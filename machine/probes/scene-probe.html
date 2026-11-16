@@ -110,6 +110,10 @@ try {
     for (let i = 0; i < rgba.length; i += 7) h = Math.imul(h ^ rgba[i], 0x01000193);
     return (h >>> 0).toString(16);
   };
+  const uniform = (rgba) => {
+    for (let i = 4; i < rgba.length; i += 4) if (rgba[i] !== rgba[0] || rgba[i + 1] !== rgba[1] || rgba[i + 2] !== rgba[2]) return false;
+    return true;
+  };
   const screenMesh = (w, id) => {
     const vp = dbg[w].viewport;
     return vp.scene?.getObjectByName(`machine.screen:${id}`) ?? vp.topScene?.getObjectByName(`machine.screen:${id}`) ?? null;
@@ -137,8 +141,9 @@ try {
       const tick = tickAt(clock, s.engine.hz);
       const mesh = screenMesh(w, id);
       const img = mesh?.material?.map?.image;
-      // drawn once the mesh is placed; a machine that has drawn nothing yet (the Super NES at tick 0) shows black, 1 by 1
-      const shown = mesh?.visible && img?.data ? { tick, hash: fnv(img.data), size: [img.width, img.height] } : null;
+      // drawn once the mesh is placed; a machine that has drawn nothing yet shows black, 1 by 1, until its poster is found;
+      // blank: one colour all over (as present/poster.js says)
+      const shown = mesh?.visible && img?.data ? { tick, hash: fnv(img.data), size: [img.width, img.height], blank: uniform(img.data) } : null;
       out[id] = { tick, running: clock.running(), shown };
     }
     return out;
@@ -364,6 +369,28 @@ try {
     },
     seatOptions: (w) => [...(hosts[w].querySelector("select.seats-pick")?.options ?? [])].map((o) => [o.value, o.textContent]),
     body: (w) => dbg[w].local.get().body?.id ?? null,
+    // the play probe: a body entered (Look), the use prompt's verbs, the controls panel, the seat the roster says this view sits in
+    enter: (w, body) => dbg[w].host.running().map((r) => dbg[w].host.record(r.id)?.api).find((a) => a?.body?.enter)?.body.enter(body) ?? null,
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((v) => { const r = v.getBoundingClientRect(); return { text: v.textContent.trim(), disabled: v.disabled, title: v.title, x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
+    controls: (w) => { const c = hosts[w].querySelector(".machine-controls"); return c && !c.hidden ? { title: c.querySelector(".machine-controls-title")?.textContent, rows: [...c.querySelectorAll("dt")].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]), foot: c.querySelector(".machine-controls-foot")?.textContent, box: (({ left, top, right, bottom }) => [left, top, right, bottom])(c.getBoundingClientRect()) } : null; },
+    sitting: (w) => dbg[w].host.record("seats")?.instance?.roster?.sitting?.() ?? null,
+    // Doom: the ticcmds port `port`'s seats wrote (forwardmove, the int8 at 0; angleturn, the int16 at 2): how many ticks moved, how many turned
+    async ticcmds(url, port) {
+      const s = (await net.a.find(url)).doc();
+      const n = s.engine.inputBytes;
+      const out = { ticks: 0, forward: 0, turn: 0 };
+      for (const seat of Object.values(s.seats ?? {})) {
+        if (seat.port !== port) continue;
+        const d = (await net.a.find(seat.inputs)).doc();
+        for (const b of Object.values(d?.chunks ?? {}))
+          for (let i = 0; i + n <= b.length; i += n) {
+            out.ticks++;
+            if (((b[i] << 24) >> 24) > 0) out.forward++;
+            if (((b[i + 2] | (b[i + 3] << 8)) << 16) >> 16 !== 0) out.turn++;
+          }
+      }
+      return out;
+    },
     eye: (w) => dbg[w].viewport.camera.position.toArray(),
     focus: (w) => rootOf(w).focus(),
     async inputs(url) {

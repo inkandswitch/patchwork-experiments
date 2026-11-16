@@ -1,7 +1,7 @@
 // A seat per port (seating.js), over its bounded spaces: 1 to 4 ports, every
 // seat a view could be sitting in, every pair of ports wanted and held,
 // every way ports can be held.
-import { portSeats, portOf, seatsFor, placesFor, seatStep, follow, portToPlay } from "./seating.js";
+import { portSeats, portOf, seatsFor, placesFor, seatStep, follow, portToPlay, openPorts } from "./seating.js";
 import { screenOf, BODY } from "./cabinet.js";
 
 test("a view's port on a machine: the index of its seat in the machine's list, only when it's that machine's own seat; every seat × 1-4 ports", () => {
@@ -117,4 +117,29 @@ test("Play's port, with no seats: the preferred one if it's free, else the first
       }
     }
   expect(cases).toBe(2 * 1 + 4 * 2 + 8 * 3 + 16 * 4);
+});
+
+test("Play's ports, with seats: the preferred first, then the rest in port order, each nobody holds whose seat is free; over every way 1-4 ports are held × every seat taken or free × every preference", () => {
+  let cases = 0;
+  for (const ports of [1, 2, 3, 4]) {
+    const seats = portSeats(ports);
+    for (let held = 0; held < 1 << ports; held++)
+      for (let taken = 0; taken < 1 << ports; taken++) {
+        const holders = Array.from({ length: ports }, (_, p) => ((held >> p) & 1 ? { id: `s${p}` } : null));
+        const stateOf = (seat) => ((taken >> seats.indexOf(seat)) & 1 ? "taken" : "free");
+        for (let prefer = 0; prefer < ports; prefer++) {
+          const got = openPorts(holders, seats, prefer, stateOf);
+          const open = (p) => !((held >> p) & 1) && !((taken >> p) & 1);
+          const want = [prefer, ...[...Array(ports).keys()].filter((p) => p !== prefer)].filter(open);
+          expect([ports, held, taken, prefer, got]).toEqual([ports, held, taken, prefer, want]);
+          // and with no seats package's view of a seat as free ("mine", "away", none), no port at all
+          for (const other of ["mine", "mine-elsewhere", "away", null]) expect(openPorts(holders, seats, prefer, () => other)).toEqual([]);
+          cases++;
+        }
+      }
+  }
+  expect(cases).toBe(4 * 1 + 16 * 2 + 64 * 3 + 256 * 4);
+  // a seat list shorter than the ports: only the ports it names
+  expect(openPorts([null, null, null], ["p1"], 2, () => "free")).toEqual([0]);
+  expect(openPorts([null, null], null, 0, () => "free")).toEqual([]);
 });

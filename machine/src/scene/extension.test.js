@@ -6,7 +6,7 @@ import part from "./part.js";
 import { screenOf } from "./cabinet.js";
 
 test("its surface is the extension contract's: update, commands, dispose, and the seats' places it contributes (nothing for probes)", () => {
-  const api = { THREE, world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [] };
+  const api = { THREE, world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null };
   const instance = ext.create(api);
   expect(Object.keys(instance).sort()).toEqual(["commands", "dispose", "seatPlaces", "update"]);
   expect(instance.commands.map((c) => c.id)).toEqual(["play", "world"]);

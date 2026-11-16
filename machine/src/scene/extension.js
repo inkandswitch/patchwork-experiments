@@ -24,10 +24,17 @@
 // - has a seat per port at the screen (seating.js), the seats package's,
 //   laid on the object, not lasting, when its session is made, and listed
 //   by port on the trait (`seats`): sitting in port N's seat takes port N
-//   and puts its pad in your hand; standing up gives the port back. Escape
-//   puts the pad down (the port stays yours while you sit); P picks it up.
-//   A machine whose trait lists no seats is played by Play alone: P takes a
-//   free port with the pad, Escape gives it back.
+//   and puts its pad in your hand; standing up gives the port back. Play
+//   (P, the use prompt, the menu) is the way in: it sits you at the first
+//   free port's seat, through the seats' roster. Escape puts the pad down
+//   (the port stays yours while you sit); P picks it up. A machine whose
+//   trait lists no seats is played by Play alone: P takes a free port with
+//   the pad, Escape gives it back;
+// - while you hold a pad, shows what its keys do (controls.js), at the
+//   bottom left of the view;
+// - never shows a stopped machine's screen black: a blank picture there is
+//   replaced by the engine's first picture from that state (present/poster.js),
+//   with the stopped note under the screen saying P plays it.
 //
 // The screen shows one player's view for everyone (the trait's `player`,
 // for a machine with a view per player: Doom), and its sound is that
@@ -44,6 +51,8 @@
 // cabinet).
 
 import { Screen, ASPECT, viewOf } from "../present/screen.js";
+import { blank, posters } from "../present/poster.js";
+import { compile } from "../engine.js";
 import { doomWorld, mapOf } from "../present/doom-world.js";
 import { Spectator } from "../present/spectator.js";
 import { QUERY, level as decodeLevel } from "../doom.js";
@@ -56,12 +65,15 @@ import { retrying, makeSession } from "./start.js";
 import { screenOf } from "./cabinet.js";
 import { seatsFor, placesFor } from "./seating.js";
 import { hands } from "./hands.js";
+import { controlsOf } from "./controls.js";
 import { WORLD, MAP_SOURCE, registered, worldCommand, stateOf, besideCabinet, wadFile } from "./worlds.js";
 
 export const TRAIT = "machine";
 export const PROVIDER = "machine";
 /** ms between tries at starting a machine that couldn't start yet (the stage's time). */
 export const RETRY_MS = 2000;
+/** How far ahead (s of the engine's ticks) a stopped screen with a blank picture looks for one (present/poster.js). */
+export const POSTER_SECONDS = 2;
 
 /**
  * The port whose view the screen shows, and which Play offers first: the
@@ -144,7 +156,7 @@ function create(api) {
   };
 
   function entry(id, o) {
-    const e = { id, url: o.sourceUrl, session: sessionOf(o), note: "Starting…", m: null, content: null, screen: null, mesh: null, view: null, pad: null, sound: null, kind: null, title: null, ports: 1, gone: false, stop: null };
+    const e = { id, url: o.sourceUrl, session: sessionOf(o), note: "Starting…", m: null, content: null, screen: null, mesh: null, view: null, last: null, poster: null, pad: null, sound: null, kind: null, title: null, ports: 1, gone: false, stop: null };
     machines.set(id, e);
     e.stop = retrying({
       attempt: () => open(e),
@@ -190,6 +202,10 @@ function create(api) {
     if (e.gone) return m.close(), true;
     e.m = m;
     e.content = content;
+    // a stopped screen's poster: the engine's first picture from the state it stopped in, on an engine of its own
+    let compiled = null;
+    const [num, den] = session.doc().engine.hz;
+    e.poster = posters({ make: async () => (compiled ??= await compile(wasm)).boot(content), vacant: session.doc().vacant, max: Math.ceil((POSTER_SECONDS * num) / den) });
     e.screen = new Screen({ THREE, aspect: ASPECT[e.kind] ?? ASPECT.square });
     e.mesh = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: e.screen.texture, toneMapped: false }));
     e.mesh.matrixAutoUpdate = false;
@@ -254,6 +270,7 @@ function create(api) {
   function close(e) {
     e.gone = true;
     e.stop?.();
+    e.poster?.dispose();
     pads.drop(e.id);
     machines.delete(e.id);
     e.mesh?.removeFromParent();
@@ -285,8 +302,6 @@ function create(api) {
 
   // ---- the pad in hand, and the port it holds (hands.js)
 
-  /** Does machine `e` have seats (its trait lists them)? Then sitting is the one way to take a port. */
-  const seated = (e) => seatsOfMachine(e.id) !== null;
   /** The seat this view sits in now, anywhere (the roster's: { of, seat }), or null: sitting nowhere, or nothing here owns seats. */
   const sitting = () => rosterIn(api)?.sitting?.() ?? null;
   const pads = hands({
@@ -296,7 +311,40 @@ function create(api) {
     seatsOf: (id) => seatsOfMachine(id),
     prefer: (e) => playerOf(e.kind, traitOf(e.id)?.player, e.ports),
     notify: (text) => api.notify(text),
+    roster: () => rosterIn(api),
   });
+
+  // ---- what the keys do, while a pad is in hand (controls.js): this extension's own overlay
+  api.style?.(CONTROLS_CSS);
+  const overlay = api.overlay?.() ?? null;
+  const panel = overlay ? overlay.ownerDocument.createElement("div") : null;
+  if (panel) {
+    panel.className = "machine-controls";
+    panel.hidden = true;
+    overlay.append(panel);
+  }
+  let panelKey = "";
+  /** The controls of the pad in hand, or none. */
+  function showControls() {
+    if (!panel) return;
+    const h = pads.held();
+    const e = h ? machines.get(h.id) : null;
+    const port = e?.m?.host.seat?.port ?? null;
+    const key = e ? `${e.id}:${e.kind}:${e.title}:${port}` : "";
+    if (key === panelKey) return;
+    panelKey = key;
+    panel.hidden = !e;
+    if (!e) return panel.replaceChildren();
+    const doc = panel.ownerDocument;
+    const el = (tag, cls, text) => Object.assign(doc.createElement(tag), cls ? { className: cls } : {}, text != null ? { textContent: text } : {});
+    const rows = el("dl", "machine-controls-keys");
+    for (const { label, keys } of controlsOf(e.kind)) {
+      const dt = el("dt");
+      for (const k of keys) dt.append(el("kbd", null, k));
+      rows.append(dt, el("dd", null, label));
+    }
+    panel.replaceChildren(el("div", "machine-controls-title", port === null ? e.title : `${e.title} · P${port + 1}`), rows, el("div", "machine-controls-foot", "Esc puts the pad down · P picks it up"));
+  }
 
   // Every frame while there are machines: step each host, show its picture
   // on its screen where its object is drawn, play its sound from there, take
@@ -323,7 +371,11 @@ function create(api) {
         e.m.frame();
         const player = playerOf(e.kind, traitOf(e.id)?.player, e.ports);
         if (e.view?.player !== player) e.view = Object.assign(viewOf(e.m.host, { player }), { player });
-        e.screen.show(e.view());
+        const picture = e.view();
+        if (picture) e.last = picture;
+        // stopped on a blank picture: its poster, once found (until then, what's shown stays)
+        if (!e.m.clock.running() && blank(e.last)) e.screen.show(e.poster.get(e.m.host, player));
+        else e.screen.show(picture);
         if (screen && at) {
           screenMatrix(THREE, at, screen, e.mesh.matrix);
           e.mesh.matrixWorldNeedsUpdate = true;
@@ -340,6 +392,7 @@ function create(api) {
     }
     for (const w of worlds.values()) show(w);
     labels.set(items);
+    showControls();
   }
 
   // ---- worlds: a map showing a machine's game (WORLD). Its things and doors
@@ -410,7 +463,7 @@ function create(api) {
     if (!e.m || e.m.clock.running()) return null;
     if (!api.clock.running()) return null; // the world's own pause says so already
     if (e.m.holders().some(Boolean)) return "Paused";
-    return seated(e) ? "Stopped while nobody plays: sit at it to play" : "Stopped while nobody plays: P to play";
+    return "Stopped while nobody plays: P to play";
   }
 
   // doom/'s map source, here or not now (late-bound: the registry, by id, read when asked)
@@ -459,6 +512,7 @@ function create(api) {
       stopLoop?.();
       stopLoop = null;
       labels.set([]);
+      panel?.remove();
       plane.dispose();
       if (audio) audio.close().catch(() => {});
     },
@@ -512,5 +566,19 @@ export async function give(ctx, info) {
   });
   return true;
 }
+
+/** The controls panel: small, at the bottom left of the view, over the picture, never in the way of a press. */
+const CONTROLS_CSS = `
+.machine-controls { position: absolute; left: 12px; bottom: 12px; max-width: min(300px, calc(100% - 24px)); padding: 8px 10px; border-radius: 8px;
+  background: rgba(18, 18, 22, 0.84); color: #f2f2f2; font: 12px/1.35 system-ui, sans-serif; pointer-events: none; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+.machine-controls[hidden] { display: none; }
+.machine-controls-title { font-weight: 600; margin-bottom: 6px; }
+.machine-controls-keys { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 3px 10px; margin: 0; }
+.machine-controls-keys dt { margin: 0; white-space: nowrap; }
+.machine-controls-keys dd { margin: 0; opacity: 0.85; }
+.machine-controls kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; margin-right: 3px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 4px;
+  font: 11px/1.5 ui-monospace, monospace; text-align: center; background: rgba(255, 255, 255, 0.08); }
+.machine-controls-foot { margin-top: 6px; opacity: 0.7; }
+`;
 
 export default { create, drop };

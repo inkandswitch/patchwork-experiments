@@ -60,7 +60,7 @@ export const plugins = [
       machine: {
         name: "Machine",
         on: "object",
-        blurb: "An existing game, run as is, in step for everyone here; its picture and sound come from its screen. Sit at one of its seats to play that port (the pad in hand; Escape puts it down, P picks it up), stand up to give it back; where it has no seats, P plays and Escape gives the port back. It stops while nobody plays",
+        blurb: "An existing game, run as is, in step for everyone here; its picture and sound come from its screen. Play (P) sits you at its first free seat with that port's pad in hand (its keys shown beside the picture; Escape puts the pad down, P picks it up), and standing up gives the port back; where it has no seats, P plays and Escape gives the port back. It stops while nobody plays, showing the last picture",
         fields: [{ key: "player", label: "Screen shows player (Doom, from 0)", kind: "number", default: 0, min: 0, max: 3, step: 1 }],
         // the session (and the source it was made for) is this object's running game: a copy starts a game of its own.
         // `seats` (the seat of each port, laid on the object with it) describes the cabinet, and goes with a copy as its seats do
@@ -85,7 +85,7 @@ export const plugins = [
     name: "Machine",
     icon: "Gamepad2",
     category: "Games",
-    description: "A cabinet for an existing game: drop a Super NES ROM or a Doom IWAD on it, and sit at it to play",
+    description: "A cabinet for an existing game: drop a Super NES ROM or a Doom IWAD on it, and press P at it to play",
     traits: ["machine"],
     async load() {
       return (await import("../scene/part.js")).default;
