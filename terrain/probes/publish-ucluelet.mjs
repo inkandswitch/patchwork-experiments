@@ -209,8 +209,8 @@ try {
     "ucluelet-basin-high": [[220, 45, 330], [390, 0, 520]],
     "ucluelet-whiskey": [[1000, 5, 520], [910, 6, 710]],
     "ucluelet-midharbour": [[560, 6, 60], [1000, 10, 800]],
-    // the yard close: the red Quonset, the galvanised one, the courtyard's slab and the frontage's stones
-    "ucluelet-courtyard": [[-50, 4, 150], [0, 5, 95]],
+    // the yard close: the red Quonset, the galvanised one, the courtyard's slab and the frontage's stones, from a standing eye (1.75 m over the yard's +3.06; at 4 m the eye was at a knee, and the ground strip under it a few metres of one shading)
+    "ucluelet-courtyard": [[-50, 4.8, 150], [0, 4.8, 95]],
     // the third look critic's: among the basin's trees, low over the waterfront's pile decks, the town's waterfront as a postcard from the harbour, the yard's shore
     "ucluelet-x-basin-mid": [[300, 14, 300], [370, 1, 470]],
     "ucluelet-x-basin-low": [[420, 3, 240], [360, 3, 450]],
@@ -251,13 +251,14 @@ try {
   };
   report.numbers.stripes = { "low-town": gradients("ucluelet-low-town.png", 418, 468), ozzard: gradients("ucluelet-ozzard.png", 525, 575) };
   check("no horizontal stripes in the harbour's mirror: vertical gradient at most 1.3 times the horizontal under the shore (low-town, ozzard)", Object.values(report.numbers.stripes).every((g) => g.ratio <= 1.3), report.numbers.stripes);
-  // the yard's ground worked and wet, not a featureless plane: the ground strip's luminance standard deviation over its mean at least 8% (courtyard, hangar-doors)
+  // the yard's ground worked and wet, not a featureless plane: the ground strip's luminance standard deviation over its mean at least 8% (courtyard, hangar-doors);
+  // the courtyard's strip the yard within about 30 m of its standing eye (rows 460–740, under the yard's horizon at about 430: rows 620–740 alone are only 4.6–7 m of ground there, a puddle or two)
   const spread = (file, y0, y1, x0 = 200, x1 = 1080) => {
     const l = pngRegion(join(SHOTS, file), x0, y0, x1, y1).map(L);
     const m = l.reduce((a, b) => a + b, 0) / l.length;
     return +(Math.sqrt(l.reduce((a, b) => a + (b - m) ** 2, 0) / l.length) / m).toFixed(4);
   };
-  report.numbers.yardGround = { courtyard: spread("ucluelet-courtyard.png", 620, 740), "hangar-doors": spread("ucluelet-hangar-doors.png", 620, 740) };
+  report.numbers.yardGround = { courtyard: spread("ucluelet-courtyard.png", 460, 740), "hangar-doors": spread("ucluelet-hangar-doors.png", 620, 740) };
   check("the yard's ground varies by at least 8% (courtyard, hangar-doors: the ground strip's standard deviation over its mean)", Object.values(report.numbers.yardGround).every((v) => v >= 0.08), report.numbers.yardGround);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);
