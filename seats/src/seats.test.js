@@ -1198,6 +1198,65 @@ describe("an object's own seats (a machine's ports): its own, and held only whil
       t.w.done();
     });
 
+  // The roster's stateOf and sit, for another package (a machine's Play):
+  // every state a seat can be in for Carol, on both owners (the table's
+  // lasting seats, the cabinet's that don't last), and every way of naming
+  // no seat. A free seat (or her own, or her other tab's) is sat in as the
+  // picker sits her; taken, away or none is refused, and nothing is said,
+  // written or claimed.
+  const ROSTER_CASES = [
+    // [name, ref, setup(t), state before, sits]
+    ["the cabinet's free P1", { of: "m", seat: "p1" }, async () => {}, "free", true],
+    ["the table's free P1", { of: null, seat: "p1" }, async () => {}, "free", true],
+    ["the cabinet's P1, hers already", { of: "m", seat: "p1" }, async (t) => (await t.attend("C", "m"), await t.pick("C", "p1")), "mine", true],
+    ["the table's P1, hers already", { of: null, seat: "p1" }, async (t) => (await t.attend("C", "board"), await t.pick("C", "p1")), "mine", true],
+    ["the table's P1, held by her other tab", { of: null, seat: "p1" }, async (t) => (await t.join("C2", "carol"), await t.attend("C2", "board"), await t.pick("C2", "p1")), "mine-elsewhere", true],
+    ["the cabinet's P1, Dan's", { of: "m", seat: "p1" }, async (t) => (await t.attend("D", "m"), await t.pick("D", "p1")), "taken", false],
+    ["the table's P1, Dan's", { of: null, seat: "p1" }, async (t) => (await t.attend("D", "board"), await t.pick("D", "p1")), "taken", false],
+    ["the table's P2, Bob's while he's away", { of: null, seat: "p2" }, async (t) => (t.w.change((d) => void (d.traits[SEATS].p2.player = "bob")), await t.step()), "away", false],
+    ["the table's P2, with no view", { of: null, seat: "p2" }, async (t) => (t.w.change((d) => void delete d.traits[SEATS].p2.camera), await t.step()), "free", true],
+    ["a seat the cabinet hasn't", { of: "m", seat: "p9" }, async () => {}, null, false],
+    ["a seat of an object that isn't there", { of: "gone", seat: "p1" }, async () => {}, null, false],
+    ["a seat of an object with none", { of: "board", seat: "p1" }, async () => {}, null, false],
+    ["nothing", null, async () => {}, null, false],
+    ["no seat named", { of: "m" }, async () => {}, null, false],
+    ["an empty seat id", { of: "m", seat: "" }, async () => {}, null, false],
+    ["an owner that isn't an id", { of: 5, seat: "p1" }, async () => {}, null, false],
+  ];
+  for (const [name, ref, setup, before, sits] of ROSTER_CASES)
+    it(`the roster's stateOf and sit, for another package: ${name}`, async () => {
+      const t = await arcade();
+      await setup(t);
+      const r = t.x.C.roster;
+      expect(r.stateOf(ref)).toBe(before);
+      const seatsBefore = t.seatsNow();
+      const claimsBefore = JSON.stringify([t.w.doc.claims ?? null, t.w.doc.objects.m.claims ?? null]);
+      const sittingBefore = r.sitting();
+      const notices = t.notices("C").length;
+      const got = r.sit(ref);
+      await t.step();
+      expect(got).toBe(sits);
+      if (sits) {
+        // as the picker sits her: in that seat's body (a seat with no view: none, where she was), its claim hers, and (a lasting seat) her name on it
+        const view = !!(ref.of ? t.w.doc.objects[ref.of] : t.w.doc).traits[SEATS][ref.seat].camera;
+        expect(r.sitting()).toEqual(view ? { of: ref.of, seat: ref.seat } : null);
+        expect(t.body("C")).toBe(view ? "seat" : "look");
+        expect(r.stateOf(ref)).toBe(before === "mine-elsewhere" ? "mine-elsewhere" : "mine");
+        if (ref.of === null) expect(t.w.doc.traits[SEATS][ref.seat].player).toBe("carol");
+        else expect(t.portClaim(ref.seat)).toEqual({ viewer: "carol", session: "C" });
+        // the notice is the picker's, said once, and only for a seat she wasn't in already
+        expect(t.notices("C").slice(notices)).toEqual(before === "free" ? [`You sat down as ${ref.of ? "Cab · P" : "Player "}${ref.seat.slice(1)}`] : []);
+      } else {
+        // refused: nothing said, written or claimed, and she sits where she sat
+        expect(t.notices("C").length).toBe(notices);
+        expect(t.seatsNow()).toBe(seatsBefore);
+        expect(JSON.stringify([t.w.doc.claims ?? null, t.w.doc.objects.m.claims ?? null])).toBe(claimsBefore);
+        expect(r.sitting()).toEqual(sittingBefore);
+        expect(r.stateOf(ref)).toBe(before);
+      }
+      t.w.done();
+    });
+
   it("a copy of the cabinet has seats of its own: sitting at one's P1 is nothing to the other's", async () => {
     const t = await arcade();
     t.w.change((d) => {

@@ -43,10 +43,16 @@
 //     sitting()      → { of, seat } | null            the seat this view is sitting in now, anywhere
 //                                                     (the seat body on top: standing up, walking off
 //                                                     from it or watching is not sitting)
+//     stateOf(ref)   → "free" | "mine" | "mine-elsewhere" | "taken" | "away" | null
+//                                                     seat `ref` ({ of, seat }) as this view sees it now
+//                                                     (its claim and the doc); null: no such seat
+//     sit(ref)       → boolean                        sits this view in seat `ref` as the picker does
+//                                                     (claim, notice, seat body); a taken or away seat,
+//                                                     or none, is refused silently; whether it sits there now
 //   }
 //
 // `seats`, `viewers`, `open` and `nameOf` are the doc's own seats: its
-// table's. All but `who` and `sitting` are pure in the snapshot they're given
+// table's. All but `who`, `sitting`, `stateOf` and `sit` are pure in the snapshot they're given
 // (the doc alone: never presence or claims), so an `audience` policy may be
 // built on them.
 //
@@ -625,6 +631,26 @@ function create(api) {
     walkedUp = { ref: a.ref, at: c ? c.at : null };
   }
 
+  /** A seat named by someone else (the roster's `sit`, `stateOf`): `{ of, seat }`, `of` an object id or null; else null. */
+  const refArg = (ref) => (ref && typeof ref === "object" && typeof ref.seat === "string" ? { of: ref.of ?? null, seat: ref.seat } : null);
+  /**
+   * The roster's `sit`: seat `ref` sat in for another package (a machine's
+   * Play), as the picker sits you in it (its claim, the notice, the seat
+   * body), but never over someone: a seat that's taken or away, or isn't
+   * there, is refused, saying nothing (the caller says why, in its own
+   * words). Already sitting there, it's the seat's view again. Whether this
+   * view now holds that seat (its claim, and a lasting seat's player), as
+   * the station's verb asks after sitting: a seat with no view holds you
+   * without the seat body, so `sitting()` stays null there.
+   */
+  function sitFor(ref) {
+    if (!ref) return false;
+    const { state } = stateOf(ref);
+    if (state === "taken" || state === "away") return false;
+    sit(ref);
+    return holding(ref);
+  }
+
   /** Up from your seat: the seat body comes off; a lasting seat stays yours, one that doesn't is free (the body's `left`). */
   function standUp(ref) {
     if (!seated()) return;
@@ -659,6 +685,11 @@ function create(api) {
       who,
       // the seat this view is sitting in now: the seat body on top, in that seat
       sitting: () => (seated() && sitting ? { of: sitting.of, seat: sitting.seat } : null),
+      stateOf: (ref) => {
+        const r = refArg(ref);
+        return r && seatAt(api.scene(), r) ? stateOf(r).state : null;
+      },
+      sit: (ref) => sitFor(refArg(ref)),
     }),
     // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
     // the people seated at it (the doc's own lasting seats), here or away;
