@@ -1198,9 +1198,19 @@ function noise(x, y) {
   return 2 * lerp(lerp(h(i, j), h(i + 1, j), ux), lerp(h(i, j + 1), h(i + 1, j + 1), ux), uy) - 1;
 }
 
+/** The islet's rock: its radius at its base (m), and its two wobbles (each times a noise in [−1, 1]). */
+const ISLET_R = 24;
+const ISLET_WOBBLE = [0.22, 0.08];
+/**
+ * How far the islet reaches from its middle, at most (m): its base's radius
+ * times the most its wobbles can add (noise is in [−1, 1]), 24 × 1.3 = 31.2.
+ * A bound, not a measure: the mesh as drawn reaches 27.8 at its base (y −4).
+ */
+export const ISLET_REACH = ISLET_R * (1 + ISLET_WOBBLE[0] + ISLET_WOBBLE[1]);
+
 /** A rocky islet with a lighthouse, standing in the sea (its base at −4). */
 function isletMeshes() {
-  const R = 24;
+  const R = ISLET_R;
   const H = 8;
   const rings = 9;
   const segs = 30;
@@ -1208,7 +1218,7 @@ function isletMeshes() {
   rock.grid(rings + 1, segs, (r, k) => {
     const q = r / rings;
     const a = (k / segs) * Math.PI * 2;
-    const wob = 1 + 0.22 * noise(Math.cos(a) * 2 + 3, Math.sin(a) * 2 + 1) + 0.08 * noise(a * 3, q * 4);
+    const wob = 1 + ISLET_WOBBLE[0] * noise(Math.cos(a) * 2 + 3, Math.sin(a) * 2 + 1) + ISLET_WOBBLE[1] * noise(a * 3, q * 4);
     const rad = q === 0 ? 0 : R * q * wob;
     const y = q === 1 ? -4 : H * Math.pow(1 - Math.pow(q, 1.6), 0.9) * (1 + 0.15 * q * noise(a * 2.3, q * 5)) - 0.6 * q;
     return [Math.cos(a) * rad, y, -Math.sin(a) * rad];

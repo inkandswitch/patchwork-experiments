@@ -367,7 +367,8 @@ re-steps, not correctness.
 
 ## Not done yet
 
-- **The scene extension:** half built ("Phase 2b, in a scene" below).
+- **The scene extension:** built, all eight wiring steps ("Phase 2b, in a
+  scene" below), and published in the Arcade (Decision 47).
 - **Running the engine in a worker:** built ("Phase 2, the host side"),
   not yet used in a scene.
 - **Deep rebases** to before the oldest retained checkpoint replay from

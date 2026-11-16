@@ -2,11 +2,27 @@
 // drop context): what it lays out, where, and with which traits.
 import { describe, it, expect } from "vitest";
 import template from "./template.js";
-import { FIT } from "./ship.js";
-import { REACH, WAY, headTo, layOutShip, turn } from "./layout.js";
+import { FIT, partMeshes } from "./ship.js";
+import { BUOY_REACH, CLIP_MARGIN, ISLET_REACH, REACH, WAY, headTo, layOutShip, seaClip, turn } from "./layout.js";
+import { DEPTH } from "./sim.js";
+import { RODE } from "./traits.js";
+import { SLOOP } from "./hull-model.js";
 import { emptyScene, fakeDrop } from "./test/fakes.js";
 
 const fakeScene = (doc, o) => fakeDrop(doc, o);
+/** The islet's mesh as it is drawn (every primitive: the rock and the lighthouse). */
+const ISLET_MESH = partMeshes("islet").flatMap((m) => m.primitives);
+
+describe("the islet's reach is the mesh's", () => {
+  it("ISLET_REACH (24 m × 1.3, 31.2) is at least the farthest vertex of the drawn islet from its middle", () => {
+    expect(ISLET_REACH).toBeCloseTo(31.2, 9);
+    let far = 0;
+    for (const p of ISLET_MESH) for (let i = 0; i < p.positions.length; i += 3) far = Math.max(far, Math.hypot(p.positions[i], p.positions[i + 2]));
+    // the rock reaches some 27.8 m at its base (y −4), well past "some 25 m across"
+    expect(far).toBeGreaterThan(27);
+    expect(ISLET_REACH).toBeGreaterThanOrEqual(far);
+  });
+});
 
 
 describe("the Ship at sea template", () => {
@@ -19,8 +35,10 @@ describe("the Ship at sea template", () => {
     expect(Number.isInteger(weather.seed)).toBe(true);
     expect(doc.traits["sailing.sea"]).toBeUndefined();
     const first = doc.objects[doc.order[0]];
-    expect(first).toMatchObject({ name: "Sea", parent: null, sourceUrl: null, providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
-    expect(first.traits).toEqual({ water: {}, "sailing.sea": { seed: weather.seed, scale: 1 } });
+    // the Sea keeps the box its layout covers, centred on it, where its world offers no open water (seaClip)
+    const want = seaClip({ yaw: headTo(45) });
+    expect(first).toMatchObject({ name: "Sea", parent: null, sourceUrl: null, providerId: null, transform: { position: want.position, rotation: [0, headTo(45), 0], scale: 1 } });
+    expect(first.traits).toEqual({ water: { clip: want.clip }, "sailing.sea": { seed: weather.seed, scale: 1 } });
     expect(Object.values(doc.objects).filter((o) => o.traits?.water)).toHaveLength(1);
     // people start in Look off her quarter (no body named: a click comes aboard), and nothing else of the old view
     expect(Object.keys(doc.view.start)).toEqual(["home"]);
@@ -70,7 +88,7 @@ describe("the Ship at sea template", () => {
 
     const ids = Object.fromEntries(Object.entries(doc.objects).map(([id, o]) => [o.name, id]));
     const byName = Object.fromEntries(Object.values(doc.objects).map((o) => [o.name, o]));
-    expect(byName.Sea.traits.water).toEqual({});
+    expect(Object.keys(byName.Sea.traits.water)).toEqual(["clip"]);
     const aboard = ["Mast", "Boom and sail", "Wheel", "Windlass", "Anchor", "Ladder", "Mainsheet"];
     for (const name of ["Mast", "Wheel", "Windlass", "Ladder", "Mainsheet"]) expect(byName[name].parent).toBe(hullId);
     // the sail goes where the mast goes, the anchor where the windlass does
@@ -168,4 +186,64 @@ describe("the Ship at anchor template", () => {
     expect(Math.hypot(islet[0], islet[2])).toBeLessThan(90);
     expect(calls.notices.at(-1).text).toMatch(/at anchor/);
   });
+});
+
+describe("the templates' clips (W26 extended): every template doc's Sea keeps a box covering her swing circle or her start, and every landmark, with the margin to spare", () => {
+  const WINDS = [{ speed: 7, from: 45 }, { speed: 5, from: 0 }, { speed: 6, from: 137 }, { speed: 4, from: 250 }];
+  for (const anchored of [false, true])
+    for (const wind of WINDS)
+      it(`${anchored ? "at anchor" : "under way"}, the wind from ${wind.from}°`, async () => {
+        const doc = emptyScene();
+        await layOutShip(fakeScene(doc).ctx, { wind, seed: 3, anchored });
+        const seas = Object.values(doc.objects).filter((o) => o.traits?.water);
+        expect(seas).toHaveLength(1);
+        const sea = seas[0];
+        const [w, depth, l] = sea.traits.water.clip;
+        // under way too: her crew may let the anchor go, and it lies at DEPTH (10 m) with her chain above it
+        expect(depth).toBe(11);
+        expect(depth).toBeGreaterThan(DEPTH);
+        expect(depth).toBeGreaterThan(SLOOP.draft);
+        // a point in the Sea's own frame (its yaw undone, the long way)
+        const yaw = sea.transform.rotation[1];
+        const local = (p) => {
+          const dx = p[0] - sea.transform.position[0], dz = p[2] - sea.transform.position[2];
+          return [dx * Math.cos(yaw) - dz * Math.sin(yaw), dx * Math.sin(yaw) + dz * Math.cos(yaw)];
+        };
+        // every circle that must be covered, worked out from the doc's own objects
+        const by = (name) => Object.values(doc.objects).find((o) => o.name === name);
+        const hull = by("Sloop");
+        const h = hull.transform.rotation[1];
+        const circles = anchored
+          ? [{ at: [hull.transform.position[0] - Math.sin(h) * (SLOOP.length / 2), 0, hull.transform.position[2] - Math.cos(h) * (SLOOP.length / 2)], r: Math.sqrt(RODE ** 2 - DEPTH ** 2) + SLOOP.length }]
+          : [{ at: hull.transform.position, r: SLOOP.length }];
+        for (const [name, r] of [["Red buoy", BUOY_REACH], ["Green buoy", BUOY_REACH], ["Islet", ISLET_REACH]]) circles.push({ at: by(name).transform.position, r });
+        expect(circles).toHaveLength(4);
+        for (const c of circles) {
+          const [x, z] = local(c.at);
+          expect(Math.abs(x) + c.r + CLIP_MARGIN).toBeLessThanOrEqual(w / 2 + 1e-6);
+          expect(Math.abs(z) + c.r + CLIP_MARGIN).toBeLessThanOrEqual(l / 2 + 1e-6);
+        }
+        // the islet as drawn: every vertex of its mesh (at its object's place, turn and
+        // scale), not the constant, is inside the box with the margin to spare
+        const islet = by("Islet");
+        const [ix, iz] = local(islet.transform.position);
+        const ir = islet.transform.rotation[1], is = islet.transform.scale ?? 1;
+        let worst = Infinity;
+        for (const p of ISLET_MESH)
+          for (let i = 0; i < p.positions.length; i += 3) {
+            const mx = p.positions[i] * is, mz = p.positions[i + 2] * is;
+            // the mesh's offset in the world, then in the Sea's frame (both turns about +Y)
+            const wx = mx * Math.cos(ir) + mz * Math.sin(ir), wz = -mx * Math.sin(ir) + mz * Math.cos(ir);
+            const lx = ix + wx * Math.cos(yaw) - wz * Math.sin(yaw), lz = iz + wx * Math.sin(yaw) + wz * Math.cos(yaw);
+            worst = Math.min(worst, w / 2 - Math.abs(lx), l / 2 - Math.abs(lz));
+          }
+        expect(worst).toBeGreaterThanOrEqual(CLIP_MARGIN - 1e-6);
+        // and no bigger than that: some circle touches each side
+        for (const [k, half] of [[0, w / 2], [1, l / 2]]) {
+          const lo = Math.min(...circles.map((c) => local(c.at)[k] - c.r - CLIP_MARGIN));
+          const hi = Math.max(...circles.map((c) => local(c.at)[k] + c.r + CLIP_MARGIN));
+          expect(lo).toBeCloseTo(-half, 4);
+          expect(hi).toBeCloseTo(half, 4);
+        }
+      });
 });

@@ -91,13 +91,21 @@ pieces, each published and checked in the real Patchwork:
   trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
   sloop in a box of water, floats in a dry room beside Ship at sea (*Model
   basin and Ship at sea*, automerge:2vunxCi5mgpYGr53LsYysQACbqZG, a doc of
-  two links); every sea example was republished in the new shape. The lead's yes to "should an inner world keep its own
-  water?" is delivered only for water authored as a box: Ship at sea, the
-  case the question was asked about, still rests in a dry room, and the
-  choice that would change it is open (below). One stage correction
+  two links); every sea example was republished in the new shape. One stage correction
   (arriving doesn't wait for objects with nothing to load, WATER.md
   Decision 73) and one removal (the trait-level `needs`, which this left
   with no consumer, Decision 77).
+- **Clipped open water** (WATER.md, "Clipped open water", Decisions 90 to
+  119, built in `lane/clip`, not yet merged or published): the lead's
+  answer to "should an inner world keep its own water?" (2026-11-15). The
+  path rule was rejected; open water may carry a `clip`, the box of its
+  own sea a doc keeps where the world it is placed in offers no open
+  water. Ship at sea dropped into a dry room floats on a block of her sea;
+  in the Harbour her block is silent and she floats on the harbour's. The
+  box is the guest's (the lead's Q1), liveness is global (Q2), and the
+  stage is unchanged: the path rule a fixer committed unaware of the
+  lead's choice is reverted (Decision 90). The *Model room* publisher lays
+  boats out as 1:25 dioramas on its floor.
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a
   screen, sound, a seat per port and Doom's world beside them, and no stage
@@ -115,12 +123,21 @@ Still open:
   visit or after its ×; an overlaid drawer was rejected there, so the
   remaining fix is opening the inspector a beat after a click that may
   become a double-click;
+- a double-click on a moving thing missed it (triage N11, found by the
+  integration of 2026-11-15): on the republished Lost Cities aboard
+  (automerge:23RNsVw3RkKho5qUcdpmPo6qYvnd), in Edit with her world running,
+  a double-click on a card of her game G landed on the Card table, because
+  the boat pitched on her own sea between the clicks and the second
+  click's ray hit something else. This is not the inspector-narrowing item
+  above: nothing moves the canvas, the thing under the pointer moves. A
+  fix is proposed, not merged, on its own lane `lane/dblclick` (WATER
+  Decision 112), for its own review: the second click of a double-click
+  resolves to the first click's hit, its object and stage, when both
+  presses are within 500 ms and 6 px, instead of casting a new ray
+  (`scene/src/stage/router.js`, with a finite test). Not yet checked in the
+  real Patchwork, and presence-check still pauses the boat's world first;
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go;
-- whether a boat linked into a dry room keeps her own open sea: the path
-  rule (each ambient name the outermost offer on the stage's own path)
-  against water kept only as a box, as built (WATER.md, "Open for the
-  lead").
+  they go.
 
 Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
@@ -294,8 +311,10 @@ frozen plain JSON, and every stage in the view reads the outermost's with
 `api.ambient(name)` and its own code. A linked world brings its things, not
 its weather: a boat alone has her sea; linked into a harbour, she floats on
 the harbour's; in a dry room she has none of the world's; water she holds as
-a thing (a basin, a tank, a box with bounds), she keeps
-([water/WATER.md](../water/WATER.md), "Water bodies"). Inner docs' spawns serve arrivals (section 9).
+a thing (a basin, a tank, a box with bounds), she keeps, and open water she
+gave a clip becomes that box in a world with none
+([water/WATER.md](../water/WATER.md), "Water bodies" and "Clipped open
+water"). Inner docs' spawns serve arrivals (section 9).
 
 **Presence where it is.** What a doc's people are doing (someone walking,
 someone's selection) is that doc's, so it is drawn where the doc is, in

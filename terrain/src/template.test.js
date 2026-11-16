@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { layOut, headTo, differences, AT_ANCHOR, MOORING, RODE, CREDIT } from "./template.js";
-import { WIND, HOME, EXPECTED, OSM_DATE, cadboroDoc } from "./cadboro.js";
+import { WIND, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
 import { credits } from "./credit.js";
 import { FakeRepo } from "./test/fake-repo.js";
@@ -72,8 +72,15 @@ describe("the Cadboro Bay template's layout", () => {
     expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7 });
     expect(d.traits["sailing.sea"]).toBeUndefined();
     expect(d.traits.water).toBeUndefined();
-    expect(d.objects[sea]).toMatchObject({ name: "Sea", sourceUrl: null, providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
-    expect(d.objects[sea].traits).toEqual({ water: {}, "sailing.sea": { seed: 7, scale: WIND.scale } });
+    // the Sea keeps the terrain's footprint, from its known grid, down to the hint's deepest seabed, where its world has no open water
+    const span = (GRID.n - 1) * GRID.cell;
+    expect(d.objects[sea]).toMatchObject({ name: "Sea", sourceUrl: null, providerId: null, transform: { position: [GRID.x0 + span / 2, 0, GRID.z0 + span / 2], rotation: [0, 0, 0], scale: 1 } });
+    expect(d.objects[sea].traits).toEqual({ water: { clip: [span, 150, span] }, "sailing.sea": { seed: 7, scale: WIND.scale } });
+    // every corner of the grid is inside the clip (its centre the Sea's place)
+    for (const x of [GRID.x0, GRID.x0 + span]) for (const z of [GRID.z0, GRID.z0 + span]) {
+      expect(Math.abs(x - d.objects[sea].transform.position[0])).toBeLessThanOrEqual(span / 2);
+      expect(Math.abs(z - d.objects[sea].transform.position[2])).toBeLessThanOrEqual(span / 2);
+    }
     // one open water: the sloop brought none of her own
     expect(Object.values(d.objects).filter((o) => o.traits?.water)).toHaveLength(1);
     expect(d.view.start).toEqual({ home: { position: [...HOME.position], target: [...HOME.target] } });

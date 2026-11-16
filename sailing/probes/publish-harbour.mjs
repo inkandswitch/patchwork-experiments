@@ -3,7 +3,8 @@
 // boats already published linked into it live, each a doc of her own,
 // unchanged and uncopied. In it they float on the harbour's open water, sail
 // in its wind, and the one open surface drawn is its; water a boat holds as
-// a thing (a tank, a basin) stays hers.
+// a thing (a tank, a basin) stays hers. Its Sea has no clip (WATER Decision
+// 103): a boat's clip is silent here, where the harbour offers water.
 // Nothing in the harbour names a boat but its links; nothing in a boat names
 // the harbour. Prints its Patchwork URL.
 //
@@ -135,6 +136,9 @@ const doc = {
   clock: { running: true, t: 0 },
   view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { home } },
 };
+// the Harbour's Sea has no clip (WATER Decision 103): placed in a dry world, its boats each keep their own block, and a
+// harbour block under them would overlap theirs. Its boats keep their clips: silent here, where the harbour offers water.
+if (objects.sea.traits.water.clip != null || objects.sea.traits.water.size != null) problems.push("the Harbour's Sea must be open water with no clip");
 console.error(J({ title: doc.title, weather, sea, boats: boats.map((b) => ({ id: b.id, name: b.name, at: b.position, yawDeg: Number.isFinite(b.from) ? (b.from - windFrom) % 360 : null })), start: doc.view.start }, null, 1));
 if (problems.length) console.error(`${DRY ? "would NOT publish" : "NOT publishing"}:\n  ${problems.join("\n  ")}`);
 if (DRY) {
@@ -153,6 +157,7 @@ const after = packageProblems(got, PACKAGES);
 if (J(Object.keys(got?.objects ?? {}).sort()) !== J(["sea", ...boats.map((b) => b.id)].sort())) after.push("came back without its Sea and its boats");
 for (const b of boats) if (got?.objects?.[b.id]?.sourceUrl !== b.url) after.push(`${b.id} doesn't link ${b.url}`);
 if (!isOpen(got?.objects?.sea) || !got.objects.sea.traits?.["sailing.sea"] || !got?.traits?.["sailing.weather"]) after.push("came back without its Sea or its weather");
+if (got?.objects?.sea?.traits?.water?.clip != null) after.push("came back with a clip on its Sea (the Harbour's has none: WATER Decision 103)");
 if (after.length) {
   console.error(`NOT verified from a fresh repo:\n  ${after.join("\n  ")}`);
   process.exit(1);

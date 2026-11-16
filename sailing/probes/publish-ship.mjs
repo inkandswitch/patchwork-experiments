@@ -1,15 +1,18 @@
 // Publish a ship at sea to a real sync server and print its Patchwork URL.
 //
 //   node probes/publish-ship.mjs [--anchor] [--sync wss://…] [--settle 8000]
-//   node probes/publish-ship.mjs [--anchor] --dry-run
+//   node probes/publish-ship.mjs [--anchor] --dry-run [--out <file.json>]
 //
+// --out (with --dry-run) writes the scene doc as JSON, { [url]: doc }, for a
+// publisher's offline dry run (publish-model-room.mjs --offline).
 // --anchor runs the "Ship at anchor" template instead (titled so).
 //
 // Makes NEW docs on every run (no dedupe): an empty scene, made the way the
 // scene datatype makes one, then the "Ship at sea" template run on it with a
 // context built on this node repo, exactly as the start screen runs it. So
 // the doc is what a maker gets from New → scene → Ship at sea: the weather
-// and a Sea (open water with a sea on it), the sloop and its stations, landmarks, the scene's one GLB file doc per
+// and a Sea (open water with a sea on it, and the clip its layout covers:
+// clip-check.mjs), the sloop and its stations, landmarks, the scene's one GLB file doc per
 // kind of piece (recorded at doc.assets[key] by ctx.file, as the stage's
 // sceneFile does), and `view.start` off her quarter (Look, no body named, where a click
 // comes aboard).
@@ -21,6 +24,7 @@
 import shipAtSea, { atAnchor } from "../src/template.js";
 import { fileKey } from "../src/parts.js";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
+import { clipProblems } from "./clip-check.mjs";
 import { emptyScene } from "./empty-scene.js";
 
 const args = Object.fromEntries(
@@ -109,6 +113,8 @@ if (!d.traits?.["sailing.weather"]) problems.push("no sailing.weather trait");
 const seas = objects.filter((o) => o.traits?.water);
 if (seas.length !== 1 || seas[0].traits.water.size != null || !seas[0].traits["sailing.sea"] || d.objects[d.order[0]] !== seas[0]) problems.push(`want one Sea first in the order (open water with a sea on it), have ${JSON.stringify(seas.map((o) => o.name))}`);
 if (d.traits?.["sailing.sea"] || d.traits?.water) problems.push("a sea or water trait left on the scene (they are a Sea object's now)");
+// the box her Sea keeps where the world she is placed in offers no open water (water/WATER.md, "Clipped open water")
+problems.push(...clipProblems(d, { anchored: ANCHORED }));
 for (const t of ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"]) if (has(t) !== 1) problems.push(`${has(t)} objects with ${t}`);
 const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "companionway", "hatch", "redBuoy", "greenBuoy"];
 const keys = KINDS.map(fileKey).sort();
@@ -129,6 +135,11 @@ if (problems.length) {
 const made = [scene.url, ...glbs];
 console.log(`scene ${scene.url}: ${objects.length} objects, ${glbs.length} GLBs (doc.assets), starts people ${JSON.stringify(d.view.start)}`);
 if (DRY) {
+  if (typeof args.out === "string") {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(args.out, JSON.stringify({ [scene.url]: JSON.parse(JSON.stringify(d)) }));
+    console.log(`wrote ${args.out}`);
+  }
   console.log(`dry run: ${made.length} docs (nothing published)`);
   process.exit(0);
 }

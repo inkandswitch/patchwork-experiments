@@ -11,16 +11,13 @@
 //   - linked into a host X at 0°, and mirrored there at 20° of heel,
 //   - linked into a host X' at 20° of heel,
 //   - linked into Y through X (two links deep),
-//   - linked into a dry room D (a host offering nothing) at 20° of heel,
-//   - linked into Z, a dry room, through X (two deep, the middle offering),
-// six views of one page on one repo, and in each view × body {look, edit,
+// four views of one page on one repo, and in each view × body {look, edit,
 // walk, seat} × held tool {none, one} × focus {outside, inside the link (a
 // view with a link to enter)}: every one of G's stages agrees with G alone,
 // every time, the doc's clock and what each stage's clock says among it.
 // The one read that does depend on placement, api.ambient (W7), is checked
-// beside it: its value is the outermost offer on G's path (G's own alone or
-// in a dry room, its outermost offering host's linked), and `mine`, `frame`
-// and `clock` say where G sits.
+// beside it: its value is the world's (G's own alone, its outermost host's
+// linked), and `mine`, `frame` and `clock` say where G sits.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -30,7 +27,6 @@ import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
 import { keyOf } from "./paths.js";
 import { readClock } from "./clock.js";
-import { invertMatrix, multiplyMatrices } from "../transform.js";
 
 const ME = "automerge:ana";
 const BEN = "automerge:ben";
@@ -56,7 +52,7 @@ const EXTENSIONS = [
       create: (api) => {
         const roster = () => api.collect("roster").map((r) => r.value).find((r) => typeof r?.playerAt === "function") ?? null;
         return {
-          // G offers an ambient of its own, which counts only where no host on its path offers one
+          // G offers an ambient of its own, which counts only where G is the world
           ambient: () => ({ "t.x": { by: api.doc().title } }),
           audience: (snap) => (id) => {
             const seat = snap.objects[id]?.traits?.["t.hand"]?.seat;
@@ -126,18 +122,14 @@ function seen(st) {
 
 /**
  * The reads that do depend on placement, and only as I4 says (W7): what
- * api.ambient gives one of G's stages. Its value is the outermost offer on
- * G's path (G's own alone or where no host offers, its outermost offering
- * host's otherwise, whatever G offers), `mine` holds exactly where G offers
- * it, its frame is the stage's own in the offering doc's root and its clock
- * the offering doc's world time. `from` is the stage the case says offers.
+ * api.ambient gives one of G's stages. Its value is the world's (G's own
+ * alone, its outermost host's when linked, whatever G offers), `mine` holds
+ * exactly where G is the world, its frame is the stage's own and its clock
+ * the outermost's world time.
  */
-function ambientSeen(st, from) {
+function ambientSeen(st, world) {
   const a = st.debug.host.record("t.table").api.ambient("t.x");
-  const there = from.frame()?.matrix ?? null;
-  const here = st.frame()?.matrix ?? null;
-  const frame = from === st ? null : there ? multiplyMatrices(invertMatrix(there), here) : here;
-  return { value: a.value, mine: a.mine, frame: a.frame?.matrix ?? null, running: a.clock.running, want: { value: from.ambients()["t.x"], mine: from === st, frame, running: from.worldTime().running } };
+  return { value: a.value, mine: a.mine, frame: a.frame?.matrix ?? null, running: a.clock.running, want: { value: world.ambients()["t.x"], mine: world === st, frame: st.frame()?.matrix ?? null, running: world.worldTime().running } };
 }
 
 describe("placement independence (I4): G alone, linked, heeled, mirrored, two links deep", () => {
@@ -150,9 +142,6 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
       const X = repo.add(emptyScene({ title: "X", traits: host, objects: { L: link(G.url, { transform: FLAT }), M: link(G.url, { transform: HEEL }) }, order: ["L", "M"] }));
       const X2 = repo.add(emptyScene({ title: "X'", traits: host, objects: { L: link(G.url, { transform: HEEL }) }, order: ["L"] }));
       const Y = repo.add(emptyScene({ title: "Y", traits: host, objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
-      // dry rooms: hosts offering nothing
-      const D = repo.add(emptyScene({ title: "D", objects: { L: link(G.url, { transform: HEEL }) }, order: ["L"] }));
-      const Z = repo.add(emptyScene({ title: "Z", objects: { LX: link(X.url, { transform: FLAT }) }, order: ["LX"] }));
       // the first view registers the extensions (the harness's), on G itself
       const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
       cleanups.push(() => s.unmount());
@@ -161,17 +150,12 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
         X: { v: await view(repo, X), into: ["L"] },
         "X'": { v: await view(repo, X2), into: ["L"] },
         Y: { v: await view(repo, Y), into: ["LX", "L"] },
-        D: { v: await view(repo, D), into: ["L"] },
-        Z: { v: await view(repo, Z), into: ["LX", "L"] },
       };
-      // whose "t.x" each view's G reads: the outermost offering doc on its path
-      const offerer = { alone: "G", X: "X", "X'": "X'", Y: "Y", D: "G", Z: "X" };
       const gStages = (v) => v.stages().filter((st) => st.url === G.url);
       const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.looks().size === 3;
-      await until(() => Object.values(views).every(({ v }) => gStages(v).length >= 1 && gStages(v).every(ready)) && gStages(views.X.v).length === 2 && gStages(views.Z.v).length === 2, 4000);
+      await until(() => Object.values(views).every(({ v }) => gStages(v).length >= 1 && gStages(v).every(ready)) && gStages(views.X.v).length === 2, 4000);
       expect(gStages(views.X.v).map((st) => st.role).sort()).toEqual(["acting", "mirror"]);
       expect(gStages(views.Y.v).map((st) => st.role).sort()).toEqual(["acting", "mirror"]);
-      expect(gStages(views.Z.v).map((st) => st.role).sort()).toEqual(["acting", "mirror"]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)
       for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.seats"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
 
@@ -209,15 +193,13 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
                 for (const st of gStages(v)) {
                   const got = seen(st);
                   if (got !== want) throw new Error(`${where} ${st.role}, focus ${focus}, body ${body}, held ${held}, ${state}:\n${got}\n≠\n${want}`);
-                  // W7: the ambient read is the outermost offer on G's path, and says where G sits
-                  const from = offerer[where] === "G" ? st : v.stages().find((x) => x.doc().title === offerer[where] && x.path.length < st.path.length);
-                  const amb = ambientSeen(st, from);
+                  // W7: the ambient read is the world's, and says where G sits
+                  const amb = ambientSeen(st, v.outermost());
                   expect(amb.value).toBe(amb.want.value);
-                  expect(amb.value).toEqual({ by: offerer[where] });
-                  expect(amb.mine).toBe(offerer[where] === "G");
+                  expect(amb.value).toEqual({ by: where === "alone" ? "G" : where });
+                  expect(amb.mine).toBe(where === "alone");
                   expect(amb.mine).toBe(amb.want.mine);
-                  if (amb.want.frame === null) expect(amb.frame).toBeNull();
-                  else amb.frame.forEach((x, i) => expect(x).toBeCloseTo(amb.want.frame[i], 9));
+                  expect(amb.frame).toEqual(amb.want.frame);
                   expect(amb.running).toBe(amb.want.running);
                   checked++;
                 }
@@ -228,8 +210,8 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
             await settle();
           }
       }
-      // (alone: 1 stage, outside only; X, Y, Z: acting + mirror; X', D: 1 — each × 2 foci) × 4 bodies × 2 held × 2 clock × 2 card states
-      expect(checked).toBe((1 + 2 * 2 + 1 * 2 + 2 * 2 + 1 * 2 + 2 * 2) * 4 * 2 * 2 * 2);
+      // (alone: 1 stage, outside only; X, Y: acting + mirror; X': 1 — each × 2 foci) × 4 bodies × 2 held × 2 clock × 2 card states
+      expect(checked).toBe((1 + 2 * 2 + 1 * 2 + 2 * 2) * 4 * 2 * 2 * 2);
     }, 90_000);
   }
 });
