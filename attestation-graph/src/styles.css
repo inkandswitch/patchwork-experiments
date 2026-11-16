@@ -1,0 +1,698 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --attg-bg: var(--editor-fill, white);
+    --attg-fg: var(--editor-line, black);
+    --attg-muted: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 45%);
+    --attg-border: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 18%);
+    --attg-panel: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --attg-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 10%);
+    --attg-accent: var(--studio-primary, #35f7ca);
+    --attg-accent-fg: var(--studio-primary-line, black);
+    --attg-accent-soft: color-mix(in oklch, var(--studio-primary, #35f7ca), var(--editor-fill, white) 70%);
+    --attg-path: var(--editor-link-text, var(--studio-link, #2563eb));
+    --attg-danger: var(--editor-danger-text, var(--studio-danger, #d33));
+    --attg-trusted-fill: color-mix(in oklch, var(--studio-added, #4caf50), var(--editor-fill, white) 76%);
+    --attg-trusted-line: color-mix(in oklch, var(--studio-added, #4caf50), var(--editor-line, black) 25%);
+    --attg-untrusted-fill: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 7%);
+    --attg-untrusted-line: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 40%);
+    --attg-family: var(--editor-family-sans, system-ui, sans-serif);
+    --attg-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+.attestation-graph {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--attg-bg);
+  color: var(--attg-fg);
+  font-family: var(--attg-family);
+  font-size: 13px;
+  line-height: 1.3;
+  outline: none;
+}
+
+/* ---- bars ---- */
+
+.attestation-graph .ag-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-2xs, 4px);
+  padding: var(--studio-space-2xs, 4px) var(--studio-space-xs, 6px);
+  background: var(--attg-panel);
+  border-bottom: 1px solid var(--attg-border);
+  flex: none;
+}
+
+.attestation-graph .ag-bar[data-position="bottom"] {
+  border-bottom: none;
+  border-top: 1px solid var(--attg-border);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.attestation-graph .ag-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.attestation-graph .ag-group + .ag-group {
+  margin-left: var(--studio-space-2xs, 4px);
+  padding-left: var(--studio-space-xs, 6px);
+  border-left: 1px solid var(--attg-border);
+}
+
+.attestation-graph .ag-spacer {
+  flex: 1;
+}
+
+.attestation-graph .ag-group-label {
+  color: var(--attg-muted);
+  font-size: 11px;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.attestation-graph .ag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attestation-graph .ag-btn:hover:not(:disabled) {
+  background: var(--attg-hover);
+}
+
+.attestation-graph .ag-btn:focus-visible {
+  outline: 2px solid var(--attg-accent);
+  outline-offset: 1px;
+}
+
+.attestation-graph .ag-btn:disabled {
+  color: var(--attg-muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.attestation-graph .ag-btn[data-active] {
+  background: var(--attg-bg);
+  border-color: var(--attg-border);
+  font-weight: 600;
+}
+
+.attestation-graph .ag-btn[data-variant="primary"] {
+  background: var(--attg-accent);
+  color: var(--attg-accent-fg);
+}
+
+.attestation-graph .ag-swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1.5px solid var(--attg-fg);
+  background: var(--attg-bg);
+  flex: none;
+}
+
+.attestation-graph .ag-swatch[data-kind="trusted"] {
+  background: var(--attg-trusted-fill);
+  border-color: var(--attg-trusted-line);
+}
+
+.attestation-graph .ag-swatch[data-kind="untrusted"] {
+  background: var(--attg-untrusted-fill);
+  border-color: var(--attg-untrusted-line);
+}
+
+.attestation-graph .ag-swatch[data-kind="or"] {
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  margin: 0 2px;
+}
+
+.attestation-graph .ag-swatch[data-kind="label"] {
+  width: auto;
+  height: auto;
+  border: none;
+  background: none;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.attestation-graph .ag-swatch[data-kind="output"] {
+  border-width: 2px;
+}
+
+.attestation-graph .ag-input {
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: var(--attg-bg);
+  border: 1px solid var(--attg-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+.attestation-graph .ag-input:focus-visible {
+  outline: 2px solid var(--attg-accent);
+  outline-offset: 0;
+}
+
+.attestation-graph .ag-input[data-wide] {
+  flex: 1 1 260px;
+  font-family: var(--attg-family-code);
+}
+
+.attestation-graph .ag-status {
+  color: var(--attg-muted);
+  font-size: 12px;
+}
+
+.attestation-graph .ag-status[data-tone="error"] {
+  color: var(--attg-danger);
+}
+
+.attestation-graph .ag-crumb-sep {
+  color: var(--attg-muted);
+}
+
+.attestation-graph .ag-crumb {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attestation-graph .ag-hint {
+  color: var(--attg-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  padding-left: var(--studio-space-sm, 8px);
+}
+
+/* ---- canvas ---- */
+
+.attestation-graph .ag-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.attestation-graph .ag-canvas[data-gesture="pan"] {
+  cursor: grabbing;
+}
+
+.attestation-graph .ag-canvas[data-gesture="connect"] {
+  cursor: crosshair;
+}
+
+.attestation-graph .ag-canvas[data-dropping] {
+  box-shadow: inset 0 0 0 3px var(--attg-accent);
+}
+
+.attestation-graph .ag-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+.attestation-graph .ag-edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.attestation-graph .ag-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.attestation-graph .ag-edge-line {
+  fill: none;
+  stroke: var(--attg-fg);
+  stroke-width: 1.2;
+  pointer-events: none;
+}
+
+.attestation-graph .ag-arrow {
+  fill: var(--attg-fg);
+}
+
+/* the chosen path: drawn under the selection colour, which still wins */
+.attestation-graph .ag-edge[data-path] .ag-edge-line {
+  stroke: var(--attg-path);
+  stroke-width: 3.5;
+}
+
+.attestation-graph .ag-arrow[data-path] {
+  fill: var(--attg-path);
+}
+
+.attestation-graph .ag-edge[data-selected] .ag-edge-line {
+  stroke: var(--attg-accent);
+  stroke-width: 3;
+}
+
+.attestation-graph .ag-edge[data-virtual] .ag-edge-hit {
+  pointer-events: none;
+}
+
+.attestation-graph .ag-wire {
+  fill: none;
+  stroke: var(--attg-accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 4;
+}
+
+.attestation-graph .ag-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--studio-space-xs, 6px);
+  color: var(--attg-muted);
+  text-align: center;
+  padding: var(--studio-space-lg, 24px);
+  pointer-events: none;
+}
+
+.attestation-graph .ag-empty strong {
+  color: var(--attg-fg);
+  font-size: 15px;
+}
+
+/* ---- nodes ---- */
+
+.attestation-graph .ag-node {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  cursor: pointer;
+  border: 1px solid var(--attg-muted);
+  background: var(--attg-bg);
+  color: var(--attg-fg);
+}
+
+.attestation-graph .ag-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 4px;
+  overflow-wrap: anywhere;
+}
+
+.attestation-graph .ag-html sub,
+.attestation-graph .ag-caption sub {
+  font-size: 0.7em;
+}
+
+.attestation-graph .ag-node[data-kind="trusted"] {
+  background: var(--attg-trusted-fill);
+  border-color: var(--attg-trusted-line);
+  border-radius: 12px;
+}
+
+.attestation-graph .ag-node[data-kind="untrusted"] {
+  background: var(--attg-untrusted-fill);
+  border-color: var(--attg-untrusted-line);
+  border-radius: 12px;
+}
+
+.attestation-graph .ag-node[data-kind="and"] {
+  border: 1.5px solid var(--attg-fg);
+  border-radius: 6px;
+}
+
+.attestation-graph .ag-node[data-kind="output"] {
+  border: 2px solid var(--attg-fg);
+  border-radius: 8px;
+}
+
+.attestation-graph .ag-node[data-kind="or"]:not([data-collapsed]) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.attestation-graph .ag-diamond {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.attestation-graph .ag-diamond polygon {
+  fill: var(--attg-bg);
+  stroke: var(--attg-fg);
+  stroke-width: 1.5;
+  pointer-events: fill;
+}
+
+.attestation-graph .ag-node[data-kind="or"] .ag-content {
+  position: relative;
+}
+
+.attestation-graph .ag-node[data-kind="text"] {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+}
+
+.attestation-graph .ag-node[data-kind="text"][data-dim] {
+  color: var(--attg-muted);
+}
+
+.attestation-graph .ag-node[data-kind="note"] {
+  border-color: var(--attg-muted);
+  background: var(--attg-panel);
+  border-top-right-radius: 10px;
+  cursor: default;
+}
+
+.attestation-graph .ag-node[data-kind="box"] {
+  cursor: default;
+}
+
+.attestation-graph .ag-node[data-kind="box"][data-shaded] {
+  background: var(--attg-hover);
+}
+
+.attestation-graph .ag-node[data-mono] .ag-html {
+  font-family: var(--attg-family-code);
+}
+
+/* a collapsed subgraph: one block standing for many */
+.attestation-graph .ag-node[data-collapsed] {
+  border: 1.5px solid var(--attg-untrusted-line);
+  border-radius: 12px;
+  background: var(--attg-untrusted-fill);
+  box-shadow:
+    4px 4px 0 -1.5px var(--attg-untrusted-fill),
+    4px 4px 0 0 var(--attg-untrusted-line),
+    8px 8px 0 -1.5px var(--attg-untrusted-fill),
+    8px 8px 0 0 var(--attg-untrusted-line);
+}
+
+.attestation-graph .ag-node[data-collapsed][data-holds] {
+  border-color: var(--attg-trusted-line);
+  background: var(--attg-trusted-fill);
+  box-shadow:
+    4px 4px 0 -1.5px var(--attg-trusted-fill),
+    4px 4px 0 0 var(--attg-trusted-line),
+    8px 8px 0 -1.5px var(--attg-trusted-fill),
+    8px 8px 0 0 var(--attg-trusted-line);
+}
+
+.attestation-graph .ag-node[data-path] {
+  box-shadow: 0 0 0 3px var(--attg-path);
+}
+
+.attestation-graph .ag-node[data-path][data-kind="or"]:not([data-collapsed]) {
+  box-shadow: none;
+}
+
+.attestation-graph .ag-node[data-path] .ag-diamond polygon {
+  stroke: var(--attg-path);
+  stroke-width: 4;
+}
+
+.attestation-graph .ag-node[data-path][data-collapsed] {
+  border-color: var(--attg-path);
+  box-shadow:
+    0 0 0 2px var(--attg-path),
+    4px 4px 0 -1.5px var(--attg-untrusted-fill),
+    4px 4px 0 0 var(--attg-path),
+    8px 8px 0 -1.5px var(--attg-untrusted-fill),
+    8px 8px 0 0 var(--attg-path);
+}
+
+.attestation-graph .ag-node[data-path][data-collapsed][data-holds] {
+  box-shadow:
+    0 0 0 2px var(--attg-path),
+    4px 4px 0 -1.5px var(--attg-trusted-fill),
+    4px 4px 0 0 var(--attg-path),
+    8px 8px 0 -1.5px var(--attg-trusted-fill),
+    8px 8px 0 0 var(--attg-path);
+}
+
+.attestation-graph .ag-heading {
+  font-weight: 700;
+}
+
+.attestation-graph .ag-title[data-untitled] {
+  color: var(--attg-muted);
+  font-style: italic;
+}
+
+/* collapse / expand toggle on a gate */
+.attestation-graph .ag-fold {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--studio-radius-round, 9999px);
+  border: 1px solid var(--attg-fg);
+  background: var(--attg-bg);
+  color: var(--attg-fg);
+  font-size: 13px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attestation-graph .ag-fold:hover {
+  background: var(--attg-accent);
+  color: var(--attg-accent-fg);
+}
+
+/* on a diamond the corner is empty space: sit on its upper-right edge */
+.attestation-graph .ag-node[data-kind="or"]:not([data-collapsed]) .ag-fold {
+  left: 75%;
+  top: 25%;
+}
+
+.attestation-graph .ag-node[data-virtual] {
+  border-style: dashed;
+  cursor: default;
+}
+
+.attestation-graph .ag-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  padding-bottom: 3px;
+  font-size: 12px;
+  font-style: italic;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.attestation-graph .ag-node[data-selected] {
+  outline: 2.5px solid var(--attg-accent);
+  outline-offset: 3px;
+}
+
+.attestation-graph .ag-node[data-dragging] {
+  opacity: 0.85;
+}
+
+.attestation-graph .ag-node[data-drop-target] {
+  outline: 2.5px dashed var(--attg-accent);
+  outline-offset: 3px;
+}
+
+.attestation-graph .ag-html[contenteditable] {
+  outline: none;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  background: var(--attg-bg);
+  color: var(--attg-fg);
+  box-shadow: 0 0 0 2px var(--attg-accent);
+  border-radius: 2px;
+  min-width: 2em;
+  min-height: 1em;
+}
+
+/* output port: drag from it to wire this node into another */
+.attestation-graph .ag-port {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--attg-accent);
+  border: 1.5px solid var(--attg-fg);
+  box-sizing: border-box;
+  cursor: crosshair;
+  opacity: 0;
+  transition: opacity var(--studio-transition-fast, 0.1s ease);
+}
+
+.attestation-graph .ag-node:hover .ag-port,
+.attestation-graph .ag-node[data-selected] .ag-port {
+  opacity: 1;
+}
+
+.attestation-graph .ag-zoomctl {
+  position: absolute;
+  right: var(--studio-space-xs, 6px);
+  bottom: var(--studio-space-xs, 6px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--attg-panel);
+  border: 1px solid var(--attg-border);
+  border-radius: var(--studio-radius-md, 6px);
+  cursor: default;
+}
+
+.attestation-graph .ag-zoomctl .ag-pct {
+  min-width: 3.2em;
+  text-align: center;
+  font-size: 11px;
+  color: var(--attg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- evidence bundles drawer ---- */
+
+.attestation-graph .ag-drawer {
+  flex: none;
+  max-height: 40%;
+  overflow: auto;
+  border-top: 1px solid var(--attg-border);
+  background: var(--attg-bg);
+}
+
+.attestation-graph .ag-drawer-note {
+  padding: var(--studio-space-xs, 6px) var(--studio-space-sm, 8px);
+  color: var(--attg-muted);
+  font-size: 12px;
+}
+
+.attestation-graph .ag-drawer-hint {
+  margin-left: var(--studio-space-sm, 8px);
+  color: var(--attg-muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.attestation-graph .ag-bundles {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.attestation-graph .ag-bundles th,
+.attestation-graph .ag-bundles td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--attg-border);
+  white-space: nowrap;
+}
+
+.attestation-graph .ag-bundles th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--attg-panel);
+  font-weight: 600;
+}
+
+.attestation-graph .ag-bundles td:first-child {
+  white-space: normal;
+  width: 100%;
+  border-left: 3px solid transparent;
+}
+
+.attestation-graph .ag-bundles [data-bit] {
+  text-align: center;
+  font-family: var(--attg-family-code);
+  font-variant-numeric: tabular-nums;
+}
+
+.attestation-graph .ag-bundles td[data-bit] {
+  color: var(--attg-muted);
+}
+
+.attestation-graph .ag-bundles td[data-bit][data-on] {
+  color: var(--attg-fg);
+  font-weight: 700;
+}
+
+.attestation-graph .ag-bundles [data-gap] {
+  padding-left: 16px;
+}
+
+.attestation-graph .ag-bundles th[data-close] {
+  padding: 0 2px;
+  text-align: right;
+}
+
+.attestation-graph .ag-bundles tbody tr {
+  cursor: pointer;
+}
+
+.attestation-graph .ag-bundles tbody tr:hover,
+.attestation-graph .ag-bundles tbody tr[data-preview] {
+  background: var(--attg-hover);
+}
+
+.attestation-graph .ag-bundles tbody tr:focus-visible {
+  outline: 2px solid var(--attg-accent);
+  outline-offset: -2px;
+}
+
+.attestation-graph .ag-bundles tbody tr[data-active] td:first-child {
+  border-left-color: var(--attg-path);
+  font-weight: 600;
+}
