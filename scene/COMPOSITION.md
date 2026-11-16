@@ -119,30 +119,18 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
-- the first click of a double-click on a link selects it, and if the
-  inspector was shut that opens it and narrows the canvas under the second
-  click, which can then miss a small link (seen in the real Patchwork on
-  2026-11-14: the first double-click on Lost Cities aboard's game selected
-  the table, the second entered). Since the inspector stays open
-  (TOOLS Decisions 6) this happens only on the first selection of an Edit
-  visit or after its ×; an overlaid drawer was rejected there, so the
-  remaining fix is opening the inspector a beat after a click that may
-  become a double-click;
-- a double-click on a moving thing missed it (triage N11, found by the
-  integration of 2026-11-15): on the republished Lost Cities aboard
-  (automerge:23RNsVw3RkKho5qUcdpmPo6qYvnd), in Edit with her world running,
-  a double-click on a card of her game G landed on the Card table, because
-  the boat pitched on her own sea between the clicks and the second
-  click's ray hit something else. This is not the inspector-narrowing item
-  above: nothing moves the canvas, the thing under the pointer moves. A
-  fix is proposed, not merged, on its own lane `lane/dblclick` (WATER
-  Decision 112), for its own review: the second click of a double-click
-  resolves to the first click's hit, its object and stage, when both
-  presses are within 500 ms and 6 px, instead of casting a new ray
-  (`scene/src/stage/router.js`, with a finite test). Not yet checked in the
-  real Patchwork, and presence-check still pauses the boat's world first;
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
+
+Fixed since (Decisions, double-click, below):
+- the first click of a double-click on a link selected it, and if the
+  inspector was shut that opened it and narrowed the canvas under the
+  second click, which could then miss a small link; and a double-click on
+  a moving thing missed it (triage N11: on Lost Cities aboard, in Edit
+  with her world running, the boat pitched between the clicks and the
+  second ray hit the Card table). The second click of a double-click now
+  resolves to its first press's hit, while the canvas is still under the
+  second click. Not yet checked by hand in the real Patchwork.
 
 Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
@@ -1045,7 +1033,8 @@ ships alone and proves something.
     ends; out of focus isn't tinted; in Edit the first click of a
     double-click selects the link and opens the inspector, which narrows the
     canvas under the second click (the probe aims again; a person on a small
-    part of a link may miss).
+    part of a link may miss). *Fixed 2026-11-16* (Decisions, double-click):
+    the second click resolves to the first press's hit.
 15. **Extract and bundle** (I9, I11). *Built:* `src/extract.js`, as §8
     says: Extract on an object or group (S: it, what's attached under it
     and what's filed in it; its top objects share one parent p, else it's
@@ -1991,3 +1980,48 @@ Then, fixing the step's review (2026-11-14, also unattended):
     a mirror and a pin; and a pin's deck handle names its heads in its url,
     so keys derived from it differed and a pin showed every card's back.
     Both are card-table's facts, not the stage's.
+
+## Decisions, double-click (2026-11-16, made unattended in `lane/dblclick`)
+
+The fix for triage N11 (WATER Decision 112), after its review.
+
+1. **A press's hit and widget are resolved as it is pressed**, and kept
+   with it (not the lazy event). Why: the first version stored the event
+   and relied on the view's hover happening to read its hit at every
+   press; any host whose hover didn't would have picked at dblclick time,
+   with the camera and scene of then, and the miss came back silently. The
+   cost is one pick and one widget pick per press, which the view's hover
+   already pays for the hit. The router's laziness rule ("nothing is
+   picked unless someone reads it") now has that one exception, and its
+   test says so.
+2. **The widget comes with the hit.** A dblclick's hit and widget are both
+   the first press's, so the chain (`widgetWins` compares their distances)
+   is decided at one moment, and a widget the first click brought up under
+   the pointer (a selection's handles) doesn't take the double-click from
+   the thing double-clicked. `x`, `y`, `ndc` and `ray` stay the dblclick's
+   own; STAGE.md says so, and that `hit.point` is then off `ev.ray` and
+   localised with a moving stage's frame of now (no consumer reads it).
+3. **The gates measure between the clicks.** The second press within
+   `DOUBLE_MS` (500 ms) of the first, the dblclick within `DOUBLE_MS` of the
+   second, as an OS times a double, not from the first press. A touch press
+   has 16 px (`DOUBLE_PX_TOUCH`), a mouse 6. The browser's own click count
+   (`detail`) was not used: on `pointerdown` it isn't the click count in
+   every browser, and the browser has already decided the dblclick is a
+   double; the gates only check the router's last two presses are its two
+   clicks. Outside them, or for a slower double, it casts a new ray as
+   before, never another press's hit.
+4. **Pointer lock on any of the three refuses the reuse.** Each press
+   records whether it was locked: a locked press's hit is the centre ray's,
+   never under the pointer, so a lock released between the clicks must not
+   hand it to an unlocked dblclick.
+5. **A first hit whose stage closed is cast again; one whose object went is
+   kept.** The router asks the host (`live`); the view answers whether the
+   key's stage is still open (an `n` is never reused, so a stage that
+   closed and opened again between the clicks gives a dead key, and the
+   same link is found by a new ray). A hit on an object the first click
+   removed is kept, not cast again: the review expected it to come to
+   nothing, and it does for a frame target, but from outside a link the
+   card's element is the link, still there, so the double-click enters it
+   (focus.test.js). A new ray there could land on whatever is behind it.
+   A null first hit (empty sea) stays null: nothing was double-clicked.
+

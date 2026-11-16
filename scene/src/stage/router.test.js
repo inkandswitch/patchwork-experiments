@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { DOUBLE_MS, DOUBLE_PX, buildEvent, createRouter, firstOfDouble, isMac, isTyping, releaseKind, retype, withHolder } from "./router.js";
+import { DOUBLE_MS, DOUBLE_PX, DOUBLE_PX_TOUCH, buildEvent, createRouter, firstOfDouble, isMac, isTyping, releaseKind, retype, withHolder } from "./router.js";
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
-function setup({ held = false, holders = {}, mac = false, base = {}, time } = {}) {
+function setup({ held = false, holders = {}, mac = false, base = {}, time, live } = {}) {
   const root = document.createElement("div");
   root.tabIndex = 0;
   const port = document.createElement("div");
@@ -60,6 +60,7 @@ function setup({ held = false, holders = {}, mac = false, base = {}, time } = {}
     exitLock: t.exitLock,
     mac,
     ...(time ? { time } : {}),
+    ...(live ? { live } : {}),
   });
   cleanups.push(() => {
     t.router.dispose();
@@ -329,53 +330,107 @@ describe("clicks on unclaimed presses", () => {
 });
 
 describe("a double-click resolves to its first click's hit (a thing that moves between the clicks is still what was double-clicked)", () => {
-  // the pointer's two presses, and the dblclick: each [dt ms since the last, dx px, dy px]; what is under the pointer at each pick
+  // Each case: the presses (each a click: ms since the last, x and y px from the start, what is under the pointer
+  // then, and whether it is a touch or under pointer lock), then the dblclick likewise, and whose hit (and widget)
+  // it gets: a press's (by what was under it), "now" (a new ray), or null (the first press's hit, nothing).
+  // Each gate is taken exactly on and one past its bound, for each press alone.
+  const P = DOUBLE_PX, PT = DOUBLE_PX_TOUCH, MS = DOUBLE_MS;
+  const at = (dt, x, y, under, o = {}) => ({ dt, x, y, under, ...o });
   const CASES = [
-    ["two quick presses in one place", [[0, 0, 0], [200, 0, 0], [10, 0, 0]], "first"],
-    ["the second press DOUBLE_PX away", [[0, 0, 0], [200, DOUBLE_PX, 0], [10, 0, 0]], "first"],
-    ["the second press past DOUBLE_PX", [[0, 0, 0], [200, DOUBLE_PX + 1, 0], [10, 0, 0]], "again"],
-    ["the dblclick past DOUBLE_PX of the first", [[0, 0, 0], [200, 0, 0], [10, 0, DOUBLE_PX + 1]], "again"],
-    ["the dblclick DOUBLE_MS after the first press", [[0, 0, 0], [DOUBLE_MS - 10, 0, 0], [10, 0, 0]], "first"],
-    ["the dblclick past DOUBLE_MS after the first press", [[0, 0, 0], [DOUBLE_MS - 10, 0, 0], [11, 0, 0]], "again"],
-    ["a dblclick with one press before it", [[0, 0, 0], null, [10, 0, 0]], "again"],
+    ["two quick clicks in one place", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0), "first"],
+    ["the second press DOUBLE_PX from the dblclick", [at(0, 0, 0, "first"), at(200, P, 0, "second")], at(10, 0, 0), "first"],
+    ["the second press alone past DOUBLE_PX from it", [at(0, 0, 0, "first"), at(200, P + 1, 0, "second")], at(10, 0, 0), "now"],
+    ["the first press DOUBLE_PX from the dblclick", [at(0, 0, 0, "first"), at(200, 0, P, "second")], at(10, 0, P), "first"],
+    ["the first press alone past DOUBLE_PX from it", [at(0, 0, 0, "first"), at(200, 0, P + 1, "second")], at(10, 0, P + 1), "now"],
+    ["the clicks DOUBLE_MS apart", [at(0, 0, 0, "first"), at(MS, 0, 0, "second")], at(10, 0, 0), "first"],
+    ["the clicks past DOUBLE_MS apart", [at(0, 0, 0, "first"), at(MS + 1, 0, 0, "second")], at(10, 0, 0), "now"],
+    ["the dblclick DOUBLE_MS after the second press (a held second click)", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(MS, 0, 0), "first"],
+    ["the dblclick past DOUBLE_MS after the second press", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(MS + 1, 0, 0), "now"],
+    ["a dblclick with one press before it", [at(0, 0, 0, "first")], at(10, 0, 0), "now"],
+    ["a stale click, then the double", [at(0, 0, 0, "stale"), at(MS + 100, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0), "first"],
+    ["nothing under the first press (the sea), something by the second", [at(0, 0, 0, null), at(200, 0, 0, "second")], at(10, 0, 0), null],
+    ["two taps DOUBLE_PX_TOUCH apart", [at(0, 0, 0, "first", { touch: true }), at(200, PT, 0, "second", { touch: true })], at(10, PT, 0), "first"],
+    ["two taps past DOUBLE_PX_TOUCH apart", [at(0, 0, 0, "first", { touch: true }), at(200, PT + 1, 0, "second", { touch: true })], at(10, PT + 1, 0), "now"],
+    ["the dblclick under pointer lock", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0, undefined, { locked: true }), "now"],
+    ["the first press alone under pointer lock", [at(0, 0, 0, "first", { locked: true }), at(200, 0, 0, "second")], at(10, 0, 0), "now"],
+    ["the second press alone under pointer lock", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { locked: true })], at(10, 0, 0), "now"],
+    ["the first hit gone by the dblclick (live: false)", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0, undefined, { live: false }), "now"],
+    ["nothing under the first press, live: false (a null hit has no stage to lose)", [at(0, 0, 0, null), at(200, 0, 0, "second")], at(10, 0, 0, undefined, { live: false }), null],
   ];
-  for (const [label, [p1, p2, dbl], want] of CASES)
-    it(`${label}: ${want === "first" ? "the first click's hit" : "a new ray"}`, () => {
-      let now = 1000;
-      const time = { now: () => now, frame: (fn) => (setTimeout(() => fn(now), 0), () => {}), after: () => () => {} };
-      const t = setup({ time });
-      // the view's hover reads each press's hit as it is pressed (view.js onHover), as the stage does
-      t.onHover.mockImplementation((ev) => ev?.hit);
-      // a boat pitching: each pick lands on something else
-      let n = 0;
-      t.pick.mockImplementation((x, y) => ({ id: `thing${++n}`, point: [x, y, 0], normal: [0, 1, 0], distance: 1 }));
-      const got = [];
-      t.inputs.a = { press: () => null, dblclick: vi.fn((ev) => (got.push(ev.hit?.id ?? null), true)) };
-      let x = 10, y = 10;
-      for (const step of [p1, p2]) {
-        if (!step) continue;
-        now += step[0];
-        x += step[1];
-        y += step[2];
-        down(t, { x, y });
-        up(t, { x, y });
-      }
-      now += dbl[0];
-      const e = new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: x + dbl[1], clientY: y + dbl[2] });
+
+  // A router on a wall clock the test sets, a pointer lock the test holds, and a world where each pick lands on what is under the pointer now.
+  function rig() {
+    const r = { now: 1000, under: null, lockEl: null, alive: true };
+    Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => r.lockEl });
+    cleanups.push(() => delete document.pointerLockElement);
+    const time = { now: () => r.now, frame: (fn) => (setTimeout(() => fn(r.now), 0), () => {}), after: () => () => {} };
+    r.live = vi.fn(() => r.alive);
+    const t = setup({ time, live: (h) => r.live(h) });
+    t.pick.mockImplementation((x, y) => (r.under == null ? null : { id: r.under, point: [x, y, 0], normal: [0, 1, 0], distance: 1 }));
+    t.pickWidget.mockImplementation(() => (r.under == null ? null : { owner: null, id: `${r.under}:w` }));
+    r.got = [];
+    t.inputs.a = { press: () => null, dblclick: (ev) => (r.got.push([ev.hit?.id ?? null, ev.widget?.id ?? null]), true) };
+    r.t = t;
+    r.click = (s) => {
+      r.now += s.dt;
+      r.under = s.under;
+      r.lockEl = s.locked ? t.canvas : null;
+      const o = { x: 10 + s.x, y: 10 + s.y, pointerType: s.touch ? "touch" : "mouse" };
+      down(t, o);
+      up(t, o);
+    };
+    r.dbl = (s) => {
+      r.now += s.dt;
+      r.under = s.under === undefined ? "now" : s.under;
+      r.lockEl = s.locked ? t.canvas : null;
+      r.alive = s.live ?? true;
+      const e = new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: 10 + s.x, clientY: 10 + s.y });
       t.canvas.dispatchEvent(e);
-      expect(got).toHaveLength(1);
-      // the first press's pick was thing1; anything else is a later ray
-      if (want === "first") expect(got[0]).toBe("thing1");
-      else expect(got[0]).not.toBe("thing1");
+      return e;
+    };
+    return r;
+  }
+
+  for (const [label, presses, dbl, want] of CASES)
+    it(`${label}: ${want === "now" ? "a new ray" : want === null ? "the first press's nothing" : `the ${want} press's hit`}`, () => {
+      const r = rig();
+      // the router alone fixes each press's hit: no hover reads it (a view's does, as it happens; nothing may rely on that)
+      for (const p of presses) r.click(p);
+      const picks = r.t.pick.mock.calls.length;
+      const e = r.dbl(dbl);
+      expect(r.got).toEqual([[want, want == null ? null : `${want}:w`]]);
+      // reusing a press's hit casts no new ray
+      if (want !== "now") expect(r.t.pick.mock.calls.length).toBe(picks);
       expect(e.defaultPrevented).toBe(true);
     });
 
-  it("firstOfDouble: the earlier of the last two presses, when both are within reach of the dblclick", () => {
+  it("the host is asked whether the first hit is still there, with that hit", () => {
+    const r = rig();
+    r.click(at(0, 0, 0, "first"));
+    r.click(at(200, 0, 0, "second"));
+    r.dbl(at(10, 0, 0));
+    expect(r.live.mock.calls.map(([h]) => h?.id)).toEqual(["first"]);
+  });
+
+  it("a dblclick straight after a dblclick has no presses of its own: a new ray", () => {
+    const r = rig();
+    r.click(at(0, 0, 0, "first"));
+    r.click(at(200, 0, 0, "second"));
+    r.dbl(at(10, 0, 0));
+    r.dbl(at(10, 0, 0, "later"));
+    expect(r.got).toEqual([
+      ["first", "first:w"],
+      ["later", "later:w"],
+    ]);
+  });
+
+  it("firstOfDouble: the earlier of the last two presses, when both pass the gates", () => {
     const a = { t: 0, x: 0, y: 0 }, b = { t: 100, x: 1, y: 1 };
     expect(firstOfDouble([a, b], 100, 0, 0)).toBe(a);
     expect(firstOfDouble([b], 100, 0, 0)).toBeNull();
     expect(firstOfDouble([], 0, 0, 0)).toBeNull();
-    expect(firstOfDouble([a, b], DOUBLE_MS + 1, 0, 0)).toBeNull();
+    expect(firstOfDouble([a, b], 100 + DOUBLE_MS + 1, 0, 0)).toBeNull();
+    expect(firstOfDouble([{ ...a, locked: true }, b], 100, 0, 0)).toBeNull();
   });
 });
 
@@ -932,16 +987,17 @@ describe("stopping an owner", () => {
 });
 
 describe("laziness and holders", () => {
-  it("doesn't pick unless someone reads the hit", () => {
+  it("doesn't pick unless someone reads the hit, but for a press's, resolved once as it is pressed (a double-click may resolve to it)", () => {
     const t = setup();
-    t.inputs.a = { press: () => null, click: () => true };
+    t.inputs.a = { press: (ev) => (ev.hit, ev.widget, null), click: () => true };
     down(t);
+    expect([t.pick.mock.calls.length, t.pickWidget.mock.calls.length]).toEqual([1, 1]);
     up(t);
-    expect(t.pick).not.toHaveBeenCalled();
+    expect([t.pick.mock.calls.length, t.pickWidget.mock.calls.length]).toEqual([1, 1]);
     t.inputs.a.click = (ev) => !!ev.hit && !!ev.hit && true;
     down(t);
     up(t);
-    expect(t.pick).toHaveBeenCalledTimes(1);
+    expect(t.pick).toHaveBeenCalledTimes(3);
   });
   it("a held tool's claim never works out the chain", () => {
     const t = setup();

@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
@@ -58,7 +58,7 @@ function holders(started) {
  * A [], B [L], C [L, M], B again [R] and C again [R, M] (mirrors), and B
  * pinned [P] (its M closed: unpinned, the pin holds no C).
  */
-async function mountNested({ repo = new FakeRepo(), log = [], extra = [] } = {}) {
+async function mountNested({ repo = new FakeRepo(), log = [], extra = [], time = null } = {}) {
   const c = repo.add(emptyScene({ title: "C", objects: { piece: object({ name: "Piece", traits: { "t.card": {} } }) }, order: ["piece"] }));
   const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card", traits: { "t.card": {} } }), M: link(c.url, { name: "C" }) }, order: ["card", "M"] }));
   const objects = {
@@ -68,7 +68,7 @@ async function mountNested({ repo = new FakeRepo(), log = [], extra = [] } = {})
     P: link(b.url, { name: "B fixed", at: { heads: b.heads() } }),
     X: link("automerge:2222222222222222222222222222", { name: "Gone" }),
   };
-  const s = await mountStage({ repo, extensions: [...extensions(log), ...extra], doc: { title: "A", objects, order: Object.keys(objects) } });
+  const s = await mountStage({ repo, time, extensions: [...extensions(log), ...extra], doc: { title: "A", objects, order: Object.keys(objects) } });
   const view = s.debug.view;
   await until(() => ["L", "L/M", "R", "R/M", "P"].every((p) => stageOf(view, p)?.debug.host.instanceOf("t.card")) && s.api("t.host")?.link("X")?.role === "closed", 3000);
   return { s, view, repo, b, c, log };
@@ -305,6 +305,54 @@ describe("Enter and Leave", () => {
     expect(view.atom.get().focus).toEqual(["L"]);
     dbl(stageOf(view, "L/M").n, "piece");
     expect(view.atom.get().focus).toEqual(["L", "M"]);
+  });
+
+  it("a double-click resolves to its first press's hit: kept when the first click removed its object, cast again when its stage closed between the clicks", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 5000;
+    const m = await mountNested({ time: wallAt(() => now) });
+    s = m.s;
+    const { view, b } = m;
+    const under = (n, id) => (view.viewport.pick = () => ({ id: keyOf(n, id), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }));
+    const dbl = () => {
+      const rect = s.canvas.getBoundingClientRect();
+      s.canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 20 }));
+    };
+    // B's card under the first press, which (as a first click may) is gone by the second; the host's table under the second
+    const L = stageOf(view, "L").n;
+    under(L, "card");
+    s.click(20, 20);
+    b.change((d) => {
+      delete d.objects.card;
+      d.order = d.order.filter((x) => x !== "card");
+    });
+    await until(() => !stageOf(view, "L").doc().objects.card);
+    now += 200;
+    under(0, "table");
+    s.click(20, 20);
+    now += 10;
+    dbl();
+    // the double-click was on the card, whose element here is the link L, still there: it enters L (a new ray, on the table, would not)
+    expect(view.atom.get().focus).toEqual(["L"]);
+    expect(view.leave()).toBe(true);
+    await placed(view);
+    // L closed and opened again between the clicks: the first press's key names a stage that is gone, so the dblclick casts again
+    under(L, "M");
+    s.click(20, 20);
+    const A = s.handle;
+    const was = JSON.parse(JSON.stringify(A.doc().objects.L));
+    A.change((d) => delete d.objects.L);
+    await until(() => !view.stages().some((x) => x.n === L));
+    A.change((d) => (d.objects.L = was));
+    await until(() => stageOf(view, "L") && stageOf(view, "L").n !== L && s.api("t.host")?.link("L")?.open, 3000);
+    const L2 = stageOf(view, "L").n;
+    expect(L2).not.toBe(L);
+    now += 200;
+    under(L2, "M");
+    s.click(20, 20);
+    now += 10;
+    dbl();
+    expect(view.atom.get().focus).toEqual(["L"]);
   });
 
   it("outside an entered link stays live: a press out there reaches its own parts, then the general ones (the focus's); in Edit a click there isn't Edit's", async () => {

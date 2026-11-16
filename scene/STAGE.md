@@ -952,8 +952,8 @@ event = {
   clientX, clientY,
   ndc: [x, y],
   ray: { origin, dir },
-  hit,                        // lazy: { id, point, normal, distance } | null, the nearest shown object (no vertex snap)
-  widget,                     // lazy: { owner, onTop, distance, ...data } | null
+  hit,                        // lazy: { id, point, normal, distance } | null, the nearest shown object (no vertex snap); a dblclick's: its first press's (Double-clicks, below)
+  widget,                     // lazy: { owner, onTop, distance, ...data } | null; a dblclick's: its first press's
   holder,                     // step 3: the holding object, null for the scene (and at every other step)
   button, buttons, pointerId, pointerType,
   shift, alt, ctrl, meta,
@@ -1000,6 +1000,22 @@ Either way the owner of the widget under the pointer gets step 2.
 is no `tap`, or it returns false, the session is cancelled and a `click` goes
 down the chain. While a session is open, presses from other pointers are
 swallowed.
+
+**Double-clicks.** A `dblclick`'s `hit` and `widget` are those of the press
+that began it, resolved as that press was pressed, so the chain is decided
+at that one moment: a thing that moved between the clicks (a boat pitching
+on her sea) or a canvas that narrowed under the pointer (the inspector
+opening on the first click's selection) still has the double-click. Its
+`x`, `y`, `ndc` and `ray` are the dblclick's own, so `hit.point` was on the
+first press's ray, not on `ev.ray`, and a moving nested stage localises
+that world point with its frame now. This holds only within the router's
+gates (`DOUBLE_MS`, `DOUBLE_PX` in `src/stage/router.js`): the presses at
+most 500 ms apart and the dblclick at most 500 ms after the second, each
+press within 6 px of it (16 px for a touch), none of them under pointer
+lock, and the first hit's stage still open (a key whose stage closed
+between the clicks names nothing). Outside them, or for a slower double,
+the dblclick casts a new ray like any other event. A first hit whose object
+the first click removed is kept: what it comes to is its consumer's.
 
 **A release that never comes.** A mouse that moves with no button down was
 released where the stage didn't hear it, and a lost pointer capture or
