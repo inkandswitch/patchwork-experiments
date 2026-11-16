@@ -1375,4 +1375,16 @@ The project lead decided the five open questions on 2026-11-12.
     and narrow: a button and a picker are one control tall, as is an empty
     cluster; Play clicked goes and neither the bar nor the canvas moves; in
     Edit the world's controls are where they were in Look, still in view
-    and clickable while the editor's cluster overflows.
+    and clickable while the editor's cluster overflows. In the real
+    Patchwork (worldbar-check, on scratch copies of Ship at anchor and Lost
+    Cities aboard, in a 639 px pane beside comments): Look's bar holds
+    exactly Come aboard and the HUD no button; Edit adds the editor's
+    commands with Come aboard where it was; the bar's Come aboard, clicked
+    from Edit, comes aboard; the canvas's top and height are the same in
+    Look, Edit and aboard; and in Edit on Lost Cities aboard a double-click
+    on a card 16 px below the canvas's top edge enters the game. Before
+    this change, against the published packages (2026-11-16), it fails 11
+    of its 17 checks, triage (f) among them: the first press lands on the
+    HUD's Come aboard, comes aboard, leaves Edit and lifts the canvas
+    38.5 px (Look's canvas sat at 101 px and Edit's at 140, the bar being
+    Edit's alone), and nothing is entered.
