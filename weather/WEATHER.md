@@ -72,10 +72,11 @@ existing conventions and adds no new ambient:
     inverted; Decision 14). It is mapped to the stage's frame, north -Z
     and east +X (terrain tmerc.js, sailing wind.js), by
     `sunDirection(azimuth, apparent)` =
-    `[sin A cos E, sin E, -cos A cos E]`. The sun gives light, and shows a
-    disc, only while its *geometric* elevation (`sunAt`'s `geometric`) is
-    above -0.833°: the almanac's sunrise, where refraction lifts the upper
-    limb onto the horizon. Below that the atmosphere keeps a dark sun
+    `[sin A cos E, sin E, -cos A cos E]`. The sun gives light only while
+    its *geometric* elevation (`sunAt`'s `geometric`) is above -0.833°:
+    the almanac's sunrise, where refraction lifts the upper limb onto the
+    horizon. Its disc fades to black there with its light, and its colour
+    rounds to `#000000` a thousandth of a degree early. Below that the atmosphere keeps a dark sun
     (colour `#000000`, intensity 0) pointing where the sun is, so the
     stage's own key light never stands in for it (Decision 19). The bands
     below (civil twilight to -6°, night by -12°) are geometric too, as the
@@ -114,34 +115,61 @@ existing conventions and adds no new ambient:
     by `wet = 1 - 0.3 · R / (R + 4)` (Decision 21). Moderate rain alone
     (2.5 mm/h) sees about 8 km, heavy rain (25 mm/h) about 1.5 km.
 
-    | Band | Geometric | Top | Horizon | Bottom | Sun tint | `disc` | `light` | Exposure |
-    |---|---|---|---|---|---|---|---|---|
-    | day | 20° and up | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
-    | low | 6° | 0.85 × (0.97, 1, 1.04) | 0.95 × (1.08, 0.98, 0.85) | 0.85 × (1.03, 0.99, 0.94) | (1, 0.83, 0.62) | 0.7 | 0.95 | 0.92 |
-    | horizon | 0° | 0.5 × (0.92, 0.96, 1.1) | 0.75 × (1.3, 0.78, 0.45) | 0.5 × (1.12, 0.88, 0.75) | (1, 0.55, 0.25) | 0.2 | 0.8 | 0.72 |
-    | set | -0.833° | 0.42 × (0.9, 0.95, 1.12) | 0.62 × (1.3, 0.72, 0.45) | 0.42 × (1.1, 0.86, 0.78) | (1, 0.5, 0.22) | 0 | 0 | 0.64 |
-    | civil | -6° | 0.06 × (0.75, 0.88, 1.25) | 0.1 × (1.1, 0.8, 0.85) | 0.05 × (0.85, 0.9, 1.1) | | 0 | 0 | 0.3 |
-    | night | -12° and down | 0.008 × (0.7, 0.85, 1.35) | 0.01 × (0.85, 0.9, 1.15) | 0.006 × (0.85, 0.9, 1.1) | | 0 | 0 | 0.15 |
+    | Band | Geometric | Top | Horizon | Bottom | Sun tint | `disc` | `light` | Exposure | Key light |
+    |---|---|---|---|---|---|---|---|---|---|
+    | day | 20° and up | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+    | low | 6° | 0.85 × (0.97, 1, 1.04) | 0.95 × (1.08, 0.98, 0.85) | 0.85 × (1.03, 0.99, 0.94) | (1, 0.83, 0.62) | 0.7 | 0.95 | 0.92 | 0.612 |
+    | horizon | 0° | 0.5 × (0.92, 0.96, 1.1) | 0.75 × (1.3, 0.78, 0.45) | 0.5 × (1.12, 0.88, 0.75) | (1, 0.55, 0.25) | 0.2 | 0.8 | 0.72 | 0.115 |
+    | set | -0.833° | 0.42 × (0.9, 0.95, 1.12) | 0.62 × (1.3, 0.72, 0.45) | 0.42 × (1.1, 0.86, 0.78) | (1, 0.5, 0.22) | 0 | 0 | 0.64 | 0 |
+    | civil | -6° | 0.06 × (0.75, 0.88, 1.25) | 0.1 × (1.1, 0.8, 0.85) | 0.05 × (0.85, 0.9, 1.1) | (1, 0.5, 0.22) | 0 | 0 | 0.3 | 0 |
+    | night | -12° and down | 0.008 × (0.7, 0.85, 1.35) | 0.01 × (0.85, 0.9, 1.15) | 0.006 × (0.85, 0.9, 1.1) | (1, 0.5, 0.22) | 0 | 0 | 0.15 | 0 |
+
+    The light the sun actually delivers is the stage's key light,
+    `sun.color × intensity × exposure` (viewport.js `lighting()`), so all
+    three factors multiply: the last column, `disc · light · exposure`, is
+    that light as a fraction of the day's (before the tint and the look's
+    own colour and intensity). At 6° it is 0.61 of the day's, at 0° 0.115,
+    and from set on nothing. The table is the spec: atmosphere.test.js
+    parses it and checks `BANDS` against every cell, the last column
+    included.
 
     The sun's colour (and so its disc in the sky, which the stage draws in
     `sun.color` whatever the intensity) is the look's, tinted, times
     `disc`; its intensity is the look's times `light` and `wet`. Every
-    colour is continuous in the elevation: a hundredth of a degree either
-    side of every node, in linear RGB before the hex rounds it, no channel
-    moves more than 1/255 (measured worst 0.83/255, the sun's colour at 0°;
-    Decision 22).
+    colour is continuous in the elevation. A hundredth of a degree either
+    side of every node and of the 2° gate, no sky colour moves more than
+    1/255 in sRGB, the space the doc writes it in, before the hex rounds
+    it (measured worst 0.46/255). The sun's colour, which fades to black,
+    moves no more than 1/255 in linear RGB, the space it lights in
+    (measured worst 0.82/255, at 0°; Decision 22).
   - **fog**: the colour is the sky's horizon (true of all four anchors), far
     is `0.9 ·` the visibility in force (Koschmieder style), and near is the
     look's near ratio times far, both in whole metres.
   - **shadows**: only while effective cover < 0.75, `h` < 0.5 and the
     sun's geometric elevation is above 2°.
-  - **clouds**: `{ cover, contrast, scale, base }`, with cover and base
-    taken from the trait and contrast and scale from a per-kind table
-    (cumulus 0.25 and 700, stratocumulus 0.12 and 500, from the anchors;
-    stratus 0.05 and 1500, a flat grey barely textured, and cirrus 0.08 and
-    3000, faint and wide, are new). The contrast fades with the haze,
-    `× (1 - h)`. There is no deck at cover 0 or at `h` = 1: a clear sky has
-    none, and fog hides it.
+  - **clouds**: `{ cover, contrast, scale, base }` (`deckOf`), base from
+    the trait and contrast and scale from a per-kind table (cumulus 0.25
+    and 700, stratocumulus 0.12 and 500, from the anchors; stratus 0.05 and
+    1500, a flat grey barely textured, and cirrus 0.08 and 3000, faint and
+    wide, are new). The stage has two decks, not one: a cover under 1 is
+    drawn as scattered clouds (the noise's top `cover` whitened, up to 0.6,
+    and brightened overhead) and a cover of 1 as a layer (the whole sky
+    textured ±contrast, nothing whitened). Handing it the trait's cover
+    straight would jump between them at cover 1. So each kind is drawn by
+    one deck at every cover (Decision 27):
+    - *scattered* (cumulus, cirrus): cover `min(cover, 0.95)`, which never
+      reaches the layer (at 0.95 it already whitens all but under half a
+      percent of the sky, so 0.95 to 1 is one look), and the kind's
+      contrast;
+    - *layer* (stratocumulus, stratus): the stage's cover 1, contrast the
+      kind's `× cover`.
+
+    The haze fades either deck toward none, `× (1 - h)`: a layer's
+    contrast, and a scattered deck's cover and contrast (its whitening
+    follows its cover alone). There is no deck at cover 0 or at `h` = 1: a
+    clear sky has none, and fog hides it. As the stage draws it (a test
+    copy of its `cloudAt` and its noise, over 864 directions), no direction
+    moves more than 0.04 for a 0.01 step of cover or haze, for every kind.
 
 ### The anchors (fixed points)
 
@@ -227,8 +255,8 @@ nothing is selected. There is no menu diving.
 - **Gusts**: `gustiness = clamp(gust / wind - 1, 0, 1)`, from the hour's
   peak gust (`wind_gusts_10m`) and mean. In a calm (wind under 0.5 m/s) a
   gust factor means nothing, and the default 0.3 is written (Decision 10).
-  `weather.js`'s `gustinessOf(mean, peak)` is this rule, rounded to the
-  slider's step (Decision 24).
+  W4's `gustinessOf(mean, peak)` in `open-meteo.js` is this rule, rounded
+  to the slider's step (Decision 24).
 - **Ranges**: every fetched number is clamped to its described range (for
   example, wind 45 m/s becomes 40), so a snapshot is always a state the
   sliders can show.
@@ -244,9 +272,9 @@ nothing is selected. There is no menu diving.
 |---|---|---|
 | W0 | package scaffold, this doc, the fetch-from-Patchwork spike; review fixes (gustiness, the doc's table as spec, the entry evaluated alone, the sky model settled) | done |
 | W1 | `time.js` (`instantOf`, `localOf`, `offsetAt`, `validDate`, `validZone`) and `solar.js` (`sunAt`, `sunDirection`, `refraction`), against Meeus's, NREL's and USNO's published values, and the default's sun end to end; every quarter hour of three Vancouver days round-tripped, and of the days around every transition of a year in eight zones, where `instantOf` never goes backwards (Decision 13). `validDate` and `validZone` are the predicates W2's params use to fall back to the default (Decision 16) | done |
-| W2 | `weather.js`: `weatherParams` (every field in force: a missing or malformed field is its default, an invalid zone or date too, a number clamped into its range), `windOf` (a pass-through), `gustinessOf` (Decision 10's rule, for W4's fetch); `atmosphere.js`: `atmosphereOf` (pure) as specified under "The look", the four anchors exact fixed points, every output over a grid of 6720 weathers passing the stage's own check unchanged; presence, the bands and the gates on the geometric elevation | done |
+| W2 | `weather.js`: `weatherParams` (every field in force: a missing or malformed field is its default, an invalid zone or date too, a number clamped into its range), `windOf` (a pass-through); `atmosphere.js`: `atmosphereOf` (pure) as specified under "The look", the four anchors exact fixed points, every output over a grid of 6720 weathers passing the stage's own check unchanged; presence, the bands and the gates on the geometric elevation. Review fixes: rows between the anchors computed independently (cover and haze quarters and midpoints, cirrus as thin cumulus, the sun untinted at s = 1), the bands table parsed as the spec, sky continuity in sRGB, the deck drawn without a jump (Decision 27), `gustinessOf` moved to W4 (Decision 24) | done |
 | W3 | the extension's ambient, inspector fields, the Place and Now commands; local probe | |
-| W4 | `open-meteo.js`, Fetch commands, recorded fixtures; table rows for gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3} and for clamping (wind 45, rain 80) | |
+| W4 | `open-meteo.js`, Fetch commands, recorded fixtures; `gustinessOf` with its rows from 07a3a291 (Decision 24), including gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3}; rows for clamping (wind 45, rain 80) | |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes | |
 | W6 | `terrain.sky` → `terrain.place`; the place templates write weather | |
 | W7 | end-to-end local probe: weather reaches sky, water and boat | |
@@ -317,10 +345,10 @@ nothing is selected. There is no menu diving.
    Ukee grey keeps a round 19 km visibility, so its fog far moves from
    17 000 to 17 100. The alternative, a visibility of 18 889 m, is a
    number nobody would dial. The cover nodes come from two places' art, so
-   the sky's top gets bluer from cover 0 to 0.35 before it greys. That is
-   inherited art direction, not physics. If it reads wrong, the cover-0
-   node is the one to redraw. *Decided unattended (2026-11-16,
-   lane/weather), for the lead.*
+   the sky's top gets bluer from cover 0 to 0.35 before it greys; whether
+   that stays is the lead's taste, Question 9, and this decision only
+   keeps the anchors as they were meanwhile. *Decided unattended
+   (2026-11-16, lane/weather), for the lead.*
 10. **A fetched gust maps to gustiness with a scale of 1:
     `g = clamp(peak / mean - 1, 0, 1)`.** Sailing's gust noise is clamped
     to ±1. Measured at a fixed point over an hour (speeds 2, 5 and 10 m/s ×
@@ -437,8 +465,10 @@ nothing is selected. There is no menu diving.
     there, pointing where the sun really is (below the horizon at night).
     Its colour and intensity fade to `#000000` and 0 as it sets, so it
     gives no light and draws no disc. "Present" is therefore tested as
-    "gives light and shows a disc", and holds iff the geometric elevation
-    is above -0.833°. The night is lit only by the sky's hemisphere light
+    "gives light", which holds iff the geometric elevation is above
+    -0.833°. The disc fades with it and its colour rounds to `#000000` a
+    thousandth of a degree early (at -0.8329° the light is still 2e-4 of
+    the day's, too little to see); a test row pins both. The night is lit only by the sky's hemisphere light
     (the dark sky colours), a third of the headlight and the environment,
     all scaled by the night's exposure. *Decided unattended (2026-11-16, lane/weather), for the lead.*
 20. **The twilight is a finite table of bands, with every node but the day
@@ -465,19 +495,22 @@ nothing is selected. There is no menu diving.
     `wet = 1 - 0.3 · R / (R + 4)`: 0.85 at 4 mm/h, tending to 0.7. Both are
     exactly the identity at 0 mm/h, so a dry world is untouched. There are
     no particles and no wet decks. *Decided unattended (2026-11-16, lane/weather), for the lead.*
-22. **Continuity is measured in linear RGB, before the hex rounds it.**
-    The plan asked for no more than 1/255 of change a hundredth of a degree
-    either side of each band's edge. In sRGB that cannot hold for anything
-    that fades to black: sRGB is steep near black (12.92 per unit of linear
-    below 0.0031), so any fade over a few degrees moves several sRGB levels
-    per 0.02°. The hex rounding also adds up to a level of its own. So
-    `skyAt` returns the look unrounded in linear RGB, the space it is
-    interpolated, filtered and drawn in (the sky shader works in linear),
-    and the check is applied there. It holds over every kind, cover
+22. **Continuity is measured before the hex rounds it: the sky in sRGB,
+    the sun in linear RGB.** The plan asked for no more than 1/255 of
+    change a hundredth of a degree either side of each band's edge. The
+    hex rounding adds up to a level of its own, so the check is on the
+    unrounded colour (`skyAt`, through `toSrgb`). The sky's three colours
+    hold it in sRGB, the space the doc writes them in, as the plan asked:
+    measured worst 0.46/255 (W2's first cut measured them in linear RGB,
+    which is the weaker check for them). The sun's colour cannot: its disc
+    fades from 0.2 to 0 over the 0.833° before set, into sRGB's steep toe
+    (12.92 per unit of linear below 0.0031), and moves 7.9/255 in sRGB
+    across -0.833 ± 0.01°. It is held to 1/255 in linear RGB, the space it
+    lights in (worst 0.82/255, at 0°). Both hold over every kind, cover
     {0, 0.5, 1}, visibility {20, 3, 1} km and rain {0, 10} mm/h, at every
-    node and at the 2° gate. The worst case is 0.83/255, the sun's colour at
-    0°. The colour transfer itself is checked separately: every byte in
-    every channel round-trips exactly. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+    node and at the 2° gate. The colour transfer itself is checked
+    separately: every byte in every channel round-trips exactly. *Decided
+    unattended (2026-11-16, lane/weather), for the lead.*
 23. **`weatherParams` is strict, and its spec is the describes.** The
     fields, defaults and ranges are read from `index.js`'s describes, the
     one source that WEATHER.md's table is checked against. A number must be
@@ -489,20 +522,16 @@ nothing is selected. There is no menu diving.
     options. `source` is dropped, because no ambient reads it. Any trait,
     including none, gives a whole set of params, and the ambients never
     throw. *Decided unattended (2026-11-16, lane/weather), for the lead.*
-24. **`gustinessOf` is here, in W2, and rounds to the slider.** The
-    plan's W2 table read "gustiness = clamp(gust/wind - 1, 0, 1); wind 0
-    gives 0". Since W0's review, gustiness is the trait's own field and
-    `windOf` passes it through, so the gust-to-gustiness rule only matters
-    to the fetch. It lives in `weather.js` as `gustinessOf(mean, peak)`, so
-    W4 calls it and W2 tests it over the plan's rows. Two departures, both
-    for the lead:
-    - in a calm (a mean under 0.5 m/s) and with no peak, the result is the
-      default 0.3, not 0, per Decision 10: a gust factor over a calm means
-      nothing, and 0 would claim a perfectly steady air;
-    - the result is rounded to the slider's 0.05 step, so a fetched value
-      is one the slider can show (5 m/s gusting 6.5 is 0.3, not
-      0.30000000000000004).
-    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+24. **The fetch's gust rule waits for the fetch.** W2's first cut put
+    `gustinessOf(mean, peak)` (Decision 10's rule, rounded to the slider's
+    0.05) in `weather.js`, with nothing to call it until W4. Review called
+    it an appendage, and it is: it moved out again, and W4 writes it in
+    `open-meteo.js` beside its one caller. Its code and table rows are in
+    commit 07a3a291 (`weather.js`, `weather.test.js`): the plan's rows; a
+    calm (mean under 0.5 m/s) or no peak giving the default 0.3, not 0, as
+    Decision 10 says (a gust factor over a calm means nothing); and the
+    rounding, so a fetched value is one the slider can show. *Decided
+    unattended (2026-11-16, lane/weather), for the lead.*
 25. **What "every peer agrees" means, exactly.** `atmosphereOf` uses
     `Math.sin`, `Math.pow` and friends, which ECMAScript does not require
     to be bit-identical across engines. V8, JavaScriptCore and SpiderMonkey
@@ -513,12 +542,40 @@ nothing is selected. There is no menu diving.
     own numbers passed through, with no arithmetic, and is bit-identical
     everywhere. *Decided unattended (2026-11-16, lane/weather), for the lead.*
 26. **The two new cloud kinds.** Cirrus has opacity 0.3, so at full cover
-    the sky's look is nearer the bright day than Ukee grey (a test row),
-    and its deck is faint and wide (contrast 0.08, cells 3000 m). Stratus
-    has opacity 1 and is barely textured (0.05, 1500 m): under it at
-    cover 1, the sky is Ukee grey's and only the deck differs. A deck's
-    contrast fades with the haze, `× (1 - h)`, so it thins continuously
-    into a fog instead of vanishing at h = 1. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+    the sky's look is cumulus's at cover 0.3 (a test row), nearer the
+    bright day than Ukee grey, and its deck is scattered, faint and wide
+    (contrast 0.08, cells 3000 m). Stratus has opacity 1 and is a barely
+    textured layer (0.05, 1500 m): under it at cover 1, the sky is Ukee
+    grey's and only the deck differs. *Decided unattended (2026-11-16,
+    lane/weather), for the lead.*
+27. **Each kind is drawn by one of the stage's two decks at every cover,
+    so the deck as drawn has no jump.** The stage's `cloudAt` (and water's
+    copy) draws a cover under 1 as scattered clouds and a cover of exactly
+    1 as a layer. W2's first cut handed it the trait's cover, so at 0.99
+    cumulus was drawn with a mean factor of 1.21 and whitening of 0.54,
+    and at 1 with 0.98 and 0: Ukee grey 25% brighter and washed out just
+    short of full cover, and cirrus 60% washed out at 0.99 but fully blue
+    at 1. The fix lives here, with no scene change. Heaps and wisps
+    (cumulus, cirrus) are always scattered, at `min(cover, 0.95)`. Sheets
+    (stratocumulus, stratus) are always the layer, with contrast
+    `× cover`. The haze fades a layer's contrast, and a scattered deck's
+    cover and contrast. Every lever is one the stage's deck is continuous
+    in, and no kind crosses between decks, so the drawn sky is continuous
+    in cover and haze. Tests check this on a copy of the stage's
+    `cloudAt` and the sky shader's noise: every 0.01 step of cover and of
+    haze, for every kind, against the stage's own steepness (no direction
+    moves more than 0.04), plus the review's row (0.95, 0.99 and 1 are one
+    sky). The anchors' decks are unchanged: the bright day is scattered at
+    0.35, and Ukee grey is the layer at 1. Two costs:
+    - stratocumulus under full cover is now drawn as a faint layer (0.12 ×
+      cover), not as scattered white heaps over the blue (a broken
+      stratocumulus sky reads as a texture, not as clouds);
+    - cumulus at full cover is a scattered deck that whitens nearly the
+      whole sky, not a layer.
+
+    The other way to fix this is a stage `cloudAt` continuous as cover
+    approaches 1. That is a scene change and the lead's call (Question
+    10). *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -552,7 +609,9 @@ nothing is selected. There is no menu diving.
 - **W2**: none at run time until W3 calls it. `atmosphereOf` is one
   `instantOf` and one `sunAt`, plus about 60 multiplies and 12 `pow`
   calls for the colours: tens of microseconds. The test grid (6720
-  weathers, each computed four times and checked) runs in about a second.
+  weathers, each computed four times and checked) runs in about a second;
+  the drawn-deck sweeps (a copy of the stage's `cloudAt` over 864
+  directions, every 0.01 of cover and haze for every kind) add under a second.
 - **Planned**: `ambient()` runs on every flush but is a cache hit unless the
   trait changed. `atmosphereOf` (a solar position, about a hundred flops, and
   a table lookup) runs only on a change. Dragging the hour slider writes a
@@ -591,3 +650,17 @@ nothing is selected. There is no menu diving.
 8. The twilight and night colours (Decision 20's bands) are new art
    direction, set by reasoning. Do you want to tune them from W7's
    screenshots, or hand them to someone with an eye for skies?
+9. The cloudless sky is Ucluelet's pale clear afternoon (top `#5b86b0`),
+   and the bright day at 35% cumulus is bluer (`#2f6db5`). So every
+   fetched clear day at Cadboro renders pale, and adding a little cloud
+   makes the sky bluer: inherited art, physically backwards. Keep it, or
+   redraw the cover-0 node with the bright day's blues? Ucluelet's clear
+   afternoon would then reproduce only if something the trait carries
+   (a summer haze, say) accounts for its paleness. Default for now: keep
+   the anchors as they were (Decision 9).
+10. The stage's cloud deck jumps from scattered to layer at cover exactly
+    1. Weather avoids the jump by always drawing a kind with one deck
+    (Decision 27), so broken stratocumulus is a faint texture rather than
+    heaps. Would you rather the stage's `cloudAt` crossfade the two decks
+    as cover nears 1? That is a scene change, and it would let every kind
+    run from heaps to a sheet.

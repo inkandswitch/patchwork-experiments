@@ -33,16 +33,15 @@ export function toLinear(hex) {
   });
 }
 
+/** Linear RGB, clamped to 0..1, as sRGB in 0..1, unrounded (the inverse transfer): the space the doc's colours are written in. */
+export const toSrgb = (rgb) =>
+  rgb.map((v) => {
+    const c = Math.min(1, Math.max(0, v));
+    return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+  });
+
 /** Linear RGB, clamped to 0..1, as an sRGB "#rrggbb". */
-export function toHex(rgb) {
-  return `#${rgb
-    .map((v) => {
-      const c = Math.min(1, Math.max(0, v));
-      const s = c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
-      return Math.round(s * 255).toString(16).padStart(2, "0");
-    })
-    .join("")}`;
-}
+export const toHex = (rgb) => `#${toSrgb(rgb).map((s) => Math.round(s * 255).toString(16).padStart(2, "0")).join("")}`;
 
 /** a at t = 0, b at t = 1, exactly at both ends. */
 const lerp = (a, b, t) => a * (1 - t) + b * t;
@@ -102,17 +101,48 @@ export function dayLook(ce, h) {
 
 /**
  * Each kind's opacity (how much of the sky's look it takes: thin cirrus lets
- * the blue through) and its deck's contrast and cell size (STAGE.md's
- * clouds). Cumulus and stratocumulus are the anchors' own decks; stratus (a
+ * the blue through), which of the stage's two decks draws it, and that
+ * deck's contrast and cell size (STAGE.md's clouds). The stage draws a deck
+ * of cover under 1 as scattered clouds (the noise's top `cover` whitened and
+ * brightened overhead) and a deck of cover 1 as a layer (the whole sky
+ * textured ±contrast, nothing whitened): two decks, not one deck at two
+ * covers. So a kind is drawn by one of them at every cover (deckOf): heaps
+ * and wisps (cumulus, cirrus) scattered, sheets (stratocumulus, stratus) as
+ * a layer. Cumulus and stratocumulus are the anchors' own decks; stratus (a
  * flat low grey, barely textured, wide cells) and cirrus (high, faint, very
  * wide) are new art direction.
  */
 export const KINDS = Object.freeze({
-  cumulus: Object.freeze({ opacity: 1, contrast: 0.25, scale: 700 }),
-  stratocumulus: Object.freeze({ opacity: 1, contrast: 0.12, scale: 500 }),
-  stratus: Object.freeze({ opacity: 1, contrast: 0.05, scale: 1500 }),
-  cirrus: Object.freeze({ opacity: 0.3, contrast: 0.08, scale: 3000 }),
+  cumulus: Object.freeze({ opacity: 1, deck: "scattered", contrast: 0.25, scale: 700 }),
+  stratocumulus: Object.freeze({ opacity: 1, deck: "layer", contrast: 0.12, scale: 500 }),
+  stratus: Object.freeze({ opacity: 1, deck: "layer", contrast: 0.05, scale: 1500 }),
+  cirrus: Object.freeze({ opacity: 0.3, deck: "scattered", contrast: 0.08, scale: 3000 }),
 });
+
+/**
+ * The highest cover a scattered deck is drawn at. Under 1, so it never turns
+ * into the stage's layer; at 0.95 the scattered deck already whitens all but
+ * the noise's lowest 17% (under half a percent of the sky), so 0.95 to 1 is
+ * one look.
+ */
+export const SCATTERED_MAX = 0.95;
+
+/**
+ * The deck (STAGE.md's clouds) for conditions `c`, or null: continuous in
+ * the trait's cover and the haze, as drawn, because it moves only by the
+ * stage deck's own continuous levers and never crosses from one deck to the
+ * other. A layer is the stage's cover-1 deck, its contrast the kind's ×
+ * cover; a scattered deck is the kind's at min(cover, SCATTERED_MAX). The
+ * haze fades either toward none, `× (1 - h)` (a layer's contrast; a
+ * scattered deck's cover and contrast, since its whitening follows its cover
+ * alone). None at cover 0 or h = 1: a clear sky has none, and fog hides it.
+ */
+export function deckOf(c) {
+  const k = KINDS[c.kind];
+  const fade = 1 - c.h;
+  const [cover, contrast] = k.deck === "layer" ? [1, k.contrast * c.cover * fade] : [Math.min(c.cover, SCATTERED_MAX) * fade, k.contrast * fade];
+  return cover > 0 && contrast > 0 ? { cover, contrast, scale: k.scale, base: c.base } : null;
+}
 
 // ─── rain and haze ───────────────────────────────────────────────────────────
 
@@ -175,16 +205,20 @@ export const BANDS = Object.freeze([
   { at: -12, name: "night", top: [0.008, [0.7, 0.85, 1.35]], horizon: [0.01, [0.85, 0.9, 1.15]], bottom: [0.006, [0.85, 0.9, 1.1]], sun: [1, 0.5, 0.22], disc: 0, light: 0, exposure: 0.15 },
 ].map((b) => Object.freeze(b)));
 
-/** The band filter at geometric elevation `e`: the nodes' values, linear between. */
+/**
+ * The band filter at geometric elevation `e`: the nodes' values, linear
+ * between, the day's above the first node and the night's below the last.
+ * One shape everywhere: { top, horizon, bottom, sun, disc, light, exposure }.
+ */
 export function bandAt(e) {
-  if (!(e < BANDS[0].at)) return BANDS[0];
-  const last = BANDS[BANDS.length - 1];
-  if (!(e > last.at)) return last;
-  const i = BANDS.findIndex((b) => b.at < e) - 1; // BANDS[i].at >= e > BANDS[i + 1].at
+  const [first, last] = [BANDS[0], BANDS[BANDS.length - 1]];
+  const x = e < first.at ? (e > last.at ? e : last.at) : first.at; // NaN holds the day, as the sun is never NaN
+  const j = BANDS.findIndex((b) => b.at < x);
+  const i = j < 0 ? BANDS.length - 2 : j - 1; // BANDS[i].at >= x >= BANDS[i + 1].at
   const [a, b] = [BANDS[i], BANDS[i + 1]];
-  const t = (a.at - e) / (a.at - b.at);
-  const pair = (x, y) => [lerp(x[0], y[0], t), lerp3(x[1], y[1], t)];
-  return { at: e, top: pair(a.top, b.top), horizon: pair(a.horizon, b.horizon), bottom: pair(a.bottom, b.bottom), sun: lerp3(a.sun, b.sun, t), disc: lerp(a.disc, b.disc, t), light: lerp(a.light, b.light, t), exposure: lerp(a.exposure, b.exposure, t) };
+  const t = (a.at - x) / (a.at - b.at);
+  const pair = (p, q) => [lerp(p[0], q[0], t), lerp3(p[1], q[1], t)];
+  return { top: pair(a.top, b.top), horizon: pair(a.horizon, b.horizon), bottom: pair(a.bottom, b.bottom), sun: lerp3(a.sun, b.sun, t), disc: lerp(a.disc, b.disc, t), light: lerp(a.light, b.light, t), exposure: lerp(a.exposure, b.exposure, t) };
 }
 
 /** A tint greyed toward white by `s` (0 the tint, 1 white), exactly the tint at s = 0 and exactly white for a white tint. */
@@ -220,14 +254,14 @@ export function skyAt(c, e) {
  *   - fog: the horizon's colour, far 0.9 × the visibility in force
  *     (Koschmieder style), near the look's fraction of it, whole metres;
  *   - sun: toward the sun (azimuth and apparent elevation), always there, so
- *     the stage's own key light never stands in for it. It gives light, and
- *     shows a disc, only while the sun's geometric elevation is above
- *     -0.833°: below, its colour is black and its intensity 0 (Decision 19).
+ *     the stage's own key light never stands in for it. It gives light iff
+ *     the sun's geometric elevation is above -0.833° (the almanac's
+ *     sunrise); its colour, and so its disc, fades to black there, rounding
+ *     to #000000 a thousandth of a degree before (Decision 19).
  *     Shadows while the effective cover is under 0.75, the haze weight under
  *     0.5 and the sun more than 2° up;
  *   - exposure;
- *   - clouds: the deck at the trait's cover and base with the kind's
- *     contrast (faded by the haze) and cells, none in a clear sky or a fog.
+ *   - clouds: deckOf's deck, none in a clear sky or a fog.
  */
 export function atmosphereAt(c, sun) {
   const e = sun.geometric;
@@ -245,9 +279,8 @@ export function atmosphereAt(c, sun) {
     },
     exposure: l.exposure,
   };
-  const k = KINDS[c.kind];
-  const contrast = k.contrast * (1 - c.h);
-  if (c.cover > 0 && contrast > 0) out.clouds = { cover: c.cover, contrast, scale: k.scale, base: c.base };
+  const deck = deckOf(c);
+  if (deck) out.clouds = deck;
   return out;
 }
 

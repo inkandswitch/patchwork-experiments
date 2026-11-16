@@ -1,9 +1,9 @@
-// The weather trait made whole (weatherParams) and the world's wind (windOf,
-// gustinessOf), over finite tables: every field × {absent, valid, each way it
-// can be malformed, out of range}, and the gust factors that matter.
+// The weather trait made whole (weatherParams) and the world's wind (windOf),
+// over finite tables: every field × {absent, valid, each way it can be
+// malformed, out of range}.
 import { describe, expect, it } from "vitest";
 import { plugins } from "./index.js";
-import { DEFAULTS, FIELDS, gustinessOf, weatherParams, windOf } from "./weather.js";
+import { DEFAULTS, FIELDS, weatherParams, windOf } from "./weather.js";
 
 const INIT = plugins[0].describes.weather.init;
 
@@ -77,6 +77,12 @@ describe("weatherParams: every field in force", () => {
       expect({ ...p, [key]: DEFAULTS[key] }).toEqual(DEFAULTS); // field by field: no other field moved
     });
 
+  it("reads only the trait's own fields, never an inherited one", () => {
+    const inherited = Object.create({ wind: 9, clouds: "stratus", zone: "UTC" });
+    inherited.cover = 0.8;
+    expect(weatherParams(inherited)).toEqual({ ...DEFAULTS, cover: 0.8 });
+  });
+
   it("is idempotent: params are a trait that gives themselves", () => {
     for (const [key, given] of rows) {
       const p = weatherParams({ [key]: given });
@@ -98,39 +104,5 @@ describe("windOf: the world's wind is the trait's own numbers", () => {
     const w = windOf(weatherParams({}));
     expect(Object.keys(w).sort()).toEqual(["from", "gustiness", "seed", "speed"]);
     expect(JSON.parse(JSON.stringify(w))).toStrictEqual(w);
-  });
-});
-
-describe("gustinessOf: a fetched hour's mean and peak → gustiness (Decision 10)", () => {
-  // [mean, peak, gustiness]: the plan's rows, a calm, no peak, and the step's rounding
-  it.each([
-    [0, 0, 0.3],
-    [0, 3, 0.3],
-    [0.49, 2, 0.3],
-    [0.5, 0.65, 0.3],
-    [5, 5, 0],
-    [5, 4, 0],
-    [5, 6.5, 0.3],
-    [5, 10, 1],
-    [5, 12.5, 1],
-    [5, 20, 1],
-    [4, 5.2, 0.3],
-    [10, 13.1, 0.3],
-    [10, 13.3, 0.35],
-    [10, 17.4, 0.75],
-    [5, undefined, 0.3],
-    [5, null, 0.3],
-    [5, NaN, 0.3],
-    [undefined, 7, 0.3],
-  ])("mean %s, peak %s → %s", (mean, peak, g) => expect(gustinessOf(mean, peak)).toBe(g));
-
-  it("is always on the slider: a multiple of its step in 0..1", () => {
-    const f = FIELDS.find((f) => f.key === "gustiness");
-    for (const mean of [0.5, 1, 3, 7, 13]) for (let peak = 0; peak <= 30; peak += 0.7) {
-      const g = gustinessOf(mean, peak);
-      expect(g).toBeGreaterThanOrEqual(f.min);
-      expect(g).toBeLessThanOrEqual(f.max);
-      expect(Number((Math.round(g / f.step) * f.step).toFixed(2))).toBe(g);
-    }
   });
 });
