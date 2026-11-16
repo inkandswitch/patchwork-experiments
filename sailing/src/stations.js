@@ -1031,13 +1031,14 @@ export function stationCommands(api, ctx) {
 
   // the way in, for the scene (the null target), until you're aboard: Enter,
   // and a button on the stage's bar of tools in every body (show "world":
-  // scene/STAGE.md, "A command"). The HUD draws no button of its own.
+  // scene/STAGE.md, "A command"). The HUD draws no button of its own. Its
+  // title names no key: the bar adds the key's hint itself ("… (Enter)").
   const aboard = {
     id: "aboard",
     name: "Come aboard",
     key: "Enter",
     show: ["world"],
-    state: (target) => (target == null && !me().playing ? { title: "Walk the deck in first person (Enter)" } : null),
+    state: (target) => (target == null && !me().playing ? { title: "Walk the deck in first person" } : null),
     run: () => ctx.crew.start?.(),
   };
 

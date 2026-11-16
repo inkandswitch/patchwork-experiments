@@ -240,7 +240,7 @@ try {
   await b.rest(300);
   const way = await js(`(() => { const e = document.querySelector('#a .toolbar .world [data-command="aboard"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim(), title: e.title, enabled: !e.disabled }; })()`);
   const cr6 = await canvasRect();
-  check("6: in Edit on her, the bar of tools offers Come aboard (Enter)", way?.text === "Come aboard" && way.enabled && /\(Enter\)$/.test(way.title), way);
+  check("6: in Edit on her, the bar of tools offers Come aboard (Enter)", way?.text === "Come aboard" && way.enabled && way.title === "Walk the deck in first person (Enter)", way);
   if (way) {
     await b.click(way.x, way.y);
     await b.rest(600);
