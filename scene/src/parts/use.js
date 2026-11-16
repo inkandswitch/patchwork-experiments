@@ -79,6 +79,8 @@ function create(api) {
   overlay.classList.add("use-layer");
   const prompt = document.createElement("div");
   prompt.className = "use-prompt";
+  // the pointer on it keeps the look on what it offers verbs for (router.js), so its buttons can be clicked
+  prompt.dataset.keepsLook = "";
   prompt.setAttribute("role", "status");
   prompt.hidden = true;
   overlay.append(prompt);
@@ -194,6 +196,8 @@ function create(api) {
   }
 
   api.listen(api.port, "pointermove", (e) => {
+    // over the prompt itself (going for one of its buttons): it stays where it is, or it would move off from under the pointer
+    if (e.target instanceof Node && prompt.contains(e.target)) return;
     const r = api.port.getBoundingClientRect();
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
     place();

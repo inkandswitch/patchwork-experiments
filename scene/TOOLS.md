@@ -294,7 +294,10 @@ what offers verbs; presses have one, so the body comes last there.
 each hint with the resolver that dispatches keys. A verb whose key is
 reserved shows without one and is in the menu (walking, Draw is a button,
 not D). The prompt shows three verbs, the menu all; verbs are buttons, for
-touch. Held-key sessions (`use.js:20-33`) move into the one key map, the
+touch and for a mouse: the prompt keeps the look (`data-keeps-look`, the
+router's) and stays put while the pointer is on it, so moving onto a button
+to click it doesn't take the look, and the prompt, away (machine/HOST.md,
+Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused

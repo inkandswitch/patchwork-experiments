@@ -929,6 +929,45 @@ describe("hover and cursor", () => {
     t.canvas.dispatchEvent(new PointerEvent("pointerleave"));
     expect(t.onHover).toHaveBeenLastCalledWith(null);
   });
+  // Off the canvas onto something over it that keeps the look (the use
+  // prompt): every way the pointer can go from there, from one hover.
+  it("a look is kept while the pointer is on something that keeps it (the use prompt), and goes as it goes anywhere else", async () => {
+    const WAYS = [
+      ["back to the canvas", (t) => move(t, { x: 40, buttons: 0 }), "hovered again"],
+      ["over another overlay", (t) => ptr("pointermove", t.other, { x: 50, buttons: 0 }), "cleared"],
+      ["out of the port", (t) => t.port.dispatchEvent(new PointerEvent("pointerleave", { relatedTarget: document.body })), "cleared"],
+      ["about on the prompt", (t) => ptr("pointermove", t.button, { x: 22, buttons: 0 }), "kept"],
+    ];
+    for (const [way, go, want] of WAYS) {
+      const t = setup();
+      const prompt = document.createElement("div");
+      prompt.dataset.keepsLook = "";
+      t.button = document.createElement("button");
+      prompt.append(t.button);
+      t.other = document.createElement("div");
+      t.port.append(prompt, t.other);
+      move(t, { x: 20, buttons: 0 });
+      await frame();
+      expect(t.onHover).toHaveBeenCalledTimes(1);
+      // onto the prompt: kept (no clear)
+      t.canvas.dispatchEvent(new PointerEvent("pointerleave", { relatedTarget: t.button }));
+      ptr("pointermove", t.button, { x: 21, buttons: 0 });
+      expect([way, t.onHover.mock.calls.length]).toEqual([way, 1]);
+      go(t);
+      await frame();
+      const last = t.onHover.mock.calls.at(-1)[0];
+      const got = t.onHover.mock.calls.length === 1 ? "kept" : last === null ? "cleared" : "hovered again";
+      expect([way, got]).toEqual([way, want]);
+    }
+    // onto anything else that's over the canvas: cleared at once, as ever
+    const t = setup();
+    const other = document.createElement("div");
+    t.port.append(other);
+    move(t, { x: 20, buttons: 0 });
+    await frame();
+    t.canvas.dispatchEvent(new PointerEvent("pointerleave", { relatedTarget: other }));
+    expect(t.onHover).toHaveBeenLastCalledWith(null);
+  });
   it("prefers the held tool's cursor", async () => {
     const t = setup();
     t.inputs.a = { cursor: () => "pointer" };
