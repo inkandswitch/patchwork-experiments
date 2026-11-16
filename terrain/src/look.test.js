@@ -141,3 +141,35 @@ describe("the ground's palette", () => {
     for (let k = 0; k < 2000; k++) expect(Math.abs(hash01(k, 7) - hash01(k, 7))).toBe(0), expect(hash01(k, 7)).toBeLessThan(1);
   });
 });
+
+import { LOOK as UKEE_LOOK } from "./ucluelet.js";
+import { COVERS } from "./cover.js";
+describe("Ucluelet's ground between the crowns: shade, not mid-grey; lots garden, not grey", () => {
+  const C = { ...COLOURS, ...UKEE_LOOK.colours };
+  const tide = { MLLW: -1.3, MHHW: 1.3, HHWLT: 1.8 };
+  const lum = (rgb) => { const l = rgb.map((c) => { const x = c / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; };
+  const limit = lum([0x2a, 0x2f, 0x28]);
+  const opts = (shaded) => ({ shoreRock: UKEE_LOOK.shoreRock, shadeOver: UKEE_LOOK.shade.over, shaded });
+  it("is the forest's shade (no lighter than #2a2f28) wherever the canopy is over 2 m or a town tree stands, on any cover trees grow on (every cover, canopy, height and 500 nodes)", () => {
+    for (const name of COVERS) {
+      const cv = COVER[name];
+      if (["beach", "rock", "lake"].includes(name)) continue;
+      for (const canopy of [0, 1, 2.01, 3, 5, 12, 30]) for (const shaded of [false, true]) for (const h of [6, 20, 60, 140]) for (let k = 0; k < 500; k++) {
+        if (canopy <= 2 && !shaded) continue;
+        expect(lum(groundRGB(h, cv, canopy, tide, C, k, false, opts(shaded)))).toBeLessThanOrEqual(limit);
+      }
+    }
+  });
+  it("draws a town lot without trees as lawn and garden, never a neutral grey (saturation at least 0.12, every node of 3000, every height)", () => {
+    const sat = (rgb) => (Math.max(...rgb) - Math.min(...rgb)) / Math.max(...rgb);
+    let patches = 0;
+    for (const h of [6, 20, 60]) for (let k = 0; k < 3000; k++) {
+      const rgb = groundRGB(h, COVER.residential, 0, tide, C, k, false, opts(false));
+      expect(sat(rgb)).toBeGreaterThanOrEqual(0.12);
+      if (h === 6 && Math.abs(rgb[1] - 0x33 * (0.94 + 0.12 * hash01(k, 7))) < 1e-9) patches++;
+    }
+    // about a third of its nodes dark shrub
+    expect(patches / 3000).toBeGreaterThan(0.28);
+    expect(patches / 3000).toBeLessThan(0.39);
+  });
+});

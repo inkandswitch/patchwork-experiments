@@ -63,7 +63,22 @@ looks it up at the ray's azimuth and the water's own distance from the
 profile's eye (land nearer than that water is in front of it, not in it):
 under the land, the reflection is the tint, fogged to the land's distance
 (the near shore's for a ray under its top, the far hills' for one over
-it), not the sky; the waves' normals break it up as they do the sky. Without
+it), not the sky. The ray is reflected off a calmed normal (`SHORE_CALM`,
+0.6 of the way from the waves' normal to straight up, fading to none as the
+sea's significant height goes from 0.6 to 2.5 m: `calmFor`), so over calm
+water the waves stretch the mirrored shore into vertical streaks instead of
+tearing it into blobs, and the band's edge is as soft as a pixel's footprint
+of the ray's rise (`SHORE_EDGE`), so far off the ripples average to a tone
+rather than alias into hard dark camouflage. A ray reflected level or down
+is at the horizon: the shore's foot where there is land, never a bright rim
+inside the band. The band's top is ragged as the forest it mirrors (a tooth
+in each of 360 azimuth bins, a tree's tip as tall as the bin's hash, the
+land lowered up to 0.012 rad toward the bin's edges) and its tint
+varies ±15% round the compass (`SHORE_RAG`). `shoreWeight` is the shader's
+working in JS, tested over tilts, views, lands and footprints. The sky it
+reflects carries the atmosphere's cloud deck (scene STAGE.md,
+"Atmosphere": `clouds`), the same function as the stage's sky (`cloudAt`),
+so the reflections agree with it. Without
 either it draws the sky alone, and the shader has no shore at all (a
 define). Terrain contributes it for its places (terrain README, "The shore
 in the water"): Ucluelet and Cadboro Bay.

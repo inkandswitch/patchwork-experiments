@@ -219,10 +219,12 @@ export const SWELL = Object.freeze({ hs: 1.2, tp: 8.3, from: 285, note: "not mod
  * horizon (there about a third of the zenith's luminance; here gentler), so
  * the far water, which reflects the horizon at a grazing angle, reads as
  * pewter, not a white band, and the far hills fade into a grey that matches
- * it (the fog is the horizon's colour).
+ * it (the fog is the horizon's colour). Ukee grey's overcast is a
+ * stratocumulus deck about 600 m up, its cells' undersides a little lighter
+ * and darker (±12%: scene STAGE.md's atmosphere clouds), not a flat grey.
  */
 export const SKIES = Object.freeze({
-  "ukee-grey": { name: "Ukee grey (overcast, bright)", sky: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" }, fog: { color: "#959ea1", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05 },
+  "ukee-grey": { name: "Ukee grey (overcast, bright)", sky: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" }, fog: { color: "#959ea1", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05, clouds: { cover: 1, contrast: 0.12, scale: 500, base: 600 } },
   "marine-layer": { name: "Marine layer (fog, 20% of afternoons)", sky: { top: "#bfc6c7", horizon: "#c9cfcf", bottom: "#b4bbbb" }, fog: { color: "#c9cfcf", near: 30, far: 900 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#f2f3f2", intensity: 0.6, shadows: false }, exposure: 1 },
   "clear-afternoon": { name: "Clear afternoon", sky: { top: "#5b86b0", horizon: "#d5e0e4", bottom: "#a9bcc4" }, fog: { color: "#d5e0e4", near: 800, far: 18000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#fff4e2", intensity: 2.2, shadows: true }, exposure: 1 },
 });
@@ -495,16 +497,21 @@ export const LOOK = Object.freeze({
   palette: "west-coast",
   // the shore is rock under the town's lots too: a dark bank above the lichen, not lawn to the waterline (palette.js groundRGB shoreRock)
   shoreRock: true,
+  // the forest floor's shade wherever the canopy is over 2 m (not 5) and under every town tree: no mid-grey ground between the crowns on the lots and the hill behind the basins
+  shade: { over: 2, towns: true },
   colours: {
     rockweed: "#35311f",
-    barnacle: "#585752",
+    // the barnacles' band darker than bare grey: on the 20 m grid's gentle slopes it is a wide strip along every shore, which in grey reads as a pale beach
+    barnacle: "#47463f",
     lichen: "#1b1b1a",
-    rock: "#3b3a37",
+    rock: "#33322f",
     forestFloor: "#1e281b",
     // the ground in the trees' shade (canopy over 5 m), between the crowns: nearly black
-    forestShade: "#121a12",
+    forestShade: "#0c120c",
     shrub: "#2b3524",
-    lawn: "#363d2e",
+    // a lot without trees: lawn and garden, mottled, a third of its nodes dark shrub (palette.js groundRGB)
+    lawn: "#4a5638",
+    lawnPatch: "#2a3326",
     yard: "#55585a",
     grass: "#3f4a30",
     bog: "#4a4831",
@@ -551,10 +558,12 @@ export const LOOK = Object.freeze({
     tiles: { near: 1024, far: 4096 },
     // salal and shore pine where the lidar's canopy is under 5 m (forest.js scrubCover): a bumpy low skin, not turf; darker than salal's own #3e4a2c, which lit flat read as lawn
     // darker still (#232b20), finer inside the skin's circles (tolerance 0.3, not 0.6), barely bumped (±0.6 m: the bushes are the lumps), every vertex mottled ±15%
-    scrub: { min: 0.8, lift: 1, jitter: 0.6, fine: 0.3, colours: ["#232b20", "#20281d", "#262f22", "#1e251b", "#242c21"] },
+    // and darker again under the crowns standing on it (no sky reaches it there: the overcast's light baked in): ["#1b2318", …]
+    scrub: { min: 0.8, lift: 1, jitter: 0.6, fine: 0.3, colours: ["#1b2318", "#19211a", "#1d261a", "#171e15", "#1c2419"] },
   },
   // foam where the coast is open to the swell (doc.swell.from), fading to the water's grey as the stage draws it under Ukee grey: surf.js's ribbons, white water over the exposed shallows under 2.5 m, and black boulders at the most exposed waterline (dressing, assumed)
-  surf: { fade: "#64737c", reef: { depth: 2.5, reef: 0.6, chance: 0.4 }, boulders: { exposure: 0.6, chance: 0.3, sides: [7, 9], sizes: [0.6, 1.1, 1.6], colours: ["#3f3d3a", "#4d4b47"] } },
+  // broken into bursts (surf.js BURSTS: about 45% of a run white at full width, the rest a lull of grey-white a quarter as wide or less, domes of spray over the exposed white), the boulders stretched on each axis and turned, no two alike
+  surf: { fade: "#64737c", bursts: true, reef: { depth: 2.5, reef: 0.6, chance: 0.4 }, boulders: { exposure: 0.6, chance: 0.3, sides: [7, 9], sizes: [0.6, 1.1, 1.6], colours: ["#3f3d3a", "#4d4b47"], stretch: [0.6, 1.4] } },
   // the town's buildings (buildings.js): West Coast siding, muted (weathered cedar, grey-green, barn red, slate blue, white), white corner boards and eave trim and a row of dark windows a storey; buildings at the water on pile decks, an industrial one there in cream corrugated cladding (a fish plant). Art direction, from photographs of the waterfront
   buildings: {
     palette: { walls: [["#7a5a40", 26], ["#5d6b5e", 18], ["#7d2f28", 12], ["#4f6070", 14], ["#e6e4dd", 18], ["#8d867b", 12]] },
@@ -577,20 +586,32 @@ export const LOOK = Object.freeze({
     // silver logs 0.8 to 1.2 m across, a third buried in the cobble, their sawn ends darker
     logs: { chance: 0.22, diameter: [0.8, 1.2], colour: "#a8a49a", cap: 0.55, bury: 0.35 },
     // grey stones, not black nuts: three sizes, 7- or 9-sided, squashed
-    boulders: { chance: 0.1, sides: [7, 9], sizes: [0.45, 0.9, 1.4], colours: ["#4d4b47", "#5a5752"] },
+    boulders: { chance: 0.1, sides: [7, 9], sizes: [0.45, 0.9, 1.4], colours: ["#4d4b47", "#5a5752"], stretch: [0.6, 1.4] },
     // the yard's frontage from the launch to the wharf: three to five stones on every piece of its shore (the courtyard photographs' riprap and cobble, assumed)
     frontage: { within: [{ at: [48.9496, -125.558], radius: 150, note: "the boatyard's frontage" }], chance: 1, count: [3, 5] },
   },
   // a band of stratus across the hills, baked into their colours (cloud.js bakeStratus, stratusAt): no sheets or lenses at all (seen from the town, a lens was a pale saucer over it)
   clouds: {
-    // from 280 m rising to its thickest at 420 m and easing back to 0.45 above, so Ozzard's and the Mackenzie Range's dark forest and the radome show in and out of it; toward the grey the horizon reads as once lit (#737b7e, under the horizon's #959ea1), so a summit is never brighter than the sky behind it, as snow
-    bake: { from: 280, peak: 420, span: 200, max: 0.7, above: 0.45, noise: 0.3, colour: "#737b7e" },
+    // from 280 m rising to its thickest at 420 m and easing back to 0.5 above, torn into wisps along the slopes (cloud.js WISPS: about 40% of the band whole, the rest at most a quarter of it), so Ozzard's and the Mackenzie Range's dark forest and the radome show between them; toward the grey the horizon reads as once lit (#737b7e, under the horizon's #959ea1), so a summit is never brighter than the sky behind it, as snow
+    // and mist low on the hills (from 60 m, at most 0.35 at 120 m) only round the valley behind the town, the hill south of the basins and Ozzard's lower flank, torn by the same noise: no sheets
+    bake: {
+      from: 280, peak: 420, span: 200, max: 0.75, above: 0.5, colour: "#737b7e", wisps: true,
+      low: { from: 60, peak: 120, span: 120, max: 0.35, above: 0.12, within: [
+        { at: [48.9445, -125.5395], radius: 700, note: "the valley behind the town" },
+        { at: [48.9415, -125.553], radius: 450, note: "the hill south of the basins" },
+        { at: [48.9555, -125.505], radius: 1200, note: "Mount Ozzard's lower flank" },
+      ] },
+    },
     sheets: null,
     mist: null,
     caps: [],
   },
   // the Inner Basin's floats full of the fleet (boats.js mooredBoats: 19 in 20 slips taken there, against five in six elsewhere; the photographs' general look, assumed)
   moored: [{ at: [48.94508, -125.553], radius: 160, taken: 0.95, note: "the Inner Basin" }],
+  // boats alongside every fixed pier in the harbour too (boats.js PIER_MOORING), six slips in ten taken, wherever the water under a boat is at least 2 m at mean water (the level drawn; read from the heights, whose 20 m grid smooths the dredged berths beside a pier to a metre or two shallower than they are, so 2 m at chart datum would leave nearly every pier bare): every float and pier head lined with boats, as in the photographs (assumed)
+  moorPiers: { within: [{ at: [48.945, -125.548], radius: 1600, note: "the harbour" }], taken: 0.6, depth: 2 },
+  // whale-watching boats and water taxis (grey aluminium) at the piers and floats round the Whiskey Dock and the 52 Steps (assumed)
+  moorMix: [{ at: [48.9437, -125.5452], radius: 260, note: "the Whiskey Dock and the 52 Steps", mix: [["whalewatch", 30], ["watertaxi", 25], ["sportfisher", 25], ["troller", 20]] }],
   // dressing about the harbour (boats.js), not data: assumed, each in at least 10 m of water (checked against the heights)
   boats: [
     { id: "troller-outbound", type: "troller", lat: 48.9485, lon: -125.551, heading: 125, length: 12, trim: "#8e2f27", note: "a troller under way, outbound down the harbour" },

@@ -128,3 +128,47 @@ describe("the fleet painted the right way round (every boat of every type over 4
     }
   });
 });
+
+import { PIER_MOORING, MIX } from "./boats.js";
+import { insideRing } from "./terrain-sample.js";
+describe("every pier and float lined with boats", () => {
+  // the ground falls away from the shore (z = 0) at 1 in 8: 2 m deep from z = 16
+  const groundAt = (x, z) => 1 - z / 8;
+  const piers = { within: () => true, taken: PIER_MOORING.taken, depth: 2, groundAt, datum: 0 };
+  // twelve piers straight out from the shore, 60 to 170 m long, and twelve area piers (a wharf's outline) out in the water
+  const lines = Array.from({ length: 12 }, (_, q) => ({ id: `way/${100 + q}`, kind: "pier", points: [[q * 300, 0], [q * 300 + 10, 60 + q * 10]] }));
+  const areas = Array.from({ length: 12 }, (_, q) => ({ id: `way/${200 + q}`, kind: "pier", area: true, points: q % 2 ? [[q * 300, 60], [q * 300 + 40, 60], [q * 300 + 40, 90], [q * 300, 90]] : [[q * 300, 90], [q * 300 + 40, 90], [q * 300 + 40, 60], [q * 300, 60]] }));
+  const floats = Array.from({ length: 12 }, (_, q) => ({ id: `way/${300 + q}`, kind: "pier", floating: true, points: [[q * 300, 120], [q * 300 + 80, 120]] }));
+  const boats = mooredBoats([...lines, ...areas, ...floats], { piers });
+  const of = (st) => boats.filter((b) => b.id.startsWith(`${st.id}#`));
+  it("puts a boat only where the water under her, at her ends and her middle, is at least the depth (every pier boat)", () => {
+    for (const b of boats.filter((b) => b.pier)) {
+      const fx = Math.sin(b.heading), fz = -Math.cos(b.heading);
+      for (const f of [-0.45, 0, 0.45]) expect(groundAt(b.x + fx * f * b.length, b.z + fz * f * b.length)).toBeLessThanOrEqual(-2 + 0.02);
+    }
+  });
+  it("lines every pier: at least one boat per 25 m of edge where the water is deep enough alongside (every pier and float)", () => {
+    for (const st of lines) {
+      // the deep part of its two sides
+      const L = Math.hypot(10, 60 + (Number(st.id.slice(4)) - 100) * 10), deep = L * (1 - (24 + 6) / (60 + (Number(st.id.slice(4)) - 100) * 10));
+      expect(of(st).length, st.id).toBeGreaterThanOrEqual(Math.floor((2 * deep) / 25));
+    }
+    for (const st of areas) expect(of(st).length, st.id).toBeGreaterThanOrEqual(Math.floor((2 * (40 + 30)) / 25));
+    for (const st of floats) expect(of(st).length, st.id).toBeGreaterThanOrEqual(Math.floor((2 * 80) / 25));
+  });
+  it("keeps an area pier's boats outside its outline, whichever way it winds (every boat)", () => {
+    for (const st of areas) for (const b of of(st)) expect(insideRing(st.points, b.x, b.z)).toBe(false);
+    expect(areas.every((st) => of(st).length > 0)).toBe(true);
+  });
+  it("moors no boat along a fixed pier unless the place asks (piers: null), and takes a place's own mix where it gives one (every slip)", () => {
+    expect(mooredBoats([...lines, ...areas]).length).toBe(0);
+    const mix = [["whalewatch", 1], ["watertaxi", 1]];
+    const mixed = mooredBoats([...lines, ...floats], { piers, mixAt: (x) => (x < 1500 ? mix : null) });
+    for (const b of mixed) {
+      const x0 = Number(b.id.match(/way\/\d(\d\d)/)[1]) * 300;
+      if (x0 < 1500) expect(["whalewatch", "watertaxi"]).toContain(b.type);
+      else expect(MIX.map(([t]) => t)).toContain(b.type);
+    }
+    expect(new Set(mixed.map((b) => b.type)).has("whalewatch")).toBe(true);
+  });
+});

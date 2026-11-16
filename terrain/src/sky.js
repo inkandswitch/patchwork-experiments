@@ -26,11 +26,11 @@ import { decodeTerrain } from "./terrain-sample.js";
 import { horizonProfile, stillServes, azimuthDir, SHORE } from "./horizon.js";
 import { dressGrain } from "./grain.js";
 
-/** The atmosphere a trait's data makes (only its sky, fog, sun and exposure), or null. Pure. */
+/** The atmosphere a trait's data makes (only its sky, fog, sun, exposure and clouds), or null. Pure. */
 export function skyOffer(trait) {
   if (!trait || typeof trait !== "object") return null;
   const out = {};
-  for (const k of ["sky", "fog", "sun", "exposure"]) if (trait[k] != null) out[k] = JSON.parse(JSON.stringify(trait[k]));
+  for (const k of ["sky", "fog", "sun", "exposure", "clouds"]) if (trait[k] != null) out[k] = JSON.parse(JSON.stringify(trait[k]));
   return Object.keys(out).length ? out : null;
 }
 

@@ -2,7 +2,8 @@
 // which boat is in which slip, so a float's slips are filled by hash of
 // its OSM id and the slip's index (the same boats every build): a slip
 // every 12 m along each side, about five in six taken (a place may fill
-// some floats fuller: its look's `moored`), each a troller (a wheelhouse
+// some floats fuller: its look's `moored`; never two empty slips running),
+// and where a place says along its fixed piers too, each a troller (a wheelhouse
 // aft of amidships, two tall trolling poles raised in a V), a small seiner
 // or crabber (the wheelhouse forward, a short mast and boom), an aluminium
 // sportfisher or a cruising sailboat (a mast, a boom, on some a blue
@@ -42,51 +43,110 @@ export const BOATS = Object.freeze({
   // a cruising sailboat: a low coachroof, a mast about 1.3 times her length, a boom (a blue cover over it on some)
   sailboat: { length: [8, 12], beam: 0.32, hull: "#eeefec", trim: ["#1f4e79", "#2b2c2e", "#8e2f27"], house: { at: 0.45, length: 0.35, height: 0.7 }, mast: 1.3, freeboard: 0.8, sheer: 0.35, boot: "#1f3348" },
   // not moored by hash (MIX): placed about a harbour by a place's look
-  whalewatch: { length: [10, 13], beam: 0.33, hull: "#eceeed", trim: ["#1f4e79", "#c8372d"], house: { at: 0.5, length: 0.5, height: 2.3 } },
-  watertaxi: { length: [8, 10], beam: 0.35, hull: "#f2f2ef", trim: ["#c8372d", "#1f4e79"], house: { at: 0.58, length: 0.4, height: 1.9 } },
+  // grey aluminium hulls: the whale-watching boats and water taxis at the Whiskey Dock and the 52 Steps
+  whalewatch: { length: [10, 13], beam: 0.33, hull: "#aeb3b5", trim: ["#1f4e79", "#c8372d"], house: { at: 0.5, length: 0.5, height: 2.3 } },
+  watertaxi: { length: [8, 10], beam: 0.35, hull: "#b8bcbe", trim: ["#c8372d", "#1f4e79"], house: { at: 0.58, length: 0.4, height: 1.9 } },
 });
-const MIX = [["troller", 30], ["seiner", 15], ["sportfisher", 25], ["sailboat", 30]];
+/** The boats a slip takes by hash, weighted: a harbour's floats; a place's look may give its own mix about some piers (`mixAt`). */
+export const MIX = Object.freeze([["troller", 30], ["seiner", 15], ["sportfisher", 25], ["sailboat", 30]].map((e) => Object.freeze(e)));
+/** Where boats lie alongside a fixed pier (a place's look's `moorPiers`): a slip every `every` m along each side (an area pier's: along its outline, outside it), `taken` of them, only where the water under a boat is at least `depth` m (at mean water, or at chart datum where the place says). */
+export const PIER_MOORING = Object.freeze({ every: 12, taken: 0.6, depth: 2 });
 
-/** The boats along every float (OSM `man_made=pier` + `floating=yes`) with a point inside: [{ id, type, x, z, heading, length, beam, trim }]. */
-export function mooredBoats(structures, { inside = () => true, every = 12, taken = 0.85, takenAt = null } = {}) {
+/**
+ * The boats along every float (OSM `man_made=pier` + `floating=yes`) with a
+ * point inside, and, where `piers` is given ({ within(x, z), taken, every,
+ * depth, groundAt(x, z) (m about mean water), datum (how far under mean
+ * water the depth is measured from, m: 0, or chart datum's) }), along every
+ * fixed pier with a point within (an area pier's outline, outside it), each
+ * boat only where the water under her is at least `depth` there: [{ id,
+ * type, x, z, heading, length, beam, trim, pier? }]. A place's `mixAt(x, z)`
+ * may give its own mix about some piers or floats (by the structure's
+ * first point). Pure.
+ */
+export function mooredBoats(structures, { inside = () => true, every = 12, taken = 0.85, takenAt = null, piers = null, mixAt = null } = {}) {
   const out = [];
   for (const st of structures) {
-    if (kindOf(st) !== "float" || st.area || !st.points.some(([x, z]) => inside(x, z))) continue;
-    const width = st.width > 0 && st.width < 50 ? st.width : 2.4;
-    // a float's share of slips taken: the place's where it says (takenAt, by the float's first point), else `taken`
-    const share = takenAt?.(st.points[0][0], st.points[0][1]) ?? taken;
+    const kind = kindOf(st);
+    if (!st.points.some(([x, z]) => inside(x, z))) continue;
+    const pier = kind === "pier" && piers && st.points.some(([x, z]) => piers.within(x, z));
+    if ((kind !== "float" || st.area) && !pier) continue;
+    // an area pier: its outline, closed, boats on its outside only (by its winding), no half-width out
+    const outline = st.area ? [...st.points, st.points[0]] : st.points;
+    const outside = st.area ? (ringSign(st.points) > 0 ? [1] : [-1]) : [-1, 1];
+    const width = st.area ? 0 : st.width > 0 && st.width < 50 ? st.width : pier ? 3 : 2.4;
+    // a float's share of slips taken: the place's where it says (takenAt, by the float's first point), else `taken`; a pier's, the piers'
+    const share = pier ? piers.taken ?? PIER_MOORING.taken : takenAt?.(st.points[0][0], st.points[0][1]) ?? taken;
+    const mix = mixAt?.(st.points[0][0], st.points[0][1]) ?? MIX;
+    const step = pier ? piers.every ?? PIER_MOORING.every : every;
+    const deep = pier ? (x, z) => {
+      const g = piers.groundAt(x, z);
+      return g != null && g <= -(piers.datum ?? 0) - (piers.depth ?? PIER_MOORING.depth);
+    } : () => true;
+    // the sides whose last slip with water enough for a boat was left empty
+    const empty = new Set();
+    // whether slip `key` would hold her boat (the boat her hash makes): in the grid and deep enough at her ends and middle
+    const fits = (key, side, d, ax, az, ux, uz) => {
+      const b = boatAt(key, mix);
+      const off = width / 2 + b.beam / 2 + 0.4;
+      const x = ax + ux * d - uz * off * side, z = az + uz * d + ux * off * side;
+      return inside(x, z) && deep(x, z) && deep(x + ux * b.length * 0.45, z + uz * b.length * 0.45) && deep(x - ux * b.length * 0.45, z - uz * b.length * 0.45);
+    };
     let slot = 0;
-    for (let q = 0; q + 1 < st.points.length; q++) {
-      const [ax, az] = st.points[q], [bx, bz] = st.points[q + 1];
+    for (let q = 0; q + 1 < outline.length; q++) {
+      const [ax, az] = outline[q], [bx, bz] = outline[q + 1];
       const L = len(bx - ax, bz - az);
-      if (L < every) continue;
+      if (L < step) continue;
       const ux = (bx - ax) / L, uz = (bz - az) / L;
-      for (let d = every / 2; d + every / 2 <= L; d += every, slot++) {
-        for (const side of [-1, 1]) {
+      for (let d = step / 2; d + step / 2 <= L; d += step, slot++) {
+        for (const side of outside) {
           const key = `${st.id}#${slot}${side > 0 ? "s" : "p"}`;
-          if (hashString(key, 1) >= share) continue;
-          let u = hashString(key, 2) * 100, type = MIX[0][0];
-          for (const [t, w] of MIX) {
-            if (u < w) {
-              type = t;
-              break;
-            }
-            u -= w;
+          // a slip its hash leaves empty is taken all the same after an empty one on the same side: never two empty slips running (at least a boat every two slips), unless none are to be taken
+          const free = hashString(key, 1) >= share;
+          if (free && (share <= 0 || !empty.has(side))) {
+            if (fits(key, side, d, ax, az, ux, uz)) empty.add(side);
+            continue;
           }
+          const { type, length, beam } = boatAt(key, mix);
           const B = BOATS[type];
-          const length = B.length[0] + (B.length[1] - B.length[0]) * hashString(key, 3);
-          const beam = B.beam * length;
           const off = width / 2 + beam / 2 + 0.4;
           const x = ax + ux * d - uz * off * side, z = az + uz * d + ux * off * side;
-          if (!inside(x, z)) continue;
+          // her ends and her middle in the water deep enough (a pier's: `depth` at chart datum)
+          if (!inside(x, z) || !deep(x, z) || !deep(x + ux * length * 0.45, z + uz * length * 0.45) || !deep(x - ux * length * 0.45, z - uz * length * 0.45)) continue;
+          empty.delete(side);
           // bow one way or the other along the float
           const heading = hashString(key, 4) < 0.5 ? Math.atan2(ux, -uz) : Math.atan2(-ux, uz);
-          out.push({ id: key, type, x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, heading, length: Math.round(length * 100) / 100, beam: Math.round(beam * 100) / 100, trim: B.trim[Math.floor(hashString(key, 5) * B.trim.length)] });
+          out.push({ id: key, type, x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, heading, length: Math.round(length * 100) / 100, beam: Math.round(beam * 100) / 100, trim: B.trim[Math.floor(hashString(key, 5) * B.trim.length)], ...(pier ? { pier: true } : {}) });
         }
       }
     }
   }
   return out;
+}
+
+/** The boat slip `key` takes by its hash, from `mix`: { type, length, beam }. */
+function boatAt(key, mix) {
+  const total = mix.reduce((a, [, w]) => a + w, 0);
+  let u = hashString(key, 2) * total, type = mix[0][0];
+  for (const [t, w] of mix) {
+    if (u < w) {
+      type = t;
+      break;
+    }
+    u -= w;
+  }
+  const B = BOATS[type];
+  const length = B.length[0] + (B.length[1] - B.length[0]) * hashString(key, 3);
+  return { type, length, beam: B.beam * length };
+}
+
+/** Which side of its edges a ring's outside is, in mooredBoats' terms: +1 or −1 by the ring's winding in (x, z). */
+function ringSign(pts) {
+  let a = 0;
+  for (let k = 0; k < pts.length; k++) {
+    const [x1, z1] = pts[k], [x2, z2] = pts[(k + 1) % pts.length];
+    a += x1 * z2 - x2 * z1;
+  }
+  return a > 0 ? -1 : 1;
 }
 
 /** A boat's own hash in [0, 1) by its id and a seed. */

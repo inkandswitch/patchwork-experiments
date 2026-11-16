@@ -2,7 +2,7 @@
 // every layout of every profile, every quarter turn, every neighbourhood of one layout, checked on a
 // 20 × 20 sample of the cell (finite enumeration, nothing random).
 import { describe, it, expect } from "vitest";
-import { SKIN_LAYOUTS, SKIN_PROFILES, PROFILE_NAMES, LAYOUT_WEIGHTS, SKIN_COLOURS, SPRUCE, SNAG, CROWN_VALUE, crownsOf, crownRadius, pickLayout, skinMesh, skinAt, skinZone, clumpOf } from "./forest.js";
+import { SKIN_LAYOUTS, SKIN_PROFILES, PROFILE_NAMES, LAYOUT_WEIGHTS, SKIN_COLOURS, SPRUCE, SNAG, CROWN_VALUE, crownsOf, crownRadius, pickLayout, skinMesh, skinAt, skinZone, clumpOf, CROWN_SHAPES, CROWN_SHADE, crownShape, crownTriangles } from "./forest.js";
 import { hexToLinear } from "./glb.js";
 import { COVER } from "./cover.js";
 
@@ -108,16 +108,19 @@ describe("the coast's silhouettes: Sitka spruce and dead snags", () => {
           off += 8;
           return;
         }
-        // a crown's 12 triangles: its base colour ±12%, with the baked shading (0.82 to 1.12)
+        // a crown's triangles: its base colour ±12%, shaded from CROWN_SHADE[0] at its foot to CROWN_SHADE[1] at its tip, with the baked side shading (0.82 to 1.12)
         const base = !plain && sign === "spruce" ? [spruce] : lin;
+        const n = crownTriangles(crownShape(plain, sign, c, v, e - layout.slice(0, e).filter((x) => x[3] === "snag").length));
         let top = -Infinity;
-        for (let t = 0; t < 12; t++) {
-          const col = [m.colors[(off + t) * 9], m.colors[(off + t) * 9 + 1], m.colors[(off + t) * 9 + 2]];
-          expect(base.some((b) => { const f = col[1] / b[1]; return f >= 0.82 * (1 - CROWN_VALUE) - 1e-6 && f <= 1.12 * (1 + CROWN_VALUE) + 1e-6 && Math.abs(col[0] / b[0] - f) < 1e-4; })).toBe(true);
-          for (let q = 1; q < 9; q += 3) top = Math.max(top, m.positions[(off + t) * 9 + q]);
+        for (let t = 0; t < n * 3; t++) {
+          const col = [m.colors[off * 9 + t * 3], m.colors[off * 9 + t * 3 + 1], m.colors[off * 9 + t * 3 + 2]];
+          expect(base.some((b) => { const f = col[1] / b[1]; return f >= CROWN_SHADE[0] * 0.82 * (1 - CROWN_VALUE) - 1e-6 && f <= CROWN_SHADE[1] * 1.12 * (1 + CROWN_VALUE) + 1e-6 && Math.abs(col[0] / b[0] - f) < 1e-4; })).toBe(true);
+          top = Math.max(top, m.positions[off * 9 + t * 3 + 1]);
         }
-        expect(top).toBeCloseTo(k * (!plain && sign === "spruce" ? SPRUCE.taller : 1), 6);
-        off += 12;
+        const tall = k * (!plain && sign === "spruce" ? SPRUCE.taller : 1);
+        expect(top).toBeLessThanOrEqual(tall + 1e-6);
+        expect(top).toBeGreaterThanOrEqual(tall * 0.95 - 1e-6);
+        off += n;
       });
       expect(off * 9).toBe(m.positions.length);
     });
@@ -147,5 +150,46 @@ describe("shore pine and salal where the canopy is 1 to 5 m", () => {
         expect(by.get(k).height).toBeGreaterThanOrEqual(2);
       }
     }
+  });
+});
+
+describe("crowns that aren't cones: cedar, hemlock and spruce", () => {
+  it("keeps every vertex of every crown inside its own radius and between its foot and its tip, its shape's triangle count fixed (every shape, profile and layout)", () => {
+    const seen = new Set();
+    for (const p of PROFILE_NAMES) for (const c of [3, 4]) SKIN_LAYOUTS[c].forEach((layout, v) => {
+      const m = skinMesh(c, v, cell, SKIN_COLOURS, p);
+      const pr = SKIN_PROFILES[p], plain = !!pr.plain;
+      let off = 0, q = 0;
+      for (const [u, w, k, sign] of layout) {
+        if (sign === "snag") { if (!plain) off += 8; continue; }
+        const shape = crownShape(plain, sign, c, v, q);
+        seen.add(shape);
+        const n = crownTriangles(shape), r = crownRadius(p, q, v), tall = k * (!plain && sign === "spruce" ? SPRUCE.taller : 1);
+        expect(n).toBe(shape ? CROWN_SHAPES[shape].tiers.length * 6 : 12);
+        for (let t = 0; t < n * 3; t++) {
+          const x = m.positions[off * 9 + t * 3], y = m.positions[off * 9 + t * 3 + 1], z = m.positions[off * 9 + t * 3 + 2];
+          expect(Math.hypot(x - u * cell, z - w * cell)).toBeLessThanOrEqual(r + 1e-4);
+          expect(y).toBeGreaterThanOrEqual(pr.foot * tall - 1e-6);
+          expect(y).toBeLessThanOrEqual(tall + 1e-6);
+        }
+        off += n;
+        q++;
+      }
+      expect(off * 9).toBe(m.positions.length);
+    });
+    // all three conifers and the plain bush are drawn somewhere
+    expect([...seen].sort()).toEqual(["cedar", "hemlock", "spruce", null].sort());
+  });
+  it("shades every crown darker at its foot than at its tip: the gaps between crowns read as shadow", () => {
+    const m = skinMesh(4, 0, cell, SKIN_COLOURS, "roof");
+    // the lowest vertex's green against the highest's, within the first crown
+    let lo = [Infinity, 0], hi = [-Infinity, 0];
+    const n = crownTriangles(crownShape(false, undefined, 4, 0, 0));
+    for (let t = 0; t < n * 3; t++) {
+      const y = m.positions[t * 3 + 1], g = m.colors[t * 3 + 1];
+      if (y < lo[0]) lo = [y, g];
+      if (y > hi[0]) hi = [y, g];
+    }
+    expect(lo[1]).toBeLessThan(hi[1] * 0.75);
   });
 });

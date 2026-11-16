@@ -1,7 +1,7 @@
 // The dense forest near where people look (a place's trees.skin.all, scrub and bands) and its tiles:
 // every claim checked at every node of a made-up place, and for every split into tiles.
 import { describe, it, expect } from "vitest";
-import { treesAt, skinAt, clumpOf, skinZone, beyondCircles, standHere, isForest, isRoof, skinInstances, skinMesh, tileInstances, treeMesh, standMesh, STAND_BASE, SKIN_LAYOUTS, SKIN_PROFILES, SNAG, SPRUCE, crownsOf, CLUMP_SINK, SPECIES_NAMES } from "./forest.js";
+import { treesAt, skinAt, clumpOf, skinZone, beyondCircles, standHere, isForest, isRoof, skinInstances, skinMesh, tileInstances, treeMesh, standMesh, STAND_BASE, SKIN_LAYOUTS, SKIN_PROFILES, SNAG, SPRUCE, crownsOf, CLUMP_SINK, SPECIES_NAMES, CROWN_SHAPES, crownShape, crownTriangles } from "./forest.js";
 import { encodeGLB, parseGLB } from "./glb.js";
 import { COVER } from "./cover.js";
 
@@ -143,16 +143,20 @@ describe("the bands: detail falling off beyond the circles", () => {
 });
 
 describe("the clumps' meshes and instances", () => {
-  it("draws every profile's crowns from just above its foot to its top, 12 triangles each (every profile and layout)", () => {
+  it("draws every profile's crowns from just above its foot to its top, each its shape's triangles (every profile and layout)", () => {
     for (const p of Object.keys(SKIN_PROFILES)) for (const c of [3, 4]) for (let v = 0; v < SKIN_LAYOUTS[c].length; v++) {
       const m = skinMesh(c, v, cell, undefined, p);
       const layout = SKIN_LAYOUTS[c][v], crowns = crownsOf(layout), plain = !!SKIN_PROFILES[p].plain;
       const snags = plain ? 0 : layout.length - crowns.length;
-      expect(m.positions.length / 9).toBe(12 * crowns.length + 8 * snags);
+      const shapes = crowns.map((x, q) => crownShape(plain, x[3], c, v, q));
+      expect(m.positions.length / 9).toBe(shapes.reduce((a, sh) => a + crownTriangles(sh), 0) + 8 * snags);
       let lo = Infinity, hi = -Infinity;
       for (let q = 1; q < m.positions.length; q += 3) (lo = Math.min(lo, m.positions[q])), (hi = Math.max(hi, m.positions[q]));
       expect(lo).toBeCloseTo(Math.min(SKIN_PROFILES[p].foot * Math.min(...crowns.map((x) => x[2])), snags ? SNAG.from : Infinity), 6);
-      expect(hi).toBeCloseTo(Math.max(...crowns.map((x) => x[2] * (!plain && x[3] === "spruce" ? SPRUCE.taller : 1)), snags ? SNAG.top : 0), 6);
+      // the tallest crown's tip (a hemlock's droops a little under it)
+      const tops = crowns.map((x, q) => x[2] * (!plain && x[3] === "spruce" ? SPRUCE.taller : 1));
+      expect(hi).toBeLessThanOrEqual(Math.max(...tops, snags ? SNAG.top : 0) + 1e-6);
+      expect(hi).toBeGreaterThanOrEqual(Math.max(...tops) * (1 - 0.05 * (1 - SKIN_PROFILES[p].foot)) - 1e-6);
     }
   });
   it("sinks a low or scrub clump's foot into the ground, keeping its top, and a roof clump's not (every clump)", () => {
@@ -168,10 +172,10 @@ describe("the clumps' meshes and instances", () => {
   it("keeps a stand's lowest crown within STAND_BASE of its foot (no bare trunks at the shore), every species", () => {
     for (const s of SPECIES_NAMES) {
       const one = treeMesh(s, -0.2, STAND_BASE), st = standMesh(s, 5);
-      // the crown's lowest vertices (the foliage's colour) start at STAND_BASE at most
-      const foliage = one.colors.slice(one.colors.length - 3);
+      // the crown's lowest vertices (anything not the trunk's colour, which is drawn first) start at STAND_BASE at most
+      const trunk = one.colors.slice(0, 3);
       let low = Infinity;
-      for (let v = 0; v < one.positions.length; v += 3) if (one.colors[v] === foliage[0] && one.colors[v + 1] === foliage[1] && one.colors[v + 2] === foliage[2]) low = Math.min(low, one.positions[v + 1]);
+      for (let v = 0; v < one.positions.length; v += 3) if (one.colors[v] !== trunk[0] || one.colors[v + 1] !== trunk[1] || one.colors[v + 2] !== trunk[2]) low = Math.min(low, one.positions[v + 1]);
       expect(low).toBeLessThanOrEqual(STAND_BASE + 1e-6);
       expect(st.positions.length).toBe(one.positions.length * 5);
     }
@@ -211,5 +215,53 @@ describe("tileInstances", () => {
     expect(json.accessors[b.attributes.COLOR_0].bufferView).toBe(json.accessors[a.attributes.COLOR_0].bufferView);
     expect(json.bufferViews.length).toBe(2);
     expect(() => encodeGLB({ meshes: [{ sameAs: 0 }] })).toThrow(/earlier mesh/);
+  });
+});
+
+import { leanYaw, TREE_LEAN, CLUMP_LEAN, CLUMP_STRETCH } from "./forest.js";
+describe("trees and clumps that lean", () => {
+  /** a quaternion turning a vector */
+  const turn = ([x, y, z, w], v) => {
+    const u = [x, y, z];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const t = cross(u, v).map((c) => 2 * c);
+    const c2 = cross(u, t);
+    return v.map((c, i) => c + w * t[i] + c2[i]);
+  };
+  it("leans a thing's top toward its direction by its angle, whatever its yaw, and is a unit quaternion (every quarter turn, 8 directions, 4 angles)", () => {
+    for (let q = 0; q < 4; q++) for (let d = 0; d < 8; d++) for (const deg of [0, 4, 8, 12]) {
+      const yaw = (q * Math.PI) / 2, a = (d * Math.PI) / 4, ang = (deg * Math.PI) / 180;
+      const dx = Math.cos(a), dz = Math.sin(a);
+      const r = leanYaw(yaw, ang, dx, dz);
+      expect(Math.hypot(...r)).toBeCloseTo(1, 3);
+      const up = turn(r, [0, 1, 0]);
+      expect(up[1]).toBeCloseTo(Math.cos(ang), 3);
+      if (deg) {
+        expect(up[0] / Math.sin(ang)).toBeCloseTo(dx, 2);
+        expect(up[2] / Math.sin(ang)).toBeCloseTo(dz, 2);
+      }
+      // the yaw is kept: the thing's own +x, leaned, still points along the yaw's
+      const fx = turn(r, [1, 0, 0]);
+      expect(fx[0] * Math.cos(yaw) - fx[2] * Math.sin(yaw)).toBeGreaterThan(0.95);
+    }
+  });
+  it("leans every tree no more than 6°, and every stand at the water 8 to 12° toward it (every tree of the dense layout)", () => {
+    for (const t of allTrees) {
+      const [ang, dx, dz] = t.lean;
+      expect(Math.hypot(dx, dz)).toBeCloseTo(1, 9);
+      if (t.crowns > 1) {
+        expect(ang).toBeGreaterThanOrEqual(TREE_LEAN.shore[0] - 1e-12);
+        expect(ang).toBeLessThanOrEqual(TREE_LEAN.shore[1] + 1e-12);
+      } else expect(ang).toBeLessThanOrEqual(Math.max(TREE_LEAN.any, TREE_LEAN.shore[1]) + 1e-12);
+    }
+  });
+  it("stretches every clump 1 to 1.15 on x and z independently, never shrinking it, and leans it at most 6° (every clump)", () => {
+    for (const c of allClumps) {
+      for (const w of [c.width, c.depth]) {
+        expect(w).toBeGreaterThanOrEqual(1);
+        expect(w).toBeLessThanOrEqual(1 + CLUMP_STRETCH);
+      }
+      expect(c.lean[0]).toBeLessThanOrEqual(CLUMP_LEAN);
+    }
   });
 });

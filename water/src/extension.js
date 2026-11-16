@@ -44,6 +44,9 @@ import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipTo
 import { boundedReader } from "./bounded.js";
 import { choose } from "./choose.js";
 
+/** The sky a surface reflects, from the world's atmosphere: its sky's colours and its cloud deck (scene STAGE.md, "Atmosphere"), or undefined (keep what was set). */
+const skyOf = (atm) => (atm?.sky ? { ...atm.sky, clouds: atm.clouds ?? null } : undefined);
+
 export { TRAIT, CURRENT };
 /** The convention a wave maker contributes in the water's stage: { bodies: { [objectId]: { components, look? } } }. */
 export const WAVES = "water.waves";
@@ -382,7 +385,7 @@ export default {
       const colour = colourOf(open ? scene.objects[open]?.traits?.[TRAIT] : null);
       surface.setColour(colour);
       const cam = api.camera.get()?.position;
-      if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, atm?.sky);
+      if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, skyOf(atm));
       surface.setShore(...shoreFor(cam, colour));
       // around the camera, at the world's level
       surface.object.position.y = world.level;
@@ -420,7 +423,7 @@ export default {
         p.surface.setPatch(w, l, yaw, floor);
         const colour = colourOf(scene?.objects?.[id]?.traits?.[TRAIT]);
         p.surface.setColour(colour);
-        p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, atm?.sky);
+        p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, skyOf(atm));
         p.surface.setShore(...shoreFor(api.camera.get()?.position, colour));
         out.push(patchExtent(box, b.A));
       }
