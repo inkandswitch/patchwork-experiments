@@ -22,7 +22,12 @@
 // it), its home worked out by publish-links --frame to hold the basin, her
 // block and both boats in Patchwork's narrow pane (WATER.md Decision 122).
 // A boat at anchor swings inside her block and one under way sails on in it
-// (WATER Costs 2), so the layout and the frame hold for either.
+// (WATER Costs 2), so the layout and the frame hold for either. The basin
+// stays where Decision 121 put it; the boat goes on the x axis, at the first
+// whole metre from x = 20 at which her block, in plan, is CLEAR metres or
+// more from the basin's (a block that covered the basin would draw two
+// water surfaces over each other: Costs 4). Ship at sea's block is 11.1 m
+// clear at 20; Ship at anchor's, smaller but nearer the boat, isn't.
 // The scene package can't see a body of water, so the basin's box and her
 // block go to publish-links as --box arguments; --mashup prints the whole
 // command with them, read from the two published docs (or from --offline
@@ -31,7 +36,7 @@
 //
 //   (in sailing/) node probes/publish-basin.mjs --mashup --basin <basin> --ship "Ship at anchor=<ship>"
 //   (in scene/)   node probes/publish-links.mjs --title "Model basin and Ship at anchor" \
-//     --link "Model basin=<basin>@-20,0,35@20" --link "Ship at anchor=<ship>@20,0,0" \
+//     --link "Model basin=<basin>@-20,0,35@20" --link "Ship at anchor=<ship>@<x>,0,0" \
 //     --frame --heading <her block's turn> --box "1:…" --box "2:…"
 //
 // No glass tank is drawn round the basin: no part makes one, and the box's
@@ -46,6 +51,7 @@ import { JIB, SAIL } from "../src/traits.js";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
 import { emptyScene } from "./empty-scene.js";
 import { waterBoxes } from "./water-boxes.mjs";
+import { matrixOf } from "./frame.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const args = Object.fromEntries(
@@ -54,8 +60,36 @@ const args = Object.fromEntries(
 const DRY = !!args["dry-run"];
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const J = JSON.stringify;
-/** Where the mashup places the basin and the boat (WATER.md Decision 121): its --link arguments' places. */
-const MASHUP = { basin: "-20,0,35@20", ship: "20,0,0" };
+/** Where the mashup places the basin (WATER.md Decision 121), and the nearest x it tries for the boat. */
+const MASHUP = { basin: { at: [-20, 0, 35], yaw: 20 }, shipFrom: 20 };
+/** How far, at least, her block lies from the basin's, in plan (m): Decision 121's 11.1, rounded down. */
+const CLEAR = 10;
+
+/** The plan (x, z) of a box's corners, as convex polygon's vertices in order round it. */
+function footprint(points) {
+  const seen = new Map();
+  for (const p of points) seen.set(`${p[0].toFixed(9)},${p[2].toFixed(9)}`, [p[0], p[2]]);
+  const v = [...seen.values()];
+  const c = [v.reduce((s, p) => s + p[0], 0) / v.length, v.reduce((s, p) => s + p[1], 0) / v.length];
+  return v.sort((a, b) => Math.atan2(a[1] - c[1], a[0] - c[0]) - Math.atan2(b[1] - c[1], b[0] - c[0]));
+}
+/** The distance between two convex polygons in plan: 0 when they touch or overlap (no axis parts them). */
+function gap(A, B) {
+  const edges = (P) => P.map((p, i) => [p, P[(i + 1) % P.length]]);
+  const parted = [...edges(A), ...edges(B)].some(([p, q]) => {
+    const n = [q[1] - p[1], p[0] - q[0]];
+    const span = (P) => P.map((r) => r[0] * n[0] + r[1] * n[1]);
+    const a = span(A), b = span(B);
+    return Math.max(...a) < Math.min(...b) || Math.max(...b) < Math.min(...a);
+  });
+  if (!parted) return 0;
+  const toSeg = (r, [p, q]) => {
+    const d = [q[0] - p[0], q[1] - p[1]];
+    const t = Math.max(0, Math.min(1, ((r[0] - p[0]) * d[0] + (r[1] - p[1]) * d[1]) / (d[0] * d[0] + d[1] * d[1])));
+    return Math.hypot(r[0] - p[0] - t * d[0], r[1] - p[1] - t * d[1]);
+  };
+  return Math.min(...A.flatMap((r) => edges(B).map((e) => toSeg(r, e))), ...B.flatMap((r) => edges(A).map((e) => toSeg(r, e))));
+}
 
 const { Repo, initSubduction } = await import("@automerge/automerge-repo");
 await initSubduction();
@@ -73,6 +107,7 @@ if (args.mashup) {
   const net = offline ? null : new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
   const within = (ms, p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timed out after ${ms} ms`)), ms))]);
   const specs = [];
+  const plan = {};
   for (const [n, name, url, kind] of [[1, "Model basin", args.basin, "size"], [2, shipName, shipUrl, "clip"]]) {
     const d = offline ? offline[url] : (await within(60000, net.find(url))).doc();
     const w = waterBoxes(d);
@@ -82,11 +117,25 @@ if (args.mashup) {
       process.exit(1);
     }
     specs.push(`--box "${n}:${w[0].spec}"`);
+    // in plan, placed as its link places it (the boat at the origin, slid along x below)
+    const m = kind === "size" ? matrixOf({ position: MASHUP.basin.at, rotation: [0, (MASHUP.basin.yaw * Math.PI) / 180, 0] }) : undefined;
+    plan[kind] = footprint(waterBoxes(d, m)[0].points);
     // looked at along her block's length: her block is the most there is to frame (her Sea's turn, as her link
     // doesn't turn her), with the basin in front of it
     if (kind === "clip") specs.unshift(`--heading ${w[0].yaw}`);
   }
-  console.log(`(in scene/) node probes/publish-links.mjs --title "Model basin and ${shipName}" \\\n  --link "Model basin=${args.basin}@${MASHUP.basin}" --link "${shipName}=${shipUrl}@${MASHUP.ship}" \\\n  --frame ${specs.join(" ")}`);
+  // the first whole metre along x from shipFrom at which her block is CLEAR from the basin's
+  const at = (x) => plan.clip.map(([px, pz]) => [px + x, pz]);
+  let x = MASHUP.shipFrom;
+  while (gap(plan.size, at(x)) < CLEAR && x < MASHUP.shipFrom + 1000) x++;
+  const clear = gap(plan.size, at(x));
+  if (clear < CLEAR) {
+    console.error(`${shipName}'s block never clears the basin by ${CLEAR} m along x`);
+    process.exit(1);
+  }
+  console.error(`${shipName} at x = ${x}: her block ${clear.toFixed(2)} m clear of the basin in plan (at least ${CLEAR})`);
+  const basinAt = `${MASHUP.basin.at.join(",")}@${MASHUP.basin.yaw}`;
+  console.log(`(in scene/) node probes/publish-links.mjs --title "Model basin and ${shipName}" \\\n  --link "Model basin=${args.basin}@${basinAt}" --link "${shipName}=${shipUrl}@${x},0,0" \\\n  --frame ${specs.join(" ")}`);
   process.exit(0);
 }
 const repo = DRY ? new Repo({ network: [] }) : new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
