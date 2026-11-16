@@ -40,6 +40,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs";
+import { clipProblems } from "./clip-check.mjs";
 
 // What each doc's contents come from (scene/STAGE.md, "Packages"): each
 // lists its own only (the view's one prompt covers every open doc's:
@@ -133,6 +134,9 @@ try {
   await P("resume()");
   const snap = await P("snapshot()");
   check("her world is published running", snap.docs[snap.scene]?.clock?.running !== false, snap.docs[snap.scene]?.clock);
+  // S is Ship at anchor's shape: her Sea keeps the box her layout covers where her world offers no open water (water/WATER.md, "Clipped open water")
+  const clipped = clipProblems(snap.docs[snap.scene], { anchored: true });
+  check("S's Sea clip covers her swing circle and the landmarks, with the margin (clip-check.mjs)", clipped.length === 0, clipped);
   check("the snapshot has F as fixed (its hatch shut) and F now (open)", snap.fThen?.objects?.[ids.fHatch]?.traits?.[SLIDE]?.at === "closed" && snap.docs[snap.f].objects[ids.fHatch].traits[SLIDE].at === "open", { then: snap.fThen?.objects?.[ids.fHatch]?.traits?.[SLIDE], now: snap.docs[snap.f]?.objects?.[ids.fHatch]?.traits?.[SLIDE] });
   snapshot = { ...snap, fHatch: ids.fHatch, wHatch: ids.wHatch };
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

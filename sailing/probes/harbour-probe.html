@@ -175,6 +175,9 @@ try {
     oceans,
     /** which stages of view w draw a surface (the water extension's debug) */
     drawers: (w) => dbg[w].view.stages().filter((s) => inst(s, "water")?.debug.surface).map((s) => [...s.path]),
+    /** the blocks drawn in view w (a bounded body's or a live clip's), and each stage's live clip */
+    blocks: (w) => { let n = 0; dbg[w].viewport.scene.traverse((o) => { if (o.name === "water-patch") n++; }); return n; },
+    clips: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], clip: inst(s, "water")?.debug.clip?.() ?? null, sea: Object.entries(s.doc().objects ?? {}).find(([, o]) => o.traits?.water && o.traits["sailing.sea"])?.[1]?.traits.water.clip ?? null })),
     /** the outermost's ambient water (its components' count and level), and what each stage's reader is made of */
     readers: (w) => dbg[w].view.stages().map((s) => {
       // what each stage reads at its own origin

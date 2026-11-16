@@ -93,6 +93,9 @@ try {
   const oceans = await P("oceans('h')");
   const drawers = await P("drawers('h')");
   check("one surface in the harbour, the harbour's: neither boat draws her own sea", oceans === 1 && J(drawers) === "[[]]", { oceans, drawers });
+  // W29: each boat's Sea carries her template's clip, silent here, where the harbour offers water; the harbour's own Sea has none
+  const clips = await P("clips('h')");
+  check("no blocks in the harbour: each boat's clip is silent where the world offers water, and the harbour's Sea has none (W29)", (await P("blocks('h')")) === 0 && clips.every((c) => c.clip === null) && clips.filter((c) => c.path.length).every((c) => Array.isArray(c.sea)) && clips.find((c) => !c.path.length).sea === null, { blocks: await P("blocks('h')"), clips });
   const readers = await P("readers('h')");
   check("every stage's reader is the harbour's water (its components), and both boats sail on it", readers.length === 3 && readers.every((r) => r.reader && r.same) && readers.filter((r) => !r.mine).every((r) => r.sails), readers);
   check("the sky is the harbour's (its sea's maritime day)", (await P("sky('h')")) === "#2f6db5", await P("sky('h')"));

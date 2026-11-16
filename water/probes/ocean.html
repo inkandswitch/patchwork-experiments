@@ -5,7 +5,9 @@
      with sRGB output and no tone mapping, the stage's sky gradient (copied
      from scene/src/stage/viewport.js), linear fog in the horizon's colour
      and a sun. Driven by probes/ocean-run.mjs, which serves three.js at
-     /three/ and calls window.__render(view) for each screenshot. -->
+     /three/ and calls window.__render(view) for each screenshot. A view
+     with `block` draws a bounded body's block (its top, skirt and floor)
+     in place of the open surface. -->
 <script type="importmap">
 { "imports": { "three": "/three/three.module.js" } }
 </script>
@@ -81,6 +83,8 @@ scene.add(sky);
 let sea = null;
 let surface = null;
 let key = null;
+let block = null; // a bounded body's block (WATER.md, "Clipped open water"): its top, skirt and floor
+let blockKey = null;
 
 /**
  * Draw one view. view: { wind: { speed, from }, seed, scale, eye: [x, y, z],
@@ -98,6 +102,24 @@ window.__render = (view) => {
       scene.add(surface.object);
     }
   }
+  // a block in place of the open surface: the sea's waves that fit its span, its top, skirt and floor at `at`
+  if (view.block) {
+    const { w, l, depth, yaw = 0 } = view.block;
+    const bk = JSON.stringify([k, view.block]);
+    const span = Math.min(w, l);
+    const clipped = { ...sea, components: sea.components.filter((c) => (2 * Math.PI) / c.k <= span) };
+    if (bk !== blockKey) {
+      blockKey = bk;
+      block?.dispose();
+      block = createOceanSurface(THREE, clipped, { patch: { w, l, yaw: (yaw * Math.PI) / 180, floor: depth } });
+      scene.add(block.object);
+    }
+    surface.object.visible = false;
+    block.object.visible = true;
+  } else {
+    surface.object.visible = true;
+    if (block) block.object.visible = false;
+  }
   const atm = view;
   skyMat.uniforms.top.value.set(atm.sky.top);
   skyMat.uniforms.horizon.value.set(atm.sky.horizon);
@@ -114,11 +136,12 @@ window.__render = (view) => {
   camera.rotation.set(THREE.MathUtils.degToRad(view.pitch ?? 0), THREE.MathUtils.degToRad(-(view.yaw ?? 0)), 0);
   camera.updateMatrixWorld();
   surface.update(view.t, camera.position, atm.sun, atm.sky);
+  if (view.block) block.update(view.t, view.block.at ?? [0, 0, 0], atm.sun, atm.sky);
   const t0 = performance.now();
   renderer.render(scene, camera);
   const gl = renderer.getContext();
   gl.finish();
-  return { ms: +(performance.now() - t0).toFixed(1), hs: sea.stats.hs, whitecaps: sea.stats.whitecaps, foamAt: surface.object.material.uniforms.uFoamAt.value, triangles: renderer.info.render.triangles, errors };
+  return { block: view.block ? { vertices: block.object.geometry.attributes.position.count, sides: Array.from(block.object.geometry.attributes.aFace.array).filter((v) => v > 0.5).length, doubleSided: block.object.material.side === THREE.DoubleSide } : null, ms: +(performance.now() - t0).toFixed(1), hs: sea.stats.hs, whitecaps: sea.stats.whitecaps, foamAt: surface.object.material.uniforms.uFoamAt.value, triangles: renderer.info.render.triangles, errors };
 };
 window.__ready = true;
 </script>

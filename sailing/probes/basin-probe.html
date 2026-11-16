@@ -8,8 +8,9 @@
      sloop in it, and no open water and no weather). Each is opened ALONE,
      then both are linked live into a dry room R (no water, no weather): the
      basin's sloop still floats, flat and still, on the water M keeps; Ship
-     at sea rests at her saved pose; no open surface is drawn anywhere, and
-     the basin's patch is drawn once. On the BUILT scene, sailing, water,
+     at sea floats too, on a calm block of her own sea (her Sea's clip:
+     water/WATER.md, "Clipped open water"); no open surface is drawn
+     anywhere, and each block is drawn once, by its own doc's stage. On the BUILT scene, sailing, water,
      joints and traversal plugins in a stub registry, on ONE in-memory repo,
      and one manual clock (window.__time). -->
 <script type="importmap">
@@ -174,7 +175,20 @@ try {
     oceans: (w) => meshes(w, "ocean"),
     patches: (w) => meshes(w, "water-patch"),
     /** which stages of view w draw the open surface, and which draw patches (and of which bodies) */
-    drawers: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], open: !!inst(s, "water")?.debug.surface, patches: inst(s, "water")?.debug.patches ?? [] })),
+    drawers: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], open: !!inst(s, "water")?.debug.surface, patches: inst(s, "water")?.debug.patches ?? [], clip: inst(s, "water")?.debug.clip?.() ?? null })),
+    /** each drawn block: its vertices, how many are its skirt and floor, whether it is seen from both sides */
+    faces: (w) => {
+      const out = [];
+      dbg[w].viewport.scene.traverse((m) => {
+        if (m.name !== "water-patch") return;
+        const f = m.geometry.attributes.aFace?.array ?? [];
+        let side = 0;
+        for (const v of f) side += v > 0.5 ? 1 : 0;
+        out.push({ vertices: f.length, sides: side, doubleSided: m.material.side === 2 });
+      });
+      return out;
+    },
+    seaOf: (k) => Object.entries(docs[k].doc().objects ?? {}).find(([, o]) => o.traits?.water && o.traits["sailing.sea"])?.[0] ?? null,
     /**
      * A hull and the water under her, in her own stage's frame, now: her drawn height, the height of the water
      * her own stage gives her there (the water package's at, through sailing's oceanAt, herself left out), which

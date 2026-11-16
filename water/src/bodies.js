@@ -1,11 +1,14 @@
 // Water bodies (WATER.md, "Water bodies"): water is a shape, an object with
-// the `water` trait, `{ size?: [w, depth, l] }`. Its origin is the surface at
-// rest; with `size` it is a box in the object's own frame (w across x, l
-// along z, centred on the origin, hanging down to its floor at y = -depth,
-// its uniform scale multiplying size), without one it is everything below
-// the origin's height. Its extent is data in the trait, never read from
-// loaded geometry. Everything here is pure: the matrices are the stage's
-// (column-major 4×4, in its doc's root frame), handed in.
+// the `water` trait, `{ size?: [w, depth, l], clip?: [w, depth, l] }`. Its
+// origin is the surface at rest; with `size` it is a box in the object's own
+// frame (w across x, l along z, centred on the origin, hanging down to its
+// floor at y = -depth, its uniform scale multiplying size), without one it is
+// everything below the origin's height: open water. Open water may carry a
+// `clip`, a box with size's grammar at the same pose: where the world it is
+// placed in offers no open water, that box is a bounded body of its doc
+// (WATER.md, "Clipped open water"). Its extent is data in the trait, never
+// read from loaded geometry. Everything here is pure: the matrices are the
+// stage's (column-major 4×4, in its doc's root frame), handed in.
 
 /** The water package's object trait: this object is water. */
 export const TRAIT = "water";
@@ -17,18 +20,29 @@ export const TILT_EPS = 1e-9;
 export const BAND = 0.5;
 
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
+/** Is this three positive numbers (a box's width, depth, length)? */
+const isBox = (s) => Array.isArray(s) && s.length === 3 && s.every((v) => finite(v) && v > 0);
+const given = (v) => v !== undefined && v !== null;
 
 /**
- * What a `water` trait says the body is: "open" (no size), "bounded" with
- * its size, or "invalid" (a size that isn't three positive numbers: it
- * neither floods nor stays a box, so it is no water).
- * @returns {{ kind: "open" } | { kind: "bounded", size: number[] } | { kind: "invalid" }}
+ * What a `water` trait says the body is: "open" (no size) with its clip or
+ * null, "bounded" with its size, or "invalid" (a size that isn't three
+ * positive numbers: it neither floods nor stays a box, so it is no water).
+ * A clip that isn't three positive numbers is lost and flagged (`badClip`),
+ * and the body stays open: a typo never takes a harbour's sea away. A clip
+ * beside a size does nothing (a box of water is always its doc's) and is
+ * flagged (`clipIgnored`).
+ * @returns {{ kind: "open", clip: number[] | null, badClip?: true } | { kind: "bounded", size: number[], clipIgnored?: true } | { kind: "invalid" }}
  */
 export function shapeOf(trait) {
   if (!trait || typeof trait !== "object") return { kind: "invalid" };
-  if (trait.size === undefined || trait.size === null) return { kind: "open" };
+  if (!given(trait.size)) {
+    if (!given(trait.clip)) return { kind: "open", clip: null };
+    const c = trait.clip;
+    return isBox(c) ? { kind: "open", clip: [c[0], c[1], c[2]] } : { kind: "open", clip: null, badClip: true };
+  }
   const s = trait.size;
-  if (Array.isArray(s) && s.length === 3 && s.every((v) => finite(v) && v > 0)) return { kind: "bounded", size: [s[0], s[1], s[2]] };
+  if (isBox(s)) return { kind: "bounded", size: [s[0], s[1], s[2]], ...(given(trait.clip) ? { clipIgnored: true } : {}) };
   return { kind: "invalid" };
 }
 
@@ -38,23 +52,43 @@ const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 /**
  * A doc's water bodies, from its objects: the open body (the lowest id of
  * those without a size: one open body per doc, the keepers' rule for two
- * objects naming one slot), the other open ones (flagged: they draw and
- * offer nothing), the bounded ones (each with its size), and the invalid.
+ * objects naming one slot) and its clip (`openClip`, the keeper's only), the
+ * other open ones (flagged: they draw and offer nothing, clip or none), the
+ * bounded ones (each with its size), the invalid, and the flags for clips:
+ * `badClip` (lost, the body stays open) and `clipIgnored` (beside a size).
  * @param {{ [id: string]: { traits?: object } } | null | undefined} objects
  */
 export function bodiesOf(objects) {
   const open = [];
+  const clips = new Map();
   const bounded = [];
   const invalid = [];
+  const badClip = [];
+  const clipIgnored = [];
   for (const id of Object.keys(objects ?? {}).sort(byId)) {
     const t = objects[id]?.traits?.[TRAIT];
     if (t === undefined) continue;
     const s = shapeOf(t);
-    if (s.kind === "open") open.push(id);
-    else if (s.kind === "bounded") bounded.push({ id, size: s.size });
-    else invalid.push(id);
+    if (s.kind === "open") {
+      open.push(id);
+      clips.set(id, s.clip);
+      if (s.badClip) badClip.push(id);
+    } else if (s.kind === "bounded") {
+      bounded.push({ id, size: s.size });
+      if (s.clipIgnored) clipIgnored.push(id);
+    } else invalid.push(id);
   }
-  return { open: open[0] ?? null, extra: open.slice(1), bounded, invalid };
+  const keeper = open[0] ?? null;
+  return { open: keeper, openClip: keeper ? clips.get(keeper) : null, extra: open.slice(1), bounded, invalid, badClip, clipIgnored };
+}
+
+/**
+ * A live clip as what it then is: the bounded body of its doc with the open
+ * body's own id and the clip as its size (WATER.md, "Clipped open water").
+ * One path, not a copy: from here on it is any bounded body. Pure.
+ */
+export function clipBody(openId, clip) {
+  return { id: openId, size: [clip[0], clip[1], clip[2]] };
 }
 
 // ─── matrices ───────────────────────────────────────────────────────────────

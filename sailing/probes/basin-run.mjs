@@ -4,13 +4,12 @@
 // with a sloop in it: a thing; no open water, no weather). Alone, the basin
 // draws its patch and no open surface, and its sloop floats on it at the
 // draft Ship at sea has on hers. Linked side by side into a dry room (no
-// water, no weather), each keeps her own water (the path rule: each ambient
-// the outermost offer on a stage's own path, WATER.md Decisions 90 to 96):
-// one open surface, Ship at sea's own, drawn by her stage; the basin's patch
-// drawn once, by the basin's stage; the basin's sloop still floats on the
-// basin, flat and still (nothing on her path offers wind); Ship at sea floats
-// on her own sea at the draft she has alone, stepped, in her own weather, so
-// her HUD shows as it does alone.
+// water, no weather): no open surface anywhere; two blocks, each drawn once
+// by its own doc's stage, with its skirt and floor: the basin's, and Ship at
+// sea's clip (water/WATER.md, "Clipped open water"); the basin's sloop still
+// floats on the basin, flat and still (the room has no wind); Ship at sea
+// floats on her own block, calm, at her open-water draft, and coasts on her
+// saved way without leaving it; no HUD.
 //
 //   node probes/basin-run.mjs [--shots <dir>] [--show] [--port 4796]
 //
@@ -81,20 +80,22 @@ try {
   const oceans = await P("oceans('h')");
   const patches = await P("patches('h')");
   const drawers = await P("drawers('h')");
-  check("one open surface in the room, Ship at sea's own, drawn by her stage; the basin's patch is drawn once, by the basin's stage", oceans === 1 && patches === 1 && J(drawers.filter((d) => d.patches.length).map((d) => [d.path, d.patches])) === J([[["LM"], ["basin"]]]) && J(drawers.filter((d) => d.open).map((d) => d.path)) === J([["LA"]]), { oceans, patches, drawers });
+  const seaA = await P("seaOf('A')");
+  check("no open surface in the room; two blocks, each drawn once by its own doc's stage: the basin's, and Ship at sea's live clip", oceans === 0 && patches === 2 && J(drawers.filter((d) => d.patches.length).map((d) => [d.path, d.patches]).sort((a, b) => (a[0][0] < b[0][0] ? -1 : 1))) === J([[["LA"], [seaA]], [["LM"], ["basin"]]]) && drawers.find((d) => d.path[0] === "LA")?.clip === seaA && drawers.every((d) => !d.open), { oceans, patches, drawers, seaA });
+  const faces = await P("faces('h')");
+  check("each block is drawn as a volume: its skirt and floor, seen from either side", faces.length === 2 && faces.every((f) => f.sides > 4 && f.sides < f.vertices && f.doubleSided), faces);
   const rM = await sample("h", "LM", built.hullM, 8);
   const offR = rM.map((u) => u.y - u.h);
   report.numbers.roomM = { draft: mean(offR), sd: sd(offR), body: rM.at(-1).body };
   check("in the room the basin's sloop still floats on her own basin, flat, at the draft she had alone (within 0.05 m)", rM.every((u) => u.body === "basin" && u.h === 0) && Math.abs(mean(offR) - report.numbers.aloneM.draft) < 0.05 && sd(offR) < 0.05, report.numbers.roomM);
   const still = rM.map((u) => Math.hypot(u.x - rM[0].x, u.z - rM[0].z));
-  check("and still: nothing on her path offers wind (she drifts under 0.5 m in 8 s)", Math.max(...still) < 0.5, { drift: Math.max(...still) });
-  const rA = await sample("h", "LA", built.hullA, 4);
+  check("and still: the room has no wind (she drifts under 0.5 m in 8 s)", Math.max(...still) < 0.5, { drift: Math.max(...still) });
+  const rA = await sample("h", "LA", built.hullA, 6);
   const offA = rA.map((u) => u.y - u.h);
-  report.numbers.roomA = { draft: mean(offA), sd: sd(offA), last: rA.at(-1) };
-  check("Ship at sea floats on her own sea in the room (her open water, body null), at the draft she has alone (within 0.2 m)", rA.every((u) => u.body === null && Number.isFinite(u.h)) && Math.abs(mean(offA) - draftA) < 0.2, report.numbers.roomA);
-  check("she is stepped (her own clock runs her sea)", rA.at(-1).simulating === true, rA.at(-1));
-  const huds = await P("huds('h')");
-  check("nobody aboard: only Ship at sea's HUD shows, as alone (she sails in her own weather); the basin's sloop's doesn't", huds.filter(Boolean).length === 1, huds);
+  report.numbers.roomA = { draft: mean(offA), sd: sd(offA), body: rA.at(-1).body, h: rA.at(-1).h, moved: Math.hypot(rA.at(-1).x - rA[0].x, rA.at(-1).z - rA[0].z) };
+  check("Ship at sea floats on her own block in the room (its body her Sea), calm: the water under her at its level", rA.every((u) => u.body === seaA && Math.abs(u.h) < 1e-6), report.numbers.roomA);
+  check("at her open-water draft (within 0.2 m), steadily, stepped", Math.abs(mean(offA) - draftA) < 0.2 && sd(offA) < 0.05 && rA.at(-1).simulating, report.numbers.roomA);
+  check("nobody aboard and no world of their own: no HUD shows in the room", (await P("huds('h')")).every((v) => !v), await P("huds('h')"));
   await shot("room");
   const errs = (await P("errors")).filter((e) => !EXPECTED.test(e));
   check("no errors or warnings", errs.length === 0, errs.slice(0, 10));

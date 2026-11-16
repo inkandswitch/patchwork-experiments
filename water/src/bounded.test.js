@@ -1,5 +1,6 @@
 // A bounded body's reader (bounded.js) and its waves: W19 (frames, tilt and
-// carrier velocity, against transforms composed the long way), W22 (the
+// carrier velocity, against transforms composed the long way; the reader
+// total, its floor-outside cases moved to W32 and membership to W15), W22 (the
 // spectrum's clip) and W23 (the current, in the reader and in the value the
 // shader draws, for open and bounded water). Every space enumerated.
 import { describe, expect, it } from "vitest";
@@ -56,7 +57,7 @@ describe("bounded frames and tilt (W19)", () => {
   for (const yawD of [0, 30, 137])
     for (const heelD of [0, 10, 30])
       for (const attach of ["root", "hull", "fitting"])
-        it(`yaw ${yawD}°, heel ${heelD}°, attached at ${attach}: inside, height (clipped; the floor outside), normal`, () => {
+        it(`yaw ${yawD}°, heel ${heelD}°, attached at ${attach}: the reader is total (Decision 98): height and normal are the surface's in every column, inside the footprint or past it; which body holds a point is choose's (W15)`, () => {
           const M = bodyMatrix(deg(yawD), deg(heelD), attach);
           const Mi = inverse4(M);
           const cell = { box: boxOf(SIZE, M), rv: rigidVelocity(null, M, 0) };
@@ -64,32 +65,28 @@ describe("bounded frames and tilt (W19)", () => {
           const raw = createSurface(WAVES);
           const level = M[13];
           const o = pt(M, [0, 0, 0]);
+          let inside = 0, outside = 0;
           for (let i = 0; i < 7; i++)
             for (let j = 0; j < 7; j++) {
               const x = o[0] - 2.5 + (5 * i) / 6;
               const z = o[2] - 2.5 + (5 * j) / 6;
               const q = pt(Mi, [x, level, z]);
-              const inside = Math.abs(q[0]) <= SIZE[0] / 2 && Math.abs(q[2]) <= SIZE[2] / 2;
+              if (Math.abs(q[0]) <= SIZE[0] / 2 && Math.abs(q[2]) <= SIZE[2] / 2) inside++;
+              else outside++;
               for (const t of [0, 3.7, 1000]) {
-                const h = R.heightAt(x, z, t);
-                if (inside) {
-                  expect(h).toBeCloseTo(level + raw.heightAt(x, z, t), 12);
-                  const n = R.normalAt(x, z, t);
-                  const m = raw.normalAt(x, z, t);
-                  for (let k = 0; k < 3; k++) expect(n[k]).toBeCloseTo(m[k], 12);
-                } else {
-                  // the floor: where the vertical through (x, z) crosses the body's y = -depth, solved the long way
-                  const q0 = pt(Mi, [x, 0, z]), q1 = pt(Mi, [x, 1, z]);
-                  const y = (-SIZE[1] - q0[1]) / (q1[1] - q0[1]);
-                  expect(h).toBeCloseTo(y, 9);
-                  // the floor's normal is the body's +Y
-                  const up = [M[4], M[5], M[6]];
-                  const l = Math.hypot(...up);
-                  const n = R.normalAt(x, z, t);
-                  for (let k = 0; k < 3; k++) expect(n[k]).toBeCloseTo(up[k] / l, 9);
-                }
+                // the same field on both sides of the footprint's edge (the mutation: Decision 63's floor outside)
+                expect(R.heightAt(x, z, t)).toBeCloseTo(level + raw.heightAt(x, z, t), 12);
+                const n = R.normalAt(x, z, t);
+                const m = raw.normalAt(x, z, t);
+                for (let k = 0; k < 3; k++) expect(n[k]).toBeCloseTo(m[k], 12);
+                const v = R.velocityAt(x, level - 0.2, z, t);
+                const w = raw.velocityAt(x, -0.2, z, t);
+                for (let k = 0; k < 3; k++) expect(v[k]).toBeCloseTo(w[k], 12);
               }
             }
+          // the grid reaches past the footprint on every side, so both kinds of column were read
+          expect(inside).toBeGreaterThan(0);
+          expect(outside).toBeGreaterThan(0);
         });
 
   it("the free surface stays level in the doc through the origin, whatever the heel (the mutation: tilt it with the frame)", () => {
