@@ -35,6 +35,8 @@ export const inputs = (doc) => ({
   ...(doc?.look ? { look: doc.look } : {}),
   ...(doc?.site ? { site: doc.site } : {}),
   ...(doc?.landmarks ? { landmarks: doc.landmarks } : {}),
+  // the swell's direction, for the surf (surf.js): only the direction, only when the place has one
+  ...(Number.isFinite(doc?.swell?.from) ? { swell: { from: doc.swell.from } } : {}),
 });
 
 /** JSON with every object's keys sorted: automerge hands a map's keys back sorted, a plain object in the order they were set. */

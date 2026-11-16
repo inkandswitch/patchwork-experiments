@@ -19,6 +19,9 @@ export const BOATS = Object.freeze({
   troller: { length: [10, 13], beam: 0.32, hull: "#f0f0ec", trim: ["#3f5b45", "#8e2f27", "#2f3e55"], house: { at: 0.42, length: 0.25, height: 2.2 }, poles: true },
   seiner: { length: [12, 16], beam: 0.33, hull: "#f0f0ec", trim: ["#8e2f27", "#2f3e55", "#3e7a78", "#c49a3a"], house: { at: 0.68, length: 0.28, height: 2.6 } },
   sportfisher: { length: [6, 8.5], beam: 0.36, hull: "#c9ccce", trim: ["#2b2c2e"], house: { at: 0.55, length: 0.35, height: 1.6 } },
+  // not moored by hash (MIX): placed about a harbour by a place's look
+  whalewatch: { length: [10, 13], beam: 0.33, hull: "#eceeed", trim: ["#1f4e79", "#c8372d"], house: { at: 0.5, length: 0.5, height: 2.3 } },
+  watertaxi: { length: [8, 10], beam: 0.35, hull: "#f2f2ef", trim: ["#c8372d", "#1f4e79"], house: { at: 0.58, length: 0.4, height: 1.9 } },
 });
 const MIX = [["troller", 35], ["seiner", 25], ["sportfisher", 40]];
 

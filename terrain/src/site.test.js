@@ -239,3 +239,28 @@ describe("buildings", () => {
     void house;
   });
 });
+
+import { cladding } from "./site.js";
+import { soup } from "./shapes.js";
+describe("corrugated cladding", () => {
+  it("ribs every wall every 0.9 m (none at the corners) and bands it under the eave, all just outside the walls", () => {
+    for (const ring of [[[0, 0], [10, 0], [10, 6], [0, 6]], [[0, 0], [0, 6], [10, 6], [10, 0]]]) {
+      const s = soup();
+      const ribs = cladding(s, ring, 2, 8, { walls: "#cccccc", trim: "#555555" });
+      // 10 m walls: 10 ribs each; 6 m walls: 5 each
+      expect(ribs).toBe(30);
+      const { positions } = s.done();
+      // two triangles a rib and a band a wall
+      expect(positions.length / 18).toBe(30 + 4);
+      for (let v = 0; v < positions.length; v += 3) {
+        const [x, y, z] = [positions[v], positions[v + 1], positions[v + 2]];
+        expect(y).toBeGreaterThanOrEqual(2);
+        expect(y).toBeLessThanOrEqual(8);
+        // off the wall, outside the footprint: 4 or 6 cm
+        const out = Math.max(-x, x - 10, -z, z - 6);
+        expect(out).toBeGreaterThan(0.03);
+        expect(out).toBeLessThan(0.07);
+      }
+    }
+  });
+});

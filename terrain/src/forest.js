@@ -52,11 +52,11 @@ export const SPECIES = Object.freeze({
 export const SPECIES_NAMES = Object.freeze(Object.keys(SPECIES));
 
 /** One tree of a species, 1 m tall, its foot at the origin, as a triangle soup (positions, colours, linear RGB). */
-export function treeMesh(name) {
+export function treeMesh(name, foot = -0.05) {
   const sp = SPECIES[name];
   const s = soup();
   const r = sp.width / 2;
-  cylinder(s, 0, 0, -0.05, sp.base + 0.08, 0.022, 0.018, sp.trunk, 6);
+  cylinder(s, 0, 0, foot, sp.base + 0.08, 0.022, 0.018, sp.trunk, 6);
   if (sp.crown === "cones") {
     const tiers = sp.tiers;
     const span = 1 - sp.base;
@@ -72,6 +72,33 @@ export function treeMesh(name) {
     cylinder(s, 0, 0, y0, ym, r * 0.55, r, sp.foliage, 7);
     cylinder(s, 0, 0, ym, 0.88, r, r * 0.55, sp.foliage, 7);
     cylinder(s, 0, 0, 0.88, 1, r * 0.55, 0, sp.foliage, 7);
+  }
+  return s.done();
+}
+
+/**
+ * A stand: `crowns` trees of a species close together, the tallest 1 m in
+ * the middle and the rest round it, each a little shorter, their crowns
+ * overlapping (a ring 0.16 of the height out, as wide as a crown is), their
+ * trunks reaching 0.2 below the foot so a stand on a slope doesn't float.
+ * What a node at the water's edge gets: a tight clump, as conifers stand
+ * at the top of the rock on this coast. The same mesh for every stand of a
+ * species and size (instanced).
+ */
+export const STAND_HEIGHTS = Object.freeze([0.82, 0.9, 0.74, 0.86, 0.78]);
+export function standMesh(name, crowns) {
+  const s = soup();
+  const one = treeMesh(name, -0.2);
+  const P = one.positions, C = one.colors;
+  const place = (dx, dz, k, turn) => {
+    const c = dcos(turn), sn = dsin(turn);
+    const at = (v) => [dx + (P[v] * c - P[v + 2] * sn) * k, P[v + 1] * k, dz + (P[v] * sn + P[v + 2] * c) * k];
+    for (let v = 0; v < P.length; v += 9) s.tri(at(v), at(v + 3), at(v + 6), [C[v], C[v + 1], C[v + 2]]);
+  };
+  place(0, 0, 1, 0);
+  for (let q = 0; q < crowns - 1; q++) {
+    const a = (q * 2 * Math.PI) / (crowns - 1) + 0.4;
+    place(0.16 * dcos(a), 0.16 * dsin(a), STAND_HEIGHTS[q % STAND_HEIGHTS.length], a * 3);
   }
   return s.done();
 }
@@ -190,7 +217,7 @@ export function treesAt({ grid, label, cover, canopy, dist, trees, built = null 
     if (label[k] <= 0 || NO_TREES.has(cover[k]) || built?.[k]) continue;
     const i = k % n, j = (k - i) / n;
     const forest = isForest(k, label, cover, canopy);
-    let mix = null, count = 0, h = 0;
+    let mix = null, count = 0, h = 0, crowns = 1;
     if (forest) {
       // at the roof's edge: not under it, or next to a node that isn't
       const edge = !roof(k) || around(n, k).some((m) => !roof(m));
@@ -198,9 +225,16 @@ export function treesAt({ grid, label, cover, canopy, dist, trees, built = null 
       mix = cover[k] === COVER.wetland ? trees.wetland : dist[k] <= fringe ? trees.fringe : trees.inland;
       count = 1 + (hash01(k, 1) < (trees.second ?? 0.5) ? 1 : 0);
       h = canopy[k];
+      // at the water, a stand of `stands` crowns (lo to hi, by hash) where the place has them: one, not one or two
+      if (trees.stands && dist[k] <= fringe && cover[k] !== COVER.wetland) {
+        const [lo, hi] = trees.stands;
+        crowns = lo + Math.min(hi - lo, Math.floor(hash01(k, 5) * (hi - lo + 1)));
+        count = 1;
+      }
     } else if (cover[k] === COVER.residential && hash01(k, 2) < town) {
       mix = trees.town;
-      count = 1;
+      // a whole tree a node for every full one the density gives, and one more by the rest's chance
+      count = Math.max(1, Math.floor(town) + (hash01(k, 3) < town - Math.floor(town) ? 1 : 0));
       h = trees.townHeight ?? 12;
     } else continue;
     for (let t = 0; t < count; t++) {
@@ -216,6 +250,7 @@ export function treesAt({ grid, label, cover, canopy, dist, trees, built = null 
         height,
         yaw: hash01(k, 50 + t) * Math.PI * 2,
         girth: 0.9 + 0.2 * hash01(k, 60 + t),
+        ...(crowns > 1 ? { crowns } : {}),
         // the fringe at the water first, then the rest: thinning keeps the lowest keys
         key: (forest && dist[k] <= fringe ? 0 : 1) + hash01(k * 4 + t, 99),
       });
@@ -240,7 +275,7 @@ export function placeTrees(o) {
  * sunk to `floor`, and triangles with no roof node dropped, so the roof's
  * edge dives into the ground. → { positions, normals?, colors, indices, roofNodes } (no normals: computed by the caller).
  */
-export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"] }) {
+export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"], jitter = 0 }) {
   const { n, cell, x0, z0 } = grid;
   const N = n * n;
   const roof = new Uint8Array(N);
@@ -283,7 +318,8 @@ export function forestRoof({ grid, heights, label, cover, canopy, dist, setback 
     const k = mesh.nodes[v];
     const i = k % n, j = (k - i) / n;
     positions[q * 3] = x0 + i * cell;
-    positions[q * 3 + 1] = top[k];
+    // a roof node a little up or down by its own hash (±jitter): crowns, not turf
+    positions[q * 3 + 1] = top[k] + (roof[k] && jitter ? (hash01(k, 79) - 0.5) * 2 * jitter : 0);
     positions[q * 3 + 2] = z0 + j * cell;
     const u = hash01(k, 77);
     const c = lin[u < 0.25 ? 0 : u < 0.55 ? 1 : u < 0.8 ? 2 : u < 0.9 ? 3 : 4];
@@ -295,10 +331,16 @@ export function forestRoof({ grid, heights, label, cover, canopy, dist, setback 
 
 /** The GLB meshes for the trees' species, and a node per tree (instanced by the scene: one draw a species). */
 export function treeInstances(trees, groundAt, sinkAt, { meshBase, layer = "forest" } = {}) {
-  const species = SPECIES_NAMES.filter((s) => trees.some((t) => t.species === s));
-  const meshes = species.map((s) => {
-    const m = treeMesh(s);
-    return { name: `Tree (${s})`, positions: m.positions, colors: m.colors, roughness: 0.95 };
+  // a mesh a species, and one a species and stand size: each tree's kind
+  const kindOf = (t) => (t.crowns > 1 ? `${t.species}×${t.crowns}` : t.species);
+  const kinds = new Set(trees.map(kindOf));
+  const sizes = [...new Set(trees.map((t) => t.crowns ?? 1))].sort((a, b) => a - b);
+  const species = [];
+  for (const c of sizes) for (const s of SPECIES_NAMES) if (kinds.has(c > 1 ? `${s}×${c}` : s)) species.push(c > 1 ? `${s}×${c}` : s);
+  const meshes = species.map((kind) => {
+    const [s, c] = kind.split("×");
+    const m = c ? standMesh(s, Number(c)) : treeMesh(s);
+    return { name: c ? `Stand of ${c} (${s})` : `Tree (${s})`, positions: m.positions, colors: m.colors, roughness: 0.95 };
   });
   const index = Object.fromEntries(species.map((s, q) => [s, meshBase + q]));
   const r2 = (v) => Math.round(v * 100) / 100;
@@ -308,7 +350,7 @@ export function treeInstances(trees, groundAt, sinkAt, { meshBase, layer = "fore
     const sink = sinkAt(g);
     const h = t.height + sink;
     const yaw = t.yaw;
-    return { mesh: index[t.species], translation: [r2(t.x), r2(g - sink), r2(t.z)], rotation: [0, r4(dsin(yaw / 2)), 0, r4(dcos(yaw / 2))], scale: [r2(h * t.girth), r2(h), r2(h * t.girth)] };
+    return { mesh: index[kindOf(t)], translation: [r2(t.x), r2(g - sink), r2(t.z)], rotation: [0, r4(dsin(yaw / 2)), 0, r4(dcos(yaw / 2))], scale: [r2(h * t.girth), r2(h), r2(h * t.girth)] };
   });
   return { meshes, nodes, species, layer };
 }

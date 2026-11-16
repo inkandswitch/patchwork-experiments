@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { treesAt, placeTrees, pick, forestRoof, treeMesh, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES } from "./forest.js";
+import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS } from "./forest.js";
 import { insideRing } from "./terrain-sample.js";
 import { COVER } from "./cover.js";
 
@@ -74,6 +74,68 @@ describe("treesAt", () => {
   });
 });
 
+describe("stands at the water, and a denser town", () => {
+  // the town's lots without a canopy (a lot under trees is forest, and gets the forest's)
+  const canopyT = Float32Array.from(canopy, (c, k) => (cover[k] === COVER.residential ? 1 : c));
+  const oT = { ...o, canopy: canopyT };
+  const dense = { ...oT, trees: { ...trees, stands: [4, 6], townPerHectare: 50 } };
+  const all = treesAt(dense);
+  const plain = treesAt(oT);
+  it("gives every fringe forest node (not a bog's) one stand of 4 to 6 crowns, by its hash, and everything else what it had", () => {
+    const per = new Map();
+    for (const t of all) per.set(t.k, [...(per.get(t.k) ?? []), t]);
+    const sizes = new Set();
+    for (let k = 0; k < N; k++) {
+      const here = per.get(k) ?? [];
+      const was = plain.filter((t) => t.k === k);
+      const fringe = isForest(k, label, cover, canopyT) && dist[k] <= 40 && cover[k] !== COVER.wetland;
+      if (fringe) {
+        expect(here).toHaveLength(1);
+        expect(here[0].crowns).toBeGreaterThanOrEqual(4);
+        expect(here[0].crowns).toBeLessThanOrEqual(6);
+        sizes.add(here[0].crowns);
+        // the same tree as the first it had, but for its crowns
+        const { crowns, ...rest } = here[0];
+        expect(rest).toEqual(was[0]);
+      } else if (cover[k] === COVER.residential && label[k] > 0) {
+        // 50 a hectare is two a 20 m node
+        expect(here).toHaveLength(2);
+        expect(here.every((t) => !t.crowns)).toBe(true);
+      } else expect(here).toEqual(was);
+    }
+    expect([...sizes].sort()).toEqual([4, 5, 6]);
+  });
+  it("is local all the same: tile by tile is the whole", () => {
+    for (const rows of [1, 5, 33]) {
+      const tiles = [];
+      for (let j0 = 0; j0 < n; j0 += rows) tiles.push(...treesAt(dense, j0 * n, Math.min(n, j0 + rows) * n));
+      expect(tiles).toEqual(all);
+    }
+  });
+  it("draws a stand as its crowns: the tallest a metre in the middle, the rest round it shorter, trunks to 0.2 below the foot", () => {
+    for (const s of SPECIES_NAMES) for (const c of [4, 5, 6]) {
+      const one = treeMesh(s, -0.2), st = standMesh(s, c);
+      expect(st.positions.length).toBe(one.positions.length * c);
+      let ymin = Infinity, ymax = -Infinity, r = 0;
+      for (let v = 0; v < st.positions.length; v += 3) {
+        ymin = Math.min(ymin, st.positions[v + 1]);
+        ymax = Math.max(ymax, st.positions[v + 1]);
+        r = Math.max(r, Math.hypot(st.positions[v], st.positions[v + 2]));
+      }
+      expect(ymin).toBeCloseTo(-0.2, 6);
+      expect(ymax).toBeCloseTo(1, 6);
+      expect(r).toBeLessThanOrEqual(0.16 + (SPECIES[s].width / 2) * (SPECIES[s].flare ?? 1) * Math.max(...STAND_HEIGHTS) + 1e-6);
+    }
+  });
+  it("instances each species and stand size from its own mesh", () => {
+    const inst = treeInstances(all, () => 0, () => 0.5, { meshBase: 7 });
+    const kinds = new Set(all.map((t) => (t.crowns ? `${t.species}×${t.crowns}` : t.species)));
+    expect(new Set(inst.species)).toEqual(kinds);
+    expect(inst.meshes.map((m) => m.name).filter((x) => x.startsWith("Stand of")).length).toBe([...kinds].filter((x) => x.includes("×")).length);
+    all.forEach((t, q) => expect(inst.species[inst.nodes[q].mesh - 7]).toBe(t.crowns ? `${t.species}×${t.crowns}` : t.species));
+  });
+});
+
 describe("placeTrees", () => {
   it("thins to exactly `max` by each tree's own key, keeping the lowest", () => {
     const all = treesAt(o);
@@ -109,6 +171,24 @@ describe("forestRoof", () => {
       }
       expect(P[v * 3 + 1]).toBeCloseTo(heights[k] + s / c, 4);
     }
+  });
+});
+
+describe("the roof's raggedness", () => {
+  it("moves each roof node by its own hash, at most `jitter` either way, and nothing else", () => {
+    const heights = Float32Array.from({ length: N }, (_, k) => (label[k] > 0 ? 10 + (k % n) : -5));
+    const flat = forestRoof({ grid, heights, label, cover, canopy, dist, setback: 20 });
+    const rough = forestRoof({ grid, heights, label, cover, canopy, dist, setback: 20, jitter: 3 });
+    expect(Array.from(rough.indices)).toEqual(Array.from(flat.indices));
+    let moved = 0;
+    for (let v = 0; v < flat.positions.length / 3; v++) {
+      const i = Math.round((flat.positions[v * 3] - x0) / cell), j = Math.round((flat.positions[v * 3 + 2] - z0) / cell);
+      const d = rough.positions[v * 3 + 1] - flat.positions[v * 3 + 1];
+      expect(Math.abs(d)).toBeLessThanOrEqual(3 + 1e-4);
+      if (!isRoof(j * n + i, { n, label, cover, canopy, dist, setback: 20 })) expect(d).toBe(0);
+      else if (d !== 0) moved++;
+    }
+    expect(moved).toBeGreaterThan(0);
   });
 });
 

@@ -119,6 +119,39 @@ function piles(s, a, b, every, across, top, ground, hex, r = 0.18) {
   }
 }
 
+/**
+ * Corrugated cladding and trim over a building's walls (art direction: a
+ * plain box reads as a placeholder): a darker rib every `every` metres
+ * standing 4 cm off each wall from `y0` to `y1`, and a trim band 0.3 m deep
+ * under the eave, 6 cm off. `P` is the ring of corners, either way round.
+ */
+export function cladding(s, P, y0, y1, { walls, trim, every = 0.9 }) {
+  const cx = P.reduce((a, p) => a + p[0], 0) / P.length, cz = P.reduce((a, p) => a + p[1], 0) / P.length;
+  const rib = rgb(walls).map((x) => x * 0.72), band = rgb(trim);
+  const strip = (A, B, off, ya, yb, col) => {
+    const m = mid(A, B);
+    // the wall's own normal, the side away from the middle
+    const [ux, uz] = unit(A, B);
+    const side = (m[0] - cx) * -uz + (m[1] - cz) * ux >= 0 ? 1 : -1;
+    const o = [-uz * side, ux * side];
+    const a = [A[0] + o[0] * off, A[1] + o[1] * off], b = [B[0] + o[0] * off, B[1] + o[1] * off];
+    quadOut(s, [a[0], ya, a[1]], [b[0], ya, b[1]], [b[0], yb, b[1]], [a[0], yb, a[1]], col, [m[0] + o[0] * 5, (ya + yb) / 2, m[1] + o[1] * 5]);
+  };
+  let ribs = 0;
+  for (let k = 0; k < P.length; k++) {
+    const A = P[k], B = P[(k + 1) % P.length];
+    const L = len(B[0] - A[0], B[1] - A[1]);
+    const n = Math.floor(L / every);
+    for (let q = 1; q < n; q++) {
+      const t0 = (q * every - 0.12) / L, t1 = (q * every + 0.12) / L;
+      strip(lerp2(A, B, t0), lerp2(A, B, t1), 0.04, y0, y1 - 0.3, rib);
+      ribs++;
+    }
+    strip(A, B, 0.06, y1 - 0.3, y1, band);
+  }
+  return ribs;
+}
+
 export const KINDS = {
   /** A hangar: a low gable over four corners (N, E, S, W), the gables on the faces doors.face and the one opposite; board-sheathed walls; sliding doors and a header band on the door face. */
   hangar(s, st, { L, footOf }) {
@@ -166,6 +199,11 @@ export const KINDS = {
     // fascia trim along the eaves
     const t = rgb(C.trim);
     for (const sv of [-1, 1]) quadOut(s, at(u0, sv * (box.hv + sideOh), st.eave - drop - 0.3), at(u1, sv * (box.hv + sideOh), st.eave - drop - 0.3), at(u1, sv * (box.hv + sideOh), st.eave - drop), at(u0, sv * (box.hv + sideOh), st.eave - drop), t, at(0, sv * (box.hv + 10), st.eave));
+    // the rake trim up both gables' roof edges, white, so the low pitch reads
+    for (const uu of [u0, u1]) for (const sv of [-1, 1]) {
+      const lo = at(uu, sv * (box.hv + sideOh), st.eave - drop), hi = at(uu, 0, st.ridge);
+      quadOut(s, [lo[0], lo[1] - 0.35, lo[2]], [hi[0], hi[1] - 0.35, hi[2]], hi, lo, t, at(uu + (uu < 0 ? -10 : 10), sv * box.hv * 0.5, st.eave));
+    }
     // the door face: the header band from the door head to the eave, the sliding leaves below it, the small door
     const D = st.doors;
     const along = (d) => lerp2(g0, g1, d / span);
@@ -190,7 +228,8 @@ export const KINDS = {
     const box = orientedBox(P);
     const b = st.roof === "shed" ? { ...box, u: unit(P[0], P[1]).slice(0, 2), v: (() => { const [x, z] = unit(P[0], P[1]); return [-z, x]; })(), hu: len(P[1][0] - P[0][0], P[1][1] - P[0][1]) / 2, hv: len(P[2][0] - P[1][0], P[2][1] - P[1][1]) / 2, c: [(P[0][0] + P[2][0]) / 2, (P[0][1] + P[2][1]) / 2] } : box;
     house(s, P, { base: foot, eave, rise: st.top - eave, roof: st.roof, walls: st.colours.walls, roofColour: st.colours.roof, overhang: 0.3, box: b });
-    return { top: st.top, eave };
+    const ribs = st.cladding === "corrugated" ? cladding(s, P, foot, eave, { walls: st.colours.walls, trim: st.colours.trim ?? st.colours.roof }) : 0;
+    return { top: st.top, eave, ...(ribs ? { ribs } : {}) };
   },
 
   /** A pile wharf: a deck on its corners, piles every 4 m beneath, and a shed on it. */
@@ -214,6 +253,7 @@ export const KINDS = {
       const at = (su, sv) => [box.c[0] + u[0] * su + box.v[0] * sv, box.c[1] + u[1] * su + box.v[1] * sv];
       const ring = [at(su0, sv0), at(su1, sv0), at(su1, sv1), at(su0, sv1)];
       house(s, ring, { base: st.deck, eave: st.deck + st.shed.height, rise: 0.8, roof: "gable", walls: st.shed.colour, roofColour: st.shed.roof, overhang: 0.3 });
+      if (st.shed.cladding === "corrugated") cladding(s, ring, st.deck, st.deck + st.shed.height, { walls: st.shed.colour, trim: st.shed.trim ?? st.shed.roof });
     }
     return { length: 2 * box.hu, width: 2 * box.hv, deck: st.deck };
   },

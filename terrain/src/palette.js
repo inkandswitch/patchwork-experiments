@@ -34,7 +34,7 @@ export const COLOURS = Object.freeze({
   scree: "#7a776f",
 });
 
-const toRGB = (hex) => [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16));
+export const toRGB = (hex) => [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16));
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 const rampAt = (stops, x) => {
   if (x <= stops[0][0]) return toRGB(stops[0][1]);
@@ -108,9 +108,12 @@ export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shor
     else rgb = h > 600 ? toRGB(C.scree) : toRGB(C.shrub);
   }
   // a little variation, by node, so a large flat area isn't one flat colour
-  const v = k < 0 ? 1 : 0.94 + 0.12 * hash01(k, 7);
+  const v = variation(k);
   return rgb.map((c) => Math.min(255, c * v));
 }
+
+/** A node's own variation of its colour: within 6% either way, by its index alone (none for k < 0). */
+export const variation = (k) => (k < 0 ? 1 : 0.94 + 0.12 * hash01(k, 7));
 
 /** sRGB 0–255 to linear 0–1 (what COLOR_0 holds). */
 export const linear = (rgb) => rgb.map((c) => {
