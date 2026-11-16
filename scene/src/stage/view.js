@@ -28,7 +28,7 @@ import { createRouter } from "./router.js";
 import { createDrawer } from "./dock.js";
 import { escapeHint } from "./ladder.js";
 import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
-import { atFocus, focusSteps, selectionStep } from "../selection.js";
+import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
 import { expand, identityOf, isLink } from "./links.js";
@@ -887,8 +887,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const p = ev?.hit?.id != null ? parseKey(ev.hit.id) : null;
       const path = p && stages.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(ev.hit.id) : null;
       if (!path && atom.get().selected == null) return false;
-      // outside the focus it can't select, so the click isn't Edit's: it goes down the chain (verbs out there still work)
-      if (path && !atFocus(atom.get().focus, path)) return false;
+      // A click on something is Edit's wherever it lands. Outside the focus it selects nothing (selectionStep's
+      // "outside, nothing") and isn't handed down the chain, where a package's click verb would act for it: the
+      // boat's come-aboard, under a card missed inside a game linked aboard her, changed the body out of Edit
+      // (COMPOSITION.md, Decisions, Edit's click is Edit's). Verbs out there go on by key, menu, prompt and press.
       selectStep({ type: "press", path: path ?? [] });
       return true;
     },

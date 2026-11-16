@@ -127,11 +127,32 @@ Still open:
   there goes to the prompt's button (found by lane/xarrow, 2026-11-16);
 - a single click on a moving thing can still miss it: aboard-run's step-13
   click selecting the card inside G missed on about one run in ten
-  (lane/xarrow); the double-click fix covers only the second press;
+  (lane/xarrow); the double-click fix covers only the second press. A miss
+  inside G now only fails to select (it used to come aboard: Fixed since);
+  editclick-run's clicks with 150 ms of her sea between aim and press
+  landed on the boat 3 to 8 times in 12;
+- the first click of a double-click can open the inspector under the
+  second: with the inspector shut, a first press that selects anything
+  (the link, or the Card table it missed onto) narrows the canvas, and
+  where the inspector now lies the second press and the dblclick are the
+  inspector's, so the stage never hears them (editclick-run's first try,
+  every run: a 700 px view, its press missing the card for the Card table,
+  the gaps 222 to 250 ms, well inside the gate). The second try, the
+  inspector already open, enters;
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
 Fixed since (Decisions, double-click, below):
+- in Edit inside an entered link, a click that landed on the host went
+  down the chain to the host's click verbs: inside Lost Cities aboard, a
+  single click at a card that the pitching boat moved away landed on her
+  Card table, and sailing's click came aboard, so the viewer left Edit for
+  the Aboard body, first person at the helm with the pointer locked, the
+  card table behind the coachroof, and every later click went down the
+  centre ray (presence-check.nopause in the real Patchwork, 2026-11-16: B's
+  three clicks selected nothing). In Edit a click on something is now
+  Edit's wherever it lands (Decisions, Edit's click is Edit's, below;
+  lane/bodyswitch).
 - the first click of a double-click on a link selected it, and if the
   inspector was shut that opened it and narrowed the canvas under the
   second click, which could then miss a small link; and a double-click on
@@ -1000,7 +1021,8 @@ ships alone and proves something.
     while its stage is on the focus path). They are offered after every
     segment wherever the hit is, and the input path always ends at the focus,
     so outside an entered link verbs, carries, keys and the menu still work;
-    Edit's click outside the focus isn't Edit's and goes down the chain. The
+    Edit's click outside the focus was left to the chain (Decision 7 below;
+    reversed since: Decisions, Edit's click is Edit's). The
     resolver and the menu take a segment per stage on the input path
     always, each stage's commands in its own context and run there (the
     "outermost is the caller's" assumption went; a held verb pins attention
@@ -1774,7 +1796,8 @@ Made while building Edit in context, with the project lead away.
 6. **Selecting from any stage is cut at the focus.** `api.view.select` in a
    game's stage with the focus on the boat selects the link (it used to
    store the game's path). Why: H10 by construction, whoever asks.
-7. **Edit's click outside the focus isn't Edit's**: it goes down the chain.
+7. *Reversed on 2026-11-16 (Decisions, Edit's click is Edit's): the click
+   is Edit's and does nothing.* **Edit's click outside the focus isn't Edit's**: it goes down the chain.
    Why: Edit can't select there, so it's Edit's to ignore, as a click on
    nothing with nothing selected is (TOOLS.md Decisions 6), and the verbs
    out there stay live.
@@ -2080,3 +2103,43 @@ The gate's page time (the Still open item, now under Fixed since).
    test or tool dispatching plain events would lose double-clicks it has
    today), or the browser's `detail` click count (Decision 3 above).
 
+## Decisions, Edit's click is Edit's (2026-11-16, made unattended in `lane/bodyswitch`)
+
+Found by presence-check.nopause: in the real Patchwork, B entered Lost
+Cities aboard's game G in Edit (a double-click), her world running, and
+B's next single clicks selected nothing. B was in the Aboard body at the
+helm. The click had gone `editInput.click` (`src/stage/view.js`) → "outside
+the focus, not Edit's" → down the chain → the Card table's holder, the
+boat's sailing part, whose click (`sailing/src/crew.js`, `input.click`)
+comes aboard. Reproduced in `focus.test.js` and on local builds by
+`sailing/probes/editclick-run.mjs` (Card table, another part of her, and
+near-misses at cards on her moving table: all boarded before, none after).
+
+1. **In Edit a click on something is Edit's wherever it lands.** At the
+   focus it selects, as before; outside the focus it selects nothing
+   (`selectionStep`'s "outside, nothing", unchanged) and goes no further.
+   Only a click on nothing with nothing selected is still left to the
+   chain. This reverses Decisions, step 14, 7 ("isn't Edit's"). Why: TOOLS
+   Decisions 6 (the lead's) is that in Edit a plain click selects before
+   any package's click verb, "a click on the ship selects her rather than
+   coming aboard", and that nothing stands on Edit; step 14's exception
+   handed exactly that click to the ship again whenever the focus was
+   inside something aboard her, and a verb that changes the body throws the
+   editor out of Edit with no act of theirs but a missed click. The stage
+   is the owner: a package can't tell (no stage sees the focus, and none
+   asks whether the viewer is editing: STAGE.md, Bodies), so sailing's
+   click is right as it is.
+2. **What stays live outside the focus.** Presses (a carry, a drag), keys,
+   the menu, the prompt and every verb on them still reach outside an
+   entered link from Edit (TOOLS Decisions 4, "verbs aren't edits"); Look
+   and every other body hand the click down the chain as before. Not
+   chosen: a click outside the focus clearing the selection (the selection
+   model is unchanged, and a missed card should not drop what is selected),
+   or leaving the focus out to where the click landed (a near miss would
+   throw the editor out of the game). Tested over every base body (Look,
+   Edit) × every focus (the scene, one link in, two) × a selection or none
+   × every hit (each stage's objects, a mirror's, a pin's, a closed link,
+   and nothing): 168 cases, the click reaching the chain exactly in Look or
+   on nothing with nothing selected, the selection as the model says, the
+   body and focus unchanged; and a click verb that enters a body, as the
+   boat's does, reached from Look and never from Edit at every focus.
