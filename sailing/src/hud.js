@@ -319,8 +319,8 @@ export function createHud(api, ctx) {
       seated: seatedView(api),
     });
     put("state", model.state, (v) => root.setAttribute("data-state", v));
-    // shown while you're aboard, or where her doc is the world (a boat alone) and she's there: in a
-    // harbour of two boats, each one's HUD stays away until you come aboard her (WATER.md)
+    // shown while you're aboard, or where she sails in her own weather (alone, or in a dry room) and she's
+    // there: in a harbour of two boats, each one's HUD stays away until you come aboard her (WATER.md)
     put("shown", !!me.playing || (!!ctx.sea?.world?.() && !!ship), (v) => (root.style.display = v ? "" : "none"));
     put("seated", model.seated, (v) => root.toggleAttribute("data-seated", v));
     // before coming aboard the hint is a button (a click on her does the same)
