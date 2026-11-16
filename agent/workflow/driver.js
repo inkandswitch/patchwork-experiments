@@ -17,6 +17,7 @@
 import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS } from "../runner.js"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS } from "./plan.js"
+import { waitingIn } from "./waiting.js"
 
 export { WORKFLOW_TOOL_IDS } from "./plan.js"
 
@@ -99,6 +100,8 @@ export class WorkflowDriver {
     this.reasons = new Map() // sessionUrl -> why its runner stopped, from its events
     this.listening = new Set() // sessionUrls whose runner events we hear
     this.reported = new Set() // step ids the orchestrator has been told about
+    this.waiting = [] // what running steps wait on a person for, as of the last tick
+    this.asked = new Set() // question call ids the orchestrator has been told about
     this.channel = null
     this.ticking = null
     this.busy = false
@@ -172,6 +175,7 @@ export class WorkflowDriver {
     // 1. What have the running steps done?
     const sessions = {}
     const usages = []
+    const waiting = []
     for (const step of plan.steps) {
       if (!step.sessionUrl) continue
       const child = await this.session(step.sessionUrl)
@@ -181,7 +185,10 @@ export class WorkflowDriver {
       if (step.status !== STEP.running) continue
 
       const outcome = sessionOutcome(doc)
-      if (outcome.state === "running") continue
+      if (outcome.state === "running") {
+        if (outcome.waiting) for (const item of waitingIn(doc)) waiting.push({ stepId: step.id, ...item })
+        continue
+      }
       this.write((d) => {
         const s = d.steps.find((x) => x.id === step.id)
         if (s.status !== STEP.running) return
@@ -194,6 +201,7 @@ export class WorkflowDriver {
         }
       })
     }
+    this.waiting = waiting
     const usage = sumUsage(usages)
     plan = this.handle.doc()
     if (usage.in !== plan.usage?.in || usage.out !== plan.usage?.out) this.write((d) => { d.usage = usage })
@@ -335,28 +343,37 @@ export class WorkflowDriver {
     await this.kick()
   }
 
-  /** Tell the orchestrator about steps that finished since it last heard. */
+  /**
+   * Tell the orchestrator what it has not heard: steps that finished, and
+   * questions steps are asking. A step waiting for a permission does not wake
+   * it — only the person can grant one, and they see it in the views — but
+   * the news it does get says so.
+   */
   report() {
     if (!this.notify) return
     const plan = this.handle.doc()
     const fresh = plan.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !this.reported.has(s.id))
+    const asking = this.waiting.filter((w) => w.kind === "question" && !this.asked.has(w.callId))
     const over = plan.status !== PLAN.running
-    if (!fresh.length && !over) return
+    if (!fresh.length && !asking.length && !over) return
     this.channel ??= this.notify(this.handle.url, plan.title)
     this.channel?.notify(() => {
       const now = this.handle.doc()
       const news = now.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !this.reported.has(s.id))
       for (const s of news) this.reported.add(s.id)
+      // Read at delivery: a question answered meanwhile is no longer news.
+      const questions = this.waiting.filter((w) => w.kind === "question" && !this.asked.has(w.callId))
+      for (const q of questions) this.asked.add(q.callId)
       const done = now.status !== PLAN.running
-      if (!news.length && !done) return ""
+      if (!news.length && !questions.length && !done) return ""
       if (done) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news)
+      return describeProgress(now, news, this.waiting)
     })
   }
 }
 
 /** The news the orchestrator wakes to. */
-export function describeProgress(plan, news) {
+export function describeProgress(plan, news, waiting = []) {
   const derived = states(plan)
   const count = (state) => [...derived.values()].filter((s) => s === state).length
   const lines = [`Workflow "${plan.title}" (${plan.status === PLAN.running ? "running" : plan.status}).`]
@@ -366,6 +383,23 @@ export function describeProgress(plan, news) {
       `## ${step.status === STEP.done ? "Done" : "Failed"}: ${step.title} (${step.id})`,
       step.status === STEP.done ? step.result ?? "" : step.error ?? "",
       `Session: ${step.sessionUrl}`
+    )
+  }
+  const title = (id) => plan.steps.find((s) => s.id === id)?.title ?? id
+  for (const q of waiting.filter((w) => w.kind === "question")) {
+    lines.push(
+      "",
+      `## Question from step ${title(q.stepId)} (${q.stepId})`,
+      q.question,
+      ...(q.options.length ? [`Options: ${q.options.map((o) => o.label).join(" / ")}`] : []),
+      "Answer it with workflow_answer if you know the answer from the work so far. If it is the person's call, ask them (ask_user) and pass their answer on."
+    )
+  }
+  const approvals = waiting.filter((w) => w.kind === "approval")
+  if (approvals.length) {
+    lines.push(
+      "",
+      `Waiting on the person's permission: ${approvals.map((a) => `${title(a.stepId)} wants to run ${a.tool}`).join("; ")}. Only they can grant it; they see it in your view and the workflow's.`
     )
   }
   lines.push(

@@ -9,6 +9,9 @@
 import { initPlan, newStep, validateSteps, states, STATE, PLAN, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS } from "../workflow/plan.js"
 import { drivePlanHere, getDriver } from "../workflow/driver.js"
 import { truncate } from "./format.js"
+import { answerQuestion } from "../loop.js"
+import { handleStore } from "../store.js"
+import { waitingIn } from "../workflow/waiting.js"
 
 const STEP_SCHEMA = {
   type: "object",
@@ -200,4 +203,48 @@ export const workflowStop = {
   },
 }
 
-export default [workflowStart, workflowAddSteps, workflowStatus, workflowStop]
+export const workflowAnswer = {
+  id: "workflow_answer",
+  name: "Answer a workflow step",
+  description: [
+    "Answer the question a workflow step is asking. Steps work for you, so when the answer follows from the goal or from what you already know, give it. When it is the person's call, ask them (ask_user) and pass on what they say.",
+    "",
+    "This cannot grant a step permission to use a tool: only the person can, in the workflow view or the step's session.",
+  ].join("\n"),
+  where: "worker",
+  risk: "edit",
+  input_schema: {
+    type: "object",
+    required: ["step", "answer"],
+    properties: {
+      plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
+      step: { type: "string", description: "The id of the step that asked." },
+      answer: { type: "string", description: "The answer, as the step will read it." },
+    },
+  },
+  async execute(input, ctx) {
+    const url = await planUrlFor(input, ctx)
+    const plan = (await ctx.repo.find(url)).doc()
+    const step = plan.steps.find((s) => s.id === input.step)
+    if (!step) throw new Error(`No step '${input.step}' in this workflow.`)
+    if (!step.sessionUrl) throw new Error(`Step '${input.step}' has not started.`)
+    const handle = await ctx.repo.find(step.sessionUrl)
+    const items = waitingIn(handle.doc())
+    const question = items.find((item) => item.kind === "question")
+    if (!question) {
+      const approval = items.find((item) => item.kind === "approval")
+      throw new Error(
+        approval
+          ? `Step '${input.step}' is not asking anything; it is waiting for permission to run ${approval.tool}, which only the person can give.`
+          : `Step '${input.step}' is not asking anything.`
+      )
+    }
+    answerQuestion(handleStore(handle, ctx.splice ?? null), question.callId, input.answer)
+    return `Answered step '${input.step}': "${question.question}" → ${truncate(input.answer, 200)}`
+  },
+  summarize(input) {
+    return `answered ${input?.step ?? "a step"}`
+  },
+}
+
+export default [workflowStart, workflowAddSteps, workflowStatus, workflowStop, workflowAnswer]

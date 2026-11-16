@@ -32,7 +32,7 @@
 export const TIERS = ["deep", "standard", "fast"]
 
 /** The tools that orchestrate. A step never gets them: workflows do not nest. */
-export const WORKFLOW_TOOL_IDS = ["workflow_start", "workflow_add_steps", "workflow_status", "workflow_stop"]
+export const WORKFLOW_TOOL_IDS = ["workflow_start", "workflow_add_steps", "workflow_status", "workflow_stop", "workflow_answer"]
 
 /** OpenRouter's aliases follow each family's newest release. */
 export const DEFAULT_TIER_MODELS = {

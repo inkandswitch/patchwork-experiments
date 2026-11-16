@@ -1172,3 +1172,49 @@
   gap: 0.5rem;
   font-size: 0.9em;
 }
+
+/* ---- Block: steps waiting on you ---------------------------------------- */
+
+.agent-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px solid var(--agent-border);
+  background: var(--agent-surface);
+}
+
+.agent-waiting[hidden] {
+  display: none;
+}
+
+.agent-waiting-title {
+  margin: 0;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--agent-warning);
+}
+
+.agent-waiting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem 0.5rem;
+  border-left: 3px solid var(--agent-warning);
+  border-radius: 4px;
+  background: var(--agent-bg);
+}
+
+.agent-waiting-item p {
+  margin: 0;
+}
+
+.agent-waiting-step {
+  font-size: 0.8em;
+  color: var(--agent-muted);
+}
+
+.agent-waiting-item input[type="text"] {
+  flex: 1 1 10rem;
+  min-width: 0;
+}

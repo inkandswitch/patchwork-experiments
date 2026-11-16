@@ -13,6 +13,8 @@
 
 import { states, STATE, PLAN, DEFAULT_LIMITS } from "./plan.js"
 import { drivePlanHere, getDriver } from "./driver.js"
+import { waitingIn } from "./waiting.js"
+import { renderWaitingItem } from "../ui/waiting.js"
 
 const STYLE_MARK = "data-patchwork-agent-styles"
 function ensureStyles() {
@@ -127,6 +129,14 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       const turns = session.turns?.length ?? 0
       const used = (session.usage?.in ?? 0) + (session.usage?.out ?? 0)
       card.append(el("p", "agent-wf-activity", `${session.status} · ${turns} turns · ${tokens(used)} tokens`))
+    }
+
+    // What it waits on you for, answerable here without opening the session.
+    if (state === STATE.needsInput) {
+      const childHandle = sessions.get(step.sessionUrl)?.handle
+      for (const item of waitingIn(session)) {
+        card.append(renderWaitingItem({ ...item, handle: childHandle, stepTitle: step.title }, { showStep: false }))
+      }
     }
 
     if (step.result && state === STATE.done) {

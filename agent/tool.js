@@ -22,6 +22,7 @@ import { decide, say, answerQuestion } from "./loop.js"
 import { heldElsewhere, needsWork } from "./runner.js"
 import { attachView } from "./runners.js"
 import { startTabRunner, accountContext } from "./tab-runner.js"
+import { watchWaiting, renderWaiting } from "./ui/waiting.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import {
   getProvider,
@@ -136,6 +137,25 @@ export function AgentTool(handle, element, options = {}) {
   const transcript = el("div", "agent-transcript")
   const composer = el("div", "agent-composer")
   main.append(header, transcript, composer)
+
+  // Workflow steps run in sessions nobody has open; what they wait on a person
+  // for — a permission, a question — is shown here, above the transcript, and
+  // answered in place.
+  const waitingStrip = el("div", "agent-waiting")
+  waitingStrip.hidden = true
+  main.insertBefore(waitingStrip, transcript)
+  let waitingShown = ""
+  function renderStrip() {
+    if (!waiting) return
+    const items = waiting.items()
+    // Rebuilt only when what is waiting changes, so an answer half-typed in the
+    // strip is not wiped by every other edit to the documents behind it.
+    const signature = items.map((item) => item.callId).join(",")
+    if (signature === waitingShown) return
+    waitingShown = signature
+    renderWaiting(waitingStrip, items, { onOpen: (url) => onOpenDoc(url), subject: handle.doc()?.subject ?? null })
+  }
+  const waiting = repo ? watchWaiting(repo, handle, () => renderStrip()) : null
 
   // ---- composer --------------------------------------------------------
   const input = document.createElement("textarea")
@@ -860,6 +880,8 @@ export function AgentTool(handle, element, options = {}) {
       modelInput.value = doc.config.model
     }
     renderDefaults()
+    waiting?.refresh()
+    renderStrip()
 
     uiState.subject = doc.subject ?? null
     renderTranscript(transcript, doc, uiState, {
@@ -994,6 +1016,7 @@ export function AgentTool(handle, element, options = {}) {
     views.dispose()
     if (wantDictation) stopListening()
     workspace?.dispose()
+    waiting?.dispose()
     detachView?.()
     workerRunner?.close()
     root.remove()

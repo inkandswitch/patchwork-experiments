@@ -764,9 +764,16 @@ common shape: gather (fast, many) → judge or verify (deep) → act (standard)
 
 When the workflow is over, bring the results together for the person: what was
 done, what was found, what failed and why. \`workflow_status\` shows every
-step; \`workflow_stop\` cancels steps or the whole thing. A step that needs a
-person (an approval, a question) waits for them in its own session — the
-workflow view shows which.`,
+step; \`workflow_stop\` cancels steps or the whole thing.
+
+## Steps that need someone
+
+A step that asks a question wakes you with it. It works for you, so answer it
+with \`workflow_answer\` when the answer follows from the goal or from what you
+know; when it is the person's call, ask them (\`ask_user\`) and pass their
+answer on. A step that needs *permission* for a tool waits for the person — you
+cannot grant it — and they see it above your conversation and in the workflow
+view.`,
   },
   {
     name: "editing-documents",

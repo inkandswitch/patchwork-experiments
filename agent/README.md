@@ -898,6 +898,12 @@ result calls for it.
   pauses; open its view anywhere and it resumes from what the document says.
 - **The orchestrator is woken** through `ctx.events` as steps finish, with their
   results, and once more when the plan is over.
+- **A step that needs someone is not left waiting unseen.** A question it asks
+  wakes the orchestrator, which can answer it (`workflow_answer`) or ask the
+  person and pass the answer on. A permission it needs does not wake anyone —
+  only the person can grant it — but it appears above the orchestrator's
+  transcript and on the step's card in the workflow view, with Allow once /
+  Deny (and option buttons or a box for questions) right there.
 - **The view** lays the steps out in stages by dependency depth: each step's
   state, frontend or worker, tier and model, why, live activity, result or
   error, and a link to its session — "Answer in its session" when a step is

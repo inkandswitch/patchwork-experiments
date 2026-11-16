@@ -107,6 +107,7 @@ export const PRESENTATION = {
   workflow_add_steps: { verb: "extend workflow", detail: (i) => `${i.steps?.length ?? 0} steps` },
   workflow_status: { verb: "check workflow", detail: () => null },
   workflow_stop: { verb: "stop", detail: (i) => (i.steps?.length ? i.steps.join(", ") : "workflow") },
+  workflow_answer: { verb: "answer step", detail: (i) => i.step ?? null },
   note_read: { verb: "recall", detail: (i) => i.name ?? "notes" },
   note_delete: { verb: "forget", detail: (i) => i.name ?? null },
   fs_edit: {
