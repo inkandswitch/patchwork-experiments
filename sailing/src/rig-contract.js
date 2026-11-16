@@ -281,6 +281,18 @@ export function bodyRig(contract, k = 1, { matrix = null, hullUrl = null, hullKe
     sailModel: c.sailModel,
     sets: (c.sets ?? []).map((s) => ({ id: s.id, reef: s.reef, sails: s.sails, areaM2: s.areaM2 * k * k, ceM: toBody(s.ceM, k), heM: s.heM * k, are: s.are, trimmed: s.trimmed })),
     resistance: c.resistance,
+    // §3.13's elements: areas ×k², their centres (on the centreplane) and how far a heel lifts them ×k
+    windage: c.windage.elements.map((e) => ({
+      id: e.id,
+      shape: e.shape,
+      areaFrontM2: e.areaFrontM2 * k * k,
+      areaSideM2: e.areaSideM2 * k * k,
+      sidePerSinHeelM2: e.sidePerSinHeelM2 * k * k,
+      cdFront: e.cdFront,
+      cdSide: e.cdSide,
+      atM: toBody(e.atM, k),
+      zPerSinHeelM: e.zPerSinHeelM * k,
+    })),
     lumpedSail: c.lumpedSail ? { tackM: toBody(c.lumpedSail.tackM, k), luffM: c.lumpedSail.luffM * k, footM: c.lumpedSail.footM * k, areaM2: c.lumpedSail.areaM2 * k * k, ceM: toBody(c.lumpedSail.ceM, k) } : null,
   };
 }

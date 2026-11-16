@@ -23,6 +23,7 @@ import { liftSlope, foilCL, foilCD, sailCL, sailCD, planformAspect, planformSlop
 import { contractResistance } from "./resistance.js";
 import { rigSails, swungCE } from "./rig-sails.js";
 import { heldEitherSide } from "./trim.js";
+import { plainWindage } from "./windage.js";
 
 export { SLOOP, specFromBox };
 
@@ -162,16 +163,28 @@ export function createShip(input) {
   const rudderAt = rel(spec.rudder.at);
   const hullAt = rel(cb); // where the hull's resistance acts
   const tack = rel(spec.sail.tack);
-  const windageAt = rel([cb[0], spec.freeboard / 2, cb[2]]);
   const center = spec.center ?? [0, 0];
   const bowAt = rel([center[0], spec.freeboard, center[1] - L / 2 + 0.03 * L]);
   const keelSlope = liftSlope(hull.keel.aspect);
   const rudderAspect = 3; // with the hull above it as an end plate
   const rudderSlope = liftSlope(rudderAspect);
   const sailAspect = (1.3 * spec.sail.luff * spec.sail.luff) / spec.sail.area;
-  const hullSide = 0.7 * L * spec.freeboard;
-  const hullFront = 0.7 * B * spec.freeboard;
-  const mastArea = 0.15 * spec.sail.luff;
+  // Windage (§3.13's elements, §6.1's forces; windage.js): a contract's, or
+  // on the plain path the same rules' from her box and lumped mast. Each is
+  // ½ρ·Cd·A per (m/s)², at its centre from the centre of gravity, lifted
+  // `up`·|sin φ| up the mast as she heels (either way: the exposed side
+  // grows whichever side is down), where the body adds `heeled`·|sin φ|
+  // of side area.
+  const rhoAir = rig?.sailModel?.rhoAirKgM3 ?? RHO_AIR;
+  const windage = (rig ? rig.windage : plainWindage(spec)).map((e) => ({
+    body: e.shape === "body",
+    at: rel(e.atM),
+    up: e.zPerSinHeelM,
+    front: 0.5 * rhoAir * e.cdFront * e.areaFrontM2,
+    // a spar's drag is its one area's (§6.1: D = q·A·(Cd_f·cos²β + Cd_s·sin²β))
+    side: 0.5 * rhoAir * e.cdSide * (e.shape === "body" ? e.areaSideM2 : e.areaFrontM2),
+    heeled: e.shape === "body" ? 0.5 * rhoAir * e.cdSide * e.sidePerSinHeelM2 : 0,
+  }));
   const anchorK = 2.5 * m; // a chain's catenary, as a spring
   // damped twice critically: a chain lying on the bottom soaks up a snatch, it doesn't hand it back
   const anchorC = 4 * Math.sqrt(anchorK * m * (1 + ADDED_MASS[2]));
@@ -1014,25 +1027,33 @@ export function createShip(input) {
       T[2] -= r0 * o * crew.w;
     }
 
-    // Windage: the wind on the topsides and the bare mast
-    for (let k = 0; k < 2; k++) {
-      const p = k === 0 ? windageAt : null;
-      const ax = k === 0 ? r0 * p[0] + r1 * p[1] + r2 * p[2] : mx;
-      const ay = k === 0 ? r3 * p[0] + r4 * p[1] + r5 * p[2] : my;
-      const az = k === 0 ? r6 * p[0] + r7 * p[1] + r8 * p[2] : mz;
+    // Windage (§6.1): each element in the air at its centre (the true wind
+    // less her motion there), in her heeled sail plane: ux square to her
+    // centreplane and uz along it are AWS_e·sin β_e and AWS_e·cos β_e. A
+    // body (the hull) meets it in cross flow, each axis its own area; a spar
+    // drags along it.
+    const sinHeel = Math.abs(r3);
+    for (let k = 0; k < windage.length; k++) {
+      const e = windage[k];
+      const ex = e.at[0], ey = e.at[1] + e.up * sinHeel, ez = e.at[2];
+      const ax = r0 * ex + r1 * ey + r2 * ez;
+      const ay = r3 * ex + r4 * ey + r5 * ez;
+      const az = r6 * ex + r7 * ey + r8 * ez;
       const rx = twx - (vx + w1 * az - w2 * ay);
       const ry = -(vy + w2 * ax - w0 * az);
       const rz = twz - (vz + w0 * ay - w1 * ax);
       const ux = r0 * rx + r3 * ry + r6 * rz;
       const uz = r2 * rx + r5 * ry + r8 * rz;
       let fx, fz;
-      if (k === 0) {
-        fx = 0.5 * RHO_AIR * hullSide * Math.abs(ux) * ux;
-        fz = 0.5 * RHO_AIR * hullFront * Math.abs(uz) * uz;
+      if (e.body) {
+        fx = (e.side + e.heeled * sinHeel) * Math.abs(ux) * ux;
+        fz = e.front * Math.abs(uz) * uz;
       } else {
-        const s = 0.5 * RHO_AIR * mastArea * Math.hypot(ux, uz);
-        fx = s * ux;
-        fz = s * uz;
+        const u = Math.hypot(ux, uz);
+        if (!(u > 0)) continue;
+        const d = (e.front * uz * uz + e.side * ux * ux) / u;
+        fx = d * ux;
+        fz = d * uz;
       }
       apply(r0 * fx + r2 * fz, r3 * fx + r5 * fz, r6 * fx + r8 * fz, ax, ay, az);
     }

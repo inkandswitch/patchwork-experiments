@@ -17,6 +17,13 @@
 // 3. elementForce is compose.js's §6.1 windage force: at a finite table of
 //    states, each fixture's elements one at a time add exactly elementForce's
 //    fx and fh, at its (x, z), to compose's surge, sway and yaw.
+// 4. sailing's physics carries §6.1's windage by construction: at every
+//    unflagged predicted point of the five fixtures, the windage in her
+//    wrench (agreement-harness sailingWindage: the wrench in the point's
+//    wind less in air moving with her, her sails stowed) is compose's
+//    (composeWindage: compose with the elements less without them, taken to
+//    her centre of gravity), surge, sway, roll and yaw, to 1e-6 of her
+//    weight (moments: of her weight × LWL).
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { WINDAGE_SOURCE, contractElement, elementForce, hullElement, mastSection, meanFreeboard, planOf, rigElements } from "./windage.js";
 import { composer } from "./test/rig-contract/compose.js";
+import { composeWindage, contractShip, sailingWindage, stateAt, unflagged } from "./test/agreement-harness.js";
 import sloop from "./test/rig-contract/sloop-12m.json";
 import cuvature from "./test/rig-contract/cuvature-first-guess.json";
 import catalina from "./test/rig-contract/catalina-30.json";
@@ -131,5 +139,25 @@ describe("elementForce is compose's §6.1 windage, element by element", () => {
         }
       }
     }
+  }
+});
+
+describe("sailing's physics carries §6.1's windage: at every unflagged predicted point, its windage is compose's", () => {
+  for (const [name, c] of Object.entries(FIXTURES)) {
+    it(name, () => {
+      const ship = contractShip(c);
+      const W = c.loading.massKg * 9.80665;
+      const WL = W * c.hull.lwlM;
+      const points = unflagged(c);
+      expect(points.length).toBeGreaterThan(10);
+      for (const p of points) {
+        const got = sailingWindage(ship, stateAt(ship, c, p));
+        const want = composeWindage(c, p);
+        // windage is there to compare: never nothing on both sides
+        expect(Math.abs(want.surge) + Math.abs(want.sway)).toBeGreaterThan(0.1);
+        for (const k of ["surge", "sway"]) expect(Math.abs(got[k] - want[k]) / W, `${p.twsKn} kn ${p.twaDeg}° ${k}: ${got[k]} vs ${want[k]}`).toBeLessThan(1e-6);
+        for (const k of ["roll", "yaw"]) expect(Math.abs(got[k] - want[k]) / WL, `${p.twsKn} kn ${p.twaDeg}° ${k}: ${got[k]} vs ${want[k]}`).toBeLessThan(1e-6);
+      }
+    });
   }
 });

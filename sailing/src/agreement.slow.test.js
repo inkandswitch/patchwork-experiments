@@ -44,17 +44,15 @@ import laser from "./test/rig-contract/laser-ilca7.json";
 const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catalina-30": catalina, j24, "laser-ilca7": laser };
 
 /**
- * Measured on 2026-11-16 (lane/n6) on naval's fixtures as of 7d473f91: §6
- * now has windage (§3.13's elements, §6.1) and swings each sail's CE to its
- * sheet (§6.6), so every predicted point moved (the sloop's reference speed
- * 3.586 → 3.430 m/s, cuvature's 3.883 → 3.268) while sailing's physics did
- * not change. The keel and rudder are the contract's planforms only (§6.4),
- * her CG, inertia and crew the contract's (§6.6), her canoe body's buoyancy,
- * resistance and side force the contract's (§6.4–6.5), and her sails each
- * their own foil (§6.2–6.3: sails-jib.test.js), each sail's CE swung with
- * its boom or clew. Her windage is still sailing's own rule (physics.js:
- * her topsides 0.7·L·f and 0.7·B·f at Cd 1, the mast 0.15·luff at the
- * lumped sail), not the contract's elements.
+ * Measured on 2026-11-16 (lane/n6) on naval's fixtures as of 7d473f91. The
+ * keel and rudder are the contract's planforms only (§6.4), her CG, inertia
+ * and crew the contract's (§6.6), her canoe body's buoyancy, resistance and
+ * side force the contract's (§6.4–6.5), her sails each their own foil
+ * (§6.2–6.3: sails-jib.test.js), each sail's CE swung with its boom or
+ * clew, and her windage the contract's elements (§3.13) under §6.1's force
+ * law, each at its own centre: at every point here sailing's windage is
+ * compose's to rounding (windage.test.js holds it to 1e-6 of her weight;
+ * breakdown() prints both).
  * `wrench`: the points that fail (wrench, helm or heel), how many pass of
  * how many, and the worst of each kind: residuals in tolerances (1 is the
  * limit; signs as the harness's: surge + forward, sway + to leeward, roll +
@@ -62,83 +60,68 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  * more heel, more weather helm than predicted). `settle`: what she averaged,
  * and which checks fail.
  *
- * What's left, and why (sailing's windage is breakdown()'s; §6.1's is
- * compose's sway and heeling moment with the elements less without them):
- * - windage's heeling force. Sailing's rule and §6.1 cost about the same
- *   drive on the keelboats (at 12 kn 45° the sloop's 202 N against a 32 N
- *   surge residual), but §6.1's hull element grows with heel (side area
- *   + 0.75·(B/2)·LOA·sin φ, its centre 0.66·B·sin φ higher), so on a
- *   heeled reach it heels her far more: at 20 kn 75° the sloop's windage
- *   pushes her to leeward with 455 N in sailing and 789 N in §6.1. The
- *   predicted heel holds that, so she
- *   heels less than predicted wherever her curve is flat enough for it to
- *   show: the sloop at 20 kn 75° (−2.4°), the Catalina at 16–20 kn 70–90°
- *   (−2.0 to −2.3°), and 22 of the J/24's points from 12 kn (−2.1 to −7.9°:
- *   at 20 kn 75°, 175 N against 305 N). It is also
- *   the J/24's settle: her leeway 7.4°
- *   against 9.0°. No surge or sway residual is past 0.35 tolerances on any
- *   keelboat. These should close when sailing's physics reads §3.13's
- *   elements; nothing here is re-tuned to them.
- * - the Laser's windage drag: sailing's rule costs her about twice §6.1's
- *   (at 16 kn 40°: 55 N against 24 N), so close-hauled and reaching from
- *   12 kn she fails surge (worst −1.06 tolerances) and roll (worst 1.81),
- *   and at 12 kn 75°, where her curve is flat, heels 8.1° more. Her settle
- *   passes, 5.8% slow (2.66 against 2.82 m/s) and 1.6° less heel.
- * - the Laser dead downwind (180°, 6–20 kn): both now swing the main's CE
- *   (§6.6), and sailing's swing turns her bow to windward less than §6.6's:
- *   2.4–4.2° less weather helm than predicted (worst yaw −2.93 tolerances
- *   at 20 kn). Windage there is under 20 N either way, so reading §3.13
- *   won't close it: open, to diagnose (where each puts the swung CE at 85°).
- *   Her planing-range points: 15 of 24 pass.
+ * What's left, and why:
  * - cuvature's righting moment: her stand-in hull (the contract describes
  *   her drawn hull only by its coefficients) is 14–18% short past 10°
- *   (hull-resistance.test.js), so roll fails at 16 points from 14 kn
- *   (worst 2.28 tolerances, 4.9° more heel at 20 kn 40°); sailing's
- *   windage, which heels her less than §6.1's, makes it look smaller. In the
- *   sim she floats on her drawn mesh. Her settle now passes (3.271 against
- *   3.268 m/s): its old 16% was the windage §6 left out. (Her Munk moment
- *   goes as u·v, sin λ·cos λ, not §6.4's sin λ: its cos λ, which
- *   stock-rig.test.js checks at λ 5° and 15°.)
- * The sloop and the Catalina settle within every tolerance (the sloop 0.9%
- * slow), so they list no settle.
+ *   (hull-resistance.test.js), so roll fails at 17 points from 14 kn
+ *   (worst 2.40 tolerances, 5.1° more heel at 20 kn 45°). With sailing's
+ *   old windage, which heeled her less than §6.1's, it looked smaller (16
+ *   points, worst 2.28); now the windage agrees, 20 kn 90° shows it too. In
+ *   the sim she floats on her drawn mesh. Her settle passes (3.276 against
+ *   3.268 m/s). (Her Munk moment goes as u·v, sin λ·cos λ, not §6.4's
+ *   sin λ: its cos λ, which stock-rig.test.js checks at λ 5° and 15°.)
+ * - the J/24's heel: every wrench passes (roll −0.17 to −0.80 tolerances,
+ *   sway under 0.18), but at 20 points from 12 kn (17 of them predicted at
+ *   22–25°, by her 25° limit, where her righting curve is flattest) that
+ *   roll residual reads as 2.2–4.5° less heel than predicted. Not windage
+ *   (it agrees exactly): the sails' heeling moment or her curve there, open. Two of the old 22 closed (12 and 14 kn 60°)
+ *   and the worst went from −7.9° to −4.5°: the rest of the old gap was
+ *   windage's heeling force. Her settle's leeway is 7.39° against 9.02°,
+ *   exactly what it was with sailing's old windage, so it never was
+ *   windage. Part of it is how settle reads leeway: in her heeled body
+ *   frame (physics.js read(): the sway across her heeled centreplane), so
+ *   tan λ·cos φ, 8.2° at her 24° for the aid's 9.0°; the rest is open.
+ * - the Laser dead downwind (180°, 6–20 kn): both swing the main's CE
+ *   (§6.6), and sailing's swing turns her bow to windward less than §6.6's:
+ *   2.4–4.2° less weather helm than predicted (worst yaw −2.93 tolerances
+ *   at 20 kn, sway −1.06 there). Windage there is a few newtons, and now
+ *   §6.1's, so it was never that: open, to diagnose (where each puts the
+ *   swung CE at 85°). The rest of the Laser passes: her old close-hauled and
+ *   reaching failures were sailing's windage drag, about twice §6.1's. Her
+ *   planing-range points: 23 of 24 pass.
+ * The sloop and the Catalina now balance at every point and settle within
+ * every tolerance (the sloop at 3.402 against 3.430 m/s, 0.8% slow), so
+ * they list nothing: their old heel failures on a heeled reach were
+ * sailing's windage, whose side area didn't grow with heel.
  */
 const KNOWN_GAPS = {
-  "sloop-12m": {
-    wrench: { failing: ["20 kn 75°"], pass: 90, of: 91, worst: { surge: -0.047, sway: -0.225, roll: -0.601, yaw: -0.053, heelDeg: -2.382, rudderDeg: -0.805 } },
-  },
   "cuvature-first-guess": {
     wrench: {
-      failing: ["14 kn 40°", "14 kn 45°", "14 kn 52°", "14 kn 60°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°", "16 kn 70°", "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°"],
-      pass: 75,
+      failing: ["14 kn 40°", "14 kn 45°", "14 kn 52°", "14 kn 60°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°", "16 kn 70°", "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°", "20 kn 90°"],
+      pass: 74,
       of: 91,
-      worst: { surge: -0.081, sway: -0.249, roll: 2.283, yaw: -0.061, heelDeg: 4.861, rudderDeg: -0.638 },
+      worst: { surge: -0.084, sway: 0.064, roll: 2.396, yaw: -0.109, heelDeg: 5.101, rudderDeg: -1.144 },
     },
-  },
-  "catalina-30": {
-    wrench: { failing: ["16 kn 70°", "20 kn 70°", "20 kn 75°", "20 kn 90°"], pass: 87, of: 91, worst: { surge: -0.048, sway: -0.292, roll: -0.532, yaw: -0.07, heelDeg: -2.259, rudderDeg: -0.95 } },
   },
   j24: {
     wrench: {
       failing: [
-        "12 kn 52°", "12 kn 60°", "14 kn 45°", "14 kn 52°", "14 kn 60°", "14 kn 70°", "14 kn 75°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°",
-        "16 kn 70°", "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°", "20 kn 90°", "20 kn 110°", "20 kn 120°",
+        "12 kn 52°", "14 kn 45°", "14 kn 52°", "14 kn 70°", "14 kn 75°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°", "16 kn 70°",
+        "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°", "20 kn 90°", "20 kn 110°", "20 kn 120°",
       ],
-      pass: 69,
+      pass: 71,
       of: 91,
-      worst: { surge: -0.068, sway: -0.34, roll: -0.879, yaw: 0.137, heelDeg: -7.933, rudderDeg: -0.706 },
+      worst: { surge: 0.059, sway: 0.177, roll: -0.803, yaw: 0.145, heelDeg: -4.512, rudderDeg: -0.585 },
     },
-    // leeway 7.4° against 9.0° at 12 kn 45°: windage's heeling force, above
-    settle: { speedMs: 2.99, heelDeg: 23.82, leewayDeg: 7.39, rudderDeg: -4.8, fails: ["leeway"] },
+    // leeway 7.4° against 9.0° at 12 kn 45°: not windage (above)
+    settle: { speedMs: 2.995, heelDeg: 24.19, leewayDeg: 7.39, rudderDeg: -4.7, fails: ["leeway"] },
   },
   "laser-ilca7": {
     wrench: {
-      failing: [
-        "6 kn 180°", "8 kn 180°", "10 kn 180°", "12 kn 75°", "12 kn 180°", "14 kn 75°", "14 kn 90°", "14 kn 180°", "16 kn 40°",
-        "16 kn 45°", "16 kn 52°", "16 kn 70°", "16 kn 75°", "16 kn 90°", "16 kn 180°", "20 kn 90°", "20 kn 110°", "20 kn 180°",
-      ],
-      pass: 67,
+      failing: ["6 kn 180°", "8 kn 180°", "10 kn 180°", "12 kn 180°", "14 kn 180°", "16 kn 180°", "20 kn 180°"],
+      pass: 78,
       of: 85,
-      worst: { surge: -1.064, sway: -1.059, roll: 1.812, yaw: -2.929, heelDeg: 8.067, rudderDeg: -4.152 },
+      worst: { surge: -0.065, sway: -1.056, roll: -1.011, yaw: -2.93, heelDeg: -1.948, rudderDeg: -4.153 },
     },
   },
 };
@@ -234,7 +217,7 @@ afterAll(() => {
     lines.push(
       `${name.padEnd(22)} wrench ${String(s.pass).padStart(2)}/${s.of} pass  worst surge ${f(s.worst.surge)} sway ${f(s.worst.sway)} roll ${f(s.worst.roll)} yaw ${f(s.worst.yaw)}  heel err worst ${f(s.worst.heelDeg, 1)}° median ${f(s.medianHeelErrDeg, 1)}°, rudder err worst ${f(s.worst.rudderDeg, 1)}° median ${f(s.medianRudderErrDeg, 1)}°${planing.length ? `  (planing: ${planing.filter((r) => r.pass).length}/${planing.length})` : ""}`,
       `${"".padEnd(22)} at ${ref.twsKn} kn ${ref.twaDeg}°: sail drive ${f(b.sail.sailing.drive, 0)} vs ${f(b.sail.contract.drive, 0)} N, heeling ${f(b.sail.sailing.heel, 0)} vs ${f(b.sail.contract.heel, 0)} N; upright R ${f(b.resistance.sailing, 0)} vs ${f(b.resistance.contract, 0)} N`,
-      `${"".padEnd(22)} residual surge ${f(b.residual.surge, 0)} N, sway ${f(b.residual.sway, 0)} N, roll ${f(b.residual.roll, 0)} N·m, yaw ${f(b.residual.yaw, 0)} N·m; of which sailing's windage ${f(b.windage.surge, 0)} N, ${f(b.windage.sway, 0)} N, ${f(b.windage.roll, 0)} N·m, ${f(b.windage.yaw, 0)} N·m`,
+      `${"".padEnd(22)} residual surge ${f(b.residual.surge, 0)} N, sway ${f(b.residual.sway, 0)} N, roll ${f(b.residual.roll, 0)} N·m, yaw ${f(b.residual.yaw, 0)} N·m; windage (sailing vs §6.1) surge ${f(b.windage.sailing.surge, 0)} vs ${f(b.windage.contract.surge, 0)} N, sway ${f(b.windage.sailing.sway, 0)} vs ${f(b.windage.contract.sway, 0)} N, roll ${f(b.windage.sailing.roll, 0)} vs ${f(b.windage.contract.roll, 0)} N·m, yaw ${f(b.windage.sailing.yaw, 0)} vs ${f(b.windage.contract.yaw, 0)} N·m`,
     );
     if (st) lines.push(`${"".padEnd(22)} settle: speed ${f(st.got.speedMs)} vs ${f(ref.speedMs)} m/s, heel ${f(st.got.heelDeg, 1)} vs ${f(ref.heelDeg, 1)}°, leeway ${f(st.got.leewayDeg, 1)} vs ${f(ref.leewayDeg, 1)}°, rudder ${f(st.got.rudderDeg, 1)} vs ${f(ref.rudderDeg, 1)}°${st.v.pass ? "" : "  (fails: " + Object.keys(st.v).filter((k) => k !== "pass" && !st.v[k]).join(", ") + ")"}`);
   }

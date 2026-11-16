@@ -99,7 +99,10 @@ in the console. Her keel and rudder are the ones it drew, her weight sits
 where it put it, and a dinghy's crew hike to windward. She floats on her
 own hull (her drawn model, when the rig was designed on it), meets the
 water's resistance the rig worked out for her, and a dinghy that can plane
-climbs onto the plane past her hull speed. She flies its main and jib, each
+climbs onto the plane past her hull speed. The wind on her hull, mast and
+rigging is the rig's windage (its §3.13 elements, each pushed by the air
+where it is, §6.1); a boat without a contract gets the same rules applied
+to her box and mast. She flies its main and jib, each
 its own sail where the rig drew it, a reef lowering the main's head; the
 physics can back the jib to get her out of irons, though no station
 works a contract boat's own jib (for now it's trimmed with the main;

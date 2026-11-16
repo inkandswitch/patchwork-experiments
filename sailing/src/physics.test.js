@@ -39,6 +39,9 @@ function swell({ amp, length, toward = 0 }) {
 }
 
 import { helmsman, sail, speedAt, steady, wrap } from "./test/sail-runs.js";
+import { specFor } from "./sim.js";
+import { plainWindage } from "./windage.js";
+import sloopContract from "./test/rig-contract/sloop-12m.json";
 
 describe("the hull", () => {
   it("floats its mass with its waterline at y = 0", () => {
@@ -482,5 +485,162 @@ describe("the anchor", () => {
       astern = Math.max(astern, s.velocity[2]); // + is back toward the anchor
     }
     expect(astern).toBeLessThan(0.6);
+  });
+});
+
+// Windage (§3.13's elements, §6.1's force law), one element at a time: the
+// 12 m fixture's own hull (a body), bare mast (a spar, Cd 0.8 all round)
+// and mast beside the main (a spar, Cd 0.4 head-on, 0.6 abeam), alone in
+// her contract, at rest, heeled φ to port about her fore-and-aft axis, in
+// a true wind set so that in her heeled sail plane the air meets her at
+// β_e off the bow at AWS_e (from starboard for β_e > 0), at scale k. Her
+// windage is the wrench in that wind less the same in still air (her sails
+// stowed, her crew held amidships: nothing else there feels the air), and
+// is held to §6.1 written out here, not through windage.js.
+describe("windage: each element is §6.1's at its own centre", () => {
+  const RHO_AIR = sloopContract.sailModel.rhoAirKgM3;
+  const byId = Object.fromEntries(sloopContract.windage.elements.map((e) => [e.id, e]));
+  const AWS = 9;
+  const ships = new Map();
+  const shipWith = (e, k) => {
+    const key = `${e.id}@${k}`;
+    if (!ships.has(key)) {
+      const contract = { ...sloopContract, windage: { ...sloopContract.windage, elements: [e] } };
+      ships.set(key, createShip(specFor(null, undefined, k, { rig: { matrix: null, sail: null, contract } })));
+    }
+    return ships.get(key);
+  };
+  const heeled = (phi) => [0, 0, Math.sin(phi / 2), Math.cos(phi / 2)];
+  const stowed = { sail: 0, furl: 1 };
+  /** Her windage wrench (world force, torque about her centre of gravity) in a steady wind (vx, vz). */
+  const windageOf = (ship, phi, wind, spin = [0, 0, 0]) => {
+    const pose = { position: [0, 0, 0], quaternion: heeled(phi), crew: 0 };
+    const motion = { velocity: [0, 0, 0], spin };
+    const at = (v) => ({ at: (x, z, t, out = [0, 0]) => ((out[0] = v[0]), (out[1] = v[1]), out) });
+    const a = ship.wrench(pose, motion, stowed, { wind: at(wind) });
+    const b = ship.wrench(pose, motion, stowed, { wind: at([0, 0]) });
+    return { force: a.force.map((v, i) => v - b.force[i]), torque: a.torque.map((v, i) => v - b.torque[i]) };
+  };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  // heeled φ about +Z: body x → (cos φ, sin φ, 0), body y → (−sin φ, cos φ, 0)
+  const rot = (phi, v) => [Math.cos(phi) * v[0] - Math.sin(phi) * v[1], Math.sin(phi) * v[0] + Math.cos(phi) * v[1], v[2]];
+
+  for (const id of ["hull", "mast-bare", "mast-sail"]) {
+    for (const betaDeg of [0, 45, 90, 135, 180, -90]) {
+      for (const phiDeg of [0, 15]) {
+        for (const k of [1, 0.5]) {
+          it(`${id}, β_e ${betaDeg}°, heel ${phiDeg}°, ×${k}`, () => {
+            const e = byId[id];
+            const ship = shipWith(e, k);
+            const b = betaDeg * DEG, phi = phiDeg * DEG, s = Math.sin(phi);
+            // the true wind: across her heeled plane AWS_e·sin β_e (its world x is that over cos φ), along her AWS_e·cos β_e (aft from ahead)
+            const got = windageOf(ship, phi, [(-AWS * Math.sin(b)) / Math.cos(phi), AWS * Math.cos(b)]);
+            // §6.1: q_e = ½ρ·AWS_e²; fx along the boat (+ ahead), fh square to the mast (+ away from the wind)
+            const q = 0.5 * RHO_AIR * AWS * AWS;
+            const cb = Math.cos(b), sb = Math.sin(b);
+            const aF = e.areaFrontM2 * k * k, aS = e.areaSideM2 * k * k, aH = e.sidePerSinHeelM2 * k * k;
+            let fx, fh;
+            if (e.shape === "body") {
+              fx = -q * e.cdFront * aF * cb * Math.abs(cb);
+              fh = q * e.cdSide * (aS + aH * s) * sb * Math.abs(sb);
+            } else {
+              const D = q * aF * (e.cdFront * cb * cb + e.cdSide * sb * sb);
+              fx = -D * cb;
+              fh = D * sb;
+            }
+            // at its centre: the contract's (x fwd, y port, z up) in her body (x starboard, y up, z aft), lifted zPerSinHeel·sin φ up the mast
+            const at = [-e.atM[1] * k, (e.atM[2] + e.zPerSinHeelM * s) * k, -e.atM[0] * k];
+            const r = at.map((v, i) => v - ship.cg[i]);
+            const f = [-fh, 0, -fx]; // fh away from a starboard wind is to port (−x); ahead is −z
+            const wantF = rot(phi, f), wantT = rot(phi, cross(r, f));
+            const tolF = 1e-9 * Math.max(1, Math.hypot(...f)), tolT = 1e-9 * Math.max(1, Math.hypot(...f) * Math.hypot(...r));
+            for (let i = 0; i < 3; i++) {
+              expect(Math.abs(got.force[i] - wantF[i]), `force[${i}] ${got.force[i]} vs ${wantF[i]}`).toBeLessThanOrEqual(tolF);
+              expect(Math.abs(got.torque[i] - wantT[i]), `torque[${i}] ${got.torque[i]} vs ${wantT[i]}`).toBeLessThanOrEqual(tolT);
+            }
+            // and there is a force to see wherever §6.1 has one
+            expect(Math.hypot(...got.force)).toBeGreaterThan(0.01 * q * aF);
+          });
+        }
+      }
+    }
+  }
+
+  it("the air at each element includes her rotation: yawing in still air, the mast feels her turn there", () => {
+    const e = byId["mast-sail"];
+    const ship = shipWith(e, 1);
+    const w = 0.3; // rad/s about +Y: her bow (−z) swings toward −x
+    // her windage turning in still air: the wrench with the element less with none (the water feels her turn the same)
+    const none = createShip(specFor(null, undefined, 1, { rig: { matrix: null, sail: null, contract: { ...sloopContract, windage: { ...sloopContract.windage, elements: [] } } } }));
+    const pose = { position: [0, 0, 0], quaternion: [0, 0, 0, 1], crew: 0 };
+    const a = ship.wrench(pose, { spin: [0, w, 0] }, stowed), b = none.wrench(pose, { spin: [0, w, 0] }, stowed);
+    const got = { force: a.force.map((v, i) => v - b.force[i]), torque: a.torque.map((v, i) => v - b.torque[i]) };
+    const at = [-e.atM[1], e.atM[2], -e.atM[0]];
+    const r = at.map((v, i) => v - ship.cg[i]);
+    // her body origin is still, so the point moves at ω × its place from the origin (upright: world = body); the air past it is minus that
+    const u = cross([0, w, 0], at).map((v) => -v);
+    const speed = Math.hypot(u[0], u[2]);
+    const D = 0.5 * RHO_AIR * e.areaFrontM2 * (e.cdFront * u[2] * u[2] + e.cdSide * u[0] * u[0]) / speed;
+    const f = [D * u[0], 0, D * u[2]];
+    const wantT = cross(r, f);
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(got.force[i] - f[i])).toBeLessThan(1e-9);
+      expect(Math.abs(got.torque[i] - wantT[i])).toBeLessThan(1e-9);
+    }
+    // it damps her turn
+    expect(got.torque[1] * w).toBeLessThan(0);
+  });
+});
+
+// The plain path (no contract: her box and lumped sail) states its elements
+// by the same rules (windage.js plainWindage), and the physics flies them:
+// the stock sloop's numbers, from her spec (SLOOP) by hand.
+describe("windage on the plain path: the stock sloop's box and lumped mast", () => {
+  it("its elements are §3.13's rules on her box and mast, by hand", () => {
+    // FBAV = her freeboard 1.2; the mast from her deck (1.2) to the sail's head (1.4 + 13), 13.2 m long, 0.0055·13.2 + 0.01 wide
+    const width = 0.0055 * 13.2 + 0.01;
+    const want = [
+      { id: "hull", shape: "body", areaFrontM2: 1.2 * 3.8, areaSideM2: 1.2 * 12, sidePerSinHeelM2: 0.75 * 1.9 * 12, cdFront: 0.816, cdSide: 0.816, atM: [0, 0.66 * 1.2, 0], zPerSinHeelM: 0.66 * 3.8 },
+      { id: "mast-sail", shape: "spar", areaFrontM2: width * 13, areaSideM2: width * 13, sidePerSinHeelM2: 0, cdFront: 0.4, cdSide: 0.6, atM: [0, 1.2 + 0.2 + 13 / 2, -1.2], zPerSinHeelM: 0 },
+      { id: "mast-bare", shape: "spar", areaFrontM2: width * 0.2, areaSideM2: width * 0.2, sidePerSinHeelM2: 0, cdFront: 0.8, cdSide: 0.8, atM: [0, 1.2 + 0.1, -1.2], zPerSinHeelM: 0 },
+    ];
+    const got = plainWindage(createShip().spec);
+    expect(got.map((e) => e.id)).toEqual(want.map((e) => e.id));
+    got.forEach((e, i) => {
+      for (const [key, v] of Object.entries(want[i])) {
+        if (Array.isArray(v)) v.forEach((x, j) => expect(e[key][j]).toBeCloseTo(x, 12));
+        else if (typeof v === "number") expect(e[key]).toBeCloseTo(v, 12);
+        else expect(e[key]).toBe(v);
+      }
+    });
+  });
+
+  it("a box with no sail (none set) has a bare mast only; one with its sail's head at the deck has no mast", () => {
+    const bare = plainWindage({ ...SLOOP, sail: { ...SLOOP.sail, area: 0 } });
+    expect(bare.map((e) => e.id)).toEqual(["hull", "mast-bare"]);
+    expect(bare[1].areaFrontM2).toBeCloseTo((0.0055 * 13.2 + 0.01) * 13.2, 12);
+    expect(bare[1].atM[1]).toBeCloseTo(1.2 + 13.2 / 2, 12);
+    expect(plainWindage({ ...SLOOP, sail: { ...SLOOP.sail, tack: [0, 0.2, -1.2], luff: 1 } }).map((e) => e.id)).toEqual(["hull"]);
+  });
+
+  it("the ship flies exactly those, beam on and heeled", () => {
+    const ship = createShip();
+    const phi = 15 * DEG, s = Math.sin(phi);
+    const pose = { position: [0, 0, 0], quaternion: [0, 0, Math.sin(phi / 2), Math.cos(phi / 2)] };
+    const at = (v) => ({ at: (x, z, t, out = [0, 0]) => ((out[0] = v[0]), (out[1] = v[1]), out) });
+    // β_e 90° from starboard at AWS_e 9: the true wind (−9/cos φ, 0)
+    const a = ship.wrench(pose, {}, { sail: 0 }, { wind: at([-9 / Math.cos(phi), 0]) });
+    const b = ship.wrench(pose, {}, { sail: 0 }, { wind: at([0, 0]) });
+    const q = 0.5 * 1.225 * 81;
+    let side = 0, roll = 0;
+    for (const e of plainWindage(ship.spec)) {
+      const fh = e.shape === "body" ? q * e.cdSide * (e.areaSideM2 + e.sidePerSinHeelM2 * s) : q * e.areaFrontM2 * e.cdSide;
+      side += fh;
+      roll += fh * (e.atM[1] + e.zPerSinHeelM * s - ship.cg[1]);
+    }
+    // to port (−x in her heeled plane: world (−cos φ, −sin φ)), heeling her further (+ about z)
+    expect(a.force[0] - b.force[0]).toBeCloseTo(-side * Math.cos(phi), 9);
+    expect(a.force[1] - b.force[1]).toBeCloseTo(-side * s, 9);
+    expect(a.torque[2] - b.torque[2]).toBeCloseTo(roll, 9);
   });
 });
