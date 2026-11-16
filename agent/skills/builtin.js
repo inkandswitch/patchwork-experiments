@@ -167,6 +167,9 @@ the document a name anywhere in Patchwork.
     handle.change((d) => { d.count = 1 })    // every write goes through change()
     handle.on("change", render)              // local and remote edits alike
 
+- **Read the "automerge" skill before writing code that changes a document.**
+  The obvious moves — \`d.items = d.items.filter(…)\`, \`await\` inside
+  \`change()\`, writing to \`handle.doc()\` — fail silently or lose data.
 - **Automerge cannot hold \`undefined\`.** Use null, or \`delete d.field\` inside a
   change.
 - **\`repo.find(url)\` returns a Promise** of a handle that is already ready:
@@ -579,6 +582,102 @@ when you need to drive something specific: a particular control, a real
 document, a sequence of steps.`,
   },
 
+  {
+    name: "automerge",
+    description:
+      "Read before writing code that changes a document. The automerge mistakes that lose data silently: writing outside change(), await inside it, filter/map on lists, whole-string writes, counters, moving objects.",
+    body: `# How automerge behaves
+
+Every Patchwork document is an automerge document, and automerge is not a
+plain JSON object. Several of the obvious moves fail, and the worst of them
+fail *silently*: the code runs, the screen looks right, and the data is gone
+on reload or the next time someone else edits. Each rule here is checked
+against the automerge Patchwork ships (\`automerge-facts.test.js\`).
+
+Import what you need from \`@automerge/automerge\` (Patchwork provides it):
+\`import { splice, updateText, Counter } from "@automerge/automerge"\`.
+
+## Writes go through change(), synchronously
+
+- **Every write goes inside \`handle.change((d) => { … })\`.** Writing to
+  \`handle.doc()\` instead does not throw and even shows the new value — but it
+  is never saved or synced, and it is gone on reload.
+- **\`change()\` is synchronous.** Anything written after an \`await\` inside the
+  callback is silently dropped. Do the async work first, then change:
+
+      const data = await fetchSomething()
+      handle.change((d) => { d.data = data })
+
+- Reassigning \`d\` or returning a value from the callback does nothing.
+- **What a document can hold:** objects, arrays, strings, numbers, booleans,
+  null, Dates and Uint8Arrays. \`undefined\`, functions, Maps and Sets throw —
+  use null or \`delete d.field\`, and plain objects for maps. A class
+  instance is stored as a plain object and comes back without its class.
+
+## Change the smallest thing
+
+Automerge merges edits by *where* they land. Two people editing different
+fields of an object both win; one person replacing the whole object erases the
+other's edit. So:
+
+- **Never rebuild a list or object to change part of it.**
+  \`d.items = d.items.filter(…)\` or \`.map(…)\` throws for a list of objects
+  ("Cannot create a reference to an existing document object"), and the usual
+  workaround — deep-copy and reassign — quietly deletes anything someone else
+  added meanwhile. Edit in place:
+
+      const i = d.items.findIndex((item) => item.id === id)
+      if (i >= 0) d.items.splice(i, 1)         // remove
+      d.items[i].done = true                    // change one field
+      d.items.push({ id, text: "new" })        // add
+
+- **Removing several:** walk backwards, so indices ahead of you do not shift.
+  \`for (let i = d.items.length - 1; i >= 0; i--) if (gone(d.items[i])) d.items.splice(i, 1)\`
+- **Text:** \`d.body = newText\` and \`d.body += "x"\` replace the whole string,
+  and a collaborator's concurrent typing is lost. Use
+  \`updateText(d, ["body"], newText)\` (writes only what differs) or
+  \`splice(d, ["body"], index, deleteCount, "inserted")\`.
+- **Numbers several people bump** (votes, scores, counts): \`d.n += 1\` from two
+  people at once comes out +1, not +2. Store \`new Counter(0)\`, change it with
+  \`d.n.increment(1)\`, and read it as \`doc.n.value\`.
+- **Two people setting the same key** at once: one value wins everywhere and
+  the other is kept as a conflict (\`getConflicts(doc, "key")\`). If both
+  matter, they should not be the same key — give each person their own.
+
+## Lists are not arrays
+
+- There is no \`sort\`, \`reverse\`, or \`length = 0\`. Use \`push\`, \`splice\`,
+  \`insertAt(i, …)\`, \`deleteAt(i)\`; empty with \`d.items.splice(0, d.items.length)\`.
+- **Don't store an order by moving items.** Sorting a list of objects means
+  deleting and re-inserting copies, which loses concurrent edits to them. Keep
+  the order in the data (a \`position\` or \`createdAt\` field) and sort a copy
+  when you render: \`[...doc.items].sort(byPosition)\`.
+- Writing past the end throws (\`index 10 is out of bounds\`).
+- **Refer to items by an id you store**, not by index — indices shift when
+  others insert or delete. Inside \`change()\`, \`d.items[0] === d.items[0]\` is
+  false (each read is a new proxy), so compare ids, not objects.
+
+## Moving and copying
+
+An object already in the document cannot be placed somewhere else in it — that
+throws. Copy it: \`JSON.parse(JSON.stringify(d.source))\`. \`{ ...d.source }\` only
+works when nothing inside it is an object, and \`structuredClone\` throws.
+
+## Versions
+
+A URL with heads (\`automerge:…#…\`, as \`doc_history\` gives) opens the
+document as it was then. It is read-only: \`change()\` on it throws "view-only
+mode". Write to the plain URL.
+
+## doc_edit does this for you
+
+When *you* edit a document with \`doc_edit\`, setting a value writes only what
+differs: send back the whole object you read with one field changed, and only
+that field is written; set a string and only the changed characters are; set a
+counter to a number and it is incremented. So whole-value sets are safe there.
+What it cannot do is guess an id — remove list items with a splice range on
+their index, from a fresh read.`,
+  },
   {
     name: "editing-documents",
     description:

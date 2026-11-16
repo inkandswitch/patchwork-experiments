@@ -14,6 +14,7 @@ import { hostImport } from "./host.js"
 import { applyOps, OpError } from "./ops.js"
 import { previewJson, preview, shape, bytes } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
+import { isCodePath, isDirectory, isFile, isFolder } from "./folders.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -134,6 +135,18 @@ export const docRead = {
   },
 }
 
+/**
+ * Is this document source code? doc_edit is approved before it knows what it
+ * is pointed at, so it checks here, once it does: a code file, or a package
+ * (a folder or directory holding a package.json). See session.needsApproval.
+ */
+function sourceCode(doc) {
+  if (isFile(doc) && isCodePath(doc.name)) return `the source file ${doc.name}`
+  if (isFolder(doc) && doc.docs.some((entry) => entry?.name === "package.json")) return "a package folder"
+  if (isDirectory(doc) && "package.json" in doc) return "a package"
+  return null
+}
+
 export const docEdit = {
   id: "doc_edit",
   name: "Edit document",
@@ -150,10 +163,12 @@ export const docEdit = {
     "Append to a list — { path: ['items'], range: [2, 2], value: { done: false } }.",
     "Change some text — { path: ['body'], find: 'teh cat', value: 'the cat' }.",
     "Insert text at offset 10 — { path: ['body'], range: [10, 10], value: 'hello' }.",
+    "Setting a value writes only what differs, so sending back a whole object you read with one field changed writes just that field, and merges with anyone else's edits. Setting a counter to a number increments it.",
+    "Edits to documents run without asking: history keeps every overwritten value (doc_history). Source code is the exception — edit code files with fs_edit/fs_write, which ask first.",
     "For a file, fs_edit does the same by path.",
   ].join("\n"),
   where: "worker",
-  risk: "write",
+  risk: "edit",
   input_schema: {
     type: "object",
     required: ["ops"],
@@ -190,7 +205,13 @@ export const docEdit = {
     const ops = input.ops ?? []
     if (!Array.isArray(ops) || !ops.length) throw new Error("Pass at least one op.")
 
-    const { handle } = await findDoc(url, ctx)
+    const { handle, doc } = await findDoc(url, ctx)
+    const code = sourceCode(doc)
+    if (code) {
+      throw new Error(
+        `${url} is ${code}. Edit source code with fs_edit or fs_write: doc_edit runs without asking because history can undo a document, but code runs with the user's authority on its next load, so the file tools ask first.`
+      )
+    }
     let done = []
     let failure = null
 
@@ -233,7 +254,7 @@ export const docCreate = {
   ].join("\n"),
   // Host tier: it needs the datatype from the page's plugin registry.
   where: "host",
-  risk: "write",
+  risk: "edit",
   input_schema: {
     type: "object",
     required: ["datatype"],

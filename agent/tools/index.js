@@ -13,12 +13,15 @@
  *
  * A tool definition:
  *
- *   { id, name, description, input_schema, where, risk, alwaysAsk?, target?,
+ *   { id, name, description, input_schema, where, risk, alwaysAsk?, askWhen?, target?,
  *     execute(input, ctx), summarize?(input, output) }
  *
  * `where` is "worker" | "host" | "task" and decides who may run it.
- * `risk` is "read" | "self" | "write" | "external"; see session.needsApproval.
- * "self" writes only to the session document and so is never asked about.
+ * `risk` is "read" | "self" | "edit" | "write" | "external"; see
+ * session.needsApproval. "self" writes only to the session document and "edit"
+ * only to automerge documents, so neither is asked about — except that an
+ * `edit` tool's `askWhen(input)` can name calls that write source code, which
+ * then need a grant like any `write`.
  */
 
 import { tryHostImport } from "./host.js"

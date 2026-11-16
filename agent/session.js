@@ -718,11 +718,27 @@ export function shortPath(url) {
 /**
  * Does this call still need a human decision?
  *
- * `risk: "read"` and `risk: "self"` run silently — the first touches nothing, the
- * second touches only this conversation's own document. Everything else needs a
- * grant for this tool on
- * this document. Tools flagged `alwaysAsk` ignore grants entirely — installing
- * code that runs on every future load should be deliberate every time.
+ *   read      runs silently: it touches nothing.
+ *   self      runs silently: it writes only this conversation's own document.
+ *   edit      runs silently: it writes only automerge documents, which keep
+ *             their history, so anything it does can be seen and put back —
+ *             doc_history shows every overwritten value. Asking first bought
+ *             nothing that history does not, and the prompts were the main
+ *             thing slowing the loop down. Two exceptions, below.
+ *   write     needs a grant: it does something history cannot undo.
+ *   external  needs a grant: it reaches past the user's documents.
+ *
+ * `edit` has two exceptions, and both are about the one thing history cannot
+ * undo — code that has already run:
+ *
+ *   - Sensitive documents always ask (see below).
+ *   - A tool's `askWhen(input)` names the calls that write source code. Code in
+ *     a package runs with the user's authority on its next load, and automerge
+ *     has no access control, so a package someone else published is as
+ *     writable as your own — editing it changes it for everyone who installed
+ *     it. Those calls fall back to needing a grant, like `write`.
+ *
+ * Tools flagged `alwaysAsk` ignore grants entirely.
  */
 export function needsApproval(doc, toolDef, block = null, subject = null, sensitive = []) {
   if (!toolDef) return true
@@ -733,7 +749,6 @@ export function needsApproval(doc, toolDef, block = null, subject = null, sensit
   if (toolDef.risk === "read" || toolDef.risk === "self") return false
   if (asksEveryTime(toolDef, block?.input)) return true
 
-  const grants = doc.grants ?? {}
   const target = block ? callTarget(block, subject, toolDef) : null
 
   // Risk belongs to the document, not only to the verb. Your module settings
@@ -741,13 +756,46 @@ export function needsApproval(doc, toolDef, block = null, subject = null, sensit
   // identity; a write to either deserves an explicit yes every time, whichever
   // tool is doing it. Attaching this to a bespoke "install" tool instead would
   // just mean the next tool that can write a document routes around it.
-  if (target && sensitive.includes(target)) return true
+  if (target && isSensitive(target, sensitive)) return true
+
+  if (toolDef.risk === "edit" && !writesCode(toolDef, block?.input)) return false
 
   // Any grant from the exact target up to "anything" answers for this call.
+  const grants = doc.grants ?? {}
   return !grantCandidates(toolDef.id, target).some((key) => {
     const held = grants[key]
     return held === "session" || held === "always"
   })
+}
+
+/** Does this `edit` call write source code? A rule that throws is taken as yes. */
+export function writesCode(toolDef, input = {}) {
+  const rule = toolDef?.askWhen
+  if (typeof rule !== "function") return false
+  try {
+    return !!rule(input ?? {})
+  } catch {
+    return true
+  }
+}
+
+/**
+ * The document an automerge URL names, without heads or a path into it.
+ *
+ * `automerge:X`, `automerge:X#heads` and `automerge:X/a/b` are one document,
+ * and a check that compared strings would let the second and third past it.
+ */
+export function documentIdOf(url) {
+  const raw = String(url ?? "")
+  if (!raw.startsWith("automerge:")) return null
+  return raw.slice("automerge:".length).split(/[#/?]/)[0] || null
+}
+
+/** Is `target` one of the sensitive documents, however its URL is spelled? */
+export function isSensitive(target, sensitive = []) {
+  const id = documentIdOf(target)
+  if (!id) return sensitive.includes(target)
+  return sensitive.some((url) => documentIdOf(url) === id)
 }
 
 /** Which grant is answering for this call, if any. For explaining a decision. */

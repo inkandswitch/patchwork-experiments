@@ -36,7 +36,7 @@ describe("every tool explains itself", () => {
       })
 
       it("declares a risk the approval logic understands", () => {
-        expect(["read", "self", "write", "external"]).toContain(tool.risk)
+        expect(["read", "self", "edit", "write", "external"]).toContain(tool.risk)
       })
 
       it("declares a tier", () => {

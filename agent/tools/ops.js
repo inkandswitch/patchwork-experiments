@@ -127,6 +127,107 @@ function parentOf(root, path) {
   return { parent, key: path[path.length - 1] }
 }
 
+// ---------------------------------------------------------------- setting
+
+/**
+ * Plain maps: automerge's map proxies and JSON objects. Not lists, counters,
+ * dates, bytes or ImmutableStrings, which are objects too.
+ */
+function isMap(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+function isCounter(value) {
+  return value !== null && typeof value === "object" && typeof value.increment === "function" && typeof value.value === "number"
+}
+
+/** Deep equality between what is in the document and a JSON value. */
+export function sameValue(current, value) {
+  if (current === value) return true
+  if (isCounter(current)) return current.value === value
+  if (Array.isArray(current) && Array.isArray(value)) {
+    return current.length === value.length && value.every((item, i) => sameValue(current[i], item))
+  }
+  if (isMap(current) && isMap(value)) {
+    const keys = Object.keys(value).filter((key) => value[key] !== undefined)
+    return Object.keys(current).length === keys.length && keys.every((key) => key in current && sameValue(current[key], value[key]))
+  }
+  return false
+}
+
+/**
+ * Make the value at `path` equal `value`, writing only what differs.
+ *
+ * Assigning a whole value is what the model naturally does — it read the
+ * object, changed a field, and sends the object back — and in automerge it is
+ * the wrong write: it replaces everything under that key, so anyone else's
+ * concurrent edit anywhere inside it is lost, and the history says the whole
+ * thing was rewritten. Measured: a list reassigned while another peer pushed
+ * to it came out without the push. So a set is turned into the edits it
+ * implies — a text splice, the changed fields, the inserted items — and the
+ * model never has to know.
+ *
+ * The invariant is only that the result equals `value`; how little is written
+ * to get there is best effort.
+ */
+export function writeValue(draft, path, value, spliceText = null) {
+  const { parent, key } = parentOf(draft, path)
+  const current = parent[key]
+  if (sameValue(current, value)) return
+
+  if (typeof current === "string" && typeof value === "string") {
+    const { from, to, inserted } = minimalSplice(current, value)
+    spliceString(draft, path, from, to, inserted, spliceText)
+    return
+  }
+
+  // A counter merges concurrent increments; setting it to a number would turn
+  // it into a plain number that does not.
+  if (isCounter(current) && typeof value === "number") {
+    current.increment(value - current.value)
+    return
+  }
+
+  if (isMap(current) && isMap(value)) {
+    for (const field of Object.keys(current)) {
+      if (!(field in value) || value[field] === undefined) delete current[field]
+    }
+    for (const [field, next] of Object.entries(value)) {
+      if (next === undefined) continue
+      if (field in current) writeValue(draft, [...path, field], next, spliceText)
+      else current[field] = next
+    }
+    return
+  }
+
+  if (Array.isArray(current) && Array.isArray(value)) {
+    // Keep the ends that already match. What is left in the middle is edited
+    // in place position by position, so an item with one changed field stays
+    // the same item, and only the difference in length is inserted or removed.
+    let start = 0
+    while (start < current.length && start < value.length && sameValue(current[start], value[start])) start++
+    let end = 0
+    while (
+      end < current.length - start &&
+      end < value.length - start &&
+      sameValue(current[current.length - 1 - end], value[value.length - 1 - end])
+    ) {
+      end++
+    }
+    const oldMiddle = current.length - start - end
+    const newMiddle = value.length - start - end
+    const paired = Math.min(oldMiddle, newMiddle)
+    for (let i = 0; i < paired; i++) writeValue(draft, [...path, start + i], value[start + i], spliceText)
+    if (oldMiddle > paired) current.splice(start + paired, oldMiddle - paired)
+    if (newMiddle > paired) current.splice(start + paired, 0, ...value.slice(start + paired, start + newMiddle))
+    return
+  }
+
+  parent[key] = value
+}
+
 export function validateOp(op) {
   if (!op || typeof op !== "object") throw new OpError("op must be an object")
   const path = op.path ?? []
@@ -189,6 +290,13 @@ export function applyOp(draft, op, { spliceText = null } = {}) {
     const target = nodeAt(draft, path)
     const [from, to = from] = range
 
+    if ((typeof target === "string" || Array.isArray(target)) && (from < 0 || to > target.length)) {
+      const unit = typeof target === "string" ? "characters" : "items"
+      throw new OpError(
+        `range [${from}, ${to}] is outside /${path.join("/")}, which has ${target.length} ${unit}. [${target.length}, ${target.length}] appends.`
+      )
+    }
+
     if (typeof target === "string") {
       const inserted = value == null ? "" : String(value)
       spliceString(draft, path, from, to, inserted, spliceText)
@@ -222,7 +330,16 @@ export function applyOp(draft, op, { spliceText = null } = {}) {
       delete container[range]
       return `deleted ${range} from /${path.join("/")}`
     }
-    container[range] = value
+    if (Array.isArray(container)) {
+      if (typeof range !== "number") throw new OpError("list keys must be numeric")
+      if (range < 0 || range >= container.length) {
+        throw new OpError(
+          `index ${range} is outside /${path.join("/")}, which has ${container.length} item${container.length === 1 ? "" : "s"} (0–${container.length - 1}). To add an item, splice: { path: ${JSON.stringify(path)}, range: [${container.length}, ${container.length}], value: … }`
+        )
+      }
+    }
+    if (range in container) writeValue(draft, [...path, range], value, spliceText)
+    else container[range] = value
     return `set ${range} on /${path.join("/")}`
   }
 
@@ -239,7 +356,11 @@ export function applyOp(draft, op, { spliceText = null } = {}) {
   if (parent == null || typeof parent !== "object") {
     throw new OpError(`cannot set /${path.join("/")}: its parent does not exist`)
   }
-  parent[key] = value
+  if (Array.isArray(parent) && (typeof key !== "number" || key < 0 || key >= parent.length)) {
+    throw new OpError(`index ${key} is outside /${path.slice(0, -1).join("/")}, which has ${parent.length} items. To add one, splice.`)
+  }
+  if (key in parent) writeValue(draft, path, value, spliceText)
+  else parent[key] = value
   return `set /${path.join("/")}`
 }
 

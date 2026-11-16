@@ -68,9 +68,11 @@ ever enters the document; adapters translate on the way in and out. That is
 what makes changing model mid-session work, and it is why the web tools are
 ours rather than a provider's hosted search.
 
-**Approvals plus history.** `risk: "read"` runs silently; everything else asks,
-and the grant it earns can be as narrow as one document or as broad as a whole
-site — see *Risk lives on the document*. Grants live in the session document, so
+**Approvals plus history.** `risk: "read"` runs silently, and so does
+`risk: "edit"` — writes to automerge documents, which keep their history, so
+anything the agent changed can be seen and put back with `doc_history`.
+Everything else asks, and the grant it earns can be as narrow as one document
+or as broad as a whole site — see *Risk lives on the document*. Grants live in the session document, so
 any participant can approve and every approval is auditable.
 
 ## The tool surface
@@ -291,7 +293,19 @@ equality`.
 
 ## Risk lives on the document
 
-`risk: "read"` runs silently. Everything else asks, and the answer can be
+`risk: "read"` runs silently. So does `risk: "edit"`: `doc_edit`, `doc_create`
+and the file tools only write automerge documents, and automerge keeps every
+version, so an approval prompt bought nothing that `doc_history` does not —
+while stopping the loop on every write. What history cannot undo is code that
+has already run, so `edit` has two exceptions. Sensitive documents (below)
+always ask. And a tool's `askWhen(input)` marks calls that write source code
+(`isCodePath`: `.js`, `.ts`, `.json`, `.css`, …), which need a grant as before:
+a package runs with the user's authority on its next load, and with no access
+control in automerge, a package someone else published is as writable as your
+own. `doc_edit` cannot tell code from data until it has loaded the document,
+so it refuses source files and packages there and points at the file tools.
+
+Everything else asks, and the answer can be
 narrow or broad: this call only, this document, this page, this directory, this
 whole site, or anything the tool can reach. Approving each fetch individually is
 what made the loop unusable — the agent stops on every page of a documentation
@@ -346,7 +360,8 @@ Grants live on the session document, so they are per-conversation, auditable in
 its history, and any participant can approve.
 
 On top of that, some *documents* always ask, whichever tool touches them and
-however broad the grant: the module settings document decides what code runs on
+however broad the grant — matched by document id, so a URL with heads or a
+path in it is still the same document: the module settings document decides what code runs on
 every future load, and the account document is your identity. Attaching that
 gate to an "install" tool instead would only mean the next tool that can write a
 document routes around it.

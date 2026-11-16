@@ -24,6 +24,40 @@ export function contentToText(content) {
   return text === "[object Object]" ? "" : text
 }
 
+/**
+ * Is this path source code — something a package loads and runs?
+ *
+ * File writes are approved by what they write, not by the fact of writing:
+ * notes, data and prose go straight in, because history keeps every version,
+ * but code runs with the user's authority on its next load. Judged by the name
+ * alone, because approval is decided before anything is loaded.
+ */
+const CODE_EXTENSIONS = new Set([
+  "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx",
+  "css", "html", "htm", "json", "wasm", "svelte", "vue",
+])
+
+export function isCodePath(path) {
+  const name = String(path ?? "").split("/").filter(Boolean).at(-1) ?? ""
+  const dot = name.lastIndexOf(".")
+  return dot > 0 && CODE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase())
+}
+
+/** A write by url alone could be to anything, so it counts as code. */
+export function writesCodeFiles(input) {
+  const paths = input.files && typeof input.files === "object" ? Object.keys(input.files) : []
+  if (input.path) paths.push(input.path)
+  if (!paths.length) return true
+  return paths.some(isCodePath)
+}
+
+/** Unlinking a non-code file is recoverable; a path with no extension may be a whole folder. */
+export function deletesCode(input) {
+  const path = String(input.path ?? "")
+  const name = path.split("/").filter(Boolean).at(-1) ?? ""
+  return !name || isCodePath(path) || name.lastIndexOf(".") <= 0
+}
+
 export function isFolder(doc) {
   return !!doc && Array.isArray(doc.docs)
 }
@@ -531,7 +565,9 @@ export const fsWrite = {
     "Writing over an existing file changes only the characters that differ, so it is safe to use for a rewrite. To change one part of a file, fs_edit is quicker: give it the old text and the new.",
   ].join("\n"),
   where: "worker",
-  risk: "write",
+  risk: "edit",
+  // Prose and data go straight in; source code still asks. See isCodePath.
+  askWhen: writesCodeFiles,
   input_schema: {
     type: "object",
     properties: {
@@ -702,7 +738,8 @@ export const fsEdit = {
     "The result shows the edited lines with a little context, so you can see the change landed without reading the file again. To replace a whole file, use fs_write; to rename or remove one, fs_delete plus fs_write.",
   ].join("\n"),
   where: "worker",
-  risk: "write",
+  risk: "edit",
+  askWhen: writesCodeFiles,
   input_schema: {
     type: "object",
     required: ["old"],
@@ -814,7 +851,8 @@ export const fsDelete = {
     "Renaming or moving is this plus fs_write. Deleting a folder takes everything under it out with it, so name the exact path you mean.",
   ].join("\n"),
   where: "worker",
-  risk: "write",
+  risk: "edit",
+  askWhen: deletesCode,
   input_schema: {
     type: "object",
     required: ["path"],
