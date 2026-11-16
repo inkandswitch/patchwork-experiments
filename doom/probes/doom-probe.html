@@ -177,7 +177,7 @@ try {
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     },
     text: (sel, w) => [...hosts[w].querySelectorAll(sel)].map((e) => e.textContent.trim()).filter(Boolean),
-    /** a button by its text (a toolbar's Objects, say), to click */
+    /** a button by its text (a toolbar's Inspector, say), to click */
     buttonRect(w, label) {
       const b = [...hosts[w].querySelectorAll("button")].find((x) => x.textContent.trim() === label && x.getBoundingClientRect().width > 0);
       if (!b) return null;
