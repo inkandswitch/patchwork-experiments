@@ -48,13 +48,25 @@ function fakeFrame() {
   const frame = document.createElement("div")
   document.body.append(frame)
   const opened = []
+  const openPorts = new Set()
+  let views = []
   frame.addEventListener("patchwork:subscribe", (event) => {
     const { selector, port } = event.detail
+    if (selector.type === "patchwork:open-views") {
+      openPorts.add(port)
+      port.postMessage({ type: "change", value: views })
+      return
+    }
     const value = selector.type === "patchwork:tool-storage" && selector.toolId === STORAGE_TOOL_ID ? STORAGE : []
     port.postMessage({ type: "change", value })
   })
   frame.addEventListener("patchwork:open-document", (event) => opened.push(event.detail))
-  return { frame, opened }
+  /** What the frame has open in its views. */
+  const setOpen = (urls) => {
+    views = urls.map((url) => ({ url, toolId: null }))
+    for (const port of openPorts) port.postMessage({ type: "change", value: views })
+  }
+  return { frame, opened, setOpen }
 }
 
 /** A session in a given state. */
@@ -98,16 +110,16 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function mount(doc) {
-  const repo = fakeRepo({ [STORAGE]: { sessionUrl: "automerge:s1", sessions: ["automerge:s1"] }, "automerge:s1": doc })
-  const { frame, opened } = fakeFrame()
+function mount(doc, extra = {}) {
+  const repo = fakeRepo({ [STORAGE]: { sessionUrl: "automerge:s1", sessions: ["automerge:s1"] }, "automerge:s1": doc, ...extra })
+  const { frame, opened, setOpen } = fakeFrame()
   const view = document.createElement("patchwork-view")
   const element = document.createElement("div")
   view.append(element)
   frame.append(view)
   cleanups.push(AmbientAgent(element, { repo }))
   const $ = (selector) => element.querySelector(selector)
-  return { repo, element, opened, $, s1: repo.handles.get("automerge:s1") }
+  return { repo, element, opened, setOpen, $, s1: repo.handles.get("automerge:s1") }
 }
 
 // ---- what deserves attention ---------------------------------------------
@@ -320,5 +332,30 @@ describe("the pop-over at rest", () => {
     expect($(".agent-float").hidden).toBe(false)
     expect($(".agent-peek").hidden).toBe(true)
     expect(element.querySelector(".agent-pop")).toBeTruthy()
+  })
+
+  it("stands aside while the workflow it belongs to is open, which shows it already", async () => {
+    const orchestrator = session("done")
+    orchestrator.made.push({ url: "automerge:plan", name: "Pack", kind: "agent-workflow" })
+    const { $, setOpen } = mount(orchestrator, {
+      "automerge:plan": { title: "Pack", steps: [{ id: "nb", title: "Notebook", status: "running", sessionUrl: "automerge:step" }] },
+      "automerge:step": session("approval"),
+    })
+    await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(false))
+    setOpen(["automerge:plan#someheads"]) // the workflow's view, however its URL is spelled
+    await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(true))
+    setOpen([])
+    await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(false))
+    setOpen(["automerge:step"]) // or the step's own session
+    await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(true))
+  })
+
+  it("lays its buttons out and styles them — the peek is outside any session view", async () => {
+    const { $ } = mount(session("approval"))
+    await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(false))
+    expect($(".agent-peek .agent-waiting-item .cluster")).toBeTruthy()
+    const css = (await import("node:fs")).readFileSync(`${process.cwd()}/styles.css`, "utf8")
+    expect(css).toContain(":is(.patchwork-agent, .agent-pop) button {")
+    expect(css).toContain(".agent-pop .cluster {")
   })
 })

@@ -182,6 +182,7 @@ export function watchAttention(repo, getSessionUrls, onChange, { now = () => Dat
               title: `${plan.title} · ${step.title}`,
               stepTitle: step.title,
               planTitle: plan.title,
+              planUrl,
               step: true,
             })
           }

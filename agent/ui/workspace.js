@@ -71,6 +71,8 @@ export function watchWorkspace(element, { repo, exclude = () => [], onChange = n
 
   return {
     focused: () => focused,
+    /** Every document open in a view right now, focused or not. */
+    openUrls: () => [...new Set([focused, ...open.map((v) => v.url)].filter(Boolean))],
     snapshot,
     title: (url) => titleOf(repo, url),
     dispose() {

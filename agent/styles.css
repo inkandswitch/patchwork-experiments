@@ -369,7 +369,7 @@
   overflow: auto;
 }
 
-.patchwork-agent button {
+:is(.patchwork-agent, .agent-pop) button {
   font: inherit;
   font-size: 0.78rem;
   padding: 2px 8px;
@@ -380,22 +380,32 @@
   cursor: pointer;
 }
 
-.patchwork-agent button:hover { background: var(--agent-surface); }
+:is(.patchwork-agent, .agent-pop) button:hover { background: var(--agent-surface); }
 
-.patchwork-agent button[data-variant="primary"] {
+:is(.patchwork-agent, .agent-pop) button[data-variant="primary"] {
   background: var(--agent-accent);
   color: var(--agent-accent-line);
   border-color: transparent;
 }
 
-.patchwork-agent button[data-variant="danger"] { color: var(--agent-danger-text); }
+:is(.patchwork-agent, .agent-pop) button[data-variant="danger"] { color: var(--agent-danger-text); }
 
-.patchwork-agent button:focus-visible {
+:is(.patchwork-agent, .agent-pop) button:focus-visible {
   outline: 2px solid var(--agent-accent);
   outline-offset: 1px;
 }
 
-.patchwork-agent button:disabled { opacity: 0.5; cursor: default; }
+:is(.patchwork-agent, .agent-pop) button:disabled { opacity: 0.5; cursor: default; }
+
+/* The pop-over's pill and peek live outside any session view, so the layout
+   helpers the view's own rules provide have to be given to them too — without
+   this the peek's buttons ran together as unstyled text. */
+.agent-pop .cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  flex-wrap: wrap;
+}
 
 /* ---- Composer ---------------------------------------------------------- */
 

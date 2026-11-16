@@ -19,7 +19,7 @@
  */
 
 import { AgentTool, isDictationShortcut } from "./tool.js"
-import { initSession, sessionTitle } from "./session.js"
+import { initSession, sessionTitle, documentIdOf } from "./session.js"
 import { hostImport } from "./tools/host.js"
 import { subscribe, openDocument } from "./ui/providers.js"
 import { watchWorkspace } from "./ui/workspace.js"
@@ -217,7 +217,10 @@ export function AmbientAgent(element, options = {}) {
   const workspace = watchWorkspace(element, {
     repo,
     exclude: () => (sessionUrl ? [sessionUrl] : []),
-    onChange: () => labelFocus(),
+    onChange: () => {
+      labelFocus()
+      renderAttention()
+    },
   })
 
   async function labelFocus() {
@@ -496,7 +499,12 @@ export function AmbientAgent(element, options = {}) {
     }
     for (const item of needs) notifier.notify(item)
 
-    const waiting = [...needs.filter((item) => !dismissed.has(item.key)), ...notices]
+    // Not over something already showing it: an open workflow view has the
+    // item on its step's card, and an open session has it in its transcript —
+    // a peek on top of either only covered what you were looking at.
+    const onScreen = new Set(workspace.openUrls().map(documentIdOf).filter(Boolean))
+    const shownElsewhere = (item) => [item.sessionUrl, item.planUrl].some((url) => url && onScreen.has(documentIdOf(url)))
+    const waiting = [...needs.filter((item) => !dismissed.has(item.key) && !shownElsewhere(item)), ...notices.filter((n) => !shownElsewhere(n))]
     const open = !box.hidden
 
     // The peek is rebuilt only when what it shows changes, so an answer being
