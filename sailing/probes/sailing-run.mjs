@@ -246,6 +246,15 @@ try {
   check("exactly one view computes the ships, and the doc's clock claim names its session", simA !== simB && simClaim?.session === (simA ? sess.a : sess.b), { simA, simB, simClaim, sess });
   const SIM = simA ? "a" : "b", FOL = simA ? "b" : "a";
   report.measured.simulator = SIM;
+  // The anchoring's timeline (sea time, her pose and read at each move), so a node harness can replay it
+  // (src/breakout.slow.test.js) and say whether it reaches the same verdict at breakout.
+  const anchoring = (report.measured.anchoring = { marks: {}, weigh: [] });
+  const poseNow = async () => {
+    const m = await P(`worldOf('${hull}', '${SIM}')`);
+    const rd = await P(`read('${hull}', '${SIM}')`);
+    return { t: await P(`clock('${SIM}')`), at: [+m[12].toFixed(3), +m[14].toFixed(3)], compass: +((compassOf(m) * 180) / Math.PI).toFixed(2), speed: rd ? +rd.speed.toFixed(3) : null, awa: rd ? +((rd.apparentWind.angle * 180) / Math.PI).toFixed(2) : null };
+  };
+  const mark = async (name, extra = {}) => { anchoring.marks[name] = { ...(await poseNow()), ...extra }; };
   // the clock: how fast sea time runs against the wall, and the follower's lag
   const c0 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
   await b.advance(3000);
@@ -292,6 +301,7 @@ try {
   // look at it from the cockpit (below) is made; sheeted in it lies over the
   // well. It's eased again (0.5) once that look is done.
   const windFrom = (await P("doc()")).traits["sailing.weather"].wind.from;
+  await mark("lay", { docAt: (await P("doc()")).objects[hull].transform.position });
   await js(`window.__p.change((d) => {
     const o = d.objects;
     o['${hull}'].transform.rotation[1] = ${(-windFrom * Math.PI) / 180};
@@ -368,6 +378,7 @@ try {
     check("at anchor, from the cockpit, the boom over B's head is in reach (its gooseneck isn't): hold R Raise sail", !!aimC && aimC.distance < 2.5 && gooseC > 2.5 && verbsC.some((v) => v.command === "sail" && /Raise/.test(v.name) && !v.disabled), { aimC, verbsC, gooseneck: n2(gooseC), boomAt: r3(boomAt), eye: r3(eye), yaw: n2(yaw), pitch: n2(pitch), me: await P("me('b')"), missed: report.measured.missed });
     // and eased again, as the template has it, for getting under way
     await js(`window.__p.change((d) => { d.objects['${rig}'].traits['sailing.sail'].sheet = 0.5; })`);
+    await mark("eased");
   }
   // B raises the sail: looking at the mast offers the sail's verbs
   const mastAt = await local(ids.mast);
@@ -391,9 +402,11 @@ try {
   const atHalyard = await P("me('b')");
   check("F at the mast locks B in there (the sail's stand spot), the hint saying hold R", atHalyard.station === rig && /hold R raise sail/.test(atHalyard.hint ?? ""), atHalyard);
   // (a little: a sail part way up, aft of her keel's centre, rounds her back up into the wind she's falling off)
+  await mark("hoist");
   await keyDown("r");
   await b.rest(350);
   await keyUp("r");
+  await mark("hoisted", { raised: (await P(`value('${rig}', '${SIM}')`)).raised });
   await b.rest(300);
   const hoisted = (await P("doc()")).objects[rig].traits["sailing.sail"].raised;
   check("holding R there hoists it: the doc has it part way up", hoisted > 0.05 && hoisted < 0.5, { hoisted });
@@ -422,9 +435,11 @@ try {
   check("B's HUD says how to steer", /steer/.test((await P("text('[data-k=\"hint\"]', 'b')"))[0] ?? ""), await P("text('[data-k=\"hint\"]', 'b')"));
   // the halyard's led aft: at the wheel, R held raises the sail the rest of the way
   check("at the helm, the hint offers the halyard (hold R)", /hold R raise sail/.test((await P("me('b')")).hint ?? ""), await P("me('b')"));
+  await mark("raise");
   await keyDown("r");
   await until(`window.__p.value('${rig}', 'a').raised > 0.95`, 10000);
   await keyUp("r");
+  await mark("raised", { raised: (await P(`value('${rig}', '${SIM}')`)).raised });
   await b.rest(300);
   check("holding R at the helm raises the sail: the doc says raised 1", (await P("doc()")).objects[rig].traits["sailing.sail"].raised > 0.95, (await P("doc()")).objects[rig].traits["sailing.sail"]);
   await shot("helm", "b");
@@ -440,12 +455,19 @@ try {
   const aimW = await pointAt(windlass, "b");
   const verbsW = await P("verbs('b')");
   check("at the windlass, B's use prompt offers to raise the anchor (hold F)", !!aimW && verbsW.some((v) => v.command === "weigh" && !v.disabled), { aimW, verbsW, me: await P("me('b')"), hovered: await P("hovered('b')") });
+  await mark("weigh");
   await keyDown("f");
   await b.rest(400);
   const weighing = await P("verbs('b')");
   const windlassClaim = (await P("doc()")).objects[windlass].claims?.station ?? null;
   const live = await P(`value('${windlass}', 'a')`);
-  await until(`window.__p.doc().objects['${windlass}'].traits['sailing.anchor'].down === false`, 12000);
+  // in 100 ms pieces (the same frames as one wait), her pose and the rode the simulator sees each time
+  for (let i = 0; i < 120; i++) {
+    const up = await until(`window.__p.doc().objects['${windlass}'].traits['sailing.anchor'].down === false`, 100);
+    anchoring.weigh.push({ ...(await poseNow()), rode: (await P(`value('${windlass}', '${SIM}')`))?.rode ?? null });
+    if (up) break;
+  }
+  await mark("up");
   await keyUp("f");
   await b.rest(300);
   const up = await docAnchor();
@@ -471,6 +493,7 @@ try {
   // isn't exercised. (The gate before was |speed| under 0.5 m/s and the apparent wind within 40°, either way
   // through the water: neither of the HUD's states exactly, and it missed in irons going astern faster.)
   const advice = (await P("text('[data-k=\"advice\"]', 'b')"))[0] ?? "";
+  await mark("leave", { advice });
   const rdLeave = await P(`read('${hull}', 'b')`);
   const leave = { advice, awa0: n2(rdLeave.apparentWind.angle), speed0: n2(rdLeave.speed) };
   const headToWind = /back the jib \(B at the helm/.test(advice);
