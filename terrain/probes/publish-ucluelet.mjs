@@ -5,7 +5,7 @@
 // boatyard. A copy of publish-rvyc.mjs for this place.
 //
 //   (in scene/, sailing/, water/ and terrain/) pnpm build
-//   node probes/publish-ucluelet.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--seed <dir>] [--shots <dir>] [--lock <dir>] [--show]
+//   node probes/publish-ucluelet.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--seed <dir>] [--shots <dir>] (--lock <dir> | $CHROME_LOCK) [--show]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -15,9 +15,11 @@
 //    BUILT scene, sailing, water and terrain plugins on an EMPTY scene
 //    (ucluelet-probe.html, an in-memory repo); the start screen's "Ucluelet
 //    (Rising Tide Boat Works)" is clicked, its fetches answered from the
-//    recording. Chrome runs only while holding --lock (a directory made with
-//    mkdir: one Chrome at a time across every probe that honours it; retried
-//    every 20 s, taken over after 30 min as stale, removed on exit). It
+//    recording. Chrome runs only while holding the lock (--lock, else
+//    $CHROME_LOCK; refused with neither: chrome-lock.mjs, a directory made
+//    with mkdir, one Chrome at a time across every probe and session;
+//    retried every 20 s, kept fresh while held, taken over after 30 min
+//    untouched, removed however the probe ends). It
 //    checks:
 //    - the terrain at the origin, locked, built by terrain-mesh from its four
 //      data files (heights, sources and canopy, OSM features, OSM look),
@@ -30,8 +32,11 @@
 //      own extras.terrain, through the copyable sampler);
 //    - known places land or water; the source layer and quality travel;
 //    - the GLB's layers (forest, buildings, boatyard and its sub-layers, the
-//      planned pier and dock), the removed buildings hidden by default; the
+//      planned pier and dock), the removed buildings and today's pier arm
+//      hidden by default; the
 //      trees drawn as one InstancedMesh a species;
+//    - the Terrain doc's fingerprint is the render's when it's built, and
+//      nothing writes to the doc after (each write logged, with its stack);
 //    - node builds the same GLB from the same docs, byte for byte; the
 //      fingerprint survives every url rewritten; a viewer without the
 //      terrain plugin still sees it;
@@ -41,6 +46,8 @@
 
 import { join, resolve, dirname } from "node:path";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
+import { publishDocs } from "./publish-stamp.mjs";
+import { lockDir } from "./chrome-lock.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -72,7 +79,12 @@ const ROOT = resolve(PKG, "..");
 const TMP = process.env.TMPDIR || tmpdir();
 const CACHE = resolve(typeof args.cache === "string" ? args.cache : join(TMP, "terrain-ucluelet"));
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(TMP, "terrain-ucluelet-shots"));
-const LOCK = typeof args.lock === "string" ? resolve(args.lock) : null;
+const LOCK = lockDir(args);
+// never Chrome without the lock: refused before anything is fetched
+if (!LOCK) {
+  console.error("No Chrome lock: pass --lock <dir> or set CHROME_LOCK (one Chrome at a time across every probe and session).");
+  process.exit(2);
+}
 const SNAP = join(SHOTS, "snap");
 mkdirSync(SNAP, { recursive: true });
 for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "water/dist/index.js", "terrain/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
@@ -87,6 +99,7 @@ if (fetched.status !== 0) {
 
 // ─── 2. the scene, in the browser (one Chrome at a time: the lock) ──────────
 const { browser, checklist, sleep } = await import("./cdp.mjs");
+// one Chrome at a time across every probe and session: --lock or $CHROME_LOCK, never without (chrome-lock.mjs)
 await (await import("./chrome-lock.mjs")).chromeLock(LOCK);
 const PORT = 4853;
 const b = await browser({ root: ROOT, port: PORT, cdp: 9853, page: "/terrain/probes/ucluelet-probe.html", width: 1280, height: 760, show: !!args.show, timeout: 1_500_000, mounts: { "/terrain-cache/": CACHE, "/snap/": SNAP } });
@@ -121,6 +134,8 @@ try {
   check("OSM pinned to the checked moment, and the data is what was checked", s.terrainDoc.osmDate === "2026-11-16T05:30:00Z" && s.terrainDoc.matchesChecked === true, { osmDate: s.terrainDoc.osmDate, matchesChecked: s.terrainDoc.matchesChecked });
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
   check("the terrain's About is its Terrain doc; it carries the credit and the place's sky", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && s.terrain.sky?.fog?.far === 9000, s.terrain);
+  const atBuild = await P("terrainNow()");
+  check("the Terrain doc's fingerprint when its render is built is the render's", atBuild.fingerprint === s.render?.builtFrom?.fingerprint, { now: atBuild.fingerprint, heads: atBuild.heads, built: s.render?.builtFrom?.fingerprint });
   check("its render is built, fingerprinted, its four data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 4 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
   check(`a summer afternoon: ${WIND.speed} m/s from ${WIND.from}°, the sea at scale ${WIND.scale} on one open water at the chart's y = 0`, J(s.sea?.wind) === J({ speed: WIND.speed, from: WIND.from }) && s.sea.scale === WIND.scale && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
   check("it starts people in Look (no body named) at the home view over the boatyard", !s.start?.body && (await P("bodyLabel()")) === "Look" && J(s.home) === J({ position: [...HOME.position], target: [...HOME.target] }), { start: s.start, here: await P("bodyLabel()"), home: s.home });
@@ -132,7 +147,7 @@ try {
   check("the heightfield is the whole grid at 20 m", J(t.grid) === J({ nx: GRID.n, nz: GRID.n, x0: GRID.x0, z0: GRID.z0, cell: GRID.cell }), t.grid);
   check("the boatyard and the lighthouse are among its places", ["Rising Tide Boat Works (the hangar), 1970 Harbour Crescent", "Amphitrite Point Lighthouse"].every((n) => t.places.some((p) => p.name === n)), t.places.map((p) => p.name));
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
-  check("the GLB's layers: forest, buildings, the boatyard's kept / removed (hidden) / wharf / planned", ["forest", "buildings", "boats", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false, t.layers);
+  check("the GLB's layers: forest, buildings, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden)", ["forest", "buildings", "boats", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
   check("the trees are drawn as one InstancedMesh a species", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
   check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#bcc3c4" && t.atmosphere?.sky?.top === "#7f8b94" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
@@ -177,6 +192,22 @@ try {
   check("the GLB's asset.copyright credits the data", /OpenStreetMap contributors/.test(same.copyright ?? "") && /NOAA/.test(same.copyright ?? ""), same.copyright);
   report.numbers.glb = same;
   // publishing remakes every doc under a new url: the render must still be fresh for its source
+  // nothing writes to the Terrain doc once its render is built (or the render is stale for it)
+  const writes = await P("terrainWrites");
+  const renderDoc = snapshot.docs[Object.values(snapshot.docs[snapshot.scene].objects).find((o) => o.providerId === "terrain-mesh").renderUrl];
+  const atEnd = await P("terrainNow()");
+  const changed = (() => {
+    const a = JSON.parse(atBuild.json), z = JSON.parse(atEnd.json);
+    const out = [];
+    const walk = (x, y, path) => {
+      if (JSON.stringify(x) === JSON.stringify(y)) return;
+      if (x && y && typeof x === "object" && typeof y === "object" && out.length < 12) for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) walk(x[k], y[k], `${path}.${k}`);
+      else out.push({ path, was: JSON.stringify(x)?.slice(0, 160), now: JSON.stringify(y)?.slice(0, 160) });
+    };
+    walk(a, z, "");
+    return out;
+  })();
+  check("nothing writes to the Terrain doc after its render is built", writes.every((w) => w.at <= renderDoc.builtAt) && atEnd.fingerprint === atBuild.fingerprint && !changed.length, { builtAt: renderDoc.builtAt, writes, fingerprints: [atBuild.fingerprint, atEnd.fingerprint], heads: [atBuild.heads, atEnd.heads], changed });
   const moved = await fingerprintAfterRewrite(snapshot);
   check("the terrain's fingerprint is the same once every url is rewritten (a published copy isn't stale)", moved.ok, moved);
 
@@ -237,20 +268,14 @@ function revive(doc) {
 
 // ─── 3. publish ─────────────────────────────────────────────────────────────
 async function publish(snap) {
-  // nobody who made it is here: their claims (who simulated her) don't travel, nor their contact doc
-  const unclaimed = (doc) => {
-    const d = structuredClone(doc);
-    delete d.claims;
-    for (const o of Object.values(d.objects ?? {})) delete o.claims;
-    return d;
-  };
-  const docs = Object.fromEntries(Object.entries(snap.docs).filter(([, d]) => d["@patchwork"]?.type !== "contact").map(([u, d]) => [u, u === snap.scene ? withPackages(unclaimed(d), PACKAGES) : d]));
+  // the contact doc left out, claims dropped, the scene stamped with its packages (publish-stamp.mjs: a dry run goes on without them where nothing's synced)
+  const { docs, problems: stamped, note } = publishDocs(snap, PACKAGES, { dry: DRY, withPackages, packageProblems });
   const urls = Object.keys(docs);
-  const stamped = packageProblems(docs[snap.scene], PACKAGES);
   if (stamped.length) {
     for (const p of stamped) console.error(`  ${p}`);
     return b.stop(1);
   }
+  if (note) console.log(`dry run: ${note}`);
   if (DRY) {
     console.log(`dry run: ${urls.length} docs to publish (${urls.map((u) => docs[u]["@patchwork"]?.type).join(", ")}; nothing published)`);
     return b.stop(0);

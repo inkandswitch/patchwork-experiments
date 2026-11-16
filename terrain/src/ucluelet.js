@@ -42,8 +42,44 @@ export const DATUM = Object.freeze({
   tide: Object.freeze({ HAT: 1.98, HHWLT: 1.93, MHHW: 1.22, MLLW: -1.33, LLWLT: -2.11 }),
 });
 
-/** A survey height (CGVD28, as the as-built plan gives them) about MWL. */
+/** A survey height (CGVD28, as the as-built plan gives them) about MWL, as the survey states it. */
 export const fromCGVD28 = (h) => Math.round((h + 0.08) * 100) / 100;
+
+/**
+ * The survey and the lidar disagree under the yard by about a metre, and
+ * the site is drawn on the lidar's ground. The survey's slab (AVG. SLAB EL
+ * 4.12, CGVD28, the hangar's floor and building B's; test pits 4.08–4.22)
+ * is +4.20 about MWL; the HRDEM lidar's bare earth (the 10 m mosaic the
+ * place fetches; the 5 m and 1 m site tiles read within 0.05 m of it), at
+ * the hangar's and building B's corners and middles, is +2.96 to +3.24,
+ * mean +3.06: the survey is 1.14 m above the lidar. CGVD28 against
+ * CGVD2013 is only 0.20 m here, so the datums don't explain it; which of
+ * the two is right is not settled from public data (a survey's local
+ * benchmark, or the lidar's vertical bias, could each do it). The scene's
+ * ground is the lidar's, so the site is conformed to it: every survey
+ * height drops by the same 1.14 m, keeping the survey's differences (the
+ * slab, the door head, the ridge, the roofs), and the decks built at yard
+ * level go with it. probes/fetch-ucluelet.mjs measures these again from
+ * the fetched lidar and checks the hangar's slab is within 0.3 m of the
+ * drawn ground.
+ */
+export const YARD = Object.freeze({
+  surveySlab: 4.2,
+  lidar: Object.freeze({
+    source: "nrcan-hrdem-dtm",
+    // [lat, lon, metres about MWL]: the hangar's corners N, E, S, W and its middle, then building B's four corners and middle
+    points: Object.freeze([
+      [48.949323, -125.5576443, 2.99], [48.9489995, -125.5574334, 3.08], [48.9488756, -125.5578714, 3.1], [48.9492002, -125.5580829, 3.02], [48.9490996, -125.557758, 3.24],
+      [48.9489373, -125.5576566, 3.12], [48.9490182, -125.5573702, 3.08], [48.9488633, -125.5572702, 2.98], [48.9487821, -125.5575579, 2.96], [48.9489002, -125.5574637, 3.02],
+    ].map((p) => Object.freeze(p))),
+    mean: 3.06,
+  }),
+  offset: -1.14,
+  decision: "conformed to the lidar: every survey height less 1.14 m (the survey's differences kept); the decks at yard level go with it",
+});
+
+/** A survey height (CGVD28) as drawn: about MWL, conformed to the lidar's ground (YARD). */
+export const fromSurvey = (h) => Math.round((h + 0.08 + YARD.offset) * 100) / 100;
 
 const NCEI_LICENCE = "Public domain (U.S. Government work); please cite NOAA NCEI";
 const NONNA = (res) => `https://nonna-geoserver.data.chs-shc.ca/geoserver/wcs?service=WCS&version=2.0.1&request=GetCoverage&format=image/tiff&subsettingCrs=http://www.opengis.net/def/crs/EPSG/0/4326&outputCrs=http://www.opengis.net/def/crs/EPSG/0/4326&subset=Long(-125.6060,-125.3240)&subset=Lat(48.8266,49.0131)&coverageId=nonna__NONNA%20${res}%20Coverage`;
@@ -97,6 +133,8 @@ export const HEIGHTS = Object.freeze({
       ncei: 147,
       crs: "frame",
       toMWL: 0,
+      // NCEI writes exactly 0 along its shoreline and where it has no sounding: on a water node that is no value (layered.js)
+      zeroIsNoValueOnWater: true,
       licence: NCEI_LICENCE,
       attribution: "Elevation and bathymetry: NOAA National Centers for Environmental Information, Barkley Sound 1 arc-second DEM (2016)",
       accuracy: "NAVD88 with no trustworthy local offset (used as it is); reads shallow against CHS here (median 6.1 m); its land is CDED-era, a median 3.1 m above the lidar. Ends at 125.570 W.",
@@ -106,6 +144,7 @@ export const HEIGHTS = Object.freeze({
       ncei: 182,
       crs: "frame",
       toMWL: 0,
+      zeroIsNoValueOnWater: true,
       licence: NCEI_LICENCE,
       attribution: "Bathymetry: NOAA National Centers for Environmental Information, British Columbia 3 arc-second DEM",
       accuracy: "About 90 m; agrees with NONNA within 5–10% at 20–100 m. Used for the strip west of 125.600 W where NONNA's tile ends.",
@@ -142,8 +181,8 @@ export const OSM_DATE = "2026-11-16T05:30:00Z";
  * recording): a fetch that differs is reported.
  */
 export const EXPECTED = Object.freeze({
-  dem: "6267104549026dc5eca723614ce6210bad0fa24feec9b41a2ed1e3e0baabcce0",
-  layers: "23ae35ddb3e3a45dc4bc6f4a2f5c276e34ce1c4c7b0b9c65d5d3ebdf0c7bbb19",
+  dem: "2ec2843cc64d1d877d9c7158a7c2b97a545358b3888069deb552a96df36ab073",
+  layers: "0cca4de40cba09b5c731a22efcae5ac63a0e2eaf68fc90eb56c5f7389a1994c2",
   features: "4df73675db33aece3d0272a2dcec434ac061e193a733c6388496a6bb57a02225",
   look: "cdf2364026c1d86dd26bd305b8dd36254d625d80220756ba246e5ebec8099a52",
 });
@@ -212,11 +251,13 @@ const TBR = "marked \"to be removed\" on the March 2026 survey";
 
 /**
  * The site's structures, as data (site.js draws them): lat, lon WGS84,
- * heights about MWL (the survey's CGVD28 + 0.08). Each says where it is
- * from, how sure that is, and what is assumed. `layer` is the GLB layer it
- * is drawn on (README, "Layers"): what the survey says is staying, what it
- * marks to be removed (hidden by default: the scene shows the plan), the
- * existing wharf, and Rising Tide's planned pier and dock.
+ * heights about MWL, the survey's conformed to the lidar's ground (YARD:
+ * CGVD28 + 0.08 − 1.14). Each says where it is from, how sure that is, and
+ * what is assumed. `layer` is the GLB layer it is drawn on (README,
+ * "Layers"): what the survey says is staying, what it marks to be removed
+ * and the pier's arm the plan replaces (both hidden by default: the scene
+ * shows the plan), the existing wharf, and Rising Tide's planned pier and
+ * dock. Today's harbour is the plan's layer off and those two on.
  *
  * Nothing here is private: the survey is in the District's public permit
  * file, the plans are Rising Tide's public media, the photos are the
@@ -229,14 +270,16 @@ export const SITE = Object.freeze({
   clear: {
     box: { south: 48.94833, west: -125.55867, north: 48.94989, east: -125.55482 },
     osm: ["way/751431449"],
-    note: "OSM's buildings inside the lot's extent (the survey's shoreline and lot lines: 48.94833–48.94989 N, 125.55867–125.55482 W) are left out: the survey draws them. OSM's L-pier (way 751431449) is drawn from the site's data.",
+    note: "OSM's buildings inside the lot's extent (the survey's shoreline and lot lines: 48.94833–48.94989 N, 125.55867–125.55482 W) are left out: the survey draws them. OSM's L-pier (way 751431449) is drawn from the site's data: its north leg as existing, its east arm on boatyard.today (the planned dock replaces it). No trees stand in the box (forest.js builtMask).",
   },
+  ground: YARD,
   layers: [
     { id: "boatyard", name: "Boatyard (1970 Harbour Crescent)" },
     { id: "boatyard.kept", name: "Buildings staying (March 2026 survey)", parent: "boatyard" },
     { id: "boatyard.removed", name: "Buildings marked to be removed (March 2026 survey)", parent: "boatyard", visible: false },
     { id: "boatyard.wharf", name: "Existing wharf and pier", parent: "boatyard" },
     { id: "boatyard.planned", name: "Planned haul-out pier and electrified dock (Rising Tide, preliminary)", parent: "boatyard" },
+    { id: "boatyard.today", name: "Today's pier arm, which the planned dock replaces", parent: "boatyard", visible: false },
   ],
   structures: [
     {
@@ -246,38 +289,38 @@ export const SITE = Object.freeze({
       layer: "boatyard.kept",
       // corners N, E, S, W; the faces W→N (north-west, the doors) and E→S (south-east) are the gable ends
       corners: [[48.949323, -125.5576443], [48.9489995, -125.5574334], [48.9488756, -125.5578714], [48.9492002, -125.5580829]],
-      floor: fromCGVD28(4.12),
-      eave: fromCGVD28(4.12) + 10.6,
-      ridge: fromCGVD28(15.93),
+      floor: fromSurvey(4.12),
+      eave: fromSurvey(4.12) + 10.6,
+      ridge: fromSurvey(15.93),
       doors: { face: 3, main: { from: 0.8, to: 34.0, head: 7.39 }, small: { from: 12.7, to: 15.8, head: 3.26 } },
       colours: { walls: ["#8a5a3e", "#9c6248", "#7d5238"], header: "#6b5241", doors: ["#4f7658", "#5b7f5f", "#8f6a4c"], roof: "#4a4e52", trim: "#e9e6de", slab: "#9b9890" },
       source: SURVEY,
-      confidence: "footprint high (edges 39.15, 39.28, 34.92, 34.91 m against the labelled 39.1/39.2/34.8; 1,369 m²); floor EL 4.08–4.22 test pits; ridge EL 15.93; door head EL 11.51",
-      assumed: "Eave 10.6 m above the floor, from the July 2026 photo's proportions (±0.5 m), so a 4° gable with the ridge north-west–south-east and the trusses spanning the 34.8 m faces. Main doors: sliding leaves across nearly the whole north-west face to the 7.4 m door head (the photo; leaves and their number not surveyed), painted green with some stripped. Walls: diagonal timber sheathing, stripped and weathered cedar brown and red (Ha-Shilth-Sa photo, 2026-07-01). Roof dark grey.",
+      confidence: "footprint high (edges 39.15, 39.28, 34.92, 34.91 m against the labelled 39.1/39.2/34.8; 1,369 m²); floor EL 4.08–4.22 test pits; ridge EL 15.93; door head EL 11.51. Absolute height in doubt: the survey's slab (+4.20 about MWL) is 1.14 m above the lidar's ground here (+3.06, YARD)",
+      assumed: "Heights conformed to the lidar's ground (YARD): floor +3.06 about MWL, not the survey's +4.20; the survey's differences kept (door head 7.39 m, ridge 11.81 m above the floor). Eave 10.6 m above the floor, from the July 2026 photo's proportions (±0.5 m), so a 4° gable with the ridge north-west–south-east and the trusses spanning the 34.8 m faces. Main doors: sliding leaves across nearly the whole north-west face to the 7.4 m door head (the photo; leaves and their number not surveyed), painted green with some stripped. The spec gives that face two ways, as 12.7 + 3.1 + 19.0 m (the 3.1 m small door between two stretches) and as leaves across 0.8–34.0 m; drawn as leaves either side of the small door (0.8–12.7 and 15.8–34.0 m), which is both if the small door is a wicket in its own panel. Walls: diagonal timber sheathing, stripped and weathered cedar brown and red (Ha-Shilth-Sa photo, 2026-07-01). Roof dark grey.",
     },
-    { id: "B", kind: "box", name: "Building B (former cold storage; Rising Tide's office and event space?)", layer: "boatyard.kept", corners: [[48.9489373, -125.5576566], [48.9490182, -125.5573702], [48.9488633, -125.5572702], [48.9487821, -125.5575579]], base: fromCGVD28(4.12), top: fromCGVD28(10.61), roof: "flat", colours: { walls: "#cfd3cf", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}, but Rising Tide's office is a "remediation of former cold storage" of this size: drawn as staying until a newer source says. Colours assumed (pale cladding).` },
-    { id: "D", kind: "box", name: "Building D (silver corrugated)", layer: "boatyard.kept", corners: [[48.9491696, -125.5582186], [48.9492953, -125.5583005], [48.9493521, -125.5580994], [48.9492262, -125.5580181]], base: fromCGVD28(4.12), top: fromCGVD28(13.03), eave: fromCGVD28(12.0), roof: "gable", colours: { walls: "#b9bdbf", roof: "#a4a9ac" }, source: SURVEY, assumed: "Survey \"(TO PL)\", not marked to be removed; roof EL 13.03 taken as the ridge, the eave 1 m lower and the slab at the hangar's (assumed)." },
-    { id: "C", kind: "box", name: "Lean-to C along the hangar's south-west wall", layer: "boatyard.removed", corners: [[48.9492073, -125.5580862], [48.9488781, -125.5578716], [48.9488559, -125.5579466], [48.9491857, -125.5581619]], base: fromCGVD28(4.12), top: fromCGVD28(4.12) + 5, eave: fromCGVD28(4.12) + 3.6, roof: "shed", colours: { walls: "#9cc3ae", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}. Heights assumed (5 m against the hangar, 3.6 m outside); mint-green corrugated as in the 2025 drone photo.` },
-    { id: "E", kind: "box", name: "Building E", layer: "boatyard.removed", corners: [[48.9490173, -125.5573702], [48.9490389, -125.5572908], [48.9488837, -125.5571916], [48.9488621, -125.557271]], base: fromCGVD28(4.12), top: fromCGVD28(7.37), roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 7.37; colours assumed.` },
-    { id: "F", kind: "box", name: "Building F", layer: "boatyard.removed", corners: [[48.9489589, -125.5571331], [48.9489359, -125.5572157], [48.9490412, -125.5572837], [48.9490645, -125.5572005]], base: fromCGVD28(4.12), top: fromCGVD28(9.5), eave: fromCGVD28(8.6), roof: "gable", colours: { walls: "#b8bcbc", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 9.50 as the ridge; colours assumed.` },
-    { id: "G", kind: "box", name: "Building G", layer: "boatyard.removed", corners: [[48.9491253, -125.5575162], [48.9491561, -125.5573814], [48.9490379, -125.5573025], [48.9490006, -125.5574356]], base: fromCGVD28(4.12), top: fromCGVD28(4.12) + 5, roof: "flat", colours: { walls: "#9cc3ae", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}; 5 m high assumed; colours assumed.` },
-    { id: "H", kind: "box", name: "Building H", layer: "boatyard.removed", corners: [[48.9492601, -125.5569078], [48.9492101, -125.5570816], [48.9492747, -125.5571213], [48.9493241, -125.55695]], base: fromCGVD28(4.12), top: fromCGVD28(4.12) + 4.5, eave: fromCGVD28(4.12) + 3.5, roof: "gable", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; heights and colours assumed.` },
-    { id: "I", kind: "box", name: "Building I (white roof)", layer: "boatyard.removed", corners: [[48.9493656, -125.5569849], [48.9493314, -125.5571078], [48.9495136, -125.557225], [48.9495477, -125.5571011]], base: fromCGVD28(4.12), top: fromCGVD28(4.12) + 5.5, eave: fromCGVD28(4.12) + 4.5, roof: "gable", colours: { walls: "#d9dbd8", roof: "#eceeed" }, source: SURVEY, assumed: `${TBR}; white roof from imagery; heights assumed.` },
-    { id: "J", kind: "box", name: "Building J (rust-red roof)", layer: "boatyard.removed", corners: [[48.9492129, -125.5570315], [48.949255, -125.5568774], [48.9490122, -125.5567238], [48.9489702, -125.5568779]], base: fromCGVD28(4.12), top: fromCGVD28(4.12) + 6, eave: fromCGVD28(4.12) + 4.8, roof: "gable", colours: { walls: "#b8bcbc", roof: "#8b3a26" }, source: SURVEY, assumed: `${TBR}; rust-red roof from imagery; heights assumed.` },
-    { id: "K", kind: "box", name: "Building K", layer: "boatyard.removed", corners: [[48.9497435, -125.5567595], [48.9496834, -125.5567454], [48.9496591, -125.556977], [48.9497191, -125.5569911]], base: fromCGVD28(4.12), top: fromCGVD28(4.12) + 4, roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; heights and colours assumed.` },
-    { id: "Q", kind: "box", name: "Building Q", layer: "boatyard.removed", corners: [[48.9489191, -125.5577208], [48.9489373, -125.557656], [48.9488379, -125.5575924], [48.9488202, -125.5576582]], base: fromCGVD28(4.12), top: fromCGVD28(9.3), roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 9.30; colours assumed.` },
+    { id: "B", kind: "box", name: "Building B (former cold storage; Rising Tide's office and event space?)", layer: "boatyard.kept", corners: [[48.9489373, -125.5576566], [48.9490182, -125.5573702], [48.9488633, -125.5572702], [48.9487821, -125.5575579]], base: fromSurvey(4.12), top: fromSurvey(10.61), roof: "flat", colours: { walls: "#cfd3cf", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}, but Rising Tide's office is a "remediation of former cold storage" of this size: drawn as staying until a newer source says. Colours assumed (pale cladding).` },
+    { id: "D", kind: "box", name: "Building D (silver corrugated)", layer: "boatyard.kept", corners: [[48.9491696, -125.5582186], [48.9492953, -125.5583005], [48.9493521, -125.5580994], [48.9492262, -125.5580181]], base: fromSurvey(4.12), top: fromSurvey(13.03), eave: fromSurvey(12.0), roof: "gable", colours: { walls: "#b9bdbf", roof: "#a4a9ac" }, source: SURVEY, assumed: "Survey \"(TO PL)\", not marked to be removed; roof EL 13.03 taken as the ridge, the eave 1 m lower and the slab at the hangar's (assumed)." },
+    { id: "C", kind: "box", name: "Lean-to C along the hangar's south-west wall", layer: "boatyard.removed", corners: [[48.9492073, -125.5580862], [48.9488781, -125.5578716], [48.9488559, -125.5579466], [48.9491857, -125.5581619]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 5, eave: fromSurvey(4.12) + 3.6, roof: "shed", colours: { walls: "#9cc3ae", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}. Heights assumed (5 m against the hangar, 3.6 m outside); mint-green corrugated as in the 2025 drone photo.` },
+    { id: "E", kind: "box", name: "Building E", layer: "boatyard.removed", corners: [[48.9490173, -125.5573702], [48.9490389, -125.5572908], [48.9488837, -125.5571916], [48.9488621, -125.557271]], base: fromSurvey(4.12), top: fromSurvey(7.37), roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 7.37; colours assumed.` },
+    { id: "F", kind: "box", name: "Building F", layer: "boatyard.removed", corners: [[48.9489589, -125.5571331], [48.9489359, -125.5572157], [48.9490412, -125.5572837], [48.9490645, -125.5572005]], base: fromSurvey(4.12), top: fromSurvey(9.5), eave: fromSurvey(8.6), roof: "gable", colours: { walls: "#b8bcbc", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 9.50 as the ridge; colours assumed.` },
+    { id: "G", kind: "box", name: "Building G", layer: "boatyard.removed", corners: [[48.9491253, -125.5575162], [48.9491561, -125.5573814], [48.9490379, -125.5573025], [48.9490006, -125.5574356]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 5, roof: "flat", colours: { walls: "#9cc3ae", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}; 5 m high assumed; colours assumed.` },
+    { id: "H", kind: "box", name: "Building H", layer: "boatyard.removed", corners: [[48.9492601, -125.5569078], [48.9492101, -125.5570816], [48.9492747, -125.5571213], [48.9493241, -125.55695]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 4.5, eave: fromSurvey(4.12) + 3.5, roof: "gable", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; heights and colours assumed.` },
+    { id: "I", kind: "box", name: "Building I (white roof)", layer: "boatyard.removed", corners: [[48.9493656, -125.5569849], [48.9493314, -125.5571078], [48.9495136, -125.557225], [48.9495477, -125.5571011]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 5.5, eave: fromSurvey(4.12) + 4.5, roof: "gable", colours: { walls: "#d9dbd8", roof: "#eceeed" }, source: SURVEY, assumed: `${TBR}; white roof from imagery; heights assumed.` },
+    { id: "J", kind: "box", name: "Building J (rust-red roof)", layer: "boatyard.removed", corners: [[48.9492129, -125.5570315], [48.949255, -125.5568774], [48.9490122, -125.5567238], [48.9489702, -125.5568779]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 6, eave: fromSurvey(4.12) + 4.8, roof: "gable", colours: { walls: "#b8bcbc", roof: "#8b3a26" }, source: SURVEY, assumed: `${TBR}; rust-red roof from imagery; heights assumed.` },
+    { id: "K", kind: "box", name: "Building K", layer: "boatyard.removed", corners: [[48.9497435, -125.5567595], [48.9496834, -125.5567454], [48.9496591, -125.556977], [48.9497191, -125.5569911]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 4, roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; heights and colours assumed.` },
+    { id: "Q", kind: "box", name: "Building Q", layer: "boatyard.removed", corners: [[48.9489191, -125.5577208], [48.9489373, -125.557656], [48.9488379, -125.5575924], [48.9488202, -125.5576582]], base: fromSurvey(4.12), top: fromSurvey(9.3), roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 9.30; colours assumed.` },
     {
       id: "wharf",
       kind: "wharf",
       name: "Existing pile wharf (survey \"LOADING DOCK\", water lot DL 2137), with its shed",
       layer: "boatyard.wharf",
       corners: [[48.94982, -125.5572937], [48.9502144, -125.5573043], [48.9502116, -125.5575711], [48.9498421, -125.557566]],
-      deck: fromCGVD28(4.12),
+      deck: fromSurvey(4.12),
       shed: { along: [0.82, 0.98], across: [0.15, 0.85], height: 4.5, colour: "#eceae4", roof: "#8e9295" },
       colours: { deck: "#6f675c", piles: "#2e2721" },
       source: SURVEY,
       confidence: "position high: 43.9 × 19.5 m, its axis about due north",
-      assumed: "Deck at yard level (EL 4.12, not surveyed); creosote piles about 4 m apart; the shed on its outer end from imagery, its size assumed. Whether it stays, is cut back or is replaced by the haul-out pier is not public: drawn as existing.",
+      assumed: "Deck at yard level (the hangar's slab, EL 4.12, conformed to the lidar: +3.06 about MWL; the deck itself not surveyed); creosote piles about 4 m apart; the shed on its outer end from imagery, its size assumed. Whether it stays, is cut back or is replaced by the haul-out pier is not public: drawn as existing.",
     },
     {
       id: "lpier-leg",
@@ -286,10 +329,22 @@ export const SITE = Object.freeze({
       layer: "boatyard.wharf",
       line: [[48.949796, -125.557057], [48.950175, -125.557032]],
       width: 3.6,
-      deck: fromCGVD28(4.12),
+      deck: fromSurvey(4.12),
       colours: { deck: "#6f675c", piles: "#2e2721" },
       source: "OpenStreetMap way 751431449 (ODbL); matches imagery within about 2 m",
-      assumed: "A fixed timber pier on piles at yard level, 3.6 m wide (the schematic's dock width); the deck height is assumed.",
+      assumed: "A fixed timber pier on piles at yard level (+3.06, as the wharf), 3.6 m wide (the schematic's dock width); the deck height is assumed.",
+    },
+    {
+      id: "lpier-arm",
+      kind: "pier",
+      name: "Existing pier's east arm (OSM way 751431449): today's harbour",
+      layer: "boatyard.today",
+      line: [[48.950175, -125.557032], [48.9500844, -125.5561565]],
+      width: 3.6,
+      deck: fromSurvey(4.12),
+      colours: { deck: "#6f675c", piles: "#2e2721" },
+      source: "OpenStreetMap way 751431449 (ODbL), its second segment (64 m east-north-east from the north leg's end)",
+      assumed: "A fixed pier at yard level like its north leg (OSM doesn't tag it floating, so no boats are dressed along it: boats.js moors them at floats), 3.6 m wide; width and deck height assumed. Rising Tide's dock arm starts at the same corner on a bearing of 92–96° against this arm's 81°: the plan is taken to replace it, so it is hidden by default (turn 'planned' off and this on for today's harbour).",
     },
     {
       id: "haulout",
@@ -298,11 +353,13 @@ export const SITE = Object.freeze({
       layer: "boatyard.planned",
       runways: [[[48.949624, -125.557324], [48.949979, -125.557309]], [[48.949617, -125.557152], [48.949971, -125.557125]]],
       width: 2.4,
-      deck: fromCGVD28(4.12),
+      deck: fromSurvey(4.12),
       colours: { concrete: "#a19f98", screen: "#8a4b2a", piles: "#3a3633" },
       source: RTBW,
-      confidence: "low: position ±15 m, bearing ±5°, length ±10 m (a whole-site fit of the schematic puts the pair about 12 m further west, over the existing wharf's east half)",
-      assumed: "Two parallel concrete runway walls on piles about 40 m long, running about north, 12.7 m apart centre to centre (schematic), 2.4 m wide (the schematic's bar), the clear well about 10.3 m (a 30 ft beam plus about 0.6 m a side), the deck at yard level; perforated Corten-look screens along their outer faces (render). No dimensions, piles or permit drawings are public.",
+      confidence: "low: position ±15 m, bearing ±5°, length ±10 m (a whole-site fit of the schematic puts the pair about 12 m further west, over the existing wharf's east half). The depth at the drawn head is evidence the position is uncertain too: −1.7 and −2.5 m about MWL (headDepth), which dries or leaves 0.3 m at the lowest normal tide, too shallow for a 110 t lift's well without dredging",
+      // the fetched heights at each runway's seaward end, west then east: bilinear on the 20 m grid, whose nodes round them are CHS NONNA-10 and NCEI 1″ water and, for the west head, lidar land; checked by probes/fetch-ucluelet.mjs
+      headDepth: { mwl: [-1.68, -2.45], note: "At LLWLT (−2.11) the west runway's head dries 0.43 m and the east's has 0.34 m of water; at MLLW (−1.33), 0.35 and 1.12 m. At 20 m a cell, with land nodes among the four round the west head, and ±15 m, that may be the grid's; but a 110 t lift's well wants 3 m or more at low water: the schematic's position, or the 12 m-west fit, or dredging not in the public plans." },
+      assumed: "Two parallel concrete runway walls on piles about 40 m long, running about north, 12.7 m apart centre to centre (schematic), 2.4 m wide (the schematic's bar), the clear well about 10.3 m (a 30 ft beam plus about 0.6 m a side), the deck at yard level (+3.06, YARD); perforated Corten-look screens along their outer faces (render). No dimensions, piles or permit drawings are public. Drawn where the schematic registers, although the heights there are only 1.7–2.5 m below mean water (headDepth): neither that position nor the 12 m-west fit is settled.",
     },
     {
       id: "travelift",
@@ -323,7 +380,7 @@ export const SITE = Object.freeze({
       layer: "boatyard.planned",
       line: [[48.950175, -125.557032], [48.950172, -125.556832]],
       width: 1.5,
-      from: fromCGVD28(4.12),
+      from: fromSurvey(4.12),
       to: 0.5,
       colours: { deck: "#8d8a83" },
       source: RTBW,
@@ -420,7 +477,7 @@ export const LOOK = Object.freeze({
   },
 });
 
-/** Where the scene opens: above the boatyard's south-west corner, looking over the hangar and the planned dock down the harbour toward Lyche Island. */
+/** Where the scene opens: above the boatyard's south-west corner, looking north-north-east (about 36°) over the hangar and the planned dock, across Ucluelet Inlet to the mountains beyond. */
 export const HOME = Object.freeze({ position: Object.freeze([-210, 105, 360]), target: Object.freeze([170, 0, -170]) });
 
 /**

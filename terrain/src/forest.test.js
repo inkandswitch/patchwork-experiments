@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { treesAt, placeTrees, pick, forestRoof, treeMesh, effectiveCanopy, isForest, isRoof, SPECIES, SPECIES_NAMES } from "./forest.js";
+import { treesAt, placeTrees, pick, forestRoof, treeMesh, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES } from "./forest.js";
+import { insideRing } from "./terrain-sample.js";
 import { COVER } from "./cover.js";
 
 // a made-up 33 × 33 place: water down the west, a forest east of it with a clearing, a yard, a town lot, a bog
@@ -139,5 +140,67 @@ describe("effectiveCanopy", () => {
     expect(e[2]).toBeGreaterThanOrEqual(2.4);
     expect(e[2]).toBeLessThanOrEqual(3.6);
     expect(e[3]).toBe(0);
+  });
+});
+
+describe("no forest on what's built (the lidar's canopy is a roof's height there too)", () => {
+  // 24 footprints over the wood and the town: 3–30 m, turned 0–345°, some smaller than a cell and between nodes, two straddling the fringe
+  const rings = [];
+  for (let q = 0; q < 24; q++) {
+    const cx = x0 + (7.3 + (q % 6) * 3.7) * cell, cz = z0 + (5.6 + Math.floor(q / 6) * 6.1) * cell;
+    const a = (q * 15 * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    const hu = 1.5 + (q % 7) * 2.1, hv = 1.5 + (q % 5) * 1.6;
+    rings.push([[-hu, -hv], [hu, -hv], [hu, hv], [-hu, hv]].map(([u, v]) => [cx + u * c - v * s, cz + u * s + v * c]));
+  }
+  const built = builtMask(grid, rings);
+  // the distance from a point to a ring (0 inside), by brute force
+  const distTo = (pts, x, z) => {
+    if (insideRing(pts, x, z)) return 0;
+    let d = Infinity;
+    for (let e = 0; e < pts.length; e++) {
+      const [xa, za] = pts[e], [xb, zb] = pts[(e + 1) % pts.length];
+      for (let q = 0; q <= 400; q++) d = Math.min(d, Math.hypot(xa + ((xb - xa) * q) / 400 - x, za + ((zb - za) * q) / 400 - z));
+    }
+    return d;
+  };
+  it("marks exactly the nodes on a footprint or within a tree's reach of one (every node)", () => {
+    const reach = TREE_REACH * cell;
+    for (let k = 0; k < N; k++) {
+      const i = k % n, j = (k - i) / n;
+      const d = Math.min(...rings.map((r) => distTo(r, x0 + i * cell, z0 + j * cell)));
+      // the brute force samples each edge at 400 points: within a hair of the reach either way it can't tell
+      if (Math.abs(d - reach) < 0.05) continue;
+      expect([k, built[k]]).toEqual([k, d < reach ? 1 : 0]);
+    }
+    expect(built.reduce((a, b) => a + b, 0)).toBeGreaterThan(24);
+  });
+  it("puts no tree on a footprint and no roof within two nodes of one, though the wood's canopy is over every node (every tree, every node)", () => {
+    const canopyB = effectiveCanopy({ n, label, cover, canopy, measured: Uint8Array.from(canopy, () => 1), built });
+    const ob = { ...o, canopy: canopyB, built };
+    const all = treesAt(ob);
+    expect(all.length).toBeGreaterThan(100);
+    for (const t of all) {
+      expect(built[t.k]).toBe(0);
+      for (const r of rings) expect([t.k, t.t, insideRing(r, t.x, t.z)]).toEqual([t.k, t.t, false]);
+    }
+    let roofs = 0;
+    for (let k = 0; k < N; k++) {
+      if (!isRoof(k, { n, label, cover, canopy: canopyB, dist, setback: 20 })) continue;
+      roofs++;
+      const i = k % n, j = (k - i) / n;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const m = (j + dj) * n + i + di;
+        expect([k, m, built[m]]).toEqual([k, m, 0]);
+      }
+    }
+    expect(roofs).toBeGreaterThan(0);
+    // and the grid's trees are still its tiles' trees
+    const tiles = [];
+    for (let j0 = 0; j0 < n; j0 += 5) tiles.push(...treesAt(ob, j0 * n, Math.min(n, j0 + 5) * n));
+    expect(tiles).toEqual(all);
+  });
+  it("leaves the canopy nothing where built, and is the lidar's elsewhere", () => {
+    const e = effectiveCanopy({ n, label, cover, canopy, measured: Uint8Array.from(canopy, () => 1), built });
+    for (let k = 0; k < N; k++) expect(e[k]).toBe(label[k] > 0 && !built[k] ? canopy[k] : 0);
   });
 });

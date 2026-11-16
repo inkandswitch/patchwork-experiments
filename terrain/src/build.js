@@ -27,7 +27,7 @@ import { sampler, int16ToBytes, toBase64, packQuality } from "./terrain-sample.j
 import { localFrame, PROJECTION } from "./tmerc.js";
 import { coverGrid, distanceToWater, COVER, COVERS } from "./cover.js";
 import { groundRGB, linear, naturalLegend, COLOURS } from "./palette.js";
-import { effectiveCanopy, placeTrees, forestRoof, treeInstances } from "./forest.js";
+import { effectiveCanopy, placeTrees, forestRoof, treeInstances, builtMask } from "./forest.js";
 import { buildingMesh } from "./buildings.js";
 import { siteMesh, inBox } from "./site.js";
 import { unpackLayers, FILLED, FLOOR } from "./layered.js";
@@ -107,6 +107,17 @@ function subsample(n, values, stride) {
   return { n: m, values: out };
 }
 
+/** What is built on, as rings of [x, z]: OSM's building footprints, the site's clear box and each site structure's corners. */
+export function builtRings(doc, look, frame) {
+  // to the millimetre, as site.js: the projection's last bits may differ between engines, the mask mustn't
+  const L = ([lat, lon]) => frame.toLocal(lat, lon).map((v) => Math.round(v * 1000) / 1000);
+  const rings = (look?.buildings ?? []).map((b) => b.points);
+  const box = doc.site?.clear?.box;
+  if (box) rings.push([[box.south, box.west], [box.south, box.east], [box.north, box.east], [box.north, box.west]].map(L));
+  for (const st of doc.site?.structures ?? []) if (st.corners?.length >= 3) rings.push(st.corners.map(L));
+  return rings;
+}
+
 /**
  * Build the GLB.
  * @param {{ doc: object, dem: Int16Array, features: object, layers?: Uint8Array | null, look?: object | null, params?: object }} input
@@ -161,7 +172,9 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     for (let k = 0; k < N; k++) if (lay.source[k] === dtm) m[k] = 1;
     return m;
   })() : null;
-  const canopy = natural ? effectiveCanopy({ n, label: cls.label, cover, canopy: lay?.canopy ?? null, measured, assumed: doc.look?.trees?.assumed }) : null;
+  // no forest where something is built (the lidar's canopy is a roof's height there too): OSM's footprints, the site's lot and its structures
+  const built = natural ? builtMask(grid, builtRings(doc, look, frame)) : null;
+  const canopy = natural ? effectiveCanopy({ n, label: cls.label, cover, canopy: lay?.canopy ?? null, measured, assumed: doc.look?.trees?.assumed, built }) : null;
   const colours = { ...COLOURS, ...(doc.look?.colours ?? {}) };
   // each land node's distance to the water: the splash zone's bands are drawn within a cell and a half of it; the forest's fringe is measured by it
   const toWater = natural ? distanceToWater(n, cls.label, grid.cell) : null;
@@ -293,7 +306,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       const normalsR = computeNormals(roof.positions, roof.indices);
       add("Forest canopy", { primitives: tiles(roof.positions, normalsR, roof.colors, roof.indices, 65535).map((t) => ({ ...t, roughness: 1 })) }, "forest");
     }
-    const placedTrees = placeTrees({ grid, label: cls.label, cover, canopy, dist, trees });
+    const placedTrees = placeTrees({ grid, label: cls.label, cover, canopy, dist, trees, built });
     treeCount = placedTrees.trees.length;
     if (treeCount) {
       const inst = treeInstances(placedTrees.trees, (x, z) => groundAt(x, z) ?? 0, sinkAt, { meshBase: meshes.length });

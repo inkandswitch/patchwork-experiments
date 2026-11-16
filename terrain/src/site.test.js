@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { siteMesh } from "./site.js";
-import { SITE, LANDMARKS, ORIGIN, GRID, PLACES, HEIGHTS, DATUM, ANCHORAGE, HOME, uclueletDoc, fromCGVD28 } from "./ucluelet.js";
+import { siteMesh, doorLeaves } from "./site.js";
+import { SITE, LANDMARKS, ORIGIN, GRID, PLACES, HEIGHTS, DATUM, ANCHORAGE, HOME, YARD, uclueletDoc, fromCGVD28, fromSurvey } from "./ucluelet.js";
+import { builtRings } from "./build.js";
 import { localFrame } from "./tmerc.js";
 import { latLonBox } from "./fetch-data.js";
 import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES } from "./buildings.js";
@@ -8,32 +9,53 @@ import { COVER } from "./cover.js";
 
 const frame = localFrame(ORIGIN);
 // flat ground at the yard's level on land (south of the shore at z ≈ 0 near the site), the harbour 8 m deep north of it
-const groundAt = (x, z) => (z > 0 ? 4.2 : -8);
+const groundAt = (x, z) => (z > 0 ? 3.06 : -8);
 const site = siteMesh(SITE, LANDMARKS, frame, groundAt, () => 0.5);
 const M = site.measures;
 
 describe("the boatyard, against its spec (README, \"Ucluelet\"; the survey and Rising Tide's plans)", () => {
-  it("the hangar: 39.1–39.3 by 34.8–34.95 m, 1,369 m², its ridge north-west–south-east, floor +4.20, eave +14.8, ridge +16.01 about MWL, a 4° gable, doors 7.39 m high", () => {
+  it("the hangar: 39.1–39.3 by 34.8–34.95 m, 1,369 m², its ridge north-west–south-east, floor +3.06, eave +13.66, ridge +14.87 about MWL (the survey's, conformed to the lidar), a 4° gable, doors 7.39 m high", () => {
     expect(M.hangar.length).toBeGreaterThan(39.1);
     expect(M.hangar.length).toBeLessThan(39.3);
     expect(M.hangar.span).toBeGreaterThan(34.8);
     expect(M.hangar.span).toBeLessThan(34.95);
     expect(Math.abs(M.hangar.area - 1369)).toBeLessThan(5);
-    expect(M.hangar.floor).toBe(4.2);
-    expect(M.hangar.ridge).toBe(16.01);
-    expect(M.hangar.eave).toBeCloseTo(14.8, 9);
+    expect(M.hangar.floor).toBe(3.06);
+    expect(M.hangar.ridge).toBe(14.87);
+    expect(M.hangar.eave).toBeCloseTo(13.66, 9);
     expect(M.hangar.pitch).toBeGreaterThan(3.5);
     expect(M.hangar.pitch).toBeLessThan(4.5);
     expect(M.hangar.doorHead).toBe(7.39);
     // the ridge runs from the door face (north-west) to the south-east: a true bearing near 157° (158.5° grid less the convergence)
     expect(Math.abs(M.hangar.bearing - 156.8)).toBeLessThan(1);
   });
-  it("heights from the survey's CGVD28 become heights about MWL by +0.08 m (CHS 08595)", () => {
+  it("heights from the survey's CGVD28 become heights about MWL by +0.08 m (CHS 08595), then drop 1.14 m to the lidar's ground", () => {
     expect(fromCGVD28(4.12)).toBe(4.2);
     expect(fromCGVD28(15.93)).toBe(16.01);
     expect(DATUM.mwlAboveCGVD28).toBe(-0.08);
-    expect(M.B.top).toBe(10.69);
-    expect(M.D.top).toBe(13.11);
+    expect(fromSurvey(4.12)).toBe(3.06);
+    expect(fromSurvey(15.93)).toBe(14.87);
+    expect(M.B.top).toBe(9.55);
+    expect(M.D.top).toBe(11.97);
+  });
+  it("the survey and the lidar disagree under the yard, and the site stands on the lidar's ground: the slab within 0.3 m of it, the survey's differences kept", () => {
+    const hs = YARD.lidar.points.map((p) => p[2]);
+    const mean = hs.reduce((a, b) => a + b, 0) / hs.length;
+    expect(Math.abs(mean - YARD.lidar.mean)).toBeLessThan(0.005);
+    expect(YARD.surveySlab).toBe(fromCGVD28(4.12));
+    expect(YARD.offset).toBe(Math.round((YARD.lidar.mean - YARD.surveySlab) * 100) / 100);
+    expect(YARD.offset).toBeLessThan(-0.9);
+    expect(Math.abs(M.hangar.floor - YARD.lidar.mean)).toBeLessThanOrEqual(0.3);
+    // every survey height drops the same, so the survey's differences hold
+    expect(M.hangar.ridge - M.hangar.floor).toBeCloseTo(15.93 - 4.12, 9);
+    expect(M.B.top - M.hangar.floor).toBeCloseTo(10.61 - 4.12, 9);
+    // what is built at yard level is at the conformed level, and the doc carries the record
+    for (const id of ["wharf", "lpier-leg", "lpier-arm", "haulout"]) expect([id, SITE.structures.find((st) => st.id === id).deck]).toEqual([id, M.hangar.floor]);
+    expect(SITE.structures.find((st) => st.id === "gangway").from).toBe(M.hangar.floor);
+    for (const id of ["hangar", "B", "D"]) expect([id, SITE.structures.find((st) => st.id === id).floor ?? SITE.structures.find((st) => st.id === id).base]).toEqual([id, M.hangar.floor]);
+    expect(uclueletDoc().site.ground).toEqual(JSON.parse(JSON.stringify(YARD)));
+    expect(SITE.structures.find((st) => st.id === "hangar").assumed).toMatch(/conformed to the lidar/);
+    expect(SITE.structures.find((st) => st.id === "wharf").assumed).toMatch(/conformed to the lidar/);
   });
   it("the haul-out pier: two runways about 40 and 39 m long, about north, 12.7 m apart centre to centre, 2.4 m wide, a 10.3 m well, at yard level", () => {
     expect(Math.abs(M.haulout.lengths[0] - 40)).toBeLessThan(1);
@@ -41,7 +63,7 @@ describe("the boatyard, against its spec (README, \"Ucluelet\"; the survey and R
     expect(Math.abs(M.haulout.spacing - 12.7)).toBeLessThan(0.7);
     expect(M.haulout.width).toBe(2.4);
     expect(Math.abs(M.haulout.well - 10.3)).toBeLessThan(0.7);
-    expect(M.haulout.deck).toBe(4.2);
+    expect(M.haulout.deck).toBe(3.06);
     expect(Math.min(M.haulout.bearing, 360 - M.haulout.bearing)).toBeLessThan(7);
   });
   it("the travel lift straddles the runways (its wheel gauge their spacing where it stands: the schematic's runways aren't quite parallel), its beams clear a 30 ft beam boat", () => {
@@ -83,7 +105,62 @@ describe("the boatyard, against its spec (README, \"Ucluelet\"; the survey and R
     const P = site.layers["boatyard.kept"].positions;
     let top = -Infinity;
     for (let v = 1; v < P.length; v += 3) top = Math.max(top, P[v]);
-    expect(top).toBeCloseTo(16.01, 4);
+    expect(top).toBeCloseTo(14.87, 4);
+  });
+  it("the hangar's sliding leaves cover the main door's span but for the small door, none over it, the stretches either side sharing eight by length", () => {
+    const { main, small } = SITE.structures.find((st) => st.id === "hangar").doors;
+    expect(M.hangar.small).toEqual([small.from, small.to]);
+    const L = M.hangar.leaves;
+    expect(L.length).toBe(8);
+    for (const [a, b] of L) expect(b <= small.from + 1e-9 || a >= small.to - 1e-9).toBe(true);
+    const covered = L.reduce((t, [a, b]) => t + (b - a), 0);
+    expect(covered).toBeCloseTo(main.to - main.from - (small.to - small.from), 9);
+    for (let q = 1; q < L.length; q++) expect(L[q][0]).toBeGreaterThanOrEqual(L[q - 1][1] - 1e-9);
+    expect(L[0][0]).toBe(main.from);
+    expect(L.at(-1)[1]).toBe(main.to);
+    // every way a small door can sit against the main span: before, overlapping either end, inside, after, none
+    for (const sm of [null, { from: -5, to: -1 }, { from: -1, to: 2 }, { from: 5, to: 8 }, { from: 32, to: 36 }, { from: 40, to: 42 }]) {
+      const ls = doorLeaves(main, sm, 8);
+      for (const [a, b] of ls) {
+        expect(b).toBeGreaterThan(a);
+        if (sm) expect(b <= sm.from + 1e-9 || a >= sm.to - 1e-9).toBe(true);
+        expect(a >= main.from - 1e-9 && b <= main.to + 1e-9).toBe(true);
+      }
+    }
+  });
+  it("today's harbour: the pier's east arm, as OSM draws it, on its own layer (hidden by default, as the planned dock replaces it), from the north leg's end", () => {
+    const arm = SITE.structures.find((st) => st.id === "lpier-arm");
+    const leg = SITE.structures.find((st) => st.id === "lpier-leg");
+    expect(arm.layer).toBe("boatyard.today");
+    expect(SITE.layers.find((l) => l.id === "boatyard.today")).toMatchObject({ parent: "boatyard", visible: false });
+    expect(arm.line[0]).toEqual(leg.line[1]);
+    // OSM way 751431449's second segment, in the frame: (70.91, −19.48) → (135.03, −9.39)
+    const [a, b] = arm.line.map(([lat, lon]) => frame.toLocal(lat, lon));
+    expect(Math.hypot(a[0] - 70.91, a[1] + 19.48)).toBeLessThan(0.1);
+    expect(Math.hypot(b[0] - 135.03, b[1] + 9.39)).toBeLessThan(0.1);
+    expect(Math.abs(M["lpier-arm"].length - 64.9)).toBeLessThan(0.5);
+    expect(site.layers["boatyard.today"].positions.length).toBeGreaterThan(0);
+    // every layer but the plan's: the harbour as it is, with an arm off the leg
+    expect(SITE.structures.filter((st) => st.layer !== "boatyard.planned" && st.kind === "pier").map((st) => st.id)).toEqual(["lpier-leg", "lpier-arm"]);
+  });
+  it("the haul-out's head records how shallow the heights are there, as evidence its position is uncertain", () => {
+    const h = SITE.structures.find((st) => st.id === "haulout");
+    expect(h.headDepth.mwl).toHaveLength(2);
+    // under 3 m at the lowest normal tide, at both heads: what the confidence says
+    for (const d of h.headDepth.mwl) expect(-(d - DATUM.tide.LLWLT)).toBeLessThan(3);
+    expect(h.confidence).toMatch(/headDepth/);
+    expect(h.assumed).toMatch(/headDepth/);
+  });
+  it("tells the build what is built on: OSM's footprints, the site's lot and each structure with corners", () => {
+    const fp = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    const rings = builtRings(uclueletDoc(), { buildings: [{ points: fp }] }, frame);
+    const withCorners = SITE.structures.filter((st) => st.corners?.length >= 3).length;
+    expect(rings.length).toBe(1 + 1 + withCorners);
+    expect(rings[0]).toBe(fp);
+    // the lot's box holds the hangar
+    const [hx, hz] = frame.toLocal(48.9491, -125.557758);
+    const box = rings[1];
+    expect(hx > Math.min(...box.map((p) => p[0])) && hx < Math.max(...box.map((p) => p[0])) && hz > Math.min(...box.map((p) => p[1])) && hz < Math.max(...box.map((p) => p[1]))).toBe(true);
   });
 });
 

@@ -113,7 +113,8 @@ On an empty scene's start screen, **Ucluelet (Rising Tide Boat Works)**:
    assumed spot: no anchorage is charted there) in about 12 m of water,
    head to wind, sails down;
 5. starts people in Look above the boatyard's south-west corner, looking
-   over the hangar and the planned dock across the harbour.
+   north-north-east (about 36°) over the hangar and the planned dock,
+   across Ucluelet Inlet to the mountains.
 
 Without sailing it is the place alone, and says so.
 
@@ -134,7 +135,8 @@ floats and piers come from vectors. Heights are kept at 2.5 cm a step
 
 The datum is CHS gauge 08595 Ucluelet: MWL 2.04 m above chart datum, 0.12 m
 above CGVD2013, 0.08 m below CGVD28's zero (the boatyard survey's heights
-are CGVD28: +0.08 m makes them heights about MWL). The tide about MWL: HAT
+are CGVD28: +0.08 m makes them heights about MWL; the site is then
+conformed to the lidar's ground, 1.14 m lower: "The boatyard", below). The tide about MWL: HAT
 +1.98, HHWLT +1.93, MHHW +1.22, MLLW −1.33, LLWLT −2.11. The land floor is
 HHWLT + 0.3 = +2.23 m.
 
@@ -151,13 +153,20 @@ longitude, never mixing a value with a missing one):
 
 | side | order | nodes |
 |---|---|---|
-| water | CHS NONNA-10 → NONNA-100 → NCEI Barkley Sound 1″ (raster 147) → NCEI BC 3″ (182) → filled | 685,496 · 22,168 · 16,717 · 3,971 · 1,471 |
+| water | CHS NONNA-10 → NONNA-100 → NCEI Barkley Sound 1″ (raster 147) → NCEI BC 3″ (182) → filled | 685,496 · 22,168 · 16,717 · 3,714 · 1,728 |
 | land | NRCan HRDEM lidar DTM → NCEI 1″ → the land floor | 236,999 · 83,574 · 229 |
 
-- The **filled** water (the inner inlet's head, 0.59 km² in 17 places) is a
-  harmonic fill from the surveyed depths round it and the shore; its
-  quality is `clamped` (made up: treat the depth as unknown). The land no
-  source covers is `raised`.
+- **NCEI writes exactly 0** along its shoreline and where it has no
+  sounding: 257 of the water nodes raster 182 covers first (the inner
+  inlet's arms) read exactly 0 m, which isn't a depth. A source marked
+  `zeroIsNoValueOnWater` (both NCEI rasters; 147 has no exact zeros here)
+  has no value at a water node where it reads a raw 0, so the node falls
+  through to the next source or the fill, and the source layer says
+  `filled`, not a survey. On land a 0 is a height.
+- The **filled** water (the inner inlet's head and arms, 0.69 km² in 10
+  places) is a harmonic fill from the surveyed depths round it and the
+  shore; its quality is `clamped` (made up: treat the depth as unknown).
+  The land no source covers is `raised`.
 - Which source each node took is kept, 4 bits a node, in the `layers` file
   doc and in `extras.terrain.source` (`{ encoding: "uint4-base64", names,
   counts, data }`), so a depth reader can tell NONNA from NCEI.
@@ -199,10 +208,11 @@ confidence and what is assumed; the GLB puts them on layers:
 
 | Layer | What | Confidence |
 |---|---|---|
-| Buildings staying | **The hangar** (survey building A): 39.2 × 34.9 m, 1,369 m², floor +4.20, ridge +16.01, eave +14.8 about MWL; a 4° gable, its ridge north-west–south-east (157° true), trusses spanning the 34.8 m faces; sliding doors across the north-west face to a 7.39 m door head, a timber header band above, a 3.1 m door; walls diagonal timber sheathing weathered cedar brown and red, doors green, part stripped; dark grey roof. Building B (the old cold storage, possibly their office), building D (silver) | footprint and heights high; eave ±0.5 m, doors and colours from the July 2026 photo |
+| Buildings staying | **The hangar** (survey building A): 39.2 × 34.9 m, 1,369 m², floor +3.06, ridge +14.87, eave +13.66 about MWL (the survey's +4.20 / +16.01 conformed to the lidar: below); a 4° gable, its ridge north-west–south-east (157° true), trusses spanning the 34.8 m faces; sliding doors across the north-west face to a 7.39 m door head, either side of a 3.1 m small door, a timber header band above; walls diagonal timber sheathing weathered cedar brown and red, doors green, part stripped; dark grey roof. Building B (the old cold storage, possibly their office), building D (silver) | footprint and heights high; eave ±0.5 m, doors and colours from the July 2026 photo |
 | Buildings marked to be removed | C (the lean-to), E, F, G, H, I (white roof), J (rust roof), K, Q, **hidden by default** (the scene shows the plan; turn the layer on for March 2026) | footprints high; heights partly assumed |
 | Existing wharf and pier | the 43.9 × 19.5 m pile wharf with its white shed, at yard level; the L-pier's north leg (OSM way 751431449); the Pat Leslie public launch | position high; deck heights assumed |
-| Planned haul-out pier and dock | two concrete runways about 40 m long, 12.7 m apart, 2.4 m wide (a 10.3 m well for a 30 ft beam), Corten-look screens; a **110 t travel lift** straddling them; a 15 m gangway; the dock's arm, 3.6 m floats at +0.5 m with guide piles and a **solar canopy**, and **three DC fast chargers** | **low**: Rising Tide's schematic registered to the L-pier (position ±15 m, bearing ±5°, length ±10 m); the travel lift's size and colour (blue), the gangway and the canopy's form are assumed |
+| Today's pier arm | the L-pier's 64 m east arm as OSM draws it, a fixed pier at yard level, **hidden by default**: the planned dock starts at the same corner and is taken to replace it. For today's harbour turn "planned" off and this and "removed" on. OSM doesn't tag it floating, so no boats are dressed along it | position medium (OSM); width and deck assumed; that the plan replaces it is assumed |
+| Planned haul-out pier and dock | two concrete runways about 40 m long, 12.7 m apart, 2.4 m wide (a 10.3 m well for a 30 ft beam), Corten-look screens; a **110 t travel lift** straddling them; a 15 m gangway; the dock's arm, 3.6 m floats at +0.5 m with guide piles and a **solar canopy**, and **three DC fast chargers** | **low**: Rising Tide's schematic registered to the L-pier (position ±15 m, bearing ±5°, length ±10 m); the heights at the runways' heads are only −1.7 and −2.5 m about MWL (`headDepth`: dry, or 0.3 m, at the lowest normal tide; a 110 t lift's well wants 3 m or more), further evidence the position, or the 12 m-west fit, is unsettled; the travel lift's size and colour (blue), the gangway and the canopy's form are assumed |
 
 OSM's buildings inside the lot's extent, and its L-pier, are left out (the
 site draws them). Assumptions, in full, are in `src/ucluelet.js`; the
@@ -210,6 +220,29 @@ largest: NAD83(CSRS) taken as WGS84 (~1–1.5 m); the hangar's eave from the
 photo; the pier from a non-scale schematic (a whole-site fit puts it 12 m
 west, over the wharf's east half); whether the wharf stays is not public;
 building B's fate is unresolved (shown as staying).
+
+**The survey and the lidar disagree by 1.14 m** (`YARD` in
+`src/ucluelet.js`). The survey's slab (AVG. SLAB EL 4.12, CGVD28; test pits
+4.08–4.22) is +4.20 about MWL. The HRDEM lidar's bare earth at the hangar's
+and building B's corners and middles is +2.96 to +3.24, mean +3.06; the
+5 m and 1 m site tiles read within 0.05 m of the 10 m mosaic the place
+uses. CGVD28 against CGVD2013 is only 0.20 m here, so the datums don't
+explain it, and public data doesn't say which is right. Drawn on the
+survey's level, the hangar stood on a metre-high plinth and the decks a
+metre and more above their roots. The scene's ground is the lidar's, so
+the site is **conformed to it**: every survey height drops 1.14 m, keeping
+the survey's differences (door head 7.39 m, ridge 11.81 m above the
+floor), and what is built at yard level (the wharf, the pier, the
+haul-out's deck, the gangway's top) goes with it. `probes/fetch-ucluelet.mjs`
+measures the ten lidar points again from the fetched raster and checks
+the hangar's slab is within 0.3 m of the drawn ground (it is 0.03 m above
+their mean).
+
+**The door face** is given two ways in the spec: as 12.7 + 3.1 + 19.0 m
+(the 3.1 m small door between two stretches) and as leaves across 0.8–34.0
+m. It is drawn as eight leaves either side of the small door (0.8–12.7 and
+15.8–34.0 m), which is both if the small door is a wicket in its own
+panel; the hangar's `assumed` says so.
 
 Two landmarks OSM has but can't shape are drawn from the doc too
 (`landmarks`): **Amphitrite Point Lighthouse**, a squat white concrete tower
@@ -246,7 +279,17 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   sand, Ucluelet's cobble), forest floor. Art direction, `COLOURS`; a place
   overrides any in `look.colours`. At 20 m the bands get only a few vertices.
 - **The forest**: the canopy (the lidar's where measured; else an assumed
-  height in OSM's woods: `look.trees.assumed`, 18 m ±20%), a forest *roof*
+  height in OSM's woods: `look.trees.assumed`, 18 m ±20%), and none where
+  something is built: the lidar's surface less its terrain is a roof's
+  height as much as a tree's (in Ucluelet 248 of 450 OSM buildings had over
+  5 m of "canopy" at their middle, 27 under the forest roof, and 232 of the
+  trees stood on footprints; now none, and no building's middle is forest
+  or roof, on the real data). `builtMask`
+  marks every node on an OSM footprint, the site's lot box or a site
+  structure, or within a tree's reach of one (0.45·√2 of a cell, as far as
+  a trunk is jittered from its node), so no tree stands on a footprint and
+  the roof (which needs a node and its eight neighbours forest) stays two
+  nodes clear of anything built. Then a forest *roof*
   (an RTIN over the ground plus the smoothed canopy, where a node and its
   eight neighbours are forest at least 20 m from the water), and
   **instanced trees** in front of it: on the 40 m fringe at the water, along
@@ -266,7 +309,7 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
 
 The small solids carry no normals (a glTF loader draws them flat-shaded,
 which they are), and the buildings are a primitive a colour: Ucluelet's GLB
-is about 22.5 MB, Cadboro Bay's 15.3 MB (it was 7.8 MB; its 5,910
+is about 23.5 MB, Cadboro Bay's 15.3 MB (it was 7.8 MB; its 5,910
 buildings are most of the rest).
 
 - **Boats on the floats** (`boats.js`): dressing, not data. Nobody maps
@@ -279,8 +322,9 @@ buildings are most of the rest).
 
 The GLB declares layers (scene README, "GLB conventions"): **Forest**,
 **Buildings**, **Docks, floats and breakwaters**, **Lights, buoys and
-beacons**, **Landmarks**, **Moored boats (dressing)**, and a place's own (Ucluelet's boatyard and its four
-sub-layers, the removed buildings hidden by default). The ground is on none.
+beacons**, **Landmarks**, **Moored boats (dressing)**, and a place's own (Ucluelet's boatyard and its five
+sub-layers, the removed buildings and today's pier arm hidden by default:
+the scene shows the plan). The ground is on none.
 
 ## The frame
 
@@ -440,7 +484,8 @@ land in the mesh is stretched; the heightfield stays true.
   where a missing pixel is weighed (every node), the canopy the largest over
   each node's pixels (every node); the frame raster refused half a cell off;
 - the layered choice in every combination of three sources' coverage on
-  land and water; the layers file round-tripping every code and canopy step;
+  land and water; a source's raw 0 as no value on water and a height on
+  land, at two datum offsets (every case); the layers file round-tripping every code and canopy step;
   the harmonic fill bringing back a plane at every node;
 - a whole layered fetch on a made-up place, every answer a fixture: what is
   asked for, from which source each node is, the bytes it makes (pinned
@@ -449,13 +494,26 @@ land in the mesh is stretched; the heightfield stays true.
   ridge, pitch, bearing, doors; the pier's runways, spacing, well; the
   travel lift's gauge; the wharf; the dock's bearing and length; the
   chargers in order), every structure's source and assumption, the layers;
-  the extent and every named place in it;
+  the survey conformed to the lidar (the slab within 0.3 m of the recorded
+  lidar mean, the survey's differences kept, every yard-level deck with
+  it); the door leaves never over the small door (and wherever a small door
+  might sit); today's pier arm on OSM's line from the leg's end, hidden by
+  default; the haul-out's head depths recorded; what the build counts as
+  built on; the extent and every named place in it;
 - the forest: species picked in exact proportion; the trees of the grid the
   trees of its tiles for every split into rows; every tree on a node that
   may have one, inside its cell, of its node's mix, at its canopy ±15%;
   trees exactly on the fringe and the roof's edges; thinning to exactly
   `max`; the roof over its nodes only, at the ground plus the smoothed
-  canopy; the trees' meshes a metre tall;
+  canopy; the trees' meshes a metre tall; the built mask exactly the nodes
+  on or within a tree's reach of 24 footprints (every node, against brute
+  force), and with the canopy over every node no tree on a footprint and no
+  roof within two nodes of one (every tree, every node);
+- the probes' Chrome lock: refused without --lock or $CHROME_LOCK; released
+  when its holder exits, throws, or gets SIGINT, SIGTERM or SIGHUP alone or
+  under another handler (child processes); waited for, taken over when
+  stale, kept fresh while held; and what a publisher sends, a dry run in a
+  never-synced checkout going on unstamped (every case);
 - the land cover painted largest first with holes, at every node; the
   chamfer distance to water within 8.3% at every node; the shore's bands
   ordered by the tide and coloured as named;
@@ -505,10 +563,16 @@ node probes/fetch-ucluelet.mjs [--cache <dir>] [--seed <dir>] [--offline] [--out
 #   Overpass queries, and checks: the grid; the classification; the lidar lines up with
 #   OSM (and misplaced would be refused); every node's source in the counts research
 #   found; islets; 8 known places; the canopy; the data is what was checked (SHA-256 of
-#   the heights, layers, features and look); the anchorage deep enough all round a swing
-node probes/publish-ucluelet.mjs --dry-run [--lock <dir>] [--shots <dir>]   # build scene/, sailing/, water/, terrain/
-#   the template in headless Chrome (one Chrome at a time while it holds --lock), 40-odd
-#   checks (see the file), node's GLB byte for byte, a viewer without the terrain plugin,
+#   the heights, layers, features and look); the anchorage deep enough all round a swing;
+#   the yard's ten lidar points (YARD) the fetched lidar's, the hangar's slab within 0.3 m
+#   of the drawn ground; the haul-out's head depths the fetched heights'
+node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>]   # build scene/, sailing/, water/, terrain/
+#   the template in headless Chrome (one Chrome at a time while it holds the lock: --lock
+#   or $CHROME_LOCK, refused with neither; released however it ends), 50-odd
+#   checks (see the file), node's GLB byte for byte, the Terrain doc's fingerprint the
+#   render's when it is built and nothing written to the doc after (every write is logged
+#   with its stack: one run of the url-rewrite check saw a stale render, not seen since),
+#   a viewer without the terrain plugin,
 #   and screens: home, the boatyard close, the dock, the inlet, Amphitrite Point
 node probes/fetch-cadboro.mjs [--cache <dir>] [--offline] [--out <dir>]
 #   fetches (or replays its recording of) NCEI and Overpass, and checks: the grid; every node
@@ -516,12 +580,13 @@ node probes/fetch-cadboro.mjs [--cache <dir>] [--offline] [--out <dir>]
 #   (SHA-256); the DEM lines up with OSM (and flipped, mirrored or shifted it would be refused);
 #   every islet clears the land floor; 13 places known to be land or water; the mooring field
 #   deep enough for a 2 m keel at the lowest normal tide
-node probes/publish-rvyc.mjs --dry-run      # build scene/, sailing/ and terrain/ first
+node probes/publish-rvyc.mjs --dry-run --lock <dir>     # build scene/, sailing/ and terrain/ first
 #   in headless Chrome, the BUILT scene, sailing and terrain plugins on an empty scene: the
 #   template from the start screen (its fetches answered from the recording), and checks the
 #   scene (see the file); node rebuilds the GLB from the same docs and compares bytes; a viewer
 #   without the terrain plugin opens a snapshot and still sees it; the fingerprint survives
-#   rewriting every url. Without --dry-run it publishes every doc (a render's builtFrom.heads
+#   rewriting every url. A dry run in a checkout never synced with pushwork (no package
+#   urls) says the scene isn't stamped and still exits 0. Without --dry-run it publishes every doc (a render's builtFrom.heads
 #   become its source's, as published) and reads each back from a fresh repo, the terrain's
 #   render checked fresh for its source there.
 ```
