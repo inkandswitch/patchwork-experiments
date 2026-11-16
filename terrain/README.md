@@ -220,6 +220,9 @@ confidence and what is assumed; the GLB puts them on layers:
 | Buildings staying | **The hangar** (survey building A): 39.2 × 34.9 m, 1,369 m², floor +3.06, ridge +14.87, eave +13.66 about MWL (the survey's +4.20 / +16.01 conformed to the lidar: below); a 4° gable, its ridge north-west–south-east (157° true), trusses spanning the 34.8 m faces, white rake trim up both gables and fascia along the eaves; sliding doors across the north-west face to a 7.39 m door head, either side of a 3.1 m small door, a timber header band above, the roof 1.2 m over it; walls diagonal timber sheathing weathered cedar brown and red, doors green, part stripped; dark grey roof. Building B (the old cold storage, possibly their office), building D (silver), both corrugated with a dark trim under the roof (cladding and trim assumed) | footprint and heights high; eave ±0.5 m, doors and colours from the July 2026 photo |
 | Buildings marked to be removed | C (the lean-to), E, F, G, H, I (white roof), J (rust roof), K, Q, **hidden by default** (the scene shows the plan; turn the layer on for March 2026) | footprints high; heights partly assumed |
 | Existing wharf and pier | the 43.9 × 19.5 m pile wharf with its white corrugated shed, at yard level; the L-pier's north leg (OSM way 751431449); the Pat Leslie public launch | position high; deck heights assumed |
+| Buildings staying: D | a galvanised Quonset hut (`site.js quonset`: a half-ellipse arch of 14 strips, ribbed every 0.6 m, flat ends, a door in its end to the shore), drawn so since the second look round from the Ha-Shilth-Sa photo (the survey's box) | footprint and crown height the survey's; form from the photo; door assumed |
+| Buildings staying: a red Quonset | a red Quonset with a white end arch and door, 12 × 7 m, 4 m high, about 10 m south-west of lean-to C | the courtyard photograph only: position, size and orientation assumed; it may be gone |
+| Buildings staying: the courtyard | pale wet concrete `#8a8a86` from the hangar's north-east face out 45 m, its joints every 6 m (`site.js slab`); the yard's apron the same concrete (was a dark asphalt grey) | the photographs; extent, level and joints assumed |
 | Today's pier arm | the L-pier's 64 m east arm as OSM draws it, a fixed pier at yard level, **hidden by default**: the planned dock starts at the same corner and is taken to replace it. For today's harbour turn "planned" off and this and "removed" on. OSM doesn't tag it floating, so no boats are dressed along it | position medium (OSM); width and deck assumed; that the plan replaces it is assumed |
 | Planned haul-out pier and dock | two concrete runways about 40 m long, 12.7 m apart, 2.4 m wide (a 10.3 m well for a 30 ft beam), Corten-look screens; a **110 t travel lift** straddling them; a 15 m gangway; the dock's arm, 3.6 m floats at +0.5 m with guide piles and a **solar canopy**, and **three DC fast chargers** | **low**: Rising Tide's schematic registered to the L-pier (position ±15 m, bearing ±5°, length ±10 m); the heights at the runways' heads are only −1.7 and −2.5 m about MWL (`headDepth`: dry, or 0.3 m, at the lowest normal tide; a 110 t lift's well wants 3 m or more), further evidence the position, or the 12 m-west fit, is unsettled; the travel lift's size and colour (blue), the gangway and the canopy's form are assumed |
 
@@ -387,11 +390,31 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   and on the real data by `probes/fetch-ucluelet.mjs`); and where the
   canopy is 3 to 5 m on wild ground or a lot (`skin.scrub`), squat shore
   pine and salal clumps. Under the skin the roof sits at 0.72 of the canopy
-  (`skin.roofDepth`), so the crowns stand out of it as cones, and the
+  (`skin.roofDepth`; Ucluelet's 0.6 since the second look round), so the crowns stand out of it as cones, and the
   ground in the trees' shade (canopy over 5 m) is nearly black
   (`look.colours.forestShade`), not lawn between the crowns. Ucluelet:
   14,103 roof, 4,815 low and 1,697 scrub clumps (20,615 in all; the roof's
   clumps on a stand's node, 307 of them, went: the stand is its crowns).
+- **The canopy closed from above** (the second look round): from a raised
+  eye the clumps were separate cones on lighter ground, a Christmas-tree
+  lot. A clump is now turned only by quarter turns and never shrunk (width
+  1 to 1.12), its crowns spread to ±0.3 of a cell so neighbours interlock,
+  and wide enough that at least 90% of every 20 m cell is under some
+  crown's foot whatever layouts and turns stand round it (tested by
+  enumeration over every layout, turn and neighbourhood of one layout):
+  a roof clump is four crowns 6.5 m across in near-square layouts, a low
+  clump three or four 8.5 m across, a scrub clump four squat bushes 6 m
+  across. The crowns are darker and bluer (`#16241c` to `#2a3a2c`), each
+  ±12% in value by hash, the roof under them as dark. Two silhouettes of
+  this coast stand out of it, keyed by the layout a node's hash picks
+  (`LAYOUT_WEIGHTS`): about one crown in ten a lighter Sitka spruce
+  (`#36463a`, 15% taller) and about one in thirty a dead snag, a grey
+  spike 3–6 m over the canopy. Where the lidar's canopy is 1 to 5 m
+  (Ucluelet's `skin.scrub.min: 1`), the scrub's clumps stand on the
+  scrub's sheet, which is darker (`#232b20`), barely bumped (±0.6 m),
+  finer inside the skin's circles (RTIN tolerance 0.3, `trees.scrub.fine`)
+  and, like the roof, mottled ±15% a vertex (`MOTTLE`, Cadboro's roof too),
+  so no facet is one flat tone.
 - **The detail falls off with distance** (`trees.bands`, metres beyond
   the skin's circles, `beyondCircles`): stands at the water only inside
   them (`stands: 0`), the roof's edge trees to 2 km beyond, the fringe's
@@ -426,6 +449,17 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   (`pileDeck`: a slab with a dark edge, black piles every 4 m where the
   ground is under it), an industrial one there in cream corrugated cladding
   (a fish plant). Ucluelet: 36 buildings on decks.
+  A place may draw some of OSM's buildings as it knows them
+  (`look.buildings.overrides`, by OSM id: walls, roof, storeys, a stone
+  base, trim, and a `form`): Ucluelet's two waterfront landmarks, from
+  photographs (assumed): Whiskey Landing Lodge (way/360389716) three
+  storeys of timber brown `#6b4a2e` on a grey stone base, a red metal roof
+  `#c0432c` with four cross-gables to the water (`crossGables`, the side
+  whose ground is lower) and white trim; the Ucluelet Aquarium
+  (way/334446398) navy `#2d3f66` under a curved metal roof (`barrel`). And
+  a place may dress one of OSM's structures (`look.structures`, by id):
+  the Whiskey Dock's red railings over a yellow curb (`structures.js
+  railing`).
 
 The small solids carry no normals (a glTF loader draws them flat-shaded,
 which they are), and the buildings are a primitive a colour: Ucluelet's GLB
@@ -453,8 +487,8 @@ rest).
   Where the place asks (`surf.reef`, `surf.boulders`): irregular patches of
   white water over the shallows under 2.5 m where the swell gets in (a fan
   of seven triangles a node, its rim 3–8 m by hash, never more than 0.7 of
-  the way to white, fading to the water's grey `#64737c`), and black boulders at
-  the most exposed waterline (dressing, assumed). Ucluelet: 1,934 of 14,696
+  the way to white, fading to the water's grey `#64737c`), and boulders at
+  the most exposed waterline (dressing, assumed; Ucluelet's grey stones, 7- or 9-sided, in three sizes). Ucluelet: 1,934 of 14,696
   pieces in 289 runs (Amphitrite, the Wild Pacific Trail shore, the outer
   islets), 608 reef patches, 203 boulders.
 - **Drift logs and the harbour's boulders** (`shore-dressing.js`, where a
@@ -462,8 +496,34 @@ rest).
   the place's circles, a piece by its own hash gets a silver-grey log or two
   (8 to 20 m, 0.5 to 1 m across) lying roughly along the shore where the
   ground first reaches the highest tide (HHWLT) walking inland; and the
-  surf's boulders along the sheltered waterline too, at a lower chance.
-  Ucluelet: 483 logs, 221 boulders, on their own layer.
+  surf's boulders along the sheltered waterline too, at a lower chance;
+  where the place names a frontage (`shore.frontage`, Ucluelet's yard
+  from the launch to the wharf), three to five stones on every piece of
+  it. A place may give the logs' width, colour, how deep they lie
+  (`bury`: Ucluelet's a third buried in the cobble, 0.8–1.2 m across, silver
+  `#a8a49a`) and their darker ends (`cap`), and the stones' sides (7 or 9),
+  sizes and greys (`#4d4b47`, `#5a5752`), squashed. On their own layer.
+- **Grain at the eye** (`grain.js`): the ground is coloured at its nodes,
+  so close up the yard and the intertidal were flat planes. Each ground
+  vertex carries its grain (`_GRAIN`, `build.js groundGrain`: the shore's
+  cobble and rock, bare rock 1, beach 0.8, other land 0.6, the site's apron
+  0.5, under the water 0), and the place's extension (`sky.js`) dresses
+  the ground's materials: two octaves of world-space luminance noise, ±12%
+  at 1.5 m and ±18% at 8 m (at ±8% and ±12% it didn't show), by the grain, fading out from 150 to 300 m.
+  Both places; the materials are put back when the extension stops.
+- **The shore in the water** (`horizon.js`; water/WATER.md, "The shore in
+  the water"): extras.terrain carries the canopy too (`canopy`: the most
+  in each cell of 32 m or more, whole metres; the sampler's `surfaceAt`),
+  and the place's extension (`sky.js`) gives the water the shore's shape
+  round the eye (the contribution `water.shore`): for 256 azimuths and 16
+  distance bins (15 m to 9 km), the highest the land and its trees stand
+  above the horizontal of the mirror eye (as far under the water as the eye
+  is over it) at that distance or beyond, how far off, how far off the
+  nearest land is and how high the near shore stands; made again when
+  the eye moves 25 m or its height by a fifth. The water draws the shore's
+  tint (its body's `colour.shore`: Ucluelet `#1a231d`, Cadboro `#26302a`)
+  where its reflected ray is under it, fogged to the land's distance: the
+  dark band under every shore in a calm overcast.
 - **Low cloud and mist** (`cloud.js`, where a place's look has `clouds`):
   weather dressing. Stratus banks at about 380 m wherever the ground at
   every 14th node is near that level (the cloud base meeting a slope:
@@ -481,10 +541,15 @@ rest).
   (`bakeStratus`): above 250 m the ground's, the roof's and the scrub's
   vertices lerp toward the fog's colour by (h − 250) / 300 (at most 0.85),
   ± 30% by a hash of where each vertex is, so the hilltops dissolve into
-  the overcast in ragged patches; the lenses still read as stacked stripes
-  on Ozzard and the range from the water. Ucluelet then keeps no banks
-  (`sheets: null`, `mist: null`) but its caps: Ozzard's collar and two low
-  wisps over the hills behind the town (a cap with a negative `below`).
+  the overcast in ragged patches. With a `peak` the bake is a band, not a
+  cap (`stratusAt`): Ucluelet's rises from 280 m to its thickest (0.7) at
+  420 m and eases back to 0.45 over the next 200 m, so the tops' dark forest
+  and the radome show in and out of it; its colour is the grey the horizon
+  reads as once lit (`#737b7e`, under the horizon's `#959ea1`: lit, the
+  horizon's own colour came out brighter than the sky, as snow), and no
+  baked colour is lighter than the horizon (tested every 20 m to 800 m).
+  Ucluelet keeps no banks, mist or caps (`caps: []`): seen from the town
+  the lenses were pale saucers over it. Its GLB has no cloud mesh.
 - **Boats about the harbour** (`look.boats`): a few placed by hand, each
   an assumption in at least 10 m of water: a troller outbound, a
   whale-watching boat past Lyche Island, a water taxi coming in, a seiner
@@ -496,7 +561,14 @@ rest).
   her length, raised in a V), a small seiner or crabber, an aluminium
   sportfisher or a sailboat (a mast 1.3 times her length, a boom, on some
   a blue cover) by hash of the float's id and the slip, the same every
-  build; every hull rises to its bow, a dark boot stripe at the waterline.
+  build; every hull rises to its bow. A working boat (troller, seiner) is
+  painted as the West Coast fleet is (`paintOf`; the second look round):
+  about 60% of hulls navy, dark green, red, black or light blue, the rest
+  white; the wheelhouse and its top white or pale grey, never the trim
+  colour; red bottom paint under a white boot stripe; two to four orange
+  buoys over the rail. A seiner has a short mast and boom; poles, masts
+  and booms are 0.14 m across, to hold at 150 m. A place may fill some
+  floats fuller (`look.moored`: Ucluelet's Inner Basin, 19 slips in 20).
   Their layer says they are dressing. Every float stands among tall black
   guide piles (`structures.js floatPiles`: every 15 m, alternating sides,
   5 to 7 m above mean water).

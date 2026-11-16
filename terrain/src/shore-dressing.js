@@ -23,7 +23,7 @@ export function keyHash(key, seed) {
   return (h >>> 0) / 4294967296;
 }
 
-export const DRIFT = Object.freeze({ chance: 0.22, length: [8, 20], diameter: [0.5, 1], colour: "#a39f96", reach: 80, step: 1 });
+export const DRIFT = Object.freeze({ chance: 0.22, length: [8, 20], diameter: [0.5, 1], colour: "#a39f96", reach: 80, step: 1, bury: 0.6 });
 
 /** Whether (x, z) is inside any of `circles` ([{ x, z, radius }]). */
 const inside = (circles, x, z) => circles.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius * c.radius);
@@ -38,7 +38,7 @@ const inside = (circles, x, z) => circles.some((c) => (x - c.x) ** 2 + (z - c.z)
  * @param {(x: number, z: number) => number | null} groundAt
  */
 export function driftLogs(pieces, groundAt, { circles = [], level = 2, built = null, ...o } = {}) {
-  const { chance, length: [l0, l1], diameter: [d0, d1], reach, step } = { ...DRIFT, ...o };
+  const { chance, length: [l0, l1], diameter: [d0, d1], reach, step, bury } = { ...DRIFT, ...o };
   const out = [];
   for (const pc of pieces) {
     const mx = (pc.a[0] + pc.b[0]) / 2, mz = (pc.a[1] + pc.b[1]) / 2;
@@ -62,16 +62,17 @@ export function driftLogs(pieces, groundAt, { circles = [], level = 2, built = n
       const len = l0 + (l1 - l0) * keyHash(pc.key, 5 + q * 10), r = (d0 + (d1 - d0) * keyHash(pc.key, 6 + q * 10)) / 2;
       const hx = (dcos(along) * len) / 2, hz = (dsin(along) * len) / 2;
       const ga = groundAt(at[0] - hx, at[1] - hz) ?? level, gb = groundAt(at[0] + hx, at[1] + hz) ?? level;
-      out.push({ key: `${pc.key}#${q}`, a: [at[0] - hx, ga + r * 0.6, at[1] - hz], b: [at[0] + hx, gb + r * 0.6, at[1] + hz], r, shade: 0.85 + 0.25 * keyHash(pc.key, 7 + q * 10) });
+      // its axis `bury` of its radius over the ground (0: half buried in the cobble)
+      out.push({ key: `${pc.key}#${q}`, a: [at[0] - hx, ga + r * bury, at[1] - hz], b: [at[0] + hx, gb + r * bury, at[1] + hz], r, shade: 0.85 + 0.25 * keyHash(pc.key, 7 + q * 10) });
     }
   }
   return out;
 }
 
-/** The logs as one triangle soup: six-sided, capped, silver-grey (each its own shade). */
-export function logMesh(logs, colour = DRIFT.colour) {
+/** The logs as one triangle soup: six-sided, capped, silver-grey (each its own shade), their sawn or broken ends `cap` of that (darker: the grey is the weathered skin). */
+export function logMesh(logs, colour = DRIFT.colour, cap = 0.9) {
   const s = soup();
   const base = hexToLinear(colour).slice(0, 3);
-  for (const g of logs) log(s, g.a, g.b, g.r, base.map((c) => c * g.shade));
+  for (const g of logs) log(s, g.a, g.b, g.r, base.map((c) => c * g.shade), 6, base.map((c) => c * g.shade * cap));
   return s.done();
 }

@@ -162,3 +162,43 @@ describe("stratus baked into colours", () => {
     expect(again).toEqual(colors);
   });
 });
+
+import { stratusAt } from "./cloud.js";
+import { hexToLinear } from "./glb.js";
+describe("the stratus as a band across the hills (Ucluelet's)", () => {
+  const band = { from: 280, peak: 420, span: 200, max: 0.7, above: 0.45, noise: 0.3, colour: "#737b7e" };
+  const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const horizon = hexToLinear("#959ea1").slice(0, 3);
+  it("rises from nothing at `from` to its peak, eases back to `above` over the next span, and holds (every 20 m to 800 m)", () => {
+    let last = 0;
+    for (let y = 0; y <= 800; y += 20) {
+      const f = stratusAt(y, band);
+      if (y <= 280) expect(f).toBe(0);
+      else if (y <= 420) {
+        expect(f).toBeGreaterThanOrEqual(last);
+        expect(f).toBeLessThanOrEqual(0.7 + 1e-12);
+      } else {
+        expect(f).toBeLessThanOrEqual(last + 1e-12);
+        expect(f).toBeGreaterThanOrEqual(0.45 - 1e-12);
+      }
+      if (y >= 620) expect(f).toBeCloseTo(0.45, 12);
+      last = f;
+    }
+    expect(stratusAt(420, band)).toBeCloseTo(0.7, 12);
+  });
+  it("never makes a hill lighter than the horizon's colour, from any of the forest's and the ground's colours (every 20 m to 800 m, every hash)", () => {
+    const bases = ["#16241c", "#131e17", "#2a3a2c", "#36463a", "#3b3a37", "#232b20", "#55585a", "#5d5850"].map((h) => hexToLinear(h).slice(0, 3));
+    const H = Array.from({ length: 41 }, (_, q) => q * 20);
+    for (const base of bases) {
+      // every height at 64 places (64 hashes), so the noise's whole range is seen
+      const positions = new Float32Array(H.length * 64 * 3), colors = new Float32Array(H.length * 64 * 3);
+      H.forEach((y, a) => { for (let b = 0; b < 64; b++) { const v = a * 64 + b; positions.set([b * 7 + a, y, b * 13], v * 3); colors.set(base, v * 3); } });
+      bakeStratus(positions, colors, band);
+      for (let v = 0; v < colors.length / 3; v++) {
+        const c = [colors[v * 3], colors[v * 3 + 1], colors[v * 3 + 2]];
+        expect(lum(c)).toBeLessThanOrEqual(lum(horizon) + 1e-6);
+        for (let e = 0; e < 3; e++) expect(c[e]).toBeLessThanOrEqual(Math.max(base[e], horizon[e]) + 1e-6);
+      }
+    }
+  });
+});

@@ -321,12 +321,12 @@ export function placeTrees(o) {
  * `depth` of the canopy, the skin's crowns standing out of it.
  * → { positions, normals?, colors, indices, roofNodes } (no normals: computed by the caller).
  */
-export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"], jitter = 0, under = null, depth = 0.7 }) {
+export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"], jitter = 0, under = null, depth = 0.7, mottle = MOTTLE }) {
   const { n } = grid;
   const N = n * n;
   const roof = new Uint8Array(N);
   for (let k = 0; k < N; k++) if (isRoof(k, { n, label, cover, canopy, dist, setback })) roof[k] = 1;
-  return sheetOver({ grid, heights, mask: roof, tolerance, floor, colours, jitter, seeds: [77, 79] }, (k) => {
+  return sheetOver({ grid, heights, mask: roof, tolerance, floor, colours, jitter, seeds: [77, 79], mottle }, (k) => {
     const i = k % n, j = (k - i) / n;
     let s = 0, c = 0;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
@@ -354,14 +354,19 @@ export const isScrub = (k, { label, cover, canopy, dist, built = null, setback =
  * under 5 m (Amphitrite's headland, Ozzard's upper slopes): not turf, a
  * bumpy low skin over the ground, its canopy's height (at least `lift`)
  * and ±`jitter` by hash, the same RTIN as the roof, its edge just under the
- * ground. → as forestRoof (roofNodes: the scrub's nodes), or null.
+ * ground. → as forestRoof (roofNodes: the scrub's nodes), or null. Where
+ * `fine` ({ zone, tolerance }: the skin's zone) the RTIN is finer, so the
+ * sheet near where people look isn't a few large facets.
  */
-export function scrubCover({ grid, heights, label, cover, canopy, dist, built = null, setback = 20, min = 0.8, lift = 1, tolerance = 0.6, floor = -80, colours = SCRUB_COLOURS, jitter = 1.5 }) {
+export function scrubCover({ grid, heights, label, cover, canopy, dist, built = null, setback = 20, min = 0.8, lift = 1, tolerance = 0.6, floor = -80, colours = SCRUB_COLOURS, jitter = 1.5, fine = null, mottle = MOTTLE }) {
   const N = grid.n * grid.n;
   const mask = new Uint8Array(N);
   for (let k = 0; k < N; k++) if (isScrub(k, { label, cover, canopy, dist, built, setback, min })) mask[k] = 1;
-  return sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [87, 89] }, (k) => heights[k] + Math.max(lift, canopy[k]));
+  return sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [87, 89], fine, mottle }, (k) => heights[k] + Math.max(lift, canopy[k]));
 }
+
+/** How much a sheet's vertex colour varies in value by hash, either way (forestRoof, scrubCover): no facet one flat tone. */
+export const MOTTLE = 0.15;
 
 /**
  * A sheet over the ground at `mask`'s nodes (their height topOf(k)): an RTIN
@@ -369,9 +374,10 @@ export function scrubCover({ grid, heights, label, cover, canopy, dist, built = 
  * the ground so the sheet's edge dives into it; every other node far down
  * at `floor` and the triangles with no mask node dropped), each mask node
  * up or down by its own hash (±jitter), coloured by another (seeds: [colour,
- * jitter]). Null if the mask is empty.
+ * jitter]) and mottled ±`mottle` in value by a third; where `fine` ({ zone,
+ * tolerance }) its zone's nodes at that tolerance. Null if the mask is empty.
  */
-function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [colourSeed, jitterSeed] }, topOf) {
+function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [colourSeed, jitterSeed], fine = null, mottle = 0 }, topOf) {
   const { n, cell, x0, z0 } = grid;
   const N = n * n;
   const roof = mask;
@@ -380,7 +386,7 @@ function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, see
   if (!count) return null;
   const top = new Float32Array(N), tol = new Float32Array(N);
   for (let k = 0; k < N; k++) {
-    tol[k] = tolerance;
+    tol[k] = fine?.zone?.[k] ? fine.tolerance : tolerance;
     if (!roof[k]) {
       // the ring round the roof just under the ground (so its edge slopes down over a cell); everything else far down, flat
       top[k] = around(n, k).some((m) => roof[m]) ? heights[k] - 1 : floor;
@@ -411,7 +417,10 @@ function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, see
     positions[q * 3 + 2] = z0 + j * cell;
     const u = hash01(k, colourSeed);
     const c = lin[u < 0.25 ? 0 : u < 0.55 ? 1 : u < 0.8 ? 2 : u < 0.9 ? 3 : 4];
-    colors.set(c, q * 3);
+    const f = 1 + mottle * (2 * hash01(k, colourSeed + 1000) - 1);
+    colors[q * 3] = c[0] * f;
+    colors[q * 3 + 1] = c[1] * f;
+    colors[q * 3 + 2] = c[2] * f;
   });
   const indices = Uint32Array.from(tris, (v) => used[v]);
   return { positions, colors, indices, roofNodes: count };
@@ -430,40 +439,70 @@ function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, see
 // in the node's cell by one of SKIN_LAYOUTS, their tops at the node's
 // canopy ±8%. Every choice is the node's index and its data, so the skin
 // of a grid is the union of its tiles' (tested by enumeration).
+//
+// The canopy is closed from above: a clump is turned only by quarter turns
+// and never shrunk (width 1 to 1.12), and its crowns are wide enough
+// (SKIN_PROFILES radius) that at least 90% of every cell lies under some
+// crown's foot, with any layouts round it (tested by enumeration). Two
+// silhouettes of this coast stand out of it, keyed by the layout a node's
+// hash picks: about one crown in ten a lighter Sitka spruce, 15% taller,
+// and about one in thirty a dead snag, a thin grey spike over the canopy.
 
-/** Where a clump's crowns stand in its cell (fractions of a cell from the node) and how tall each is (of the clump's height): three layouts each for 3 and 4 crowns. */
+/**
+ * Where a clump's crowns stand in its cell (fractions of a cell from the
+ * node), how tall each is (of the clump's height), and its signature, if
+ * any ("spruce", "snag": a snag stands at [u, v] beside the crowns): four
+ * layouts of 3 crowns and four of 4, each kind's last its snag's. 4-crown
+ * layouts are near-square so a roof's cell closes under any quarter turn.
+ */
 export const SKIN_LAYOUTS = Object.freeze({
   3: Object.freeze([
-    [[-0.22, -0.17, 1], [0.24, -0.08, 0.9], [0.02, 0.26, 0.95]],
-    [[-0.2, 0.2, 0.92], [0.22, 0.16, 1], [0.0, -0.25, 0.88]],
-    [[-0.26, 0.0, 0.95], [0.12, -0.24, 0.9], [0.18, 0.22, 1]],
+    [[-0.3, -0.2, 1], [0.3, -0.14, 0.9], [0.02, 0.3, 0.95]],
+    [[-0.28, 0.24, 0.92], [0.3, 0.2, 1, "spruce"], [0.0, -0.3, 0.88]],
+    [[-0.3, 0.0, 0.95], [0.18, -0.28, 0.9], [0.22, 0.28, 1]],
+    [[-0.26, -0.26, 1], [0.3, 0.02, 0.9], [-0.16, 0.3, 0.94], [0.06, -0.04, 1, "snag"]],
   ].map((l) => Object.freeze(l.map((c) => Object.freeze(c))))),
   4: Object.freeze([
-    [[-0.24, -0.22, 1], [0.24, -0.2, 0.88], [-0.2, 0.24, 0.93], [0.25, 0.22, 0.97]],
-    [[0.0, -0.28, 0.9], [-0.28, 0.02, 1], [0.27, 0.04, 0.94], [0.02, 0.28, 0.86]],
-    [[-0.18, -0.26, 0.95], [0.28, -0.12, 1], [-0.26, 0.16, 0.87], [0.12, 0.27, 0.92]],
+    [[-0.25, -0.25, 1], [0.25, -0.25, 0.88], [-0.25, 0.25, 0.93], [0.25, 0.25, 0.97]],
+    [[-0.28, -0.2, 0.9], [0.22, -0.28, 1], [-0.22, 0.28, 0.94, "spruce"], [0.28, 0.2, 0.86]],
+    [[-0.2, -0.3, 0.95], [0.3, -0.22, 1], [-0.3, 0.2, 0.87], [0.2, 0.28, 0.92]],
+    [[-0.27, -0.24, 1], [0.25, -0.2, 0.9, "spruce"], [-0.24, 0.24, 0.95], [0.2, 0.3, 0.88], [0.02, 0.0, 1, "snag"]],
   ].map((l) => Object.freeze(l.map((c) => Object.freeze(c))))),
 });
-/** The crowns' colours (a little lighter and greener than the roof, so they read against it); a place's `trees.skin.colours` overrides them. */
-export const SKIN_COLOURS = Object.freeze(["#1d2e1f", "#243627", "#2b3b26", "#1a291d", "#304229"]);
+/** How often a node's hash picks each layout (by index): the snag's least, so about one crown in thirty is a snag. */
+export const LAYOUT_WEIGHTS = Object.freeze({ 3: Object.freeze([1, 1, 1, 0.45]), 4: Object.freeze([1, 1, 1, 0.55]) });
+/** A layout's crowns: its entries but a snag. */
+export const crownsOf = (layout) => layout.filter((c) => c[3] !== "snag");
+/** The crowns' colours: the coast's forest dark and blue-green; a place's `trees.skin.colours` overrides them. Each crown ±12% in value by hash. */
+export const SKIN_COLOURS = Object.freeze(["#16241c", "#1c2b22", "#22301f", "#131e17", "#2a3a2c"]);
+/** A Sitka spruce's crown, lighter and greyer than the hemlock and cedar round it, and how much taller it stands. */
+export const SPRUCE = Object.freeze({ colour: "#36463a", taller: 1.15 });
+/** A dead snag: a thin grey spike from `from` of the clump's height to `top` (3–6 m over a 20–30 m canopy), `radius` metres at its foot. */
+export const SNAG = Object.freeze({ colour: "#8f8b83", from: 0.5, top: 1.18, radius: 0.4 });
+/** How much a crown's colour varies in value by hash, either way. */
+export const CROWN_VALUE = 0.12;
 /** A crown's radius in metres, and where it starts and its narrow tier starts and ends (of the clump's height). */
-export const SKIN_CROWN = Object.freeze({ radius: 4.2, foot: 0.55, waist: 0.86, upper: 0.72, tip: 1 });
+export const SKIN_CROWN = Object.freeze({ radius: 6.5, foot: 0.55, waist: 0.86, upper: 0.72, tip: 1, crowns: Object.freeze([4, 4]) });
 
 /**
  * A clump's crown profiles: `roof`, standing out of the forest roof (its
- * foot hidden in it); `low`, a whole conifer down to a metre or so over the
- * ground, where the forest is too patchy for a roof (second growth among
- * the lots, the edges of clearings); `scrub`, a squat round-shouldered
- * bush, shore pine and salal, where the canopy is 3 to 5 m. Fractions of
- * the clump's height; radius in metres.
+ * foot hidden in it), always four crowns; `low`, a whole conifer down to a
+ * metre or so over the ground, where the forest is too patchy for a roof
+ * (second growth among the lots, the edges of clearings); `scrub`, four
+ * squat round-shouldered bushes, shore pine and salal, where the canopy is
+ * 1 to 5 m, a lumpy dark mass over the scrub's sheet. Fractions of the
+ * clump's height; radius in metres; `crowns`, the profile's own count (else
+ * the place's skin.crowns).
  */
 export const SKIN_PROFILES = Object.freeze({
   roof: SKIN_CROWN,
-  low: Object.freeze({ radius: 7, foot: 0.06, waist: 0.8, upper: 0.55, tip: 1 }),
-  scrub: Object.freeze({ radius: 3.4, foot: 0, waist: 0.85, upper: 0.45, tip: 1 }),
+  low: Object.freeze({ radius: 8.5, foot: 0.06, waist: 0.8, upper: 0.55, tip: 1 }),
+  scrub: Object.freeze({ radius: 6, foot: 0, waist: 0.85, upper: 0.45, tip: 1, crowns: Object.freeze([4, 4]), plain: true }),
 });
 /** The skin's profiles in the order their meshes are made. */
 export const PROFILE_NAMES = Object.freeze(Object.keys(SKIN_PROFILES));
+/** A crown's radius against its profile's: 0.92 to 1.08, by its place in the layout. */
+export const crownRadius = (profile, q, variant) => SKIN_PROFILES[profile].radius * (0.92 + 0.16 * ((q * 0.37 + variant * 0.21) % 1));
 
 /** One crown: a wide six-sided cone (foot → waist) and a narrow one over it (upper → tip), no caps (they're never seen from under the roof): 12 triangles. */
 function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN) {
@@ -477,13 +516,51 @@ function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN
   }
 }
 
-/** A clump mesh: layout `variant` of `crowns` crowns in a cell `cell` metres across, unit height (y = 1 is the clump's height), positions in metres across; its crowns of `profile` (SKIN_PROFILES). */
+/** A snag: a four-sided grey spike from SNAG.from to SNAG.top of the clump's height (8 triangles). */
+function snag(s, cx, cz, colour) {
+  const ring = (y, rr, q) => [cx + rr * dcos((q * Math.PI) / 2 + 0.4), y, cz - rr * dsin((q * Math.PI) / 2 + 0.4)];
+  for (let q = 0; q < 4; q++) {
+    const shade = colour.map((c) => c * (q === 0 ? 1.1 : q === 2 ? 0.8 : 1));
+    s.tri(ring(SNAG.from, SNAG.radius, q), ring(SNAG.from, SNAG.radius, q + 1), ring(SNAG.top, 0.06, q + 1), shade);
+    s.tri(ring(SNAG.from, SNAG.radius, q), ring(SNAG.top, 0.06, q + 1), ring(SNAG.top, 0.06, q), shade);
+  }
+}
+
+/** A crown's colour (linear): the layout's pick from `lin`, its value ±CROWN_VALUE by hash; a spruce's its own. */
+function crownColour(lin, q, crowns, variant, sign, plain) {
+  const base = !plain && sign === "spruce" ? hexToLinear(SPRUCE.colour).slice(0, 3) : lin[(q + variant * 2) % lin.length];
+  const f = 1 + CROWN_VALUE * (2 * hash01((crowns * 16 + variant) * 8 + q, 71) - 1);
+  return base.map((c) => c * f);
+}
+
+/** A clump mesh: layout `variant` of `crowns` crowns in a cell `cell` metres across, unit height (y = 1 is the clump's height), positions in metres across; its crowns of `profile` (SKIN_PROFILES; a plain profile, the scrub's, has no spruce or snag). */
 export function skinMesh(crowns, variant, cell, colours = SKIN_COLOURS, profile = "roof") {
   const s = soup();
   const lin = colours.map((c) => hexToLinear(c).slice(0, 3));
   const pr = SKIN_PROFILES[profile];
-  SKIN_LAYOUTS[crowns][variant].forEach(([u, v, k], q) => crown(s, u * cell, v * cell, k, pr.radius * (0.85 + 0.3 * ((q * 0.37 + variant * 0.21) % 1)), lin[(q + variant * 2) % lin.length], pr));
+  let q = 0;
+  for (const [u, v, k, sign] of SKIN_LAYOUTS[crowns][variant]) {
+    if (sign === "snag") {
+      if (!pr.plain) snag(s, u * cell, v * cell, hexToLinear(SNAG.colour).slice(0, 3));
+      continue;
+    }
+    const tall = !pr.plain && sign === "spruce" ? SPRUCE.taller : 1;
+    crown(s, u * cell, v * cell, k * tall, crownRadius(profile, q, variant), crownColour(lin, q, crowns, variant, sign, pr.plain), pr);
+    q++;
+  }
   return s.done();
+}
+
+/** The layout a node's hash `u` (in [0, 1)) picks among `crowns`' layouts, by LAYOUT_WEIGHTS. */
+export function pickLayout(crowns, u) {
+  const w = LAYOUT_WEIGHTS[crowns];
+  const total = w.reduce((a, b) => a + b, 0);
+  let x = u * total;
+  for (let v = 0; v < w.length; v++) {
+    if (x < w[v]) return v;
+    x -= w[v];
+  }
+  return w.length - 1;
 }
 
 /** The nodes inside any of `circles` ([{ x, z, radius }] in the frame): 1, else 0. */
@@ -526,19 +603,20 @@ export function clumpOf(k, { n, label, cover, canopy, dist, zone, skin, setback 
 /**
  * The clumps on nodes [k0, k1): one on every node clumpOf gives one (by
  * default every roof node in `zone`), none where `built`. Each { k, x, z,
- * height, crowns, variant, profile, yaw, width, key }: a roof clump its
+ * height, crowns, variant, profile, yaw (a quarter turn), width (1 to 1.12), key }: a roof clump its
  * canopy ±8%, a low one or a scrub one its canopy −8 to +8% (at least 2 m).
  * @param {object} o  { grid, label, cover, canopy (effective), dist, zone (skinZone), skin (the look's trees.skin), setback?, built?, trees? (the look's trees, for its stands), beyond? (beyondCircles) }
  */
 export function skinAt(o, k0 = 0, k1 = o.grid.n * o.grid.n) {
   const { grid, canopy, skin } = o;
   const { n, cell, x0, z0 } = grid;
-  const [lo, hi] = skin.crowns ?? [3, 4];
   const out = [];
   for (let k = k0; k < k1; k++) {
     const profile = clumpOf(k, { ...o, n });
     if (!profile) continue;
     const i = k % n, j = (k - i) / n;
+    // the profile's own count where it has one (a roof's and the scrub's always four, so the cell closes), else the place's
+    const [lo, hi] = SKIN_PROFILES[profile].crowns ?? skin.crowns ?? [3, 4];
     const crowns = lo + Math.min(hi - lo, Math.floor(hash01(k, 82) * (hi - lo + 1)));
     out.push({
       k,
@@ -546,10 +624,11 @@ export function skinAt(o, k0 = 0, k1 = o.grid.n * o.grid.n) {
       z: z0 + j * cell,
       height: Math.max(profile === "roof" ? 0 : 2, canopy[k] * (0.92 + 0.16 * hash01(k, 81))),
       crowns,
-      variant: Math.floor(hash01(k, 83) * SKIN_LAYOUTS[crowns].length),
+      variant: pickLayout(crowns, hash01(k, 83)),
       ...(profile !== "roof" ? { profile } : {}),
-      yaw: hash01(k, 84) * Math.PI * 2,
-      width: 0.9 + 0.2 * hash01(k, 85),
+      // a quarter turn, and never shrunk: neighbouring cells' crowns still interlock and close the canopy
+      yaw: Math.floor(hash01(k, 84) * 4) * (Math.PI / 2),
+      width: 1 + 0.12 * hash01(k, 85),
       key: hash01(k, 86),
     });
   }

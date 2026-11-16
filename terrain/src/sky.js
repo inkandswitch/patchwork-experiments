@@ -11,6 +11,20 @@
 // the place's sky is the world's. A hidden object offers nothing; of
 // several, the lowest id's. No scene change: one more provider of an
 // ambient the stage already merges.
+//
+// It also gives its stage's parts the contribution `water.shore` (water's
+// convention: WATER.md, "The shore in the water"): the shore's shape round
+// an eye, as the water mirrors it (horizon.js), read from the place's own
+// GLB (api.content(id).extras.terrain: its heights and its canopy), made
+// again only when the eye has moved 25 m or its height by a fifth.
+//
+// And it dresses the place's ground (STAGE.md: dressing, for an object that
+// carries its trait): the grain at the eye (grain.js), on the materials of
+// the meshes whose GLB gives them the grain, put back when it stops.
+
+import { decodeTerrain } from "./terrain-sample.js";
+import { horizonProfile, stillServes, azimuthDir, SHORE } from "./horizon.js";
+import { dressGrain } from "./grain.js";
 
 /** The atmosphere a trait's data makes (only its sky, fog, sun and exposure), or null. Pure. */
 export function skyOffer(trait) {
@@ -20,22 +34,101 @@ export function skyOffer(trait) {
   return Object.keys(out).length ? out : null;
 }
 
-/** The trait the scene's sky comes from: the lowest id's among shown objects that have one. Pure. */
-export function skyTrait(doc) {
+/** The object the scene's sky comes from: the lowest id among shown objects that have the trait, or null. Pure. */
+export function skyObject(doc) {
   const ids = Object.keys(doc?.objects ?? {}).sort();
   for (const id of ids) {
     const o = doc.objects[id];
-    if (o?.traits?.["terrain.sky"] && o.visible !== false) return o.traits["terrain.sky"];
+    if (o?.traits?.["terrain.sky"] && o.visible !== false) return id;
   }
   return null;
+}
+
+/** The trait the scene's sky comes from: the lowest id's among shown objects that have one. Pure. */
+export function skyTrait(doc) {
+  const id = skyObject(doc);
+  return id == null ? null : doc.objects[id].traits["terrain.sky"];
+}
+
+/**
+ * The shore's profile round `eye` (the stage's frame) for a terrain decoded
+ * from its extras (`t`) whose world matrix is `M` (column-major; level: its
+ * turn about the vertical and its shift are undone, any tilt ignored).
+ * Pure.
+ */
+export function shoreProfile(t, M, eye) {
+  const m = M ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  // the land's x and z axes in the stage, unit length
+  const lx = Math.hypot(m[0], m[2]) || 1, lz = Math.hypot(m[8], m[10]) || 1;
+  const xa = [m[0] / lx, m[2] / lx], za = [m[8] / lz, m[10] / lz];
+  const toLand = (x, z) => [(x - m[12]) * xa[0] + (z - m[14]) * xa[1], (x - m[12]) * za[0] + (z - m[14]) * za[1]];
+  const dirOf = (a) => {
+    const [dx, dz] = azimuthDir(a);
+    return [dx * xa[0] + dz * xa[1], dx * za[0] + dz * za[1]];
+  };
+  return horizonProfile((x, z) => t.surfaceAt(x, z), [eye[0], eye[1] - m[13], eye[2]], { level: t.seaLevel ?? 0, toLand, dirOf });
 }
 
 export default {
   create(api) {
     let key;
     let offer = null;
+    // the shore for the water's mirror: the terrain decoded once per GLB, the profile once per eye that serves
+    let decoded = null; // { extras, t }
+    let made = null; // { eye, key, data }
+    let count = 0;
+    const shore = {
+      v: 1,
+      ...SHORE,
+      /** The profile round `eye` ([x, y, z] in this stage), { key, eye, data } (horizon.js), or null where the place's GLB isn't here. */
+      profile(eye) {
+        // (the water asks every frame: the place's GLB may have arrived since the last flush)
+        dress();
+        const id = skyObject(api.doc());
+        const ex = id == null ? null : api.content?.(id)?.extras?.terrain;
+        if (!ex) return null;
+        if (decoded?.extras !== ex) {
+          try {
+            decoded = { extras: ex, t: decodeTerrain(ex) };
+          } catch {
+            decoded = null;
+            return null;
+          }
+          made = null;
+        }
+        const e = [eye[0], eye[1], eye[2]];
+        if (made && stillServes(made.eye, e)) return made;
+        made = { eye: e, key: ++count, data: shoreProfile(decoded.t, api.worldOf?.(id) ?? null, e) };
+        return made;
+      },
+    };
+    // the ground's grain: dressed once the place's GLB is here (a new GLB, a new root: dressed again), looked for at every update, flush and frame the water asks for the shore
+    let dressed = null; // { root, undo }
+    function dress() {
+      const id = skyObject(api.doc());
+      const c = id == null ? null : api.content?.(id);
+      const root = c?.loaded ? c.root : null;
+      if (dressed?.root === root) return;
+      dressed?.undo();
+      dressed = null;
+      if (!root) return;
+      const d = dressGrain(root);
+      dressed = { root, undo: d.undo };
+      if (d.count) api.invalidate?.();
+    }
     return {
+      get "water.shore"() {
+        return shore;
+      },
+      update() {
+        dress();
+      },
+      dispose() {
+        dressed?.undo();
+        dressed = null;
+      },
       ambient() {
+        dress();
         const t = skyTrait(api.doc());
         const k = t ? JSON.stringify(t) : null;
         if (k !== key) {

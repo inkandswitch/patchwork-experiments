@@ -311,3 +311,54 @@ describe("corrugated cladding", () => {
     }
   });
 });
+
+import { quonset, slab, QUONSET } from "./site.js";
+import { soup as soupOf } from "./shapes.js";
+describe("Quonsets and the courtyard's slab", () => {
+  // rectangles turned to 8 headings, 12 × 7 m and 15 × 16 m (span wider than long)
+  const rect = (L, W, t, cx = 3, cz = -2) => {
+    const u = [Math.cos(t), Math.sin(t)], v = [-u[1], u[0]];
+    return [[-L / 2, -W / 2], [L / 2, -W / 2], [L / 2, W / 2], [-L / 2, W / 2]].map(([a, b]) => [cx + u[0] * a + v[0] * b, cz + u[1] * a + v[1] * b]);
+  };
+  const inside = (P, x, z) => {
+    // a convex ring either way round: every edge's cross product the same sign (or on it, to float32 positions' millimetre)
+    let pos = 0, neg = 0;
+    for (let a = 0; a < 4; a++) {
+      const [x0, z0] = P[a], [x1, z1] = P[(a + 1) % 4];
+      const c = (x1 - x0) * (z - z0) - (z1 - z0) * (x - x0);
+      if (c > 1e-3) pos++;
+      if (c < -1e-3) neg++;
+    }
+    return !(pos && neg);
+  };
+  it("lies inside its outline, from its base to its rise, ribbed every 0.6 m, every heading and size, each door end", () => {
+    for (const [L, W, H] of [[12, 7, 4], [15.2, 16, 8.9]]) for (let h = 0; h < 8; h++) for (const door of [0, 1, null]) {
+      const P = rect(L, W, (h * Math.PI) / 4 + 0.1);
+      const s = soupOf();
+      const m = quonset(s, P, 3, H, { shell: "#b82a26", arch: "#ecebe6", door });
+      const mesh = s.done();
+      for (let v = 0; v < mesh.positions.length; v += 3) {
+        expect(inside(P, mesh.positions[v], mesh.positions[v + 2])).toBe(true);
+        expect(mesh.positions[v + 1]).toBeGreaterThanOrEqual(3 - 1e-6);
+        expect(mesh.positions[v + 1]).toBeLessThanOrEqual(3 + H + 1e-6);
+      }
+      expect(m.ribs).toBe(Math.floor((L - 2 * QUONSET.inset - QUONSET.ribWidth) / QUONSET.ribEvery) + 1);
+      // shell, ribs and two end fans; a door end adds a rim band and a door
+      const N = QUONSET.segments;
+      expect(mesh.positions.length / 9).toBe(2 * N + 2 * N * m.ribs + 2 * N + (door == null ? 0 : 2 * N + 2));
+    }
+  });
+  it("lays a slab's seams every 6 m both ways inside it, over its top (every heading)", () => {
+    for (let h = 0; h < 8; h++) {
+      const P = rect(40, 45, (h * Math.PI) / 4 + 0.2);
+      const s = soupOf();
+      const m = slab(s, P, 2.8, 3.3, { colour: "#8a8a86", seams: { every: 6, colour: "#6c6c69", width: 0.12 } });
+      expect(m.seams).toBe(Math.floor(40 / 6) + Math.floor(45 / 6) - (40 % 6 === 0 ? 1 : 0) - (45 % 6 === 0 ? 1 : 0));
+      const mesh = s.done();
+      for (let v = 0; v < mesh.positions.length; v += 3) {
+        expect(inside(P, mesh.positions[v], mesh.positions[v + 2])).toBe(true);
+        expect(mesh.positions[v + 1]).toBeLessThanOrEqual(3.31 + 1e-6);
+      }
+    }
+  });
+});

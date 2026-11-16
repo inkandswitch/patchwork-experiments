@@ -52,15 +52,16 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
  * hex): the water seen from above at depth, and the light scattered back
  * through a crest. A place's water is its own (Ucluelet's inlet a dark
  * grey-green, the Salish Sea's greener), not the material's open-ocean
- * defaults. Each is kept only when it is a #rrggbb string; null when
- * neither is.
- * @returns {{ deep?: string, scatter?: string } | null}
+ * defaults; and `shore`, the tint the shore shows in the water where the
+ * stage gives a shore's shape (`water.shore`). Each is kept only when it is
+ * a #rrggbb string; null when none is.
+ * @returns {{ deep?: string, scatter?: string, shore?: string } | null}
  */
 export function colourOf(trait) {
   const c = trait?.colour;
   if (!c || typeof c !== "object") return null;
   const out = {};
-  for (const k of ["deep", "scatter"]) if (typeof c[k] === "string" && HEX.test(c[k])) out[k] = c[k];
+  for (const k of ["deep", "scatter", "shore"]) if (typeof c[k] === "string" && HEX.test(c[k])) out[k] = c[k];
   return Object.keys(out).length ? out : null;
 }
 

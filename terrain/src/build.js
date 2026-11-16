@@ -272,10 +272,12 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     ground = { ...ground, colors: Float32Array.from(ground.colors) };
     baked += bakeStratus(ground.positions, ground.colors, bake);
   }
+  // the ground's grain (grain.js draws it): how much fine detail each vertex's ground takes, by what it is (groundGrain)
+  const grain = natural ? groundGrain(ground.positions, grid, { cover, apron, apronAbove, shoreTop: (tide.HHWLT ?? 1.3) + 1.5 }) : null;
   const meshes = [
     {
       name: "Ground",
-      primitives: tiles(ground.positions, ground.normals, ground.colors, ground.triangles, 65535).map((t) => ({ ...t, roughness: 0.95 })),
+      primitives: tiles(ground.positions, ground.normals, ground.colors, ground.triangles, 65535, grain).map((t) => ({ ...t, roughness: 0.95 })),
       // a legend only where the colour is the height's: a ground coloured by what covers it (a look) isn't "ground by height", and its colour bar would say so falsely
       ...(natural ? {} : { extras: { legend: legend(hmin, hmax) } }),
     },
@@ -334,14 +336,21 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   const clearIds = new Set(clear?.osm ?? []);
   let made = 0, placed = [];
   if (p.structures) {
-    const st = structureMesh((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside });
+    // a place's dressing for some (its look's structures: { [osm id]: { rail, curb } }, a wharf's railings)
+    const st = structureMesh((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside, dress: doc.look?.structures ?? {} });
     made = st.made;
     if (st.positions.length) add("Harbour structures", { positions: st.positions, colors: st.colors, roughness: 0.9 }, "harbour");
   }
   // boats along the floats: dressing (boats.js)
   let boatCount = 0;
   if (p.boats && natural && p.structures) {
-    const moored = mooredBoats((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside });
+    // where the place's look fills some floats fuller (look.moored: circles, each its share of slips taken)
+    const fuller = (doc.look?.moored ?? []).map((c) => {
+      const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+      return { x, z, radius: c.radius, taken: c.taken };
+    });
+    const takenAt = fuller.length ? (x, z) => fuller.find((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius ** 2)?.taken ?? null : null;
+    const moored = mooredBoats((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside, takenAt });
     boatCount = moored.length;
     if (moored.length) {
       const bm = boatMesh(moored);
@@ -374,7 +383,10 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     };
     // a place's look may give its own walls (look.buildings.palette, merged over buildings.js PALETTE), facade details, and pile decks for buildings at the water
     const lb = doc.look?.buildings ?? {};
-    const bm = buildingMesh(look.buildings, { groundAt, sinkAt, coverAt, leaveOut, palette: { ...PALETTE, ...(lb.palette ?? {}) }, details: !!lb.details, deckAbove: lb.decks ? (tide.HHWLT ?? 1.3) + 1.2 : null });
+    // a place's own look for some of OSM's buildings (its look's buildings.overrides: { [osm id]: { colour, roofColour, levels, form, gables, stone, trim } }): landmarks drawn from photographs
+    const over = lb.overrides ?? {};
+    const theirs = look.buildings.map((b) => (over[b.id] ? { ...b, ...over[b.id] } : b));
+    const bm = buildingMesh(theirs, { groundAt, sinkAt, coverAt, leaveOut, palette: { ...PALETTE, ...(lb.palette ?? {}) }, details: !!lb.details, deckAbove: lb.decks ? (tide.HHWLT ?? 1.3) + 1.2 : null });
     buildingsMade = bm.made;
     buildingDecks = bm.decks;
     if (bm.primitives.length) add("Buildings", { primitives: bm.primitives.map((q) => ({ ...q, roughness: 0.8 })) }, "buildings");
@@ -407,7 +419,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     }
     // salal and shore pine where the canopy is under 5 m, where the place has them (forest.js scrubCover)
     if (trees.scrub) {
-      const sc = scrubCover({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, built, setback: trees.roofSetback ?? 20, ...trees.scrub });
+      // finer inside the skin's circles (trees.scrub.fine: the RTIN's tolerance there), so the sheet near where people look isn't a few large facets
+      const sc = scrubCover({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, built, setback: trees.roofSetback ?? 20, ...trees.scrub, fine: zone && trees.scrub.fine ? { zone, tolerance: trees.scrub.fine } : null });
       if (sc) {
         scrubNodes = sc.roofNodes;
         if (bake) baked += bakeStratus(sc.positions, sc.colors, bake);
@@ -481,9 +494,19 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     const inCircle = (pc) => circles.some((c) => ((pc.a[0] + pc.b[0]) / 2 - c.x) ** 2 + ((pc.a[1] + pc.b[1]) / 2 - c.z) ** 2 <= c.radius ** 2);
     // the sheltered waterline's boulders: the pieces the surf's boulders leave (under its exposure), as if exposed, at the place's lower chance
     const emin = doc.look.surf?.boulders?.exposure ?? 0.6;
-    const rocksAt = sd.boulders ? boulders(pieces.filter((pc) => pc.exposure < emin && inCircle(pc)).map((pc) => ({ ...pc, exposure: 1 })), { exposure: 0, ...sd.boulders }) : null;
-    shoreDressing = { logs: logs.length, boulders: rocksAt?.boulders ?? 0 };
-    if (logs.length) add("Drift logs", { ...logMesh(logs), roughness: 0.95 }, "shore", { dressing: "Drift logs along the harbour's shores at the top of the tide, by hash: assumed, not mapped." });
+    // and where the place names a frontage (sd.frontage: circles, its own boulders' options), every sheltered piece there its own cluster
+    const front = (sd.frontage?.within ?? []).map((c) => {
+      const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+      return { x, z, radius: c.radius };
+    });
+    const inFront = (pc) => front.some((c) => ((pc.a[0] + pc.b[0]) / 2 - c.x) ** 2 + ((pc.a[1] + pc.b[1]) / 2 - c.z) ** 2 <= c.radius ** 2);
+    const sheltered = (pc) => pc.exposure < emin && inCircle(pc);
+    const asExposed = (pc) => ({ ...pc, exposure: 1 });
+    const general = sd.boulders ? boulders(pieces.filter((pc) => sheltered(pc) && !inFront(pc)).map(asExposed), { exposure: 0, ...sd.boulders }) : null;
+    const frontage = sd.frontage && front.length ? boulders(pieces.filter((pc) => pc.exposure < emin && inFront(pc)).map(asExposed), { exposure: 0, ...sd.boulders, ...sd.frontage }) : null;
+    const rocksAt = general || frontage ? { positions: concat(general?.positions ?? new Float32Array(0), frontage?.positions ?? new Float32Array(0)), colors: concat(general?.colors ?? new Float32Array(0), frontage?.colors ?? new Float32Array(0)), boulders: (general?.boulders ?? 0) + (frontage?.boulders ?? 0) } : null;
+    shoreDressing = { logs: logs.length, boulders: rocksAt?.boulders ?? 0, frontage: frontage?.boulders ?? 0 };
+    if (logs.length) add("Drift logs", { ...logMesh(logs, sd.logs.colour, sd.logs.cap), roughness: 0.95 }, "shore", { dressing: "Drift logs along the harbour's shores at the top of the tide, by hash: assumed, not mapped." });
     if (rocksAt?.boulders) add("Boulders along the harbour's waterline", { positions: rocksAt.positions, colors: rocksAt.colors, roughness: 0.7 }, "shore", { dressing: "Boulders by hash along the sheltered waterline: assumed, not mapped." });
   }
   // low cloud on the hills and mist in the forest's hollows (cloud.js): where the place's look has clouds
@@ -553,6 +576,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     },
     // rings of OSM coastline too small to hold a node: not in the heights, so here, for anything that can run aground
     rocks: islets.rocks.map((r) => ({ id: r.id, top: r.top, points: r.points })),
+    // the canopy over the ground (where the place has a look), the most in each cell of about 32 m or more: a skyline, for a horizon's shape (the water's reflection of the shore)
+    ...(canopy ? { canopy: canopyLayer(grid, canopy) } : {}),
     // which source each node's height is from (layered heights only): 4 bits a node, the first in a byte's low bits
     ...(lay && layerNames ? { source: sourceLayer(subsample(n, lay.source, stride), layerNames) } : {}),
     outside: null,
@@ -609,12 +634,55 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
 
 const round = (v) => Math.round(v * 100) / 100;
 
+/** The ground's grain attribute (a glTF custom attribute; three reads it as "_grain"). */
+export const GRAIN = "_GRAIN";
+/** How much grain each kind of ground takes: the shore's cobble and rock in full, bare rock and beach, the yard's apron lightly, the rest between. */
+export const GRAINS = Object.freeze({ shore: 1, rock: 1, beach: 0.8, apron: 0.5, land: 0.6, water: 0 });
+
+/**
+ * Each ground vertex's grain (0 to 1, GRAINS): by its height and its
+ * nearest node's cover: under the water none; the site's apron (over
+ * `apronAbove`) light; up to `shoreTop` (the shore's cobble and rock) full;
+ * bare rock full, beach most, other land between. Pure.
+ */
+export function groundGrain(positions, grid, { cover, apron = null, apronAbove = 0.9, shoreTop = 3 }) {
+  const { n, cell, x0, z0 } = grid;
+  const V = positions.length / 3;
+  const out = new Float32Array(V);
+  for (let v = 0; v < V; v++) {
+    const x = positions[v * 3], y = positions[v * 3 + 1], z = positions[v * 3 + 2];
+    const i = Math.max(0, Math.min(n - 1, Math.round((x - x0) / cell))), j = Math.max(0, Math.min(n - 1, Math.round((z - z0) / cell)));
+    const k = j * n + i;
+    out[v] = y <= -0.3 ? GRAINS.water : apron?.[k] && y > apronAbove ? GRAINS.apron : y <= shoreTop ? GRAINS.shore : cover[k] === COVER.rock ? GRAINS.rock : cover[k] === COVER.beach ? GRAINS.beach : GRAINS.land;
+  }
+  return out;
+}
+
 /** Two Float32Arrays end to end. */
 function concat(a, b) {
   const out = new Float32Array(a.length + b.length);
   out.set(a);
   out.set(b, a.length);
   return out;
+}
+
+/**
+ * The canopy as extras.terrain carries it: every `stride`-th node (cells of
+ * 32 m or more), each the most canopy (whole metres, at most 255) of the
+ * nodes within half a stride of it. { encoding, grid, data }.
+ */
+export function canopyLayer(grid, canopy) {
+  const { n, cell, x0, z0 } = grid;
+  let stride = Math.max(1, Math.ceil(32 / cell));
+  while ((n - 1) % stride) stride++;
+  const m = (n - 1) / stride + 1, half = Math.floor(stride / 2);
+  const out = new Uint8Array(m * m);
+  for (let J = 0; J < m; J++) for (let I = 0; I < m; I++) {
+    let most = 0;
+    for (let j = Math.max(0, J * stride - half); j <= Math.min(n - 1, J * stride + half); j++) for (let i = Math.max(0, I * stride - half); i <= Math.min(n - 1, I * stride + half); i++) most = Math.max(most, canopy[j * n + i]);
+    out[J * m + I] = Math.min(255, Math.round(most));
+  }
+  return { encoding: "uint8-base64", grid: { nx: m, nz: m, x0, z0, cell: cell * stride }, data: toBase64(out) };
 }
 
 /** A source layer for extras.terrain: { encoding, names, counts, data } (4 bits a node). */
@@ -634,9 +702,9 @@ function sourceLayer({ values }, names) {
  * 16-bit indices: half the bytes), by the square tile its triangles'
  * middles fall in. Normals are the whole mesh's, so the cuts don't show.
  */
-export function tiles(positions, normals, colors, triangles, max) {
+export function tiles(positions, normals, colors, triangles, max, grain = null) {
   const V = positions.length / 3;
-  if (V <= max) return [{ positions, normals, colors, indices: triangles }];
+  if (V <= max) return [{ positions, normals, colors, indices: triangles, ...(grain ? { attributes: { [GRAIN]: grain } } : {}) }];
   let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
   for (let v = 0; v < V; v++) {
     minx = Math.min(minx, positions[v * 3]);
@@ -661,15 +729,16 @@ export function tiles(positions, normals, colors, triangles, max) {
       .filter((p) => p.tris.length)
       .map(({ map, tris }) => {
         const m = map.size;
-        const pos = new Float32Array(m * 3), nor = new Float32Array(m * 3), col = new Float32Array(m * 3);
+        const pos = new Float32Array(m * 3), nor = new Float32Array(m * 3), col = new Float32Array(m * 3), gr = grain ? new Float32Array(m) : null;
         for (const [v, i] of map) {
           for (let e = 0; e < 3; e++) {
             pos[i * 3 + e] = positions[v * 3 + e];
             nor[i * 3 + e] = normals[v * 3 + e];
             col[i * 3 + e] = colors[v * 3 + e];
           }
+          if (gr) gr[i] = grain[v];
         }
-        return { positions: pos, normals: nor, colors: col, indices: Uint16Array.from(tris) };
+        return { positions: pos, normals: nor, colors: col, indices: Uint16Array.from(tris), ...(gr ? { attributes: { [GRAIN]: gr } } : {}) };
       });
   }
 }

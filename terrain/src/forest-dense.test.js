@@ -1,7 +1,7 @@
 // The dense forest near where people look (a place's trees.skin.all, scrub and bands) and its tiles:
 // every claim checked at every node of a made-up place, and for every split into tiles.
 import { describe, it, expect } from "vitest";
-import { treesAt, skinAt, clumpOf, skinZone, beyondCircles, standHere, isForest, isRoof, skinInstances, skinMesh, tileInstances, treeMesh, standMesh, STAND_BASE, SKIN_LAYOUTS, SKIN_PROFILES, CLUMP_SINK, SPECIES_NAMES } from "./forest.js";
+import { treesAt, skinAt, clumpOf, skinZone, beyondCircles, standHere, isForest, isRoof, skinInstances, skinMesh, tileInstances, treeMesh, standMesh, STAND_BASE, SKIN_LAYOUTS, SKIN_PROFILES, SNAG, SPRUCE, crownsOf, CLUMP_SINK, SPECIES_NAMES } from "./forest.js";
 import { encodeGLB, parseGLB } from "./glb.js";
 import { COVER } from "./cover.js";
 
@@ -146,11 +146,13 @@ describe("the clumps' meshes and instances", () => {
   it("draws every profile's crowns from just above its foot to its top, 12 triangles each (every profile and layout)", () => {
     for (const p of Object.keys(SKIN_PROFILES)) for (const c of [3, 4]) for (let v = 0; v < SKIN_LAYOUTS[c].length; v++) {
       const m = skinMesh(c, v, cell, undefined, p);
-      expect(m.positions.length / 9).toBe(12 * c);
+      const layout = SKIN_LAYOUTS[c][v], crowns = crownsOf(layout), plain = !!SKIN_PROFILES[p].plain;
+      const snags = plain ? 0 : layout.length - crowns.length;
+      expect(m.positions.length / 9).toBe(12 * crowns.length + 8 * snags);
       let lo = Infinity, hi = -Infinity;
       for (let q = 1; q < m.positions.length; q += 3) (lo = Math.min(lo, m.positions[q])), (hi = Math.max(hi, m.positions[q]));
-      expect(lo).toBeCloseTo(SKIN_PROFILES[p].foot * Math.min(...SKIN_LAYOUTS[c][v].map((x) => x[2])), 6);
-      expect(hi).toBeLessThanOrEqual(1 + 1e-6);
+      expect(lo).toBeCloseTo(Math.min(SKIN_PROFILES[p].foot * Math.min(...crowns.map((x) => x[2])), snags ? SNAG.from : Infinity), 6);
+      expect(hi).toBeCloseTo(Math.max(...crowns.map((x) => x[2] * (!plain && x[3] === "spruce" ? SPRUCE.taller : 1)), snags ? SNAG.top : 0), 6);
     }
   });
   it("sinks a low or scrub clump's foot into the ground, keeping its top, and a roof clump's not (every clump)", () => {

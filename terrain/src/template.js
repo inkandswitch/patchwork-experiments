@@ -62,8 +62,8 @@ export function bayWater(seed, hint = HINT, colour = BAY_WATER) {
     traits: { [WATER]: { clip, colour: { ...colour } }, [SEA]: { seed, scale: WIND.scale } },
   };
 }
-/** The bay's own water colour (the water trait's `colour`: water/WATER.md): the Salish Sea's grey-green under a summer sky, not the open ocean's blue. Art direction, from the place's photographs' general look. */
-export const BAY_WATER = Object.freeze({ deep: "#183b3c", scatter: "#2f7566" });
+/** The bay's own water colour (the water trait's `colour`: water/WATER.md): the Salish Sea's grey-green under a summer sky, not the open ocean's blue; the shore's tint where it shows in the water (the oaks' and firs' dark olive). Art direction, from the place's photographs' general look. */
+export const BAY_WATER = Object.freeze({ deep: "#183b3c", scatter: "#2f7566", shore: "#26302a" });
 /** This package's: the data's credit at the foot of the view (credit.js). */
 export const CREDIT = "terrain.credit";
 /** Chain out on the mooring (sailing's RODE: 25 m; the water is ~8 m deep). */

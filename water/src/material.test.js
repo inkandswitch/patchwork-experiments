@@ -292,3 +292,45 @@ describe("createOceanSurface", () => {
     expect(s.object.material.disposed).toBe(true);
   });
 });
+
+describe("the shore in the water (setShore)", () => {
+  const THREE = fakeThree();
+  const sea = createOcean({ wind: { speed: 5, from: 270 }, seed: 3 });
+  const W = 8, H = 4;
+  const profile = (key, e = 0.05) => ({ key, eye: [1, 3, 2], azimuths: W, bins: H, near: 15, reach: 6000, data: Float32Array.from({ length: W * H * 4 }, (_, i) => (i % 4 ? 0.5 : e)) });
+  it("draws the sky alone until it has a profile and a tint, then compiles the shore in, and takes it out again with null", () => {
+    const s = createOceanSurface(THREE, sea);
+    const m = s.object.material;
+    expect(m.defines.SHORE).toBeUndefined();
+    s.setShore(profile(1), null);
+    expect(m.defines.SHORE).toBeUndefined();
+    s.setShore(null, "#1a231d");
+    expect(m.defines.SHORE).toBeUndefined();
+    s.setShore(profile(1), "#1a231d");
+    expect(m.defines.SHORE).toBe(1);
+    expect(m.defines.SHORE_BINS).toBe("4.0");
+    const tex = m.uniforms.uShore.value;
+    expect([tex.image.width, tex.image.height]).toEqual([W, H]);
+    expect(tex.wrapS).toBe(THREE.RepeatWrapping);
+    expect(m.uniforms.uShoreTint.value.v).toBe("#1a231d");
+    expect([m.uniforms.uShoreEye.value.x, m.uniforms.uShoreEye.value.y, m.uniforms.uShoreEye.value.z]).toEqual([1, 3, 2]);
+    // every texel the profile's, as half floats (0.5 exactly; 0.05 to a half's precision)
+    for (let i = 0; i < W * H * 4; i++) expect(tex.image.data[i]).toBe(THREE.DataUtils.toHalfFloat(i % 4 ? 0.5 : 0.05));
+    expect(tex.format).toBe(THREE.RGBAFormat);
+    // the same key: no upload; a new key: the same texture, new data
+    const v0 = tex.version;
+    s.setShore(profile(1, 0.2), "#1a231d");
+    expect(tex.version).toBe(v0);
+    s.setShore(profile(2, 0.2), "#1a231d");
+    expect(m.uniforms.uShore.value).toBe(tex);
+    expect(tex.version).toBe(v0 + 1);
+    expect(tex.image.data[0]).toBe(THREE.DataUtils.toHalfFloat(0.2));
+    s.setShore(null, "#1a231d");
+    expect(m.defines.SHORE).toBeUndefined();
+    expect(m.defines.WAVES).toBeGreaterThan(0);
+  });
+  it("keeps a body's shore tint with its colour (colourOf), and only as #rrggbb", () => {
+    expect(colourOf({ colour: { deep: "#1e3a3c", shore: "#1a231d" } })).toEqual({ deep: "#1e3a3c", shore: "#1a231d" });
+    expect(colourOf({ colour: { shore: "dark" } })).toBe(null);
+  });
+});

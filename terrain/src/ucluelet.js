@@ -228,8 +228,8 @@ export const SKIES = Object.freeze({
 });
 
 /** Named places (lat, lon from OSM unless noted). */
-/** The inlet's water (the water trait's `colour`): dark grey-green that holds the forest's darkness, as photographs of the harbour and inlet under cloud show; art direction. */
-export const WATER_COLOUR = Object.freeze({ deep: "#1e3a3c", scatter: "#3d6a5f" });
+/** The inlet's water (the water trait's `colour`): dark grey-green that holds the forest's darkness, as photographs of the harbour and inlet under cloud show, and the shore's tint where the calm water mirrors the forest (the dark band under every shore in Ucluelet_Dock.jpg); art direction. */
+export const WATER_COLOUR = Object.freeze({ deep: "#1e3a3c", scatter: "#3d6a5f", shore: "#1a231d" });
 
 export const PLACES = Object.freeze([
   { name: "Rising Tide Boat Works (the hangar), 1970 Harbour Crescent", kind: "site", lat: 48.9491, lon: -125.557758, note: "the survey's building A" },
@@ -282,7 +282,7 @@ export const SITE = Object.freeze({
   },
   ground: YARD,
   // the yard's ground inside the lot's box, above the highest normal tide: one even gravel tone, its edge the shore's cut at MHHW (build.js apronMask)
-  apron: { colour: "#6d6c68", wet: "#5c5b58", wetShare: 0.35, verge: { colour: "#4b5734", width: 14 }, shore: "#55524b", assumed: "Grey wet asphalt and gravel with darker wet patches, a grass verge along the waterfront and cobble below it (the seaplane-base courtyard photographs' and imagery's general look; the surface isn't surveyed)" },
+  apron: { colour: "#8a8a86", wet: "#7b7b77", wetShare: 0.35, verge: { colour: "#4b5734", width: 14 }, shore: "#55524b", assumed: "Pale wet concrete and gravel with darker wet patches (the courtyard photographs are concrete, not asphalt), a grass verge along the waterfront and cobble below it (the seaplane-base courtyard photographs' and imagery's general look; the surface isn't surveyed)" },
   layers: [
     { id: "boatyard", name: "Boatyard (1970 Harbour Crescent)" },
     { id: "boatyard.kept", name: "Buildings staying (March 2026 survey)", parent: "boatyard" },
@@ -313,7 +313,9 @@ export const SITE = Object.freeze({
       assumed: "Heights conformed to the lidar's ground (YARD): floor +3.06 about MWL, not the survey's +4.20; the survey's differences kept (door head 7.39 m, ridge 11.81 m above the floor). Eave 10.6 m above the floor, from the July 2026 photo's proportions (±0.5 m), so a 4° gable with the ridge north-west–south-east and the trusses spanning the 34.8 m faces. Main doors: sliding leaves across nearly the whole north-west face to the 7.4 m door head (the photo; leaves and their number not surveyed), painted green with some stripped. The spec gives that face two ways, as 12.7 + 3.1 + 19.0 m (the 3.1 m small door between two stretches) and as leaves across 0.8–34.0 m; drawn as leaves either side of the small door (0.8–12.7 and 15.8–34.0 m), which is both if the small door is a wicket in its own panel. Walls: diagonal timber sheathing, stripped and weathered cedar brown and red (Ha-Shilth-Sa photo, 2026-07-01). Roof dark grey.",
     },
     { id: "B", kind: "box", name: "Building B (former cold storage; Rising Tide's office and event space?)", layer: "boatyard.kept", corners: [[48.9489373, -125.5576566], [48.9490182, -125.5573702], [48.9488633, -125.5572702], [48.9487821, -125.5575579]], base: fromSurvey(4.12), top: fromSurvey(10.61), roof: "flat", cladding: "corrugated", colours: { walls: "#cfd3cf", roof: "#8e9295", trim: "#5d6266" }, source: SURVEY, assumed: `${TBR}, but Rising Tide's office is a "remediation of former cold storage" of this size: drawn as staying until a newer source says. Colours and cladding assumed (pale corrugated, a dark trim at the roof).` },
-    { id: "D", kind: "box", name: "Building D (silver corrugated)", layer: "boatyard.kept", corners: [[48.9491696, -125.5582186], [48.9492953, -125.5583005], [48.9493521, -125.5580994], [48.9492262, -125.5580181]], base: fromSurvey(4.12), top: fromSurvey(13.03), eave: fromSurvey(12.0), roof: "gable", cladding: "corrugated", colours: { walls: "#b9bdbf", roof: "#a4a9ac", trim: "#6f7477" }, source: SURVEY, assumed: "Survey \"(TO PL)\", not marked to be removed; roof EL 13.03 taken as the ridge, the eave 1 m lower and the slab at the hangar's (assumed). Silver corrugated with a darker trim (the 2025 drone photo's look; trim assumed)." },
+    { id: "D", kind: "quonset", name: "Building D (a galvanised Quonset hut)", layer: "boatyard.kept", corners: [[48.9491696, -125.5582186], [48.9492953, -125.5583005], [48.9493521, -125.5580994], [48.9492262, -125.5580181]], base: fromSurvey(4.12), top: fromSurvey(13.03), door: 1, colours: { shell: "#a9adaf", end: "#9ea2a4", door: "#6f7477" }, source: `${SURVEY}; its form from the Ha-Shilth-Sa photo (2026-07-01: a galvanised Quonset west of the hangar, its arched end to the shore)`, assumed: "Survey \"(TO PL)\", not marked to be removed; roof EL 13.03 taken as the arch's crown and the slab at the hangar's (assumed). A Quonset (the photo): its length along the survey's north-north-west edge, its arch over the other, ribbed every 0.6 m; galvanised grey; a door in its end toward the shore (assumed)." },
+    { id: "red-quonset", kind: "quonset", name: "A red Quonset hut (the courtyard photographs)", layer: "boatyard.kept", corners: [[48.9490475, -125.5581683], [48.9489482, -125.5581038], [48.9489235, -125.5581919], [48.9490228, -125.5582564]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 4, door: 0, colours: { shell: "#b82a26", end: "#b82a26", arch: "#ecebe6", door: "#ecebe6" }, source: "the seaplane-base courtyard photograph (On This Spot): a red Quonset with a white end arch and door before a mint-green corrugated building (lean-to C)", assumed: "Not on the survey: position (about 10 m south-west of lean-to C, along it), size (12 × 7 m, 4 m high) and orientation assumed from the photograph; it may be gone." },
+    { id: "courtyard", kind: "slab", name: "The courtyard's concrete slab (the photographs)", layer: "boatyard.kept", corners: [[48.949323, -125.5576443], [48.9489995, -125.5574334], [48.9491585, -125.5568674], [48.949482, -125.5570783]], colour: "#8a8a86", seams: { every: 6, colour: "#6c6c69", width: 0.12 }, source: "the seaplane-base courtyard photographs: wet concrete, its joints in lines", assumed: "The slab's extent (the hangar's north-east face out 45 m), its level (a hand over the highest ground under it) and its joints every 6 m: assumed." },
     { id: "C", kind: "box", name: "Lean-to C along the hangar's south-west wall", layer: "boatyard.removed", corners: [[48.9492073, -125.5580862], [48.9488781, -125.5578716], [48.9488559, -125.5579466], [48.9491857, -125.5581619]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 5, eave: fromSurvey(4.12) + 3.6, roof: "shed", colours: { walls: "#9cc3ae", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}. Heights assumed (5 m against the hangar, 3.6 m outside); mint-green corrugated as in the 2025 drone photo.` },
     { id: "E", kind: "box", name: "Building E", layer: "boatyard.removed", corners: [[48.9490173, -125.5573702], [48.9490389, -125.5572908], [48.9488837, -125.5571916], [48.9488621, -125.557271]], base: fromSurvey(4.12), top: fromSurvey(7.37), roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 7.37; colours assumed.` },
     { id: "F", kind: "box", name: "Building F", layer: "boatyard.removed", corners: [[48.9489589, -125.5571331], [48.9489359, -125.5572157], [48.9490412, -125.5572837], [48.9490645, -125.5572005]], base: fromSurvey(4.12), top: fromSurvey(9.5), eave: fromSurvey(8.6), roof: "gable", colours: { walls: "#b8bcbc", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 9.50 as the ridge; colours assumed.` },
@@ -522,7 +524,8 @@ export const LOOK = Object.freeze({
     stands: [4, 6],
     // three trees a residential node (20 m) where none is built: the town peeking out of spruce, hemlock and cedar
     townPerHectare: 80,
-    roofColours: ["#141f17", "#18251a", "#1b2a1d", "#1f2d1d", "#1c2a24"],
+    // the roof under the crowns as dark and as blue-green as they are, so a gap between them doesn't read
+    roofColours: ["#131e17", "#16241c", "#1a281e", "#1c2a1f", "#182519"],
     roofJitter: 3,
     // the fringe's first, then the rest by hash: room for the town's trees among the edges'
     max: 55000,
@@ -532,12 +535,14 @@ export const LOOK = Object.freeze({
         { at: [48.945, -125.548], radius: 2300, note: "the harbour, the inlet to Hitacu and its far shore" },
         { at: [48.928, -125.558], radius: 2000, note: "the Wild Pacific Trail's coast and Amphitrite Point" },
       ],
+      // a low clump's 3 or 4 crowns (a roof's and the scrub's are always 4: forest.js SKIN_PROFILES)
       crowns: [3, 4],
       // every forest node in the circles, not only the roof's: low crowns down to a metre over the ground where the forest is too patchy for a roof (the second growth among the town's lots and behind the basins), and shore pine and salal where the lidar's canopy is 3 to 5 m (Amphitrite's headland)
       all: true,
-      scrub: { min: 3 },
-      // the roof under the crowns at 0.72 of the canopy, so they stand out of it as cones (forest.js forestRoof `depth`)
-      roofDepth: 0.72,
+      // shore pine and salal, four bushes a node, wherever the lidar's canopy is 1 to 5 m (Amphitrite's headland): a lumpy dark mass over the scrub's sheet
+      scrub: { min: 1 },
+      // the roof under the crowns at 0.6 of the canopy, so most of each crown stands out of it and the canopy closes over it (forest.js forestRoof `depth`)
+      roofDepth: 0.6,
       max: 60000,
     },
     // the detail falls off with the distance beyond the skin's circles (forest.js treesAt): stands at the water within them, the roof's edge trees to 2 km beyond, the shore's single trees to 5 km, then the roof alone (the far hills are grey shapes in the fog)
@@ -545,38 +550,47 @@ export const LOOK = Object.freeze({
     // the instances cut into 1 km tiles inside the circles, 4 km beyond, so the stage culls the forest a tile at a time
     tiles: { near: 1024, far: 4096 },
     // salal and shore pine where the lidar's canopy is under 5 m (forest.js scrubCover): a bumpy low skin, not turf; darker than salal's own #3e4a2c, which lit flat read as lawn
-    scrub: { min: 0.8, lift: 1, jitter: 1.5, colours: ["#323d25", "#2c3622", "#38432a", "#28311f", "#303a27"] },
+    // darker still (#232b20), finer inside the skin's circles (tolerance 0.3, not 0.6), barely bumped (±0.6 m: the bushes are the lumps), every vertex mottled ±15%
+    scrub: { min: 0.8, lift: 1, jitter: 0.6, fine: 0.3, colours: ["#232b20", "#20281d", "#262f22", "#1e251b", "#242c21"] },
   },
   // foam where the coast is open to the swell (doc.swell.from), fading to the water's grey as the stage draws it under Ukee grey: surf.js's ribbons, white water over the exposed shallows under 2.5 m, and black boulders at the most exposed waterline (dressing, assumed)
-  surf: { fade: "#64737c", reef: { depth: 2.5, reef: 0.6, chance: 0.4 }, boulders: { exposure: 0.6, chance: 0.3 } },
+  surf: { fade: "#64737c", reef: { depth: 2.5, reef: 0.6, chance: 0.4 }, boulders: { exposure: 0.6, chance: 0.3, sides: [7, 9], sizes: [0.6, 1.1, 1.6], colours: ["#3f3d3a", "#4d4b47"] } },
   // the town's buildings (buildings.js): West Coast siding, muted (weathered cedar, grey-green, barn red, slate blue, white), white corner boards and eave trim and a row of dark windows a storey; buildings at the water on pile decks, an industrial one there in cream corrugated cladding (a fish plant). Art direction, from photographs of the waterfront
   buildings: {
     palette: { walls: [["#7a5a40", 26], ["#5d6b5e", 18], ["#7d2f28", 12], ["#4f6070", 14], ["#e6e4dd", 18], ["#8d867b", 12]] },
     details: true,
     decks: true,
+    // the waterfront's two landmarks, drawn from photographs (UclueletHarbour.JPG, Wharf_in_Ucluelet_showing_aquarium_on_the_left.jpg): assumed, not surveyed
+    overrides: {
+      "way/360389716": { note: "Whiskey Landing Lodge: three storeys of timber-brown walls on a grey stone base, a bright red metal roof with four cross-gables to the water, white-framed glazing (assumed from photographs)", levels: 3, colour: "#6b4a2e", roofColour: "#c0432c", form: "gables", gables: 4, stone: "#7c7a74", stoneHeight: 1.6, trim: "#f2f1ec" },
+      "way/334446398": { note: "The Ucluelet Aquarium at the head of the Whiskey Dock: navy and white, a curved metal roof (assumed from photographs)", levels: 2, colour: "#2d3f66", roofColour: "#c9cccd", form: "curved", trim: "#f2f1ec" },
+    },
   },
+  // the Whiskey Dock's red railings over a yellow curb (the waterfront photographs; assumed)
+  structures: { "way/1528008867": { rail: "#b8302a", curb: "#e0b62c", every: 2.5 } },
   // the harbour's shores (shore-dressing.js): silver-grey drift logs at the top of the tide, and boulders along the sheltered waterline (dressing, assumed): the harbour and inlet, and the coves round Amphitrite
   shore: {
     within: [
       { at: [48.945, -125.548], radius: 2300, note: "the harbour and the inlet to Hitacu" },
       { at: [48.928, -125.558], radius: 2000, note: "the Wild Pacific Trail's coves and Amphitrite Point" },
     ],
-    logs: { chance: 0.22 },
-    boulders: { chance: 0.1 },
+    // silver logs 0.8 to 1.2 m across, a third buried in the cobble, their sawn ends darker
+    logs: { chance: 0.22, diameter: [0.8, 1.2], colour: "#a8a49a", cap: 0.55, bury: 0.35 },
+    // grey stones, not black nuts: three sizes, 7- or 9-sided, squashed
+    boulders: { chance: 0.1, sides: [7, 9], sizes: [0.45, 0.9, 1.4], colours: ["#4d4b47", "#5a5752"] },
+    // the yard's frontage from the launch to the wharf: three to five stones on every piece of its shore (the courtyard photographs' riprap and cobble, assumed)
+    frontage: { within: [{ at: [48.9496, -125.558], radius: 150, note: "the boatyard's frontage" }], chance: 1, count: [3, 5] },
   },
-  // stratus banks on the hills at about 380 m, mist over the forest's hollows (cloud.js's defaults), and a collar of cloud round Mount Ozzard's top just under the radome (dressing)
+  // a band of stratus across the hills, baked into their colours (cloud.js bakeStratus, stratusAt): no sheets or lenses at all (seen from the town, a lens was a pale saucer over it)
   clouds: {
-    // the stratus baked into the hills' colours from 250 m (cloud.js bakeStratus): the tops dissolve into the overcast, no sheets seen edge-on as stripes
-    bake: { from: 250, span: 300, max: 0.85, noise: 0.3, colour: "#959ea1" },
+    // from 280 m rising to its thickest at 420 m and easing back to 0.45 above, so Ozzard's and the Mackenzie Range's dark forest and the radome show in and out of it; toward the grey the horizon reads as once lit (#737b7e, under the horizon's #959ea1), so a summit is never brighter than the sky behind it, as snow
+    bake: { from: 280, peak: 420, span: 200, max: 0.7, above: 0.45, noise: 0.3, colour: "#737b7e" },
     sheets: null,
     mist: null,
-    // the collar under Ozzard's radome, and two low wisps over the hills behind the town (a cap whose `below` is negative lies that far over the ground there)
-    caps: [
-      { at: [48.95939, -125.49298], below: 50, size: 760, alpha: 0.6, thick: 30, clear: 4, note: "Mount Ozzard: cloud caught under the summit" },
-      { at: [48.9375, -125.5525], below: -35, size: 340, alpha: 0.3, thick: 14, clear: 6, note: "a wisp over the hill behind the town" },
-      { at: [48.9355, -125.5415], below: -30, size: 280, alpha: 0.26, thick: 12, clear: 6, note: "a wisp over the hollow toward Spring Cove" },
-    ],
+    caps: [],
   },
+  // the Inner Basin's floats full of the fleet (boats.js mooredBoats: 19 in 20 slips taken there, against five in six elsewhere; the photographs' general look, assumed)
+  moored: [{ at: [48.94508, -125.553], radius: 160, taken: 0.95, note: "the Inner Basin" }],
   // dressing about the harbour (boats.js), not data: assumed, each in at least 10 m of water (checked against the heights)
   boats: [
     { id: "troller-outbound", type: "troller", lat: 48.9485, lon: -125.551, heading: 125, length: 12, trim: "#8e2f27", note: "a troller under way, outbound down the harbour" },
@@ -586,8 +600,8 @@ export const LOOK = Object.freeze({
   ],
 });
 
-/** Where the scene opens: 30 m over the water 140 m off the old seaplane base's frontage, looking south-south-east (about 159°) over the planned dock and the sloop at anchor to the basins and the forested peninsula behind the town; the hangar, the wharf and the haul-out pier at the frame's right. */
-export const HOME = Object.freeze({ position: Object.freeze([60, 30, -140]), target: Object.freeze([420, 0, 800]) });
+/** Where the scene opens: 30 m over the water 140 m off the old seaplane base's frontage, looking south-south-east (about 159°) and down about 7.7° (the target on the water 222 m off), over the planned dock and the sloop at anchor to the basins and the forested hill behind the town, which fill the frame rather than the sky; the hangar, the wharf and the haul-out pier at the frame's right. */
+export const HOME = Object.freeze({ position: Object.freeze([60, 30, -140]), target: Object.freeze([139, 0, 67]) });
 
 /**
  * Where the sloop lies: at anchor in the harbour about 70 m north of the
