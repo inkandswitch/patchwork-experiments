@@ -4,7 +4,7 @@
 // Weather is a scene extension (WEATHER.md; the scene package's STAGE.md,
 // "Ambients"): a world's weather is one scene trait, `weather`, plain
 // physical data — where and when (place, lat, lon, zone, date, hour), the air
-// (wind, from, gust, seed) and the sky (cover, clouds, base, visibility,
+// (wind, from, gustiness, seed) and the sky (cover, clouds, base, visibility,
 // rain). The extension offers it as the world's two ambient conventions,
 // `wind` and `atmosphere`, a pure function of the trait, so every peer and
 // the deterministic sim compute the same world from the doc, and nothing is
@@ -26,6 +26,7 @@ const INIT = {
   hour: 15,
   wind: 4,
   from: 235,
+  gustiness: 0.3,
   seed: 1,
   cover: 0.35,
   clouds: "cumulus",
@@ -59,15 +60,15 @@ export const plugins = [
           { key: "zone", label: "Time zone (IANA, e.g. America/Vancouver)", kind: "string", default: INIT.zone },
           { key: "date", label: "Date (YYYY-MM-DD, local)", kind: "string", default: INIT.date },
           { key: "hour", label: "Hour (local clock)", kind: "number", default: INIT.hour, min: 0, max: 24, step: 0.25 },
-          { key: "wind", label: "Wind (m/s at 10 m)", kind: "number", default: INIT.wind, min: 0, max: 30, step: 0.1 },
+          { key: "wind", label: "Wind (m/s at 10 m)", kind: "number", default: INIT.wind, min: 0, max: 40, step: 0.1 },
           { key: "from", label: "Wind from (degrees true)", kind: "number", default: INIT.from, min: 0, max: 360, step: 1 },
-          { key: "gust", label: "Gusts (m/s; empty: 30% over the wind)", kind: "number", min: 0, max: 45, step: 0.1 },
+          { key: "gustiness", label: "Gustiness (0.3: gusts to 130% of the wind, lulls to 70%)", kind: "number", default: INIT.gustiness, min: 0, max: 1, step: 0.05 },
           { key: "seed", label: "Gust seed", kind: "integer", default: INIT.seed },
           { key: "cover", label: "Cloud cover (0 clear, 1 overcast)", kind: "number", default: INIT.cover, min: 0, max: 1, step: 0.05 },
           { key: "clouds", label: "Clouds", kind: "enum", default: INIT.clouds, options: CLOUDS },
           { key: "base", label: "Cloud base (m)", kind: "number", default: INIT.base, min: 50, max: 12000, step: 50, log: true },
           { key: "visibility", label: "Visibility (m)", kind: "number", default: INIT.visibility, min: 100, max: 50000, step: 100, log: true },
-          { key: "rain", label: "Rain (mm/h)", kind: "number", default: INIT.rain, min: 0, max: 20, step: 0.1 },
+          { key: "rain", label: "Rain (mm/h)", kind: "number", default: INIT.rain, min: 0, max: 50, step: 0.1 },
         ],
         init: INIT,
       },

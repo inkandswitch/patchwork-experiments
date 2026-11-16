@@ -19,23 +19,30 @@ different fields at once both keep their edit (writes are field by field,
 STAGE.md "Describing traits"). A missing field is its default, and `init` is
 the defaults.
 
-| Field | Meaning | Default | Range |
-|---|---|---|---|
-| `place` | a name, for people | `"Cadboro Bay"` | text |
-| `lat`, `lon` | degrees north, east (WGS84) | 48.454, -123.2915 | ±90, ±180 |
-| `zone` | IANA time zone the clock reads in | `"America/Vancouver"` | text |
-| `date` | local calendar date, `YYYY-MM-DD` | `"2026-07-15"` | text |
-| `hour` | local clock hour (the sun slider) | 15 | 0..24, step 0.25 |
-| `wind` | mean wind speed at 10 m, m/s | 4 | 0..30 |
-| `from` | wind direction, degrees true, where it blows from | 235 | 0..360 |
-| `gust` | gust speed, m/s | none: 30% over the wind | 0..45 |
-| `seed` | the gusts' seed | 1 | integer |
-| `cover` | cloud cover, 0 clear to 1 overcast | 0.35 | 0..1 |
-| `clouds` | `cumulus` / `stratocumulus` / `stratus` / `cirrus` | `cumulus` | enum |
-| `base` | cloud base, m | 1200 | 50..12000 (log) |
-| `visibility` | horizontal visibility, m | 10000 | 100..50000 (log) |
-| `rain` | precipitation, mm/h | 0 | 0..20 |
-| `source` | set only by a fetch: `{ name, api, for, fetched, sum }` | none | not described |
+Each row is the field exactly as `index.js` describes it: `index.test.js`
+reads this table and checks every field against it, so the doc is the spec.
+
+| Field | Kind | Default | Min | Max | Step | Slider | Meaning |
+|---|---|---|---|---|---|---|---|
+| `place` | string | `"Cadboro Bay"` | | | | | a name, for people |
+| `lat` | number | 48.454 | -90 | 90 | 0.0001 | | degrees north (WGS84) |
+| `lon` | number | -123.2915 | -180 | 180 | 0.0001 | | degrees east (WGS84) |
+| `zone` | string | `"America/Vancouver"` | | | | | the IANA time zone the clock reads in |
+| `date` | string | `"2026-07-15"` | | | | | local calendar date, `YYYY-MM-DD` |
+| `hour` | number | 15 | 0 | 24 | 0.25 | | local clock hour: the sun slider |
+| `wind` | number | 4 | 0 | 40 | 0.1 | | mean wind speed at 10 m, m/s |
+| `from` | number | 235 | 0 | 360 | 1 | | where the wind blows from, degrees true |
+| `gustiness` | number | 0.3 | 0 | 1 | 0.05 | | the hour's peak gust over the mean, less 1: 0.3 is gusts to 130% and lulls to 70% (sailing's model) |
+| `seed` | integer | 1 | | | | | the gusts' seed |
+| `cover` | number | 0.35 | 0 | 1 | 0.05 | | cloud cover, 0 clear to 1 overcast |
+| `clouds` | enum | `"cumulus"` | | | | | `cumulus`, `stratocumulus`, `stratus` or `cirrus` |
+| `base` | number | 1200 | 50 | 12000 | 50 | log | cloud base, m |
+| `visibility` | number | 10000 | 100 | 50000 | 100 | log | horizontal visibility, m |
+| `rain` | number | 0 | 0 | 50 | 0.1 | | precipitation, mm/h |
+
+Every field has a default, so every slider shows the value in force and can
+be dialled back to it. One more key, `source`, is written only by a fetch
+(`{ name, api, for, fetched, sum }`) and is not described.
 
 `source` says where a snapshot came from: the provider (`"Open-Meteo"`), which
 API (`forecast` or `archive`), the hour the data is for and when it was fetched
@@ -50,10 +57,10 @@ fetch" or "dialled". Nothing has to intercept an edit to know.
 (sailing's weather.js pattern), and null without the trait. It offers the two
 existing conventions and adds no new ambient:
 
-- **`wind`** = `{ speed: wind, from, seed, gustiness }`, with
-  `gustiness = clamp(gust / wind - 1, 0, 1)` (sailing's model: gustiness g
-  means speed ±g), 0.3 when `gust` is missing, and 0 in a calm. The
-  convention's own documentation moves here from sailing/DESIGN.md in W5.
+- **`wind`** = `{ speed: wind, from, seed, gustiness }`: the trait's own
+  fields, passed through. `gustiness` is sailing's quantity (g: speed ±g,
+  direction ±33°·g), so nothing converts it. The convention's own
+  documentation moves here from sailing/DESIGN.md in W5.
 - **`atmosphere`** = `atmosphereOf(trait)` (STAGE.md's shape):
   - **sun**: the direction comes from `solar.js` (the NOAA/Meeus low-accuracy
     algorithm, with apparent elevation through Bennett's refraction) at
@@ -61,21 +68,54 @@ existing conventions and adds no new ambient:
     frame, north -Z and east +X (terrain tmerc.js, sailing wind.js), as
     `[sin A cos E, sin E, -cos A cos E]`. The sun is present only while its
     apparent elevation is above -0.833° (its upper limb on the horizon).
-    Intensity, colour and shadows follow elevation and cover.
-  - **sky** gradient and **exposure**: interpolated in linear RGB over a finite
-    anchor table indexed by cover, kind and visibility, and by sun elevation
-    in bands (day, low, horizon, civil twilight, night). The anchors are the
-    existing art direction, reproduced exactly at their conditions:
-    - sailing's bright day: cover 0.35, cumulus;
-    - Ucluelet's clear afternoon: cover 0;
-    - Ukee grey: cover 1, stratocumulus, base 600 m, visibility 19 km;
-    - the marine layer: visibility under 1 km.
+  - **The look** (sky gradient, sun colour and intensity, exposure, fog near)
+    comes from a finite table of looks, each a complete daytime atmosphere,
+    combined in three steps:
+    1. *Cloud.* The sky's effective cover is `cover · opacity(kind)`, with
+       opacity 1 for cumulus, stratocumulus and stratus and 0.3 for cirrus
+       (thin cirrus lets the blue through). The look is interpolated
+       piecewise linearly over effective cover between three nodes: 0 (the
+       clear afternoon), 0.35 (the bright day) and 1 (Ukee grey). Colours
+       interpolate in linear RGB, numbers linearly.
+    2. *Haze.* The haze weight `h` is 0 at visibility ≥ 10 km and 1 at
+       ≤ 1 km, linear in log visibility between. The look blends by `h`
+       toward the fogbound look (the marine layer), whatever the cover: in
+       thick fog the sky is the fog.
+    3. *Sun elevation.* That look holds while the sun is 20° or more up.
+       Below, it blends through bands (low, horizon, civil twilight to -6°,
+       night by -12°) toward new art direction, with exposure
+       non-increasing as the sun sinks.
 
-    Twilight and night are new art direction.
-  - **fog**: from visibility, Koschmieder style (`far ≈ 0.9 · visibility`).
-    Rain lowers the visibility and darkens the sky.
-  - **clouds**: from cover, kind and base, with a per-kind table for contrast
-    and cell scale.
+    Rain is a darkening of the sky and a cut in visibility, and is the
+    identity at 0 mm/h.
+  - **fog**: the colour is the sky's horizon (true of all four anchors), far
+    is `0.9 · visibility` (Koschmieder style), and near is the look's near
+    ratio times far.
+  - **shadows**: only while effective cover < 0.75, `h` < 0.5 and the sun
+    is above 2°.
+  - **clouds**: `{ cover, contrast, scale, base }`, with cover and base
+    taken from the trait and contrast and scale from a per-kind table
+    (cumulus 0.25 and 700, stratocumulus 0.12 and 500, from the anchors;
+    stratus and cirrus are new). There is no deck at cover 0 or at `h` = 1:
+    a clear sky has none, and fog hides it.
+
+### The anchors (fixed points)
+
+The existing art direction is four looks. Each is reproduced at its
+conditions, with the sun 20° or more up: sky colours, fog colour and near,
+sun colour, intensity and shadows, exposure, and clouds (present or absent).
+Only the sun's direction moves, to where the real sun is.
+
+| Look | Was | Cover | Clouds | Base | Visibility | `h` | Fog far |
+|---|---|---|---|---|---|---|---|
+| bright day | sailing `ATMOSPHERE` | 0.35 | cumulus | 1200 | 10 000 | 0 | 9000 (same) |
+| clear afternoon | terrain `SKIES` | 0 | any | any | 20 000 | 0 | 18 000 (same) |
+| Ukee grey | terrain `SKIES` | 1 | stratocumulus | 600 | 19 000 | 0 | 17 100 (was 17 000) |
+| marine layer | terrain `SKIES` | any | any | any | 1000 | 1 | 900 (same) |
+
+The weather's defaults are the bright day's conditions, so a new world looks
+as sailing's did. The one number that moves is Ukee grey's fog far, by 0.6%
+(Decision 9).
 
 ## The outermost rule
 
@@ -140,6 +180,12 @@ nothing is selected. There is no menu diving.
     100..3000 m;
   - kind from the low, mid and high cloud layers and the WMO weather code;
   - visibility from the code, precipitation and relative humidity.
+- **Gusts**: `gustiness = clamp(gust / wind - 1, 0, 1)`, from the hour's
+  peak gust (`wind_gusts_10m`) and mean. In a calm (wind under 0.5 m/s) a
+  gust factor means nothing, and the default 0.3 is written (Decision 10).
+- **Ranges**: every fetched number is clamped to its described range (for
+  example, wind 45 m/s becomes 40), so a snapshot is always a state the
+  sliders can show.
 - **Snapshot**: `snapshotFrom(json, request)` takes the hour nearest the
   request. A failure, or an `{ error: true, reason }` reply, becomes a notice
   and leaves the doc untouched.
@@ -150,11 +196,11 @@ nothing is selected. There is no menu diving.
 
 | Step | What | State |
 |---|---|---|
-| W0 | package scaffold, this doc, the fetch-from-Patchwork spike | done |
-| W1 | `time.js` (`instantOf`) and `solar.js` (`sunAt`, `sunDirection`), against published ephemerides | |
-| W2 | `windOf`, `atmosphereOf` (pure), with the anchors as fixed points | |
+| W0 | package scaffold, this doc, the fetch-from-Patchwork spike; review fixes (gustiness, the doc's table as spec, the entry evaluated alone, the sky model settled) | done |
+| W1 | `time.js` (`instantOf`) and `solar.js` (`sunAt`, `sunDirection`), against published ephemerides; an invalid zone or a malformed date falls back to the default (table rows for each) | |
+| W2 | `windOf` (a pass-through), `atmosphereOf` (pure) as specified under "The look", with the four anchors as fixed points | |
 | W3 | the extension's ambient, inspector fields, the Place and Now commands; local probe | |
-| W4 | `open-meteo.js`, Fetch commands, recorded fixtures | |
+| W4 | `open-meteo.js`, Fetch commands, recorded fixtures; table rows for gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3} and for clamping (wind 45, rain 80) | |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes | |
 | W6 | `terrain.sky` → `terrain.place`; the place templates write weather | |
 | W7 | end-to-end local probe: weather reaches sky, water and boat | |
@@ -167,7 +213,7 @@ nothing is selected. There is no menu diving.
    the name as water owns `water`. It offers only the existing `wind` and
    `atmosphere` conventions, so no consumer changes and no new ambient
    exists. *Decided unattended (2026-11-16, lane/weather), for the lead.*
-2. **The trait is flat, not nested** (`wind`, `from` and `gust` rather than
+2. **The trait is flat, not nested** (`wind`, `from` and `gustiness` rather than
    `wind: { speed, from }`). Each field is one slider, and concurrent edits
    merge field by field. *Decided unattended (2026-11-16, lane/weather), for
    the lead.*
@@ -177,17 +223,25 @@ nothing is selected. There is no menu diving.
    9 km). Sailing's old default, 7 m/s from 45°, was a working breeze with
    no place; examples that want it say so. *Decided unattended (2026-11-16,
    lane/weather), for the lead.*
-4. **`gust` has no default.** A missing gust means the stock gustiness, 30%
-   over the wind, and no fixed number says that, so the field shows empty.
-   *Decided unattended (2026-11-16, lane/weather), for the lead.*
+4. **The gusts are `gustiness`, sailing's own quantity, with default 0.3.**
+   W0 had `gust` in m/s with no default, meaning "30% over the wind". The
+   review found that such a field can't be cleared once set (an emptied
+   number input writes nothing), and that its slider shows a value that
+   isn't in force. A gust in m/s can't have a default, because the stock
+   gust scales with the wind. `gustiness` can: the slider always shows what
+   is in force, `windOf` passes it through, and the fetch converts the
+   hour's peak (Decision 10). *Decided unattended (2026-11-16,
+   lane/weather), for the lead.*
 5. **`source` is not described.** The inspector neither shows nor touches
    it, and provenance comes from its `sum`. So dialling a fetched field needs
    no hook to mark the snapshot stale. *Decided unattended (2026-11-16,
    lane/weather), for the lead.*
 6. **Ranges**: cloud base 50..12 000 m on a log slider (cirrus sits at
-   6–12 km), visibility 100..50 000 m on a log slider, rain 0..20 mm/h,
-   wind 0..30 m/s, gusts 0..45 m/s. *Decided unattended (2026-11-16,
-   lane/weather), for the lead.*
+   6–12 km); visibility 100..50 000 m on a log slider; rain 0..50 mm/h (a
+   Pacific Northwest cloudburst; W0's 20 was short of heavy showers); wind
+   0..40 m/s (above hurricane force, 32.7; W0's 30 was a Ucluelet storm);
+   gustiness 0..1 (sailing's range). A fetch clamps into them. *Decided
+   unattended (2026-11-16, lane/weather), for the lead.*
 7. **The fetch runs in the page, with no worker or embed.** The W0 spike
    (below) found no Content-Security-Policy on patchwork.inkandswitch.com,
    neither as a header nor as a meta tag, and Open-Meteo answers with
@@ -201,6 +255,55 @@ nothing is selected. There is no menu diving.
    asserts instead that the files it walks include `src/index.js` and
    itself. Every file is still read. *Decided unattended (2026-11-16,
    lane/weather), for the lead.*
+
+9. **The sky model is cloud, then haze, then the sun's elevation, and its
+   anchors are stated by their visibilities.** W0's doc said both "fog far
+   ≈ 0.9 · visibility" and "the anchors reproduced exactly", which can't
+   both hold for the old numbers, and it gave no interpolation between four
+   scattered points. The model under "The look" is defined everywhere and
+   meets every anchor:
+   - cover nodes 0, 0.35 and 1;
+   - haze from 10 km down to 1 km;
+   - fog far at 0.9 · visibility;
+   - fog near as a per-look ratio of far (the old ratios are 0.044, 0.033,
+     0.053 and 0.033, so no single rule fits them).
+
+   Ukee grey keeps a round 19 km visibility, so its fog far moves from
+   17 000 to 17 100. The alternative, a visibility of 18 889 m, is a
+   number nobody would dial. The cover nodes come from two places' art, so
+   the sky's top gets bluer from cover 0 to 0.35 before it greys. That is
+   inherited art direction, not physics. If it reads wrong, the cover-0
+   node is the one to redraw. *Decided unattended (2026-11-16,
+   lane/weather), for the lead.*
+10. **A fetched gust maps to gustiness with a scale of 1:
+    `g = clamp(peak / mean - 1, 0, 1)`.** Sailing's gust noise is clamped
+    to ±1. Measured at a fixed point over an hour (speeds 2, 5 and 10 m/s ×
+    seeds 1, 7 and 42, g 0.5), the model's peak speed reaches
+    `mean · (1 + 0.97..1.00 · g)`. So the observed hourly peak gust is the
+    model's hourly peak. The review's worry that a gust factor of 1.5–2
+    "overdrives" is about the model's symmetric lulls and veers, not about
+    this mapping. At a gust factor of 1.5, the model's deepest lull is 50%
+    of the mean. Real turbulence, with intensity about (G - 1)/3 and lulls
+    about 2.5σ, gives about 58%. At a gust factor of 2 (light, fluky air)
+    the lulls reach calm, which happens. Changing the lulls' shape is a
+    sailing change, not this package's. *Decided unattended (2026-11-16,
+    lane/weather), for the lead.*
+11. **The entry's worker-safety is checked by running it.** W0's regex
+    missed `export * from` and an unspaced `import{…}from`. The test now
+    copies `index.js` alone into an empty folder and imports it in a fresh
+    node. Any static import or re-export, in any spelling, fails there.
+    `load()` is shown to be the only thing that reaches for `extension.js`.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+12. **The standalone lint.** patchwork-experiments has no `pnpm lint`
+    script. The proof uses patchwork-base's `scripts/lint-standalone.mjs`,
+    with its root (line 35) replaced by `process.env.LINT_ROOT`, run as
+    `LINT_ROOT=/Users/pvh/dev/pe-lane-weather node lint-standalone.mjs`. It
+    reports 130 findings on both this lane and the scene-stage baseline,
+    and none under `weather/`. The "weather" hits are the unrelated
+    `cards/cards/weather` (`@embark/weather`, plugin ids `weather-card`
+    and so on: no clash). The other proof is the folder copied out alone
+    (`git archive`): `pnpm install --frozen-lockfile`, build and test all
+    pass. *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -223,8 +326,9 @@ nothing is selected. There is no menu diving.
 
 ## Costs
 
-- **W0**: none at run time. The extension runs where the trait is and offers
-  nothing.
+- **W0**: none at run time. The extension runs where the trait is and
+  offers nothing. In the tests, `index.test.js` spawns one node (about
+  50 ms) to evaluate the entry alone.
 - **Planned**: `ambient()` runs on every flush but is a cache hit unless the
   trait changed. `atmosphereOf` (a solar position, about a hundred flops, and
   a table lookup) runs only on a change. Dragging the hour slider writes a
