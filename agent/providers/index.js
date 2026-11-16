@@ -229,9 +229,9 @@ export async function modelInfo(providerId, modelId, { key = null } = {}) {
   try {
     let { models } = await loadCatalogue(providerId, { key })
     info = models.find((m) => m.id === modelId) ?? null
-    // A catalogue cached before `supports` existed has the model but not what
-    // this needs; refresh once rather than wait a day for the TTL.
-    if (info && info.supports === undefined) {
+    // A catalogue cached before `supports` or `efforts` existed has the model
+    // but not what this needs; refresh once rather than wait a day for the TTL.
+    if (info && (info.supports === undefined || info.efforts === undefined)) {
       ;({ models } = await loadCatalogue(providerId, { key, force: true }))
       info = models.find((m) => m.id === modelId) ?? null
     }

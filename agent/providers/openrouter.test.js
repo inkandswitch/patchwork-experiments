@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel, describeDefaults } from "./openrouter.js"
+import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel, describeDefaults, effortsOf, ALL_EFFORTS } from "./openrouter.js"
+import { DEFAULT_CONFIG } from "../session.js"
 
 /** A ReadableStream of SSE chunks, the shape `response.body` actually has. */
 function streamOf(chunks) {
@@ -375,5 +376,38 @@ describe("a model that cannot read images", () => {
     expect(terse.supports).toBeNull()
     expect(terse.maxOutput).toBeNull()
     expect(describeDefaults(terse)).toBe("")
+  })
+})
+
+describe("effort", () => {
+  it("reads the three cases the catalogue distinguishes", () => {
+    expect(effortsOf(undefined)).toEqual({ efforts: [], defaultEffort: null }) // no reasoning at all
+    expect(effortsOf({ mandatory: false })).toEqual({ efforts: [], defaultEffort: null }) // reasons, but no effort setting
+    expect(effortsOf({ supported_efforts: null }).efforts).toEqual(ALL_EFFORTS) // any level
+    expect(effortsOf({ supported_efforts: ["high", "low"], default_effort: "high" })).toEqual({ efforts: ["high", "low"], defaultEffort: "high" })
+  })
+
+  it("never offers 'none' to a model that must reason", () => {
+    expect(effortsOf({ supported_efforts: null, mandatory: true }).efforts).not.toContain("none")
+    expect(effortsOf({ supported_efforts: ["high", "none"], mandatory: true }).efforts).toEqual(["high"])
+  })
+
+  it("sends an effort the model takes", () => {
+    const body = buildBody({ messages: [], model: "m", params: { reasoning: { effort: "max" } }, capabilities: { supports: ["reasoning"], efforts: ["max", "high"] } })
+    expect(body.reasoning).toEqual({ effort: "max" })
+  })
+
+  it("drops one it does not, keeping the rest of the reasoning settings", () => {
+    const capabilities = { supports: ["reasoning"], efforts: ["high", "low"] }
+    expect("reasoning" in buildBody({ messages: [], model: "m", params: { reasoning: { effort: "max" } }, capabilities })).toBe(false)
+    expect(buildBody({ messages: [], model: "m", params: { reasoning: { effort: "max", exclude: true } }, capabilities }).reasoning).toEqual({ exclude: true })
+  })
+
+  it("sends it as chosen when the catalogue has no entry", () => {
+    expect(buildBody({ messages: [], model: "m", params: { reasoning: { effort: "max" } } }).reasoning).toEqual({ effort: "max" })
+  })
+
+  it("defaults new sessions to the latest Opus", () => {
+    expect(DEFAULT_CONFIG.model).toBe("~anthropic/claude-opus-latest")
   })
 })

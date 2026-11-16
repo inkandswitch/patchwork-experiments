@@ -180,6 +180,12 @@ export function AgentTool(handle, element, options = {}) {
   // model's authors recommend, and what an override in config.params replaces.
   const paramsNote = el("p", "agent-model-defaults", "")
   const refreshModels = el("button", null, "Refresh model list")
+  // How hard the model thinks before it acts. Only the levels the chosen model
+  // takes are offered — the catalogue says which — and "model default" sends
+  // nothing, so the model runs at the effort its authors chose.
+  const effortSelect = document.createElement("select")
+  effortSelect.className = "agent-effort"
+  const effortNote = el("p", "agent-model-defaults", "")
   const keyInput = document.createElement("input")
   keyInput.type = "password"
   keyInput.placeholder = "OpenRouter API key (sk-or-…)"
@@ -199,6 +205,9 @@ export function AgentTool(handle, element, options = {}) {
     modelStatus,
     paramsNote,
     refreshModels,
+    el("p", null, "Effort"),
+    effortSelect,
+    effortNote,
     el("p", null, "API key"),
     keyInput,
     keyNote,
@@ -694,17 +703,68 @@ export function AgentTool(handle, element, options = {}) {
   modelInput.addEventListener("change", commitModel)
   modelInput.addEventListener("blur", commitModel)
 
+  effortSelect.addEventListener("change", () => {
+    const effort = effortSelect.value
+    store.change((d) => {
+      if (!d.config) d.config = {}
+      if (!d.config.params) d.config.params = {}
+      const params = d.config.params
+      if (effort) {
+        if (!params.reasoning) params.reasoning = {}
+        params.reasoning.effort = effort
+      } else if (params.reasoning) {
+        delete params.reasoning.effort
+        if (!Object.keys(params.reasoning).length) delete params.reasoning
+      }
+    })
+    render()
+  })
+
+  function renderEffort() {
+    const doc = handle.doc()
+    const info = catalogueModels.find((m) => m.id === doc?.config?.model)
+    const chosen = doc?.config?.params?.reasoning?.effort ?? ""
+    const efforts = info?.efforts ?? []
+    const options = [["", info?.defaultEffort ? `model default (${info.defaultEffort})` : "model default"]]
+    for (const effort of efforts) options.push([effort, effort])
+    // A level kept from a previous model stays visible rather than vanishing
+    // from the control; the request leaves it out while this model is in use.
+    if (chosen && !efforts.includes(chosen)) options.push([chosen, `${chosen} (not taken by this model)`])
+
+    const signature = JSON.stringify(options)
+    if (effortSelect.dataset.options !== signature) {
+      effortSelect.dataset.options = signature
+      effortSelect.replaceChildren(
+        ...options.map(([value, label]) => {
+          const option = document.createElement("option")
+          option.value = value
+          option.textContent = label
+          return option
+        })
+      )
+    }
+    if (effortSelect.value !== chosen) effortSelect.value = chosen
+    effortSelect.disabled = !info || (!efforts.length && !chosen)
+    effortNote.textContent = !info
+      ? "Open the model list to see which effort levels this model takes."
+      : efforts.length
+        ? "Higher thinks longer before acting: better on hard problems, slower and dearer."
+        : "This model has no effort setting."
+  }
+
   let catalogueLoaded = false
   let catalogueModels = []
 
   function renderDefaults() {
+    renderEffort()
     const doc = handle.doc()
     const info = catalogueModels.find((m) => m.id === doc?.config?.model)
     if (!info) {
       paramsNote.textContent = ""
       return
     }
-    const set = Object.entries(doc?.config?.params ?? {}).filter(([name]) => name !== "maxTokens")
+    // maxTokens and effort have controls of their own.
+    const set = Object.entries(doc?.config?.params ?? {}).filter(([name]) => name !== "maxTokens" && name !== "reasoning")
     const recommended = describeDefaults(info)
     const ceiling = info.maxOutput ? `up to ${Math.round(info.maxOutput / 1000)}k output tokens` : ""
     const parts = []
@@ -777,7 +837,8 @@ export function AgentTool(handle, element, options = {}) {
     root.dataset.runner = workerRunner ? "worker" : workerTried ? "tab" : "pending"
     statusDot.dataset.status = doc.status ?? STATUS.idle
     statusDot.title = doc.status ?? "idle"
-    modelButton.textContent = (doc.config?.model ?? "no model").split("/").pop()
+    const effort = doc.config?.params?.reasoning?.effort
+    modelButton.textContent = (doc.config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "")
     // `doc` is the session document; the focused element lives on the DOM one.
     // Never overwrite the field while it is being typed in.
     const focused = modelInput.ownerDocument?.activeElement

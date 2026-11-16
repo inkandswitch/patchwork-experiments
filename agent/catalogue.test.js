@@ -89,8 +89,8 @@ describe("loadCatalogue", () => {
 
 describe("modelInfo", () => {
   const WITH_INFO = [
-    { ...MODELS[0], supports: ["temperature", "tools"], maxOutput: 32000, defaults: { temperature: 1 } },
-    { ...MODELS[1], supports: null, maxOutput: null, defaults: {} },
+    { ...MODELS[0], supports: ["temperature", "tools"], maxOutput: 32000, defaults: { temperature: 1 }, efforts: ["high", "low"], defaultEffort: "high" },
+    { ...MODELS[1], supports: null, maxOutput: null, defaults: {}, efforts: [], defaultEffort: null },
   ]
 
   it("answers from a fresh cache without touching the network", async () => {

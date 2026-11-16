@@ -139,7 +139,7 @@ export async function run(opts) {
     // take and to cap max_tokens; the truncation recovery below respects the
     // same ceiling.
     capabilities: modelInfo
-      ? { supports: modelInfo.supports ?? null, maxOutput: modelInfo.maxOutput ?? null }
+      ? { supports: modelInfo.supports ?? null, maxOutput: modelInfo.maxOutput ?? null, efforts: modelInfo.efforts ?? null }
       : null,
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
   }

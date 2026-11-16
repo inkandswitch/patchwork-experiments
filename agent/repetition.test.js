@@ -143,9 +143,9 @@ describe("what the loop knows about the model", () => {
   it("passes the model's capabilities to the provider with every request", async () => {
     const store = session()
     const provider = makeMock([[{ type: "text", delta: "hi" }]])
-    const modelInfo = { id: "x/y", supports: ["temperature", "tools"], maxOutput: 4096, defaults: { temperature: 1 } }
+    const modelInfo = { id: "x/y", supports: ["temperature", "tools"], maxOutput: 4096, defaults: { temperature: 1 }, efforts: ["high"] }
     await run({ store, provider, toolset: toolset(), canRun: () => true, flushMs: 0, modelInfo })
-    expect(provider.requests[0].capabilities).toEqual({ supports: ["temperature", "tools"], maxOutput: 4096 })
+    expect(provider.requests[0].capabilities).toEqual({ supports: ["temperature", "tools"], maxOutput: 4096, efforts: ["high"] })
   })
 
   it("sends no capabilities when it has no opinion", async () => {

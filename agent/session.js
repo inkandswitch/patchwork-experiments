@@ -94,7 +94,8 @@ export function _resetIds() {
 // Anything set here is an explicit override and travels with the session.
 export const DEFAULT_CONFIG = {
   providerId: "openrouter",
-  model: "anthropic/claude-sonnet-4.5",
+  // The alias follows the newest Opus, so the default does not age.
+  model: "~anthropic/claude-opus-latest",
   params: { maxTokens: 8192 },
 }
 

@@ -17,14 +17,41 @@ const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 export const id = "openrouter"
 export const name = "OpenRouter"
 
-/** Models worth offering in the picker. Any OpenRouter slug works. */
+/**
+ * Models worth offering in the picker. Any OpenRouter slug works.
+ *
+ * OpenRouter's `~…-latest` aliases follow each family's newest release, so a
+ * session started on one does not go stale when the next model ships.
+ */
 export const SUGGESTED_MODELS = [
-  { id: "anthropic/claude-sonnet-4.5", label: "Claude Sonnet 4.5" },
-  { id: "anthropic/claude-opus-4.1", label: "Claude Opus 4.1" },
-  { id: "openai/gpt-4.1", label: "GPT-4.1" },
-  { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
+  { id: "~anthropic/claude-opus-latest", label: "Claude Opus (latest)" },
+  { id: "~anthropic/claude-sonnet-latest", label: "Claude Sonnet (latest)" },
+  { id: "~anthropic/claude-haiku-latest", label: "Claude Haiku (latest)" },
+  { id: "~google/gemini-pro-latest", label: "Gemini Pro (latest)" },
 ]
+
+/**
+ * Every effort level OpenRouter's gateway knows, highest first. A model whose
+ * catalogue entry says `supported_efforts: null` accepts all of them.
+ */
+export const ALL_EFFORTS = ["max", "xhigh", "high", "medium", "low", "minimal", "none"]
+
+/**
+ * Which effort levels a model takes, from its catalogue `reasoning` entry.
+ *
+ * The catalogue distinguishes three cases, and they must not be merged: no
+ * `supported_efforts` at all means the model has no effort setting; `null`
+ * means any level goes; a list is the levels it takes. "none" turns reasoning
+ * off, which a model that must reason rejects.
+ */
+export function effortsOf(reasoning) {
+  if (!reasoning || typeof reasoning !== "object" || !("supported_efforts" in reasoning)) {
+    return { efforts: [], defaultEffort: null }
+  }
+  let efforts = Array.isArray(reasoning.supported_efforts) ? [...reasoning.supported_efforts] : [...ALL_EFFORTS]
+  if (reasoning.mandatory) efforts = efforts.filter((effort) => effort !== "none")
+  return { efforts, defaultEffort: reasoning.default_effort ?? null }
+}
 
 // ---------------------------------------------------------------- outbound
 
@@ -122,7 +149,8 @@ const KNOBS = [
 
 /**
  * `capabilities` is what the catalogue knows about this model, when it knows
- * anything: { supports: [param names] | null, maxOutput: number | null }.
+ * anything: { supports: [param names] | null, maxOutput: number | null,
+ * efforts: [levels] }.
  */
 export function buildBody({ system, messages, tools, model, params = {}, dropImages = false, capabilities = null }) {
   const body = {
@@ -158,7 +186,17 @@ export function buildBody({ system, messages, tools, model, params = {}, dropIma
   //   { effort: "low" }      think less
   //   { max_tokens: 1024 }   think at most this much
   //   { exclude: true }      think, but do not stream it back
-  if (params.reasoning != null && supports("reasoning")) body.reasoning = params.reasoning
+  if (params.reasoning != null && supports("reasoning")) {
+    // An effort the model does not take is dropped, not sent: a session keeps
+    // its effort when its model changes, and "max" on a model without it is a
+    // rejected request. Without a catalogue entry there is nothing to check
+    // against, so it goes as chosen.
+    const reasoning = { ...params.reasoning }
+    if (reasoning.effort != null && Array.isArray(capabilities?.efforts) && !capabilities.efforts.includes(reasoning.effort)) {
+      delete reasoning.effort
+    }
+    if (Object.keys(reasoning).length) body.reasoning = reasoning
+  }
   return body
 }
 
@@ -445,6 +483,8 @@ export async function models({ key, fetchImpl = fetch } = {}) {
       defaults: pickDefaults(model.default_parameters),
       supports: Array.isArray(model.supported_parameters) ? model.supported_parameters : null,
       maxOutput: model.top_provider?.max_completion_tokens ?? null,
+      // Which effort levels it takes, and which it uses when none is chosen.
+      ...effortsOf(model.reasoning),
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 }
