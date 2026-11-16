@@ -1,8 +1,9 @@
 // The play extension against a stand-in for the scene's api: what it asks of
 // the stage when you walk in, pick up the gun, shoot and put it down.
 import { describe, it, expect, beforeEach } from "vitest";
-import play, { ATMOSPHERE, hueOf, scores } from "./play.js";
+import play, { ATMOSPHERE, hueOf, playState, scores } from "./play.js";
 import { plugins } from "./index.js";
+import { resetCommand } from "./reset.js";
 
 class Obj {
   constructor() {
@@ -125,6 +126,57 @@ function fakeApi(doc) {
 const T = (position, yaw = 0) => ({ position, rotation: [0, yaw, 0], scale: 1 });
 const scene = (doc) => ({ d: doc, objects: doc.objects });
 const ray = (dir = [0, 0, -1]) => ({ origin: [0, 1.6, 0], dir });
+// a command's state as a surface asks it: in the stage's context (its view)
+const stateOf = (f, x, id, target = null) => x.commands.find((c) => c.id === id).state(target, { scene: scene(f.api.doc()), view: f.api.view.get() });
+
+describe("Play and Stand targets up: world commands, on the bar in every body (scene/TOOLS.md §6)", () => {
+  const PLAY = { label: "Play", title: "Walk the level with the gun" };
+  const PICK = { label: "Pick up the gun", title: "Take the gun in hand: a click shoots, R reloads" };
+  // holding × walking × target: every row (A2)
+  const ROWS = [
+    [false, false, null, PLAY],
+    [false, true, null, PICK],
+    [true, false, null, null],
+    [true, true, null, null],
+    [false, false, "x", null],
+    [false, true, "x", null],
+    [true, false, "x", null],
+    [true, true, "x", null],
+  ];
+  for (const [holding, walking, target, want] of ROWS)
+    it(`Play: holding ${holding}, walking ${walking}, target ${target} → ${want ? want.label : "null"}`, () => {
+      expect(playState(target, { holding, walking })).toEqual(want);
+    });
+
+  it("Play and Stand targets up say world and menu; the gun stays Edit's toolbar and the menu", () => {
+    const f = fakeApi({ objects: {} });
+    const x = f.bind(play.create(f.api));
+    expect(Object.fromEntries(x.commands.map((c) => [c.id, c.show]))).toEqual({ play: ["world", "menu"], gun: ["toolbar", "menu"], reset: ["world", "menu"] });
+  });
+
+  // the bar's world cluster is right-aligned, in command order (scene's
+  // barEntries): the last entry's place is anchored. Play goes last, so Stand
+  // targets up coming as a target falls never slides Play under a pending
+  // click (a click meant for Play would stand the targets up and wipe the scores)
+  it("on the bar Play is the arena's last world command: Stand targets up comes and goes to its left", () => {
+    const f = fakeApi({ objects: {} });
+    const x = f.bind(play.create(f.api));
+    expect(x.commands.filter((c) => c.show.includes("world")).map((c) => c.id)).toEqual(["reset", "play"]);
+  });
+
+  // targets: none, all standing, one down (A3; its state doesn't decide the bar's height: the bar shows while it's declared)
+  const target = (down) => ({ traits: { "arena.target": down ? { down: { by: "p", at: 1 }, stand: { rotation: [0, 0, 0] } } : {} }, transform: T([0, 0, -5], down ? 1.5 : 0) });
+  const RESET = [
+    ["no targets", {}, false],
+    ["all standing", { a: target(false), b: target(false) }, false],
+    ["one down", { a: target(false), b: target(true) }, true],
+  ];
+  for (const [what, objects, applies] of RESET)
+    it(`Stand targets up: ${what} → ${applies ? "applies" : "null"}`, () => {
+      const state = resetCommand({ change() {} }).state(null, { scene: { objects } });
+      expect(state).toEqual(applies ? { title: "Stand every knocked-over target back up" } : null);
+    });
+});
 
 describe("playing", () => {
   let doc, f, x;
@@ -140,9 +192,10 @@ describe("playing", () => {
     expect(f.calls.entered).toEqual([["walk", "sp"]]);
     expect(f.calls.held).toBeTruthy();
     expect(x.commands.find((c) => c.id === "gun").state(null)).toMatchObject({ checked: true });
-    expect(x.commands.find((c) => c.id === "play").state(null)).toBeNull();
+    expect(stateOf(f, x, "play")).toBeNull();
     // walking already: Play only picks the gun up
     f.calls.held.put();
+    expect(stateOf(f, x, "play")).toMatchObject({ label: "Pick up the gun" });
     f.calls.entered.length = 0;
     x.commands.find((c) => c.id === "play").run(null);
     expect(f.calls.entered).toEqual([]);
@@ -168,8 +221,8 @@ describe("playing", () => {
     const g = fakeApi(bare);
     const y = g.bind(play.create(g.api));
     y.update(scene(bare), {}, { scene: null });
-    expect(g.calls.overlay.textContent).toMatch(/Play/);
-    expect(g.calls.overlay.textContent).not.toMatch(/target|standing/i);
+    expect(g.calls.overlay.textContent).toBe("");
+    expect(stateOf(g, y, "play")).toMatchObject({ label: "Play" });
     y.commands.find((c) => c.id === "play").run(null);
     expect(g.calls.overlay.textContent).not.toMatch(/standing/);
     expect(g.calls.overlay.textContent).toMatch(/Esc put the gun down/);
@@ -211,23 +264,47 @@ describe("playing", () => {
     expect(JSON.stringify(doc.objects.t1)).toBe(before);
   });
 
-  it("the lobby's Stand them up stands knocked-over targets back up", () => {
+  it("Stand targets up (the bar's, reset.js) stands knocked-over targets back up, and the lobby counts it", () => {
     doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
     doc.objects.t1.transform = { position: [0, 0, -5], rotation: [1.5, 0, 0], scale: 1 };
     x.update(scene(doc), {}, { scene: null });
-    // the button, and the menu's Stand targets up (reset.js)
-    expect(x.commands.map((c) => c.id)).toEqual(["play", "gun", "reset"]);
-    f.calls.overlay.querySelector(".arena-reset").click();
+    expect(x.commands.map((c) => c.id)).toEqual(["reset", "play", "gun"]);
+    expect(f.calls.overlay.textContent).toMatch(/0 of 1 targets standing/);
+    expect(stateOf(f, x, "reset")).toBeTruthy();
+    x.commands.find((c) => c.id === "reset").run(null);
     expect(doc.objects.t1.transform.rotation).toEqual([0, 0, 0]);
     expect(doc.objects.t1.traits["arena.target"].down).toBeUndefined();
+    x.update(scene(doc), {}, { scene: null });
+    expect(f.calls.overlay.textContent).toMatch(/1 of 1 targets standing/);
+    expect(stateOf(f, x, "reset")).toBeNull();
   });
 
-  it("put down (Escape, the stage's): back to the lobby; walking goes on", () => {
+  it("put down (Escape, the stage's): back to the lobby; walking goes on, and Play offers the gun again", () => {
     x.commands.find((c) => c.id === "play").run(null);
     f.calls.held.put();
     expect(x.commands.find((c) => c.id === "gun").state(null)).toMatchObject({ checked: false });
-    expect(f.calls.overlay.querySelector(".arena-play").textContent).toMatch(/Pick up the gun/);
+    expect(stateOf(f, x, "play")).toEqual({ label: "Pick up the gun", title: "Take the gun in hand: a click shoots, R reloads" });
   });
+
+  // the HUD only reads (A1): no button, whatever's going on. Looking, walking,
+  // holding the gun × every target standing, one down and scored
+  for (const at of ["looking", "walking", "holding"])
+    for (const knocked of [false, true])
+      it(`the HUD holds no button: ${at}, ${knocked ? "a target down and scored" : "every target standing"}`, () => {
+        if (knocked) {
+          doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
+          x.update(scene(doc), {}, { scene: null });
+        }
+        if (at === "walking") x.commands.find((c) => c.id === "play").run(null), f.calls.held.put();
+        if (at === "holding") x.commands.find((c) => c.id === "play").run(null);
+        const hud = f.calls.overlay;
+        expect(hud.querySelector(".arena-hud")).not.toBeNull();
+        expect(hud.querySelector(".arena-count, .arena-top")?.textContent).toMatch(knocked ? /0 of 1/ : /1 of 1/);
+        if (knocked) expect(hud.querySelector(".arena-scores")?.textContent).toMatch(/You1/);
+        // a <button> or a button role; that it takes no press at all is the
+        // CSS's (pointer-events: none), which the browser probe shows
+        expect(hud.querySelectorAll("button, [role=button]").length).toBe(0);
+      });
 
   it("under the lock a press shoots at once; without it the press is the body's (a drag looks) and the tap's click shoots", () => {
     x.commands.find((c) => c.id === "play").run(null);

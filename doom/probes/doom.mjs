@@ -137,10 +137,10 @@ async function hover(w, p) {
 async function clickAt({ x, y }) {
   await b.click(Math.round(x), Math.round(y));
 }
-/** Play in view w: press ▶ Play (the arena's, which runs wherever the level is: no mode to switch to). */
+/** Play in view w: press Play on the bar of tools (the arena's world command, which runs wherever the level is: no mode to switch to). */
 async function play(w) {
-  await b.waitFor(`window.__p.running("${w}").includes("arena") && !!window.__p.rect(".arena-play", "${w}")`, 8000);
-  await clickAt(await P(`rect(".arena-play", "${w}")`));
+  await b.waitFor(`window.__p.running("${w}").includes("arena") && !!window.__p.rect('.toolbar [data-command="play"]', "${w}")`, 8000);
+  await clickAt(await P(`rect('.toolbar [data-command="play"]', "${w}")`));
   await b.rest(600);
 }
 /** The door's height as view w draws it, above where it rests shut. */
