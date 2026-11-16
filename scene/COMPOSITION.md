@@ -146,7 +146,15 @@ Still open:
   (presence-check.nopause run 3, B's first try: the first press on the
   Card table, the second on the inspector's behaviour picker);
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go.
+  they go;
+- a start placed on a link doesn't arrive when the linked doc starts people
+  in a general body (found by N7's gate, 2026-11-16; Decisions, N7, 1).
+  E1M1 starts people walking at its spawn; linked into a mashup with the
+  start on its link, nobody arrives, because walk is a general part and
+  runs only at the focus (the outermost), while an arrival through a link
+  is offered only the linked doc's stage's bodies. Walk picked by hand
+  from the chip then walks E1M1's floors from the home, which is the
+  spawn's eye. A stage change, and the lead's call (Waiting on the lead).
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -223,6 +231,12 @@ the lead confirms or reverses it):
   serves tests; and a test that drives the stage's manual clock no longer
   drives the gate unless it sets `timeStamp` (Decisions, double-click
   stamps, 4). Not chosen: refusing a double-click with a missing stamp.
+- **Arriving through a link in a general body** (Decisions, N7, 1, a
+  question, not decided): should a start through a link offer the focus's
+  general bodies too, entered at the linked doc's place and read in that
+  doc's stage, or should arriving through a link move the focus there, or
+  is a linked doc that starts people walking simply not started so? Until
+  then, E1M1 on the Cadboro Bay shore isn't published (Decisions, N7, 2).
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2236,3 +2250,102 @@ near-misses at cards on her moving table: all boarded before, none after).
    symptom by those today; a package that did would be wrong by TOOLS
    Decisions 6 (nothing stands on Edit), not something the stage would
    cut, since a carry out there is meant to work.
+
+## Decisions, N7 (2026-11-16, decided unattended in `lane/n7`, for the lead)
+
+N7 is mashups: published docs linked unchanged into a new doc, with no
+stage code. The first candidate was E1M1 on the Cadboro Bay shore. It was
+gated on an unlisted scratch doc, *E1M1 at Cadboro Bay (scratch)*
+(automerge:25Zpxs48qfj7ZaNAaapmwWFvLZCv): Cadboro Bay's link at the origin,
+E1M1's at (−145, 10.29, −680), yaw 0, with the start on E1M1's link. It was
+checked in the real Patchwork by `recovered/publish/shore-check.mjs`, which
+scored 7/8 on its third run. Its first run never loaded the scene package
+(the shell's fetch of its package.json failed with HTTP 557 for 10 minutes),
+and its second run scored 4/8 because of two bugs in the check's own reads.
+
+1. **Finding: a start through a link can't arrive in a general body.**
+   *This is a question for the lead, not a decision.* E1M1's own start is
+   `{ body: "walk", place: <its Spawn> }`. A start placed on a link hands
+   arrival to the linked doc (Decisions, step 16, 2), in that doc's stage and
+   only there (Decisions, step 15 review, 1: `bodyDefs(caller, only)`,
+   `src/stage/view.js` `tryArrive`, `const only = at.through`). walk is
+   general, though: its plugin has no traits (`walk/src/index.js`), and a
+   general part runs only in the focus stage (§3; `src/stage/host.js`
+   `general`). On arrival the focus is the outermost.
+
+   In the real Patchwork the running sets showed walk in the mashup's stage
+   and not in E1M1's. E1M1's stage settled without offering walk, so nobody
+   arrived (`if (only)` … `arrival = null`), 97 s after the page opened. The
+   viewer was left in Look at the home, which is E1M1's spawn eye carried
+   through the link (the feet 0.1 m over the spawn).
+
+   Games night arrives because its body is a seat, which is a trait part of
+   the game's doc. So the two decisions disagree for any doc that starts
+   people in a general body. Alone, E1M1 arrives walking (its stage is the
+   focus). Linked, it doesn't, and a doc should start people the same way
+   alone and linked (the reason Decisions, step 16, 2 gives).
+
+   Everything else composed, with no change (shore-check 2 and 4–8). With
+   Walk picked by hand, as from the body chip, the walker stands 0.05 m over
+   the spawn, and W held for 1.5 s walks 1.79 m. The ray down from the feet
+   hits E1M1's level (stage 2), so a general body in the outermost stage
+   walks a linked doc's floors. E1M1's exit offers Exit and its 11 doors
+   offer Open, all from E1M1's own traversal and joints. Cadboro's hatch
+   offers Open from Cadboro's own stage. There were no error notices.
+
+   The options, for the lead:
+   - (a) A start through a link also offers the focus's general bodies,
+     entered at the linked doc's place, resolved by that doc's stage. The
+     body is the viewer's and not a doc's, so the place still names an
+     object of the doc that holds it.
+   - (b) Arriving through a link moves the focus there (an Enter), so the
+     general parts run in that stage.
+   - (c) Leave it as it is: a doc that starts people walking doesn't start
+     them so when it's linked.
+
+   Not taken: the publisher writing `{ body: "walk", home: <the spawn's
+   eye> }` on the mashup itself. walk would then start at the eye, which a
+   returning viewer's saved camera replaces, and that hides the gap rather
+   than closing it.
+2. **E1M1 at Cadboro Bay is not published.** The gate's rule was "NO-GO if
+   arrival needs a stage change", and it does (1). The scratch doc stays
+   unlisted and isn't in the folder. N7's fallback for its second mashup
+   is the Arcade nested in Games night (a mashup of a mashup). Everything
+   needed to publish once (1) is answered is kept outside git, in
+   `recovered/publish/`:
+   - the place and its proof, `shore-place.mjs --check` (18/18);
+   - the check, `shore-check.mjs`;
+   - the publish command: `publish-links.mjs --title "E1M1 at Cadboro Bay"
+     --link "Cadboro Bay=automerge:JjZVTNDWJnvw9Gp5nZ936e7KRZ4@0,0,0"
+     --link "E1M1=automerge:8E9xshmtfuMbyW9rXC44ojajTHj@-145,10.29,-680@0"
+     --start 2 --view-like 1`.
+3. **The place is Gyro Park.** It is the flat lawn at the head of Cadboro
+   Bay, at centre (−145, −680), yaw 0. It was found by a search over a 5 m
+   grid within 1500 m of the moorings, with the footprint within 150 m of
+   the sea. Under every node of the footprint the rule holds:
+   - it is land (heights 5.18 to 5.76 m) and on the grid;
+   - nothing the terrain draws stands there (no buildings or trees);
+   - no other object of the place swings over it;
+   - the level's drawn geometry, with its doors at their lowest stops,
+     clears the drawn Ground by 0.05 m at all 20,907 overlay points.
+
+   Controls over the water, over the clubhouse, over the sloop and off the
+   grid each fail their clause. The level's y is the rule's pose rounded UP
+   to the centimetre: 10.28 for 10.2840 left 4 overlay points 4 mm short,
+   so the spec printer rounds up, and shore-place's row 18 fails if it
+   doesn't. Because a Doom level isn't flat, it floats over the lawn by a
+   median 4.8 m per 5 m cell (p90 9.3, max 17 m), and its spawn floor is
+   4.9 m up. Whether that is acceptable, or the level should have a stand,
+   is the lead's call.
+4. **A linked place brings its things, not its weather** (STAGE.md
+   Ambients, checked as the rule and not as a bug, by shore-check 4).
+   Cadboro's stage offers `atmosphere`, `water` and `wind`, and none of them
+   is the world's. The world has no ambients at all, so the default sky
+   shows. Cadboro's own `terrain.sky` is `{}`, so the sky looks the same,
+   but its weather (wind from 235° at 4 m/s) isn't the mashup's. Its Sea
+   is drawn as a clipped block, one `water-patch` with no open ocean, which
+   is why the water reads as Cadboro's: water runs in Cadboro's stage
+   alone, and its clip is the Sea. Whether a doc should be able to say "my
+   world's ambients are link N's" is the lead's question (N7's questions).
+5. **Name and icon, if (1) lets it publish:** *E1M1 at Cadboro Bay*,
+   Castle.
