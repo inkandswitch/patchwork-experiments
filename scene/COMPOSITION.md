@@ -130,7 +130,10 @@ Still open:
   (lane/xarrow); the double-click fix covers only the second press. A miss
   inside G now only fails to select (it used to come aboard: Fixed since);
   editclick-run's clicks with 150 ms of her sea between aim and press
-  landed on the boat 3 to 8 times in 12;
+  landed on the boat 3 to 8 times in 12. Aiming only at a card the view's
+  own pick lands on doesn't cure it: in the real Patchwork on 2026-11-16
+  (presence-check.nopause runs 3 and 4, aims checked so) first presses
+  still landed on her Card table 80 ms after the aim;
 - the first click of a double-click can open the inspector under the
   second: with the inspector shut, a first press that selects anything
   (the link, or the Card table it missed onto) narrows the canvas, and
@@ -138,7 +141,9 @@ Still open:
   inspector's, so the stage never hears them (editclick-run's first try,
   every run: a 700 px view, its press missing the card for the Card table,
   the gaps 222 to 250 ms, well inside the gate). The second try, the
-  inspector already open, enters;
+  inspector already open, enters. The same in the real Patchwork
+  (presence-check.nopause run 3, B's first try: the first press on the
+  Card table, the second on the inspector's behaviour picker);
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
@@ -175,13 +180,49 @@ Fixed since (each item names its Decisions section below):
   arrived over 500 ms later and the router refused a double-click Chrome
   itself fired (enter-check, 2026-11-16, a stalled try, retried). The gate
   now times the events' own `timeStamp`s (Decisions, double-click stamps,
-  below; lane/dblstamp).
+  1, below; lane/dblstamp), and the dblclick as the release that made it,
+  since Chrome stamps a dblclick when it dispatches it (Decisions,
+  double-click stamps, 3; after the lane/bodyswitch merge). Checked in the
+  real Patchwork only with probe-made input whose stamps are planned as an
+  OS would stamp a person's clicks (Decisions, double-click stamps, 4);
+  never with real OS input. With such input, before the release timing,
+  enter-check's first try (presses 250 ms apart by their stamps, handled
+  1102 ms apart) didn't enter (12/13); after it, its first try (250 ms by
+  the stamps, handled 1011 ms apart) entered (13/13), and
+  presence-check.nopause entered on each peer's first try (12/12).
 
 Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
   Fitting out's hatch; equal at rest): it plays the acting stage's held pose
   back as any peer does (Decisions, final fixer after the next phase, 2).
   The lead accepted it on 2026-11-15 ("it's fine").
+
+Waiting on the lead (decided unattended on 2026-11-16; each stands until
+the lead confirms or reverses it):
+- **In Edit, a click on the host inside an entered link is Edit's and
+  does nothing** (Decisions, Edit's click is Edit's, 1; lane/bodyswitch).
+  This reverses Decisions, step 14, 7 ("Edit's click outside the focus
+  isn't Edit's", itself unattended), and narrows TOOLS Decisions 4 (the
+  lead's 2026-11-12 answer that what is outside an entered link stays
+  live) for Edit's click alone: presses, keys, the menu, the prompt and
+  every verb on them still reach outside from Edit. TOOLS Decisions 6
+  gained a sentence saying this, marked there as unattended.
+- **Not chosen there** (Decisions, Edit's click is Edit's, 2): a click
+  outside the focus clearing the selection, and a click outside the focus
+  leaving the focus out to where it landed.
+- **The asymmetry this leaves** (found by the merge's critic): in Edit a
+  click on nothing (or on a stale hit) with something selected clears the
+  selection, while a click on something outside the focus keeps it. The
+  reason given for keeping it ("a missed card should not drop what is
+  selected") fits a near miss onto empty sea just as well. Both should
+  probably keep, or both clear; unchanged until the lead says which.
+- **No stamp on any of the three events puts the double-click on the
+  stage's clock** (Decisions, double-click stamps, 2; lane/dblstamp). Only
+  an event whose `timeStamp` is 0 takes that path, and no engine in use
+  makes one (Chrome and happy-dom stamp every event), so in practice it
+  serves tests; and a test that drives the stage's manual clock no longer
+  drives the gate unless it sets `timeStamp` (Decisions, double-click
+  stamps, 4). Not chosen: refusing a double-click with a missing stamp.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2102,6 +2143,36 @@ The gate's page time (the Still open item, now under Fixed since).
    hand. Not chosen: refusing outright when a stamp is missing (a host
    test or tool dispatching plain events would lose double-clicks it has
    today), or the browser's `detail` click count (Decision 3 above).
+3. **The dblclick is timed as its release** (2026-11-16, after the
+   lane/bodyswitch merge's review; not in lane/dblstamp). Chrome stamps a
+   `dblclick` when it dispatches it, not when the release that made it was
+   made: in the real Patchwork (presence-check.nopause run 3, every press
+   and release stamped as made), B's dblclicks were stamped 1518 and 835 ms
+   after their second presses, while the pointerups that made them carried
+   their inputs' stamps, 50 ms after. So a dblclick's own stamp is page
+   time again, and Decision 1 cured only the first gap. The router now
+   keeps the release after the last press and times the dblclick by it;
+   the browser fires the dblclick from that release, in the same task, so
+   its time is the dblclick's. A dblclick with no release heard after the
+   last press (one dispatched alone) keeps its own stamp. The second gate
+   now reads: the second click released within 500 ms of its press.
+   router.test.js has the dblclick stamped a second after its release
+   still resolving to the first press's hit (it failed before), held
+   second clicks on and past the bound, unstamped releases, and no release
+   heard.
+4. **What it costs.** The gates read a clock the stage's injectable `time`
+   source doesn't govern: happy-dom and Chrome stamp every event, so a test
+   that drives the stage's manual clock no longer drives the gate unless it
+   sets `timeStamp` (router.test.js does). Decision 2's fallback is reached
+   only by an event whose `timeStamp` is 0, which no engine in use makes:
+   in practice it serves tests (Waiting on the lead, above). A probe that
+   drives Chrome over CDP must pass `timestamp` on each
+   `Input.dispatchMouseEvent`: unstamped, Chrome stamps each event as it
+   dispatches it, and an awaited dispatch waits out a busy page, so the
+   stall lands in the stamp (presence-check run 1, B's third try: presses
+   1023 ms apart by their stamps, 90 ms apart as sent). enter-check and
+   presence-check.nopause plan their stamps from the first press since
+   2026-11-16. Real OS input has not been checked by any run.
 
 ## Decisions, Edit's click is Edit's (2026-11-16, made unattended in `lane/bodyswitch`)
 

@@ -1023,13 +1023,21 @@ between the clicks names nothing). Outside them, or for a slower double,
 the dblclick casts a new ray like any other event. A first hit whose object
 the first click removed is kept: what it comes to is its consumer's. The
 500 ms gates time the clicks as they were made, by each event's own
-`timeStamp` (one clock for `pointerdown` and `dblclick`), not as the page
-handled them: a page busy between the clicks (the inspector opening on the
-first click's selection) still has the double-click the browser fired, and
-one catching up on queued events doesn't pass clicks made too far apart.
-When any of the three events has no stamp (a synthetic one with
+`timeStamp` (one clock for every pointer event), not as the page handled
+them: a page busy between the clicks (the inspector opening on the first
+click's selection) still has the double-click the browser fired, and one
+catching up on queued events doesn't pass clicks made too far apart. The
+dblclick is timed as the release that made it (the `pointerup` after the
+second press), because Chrome stamps a dblclick when it dispatches it, not
+when its release was made; a dblclick with no release heard after the last
+press keeps its own stamp. When any of the three times has no stamp (a synthetic one with
 `timeStamp` 0), all three are timed on the stage's clock as each was
-handled instead, never one clock against the other.
+handled instead, never one clock against the other. A driver that makes
+input (a probe's `Input.dispatchMouseEvent`) gives each event its
+`timestamp`, as an OS stamps a person's clicks: without it Chrome stamps
+each event as it dispatches it, and a dispatch that waits out a busy page
+carries the wait into the stamp. A test on the stage's manual clock that
+times a double-click sets `timeStamp` on its events.
 
 **A release that never comes.** A mouse that moves with no button down was
 released where the stage didn't hear it, and a lost pointer capture or

@@ -1076,8 +1076,9 @@ The project lead decided the five open questions on 2026-11-12.
      the click: a press (a drag, a carry) still goes down the chain first.
      A package's click verb is reached outside Edit, or by its key and the
      menu. This holds inside an entered link too: a click on the host there
-     is Edit's, and does nothing (COMPOSITION.md, Decisions, Edit's click is
-     Edit's, 2026-11-16).
+     is Edit's, and does nothing (decided unattended, 2026-11-16,
+     lane/bodyswitch; for the lead to confirm: COMPOSITION.md, Decisions,
+     Edit's click is Edit's).
    - **The inspector stays open** (decided unattended, 2026-11-14; lane/loose).
      It used to open on a selection and shut on deselecting, so the canvas
      changed width at every select and deselect and everything on screen
