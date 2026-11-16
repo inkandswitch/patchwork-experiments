@@ -1867,7 +1867,8 @@ minor faults. Each fix has a test that fails without it.
 86. **Ship at anchor is not republished on its own.** No example in the
     folder is the bare Ship at anchor; Lost Cities aboard and Fitting out
     run that template themselves when they are published. `publish-ship
-    --anchor` stays for when one is wanted.
+    --anchor` stays for when one is wanted. (Superseded by 120: the Model
+    room links her, so she is published and listed on her own.)
 87. **The Quiet games room and Games night are republished with the
     boat.** `publish-aboard` makes a new game doc G on every run, and the
     room's Lost Cities is the boat's G (the shared-game proof), so the
@@ -2072,6 +2073,16 @@ minor faults. Each fix has a test that fails without it.
      vertex shader, transcribes them on the surface's real uniforms
      (`uWaves`, `uPhase`, `uCell`, `uInner`) after `update(t, origin)`,
      and holds every vertex to `drawnVertex`, at the capped sizes too.
+120. **Ship at anchor is published on her own and listed** (integration,
+     2026-11-16). The Model room links her (the design's "now on its own"),
+     so a bare Ship at anchor is in the folder; supersedes 86.
+121. **Model basin and Ship at sea is laid out again.** At the old layout
+     (the basin at x −18 yawed 20°, Ship at sea at +18) her clip, 116 × 223 m
+     turned 45° about (43.5, −83.2) in her frame, covers the basin. The basin
+     now sits at (−20, 0, 35), Ship at sea at (20, 0, 0), home 0,55,125 over
+     0,0,17.5: every point of the basin's rim is at least 11.1 m outside her
+     block. She is under way, so a solo visit sails her on, and after enough
+     of them the room shows her beside an empty block (Costs 2).
 
 ## Invariants
 
@@ -2255,3 +2266,22 @@ lane; the republishing order is the design's (Ship at sea, Ship at anchor,
 Lost Cities aboard with the games room and Games night, Fitting out,
 Cadboro Bay, the Harbour, the Model basin and Ship at sea, then the Model
 room).
+
+Integrated 2026-11-16: `lane/clip` merged into scene-stage (5ae3b34c);
+scene, water, sailing and terrain built from the committed tree and
+synced. Suites: scene 1500, water 1106, sailing 788, terrain 108. Chrome on
+the merged tree: harbour-run 23/23, basin-run 15/15, model-room-run 18/18,
+pins-run 27/27, links-run 37/37, sailing-run 85/85, extract-run 25/25,
+aboard-run 70/71 (step 13's X arrow, as before; its double-click entered
+G). Republished in the design's order: Ship at sea
+(automerge:Vbo6eVPveVH4tBRyPZ4ziBxYcUF), Ship at anchor, now listed on her
+own (automerge:3NkHf9D3oWisX4E4BCRk3FM1xQNA, Decision 120), Lost Cities
+aboard (automerge:3qAsXwsm1T29mxgfF8fUAQk3bpS3) with the games room, Games
+night and E1M1's exit, Fitting out, Cadboro Bay, the Harbour
+(automerge:wWT7oXqy2avFoaA12RELnJag6Yi), Model basin and Ship at sea laid
+out again (automerge:3dbt3t2QxqcGwfAU7dFM6Nb2KqCt, Decision 121), and the
+Model room (automerge:2n6eFnz8tvrEMzo3NEjXqnPubM8R). Checked in the real
+Patchwork: the Model room 12/12 (two blocks, nothing drawn outside them,
+both hulls afloat on their own), the dry room 14/14, the Harbour 11/11 (no
+blocks), and the earlier checks unchanged (80/80 in all). `lane/dblclick`
+is not merged; it waits for its own review (Decision 112).
