@@ -59,11 +59,11 @@ const UNTIL = arg("--until"); // stop after this section (for working on the pro
 
 // The page seeds Math.random (--seed): runs repeat, but for real time. The sea (its waves and its
 // gusts) is pinned apart from that: the template draws the sea's seed from Math.random, which every
-// new id draws from too, so a package more or an object more before it handed the same --seed another
-// sea (the water split did: loose/probes.md, 2026-11-15). The probe writes the sea's own seed into the
-// doc before the world first runs: --sea N, by default the run's --seed. Not every sea exercises every
-// step: on some the anchor breaks out with her well off the wind, and the leave step reports itself
-// not exercised (sailing/DESIGN.md, under the modules' table).
+// new id draws from too, so a package more or an object more before it would hand the same --seed
+// another sea. The probe writes the sea's own seed into the doc before the world first runs: --sea N,
+// by default the run's --seed. Not every sea exercises every step: on some the anchor breaks out with
+// her well off the wind, and the leave step reports itself not exercised (sailing/DESIGN.md, "Leaving
+// the anchor", which lists the seas and the open defect).
 const SEED = Number(arg("--seed") ?? 1);
 const SEA = Number(arg("--sea") ?? SEED);
 const b = await browser({ root: ROOT, port: 4760, cdp: 9760, page: `/sailing/probes/sailing-probe.html?held&seed=${SEED}`, width: 1616, height: 530, show: process.argv.includes("--show"), gpu: !process.argv.includes("--swiftshader"), timeout: 900_000 });
@@ -464,18 +464,16 @@ try {
   // port), B backs the jib, and her heading must swing past 45° within 30 s of sea time: one bounded
   // step, reported whatever happens, nothing retried; then B lets it fly.
   const jibId = await P(`byName("Jib")`);
-  // the main hoisted at anchor, she lies head to wind as it breaks out, in the HUD's own sense of the two states
-  // where it says to back the jib (hud.js): luffing (the apparent wind within 40°, under 0.5 m/s and not going
-  // astern faster than 0.15) or in irons (within 35°, going astern faster than that), or the step isn't
-  // exercised. (In irons is the state DESIGN.md expects the moment the anchor breaks out; the gate once took
-  // luffing alone, so a sea where she broke out going astern dead into the wind didn't count.)
+  // the main hoisted at anchor, she lies head to wind as it breaks out, as the HUD itself has it: its advice says
+  // to back the jib exactly when she's luffing or in irons (hud.js hudModel, on a ship whose jib B can back), so
+  // the gate is that advice, read off B's HUD, never its thresholds copied here. Any other advice, and the step
+  // isn't exercised. (The gate before was |speed| under 0.5 m/s and the apparent wind within 40°, either way
+  // through the water: neither of the HUD's states exactly, and it missed in irons going astern faster.)
   const advice = (await P("text('[data-k=\"advice\"]', 'b')"))[0] ?? "";
   const rdLeave = await P(`read('${hull}', 'b')`);
-  const leave = { awa0: n2(rdLeave.apparentWind.angle), speed0: n2(rdLeave.speed) };
-  const awaLeave = Math.abs(rdLeave.apparentWind.angle), vLeave = rdLeave.speed;
-  const headToWind = (awaLeave < (40 * Math.PI) / 180 && Math.abs(vLeave) < 0.5 && vLeave >= -0.15) || (awaLeave < (35 * Math.PI) / 180 && vLeave < -0.15);
-  check("weighed with the main up, she lies head to wind as the HUD has it (luffing: within 40°, under 0.5 m/s; or in irons: within 35°, going astern): the leave step is exercised", headToWind, leave);
-  check("head to wind, the HUD names the move (back the jib, B at the helm)", /back the jib \(B at the helm/.test(advice), { advice, awa: n2(rdLeave.apparentWind.angle), speed: n2(rdLeave.speed) });
+  const leave = { advice, awa0: n2(rdLeave.apparentWind.angle), speed0: n2(rdLeave.speed) };
+  const headToWind = /back the jib \(B at the helm/.test(advice);
+  check("weighed with the main up, she lies head to wind as the HUD has it (it says to back the jib, B at the helm: luffing or in irons): the leave step is exercised", headToWind, leave);
   const hLeave = compassOf(await P(`worldOf('${hull}', 'b')`));
   await keyDown("a");
   await b.rest(600); // the wheel a third to port
@@ -502,9 +500,10 @@ try {
   leave.bow = /bow to port/.test(leave.hint ?? "") ? "port" : /bow to starboard/.test(leave.hint ?? "") ? "starboard" : null;
   check("B, the wheel to port, backs the jib on the side opposite the bow the hint names, then lets it fly", headToWind && leave.bow != null && leave.held != null && leave.held !== leave.bow && /B (unroll jib backed|back jib), bow to /.test(leave.hint ?? "") && leave.let == null, leave);
   // compass + is her bow to starboard
-  // (within 30 s, not 15: she breaks out with a little headway, ~0.3 m/s, and going ahead the wheel to
-  // port turns her bow to port first, for some 6 s, until the backed jib wins: seed 1 passes 45° at 18.5 s.
-  // From rest the stock rig does it in 6–10 s: stock-rig.test.js, DESIGN.md "Leaving the anchor".)
+  // (within 30 s, not 15: on a sea where she breaks out luffing with a little headway, going ahead the wheel to
+  // port turns her bow to port first until the backed jib wins: sea 383967344 passes 45° in 16.35 s; the default
+  // sea, in irons going astern, in 5.55 s. From rest the stock rig does it in 6–10 s: stock-rig.test.js,
+  // DESIGN.md "Leaving the anchor", which lists every sea measured.)
   check("backed, she falls off the way the hint said: her heading swings past 45° that way within 30 s of sea time", headToWind && leave.past != null && Math.sign(leave.turned) === (leave.bow === "starboard" ? 1 : -1), leave);
   // the tack she's on: +1 the wind on her port side (her heading the wind's + 90°), −1 starboard
   const side = (await P(`read('${hull}', 'b')`)).apparentWind.angle < 0 ? 1 : -1;

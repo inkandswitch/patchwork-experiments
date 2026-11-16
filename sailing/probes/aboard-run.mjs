@@ -79,9 +79,9 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sail
 const QUICK = process.argv.includes("--quick");
 // The sea (its waves and gusts) is pinned apart from the page's seeded Math.random: the template draws
 // the sea's seed from that stream, which every new id draws from too, so a package more or an object
-// more before it handed the same --seed another sea (the water split did: loose/probes.md, 2026-11-15),
-// and with it another heel under step 13's arrow. The probe writes the sea's own seed into the doc
-// before the world first runs: --sea N, by default the run's --seed.
+// more before it would hand the same --seed another sea, and with it another heel under step 13's
+// arrow. The probe writes the sea's own seed into the doc before the world first runs: --sea N, by
+// default the run's --seed.
 const SEA = Number(arg("--sea") ?? arg("--seed") ?? 1);
 /** How far (px) the table's top may wander on a seated view's screen over the sample. */
 const STEADY_PX = 40;
