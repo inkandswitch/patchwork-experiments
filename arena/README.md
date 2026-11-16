@@ -44,7 +44,10 @@ when). The position isn't touched. Scores aren't stored: they are counted
 from `down.by`, so two players hitting one target at once agree whose it is.
 *Stand targets up* (a button on the bar of tools whenever a target is down,
 in any body, and in the menu; `standTargetsUp` in `src/level.js`) puts each
-back at its `stand` rotation, where it is now, and clears both keys.
+back at its `stand` rotation, where it is now, and clears both keys. It is
+listed before Play, so on the bar it comes and goes to Play's left and Play,
+the cluster's last, never moves under a pending click: a click meant for
+Play that landed on it would wipe the scores, with no undo outside Edit.
 
 **Copies** (scene/STAGE.md, "Copying objects"). `down` is play state, marked
 `runtime` in the trait's description, so a copy of a knocked-over target, in
@@ -57,11 +60,11 @@ it came from.)
 
 Enter, or **Play** on the bar of tools (scene/TOOLS.md §6: a world command,
 `show: ["world", "menu"]`, so it is at the bar's right end looking, walking
-or editing) walks you in: the walk
-body (scene/TOOLS.md §4, the walk package's) entered at a spawn point (a
-random one; with none, at the eye), with the gun in hand. The pointer is
-locked (where it can't be, drag to look). W A S D or the arrows move, Shift
-runs, Space jumps: those keys are the walk body's.
+or editing) walks you in: the walk body (scene/TOOLS.md §4, the walk
+package's) entered at a spawn point (a random one; with none, at the eye),
+with the gun in hand. The pointer is locked (where it can't be, drag to
+look). W A S D or the arrows move, Shift runs, Space jumps: those keys are
+the walk body's.
 
 The **gun** is a held tool (`gun`, G; scene/TOOLS.md §4): a click shoots
 (12 in the magazine, reloading when it's empty), R or a right-click reloads
@@ -147,7 +150,8 @@ nothing.
   up the gun, shoot and put it down; a hit knocks a target over once,
   scores it and tells the others; Play's state (holding × walking × target,
   every row), Stand targets up's (no targets, all standing, one down), the
-  commands' surfaces, and a HUD with no button looking, walking or holding;
+  commands' surfaces and their order (Play the last world command), and a
+  HUD with no button looking, walking or holding;
 - `src/edit.test.js`: the template (one file per kind, the group, the look,
   starting people walking at a spawn point), the parts (where each goes,
   what makes a level, one file per kind per scene), Stand targets up, a

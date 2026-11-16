@@ -154,6 +154,16 @@ describe("Play and Stand targets up: world commands, on the bar in every body (s
     expect(Object.fromEntries(x.commands.map((c) => [c.id, c.show]))).toEqual({ play: ["world", "menu"], gun: ["toolbar", "menu"], reset: ["world", "menu"] });
   });
 
+  // the bar's world cluster is right-aligned, in command order (scene's
+  // barEntries): the last entry's place is anchored. Play goes last, so Stand
+  // targets up coming as a target falls never slides Play under a pending
+  // click (a click meant for Play would stand the targets up and wipe the scores)
+  it("on the bar Play is the arena's last world command: Stand targets up comes and goes to its left", () => {
+    const f = fakeApi({ objects: {} });
+    const x = f.bind(play.create(f.api));
+    expect(x.commands.filter((c) => c.show.includes("world")).map((c) => c.id)).toEqual(["reset", "play"]);
+  });
+
   // targets: none, all standing, one down (A3; its state doesn't decide the bar's height: the bar shows while it's declared)
   const target = (down) => ({ traits: { "arena.target": down ? { down: { by: "p", at: 1 }, stand: { rotation: [0, 0, 0] } } : {} }, transform: T([0, 0, -5], down ? 1.5 : 0) });
   const RESET = [
@@ -258,7 +268,7 @@ describe("playing", () => {
     doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
     doc.objects.t1.transform = { position: [0, 0, -5], rotation: [1.5, 0, 0], scale: 1 };
     x.update(scene(doc), {}, { scene: null });
-    expect(x.commands.map((c) => c.id)).toEqual(["play", "gun", "reset"]);
+    expect(x.commands.map((c) => c.id)).toEqual(["reset", "play", "gun"]);
     expect(f.calls.overlay.textContent).toMatch(/0 of 1 targets standing/);
     expect(stateOf(f, x, "reset")).toBeTruthy();
     x.commands.find((c) => c.id === "reset").run(null);
@@ -291,7 +301,9 @@ describe("playing", () => {
         expect(hud.querySelector(".arena-hud")).not.toBeNull();
         expect(hud.querySelector(".arena-count, .arena-top")?.textContent).toMatch(knocked ? /0 of 1/ : /1 of 1/);
         if (knocked) expect(hud.querySelector(".arena-scores")?.textContent).toMatch(/You1/);
-        expect(hud.querySelectorAll("button, [onclick], [role=button]").length).toBe(0);
+        // a <button> or a button role; that it takes no press at all is the
+        // CSS's (pointer-events: none), which the browser probe shows
+        expect(hud.querySelectorAll("button, [role=button]").length).toBe(0);
       });
 
   it("under the lock a press shoots at once; without it the press is the body's (a drag looks) and the tap's click shoots", () => {
