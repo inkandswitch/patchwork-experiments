@@ -1024,7 +1024,14 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   tree reach no scene key; the package registers no `scene.outline` and
   Edit's toolbar has Inspector and no Objects (`parts/inspector.test.js`,
   "one pane"); a focus move with the pane open reopens it inside, its tree
-  on the link's objects (`stage/focus.test.js`).
+  on the link's objects (`stage/focus.test.js`). Local probes (built
+  tool, headless Chrome): editor-run 81/81 with arena built (new
+  `treeAboveTheFields`: the tree on top, at most 40% of the pane;
+  `inspectorShowsIt`: one Inspector tab, its tree's row and its fields on
+  the same object), parts-run 20/20, xdnd-run (main) 60/60, hand-run 33/33.
+  drag-run times out on scene-stage too (not this change). The real
+  Patchwork checks (realcheck-editbody, grip-check, enter-check) wait for
+  the integrator's build and sync.
 
 ## What it costs
 
