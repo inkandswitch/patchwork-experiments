@@ -40,9 +40,13 @@ On an empty scene's start screen, **Cadboro Bay (RVYC)**:
    doc (sources and licences), with the `terrain.credit` trait, so the view
    shows "© OpenStreetMap contributors (ODbL) · NOAA NCEI · CHS · ECCC · not
    for navigation" at its foot;
-3. gives the scene a sea (`sailing.sea`) with a typical summer afternoon:
-   4 m/s from 235° (WSW), wave scale 0.5 (a south-westerly reaches the bay
-   over Uplands and Oak Bay, so the bay is a lee);
+3. gives the scene its weather (`sailing.weather`, a typical summer
+   afternoon: 4 m/s from 235°, WSW) and the bay's Sea at y = 0 (open water
+   with `sailing.sea`, wave scale 0.5: a south-westerly reaches the bay over
+   Uplands and Oak Bay, so the bay is a lee). The Sea's `clip` is the
+   terrain's footprint from its known grid, 150 m deep, so the bay placed in
+   a world with no open water is a block of its own sea (water/WATER.md,
+   "Clipped open water");
 4. lays sailing's sloop (the `sailing.sloop` part, found in the registry,
    never imported) on the mooring field, head to wind, main down, jib
    rolled away, anchor down with 25 m of chain (sailing has no mooring buoy, so her anchor
