@@ -3,7 +3,7 @@
 // malformed, out of range}.
 import { describe, expect, it } from "vitest";
 import { plugins } from "./index.js";
-import { DEFAULTS, FIELDS, weatherParams, windOf } from "./weather.js";
+import { DEFAULTS, FIELDS, PLACES, SUMMED, placeOf, provenance, sumOf, weatherParams, windOf } from "./weather.js";
 
 const INIT = plugins[0].describes.weather.init;
 
@@ -104,5 +104,54 @@ describe("windOf: the world's wind is the trait's own numbers", () => {
     const w = windOf(weatherParams({}));
     expect(Object.keys(w).sort()).toEqual(["from", "gustiness", "seed", "speed"]);
     expect(JSON.parse(JSON.stringify(w))).toStrictEqual(w);
+  });
+});
+
+describe("provenance: fetched, dialled since fetch, or dialled", () => {
+  it("the summed fields are every field but place and seed, in order", () =>
+    expect(SUMMED).toEqual(["lat", "lon", "zone", "date", "hour", "wind", "from", "gustiness", "cover", "clouds", "base", "visibility", "rain"]));
+
+  it("the sum is exact: the summed fields in force, as JSON", () => expect(sumOf(DEFAULTS)).toBe('[48.454,-123.2915,"America/Vancouver","2026-07-15",15,4,235,0.3,0.35,"cumulus",1200,10000,0]'));
+
+  /** A trait as a fetch writes it: its fields, and a source summing them in force. */
+  const fetched = (t) => ({ ...t, source: { name: "Open-Meteo", api: "forecast", for: "2026-07-15T22:00Z", fetched: "2026-07-15T22:03:00Z", sum: sumOf(weatherParams(t)) } });
+  const F = fetched({ ...DEFAULTS, wind: 6.2, from: 250, cover: 0.8, clouds: "stratocumulus", visibility: 24000 });
+
+  // [name, trait] → provenance
+  const rows = [
+    ["undefined", undefined, "dialled"],
+    ["no source", DEFAULTS, "dialled"],
+    ["a source that isn't a map", { ...DEFAULTS, source: "Open-Meteo" }, "dialled"],
+    ["a source with no sum", { ...DEFAULTS, source: { name: "Open-Meteo" } }, "dialled"],
+    ["a sum that isn't a string", { ...DEFAULTS, source: { sum: 5 } }, "dialled"],
+    ["an inherited source", Object.create({ source: F.source }), "dialled"],
+    ["as fetched", F, "fetched"],
+    ["fetched with fields left out (their defaults in force)", fetched({ wind: 6 }), "fetched"],
+    ["fetched, a malformed field (its default in force, on both sides)", fetched({ wind: "6" }), "fetched"],
+    ["fetched, then the place renamed", { ...F, place: "RVYC" }, "fetched"],
+    ["fetched, then the seed dialled", { ...F, seed: 7 }, "fetched"],
+    ["fetched, then a field written as the value in force", { ...F, rain: 0 }, "fetched"],
+    ["a sum from other fields", { ...DEFAULTS, source: F.source }, "dialled since fetch"],
+  ];
+  for (const [name, trait, want] of rows) it(`${name} → ${want}`, () => expect(provenance(trait)).toBe(want));
+
+  // Every summed field, dialled to another value it can hold, makes it "dialled since fetch".
+  const other = { lat: 48.95, lon: -125.558, zone: "UTC", date: "2026-07-16", hour: 15.25, wind: 6.3, from: 251, gustiness: 0.35, cover: 0.85, clouds: "stratus", base: 1250, visibility: 24100, rain: 0.1 };
+  it("the table of other values covers every summed field", () => expect(Object.keys(other)).toEqual([...SUMMED]));
+  for (const k of SUMMED) it(`fetched, then ${k} dialled → dialled since fetch`, () => expect(provenance({ ...F, [k]: other[k] })).toBe("dialled since fetch"));
+});
+
+describe("placeOf: the place the weather is at", () => {
+  it.each([
+    [{}, "Cadboro Bay"],
+    [{ lat: 48.95, lon: -125.558 }, "Ucluelet"],
+    [{ lat: 48.95, lon: -125.558, place: "Ukee" }, "Ucluelet"],
+    [{ lat: 48.95, lon: -125.558, zone: "UTC" }, null],
+    [{ lat: 48.4541 }, null],
+    [{ lon: -125.558 }, null],
+  ])("%j → %s", (t, want) => expect(placeOf(weatherParams(t))?.place ?? null).toBe(want));
+
+  it("every place is on the sliders (its params are itself)", () => {
+    for (const q of PLACES) expect(weatherParams(q)).toEqual({ ...DEFAULTS, ...q });
   });
 });

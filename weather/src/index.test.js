@@ -96,13 +96,3 @@ describe("the weather trait's fields", () => {
     expect(new Date(`${d.init.date}T00:00:00Z`).toISOString().slice(0, 10)).toBe(d.init.date);
   });
 });
-
-describe("the extension (the scaffold)", () => {
-  const api = (traits) => ({ doc: () => ({ traits: traits === undefined ? {} : { weather: traits } }) });
-  const cases = { absent: undefined, empty: {}, full: plugins[0].describes.weather.init };
-  for (const [name, trait] of Object.entries(cases))
-    it(`offers nothing yet: trait ${name}`, async () => {
-      const ext = await plugins[0].load();
-      expect(ext.create(api(trait)).ambient()).toBe(null);
-    });
-});

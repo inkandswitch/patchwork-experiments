@@ -54,3 +54,45 @@ export function weatherParams(trait) {
 export function windOf(p) {
   return { speed: p.wind, from: p.from, seed: p.seed, gustiness: p.gustiness };
 }
+
+// ─── places and provenance ───────────────────────────────────────────────────
+
+/**
+ * The places the Place command offers (WEATHER.md, "Setting it"): a name for
+ * people and where the sun is computed from. Cadboro Bay is the defaults';
+ * Ucluelet is terrain's origin there (terrain/src/ucluelet.js ORIGIN).
+ */
+export const PLACES = Object.freeze([
+  Object.freeze({ place: "Cadboro Bay", lat: 48.454, lon: -123.2915, zone: "America/Vancouver" }),
+  Object.freeze({ place: "Ucluelet", lat: 48.95, lon: -125.558, zone: "America/Vancouver" }),
+]);
+
+/** The place among PLACES the params are at (lat, lon and zone exactly; the name is a label), or null. */
+export const placeOf = (p) => PLACES.find((q) => q.lat === p.lat && q.lon === p.lon && q.zone === p.zone) ?? null;
+
+/**
+ * The fields a fetched snapshot speaks for: the conditions (wind, gusts,
+ * sky) and the place and moment they are of. Not `place` (a label) or
+ * `seed` (which gust pattern plays, not the weather's).
+ */
+export const SUMMED = Object.freeze(FIELDS.map((f) => f.key).filter((k) => k !== "place" && k !== "seed"));
+
+/**
+ * The key a fetch writes as `source.sum`: the summed fields in force, in
+ * order, as JSON. Exact, not a hash, so no dialled weather can pass for a
+ * fetched one.
+ */
+export const sumOf = (p) => JSON.stringify(SUMMED.map((k) => p[k]));
+
+/**
+ * Where the weather in force came from (WEATHER.md, "The data"):
+ * "fetched" while every summed field is as the fetch wrote it, "dialled
+ * since fetch" once one isn't, and "dialled" with no fetch on record (no
+ * `source`, or one without a string `sum`). Pure: nothing intercepts an
+ * edit to know.
+ */
+export function provenance(trait) {
+  const s = trait && typeof trait === "object" && Object.hasOwn(trait, "source") ? trait.source : null;
+  if (!s || typeof s !== "object" || typeof s.sum !== "string") return "dialled";
+  return s.sum === sumOf(weatherParams(trait)) ? "fetched" : "dialled since fetch";
+}
