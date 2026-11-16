@@ -109,7 +109,8 @@
 }
 
 /* what the keys do here, top middle (the bottom is the panel's, and the
-   notices' toasts); before coming aboard, the way in is top left (below) */
+   notices' toasts); before coming aboard, a status hint top left (below);
+   the way in is the bar's Come aboard, never a HUD button */
 .scene-stage .sail-hud .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   left: 50%;

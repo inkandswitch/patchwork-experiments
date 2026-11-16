@@ -244,7 +244,8 @@ export function heldWeigh({ rode, input, commit, alive = () => true, done = () =
 }
 
 /**
- * The commands for the use prompt (and Enter to come aboard).
+ * The commands for the use prompt, and Come aboard (Enter, and a button
+ * on the bar of tools in every body: show ["world"]).
  * @param {object} api
  * @param {{ sea, sim, crew }} ctx
  */

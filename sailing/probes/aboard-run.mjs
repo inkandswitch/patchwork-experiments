@@ -22,8 +22,9 @@
 //  6. Flip turns it over on the table;
 //  7. a plain click on a card doesn't board; a drag on the wheel orbits
 //     (the hand doesn't carry her fittings); seated, a plain click on the
-//     hull doesn't board, and the HUD offers Enter, not the walking keys,
-//     its dial top left clear of the hand;
+//     hull doesn't board, the bar offers Come aboard (Enter) and the HUD
+//     has no button and not the walking keys, its dial top left clear of
+//     the hand;
 //  8. B gets her under way with the keys in the template's own breeze: Enter,
 //     R held at the mast (the main up at anchor), F held at the windlass, F
 //     at the wheel; head to wind (the HUD's: within 40°, slow; else the step fails as not

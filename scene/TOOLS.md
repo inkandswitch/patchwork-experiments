@@ -1236,6 +1236,24 @@ The project lead decided the five open questions on 2026-11-12.
       help line, the Esc hint) are not commands and stay as they are; one
       stage-drawn legend of declared keys is a *question for the lead*,
       likely with N9's touch controls, which need the same keys.
+    - **Consumers.** Sailing's Come aboard (`aboard`, `show: ["world"]`):
+      the HUD's own button, a private copy of the command that sat over the
+      canvas's top edge in Edit (triage (f)), is gone, and the HUD only
+      reads (`sailing/src/hud.js`, `probes/editclick-run.mjs` steps 5-6).
+      Arena's Play and Stand targets up, and the cups' Lift all, follow
+      (lane/n8 steps 3-4). The button reaches further than the HUD did:
+      it's on the bar wherever sailing runs on the focus path (an entered
+      boat in a harbour, the Model room's boat), where the HUD is hidden
+      because her doc isn't the world. It applies there exactly where
+      Enter and a click on her already did, so nothing new can happen;
+      the focus-path question above covers it.
+    - **Known: entering a link moves the canvas.** Entered in Edit (a
+      double-click on G's card aboard Lost Cities), the canvas moves down
+      about 31 px as the entered path's chrome appears. That's after the
+      entering press, so it isn't triage (f), but a click straight after
+      lands that far off; B3 holds the bar of tools still, not the other
+      strips. Left for a later item (a constant-height strip for the
+      path's chrome).
     *Proves* (finite, exhaustive, `src/parts/toolbar.test.js`): every
     `show` (absent, [], toolbar, world, both, menu, the string "world") ×
     Look, Edit and a walk × `edit: true` or not lands in exactly the
