@@ -1,5 +1,7 @@
-// The world's water as one stage reads it (WATER.md, "Frames" and "Time"):
-// the outermost doc's water value (plain JSON: { v, level, components, look })
+// The world's open water as one stage reads it (WATER.md, "Frames" and
+// "Time"): the outermost doc's water value (plain JSON: { v, level,
+// components, look?, current? }, the current [ux, uz] in m/s, its frequency
+// shift already in the components)
 // evaluated with this package's own surface, in the calling stage's frame and
 // on its clock. Pure.
 //
@@ -18,7 +20,7 @@
 import { createSurface } from "./surface.js";
 
 /** The water value's version this package reads. */
-export const VERSION = 1;
+export const VERSION = 2;
 /** How far a frame's rotation may move +Y before the water is refused there. */
 export const TILT_EPS = 1e-9;
 
@@ -63,10 +65,11 @@ export const tauOf = (timing, t) => (timing.mine ? t : timing.running ? t + timi
 /**
  * The world's water as seen from a frame, on a timing: sailing's ocean
  * shape (heightAt, sampleAt, normalAt, velocityAt, displaced, components,
- * stats, plus level and seed for the surface's look; the wind is its own
- * ambient, not the water's). null when there's
+ * stats, plus level and seed for the surface's look, and `body` null: it is
+ * the world's open water, no doc's thing; the wind is its own ambient, not
+ * the water's). null when there's
  * no value, its version isn't this package's, or the frame is tilted.
- * @param {{ v: number, level: number, components: object[], look?: object } | null} value
+ * @param {{ v: number, level: number, components: object[], look?: object, current?: number[] } | null} value
  * @param {{ matrix: number[] | null } | null} frame
  * @param {ReturnType<typeof createTiming>} timing
  */
@@ -77,9 +80,11 @@ export function readerFor(value, frame, timing) {
   const level = Number(value.level) || 0;
   const surface = createSurface(value.components);
   const look = value.look ?? {};
-  const extras = { level, seed: look.seed ?? 1, stats: look.stats ?? { hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 } };
-  // the world itself, at its own time and level 0: the evaluator as it is (W1: alone is today)
-  if (timing.mine && f.identity && level === 0) return Object.freeze({ ...surface, ...extras });
+  const extras = { body: null, level, seed: look.seed ?? 1, stats: look.stats ?? { hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 } };
+  const Ux = Number(value.current?.[0]) || 0;
+  const Uz = Number(value.current?.[1]) || 0;
+  // the world itself, at its own time and level 0, with no current: the evaluator as it is (W1: alone is today)
+  if (timing.mine && f.identity && level === 0 && !Ux && !Uz) return Object.freeze({ ...surface, ...extras });
 
   const { a, b, c, d, s, tx, ty, tz } = f;
   const s2 = s * s;
@@ -119,6 +124,8 @@ export function readerFor(value, frame, timing) {
       return out;
     }
     surface.velocityAt(wx(x, z), s * y + ty - level, wz(x, z), tauOf(timing, t), V);
+    V[0] += Ux;
+    V[2] += Uz;
     out[0] = (a * V[0] + b * V[2]) / s2;
     out[1] = V[1] / s;
     out[2] = (c * V[0] + d * V[2]) / s2;

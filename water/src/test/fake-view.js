@@ -17,8 +17,27 @@ const frozen = (v) => {
   return v;
 };
 
+/** A doc transform ({ position, rotation (Euler XYZ), scale }) as a column-major matrix. */
+export function compose(t) {
+  const [x, y, z] = t?.position ?? [0, 0, 0];
+  const [a, b, c] = t?.rotation ?? [0, 0, 0];
+  const s = t?.scale ?? 1;
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cc = Math.cos(c), sc = Math.sin(c);
+  // R = Rx(a) · Ry(b) · Rz(c) (three's XYZ order)
+  const R = [cb * cc, ca * sc + sa * sb * cc, sa * sc - ca * sb * cc, -cb * sc, ca * cc - sa * sb * sc, sa * cc + ca * sb * sc, sb, -sa * cb, ca * cb];
+  return [R[0] * s, R[1] * s, R[2] * s, 0, R[3] * s, R[4] * s, R[5] * s, 0, R[6] * s, R[7] * s, R[8] * s, 0, x, y, z, 1];
+}
+
+/** Column-major A · B. */
+export function mulM(A, B) {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += A[k * 4 + r] * B[c * 4 + k];
+  return o;
+}
+
 /**
- * @param {{ doc: object, matrix?: number[] | null, extensions?: object[], drawn?: boolean }[]} specs  the outermost first
+ * @param {{ doc: object, matrix?: number[] | null, extensions?: object[], drawn?: boolean, poses?: object }[]} specs  the outermost first;
+ *   `poses` overrides an object's drawn matrix (api.worldOf), as a held pose does
  */
 export function fakeView(specs) {
   const THREE = fakeThree();
@@ -68,6 +87,7 @@ export function fakeView(specs) {
       notices: [],
       processes: 0,
       groups: [],
+      poses: spec.poses ?? null,
       camera: { position: [3, 10, 20] },
       cache: new Map(),
     };
@@ -75,7 +95,19 @@ export function fakeView(specs) {
     s.api = {
       THREE,
       doc: () => s.doc,
-      scene: () => ({ d: s.doc, traits: s.doc.traits }),
+      scene: () => {
+        const objects = s.doc.objects ?? {};
+        const parents = new Map(Object.entries(objects).map(([id, o]) => [id, o.parent && objects[o.parent] ? o.parent : null]));
+        const world = (id) => {
+          const o = objects[id];
+          if (!o) return null;
+          const own = compose(o.transform);
+          const p = parents.get(id);
+          return p ? mulM(world(p), own) : own;
+        };
+        return { d: s.doc, traits: s.doc.traits ?? {}, objects, parents, ids: Object.keys(objects), world };
+      },
+      worldOf: (id) => s.poses?.[id] ?? s.api.scene().world(id),
       clock: Object.freeze({ t: () => s.clock.t, running: () => s.clock.running, process: () => (spec.drawn ? () => {} : (s.processes++, () => s.processes--)) }),
       loop: (fn) => (s.loops.add(fn), () => s.loops.delete(fn)),
       world: () => {
@@ -113,14 +145,16 @@ export function fakeView(specs) {
   return view;
 }
 
-/** A wave maker standing in for sailing's sea: contributes these components as `water.waves`. */
-export const waves = (components, look) => ({ create: () => ({ "water.waves": { components, ...(look ? { look } : {}) } }) });
+/** A wave maker standing in for sailing's sea: contributes these components for these bodies as `water.waves`. */
+export const waves = (components, look, ids = ["sea"]) => ({ create: () => ({ "water.waves": { bodies: Object.fromEntries(ids.map((id) => [id, { components, ...(look ? { look } : {}) }])) } }) });
 
 /** Whoever makes the weather, standing in for sailing's sea: offers the world's wind ambient. */
 export const windOf = (wind) => ({ create: () => ({ ambient: () => ({ wind }) }) });
 
-/** Count the ocean meshes drawn across the view (one surface each). */
+/** Count the open surfaces drawn across the view (one mesh each). */
 export const surfaces = (view) => view.stages.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.children.filter((c) => c.name === "ocean").length, 0), 0);
+/** Count the bounded patches drawn across the view. */
+export const patches = (view) => view.stages.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.children.filter((c) => c.name === "water-patch").length, 0), 0);
 
 /** A level placement's world matrix: yaw (radians), then translation; column-major. */
 export function placement(yaw = 0, t = [0, 0, 0], s = 1) {
