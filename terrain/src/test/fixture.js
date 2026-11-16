@@ -49,6 +49,12 @@ export const features = () => featuresFromOsm(OSM, frame);
 export function demValues() {
   const { n, cell, x0, z0 } = GRID;
   const v = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) v[j * n + i] = heightAtLocal(x0 + i * cell, z0 + j * cell) + 0.68; // NAVD88 is 0.68 m above mean water here (demToMWL)
+  return v;
+}
+
+/** The made-up place's height about MWL at any local (x, z): hills north of the mainland shore, a basin south, a hill on the island. */
+export function heightAtLocal(x, z) {
   // the mainland shore's z at x, along MAIN
   const shoreZ = (x) => {
     for (let k = 0; k + 1 < MAIN.length; k++) {
@@ -66,14 +72,7 @@ export function demValues() {
     }
     return c;
   };
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const x = x0 + i * cell, z = z0 + j * cell;
-      const h = inIsland(x, z) ? Math.max(2.5, 9 - Math.hypot(x - 30, z - 160) / 8) : -(z - shoreZ(x)) / 12 + 0.4 * Math.sin(x / 37);
-      v[j * n + i] = h + 0.68; // NAVD88 is 0.68 m above mean water here (demToMWL)
-    }
-  }
-  return v;
+  return inIsland(x, z) ? Math.max(2.5, 9 - Math.hypot(x - 30, z - 160) / 8) : -(z - shoreZ(x)) / 12 + 0.4 * Math.sin(x / 37);
 }
 export const dem = () => bytesToInt16(quantize(demValues(), 0.02));
 

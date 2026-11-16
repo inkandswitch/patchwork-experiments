@@ -9,7 +9,7 @@ import { soup, prism, widen } from "./shapes.js";
 
 export const KINDS = Object.freeze({
   float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#a8a398" },
-  pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#8b7558" },
+  pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#7a7368" },
   breakwater: { width: 8, top: 3, bottom: -6, colour: "#8d877c" },
   groyne: { width: 3, top: 1.5, bottom: -2, colour: "#807a6e" },
 });

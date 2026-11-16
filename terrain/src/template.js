@@ -30,21 +30,22 @@ const HINT = { bounds: { min: [GRID.x0, -150, GRID.z0], max: [GRID.x0 + (GRID.n 
  * water (the water package's clip: its WATER.md, "Clipped open water"): the
  * terrain's footprint, from its known grid as data (never the loaded GLB),
  * down to the deepest seabed in it, so the bay on a chart table is a block
- * of its own sea. Its centre is where the Sea stands. Pure.
+ * of its own sea. Its centre is where the Sea stands. Another place passes
+ * its own placeholder box (template-ucluelet.js). Pure.
  */
-export function bayClip() {
-  const { min, max } = HINT.bounds;
+export function bayClip(hint = HINT) {
+  const { min, max } = hint.bounds;
   return { clip: [max[0] - min[0], -min[1], max[2] - min[2]], position: [(min[0] + max[0]) / 2, 0, (min[2] + max[2]) / 2] };
 }
 
 /**
  * The bay's Sea: open water at the chart's y = 0 (mean water level), with
  * sailing's sea on it for its waves, keeping the terrain's footprint where
- * its world offers no open water (bayClip). An object with no source: its
- * shape is the water trait's data. Pure.
+ * its world offers no open water (bayClip of the place's hint). An object
+ * with no source: its shape is the water trait's data. Pure.
  */
-export function bayWater(seed) {
-  const { clip, position } = bayClip();
+export function bayWater(seed, hint = HINT) {
+  const { clip, position } = bayClip(hint);
   return {
     name: "Sea",
     sourceUrl: null,
@@ -148,6 +149,7 @@ export function differences(fetched) {
   const out = [];
   if (fetched.dem.record.sha256 !== EXPECTED.dem) out.push("NOAA's heights");
   if (fetched.features.record.sha256 !== EXPECTED.features) out.push(`OpenStreetMap's shore and docks (as of ${OSM_DATE})`);
+  if (fetched.look && fetched.look.record.sha256 !== EXPECTED.look) out.push(`OpenStreetMap's buildings and land cover (as of ${OSM_DATE})`);
   return out;
 }
 

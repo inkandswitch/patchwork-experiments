@@ -46,12 +46,13 @@ describe("buildTerrain", () => {
     expect(built.stats.water).toBeGreaterThan(0);
   });
 
-  it("is a valid GLB that three.js loads: ground, skirt, structures and marks, in metres", async () => {
+  it("is a valid GLB that three.js loads: ground, skirt, structures, boats and marks, in metres", async () => {
     const gltf = await load(built.glb);
     const names = [];
     gltf.scene.traverse((o) => o.isMesh && names.push(o.name || o.parent?.name));
     // (three.js writes a name's spaces as underscores)
-    expect(names).toEqual(["Ground", "Skirt", "Harbour_structures", "Marks"]);
+    // (the fixture is a place with a look: its float gets boats)
+    expect(names).toEqual(["Ground", "Skirt", "Harbour_structures", "Moored_boats", "Marks"]);
     const { json } = parseGLB(built.glb);
     expect(json.asset.extras.units).toBe("m");
     expect(json.meshes[0].extras.legend.stops.length).toBe(32);
@@ -213,5 +214,119 @@ describe("tiles: a big mesh in 16-bit pieces", () => {
       }
     }
     expect(seen.size).toBe(idx.length / 3);
+  });
+});
+
+import { SITE } from "./ucluelet.js";
+import { COVER } from "./cover.js";
+describe("buildTerrain with a look and a site", () => {
+  const ll = (x, z) => frame.toLatLon(x, z);
+  const sq = (x, z, s) => [[x, z], [x + s, z], [x + s, z + s], [x, z + s]];
+  const look = {
+    version: 1,
+    buildings: [{ id: "way/50", kind: "house", points: sq(-120, -230, 12) }, { id: "way/51", kind: "yes", points: sq(-60, -230, 10) }],
+    areas: [{ id: "way/60", cover: "wood", rings: [sq(-250, -250, 500).map(([x, z]) => [x, z < -130 ? z : -150])], holes: [] }],
+  };
+  const doc = terrainDoc({
+    site: { name: "test", layers: [{ id: "yard", name: "The yard" }, { id: "yard.gone", name: "Gone", parent: "yard", visible: false }], clear: { box: (() => { const [s, w] = ll(-70, -220), [n, e] = ll(-50, -240); return { south: Math.min(s, n), north: Math.max(s, n), west: Math.min(w, e), east: Math.max(w, e) }; })(), osm: ["way/3"] }, structures: [{ id: "shed", kind: "box", layer: "yard", corners: sq(-200, -230, 10).map(([x, z]) => ll(x, z)), base: 5, top: 9, roof: "gable", colours: { walls: "#aaaaaa", roof: "#333333" } }, { id: "old", kind: "box", layer: "yard.gone", corners: sq(-180, -230, 6).map(([x, z]) => ll(x, z)), base: 5, top: 7, roof: "flat", colours: { walls: "#aaaaaa", roof: "#333333" } }] },
+  });
+  const built = buildTerrain({ doc, dem: dem(), features: features(), look });
+  const { json } = parseGLB(built.glb);
+  it("declares its layers (the forest, buildings, the harbour, marks; the site's, hidden where it says) and puts each node on one", () => {
+    const ids = json.scenes[0].extras.layers.map((l) => l.id);
+    for (const id of ["forest", "buildings", "harbour", "marks", "yard", "yard.gone"]) expect(ids).toContain(id);
+    expect(json.scenes[0].extras.layers.find((l) => l.id === "yard.gone")).toMatchObject({ parent: "yard", visible: false });
+    expect(json.nodes.find((n) => n.name === "Buildings").extras.layer).toBe("buildings");
+    expect(json.nodes.find((n) => n.name === "Gone").extras.layer).toBe("yard.gone");
+  });
+  it("draws the trees as nodes of a few shared meshes under one forest node, and leaves out what the site clears", () => {
+    const trees = json.nodes.find((n) => n.name === "Trees");
+    expect(trees.extras.layer).toBe("forest");
+    expect(trees.children.length).toBe(built.stats.trees);
+    expect(built.stats.trees).toBeGreaterThan(0);
+    const meshes = new Set(trees.children.map((c) => json.nodes[c].mesh));
+    expect(meshes.size).toBeLessThanOrEqual(8);
+    // the second building is inside the site's box, OSM's way/3 (the float) is the site's to draw
+    expect(built.stats.buildings).toBe(1);
+    expect(built.stats.structures).toBe(1);
+  });
+  it("is deterministic with all of it", () => {
+    expect(Buffer.from(buildTerrain({ doc, dem: dem(), features: features(), look }).glb).equals(Buffer.from(built.glb))).toBe(true);
+  });
+  it("cuts the shore's bands crisp, and draws no surf, cloud or boats about the harbour for a place whose look has none", () => {
+    expect(built.stats.shore.cut).toBeGreaterThan(0);
+    expect(built.stats.surf).toBe(null);
+    expect(built.stats.clouds).toBe(null);
+    for (const name of ["Surf", "Low cloud and mist", "Boats about the harbour"]) expect(json.nodes.some((n) => n.name === name)).toBe(false);
+  });
+  it("leaves out an OSM building a landmark draws itself, lays the forest's skin where the look asks, and paints the site's apron one tone above the highest tide", () => {
+    const [mlat, mlon] = ll(-114, -224);
+    const withAll = {
+      ...doc,
+      landmarks: [{ id: "ball", kind: "dome", replaces: "way/50", at: [mlat, mlon], size: { radius: 4, building: [6, 6, 1] }, colours: { dome: "#ffffff", building: "#cccccc" } }],
+      site: { ...doc.site, apron: { colour: "#958b76" } },
+      look: { ...doc.look, trees: { ...doc.look.trees, skin: { within: [{ at: ll(0, -200), radius: 400 }], crowns: [3, 4] } } },
+    };
+    const b = buildTerrain({ doc: withAll, dem: dem(), features: features(), look });
+    const j = parseGLB(b.glb).json;
+    // way/50 is the landmark's; way/51 is inside the site's box
+    expect(b.stats.buildings).toBe(0);
+    expect(b.stats.skin).toBeGreaterThan(0);
+    const skin = j.nodes.find((n) => n.name === "Forest skin");
+    expect(skin.extras.layer).toBe("forest");
+    expect(skin.children.length).toBe(b.stats.skin);
+    expect(new Set(skin.children.map((c) => j.nodes[c].mesh)).size).toBeLessThanOrEqual(6);
+    expect(Buffer.from(buildTerrain({ doc: withAll, dem: dem(), features: features(), look }).glb).equals(Buffer.from(b.glb))).toBe(true);
+  });
+  it("draws surf where the place has a swell, cloud and boats where its look asks, each on its layer, and is deterministic", () => {
+    const [blat, blon] = ll(30, 100);
+    const dressed = { ...doc, swell: { from: 270 }, look: { ...(doc.look ?? {}), surf: { reach: 600, min: 0.2 }, clouds: { sheets: { levels: [8], every: 4, below: 30, above: 30, chance: 1, size: 200, alpha: 0.5, clear: 2 }, mist: null }, boats: [{ type: "troller", lat: blat, lon: blon, heading: 90, length: 12 }] } };
+    const b = buildTerrain({ doc: dressed, dem: dem(), features: features(), look });
+    const j = parseGLB(b.glb).json;
+    const layers = j.scenes[0].extras.layers.map((l) => l.id);
+    expect(layers).toContain("surf");
+    expect(layers).toContain("weather");
+    expect(b.stats.surf.exposed).toBeGreaterThan(0);
+    expect(b.stats.clouds.sheets).toBeGreaterThan(0);
+    expect(j.nodes.find((n) => n.name === "Surf").extras.layer).toBe("surf");
+    expect(j.nodes.find((n) => n.name === "Low cloud and mist").extras.layer).toBe("weather");
+    expect(j.nodes.find((n) => n.name === "Boats about the harbour").extras.layer).toBe("boats");
+    // the surf opaque and unlit, the cloud blended and unlit
+    const matOf = (name) => j.materials[j.meshes[j.nodes.find((n) => n.name === name).mesh].primitives[0].material];
+    expect(matOf("Surf").alphaMode).toBe(undefined);
+    expect(matOf("Surf").extensions.KHR_materials_unlit).toEqual({});
+    expect(matOf("Low cloud and mist").alphaMode).toBe("BLEND");
+    expect(matOf("Low cloud and mist").extensions.KHR_materials_unlit).toEqual({});
+    expect(Buffer.from(buildTerrain({ doc: dressed, dem: dem(), features: features(), look }).glb).equals(Buffer.from(b.glb))).toBe(true);
+  });
+  it("a place with no look at all builds as before: the chart palette, no forest, no buildings", () => {
+    const { look: _l, ...plain } = terrainDoc();
+    void _l;
+    const b = buildTerrain({ doc: plain, dem: dem(), features: features() });
+    expect(b.stats.trees).toBe(0);
+    expect(b.stats.buildings).toBe(0);
+    void COVER;
+    void SITE;
+  });
+});
+
+import { apronMask } from "./build.js";
+describe("the site's apron", () => {
+  it("is exactly the land nodes whose position is inside the box (every node of a small grid)", () => {
+    const g = { n: 21, cell: 10, x0: -100, z0: -100 };
+    const lab = new Int8Array(21 * 21);
+    for (let k = 0; k < lab.length; k++) lab[k] = k % 21 < 12 ? 1 : -1;
+    const [s1, w1] = frame.toLatLon(-45, 35), [n1, e1] = frame.toLatLon(55, -65);
+    const box = { south: Math.min(s1, n1), north: Math.max(s1, n1), west: Math.min(w1, e1), east: Math.max(w1, e1) };
+    const m = apronMask(g, frame, box, lab);
+    let some = 0;
+    for (let k = 0; k < lab.length; k++) {
+      const i = k % 21, jj = (k - i) / 21;
+      const [lat, lon] = frame.toLatLon(-100 + i * 10, -100 + jj * 10);
+      const inside = lat >= box.south && lat <= box.north && lon >= box.west && lon <= box.east;
+      expect(m[k]).toBe(inside && lab[k] > 0 ? 1 : 0);
+      some += m[k];
+    }
+    expect(some).toBeGreaterThan(10);
   });
 });

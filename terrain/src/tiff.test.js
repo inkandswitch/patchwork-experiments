@@ -136,3 +136,21 @@ describe("nceiUrl", () => {
     }
   });
 });
+
+import { writeTiff } from "./test/tiff-writer.js";
+describe("readTiff, the rest of what CHS, NRCan and NCEI send", () => {
+  const vals = Array.from({ length: 6 * 5 }, (_, k) => k - 3.5);
+  it("reads big-endian tiles, a sparse tile as nodata, and a ModelTransformation's georeference", () => {
+    const t = readTiff(writeTiff(6, 5, vals, { le: false, tile: [4, 4], sparse: [1], transformation: [0.5, 0, 0, -125, 0, -0.25, 0, 49, 0, 0, 0, 0, 0, 0, 0, 1], nodata: "-9" }));
+    for (let r = 0; r < 5; r++) for (let q = 0; q < 6; q++) expect(t.data[r * 6 + q]).toBe(q >= 4 && r < 4 ? -9 : vals[r * 6 + q]);
+    expect(t.geo).toEqual({ x0: -125, y0: 49, dx: 0.5, dy: -0.25, point: false, crs: 4326 });
+  });
+  it("a sparse tile with no nodata is NaN; a point raster says so", () => {
+    const t = readTiff(writeTiff(6, 5, vals, { tile: [4, 4], sparse: [0], scale: [2, 2, 0], tie: [0, 0, 0, 10, 20, 0], point: true, nodata: null }));
+    expect(t.data[0]).toBeNaN();
+    expect(t.geo).toEqual({ x0: 10, y0: 20, dx: 2, dy: -2, point: true, crs: 4326 });
+  });
+  it("refuses a ModelTransformation that rotates the raster", () => {
+    expect(() => readTiff(writeTiff(6, 5, vals, { transformation: [0.5, 0.1, 0, -125, 0, -0.25, 0, 49, 0, 0, 0, 0, 0, 0, 0, 1] }))).toThrow(/rotates or shears/);
+  });
+});
