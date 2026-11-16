@@ -355,7 +355,27 @@ describe("Enter and Leave", () => {
     expect(view.atom.get().focus).toEqual(["L"]);
   });
 
-  it("outside an entered link stays live: a press out there reaches its own parts, then the general ones (the focus's); in Edit a click there isn't Edit's", async () => {
+  it("a double-click the page meets late (busy 1 s after the first press) is still one: the gate times the events' own stamps", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 5000;
+    const m = await mountNested({ time: wallAt(() => now) });
+    s = m.s;
+    const { view } = m;
+    const under = (n, id) => (view.viewport.pick = () => ({ id: keyOf(n, id), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }));
+    // B's card (from outside, the link L) under the first press; the page then busy a second on the stage's clock
+    // (the inspector opening), the table under the second press; the events themselves stamped as made, ms apart
+    under(stageOf(view, "L").n, "card");
+    s.click(20, 20);
+    now += 1000;
+    under(0, "table");
+    s.click(20, 20);
+    now += 1000;
+    const rect = s.canvas.getBoundingClientRect();
+    s.canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 20 }));
+    expect(view.atom.get().focus).toEqual(["L"]);
+  });
+
+  it("outside an entered link stays live: a press out there reaches its own parts, then the general ones (the focus's); in Edit a click there is Edit's, and selects nothing; in Look it goes down the chain", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
@@ -367,9 +387,17 @@ describe("Enter and Leave", () => {
     log.length = 0;
     s.click(20, 20);
     await settle();
-    // the host's table: its holder, then the general parts, now B's (their element of the path: nothing)
-    expect(log).toEqual(["t.host table", "t.general -", "click t.host table", "click t.general -"]);
+    // the host's table: the press reaches its holder, then the general parts, now B's (their element of the path:
+    // nothing); the click is Edit's (COMPOSITION.md, Decisions, Edit's click is Edit's): no package's click verb
+    expect(log).toEqual(["t.host table", "t.general -"]);
     expect(view.atom.get().selected).toBe(null);
+    // in Look the same click goes down the chain: the table's holder's click, then the general parts'
+    view.enterBody("look");
+    log.length = 0;
+    s.click(20, 20);
+    await settle();
+    expect(log).toEqual(["t.host table", "t.general -", "click t.host table", "click t.general -"]);
+    view.enterBody(EDIT.id);
     // a card of B's: B's holder, the host's root, the general parts; Edit's click selects it first (it's at the focus)
     view.viewport.pick = () => ({ id: keyOf(stageOf(view, "L").n, "card"), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 });
     log.length = 0;
@@ -697,5 +725,95 @@ describe("leaving Edit puts the selection down (TOOLS.md Decisions 6)", () => {
           }
     }
     expect(cases).toBe(96);
+  }, 60_000);
+});
+
+describe("in Edit a click is Edit's wherever it lands (COMPOSITION.md, Decisions, Edit's click is Edit's)", () => {
+  // TOOLS.md Decisions 6: in Edit a plain click selects, before any package's click verb. Inside an entered
+  // link a click on the host (the boat round a game linked aboard her) can't select, and it used to go down
+  // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
+  // her moving table (presence-check.nopause, 2026-11-16). Every base body × every focus × a selection or
+  // none × every thing a click can land on (each stage's objects, mirrors', a pin's and a closed link's, and
+  // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly in Look,
+  // or in Edit on nothing (or a stale hit) with nothing selected; the selection is selectionStep's (outside the
+  // focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 22 = 264 cases.
+  const FOCI = [[], ["L"], ["L", "M"]];
+  const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
+  // a hit is { key: (view) => the viewport's key, path: the hit's path, or null for nothing }. Stale hits: an id
+  // its stage no longer has (removed between the pick and the click), in every stage; a stage no longer there;
+  // a malformed key.
+  const live = Object.entries(STAGES).flatMap(([sp, ids]) => ids.map((id) => ({ name: `${sp}:${id}`, key: (view) => keyOf(stageOf(view, sp).n, id), path: [...pathOf(sp), id] })));
+  const stale = [
+    ...Object.keys(STAGES).map((sp) => ({ name: `${sp}:gone (stale)`, key: (view) => keyOf(stageOf(view, sp).n, "gone"), path: null })),
+    { name: "a stage no longer there (stale)", key: () => keyOf(999, "card"), path: null },
+    { name: "a malformed key (stale)", key: () => "\u001fx\u001fcard", path: null },
+    { name: "nothing", key: null, path: null },
+  ];
+  const HITS = [...live, ...stale];
+  it("every base body × every focus × a selection or none × every hit: down the chain only in Look or on nothing with nothing selected", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const m = await mountNested();
+    s = m.s;
+    const { view, log } = m;
+    let cases = 0;
+    for (const focus of FOCI) {
+      expect(view.focusOn(focus)).toBe(true);
+      await placed(view);
+      for (const base of ["look", "edit"])
+        for (const withSel of [false, true])
+          for (const hit of HITS) {
+            const name = `${base} ${J(focus)}${withSel ? " selected" : ""} click on ${hit.name}`;
+            view.enterBody("look");
+            expect(view.enterBody(base), name).toBe(true);
+            const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
+            view.select(sel);
+            expect(J(view.atom.get().selected), name).toBe(J(sel));
+            view.viewport.pick = hit.key ? () => ({ id: hit.key(view), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }) : () => null;
+            log.length = 0;
+            s.click(20, 20);
+            await settle();
+            const down = base === "look" || (!hit.path && !withSel);
+            const want = base === "look" ? sel : selectionStep({ focus, selected: sel }, { type: "press", path: hit.path ?? [] }).selected;
+            expect([name, log.some((x) => x.startsWith("click ")), J(view.atom.get().selected), view.atom.get().body?.id, J(view.atom.get().focus)]).toEqual([name, down, J(want), base, J(focus)]);
+            cases++;
+          }
+    }
+    expect(cases).toBe(264);
+  }, 60_000);
+
+  // The symptom, with a click verb that changes the body as the boat's does: a part holding the host's table
+  // whose click enters a body of its own. Every base × every focus, a click on the table: in Look it boards;
+  // in Edit it never does (at the boat it selects the table; inside a link it selects nothing).
+  it("a click verb on the host that enters a body (the boat's come-aboard): reached from Look, never from Edit, whatever the focus", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const boards = {
+      meta: { id: "t.board", traits: ["t.host"] },
+      module: { create: (api) => ({ bodies: [{ id: "t.board", label: "Aboard", enter: () => ({ input: {} }) }], input: { click: () => api.body.enter("t.board") } }) },
+    };
+    const m = await mountNested({ extra: [boards] });
+    s = m.s;
+    const { view } = m;
+    const got = [];
+    for (const focus of FOCI) {
+      expect(view.focusOn(focus)).toBe(true);
+      await placed(view);
+      for (const base of ["look", "edit"]) {
+        view.enterBody("look");
+        view.enterBody(base);
+        view.select(null);
+        view.viewport.pick = () => ({ id: "table", point: [0, 0, 0], normal: [0, 1, 0], distance: 3 });
+        s.click(20, 20);
+        await settle();
+        got.push([base, J(focus), view.atom.get().body?.id, J(view.atom.get().selected)]);
+      }
+    }
+    expect(got).toEqual([
+      ["look", "[]", "t.board", "null"],
+      ["edit", "[]", "edit", J(["table"])],
+      ["look", '["L"]', "t.board", "null"],
+      ["edit", '["L"]', "edit", "null"],
+      ["look", '["L","M"]', "t.board", "null"],
+      ["edit", '["L","M"]', "edit", "null"],
+    ]);
   }, 60_000);
 });

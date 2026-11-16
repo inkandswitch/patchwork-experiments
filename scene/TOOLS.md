@@ -212,7 +212,9 @@ was, so Enter and Leave never change the body or drop the tool (the tool
 goes down only when its stage leaves the focus path);
 they are offered input after every segment wherever the hit is, so the
 menu, keys and prompt still reach outside. In Edit, a click outside the
-focus isn't Edit's (it can't select there) and goes down the chain. The
+focus is still Edit's: it selects nothing and goes no further, so no
+package's click verb acts for it (COMPOSITION.md, Decisions, Edit's click
+is Edit's, reversing step 14's "isn't Edit's"). The
 outline's link rows say what each link is here and enter; drawer tabs
 open as the focus moved open again inside. Select's menu entry is the
 focus stage's alone, so it's offered only on what can be selected.
@@ -1073,7 +1075,9 @@ The project lead decided the five open questions on 2026-11-12.
      selected is Edit's to ignore, so it goes down the chain as before. Only
      the click: a press (a drag, a carry) still goes down the chain first.
      A package's click verb is reached outside Edit, or by its key and the
-     menu.
+     menu. This holds inside an entered link too: a click on the host there
+     is Edit's, and does nothing (COMPOSITION.md, Decisions, Edit's click is
+     Edit's, 2026-11-16).
    - **The inspector stays open** (decided unattended, 2026-11-14; lane/loose).
      It used to open on a selection and shut on deselecting, so the canvas
      changed width at every select and deselect and everything on screen

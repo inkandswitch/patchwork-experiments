@@ -900,9 +900,10 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
 5. **the top body's input** ("Bodies" below); Look, walk, seat, sailing's
    aboard and station have no default press. A body may name event types it
    takes **ahead** of steps 3 and 4 (after the held tool and a widget's
-   owner only): Edit takes `click`, so in Edit a plain click selects (an object)
-   or clears (nothing, with something selected) before any package's click
-   verb (TOOLS.md Decisions 6). Presses still go down the chain first;
+   owner only): Edit takes `click`, so in Edit a plain click selects (an object
+   at the focus), clears (nothing, with something selected) or does nothing
+   (an object outside the focus) before any package's click verb (TOOLS.md
+   Decisions 6). Presses still go down the chain first;
 6. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held (a first-person body holds it).
@@ -926,7 +927,12 @@ a tool to pick first, and there is no `local.tool` or `view.tool`:
   in a game too. A plain click selects only as the Edit body's click
   (`editInput` in `stage/view.js`), taken ahead of the chain, after only the
   held tool and a widget (TOOLS.md Decisions 6), on something at the focus;
-  a click outside the focus isn't Edit's and goes down the chain. Look has
+  a click on something outside the focus is Edit's too and selects nothing,
+  so after the held tool and a widget no package's click verb is offered it
+  (COMPOSITION.md, Decisions, Edit's click is Edit's). Only a click on
+  nothing (or on what its doc no longer has) with nothing selected is left
+  to the chain. Only the click: presses and the double-click go down the
+  chain in Edit as in every body, at the focus and outside it. Look has
   none. Where a selection may be is `src/selection.js`: an element of the
   focus stage (H10): with the focus on the boat, a card aboard selects the
   link it's in; Enter the link to select the card.
@@ -1015,7 +1021,15 @@ press within 6 px of it (16 px for a touch), none of them under pointer
 lock, and the first hit's stage still open (a key whose stage closed
 between the clicks names nothing). Outside them, or for a slower double,
 the dblclick casts a new ray like any other event. A first hit whose object
-the first click removed is kept: what it comes to is its consumer's.
+the first click removed is kept: what it comes to is its consumer's. The
+500 ms gates time the clicks as they were made, by each event's own
+`timeStamp` (one clock for `pointerdown` and `dblclick`), not as the page
+handled them: a page busy between the clicks (the inspector opening on the
+first click's selection) still has the double-click the browser fired, and
+one catching up on queued events doesn't pass clicks made too far apart.
+When any of the three events has no stamp (a synthetic one with
+`timeStamp` 0), all three are timed on the stage's clock as each was
+handled instead, never one clock against the other.
 
 **A release that never comes.** A mouse that moves with no button down was
 released where the stage didn't hear it, and a lost pointer capture or

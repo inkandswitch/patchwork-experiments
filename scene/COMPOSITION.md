@@ -121,29 +121,42 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
-- the double-click gate measures time as the page meets the presses
-  (`time.now()`), not as the person made them: when the page is busy
-  after the first press (in headless Chrome the first selection of an Edit
-  visit, opening the inspector, held it about 1 s), the second press
-  arrives over 500 ms later and the router refuses a double-click Chrome
-  itself fired. Seen in enter-check on 2026-11-16 (a stalled try, retried).
-  The likely fix is the events' own `timeStamp` for both presses and the
-  dblclick; not built;
 - the use prompt stays put while the pointer is on it (since lane/arcade),
   so when the camera moves and the pointer doesn't (a ride, Frame, a body
   change) it can be left over a halo handle or anything else, and a press
   there goes to the prompt's button (found by lane/xarrow, 2026-11-16);
 - a single click on a moving thing can still miss it: aboard-run's step-13
   click selecting the card inside G missed on about one run in ten
-  (lane/xarrow); the double-click fix covers only the second press;
+  (lane/xarrow); the double-click fix covers only the second press. A miss
+  inside G now only fails to select (it used to come aboard: Fixed since);
+  editclick-run's clicks with 150 ms of her sea between aim and press
+  landed on the boat 3 to 8 times in 12;
+- the first click of a double-click can open the inspector under the
+  second: with the inspector shut, a first press that selects anything
+  (the link, or the Card table it missed onto) narrows the canvas, and
+  where the inspector now lies the second press and the dblclick are the
+  inspector's, so the stage never hears them (editclick-run's first try,
+  every run: a 700 px view, its press missing the card for the Card table,
+  the gaps 222 to 250 ms, well inside the gate). The second try, the
+  inspector already open, enters;
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
-Fixed since (Decisions, double-click, below):
+Fixed since (each item names its Decisions section below):
+- in Edit inside an entered link, a click that landed on the host went
+  down the chain to the host's click verbs: inside Lost Cities aboard, a
+  single click at a card that the pitching boat moved away landed on her
+  Card table, and sailing's click came aboard, so the viewer left Edit for
+  the Aboard body, first person at the helm with the pointer locked, the
+  card table behind the coachroof, and every later click went down the
+  centre ray (presence-check.nopause in the real Patchwork, 2026-11-16: B's
+  three clicks selected nothing). In Edit a click on something is now
+  Edit's wherever it lands (Decisions, Edit's click is Edit's, below;
+  lane/bodyswitch).
 - the first click of a double-click on a link selected it, and if the
   inspector was shut that opened it and narrowed the canvas under the
   second click, which could then miss a small link; and a double-click on
-  a moving thing missed it (triage N11: on Lost Cities aboard, in Edit
+  a moving thing missed it (Decisions, double-click; triage N11: on Lost Cities aboard, in Edit
   with her world running, the boat pitched between the clicks and the
   second ray hit the Card table). The second click of a double-click now
   resolves to its first press's hit, while the canvas is still under the
@@ -153,8 +166,16 @@ Fixed since (Decisions, double-click, below):
   15 px between presses 250 ms apart, and every double-click the router
   met as one, with its first press on the game, entered it; on one run the
   second press's own ray hit the Card table and the double-click still
-  entered G. (A try the page met more than 500 ms apart is the gate item
-  under Still open.)
+  entered G. (A try the page met more than 500 ms apart was refused then;
+  the next item fixes that.)
+- the double-click gate measured time as the page met the presses
+  (`time.now()`), not as the person made them: when the page was busy
+  after the first press (in headless Chrome the first selection of an Edit
+  visit, opening the inspector, held it about 1 s), the second press
+  arrived over 500 ms later and the router refused a double-click Chrome
+  itself fired (enter-check, 2026-11-16, a stalled try, retried). The gate
+  now times the events' own `timeStamp`s (Decisions, double-click stamps,
+  below; lane/dblstamp).
 
 Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
@@ -1000,7 +1021,8 @@ ships alone and proves something.
     while its stage is on the focus path). They are offered after every
     segment wherever the hit is, and the input path always ends at the focus,
     so outside an entered link verbs, carries, keys and the menu still work;
-    Edit's click outside the focus isn't Edit's and goes down the chain. The
+    Edit's click outside the focus was left to the chain (Decision 7 below;
+    reversed since: Decisions, Edit's click is Edit's). The
     resolver and the menu take a segment per stage on the input path
     always, each stage's commands in its own context and run there (the
     "outermost is the caller's" assumption went; a held verb pins attention
@@ -1774,7 +1796,8 @@ Made while building Edit in context, with the project lead away.
 6. **Selecting from any stage is cut at the focus.** `api.view.select` in a
    game's stage with the focus on the boat selects the link (it used to
    store the game's path). Why: H10 by construction, whoever asks.
-7. **Edit's click outside the focus isn't Edit's**: it goes down the chain.
+7. *Reversed on 2026-11-16 (Decisions, Edit's click is Edit's): the click
+   is Edit's and does nothing.* **Edit's click outside the focus isn't Edit's**: it goes down the chain.
    Why: Edit can't select there, so it's Edit's to ignore, as a click on
    nothing with nothing selected is (TOOLS.md Decisions 6), and the verbs
    out there stay live.
@@ -2049,3 +2072,93 @@ The fix for triage N11 (WATER Decision 112), after its review.
    (focus.test.js). A new ray there could land on whatever is behind it.
    A null first hit (empty sea) stays null: nothing was double-clicked.
 
+## Decisions, double-click stamps (2026-11-16, made unattended in `lane/dblstamp`)
+
+The gate's page time (the Still open item, now under Fixed since).
+
+1. **The time gates read the events' own `timeStamp`.** Each press keeps
+   its `pointerdown`'s stamp, and the dblclick brings its own; the two
+   gaps (second press after the first, dblclick after the second) are
+   taken between those. Why: a stamp is when the input happened, on one
+   clock for every event of the page, so what the gate measures is what
+   the browser measured when it decided the dblclick was a double. The
+   stage's clock (`time.now()`) is when the router got round to the
+   event: a page busy after the first click (the inspector opening, about
+   1 s in headless Chrome) pushed a 200 ms double past 500 ms and the
+   router refused it, and a page catching up on queued events would pass
+   clicks made 600 ms apart. Both directions are in router.test.js, each
+   time gate on and one past its bound with the page's clock saying the
+   opposite; focus.test.js has the stage's clock a second on between the
+   presses and the double-click still entering the link. The bounds (500
+   ms, 6 px, 16 px for a touch), the lock gate and `live` are unchanged.
+2. **No stamp on any of the three puts all three on the stage's clock.**
+   A stamp is `timeStamp` when it is a finite number above 0 (`stampOf`);
+   an event without one (a synthetic event, an old engine's 0) can't be
+   placed on the stamps' clock, and the stage's `time.now()` is the epoch
+   (or a manual source's), so comparing one against the other would be
+   meaningless. Then every press and the dblclick are timed as handled, as
+   before this change: never one clock against the other. Each press
+   records both, so the choice is made at the dblclick, with all three in
+   hand. Not chosen: refusing outright when a stamp is missing (a host
+   test or tool dispatching plain events would lose double-clicks it has
+   today), or the browser's `detail` click count (Decision 3 above).
+
+## Decisions, Edit's click is Edit's (2026-11-16, made unattended in `lane/bodyswitch`)
+
+Found by presence-check.nopause: in the real Patchwork, B entered Lost
+Cities aboard's game G in Edit (a double-click), her world running, and
+B's next single clicks selected nothing. B was in the Aboard body at the
+helm. The click had gone `editInput.click` (`src/stage/view.js`) → "outside
+the focus, not Edit's" → down the chain → the Card table's holder, the
+boat's sailing part, whose click (`sailing/src/crew.js`, `input.click`)
+comes aboard. Reproduced in `focus.test.js` and on local builds by
+`sailing/probes/editclick-run.mjs` (Card table, another part of her, and
+near-misses at cards on her moving table: all boarded before, none after).
+
+1. **In Edit a click on something is Edit's wherever it lands.** At the
+   focus it selects, as before; outside the focus it selects nothing
+   (`selectionStep`'s "outside, nothing", unchanged) and goes no further.
+   Only a click on nothing (or on what its doc no longer has) with nothing
+   selected is still left to the chain. This reverses Decisions, step 14, 7
+   ("isn't Edit's"), and narrows TOOLS Decisions 4 ("outside an entered
+   link stays live") for Edit's click alone; both were the lead's to
+   confirm, unattended. Why: TOOLS
+   Decisions 6 (the lead's) is that in Edit a plain click selects before
+   any package's click verb, "a click on the ship selects her rather than
+   coming aboard", and that nothing stands on Edit; step 14's exception
+   handed exactly that click to the ship again whenever the focus was
+   inside something aboard her, and a verb that changes the body throws the
+   editor out of Edit with no act of theirs but a missed click. The stage
+   is the owner: a package can't tell (no stage sees the focus, and none
+   asks whether the viewer is editing: STAGE.md, Bodies), so sailing's
+   click is right as it is.
+2. **What stays live outside the focus.** Presses (a carry, a drag), keys,
+   the menu, the prompt and every verb on them still reach outside an
+   entered link from Edit (TOOLS Decisions 4, "verbs aren't edits"); Look
+   and every other body hand the click down the chain as before. Not
+   chosen (unattended, for the lead to confirm): a click outside the focus
+   clearing the selection (the selection model is unchanged, and a missed
+   card should not drop what is selected), or leaving the focus out to
+   where the click landed (a near miss would throw the editor out of the
+   game). Tested over every base body (Look, Edit) × every focus (the
+   scene, one link in, two) × a selection or none × every hit (each
+   stage's objects, a mirror's, a pin's, a closed link; stale hits: an id
+   each stage no longer has, a stage no longer there, a malformed key; and
+   nothing): 264 cases, the click reaching the chain exactly in Look or on
+   nothing (or a stale hit) with nothing selected, the selection as the
+   model says, the body and focus unchanged; and a click verb that enters a
+   body, as the boat's does, reached from Look and never from Edit at every
+   focus.
+3. **What the property is, and isn't.** It is about the click: in Edit no
+   package's click verb is offered a click, after the held tool and a
+   widget's owner (which take it first in every body, as before). It is not
+   "nothing a missed pointer does leaves Edit": presses and the
+   double-click still go down the chain in Edit, at the focus as much as
+   outside it, because a press is a carry or a drag and the double-click
+   is Enter and Frame (`scene.focus`, `scene.frame`), and a widget's owner
+   still takes what it owns. No package in the tree changes the body on a
+   press, a double-click or a widget (sailing, seats, walk and arena enter
+   bodies only from a click, a command or a key), so nothing reaches the
+   symptom by those today; a package that did would be wrong by TOOLS
+   Decisions 6 (nothing stands on Edit), not something the stage would
+   cut, since a carry out there is meant to work.
