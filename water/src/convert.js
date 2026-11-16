@@ -1,5 +1,5 @@
 // The world's open water as one stage reads it (WATER.md, "Frames" and
-// "Time"): the water value of the outermost doc on the caller's path that offers one (plain JSON: { v, level,
+// "Time"): the outermost doc's water value (plain JSON: { v, level,
 // components, look?, current? }, the current [ux, uz] in m/s, its frequency
 // shift already in the components)
 // evaluated with this package's own surface, in the calling stage's frame and
@@ -15,7 +15,7 @@
 // caller's clock shows t: t + Δ while the world runs (Δ latched once a frame,
 // after every clock has ticked, by latch()), the latched world time while it
 // is paused (and the water then has no velocity), and t itself for the
-// offering doc's own reader.
+// outermost's own reader.
 
 import { createSurface } from "./surface.js";
 
