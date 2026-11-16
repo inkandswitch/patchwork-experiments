@@ -16,7 +16,10 @@
 //  2. A double-clicks a card of G's as presence-check does it (press,
 //     release, 90 ms of her sea, press, release; real CDP events), up to
 //     three tries: what each press hit, the two gaps by the events' own
-//     timeStamps, and whether it entered G;
+//     timeStamps, whether every press and the dblclick reached the canvas
+//     at the width the first press found (the inspector, shut, opens a
+//     beat after the first press's selection: scene/TOOLS.md Decisions 6)
+//     and whether it entered G;
 //  3. inside G, in Edit: a click on the boat's Card table, then one on her
 //     hull, each outside the focus: the body stays Edit, the focus and the
 //     selection are unchanged;
@@ -55,7 +58,7 @@ const report = { checks: list.checks, details: list.details, numbers: {} };
 const LISTEN = `(() => {
   const host = document.getElementById("a"); const log = (window.__ev = []);
   const what = (e) => { const v = __p.A.view; const r = v.canvas.getBoundingClientRect(); const hit = v.viewport.pick(e.clientX - r.left, e.clientY - r.top);
-    return { type: e.type, stamp: +e.timeStamp.toFixed(1), x: Math.round(e.clientX), y: Math.round(e.clientY), on: e.target === v.canvas ? "canvas" : e.target.tagName.toLowerCase() + "." + String(e.target.className || ""),
+    return { type: e.type, stamp: +e.timeStamp.toFixed(1), x: Math.round(e.clientX), y: Math.round(e.clientY), on: e.target === v.canvas ? "canvas" : e.target.tagName.toLowerCase() + "." + String(e.target.className || ""), cw: Math.round(r.width),
       hit: hit?.id ? v.pathOfKey(hit.id) : null, body: __p.A.local.get().body?.id ?? null, focus: v.atom.get().focus, selected: v.atom.get().selected }; };
   host.addEventListener("pointerdown", (e) => log.push(what(e)), true);
   host.addEventListener("dblclick", (e) => log.push(what(e)), true);
@@ -110,6 +113,10 @@ try {
   // landed on G's card and whose dblclick reached the canvas enters, however the boat moved between the clicks
   const onG = (t) => t.events?.find((e) => e.type === "pointerdown")?.hit?.[0] === ids.link && t.events.find((e) => e.type === "dblclick")?.on === "canvas";
   check("2: every try whose first press landed on a card of G's and whose dblclick reached the canvas entered", tries.filter(onG).every((t) => t.entered), tries.map((t) => ({ onG: onG(t), entered: t.entered })));
+  // a first press's selection opens the shut inspector only a beat later (scene/TOOLS.md Decisions 6, "The inspector
+  // waits a beat"), so the canvas keeps its width under the second press: every press and the dblclick reach it
+  const onCanvas = (t) => t.events?.length >= 3 && t.events.every((e) => e.on === "canvas" && e.cw === t.events[0].cw);
+  check("2: every try's presses and dblclick reached the canvas at the width the first press found (no inspector opened under the second)", tries.filter((t) => t.aim).every(onCanvas), tries.map((t) => t.events?.map((e) => `${e.on} ${e.cw}`)));
   report.numbers.firstTry = tries[0] && { entered: tries[0].entered, gaps: tries[0].gaps, presses: tries[0].events?.map((e) => ({ type: e.type, on: e.on, hit: e.hit, selected: e.selected })) };
   check("2: entering leaves the body Edit", (await state()).body === "edit", await state());
 
