@@ -103,7 +103,7 @@ describe("controls", () => {
 });
 
 describe("stepping", () => {
-  it("skips what one step can't catch up, as the sea's clock does, so she stays on the waves drawn", () => {
+  it("skips what one step can't catch up, as the doc's clock does, so she stays on the waves drawn", () => {
     const cap = MAX_SUBSTEPS * SUBSTEP;
     const [s1, dt1] = catchUp({ t: 10, acc: 0.002 }, 10.1);
     expect(s1.t).toBe(10);

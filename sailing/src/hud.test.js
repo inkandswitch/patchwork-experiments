@@ -1,5 +1,6 @@
 // The HUD: its model (pure) and the DOM it keeps, against a stand-in api.
 import { describe, it, expect, vi } from "vitest";
+import { brokenClocks } from "./test/fakes.js";
 import { compass, createHud, hudModel, inIrons, knots, luffing, nearEye, NEAR, sailDownNudge, sailRow, speedOver, stationGuide, windFrom } from "./hud.js";
 
 describe("the HUD's model", () => {
@@ -232,7 +233,7 @@ describe("the HUD", () => {
       crew: { me: () => me.current, start: vi.fn() },
     };
     const hud = createHud(api, ctx);
-    return { overlay, loops, ctx, hud, clock, root: overlay.querySelector(".sail-hud"), tick: () => hud.tick(0.2) }; // play.js ticks it each frame
+    return { overlay, loops, api, ctx, hud, clock, root: overlay.querySelector(".sail-hud"), tick: () => hud.tick(0.2) }; // play.js ticks it each frame
   }
 
   it("reads the wind at the doc's world time, api.clock.t(), at every t of the table", () => {
@@ -243,6 +244,21 @@ describe("the HUD", () => {
       s.tick();
       expect([t, s.clock.asked]).toEqual([t, [t]]);
     }
+  });
+
+  it("has no fallback for the clock: broken each way, the tick throws and the wind is asked at no time", () => {
+    const s = stage({ current: { playing: true, on: "hull" } });
+    const clock = s.api.clock;
+    for (const row of brokenClocks(clock)) {
+      s.api.clock = row.clock;
+      s.clock.asked.length = 0;
+      expect(() => s.tick(), row.name).toThrow(row.throws);
+      expect(s.clock.asked, row.name).toEqual([]);
+    }
+    s.api.clock = clock; // and whole again, it reads the wind once, at t
+    s.clock.asked.length = 0;
+    s.tick();
+    expect(s.clock.asked).toEqual([0]);
   });
 
   it("shows the way in before you're aboard: a button that comes aboard", () => {

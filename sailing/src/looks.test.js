@@ -5,7 +5,7 @@ import { createOcean } from "./test/ocean.js";
 import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness, ropeIndex, ropeTube } from "./looks.js";
 import { createSeaView } from "./sea-view.js";
 import { FLOAT, JIB, SAIL, SEA, SHIP, WINCH } from "./traits.js";
-import { composeMatrix, emptyScene, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
+import { brokenClocks, composeMatrix, emptyScene, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
 import { parseGLB } from "./glb.js";
 import { jibFit, partGLB } from "./ship.js";
 import { clothCount, clothVertices } from "./cloth.js";
@@ -292,7 +292,8 @@ function stockStage({ burgee = false } = {}) {
     clock: { t: () => clock },
   };
   let clock = 0;
-  const wind = { at: (x, z, t, out = [0, 0]) => ((out[0] = -3), (out[1] = 5), out) };
+  const windAsked = []; // the times the wind was read at
+  const wind = { at: (x, z, t, out = [0, 0]) => (windAsked.push(t), (out[0] = -3), (out[1] = 5), out) };
   const ctx = {
     sea: { wind },
     sim: {
@@ -303,10 +304,28 @@ function stockStage({ burgee = false } = {}) {
       sailModels: () => models,
     },
   };
-  return { api, ctx, read, values, rig, jib, world, contract, models, worlds, setClock: (t) => (clock = t) };
+  return { api, ctx, read, values, rig, jib, world, contract, models, worlds, windAsked, setClock: (t) => (clock = t) };
 }
 
 describe("the trim dressing: the drawn cloth and lines are the pure functions of the read", () => {
+  it("has no fallback for the clock: broken each way, the tick throws and the wind is asked at no time", () => {
+    const st = stockStage();
+    const looks = createLooks(st.api, st.ctx);
+    const clock = st.api.clock;
+    for (const row of brokenClocks(clock)) {
+      st.api.clock = row.clock;
+      st.windAsked.length = 0;
+      expect(() => looks.tick(), row.name).toThrow(row.throws);
+      expect(st.windAsked, row.name).toEqual([]);
+    }
+    st.api.clock = clock; // and whole again, every read of the wind is at t
+    st.setClock(3.7);
+    looks.tick();
+    expect(st.windAsked.length).toBeGreaterThan(0);
+    expect(new Set(st.windAsked)).toEqual(new Set([3.7]));
+    looks.dispose();
+  });
+
   it("the main's and the jib's cloth are clothVertices of trimOf, the sheets' slack and the flutter, exactly", () => {
     const st = stockStage();
     const looks = createLooks(st.api, st.ctx);

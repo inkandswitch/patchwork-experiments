@@ -45,6 +45,36 @@ export function emptyScene() {
   };
 }
 
+/** What a broken clock's t() throws (brokenClocks' third row). */
+export const CLOCK_FAULT = new Error("the clock's t() failed");
+
+/**
+ * A stage's clock (api.clock) broken each way a reader could paper over:
+ * none, one without t, and a t that throws CLOCK_FAULT. The stage always
+ * has a clock with t (scene TOOLS.md §7), so a reader of the world time has
+ * no fallback: with each row in place of `clock` the read throws (`throws`:
+ * an Error class, or the fault itself) and asks the sea at no time at all.
+ * Whatever a fallback's spelling, it shows as a read that didn't throw or a
+ * time that reached the sea. The rest of `clock` (now, after) is kept.
+ */
+export function brokenClocks(clock) {
+  const { t, ...rest } = clock;
+  return [
+    { name: "no clock", clock: undefined, throws: TypeError },
+    { name: "a clock without t", clock: rest, throws: TypeError },
+    {
+      name: "a t that throws",
+      clock: {
+        ...rest,
+        t() {
+          throw CLOCK_FAULT;
+        },
+      },
+      throws: CLOCK_FAULT,
+    },
+  ];
+}
+
 /** T · R(XYZ) · S as a column-major 4×4 (scene/src/transform.js). */
 export function composeMatrix(t) {
   const p = t?.position ?? [0, 0, 0];

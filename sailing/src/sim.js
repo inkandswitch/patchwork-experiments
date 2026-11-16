@@ -226,7 +226,7 @@ export function controlsOf(v, at, spec) {
 /**
  * A state ready to step to sea time `t`: when it's further behind than one
  * step catches up (MAX_SUBSTEPS: a stall, or frames too slow), the rest is
- * skipped, as the sea's clock skips it, so she stays on the waves drawn.
+ * skipped, as the doc's clock (api.clock.t()) skips it, so she stays on the waves drawn.
  * @returns {[object, number]}  the state, and the dt to step it by
  */
 export function catchUp(state, t) {
