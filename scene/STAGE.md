@@ -927,14 +927,15 @@ a tool to pick first, and there is no `local.tool` or `view.tool`:
   in a game too. A plain click selects only as the Edit body's click
   (`editInput` in `stage/view.js`), taken ahead of the chain, after only the
   held tool and a widget (TOOLS.md Decisions 6), on something at the focus;
-  a click on something outside the focus is Edit's too and selects nothing:
-  it never goes down the chain to a package's click verb (the boat's come
-  aboard, under a card missed inside a game linked aboard her: COMPOSITION.md,
-  Decisions, Edit's click is Edit's). Only a click on nothing with nothing
-  selected is left to the chain. Look has none. Where a selection may be
-  is `src/selection.js`: an element of the focus stage (H10): with the
-  focus on the boat, a card aboard selects the link it's in; Enter the
-  link to select the card.
+  a click on something outside the focus is Edit's too and selects nothing,
+  so after the held tool and a widget no package's click verb is offered it
+  (COMPOSITION.md, Decisions, Edit's click is Edit's). Only a click on
+  nothing (or on what its doc no longer has) with nothing selected is left
+  to the chain. Only the click: presses and the double-click go down the
+  chain in Edit as in every body, at the focus and outside it. Look has
+  none. Where a selection may be is `src/selection.js`: an element of the
+  focus stage (H10): with the focus on the boat, a card aboard selects the
+  link it's in; Enter the link to select the card.
 - **The halo** (`scene.halo`) is the selection's handles, in the Edit body,
   where the doc is writable and no tool is held: a move arrow along each axis, a rotate ring
   about each and a scale handle at each corner, all outside the thing's box

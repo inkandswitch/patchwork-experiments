@@ -887,10 +887,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const p = ev?.hit?.id != null ? parseKey(ev.hit.id) : null;
       const path = p && stages.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(ev.hit.id) : null;
       if (!path && atom.get().selected == null) return false;
-      // A click on something is Edit's wherever it lands. Outside the focus it selects nothing (selectionStep's
-      // "outside, nothing") and isn't handed down the chain, where a package's click verb would act for it: the
-      // boat's come-aboard, under a card missed inside a game linked aboard her, changed the body out of Edit
-      // (COMPOSITION.md, Decisions, Edit's click is Edit's). Verbs out there go on by key, menu, prompt and press.
+      // A click on something is Edit's wherever it lands: outside the focus it selects nothing (selectionStep's
+      // "outside, nothing") and goes no further, so no package's click verb acts for an Edit click (COMPOSITION.md,
+      // Decisions, Edit's click is Edit's). Presses, keys, the menu and the prompt still reach outside the focus.
       selectStep({ type: "press", path: path ?? [] });
       return true;
     },

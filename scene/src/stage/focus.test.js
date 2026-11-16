@@ -734,12 +734,22 @@ describe("in Edit a click is Edit's wherever it lands (COMPOSITION.md, Decisions
   // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
   // her moving table (presence-check.nopause, 2026-11-16). Every base body × every focus × a selection or
   // none × every thing a click can land on (each stage's objects, mirrors', a pin's and a closed link's, and
-  // nothing): the click goes down the chain exactly in Look, or in Edit on nothing with nothing selected; the
-  // selection is selectionStep's (outside the focus: unchanged); the body and the focus never move.
-  // 2 × 3 × 2 × 14 = 168 cases.
+  // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly in Look,
+  // or in Edit on nothing (or a stale hit) with nothing selected; the selection is selectionStep's (outside the
+  // focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 22 = 264 cases.
   const FOCI = [[], ["L"], ["L", "M"]];
   const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
-  const HITS = [...Object.entries(STAGES).flatMap(([sp, ids]) => ids.map((id) => [sp, id])), null];
+  // a hit is { key: (view) => the viewport's key, path: the hit's path, or null for nothing }. Stale hits: an id
+  // its stage no longer has (removed between the pick and the click), in every stage; a stage no longer there;
+  // a malformed key.
+  const live = Object.entries(STAGES).flatMap(([sp, ids]) => ids.map((id) => ({ name: `${sp}:${id}`, key: (view) => keyOf(stageOf(view, sp).n, id), path: [...pathOf(sp), id] })));
+  const stale = [
+    ...Object.keys(STAGES).map((sp) => ({ name: `${sp}:gone (stale)`, key: (view) => keyOf(stageOf(view, sp).n, "gone"), path: null })),
+    { name: "a stage no longer there (stale)", key: () => keyOf(999, "card"), path: null },
+    { name: "a malformed key (stale)", key: () => "\u001fx\u001fcard", path: null },
+    { name: "nothing", key: null, path: null },
+  ];
+  const HITS = [...live, ...stale];
   it("every base body × every focus × a selection or none × every hit: down the chain only in Look or on nothing with nothing selected", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
@@ -752,24 +762,23 @@ describe("in Edit a click is Edit's wherever it lands (COMPOSITION.md, Decisions
       for (const base of ["look", "edit"])
         for (const withSel of [false, true])
           for (const hit of HITS) {
-            const name = `${base} ${J(focus)}${withSel ? " selected" : ""} click on ${hit ? hit.join(":") || ":" : "nothing"}`;
+            const name = `${base} ${J(focus)}${withSel ? " selected" : ""} click on ${hit.name}`;
             view.enterBody("look");
             expect(view.enterBody(base), name).toBe(true);
             const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
             view.select(sel);
             expect(J(view.atom.get().selected), name).toBe(J(sel));
-            view.viewport.pick = hit ? () => ({ id: keyOf(stageOf(view, hit[0]).n, hit[1]), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }) : () => null;
+            view.viewport.pick = hit.key ? () => ({ id: hit.key(view), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }) : () => null;
             log.length = 0;
             s.click(20, 20);
             await settle();
-            const path = hit ? [...pathOf(hit[0]), hit[1]] : [];
-            const down = base === "look" || (!hit && !withSel);
-            const want = base === "look" ? sel : selectionStep({ focus, selected: sel }, { type: "press", path }).selected;
+            const down = base === "look" || (!hit.path && !withSel);
+            const want = base === "look" ? sel : selectionStep({ focus, selected: sel }, { type: "press", path: hit.path ?? [] }).selected;
             expect([name, log.some((x) => x.startsWith("click ")), J(view.atom.get().selected), view.atom.get().body?.id, J(view.atom.get().focus)]).toEqual([name, down, J(want), base, J(focus)]);
             cases++;
           }
     }
-    expect(cases).toBe(168);
+    expect(cases).toBe(264);
   }, 60_000);
 
   // The symptom, with a click verb that changes the body as the boat's does: a part holding the host's table

@@ -142,7 +142,7 @@ Still open:
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
-Fixed since (Decisions, double-click, below):
+Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her
@@ -156,7 +156,7 @@ Fixed since (Decisions, double-click, below):
 - the first click of a double-click on a link selected it, and if the
   inspector was shut that opened it and narrowed the canvas under the
   second click, which could then miss a small link; and a double-click on
-  a moving thing missed it (triage N11: on Lost Cities aboard, in Edit
+  a moving thing missed it (Decisions, double-click; triage N11: on Lost Cities aboard, in Edit
   with her world running, the boat pitched between the clicks and the
   second ray hit the Card table). The second click of a double-click now
   resolves to its first press's hit, while the canvas is still under the
@@ -2118,8 +2118,11 @@ near-misses at cards on her moving table: all boarded before, none after).
 1. **In Edit a click on something is Edit's wherever it lands.** At the
    focus it selects, as before; outside the focus it selects nothing
    (`selectionStep`'s "outside, nothing", unchanged) and goes no further.
-   Only a click on nothing with nothing selected is still left to the
-   chain. This reverses Decisions, step 14, 7 ("isn't Edit's"). Why: TOOLS
+   Only a click on nothing (or on what its doc no longer has) with nothing
+   selected is still left to the chain. This reverses Decisions, step 14, 7
+   ("isn't Edit's"), and narrows TOOLS Decisions 4 ("outside an entered
+   link stays live") for Edit's click alone; both were the lead's to
+   confirm, unattended. Why: TOOLS
    Decisions 6 (the lead's) is that in Edit a plain click selects before
    any package's click verb, "a click on the ship selects her rather than
    coming aboard", and that nothing stands on Edit; step 14's exception
@@ -2133,13 +2136,29 @@ near-misses at cards on her moving table: all boarded before, none after).
    the menu, the prompt and every verb on them still reach outside an
    entered link from Edit (TOOLS Decisions 4, "verbs aren't edits"); Look
    and every other body hand the click down the chain as before. Not
-   chosen: a click outside the focus clearing the selection (the selection
-   model is unchanged, and a missed card should not drop what is selected),
-   or leaving the focus out to where the click landed (a near miss would
-   throw the editor out of the game). Tested over every base body (Look,
-   Edit) × every focus (the scene, one link in, two) × a selection or none
-   × every hit (each stage's objects, a mirror's, a pin's, a closed link,
-   and nothing): 168 cases, the click reaching the chain exactly in Look or
-   on nothing with nothing selected, the selection as the model says, the
-   body and focus unchanged; and a click verb that enters a body, as the
-   boat's does, reached from Look and never from Edit at every focus.
+   chosen (unattended, for the lead to confirm): a click outside the focus
+   clearing the selection (the selection model is unchanged, and a missed
+   card should not drop what is selected), or leaving the focus out to
+   where the click landed (a near miss would throw the editor out of the
+   game). Tested over every base body (Look, Edit) × every focus (the
+   scene, one link in, two) × a selection or none × every hit (each
+   stage's objects, a mirror's, a pin's, a closed link; stale hits: an id
+   each stage no longer has, a stage no longer there, a malformed key; and
+   nothing): 264 cases, the click reaching the chain exactly in Look or on
+   nothing (or a stale hit) with nothing selected, the selection as the
+   model says, the body and focus unchanged; and a click verb that enters a
+   body, as the boat's does, reached from Look and never from Edit at every
+   focus.
+3. **What the property is, and isn't.** It is about the click: in Edit no
+   package's click verb is offered a click, after the held tool and a
+   widget's owner (which take it first in every body, as before). It is not
+   "nothing a missed pointer does leaves Edit": presses and the
+   double-click still go down the chain in Edit, at the focus as much as
+   outside it, because a press is a carry or a drag and the double-click
+   is Enter and Frame (`scene.focus`, `scene.frame`), and a widget's owner
+   still takes what it owns. No package in the tree changes the body on a
+   press, a double-click or a widget (sailing, seats, walk and arena enter
+   bodies only from a click, a command or a key), so nothing reaches the
+   symptom by those today; a package that did would be wrong by TOOLS
+   Decisions 6 (nothing stands on Edit), not something the stage would
+   cut, since a carry out there is meant to work.

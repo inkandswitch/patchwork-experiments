@@ -22,8 +22,10 @@
 //     selection are unchanged;
 //  4. inside G, in Edit: `--misses` single clicks each aimed at a card of
 //     G's, her sea moving 150 ms between the aim and the press (what a
-//     script's or a hand's latency is): what each press hit (a card at the
-//     focus, the boat outside it, nothing) and the body after; none boards.
+//     script's or a hand's latency is): what each press hit (a card of G's,
+//     another of G's things such as its board, the boat outside the focus,
+//     nothing) and the body after; none boards, and each hit inside G
+//     selects what it hit.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -153,7 +155,8 @@ try {
     await js("__p.A.view.select(null)");
     await P("setCam('a', __p.overTable('a'))");
     await b.rest(200);
-    const at = await P(`aimBest(${J(await cards())}, 'a')`);
+    const ofG = await cards();
+    const at = await P(`aimBest(${J(ofG)}, 'a')`);
     if (!at) { misses.push({ aim: null }); continue; }
     await b.advance(150);
     await b.move(at.x, at.y);
@@ -161,14 +164,15 @@ try {
     await b.rest(400);
     const ev = (await events()).find((e) => e.type === "pointerdown");
     const after = await state();
-    const where = !ev?.hit ? "nothing" : ev.hit[0] === ids.link && ev.hit.length > 1 ? "G" : "boat";
+    // inside G: a card of G's, or another of G's things (its board); outside: the boat's
+    const where = !ev?.hit ? "nothing" : ev.hit[0] === ids.link && ev.hit.length > 1 ? (ofG.includes(ev.hit[1]) ? "G card" : "G other") : "boat";
     misses.push({ aimed: at.id, where, hit: ev?.hit ?? null, body: after.body, selected: after.selected });
     await b.advance(700 + 137 * i); // (another moment of her sea for the next)
   }
   report.numbers.singleClicks = misses;
   const tally = misses.reduce((t, m) => ((t[m.where] = (t[m.where] ?? 0) + 1), t), {});
   check(`4: ${MISSES} single clicks at cards on her moving table, in Edit inside G: none changes the body`, misses.every((m) => m.body === "edit"), { tally, misses });
-  check("4: …each one on a card of G's selects it", misses.filter((m) => m.where === "G").every((m) => Array.isArray(m.selected) && m.selected[0] === ids.link && m.selected.length === 2), tally);
+  check("4: …each one on something of G's (a card, or its board) selects that thing", misses.filter((m) => m.where?.startsWith("G ")).every((m) => J(m.selected) === J(m.hit.slice(0, 2))), tally);
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
 }
