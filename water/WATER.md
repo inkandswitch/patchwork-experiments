@@ -2089,7 +2089,67 @@ minor faults. Each fix has a test that fails without it.
      now sits at (−20, 0, 35), Ship at sea at (20, 0, 0), home 0,55,125 over
      0,0,17.5: every point of the basin's rim is at least 11.1 m outside her
      block. She is under way, so a solo visit sails her on, and after enough
-     of them the room shows her beside an empty block (Costs 2).
+     of them the room shows her beside an empty block (Costs 2). (Its home
+     is superseded by 122.)
+
+## Decisions, framing (2026-11-16, made unattended in `lane/framing`)
+
+122. **A dry room's home is worked out, not typed: a publisher's fitter,
+     copied, not a scene feature.** The published Model room arrived with
+     both blocks cut at the pane's edges (its home, `0, 0.75·span,
+     1.45·span` over the origin, was a guess), and Model basin and Ship at
+     sea with the basin cut at the left of Patchwork's 640 px pane (the
+     typed `0,55,125:0,0,17.5`); the Harbour (Decision 88) and the Arcade
+     (HOST Decision 47) had each been fixed by hand for the same pane.
+     The answer is `probes/frame.mjs`, in scene and, byte for byte the
+     same, in sailing (packages are independent): `fitHome(points, {
+     pitch, heading })` is the nearest camera looking that way from which
+     every point is inside the middle 90% of a 640 × 800 pane, in closed
+     form (in the camera's frame each point's constraint is linear in the
+     camera's place, so each axis's nearest depth and offset is a min of
+     two lines; the nearer axis wins). The stage's camera has a fixed
+     45° field top to bottom and the pane's width across, so a home that
+     frames the narrowest pane frames every wider one: a home written
+     once is right in every pane down to 576 px. That is why it isn't a
+     scene feature (a home fitted at arrival from the live pane): it would
+     buy only a tighter picture in wide panes, at the cost of a core
+     change to arrival and to Home, and the boxes would still have to come
+     from the doc. What is framed is what the doc shows: every drawn
+     thing's bounds as its file's hint states them (`drawnBoxes`, through
+     parents and links: `contentOf`), plus what a package knows that no
+     hint states, passed in: sailing's `water-boxes.mjs` gives each body
+     of water's box (a basin's size, open water's clip) from its floor up
+     to the top of everything its doc draws (the `lid`: her masthead,
+     15.4 m, or the islet's lighthouse, 18.5 m), because a boat moves
+     inside her block (clip-check) and her rig stands over it. The scene
+     package never sees water: publish-links takes such boxes as `--box
+     "N:centre:size@yaw"` in link N's doc.
+     - **publish-model-room** fits its home by default (`--pitch 27`,
+       looking along the blocks' length, as they lie square to the room)
+       and refuses any home, given or fitted, that leaves a block or a
+       drawn thing of a boat out of the 640 × 800 or 1440 × 900 pane. It
+       also checks that each block, as water-boxes sees it through the
+       link, is the block it laid out.
+     - **publish-links** gains `--frame [--pitch] [--heading]` and `--box`;
+       with either, the home (fitted, given or the started link's) is
+       checked in both panes and refused if anything is out.
+     - **publish-basin --mashup --basin <url> --ship <url>** prints the
+       mashup's publish-links command with both `--box`es read from the
+       docs and `--heading` her block's turn (−45°: looking along her
+       block, the basin in front of it, about 295 m out; from the front
+       it would be 403 m). Decision 121's layout is kept.
+     - **frame-check.mjs** (sailing) is the proof: every drawn box and
+       every water box of a doc, through every link, projected from its
+       home by `project` (held to three's PerspectiveCamera in scene's
+       frame-home test) into 640 × 800 and 1440 × 900. On dry runs: the
+       Model room 68/68 (34 boxes × 2 panes), the mashup 62/62; with the
+       published homes, the room fails both blocks in the narrow pane
+       (x ±1.22) and the mashup five (the basin at x −1.12, her block,
+       islet and green buoy past the right edge), as seen in Patchwork.
+     The cost: Ship at sea's block is 116 × 223 m, so whole it is framed
+     from far off and both boats are small in the mashup's picture. The
+     Arcade's home (pane width and the widest label, HOST Decision 47) and
+     the Harbour's (88) are left as they are; both could use the fitter.
 
 ## Invariants
 
