@@ -102,6 +102,9 @@ export const PRESENTATION = {
     detail: (i) => (i.pattern ? `${i.pattern}${i.include ? ` in ${i.include}` : ""}` : null),
   },
   fs_delete: { verb: "remove", detail: (i) => baseName(i.path) },
+  note_write: { verb: "note", detail: (i) => i.name ?? null },
+  note_read: { verb: "recall", detail: (i) => i.name ?? "notes" },
+  note_delete: { verb: "forget", detail: (i) => i.name ?? null },
   fs_edit: {
     verb: "edit",
     detail: (i) => (i.path ? baseName(i.path) : i.url ? "file" : null),

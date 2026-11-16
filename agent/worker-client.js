@@ -54,6 +54,7 @@ export async function connectWorkerRunner({
   key,
   providerId,
   system,
+  account,
   onEvent,
   timeoutMs = 20000,
 }) {
@@ -112,6 +113,7 @@ export async function connectWorkerRunner({
       key: key ?? null,
       providerId: providerId ?? "openrouter",
       system: system ?? null,
+      account: account ?? null,
     },
     [channel.port2]
   )

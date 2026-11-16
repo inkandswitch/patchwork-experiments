@@ -44,6 +44,7 @@ import {
 } from "./session.js"
 import { batchedAppender } from "./store.js"
 import { runTool } from "./tools/index.js"
+import { notesSection } from "./tools/notes.js"
 
 export const DEFAULT_SYSTEM = `You are an agent living inside Patchwork, a local-first workspace where everything is an automerge document.
 
@@ -142,6 +143,18 @@ export async function run(opts) {
       ? { supports: modelInfo.supports ?? null, maxOutput: modelInfo.maxOutput ?? null, efforts: modelInfo.efforts ?? null }
       : null,
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
+  }
+
+  // What earlier sessions learned. Read once per run, so a note written in one
+  // turn is in the next run's prompt; a failure to read them is not a reason
+  // to stop working.
+  if (opts.notes !== false) {
+    try {
+      const learned = await notesSection(ctx ?? {})
+      if (learned) settings.system = `${system}\n\n${learned}`
+    } catch {
+      /* no notes this run */
+    }
   }
 
   let truncations = 0

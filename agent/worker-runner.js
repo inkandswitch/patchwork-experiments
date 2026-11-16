@@ -80,7 +80,7 @@ function broadcast(sessionUrl, message) {
   }
 }
 
-async function startSession({ sessionUrl, subject, key, providerId, system }, port) {
+async function startSession({ sessionUrl, subject, key, providerId, system, account }, port) {
   const existing = runners.get(sessionUrl)
   if (existing) {
     existing.ports.add(port)
@@ -96,7 +96,20 @@ async function startSession({ sessionUrl, subject, key, providerId, system }, po
   const runner = new SessionRunner({
     store,
     runnerUrl: `worker-${Math.random().toString(36).slice(2, 10)}`,
-    ctx: { repo, subject, sessionUrl, splice: automerge?.splice ?? null, events: createEvents(store) },
+    // The account's documents come from the tab: a worker has no
+    // accountDocHandle. Without them discovery, notes and the sensitive-document
+    // check had nothing to go on here.
+    ctx: {
+      repo,
+      subject,
+      sessionUrl,
+      splice: automerge?.splice ?? null,
+      events: createEvents(store),
+      rootFolderUrl: account?.rootFolderUrl ?? null,
+      contactUrl: account?.contactUrl ?? null,
+      moduleSettingsUrl: account?.moduleSettingsUrl ?? null,
+      sensitiveDocs: (account?.sensitiveDocs ?? []).filter(Boolean),
+    },
     buildToolset: (doc) => buildToolset(doc),
     getProvider: async () => getProvider(providerId ?? "openrouter"),
     // The key is passed in per session rather than read from storage: a worker

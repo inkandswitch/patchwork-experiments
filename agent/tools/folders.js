@@ -457,7 +457,7 @@ async function createFile(repo, name, content) {
 }
 
 /** Make a folder document. */
-async function createFolder(repo, name) {
+export async function createFolder(repo, name) {
   const handle = await repo.create2()
   handle.change((doc) => {
     doc.title = name

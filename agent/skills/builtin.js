@@ -679,6 +679,48 @@ What it cannot do is guess an id — remove list items with a splice range on
 their index, from a fresh read.`,
   },
   {
+    name: "keeping-notes",
+    description:
+      "What to write down so later sessions start knowing it: when to note_write, what makes a note worth keeping, how to keep notes from rotting, and what never goes in one.",
+    body: `# Keeping notes
+
+Each session starts with a list of your notes (\`note_read\` opens one). They
+live in the user's "Agent notes" folder, where the user reads and edits them
+too — so write them for both of you.
+
+## When
+
+Before you finish, ask: did I work something out that the next session would
+have to work out again? The best notes come from being wrong first — a write
+that failed and why, a datatype that was not shaped the way you assumed, a tool
+that behaves differently from its description. Write it then, while you know.
+
+## What
+
+- **Worth keeping:** how a particular datatype or document is actually shaped;
+  a mistake and the fix; how something in this workspace behaves; a preference
+  the user stated ("they want tests before code").
+- **Not worth keeping:** a log of what you did today; anything a skill already
+  says; anything you could read straight off a document when you need it.
+
+## How
+
+- One topic per note, named for the topic: \`automerge counters\`, not
+  \`session 14 learnings\`.
+- Start with \`# Title\` and one line saying what it is. That line is all a
+  later session sees in the list, so make it decide whether to read on.
+- Say *why*, not only *what* — a rule without its reason gets misapplied.
+- Update instead of adding a near-duplicate: \`note_read\`, change it,
+  \`note_write\` the whole thing back (only the difference is written).
+- A note that turned out wrong is worse than none. Fix it or \`note_delete\` it.
+
+## Never
+
+No credentials, tokens, passwords or keys — notes are synced, and one that
+looks like it holds one is refused. Nothing the user told you in confidence
+that they would not want sitting in a folder.`,
+  },
+  {
     name: "editing-documents",
     description:
       "How to change any Patchwork document safely with doc_edit's path/range/value ops, and how to change text by anchoring on it (find, fs_edit) rather than counting characters.",
