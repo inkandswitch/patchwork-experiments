@@ -7,7 +7,8 @@
 // its origin: weather, so only the outermost doc's counts, offered as the
 // world's `water` ambient. With a size it is a box hanging from its origin:
 // a thing, which counts for its own doc wherever that doc is placed and is
-// never offered. What floats asks the extension which water it is in. What
+// never offered. Open water may carry a clip: the box it keeps, as its doc's
+// own, where the world it is placed in offers no open water. What floats asks the extension which water it is in. What
 // makes waves (sailing's sea) and a current (`water.current`, here) are
 // behaviours put on the shape. Parts: open water, and a pond.
 
@@ -21,8 +22,11 @@ export const plugins = [
       water: {
         name: "Water",
         on: "object",
-        blurb: "This object is water, its origin the surface at rest. With a size (width, depth, length) it is a box hanging from its origin, its doc's own wherever the doc is placed; without one it is open water below its origin, and a world linked into another floats on that world's open water instead. Its waves come from whatever makes them (a sea)",
-        fields: [{ key: "size", label: "Size (m: [width, depth, length]; empty: open water)", kind: "json" }],
+        blurb: "This object is water, its origin the surface at rest. Three ways to say it: open (no size, no clip): my sea, unless the world has one; open with a clip: my sea, or this much of it, a box at this object's place kept where the world it is placed in has no open water; a box (a size): this water, always, its doc's own wherever the doc is placed. Its waves come from whatever makes them (a sea). A doc meant to be placed on a deck is best without a clip. While it is selected, its box is outlined",
+        fields: [
+          { key: "size", label: "Size (m: [width, depth, length]; empty: open water)", kind: "json" },
+          { key: "clip", label: "Clip: keep this much where the world has no water (m: [width, depth, length]; empty: none; open water only)", kind: "json" },
+        ],
         init: {},
       },
       "water.current": {

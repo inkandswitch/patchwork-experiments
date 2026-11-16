@@ -64,12 +64,12 @@ describe("what a doc offers (waterValue, wavesByBody)", () => {
     for (const x of [-100, 0, 37.5]) for (const t of [0, 13.37, 1e4]) expect(Math.abs(w.heightAt(x, x / 2, t))).toBeLessThan(amp + 0.5);
   });
 
-  it("a patch's extent is its footprint's corners, turned, and the band about its level; the union holds them all", () => {
+  it("a patch's extent is its footprint's corners, turned and widened by the band, from its floor to the band above its level; the union holds them all", () => {
     const box = boxOf([2, 1, 4], compose({ position: [10, 3, -5], rotation: [0, Math.PI / 2, 0] }));
     const e = patchExtent(box, 0.5);
     const r = (a) => a.map((x) => Math.round(x * 1e9) / 1e9 + 0);
-    expect(r(e.min)).toEqual([8, 2.5, -6]);
-    expect(r(e.max)).toEqual([12, 3.5, -4]);
+    expect(r(e.min)).toEqual([7.5, 2, -6.5]);
+    expect(r(e.max)).toEqual([12.5, 3.5, -3.5]);
     expect(unionOf([null, e, { min: [0, 0, 0], max: [1, 1, 1] }])).toEqual({ min: [0, 0, e.min[2]], max: [e.max[0], e.max[1], 1] });
     expect(unionOf([null])).toBeNull();
   });

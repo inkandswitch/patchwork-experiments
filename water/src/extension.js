@@ -18,11 +18,20 @@
 //     not }) → reader | null }, which water a point in this stage's frame is
 //     in (choose.js), as sailing's ocean shape (convert.js for the world's
 //     open water, bounded.js for a body of this doc), or null.
+//   - Open water may carry a clip (WATER.md, "Clipped open water"): where the
+//     world offers no open water (`ambient("water")` is null) and this stage
+//     has flushed once (the first-flush guard: alone, its own offer is the
+//     world's from then on), the doc's open body with a valid clip, level in
+//     its doc, is the bounded body { id: its own id, size: clip } of its doc.
+//     From there it is any bounded body: one path, not a copy.
 //   - It draws the open surface where its doc is the world (around the
 //     camera, lit by the world's atmosphere and roughened by the world's
-//     wind), and a finite patch over each bounded body in every stage that
-//     draws its doc (acting, mirror, pin), and sets the stage's extent to the
-//     union of what it draws.
+//     wind), and a block over each bounded body (its top, skirt and floor)
+//     in every stage that draws its doc (acting, mirror, pin), and sets the
+//     stage's extent to the union of what it draws, floors included.
+//   - While a Water object of its doc is selected, it draws a dashed outline
+//     of that object's box (its size, or its clip whether or not it is live
+//     here), so an author sees how much sea comes with her.
 //
 // Waves are a function of time, so it registers a process with no state (a
 // reason for time to pass) where its doc is the world and its open water has
@@ -31,7 +40,7 @@
 
 import { createOceanSurface } from "./material.js";
 import { createTiming, latch, levelOf, readerFor, VERSION } from "./convert.js";
-import { amplitudeBound, bodiesOf, boxOf, clipToSpan, currentOf, CURRENT, isLevel, rigidVelocity, scaleOf, shiftByCurrent, TRAIT } from "./bodies.js";
+import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipToSpan, currentOf, CURRENT, isLevel, rigidVelocity, scaleOf, shapeOf, shiftByCurrent, TRAIT } from "./bodies.js";
 import { boundedReader } from "./bounded.js";
 import { choose } from "./choose.js";
 
@@ -87,22 +96,59 @@ export function waterExtent(components, level = 0) {
   return { min: [-WATER_REACH, level - h, -WATER_REACH], max: [WATER_REACH, level + h, WATER_REACH] };
 }
 
-/** A bounded body's slab: its footprint's corners in the stage's frame, the band A about its level. Pure. */
-export function patchExtent(box, A) {
-  const [w, , l] = box.size;
+/** A body's heading in the stage's frame: its +Z column's yaw. */
+const yawOf = (M) => Math.atan2(M[8], M[10]);
+
+/**
+ * How a bounded body's block is drawn (material.js patchGrid): its
+ * footprint w × l (scaled), turned by its heading, level at its origin, and
+ * its floor plane relative to the level, [f0, fx, fz] (the floor's height at
+ * offset (dx, dz) from the origin is f0 + fx·dx + fz·dz): the body's
+ * y = -depth, wherever it is turned. Pure.
+ */
+export function patchGeometry(box) {
   const M = box.M;
+  const s = scaleOf(M);
+  const o = applyPoint(M, [0, -box.size[1], 0]);
+  const n = applyDir(M, [0, 1, 0]);
+  const ny = n[1];
+  const f0 = o[1] - M[13] - (Math.abs(ny) < 1e-12 ? 0 : (n[0] * (M[12] - o[0]) + n[2] * (M[14] - o[2])) / ny);
+  const floor = Math.abs(ny) < 1e-12 ? [o[1] - M[13], 0, 0] : [f0 + 0, -n[0] / ny + 0, -n[2] / ny + 0];
+  return { w: box.size[0] * s, l: box.size[2] * s, yaw: yawOf(M), floor };
+}
+
+/**
+ * A bounded body's slab: its drawn footprint's corners in the stage's frame,
+ * widened by the band A (a crest's sideways throw is within it), from the
+ * band above its level down to its floor (or A below the level, whichever is
+ * lower), so a camera inside a block isn't cut by the near plane. Pure.
+ */
+export function patchExtent(box, A) {
+  const { w, l, yaw, floor } = patchGeometry(box);
+  const M = box.M;
+  const c = Math.cos(yaw), sn = Math.sin(yaw);
   const min = [Infinity, box.level - A, Infinity];
   const max = [-Infinity, box.level + A, -Infinity];
   for (const u of [-w / 2, w / 2])
     for (const v of [-l / 2, l / 2]) {
-      const x = M[0] * u + M[8] * v + M[12];
-      const z = M[2] * u + M[10] * v + M[14];
-      min[0] = Math.min(min[0], x);
-      max[0] = Math.max(max[0], x);
-      min[2] = Math.min(min[2], z);
-      max[2] = Math.max(max[2], z);
+      const dx = u * c + v * sn, dz = -u * sn + v * c;
+      min[0] = Math.min(min[0], M[12] + dx - A);
+      max[0] = Math.max(max[0], M[12] + dx + A);
+      min[2] = Math.min(min[2], M[14] + dz - A);
+      max[2] = Math.max(max[2], M[14] + dz + A);
+      min[1] = Math.min(min[1], box.level + floor[0] + floor[1] * dx + floor[2] * dz);
     }
   return { min, max };
+}
+
+/** The twelve edges of a box `size` hanging from the origin of M (column-major, the stage's frame), as 24 points flattened: the selection outline. Pure. */
+export function outlineSegments(size, M) {
+  const [w, d, l] = size;
+  const P = (x, y, z) => applyPoint(M, [x, y, z]);
+  const c = [];
+  for (const y of [0, -d]) for (const [x, z] of [[-w / 2, -l / 2], [w / 2, -l / 2], [w / 2, l / 2], [-w / 2, l / 2]]) c.push(P(x, y, z));
+  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+  return edges.flatMap(([a, b]) => [...c[a], ...c[b]]);
 }
 
 /** The union of boxes (nulls left out), or null for none. Pure. */
@@ -129,8 +175,6 @@ export function isUnder(scene, id, root) {
 
 /** A frame's identity for rebuilding a reader: its matrix's numbers. */
 const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
-/** A body's heading in the stage's frame: its +Z column's yaw. */
-const yawOf = (M) => Math.atan2(M[8], M[10]);
 
 export default {
   create(api) {
@@ -142,8 +186,7 @@ export default {
     let refused = false; // said once: no water here (tilted frame, another version)
 
     /** The reader for the world's open water as it is now (made again only when the value, the frame or `mine` changed). */
-    function refreshWorld() {
-      const a = api.ambient(TRAIT);
+    function refreshWorld(a) {
       if (!a) {
         world = null;
         worldFrom = null;
@@ -176,17 +219,40 @@ export default {
       api.notify?.(text, "info");
     };
 
-    /** Each bounded body's box (its drawn pose), its rigid velocity since the last frame, and its reader (made again only when its waves change). */
-    function refreshBodies() {
+    // the first-flush guard (WATER Decision 107): a clip is never live before this
+    // stage has been asked for its ambients once, so alone its own offer is the world's
+    let flushed = false;
+    let clipLive = null; // the open body whose clip is a bounded body here now, or null
+
+    /**
+     * Each bounded body's box (its drawn pose), its rigid velocity since the
+     * last frame, and its reader (made again only when its waves change); with
+     * the open body's clip among them where the world offers no open water
+     * (`dry`) and this stage has flushed.
+     */
+    function refreshBodies(dry) {
       const sc = api.scene?.() ?? null;
       const found = bodiesOf(sc?.objects);
-      for (const id of found.extra) sayOnce(`extra:${id}`, `Only one open water counts in a scene: “${sc.objects[id]?.name ?? id}” is left out`);
-      for (const id of found.invalid) sayOnce(`invalid:${id}`, `Water's size is three positive numbers (width, depth, length): “${sc.objects[id]?.name ?? id}” holds none`);
-      const waves = found.bounded.length ? wavesByBody(api.collect(WAVES)) : {};
+      const name = (id) => sc.objects[id]?.name ?? id;
+      for (const id of found.extra) sayOnce(`extra:${id}`, `Only one open water counts in a scene: “${name(id)}” is left out`);
+      for (const id of found.invalid) sayOnce(`invalid:${id}`, `Water's size is three positive numbers (width, depth, length): “${name(id)}” holds none`);
+      for (const id of found.badClip) sayOnce(`clip:${id}`, `Water's clip is three positive numbers (width, depth, length): “${name(id)}” keeps no box, and stays open water`);
+      for (const id of found.clipIgnored) sayOnce(`clipped:${id}`, `“${name(id)}” has a size, so its clip does nothing: a box of water is always its doc's`);
+      const list = [...found.bounded];
+      clipLive = null;
+      if (dry && flushed && found.open && found.openClip) {
+        const M = sc.world?.(found.open) ?? null;
+        if (!M || isLevel(M)) {
+          list.push(clipBody(found.open, found.openClip));
+          list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+          clipLive = found.open;
+        }
+      }
+      const waves = list.length ? wavesByBody(api.collect(WAVES)) : {};
       const t = api.clock.t();
       const seen = new Set();
       order = [];
-      for (const { id, size } of found.bounded) {
+      for (const { id, size } of list) {
         const W = api.worldOf(id);
         if (!W) continue;
         seen.add(id);
@@ -217,12 +283,23 @@ export default {
 
     let frame = 0;
     let freshAt = -1; // the frame refresh last ran in
+    let freshFor = undefined; // and the world's water value it ran for
+    let freshFlushed = false; // and whether this stage had flushed
     let scene = null;
+    /**
+     * Once a frame, and again whenever the world's water value changes or this
+     * stage first flushes: so no step reads a clip after the outermost's
+     * offer arrives, even before this stage's next loop (W31).
+     */
     function refresh() {
-      if (freshAt === frame) return;
+      const a = api.ambient(TRAIT);
+      const value = a?.value ?? null;
+      if (freshAt === frame && freshFor === value && freshFlushed === flushed) return;
       freshAt = frame;
-      refreshWorld();
-      scene = refreshBodies();
+      freshFor = value;
+      freshFlushed = flushed;
+      refreshWorld(a);
+      scene = refreshBodies(a === null);
     }
 
     /** Which water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries: a reader, or null. */
@@ -301,11 +378,10 @@ export default {
       for (const id of order) {
         const b = bodies.get(id);
         const box = b.cell.box;
-        const s = scaleOf(box.M);
-        const w = box.size[0] * s, l = box.size[2] * s, yaw = yawOf(box.M);
+        const { w, l, yaw, floor } = patchGeometry(box);
         let p = patches.get(id);
         if (!p) {
-          p = { surface: createOceanSurface(api.THREE, lookOf(b.components, b.look, wind), { patch: { w, l, yaw } }), key: b.key, wind };
+          p = { surface: createOceanSurface(api.THREE, lookOf(b.components, b.look, wind), { patch: { w, l, yaw, floor } }), key: b.key, wind };
           group.add(p.surface.object);
           patches.set(id, p);
           api.invalidate();
@@ -315,7 +391,7 @@ export default {
           p.wind = wind;
           api.invalidate();
         }
-        p.surface.setPatch(w, l, yaw);
+        p.surface.setPatch(w, l, yaw, floor);
         p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, atm?.sky);
         out.push(patchExtent(box, b.A));
       }
@@ -326,6 +402,49 @@ export default {
         api.invalidate();
       }
       return out;
+    }
+
+    // ─── the selection outline: a selected Water object's box (size, or clip) ───
+    let outline = null;
+    let outlineKey = null;
+    function drawOutline() {
+      const sel = api.view?.get?.()?.selected ?? null;
+      const o = typeof sel === "string" ? scene?.objects?.[sel] : null;
+      const sh = o?.traits?.[TRAIT] !== undefined ? shapeOf(o.traits[TRAIT]) : null;
+      const size = sh?.kind === "bounded" ? sh.size : sh?.kind === "open" ? sh.clip : null;
+      const M = size ? api.worldOf(sel) : null;
+      if (!M) return undrawOutline();
+      const key = JSON.stringify([sel, size, Array.from(M)]);
+      if (key === outlineKey) return;
+      outlineKey = key;
+      const T = api.THREE;
+      const g = new T.BufferGeometry();
+      g.setAttribute("position", new T.BufferAttribute(new Float32Array(outlineSegments(size, Array.from(M))), 3));
+      const dash = Math.max(0.05, (Math.min(size[0], size[2]) * scaleOf(M)) / 24);
+      if (outline) {
+        outline.geometry.dispose();
+        outline.geometry = g;
+        outline.material.dashSize = dash;
+        outline.material.gapSize = dash * 0.6;
+      } else {
+        outline = new T.LineSegments(g, new T.LineDashedMaterial({ color: 0xffffff, dashSize: dash, gapSize: dash * 0.6, transparent: true, opacity: 0.85 }));
+        outline.name = "water-outline";
+        outline.frustumCulled = false;
+        outline.userData.noPick = true;
+        outline.raycast = () => {};
+        group.add(outline);
+      }
+      outline.computeLineDistances?.();
+      api.invalidate();
+    }
+    function undrawOutline() {
+      if (!outline) return;
+      outline.geometry.dispose();
+      outline.material.dispose();
+      outline.removeFromParent?.();
+      outline = null;
+      outlineKey = null;
+      api.invalidate();
     }
 
     function setExtent(box) {
@@ -346,6 +465,7 @@ export default {
       const atm = api.ambient("atmosphere")?.value ?? null;
       const open = drawOpen(a, wind, atm);
       const own = drawPatches(wind, atm);
+      drawOutline();
       setExtent(unionOf([open, ...own]));
     });
     refresh();
@@ -355,6 +475,8 @@ export default {
       /** which water a point is in, as a reader in this stage's frame and on its clock: { at(p, { not }) } */
       water: contribution,
       ambient() {
+        // the stage is asking for its ambients: it has flushed (the first-flush guard)
+        flushed = true;
         const sc = api.scene?.() ?? null;
         const id = bodiesOf(sc?.objects).open;
         if (!id) return null;
@@ -372,6 +494,7 @@ export default {
         order = [];
         needTime(null);
         undrawOpen();
+        undrawOutline();
         for (const p of patches.values()) p.surface.dispose();
         patches.clear();
         if (extentKey !== null) api.extent?.(null);
@@ -386,6 +509,11 @@ export default {
           return [...patches.keys()];
         },
         bodies: () => [...order],
+        /** the open body whose clip is a bounded body here now, or null */
+        clip: () => clipLive,
+        get outline() {
+          return outline;
+        },
         timing,
       },
     };
