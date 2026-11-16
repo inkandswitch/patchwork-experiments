@@ -118,9 +118,11 @@ Still open:
   against water kept only as a box, as built (WATER.md, "Open for the
   lead").
 
+Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
   Fitting out's hatch; equal at rest): it plays the acting stage's held pose
   back as any peer does (Decisions, final fixer after the next phase, 2).
+  The lead accepted it on 2026-11-15 ("it's fine").
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -1164,7 +1166,8 @@ The five open questions were put to the project lead and answered:
    read path (2d738ae6, 94cfd4d0, with the atmosphere and arena moved onto
    it), republish Ship at sea, Lost Cities aboard, Fitting out and Cadboro
    Bay without the water trait, and take the Harbour out of the folder.
-   This is the first of the lead's open questions.
+   This is the first of the lead's open questions. *Closed: the lead
+   accepted the sentence on 2026-11-15 (Decision 1; WATER Decision 43).*
 2. **A mirror trails a moving part by the playback delay, and that is kept
    as a known gap.** fitout-check's step 4 failed once at integration (the
    mirrored hatch 13 to 24 cm behind the acting one mid-slide). Run three
@@ -1182,7 +1185,8 @@ The five open questions were put to the project lead and answered:
    case of a doc placed twice in one view, and it waits for a second
    consumer or the lead's word. fitout-check now also waits for the
    packages to run before step 1 (a run failed step 1 when the load prompt
-   came after the stages were up).
+   came after the stages were up). *Accepted by the lead on 2026-11-15
+   ("it's fine"): the lag stays, and the same-view shortcut is not built.*
 
 ## Decisions, presence where it is (2026-11-14, made unattended)
 
