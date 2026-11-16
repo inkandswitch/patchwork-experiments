@@ -48,7 +48,8 @@ modules share.
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, mainsheet, jib winches, companionway, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the weather and a Sea (a water object with a sea on it, first in the order: `bringSea`; its `clip` the box of her layout, `seaClip`: her swing circle or start and the landmarks, 10 m to spare, centred and turned with the layout, so in a world with no open water she floats on a block of her own sea: water/WATER.md, "Clipped open water"), the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
 | `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
-| `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@3` GLB): the 12 m fixture's hull, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`). See "Trim feedback" |
+| `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@4` GLB): the 12 m fixture's hull, its windage element, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig and its windage computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`, `windageOf`, `rm30Of`). See "Trim feedback" |
+| `windage.js` | yes | §3.13's windage elements and §6.1's force on one (`hullElement`, `rigElements`, `windageElements`, `contractElement`, `elementForce`): naval's `naval/windage.js` rules, copied (its header says what differs) |
 | `resistance.js` | yes | A rig contract's resistance table (§6.5) unpacked for the 120 Hz loop: the canoe body's R(V, φ) with its planing blend, the planing weight, and the induced drag's effective draft (`contractResistance`) |
 | `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
@@ -238,7 +239,17 @@ plain path (`specFor`: her box, her `extras.ship` and the rig's
 one on her rig's GLB ("Trim feedback" item 1). Two live cases sail the
 plain path: a rig file with no `extras.rig`, and the stock rig on any hull
 but her own (camber's), where her contract isn't taken.
-`stock-rig.test.js` pins the plain spec key for key for both.
+`stock-rig.test.js` pins the plain spec key for key for both. A contract
+is read (`rigContract`) only in v1's current shape: with its frame matrix,
+mass, hull and the windage elements the schema requires (§3.13). One stated
+before v1 had windage (a doc holding `sailing/rig@3`) is not read and sails
+the plain path until it is republished: no back-compat.
+
+The copies (`test/rig-contract/`: naval's schema, validator, `compose.js`
+and five valid fixtures; `windage.js`: naval's windage rules) are copies,
+never links. `windage.test.js` holds each copied file to its sha256 and
+`windage.js` to every fixture's elements, so drift either way shows; to
+take a newer contract, re-copy them all and rewrite that table.
 
 - **Frame.** The contract is x forward, y port, z up, the design
   waterplane at z = 0; the body is (−y, z, −x) of it. `frame.glbToFrame`
@@ -475,28 +486,59 @@ but her own (camber's), where her contract isn't taken.
   0.005 m/s and 0.05° of the 15 s before) and average its speed ±10%, heel
   ±2°, leeway ±1.5°, rudder on the same side. Her crew are all the way out
   at a heeled point; at an upright one roll passes if somewhere between in
-  and out they hold her there. The 12 m sloop and the Catalina 30 pass at
-  every point, and they and the J/24 settle within every tolerance. The
-  Laser settles 2.1° short of her heel and cuvature 16.4% slow (3.24 m/s
-  against 3.88), both by windage: cuvature's is 395 N, a quarter of her
-  drive at 12 kn 45°, and without it she settles 0.8% slow. What still
-  fails is listed in `KNOWN_GAPS`
-  point by point with its measured values, each held to them, so the list
-  moves when the physics does: windage, which §6.1 leaves out and sailing
-  doesn't (all of the Laser's surge, sway and roll failures; less windage,
-  every fixture's surge residual is within 0.07 of its tolerance),
-  cuvature's stand-in hull's righting moment, one J/24 point where her
-  righting curve is near flat (14 kn 52°, 2.2° less heel), and the Laser's
-  main's CE swung out on reaches and runs (weather helm 1.5–2.2° more than
-  predicted running, yaw past tolerance from 90° at 16 kn and up, planing
-  points included). The report beside it gives each fixture's residual at
-  the reference point and how much of it is windage. Each
+  and out they hold her there. Since naval's 01b9b8cb and 7d473f91 the
+  fixtures' predictions include §3.13's windage and each sail's CE swung
+  to its sheet (§6.6); sailing's windage is still its own rule (her
+  topsides and the lumped mast), so measured on 2026-11-16 every fixture
+  settles within every tolerance but the J/24's leeway (7.4° against
+  9.0°), cuvature's settle now included (3.27 against 3.27 m/s; its old
+  16% was the windage §6 left out). What still fails is listed in
+  `KNOWN_GAPS` point by point with its measured values, each held to them,
+  so the list moves when the physics does: windage's heeling force, which
+  §6.1's hull element grows with heel and sailing's rule doesn't (one
+  sloop point, four of the Catalina's and 22 of the J/24's heel 2–8° less
+  than predicted on heeled reaches; no keelboat's surge or sway residual
+  past 0.35 of its tolerance), the Laser's windage drag (about twice
+  §6.1's: her close-hauled and reaching surge and roll failures), the
+  Laser dead downwind (both swing the main's CE now, and sailing's turns
+  her bow up 2.4–4.2° of helm less than §6.6's: open), and cuvature's
+  stand-in hull's righting moment. The report beside it gives each
+  fixture's residual at the reference point and how much of it is
+  sailing's windage. Each
   mechanism also has its own finite cases: `foils-mass-crew.test.js` (item
   9), `hull-resistance.test.js` (her hull, resistance, planing, side force
   and induced drag, and one seeded sea run as a guard), `sails-jib.test.js`
   (item 11: the coefficients, the sets' trimmed tables through the wrench,
   each sail at its own CE and in its own air, the jib's swing, sheet and
   lead, backing and goose-winging, furling, reefing's CE, and irons).
+
+### Decisions (N6)
+
+Each decided unattended (2026-11-16, lane/n6), for the lead:
+- *`windage.js` is naval's rules, copied, with two seams.* Its builder is
+  split into `hullElement` and `rigElements` (`windageElements` is the
+  two, as naval's is), and `rigElements` takes the mast's width where
+  naval works it out from the mast's length: the stock sloop keeps the
+  fixture's hull element and states only her rig's, at her drawn 0.19 m
+  section (`rig.mast.sectionM`), not `mastSection(14)` (0.087 m).
+- *The stock hull's windage element is the fixture's*, as her canoe body
+  is, not §3.13's rule on her drawn sheer (her drawn hull isn't the one she
+  floats on: "Which hull").
+- *RM30 for her rigging* is the kept righting curve's (boat + crew at 30°,
+  the curve she sails on), over her drawn chainplates' half-breadth, as
+  naval's loads use the chainplate base; `loads` stays null.
+- *`rigContract` requires `windage.elements`* (an array: the schema
+  requires it). A doc filed with `rig@3` sails the plain path until it is
+  republished; no shim.
+- *The agreement harness reads compose's water side force (`hydroAt`) on
+  the contract with its windage elements taken off* (`windageless`): L is
+  read off compose's sway equation, whose air heeling force now includes
+  the elements', which `breakdown`'s §6.3 reading of the sails alone
+  doesn't hold. Without it the water check failed by 2–4% at every
+  reference point though no water force had changed.
+- *KNOWN_GAPS lists the sloop and the Catalina now*: their predictions
+  moved (naval's windage and swung CE), sailing's physics didn't, and the
+  gaps are re-measured, not re-tuned (agreement.slow.test.js's header).
 
 ## Trim feedback
 
@@ -620,6 +662,15 @@ so a test can re-derive it:
   moved (mast, boom, rigging, sails). `gyradiiM` stays the fixture's: an
   estimate either way, and marked so.
 - `loads`: null (§3.1 allows it; fit-out reads it, sailing doesn't).
+- `windage` (§3.13; `windageOf`, rig@4): `source` naval's, and four
+  elements. `hull` is the fixture's own (kept, as her canoe body is:
+  FBAV 1.2 × beam 3.8 and × LOA 12, Cd 0.816, at mid-LOA). `mast-sail` and
+  `mast-bare` are §3.13's rules on her drawn mast (plumb, stepped on deck,
+  14 m, section 0.19 m: BAS 1.45, P 12.2, so 1.8 m of it is bare).
+  `rigging` is I (13.9) × 4·d at Cd 1.2, half way up I, d the cap shroud's
+  for the kept righting curve's RM30 (`rm30Of`: boat + crew at 30°, 43.5
+  kN·m) over her drawn chainplates' half-breadth (1.67 m): 9.1 mm.
+  `stock-rig.test.js` re-derives each element by hand from the drawing.
 - `predicted`: { status "not-computed", why "generated by sailing from the
   stock drawing; the rig aid's VPP wasn't run on it" }, with empty tables.
   The agreement test reads only the fixtures, so nothing is lost.
@@ -1101,7 +1152,7 @@ parent.
 (every point the mast and rig meshes are drawn from, now shared constants,
 so the meshes are byte for byte what they were) and the kept parts of the
 fixture (`stock-rig-12m.js`). `partGLB("rig")` carries it as `extras.rig`,
-filed under `sailing/rig@2` then (`rig@3` today: parts.js `VERSIONS`). Where the build differs
+filed under `sailing/rig@2` then (`rig@4` today: parts.js `VERSIONS`). Where the build differs
 from the spec above, or says more:
 - *The runtime copy is a module, not JSON* (`stock-rig-12m.js`, the kept
   parts only: about 19 KB, not the fixture's 199 KB), because plain node
@@ -1357,7 +1408,8 @@ node is the cloth and the battens (now ribbons, `battenVertices`, not
 tubes) at `NEUTRAL`; a new `Bunt` node lies along the boom at radius
 `BUNT_R` 0.02 (inside the boom until a view swells it). The file keys
 stayed `rig@2` and `jib@1` (nothing filed before item 4 needed them kept);
-they are `rig@3` and `jib@2` since, their cloth taking no shadows.
+they are `rig@3` and `jib@2` since, their cloth taking no shadows, and the
+rig `rig@4` since its contract states its windage (§3.13).
 
 **Where it differs from §4, and why.**
 - *The reef* cuts level at f of the contract's own tack → head (the

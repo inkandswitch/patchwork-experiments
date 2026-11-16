@@ -70,13 +70,19 @@ describe("the contract's frame in the body's", () => {
 });
 
 describe("reading a contract", () => {
-  it("reads v1 with a frame, a mass and a hull; nothing else", () => {
+  it("reads v1 with a frame, a mass, a hull and its windage elements; nothing else", () => {
     expect(rigContract(sloop)).toBe(sloop);
     expect(rigContract(null)).toBeNull();
     expect(rigContract({ ...sloop, format: "something-else" })).toBeNull();
     expect(rigContract({ ...sloop, version: 2 })).toBeNull();
     expect(rigContract({ ...sloop, frame: { ...sloop.frame, glbToFrame: [1, 0, 0] } })).toBeNull();
     expect(rigContract({ ...sloop, loading: { ...sloop.loading, massKg: 0 } })).toBeNull();
+    // §3.13's windage is required: a contract stated before it is not read (it sails the plain path)
+    const { windage, ...noWindage } = sloop;
+    expect(windage.elements.length).toBeGreaterThan(0);
+    expect(rigContract(noWindage)).toBeNull();
+    expect(rigContract({ ...sloop, windage: { source: windage.source } })).toBeNull();
+    expect(rigContract({ ...sloop, windage: { ...windage, elements: [] } })).toEqual({ ...sloop, windage: { ...windage, elements: [] } });
     expect(RIG_FORMAT).toBe(sloop.format);
   });
 

@@ -37,7 +37,9 @@ export const toContract = (p, k = 1) => [-p[2] / k + 0, -p[0] / k + 0, p[1] / k 
 
 /**
  * The contract in a GLB's extras, if it is one sailing can read: v1, with a
- * frame matrix, a positive mass and a hull. Else null.
+ * frame matrix, a positive mass, a hull and its windage elements (§3.13,
+ * which the schema requires). Else null: a contract stated before v1 had
+ * windage sails the plain path, until it is restated.
  */
 export function rigContract(extrasRig) {
   const c = extrasRig;
@@ -45,6 +47,7 @@ export function rigContract(extrasRig) {
   const m = c.frame?.glbToFrame;
   if (!Array.isArray(m) || m.length !== 16 || !m.every(Number.isFinite)) return null;
   if (!(c.loading?.massKg > 0) || !isVec3(c.loading?.cgM) || !c.hull) return null;
+  if (!Array.isArray(c.windage?.elements)) return null;
   return c;
 }
 

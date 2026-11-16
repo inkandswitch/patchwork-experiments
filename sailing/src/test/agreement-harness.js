@@ -25,6 +25,7 @@
 
 import { createShip } from "../physics.js";
 import { specFor } from "../sim.js";
+import { composer } from "./rig-contract/compose.js";
 
 const DEG = Math.PI / 180;
 export const RUDDER_MAX_DEG = 35; // physics.js's RUDDER_MAX, when the contract doesn't say
@@ -279,8 +280,8 @@ export function settleVerdict(p, got) {
  * furled), and the hull's
  * resistance upright at that speed (the contract's §6.5 with no side force;
  * sailing's as the wrench with the wind moving with her, so no windage),
- * and her windage there (the wind on her hull and bare mast, which §6.1
- * leaves out: N and N·m, signed as the residuals) beside her residual.
+ * and her windage there (sailing's own: the wind on her hull and bare
+ * mast, N and N·m, signed as the residuals) beside her residual.
  */
 export function breakdown(contract, ship, p, compose) {
   const s = stateAt(ship, contract, p);
@@ -315,7 +316,7 @@ export function breakdown(contract, ship, p, compose) {
   const rSailing = ship.wrench({ position: [0, y, 0], quaternion: [0, 0, 0, 1] }, { velocity: [0, 0, -V], spin: [0, 0, 0] }, { sail: 0 }, still).force[2];
   const rTheirs = compose ? compose.resistanceAt(V, 0, 0).total : NaN;
 
-  // the wind on her hull and bare mast, which §6.1 leaves out: her sails
+  // sailing's wind on her hull and bare mast: her sails
   // stowed, in the point's wind less in air moving with her
   const v = s.motion.velocity;
   const withHer = { water: CALM, wind: { at: (x_, z_, t_, out = [0, 0]) => ((out[0] = v[0]), (out[1] = v[2]), out) } };
@@ -325,6 +326,16 @@ export function breakdown(contract, ship, p, compose) {
   return { sail: { sailing, contract: theirs }, resistance: { sailing: rSailing, contract: rTheirs }, windage, residual: residualsOf(up) };
 }
 
+/** The contract with its windage (§3.13) taken off: `elements` empty, the rest as it is. */
+export const windageless = (c) => ({ ...c, windage: { ...c.windage, elements: [] } });
+
+const windagelessComposers = new WeakMap();
+/** compose's composer of `windageless(c)`, one per contract. */
+function windagelessComposer(c) {
+  if (!windagelessComposers.has(c)) windagelessComposers.set(c, composer(windageless(c)));
+  return windagelessComposers.get(c);
+}
+
 /**
  * Her hydrodynamic forces at a predicted point, horizontal, in the track's
  * frame: `side` square to her track (+ to windward) and `drag` along it
@@ -332,9 +343,12 @@ export function breakdown(contract, ship, p, compose) {
  * moving with her (no sail, no windage: the water's forces alone), the
  * contract's (§6.4–6.5) as compose has them: L = Y·cos φ and R_total, with
  * L from compose's sway equation at that point (its sail heeling force from
- * `breakdown`'s §6.3 reading, its residual included, so L is compose's own).
+ * `breakdown`'s §6.3 reading, its residual included, so L is compose's own),
+ * on the contract with no windage elements (windageless), so its sway holds
+ * no windage heeling force to take back out.
  */
-export function hydroAt(contract, ship, p, compose) {
+export function hydroAt(contract, ship, p) {
+  const compose = windagelessComposer(contract);
   const s = stateAt(ship, contract, p);
   const v = s.motion.velocity;
   const withHer = { water: CALM, wind: { at: (x_, z_, t_, out = [0, 0]) => ((out[0] = v[0]), (out[1] = v[2]), out) } };
