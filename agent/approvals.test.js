@@ -71,6 +71,12 @@ describe("sensitive documents always ask", () => {
   })
 })
 
+describe("closing what the conversation opened", () => {
+  it("does not ask", () => {
+    expect(asks("view_unmount", { mountId: "m1" })).toBe(false)
+  })
+})
+
 describe("what still asks is unchanged", () => {
   it("running code and reaching the web", () => {
     expect(asks("view_mount", { url: "automerge:x", toolId: "t" })).toBe(true)

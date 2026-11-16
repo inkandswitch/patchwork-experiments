@@ -12,6 +12,7 @@
  */
 
 import { states, STATE, PLAN, DEFAULT_LIMITS } from "./plan.js"
+import { formatCost } from "../session.js"
 import { drivePlanHere, getDriver } from "./driver.js"
 import { waitingIn } from "./waiting.js"
 import { renderWaitingItem } from "../ui/waiting.js"
@@ -143,7 +144,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     if (session && (state === STATE.running || state === STATE.needsInput)) {
       const turns = session.turns?.length ?? 0
       const used = (session.usage?.in ?? 0) + (session.usage?.out ?? 0)
-      card.append(el("p", "agent-wf-activity", `${session.status} · ${turns} turns · ${tokens(used)} tokens`))
+      const spent = formatCost(session.usage)
+      card.append(el("p", "agent-wf-activity", `${session.status} · ${turns} turns · ${tokens(used)} tokens${spent ? ` · ${spent}` : ""}`))
     }
 
     // What it waits on you for, answerable here without opening the session.
@@ -204,6 +206,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       count(STATE.failed) ? `${count(STATE.failed)} failed` : null,
       count(STATE.blocked) ? `${count(STATE.blocked)} blocked` : null,
       `${tokens(used)} of ${tokens(limit)} tokens`,
+      formatCost(plan.usage) ? `${formatCost(plan.usage)} so far` : null,
       `up to ${plan.limits?.parallel ?? DEFAULT_LIMITS.parallel} at once`,
     ]
       .filter(Boolean)

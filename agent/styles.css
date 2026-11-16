@@ -1218,3 +1218,9 @@
   flex: 1 1 10rem;
   min-width: 0;
 }
+
+.patchwork-agent .agent-cost {
+  font-size: 0.8em;
+  color: var(--agent-muted);
+  font-variant-numeric: tabular-nums;
+}

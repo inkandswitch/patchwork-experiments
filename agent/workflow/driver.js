@@ -52,7 +52,15 @@ export function sessionOutcome(doc) {
 
 /** What a plan's step sessions cost, summed. */
 function sumUsage(usages) {
-  return usages.reduce((sum, u) => ({ in: sum.in + (u?.in ?? 0), out: sum.out + (u?.out ?? 0) }), { in: 0, out: 0 })
+  const sum = { in: 0, out: 0 }
+  for (const u of usages) {
+    sum.in += u?.in ?? 0
+    sum.out += u?.out ?? 0
+    // Cost only once some step has one, so an unknown is not shown as free.
+    if (typeof u?.cost === "number") sum.cost = (sum.cost ?? 0) + u.cost
+    if (u?.costEstimated) sum.costEstimated = true
+  }
+  return sum
 }
 
 /** One driver per plan per page. */
@@ -240,7 +248,10 @@ export class WorkflowDriver {
     this.waiting = waiting
     const usage = sumUsage(usages)
     plan = this.handle.doc()
-    if (usage.in !== plan.usage?.in || usage.out !== plan.usage?.out) this.write((d) => { d.usage = usage })
+    const was = plan.usage ?? {}
+    if (usage.in !== was.in || usage.out !== was.out || usage.cost !== was.cost || !!usage.costEstimated !== !!was.costEstimated) {
+      this.write((d) => { d.usage = usage })
+    }
 
     // 2. Keep running steps running — after a reload their runners are gone.
     plan = this.handle.doc()

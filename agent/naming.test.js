@@ -164,7 +164,9 @@ describe("the agent naming its own work", () => {
     // If a second tool ever claims "self", it had better also write nothing but
     // the session document — so make adding one a deliberate act.
     const selfWriters = BUILTIN_TOOLS.filter((t) => t.risk === "self").map((t) => t.id)
-    expect(selfWriters).toEqual(["session_title"])
+    // view_unmount touches only this conversation too: it closes a view the
+    // conversation opened, which needed a yes when it was mounted.
+    expect(selfWriters).toEqual(["view_unmount", "session_title"])
   })
 
   it("reads as naming something in the log", () => {

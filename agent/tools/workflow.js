@@ -9,6 +9,7 @@
 import { initPlan, newStep, validateSteps, states, STATE, PLAN, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS } from "../workflow/plan.js"
 import { drivePlanHere, getDriver } from "../workflow/driver.js"
 import { truncate } from "./format.js"
+import { formatCost } from "../session.js"
 import { answerQuestion } from "../loop.js"
 import { handleStore } from "../store.js"
 import { waitingIn } from "../workflow/waiting.js"
@@ -57,7 +58,7 @@ export function describePlan(plan, url) {
   const lines = [
     `${plan.title} — ${plan.status} (${url})`,
     `Goal: ${plan.goal}`,
-    `Tokens: ${((plan.usage?.in ?? 0) + (plan.usage?.out ?? 0)).toLocaleString("en")} of ${(plan.limits?.tokens ?? DEFAULT_LIMITS.tokens).toLocaleString("en")}`,
+    `Tokens: ${((plan.usage?.in ?? 0) + (plan.usage?.out ?? 0)).toLocaleString("en")} of ${(plan.limits?.tokens ?? DEFAULT_LIMITS.tokens).toLocaleString("en")}${formatCost(plan.usage) ? ` · cost so far ${formatCost(plan.usage)}` : ""}`,
     "",
   ]
   for (const step of plan.steps ?? []) {

@@ -124,12 +124,46 @@ export function initSession(doc, opts = {}) {
   doc.usage = { in: 0, out: 0, turns: 0 }
 }
 
-/** Accumulate token usage so a session can show what it has cost. */
+/**
+ * Accumulate usage so a session can show what it has cost.
+ *
+ * `cost` is in dollars, as OpenRouter reports it for each request; a turn
+ * whose cost was worked out from list prices instead marks the total as
+ * partly estimated. A session that has never had a cost has no `cost` at all,
+ * rather than a zero that would claim it was free.
+ */
 export function addUsage(doc, usage) {
   if (!doc.usage) doc.usage = { in: 0, out: 0, turns: 0 }
   doc.usage.in += usage?.in ?? 0
   doc.usage.out += usage?.out ?? 0
   doc.usage.turns += 1
+  if (typeof usage?.cost === "number" && Number.isFinite(usage.cost)) {
+    doc.usage.cost = (doc.usage.cost ?? 0) + usage.cost
+    if (usage.estimated) doc.usage.costEstimated = true
+  }
+}
+
+/**
+ * What one request cost: as the provider reported it, else worked out from the
+ * catalogue's list prices (dollars per million tokens), else unknown.
+ */
+export function costOf(usage, prices = null) {
+  if (typeof usage?.cost === "number" && Number.isFinite(usage.cost)) return { cost: usage.cost, estimated: false }
+  const input = prices?.promptPerM
+  const output = prices?.completionPerM
+  if (input == null && output == null) return { cost: null, estimated: false }
+  const cost = ((usage?.in ?? 0) * (input ?? 0) + (usage?.out ?? 0) * (output ?? 0)) / 1e6
+  return { cost, estimated: true }
+}
+
+/** "$0.42", "<$0.01", "$1,204", "~" in front when partly estimated; null when no cost is known. */
+export function formatCost(usage) {
+  const cost = usage?.cost
+  if (typeof cost !== "number" || !Number.isFinite(cost)) return null
+  const mark = usage.costEstimated ? "~" : ""
+  if (cost > 0 && cost < 0.01) return `${mark}<$0.01`
+  if (cost >= 100) return `${mark}$${Math.round(cost).toLocaleString("en")}`
+  return `${mark}$${cost.toFixed(2)}`
 }
 
 // ---------------------------------------------------------------- turns
@@ -326,6 +360,47 @@ export function unansweredCalls(doc) {
     out.push(found.block)
   }
   return out
+}
+
+/**
+ * Calls a runner claimed and never finished.
+ *
+ * A call is claimed (`running`) under the lease of the runner executing it.
+ * If that runner's tab closes or reloads mid-call, nothing will ever write the
+ * call's result — and before this, nothing noticed: the call was neither
+ * runnable nor awaiting anyone, so the session sat there looking busy forever.
+ * A running call is orphaned exactly when its claim is not the live lease:
+ * the lease has gone stale, or another runner or generation holds it.
+ */
+export function orphanedCalls(doc, { now = Date.now(), staleAfterMs = 15000 } = {}) {
+  const lease = doc?.lease
+  const live = !!lease && leaseIsLive(lease, { now, staleAfterMs })
+  return unansweredCalls(doc).filter(
+    (call) => call.status === CALL.running && !(live && lease.runner === call.runner && lease.generation === call.generation)
+  )
+}
+
+/** What an interrupted call's result says. */
+export const INTERRUPTED =
+  "This call was interrupted before it finished: the tab or process running it closed or reloaded. It may or may not have taken effect, so check before trying it again."
+
+/**
+ * Close out orphaned calls with an error result, inside a change.
+ *
+ * Not re-run: a call that was cut off may already have done what it does, and
+ * doing a write twice is worse than telling the model it might not have
+ * happened. Returns how many were closed.
+ */
+export function resolveOrphans(doc, opts = {}) {
+  const orphans = orphanedCalls(doc, opts)
+  if (!orphans.length) return 0
+  for (const call of orphans) {
+    const found = findCall(doc, call.id)
+    if (found) found.block.status = CALL.error
+  }
+  if (!doc.turns) doc.turns = []
+  doc.turns.push(makeTurn("tool", orphans.map((call) => resultBlock(call.id, INTERRUPTED, { isError: true, summary: "interrupted" }))))
+  return orphans.length
 }
 
 /** Calls blocked on a human decision. */
@@ -727,7 +802,8 @@ export function shortPath(url) {
  * Does this call still need a human decision?
  *
  *   read      runs silently: it touches nothing.
- *   self      runs silently: it writes only this conversation's own document.
+ *   self      runs silently: it touches only this conversation — its own
+ *             document, or a view it opened and is now closing.
  *   edit      runs silently: it writes only automerge documents, which keep
  *             their history, so anything it does can be seen and put back —
  *             doc_history shows every overwritten value. Asking first bought

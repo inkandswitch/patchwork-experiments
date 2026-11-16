@@ -245,9 +245,10 @@ describe("decodeStream", () => {
   it("reports usage when the provider sends it", async () => {
     const wire =
       frame({ content: "hi" }, "stop") +
-      `data: ${JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 3 } })}\n\n`
+      `data: ${JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 3, cost: 0.0123 } })}\n\n`
     const usage = (await collect(decodeStream(chunked(wire)))).find((e) => e.type === "usage")
-    expect(usage).toMatchObject({ in: 10, out: 3 })
+    // The cost is what OpenRouter charged, in dollars, reported on every response.
+    expect(usage).toMatchObject({ in: 10, out: 3, cost: 0.0123 })
   })
 
   it("always ends with exactly one stop event", async () => {

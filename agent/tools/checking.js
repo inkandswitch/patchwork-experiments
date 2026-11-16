@@ -476,7 +476,7 @@ function requireMount(mountId) {
   const mount = mounts.get(mountId)
   if (!mount) {
     throw new Error(
-      `No mount '${mountId}'. It may have been unmounted or evicted (only ${MAX_MOUNTS} stay live). Open it again with view_mount.`
+      `No mount '${mountId}'. It was unmounted, evicted (only ${MAX_MOUNTS} stay live), or the page has been reloaded since it was opened, which closes every view. If you still need it, open it again with view_mount.`
     )
   }
   return mount
@@ -719,7 +719,10 @@ export const viewUnmount = {
   description:
     "Close an open document, tearing the tool down the way Patchwork will, and report whether its cleanup is well-behaved. Always finish a view_mount with this.",
   where: "host",
-  risk: "write",
+  // Closing what this conversation opened. Mounting it already needed a yes,
+  // and its cleanup can do nothing its mount could not; asking again to put
+  // it away was a prompt with nothing behind it.
+  risk: "self",
   input_schema: {
     type: "object",
     required: ["mountId"],
@@ -727,13 +730,20 @@ export const viewUnmount = {
   },
 
   async execute(input) {
-    requireMount(input.mountId)
+    // Closing something already closed is not a failure. Mounts live in the
+    // page, so a reload closes every one of them — and an error here sent the
+    // agent off to mount the view again (asking permission) only to close it.
+    if (!mounts.has(input.mountId)) {
+      return `Nothing to close: '${input.mountId}' is not open. It was already closed, or the page has been reloaded since it was opened, which closes every view.`
+    }
     const notes = teardown(input.mountId)
     return notes.join("\n")
   },
 
   summarize(input, output) {
-    return String(output ?? "").includes("PROBLEM") ? "unmounted · problem" : "unmounted · clean"
+    const text = String(output ?? "")
+    if (text.startsWith("Nothing to close")) return "already closed"
+    return text.includes("PROBLEM") ? "unmounted · problem" : "unmounted · clean"
   },
 }
 

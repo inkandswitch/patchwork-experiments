@@ -54,6 +54,18 @@ its next write and stands down. The same class runs in a tab, a worker, or node
 A call the current runner cannot execute **parks** the session rather than
 failing it, and resumes when a capable runner appears.
 
+**An interrupted call is closed, not repeated.** A call is claimed under the
+lease of the runner executing it. If that runner's tab reloads mid-call, the
+next runner to take the session over finds the claim no longer matches the live
+lease and closes the call with an error result saying it may or may not have
+taken effect — so the model checks, rather than a write silently happening
+twice, and the session does not sit looking busy forever.
+
+**What a session costs** is what OpenRouter charges: each response reports its
+cost, which the loop adds to `usage.cost` and the header shows. A provider that
+reports none is estimated from the catalogue's list prices, and the total says
+it is partly estimated. A workflow adds up its steps.
+
 **Runners outlive the views that started them.** A runner is registered per
 session in a module-level registry; views attach to it and detach from it.
 Navigating to another document unmounts the tool, which detaches a view — it

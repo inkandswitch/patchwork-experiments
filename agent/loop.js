@@ -23,6 +23,7 @@ import {
   callTarget,
   grantKey,
   addUsage,
+  costOf,
   makeTurn,
   textBlock,
   contextBlock,
@@ -142,6 +143,9 @@ export async function run(opts) {
     capabilities: modelInfo
       ? { supports: modelInfo.supports ?? null, maxOutput: modelInfo.maxOutput ?? null, efforts: modelInfo.efforts ?? null }
       : null,
+    // List prices, for estimating a request's cost when the provider does not
+    // report one.
+    prices: modelInfo ? { promptPerM: modelInfo.promptPerM ?? null, completionPerM: modelInfo.completionPerM ?? null } : null,
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
   }
 
@@ -510,8 +514,9 @@ async function streamTurn(opts) {
       } else if (event.type === "call") {
         calls.push(event)
       } else if (event.type === "usage") {
-        store.change((d) => addUsage(d, event))
-        emit({ type: "usage", ...event })
+        const priced = { ...event, ...costOf(event, opts.prices) }
+        store.change((d) => addUsage(d, priced))
+        emit({ type: "usage", ...priced })
       } else if (event.type === "stop") {
         stopReason = event.reason
       }

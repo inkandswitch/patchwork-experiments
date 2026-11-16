@@ -21,6 +21,8 @@ import {
   runnableCalls,
   callsAwaitingApproval,
   questionsAwaitingAnswer,
+  orphanedCalls,
+  resolveOrphans,
 } from "./session.js"
 import { run, OUTCOME } from "./loop.js"
 
@@ -43,6 +45,9 @@ export const STALE_AFTER_MS = 15000
  */
 export function needsWork(doc, canRun = () => true) {
   if (!doc) return false
+  // A call whose runner died mid-flight has to be closed out before anything
+  // else can happen — whatever else the session is waiting on.
+  if (orphanedCalls(doc).length) return true
   if (callsAwaitingApproval(doc).length) return false
   // A question the agent asked is work for a person, not for a runner.
   if (questionsAwaitingAnswer(doc).length) return false
@@ -140,6 +145,9 @@ export class SessionRunner {
       let generation
       this.store.change((d) => {
         generation = claimLease(d, this.runnerUrl, this.now()).generation
+        // Taking over: anything the previous runner was in the middle of will
+        // never finish. Say so, so the model can check and carry on.
+        resolveOrphans(d, { now: this.now(), staleAfterMs: STALE_AFTER_MS })
       })
 
       const provider = await this.getProvider()

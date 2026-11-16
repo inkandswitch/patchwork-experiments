@@ -22,6 +22,7 @@ import { decide, say, answerQuestion } from "./loop.js"
 import { heldElsewhere, needsWork } from "./runner.js"
 import { attachView } from "./runners.js"
 import { startTabRunner, accountContext } from "./tab-runner.js"
+import { formatCost } from "./session.js"
 import { watchWaiting, renderWaiting } from "./ui/waiting.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import {
@@ -128,7 +129,9 @@ export function AgentTool(handle, element, options = {}) {
   const subjectLabel = el("span", "agent-subject", "Agent")
   const modelButton = el("button", "agent-model", "model")
   modelButton.title = "Change model or API key"
-  header.append(statusDot, subjectLabel, modelButton)
+  // What this session has spent, as OpenRouter reports it.
+  const costLabel = el("span", "agent-cost", "")
+  header.append(statusDot, subjectLabel, costLabel, modelButton)
 
   // What the session makes and opens lives IN the transcript, beside the call
   // that made or opened it (ui/views.js). There used to be a strip of "things
@@ -871,6 +874,12 @@ export function AgentTool(handle, element, options = {}) {
     root.dataset.runner = workerRunner ? "worker" : workerTried ? "tab" : "pending"
     statusDot.dataset.status = doc.status ?? STATUS.idle
     statusDot.title = doc.status ?? "idle"
+    const spent = formatCost(doc.usage)
+    costLabel.textContent = spent ?? ""
+    costLabel.hidden = !spent
+    costLabel.title = spent
+      ? `${(doc.usage.in ?? 0).toLocaleString("en")} tokens in, ${(doc.usage.out ?? 0).toLocaleString("en")} out over ${doc.usage.turns ?? 0} requests · ${doc.usage.costEstimated ? "partly estimated from list prices" : "as charged by OpenRouter"}`
+      : ""
     const effort = doc.config?.params?.reasoning?.effort
     modelButton.textContent = (doc.config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "")
     // `doc` is the session document; the focused element lives on the DOM one.

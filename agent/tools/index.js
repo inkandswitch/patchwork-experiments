@@ -18,7 +18,8 @@
  *
  * `where` is "worker" | "host" | "task" and decides who may run it.
  * `risk` is "read" | "self" | "edit" | "write" | "external"; see
- * session.needsApproval. "self" writes only to the session document and "edit"
+ * session.needsApproval. "self" touches only this conversation (its document,
+ * or a view it opened and is closing) and "edit"
  * only to automerge documents, so neither is asked about — except that an
  * `edit` tool's `askWhen(input)` can name calls that write source code, which
  * then need a grant like any `write`.

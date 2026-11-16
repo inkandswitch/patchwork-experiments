@@ -306,6 +306,9 @@ export async function* decodeStream(chunks) {
       in: usage.prompt_tokens ?? 0,
       out: usage.completion_tokens ?? 0,
       cached: usage.prompt_tokens_details?.cached_tokens ?? 0,
+      // What the request actually cost, in dollars (OpenRouter credits),
+      // reported on every response; null when an upstream leaves it out.
+      cost: typeof usage.cost === "number" ? usage.cost : null,
     }
   }
 
