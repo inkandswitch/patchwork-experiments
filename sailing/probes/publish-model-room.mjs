@@ -8,7 +8,7 @@
 //
 //   (in sailing/) node probes/publish-model-room.mjs \
 //     --boat "Ship at anchor=automerge:…" --boat "Lost Cities aboard=automerge:…" \
-//     [--title "Model room"] [--scale 25] [--gap 0.6] [--weather 5,270] [--home px,py,pz:tx,ty,tz]
+//     [--title "Model room"] [--scale 25] [--gap 0.6] [--weather 5,270] [--pitch 27] [--home px,py,pz:tx,ty,tz]
 //     [--dry-run] [--offline <docs.json>] [--sync wss://…] [--settle 8000]
 //
 // Each boat's link is turned against her Sea's heading, so every block lies
@@ -17,7 +17,13 @@
 // so her block's floor rests on the room's floor (y = 0). --weather gives the
 // room the world's wind (sailing.weather) and no water: the Breezy pavilion,
 // where both blocks get waves. People start in Look from --home if given,
-// else from far enough out to frame every block in a narrow (640 px) pane.
+// else from the nearest place looking down --pitch degrees (27) from the
+// front from which every block, up to the top of what her doc draws, and
+// every drawn thing of each boat (hull, mast, islet …) is inside the middle
+// 90% of Patchwork's narrow pane (640 × 800), so inside every wider one too
+// (frame.mjs fitHome; water-boxes.mjs). Either way it checks that home in the
+// narrow pane and the whole window (1440 × 900), as frame-check.mjs does, and
+// refuses a home that leaves any of it out.
 //
 // It reads each boat from the server first (a scene whose one Sea is open
 // water with a valid clip: a boat published before clips has none and is
@@ -29,8 +35,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { packageProblems, pushworkUrl } from "./scene-packages.mjs";
+import { contentOf, fitHome, panesReport } from "./frame.mjs";
+import { waterBoxes } from "./water-boxes.mjs";
 
-const ARITY = { title: 1, boat: 1, scale: 1, gap: 1, weather: 1, home: 1, "dry-run": 0, offline: 1, sync: 1, settle: 1 };
+const ARITY = { title: 1, boat: 1, scale: 1, gap: 1, weather: 1, pitch: 1, home: 1, "dry-run": 0, offline: 1, sync: 1, settle: 1 };
 const args = { boat: [] };
 const bad = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -57,8 +65,9 @@ const LINK = "scene.link";
 const BARE = /^automerge:[1-9A-HJ-NP-Za-km-z]{20,60}$/;
 const S = 1 / Number(args.scale ?? 25);
 const GAP = Number(args.gap ?? 0.6);
+const PITCH = Number(args.pitch ?? 27);
 const weather = args.weather ? (([speed, from]) => ({ wind: { speed, from }, seed: 7 }))(args.weather.split(",").map(Number)) : null;
-if (!(S > 0) || !(GAP >= 0) || (weather && ![weather.wind.speed, weather.wind.from].every(Number.isFinite))) throw new Error(`--scale, --gap, --weather: numbers, please`);
+if (!(S > 0) || !(GAP >= 0) || !(PITCH > 0 && PITCH < 90) || (weather && ![weather.wind.speed, weather.wind.from].every(Number.isFinite))) throw new Error(`--scale, --gap, --pitch (0 to 90), --weather: numbers, please`);
 const isBox = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Number.isFinite(v) && v > 0);
 const tidy = (v) => Math.round(v * 1e6) / 1e6 + 0;
 
@@ -97,6 +106,7 @@ for (const b of boats) {
   if (seas.length !== 1) problems.push(`${b.name} (${b.url}) has ${seas.length} open water objects, not one`);
   else if (!isBox(sea.traits.water.clip)) problems.push(`${b.name} (${b.url})'s Sea has no clip: she was published before clips; republish her first`);
   else if ((t.rotation?.[0] ?? 0) !== 0 || (t.rotation?.[2] ?? 0) !== 0 || (t.scale ?? 1) !== 1) problems.push(`${b.name}'s Sea is tilted or scaled: its block would be no water`);
+  b.doc = d;
   b.clip = sea?.traits.water.clip ?? null;
   b.sea = { at: t.position ?? [0, 0, 0], yaw: t.rotation?.[1] ?? 0 };
   console.error(`boat: ${b.name} = ${d.title} (${Object.keys(d.objects).length} objects, clip ${J(b.clip)} at ${J(b.sea.at)} turned ${tidy((b.sea.yaw * 180) / Math.PI)}°)`);
@@ -133,12 +143,25 @@ for (let i = 0; i < boats.length; i++)
     const a = boats[i].block, c = boats[j].block;
     if (Math.abs(a.centre[0] - c.centre[0]) < (a.w + c.w) / 2 && Math.abs(a.centre[2] - c.centre[2]) < (a.l + c.l) / 2) problems.push(`${boats[i].name}'s and ${boats[j].name}'s blocks overlap`);
   }
-const deep = Math.max(...boats.map((b) => b.block.l));
-const span = Math.max(total, deep);
+// what the room shows: each boat's block (her clip up to the top of what her doc draws) and every drawn
+// thing of hers, through her link; a link inside a boat (her game) isn't read: it is on her deck, under the lid
+const shown = contentOf({ objects, assets: {} }, Object.fromEntries(boats.map((b) => [b.url, b.doc])), { more: waterBoxes });
+for (const b of boats) {
+  const blocks = shown.boxes.filter((x) => x.via[0] === b.id && x.kind === "clip");
+  const lo = (k) => Math.min(...blocks.flatMap((x) => x.points.map((p) => p[k]))), hi = (k) => Math.max(...blocks.flatMap((x) => x.points.map((p) => p[k])));
+  // the block as water-boxes.mjs sees it through the link is the block laid out above
+  // (to 1e-5: the link's transform is written to 1e-6)
+  const off = (a, b) => Math.abs(a - b) > 1e-5;
+  if (blocks.length !== 1 || off(lo(1), b.block.floor) || off((lo(0) + hi(0)) / 2, b.block.centre[0]) || off(hi(0) - lo(0), b.block.w) || off((lo(2) + hi(2)) / 2, 0) || off(hi(2) - lo(2), b.block.l))
+    problems.push(`${b.name}'s block through her link isn't the block laid out (${blocks.length} clip boxes: x ${lo(0)}..${hi(0)}, y ${lo(1)}, z ${lo(2)}..${hi(2)})`);
+}
+const points = shown.boxes.flatMap((x) => x.points);
 const home = args.home
   ? (([p, t]) => ({ position: p, target: t }))(args.home.split(":").map((s) => s.split(",").map(Number)))
-  : { position: [0, tidy(span * 0.75), tidy(span * 1.45)], target: [0, 0, 0] };
+  : fitHome(points, { pitch: PITCH });
 if (![...home.position, ...home.target].every(Number.isFinite) || home.position.length !== 3 || home.target.length !== 3) throw new Error(`--home ${J(args.home)}: want px,py,pz:tx,ty,tz`);
+const framed = panesReport(home, points);
+for (const f of framed) if (!f.inside) problems.push(`from ${J(home)} the room's blocks and boats aren't all inside the ${f.pane} pane (x ${f.x.map((v) => v.toFixed(2))}, y ${f.y.map((v) => v.toFixed(2))})`);
 const PACKAGES = weather ? ["scene", "sailing"] : ["scene"];
 const doc = {
   "@patchwork": { type: "scene", suggestedImportUrl: urlOf("scene") },
@@ -153,7 +176,7 @@ const doc = {
   clock: { running: true, t: 0 },
   view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home } },
 };
-console.error(J({ title: doc.title, scale: `1:${1 / S}`, weather, blocks: boats.map((b) => ({ id: b.id, name: b.name, ...b.block })), start: doc.view.start }, null, 1));
+console.error(J({ title: doc.title, scale: `1:${1 / S}`, weather, blocks: boats.map((b) => ({ id: b.id, name: b.name, ...b.block })), start: doc.view.start, framed: framed.map((f) => ({ pane: f.pane, x: f.x.map(tidy), y: f.y.map(tidy), inside: f.inside })), boxes: shown.boxes.length, notRead: shown.missing.map((m) => `${m.depth ? "inside a boat: " : ""}${m.url}`) }, null, 1));
 if (problems.length) {
   console.error(`${DRY ? "would NOT publish" : "NOT publishing"}:\n  ${problems.join("\n  ")}`);
   process.exit(1);

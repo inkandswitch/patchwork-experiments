@@ -7,7 +7,8 @@
 //   (in scene/) node probes/publish-links.mjs --title "Games night" \
 //     --link "Quiet games room=automerge:…@0,0,0" \
 //     --link "Liar's dice=automerge:…@-4.2,0.035,1.95@90" \
-//     [--start 1] [--home px,py,pz:tx,ty,tz] [--view-like 1] [--dry-run] [--offline <docs.json>] [--sync wss://…] [--settle 8000]
+//     [--start 1] [--home px,py,pz:tx,ty,tz] [--view-like 1] [--frame [--pitch 27] [--heading 0]]
+//     [--box "[N:]cx,cy,cz:w,h,l[@yaw]"]... [--dry-run] [--offline <docs.json>] [--sync wss://…] [--settle 8000]
 //
 // --link NAME=URL@x,y,z[@yawDegrees[@scale]] places a locked link (as a game
 // part's link is) at that position on the doc's root, turned and at that
@@ -17,6 +18,19 @@
 // prefs (grid, axes, bounds, units, snap), so a room stays a room. --home sets
 // the home view; without it the started link's doc's home, moved by its link.
 //
+// --frame works the home out instead (unless --home is given): the nearest
+// place looking down --pitch degrees (27) along --heading (0: towards −z)
+// from which everything the doc shows is inside the middle 90% of
+// Patchwork's narrow pane (640 × 800), so inside every wider one too
+// (frame.mjs fitHome). What it shows is each linked doc's drawn things (the
+// bounds its files' hints state, carried through the links), and each
+// --box: a box the scene can't see from hints (a package's own, such as a
+// body of water; sailing's publish-basin --mashup prints them), its centre,
+// size and turn (degrees) in link N's doc (1-based), or in this doc with no
+// N. With --frame or a --box, the home (whichever it is) is checked in the
+// narrow pane and the whole window (1440 × 900), and one that leaves any of
+// it out is refused.
+//
 // It checks, before publishing, that each linked doc is a scene on the server,
 // and after, from a fresh repo, that the doc came back whole. --offline reads
 // the linked docs from a JSON file ({ [url]: doc }) instead, and needs
@@ -24,9 +38,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
+import { contentOf, fitHome, matrixOf, panesReport, specPoints } from "./frame.mjs";
 
-const ARITY = { title: 1, link: 1, start: 1, home: 1, "view-like": 1, "dry-run": 0, offline: 1, sync: 1, settle: 1 };
-const args = { link: [] };
+const ARITY = { title: 1, link: 1, start: 1, home: 1, "view-like": 1, frame: 0, pitch: 1, heading: 1, box: 1, "dry-run": 0, offline: 1, sync: 1, settle: 1 };
+const args = { link: [], box: [] };
 const bad = [];
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
@@ -34,7 +49,7 @@ for (let i = 2; i < process.argv.length; i++) {
   if (k == null || !(k in ARITY)) { bad.push(a); continue; }
   const v = process.argv[i + 1];
   if (ARITY[k] && (v == null || v.startsWith("--"))) { bad.push(`${a} (wants a value)`); continue; }
-  if (k === "link") args.link.push(v);
+  if (k === "link" || k === "box") args[k].push(v);
   else args[k] = ARITY[k] ? v : true;
   i += ARITY[k];
 }
@@ -57,6 +72,18 @@ const links = args.link.map((spec, i) => {
 });
 const start = args.start != null ? links[Number(args.start) - 1] : null;
 if (args.start != null && !start) throw new Error(`--start ${args.start}: there are ${links.length} links`);
+const PITCH = Number(args.pitch ?? 27), HEADING = Number(args.heading ?? 0);
+if (!(PITCH > 0 && PITCH < 90) || !Number.isFinite(HEADING)) throw new Error(`--pitch (0 to 90) and --heading: degrees, please`);
+const linkMatrix = (l) => matrixOf({ position: l.position, rotation: [0, l.yaw, 0], scale: l.scale });
+const boxes = args.box.map((spec) => {
+  const m = /^(?:(\d+):)?(.+)$/.exec(spec);
+  const l = m?.[1] != null ? links[Number(m[1]) - 1] : null;
+  if (m?.[1] != null && !l) throw new Error(`--box ${J(spec)}: there are ${links.length} links`);
+  const points = m && specPoints(m[2], l ? linkMatrix(l) : undefined);
+  if (!points) throw new Error(`--box ${J(spec)}: want [N:]cx,cy,cz:w,h,l[@yawDegrees]`);
+  return { name: `box ${spec}`, points };
+});
+const FRAMING = !!args.frame || boxes.length > 0;
 
 if (args.offline && !args["dry-run"]) throw new Error("--offline is for a dry run: publishing reads the links from the server");
 const offline = args.offline ? JSON.parse(readFileSync(args.offline, "utf8")) : null;
@@ -87,6 +114,16 @@ if (args.home) {
   const h = linked[links.indexOf(start)].view?.start?.home;
   if (h) home = { position: turn(h.position, start).map((v) => +v.toFixed(4)), target: turn(h.target, start).map((v) => +v.toFixed(4)) };
 }
+// what the doc shows, for --frame and --box: each linked doc's drawn things through its link, and the boxes
+let shown = null;
+if (FRAMING) {
+  const held = Object.fromEntries(links.map((l, i) => [l.url, linked[i]]));
+  shown = contentOf({ objects: Object.fromEntries(links.map((l) => [l.id, { name: l.name, sourceUrl: l.url, providerId: LINK, parent: null, transform: { position: l.position, rotation: [0, l.yaw, 0], scale: l.scale } }])), assets: {} }, held);
+  shown.boxes.push(...boxes.map((b) => ({ ...b, via: [] })));
+  if (!shown.boxes.length) throw new Error("--frame: the linked docs state no bounds and there's no --box: nothing to frame");
+  if (args.frame && !args.home) home = fitHome(shown.boxes.flatMap((b) => b.points), { pitch: PITCH, heading: HEADING });
+  if (!home) throw new Error("--box: no home to check (give --home, --frame or --start)");
+}
 const like = args["view-like"] != null ? linked[Number(args["view-like"]) - 1]?.view ?? {} : {};
 const prefs = Object.fromEntries(["units", "grid", "axes", "bounds", "snap"].filter((k) => k in like).map((k) => [k, like[k]]));
 
@@ -109,7 +146,13 @@ const doc = {
   clock: { running: true, t: 0 },
   view: { units: "m", grid: true, axes: true, bounds: false, snap: true, ...prefs, start: { ...(start ? { place: start.id } : {}), ...(home ? { home } : {}) } },
 };
-console.error(J({ title: doc.title, order: doc.order, start: doc.view.start, prefs }, null, 1));
+const framed = shown ? panesReport(home, shown.boxes.flatMap((b) => b.points)) : null;
+console.error(J({ title: doc.title, order: doc.order, start: doc.view.start, prefs, ...(framed ? { framed, boxes: shown.boxes.length, notRead: shown.missing.map((m) => m.url) } : {}) }, null, 1));
+const out = (framed ?? []).filter((f) => !f.inside);
+if (out.length) {
+  console.error(`${args["dry-run"] ? "would NOT publish" : "NOT publishing"}: from ${J(home)} what the doc shows isn't all inside the ${out.map((f) => f.pane).join(" and ")} pane${out.length > 1 ? "s" : ""}`);
+  process.exit(1);
+}
 if (args["dry-run"]) {
   console.log(J(doc, null, 2));
   process.exit(0);
