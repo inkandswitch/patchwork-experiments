@@ -1,7 +1,7 @@
 // Reading commands (STAGE.md, "A command"), for the surfaces that present
-// them: the toolbar, the key map and the menu. Pure: no DOM, no api.
+// them: the bar of tools, the key map and the menu. Pure: no DOM, no api.
 
-import { inBody } from "../stage/bodies.js";
+import { editing, inBody } from "../stage/bodies.js";
 
 /**
  * Every running extension's commands, flattened, in running order then
@@ -162,6 +162,57 @@ export function applicable(flat, target, ctx, surface, opts) {
     if (state) out.push({ ext, command, state });
   }
   return out;
+}
+
+/**
+ * Is this a world command, the bar's in every body? Only an explicit
+ * mention counts (show names "world"), as for the menu's scene commands:
+ * a command that says nothing about its surfaces is no game's call to make.
+ */
+export const isWorld = (command) => shownOn(command, "world", { strict: true });
+
+/**
+ * Is this command meant for the bar of tools in this view (TOOLS.md §6)?
+ * A world command is, in every body; a toolbar command (show names
+ * "toolbar", or says nothing) is the editor's, so only in Edit. Whether it
+ * applies (state, and `edit: true`) is commandState's, as on every surface.
+ */
+export const onBar = (command, view) => isWorld(command) || (editing(view) && shownOn(command, "toolbar"));
+
+/**
+ * The bar of tools for a view: the focus path's scene commands (the null
+ * target) that are on the bar and apply, each worked out in its own stage's
+ * context, in two clusters, each in path order (the focus first), then
+ * running order, then command order, one entry per stage/extension/id (the
+ * first copy that applies): `editor` (the toolbar commands: Edit only) and
+ * `world` (the world commands: every body; a command saying both is a world
+ * command). And `shown`, the bar's presence, by one rule for both clusters:
+ * is some command on the path the bar's in this body (onBar, and in its
+ * body), whether or not it applies now? So the bar's height depends on
+ * which extensions run, never on a command's state, and the canvas under it
+ * doesn't move as Play or Lift all comes and goes.
+ * @param {{ stage?: number, collected: any, ctx: object }[]} segs  the focus path's stages, focus first
+ * @param {{ body?: { id?: string } } | null | undefined} view
+ * @returns {{ editor: { ext, command, state, stage? }[], world: { ext, command, state, stage? }[], shown: boolean }}
+ */
+export function barEntries(segs, view) {
+  const editor = [];
+  const world = [];
+  let shown = false;
+  const seen = new Set();
+  for (const seg of segs ?? []) {
+    for (const { ext, command } of flatCommands(seg.collected)) {
+      if (!onBar(command, view)) continue;
+      if (inBody(command, view)) shown = true;
+      const k = `${seg.stage ?? ""}\u0000${ext}\u0000${command.id}`;
+      if (seen.has(k)) continue;
+      const state = commandState(command, null, seg.ctx);
+      if (!state) continue;
+      seen.add(k);
+      (isWorld(command) ? world : editor).push(seg.stage === undefined ? { ext, command, state } : { ext, command, state, stage: seg.stage });
+    }
+  }
+  return { editor, world, shown };
 }
 
 /** Everything a rendered control shows, as one string (to tell whether it changed). */

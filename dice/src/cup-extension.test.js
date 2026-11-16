@@ -6,7 +6,7 @@
 // the stage says it built.
 import { describe, it, expect } from "vitest";
 import Cups, { ASTRAY_MS, MESSAGES, SHAKE_SECONDS, dressFor } from "./cup-extension.js";
-import { CUP, lifted, ringOf, sealersFor } from "./cup.js";
+import { CUP, knocked, lifted, ringOf, sealersFor } from "./cup.js";
 import { KEPT } from "./lots.js";
 import { PRESETS, dieOf } from "./die.js";
 import { builtDie } from "./die-glb.js";
@@ -564,6 +564,111 @@ describe("the cup's verbs and what the doc says", () => {
     t.run("B", "stand");
     t.w.flush();
     expect(t.state("B", "knock")).not.toBe(null);
+    t.w.done();
+  });
+});
+
+describe("Lift all cups: on the bar of tools in every body, its state pinned (TOOLS.md Decision 10)", () => {
+  it("is a world command (the bar in every body) and a menu entry, nowhere else: in Edit the bar's world cluster shows it too", () => {
+    const t = table();
+    expect(t.cmd("A", "lift-all").show).toEqual(["menu", "world"]);
+    // the cup's own verbs stay where they were: none of them is the world's
+    for (const c of t.views.A.x.commands) if (c.id !== "lift-all") expect(c.show).not.toContain("world");
+    t.w.done();
+  });
+
+  // Every table: Alice's cup as each case says, beside it a second cup set
+  // down plain (up, nobody's), so "one" means one of two and the cup asked
+  // about need not be the one that's down. Expected: it applies exactly when
+  // some cup covers (down AND upright: a knocked-over cup is down but covers
+  // nothing) or is shaken blind with a holder (whatever is asked about, so
+  // long as it's no cup or a cup), never on a die.
+  const base = T([0, 0.75, 0]);
+  const CASES = {
+    "no cups but the plain one": null,
+    "all up": { transform: lifted(base), cup: { holder: null, up: true, blind: false } },
+    "one covering": { transform: base, cup: { holder: "alice", up: false, blind: false } },
+    "one knocked over": { transform: knocked(base), cup: { holder: "alice", up: false, blind: false } },
+    "one knocked over, blind, held": { transform: knocked(base), cup: { holder: "alice", up: false, blind: true } },
+    "one blind, held, up": { transform: lifted(base), cup: { holder: "alice", up: true, blind: true } },
+    "one blind, nobody's, up": { transform: lifted(base), cup: { holder: null, up: true, blind: true } },
+  };
+  const APPLIES = {
+    "no cups but the plain one": false,
+    "all up": false,
+    "one covering": true,
+    "one knocked over": false,
+    "one knocked over, blind, held": true,
+    "one blind, held, up": true,
+    "one blind, nobody's, up": false,
+  };
+  const TARGETS = { "nothing (the bar)": null, "a cup (the plain one)": "cup2", "a die": "d0" };
+  const ROWS = Object.keys(CASES).flatMap((c) => Object.keys(TARGETS).map((g) => [c, g, APPLIES[c] && g !== "a die"]));
+  const plain = (x) => ({ name: "Bob's cup", transform: lifted(T([x, 0.75, 0])), traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } });
+
+  it("the 21-row table: cups × what it's asked about", () => {
+    expect(ROWS.length).toBe(21);
+    for (const [c, g, applies] of ROWS) {
+      const t = table({ present: ["A"] });
+      t.w.change((doc) => {
+        doc.objects.cup2 = plain(0.4);
+        doc.order.push("cup2");
+        const it = CASES[c];
+        if (!it) {
+          delete doc.objects.cup;
+          doc.order = doc.order.filter((id) => id !== "cup");
+          return;
+        }
+        doc.objects.cup.transform = it.transform;
+        Object.assign(doc.objects.cup.traits[CUP], it.cup);
+      });
+      t.w.flush();
+      const got = t.state("A", "lift-all", TARGETS[g]);
+      expect([c, g, got]).toEqual([c, g, applies ? { title: "Lift every cup at the table, blind ones shown to their holders too" } : null]);
+      t.w.done();
+    }
+  });
+
+  // Run: one table holding a cup of every kind at once. Lift all lifts the
+  // ones that cover and shows blind held ones to their holders; every other
+  // cup is left exactly as it was (a blind cup nobody holds keeps its veil, a
+  // knocked-over one stays where it fell).
+  it("run: lifts exactly the cups its state counts, and leaves every other cup as it was", () => {
+    const t = table({ present: ["A"] });
+    const at = (x) => T([x, 0.75, 0]);
+    const KINDS = {
+      cup: { transform: at(0), cup: { holder: "alice", up: false, blind: false } }, // covering
+      held: { transform: lifted(at(0.4)), cup: { holder: "alice", up: true, blind: true } }, // blind, held, up
+      veiled: { transform: lifted(at(0.8)), cup: { holder: null, up: true, blind: true } }, // blind, nobody's, up
+      fallen: { transform: knocked(at(1.2)), cup: { holder: "alice", up: false, blind: false } }, // knocked over
+      plainup: { transform: lifted(at(1.6)), cup: { holder: null, up: true, blind: false } }, // plain, up
+    };
+    t.w.change((doc) => {
+      for (const [id, k] of Object.entries(KINDS)) {
+        doc.objects[id] ??= { name: id, traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } };
+        doc.objects[id].transform = k.transform;
+        Object.assign(doc.objects[id].traits[CUP], k.cup);
+        if (!doc.order.includes(id)) doc.order.push(id);
+      }
+    });
+    t.w.flush();
+    const before = JSON.parse(JSON.stringify(t.doc.objects));
+    t.run("A", "lift-all", null);
+    t.w.flush();
+    const after = t.doc.objects;
+    const EXPECT = {
+      cup: { up: true, blind: false, moved: true },
+      held: { up: true, blind: false, moved: false },
+      veiled: { up: true, blind: true, moved: false },
+      fallen: { up: false, blind: false, moved: false },
+      plainup: { up: true, blind: false, moved: false },
+    };
+    for (const [id, e] of Object.entries(EXPECT)) {
+      const c = after[id].traits[CUP];
+      const moved = JSON.stringify(after[id].transform) !== JSON.stringify(before[id].transform);
+      expect([id, { up: c.up, blind: c.blind, moved }]).toEqual([id, e]);
+    }
+    expect(t.state("A", "lift-all", null)).toBe(null);
     t.w.done();
   });
 });

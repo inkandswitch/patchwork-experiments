@@ -1,9 +1,14 @@
-// scene.toolbar: a row along the top presenting every running extension's
-// commands for the scene (the null target) that are meant for a toolbar (show
-// includes "toolbar", or says nothing): a button, a toggle (aria-pressed from
-// `checked`) or a picker (`choices`/`value`), in running order then command
-// order. It owns no verbs of its own; what used to be hard-wired here (frame,
-// measure, grid, units…) is each part's command now.
+// scene.toolbar: the bar of tools (TOOLS.md §6), a row along the top
+// presenting the scene commands (the null target) of every running
+// extension on the focus path, in two clusters: the editor's, at the left,
+// only in Edit (show includes "toolbar", or says nothing), and the world's,
+// at the right, in every body (show includes "world": a game's Play, a
+// table's Lift all cups, a boat's Come aboard), so a world command sits at the
+// same place looking, walking, seated or editing. Each is a button, a
+// toggle (aria-pressed from `checked`) or a picker (`choices`/`value`), in
+// running order then command order. It owns no verbs of its own; what used
+// to be hard-wired here (frame, measure, grid, units…) is each part's
+// command now.
 //
 // Each flush it works out every control's state; the DOM is touched only for
 // controls whose state changed, so a picker keeps its focus and a hover costs
@@ -15,19 +20,24 @@
 // stage's context and run there. It doesn't follow the pointer, so it
 // doesn't change under it.
 //
-// The toolbar is the editor's (../stage/bodies.js): it shows only in the Edit
-// body. Elsewhere (looking, walking, seated) there is no bar: a package's
-// command meant for it (arena's Play, the cups' Lift all) is still in the
-// menu and on its key.
+// It shows while some extension on the focus path has a command that is
+// the bar's in this body, whether or not that applies just now (barEntries'
+// `shown`): its height depends on which extensions run, never on a
+// command's state, so the canvas under it doesn't jump as Play or Lift all
+// comes and goes. With none (a plain scene, looking) there is no bar. The
+// editor's cluster scrolls sideways when the view is too narrow for it; the
+// world's sits outside that scroll, always in view at the right end.
+//
+// A button doesn't take the focus from a mouse press: the focus stays where
+// it was (the tool's root, where the keys are heard), so the next Space or
+// Enter that no key claims goes on to the stage and doesn't run the button
+// again (the router lets an unclaimed key through), whatever the body. From
+// the keyboard (Tab, then Space) a button is focused as any button is.
 
 import css from "./toolbar.css?inline";
-import { applicable, cleanChoices, controlKey, controlKind, flatCommands, localChanged, tooltip } from "./toolbar-commands.js";
+import { barEntries, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
 import { hintFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
-import { editing } from "../stage/bodies.js";
-
-/** Does the toolbar show? Only in Edit, with something on it. Pure. */
-export const toolbarShown = (view, count) => editing(view) && count > 0;
 
 function create(api) {
   api.style(css);
@@ -38,12 +48,19 @@ function create(api) {
   bar.setAttribute("aria-label", "Scene");
   const row = document.createElement("div");
   row.className = "cluster tools";
-  bar.append(row);
+  // (the world's cluster, right-aligned: the same place in every body)
+  const world = document.createElement("div");
+  world.className = "cluster world";
+  bar.append(row, world);
   edge.append(bar);
 
   /** control key ("stage\0ext\0command") → { el, sig, kind, choices } */
   const controls = new Map();
-  let order = "";
+  /** each cluster's running order, as keys (to touch its children only when it changes) */
+  const orders = new Map([
+    [row, ""],
+    [world, ""],
+  ]);
 
   const keyOf = (ext, id, stage) => `${stage ?? ""}\u0000${ext}\u0000${id}`;
 
@@ -65,6 +82,8 @@ function create(api) {
       el = document.createElement("button");
       el.type = "button";
       el.className = "button";
+      // (a mouse press doesn't move the focus: see the header)
+      el.addEventListener("mousedown", (e) => e.preventDefault());
       el.addEventListener("click", () => {
         const c = mine();
         if (c?.kind === "toggle") invoke(!c.checked);
@@ -110,30 +129,36 @@ function create(api) {
     // the focus path's stages, each its own commands in its own context (each key is the resolver's: shown only where pressing it does this)
     const path = typeof api.path === "function" ? api.path({ focus: true }) : [];
     const segs = path.length ? path.map((seg) => ({ stage: seg.stage, collected: seg.collect("commands"), ctx: seg.context(null) })) : segmentsOf(keys);
-    const items = editing(view) ? segs.flatMap((seg) => applicable(flatCommands(seg.collected), null, seg.ctx, "toolbar").map((it) => ({ ...it, stage: seg.stage, key: hintFor({ ext: it.ext, command: it.command, target: null, stage: seg.stage }, keys) }))) : [];
+    const entries = barEntries(segs, view);
     const seen = new Set();
-    const els = [];
-    for (const item of items) {
-      const k = keyOf(item.ext, item.command.id, item.stage);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      const kind = controlKind(item.state);
-      let c = controls.get(k);
-      // a control that changes kind (button ↔ picker) is made again
-      if (c && (c.kind === "choices") !== (kind === "choices")) c = null;
-      if (!c) controls.set(k, (c = build(item)));
-      c.kind = kind;
-      const sig = controlKey(item);
-      if (c.sig !== sig) paint(c, item, sig);
-      els.push(c.el);
-    }
+    const place = (el, items) => {
+      const ks = [];
+      const els = [];
+      for (const it of items) {
+        const item = { ...it, key: hintFor({ ext: it.ext, command: it.command, target: null, stage: it.stage }, keys) };
+        const k = keyOf(item.ext, item.command.id, item.stage);
+        seen.add(k);
+        const kind = controlKind(item.state);
+        let c = controls.get(k);
+        // a control that changes kind (button ↔ picker) is made again
+        if (c && (c.kind === "choices") !== (kind === "choices")) c = null;
+        if (!c) controls.set(k, (c = build(item)));
+        c.kind = kind;
+        const sig = controlKey(item);
+        if (c.sig !== sig) paint(c, item, sig);
+        ks.push(k);
+        els.push(c.el);
+      }
+      const next = ks.join("\u0001");
+      if (next !== orders.get(el)) {
+        orders.set(el, next);
+        el.replaceChildren(...els);
+      }
+    };
+    place(row, entries.editor);
+    place(world, entries.world);
     for (const k of [...controls.keys()]) if (!seen.has(k)) controls.delete(k);
-    const nextOrder = [...seen].join("\u0001");
-    if (nextOrder !== order) {
-      order = nextOrder;
-      row.replaceChildren(...els);
-    }
-    edge.hidden = !toolbarShown(view, els.length);
+    edge.hidden = !entries.shown;
   }
 
   return {

@@ -17,7 +17,8 @@
 //   nothing), hides the dice under a cup it may not see under, and tilts a
 //   cup its holder is peeking under.
 // - The verbs: Shake (S), Shake blind, Peek (hold P), Lift (L),
-//   Cover, Knock over, Stand up, Lift all cups. A cup down over dice can't
+//   Cover, Knock over, Stand up, Lift all cups (the table's, not a cup's: a
+//   button on the bar of tools in every body, show "world"). A cup down over dice can't
 //   be carried (the hand asks `carryable`): picking it up is lifting it.
 //
 // THE ROLL. Shaking writes, in one change, the cup down on its spot, its
@@ -700,7 +701,7 @@ function create(api) {
       {
         id: "lift-all",
         name: "Lift all cups",
-        show: ["menu", "toolbar"],
+        show: ["menu", "world"],
         state: liftAllState,
         run: (target) => {
           if (!liftAllState(target, { scene: api.scene(), local: api.local.get() })) return;

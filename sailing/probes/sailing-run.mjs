@@ -233,7 +233,9 @@ try {
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in Look, off her quarter", (await P("bodyLabel('a')")) === "Look" && (await P("bodyLabel('b')")) === "Look", { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
   check("both run what the doc calls for, the same: sailing and the general parts", JSON.stringify(run.a) === JSON.stringify(run.b) && SOME.every((id) => run.a.includes(id)), run);
-  check("the HUD offers to come aboard in both views", /come aboard/i.test((await P("text('.sail-hint button', 'a')"))[0]) && /come aboard/i.test((await P("text('.sail-hint button', 'b')"))[0]));
+  // the way in is the aboard command's Come aboard on the bar of tools (show "world": scene TOOLS.md Decision 10); the HUD only reads
+  const wayIn = { a: await P("text('.toolbar .world [data-command=\"aboard\"]', 'a')"), b: await P("text('.toolbar .world [data-command=\"aboard\"]', 'b')"), hudButtons: [...(await P("text('.sail-hud button', 'a')")), ...(await P("text('.sail-hud button', 'b')"))] };
+  check("the bar of tools offers Come aboard in both views, and the HUD holds no button", /^come aboard$/i.test(wayIn.a[0] ?? "") && /^come aboard$/i.test(wayIn.b[0] ?? "") && wayIn.hudButtons.length === 0, wayIn);
   const looks = { a: await P("look('a')"), b: await P("look('b')") };
   check("the sea's sky, haze and sun in both views", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && !!looks[w].atmosphere), looks);
   await shot("opening");
