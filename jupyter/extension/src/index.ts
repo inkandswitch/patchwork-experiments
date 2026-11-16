@@ -5,6 +5,8 @@ import { IMainMenu } from '@jupyterlab/mainmenu';
 import { INotebookTracker, type NotebookPanel } from '@jupyterlab/notebook';
 import { automergeBinding } from './binding';
 import { connectBridge, type PatchworkBridge } from './bridge';
+import { sourceDiff } from './diff-editor';
+import { DiffTracker, showDiffs } from './diff-view';
 import { PatchworkDrive } from './drive';
 import { connectKernels } from './kernel';
 import {
@@ -82,9 +84,10 @@ const presencePlugin: JupyterFrontEndPlugin<void> = {
   autoStart: true,
   requires: [INotebookTracker],
   activate: (_: JupyterFrontEnd, tracker: INotebookTracker) => {
-    const { user, kernel } = bridge();
+    const { user, kernel, handle } = bridge();
     tracker.widgetAdded.connect((_, panel) => {
-      if (kernel) connectKernels(panel.sessionContext, kernel);
+      if (handle?.isReadOnly?.()) keepKernelOff(panel);
+      else if (kernel) connectKernels(panel.sessionContext, kernel);
       void panel.context.ready.then(() => {
         followReadOnly(panel);
         const model = panel.context.model;
@@ -93,6 +96,29 @@ const presencePlugin: JupyterFrontEndPlugin<void> = {
           awareness.setLocalStateField('user', { name: user.name, display_name: user.name, color: user.color });
         }
       });
+    });
+  }
+};
+
+const diffPlugin: JupyterFrontEndPlugin<void> = {
+  id: '@patchwork/jupyter-extension:diff',
+  description: 'Shows what the checked-out Patchwork draft changed in the notebook.',
+  autoStart: true,
+  requires: [INotebookTracker, IEditorExtensionRegistry],
+  activate: (_: JupyterFrontEnd, tracker: INotebookTracker, extensions: IEditorExtensionRegistry) => {
+    const { handle, baseline } = bridge();
+    if (!handle || !baseline) return;
+    const diffs = new DiffTracker(handle, baseline);
+    extensions.addExtension({
+      name: 'patchwork-diff',
+      factory: options => {
+        const sharedModel = options.model.sharedModel as any;
+        if (!isAutomergeCell(sharedModel)) return null;
+        return EditorExtensionRegistry.createImmutableExtension(sourceDiff(sharedModel, diffs));
+      }
+    });
+    tracker.widgetAdded.connect((_, panel) => {
+      void panel.context.ready.then(() => showDiffs(panel, diffs));
     });
   }
 };
@@ -116,6 +142,15 @@ function followReadOnly(panel: NotebookPanel): void {
   apply();
   shared.scopeReplaced.connect(later);
   model.cells.changed.connect(later);
+}
+
+/** A notebook shown at a point in history, like the version a draft is compared with, runs nothing. */
+function keepKernelOff(panel: NotebookPanel): void {
+  const session = panel.sessionContext;
+  session.kernelPreference = { ...session.kernelPreference, shouldStart: false, canStart: false, autoStartDefault: false };
+  void session.ready.then(() => {
+    if (session.session?.kernel) void session.shutdown();
+  });
 }
 
 /** Resolves with the chosen file, or null if the picker was dismissed. */
@@ -152,4 +187,4 @@ function isAutomergeCell(model: unknown): model is AutomergeCodeCell | Automerge
   );
 }
 
-export default [drivePlugin, importPlugin, bindingPlugin, presencePlugin];
+export default [drivePlugin, importPlugin, bindingPlugin, presencePlugin, diffPlugin];

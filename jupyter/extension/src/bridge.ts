@@ -1,3 +1,4 @@
+import type { Heads } from '@automerge/automerge';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import type { Automerge } from './model/automerge';
 import type { NotebookDoc } from './model';
@@ -20,6 +21,16 @@ export type PatchworkBridge = {
    * checked-out draft or history position.
    */
   handle?: DocHandle<NotebookDoc>;
+  /** What `handle` is diffed against, such as where the checked-out draft forked off. */
+  baseline?: Baseline;
+};
+
+export type Baseline = {
+  /** Heads in `handle`'s history, or null when there is nothing to compare. */
+  current(): Heads | null;
+  /** Whether cells that didn't change are folded away. */
+  collapsed(): boolean;
+  subscribe(listener: () => void): () => void;
 };
 
 export type KernelBridge = {

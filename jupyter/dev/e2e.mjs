@@ -150,6 +150,42 @@ try {
     expect(await iframe.evaluate(node => node.isConnected), "the iframe was replaced")
   })
 
+  await step("shows what the checked-out draft changed", async () => {
+    await page.evaluate(() => {
+      const { A, repo, handle, shown, selectDraft } = window.harness
+      const clonedAt = handle.heads()
+      const draft = repo.clone(handle)
+      draft.change(doc => {
+        A.splice(doc, ["cells", 0, "source"], 0, 0, "# drafted\n")
+        A.splice(doc, ["cells", 0, "source"], "# drafted\nafter ".length, "the ".length)
+        doc.cells.deleteAt(doc.cells.length - 1)
+        doc.cells.push({ id: "drafted-cell", cell_type: "code", source: "print('new')", metadata: {}, outputs: [], execution_count: null })
+      })
+      const draftDoc = repo.create({ "@patchwork": { type: "draft" }, clones: { [handle.url]: { clonedAt, cloneUrl: draft.url } } })
+      window.harness.draft = draft
+      shown.swap(draft)
+      selectDraft(draftDoc.url)
+    })
+    await frame.waitForSelector(".jp-Cell.pw-diff-added .cm-content:has-text(\"print('new')\")", { timeout: 5_000 })
+    await frame.waitForSelector(".jp-Cell.pw-diff-changed .pw-diff-insertion:has-text('# drafted')", { timeout: 5_000 })
+    await frame.waitForSelector(".jp-Cell.pw-diff-changed .pw-diff-deletion[title='the ']", { timeout: 5_000 })
+    await frame.click(".pw-diff-deleted summary:has-text('1 deleted cell')", { timeout: 5_000 })
+    await frame.waitForSelector(".pw-diff-deleted[open] pre", { timeout: 5_000 })
+    await page.screenshot({ path: join(ROOT, ".cache/e2e-diff.png") })
+
+    await frame.click(".jp-Cell.pw-diff-changed .cm-content")
+    await page.keyboard.press("ControlOrMeta+End")
+    await page.keyboard.type(" # more")
+    await frame.waitForSelector(".pw-diff-insertion:has-text('# more')", { timeout: 5_000 })
+    expect(await frame.locator(".pw-diff-deleted[open]").count() === 1, "the deleted cells closed while typing")
+
+    await page.evaluate(() => {
+      window.harness.shown.swap(window.harness.handle)
+      window.harness.selectDraft(null)
+    })
+    await frame.waitForFunction(() => !document.querySelector(".pw-diff-added, .pw-diff-changed, .pw-diff-deleted, .pw-diff-insertion"), null, { timeout: 5_000 })
+  })
+
   await step("shows an earlier version read-only", async () => {
     const { url, heads, source } = await page.evaluate(() => {
       const { handle } = window.harness

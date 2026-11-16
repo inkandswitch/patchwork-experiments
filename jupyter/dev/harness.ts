@@ -1,6 +1,7 @@
 import * as A from "@automerge/automerge/slim"
 import { initializeWasm, Repo, type AutomergeUrl, type DocHandle, type PeerId } from "@automerge/automerge-repo/slim"
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb"
+import { accept } from "@inkandswitch/patchwork-providers"
 // @ts-ignore — the default init is a wasm-bindgen runtime helper not in the .d.ts
 import initSubduction, { MemorySigner } from "@automerge/automerge-subduction/slim"
 import automergeWasm from "@automerge/automerge/automerge.wasm?url"
@@ -32,8 +33,27 @@ async function main() {
   }
   const heads = new URLSearchParams(location.search).get("heads")
   const shown = overlay(heads ? handle.view(heads.split(",") as any) : handle)
-  Object.assign(window, { harness: { A, repo, handle, shown } })
+  const selectDraft = draftSelection(document.body)
+  Object.assign(window, { harness: { A, repo, handle, shown, selectDraft } })
   JupyterTool(shown, document.getElementById("app")!)
+}
+
+/** Like the drafts package's provider: answers `draft:selection` with whatever was last selected. */
+function draftSelection(element: HTMLElement): (draft: AutomergeUrl | null) => void {
+  let selection = { checkedOut: null as AutomergeUrl | null, at: null }
+  const subscribers = new Set<(value: typeof selection) => void>()
+  element.addEventListener("patchwork:subscribe", event => {
+    if (event.detail.selector.type !== "draft:selection") return
+    accept<typeof selection>(event, respond => {
+      respond(selection)
+      subscribers.add(respond)
+      return () => subscribers.delete(respond)
+    })
+  })
+  return draft => {
+    selection = { checkedOut: draft, at: null }
+    for (const respond of subscribers) respond(selection)
+  }
 }
 
 /**

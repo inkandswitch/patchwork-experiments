@@ -2,6 +2,7 @@ import * as Automerge from "@automerge/automerge"
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo"
 import type { NotebookDoc } from "../extension/src/model"
 import type { PatchworkBridge } from "../extension/src/bridge"
+import { compareBaseline } from "./baseline"
 import { kernelConfig } from "./kernel"
 
 declare global {
@@ -20,12 +21,14 @@ export default function JupyterTool(handle: DocHandle<NotebookDoc>, element: HTM
   const token = crypto.randomUUID()
   const bridges = (window.__patchworkJupyter ??= new Map())
   const user = { name: "Anonymous", color: colorFor(token) }
+  const baseline = compareBaseline(element)
   bridges.set(token, {
     Automerge,
     repo: window.repo,
     handle,
+    baseline,
     user,
-    kernel: kernelConfig(window.repo),
+    kernel: handle.isReadOnly() ? undefined : kernelConfig(window.repo),
     onCreate: url =>
       element.dispatchEvent(
         new CustomEvent("patchwork:open-document", { detail: { url }, bubbles: true, composed: true }),
@@ -45,6 +48,7 @@ export default function JupyterTool(handle: DocHandle<NotebookDoc>, element: HTM
   return () => {
     iframe.remove()
     bridges.delete(token)
+    baseline.dispose()
   }
 }
 

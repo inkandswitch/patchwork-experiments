@@ -284,7 +284,7 @@ class SnapshotBackend implements DocBackend<NotebookDoc> {
   private _doc: Doc<NotebookDoc>;
 }
 
-function parseDocumentId(path: string): string | null {
+export function parseDocumentId(path: string): string | null {
   const local = path.startsWith(`${DRIVE_NAME}:`) ? path.slice(DRIVE_NAME.length + 1) : path;
   const [first, second] = local.replace(/^\/+/, '').split('/');
   if (second === undefined) {
