@@ -40,6 +40,10 @@ const VIEWS = [
   { name: "crests-12", wind: { speed: 12, from: 270 }, eye: [0, 3, 0], yaw: 20, pitch: -9 },
   { name: "away-12", wind: { speed: 12, from: 270 }, eye: [0, 4, 0], yaw: 200, pitch: -6 },
   { name: "down-12", wind: { speed: 12, from: 270 }, eye: [0, 30, 0], yaw: 120, pitch: -50 },
+  // a block of the sea (a clip, or a size): its top, its skirt from the moving rim to its floor, and its floor
+  { name: "block-calm", wind: { speed: 0.1, from: 270 }, eye: [-55, 22, 55], yaw: 45, pitch: -18, block: { w: 60, l: 40, depth: 6, at: [0, 0, 0], yaw: 20 } },
+  { name: "block-12", wind: { speed: 12, from: 270 }, eye: [-55, 22, 55], yaw: 45, pitch: -18, block: { w: 60, l: 40, depth: 6, at: [0, 0, 0], yaw: 20 } },
+  { name: "block-under", wind: { speed: 8, from: 270 }, eye: [-38, -2, 30], yaw: 50, pitch: 2, block: { w: 60, l: 40, depth: 6, at: [0, 0, 0], yaw: 20 } },
 ].filter((v) => !only || String(only).split(",").includes(v.name));
 
 const b = await browser({ root, mounts: { "/three/": three }, port: PORT, cdp: CDP, page: "/probes/ocean.html" });
@@ -53,6 +57,11 @@ try {
     report.views[v.name] = r;
     report.shots.push(await b.shot(join(SHOTS, `ocean-${v.name}.png`)));
     if (r.errors.length) code = 1;
+    // a block is drawn as a volume: its skirt and floor, seen from either side
+    if (v.block && !(r.block && r.block.sides > 4 && r.block.sides < r.block.vertices && r.block.doubleSided)) {
+      report.failed = [...(report.failed ?? []), `${v.name}: no skirt and floor (${JSON.stringify(r.block)})`];
+      code = 1;
+    }
   }
 } catch (err) {
   report.error = String(err?.stack ?? err);
