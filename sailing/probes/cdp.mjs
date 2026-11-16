@@ -24,6 +24,15 @@
 //                                        polls the wall for up to ms, a still frame (no time
 //                                        passes) each time round; → its value, or false
 //
+// Touch (Chrome's touch emulation): `await b.touch.emulate(true)` makes the
+// page a touch screen (maxTouchPoints 5, `(pointer: coarse)`); then
+// `await b.touch.fingers([[id, x, y], …])` sets which fingers are down where:
+// a new id presses, a moved one moves (Chrome tells them apart against the
+// last call, one pointer event each), and [] lifts them all. CDP can't lift
+// one finger while another stays down (a touchMove without it leaves it
+// down, a touchEnd lifts every one), so dropping some is refused.
+// `b.touch.tap([x, y])` is one finger down and up.
+//
 // key, click, drag and the rest rest() rather than sleep, and shot() draws a
 // frame first. The wall is for loading and sync only: waitFor(expr, ms) polls
 // on it, stepping a frame each time round when simulated (a page loading at
@@ -214,6 +223,28 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
     await send("Input.dispatchKeyEvent", { type: "keyUp", key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: modBits(mods) });
   }
 
+  // ── touch ──
+  let down = []; // the ids the last fingers() left down
+  const touch = {
+    /** Make the page a touch screen, or not. */
+    emulate: (enabled) => send("Emulation.setTouchEmulationEnabled", { enabled, maxTouchPoints: 5 }),
+    /** The fingers down now, [[id, x, y], …]: against the last call, a new id presses, a moved one moves; [] lifts all (CDP lifts none alone). */
+    async fingers(points) {
+      const ids = points.map(([id]) => id);
+      if (ids.length && down.some((id) => !ids.includes(id))) throw new Error("CDP can't lift one finger while another stays down: lift them all ([])");
+      const type = !points.length ? "touchEnd" : down.length ? "touchMove" : "touchStart";
+      await send("Input.dispatchTouchEvent", { type, touchPoints: points.map(([id, x, y]) => ({ id, x, y })) });
+      down = ids;
+      await rest(16);
+    },
+    /** One finger down and up at [x, y], with nothing else down. */
+    async tap([x, y], id = 1) {
+      await touch.fingers([[id, x, y]]);
+      await touch.fingers([]);
+      await rest(60);
+    },
+  };
+
   return {
     send,
     js,
@@ -223,6 +254,7 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
     mouse,
     keyDown,
     keyUp,
+    touch,
     simulated,
     step,
     advance,

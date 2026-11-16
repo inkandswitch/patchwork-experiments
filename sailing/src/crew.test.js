@@ -360,11 +360,19 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(close(s.cam.position, crew.me().eye, 1e-6)).toBe(true);
   });
 
-  it("declares the walking keys only: F, Q and E go on to the key map", () => {
+  it("declares the walking keys only, labelled as walk's (W and ↑ both Forward: one touch control): F, Q and E go on to the key map", () => {
     const s = stage();
     const crew = s.make();
     crew.start();
     s.frames(2);
+    // walk/src/body.js WALK_KEYS, as a literal: the chip's body and the body it sits as declare the same
+    const WALK = [
+      ["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"],
+      ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"],
+      ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"],
+    ].map(([code, label]) => ({ code, label }));
+    expect(s.body().keys).toEqual(WALK);
+    expect(s.bodies.at(-1).def.keys).toEqual(WALK);
     expect(s.declared()).toEqual(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
     expect(s.key("KeyF", "f")).toBe(false);
     expect(s.key("KeyQ", "q")).toBe(false);
@@ -487,7 +495,7 @@ describe("the crew", { timeout: 60_000 }, () => {
     s.frames(2);
     const seen = [];
     const handlers = {
-      keys: ["KeyA", "KeyD", "KeyF"],
+      keys: [{ code: "KeyA", label: "Steer to port" }, { code: "KeyD", label: "Steer to starboard" }, { code: "KeyF", label: "Leave" }],
       key: (ev) => (seen.push(ev.code), ev.code === "KeyA"),
       keyup: () => true,
       tick: vi.fn(),
@@ -500,6 +508,8 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.held).toBe(1); // the crew's camera still: a station is ours
     expect(crew.me().station).toBe("wheel");
     expect(crew.me().hint).toBe("A / D steer · F leave");
+    // the station body declares what the station does, as it says it
+    expect(s.body().keys).toEqual(handlers.keys);
     expect(s.declared()).toEqual(["KeyA", "KeyD", "KeyF"]);
     expect(s.key("KeyA")).toBe(true);
     expect(s.key("KeyW")).toBe(false); // not walking while you're at it
