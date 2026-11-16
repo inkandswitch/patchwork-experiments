@@ -58,18 +58,48 @@ export function seaObject({ seed, scale = 1, level = 0, name = "Sea" } = {}) {
 /** Does a doc have open water (an object with the water trait and no size)? */
 export const hasOpenWater = (d) => Object.values(d?.objects ?? {}).some(isOpenWater);
 
+/** A doc's open body: the one that counts, the lowest id of its open water objects (the water package's one-open rule), or null. */
+export function openBody(d) {
+  const ids = Object.keys(d?.objects ?? {}).filter((id) => isOpenWater(d.objects[id]));
+  return ids.length ? ids.sort()[0] : null;
+}
+
 /**
  * Give a doc a Sea and the weather where it has no open water (one seed for
  * both, so its waves and gusts come from one number), first in its order.
+ * A doc with open water is left as it is, weather and all (Decision 68).
  * Writes into `d`; returns the Sea's id, or null when it had open water.
  */
 export function bringSea(d, newId, { wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) {
-  if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather({ wind, seed });
   if (hasOpenWater(d)) return null;
+  if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather({ wind, seed });
   const id = newId("o");
   d.objects[id] = seaObject({ seed });
   d.order.unshift(id);
   return id;
+}
+
+/**
+ * Put a sea on a doc (the Sea part): on its open body when it has one with
+ * no sea yet, else on a new Sea first in its order; with the weather where
+ * the doc has none. A doc whose open body has a sea already is left as it
+ * is: a second open body would be flagged and do nothing. Writes into `d`;
+ * `{ id }` the water the sea is on, or `{ id: null, had }` the open body
+ * that has one.
+ */
+export function addSea(d, newId) {
+  const open = openBody(d);
+  if (open && d.objects[open].traits[SEA]) return { id: null, had: open };
+  if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather();
+  const seed = d.traits[WEATHER].seed ?? Math.floor(Math.random() * 1e9);
+  if (open) {
+    d.objects[open].traits[SEA] = newSea({ seed });
+    return { id: open };
+  }
+  const id = newId("o");
+  d.objects[id] = seaObject({ seed });
+  d.order.unshift(id);
+  return { id };
 }
 
 const sub = (a, b) => a.map((v, i) => v - b[i]);
@@ -333,24 +363,25 @@ export const sloop = {
     const world = matrixOf(at.world);
     const objects = sloopObjects({ position: [world[12], 0, world[14]], yaw: headingOf(world) }, files, ctx.newId);
     ctx.change((d) => {
-      if (!hasOpenWater(d)) bringSea(d, ctx.newId);
+      bringSea(d, ctx.newId);
       writeObjects(d, objects);
     });
     return objects[0][0];
   },
 };
 
-/** A Sea as a part: open water with waves on it, at the origin's height whatever it was dropped on, and the weather if the scene has none. */
+/**
+ * A Sea as a part: waves on the scene's open water, or open water with waves
+ * on it at the origin's height whatever it was dropped on; and the weather
+ * if the scene has none. Where the open water has a sea already, it says so
+ * and adds nothing.
+ */
 export const sea = {
   async create(ctx) {
-    let id = null;
-    ctx.change((d) => {
-      if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather();
-      id = ctx.newId("o");
-      d.objects[id] = seaObject({ seed: d.traits[WEATHER].seed ?? Math.floor(Math.random() * 1e9) });
-      d.order.unshift(id);
-    });
-    return id;
+    let out = null;
+    ctx.change((d) => (out = addSea(d, ctx.newId)));
+    if (out?.had) ctx.notify?.("This scene's water has a sea already.");
+    return out?.id ?? out?.had ?? null;
   },
 };
 
