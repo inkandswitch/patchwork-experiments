@@ -341,12 +341,14 @@ export function placeTrees(o) {
  * `depth` of the canopy, the skin's crowns standing out of it.
  * → { positions, normals?, colors, indices, roofNodes } (no normals: computed by the caller).
  */
-export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"], jitter = 0, under = null, depth = 0.7, mottle = MOTTLE }) {
+export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"], jitter = 0, under = null, depth = 0.7, mottle = MOTTLE, far = null }) {
   const { n } = grid;
   const N = n * n;
   const roof = new Uint8Array(N);
   for (let k = 0; k < N; k++) if (isRoof(k, { n, label, cover, canopy, dist, setback })) roof[k] = 1;
-  return sheetOver({ grid, heights, mask: roof, tolerance, floor, colours, jitter, seeds: [77, 79], mottle }, (k) => {
+  // the far forest (outside the skin's zone, where `far` is given): patches, clearcuts and a toothed skyline (farRoof)
+  const fr = far ? farRoof({ grid, heights, roof, under, ...far }) : null;
+  return sheetOver({ grid, heights, mask: roof, tolerance, floor, colours, jitter, seeds: [77, 79], mottle, colourOf: fr?.colourOf ?? null }, (k) => (fr?.lift[k] ?? 0) + (() => {
     const i = k % n, j = (k - i) / n;
     let s = 0, c = 0;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
@@ -357,11 +359,113 @@ export function forestRoof({ grid, heights, label, cover, canopy, dist, setback 
     }
     // under the skin's crowns (`under`: its zone), the roof sits at `depth` of the canopy, so the crowns stand out of it as cones, not tips
     return heights[k] + (s / c) * (under?.[k] ? depth : 1);
-  });
+  })());
+}
+
+/**
+ * The far forest's look (forestRoof's `far`), on roof nodes outside the
+ * skin's zone (`under`), so the hills seen from kilometres off (Mount
+ * Ozzard, the Mackenzie Range) are forest, not smooth grey domes:
+ * - patches: a two-octave value noise (cells `cells` m, weights 0.6 and 0.4)
+ *   between `colours[0]` and `colours[1]`, stretched about its middle;
+ * - clearcuts: on slopes over `clearcuts.slope` degrees and under
+ *   `clearcuts.below` m, a block of `clearcuts.block` m a side in some cells
+ *   of a `clearcuts.cell` m lattice (by the cell's hash, `clearcuts.share`
+ *   of them), lighter second growth in `clearcuts.colour`;
+ * - crests: every crest node (crestAt) lifted by `lift[0]` to `lift[1]` m by
+ *   its hash, so the skyline is toothed, not a smooth curve.
+ * → { colourOf(k) → linear rgb | null, lift: Float32Array, crests }. Pure.
+ */
+export const FAR_ROOF = Object.freeze({
+  cells: Object.freeze([300, 90]),
+  colours: Object.freeze(["#121d16", "#2b3828"]),
+  clearcuts: Object.freeze({ slope: 12, below: 600, cell: 250, block: Object.freeze([150, 300]), share: 0.12, colour: "#47513a" }),
+  lift: Object.freeze([4, 9]),
+  crest: 1.5,
+});
+
+/** A 2D value noise in [0, 1] at (x, z) in cells: a hash at each lattice point, smoothly interpolated. Pure. */
+export function valueNoise2(x, z, seed) {
+  const xi = Math.floor(x), zi = Math.floor(z);
+  const sm = (t) => t * t * (3 - 2 * t);
+  const u = sm(x - xi), w = sm(z - zi);
+  const h = (a, b) => hash01((Math.imul(a, 73856093) ^ Math.imul(b, 19349663)) >>> 0, seed);
+  const top = h(xi, zi) + (h(xi + 1, zi) - h(xi, zi)) * u, bot = h(xi, zi + 1) + (h(xi + 1, zi + 1) - h(xi, zi + 1)) * u;
+  return top + (bot - top) * w;
+}
+
+/** The far roof's patch value at (x, z) (m), in [0, 1]: FAR_ROOF's two octaves, stretched about the middle. Pure. */
+export function patchAt(x, z, cells = FAR_ROOF.cells) {
+  const v = 0.6 * valueNoise2(x / cells[0], z / cells[0], 211) + 0.4 * valueNoise2(x / cells[1], z / cells[1], 223);
+  return Math.max(0, Math.min(1, (v - 0.5) * 1.8 + 0.5));
+}
+
+/** Whether (x, z) (m) is in a clearcut block of FAR_ROOF's lattice (slope and height aside). Pure. */
+export function inClearcut(x, z, o = FAR_ROOF.clearcuts) {
+  const ci = Math.floor(x / o.cell), cj = Math.floor(z / o.cell);
+  const key = (Math.imul(ci, 92821) ^ Math.imul(cj, 68917)) >>> 0;
+  if (hash01(key, 231) >= o.share) return false;
+  // the block: [block[0], block[1]] a side on each axis by hash, held inside its cell
+  const w = Math.min(o.cell, o.block[0] + (o.block[1] - o.block[0]) * hash01(key, 233));
+  const d = Math.min(o.cell, o.block[0] + (o.block[1] - o.block[0]) * hash01(key, 235));
+  const ox = (o.cell - w) * hash01(key, 237), oz = (o.cell - d) * hash01(key, 239);
+  const fx = x - ci * o.cell, fz = z - cj * o.cell;
+  return fx >= ox && fx < ox + w && fz >= oz && fz < oz + d;
+}
+
+/** A node's slope (degrees) from its four neighbours' heights (central differences, one-sided at the grid's edge). Pure. */
+export function slopeAt(k, n, cell, heights) {
+  const i = k % n, j = (k - i) / n;
+  const hx = (heights[j * n + Math.min(n - 1, i + 1)] - heights[j * n + Math.max(0, i - 1)]) / (cell * (Math.min(n - 1, i + 1) - Math.max(0, i - 1)));
+  const hz = (heights[Math.min(n - 1, j + 1) * n + i] - heights[Math.max(0, j - 1) * n + i]) / (cell * (Math.min(n - 1, j + 1) - Math.max(0, j - 1)));
+  return (Math.atan(Math.hypot(hx, hz)) * 180) / Math.PI;
+}
+
+/**
+ * Whether node k is a crest of the ground: not on the grid's edge, and
+ * higher than all eight neighbours (a summit), or higher than both of its
+ * neighbours along one of the four axes through it by at least `margin` m
+ * each (a ridge across that axis). Pure.
+ */
+export function crestAt(k, n, heights, margin = FAR_ROOF.crest) {
+  const i = k % n, j = (k - i) / n;
+  if (i < 1 || j < 1 || i >= n - 1 || j >= n - 1) return false;
+  const h = heights[k];
+  let summit = true;
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if ((di || dj) && heights[k + dj * n + di] >= h) summit = false;
+  if (summit) return true;
+  for (const [di, dj] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+    if (h - heights[k + dj * n + di] >= margin && h - heights[k - dj * n - di] >= margin) return true;
+  }
+  return false;
+}
+
+/** The far roof's colours and lifts for a roof mask (see FAR_ROOF above). Pure. */
+export function farRoof({ grid, heights, roof, under = null, cells = FAR_ROOF.cells, colours = FAR_ROOF.colours, clearcuts = FAR_ROOF.clearcuts, lift: liftRange = FAR_ROOF.lift, crest = FAR_ROOF.crest }) {
+  const { n, cell, x0, z0 } = grid;
+  const N = n * n;
+  const far = (k) => roof[k] && !under?.[k];
+  const [lo, hi] = colours.map((c) => hexToLinear(c).slice(0, 3));
+  const cut = clearcuts ? hexToLinear(clearcuts.colour).slice(0, 3) : null;
+  const lift = new Float32Array(N);
+  let crests = 0;
+  for (let k = 0; k < N; k++) {
+    if (!far(k) || !crestAt(k, n, heights, crest)) continue;
+    lift[k] = liftRange[0] + (liftRange[1] - liftRange[0]) * hash01(k, 241);
+    crests++;
+  }
+  const colourOf = (k) => {
+    if (!far(k)) return null;
+    const i = k % n, j = (k - i) / n, x = x0 + i * cell, z = z0 + j * cell;
+    if (cut && heights[k] < clearcuts.below && inClearcut(x, z, clearcuts) && slopeAt(k, n, cell, heights) > clearcuts.slope) return cut;
+    const t = patchAt(x, z, cells);
+    return [0, 1, 2].map((c) => lo[c] + (hi[c] - lo[c]) * t);
+  };
+  return { colourOf, lift, crests };
 }
 
 /** The colours of the low scrub (salal and shore pine) where the lidar's canopy is under 5 m: a place's `trees.scrub.colours` overrides them. */
-export const SCRUB_COLOURS = Object.freeze(["#3e4a2c", "#37432a", "#44502f", "#333f27", "#3b4630"]);
+export const SCRUB_COLOURS = Object.freeze(["#2b3a24", "#33452a", "#27331f", "#2f3f27", "#374a2c"]);
 
 /** What low scrub grows on: wild ground (nothing mapped, wood, scrub, wetland), not lots, lawns or yards. */
 const WILD = new Set([COVER.none, COVER.wood, COVER.scrub, COVER.wetland]);
@@ -397,7 +501,7 @@ export const MOTTLE = 0.15;
  * jitter]) and mottled ±`mottle` in value by a third; where `fine` ({ zone,
  * tolerance }) its zone's nodes at that tolerance. Null if the mask is empty.
  */
-function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [colourSeed, jitterSeed], fine = null, mottle = 0 }, topOf) {
+function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [colourSeed, jitterSeed], fine = null, mottle = 0, colourOf = null }, topOf) {
   const { n, cell, x0, z0 } = grid;
   const N = n * n;
   const roof = mask;
@@ -436,7 +540,7 @@ function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, see
     positions[q * 3 + 1] = top[k] + (roof[k] && jitter ? (hash01(k, jitterSeed) - 0.5) * 2 * jitter : 0);
     positions[q * 3 + 2] = z0 + j * cell;
     const u = hash01(k, colourSeed);
-    const c = lin[u < 0.25 ? 0 : u < 0.55 ? 1 : u < 0.8 ? 2 : u < 0.9 ? 3 : 4];
+    const c = (roof[k] && colourOf?.(k)) || lin[u < 0.25 ? 0 : u < 0.55 ? 1 : u < 0.8 ? 2 : u < 0.9 ? 3 : 4];
     const f = 1 + mottle * (2 * hash01(k, colourSeed + 1000) - 1);
     colors[q * 3] = c[0] * f;
     colors[q * 3 + 1] = c[1] * f;
@@ -477,18 +581,28 @@ function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, see
  */
 export const SKIN_LAYOUTS = Object.freeze({
   3: Object.freeze([
-    [[-0.3, -0.2, 1], [0.3, -0.14, 0.9], [0.02, 0.3, 0.95]],
-    [[-0.28, 0.24, 0.92], [0.3, 0.2, 1, "spruce"], [0.0, -0.3, 0.88]],
-    [[-0.3, 0.0, 0.95], [0.18, -0.28, 0.9], [0.22, 0.28, 1]],
-    [[-0.26, -0.26, 1], [0.3, 0.02, 0.9], [-0.16, 0.3, 0.94], [0.06, -0.04, 1, "snag"]],
+    [[-0.3, -0.2, 1.08], [0.3, -0.14, 0.8], [0.02, 0.3, 1.4]],
+    [[-0.28, 0.24, 0.85], [0.3, 0.2, 1.15, "spruce"], [0.0, -0.3, 0.95]],
+    [[-0.3, 0.0, 1.2], [0.18, -0.28, 0.82], [0.22, 0.28, 1]],
+    [[-0.26, -0.26, 1.12], [0.3, 0.02, 0.8], [-0.16, 0.3, 0.97], [0.06, -0.04, 1, "snag"]],
   ].map((l) => Object.freeze(l.map((c) => Object.freeze(c))))),
   4: Object.freeze([
-    [[-0.25, -0.25, 1], [0.25, -0.25, 0.88], [-0.25, 0.25, 0.93], [0.25, 0.25, 0.97]],
-    [[-0.28, -0.2, 0.9], [0.22, -0.28, 1], [-0.22, 0.28, 0.94, "spruce"], [0.28, 0.2, 0.86]],
-    [[-0.2, -0.3, 0.95], [0.3, -0.22, 1], [-0.3, 0.2, 0.87], [0.2, 0.28, 0.92]],
-    [[-0.27, -0.24, 1], [0.25, -0.2, 0.9, "spruce"], [-0.24, 0.24, 0.95], [0.2, 0.3, 0.88], [0.02, 0.0, 1, "snag"]],
+    [[-0.25, -0.25, 1], [0.25, -0.25, 0.8], [-0.25, 0.25, 1.45], [0.25, 0.25, 0.9]],
+    [[-0.28, -0.2, 0.84], [0.22, -0.28, 1.18], [-0.22, 0.28, 1, "spruce"], [0.28, 0.2, 0.92]],
+    [[-0.2, -0.3, 1.1], [0.3, -0.22, 0.82], [-0.3, 0.2, 1.38], [0.2, 0.28, 0.95]],
+    [[-0.27, -0.24, 1], [0.25, -0.2, 1.15, "spruce"], [-0.24, 0.24, 0.8], [0.2, 0.3, 1.36], [0.02, 0.0, 1, "snag"]],
   ].map((l) => Object.freeze(l.map((c) => Object.freeze(c))))),
 });
+/**
+ * A crown at least this tall (of its clump's height, in its layout) is an
+ * emergent: an old tree standing over the canopy (about one crown in seven;
+ * each layout's crowns span at least 0.3 of the clump's height, 0.8 to 1.25
+ * but for them, so the forest isn't a tree farm of equal cones). Its radius
+ * is EMERGENT.radius of its profile's, its foot no higher than an ordinary
+ * crown's (so it doesn't float over the roof), and a cedar's top is
+ * flattened with two leaders (EMERGENT.flat, EMERGENT.leaders).
+ */
+export const EMERGENT = Object.freeze({ at: 1.3, radius: 1.1, flat: 0.85, leaders: Object.freeze({ radius: 0.14, offset: 0.28, from: 0.78, to: 1 }) });
 /** How often a node's hash picks each layout (by index): the snag's least, so about one crown in thirty is a snag. */
 export const LAYOUT_WEIGHTS = Object.freeze({ 3: Object.freeze([1, 1, 1, 0.45]), 4: Object.freeze([1, 1, 1, 0.55]) });
 /** A layout's crowns: its entries but a snag. */
@@ -522,7 +636,15 @@ export const SKIN_PROFILES = Object.freeze({
 /** The skin's profiles in the order their meshes are made. */
 export const PROFILE_NAMES = Object.freeze(Object.keys(SKIN_PROFILES));
 /** A crown's radius against its profile's: 0.92 to 1.08, by its place in the layout. */
-export const crownRadius = (profile, q, variant) => SKIN_PROFILES[profile].radius * (0.92 + 0.16 * ((q * 0.37 + variant * 0.21) % 1));
+export const crownRadius = (profile, q, variant, k = 1) => SKIN_PROFILES[profile].radius * (0.92 + 0.16 * ((q * 0.37 + variant * 0.21) % 1)) * (!SKIN_PROFILES[profile].plain && k >= EMERGENT.at ? EMERGENT.radius : 1);
+/**
+ * The scrub's bush (a plain profile's crown, 5.5 to 6.5 m across its foot so the scrub's cells still close): a squat seven-sided dome, its
+ * rings at `rings` of its height, each `radii` of its radius, a flat cap.
+ * 49 triangles.
+ */
+export const BUSH = Object.freeze({ sides: 7, rings: Object.freeze([0, 0.35, 0.75, 1]), radii: Object.freeze([1, 0.95, 0.7, 0.35]) });
+/** The scrub's height over the ground (m): its canopy held to [min, max], ±8% by hash (skinAt). */
+export const BUSH_HEIGHT = Object.freeze({ min: 1, max: 2.9 });
 
 /**
  * The crowns' shapes (the skin's, but the scrub's plain bushes): three of
@@ -551,12 +673,12 @@ export const CROWN_SHAPES = Object.freeze({
 /** A crown's shade from its foot to its tip (of its colour). */
 export const CROWN_SHADE = Object.freeze([0.55, 1]);
 /** How many triangles a crown of a shape is (6 a tier), and the scrub's plain bush (two six-sided cones). */
-export const crownTriangles = (shape) => (shape ? CROWN_SHAPES[shape].tiers.length * 6 : 12);
+export const crownTriangles = (shape, emergent = false) => (shape ? CROWN_SHAPES[shape].tiers.length * 6 + (emergent && shape === "cedar" ? 12 : 0) : BUSH.sides * (2 * (BUSH.rings.length - 1) + 1));
 /** The shape of crown q of layout `variant` of `crowns` (its sign the layout's): a spruce where the layout says, else a cedar or a hemlock by hash; none (a plain bush) for a plain profile. */
 export const crownShape = (plain, sign, crowns, variant, q) => (plain ? null : sign === "spruce" ? "spruce" : hash01((crowns * 16 + variant) * 8 + q, 73) < 0.5 ? "cedar" : "hemlock");
 
 /** One crown: of `shape` (CROWN_SHAPES), or a plain bush (null: a wide six-sided cone, foot → waist, and a narrow one over it, upper → tip); no caps (never seen from under the roof). `seed` turns its tiers' offsets. */
-function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN, shape = null, seed = 0) {
+function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN, shape = null, seed = 0, emergent = false) {
   const shadeAt = (y) => CROWN_SHADE[0] + (CROWN_SHADE[1] - CROWN_SHADE[0]) * Math.max(0, Math.min(1, (y / k - foot) / (tip - foot)));
   // faces toward the sun's side a little lighter: shading baked in, as the trees' are
   const side = (q) => (q < 2 || q === 5 ? 1.12 : q === 3 ? 0.82 : 1);
@@ -570,12 +692,30 @@ function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN
     }
   };
   if (!shape) {
-    cone(0, 0, foot * k, r, [0, 0], waist * k);
-    cone(0, 0, upper * k, r * 0.58, [0, 0], tip * k);
+    // the scrub's bush: a squat dome (BUSH), its foot at the clump's foot
+    const N = BUSH.sides;
+    const ringAt = (q, e) => {
+      const rr = r * BUSH.radii[e], y = (foot + (tip - foot) * BUSH.rings[e]) * k;
+      return [cx + rr * dcos((q * 2 * Math.PI) / N), y, cz - rr * dsin((q * 2 * Math.PI) / N)];
+    };
+    const sideOf = (q) => (q < 2 || q === N - 1 ? 1.12 : q === 3 || q === 4 ? 0.82 : 1);
+    for (let e = 0; e + 1 < BUSH.rings.length; e++) for (let q = 0; q < N; q++) {
+      const a = ringAt(q, e), b = ringAt(q + 1, e), c = ringAt(q + 1, e + 1), d = ringAt(q, e + 1), f = sideOf(q);
+      s.triC(a, b, c, at(a, f), at(b, f), at(c, f));
+      s.triC(a, c, d, at(a, f), at(c, f), at(d, f));
+    }
+    const topY = tip * k, centre = [cx, topY, cz];
+    for (let q = 0; q < N; q++) {
+      const a = ringAt(q, BUSH.rings.length - 1), b = ringAt(q + 1, BUSH.rings.length - 1);
+      s.triC(a, b, centre, at(a, 1), at(b, 1), at(centre, 1));
+    }
     return;
   }
   const sh = CROWN_SHAPES[shape];
-  const span = tip - foot;
+  // an emergent's foot no higher than an ordinary crown's (its span the longer), a cedar's top flattened with two leaders over it
+  const base = foot * Math.min(k, 1), top = tip * k;
+  const yOf = (f) => base + (top - base) * f;
+  const flat = emergent && shape === "cedar";
   sh.tiers.forEach(([f0, f1, rf], t) => {
     const last = t === sh.tiers.length - 1;
     // the lowest tier centred (the canopy closes on it); those over it off the axis by hash
@@ -585,8 +725,15 @@ function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN
     const lean = last && sh.bend ? sh.bend * rf * r : 0;
     const dir = (hash01(seed, 76) * Math.PI * 2);
     const apex = [u + lean * dcos(dir), w - lean * dsin(dir)];
-    cone(u, w, (foot + span * f0) * k, rf * r, apex, (foot + span * f1 - (last ? sh.droop * span : 0)) * k);
+    cone(u, w, yOf(f0), rf * r, flat && last ? [u, w] : apex, yOf(last && flat ? f0 + (f1 - f0) * EMERGENT.flat : f1) - (last ? sh.droop * (tip - foot) * k : 0));
   });
+  if (flat) {
+    const L = EMERGENT.leaders, dir = hash01(seed, 77) * Math.PI * 2;
+    for (const sgn of [-1, 1]) {
+      const ox = sgn * L.offset * r * dcos(dir), oz = -sgn * L.offset * r * dsin(dir);
+      cone(ox, oz, yOf(L.from), L.radius * r, [ox * 1.15, oz * 1.15], yOf(L.to) - (sgn > 0 ? 0.04 * top : 0));
+    }
+  }
 }
 
 /** A snag: a four-sided grey spike from SNAG.from to SNAG.top of the clump's height (8 triangles). */
@@ -619,7 +766,7 @@ export function skinMesh(crowns, variant, cell, colours = SKIN_COLOURS, profile 
     }
     const tall = !pr.plain && sign === "spruce" ? SPRUCE.taller : 1;
     const shape = crownShape(pr.plain, sign, crowns, variant, q);
-    crown(s, u * cell, v * cell, k * tall, crownRadius(profile, q, variant), crownColour(lin, q, crowns, variant, sign, pr.plain), pr, shape, (crowns * 16 + variant) * 8 + q);
+    crown(s, u * cell, v * cell, k * tall, crownRadius(profile, q, variant, k), crownColour(lin, q, crowns, variant, sign, pr.plain), pr, shape, (crowns * 16 + variant) * 8 + q, !pr.plain && k >= EMERGENT.at);
     q++;
   }
   return s.done();
@@ -696,7 +843,8 @@ export function skinAt(o, k0 = 0, k1 = o.grid.n * o.grid.n) {
       k,
       x: x0 + i * cell,
       z: z0 + j * cell,
-      height: Math.max(profile === "roof" ? 0 : 2, canopy[k] * (0.92 + 0.16 * hash01(k, 81))),
+      // the scrub's bushes 1 to 3 m (BUSH_HEIGHT), whatever its canopy
+      height: profile === "scrub" ? Math.min(BUSH_HEIGHT.max, Math.max(BUSH_HEIGHT.min, canopy[k])) * (0.92 + 0.16 * hash01(k, 81)) : Math.max(profile === "roof" ? 0 : 2, canopy[k] * (0.92 + 0.16 * hash01(k, 81))),
       crowns,
       variant: pickLayout(crowns, hash01(k, 83)),
       ...(profile !== "roof" ? { profile } : {}),

@@ -18,8 +18,9 @@
 
 import { len, dsin, dcos } from "./detmath.js";
 import { hashString } from "./buildings.js";
-import { kindOf } from "./structures.js";
-import { soup, rgb } from "./shapes.js";
+import { kindOf, KINDS } from "./structures.js";
+import { soup, rgb, widen } from "./shapes.js";
+import { insideRing } from "./terrain-sample.js";
 import { quadOut, quadUp, triOut } from "./buildings.js";
 
 /** A working boat's hull colours (most of the fleet: Ucluelet_Dock, the fish plant's), and how many hulls take one rather than white. */
@@ -33,12 +34,25 @@ export const WORKING = Object.freeze({
   buoy: "#e0482e",
   buoys: Object.freeze([2, 4]),
 });
+/**
+ * What a boat shows from above (art direction, the harbour photographs'
+ * general look): a working boat's deck painted green-grey, or tan on about
+ * 30% (by her hash), inside a 0.7 m bulwark whose inner face is her hull's
+ * colour; every boat's gunwale capped with a white rail, so each has a crisp
+ * rim against the floats (structures.js: wet timber, darker than any deck);
+ * a sailboat's deck pale with a dark cockpit well; any other's glassfibre
+ * white-grey. `rail` is the cap rail's width (m), `gap` the water between a
+ * boat and her float or pier (m), `clear` how far a boat's footprint keeps
+ * off any other float, pier or wall (m).
+ */
+export const DECKS = Object.freeze({ working: Object.freeze(["#7a887c", "#a08c69"]), tan: 0.3, sailboat: "#d9d6cc", cockpit: "#3b3f44", other: "#c9c7c0", cap: "#e9e8e3", rail: 0.18, gap: 0.7, clear: 0.3 });
+
 /** How wide a pole, mast or boom is drawn (m): enough to hold at 150 m. */
 export const SPAR = 0.14;
 
 export const BOATS = Object.freeze({
-  troller: { length: [10, 13], beam: 0.32, hull: "#f0f0ec", trim: ["#3f5b45", "#8e2f27", "#2f3e55"], house: { at: 0.42, length: 0.25, height: 2.2 }, poles: true, sheer: 0.8, boot: "#7a2a24", working: true },
-  seiner: { length: [12, 16], beam: 0.33, hull: "#f0f0ec", trim: ["#8e2f27", "#2f3e55", "#3e7a78", "#c49a3a"], house: { at: 0.68, length: 0.28, height: 2.6 }, sheer: 0.9, working: true, derrick: 0.55 },
+  troller: { length: [10, 13], beam: 0.32, hull: "#f0f0ec", trim: ["#3f5b45", "#8e2f27", "#2f3e55"], house: { at: 0.42, length: 0.25, height: 2.2 }, poles: true, sheer: 0.8, boot: "#7a2a24", working: true, freeboard: 1.3, bulwark: 0.7 },
+  seiner: { length: [12, 16], beam: 0.33, hull: "#f0f0ec", trim: ["#8e2f27", "#2f3e55", "#3e7a78", "#c49a3a"], house: { at: 0.68, length: 0.28, height: 2.6 }, sheer: 0.9, working: true, derrick: 0.55, freeboard: 1.6, bulwark: 0.7 },
   sportfisher: { length: [6, 8.5], beam: 0.36, hull: "#c9ccce", trim: ["#2b2c2e"], house: { at: 0.55, length: 0.35, height: 1.6 }, sheer: 0.35, boot: "#3a3d40" },
   // a cruising sailboat: a low coachroof, a mast about 1.3 times her length, a boom (a blue cover over it on some)
   sailboat: { length: [8, 12], beam: 0.32, hull: "#eeefec", trim: ["#1f4e79", "#2b2c2e", "#8e2f27"], house: { at: 0.45, length: 0.35, height: 0.7 }, mast: 1.3, freeboard: 0.8, sheer: 0.35, boot: "#1f3348" },
@@ -65,6 +79,9 @@ export const PIER_MOORING = Object.freeze({ every: 12, taken: 0.6, depth: 2 });
  */
 export function mooredBoats(structures, { inside = () => true, every = 12, taken = 0.85, takenAt = null, piers = null, mixAt = null } = {}) {
   const out = [];
+  // every float's, pier's and wall's outline, so no boat is moored over one (a float's bend, a finger beside it)
+  const rings = structureRings(structures);
+  const clearOf = (x, z, ux, uz, length, beam) => !rings.some((r) => overlaps(footprint(x, z, ux, uz, length, beam, DECKS.clear), r));
   for (const st of structures) {
     const kind = kindOf(st);
     if (!st.points.some(([x, z]) => inside(x, z))) continue;
@@ -87,7 +104,7 @@ export function mooredBoats(structures, { inside = () => true, every = 12, taken
     // whether slip `key` would hold her boat (the boat her hash makes): in the grid and deep enough at her ends and middle
     const fits = (key, side, d, ax, az, ux, uz) => {
       const b = boatAt(key, mix);
-      const off = width / 2 + b.beam / 2 + 0.4;
+      const off = width / 2 + b.beam / 2 + DECKS.gap;
       const x = ax + ux * d - uz * off * side, z = az + uz * d + ux * off * side;
       return inside(x, z) && deep(x, z) && deep(x + ux * b.length * 0.45, z + uz * b.length * 0.45) && deep(x - ux * b.length * 0.45, z - uz * b.length * 0.45);
     };
@@ -108,10 +125,12 @@ export function mooredBoats(structures, { inside = () => true, every = 12, taken
           }
           const { type, length, beam } = boatAt(key, mix);
           const B = BOATS[type];
-          const off = width / 2 + beam / 2 + 0.4;
+          const off = width / 2 + beam / 2 + DECKS.gap;
           const x = ax + ux * d - uz * off * side, z = az + uz * d + ux * off * side;
           // her ends and her middle in the water deep enough (a pier's: `depth` at chart datum)
           if (!inside(x, z) || !deep(x, z) || !deep(x + ux * length * 0.45, z + uz * length * 0.45) || !deep(x - ux * length * 0.45, z - uz * length * 0.45)) continue;
+          // and clear of every float, pier and wall by DECKS.clear
+          if (!clearOf(x, z, ux, uz, length, beam)) continue;
           empty.delete(side);
           // bow one way or the other along the float
           const heading = hashString(key, 4) < 0.5 ? Math.atan2(ux, -uz) : Math.atan2(-ux, uz);
@@ -121,6 +140,44 @@ export function mooredBoats(structures, { inside = () => true, every = 12, taken
     }
   }
   return out;
+}
+
+/** Every structure's outline as mooredBoats keeps boats off it: an area's ring as drawn, a line widened (its width tag, else its kind's): [{ ring, box }]. Pure. */
+export function structureRings(structures) {
+  const out = [];
+  for (const st of structures) {
+    const k = KINDS[kindOf(st)];
+    if (!k) continue;
+    const width = st.width > 0 && st.width < 50 ? st.width : k.width;
+    const ring = st.area ? st.points : widen(st.points, width);
+    if (!ring || ring.length < 3) continue;
+    out.push({ ring, box: boxOf(ring) });
+  }
+  return out;
+}
+
+/** A boat's footprint at (x, z) along (ux, uz), her length by her beam, grown by `grow` all round: its four corners. Pure. */
+export function footprint(x, z, ux, uz, length, beam, grow = 0) {
+  const a = length / 2 + grow, b = beam / 2 + grow;
+  return [[-a, -b], [a, -b], [a, b], [-a, b]].map(([f, r]) => [x + ux * f - uz * r, z + uz * f + ux * r]);
+}
+
+const boxOf = (pts) => {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [x, z] of pts) (x0 = Math.min(x0, x)), (x1 = Math.max(x1, x)), (z0 = Math.min(z0, z)), (z1 = Math.max(z1, z));
+  return [x0, z0, x1, z1];
+};
+const segsCross = (a, b, c, d) => {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+};
+
+/** Whether a footprint (a ring) overlaps a structure's ({ ring, box }): any edges crossing, or a corner of either inside the other. Pure. */
+export function overlaps(foot, { ring, box }) {
+  const fb = boxOf(foot);
+  if (fb[2] < box[0] || fb[0] > box[2] || fb[3] < box[1] || fb[1] > box[3]) return false;
+  for (let a = 0; a < foot.length; a++) for (let c = 0; c < ring.length; c++) if (segsCross(foot[a], foot[(a + 1) % foot.length], ring[c], ring[(c + 1) % ring.length])) return true;
+  return foot.some(([x, z]) => insideRing(ring, x, z)) || ring.some(([x, z]) => insideRing(foot, x, z));
 }
 
 /** The boat slip `key` takes by its hash, from `mix`: { type, length, beam }. */
@@ -162,6 +219,18 @@ const own = (b, seed) => hashString(String(b.id), seed);
  * the trim colour), her trim on the rail. Pure.
  */
 export function paintOf(b) {
+  return { ...hullPaint(b), ...deckPaint(b) };
+}
+
+/** A boat's deck and cap rail (DECKS), by her type and her own hash: { deck, cap, cockpit? }. Pure. */
+export function deckPaint(b) {
+  const B = BOATS[b.type];
+  if (B.working) return { deck: DECKS.working[own(b, 11) < DECKS.tan ? 1 : 0], cap: DECKS.cap };
+  if (b.type === "sailboat") return { deck: DECKS.sailboat, cap: DECKS.cap, cockpit: DECKS.cockpit };
+  return { deck: DECKS.other, cap: DECKS.cap };
+}
+
+function hullPaint(b) {
   const B = BOATS[b.type];
   if (B.working) {
     const painted = own(b, 6) < WORKING.painted;
@@ -183,7 +252,9 @@ export function boatMesh(boats) {
     const at = (f, r, y) => [b.x + fx * f + rx * r, y, b.z + fz * f + rz * r];
     const Lh = b.length / 2, Bh = b.beam / 2, fb = B.freeboard ?? 0.9, keel = -0.6;
     const paint = paintOf(b);
-    const hull = rgb(paint.hull), rail = rgb(paint.rail), deck = rgb("#8f8a80"), bottom = rgb(paint.bottom), stripe = rgb(paint.stripe), house = rgb(paint.house), roof = rgb(paint.roof);
+    const hull = rgb(paint.hull), rail = rgb(paint.rail), deck = rgb(paint.deck), cap = rgb(paint.cap), bottom = rgb(paint.bottom), stripe = rgb(paint.stripe), house = rgb(paint.house), roof = rgb(paint.roof);
+    // the deck under the bulwark's top (a working boat's 0.7 m; any other's a low toe rail)
+    const bw = B.bulwark ?? 0.1;
     // hull: a box aft, a wedge to the bow, its sheer rising forward (the bow `sheer` above the stern)
     const sheer = B.sheer ?? 0.6;
     const topAt = (f) => fb + sheer * Math.max(0, (f + Lh) / (2 * Lh)) ** 2;
@@ -198,11 +269,22 @@ export function boatMesh(boats) {
       quadOut(s, at(f0, r0, 0.3), at(f1, r1, 0.3), at(f1, r1, t1 - 0.15), at(f0, r0, t0 - 0.15), hull, out);
       quadOut(s, at(f0, r0, t0 - 0.15), at(f1, r1, t1 - 0.15), at(f1, r1, t1), at(f0, r0, t0), rail, [out[0], out[1] + 0.01, out[2]]);
     }
-    const mid = topAt(Lh * 0.45);
-    quadUp(s, at(-Lh, -Bh, topAt(-Lh)), at(Lh * 0.45, -Bh, mid), at(Lh * 0.45, Bh, mid), at(-Lh, Bh, topAt(-Lh)), deck);
-    triOut(s, at(Lh * 0.45, -Bh, mid), at(Lh, 0, topAt(Lh)), at(Lh * 0.45, Bh, mid), deck, at(Lh * 0.7, 0, mid + 5));
+    // the gunwale's white cap rail (DECKS.rail wide, inward), the bulwark's inner face in her hull's colour down to the deck
+    const inner = sides.map(([f, r]) => [f === Lh ? Lh - DECKS.rail * 2.5 : f === -Lh ? -Lh + DECKS.rail : f, r === 0 ? 0 : r - Math.sign(r) * DECKS.rail]);
+    const deckAt = (f) => topAt(f) - bw;
+    for (let k = 0; k < sides.length; k++) {
+      const q = (k + 1) % sides.length;
+      const [f0, r0] = sides[k], [f1, r1] = sides[q], [g0, s0] = inner[k], [g1, s1] = inner[q];
+      quadUp(s, at(f0, r0, topAt(f0) + 0.02), at(f1, r1, topAt(f1) + 0.02), at(g1, s1, topAt(g1) + 0.02), at(g0, s0, topAt(g0) + 0.02), cap);
+      quadOut(s, at(g0, s0, deckAt(g0)), at(g1, s1, deckAt(g1)), at(g1, s1, topAt(g1)), at(g0, s0, topAt(g0)), hull.map((v) => v * 0.85), at(0, 0, topAt(0)));
+    }
+    const mid = deckAt(inner[1][0]);
+    quadUp(s, at(inner[0][0], inner[0][1], deckAt(inner[0][0])), at(inner[1][0], inner[1][1], mid), at(inner[3][0], inner[3][1], mid), at(inner[4][0], inner[4][1], deckAt(inner[4][0])), deck);
+    triOut(s, at(inner[1][0], inner[1][1], mid), at(inner[2][0], 0, deckAt(inner[2][0])), at(inner[3][0], inner[3][1], mid), deck, at(Lh * 0.7, 0, mid + 5));
     // the wheelhouse (a sailboat's coachroof): white walls and top (paintOf), a dark band of windows
-    const hc = -Lh + b.length * B.house.at, hl = (b.length * B.house.length) / 2, hw = Bh * 0.75, base = topAt(hc), top = base + B.house.height;
+    const hc = -Lh + b.length * B.house.at, hl = (b.length * B.house.length) / 2, hw = Bh * 0.75, base = deckAt(hc), top = topAt(hc) + B.house.height;
+    // a sailboat's cockpit well, dark, aft of her coachroof
+    if (paint.cockpit) quadUp(s, at(-Lh * 0.85, -hw * 0.85, deckAt(-Lh * 0.85) + 0.01), at(hc - hl, -hw * 0.85, deckAt(hc - hl) + 0.01), at(hc - hl, hw * 0.85, deckAt(hc - hl) + 0.01), at(-Lh * 0.85, hw * 0.85, deckAt(-Lh * 0.85) + 0.01), rgb(paint.cockpit));
     const box = [[hc - hl, -hw], [hc + hl, -hw], [hc + hl, hw], [hc - hl, hw]];
     const glass = rgb("#26313a");
     for (let k = 0; k < 4; k++) {

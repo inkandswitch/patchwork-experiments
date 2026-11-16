@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { mooredBoats, boatMesh, BOATS } from "./boats.js";
+import { mooredBoats, boatMesh, BOATS, DECKS, deckPaint, structureRings, footprint, overlaps, MIX as MIX0 } from "./boats.js";
+import { hexToLinear } from "./glb.js";
 import { floatPiles, structureMesh, KINDS } from "./structures.js";
 import { soup } from "./shapes.js";
 
@@ -10,14 +11,14 @@ describe("boats on the floats (dressing)", () => {
     { id: "way/3", kind: "breakwater", floating: false, area: true, width: null, points: [[0, 90], [10, 90], [10, 95]] },
   ];
   const boats = mooredBoats(floats);
-  it("moors boats only along floats, beside them (half the float, half the boat and 0.4 m off its line), at the middle of 12 m slips", () => {
+  it("moors boats only along floats, beside them (half the float, half the boat and DECKS.gap off its line), at the middle of 12 m slips", () => {
     expect(boats.length).toBeGreaterThan(0);
     for (const b of boats) {
       expect(b.id.startsWith("way/1#")).toBe(true);
       const B = BOATS[b.type];
       expect(b.length).toBeGreaterThanOrEqual(B.length[0]);
       expect(b.length).toBeLessThanOrEqual(B.length[1] + 1e-9);
-      const off = 1.2 + b.beam / 2 + 0.4;
+      const off = 1.2 + b.beam / 2 + DECKS.gap;
       const onFirst = Math.abs(Math.abs(b.z) - off) < 0.02 && b.x > 0 && b.x < 120;
       const onSecond = Math.abs(Math.abs(b.x - 120) - off) < 0.02 && b.z > 0 && b.z < 60;
       expect(onFirst || onSecond).toBe(true);
@@ -135,9 +136,9 @@ describe("every pier and float lined with boats", () => {
   // the ground falls away from the shore (z = 0) at 1 in 8: 2 m deep from z = 16
   const groundAt = (x, z) => 1 - z / 8;
   const piers = { within: () => true, taken: PIER_MOORING.taken, depth: 2, groundAt, datum: 0 };
-  // twelve piers straight out from the shore, 60 to 170 m long, and twelve area piers (a wharf's outline) out in the water
+  // twelve piers straight out from the shore, 60 to 170 m long, and twelve area piers (a wharf's outline) out in the water beside them
   const lines = Array.from({ length: 12 }, (_, q) => ({ id: `way/${100 + q}`, kind: "pier", points: [[q * 300, 0], [q * 300 + 10, 60 + q * 10]] }));
-  const areas = Array.from({ length: 12 }, (_, q) => ({ id: `way/${200 + q}`, kind: "pier", area: true, points: q % 2 ? [[q * 300, 60], [q * 300 + 40, 60], [q * 300 + 40, 90], [q * 300, 90]] : [[q * 300, 90], [q * 300 + 40, 90], [q * 300 + 40, 60], [q * 300, 60]] }));
+  const areas = Array.from({ length: 12 }, (_, q) => ({ id: `way/${200 + q}`, kind: "pier", area: true, points: q % 2 ? [[q * 300 + 100, 60], [q * 300 + 140, 60], [q * 300 + 140, 90], [q * 300 + 100, 90]] : [[q * 300 + 100, 90], [q * 300 + 140, 90], [q * 300 + 140, 60], [q * 300 + 100, 60]] }));
   const floats = Array.from({ length: 12 }, (_, q) => ({ id: `way/${300 + q}`, kind: "pier", floating: true, points: [[q * 300, 120], [q * 300 + 80, 120]] }));
   const boats = mooredBoats([...lines, ...areas, ...floats], { piers });
   const of = (st) => boats.filter((b) => b.id.startsWith(`${st.id}#`));
@@ -170,5 +171,67 @@ describe("every pier and float lined with boats", () => {
       else expect(MIX.map(([t]) => t)).toContain(b.type);
     }
     expect(new Set(mixed.map((b) => b.type)).has("whalewatch")).toBe(true);
+  });
+});
+
+describe("boats that read from above (DECKS)", () => {
+  const lum = (h) => {
+    const c = hexToLinear(h);
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const float = lum(KINDS.float.colour);
+  const apart = (a, b) => Math.abs(a - b) / Math.max(a, b);
+  it("paints every deck at least 25% off the float deck's luminance and every cap rail at least 40% (every type of the mix and the placed ones, every trim, 40 boats each)", () => {
+    for (const type of Object.keys(BOATS)) for (const trim of BOATS[type].trim) for (let q = 0; q < 40; q++) {
+      const p = deckPaint({ id: `way/9#${q}${trim}`, type, trim });
+      expect(apart(lum(p.deck), float), `${type} ${p.deck}`).toBeGreaterThanOrEqual(0.25);
+      expect(apart(lum(p.cap), float)).toBeGreaterThanOrEqual(0.4);
+    }
+  });
+  it("paints about 30% of working decks tan (every troller and seiner of 200)", () => {
+    let tan = 0;
+    for (let q = 0; q < 200; q++) tan += deckPaint({ id: `way/7#${q}`, type: q % 2 ? "troller" : "seiner" }).deck === DECKS.working[1] ? 1 : 0;
+    expect(tan / 200).toBeGreaterThan(0.2);
+    expect(tan / 200).toBeLessThan(0.4);
+  });
+  it("draws every boat's deck, its cap rail, and a working boat's deck under her bulwark (every type, both headings)", () => {
+    for (const type of Object.keys(BOATS)) for (const heading of [0.3, 0.3 + Math.PI]) {
+      const b = { id: `way/8#1${type}`, type, x: 0, z: 0, heading, length: BOATS[type].length[0], beam: BOATS[type].length[0] * BOATS[type].beam, trim: BOATS[type].trim[0] };
+      const m = boatMesh([b]);
+      const p = deckPaint(b);
+      const at = (h) => {
+        const c = hexToLinear(h).slice(0, 3).map((v) => Math.fround(v));
+        const ys = [];
+        for (let v = 0; v < m.colors.length; v += 3) if (Math.abs(m.colors[v] - c[0]) < 1e-6 && Math.abs(m.colors[v + 1] - c[1]) < 1e-6 && Math.abs(m.colors[v + 2] - c[2]) < 1e-6) ys.push(m.positions[v + 1]);
+        return ys;
+      };
+      const deckY = at(p.deck), capY = at(p.cap);
+      expect(deckY.length).toBeGreaterThan(0);
+      expect(capY.length).toBeGreaterThan(0);
+      // her cap rail at the stern stands the bulwark over her deck there (both rise to the bow alike)
+      if (BOATS[type].bulwark) expect(Math.min(...capY) - Math.min(...deckY)).toBeCloseTo(BOATS[type].bulwark + 0.02, 2);
+    }
+  });
+  // a main float with fingers, an L float, a fixed pier close beside a float, a breakwater's end
+  const layout = [
+    { id: "way/501", kind: "pier", floating: true, points: [[0, 0], [150, 0]] },
+    ...[20, 50, 80, 110].map((x, q) => ({ id: `way/51${q}`, kind: "pier", floating: true, width: 1.5, points: [[x, 1.2], [x, 14]] })),
+    { id: "way/520", kind: "pier", floating: true, points: [[0, 60], [80, 60], [80, 100]] },
+    { id: "way/530", kind: "pier", floating: false, points: [[0, 130], [100, 130]] },
+    { id: "way/531", kind: "pier", floating: true, points: [[0, 138], [100, 138]] },
+    { id: "way/540", kind: "breakwater", area: true, points: [[120, 120], [160, 120], [160, 128], [120, 128]] },
+  ];
+  it("moors no boat whose footprint, 0.3 m all round, overlaps any float, pier or wall (every boat, the place's mix and every weight of it)", () => {
+    const rings = structureRings(layout);
+    const piers = { within: () => true, taken: 1, depth: 0, groundAt: () => -10, datum: 0 };
+    for (const mix of [MIX0, [["seiner", 1]], [["sailboat", 1]], [["troller", 1]]]) {
+      const boats = mooredBoats(layout, { taken: 1, piers, mixAt: () => mix });
+      expect(boats.length).toBeGreaterThan(10);
+      for (const b of boats) {
+        const ux = Math.sin(b.heading), uz = -Math.cos(b.heading);
+        const f = footprint(b.x, b.z, ux, uz, b.length, b.beam, DECKS.clear - 1e-6);
+        for (const r of rings) expect(overlaps(f, r), b.id).toBe(false);
+      }
+    }
   });
 });

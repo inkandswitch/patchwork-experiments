@@ -26,7 +26,7 @@ import { markMesh } from "./marks.js";
 import { sampler, int16ToBytes, toBase64, packQuality } from "./terrain-sample.js";
 import { localFrame, PROJECTION } from "./tmerc.js";
 import { coverGrid, distanceToWater, COVER, COVERS } from "./cover.js";
-import { groundRGB, linear, COLOURS, toRGB, hash01 } from "./palette.js";
+import { groundRGB, linear, COLOURS, toRGB, hash01, withBands } from "./palette.js";
 import { shoreSlabs, levelsOf, cutShore } from "./shore.js";
 import { SURF, coastPieces, surfMesh, reefPatches, boulders } from "./surf.js";
 import { CLOUDS, sheetsAt, capsAt, cloudMesh, bakeStratus } from "./cloud.js";
@@ -208,7 +208,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   const colours = { ...COLOURS, ...(doc.look?.colours ?? {}) };
   // each land node's distance to the water: the splash zone's bands are drawn within a cell and a half of it; the forest's fringe is measured by it
   const toWater = natural ? distanceToWater(n, cls.label, grid.cell) : null;
-  const tide = doc.datum?.tide ?? {};
+  // the tide's levels, with where the place's look puts its shore's bands (palette.js withBands)
+  const tide = withBands(doc.datum?.tide ?? {}, doc.look?.bands ?? null);
   // the bare rock band under any cover but a beach, where the place says its shore is rock under the lots (look.shoreRock)
   const shoreRock = !!doc.look?.shoreRock;
   // the site's apron (site.apron): its land inside the clear box one even tone above the highest normal tide, its edge the shore cut's (crisp)
@@ -249,9 +250,19 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   const underDeck = decks.length ? builtMask(grid, decks, DECK_SHORE) : null;
   const deckWet = linear(toRGB(colours.deckWet)), deckWeed = linear(toRGB(colours.deckWeed));
   // mid-tide: the rockweed's band (palette.js bands), under a deck too
-  const weedLo = (tide.MLLW ?? -1.2) * 0.25, weedHi = (tide.MHHW ?? 0.9) * 0.5;
+  const weedLo = tide.musselTop ?? (tide.MLLW ?? -1.2) * 0.25, weedHi = tide.weedTop ?? (tide.MHHW ?? 0.9) * 0.5;
   const deckRGB = (k, y) => (underDeck?.[k] && y <= deckAbove ? (y > weedLo && y <= weedHi ? deckWeed : deckWet) : null);
   const apronAt = (k) => (vergeRGB && toWater[k] <= ap.verge.width ? vergeRGB : wetRGB && hash01(k, 91) < (ap.wetShare ?? 0.3) ? wetRGB : apronRGB);
+  // the coast's pieces and their exposure to the swell (surf.js), made once: for the surf, and the black rock of the exposed coast
+  let piecesMemo = null;
+  const piecesFor = (so) => (piecesMemo ??= coastPieces(sh.chains, grid, cls.label, doc.swell.from, so));
+  // black rock on the coast open to the swell, where the place's look asks (look.blackRock, blackRockMask): no terraced pale shelves under a lighthouse
+  const br = natural && doc.look?.blackRock && Number.isFinite(doc.swell?.from) ? doc.look.blackRock : null;
+  const blackRock = br ? blackRockMask(grid, h, toWater, piecesFor({ ...SURF, ...(doc.look.surf ?? {}) }), { ...br, within: (br.within ?? []).map((c) => {
+    const [x, z] = frame.toLocal(c.at[0], c.at[1]);
+    return { x, z, radius: c.radius };
+  }) }) : null;
+  const blackRGB = br ? linear(toRGB(br.colour)) : null;
   const V = mesh.nodes.length;
   const positions = new Float32Array(V * 3);
   const colors = new Float32Array(V * 3);
@@ -261,7 +272,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     positions[v * 3] = grid.x0 + i * grid.cell;
     positions[v * 3 + 1] = yOf(h[k]);
     positions[v * 3 + 2] = grid.z0 + j * grid.cell;
-    const c = apron?.[k] && h[k] > apronAbove ? apronAt(k) : deckRGB(k, h[k]) ?? (natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell, { shoreRock, shadeOver, shaded: shadeTowns && !built?.[k] && cls.label[k] > 0 && townTreeAt(k, cover, townTrees) })) : colourAt(h[k]));
+    const c = apron?.[k] && h[k] > apronAbove ? apronAt(k) : blackRock?.[k] && !(h[k] > (tide.weedTop ?? 0) && h[k] <= (tide.MHHW ?? 0.9)) ? blackRGB.map((x) => x * (0.92 + 0.16 * hash01(k, 93))) : deckRGB(k, h[k]) ?? (natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell, { shoreRock, shadeOver, shaded: shadeTowns && !built?.[k] && cls.label[k] > 0 && townTreeAt(k, cover, townTrees) })) : colourAt(h[k]));
     colors[v * 3] = c[0];
     colors[v * 3 + 1] = c[1];
     colors[v * 3 + 2] = c[2];
@@ -293,6 +304,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       if (apron?.[top] && cobbleRGB && s.hi > 0) return cobbleRGB;
       // under a pile deck: wet and black, the rockweed's band its own
       if (underDeck?.[top] && s.lo < deckAbove) return s.key === "rockweed" ? deckWeed : deckWet;
+      // the exposed coast's black rock, but for the barnacles' band
+      if (blackRock?.[top] && s.key !== "barnacle") return blackRGB;
       // a beach is beach above the water; bare rock above the lichen only where nothing else covers the ground (as groundRGB), or under anything where the place's shore is rock
       if ((cv === COVER.beach && s.hi > 0) || (s.key === "rock" && !shoreRock && cv !== COVER.none && cv !== COVER.rock)) return null;
       return flat[q];
@@ -449,7 +462,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       const size = beyond && beyond[k] > 0 ? tileSize.far : tileSize.near;
       return `${size}:${Math.floor((i * grid.cell) / size)},${Math.floor((j * grid.cell) / size)}`;
     };
-    const roof = forestRoof({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, setback: trees.roofSetback ?? 20, ...(trees.roofColours ? { colours: trees.roofColours } : {}), jitter: trees.roofJitter ?? 0, under: zone, depth: trees.skin?.roofDepth ?? 1 });
+    const roof = forestRoof({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, setback: trees.roofSetback ?? 20, ...(trees.roofColours ? { colours: trees.roofColours } : {}), jitter: trees.roofJitter ?? 0, under: zone, depth: trees.skin?.roofDepth ?? 1, far: trees.far ?? null });
     if (roof) {
       roofTriangles = roof.indices.length / 3;
       if (bake) baked += bakeStratus(roof.positions, roof.colors, bake);
@@ -487,7 +500,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       const placed = placeSkin({ grid, label: cls.label, cover, canopy, dist, zone, skin: trees.skin, setback: trees.roofSetback ?? 20, built, trees, beyond });
       skinCount = placed.clumps.length;
       if (skinCount) {
-        const inst = skinInstances(placed.clumps, (x, z) => groundAt(x, z) ?? 0, { meshBase: meshes.length, cell: grid.cell, ...(trees.skin.colours ? { colours: trees.skin.colours } : {}), ...(trees.scrub?.colours ? { scrubColours: trees.scrub.colours } : {}) });
+        const inst = skinInstances(placed.clumps, (x, z) => groundAt(x, z) ?? 0, { meshBase: meshes.length, cell: grid.cell, ...(trees.skin.colours ? { colours: trees.skin.colours } : {}), ...(trees.scrub?.bushes ? { scrubColours: trees.scrub.bushes } : {}) });
         instanced("Forest skin", inst, placed.clumps.map((c) => c.k), (tiles) => ({ skin: { count: skinCount, before: placed.before, kinds: inst.kinds, tiles } }));
       }
     }
@@ -506,8 +519,6 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   }
   // surf on the exposed coast (surf.js): where the place has a swell
   let surf = null;
-  let piecesMemo = null;
-  const piecesFor = (so) => (piecesMemo ??= coastPieces(sh.chains, grid, cls.label, doc.swell.from, so));
   if (p.surf && natural && Number.isFinite(doc.swell?.from) && doc.look?.surf) {
     const so = { ...SURF, ...doc.look.surf };
     const pieces = piecesFor(so);
@@ -677,7 +688,8 @@ const round = (v) => Math.round(v * 100) / 100;
 /** The ground's grain attribute (a glTF custom attribute; three reads it as "_grain"). */
 export const GRAIN = "_GRAIN";
 /** How much grain each kind of ground takes: the shore's cobble and rock in full, bare rock and beach, the yard's apron lightly, the rest between. */
-export const GRAINS = Object.freeze({ shore: 1, rock: 1, beach: 0.8, apron: 0.5, land: 0.6, water: 0 });
+// the site's apron the full grain and its puddles (over 1: grain.js PUDDLES), a worked yard's wet concrete and gravel
+export const GRAINS = Object.freeze({ shore: 1, rock: 1, beach: 0.8, apron: 2, land: 0.6, water: 0 });
 
 /**
  * Each ground vertex's grain (0 to 1, GRAINS): by its height and its
@@ -694,6 +706,33 @@ export function groundGrain(positions, grid, { cover, apron = null, apronAbove =
     const i = Math.max(0, Math.min(n - 1, Math.round((x - x0) / cell))), j = Math.max(0, Math.min(n - 1, Math.round((z - z0) / cell)));
     const k = j * n + i;
     out[v] = y <= -0.3 ? GRAINS.water : apron?.[k] && y > apronAbove ? GRAINS.apron : y <= shoreTop ? GRAINS.shore : cover[k] === COVER.rock ? GRAINS.rock : cover[k] === COVER.beach ? GRAINS.beach : GRAINS.land;
+  }
+  return out;
+}
+
+/**
+ * The land nodes of the coast open to the swell (look.blackRock): within
+ * `reach` m of the water (toWater) and under `below` m, within `reach` m of
+ * a coast piece (surf.js coastPieces) whose exposure is over `exposure`,
+ * inside one of the circles `within` ([{ x, z, radius }] in the frame; none:
+ * everywhere). → Uint8Array a node. Pure.
+ */
+export function blackRockMask(grid, h, toWater, pieces, { exposure = 0.7, reach = 25, below = 8, within = [] }) {
+  const { n, cell, x0, z0 } = grid;
+  const out = new Uint8Array(n * n);
+  const inCircles = (x, z) => !within.length || within.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius ** 2);
+  const R = Math.ceil(reach / cell) + 1;
+  for (const pc of pieces) {
+    if (!(pc.exposure > exposure)) continue;
+    const mx = (pc.a[0] + pc.b[0]) / 2, mz = (pc.a[1] + pc.b[1]) / 2;
+    if (!inCircles(mx, mz)) continue;
+    const ci = Math.round((mx - x0) / cell), cj = Math.round((mz - z0) / cell);
+    for (let j = cj - R; j <= cj + R; j++) for (let i = ci - R; i <= ci + R; i++) {
+      if (i < 0 || j < 0 || i >= n || j >= n) continue;
+      const k = j * n + i;
+      if (h[k] <= 0 || h[k] >= below || toWater[k] > reach) continue;
+      if (Math.hypot(x0 + i * cell - mx, z0 + j * cell - mz) <= reach + cell / 2) out[k] = 1;
+    }
   }
   return out;
 }

@@ -10,7 +10,8 @@ import { soup, prism, widen, cylinder } from "./shapes.js";
 
 export const KINDS = Object.freeze({
   // decks weathered grey, not beige; black creosote piles every 15 m along a float's and a pier's sides
-  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#8d8a82", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
+  // a float's deck wet timber, darker than any boat's deck, with a pale bull rail along its edges (boats.js DECKS): the boats read against it from above
+  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#5e5a53", edge: { colour: "#a9a59c", width: 0.3, height: 0.15 }, piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
   pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#74726c", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
   // rock rubble, dark, not a pale slab
   breakwater: { width: 8, top: 3, bottom: -6, colour: "#57544e" },
@@ -37,6 +38,13 @@ export function structureMesh(structures, { inside = () => true, dress = {} } = 
     if (ring && prism(s, ring, k.bottom, k.top, k.colour)) made++;
     else skipped.push(st.id);
     if (k.piles && !st.area) floatPiles(s, st, width, k.piles, inside);
+    // a float's bull rail: a pale strip along every edge of its deck
+    if (ring && k.edge) for (let a = 0; a < ring.length; a++) {
+      const A = ring[a], B = ring[(a + 1) % ring.length];
+      if (Math.hypot(B[0] - A[0], B[1] - A[1]) < 0.5) continue;
+      const e = widen([A, B], k.edge.width);
+      if (e) prism(s, e, k.top, k.top + k.edge.height, k.edge.colour, { bottom: false });
+    }
     // a place's dressing for one structure (its look's structures: a wharf's railings and curb)
     if (ring && dress[st.id]?.rail) railing(s, ring, k.top, dress[st.id]);
   }

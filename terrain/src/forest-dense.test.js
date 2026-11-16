@@ -1,7 +1,7 @@
 // The dense forest near where people look (a place's trees.skin.all, scrub and bands) and its tiles:
 // every claim checked at every node of a made-up place, and for every split into tiles.
 import { describe, it, expect } from "vitest";
-import { treesAt, skinAt, clumpOf, skinZone, beyondCircles, standHere, isForest, isRoof, skinInstances, skinMesh, tileInstances, treeMesh, standMesh, STAND_BASE, SKIN_LAYOUTS, SKIN_PROFILES, SNAG, SPRUCE, crownsOf, CLUMP_SINK, SPECIES_NAMES, CROWN_SHAPES, crownShape, crownTriangles } from "./forest.js";
+import { EMERGENT, BUSH_HEIGHT, treesAt, skinAt, clumpOf, skinZone, beyondCircles, standHere, isForest, isRoof, skinInstances, skinMesh, tileInstances, treeMesh, standMesh, STAND_BASE, SKIN_LAYOUTS, SKIN_PROFILES, SNAG, SPRUCE, crownsOf, CLUMP_SINK, SPECIES_NAMES, CROWN_SHAPES, crownShape, crownTriangles } from "./forest.js";
 import { encodeGLB, parseGLB } from "./glb.js";
 import { COVER } from "./cover.js";
 
@@ -149,7 +149,7 @@ describe("the clumps' meshes and instances", () => {
       const layout = SKIN_LAYOUTS[c][v], crowns = crownsOf(layout), plain = !!SKIN_PROFILES[p].plain;
       const snags = plain ? 0 : layout.length - crowns.length;
       const shapes = crowns.map((x, q) => crownShape(plain, x[3], c, v, q));
-      expect(m.positions.length / 9).toBe(shapes.reduce((a, sh) => a + crownTriangles(sh), 0) + 8 * snags);
+      expect(m.positions.length / 9).toBe(shapes.reduce((a, sh, q) => a + crownTriangles(sh, !plain && crowns[q][2] >= EMERGENT.at), 0) + 8 * snags);
       let lo = Infinity, hi = -Infinity;
       for (let q = 1; q < m.positions.length; q += 3) (lo = Math.min(lo, m.positions[q])), (hi = Math.max(hi, m.positions[q]));
       expect(lo).toBeCloseTo(Math.min(SKIN_PROFILES[p].foot * Math.min(...crowns.map((x) => x[2])), snags ? SNAG.from : Infinity), 6);

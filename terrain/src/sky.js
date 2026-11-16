@@ -16,7 +16,10 @@
 // convention: WATER.md, "The shore in the water"): the shore's shape round
 // an eye, as the water mirrors it (horizon.js), read from the place's own
 // GLB (api.content(id).extras.terrain: its heights and its canopy), made
-// again only when the eye has moved 25 m or its height by a fifth.
+// again only when the eye has moved 25 m or its height by a fifth. With it,
+// the water's shelter (WATER.md, "Shelter"): how open each spot of the
+// place's water is to the wind's fetch (exposure.js), made again only when
+// the wind turns a degree or the GLB or its place changes.
 //
 // And it dresses the place's ground (STAGE.md: dressing, for an object that
 // carries its trait): the grain at the eye (grain.js), on the materials of
@@ -25,6 +28,7 @@
 import { decodeTerrain } from "./terrain-sample.js";
 import { horizonProfile, stillServes, azimuthDir, SHORE } from "./horizon.js";
 import { dressGrain } from "./grain.js";
+import { exposureFor } from "./exposure.js";
 
 /** The atmosphere a trait's data makes (only its sky, fog, sun, exposure and clouds), or null. Pure. */
 export function skyOffer(trait) {
@@ -101,7 +105,28 @@ export default {
         made = { eye: e, key: ++count, data: shoreProfile(decoded.t, api.worldOf?.(id) ?? null, e) };
         return made;
       },
+      /** The water's exposure to a wind from `from` degrees (exposure.js exposureFor, with a key), or null where the place's GLB isn't here. */
+      exposure(from) {
+        const id = skyObject(api.doc());
+        const ex = id == null ? null : api.content?.(id)?.extras?.terrain;
+        if (!ex) return null;
+        if (decoded?.extras !== ex) {
+          try {
+            decoded = { extras: ex, t: decodeTerrain(ex) };
+          } catch {
+            decoded = null;
+            return null;
+          }
+          made = null;
+        }
+        const M = api.worldOf?.(id) ?? null;
+        const k = `${Math.round(Number(from) || 0)}|${M ? Array.from(M, (v) => v.toFixed(3)).join(",") : "-"}`;
+        if (sheltered?.decoded === decoded && sheltered.k === k) return sheltered.grid;
+        sheltered = { decoded, k, grid: { key: ++count, ...exposureFor(decoded.t, M, Math.round(Number(from) || 0)) } };
+        return sheltered.grid;
+      },
     };
+    let sheltered = null; // { decoded, k, grid }
     // the ground's grain: dressed once the place's GLB is here (a new GLB, a new root: dressed again), looked for at every update, flush and frame the water asks for the shore
     let dressed = null; // { root, undo }
     function dress() {

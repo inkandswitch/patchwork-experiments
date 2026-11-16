@@ -53,14 +53,27 @@ const rampAt = (stops, x) => {
  */
 export function bands(tide = {}) {
   const mllw = tide.MLLW ?? -1.2, mhhw = tide.MHHW ?? 0.9, hhwlt = tide.HHWLT ?? 1.3;
+  // a place's look may set where the rockweed starts and stops (withBands: `musselTop`, `weedTop`, about mean water)
   return [
     [mllw, "kelp"],
-    [mllw + (0 - mllw) * 0.75, "mussel"],
-    [mhhw * 0.5, "rockweed"],
+    [tide.musselTop ?? mllw + (0 - mllw) * 0.75, "mussel"],
+    [tide.weedTop ?? mhhw * 0.5, "rockweed"],
     [mhhw, "barnacle"],
     [hhwlt + 1.1, "lichen"],
     [hhwlt + 3, "rock"],
   ];
+}
+
+/**
+ * The tide's levels as the bands read them, with a place's look's own
+ * (look.bands: { musselTop, weedBelowMHHW }): the mussels' band up to
+ * `musselTop` m about mean water, the rockweed's up to `weedBelowMHHW` under
+ * the mean higher high water, so the barnacles' band over it is that thin.
+ * The tide alone where the look says nothing. Pure.
+ */
+export function withBands(tide = {}, look = null) {
+  if (!look) return tide;
+  return { ...tide, ...(look.musselTop != null ? { musselTop: look.musselTop } : {}), ...(look.weedBelowMHHW != null ? { weedTop: (tide.MHHW ?? 0.9) - look.weedBelowMHHW } : {}) };
 }
 
 /** A node-hash in [0, 1): the same node, the same value, everywhere. */

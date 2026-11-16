@@ -53,8 +53,10 @@ export const WAVES = "water.waves";
 /**
  * The convention a part contributes for the shore's shape round an eye, as
  * the water mirrors it (WATER.md, "The shore in the water"): { v, azimuths,
- * bins, near, reach, profile(eye) → { key, eye, data } | null }. Terrain
- * gives it for its places.
+ * bins, near, reach, profile(eye) → { key, eye, data } | null, and
+ * optionally exposure(from) → { key, n, data, origin, u, v, size } | null:
+ * how open the water is to a wind from `from` degrees, for shelter }.
+ * Terrain gives it for its places.
  */
 export const SHORE = "water.shore";
 /** The world's wind, an ambient whoever makes the weather offers (sailing's weather): { speed (m/s), from (degrees) }. */
@@ -366,6 +368,17 @@ export default {
       return profile ? [{ ...profile, azimuths: s.azimuths, bins: s.bins, near: s.near, reach: s.reach }, colour.shore] : [null, null];
     }
 
+    /**
+     * Shelter for the world's wind: where this stage's parts give the
+     * water's exposure (the contribution `water.shore`'s exposure(from), the
+     * last one's), its grid for a wind from `wind.from`; else null.
+     */
+    function exposureFor(wind) {
+      const s = api.collect?.(SHORE)?.at(-1)?.value;
+      if (typeof s?.exposure !== "function") return null;
+      return s.exposure(Number(wind?.from) || 0) ?? null;
+    }
+
     function drawOpen(a, wind, atm) {
       if (!a?.mine || !world) return undrawOpen();
       if (drawn !== world || drawnWind !== wind) {
@@ -387,6 +400,7 @@ export default {
       const cam = api.camera.get()?.position;
       if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, skyOf(atm));
       surface.setShore(...shoreFor(cam, colour));
+      surface.setExposure(exposureFor(wind));
       // around the camera, at the world's level
       surface.object.position.y = world.level;
       return waterExtent(world.components, world.level);
@@ -425,6 +439,7 @@ export default {
         p.surface.setColour(colour);
         p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, skyOf(atm));
         p.surface.setShore(...shoreFor(api.camera.get()?.position, colour));
+        p.surface.setExposure(exposureFor(wind));
         out.push(patchExtent(box, b.A));
       }
       for (const [id, p] of [...patches]) {

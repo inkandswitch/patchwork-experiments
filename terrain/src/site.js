@@ -215,11 +215,17 @@ export function quonset(s, P, base, rise, { shell, end = shell, arch = null, doo
 /**
  * A concrete slab on a rectangle P from its lowest ground to `top` (else a
  * hand over its highest corner), its seams dark lines every `every` metres
- * both ways, a centimetre over it. → { seams }.
+ * both ways, a centimetre over it; where `wet` ({ share, colour, seed }),
+ * about `share` of its panels (by each panel's hash) with a dark wet patch
+ * over 40 to 90% of it each way, half a centimetre over it; where `curb`
+ * ({ colour, width, height }), a low curb along every edge. → { seams,
+ * wet, curbs }.
  */
-export function slab(s, P, foot, top, { colour, seams = null }) {
+export function slab(s, P, foot, top, { colour, seams = null, wet = null, curb = null }) {
   prism(s, P, foot, top, colour);
-  if (!seams) return { seams: 0 };
+  const curbs = curb ? slabCurb(s, P, top, curb) : 0;
+  const wetCount = wet && seams ? wetPanels(s, P, top, seams.every, wet) : 0;
+  if (!seams) return { seams: 0, wet: wetCount, curbs };
   const [p0, p1, , p3] = P;
   const [ux, uz, lu] = unit(p0, p1), [vx, vz, lv] = unit(p0, p3);
   const col = rgb(seams.colour), w = (seams.width ?? 0.12) / 2, y = top + 0.01;
@@ -230,7 +236,37 @@ export function slab(s, P, foot, top, { colour, seams = null }) {
   };
   for (let d = seams.every; d < lu - w; d += seams.every) strip([p0[0] + ux * d + vx * w, p0[1] + uz * d + vz * w], [p0[0] + ux * d + vx * (lv - w), p0[1] + uz * d + vz * (lv - w)], ux, uz);
   for (let d = seams.every; d < lv - w; d += seams.every) strip([p0[0] + vx * d + ux * w, p0[1] + vz * d + uz * w], [p0[0] + vx * d + ux * (lu - w), p0[1] + vz * d + uz * (lu - w)], vx, vz);
-  return { seams: count };
+  return { seams: count, wet: wetCount, curbs };
+}
+
+/** A slab's wet patches (slab's `wet`): in each `every`-metre panel whose hash is under `share`, a dark quad over 40 to 90% of it each way, placed in it by hash. Returns how many. */
+export function wetPanels(s, P, top, every, { share = 0.18, colour, seed = 0 }) {
+  const [p0, p1, , p3] = P;
+  const [ux, uz, lu] = unit(p0, p1), [vx, vz, lv] = unit(p0, p3);
+  const col = rgb(colour), y = top + 0.005;
+  let count = 0;
+  for (let a = 0; a * every < lu; a++) for (let b = 0; b * every < lv; b++) {
+    const k = seed * 4096 + a * 64 + b;
+    if (hash01(k, 401) >= share) continue;
+    const pw = Math.min(every, lu - a * every), pd = Math.min(every, lv - b * every);
+    const w = pw * (0.4 + 0.5 * hash01(k, 402)), d = pd * (0.4 + 0.5 * hash01(k, 403));
+    const ou = a * every + (pw - w) * hash01(k, 404), ov = b * every + (pd - d) * hash01(k, 405);
+    const at = (su, sv) => [p0[0] + ux * su + vx * sv, y, p0[1] + uz * su + vz * sv];
+    quadUp(s, at(ou, ov), at(ou + w, ov), at(ou + w, ov + d), at(ou, ov + d), col);
+    count++;
+  }
+  return count;
+}
+
+/** A low curb along every edge of a slab's rectangle P (slab's `curb`): `width` wide, `height` over its top. Returns how many edges. */
+export function slabCurb(s, P, top, { colour, width = 0.3, height = 0.2 }) {
+  let n = 0;
+  for (let a = 0; a < P.length; a++) {
+    const A = P[a], B = P[(a + 1) % P.length];
+    const ring = widen([A, B], width);
+    if (ring && prism(s, ring, top - 0.05, top + height, colour, { bottom: false })) n++;
+  }
+  return n;
 }
 
 export const KINDS = {
@@ -245,7 +281,7 @@ export const KINDS = {
   slab(s, st, { L, ground, footOf }) {
     const P = st.corners.map(L);
     const top = st.top ?? Math.max(...P.map(([x, z]) => ground(x, z))) + 0.08;
-    return { top, ...slab(s, P, footOf(P), top, { colour: st.colour, seams: st.seams ?? null }) };
+    return { top, ...slab(s, P, footOf(P), top, { colour: st.colour, seams: st.seams ?? null, wet: st.wet ?? null, curb: st.curb ?? null }) };
   },
 
   // yard gear (dressing): rows of totes (bins `size` across, each spot stacked 1 to `stack` high by hash, colours by hash)
