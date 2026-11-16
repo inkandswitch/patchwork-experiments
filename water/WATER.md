@@ -1214,6 +1214,7 @@ Each is fixed here with a test that fails without the fix, or answered.
     crew and HUD comments now say "click her". `index.test.js` pins that
     the ships' part holds no scene trait. This changes the published
     templates' first interaction, so it is put to the lead below.
+    *Accepted by the lead on 2026-11-15 ("fine"; 44).*
 31. **The viewport reads the atmosphere through the same path as every
     stage.** `view.ambient(name)` is the outermost's value; `api.ambient`
     and the viewport (told by `view.ambientsChanged` when any stage's
@@ -1324,9 +1325,10 @@ Each is fixed here with a test that fails without the fix, or answered.
     and the ship doesn't float. camber-run's probe page now writes the
     water beside its sea, as a template does (ecdf5ef9). Whether the sea
     trait should bring the water with it, as the Sloop does, is the lead's
-    call: it would make one trait write another's. *Dissolved by 45: the
-    lead asked for water as a shape with sea behaviour on it, so a sea is a
-    behaviour of a Water object and every way of adding one writes both.*
+    call: it would make one trait write another's. *Superseded by "Water
+    bodies" (45): the lead asked for water as a shape with sea behaviour on
+    it, so a sea is a behaviour of a Water object and every way of adding
+    one writes both.*
 
 ## Decisions, water bodies (2026-11-15, following the lead's answers of 2026-11-15)
 
