@@ -25,6 +25,8 @@ const COLLECTED = [
   { id: "sailing", value: [
     { id: "helm", name: "Take the helm", key: "f", reach: true, state: on("helm"), run() {} },
     { id: "aboard", name: "Come aboard", key: "Enter", show: ["world"], state: (t) => (t == null ? {} : null), run() {} },
+    // (keyed, on no surface: a key works with nothing showing it)
+    { id: "anchor", name: "Drop anchor", key: "n", show: [], state: (t) => (t == null ? {} : null), run() {} },
   ] },
   { id: "dice", value: [{ id: "roll", name: "Roll", key: "r", state: on("crate"), run() {} }] },
   { id: "scene.measure", value: [{ id: "measure", name: "Measure", key: "m", tool: { pointer: true }, state: (t) => (t == null ? { checked: false } : null), run() {} }] },

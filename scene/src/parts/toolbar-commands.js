@@ -183,45 +183,37 @@ export const onBar = (command, view) => isWorld(command) || (editing(view) && sh
  * The bar of tools for a view: the focus path's scene commands (the null
  * target) that are on the bar and apply, each worked out in its own stage's
  * context, in two clusters, each in path order (the focus first), then
- * running order, then command order, one entry per stage/extension/id:
- * `editor` (the toolbar commands: Edit only) and `world` (the world
- * commands: every body; a command saying both is a world command). And
- * `declared`: does some extension on the path declare a world command
- * that may apply in this body, whether or not it applies now? That, not
- * the state of the moment, decides whether the bar shows (barShown).
+ * running order, then command order, one entry per stage/extension/id (the
+ * first copy that applies): `editor` (the toolbar commands: Edit only) and
+ * `world` (the world commands: every body; a command saying both is a world
+ * command). And `shown`, the bar's presence, by one rule for both clusters:
+ * is some command on the path the bar's in this body (onBar, and in its
+ * body), whether or not it applies now? So the bar's height depends on
+ * which extensions run, never on a command's state, and the canvas under it
+ * doesn't move as Play or Lift all comes and goes.
  * @param {{ stage?: number, collected: any, ctx: object }[]} segs  the focus path's stages, focus first
  * @param {{ body?: { id?: string } } | null | undefined} view
- * @returns {{ editor: { ext, command, state, stage? }[], world: { ext, command, state, stage? }[], declared: boolean }}
+ * @returns {{ editor: { ext, command, state, stage? }[], world: { ext, command, state, stage? }[], shown: boolean }}
  */
 export function barEntries(segs, view) {
   const editor = [];
   const world = [];
-  let declared = false;
+  let shown = false;
   const seen = new Set();
   for (const seg of segs ?? []) {
     for (const { ext, command } of flatCommands(seg.collected)) {
-      const w = isWorld(command);
-      if (w && inBody(command, view)) declared = true;
       if (!onBar(command, view)) continue;
+      if (inBody(command, view)) shown = true;
       const k = `${seg.stage ?? ""}\u0000${ext}\u0000${command.id}`;
       if (seen.has(k)) continue;
       const state = commandState(command, null, seg.ctx);
       if (!state) continue;
       seen.add(k);
-      (w ? world : editor).push(seg.stage === undefined ? { ext, command, state } : { ext, command, state, stage: seg.stage });
+      (isWorld(command) ? world : editor).push(seg.stage === undefined ? { ext, command, state } : { ext, command, state, stage: seg.stage });
     }
   }
-  return { editor, world, declared };
+  return { editor, world, shown };
 }
-
-/**
- * Does the bar show? While it holds an editor command, or some extension
- * declares a world command for this body: so outside Edit its height
- * depends on which extensions run, never on a command's state, and the
- * canvas under it doesn't move when Play or Lift all comes and goes.
- * @param {{ editor: any[], declared: boolean }} entries  barEntries()
- */
-export const barShown = ({ editor, declared }) => editor.length > 0 || declared;
 
 /** Everything a rendered control shows, as one string (to tell whether it changed). */
 export function controlKey({ ext, command, state, key }) {

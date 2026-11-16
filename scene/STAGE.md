@@ -1539,7 +1539,7 @@ A **command**:
 ```js
 { id, name,
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
-  show?: string[],           // the surfaces that show it ("toolbar", "world", "menu", "inspector", "use"); [] none; absent all but "world"
+  show?: string | string[],  // the surfaces that show it ("toolbar", "world", "menu", "inspector", "use"); [] none; absent: every surface it applies to, except the strict ones ("world", and the menu for the scene)
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
   reach?: true,              // applies only within the body's reach (below)
   edit?: true,               // the editor's: applies only in the Edit body (below)
@@ -1585,12 +1585,13 @@ A **command**:
   the bar of tools) holds two clusters: the editor's (`show` names
   "toolbar", or says nothing) only in Edit, and at its right end the
   world's (`show` names "world": strict, only an explicit mention counts,
-  as for the menu's scene commands) in every body: a game's Play, Lift all
-  or Come aboard. A command naming both is a world command. The bar shows
-  while it holds an editor command or an extension on the focus path
-  declares a world command for this body (applying now or not), so its
-  height doesn't change with a command's state (`src/parts/toolbar-commands.js`
-  `barEntries`, `barShown`; TOOLS.md Decisions 10).
+  as for the menu's scene commands) in every body: a game's Play, say.
+  "world" is for scene commands, as "toolbar" is: an object verb tagged
+  "world" never applies there, and would keep an empty bar up. A command
+  naming both is a world command. The bar shows while some command on the
+  focus path is the bar's in this body, applying now or not, so its height
+  doesn't change with a command's state (`src/parts/toolbar-commands.js`
+  `barEntries`; TOOLS.md Decisions 10).
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - **Attention** is one target per view (TOOLS.md §3): the selection if

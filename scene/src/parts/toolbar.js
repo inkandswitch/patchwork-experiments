@@ -2,8 +2,8 @@
 // presenting the scene commands (the null target) of every running
 // extension on the focus path, in two clusters: the editor's, at the left,
 // only in Edit (show includes "toolbar", or says nothing), and the world's,
-// at the right, in every body (show includes "world": arena's Play, the
-// cups' Lift all, sailing's Come aboard), so a world command sits at the
+// at the right, in every body (show includes "world": a game's Play, a
+// table's Lift all cups, a boat's Come aboard), so a world command sits at the
 // same place looking, walking, seated or editing. Each is a button, a
 // toggle (aria-pressed from `checked`) or a picker (`choices`/`value`), in
 // running order then command order. It owns no verbs of its own; what used
@@ -20,15 +20,22 @@
 // stage's context and run there. It doesn't follow the pointer, so it
 // doesn't change under it.
 //
-// It shows while it holds an editor command, or while some extension on
-// the focus path declares a world command for this body, whether or not
-// that applies just now (barShown): outside Edit its height depends on
-// which extensions run, never on a command's state, so the canvas under it
-// doesn't jump as Play or Lift all comes and goes. With neither (a plain
-// scene, looking) there is no bar.
+// It shows while some extension on the focus path has a command that is
+// the bar's in this body, whether or not that applies just now (barEntries'
+// `shown`): its height depends on which extensions run, never on a
+// command's state, so the canvas under it doesn't jump as Play or Lift all
+// comes and goes. With none (a plain scene, looking) there is no bar. The
+// editor's cluster scrolls sideways when the view is too narrow for it; the
+// world's sits outside that scroll, always in view at the right end.
+//
+// A button doesn't take the focus from a mouse press: the focus stays where
+// it was (the tool's root, where the keys are heard), so the next Space or
+// Enter that no key claims goes on to the stage and doesn't run the button
+// again (the router lets an unclaimed key through), whatever the body. From
+// the keyboard (Tab, then Space) a button is focused as any button is.
 
 import css from "./toolbar.css?inline";
-import { barEntries, barShown, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
+import { barEntries, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
 import { hintFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 
@@ -75,6 +82,8 @@ function create(api) {
       el = document.createElement("button");
       el.type = "button";
       el.className = "button";
+      // (a mouse press doesn't move the focus: see the header)
+      el.addEventListener("mousedown", (e) => e.preventDefault());
       el.addEventListener("click", () => {
         const c = mine();
         if (c?.kind === "toggle") invoke(!c.checked);
@@ -149,7 +158,7 @@ function create(api) {
     place(row, entries.editor);
     place(world, entries.world);
     for (const k of [...controls.keys()]) if (!seen.has(k)) controls.delete(k);
-    edge.hidden = !barShown(entries);
+    edge.hidden = !entries.shown;
   }
 
   return {

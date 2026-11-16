@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import toolbar from "./toolbar.js";
-import { keyMatches, keyLabel, commandState, shownOn, flatCommands, barEntries, barShown, onBar } from "./toolbar-commands.js";
+import { keyMatches, keyLabel, commandState, shownOn, flatCommands, barEntries, onBar } from "./toolbar-commands.js";
 
 /** A stand-in extension with a button, a toggle (a pref), a picker and an object-only command. */
 function fakeTools(log) {
@@ -141,6 +141,14 @@ describe("scene.toolbar", () => {
     expect(log).not.toContain("off");
   });
 
+  it("a mouse press on a button keeps the focus where it was; on a picker it opens it, as ever", () => {
+    for (const [id, prevented] of [["frame", true], ["grid", true], ["shade", false]]) {
+      const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+      control(id).dispatchEvent(press);
+      expect([id, press.defaultPrevented]).toEqual([id, prevented]);
+    }
+  });
+
   it("leaves the DOM alone when nothing it shows changed (a hover)", async () => {
     const before = [...bar().querySelectorAll("[data-command]")];
     s.local.swap((m) => ({ ...m, hovered: "a" }));
@@ -159,8 +167,8 @@ describe("scene.toolbar", () => {
 // The bar of tools (TOOLS.md §6, Decisions 10): the editor's commands only
 // in Edit, the world's in every body. (B1) outside Edit it holds exactly
 // the world commands that apply, never an editor command; (B2) in Edit the
-// editor's, then the world's; (B3) it shows ⇔ it holds an editor command or
-// a world command is declared for this body, whatever that command's state.
+// editor's, then the world's; (B3) it shows ⇔ some command on the path is
+// the bar's in this body, whatever that command's state.
 const LOOK = { body: { id: "look" } };
 const EDIT = { body: { id: "edit" } };
 const WALK = { body: { id: "walk" } };
@@ -206,40 +214,50 @@ describe("the bar of tools, exhaustively", () => {
     expect(n).toBe(42);
   });
 
-  // body × an editor command running × a world command declared × it applies now (only if declared): 12 rows.
+  // body × the editor's command (none, there but not applying, applying) × a
+  // world command (likewise): 18 rows. One rule for both clusters: the bar
+  // shows while a command that is the bar's in this body is there, applying
+  // or not; only what applies has a control.
   const ROWS = [
-    // body, editor runs, declared, applies, shown, editor ids, world ids
-    [LOOK, false, false, null, false, [], []],
-    [LOOK, false, true, false, true, [], []],
-    [LOOK, false, true, true, true, [], ["w"]],
-    [LOOK, true, false, null, false, [], []],
-    [LOOK, true, true, false, true, [], []],
-    [LOOK, true, true, true, true, [], ["w"]],
-    [EDIT, false, false, null, false, [], []],
-    [EDIT, false, true, false, true, [], []],
-    [EDIT, false, true, true, true, [], ["w"]],
-    [EDIT, true, false, null, true, ["ed"], []],
-    [EDIT, true, true, false, true, ["ed"], []],
-    [EDIT, true, true, true, true, ["ed"], ["w"]],
+    // body, editor's, world's, shown, editor ids, world ids
+    [LOOK, "none", "none", false, [], []],
+    [LOOK, "none", "there", true, [], []],
+    [LOOK, "none", "applies", true, [], ["w"]],
+    [LOOK, "there", "none", false, [], []],
+    [LOOK, "there", "there", true, [], []],
+    [LOOK, "there", "applies", true, [], ["w"]],
+    [LOOK, "applies", "none", false, [], []],
+    [LOOK, "applies", "there", true, [], []],
+    [LOOK, "applies", "applies", true, [], ["w"]],
+    [EDIT, "none", "none", false, [], []],
+    [EDIT, "none", "there", true, [], []],
+    [EDIT, "none", "applies", true, [], ["w"]],
+    [EDIT, "there", "none", true, [], []],
+    [EDIT, "there", "there", true, [], []],
+    [EDIT, "there", "applies", true, [], ["w"]],
+    [EDIT, "applies", "none", true, ["ed"], []],
+    [EDIT, "applies", "there", true, ["ed"], []],
+    [EDIT, "applies", "applies", true, ["ed"], ["w"]],
   ];
 
-  it("body × editor command × world declared × applying (12 rows): shown ⇔ an editor entry or a declared world command, whatever its state", () => {
-    for (const [view, ed, declared, applies, shown, eds, ws] of ROWS) {
+  it("body × editor's command × world command, each none/there/applying (18 rows): shown ⇔ one is there, whatever its state", () => {
+    const state = (kind) => (t) => (t == null && kind === "applies" ? {} : null);
+    for (const [view, ed, w, shown, eds, ws] of ROWS) {
       const commands = [
-        ...(ed ? [{ id: "ed", name: "Snap", show: ["toolbar"], edit: true, run() {} }] : []),
-        ...(declared ? [{ id: "w", name: "Play", show: ["world", "menu"], state: (t) => (t == null && applies ? {} : null), run() {} }] : []),
+        ...(ed !== "none" ? [{ id: "ed", name: "Snap", show: ["toolbar"], edit: true, state: state(ed), run() {} }] : []),
+        ...(w !== "none" ? [{ id: "w", name: "Play", show: ["world", "menu"], state: state(w), run() {} }] : []),
       ];
       const entries = barEntries([segIn(view, commands)], view);
-      const row = [view.body.id, ed, declared, applies];
-      expect([...row, barShown(entries), entries.editor.map((e) => e.command.id), entries.world.map((e) => e.command.id)]).toEqual([...row, shown, eds, ws]);
-      expect(entries.declared).toBe(declared);
+      const row = [view.body.id, ed, w];
+      expect([...row, entries.shown, entries.editor.map((e) => e.command.id), entries.world.map((e) => e.command.id)]).toEqual([...row, shown, eds, ws]);
     }
+    expect(ROWS).toHaveLength(18);
   });
 
-  it("a world command that is the editor's (edit: true) declares nothing outside Edit", () => {
+  it("a world command that is the editor's (edit: true) keeps no bar outside Edit", () => {
     const command = { id: "w", show: ["world"], edit: true, run() {} };
-    expect(barEntries([segIn(LOOK, [command])], LOOK)).toEqual({ editor: [], world: [], declared: false });
-    expect(barEntries([segIn(EDIT, [command])], EDIT).declared).toBe(true);
+    expect(barEntries([segIn(LOOK, [command])], LOOK)).toEqual({ editor: [], world: [], shown: false });
+    expect(barEntries([segIn(EDIT, [command])], EDIT).shown).toBe(true);
   });
 
   it("across the focus path: the focus's first, then outward; each entry tagged with its stage, once per stage/extension/id", () => {
@@ -316,6 +334,15 @@ describe("the bar of tools in every body", () => {
     expect(edge().hidden).toBe(false);
   });
 
+  it("a mouse press on a bar button doesn't take the focus (an unclaimed Space would run it again)", async () => {
+    s.api("t.game").body.enter("look");
+    await s.settle();
+    const play = s.root.querySelector('.toolbar .world [data-command="play"]');
+    const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    play.dispatchEvent(press);
+    expect(press.defaultPrevented).toBe(true);
+  });
+
   it("a plain scene, looking, has no bar: nothing declares a world command", async () => {
     await s.uninstall("t.game");
     s.api("scene.toolbar").body.enter("look");
@@ -326,32 +353,43 @@ describe("the bar of tools in every body", () => {
 
 // In a narrow view the toolbar wrapped to a second row, so the canvas under
 // it lost height whenever the view narrowed or a command came on offer. It is
-// one row that scrolls sideways: no rule on the bar or its row wraps, and
-// no control shrinks to fit (it would squash a label instead of scrolling).
+// one row: the editor's cluster scrolls sideways, and the world's sits
+// outside that scroll, in view at the right end at any width. These read the
+// stylesheet, as guards against an edit undoing it; the layout itself (the
+// world's buttons in view in a narrow Edit, one height in every body, a
+// picker as tall as a button) is measured in a browser by
+// probes/toolbar-run.mjs.
 describe("the toolbar is one row at any width", async () => {
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const css = readFileSync(fileURLToPath(import.meta.url).replace(/toolbar\.test\.js$/, "toolbar.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim().replace(/\s+/g, " "), body }));
   const rule = (pred) => rules.find((r) => pred(r.sel.replace(/:where\(.*$/, "").trim()));
-  it("the bar doesn't wrap and scrolls sideways", () => {
+  it("the bar doesn't wrap and doesn't scroll: the editor's cluster does, with no scrollbar", () => {
     const bar = rule((s) => s.endsWith(".toolbar"));
     expect(bar.body).toMatch(/flex-wrap:\s*nowrap/);
-    expect(bar.body).toMatch(/overflow-x:\s*auto/);
+    expect(bar.body).not.toMatch(/overflow/);
+    const tools = rule((s) => s.endsWith(".toolbar .tools"));
+    expect(tools.body).toMatch(/overflow-x:\s*auto/);
+    expect(tools.body).toMatch(/min-width:\s*0/);
     // no scrollbar to come and go with the commands on offer (it would change the bar's height)
-    expect(bar.body).toMatch(/scrollbar-width:\s*none/);
-    expect(rule((s) => s.includes("::-webkit-scrollbar"))?.body).toMatch(/display:\s*none/);
+    expect(tools.body).toMatch(/scrollbar-width:\s*none/);
+    expect(rule((s) => s.includes(".tools::-webkit-scrollbar"))?.body).toMatch(/display:\s*none/);
   });
-  it("its row doesn't wrap, and its controls keep their size", () => {
-    expect(rule((s) => s.endsWith(".toolbar .tools")).body).toMatch(/flex-wrap:\s*nowrap/);
-    expect(rule((s) => s.endsWith(".toolbar .tools >")).body).toMatch(/flex-shrink:\s*0/);
-  });
-  it("the world's cluster keeps to the right, doesn't wrap, and is a button tall when empty", () => {
+  it("the world's cluster is outside the scroll and doesn't give way to it", () => {
     const world = rule((s) => s.endsWith(".toolbar .world"));
-    expect(world.body).toMatch(/margin-left:\s*auto/);
-    expect(world.body).toMatch(/flex-wrap:\s*nowrap/);
-    expect(world.body).toMatch(/min-height:\s*calc\(1lh \+ 8px\)/);
-    expect(rule((s) => s.endsWith(".toolbar .world >")).body).toMatch(/flex-shrink:\s*0/);
+    expect(world.body).toMatch(/flex:\s*0 0 auto/);
+    expect(world.body).not.toMatch(/overflow/);
+  });
+  it("every cluster is one control tall, even empty, and every control is that tall and keeps its width", () => {
+    expect(rule((s) => s.endsWith(".toolbar")).body).toMatch(/--scene-toolbar-control:\s*calc\(1lh \+ 8px\)/);
+    const cluster = rule((s) => s.endsWith(".toolbar .cluster"));
+    expect(cluster.body).toMatch(/flex-wrap:\s*nowrap/);
+    expect(cluster.body).toMatch(/min-height:\s*var\(--scene-toolbar-control\)/);
+    const control = rule((s) => s.endsWith(".toolbar .cluster >"));
+    expect(control.body).toMatch(/flex-shrink:\s*0/);
+    expect(control.body).toMatch(/box-sizing:\s*border-box/);
+    expect(control.body).toMatch(/height:\s*var\(--scene-toolbar-control\)/);
   });
   it("no rule here makes anything wrap", () => {
     for (const r of rules) expect(r.body, r.sel).not.toMatch(/flex-wrap:\s*wrap/);
