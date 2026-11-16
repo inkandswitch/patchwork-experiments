@@ -25,6 +25,7 @@ import { windFrom } from "./test/agreement-harness.js";
 import { helmBackSide } from "./stations.js";
 import { trimModelOf, trimOf } from "./trim.js";
 import { emptyScene, fakeDrop, fakeNode, fakeWorld } from "./test/fakes.js";
+import { readGLB } from "./test/frame-hulls.js";
 import { validate, errorText, polygonAreaCentroid } from "./test/rig-contract/validate.js";
 import fixture from "./test/rig-contract/sloop-12m.json";
 import cuvatureFixture from "./test/rig-contract/cuvature-first-guess.json";
@@ -41,24 +42,6 @@ const near = (got, want, tol) => {
   expect(got).toHaveLength(want.length);
   got.forEach((v, i) => expect(Math.abs(v - want[i])).toBeLessThanOrEqual(tol));
 };
-
-/** What the stage reads off a GLB: its positions' box and the scene's extras. */
-function readGLB(bytes) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + dv.getUint32(12, true))));
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (const m of json.meshes) {
-    for (const p of m.primitives) {
-      const a = json.accessors[p.attributes.POSITION];
-      for (let i = 0; i < 3; i++) {
-        min[i] = Math.min(min[i], a.min[i]);
-        max[i] = Math.max(max[i], a.max[i]);
-      }
-    }
-  }
-  return { box: { min, max }, extras: json.scenes[0].extras ?? {} };
-}
 
 // what a ship's rig can't vouch for, sim.js logs once per spec: none of these should
 const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

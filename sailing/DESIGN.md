@@ -79,7 +79,7 @@ the jib, and on some seas the anchor breaks out with her well off the
 wind, so the step reports itself not exercised. Which seas, and why that
 is an open defect in her physics rather than a property of the probe, is
 under "Leaving the anchor" (the probe records its anchoring timeline,
-`measured.anchoring`, which `src/breakout.slow.test.js` replays in node). `probes/camber-run.mjs` takes a
+`measured.anchoring`, which `src/test/breakout.js` replays in node). `probes/camber-run.mjs` takes a
 hull drawn in camber (its built plugins, borrowed at dev time) from a bare
 sea to sailing: the Ship trait with her frame from her GLB, the parts
 dragged from the bin onto her deck, floating, sailing bow first, stood on
@@ -657,26 +657,17 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   `api.clock.t`" (line 351) and its list of ctx.sea's members with `clock`
   (line 106) are now stale; they are water's, left for the integrator.
 - *Leaving the anchor: diagnosed, not fixed; stopped for the lead.* The
-  node replay of sailing-run's sequence (`src/test/breakout.js`,
-  `src/breakout.slow.test.js`) reproduces Chrome's verdict on all seven seas
-  of the Open table, and shows the plan's leading hypothesis (the windlass
-  yanks her forward) is not what happens there: laid at anchor she never
-  falls back onto her rode, and in a head sea her heave damping drives her
-  into the waves ("Leaving the anchor", Open). The fixes measured (a laid
-  ship's anchor set at her rode's reach; a windlass with a bounded pull and
-  a real line speed; heave damped along the world's vertical) each change a
-  choice that is the lead's (the weighing time, her seaway speed), and
-  together they still don't make the HUD advise backing the jib at
-  breakout on every sea. So the step stops, as its plan says to when the
-  physics doesn't give the claim, with the measurements and a scratch patch
-  of the candidate, and the HUD and the probe left as they were. The probe
-  now records its anchoring timeline (`measured.anchoring`: each move's
-  world time and her pose, and the weighing in 100 ms pieces) so a replay
-  can follow it. The diagnosis is pinned as OPEN ratchets, as KNOWN_GAPS
-  are: they fail when it changes. The plan's table row "sails down" has no
-  verdict to ask for: the HUD gives the jib's advice only with the main up
-  (hud.js `luffing`, `inIrons`), so the sails-down runs are measured (the
-  main hardly mattered once she was lying to her anchor) but not tabled.
+  physics doesn't give the step's claim, and every fix measured is a
+  choice of the lead's ("Leaving the anchor", Open, with its questions), so
+  the physics, stations, HUD and probe gate are as they were. What the
+  step adds: the probe records its anchoring timeline
+  (`measured.anchoring`), a node replay of it (`src/test/breakout.js`, with
+  `sim.specOf`, the spec her physics steps with), and the diagnosis pinned
+  as verdict-only OPEN ratchets (`src/breakout.slow.test.js`). The
+  candidate fixes are scratch patches outside the tree:
+  `/Users/pvh/.claude/projects/-Users-pvh-dev-patchwork-base/5cc6c087-e4f2-4927-93fb-4f98c0b7eab2/recovered/loose/n6-step4-candidate-set-anchor-windlass.patch` (a set anchor and a
+  bounded windlass), `n6-step4-heave-hybrid.patch` and
+  `n6-step4-heave-world-vertical.patch` (the two heave switches), beside it.
 
 ## Trim feedback
 
@@ -1709,56 +1700,96 @@ and takes 18.9 s (2026-11-16). The station's verbs (the wheel, sheets, furler, h
 windlass) run in sea time, as far as the ships step a frame (0.25 s), so
 at a few frames a second the jib still unrolls in its 4 s.
 
-**Open: laid at anchor, she isn't lying to it, so in waves she doesn't
-reliably lie head to wind as it breaks out.** This section's opening claim
-holds once her rode is taut (the flat-water case pinned above starts her 20
-m from her anchor and gives her 90 s). It does not hold for a ship *laid* at
-anchor, by the template or by an editor's move, and that is what the probes
-do. Diagnosed 2026-11-16 (lane/n6) in node, without Chrome:
-`src/breakout.slow.test.js` replays sailing-run's own sequence
-(`src/test/breakout.js`: the template, laid at anchor, the main eased,
-hoisted and raised, the windlass held, all through the stations' own held
-verbs and on the timeline the probe now records, `measured.anchoring`) and
-reaches Chrome's verdict on all seven seas, its apparent wind within 2.5°
-and its speed within 0.05 m/s of Chrome's:
+**Open: laid at anchor, she isn't lying to it, so in waves where she points
+as it breaks out is chance.** This section's opening claim holds once her
+rode is taut (the flat-water case pinned above starts her 20 m from her
+anchor and gives her 90 s). It does not hold for a ship *laid* at anchor,
+by an editor's move (as the probes do) or as the template lays out Ship at
+anchor. Diagnosed 2026-11-16 (lane/n6) in node, without Chrome:
+`src/test/breakout.js` replays sailing-run's own sequence (laid at anchor,
+the main eased, hoisted and raised, the windlass held, all through the
+stations' own held verbs, on the timeline and from the positions the probe
+records, `measured.anchoring`), and asks hud.js's own model for the
+advice. Measured once against the probe's marks, the replay follows the
+simulator's read to within 2.3° of apparent wind and 0.05 m/s on all seven
+seas (a calibration, not pinned: it moves with any change to her physics).
 
-| sea | as the anchor comes up (apparent wind, speed) | 1.25 s later, as the probe reads the HUD | the HUD then | least chain to spare, laid → windlass |
+| sea | as the anchor comes up: apparent wind, speed; B's HUD | 1.25 s later, as the probe reads B's HUD (Chrome) | chain to spare, laid → windlass | while weighing, the windlass |
 |---|---|---|---|---|
-| 1 | 1° off, 0.57 m/s astern | 12° off, 0.35 astern | in irons: back the jib | 12.9 m |
-| 2 | 29° off, 0.43 astern | 39° off, 0.43 astern | nothing | 11.6 m |
-| 3 | 4° off, 0.45 astern | 5° off, 0.59 astern | in irons: back the jib | 12.8 m |
-| 4 | 18° off, 0.43 astern | 23° off, 0.47 astern | in irons: back the jib | 12.7 m |
-| 5 | 140° off, 0.40 ahead | 159° off, 0.90 ahead | nothing | 9.9 m |
-| 383967344 | 30° off, 0.48 ahead | 14° off, 0.00 | head to wind: back the jib | 6.3 m |
-| 696349617 | 32° off, 0.38 ahead | 21° off, 0.63 ahead | nothing | 11.2 m |
+| 1 | 1° off, 0.57 m/s astern; back the jib | 12° off, 0.35 astern; in irons: back the jib | 12.9 m | never pulls: 2.3 m slack or more |
+| 2 | 29° off, 0.43 astern; back the jib | 39° off, 0.43 astern; nothing (in irons is within 35°) | 11.6 m | pulls for the last 0.6 s, 0.09 m short |
+| 3 | 4° off, 0.45 astern; back the jib | 5° off, 0.59 astern; in irons: back the jib | 12.8 m | never pulls |
+| 4 | 18° off, 0.43 astern; back the jib | 23° off, 0.47 astern; in irons: back the jib | 12.7 m | never pulls |
+| 5 | 140° off, 0.40 ahead; nothing | 159° off, 0.90 ahead; nothing | 9.9 m | pulls from 31.4 to 35.0 s, up to 1.2 m short: 77° off → 140° |
+| 383967344 | 30° off, 0.48 ahead; back the jib | 14° off, 0.00; back the jib | 6.3 m | pulls from 30.6 s to breakout, up to 3.9 m short: 85° off → 30° |
+| 696349617 | 32° off, 0.38 ahead; back the jib | 21° off, 0.63 ahead by the simulator, 0.53 by B (luffing is under 0.5); nothing | 11.2 m | pulls from 31.6 to 33.5 s, up to 0.5 m short: 59° off → 32° |
 
-(Chrome: sailing-run on 62756a05, one run per sea, 2026-11-16; the leave
-step exercised on 1, 3, 4 and 383967344, past 45° in 5.85, 10.2, 5.85 and
-18.9 s; on 2 and 696349617 the HUD said to back the jib at the frame the
-anchor came up and no longer when the probe read it.)
+(The reads are Chrome's: sailing-run on 62756a05, one run per sea; the
+verdicts at breakout and the windlass's columns are the replay's.)
+`src/breakout.slow.test.js` pins every verdict here (never a magnitude) as
+an OPEN ratchet, row by row, as KNOWN_GAPS are. The replay's B, a publish
+(200 ms) behind the simulator as Chrome's is, reads sea 696349617 at 0.48
+m/s ahead when the probe reads the HUD, where Chrome's B read 0.53: so in
+node the HUD says to back the jib there, and in Chrome it didn't. Which
+publish B shows decides that row.
 
 What the replay shows:
-- **She is never on her rode.** The anchor of a ship laid at anchor goes
-  down under her bow (sim.js `dropPoint`) with 25 m of chain in 10 m of
-  water: 22 m of horizontal scope. From being laid (7.6 s) until the
-  windlass turns (29.3 s) her rode has 6–13 m to spare at every frame, on
-  every sea: the anchor never pulls her. She is a free boat beside it,
-  drifting astern and yawing as the gusts and waves take her, and where she
-  points when the windlass is done is chance. The leading hypothesis (the
-  windlass yanks her up to the anchor) is refuted for these runs: with 13 m
-  of slack, the kinematic windlass (all 25 m in 6 s) only takes in slack,
-  and pulls her for the last half second, if at all.
-- **In a head sea she makes way into the waves.** Adrift with no wind and
-  her sails down, bow to the waves, she goes 10.6 and 11.4 m *toward* them
-  in 60 s (seas 1 and 696349617; pinned as an OPEN ratchet in the same
-  file). Waves push a hull down-wave. It is her contract's heave damping,
-  applied along her body's vertical (`HEAVE_LINEAR`, "moving ahead pitched,
-  that's her bottom's lift"): pitching in a head sea, its fore-and-aft part
-  is a thrust. Damped along the world's vertical instead (a scratch switch)
-  she goes 6.4 and 8.1 m down-wave. At anchor this keeps her creeping up on
-  her chain: with the anchor set ahead of her (below), her rode was still
-  slack in 75–84% of the frames.
-- **Fixing those two isn't enough with the windlass as it is.** A scratch
+- **Before the windlass turns, she is never on her rode.** The anchor of a
+  ship laid at anchor goes down under her bow (sim.js `dropPoint`; Ship at
+  anchor's, layout.js, the same) with 25 m of chain in 10 m of water: 22 m
+  of horizontal scope. From being laid (7.6 s) until the windlass turns
+  (29.3 s) her rode has 6–13 m to spare at every frame, on every sea, laid
+  by an editor's move or as Ship at anchor, main up or sails down (28
+  cases, pinned). She is a free boat beside her anchor, sailing or drifting
+  as the gusts and waves take her: with the main up she had 0.6–0.9 m/s of
+  headway, 59–85° off the wind, when the windlass turned on seas 5,
+  383967344 and 696349617.
+- **The windlass is a cause too, on four seas of seven.** It shortens the
+  rode kinematically (all 25 m in 6 s), and on seas 2, 5, 383967344 and
+  696349617 the rode goes taut while it does. On the last three the pull
+  swings her bow by tens of degrees, toward the wind on two of them and
+  away from it on sea 5, and slows her; on sea 2 it pulls only for the
+  last 0.6 s. On seas 1, 3 and 4 it never pulls: the physics holds her
+  on at least the drop plus her freeboard plus `SLACK` (sim.js
+  `effectiveRode`, about 14.8 m), so the last 15 m wound in change nothing.
+  The plan's leading hypothesis, that weighing yanks her forward, is still
+  refuted: her headway came from sailing adrift under the main before the
+  windlass turned, and the pull slowed her.
+- **Two of the three seas that fail in Chrome fail on the HUD's
+  instantaneous gate.** At the frame the anchor comes up, B's HUD advises
+  backing the jib on six seas of seven, all but sea 5. When the probe reads
+  it 1.25 s later, sea 2 is 39–40° off (in irons is within 35°) and sea
+  696349617 is going 0.53 m/s ahead by B's read (luffing is under 0.5), and
+  backed anyway, as the probe does whatever the gate says, she passed 45° in
+  8.7 s and 9 s. Only on sea 5 is she truly off the wind (159°, stern to
+  it). The HUD reads her speed through the water, which swings by the
+  waves' orbital velocity (±0.5 m/s), so on seas like these the verdict is
+  the instant's.
+- **Adrift with no wind and her sails down, on most seas she makes way
+  toward the waves.** In 60 s, bow or stern to them (pinned as a table of
+  verdicts in the same file; metres made toward the waves from 045°):
+
+  | sea | today, bow / stern to the waves | hybrid switch | world's vertical |
+  |---|---|---|---|
+  | 1 | +10.6 / +10.9 | −6.4 / −6.1 | −6.0 / −5.9 |
+  | 2 | +32.7 / +30.2 | +6.5 / +5.5 | +5.8 / +4.9 |
+  | 3 | +8.0 / +9.3 | −12.3 / −10.1 | −10.3 / −8.6 |
+  | 4 | −5.3 / −1.3 | −21.1 / −21.7 | −19.8 / −20.1 |
+  | 5 | −4.3 / +0.3 | −30.1 / −43.9 | −27.2 / −31.4 |
+  | 383967344 | +2.7 / +7.1 | −27.9 / −33.7 | −21.6 / −22.7 |
+  | 696349617 | +11.4 / +12.2 | −8.1 / −7.2 | −7.0 / −6.5 |
+
+  A hull in waves is pushed slowly down-wave. Most of this is her
+  contract's heave damping, applied along her body's vertical (`HEAVE_LINEAR`,
+  "moving ahead pitched, that's her bottom's lift"): two scratch switches
+  turn every sea but one down-wave. The hybrid damps her body-vertical
+  rate along the world's vertical; the other damps the world's vertical
+  rate along it. Neither is the whole story: on sea 2 she still makes 5–6
+  m toward the waves, so there is a second source, not found. And it isn't
+  a head sea's: stern to the waves she makes way toward them as much. At
+  anchor this keeps her creeping up on her chain (with the anchor set ahead
+  of her, below, her rode was still slack in 75–84% of the frames).
+- **Fixing those isn't enough with the windlass as it is.** A scratch
   candidate (kept out of the tree; the lead's to choose, see the
   questions): the anchor of a ship laid at anchor *set* ahead of her bow at
   the reach of her rode, as a ship at anchor lies; and a windlass with a
@@ -1773,23 +1804,56 @@ What the replay shows:
   water she came over the anchor head to wind (2°) at 0.8 m/s ahead: a
   straight chain shortening at 0.35 m/s draws her bow in faster as it comes
   up and down (dx/dL = L/x), so the HUD still said nothing. With all three
-  (set, bounded, heave along the world's vertical) in waves, she lay within
-  32–38° (76° on sea 5), and at breakout the HUD advised backing the jib on
-  2 of 7 seas, 5 of 7 when the probe reads it.
+  (set, bounded, and the hybrid heave switch) in waves, she lay within
+  32–38° (76° on sea 5). Side by side, on the simulator's read as these
+  were measured:
+
+  | the HUD advises backing the jib | at breakout | when the probe reads it |
+  |---|---|---|
+  | today | 6 of 7 seas | 4 of 7 (as in Chrome) |
+  | all three candidate fixes | 2 of 7 | 5 of 7 |
+
+  So the candidate is worse at breakout and better 1.25 s later. Raised or
+  not, the main changed little with it applied (measured with the
+  candidate only, so not pinned).
+
+The plan's table row "sails down" has no verdict to ask for: the HUD gives
+the jib's advice only with the main up (hud.js `luffing`, `inIrons`); with
+the sails down only the rode's slack before weighing is pinned.
+
+**Two other probe failures on these seas** (both the same to the digit on
+62756a05's uninstrumented sailing-run.mjs with the same build, so not the
+anchoring instrumentation):
+- *Sea 383967344: "with the sails down she carries her way, and slows"*
+  fails by a hair (a mean of 1.77 m/s over 24 s against 0.9 × 1.95 =
+  1.755; the first sample, 2.50, a wave's surge). On b4318ae0's build,
+  before N6, the same sea passes (2.62 m/s when the sails came down, a
+  mean of 2.15): §3.13's windage changed the whole run before it, and the
+  check's bound is marginal. In node, from 1.95 m/s under bare poles in 7
+  m/s of wind, running before it she averages 0.91 of her speed over 24 s
+  even in flat water (1.77; 1.76 with sailing's old windage), and 0.73–0.88
+  of it on other points of sail. It isn't the heave thrust above (flat water
+  fails too). Whether the check's bound should depend on her point of
+  sail is a question for the lead.
+- *Sea 5: "F climbs the ladder: B is back on deck"* fails (B not on deck
+  after the climb). That is the walker's (N10's to replace), not diagnosed
+  here; it is in the follow-up log.
 
 So the claim is not met, and the remaining choices are the lead's
 (questions for the lead, 2026-11-16, lane/n6): whether a laid ship's anchor
 is set; the windlass's line speed (real, 40–54 s to weigh, or the game's 6
-s); whether her heave damping goes along the world's vertical (it was put
-along her body's for her speed in a seaway, 97% of flat water against 83%);
-whether her rode should be a catenary rather than a stiff spring that goes
-slack (in waves she snatches on it); and whether "head to wind" at
-breakout is read through the water, as the HUD does, or over the ground
-(her speed through the water swings by the waves' orbital velocity, ±0.5
-m/s). Until then sailing-run's verdict on the leave step holds only for the
-sea it ran on, and `breakout.slow.test.js` holds the diagnosis: its OPEN
-cases fail as soon as any of this is changed, and are rewritten with this
-section then.
+s) and whether it pulls her at all before the chain is up and down;
+whether her heave damping goes along the world's vertical (it was put
+along her body's for her speed in a seaway, 97% of flat water against 83%,
+above), and what else drives her toward the waves on sea 2; whether her
+rode should be a catenary rather than a stiff spring that goes slack (in
+waves she snatches on it); and whether "head to wind" at breakout is read
+through the water, as the HUD does, or over the ground, or over some
+seconds rather than an instant (the second finding above: two of the three
+failing seas are within a few degrees or a few cm/s of the gate). Until
+then sailing-run's verdict on the leave step holds only for the sea it ran
+on, and `breakout.slow.test.js` holds the diagnosis: its OPEN rows fail as
+soon as any of this is changed, and are rewritten with this section then.
 
 ## Parts
 
@@ -1935,6 +1999,7 @@ ctx.sea.tick()           // after every clock has ticked: the wind's time offset
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
 ctx.sim.read(shipId)     // what a sailor reads off her (published(): diagnostics, velocity, spin), as simulated or streamed, or null
+ctx.sim.specOf(shipId)   // the spec her physics steps with on this view (createShip's), or null following or before her first step
 ctx.sim.stationsOf(shipId) → { helm, sail, anchor, mainsheet, jib, ladder, winches }   // object ids anywhere under her (a rig on a mast on the hull), null if missing; winches a list
 ctx.sim.value(stationId) // the station's live value: its trait fields, with its holder's input over them
 ctx.sim.input(stationId, partial)   // this view's live input at a station it holds (presence), e.g. { angle }
