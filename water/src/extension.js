@@ -40,13 +40,25 @@
 
 import { createOceanSurface } from "./material.js";
 import { createTiming, latch, levelOf, readerFor, VERSION } from "./convert.js";
-import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipToSpan, currentOf, CURRENT, isLevel, rigidVelocity, scaleOf, shapeOf, shiftByCurrent, TRAIT } from "./bodies.js";
+import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipToSpan, colourOf, currentOf, CURRENT, isLevel, rigidVelocity, scaleOf, shapeOf, shiftByCurrent, TRAIT } from "./bodies.js";
 import { boundedReader } from "./bounded.js";
 import { choose } from "./choose.js";
+
+/** The sky a surface reflects, from the world's atmosphere: its sky's colours and its cloud deck (scene STAGE.md, "Atmosphere"), or undefined (keep what was set). */
+const skyOf = (atm) => (atm?.sky ? { ...atm.sky, clouds: atm.clouds ?? null } : undefined);
 
 export { TRAIT, CURRENT };
 /** The convention a wave maker contributes in the water's stage: { bodies: { [objectId]: { components, look? } } }. */
 export const WAVES = "water.waves";
+/**
+ * The convention a part contributes for the shore's shape round an eye, as
+ * the water mirrors it (WATER.md, "The shore in the water"): { v, azimuths,
+ * bins, near, reach, profile(eye) → { key, eye, data } | null, and
+ * optionally exposure(from) → { key, n, data, origin, u, v, size } | null:
+ * how open the water is to a wind from `from` degrees, for shelter }.
+ * Terrain gives it for its places.
+ */
+export const SHORE = "water.shore";
 /** The world's wind, an ambient whoever makes the weather offers (sailing's weather): { speed (m/s), from (degrees) }. */
 export const WIND = "wind";
 const CALM = Object.freeze({ speed: 0, from: 0 });
@@ -342,6 +354,31 @@ export default {
       wind: wind ? { speed: Number(wind.speed) || 0, from: Number(wind.from) || 0 } : CALM,
     });
 
+    /**
+     * The shore in the water for a camera at `cam` and a body's colour: where
+     * the body has a shore tint and this stage's parts give the shore's shape
+     * (the contribution `water.shore`, the last one's: its profile(eye)), that
+     * profile and the tint; else nothing. [profile, tint] for setShore.
+     */
+    function shoreFor(cam, colour) {
+      if (!cam || !colour?.shore) return [null, null];
+      const eye = Array.isArray(cam) ? cam : [cam.x, cam.y, cam.z];
+      const s = api.collect?.(SHORE)?.at(-1)?.value;
+      const profile = typeof s?.profile === "function" ? s.profile(eye) : null;
+      return profile ? [{ ...profile, azimuths: s.azimuths, bins: s.bins, near: s.near, reach: s.reach }, colour.shore] : [null, null];
+    }
+
+    /**
+     * Shelter for the world's wind: where this stage's parts give the
+     * water's exposure (the contribution `water.shore`'s exposure(from), the
+     * last one's), its grid for a wind from `wind.from`; else null.
+     */
+    function exposureFor(wind) {
+      const s = api.collect?.(SHORE)?.at(-1)?.value;
+      if (typeof s?.exposure !== "function") return null;
+      return s.exposure(Number(wind?.from) || 0) ?? null;
+    }
+
     function drawOpen(a, wind, atm) {
       if (!a?.mine || !world) return undrawOpen();
       if (drawn !== world || drawnWind !== wind) {
@@ -356,8 +393,14 @@ export default {
         }
         api.invalidate();
       }
+      // the doc's open body's own colour, if it has one (its trait's `colour`)
+      const open = bodiesOf(scene?.objects).open;
+      const colour = colourOf(open ? scene.objects[open]?.traits?.[TRAIT] : null);
+      surface.setColour(colour);
       const cam = api.camera.get()?.position;
-      if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, atm?.sky);
+      if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, skyOf(atm));
+      surface.setShore(...shoreFor(cam, colour));
+      surface.setExposure(exposureFor(wind));
       // around the camera, at the world's level
       surface.object.position.y = world.level;
       return waterExtent(world.components, world.level);
@@ -392,7 +435,11 @@ export default {
           api.invalidate();
         }
         p.surface.setPatch(w, l, yaw, floor);
-        p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, atm?.sky);
+        const colour = colourOf(scene?.objects?.[id]?.traits?.[TRAIT]);
+        p.surface.setColour(colour);
+        p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, skyOf(atm));
+        p.surface.setShore(...shoreFor(api.camera.get()?.position, colour));
+        p.surface.setExposure(exposureFor(wind));
         out.push(patchExtent(box, b.A));
       }
       for (const [id, p] of [...patches]) {

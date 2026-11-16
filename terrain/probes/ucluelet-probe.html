@@ -166,7 +166,7 @@ try {
         start: d.view?.start ?? null,
         home: d.view?.start?.home ?? null,
         // the weather's wind and the bay's Sea (an open water object with a sea on it: WATER.md, "Water bodies")
-        sea: (() => { const w = Object.values(objects()).filter((o) => o.traits?.water); const s = w.find((o) => o.traits["sailing.sea"]); return { wind: d.traits?.["sailing.weather"]?.wind ?? null, scale: s?.traits["sailing.sea"].scale ?? null, waters: w.length, level: s?.transform.position[1] ?? null, open: !!s && s.traits.water.size == null, clip: s?.traits.water.clip ?? null, at: s?.transform.position ?? null }; })(),
+        sea: (() => { const w = Object.values(objects()).filter((o) => o.traits?.water); const s = w.find((o) => o.traits["sailing.sea"]); return { wind: d.traits?.["sailing.weather"]?.wind ?? null, scale: s?.traits["sailing.sea"].scale ?? null, waters: w.length, level: s?.transform.position[1] ?? null, open: !!s && s.traits.water.size == null, clip: s?.traits.water.clip ?? null, colour: s?.traits.water.colour ?? null, at: s?.transform.position ?? null }; })(),
         terrain: t ? { transform: t.transform, locked: !!t.locked, providerId: t.providerId, parent: t.parent, sourceUrl: t.sourceUrl, infoUrl: t.infoUrl ?? null, credit: !!t.traits?.["terrain.credit"], sky: t.traits?.["terrain.sky"] ?? null } : null,
         terrainDoc: terrainDoc ? { files: ["dem", "features", "layers", "look"].filter((k) => terrainDoc.data?.[k]?.url), site: (terrainDoc.site?.structures ?? []).map((x) => x.id), summary: terrainDoc.data?.summary ?? null, title: terrainDoc.title, type: terrainDoc["@patchwork"]?.type, origin: terrainDoc.origin, grid: terrainDoc.grid, data: !!terrainDoc.data, sources: (terrainDoc.sources ?? []).map((s) => s.id), sourceUrls: (terrainDoc.sources ?? []).map((s) => s.url ?? null), requests: (terrainDoc.sources ?? []).reduce((a, s) => a + (s.requests?.length ?? 0), 0), osmDate: terrainDoc.osmDate ?? null, matchesChecked: terrainDoc.data?.summary?.matchesChecked ?? null, attribution: terrainDoc.attribution } : null,
         featuresFile: terrainDoc?.data?.features?.url ? (({ licence, attribution }) => ({ licence, attribution }))(repo.handles.get(terrainDoc.data.features.url)?.doc() ?? {}) : null,
@@ -183,6 +183,19 @@ try {
       // (what has content: not a group, or an object with no source, as the Sea)
       const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group" && objects()[id].sourceUrl != null);
       return { total: all.length, loaded: all.filter((id) => dbg.viewport.contentOf(id)?.loaded).length };
+    },
+    /** the ground's grain (grain.js): its meshes, and how many of their materials the place's extension has dressed, and whether a program with the grain was compiled */
+    grain() {
+      const c = dbg.viewport.contentOf(terrainId());
+      if (!c?.loaded) return { loaded: false };
+      let meshes = 0, dressed = 0;
+      c.root.traverse((o) => {
+        if (!o.isMesh || !o.geometry?.attributes?._grain) return;
+        meshes++;
+        if (String(o.material?.customProgramCacheKey?.() ?? "").includes("terrain-grain")) dressed++;
+      });
+      const programs = dbg.viewport.renderer?.info?.programs ?? [];
+      return { meshes, dressed, programs: programs.length, grainPrograms: programs.filter((p) => String(p.cacheKey).includes("terrain-grain")).length };
     },
     /** what the terrain's GLB says, read the way sailing will: content(id).extras.terrain through the copyable sampler */
     terrain() {

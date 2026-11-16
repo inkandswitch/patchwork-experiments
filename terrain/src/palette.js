@@ -32,6 +32,9 @@ export const COLOURS = Object.freeze({
   lake: "#3b4a4e",
   // high, bare ground
   scree: "#7a776f",
+  // under a pile deck and round it (build.js): wet and black, the rockweed's band at mid-tide
+  deckWet: "#2b2a24",
+  deckWeed: "#4a4528",
 });
 
 export const toRGB = (hex) => [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16));
@@ -50,14 +53,27 @@ const rampAt = (stops, x) => {
  */
 export function bands(tide = {}) {
   const mllw = tide.MLLW ?? -1.2, mhhw = tide.MHHW ?? 0.9, hhwlt = tide.HHWLT ?? 1.3;
+  // a place's look may set where the rockweed starts and stops (withBands: `musselTop`, `weedTop`, about mean water)
   return [
     [mllw, "kelp"],
-    [mllw + (0 - mllw) * 0.75, "mussel"],
-    [mhhw * 0.5, "rockweed"],
+    [tide.musselTop ?? mllw + (0 - mllw) * 0.75, "mussel"],
+    [tide.weedTop ?? mhhw * 0.5, "rockweed"],
     [mhhw, "barnacle"],
     [hhwlt + 1.1, "lichen"],
     [hhwlt + 3, "rock"],
   ];
+}
+
+/**
+ * The tide's levels as the bands read them, with a place's look's own
+ * (look.bands: { musselTop, weedBelowMHHW }): the mussels' band up to
+ * `musselTop` m about mean water, the rockweed's up to `weedBelowMHHW` under
+ * the mean higher high water, so the barnacles' band over it is that thin.
+ * The tide alone where the look says nothing. Pure.
+ */
+export function withBands(tide = {}, look = null) {
+  if (!look) return tide;
+  return { ...tide, ...(look.musselTop != null ? { musselTop: look.musselTop } : {}), ...(look.weedBelowMHHW != null ? { weedTop: (tide.MHHW ?? 0.9) - look.weedBelowMHHW } : {}) };
 }
 
 /** A node-hash in [0, 1): the same node, the same value, everywhere. */
@@ -82,7 +98,7 @@ export function hash01(k, seed = 0) {
  * @param {boolean} [shore]  whether the node is at the shore (the splash zone's bands above the tide are drawn only there)
  * @param {{ shoreRock?: boolean }} [opts]  shoreRock: the bare rock band above the lichen under any cover but a beach (a rocky bank under the town's lots), not only where nothing covers the ground
  */
-export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shore = true, { shoreRock = false } = {}) {
+export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shore = true, { shoreRock = false, shadeOver = 5, shaded = false } = {}) {
   const C = colours;
   let rgb;
   // above the highest normal tide, the splash zone's bands belong to the shore only (low land inland is what covers it)
@@ -97,9 +113,12 @@ export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shor
       break;
     }
     if (band && splash && !(beachy && h > 0) && !(band === "rock" && !shoreRock && cover !== COVER.none && cover !== COVER.rock)) rgb = toRGB(C[band]);
-    else if (cover === COVER.wood || (cover === COVER.none && canopy > 5)) rgb = toRGB(C.forestFloor);
+    // under trees (the lidar's canopy over `shadeOver`, 5 m by default, or a tree standing on the node: `shaded`), forest floor: on a town lot or a yard too (second growth round the houses), not lawn or gravel; in their shade where the place has one
+    else if ((canopy > shadeOver || shaded) && C.forestShade && cover !== COVER.beach && cover !== COVER.rock && cover !== COVER.lake && (cover !== COVER.yard || shadeOver < 5)) rgb = toRGB(C.forestShade);
+    else if (cover === COVER.wood || ((cover === COVER.none || cover === COVER.residential) && canopy > 5)) rgb = toRGB(C.forestFloor);
     else if (cover === COVER.scrub) rgb = toRGB(C.shrub);
-    else if (cover === COVER.residential) rgb = toRGB(C.lawn);
+    // a lot without trees: lawn and garden, mottled ±LAWN_MOTTLE, with dark shrub patches on LAWN_PATCH of its nodes, where the place has them (never a neutral grey)
+    else if (cover === COVER.residential) rgb = C.lawnPatch && hash01(k, 8) < LAWN_PATCH ? toRGB(C.lawnPatch) : C.lawnPatch ? toRGB(C.lawn).map((c) => c * (1 + LAWN_MOTTLE * (2 * hash01(k, 9) - 1))) : toRGB(C.lawn);
     else if (cover === COVER.yard) rgb = toRGB(C.yard);
     else if (cover === COVER.grass) rgb = toRGB(C.grass);
     else if (cover === COVER.wetland) rgb = toRGB(C.bog);
@@ -112,6 +131,10 @@ export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shor
   const v = variation(k);
   return rgb.map((c) => Math.min(255, c * v));
 }
+
+/** A lot's lawn: how much its tone varies by node either way, and the share of its nodes that are dark shrub (colours.lawnPatch, where the place has one). */
+export const LAWN_MOTTLE = 0.12;
+export const LAWN_PATCH = 1 / 3;
 
 /** A node's own variation of its colour: within 6% either way, by its index alone (none for k < 0). */
 export const variation = (k) => (k < 0 ? 1 : 0.94 + 0.12 * hash01(k, 7));

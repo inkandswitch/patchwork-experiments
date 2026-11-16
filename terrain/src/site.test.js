@@ -4,7 +4,7 @@ import { SITE, LANDMARKS, ORIGIN, GRID, PLACES, HEIGHTS, DATUM, ANCHORAGE, HOME,
 import { builtRings } from "./build.js";
 import { localFrame } from "./tmerc.js";
 import { latLonBox } from "./fetch-data.js";
-import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES } from "./buildings.js";
+import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES, facade, pileDeck, paletteSoup, deckOf, pileSpots, DECK_REACH, DETAIL } from "./buildings.js";
 import { COVER } from "./cover.js";
 
 const frame = localFrame(ORIGIN);
@@ -245,6 +245,85 @@ describe("buildings", () => {
     const out = buildingMesh(b, { groundAt: (x) => (x > 100 ? null : 5), sinkAt: () => 0.5, coverAt: () => 0, leaveOut: (q) => q.id === "way/1" });
     expect(out.made).toBe(1);
   });
+  it("trims a house's walls: two corner boards and an eave band a wall, and a row of windows a storey (one every 3 m), all proud of the walls (both windings)", () => {
+    for (const ring of [[[0, 0], [12, 0], [12, 7], [0, 7]], [[0, 0], [0, 7], [12, 7], [12, 0]]]) {
+      const s = soup();
+      // two storeys: floor 0, eave 5.6
+      const quads = facade(s, ring, { floor: 0, eave: 5.6 });
+      // per wall 3 trims, and windows: a 12 m wall 3 a storey, a 7 m wall 1, two storeys
+      expect(quads).toBe(4 * 3 + 2 * (3 + 1) * 2);
+      const m = s.done();
+      for (let v = 0; v < m.positions.length; v += 3) {
+        const x = m.positions[v], z = m.positions[v + 2];
+        // on or just outside the footprint's walls, never inside it
+        const inside = x > 0.001 && x < 11.999 && z > 0.001 && z < 6.999;
+        expect(inside).toBe(false);
+        expect(Math.min(Math.abs(x), Math.abs(x - 12), Math.abs(z), Math.abs(z - 7))).toBeLessThanOrEqual(0.051);
+      }
+      // ribs instead of trim and windows: one every 0.9 m a wall
+      expect(facade(soup(), ring, { floor: 0, eave: 5, ribs: "#d8d2bf" })).toBe(2 * 12 + 2 * 7);
+    }
+  });
+  it("stands a building at the water on a pile deck: piles no more than 4 m apart, a row at each edge, only where the ground is under the deck", () => {
+    const s = soup();
+    // the ground falls from 5 m at z = 0 to 1 m at z = 8 (the water's side +z, the long side along x)
+    const groundAt = (x, z) => 5 - z / 2;
+    const d = deckOf([[0, 0], [20, 0], [20, 8], [0, 8]], groundAt, { mlw: -1.2 });
+    expect(d.side).toBeGreaterThan(0);
+    // the water half a metre under the lower low water (−1.7) under the outer row (inset 0.3) from z = 13.4: the deck reaches 6 m out (in 2 m steps)
+    expect(d.reached).toBe(true);
+    expect(d.out).toBe(6);
+    const count = pileDeck(s, d, { deck: 3, groundAt });
+    const spots = pileSpots(d.box, d.side);
+    expect(count).toBe(spots.filter((p) => groundAt(p.x, p.z) <= 3 - 0.5 - 0.3).length);
+    // a row at each long edge, 0.3 in, and none more than 4 m apart
+    const zs = [...new Set(spots.map((p) => Math.round(p.z * 1000) / 1000))].sort((a, b) => a - b);
+    expect(zs[0]).toBeCloseTo(0.3, 6);
+    expect(zs.at(-1)).toBeCloseTo(14 - 0.3, 6);
+    for (let q = 1; q < zs.length; q++) expect(zs[q] - zs[q - 1]).toBeLessThanOrEqual(4 + 1e-9);
+  });
+  it("reaches every deck out until its outer piles stand a metre under the lowest tide, or not at all (every slope, shore direction and offset)", () => {
+    const mlw = -1.2;
+    let reachedSome = 0;
+    for (const slope of [1 / 3, 1 / 5, 1 / 10, 1 / 20]) for (let a = 0; a < 8; a++) for (const off of [-6, 0, 6]) {
+      const th = (a * Math.PI) / 4 + 0.1;
+      const n = [Math.cos(th), Math.sin(th)];
+      // the ground falls toward n: 0 at the line through (off·n)
+      const groundAt = (x, z) => -slope * (x * n[0] + z * n[1] - off);
+      const pts = [[-12, -5], [12, -5], [12, 5], [-12, 5]];
+      const d = deckOf(pts, groundAt, { mlw });
+      if (d.reached) {
+        reachedSome++;
+        for (const p of pileSpots(d.box, d.side).filter((p) => p.outer)) expect(groundAt(p.x, p.z)).toBeLessThanOrEqual(mlw - DECK_REACH.depth + 1e-9);
+        expect(d.out).toBeLessThanOrEqual(DECK_REACH.reach);
+      } else expect(d.out).toBe(0);
+      // steep enough shores are always reached
+      if (slope >= 1 / 10) expect(d.reached).toBe(true);
+    }
+    expect(reachedSome).toBeGreaterThan(48);
+  });
+  it("draws every building on a deck as a fish plant (cream ribs, no window grid, roller doors) unless the place draws it itself, its piles to the seabed (every kind)", () => {
+    const groundAt = (x, z) => 4 - z / 2;
+    const palette = { walls: [["#7a5a40", 1]], roofs: [["#3d3f42", 1]], cladding: [["#b8bcbc", 1]], metalRoofs: [["#9ea3a6", 1]], plant: "#d8d2bf" };
+    const lin = (hex) => [1, 3, 5].map((k) => ((parseInt(hex.slice(k, k + 2), 16) / 255 + 0.055) / 1.055) ** 2.4);
+    const has = (out, hex) => out.primitives.some((p) => p.color.every((c, i) => Math.abs(c - lin(hex)[i]) < 1e-4));
+    for (const kind of ["house", "commercial", "hotel", "warehouse", "yes"]) {
+      const out = buildingMesh([{ id: `way/${kind}`, kind, points: [[0, 0], [20, 0], [20, 8], [0, 8]] }], { groundAt, sinkAt: () => 0.5, coverAt: () => 0, deckAbove: 3.1, details: true, palette });
+      expect(out.decks).toBe(1);
+      expect(out.reached).toBe(1);
+      expect(has(out, "#d8d2bf")).toBe(true);
+      expect(has(out, DETAIL.glass)).toBe(false);
+      expect(has(out, "#3d6f9a") || has(out, "#c9b04a")).toBe(true);
+      // the piles go into the seabed (half a metre under it at least, never above −6)
+      let lo = Infinity;
+      for (const p of out.primitives) for (let v = 1; v < p.positions.length; v += 3) lo = Math.min(lo, p.positions[v]);
+      expect(lo).toBeLessThanOrEqual(-6);
+    }
+    // a building the place draws itself (an override's colour) keeps its own form and windows
+    const own = buildingMesh([{ id: "way/1", kind: "house", colour: "#6b4a2e", points: [[0, 0], [20, 0], [20, 8], [0, 8]] }], { groundAt, sinkAt: () => 0.5, coverAt: () => 0, deckAbove: 3.1, details: true, palette });
+    expect(has(own, DETAIL.glass)).toBe(true);
+    void paletteSoup;
+  });
   it("simplifies a footprint's jogs under 0.4 m, and keeps its corners", () => {
     const ring = [[0, 0], [5, 0.1], [10, 0], [10, 10], [5, 10.2], [0, 10]];
     expect(simplify(ring, 0.4)).toEqual([[0, 0], [10, 0], [10, 10], [0, 10]]);
@@ -253,7 +332,7 @@ describe("buildings", () => {
 });
 
 import { cladding } from "./site.js";
-import { soup } from "./shapes.js";
+import { soup, rgb } from "./shapes.js";
 describe("corrugated cladding", () => {
   it("ribs every wall every 0.9 m (none at the corners) and bands it under the eave, all just outside the walls", () => {
     for (const ring of [[[0, 0], [10, 0], [10, 6], [0, 6]], [[0, 0], [0, 6], [10, 6], [10, 0]]]) {
@@ -272,6 +351,80 @@ describe("corrugated cladding", () => {
         const out = Math.max(-x, x - 10, -z, z - 6);
         expect(out).toBeGreaterThan(0.03);
         expect(out).toBeLessThan(0.07);
+      }
+    }
+  });
+});
+
+import { quonset, slab, QUONSET } from "./site.js";
+import { soup as soupOf } from "./shapes.js";
+describe("Quonsets and the courtyard's slab", () => {
+  // rectangles turned to 8 headings, 12 × 7 m and 15 × 16 m (span wider than long)
+  const rect = (L, W, t, cx = 3, cz = -2) => {
+    const u = [Math.cos(t), Math.sin(t)], v = [-u[1], u[0]];
+    return [[-L / 2, -W / 2], [L / 2, -W / 2], [L / 2, W / 2], [-L / 2, W / 2]].map(([a, b]) => [cx + u[0] * a + v[0] * b, cz + u[1] * a + v[1] * b]);
+  };
+  const inside = (P, x, z) => {
+    // a convex ring either way round: every edge's cross product the same sign (or on it, to float32 positions' millimetre)
+    let pos = 0, neg = 0;
+    for (let a = 0; a < 4; a++) {
+      const [x0, z0] = P[a], [x1, z1] = P[(a + 1) % 4];
+      const c = (x1 - x0) * (z - z0) - (z1 - z0) * (x - x0);
+      if (c > 1e-3) pos++;
+      if (c < -1e-3) neg++;
+    }
+    return !(pos && neg);
+  };
+  it("lies inside its outline, from its base to its rise, ribbed every 0.6 m, every heading and size, each door end", () => {
+    for (const [L, W, H] of [[12, 7, 4], [15.2, 16, 8.9]]) for (let h = 0; h < 8; h++) for (const door of [0, 1, null]) {
+      const P = rect(L, W, (h * Math.PI) / 4 + 0.1);
+      const s = soupOf();
+      const m = quonset(s, P, 3, H, { shell: "#b82a26", arch: "#ecebe6", door });
+      const mesh = s.done();
+      for (let v = 0; v < mesh.positions.length; v += 3) {
+        expect(inside(P, mesh.positions[v], mesh.positions[v + 2])).toBe(true);
+        expect(mesh.positions[v + 1]).toBeGreaterThanOrEqual(3 - 1e-6);
+        expect(mesh.positions[v + 1]).toBeLessThanOrEqual(3 + H + 1e-6);
+      }
+      expect(m.ribs).toBe(Math.floor((L - 2 * QUONSET.inset - QUONSET.ribWidth) / QUONSET.ribEvery) + 1);
+      // shell, ribs and two end fans; a door end adds a rim band and a door
+      const N = QUONSET.segments;
+      expect(mesh.positions.length / 9).toBe(2 * N + 2 * N * m.ribs + 2 * N + (door == null ? 0 : 2 * N + 2));
+    }
+  });
+  it("wets about a fifth of a slab's panels with a dark patch inside its panel, and curbs every edge (every heading)", () => {
+    for (let h = 0; h < 8; h++) {
+      const t = (h * Math.PI) / 4 + 0.1, u = [Math.cos(t), Math.sin(t)], v = [-u[1], u[0]];
+      const P = [[0, 0], [40, 0], [40, 45], [0, 45]].map(([a, b]) => [u[0] * a + v[0] * b, u[1] * a + v[1] * b]);
+      const s = soup();
+      const m = slab(s, P, 2.8, 3.3, { colour: "#8a8a86", seams: { every: 6, colour: "#4a4a47", width: 0.15 }, wet: { share: 0.22, colour: "#5d5f61", seed: 1 }, curb: { colour: "#9a9a95", width: 0.3, height: 0.2 } });
+      const panels = Math.ceil(40 / 6) * Math.ceil(45 / 6);
+      expect(m.wet / panels).toBeGreaterThan(0.1);
+      expect(m.wet / panels).toBeLessThan(0.35);
+      expect(m.curbs).toBe(4);
+      // every wet patch's corner inside the slab, over its top
+      const d = s.done(), wet = rgb("#5d5f61");
+      for (let q = 0; q < d.positions.length; q += 3) {
+        if (Math.abs(d.colors[q] - wet[0]) > 1e-6 || Math.abs(d.colors[q + 1] - wet[1]) > 1e-6) continue;
+        const a = d.positions[q] * u[0] + d.positions[q + 2] * u[1], b = d.positions[q] * v[0] + d.positions[q + 2] * v[1];
+        expect(a).toBeGreaterThanOrEqual(-1e-6);
+        expect(a).toBeLessThanOrEqual(40 + 1e-6);
+        expect(b).toBeGreaterThanOrEqual(-1e-6);
+        expect(b).toBeLessThanOrEqual(45 + 1e-6);
+        expect(d.positions[q + 1]).toBeGreaterThan(3.3);
+      }
+    }
+  });
+  it("lays a slab's seams every 6 m both ways inside it, over its top (every heading)", () => {
+    for (let h = 0; h < 8; h++) {
+      const P = rect(40, 45, (h * Math.PI) / 4 + 0.2);
+      const s = soupOf();
+      const m = slab(s, P, 2.8, 3.3, { colour: "#8a8a86", seams: { every: 6, colour: "#6c6c69", width: 0.12 } });
+      expect(m.seams).toBe(Math.floor(40 / 6) + Math.floor(45 / 6) - (40 % 6 === 0 ? 1 : 0) - (45 % 6 === 0 ? 1 : 0));
+      const mesh = s.done();
+      for (let v = 0; v < mesh.positions.length; v += 3) {
+        expect(inside(P, mesh.positions[v], mesh.positions[v + 2])).toBe(true);
+        expect(mesh.positions[v + 1]).toBeLessThanOrEqual(3.31 + 1e-6);
       }
     }
   });

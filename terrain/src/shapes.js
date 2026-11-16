@@ -14,6 +14,11 @@ export function soup() {
   };
   return {
     tri,
+    /** a triangle with a colour at each corner */
+    triC(a, b, c, ca, cb, cc) {
+      pos.push(...a, ...b, ...c);
+      col.push(...ca, ...cb, ...cc);
+    },
     /** quad a b c d, counter-clockwise seen from where it faces */
     quad(a, b, c, d, rgb) {
       tri(a, b, c, rgb);
@@ -119,5 +124,35 @@ export function cylinder(s, x, z, y0, y1, r0, r1, hex, seg = 12) {
     else s.tri(a0, b0, a1, side);
     if (r1 > 0) s.tri([x, y1, z], a1, b1, c);
     s.tri([x, y0, z], b0, a0, c);
+  }
+}
+
+/**
+ * A log: a `seg`-sided prism of radius r from a to b ([x, y, z], any
+ * direction but straight up), its ends capped; its sides shaded by which
+ * way they face (up lighter, down darker), so a pile reads without normals.
+ * `hex` a colour or [r, g, b] linear.
+ */
+export function log(s, a, b, r, hex, seg = 6, capHex = null) {
+  const c = Array.isArray(hex) ? hex : rgb(hex);
+  const cap = capHex == null ? c.map((v) => v * 0.9) : Array.isArray(capHex) ? capHex : rgb(capHex);
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const l = Math.hypot(d[0], d[1], d[2]);
+  const u = [d[0] / l, d[1] / l, d[2] / l];
+  // a side vector level and square to the axis, and the third square to both
+  const h = Math.hypot(u[0], u[2]) || 1;
+  const p = [-u[2] / h, 0, u[0] / h];
+  const q = [u[1] * p[2] - u[2] * p[1], u[2] * p[0] - u[0] * p[2], u[0] * p[1] - u[1] * p[0]];
+  const ring = (o, k) => {
+    const t = (2 * Math.PI * k) / seg, cs = dcos(t), sn = dsin(t);
+    return [o[0] + r * (p[0] * cs + q[0] * sn), o[1] + r * (p[1] * cs + q[1] * sn), o[2] + r * (p[2] * cs + q[2] * sn)];
+  };
+  for (let k = 0; k < seg; k++) {
+    const t = (2 * Math.PI * (k + 0.5)) / seg;
+    const up = q[1] * dsin(t) + p[1] * dcos(t);
+    const shade = c.map((v) => v * (0.82 + 0.25 * Math.max(-0.6, Math.min(1, up))));
+    s.quad(ring(a, k), ring(a, k + 1), ring(b, k + 1), ring(b, k), shade);
+    s.tri(a, ring(a, k + 1), ring(a, k), cap);
+    s.tri(b, ring(b, k), ring(b, k + 1), cap);
   }
 }

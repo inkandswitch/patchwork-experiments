@@ -9,19 +9,21 @@
 //     (sea-view.js), every sea builds its waves from (sea.js), and the water
 //     package's surface reads for its roughness and foam: one copy of one
 //     fact.
-//   - `atmosphere`: a bright maritime day.
+//   - `atmosphere`: a bright maritime day, fair-weather cumulus over a third
+//     of its sky.
 //
 // Where this doc is the outermost, they are the world's. Pure but for create().
 
 import { WEATHER } from "./traits.js";
 import { GUSTINESS } from "./wind.js";
 
-/** A bright maritime day: blue overhead, a pale horizon the far sea hazes into, the sun high to one side. */
+/** A bright maritime day: blue overhead, a pale horizon the far sea hazes into, the sun high to one side, fair-weather cumulus over a third of the sky (scene STAGE.md's atmosphere clouds). */
 export const ATMOSPHERE = Object.freeze({
   sky: Object.freeze({ top: "#2f6db5", horizon: "#cfe2ee", bottom: "#a9c6d8" }),
   fog: Object.freeze({ color: "#cfe2ee", near: 300, far: 9000 }),
   sun: Object.freeze({ direction: Object.freeze([0.55, 0.7, -0.45]), color: "#fff3df", intensity: 2.2, shadows: true }),
   exposure: 1,
+  clouds: Object.freeze({ cover: 0.35, contrast: 0.25, scale: 700, base: 1200 }),
 });
 
 /** The ambient name of a world's wind (sailing/DESIGN.md, "Conventions"; STAGE.md names it): { speed (m/s), from (degrees), seed, gustiness (0..1) }. */

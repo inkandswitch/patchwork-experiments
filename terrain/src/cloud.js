@@ -12,6 +12,8 @@
 // - mist: the same walk over the forest's hollows (a node lower than the
 //   mean of the ring `every` nodes round it by at least `hollow`), a thin
 //   bank `lift` metres over the canopy;
+// - bake: where the place asks, stratus baked into the ground's and the
+//   forest roof's colours above a height (bakeStratus): no sheet at all;
 // - caps: where the place names one (its look's clouds.caps: a summit), a
 //   bank wrapped round it `below` metres under the top (Mount Ozzard's,
 //   under the radome).
@@ -42,6 +44,106 @@ export const CLOUDS = Object.freeze({
   caps: [],
 });
 
+/** Whether (x, z) is inside any of `circles` ([{ x, z, radius }] in the frame); anywhere without any. */
+const within = (circles, x, z) => !circles?.length || circles.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius * c.radius);
+
+/**
+ * Stratus baked into colours (a place's clouds.bake): from `from` metres up,
+ * every vertex lerped toward `colour` by the band's factor at its height
+ * (stratusAt) and where it is. The colour is the one the sky's horizon reads
+ * as once lit (darker than the horizon's own: lit by the sky and the sun a
+ * hill comes out lighter than its colour), so a summit never shows brighter
+ * than the sky behind it, as snow. Where it is:
+ *
+ * - with `wisps` (WISPS), the band is torn into wisps lying along the
+ *   slopes: a coarse value noise (wispAt: two octaves, their cells
+ *   `cells` metres across, `stretch` times finer in height than across, so
+ *   on a hillside a wisp runs along the contour and is cut across it),
+ *   thresholded so that about `cover` of the band takes the band's whole
+ *   factor and the rest at most `floor` of it, letting the dark forest show
+ *   between; and with `low` ({ from, peak, span, max, above, within:
+ *   circles in the frame }) a weaker band of mist low on the hills, only in
+ *   its circles, torn by the same noise;
+ * - without, ± `noise` of the factor by a hash of where it is (to the
+ *   metre).
+ *
+ * In place; returns how many vertices it touched. Pure but for `colors`.
+ * @param {Float32Array} positions  xyz
+ * @param {Float32Array} colors  rgb (linear), as many
+ */
+export function bakeStratus(positions, colors, o = {}) {
+  const fog = hexToLinear(o.colour ?? "#959ea1").slice(0, 3);
+  let touched = 0;
+  for (let v = 0; v < positions.length / 3; v++) {
+    const x = positions[v * 3], y = positions[v * 3 + 1], z = positions[v * 3 + 2];
+    const t = stratusFactor(x, y, z, o);
+    if (t === null) continue;
+    for (let c = 0; c < 3; c++) colors[v * 3 + c] += (fog[c] - colors[v * 3 + c]) * t;
+    touched++;
+  }
+  return touched;
+}
+
+/** How a band of stratus is torn into wisps (bakeStratus): the noise's cells (m), how much finer in height, each octave's weight, the share of the band at its whole factor, and the most the rest take of it. */
+export const WISPS = Object.freeze({ cells: Object.freeze([350, 120]), stretch: 3, weights: Object.freeze([0.65, 0.35]), cover: 0.4, floor: 0.25 });
+/** The noise's levels between which a wisp goes from the floor to whole: chosen so that `cover` of the noise is over the upper one (cloud.test.js measures it over a grid). */
+export const WISP_EDGES = Object.freeze([0.505, 0.54]);
+
+/** A value noise in [0, 1] at (x, y, z) in cells: a hash at each lattice point, smoothly interpolated. Pure. */
+function valueNoise3(x, y, z, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const sm = (t) => t * t * (3 - 2 * t);
+  const u = sm(x - xi), w = sm(y - yi), s = sm(z - zi);
+  const h = (a, b, c) => hash01((Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791)) >>> 0, seed);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const plane = (c) => lerp(lerp(h(xi, yi, c), h(xi + 1, yi, c), u), lerp(h(xi, yi + 1, c), h(xi + 1, yi + 1, c), u), w);
+  return lerp(plane(zi), plane(zi + 1), s);
+}
+
+/** The wisps' noise at a point (x, y, z in metres): WISPS' octaves, in [0, 1]. Pure. */
+export function wispAt(x, y, z, o = WISPS) {
+  let n = 0;
+  o.cells.forEach((c, q) => (n += o.weights[q] * valueNoise3(x / c, (y * o.stretch) / c, z / c, 97 + q)));
+  return n;
+}
+
+/** How much of the band a point takes, by the wisps' noise there: `floor` under WISP_EDGES[0], 1 over WISP_EDGES[1], smoothly between. Pure. */
+export function wispShare(x, y, z, o = WISPS) {
+  const t = Math.max(0, Math.min(1, (wispAt(x, y, z, o) - WISP_EDGES[0]) / (WISP_EDGES[1] - WISP_EDGES[0])));
+  return o.floor + (1 - o.floor) * t * t * (3 - 2 * t);
+}
+
+/** The stratus's factor at a point for a place's bake (bakeStratus), or null where it touches nothing. Pure. */
+export function stratusFactor(x, y, z, o = {}) {
+  const from = o.from ?? 250, max = o.max ?? 0.85;
+  const low = o.low && o.wisps && (o.low.within ?? []).some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius * c.radius) ? o.low : null;
+  if (y <= from && !(low && y > low.from)) return null;
+  if (o.wisps) {
+    const wisps = { ...WISPS, ...(o.wisps === true ? {} : o.wisps) };
+    const share = wispShare(x, y, z, wisps);
+    const band = Math.min(max, stratusAt(y, o)) * share;
+    return Math.max(band, low ? Math.min(low.max, stratusAt(y, low)) * share : 0);
+  }
+  const u = hash01((Math.imul(Math.round(x), 73856093) ^ Math.imul(Math.round(z), 19349663)) >>> 0, 96);
+  const noise = o.noise ?? 0.3;
+  return Math.max(0, Math.min(max, stratusAt(y, o) * (1 + (u - 0.5) * 2 * noise)));
+}
+
+/**
+ * The stratus's share at height y (before the noise): with a `peak`, a band
+ * (cloud lies across the hills, their tops in and out of it): 0 at `from`,
+ * rising (smoothly) to `max` at `peak`, easing back to `above` over the
+ * next `span` metres and holding there; without, a ramp, (y − from) / span
+ * (at most 1). Pure.
+ */
+export function stratusAt(y, { from = 250, span = 300, peak = null, max = 0.85, above = 0.45 } = {}) {
+  if (y <= from) return 0;
+  if (peak == null) return Math.min(1, (y - from) / span);
+  const smooth = (t) => t * t * (3 - 2 * t);
+  if (y <= peak) return max * smooth(Math.min(1, (y - from) / (peak - from)));
+  return max + (above - max) * smooth(Math.min(1, (y - peak) / span));
+}
+
 /** A bank's polar grid: RINGS rings out from its middle, SECTORS sectors round. */
 export const RINGS = 4, SECTORS = 14;
 
@@ -65,7 +167,7 @@ export function sheetsAt(grid, ground, canopy, clouds = CLOUDS, k0 = 0, k1 = gri
         out.push({ k, kind: "stratus", x: x0 + i * cell, z: z0 + j * cell, y: L + (hash01(k, 210 + q) - 0.5) * 30, size: S.size * (0.75 + 0.5 * hash01(k, 220 + q)), alpha: S.alpha * (0.7 + 0.3 * hash01(k, 230 + q)), clear: S.clear, thick: (S.thick ?? CLOUDS.sheets.thick) * (0.7 + 0.6 * hash01(k, 235 + q)) });
       });
     }
-    if (M && canopy && canopy[k] > 5 && i % M.every === 5 % M.every && j % M.every === 5 % M.every && hash01(k, 240) < M.chance) {
+    if (M && canopy && canopy[k] > 5 && i % M.every === 5 % M.every && j % M.every === 5 % M.every && hash01(k, 240) < M.chance && within(M.within, x0 + i * cell, z0 + j * cell)) {
       // a hollow: lower than the ring round it
       let s = 0, c = 0;
       for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {

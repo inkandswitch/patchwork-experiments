@@ -55,7 +55,11 @@ describe("buildTerrain", () => {
     expect(names).toEqual(["Ground", "Skirt", "Harbour_structures", "Moored_boats", "Marks"]);
     const { json } = parseGLB(built.glb);
     expect(json.asset.extras.units).toBe("m");
-    expect(json.meshes[0].extras.legend.stops.length).toBe(32);
+    // a place with a look is coloured by what covers it, not its height: no height legend
+    expect(json.meshes[0].extras?.legend).toBeUndefined();
+    // a place without one is coloured by height, and says so
+    const plain = parseGLB(buildTerrain({ doc: terrainDoc({ look: undefined }), dem: dem(), features: features(), params: { forest: false } }).glb).json;
+    expect(plain.meshes[0].extras.legend.stops.length).toBe(32);
   });
 
   it("carries its heightfield in extras.terrain: exactly the burned heights, decodable by the copyable sampler", async () => {
@@ -328,5 +332,42 @@ describe("the site's apron", () => {
       some += m[k];
     }
     expect(some).toBeGreaterThan(10);
+  });
+});
+
+import { COLOURS } from "./palette.js";
+import { hexToLinear } from "./glb.js";
+describe("a building at the water on a pile deck: the ground under it wet and black", () => {
+  // a 12 m shed at the mainland's shore (the ground falls 1 in 12 to the south, from 1.6 m to 0.3 m under it), on a pile deck where the look asks
+  const shed = [[-66, -122], [-54, -122], [-54, -108], [-66, -108]];
+  const look = { version: 1, buildings: [{ id: "way/70", kind: "house", points: shed }], areas: [] };
+  const build = (decks, params = {}) => buildTerrain({ doc: terrainDoc({ look: { ...terrainDoc().look, buildings: { decks } } }), dem: dem(), features: features(), look, params });
+  const wet = hexToLinear(COLOURS.deckWet).slice(0, 3), weed = hexToLinear(COLOURS.deckWeed).slice(0, 3);
+  /** the ground's vertices within 10 m of the shed coloured as under a deck */
+  const under = (b) => {
+    const { json, bin } = parseGLB(b.glb);
+    let n = 0;
+    for (const m of json.meshes.filter((m) => m.name === "Ground")) for (const p of m.primitives) {
+      const pa = json.accessors[p.attributes.POSITION], ca = json.accessors[p.attributes.COLOR_0];
+      const read = (a) => new Float32Array(bin.buffer, bin.byteOffset + (json.bufferViews[a.bufferView].byteOffset ?? 0) + (a.byteOffset ?? 0), a.count * (a.type === "VEC4" ? 4 : 3));
+      const P = read(pa), C = read(ca), cc = ca.type === "VEC4" ? 4 : 3;
+      for (let v = 0; v < pa.count; v++) {
+        const x = P[v * 3], z = P[v * 3 + 2];
+        if (x < -76 || x > -44 || z < -132 || z > -60) continue;
+        const c = [C[v * cc], C[v * cc + 1], C[v * cc + 2]];
+        if ([wet, weed].some((w) => w.every((e, i) => Math.abs(e - c[i]) < 1e-5))) n++;
+      }
+    }
+    return n;
+  };
+  it("stands it on a deck and colours the ground round it wet black and rockweed, and none without decks", () => {
+    const b = build(true);
+    expect(b.stats.buildingDecks).toBe(1);
+    expect(under(b)).toBeGreaterThan(0);
+    // the vertices' own colours too, not only the crisp shore's bands
+    expect(under(build(true, { crispShore: false }))).toBeGreaterThan(0);
+    const plain = build(false);
+    expect(plain.stats.buildingDecks).toBe(0);
+    expect(under(plain)).toBe(0);
   });
 });

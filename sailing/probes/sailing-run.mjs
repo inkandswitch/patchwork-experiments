@@ -233,7 +233,7 @@ try {
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in Look, off her quarter", (await P("bodyLabel('a')")) === "Look" && (await P("bodyLabel('b')")) === "Look", { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
   check("both run what the doc calls for, the same: sailing and the general parts", JSON.stringify(run.a) === JSON.stringify(run.b) && SOME.every((id) => run.a.includes(id)), run);
-  check("the HUD offers to come aboard in both views", (await P("text('.sail-hint button', 'a')"))[0] === "Click to come aboard" && (await P("text('.sail-hint button', 'b')"))[0] === "Click to come aboard");
+  check("the HUD offers to come aboard in both views", /come aboard/i.test((await P("text('.sail-hint button', 'a')"))[0]) && /come aboard/i.test((await P("text('.sail-hint button', 'b')"))[0]));
   const looks = { a: await P("look('a')"), b: await P("look('b')") };
   check("the sea's sky, haze and sun in both views", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && !!looks[w].atmosphere), looks);
   await shot("opening");

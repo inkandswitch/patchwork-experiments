@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { createOcean } from "./test/spectrum.js";
 import { fakeThree } from "./test/fake-three.js";
-import { createOceanSurface, detailWaves, foamThreshold, oceanGrid, snapOrigin, surfaceSlopeVariance, waveUniforms } from "./material.js";
+import { createOceanSurface, detailWaves, foamThreshold, oceanGrid, scatterGain, snapOrigin, surfaceSlopeVariance, waveUniforms, shoreWeight, calmFor, SHORE_CALM, SHORE_EDGE, CALM_UNTIL, cloudAt, cloudsOf } from "./material.js";
+import { colourOf } from "./bodies.js";
 
 // This package doesn't depend on three (the stage hands it one), so the
 // surface is built here against just enough of three's shape to see what it
@@ -229,6 +230,48 @@ describe("createOceanSurface", () => {
     expect(u.uSunOn.value).toBe(0);
   });
 
+  it("takes a body's own colour, and back to the options' or the defaults without one; an overcast's sun scatters a third as much through a crest", () => {
+    const s = createOceanSurface(THREE, sea);
+    const u = s.object.material.uniforms;
+    const deep0 = u.uDeep.value.v, scatter0 = u.uScatter.value.v;
+    s.setColour({ deep: "#1e3a3c", scatter: "#3d6a5f" });
+    expect([u.uDeep.value.v, u.uScatter.value.v]).toEqual(["#1e3a3c", "#3d6a5f"]);
+    // only the deep: the scatter is the default again
+    s.setColour({ deep: "#183b3c" });
+    expect([u.uDeep.value.v, u.uScatter.value.v]).toEqual(["#183b3c", scatter0]);
+    s.setColour(null);
+    expect([u.uDeep.value.v, u.uScatter.value.v]).toEqual([deep0, scatter0]);
+    const o = createOceanSurface(THREE, sea, { deep: "#101010" });
+    o.setColour({ scatter: "#202020" });
+    expect([o.object.material.uniforms.uDeep.value.v, o.object.material.uniforms.uScatter.value.v]).toEqual(["#101010", "#202020"]);
+    // the sun's shadows: every case
+    for (const [sun, gain] of [[{ shadows: false }, 0.35], [{ shadows: true }, 1], [{}, 1], [null, 1]]) expect(scatterGain(sun)).toBe(gain);
+    s.update(0, [0, 0, 0], { direction: [0, 1, 0], shadows: false });
+    expect(u.uScatterGain.value).toBe(0.35);
+    s.update(0, [0, 0, 0], { direction: [0, 1, 0] });
+    expect(u.uScatterGain.value).toBe(1);
+  });
+
+  it("declares in its shaders every uniform of its own that they use (every one)", () => {
+    const m = createOceanSurface(THREE, sea).object.material;
+    for (const name of Object.keys(m.uniforms).filter((k) => /^u[A-Z]/.test(k))) {
+      for (const src of [m.vertexShader, m.fragmentShader]) {
+        if (!new RegExp(`\\b${name}\\b`).test(src)) continue;
+        expect(new RegExp(`uniform\\s+\\w+\\s+${name}\\b`).test(src), `${name} declared`).toBe(true);
+      }
+    }
+  });
+
+  it("reads a body's colour from its trait: each of deep and scatter only as #rrggbb (every case)", () => {
+    expect(colourOf({ clip: [1, 1, 1], colour: { deep: "#1e3a3c", scatter: "#3d6a5f" } })).toEqual({ deep: "#1e3a3c", scatter: "#3d6a5f" });
+    expect(colourOf({ colour: { deep: "#1e3a3c", scatter: "teal" } })).toEqual({ deep: "#1e3a3c" });
+    expect(colourOf({ colour: { deep: "#1e3a3" } })).toBe(null);
+    expect(colourOf({ colour: "#1e3a3c" })).toBe(null);
+    expect(colourOf({ colour: null })).toBe(null);
+    expect(colourOf({})).toBe(null);
+    expect(colourOf(null)).toBe(null);
+  });
+
   it("setSea recompiles only when the number of waves changes; a calm still has one (still) wave", () => {
     const s = createOceanSurface(THREE, sea);
     const m = s.object.material;
@@ -247,5 +290,128 @@ describe("createOceanSurface", () => {
     s.dispose();
     expect(s.object.geometry.disposed).toBe(true);
     expect(s.object.material.disposed).toBe(true);
+  });
+});
+
+describe("the shore in the water (setShore)", () => {
+  const THREE = fakeThree();
+  const sea = createOcean({ wind: { speed: 5, from: 270 }, seed: 3 });
+  const W = 8, H = 4;
+  const profile = (key, e = 0.05) => ({ key, eye: [1, 3, 2], azimuths: W, bins: H, near: 15, reach: 6000, data: Float32Array.from({ length: W * H * 4 }, (_, i) => (i % 4 ? 0.5 : e)) });
+  it("draws the sky alone until it has a profile and a tint, then compiles the shore in, and takes it out again with null", () => {
+    const s = createOceanSurface(THREE, sea);
+    const m = s.object.material;
+    expect(m.defines.SHORE).toBeUndefined();
+    s.setShore(profile(1), null);
+    expect(m.defines.SHORE).toBeUndefined();
+    s.setShore(null, "#1a231d");
+    expect(m.defines.SHORE).toBeUndefined();
+    s.setShore(profile(1), "#1a231d");
+    expect(m.defines.SHORE).toBe(1);
+    expect(m.defines.SHORE_BINS).toBe("4.0");
+    const tex = m.uniforms.uShore.value;
+    expect([tex.image.width, tex.image.height]).toEqual([W, H]);
+    expect(tex.wrapS).toBe(THREE.RepeatWrapping);
+    expect(m.uniforms.uShoreTint.value.v).toBe("#1a231d");
+    expect([m.uniforms.uShoreEye.value.x, m.uniforms.uShoreEye.value.y, m.uniforms.uShoreEye.value.z]).toEqual([1, 3, 2]);
+    // every texel the profile's, as half floats (0.5 exactly; 0.05 to a half's precision)
+    for (let i = 0; i < W * H * 4; i++) expect(tex.image.data[i]).toBe(THREE.DataUtils.toHalfFloat(i % 4 ? 0.5 : 0.05));
+    expect(tex.format).toBe(THREE.RGBAFormat);
+    // the same key: no upload; a new key: the same texture, new data
+    const v0 = tex.version;
+    s.setShore(profile(1, 0.2), "#1a231d");
+    expect(tex.version).toBe(v0);
+    s.setShore(profile(2, 0.2), "#1a231d");
+    expect(m.uniforms.uShore.value).toBe(tex);
+    expect(tex.version).toBe(v0 + 1);
+    expect(tex.image.data[0]).toBe(THREE.DataUtils.toHalfFloat(0.2));
+    s.setShore(null, "#1a231d");
+    expect(m.defines.SHORE).toBeUndefined();
+    expect(m.defines.WAVES).toBeGreaterThan(0);
+  });
+  it("keeps a body's shore tint with its colour (colourOf), and only as #rrggbb", () => {
+    expect(colourOf({ colour: { deep: "#1e3a3c", shore: "#1a231d" } })).toEqual({ deep: "#1e3a3c", shore: "#1a231d" });
+    expect(colourOf({ colour: { shore: "dark" } })).toBe(null);
+  });
+});
+
+describe("the shore's mirror is glassy (shoreWeight, the shader's own working)", () => {
+  const D = Math.PI / 180;
+  const TILTS = [0, 5, 10, 20];
+  const VIEWS = [1, 3, 10, 30];
+  const LANDS = [0, 1, 3, 8];
+  const AZ = [0, 45, 90, 135, 180, 225, 270, 315];
+  const FW = [0, 0.004, 0.02, 0.1];
+  // the eye looks along +x, down at `view` degrees: V points from the water back up to it
+  const eyeV = (view) => [-Math.cos(view * D), Math.sin(view * D), 0];
+  const normal = (tilt, az) => [Math.sin(tilt * D) * Math.cos(az * D), Math.cos(tilt * D), Math.sin(tilt * D) * Math.sin(az * D)];
+  it("stays in [0, 1], grows with the land's elevation, and is never the whole tint under land 2° lower than the ray (every tilt, view, land, tilt azimuth, footprint and calm)", () => {
+    for (const calm of [0, SHORE_CALM]) for (const tilt of TILTS) for (const az of AZ) for (const view of VIEWS) for (const fw of FW) {
+      const V = eyeV(view), N = normal(tilt, az);
+      let last = -1;
+      for (const land of LANDS) {
+        const { weight, rise } = shoreWeight({ V, N, calm, land: land * D, fw });
+        expect(weight).toBeGreaterThanOrEqual(0);
+        expect(weight).toBeLessThanOrEqual(1);
+        expect(weight).toBeGreaterThanOrEqual(last);
+        last = weight;
+        if (land * D < rise - 2 * D) expect(weight).toBeLessThan(1);
+      }
+    }
+  });
+  it("calms the reflection: a level eye's ray rises less than half as far off a tilted normal under the calm as without it (every tilt and azimuth)", () => {
+    for (const tilt of TILTS.slice(1)) for (const az of AZ) {
+      // seen from overhead the ray's tilt from straight up is twice the normal's: compare the two
+      const up = (calm) => Math.PI / 2 - shoreWeight({ V: [0, 1, 0], N: normal(tilt, az), calm, land: 0 }).rise;
+      expect(up(SHORE_CALM)).toBeLessThanOrEqual(up(0) * 0.5 + 1e-9);
+    }
+  });
+  it("softens the edge by the pixel's footprint, within its bounds (every footprint)", () => {
+    // at the land's own elevation the weight is a half, whatever the edge; a footprint's width away it is soft, not hard
+    for (const fw of FW) {
+      const V = eyeV(3), N = [0, 1, 0];
+      const { rise } = shoreWeight({ V, N, land: 0 });
+      expect(shoreWeight({ V, N, land: rise, fw }).weight).toBeCloseTo(0.5, 9);
+      const edge = Math.max(SHORE_EDGE.min, Math.min(SHORE_EDGE.max, SHORE_EDGE.foot * fw));
+      expect(shoreWeight({ V, N, land: rise + edge, fw }).weight).toBeCloseTo(1, 9);
+      expect(shoreWeight({ V, N, land: rise + edge * 0.5, fw }).weight).toBeLessThan(1);
+    }
+  });
+  it("is calm only in a small sea: the full calm up to CALM_UNTIL[0], none from CALM_UNTIL[1], never more as the sea grows (every half metre)", () => {
+    let last = Infinity;
+    for (let hs = 0; hs <= 6; hs += 0.25) {
+      const c = calmFor(hs);
+      expect(c).toBeLessThanOrEqual(last);
+      last = c;
+      if (hs <= CALM_UNTIL[0]) expect(c).toBe(SHORE_CALM);
+      if (hs >= CALM_UNTIL[1]) expect(c).toBe(0);
+    }
+  });
+});
+
+describe("the sky's clouds in the water (cloudAt, the shader's and the stage's own working)", () => {
+  it("checks a deck as the stage does: a cover over 0, its numbers held and defaulted", () => {
+    expect(cloudsOf(null)).toBe(null);
+    expect(cloudsOf({ cover: 0 })).toBe(null);
+    expect(cloudsOf({ cover: 3, contrast: 2 })).toEqual({ cover: 1, contrast: 0.5, scale: 600, base: 800 });
+    expect(cloudsOf({ cover: 0.35, contrast: 0.25, scale: 700, base: 1200 })).toEqual({ cover: 0.35, contrast: 0.25, scale: 700, base: 1200 });
+  });
+  it("moves the reflected sky's luminance at most ±contrast, and not at all at or below the horizon (64 directions × 3 covers × every noise level)", () => {
+    for (const cover of [0.35, 0.7, 1]) for (const level of [0, 0.5, 1]) for (let a = 0; a < 8; a++) for (let e = 0; e < 8; e++) {
+      const el = -0.6 + (e / 7) * 2.1, az = (a / 8) * Math.PI * 2;
+      const d = [Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)];
+      const { factor, white } = cloudAt(d, { cover, contrast: 0.2, scale: 600, base: 800 }, () => level);
+      expect(Math.abs(factor - 1)).toBeLessThanOrEqual(0.2 + 1e-12);
+      expect(white).toBeLessThanOrEqual(0.6);
+      if (d[1] <= 0.03) expect(factor).toBe(1);
+    }
+  });
+  it("takes the atmosphere's clouds with its sky, and none without", () => {
+    const s = createOceanSurface(fakeThree(), createOcean({ wind: { speed: 5, from: 270 }, seed: 3 }));
+    const u = s.object.material.uniforms.uClouds.value;
+    s.update(0, [0, 2, 0], undefined, { top: "#c4cacc", horizon: "#959ea1", clouds: { cover: 1, contrast: 0.08, scale: 500, base: 600 } });
+    expect([u.x, u.y, u.z, u.w]).toEqual([1, 0.08, 500, 600]);
+    s.update(0, [0, 2, 0], undefined, { top: "#c4cacc", horizon: "#959ea1" });
+    expect(u.x).toBe(0);
   });
 });
