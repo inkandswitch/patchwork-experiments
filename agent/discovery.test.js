@@ -93,12 +93,46 @@ describe("doc_search", () => {
     expect(out).not.toContain("automerge:leek")
   })
 
-  it("searches file contents when asked, and says so when it did not", async () => {
+  it("will not read inside documents across the whole account", async () => {
+    await expect(docSearch.execute({ query: "milk", content: true }, ctx)).rejects.toThrow(/Give `root`/)
+  })
+
+  it("never suggests a content search when a name search misses", async () => {
+    const missed = await docSearch.execute({ query: "zzz" }, ctx)
+    expect(missed).not.toMatch(/content: true/)
+  })
+
+  it("reads only files for a content search — never sessions or other documents", async () => {
+    const loaded = []
+    const tree = {
+      "automerge:root": { docs: [
+        { name: "notes.md", type: "file", url: "automerge:notes" },
+        { name: "Agent", type: "agent-session", url: "automerge:session" },
+        { name: "Pack", type: "agent-workflow", url: "automerge:plan" },
+      ] },
+    }
+    const find = async (url) => {
+      loaded.push(url)
+      if (url in tree) return { doc: () => tree[url] }
+      return ctx.repo.find(url)
+    }
+    await docSearch.execute({ query: "milk", content: true, root: "automerge:root" }, { repo: { find } })
+    expect(loaded.sort()).toEqual(["automerge:notes", "automerge:root"])
+  })
+
+  it("stops a walk that runs out of time, and says so", async () => {
+    let t = 0
+    const seen = []
+    const result = await walkTree(ctx.repo, "automerge:root", ({ path }) => { seen.push(path); t += 10_000; return false }, { now: () => t, budgetMs: 5000 })
+    expect(result.truncated).toBe(true)
+    expect(result.visits).toBe(1)
+  })
+
+  it("searches file contents under a named folder", async () => {
     const missed = await docSearch.execute({ query: "milk" }, ctx)
     expect(missed).toMatch(/No documents matched/)
-    expect(missed).toMatch(/content: true/)
 
-    const found = await docSearch.execute({ query: "milk", content: true }, ctx)
+    const found = await docSearch.execute({ query: "milk", content: true, root: "automerge:root" }, ctx)
     expect(found).toContain("notes.md")
     expect(found).toContain("remember the milk")
   })
