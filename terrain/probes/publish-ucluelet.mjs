@@ -87,36 +87,7 @@ if (fetched.status !== 0) {
 
 // ─── 2. the scene, in the browser (one Chrome at a time: the lock) ──────────
 const { browser, checklist, sleep } = await import("./cdp.mjs");
-if (LOCK) {
-  const { mkdirSync: mk, rmdirSync, statSync } = await import("node:fs");
-  for (;;) {
-    try {
-      mk(LOCK);
-      break;
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-      let age = 0;
-      try {
-        age = Date.now() - statSync(LOCK).mtimeMs;
-      } catch {}
-      if (age > 30 * 60_000) {
-        console.error(`the Chrome lock is ${Math.round(age / 60000)} min old: taking it over as stale`);
-        try {
-          rmdirSync(LOCK);
-        } catch {}
-        continue;
-      }
-      console.error("waiting for the Chrome lock (another probe's Chrome is running)…");
-      await sleep(20_000);
-    }
-  }
-  process.on("exit", () => {
-    try {
-      rmdirSync(LOCK);
-    } catch {}
-  });
-  console.error(`holding the Chrome lock ${LOCK}`);
-}
+await (await import("./chrome-lock.mjs")).chromeLock(LOCK);
 const PORT = 4853;
 const b = await browser({ root: ROOT, port: PORT, cdp: 9853, page: "/terrain/probes/ucluelet-probe.html", width: 1280, height: 760, show: !!args.show, timeout: 1_500_000, mounts: { "/terrain-cache/": CACHE, "/snap/": SNAP } });
 const js = (expr, ms = 120_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -172,7 +143,8 @@ try {
   await sleep(4000);
   report.shots.push(await b.shot(join(SHOTS, "ucluelet-home.png")));
   const views = {
-    "ucluelet-boatyard": [[-75, 24, 15], [40, 6, 75]],
+    "ucluelet-boatyard": [[-20, 16, -48], [24, 7, 95]],
+    "ucluelet-hangar-doors": [[-55, 9, 40], [18, 8, 100]],
     "ucluelet-boatyard-dock": [[120, 30, -140], [60, 4, 40]],
     "ucluelet-inlet": [[1100, 260, 900], [-1600, 0, -1900]],
     "ucluelet-amphitrite": [[1080, 32, 3340], [1228, 9, 3203]],

@@ -3,7 +3,7 @@
 // stock sloop on the club's moorings, people starting in Look at a home view.
 //
 //   (in scene/, sailing/ and terrain/) pnpm build
-//   node probes/publish-rvyc.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--shots <dir>] [--show]
+//   node probes/publish-rvyc.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--shots <dir>] [--lock <dir>] [--show]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -61,7 +61,7 @@ import { createHash } from "node:crypto";
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []),
 );
-const KNOWN_ARGS = new Set(["sync", "settle", "dry-run", "show", "shots", "cache"]);
+const KNOWN_ARGS = new Set(["sync", "settle", "dry-run", "show", "shots", "cache", "lock"]);
 const unknown = Object.keys(args).filter((k) => !KNOWN_ARGS.has(k));
 if (unknown.length) {
   const lines = readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n");
@@ -89,6 +89,8 @@ if (fetched.status !== 0) {
 
 // ─── 2. the scene, in the browser ───────────────────────────────────────────
 const { browser, checklist, sleep } = await import("./cdp.mjs");
+// one Chrome at a time across probes that honour --lock (chrome-lock.mjs)
+await (await import("./chrome-lock.mjs")).chromeLock(typeof args.lock === "string" ? resolve(args.lock) : null);
 const PORT = 4851;
 const b = await browser({ root: ROOT, port: PORT, cdp: 9851, page: "/terrain/probes/rvyc-probe.html", width: 1280, height: 760, show: !!args.show, timeout: 900_000, mounts: { "/terrain-cache/": CACHE, "/snap/": SNAP } });
 const js = (expr, ms = 120_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -113,14 +115,14 @@ try {
   check("everything loaded", await until("loaded().loaded === __p.loaded().total", 120_000), await P("loaded()"));
   const s = await P("shape()");
   report.numbers.shape = s;
-  check("the template's fetches were all answered from the recording (nothing reached the network)", (await P("fetched")).length === 2, await P("fetched"));
+  check("the template's fetches were all answered from the recording (nothing reached the network)", (await P("fetched")).length === 3, await P("fetched"));
   check("the terrain is at the origin, locked, by the terrain-mesh source", s.terrain?.locked && s.terrain.providerId === "terrain-mesh" && J(s.terrain.transform) === J({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }) && s.terrain.parent === null, s.terrain);
-  check("the Terrain doc has its data, its sources and their attribution", s.terrainDoc?.type === "terrain" && s.terrainDoc.data && ["ncei-port-townsend-navd88", "osm-overpass", "chs-iwls", "eccc-climate-hourly"].every((x) => s.terrainDoc.sources.includes(x)) && /OpenStreetMap/.test(s.terrainDoc.attribution), s.terrainDoc);
+  check("the Terrain doc has its data, its sources and their attribution", s.terrainDoc?.type === "terrain" && s.terrainDoc.data && ["ncei-port-townsend-navd88", "osm-overpass", "chs-iwls", "eccc-climate-hourly", "osm-overpass-look"].every((x) => s.terrainDoc.sources.includes(x)) && /OpenStreetMap/.test(s.terrainDoc.attribution), s.terrainDoc);
   check("every source can be traced: a url, and the tide and wind sources their exact requests", s.terrainDoc.sourceUrls.every((u) => /^https:\/\//.test(u ?? "")) && s.terrainDoc.requests >= 11, { urls: s.terrainDoc.sourceUrls.map((u) => u?.slice(0, 90)), requests: s.terrainDoc.requests });
   check("OSM pinned to the checked moment, and the data is what was checked", s.terrainDoc.osmDate === "2026-11-09T20:32:33Z" && s.terrainDoc.matchesChecked === true, { osmDate: s.terrainDoc.osmDate, matchesChecked: s.terrainDoc.matchesChecked });
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
   check("the terrain's About is its Terrain doc, and it carries the credit trait", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit, s.terrain);
-  check("its render is built, fingerprinted, its data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 2 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 1, s.render);
+  check("its render is built, fingerprinted, its data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 3 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
   check("a summer afternoon's sea: 4 m/s from 235°, small waves, on the bay's one open water at the chart's y = 0", J(s.sea?.wind) === J({ speed: 4, from: 235 }) && s.sea.scale === 0.5 && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
   check("it starts people in Look (no body named) at a home view from the club (view.start)", !s.start?.body && (await P("bodyLabel()")) === "Look" && J(s.home) === J({ position: [-400, 22, 300], target: [120, 0, -40] }), { start: s.start, here: await P("bodyLabel()"), home: s.home });
   check("the sloop is on the mooring, head to wind, main down, jib rolled away, anchor down", s.hull && Math.hypot(s.hull.position[0], s.hull.position[2]) < 0.01 && Math.abs(Math.cos(s.hull.rotation[1] + (235 * Math.PI) / 180) - 1) < 1e-9 && s.sail?.raised === 0 && s.jib?.furl === 1 && s.anchor?.down === true && s.anchor.rode === 25, { hull: s.hull, sail: s.sail, jib: s.jib, anchor: s.anchor });
@@ -147,7 +149,7 @@ try {
   await sleep(1500);
   report.shots.push(await b.shot(join(SHOTS, "rvyc-club.png")));
   const tool = await P("terrainTool()", 60_000);
-  check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources === 4 && !tool.empty, tool);
+  check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources === 5 && !tool.empty, tool);
   await sleep(500);
   report.shots.push(await b.shot(join(SHOTS, "rvyc-terrain-tool.png")));
   await P("closeTerrainTool()");

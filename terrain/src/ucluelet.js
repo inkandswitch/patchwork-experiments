@@ -416,7 +416,7 @@ export const LOOK = Object.freeze({
     // the canopy grid is the truth for where trees stand and how tall: they're placed only where it is over 5 m
     canopy: true,
     fringeWidth: 40,
-    max: 24000,
+    max: 30000,
   },
 });
 

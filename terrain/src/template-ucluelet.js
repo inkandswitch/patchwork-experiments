@@ -83,8 +83,8 @@ export function placeDoc() {
 }
 
 export async function newUclueletTerrain(repo) {
-  const { attribution, credit, ...d } = placeDoc();
-  return repo.create2({ "@patchwork": { type: "terrain" }, ...d, data: null, sources: [], attribution: "", credit: "" });
+  // its credits from the start: they are the place's (the tool's Fetch data passes them on)
+  return repo.create2({ "@patchwork": { type: "terrain" }, ...placeDoc(), data: null, sources: [] });
 }
 
 /**
