@@ -721,6 +721,54 @@ looks like it holds one is refused. Nothing the user told you in confidence
 that they would not want sitting in a folder.`,
   },
   {
+    name: "running-workflows",
+    description:
+      "When a job is worth splitting across several agent sessions, how to write steps that stand alone, choosing each step's tier and placement, fanning out on results, and bringing it together.",
+    body: `# Running workflows
+
+\`workflow_start\` hands a job to several agent sessions at once — each step its
+own session, on its own model, running in parallel where it can and in order
+where one step needs another's result. It costs a session per step, so it is
+worth it only when the job really divides: many independent pieces (one per
+file, per document, per finding), or a pipeline where a cheap model gathers and
+a strong one judges. A job you could do in a few tool calls, do yourself.
+
+## Writing a step
+
+- **Its prompt stands alone.** A step sees the goal, its own prompt, and the
+  results of the steps in its \`after\` — not this conversation. Name the URLs,
+  paths and constraints it needs. Say what its result should contain, because
+  that result is all you will get back.
+- **Small and checkable.** "Review tools/ops.js for automerge misuse and list
+  each problem with its line" beats "review the code".
+- **\`after\` is for real dependencies.** Everything not waiting on something
+  starts at once, up to the parallel limit.
+
+## Tier and placement
+
+- **deep** (the strongest model): planning, judgement, hard reasoning, and
+  checking another step's work. **standard**: most writing and editing.
+  **fast**: searching, reading, extracting, mechanical changes. Say why in
+  \`why\` — the person sees it beside the step.
+- **where: worker** unless the step needs the page: mounting or driving a view,
+  screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
+  steps run side by side; host steps take turns on the page.
+
+## Fanning out, and finishing
+
+\`workflow_start\` returns at once; you are woken as steps finish, with their
+results. When a result calls for more work — a review that found five problems
+— \`workflow_add_steps\` with one step per problem, \`after\` the review. A
+common shape: gather (fast, many) → judge or verify (deep) → act (standard)
+→ check (deep).
+
+When the workflow is over, bring the results together for the person: what was
+done, what was found, what failed and why. \`workflow_status\` shows every
+step; \`workflow_stop\` cancels steps or the whole thing. A step that needs a
+person (an approval, a question) waits for them in its own session — the
+workflow view shows which.`,
+  },
+  {
     name: "editing-documents",
     description:
       "How to change any Patchwork document safely with doc_edit's path/range/value ops, and how to change text by anchoring on it (find, fs_edit) rather than counting characters.",

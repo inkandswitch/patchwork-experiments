@@ -33,6 +33,27 @@ export const plugins = [
   },
 
   {
+    type: "patchwork:datatype",
+    id: "agent-workflow",
+    name: "Agent Workflow",
+    icon: "Workflow",
+    async load() {
+      return (await import("./workflow/datatype.js")).AgentWorkflowDatatype
+    },
+  },
+  {
+    // A workflow's plan and what each of its steps is doing.
+    type: "patchwork:tool",
+    id: "agent-workflow",
+    name: "Workflow",
+    icon: "Workflow",
+    supportedDatatypes: ["agent-workflow"],
+    async load() {
+      const { WorkflowView } = await import("./workflow/view.js")
+      return (handle, element) => WorkflowView(handle, element)
+    },
+  },
+  {
     // The sidebar panel: attaches to whatever document you are looking at.
     type: "patchwork:component",
     id: "agent-panel",

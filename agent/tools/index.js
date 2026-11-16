@@ -37,12 +37,14 @@ import askTools from "./ask.js"
 import namingTools from "./naming.js"
 import recallTools from "./recall.js"
 import noteTools from "./notes.js"
+import workflowTools from "./workflow.js"
+import { WORKFLOW_TOOL_IDS } from "../workflow/plan.js"
 import skillTools from "./skills.js"
 import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools, ...namingTools, ...recallTools, ...noteTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {
@@ -118,7 +120,12 @@ export async function buildToolset(sessionDoc, opts = {}) {
   const all = [...BUILTIN_TOOLS, ...plugins]
 
   const enabled = sessionDoc?.tools?.enabled
-  const chosen = enabled?.length ? all.filter((t) => enabled.includes(t.id)) : all
+  const disabled = sessionDoc?.tools?.disabled ?? []
+  // Orchestrating is opt-in per session: many sessions, real cost.
+  const workflows = !!sessionDoc?.config?.workflows?.enabled
+  const chosen = (enabled?.length ? all.filter((t) => enabled.includes(t.id)) : all).filter(
+    (t) => !disabled.includes(t.id) && (workflows || !WORKFLOW_TOOL_IDS.includes(t.id))
+  )
 
   const byId = new Map(chosen.map((t) => [t.id, t]))
   return {

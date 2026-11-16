@@ -19,11 +19,10 @@ import {
 } from "./session.js"
 import { handleStore } from "./store.js"
 import { decide, say, answerQuestion } from "./loop.js"
-import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
-import { ensureRunner as ensureSharedRunner, attachView } from "./runners.js"
+import { heldElsewhere, needsWork } from "./runner.js"
+import { attachView } from "./runners.js"
+import { startTabRunner, accountContext } from "./tab-runner.js"
 import { connectWorkerRunner } from "./worker-client.js"
-import { createEvents } from "./events.js"
-import { buildToolset } from "./tools/index.js"
 import {
   getProvider,
   readKey,
@@ -34,7 +33,7 @@ import {
   modelInfo,
 } from "./providers/index.js"
 import { describeModel, describeDefaults } from "./providers/openrouter.js"
-import { hostImport } from "./tools/host.js"
+import { DEFAULT_LIMITS, DEFAULT_TIER_MODELS, TIERS } from "./workflow/plan.js"
 import { renderTranscript } from "./ui/transcript.js"
 import { createInlineViews } from "./ui/views.js"
 import { getMount, mountForPerson, mountIdIn, parkMount } from "./tools/checking.js"
@@ -186,6 +185,47 @@ export function AgentTool(handle, element, options = {}) {
   const effortSelect = document.createElement("select")
   effortSelect.className = "agent-effort"
   const effortNote = el("p", "agent-model-defaults", "")
+
+  // Workflows: off unless switched on here, because one is many sessions and
+  // real cost. The limits and the tier models are what workflow_start copies
+  // into each plan it makes.
+  const workflowsToggle = document.createElement("input")
+  workflowsToggle.type = "checkbox"
+  const workflowsLabel = el("label", "cluster")
+  workflowsLabel.append(workflowsToggle, el("span", null, "Let this session run workflows"))
+  const numberField = (label, key, fallback) => {
+    const input = document.createElement("input")
+    input.type = "number"
+    input.min = "1"
+    input.dataset.key = key
+    input.placeholder = String(fallback)
+    const field = el("label", "agent-wf-field")
+    field.append(el("span", null, label), input)
+    return { field, input }
+  }
+  const wfParallel = numberField("At once", "parallel", DEFAULT_LIMITS.parallel)
+  const wfSteps = numberField("Steps in all", "steps", DEFAULT_LIMITS.steps)
+  const wfTokens = numberField("Token budget", "tokens", DEFAULT_LIMITS.tokens)
+  const tierInputs = TIERS.map((tier) => {
+    const input = document.createElement("input")
+    input.type = "text"
+    input.setAttribute("list", "agent-model-list")
+    input.placeholder = DEFAULT_TIER_MODELS[tier]
+    input.dataset.tier = tier
+    input.spellcheck = false
+    const field = el("label", "agent-wf-field")
+    field.append(el("span", null, tier), input)
+    return input
+  })
+  const workflowsBox = el("div", "agent-wf-settings")
+  workflowsBox.append(
+    workflowsLabel,
+    el("p", "agent-model-defaults", "The agent can split big jobs across several sessions, each on the model its tier names. Watch them in the workflow view."),
+    wfParallel.field,
+    wfSteps.field,
+    wfTokens.field,
+    ...tierInputs.map((input) => input.parentElement)
+  )
   const keyInput = document.createElement("input")
   keyInput.type = "password"
   keyInput.placeholder = "OpenRouter API key (sk-or-…)"
@@ -208,6 +248,8 @@ export function AgentTool(handle, element, options = {}) {
     el("p", null, "Effort"),
     effortSelect,
     effortNote,
+    el("p", null, "Workflows"),
+    workflowsBox,
     el("p", null, "API key"),
     keyInput,
     keyNote,
@@ -233,11 +275,7 @@ export function AgentTool(handle, element, options = {}) {
     uninstall: (ref) => onUninstall(ref),
     rerender: () => render(),
   })
-  const sensitiveDocs = () =>
-    [
-      globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
-      globalThis.accountDocHandle?.url,
-    ].filter(Boolean)
+  const sensitiveDocs = () => accountContext().sensitiveDocs
   const store = handleStore(handle, options.splice ?? null)
   let runner = null
   let detachView = null
@@ -296,6 +334,7 @@ export function AgentTool(handle, element, options = {}) {
         subject: subjectUrl(),
         key: readKey(handle.doc()?.config?.providerId ?? "openrouter"),
         providerId: handle.doc()?.config?.providerId ?? "openrouter",
+        account: (({ accountDocHandle, ...plain }) => plain)(accountContext()),
         onEvent: () => render(),
       })
     } catch {
@@ -312,83 +351,13 @@ export function AgentTool(handle, element, options = {}) {
   async function ensureRunner() {
     if (runner || disposed) return runner
 
-    const entry = await ensureSharedRunner(handle.url, async (emit) => {
-      // Snapshot the worker's presence now and hold it for this runner's life.
-      const tabCanRun = workerRunner
-        ? (where) => where === "host"
-        : (where) => where === "worker" || where === "host"
-
-      const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
-      const liveStore = handleStore(handle, splice)
-      // How tools wake this session after their calls are over. It belongs to the
-      // runner, not the view: a tool may be watching long after the view has gone.
-      const events = createEvents(liveStore)
-
-      // Mutable on purpose: `element` is swapped as views come and go, so
-      // host-tier tools always mount into something actually on the page, and
-      // becomes null when nothing is watching.
-      const sharedCtx = {
-        repo,
-        subject: subjectUrl(),
-        // So the agent can name its own conversation. Nothing else may be
-        // reached through this — it is the session's own document.
-        sessionUrl: handle.url,
-        splice,
-        events,
-        element: root,
-        // Installing a module means editing the account's module-settings
-        // document, and discovery needs the root folder — the entry point to
-        // everything the user has.
-        accountDocHandle: globalThis.accountDocHandle ?? null,
-        rootFolderUrl: globalThis.accountDocHandle?.doc()?.rootFolderUrl ?? null,
-        contactUrl: globalThis.accountDocHandle?.doc()?.contactUrl ?? null,
-        moduleSettingsUrl: globalThis.accountDocHandle?.doc()?.moduleSettingsUrl ?? null,
-        skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
-        // So view_screenshot can photograph a view that view_mount opened.
-        getMount,
-        // Documents that always require an explicit yes, whatever touches them.
-        sensitiveDocs: [
-          globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
-          globalThis.accountDocHandle?.url,
-        ].filter(Boolean),
-      }
-
-      const made = new SessionRunner({
-        store: liveStore,
-        runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
-        ctx: sharedCtx,
-        buildToolset: async (doc) => {
-          toolsetRef = await buildToolset(doc)
-          return toolsetRef
-        },
-        getProvider: async () => getProvider(handle.doc()?.config?.providerId ?? "openrouter"),
-        getKey: () => readKey(handle.doc()?.config?.providerId ?? "openrouter"),
-        getModelInfo: (model, providerId) => modelInfo(providerId, model, { key: readKey(providerId) }),
-        // Fixed at construction, NOT read live. A `canRun` that consults
-        // `workerRunner` flips mid-run the moment the worker finishes
-        // connecting, and the turn in flight then parks on its own worker-tier
-        // call. The lease keeps two runners from colliding; this only decides
-        // what each is willing to pick up.
-        canRun: tabCanRun,
-        onEvent: emit,
-      })
-      // The runner watches the document itself. Previously this subscription
-      // lived in the view, so unmounting the tool left the runner alive but
-      // with nothing to wake it — and an approval written from anywhere else
-      // would never be picked up. A runner that outlives its view has to hear
-      // about changes on its own.
-      const onDocChange = () => made.tick()
-      handle.on("change", onDocChange)
-
-      made.start()
-      return {
-        runner: made,
-        ctx: sharedCtx,
-        dispose: () => {
-          handle.off("change", onDocChange)
-          events.stop()
-        },
-      }
+    // Snapshot the worker's presence now and hold it for this runner's life.
+    const entry = await startTabRunner(handle, {
+      repo,
+      subject: subjectUrl(),
+      element: root,
+      canRun: workerRunner ? (where) => where === "host" : (where) => where === "worker" || where === "host",
+      onToolset: (toolset) => { toolsetRef = toolset },
     })
 
     runner = entry?.runner ?? null
@@ -720,7 +689,52 @@ export function AgentTool(handle, element, options = {}) {
     render()
   })
 
+  function writeWorkflows(fn) {
+    store.change((d) => {
+      if (!d.config) d.config = {}
+      if (!d.config.workflows) d.config.workflows = {}
+      fn(d.config.workflows)
+    })
+    render()
+  }
+
+  workflowsToggle.addEventListener("change", () => writeWorkflows((w) => { w.enabled = workflowsToggle.checked }))
+  for (const { input } of [wfParallel, wfSteps, wfTokens]) {
+    input.addEventListener("change", () => {
+      const value = Number.parseInt(input.value, 10)
+      writeWorkflows((w) => {
+        if (Number.isFinite(value) && value > 0) w[input.dataset.key] = value
+        else delete w[input.dataset.key]
+      })
+    })
+  }
+  for (const input of tierInputs) {
+    input.addEventListener("change", () => {
+      const model = input.value.trim()
+      writeWorkflows((w) => {
+        if (!w.tiers) w.tiers = {}
+        if (model) w.tiers[input.dataset.tier] = model
+        else delete w.tiers[input.dataset.tier]
+      })
+    })
+  }
+
+  function renderWorkflows() {
+    const w = handle.doc()?.config?.workflows ?? {}
+    workflowsToggle.checked = !!w.enabled
+    const focused = workflowsBox.ownerDocument?.activeElement
+    for (const { input } of [wfParallel, wfSteps, wfTokens]) {
+      if (focused !== input) input.value = w[input.dataset.key] ?? ""
+      input.disabled = !w.enabled
+    }
+    for (const input of tierInputs) {
+      if (focused !== input) input.value = w.tiers?.[input.dataset.tier] ?? ""
+      input.disabled = !w.enabled
+    }
+  }
+
   function renderEffort() {
+    renderWorkflows()
     const doc = handle.doc()
     const info = catalogueModels.find((m) => m.id === doc?.config?.model)
     const chosen = doc?.config?.params?.reasoning?.effort ?? ""

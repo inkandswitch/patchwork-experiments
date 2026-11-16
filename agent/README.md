@@ -20,6 +20,8 @@ claimed by a node process with no tab open.
 | `runner.js` | claims the lease, notices work, drives the loop |
 | `datatype.js` | the `agent-session` datatype |
 | `tool.js` | the view — sidebar panel and full-window pop-out, one render function |
+| `tab-runner.js` | runs a session in this tab, with or without a view of it |
+| `workflow/` | workflows: the plan model, the driver that runs it, its datatype and view |
 | `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
 | `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
@@ -867,6 +869,44 @@ pending call. Every e2e run passed — hidden nodes are still in the DOM — whi
 person saw a stuck session and no buttons. Found by adding `--shot` to the e2e
 probe and looking at the picture; the same capture showed `display: flex` on a
 list breaking marker hanging, which no assertion would ever have caught.
+
+## Workflows
+
+A session with **Workflows** switched on in its settings can hand a large job to
+several agent sessions at once. `workflow_start` writes a **plan document** — an
+`agent-workflow` — of steps, each with a prompt, the steps it waits for, where it
+runs and which model tier it needs, and the reason for that choice. The plan is a
+document, not a script, so it can be watched, resumed after a reload, and
+extended while it runs: `workflow_add_steps` adds one step per finding when a
+result calls for it.
+
+- **Each step is a session** (`workflow/driver.js`): a full transcript you can
+  open, steer and approve in. It is started on its tier's model — deep,
+  standard and fast default to the latest Opus, Sonnet and Haiku, and the
+  mapping is a setting — with the goal, its prompt and the results of the
+  steps it waits for. It inherits the orchestrator's grants, never gets the
+  workflow tools (no nesting), and a `worker` step gets only the tools that
+  run without the page.
+- **The plan decides; the driver acts.** `workflow/plan.js` is pure: five
+  stored step states, the rest (ready, waiting, blocked, needs-you) derived, and
+  `toStart` choosing what may run. Its rules — only ready steps start, never more
+  than `parallel` at once nor `hostParallel` on the page, blocked exactly when
+  something it needs failed — are checked over every plan of up to three steps
+  and every four-step graph (`workflow-plan.test.js`).
+- **One driver per plan**, by the same lease a runner holds on a session, so two
+  tabs with the plan open cannot both start a step. Close the tab and the plan
+  pauses; open its view anywhere and it resumes from what the document says.
+- **The orchestrator is woken** through `ctx.events` as steps finish, with their
+  results, and once more when the plan is over.
+- **The view** lays the steps out in stages by dependency depth: each step's
+  state, frontend or worker, tier and model, why, live activity, result or
+  error, and a link to its session — "Answer in its session" when a step is
+  waiting on you.
+
+Limits are per session: steps at once (3), steps in all (24), tokens in all
+(3M). Every step runs in the tab today, because the SharedWorker runner is
+still opt-in (below); `where` already decides which tools a step gets, so a
+`worker` step will move to the worker or the node runner without changing.
 
 ## What is not built yet
 

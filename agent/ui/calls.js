@@ -103,6 +103,10 @@ export const PRESENTATION = {
   },
   fs_delete: { verb: "remove", detail: (i) => baseName(i.path) },
   note_write: { verb: "note", detail: (i) => i.name ?? null },
+  workflow_start: { verb: "orchestrate", detail: (i) => (i.title ? `${i.title} · ${i.steps?.length ?? 0} steps` : null) },
+  workflow_add_steps: { verb: "extend workflow", detail: (i) => `${i.steps?.length ?? 0} steps` },
+  workflow_status: { verb: "check workflow", detail: () => null },
+  workflow_stop: { verb: "stop", detail: (i) => (i.steps?.length ? i.steps.join(", ") : "workflow") },
   note_read: { verb: "recall", detail: (i) => i.name ?? "notes" },
   note_delete: { verb: "forget", detail: (i) => i.name ?? null },
   fs_edit: {
