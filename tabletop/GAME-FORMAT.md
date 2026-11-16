@@ -48,7 +48,8 @@ might reasonably want it otherwise.
 4. **`secure` stays, as a deck's word**, meaning "nobody, not even whoever
    sets the table up, may know the order or a card they aren't shown". It
    names no keeper; the table asks for one whose players shuffle between them
-   and falls back to a plain one, saying so.
+   and falls back to a plain one, saying so (the template and the game page
+   alike: `made-with.js` `tableNotes`).
 5. **Containers are titled by the game and the deck** ("Lost Cities: Deck"),
    never by the scene a table is set down in (host-titled decks are gone,
    COMPOSITION.md §11).

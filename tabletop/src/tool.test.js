@@ -4,6 +4,8 @@ import TabletopGameTool from "./tool.js";
 // A stand-in for the host's plugin registry, holding this package's plugins
 // and, as other packages would register them, whoever owns seats and a
 // keeper of each kind (test/stand-ins.js).
+// `absent` hides plugins by id, so a test can uninstall a keeper or the seats owner.
+const installed = vi.hoisted(() => ({ absent: new Set() }));
 vi.mock("@inkandswitch/patchwork-plugins", async () => {
   const { plugins: own } = await import("./index.js");
   const { keeperPlugin, seatsPlugin } = await import("./test/stand-ins.js");
@@ -14,7 +16,7 @@ vi.mock("@inkandswitch/patchwork-plugins", async () => {
       const all = new Map();
       registries.set(type, {
         register: (p) => all.set(p.id, { ...p }),
-        filter: (fn) => [...all.values()].filter(fn),
+        filter: (fn) => [...all.values()].filter((p) => !installed.absent.has(p.id)).filter(fn),
         async load(id) {
           const p = all.get(id);
           if (p && !p.module) p.module = await p.load();
@@ -30,6 +32,7 @@ vi.mock("@inkandswitch/patchwork-plugins", async () => {
 });
 import { TabletopGameDatatype } from "./datatype.js";
 import { SEATS, keptIn } from "./test/stand-ins.js";
+import { CASES, cardsGame } from "./test/table-notes.js";
 
 /** An in-memory repo whose handles emit "change". */
 function fakeRepo() {
@@ -198,4 +201,30 @@ describe("the tabletop-game tool", () => {
     expect(Object.keys(scene.traits[SEATS])).toEqual(["p1", "p2"]);
     cleanup();
   }, 30_000); // builds the whole game: ~7 s seen under load (default 5 s)
+});
+
+describe("what the game page's status line warns the maker of (test/table-notes.js: the template says the same)", () => {
+  for (const c of CASES)
+    it(c.name, async () => {
+      // the stand-ins' ids (test/stand-ins.js): t.keep-<kind>, t.seats
+      installed.absent = new Set([...(c.keepers.includes("joint") ? [] : ["t.keep-joint"]), ...(c.owner ? [] : ["t.seats"])]);
+      try {
+        const repo = fakeRepo();
+        const game = repo.add({ "@patchwork": { type: "tabletop-game" }, ...cardsGame(c) });
+        const element = document.createElement("div");
+        element.repo = repo;
+        const opened = [];
+        element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+        const cleanup = TabletopGameTool(game, element);
+        await until(() => button(element, "Set up a table") && !button(element, "Set up a table").disabled);
+        button(element, "Set up a table").click();
+        await until(() => opened.length === 1 && button(element, "Set up a table"));
+        const status = element.querySelector(".status").textContent;
+        if (c.expected.length) expect(status).toBe(c.expected.join(" "));
+        else expect(status).toMatch(/^\d+ pieces of \d+ kinds\.$/);
+        cleanup();
+      } finally {
+        installed.absent = new Set();
+      }
+    });
 });

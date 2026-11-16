@@ -12,6 +12,7 @@ import { fakeDrop } from "../test/fakes.js";
 import { SEATS, keeperPlugin, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
 import { game as builtIn, gamePlugins } from "../test/games.js";
 import { emptyScene } from "../empty-scene.js";
+import { CASES, cardsGame } from "../test/table-notes.js";
 
 /** What's installed where a table is usually made: whoever owns seats, a keeper of each kind (stand-ins), and the games. */
 const installed = (...more) => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins(), ...more);
@@ -237,4 +238,15 @@ describe("the Draw Dominoes templates", () => {
       expect(new Set(tiles.map((o) => o.sourceUrl)).size).toBe(1);
     });
   }
+});
+
+describe("what the maker is warned of (test/table-notes.js: the game page's status line says the same)", () => {
+  for (const c of CASES)
+    it(c.name, async () => {
+      const doc = emptyScene();
+      const plugins = [...c.keepers.map((k) => keeperPlugin(k)), ...(c.owner ? [seatsPlugin()] : [])];
+      const { ctx, calls } = fakeDrop(doc, { registries: registries(...plugins) });
+      expect(await setUp(ctx, cardsGame(c))).not.toBe(null);
+      expect(calls.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual(c.expected);
+    });
 });
