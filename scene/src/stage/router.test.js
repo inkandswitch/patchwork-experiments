@@ -339,7 +339,10 @@ describe("a double-click resolves to its first click's hit (a thing that moves b
   // Each gate is taken exactly on and one past its bound, for each press alone.
   // `dt` is the time between the inputs, on the events' own stamps; the page's clock (when the router handled each)
   // moves by the same unless `page` says otherwise (the page busy, or catching up on queued events back to back), and
-  // `stamp: false` is an event with no stamp of its own (timeStamp 0).
+  // `stamp: false` is an event with no stamp of its own (timeStamp 0). Each click is a press and its release, `hold`
+  // ms later (0 unless given; `holdPage` the page's, `upStamp: false` an unstamped release, `noUp` no release heard);
+  // the dblclick's `dt` is from the last release, and its own stamp counts only when no release followed the last
+  // press (Chrome stamps a dblclick as it dispatches it, not as the release that made it was made).
   const P = DOUBLE_PX, PT = DOUBLE_PX_TOUCH, MS = DOUBLE_MS;
   const at = (dt, x, y, under, o = {}) => ({ dt, x, y, under, ...o });
   const CASES = [
@@ -348,15 +351,21 @@ describe("a double-click resolves to its first click's hit (a thing that moves b
     ["the page busy 1 s meeting the second press, the clicks 600 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 1600 })], at(10, 0, 0), "now"],
     ["the clicks DOUBLE_MS apart, met 1 s apart", [at(0, 0, 0, "first"), at(MS, 0, 0, "second", { page: 1000 })], at(10, 0, 0), "first"],
     ["the clicks past DOUBLE_MS apart, met back to back", [at(0, 0, 0, "first"), at(MS + 1, 0, 0, "second", { page: 0 })], at(10, 0, 0), "now"],
-    ["the dblclick DOUBLE_MS after the second press, met 1 s after", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(MS, 0, 0, undefined, { page: 1000 }), "first"],
-    ["the dblclick past DOUBLE_MS after the second press, met at once", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(MS + 1, 0, 0, undefined, { page: 0 }), "now"],
+    ["the second click released DOUBLE_MS after its press, met 1 s after", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS, holdPage: 1000 })], at(0, 0, 0), "first"],
+    ["the second click released past DOUBLE_MS after its press, met at once", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS + 1, holdPage: 0 })], at(0, 0, 0), "now"],
+    // the dblclick is timed as the release that made it: its own stamp is when the page dispatched it
+    ["the dblclick stamped 1 s after its release (the page busy)", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(1000, 0, 0, undefined, { page: 1000 }), "first"],
+    ["the dblclick stamped before its release", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: 50 })], at(-80, 0, 0, undefined, { page: 0 }), "first"],
+    ["no release heard after the second press: the dblclick's own stamp, DOUBLE_MS after", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { noUp: true })], at(MS, 0, 0), "first"],
+    ["no release heard after the second press: the dblclick's own stamp, past DOUBLE_MS after", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { noUp: true })], at(MS + 1, 0, 0), "now"],
     // an event without a stamp puts all three on the page's clock, never one clock against the other
     ["no event stamped, met DOUBLE_MS apart", [at(0, 0, 0, "first", { stamp: false }), at(MS, 0, 0, "second", { stamp: false })], at(MS, 0, 0, undefined, { stamp: false }), "first"],
     ["no event stamped, the presses met past DOUBLE_MS apart", [at(0, 0, 0, "first", { stamp: false }), at(MS + 1, 0, 0, "second", { stamp: false })], at(10, 0, 0, undefined, { stamp: false }), "now"],
-    ["no event stamped, the dblclick met past DOUBLE_MS after", [at(0, 0, 0, "first", { stamp: false }), at(200, 0, 0, "second", { stamp: false })], at(MS + 1, 0, 0, undefined, { stamp: false }), "now"],
+    ["no event stamped, the second release met past DOUBLE_MS after its press", [at(0, 0, 0, "first", { stamp: false }), at(200, 0, 0, "second", { stamp: false, hold: MS + 1 })], at(0, 0, 0, undefined, { stamp: false }), "now"],
     ["the first press alone unstamped: the clicks 200 ms apart, met 1 s apart", [at(0, 0, 0, "first", { stamp: false }), at(200, 0, 0, "second", { page: 1200 })], at(10, 0, 0), "now"],
     ["the second press alone unstamped: the clicks 200 ms apart, met 1 s apart", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { page: 1200, stamp: false })], at(10, 0, 0), "now"],
-    ["the dblclick alone unstamped: the clicks 600 ms apart, met 200 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 200 })], at(10, 0, 0, undefined, { stamp: false }), "first"],
+    ["the second release alone unstamped: the clicks 600 ms apart, met 200 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 200, upStamp: false })], at(10, 0, 0), "first"],
+    ["the dblclick alone unstamped, its release stamped: the clicks 600 ms apart, met 200 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 200 })], at(10, 0, 0, undefined, { stamp: false }), "now"],
     // the other gates, both clocks agreeing
     ["two quick clicks in one place", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0), "first"],
     ["the second press DOUBLE_PX from the dblclick", [at(0, 0, 0, "first"), at(200, P, 0, "second")], at(10, 0, 0), "first"],
@@ -365,8 +374,8 @@ describe("a double-click resolves to its first click's hit (a thing that moves b
     ["the first press alone past DOUBLE_PX from it", [at(0, 0, 0, "first"), at(200, 0, P + 1, "second")], at(10, 0, P + 1), "now"],
     ["the clicks DOUBLE_MS apart", [at(0, 0, 0, "first"), at(MS, 0, 0, "second")], at(10, 0, 0), "first"],
     ["the clicks past DOUBLE_MS apart", [at(0, 0, 0, "first"), at(MS + 1, 0, 0, "second")], at(10, 0, 0), "now"],
-    ["the dblclick DOUBLE_MS after the second press (a held second click)", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(MS, 0, 0), "first"],
-    ["the dblclick past DOUBLE_MS after the second press", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(MS + 1, 0, 0), "now"],
+    ["the second click released DOUBLE_MS after its press (a held second click)", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS })], at(10, 0, 0), "first"],
+    ["the second click released past DOUBLE_MS after its press", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS + 1 })], at(10, 0, 0), "now"],
     ["a dblclick with one press before it", [at(0, 0, 0, "first")], at(10, 0, 0), "now"],
     ["a stale click, then the double", [at(0, 0, 0, "stale"), at(MS + 100, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0), "first"],
     ["nothing under the first press (the sea), something by the second", [at(0, 0, 0, null), at(200, 0, 0, "second")], at(10, 0, 0), null],
@@ -405,7 +414,8 @@ describe("a double-click resolves to its first click's hit (a thing that moves b
       r.lockEl = s.locked ? t.canvas : null;
       const o = { x: 10 + s.x, y: 10 + s.y, pointerType: s.touch ? "touch" : "mouse", timeStamp };
       down(t, o);
-      up(t, o);
+      if (s.noUp) return;
+      up(t, { ...o, timeStamp: advance({ dt: s.hold ?? 0, page: s.holdPage, stamp: s.upStamp ?? s.stamp }) });
     };
     r.dbl = (s) => {
       const timeStamp = advance(s);
