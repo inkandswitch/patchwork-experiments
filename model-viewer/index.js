@@ -22,7 +22,8 @@ export const plugins = [
     content: "built",
     cost: "expensive",
     // 2: corrected unit table (yards, mega/gigametres); block parts keep their own layer and colour
-    version: 2,
+    // 3: every layer built and declared (GLB layers convention), hidden ones too
+    version: 3,
     params: [
       {
         key: "unit", label: "File units", kind: "enum", default: "auto", cost: "cheap",
@@ -35,7 +36,8 @@ export const plugins = [
           { value: "ft", label: "Feet" },
         ],
       },
-      { key: "hidden", label: "Include hidden objects/layers", kind: "boolean", default: false },
+      // hidden layers are always built (the scene shows or hides them); this is objects hidden one by one
+      { key: "hidden", label: "Include hidden objects", kind: "boolean", default: false },
     ],
     async load() {
       return (await import("./source.js")).default;

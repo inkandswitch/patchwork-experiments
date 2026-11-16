@@ -1,5 +1,9 @@
 // scene:source "file-3dm": Rhino .3dm → GLB (Y-up metres), one mesh per layer+colour.
+// Every layer with geometry is built, hidden ones too, and declared in the
+// GLB as the scene's layers convention says (layers.js): showing or hiding one
+// is a display change, not a rebuild.
 import { encodeGLB, computeBounds, computeNormals } from "./glb.js";
+import { layerShown, layerStates, sanitizeLayers } from "./layers.js";
 
 export const RHINO_URL = "https://cdn.jsdelivr.net/npm/rhino3dm@8.35.0/";
 let rhinoPromise;
@@ -167,13 +171,15 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
     const layerInfo = [];
     for (let i = 0; i < layers.count; i++) {
       const l = layers.get(i);
-      layerInfo.push({ name: l.fullPath || l.name, visible: l.visible !== false, color: l.color });
+      layerInfo.push({ id: typeof l.id === "string" && l.id ? l.id : `layer-${i}`, name: l.name || l.fullPath || `Layer ${i + 1}`, path: l.fullPath || l.name || `Layer ${i + 1}`, parentId: l.parentLayerId, visible: l.visible !== false, color: l.color });
     }
     const groups = new Map(); // key → {name, color, pos: number[][], idx: number[][], n}
     let objects = 0, skipped = 0, triangles = 0;
     const stats = { approx: 0 };
 
-    const shown = (a) => a.visible !== false && layerInfo[a.layerIndex]?.visible !== false;
+    // an object hidden in the file is left out (unless asked for); its layer,
+    // hidden or not, is the scene's to show (the GLB's layer table)
+    const shown = (a) => a.visible !== false;
     const BY_PARENT = enumVal(rhino.ObjectColorSource?.ColorFromParent);
     // An object's display colour. A block's parts keep their own colour
     // unless they're set to "by parent", when they take the block's.
@@ -213,12 +219,12 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
       if (!meshes.length) { skipped++; return; }
       objects++;
       const li = attrs?.layerIndex ?? 0;
-      const layer = layerInfo[li] ?? { name: "Default" };
+      const layer = layerInfo[li] ?? { id: null, path: "Default" };
       const c = colorOf(attrs, parentColor);
       const hex = "#" + [c.r, c.g, c.b].map((v) => (v | 0).toString(16).padStart(2, "0")).join("");
       const key = li + hex;
       let g = groups.get(key);
-      if (!g) groups.set(key, (g = { name: layer.name, color: hex, pos: [], idx: [], n: 0 }));
+      if (!g) groups.set(key, (g = { name: layer.path, layer: layer.id, color: hex, pos: [], idx: [], n: 0 }));
       for (const a of meshes) {
         let pos = a.pos;
         if (xform) pos = applyXform(pos, xform);
@@ -256,11 +262,23 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
       const indices = new Uint32Array(total);
       let k = 0;
       for (const a of g.idx) { indices.set(a, k); k += a.length; }
-      meshes.push({ name: g.name, positions, indices, normals: computeNormals(positions, indices), color: g.color, roughness: 0.6 });
+      meshes.push({ name: g.name, positions, indices, normals: computeNormals(positions, indices), color: g.color, roughness: 0.6, layer: g.layer, ...(g.layer ? { extras: { layer: g.layer } } : {}) });
     }
-    const glb = encodeGLB({ meshes, generator: "rhino-3dm-scene" });
+    // the layer table: each layer with geometry, and the layers it's in, in
+    // the file's order
+    const byId = new Map(layerInfo.map((l) => [l.id, l]));
+    const keep = new Set();
+    for (const m of meshes) for (let l = byId.get(m.layer); l && !keep.has(l.id); l = byId.get(l.parentId)) keep.add(l.id);
+    const table = layerInfo
+      .filter((l) => keep.has(l.id))
+      .map((l) => ({ id: l.id, name: l.name, ...(keep.has(l.parentId) ? { parent: l.parentId } : {}), visible: l.visible }));
+    const glb = encodeGLB({ meshes, generator: "rhino-3dm-scene", extras: table.length ? { layers: table } : null });
+    // bounds of what's shown as the file has it (all of it, if that's nothing)
+    const states = layerStates(sanitizeLayers(table), {});
+    const shownMeshes = meshes.filter((m) => layerShown(states, m.layer ?? null));
+    const hiddenLayers = table.filter((l) => !states.get(l.id)?.shown).length;
     let bounds = null;
-    for (const m of meshes) {
+    for (const m of shownMeshes.length ? shownMeshes : meshes) {
       const b = computeBounds(m.positions);
       if (!b) continue;
       if (!bounds) bounds = b;
@@ -272,7 +290,7 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
       glb,
       meta: {
         ...(bounds ? { bounds } : {}),
-        notes: `${objects} object${objects === 1 ? "" : "s"}, ${Math.round(triangles).toLocaleString()} triangles, ${meshes.length} layer group${meshes.length === 1 ? "" : "s"} (${u})` + (skipped ? `; ${skipped} curves/points/unsupported skipped` : "") + (stats.approx ? `; ${stats.approx} surfaces had no render mesh and were approximated (untrimmed)` : ""),
+        notes: `${objects} object${objects === 1 ? "" : "s"}, ${Math.round(triangles).toLocaleString()} triangles, ${table.length} layer${table.length === 1 ? "" : "s"}${hiddenLayers ? ` (${hiddenLayers} hidden)` : ""} (${u})` + (skipped ? `; ${skipped} curves/points/unsupported skipped` : "") + (stats.approx ? `; ${stats.approx} surfaces had no render mesh and were approximated (untrimmed)` : ""),
       },
     };
   } finally {
