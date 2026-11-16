@@ -27,6 +27,7 @@ import { applicable, commandState, flatCommands, keysOf } from "./toolbar-comman
 import { attentionPath, hintFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 import { samePath } from "../stage/paths.js";
+import { looksFromEye } from "../stage/pointer.js";
 
 /** How many verbs the prompt shows. */
 export const MAX_VERBS = 3;
@@ -92,7 +93,8 @@ function create(api) {
   let offWatch = null;
 
   const keymap = () => api.collect("keymap").map((r) => r.value).find((v) => v && typeof v.pinned === "function") ?? null;
-  const locked = () => !!api.view.get().pointer?.locked;
+  // the look is the eye's (the crosshair's): under lock, or a lock body under touch
+  const fromEye = () => looksFromEye(api.view.get().pointer);
 
   function refresh() {
     const km = keymap();
@@ -174,10 +176,10 @@ function create(api) {
     return el;
   }
 
-  // Under the crosshair when locked; under the pointer otherwise.
+  // Under the crosshair when the look is the eye's; under the pointer otherwise.
   function place() {
     if (prompt.hidden) return;
-    const at = locked() || !pointer ? null : pointer;
+    const at = fromEye() || !pointer ? null : pointer;
     prompt.style.setProperty("--use-x", at ? `${at.x}px` : "50%");
     prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
   }

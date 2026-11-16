@@ -278,6 +278,26 @@ describe("scene.use", () => {
       expect(log).toEqual([["helm", "helm", undefined]]);
     });
 
+    it("by touch (a finger never locks, and hovers nowhere): it looks along the middle of the view all the same, the prompt in the middle", async () => {
+      await mount();
+      const vp = s.debug.viewport;
+      vp.centerRay = () => ({ origin: eye, dir: [0, 0, -1] });
+      vp.raycast = () => ({ id: "spoke", point: [0, 1, 0], normal: null, distance: 1.5 });
+      const tap = (type) => s.canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 4, pointerType: "touch", button: 0, buttons: type === "pointerdown" ? 1 : 0 }));
+      tap("pointerdown");
+      tap("pointerup");
+      expect(s.api("t.game").body.enter("walk")).toBe(true);
+      await settle();
+      expect(s.local.get().pointer).toMatchObject({ lock: true, touch: true, locked: false });
+      expect(verbs()).toEqual(["FTake the helm"]);
+      expect([prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")]).toEqual(["50%", "50%"]);
+      // a finger dragging on the world (looking) doesn't move it under the finger
+      s.canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 4, pointerType: "touch", clientX: 30, clientY: 40, buttons: 1 }));
+      expect(prompt().style.getPropertyValue("--use-x")).toBe("50%");
+      prompt().querySelector(".use-verb").click();
+      expect(log).toEqual([["helm", "helm", undefined]]);
+    });
+
     it("a verb whose key the body reserves shows without it, and no key runs it", async () => {
       await walking({ hitId: "barrel", distance: 1 });
       expect(verbs()).toEqual(["GPick up", "Wave"]);

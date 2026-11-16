@@ -29,7 +29,9 @@ Built only from the scene's extension contract (scene/STAGE.md).
 - **On touch** there is no lock: the stage's touch pad (scene's
   `scene.touch`) shows the walking keys from their labels (Forward, Back,
   Left, Right on the pad; Run and Jump as buttons), and a finger dragging on
-  the world looks round, at the same time.
+  the world looks round, at the same time. The look is the eye's, as under
+  lock (scene/TOOLS.md Decisions 12): the use prompt sits in the middle of
+  the view, and a tap on its button uses what you look at.
 - **Under another body** (a seat): it waits, its keys up and the camera let
   go; when that body goes, it walks on from the eye.
 - **Presence**: `avatar` `{ feet, yaw, pitch }` at 20 Hz while walking; the

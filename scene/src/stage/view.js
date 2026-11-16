@@ -25,6 +25,7 @@ import css from "./stage.css?inline";
 import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
 import { createRouter } from "./router.js";
+import { looksFromEye } from "./pointer.js";
 import { createDrawer } from "./dock.js";
 import { escapeHint } from "./ladder.js";
 import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
@@ -1099,10 +1100,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── the look and attention (TOOLS.md §3) ─────────────────────────────────
 
-  // Where the look is, in the world and in keys: under lock, the eye ray's hit; else the pointer's (the last hover).
+  // Where the look is, in the world and in keys: under lock (or a lock body under touch: pointer.js
+  // looksFromEye), the eye ray's hit; else the pointer's (the last hover).
   let hoverHit = null; // { id: key, point, distance }
   function look() {
-    if (atom.get().pointer?.locked) {
+    if (looksFromEye(atom.get().pointer)) {
       let h = null;
       try {
         const r = viewport.centerRay();

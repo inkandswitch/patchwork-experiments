@@ -22,6 +22,17 @@ export const lockedNow = ({ lock = false, wanted = false, released = false, refu
   !!lock && !wanted && !released && !refused && !touch;
 
 /**
+ * Does the look go along the eye's ray (the middle of the view), not under
+ * the pointer? Under lock; and for a lock body under touch, where a finger
+ * never locks and never hovers (it only presses and drags, to look), so the
+ * body looks where its eye does, as it would locked:
+ *
+ *   eye ⇔ locked ∨ (body.lock ∧ ¬wanted ∧ touch)
+ * @param {{ locked?: boolean, lock?: boolean, wanted?: boolean, touch?: boolean } | null | undefined} p  the view's `pointer`
+ */
+export const looksFromEye = (p) => !!p?.locked || (!!p?.lock && !p?.wanted && !!p?.touch);
+
+/**
  * One event on the pointer state, and what the router does about it.
  * Events: { type: "press" } (on the world), { type: "key" },
  * { type: "release" } (the browser let go: its Escape, the window losing

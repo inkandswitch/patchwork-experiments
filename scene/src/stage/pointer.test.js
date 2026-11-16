@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lockedNow, pointerStep } from "./pointer.js";
+import { lockedNow, looksFromEye, pointerStep } from "./pointer.js";
 
 // H5's pure side (TOOLS.md §4): locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧
 // ¬refused ∧ ¬touch, over all 2⁵ states, and every event on each.
@@ -26,6 +26,21 @@ describe("the pointer (H5), exhaustively", () => {
       expect(lockedNow(s)).toBe(s.lock && !s.wanted && !s.released && !s.refused && !s.touch);
     }
     expect(n).toBe(32);
+  });
+
+  it("the look is the eye's under lock, and for a lock body under touch (no hover to look with), for every state", () => {
+    let n = 0;
+    for (const s of states()) {
+      n++;
+      const p = { ...s, locked: lockedNow(s) };
+      expect([s, looksFromEye(p)]).toEqual([s, p.locked || (s.lock && !s.wanted && s.touch)]);
+      // a mouse that isn't locked (released, refused, or something wants the pointer) looks where it hovers;
+      // a finger hovers nowhere, so wherever the body would lock, its eye looks
+      if (s.lock && !s.wanted) expect(looksFromEye(p)).toBe(s.touch || (!s.released && !s.refused));
+      else expect(looksFromEye(p)).toBe(false);
+    }
+    expect(n).toBe(32);
+    expect(looksFromEye(null)).toBe(false);
   });
 
   it("every event on every state does only what it says", () => {

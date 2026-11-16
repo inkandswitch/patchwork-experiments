@@ -39,7 +39,7 @@ each build step.
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
 | **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
-| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock; a press moves the look to what it pressed, before anything handles it). Keys, the use prompt and a menu go to it. |
+| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock and for a lock body under touch, `looksFromEye`; a press moves the look to what it pressed, before anything handles it). Keys, the use prompt and a menu go to it. |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
@@ -1594,7 +1594,8 @@ A **command**:
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - **Attention** is one target per view (TOOLS.md §3): the selection if
-  any, else the look (the pointer's hit, or the eye ray under lock;
+  any, else the look (the pointer's hit, or the eye ray under lock and for
+  a lock body under touch, `pointer.js` `looksFromEye`;
   `api.attention()`, `api.look()`). The key map (`scene.keys`) tries
   attention's path (the selection; or the look's hit, then what it's
   attached to, nearest first), then the scene, whatever kind of target the
@@ -1603,8 +1604,8 @@ A **command**:
   shows a key asks it (`hintFor`): a key is shown only where pressing it
   does that (H3), so walking, Draw shows without D and is in the menu.
 - **The use prompt** (`scene.use`, general: it runs in every scene) shows
-  attention's verbs where attention is (the crosshair under lock, else the
-  pointer): on the selection, or the first object along the look's chain
+  attention's verbs where attention is (the crosshair when the look is the
+  eye's, else the pointer): on the selection, or the first object along the look's chain
   with a keyed command shown on `"use"`, at most three, each a button, its
   key the resolver's. It shows; the key map does.
 - **Held verbs.** `run` may return a session, `{ end(), cancel(), update?(dt) }`.

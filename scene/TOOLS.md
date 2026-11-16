@@ -139,7 +139,9 @@ stage's doc).
 ## 3. Attention, selection and handles
 
 **Attention** is one target per view: the selection if any, else the look
-(the pointer's hit, or the eye ray under lock). The prompt and the halo are
+(the pointer's hit, or the eye ray under lock and for a lock body under
+touch, where a finger hovers nowhere: `pointer.js` `looksFromEye`,
+Decisions 12). The prompt and the halo are
 one surface over it, and keys go to it (§5): what is shown is what keys do.
 
 **A press** runs COMPOSITION §5's chain: the held tool, the widget owner
@@ -694,7 +696,7 @@ and Dee still walks. To try his changes, he plays a copy.
 |---|---|---|
 | H1 | **What runs is the doc's.** The host resyncs only on a registry or doc change | Over each fixture doc, every change to body, held tool, selection, focus, prefs or clock triggers no sync |
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
-| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them), 12 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`); the pad presses each shown control's code into the key order, to the layer shown, and a lit control is one its layer holds (`src/parts/touch.test.js`; every finger sequence, `src/hold-key.test.js`); every modifier code × {claimed, reserved but passed, not reserved} × {let go at the root, elsewhere in the window, by a blur}: an event's flag is set iff that key is down, or the DOM's (`src/stage/router.test.js`); the Esc hint, by a finger, pops the rung it names |
+| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them, each asserted in sailing's `stations.test.js`), 11 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`); the pad presses each shown control's code into the key order, to the layer shown, and a lit control is one its layer holds (`src/parts/touch.test.js`; every finger sequence, `src/hold-key.test.js`); every modifier code × {claimed, reserved but passed, not reserved} × {let go at the root, elsewhere in the window, by a blur}: an event's flag is set iff that key is down, or the DOM's (`src/stage/router.test.js`); the Esc hint, by a finger, pops the rung it names |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
 | H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release, or a finger, the next mouse press on the world only relocks; a finger never locks; nothing but a relock, a body or the pointer unwanted takes the lock | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router); finger then mouse on a button, on an edge, on the world with the grant after the handler (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
@@ -1307,3 +1309,20 @@ The project lead decided the five open questions on 2026-11-12.
    should declare a `label` of its own (as a body has a label and a tool
    a name) to name its group, or the group take its extension's name
    (which `local.running` would then have to carry).
+12. **A lock body under touch looks from its eye** (decided unattended
+   (2026-11-16, lane/n9), for the lead). A finger never locks the pointer
+   (Decisions 9) and never hovers (it only presses and drags, and the
+   router hovers only a pointer with no button down), so a first-person
+   body under touch had no look at all: no use prompt, no F, nothing to
+   take a station by. The look is now the eye ray's wherever the body
+   would lock and nothing wants the pointer, by mouse or finger:
+   `looksFromEye(pointer)` ⇔ locked ∨ (body.lock ∧ ¬wanted ∧ touch)
+   (`stage/pointer.js`, checked over all 32 pointer states), read by the
+   view's look and by the use prompt, which then sits in the middle of the
+   view as under lock and doesn't follow a finger dragging to look. So a
+   verb is a tap on the prompt's button, at what the eye looks at (sailing
+   takes the helm that way, `sailing/probes/touch-run.mjs`). A mouse that
+   isn't locked (released, refused) still looks where it hovers. Not
+   changed: a press's hit (a finger's press is still where it lands).
+   Open for the lead: whether a lock body under touch should draw the
+   stage's own crosshair (sailing draws its own; walk draws none).
