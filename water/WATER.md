@@ -19,7 +19,7 @@ On 2026-11-15 the note gained a second design, "Water bodies": water as a
 shape that sea behaviour is put on, with bounded water that an inner world
 keeps wherever it is placed. It follows the lead's answers of that day
 (Decisions 43 to 56) and replaces the parts of "The design" it names. It was
-built the same day in `lane/water` (Decisions 57 to 72; "Where it stands").
+built the same day in `lane/water` (Decisions 57 to 74; "Where it stands").
 
 ## The problem
 
@@ -414,7 +414,7 @@ Doc edits with step 1:
 
 Designed 2026-11-15 in the lane `lane/water`, and built there the same day
 (steps 1 to 5 and 7; step 6, republishing, is dry runs only, and step 8 is
-deferred: Decisions 57 to 72). It follows two of the lead's answers of that
+deferred: Decisions 57 to 74). It follows two of the lead's answers of that
 day (Decisions 43 to 56):
 
 - To Decision 42 (should the sea bring water with it?): "should the water
@@ -1492,6 +1492,23 @@ it chose this, each with its reason.
     `scene/probes/publish-links.mjs`, which reads its links from the
     server, so it runs after the basin is published (the command is in
     `publish-basin.mjs`).
+73. **One scene change after all: arriving doesn't wait for content from an
+    object with nothing to load.** "Scene: no change" assumed objects with
+    no source were already whole citizens. They weren't quite: the stage's
+    `contentIn` waited for every visible object's content before a start
+    through a seat body, so a doc holding a Sea waited the full
+    ARRIVE_WAIT_MS (20 s), and aboard-run's "B arrives watching from a
+    seat" failed. `showsContent(o)` (scene `providers.js`: a source or a
+    render) now says what has content to load, and `contentIn` skips the
+    rest. It adds no concept: it corrects an existing rule for a shape the
+    stage already accepted. Nothing in it is about water.
+74. **Scene's `needs` has no consumer now.** `sailing.ship` dropped
+    `needs: ["water"]` (as designed), and it was the only declaration in
+    the repo. The mechanism stays (removing it is a scene change nobody
+    asked for); D3, a per-object `needs`, is its candidate future, or its
+    removal. scene/probes/xdnd-run.mjs's sail mode still checks a scene
+    `sailing.sea` trait and the needs notice, so it fails until it is
+    rewritten; it was not run here.
 
 ## Invariants
 
@@ -1570,4 +1587,19 @@ On 2026-11-15 the lead accepted Decision 1's sentence and boarding by click
 (43, 44), and "Water bodies" was designed in the lane `lane/water` (45 to
 56): water as an object whose extent says whether it is weather or a thing,
 the sea and a current as behaviours on it, and the weather on the scene.
-None of it is built yet; its build order is in that section.
+
+Built the same day in `lane/water` (Decisions 57 to 74): the water package's
+object trait, the choice (`choose.js`), bounded readers (`bounded.js`),
+patches, `water.current`, and the Water and Pond parts; sailing's
+`sailing.weather`, the sea as an object behaviour built from the world's
+wind, `oceanAt` and the per-step hull sampling, the Sea part, templates and
+the Sloop writing a Sea object; terrain's template writing the bay's Sea;
+the words in `scene/`; and one scene correction (73). Suites: water 290,
+sailing 744 (slow tier 37 of 39, the two agreement fails as on
+`scene-stage`), terrain 108, scene 1450. Every new invariant mutation-checked
+(the table above). Chrome under the lock: harbour-run 22/22, basin-run
+14/14, links-run 37/37, pins-run 27/27, sailing-run 82 with the four
+head-to-wind failures it had before, aboard-run 65 with the six step-13
+failures it had before. Publisher dry runs: ship, ship --anchor, harbour
+(--offline), basin, aboard, fitout, rvyc. Nothing republished, synced or
+merged from the lane; walk's reader (71) is not built.
