@@ -281,6 +281,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       if (dead) return;
       atom.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown }) }));
     },
+    // its widths are this viewer's prefs, like the grid and the units (dock.js)
+    prefs: () => atom.get().prefs,
+    setPref: (key, px) => {
+      if (!dead) setPref(key, px);
+    },
   });
 
   // ─── the view's atom ──────────────────────────────────────────────────────
@@ -1299,7 +1304,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   cleanups.push(
     atom.watch((next, prev) => {
-      if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
+      if (next.prefs !== prev.prefs) {
+        writeJSON(prefsKey, next.prefs);
+        drawer.refreshWidth();
+      }
       if (next.body !== prev.body || next.held !== prev.held) announce();
       if (next.selected !== prev.selected) router?.refresh();
       requestFlush();

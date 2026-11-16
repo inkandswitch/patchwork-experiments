@@ -254,7 +254,9 @@ STAGE.md, "Extract and bundle".
   (in Edit a selection opens it, and it stays open, on the scene when
   nothing is selected, until its ×, the toolbar or leaving Edit), Objects, Dimensions and Parts when you open
   them from the toolbar, and any extension's docked editor (Camber's
-  Shape, a die's panel).
+  Shape, a die's panel). Drag its left edge to resize it (double-click for
+  the default): the stage's own panels and docked editors each keep the
+  width you last gave them, per scene.
 
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
