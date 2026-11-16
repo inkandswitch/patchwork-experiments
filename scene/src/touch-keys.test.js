@@ -7,28 +7,28 @@ import { EDIT, LOOK } from "./stage/bodies.js";
 // Every keys declaration in the repo, copied as literals (scene can't import
 // another package). Re-copy when one changes.
 const L = (pairs) => pairs.map(([code, label]) => ({ code, label }));
-const codes = (list) => list.map((code) => ({ code }));
 
 /** walk/src/body.js WALK_KEYS */
 const WALK_KEYS = L([["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"], ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"], ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"]]);
-/** sailing/src/crew.js walkKeys: MOVE_KEYS, unlabelled */
-const ABOARD_KEYS = codes(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
+/** sailing/src/crew.js WALK_KEYS ("aboard": a copy of walk's, until N10 folds it into walk) */
+const ABOARD_KEYS = L([["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"], ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"], ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"]]);
 /**
- * sailing/src/stations.js, as crew.js's station body declares them (bare
- * codes): every set a station can take. A post is sailKeys (Q E with the
- * sheet, R with the halyard) + F; a winch is jibKeys (Q E R B with a jib) +
- * F; the helm is A D ← → + sailKeys (sheet and halyard, with a sail) +
- * jibKeys (B, with a jib) + F.
+ * sailing/src/stations.js, as crew.js's station body declares them: every
+ * set a station can take (sailing's stations.test.js asserts each). A post
+ * is sailKeys (Q E with the sheet, R the halyard: takePost always works it)
+ * + F; a winch is jibKeys (Q E R B with a jib) + F; the helm is A D ← → +
+ * sailKeys (sheet and halyard, with a sail) + jibKeys (B, with a jib) + F.
  */
-const POST_KEYS = codes(["KeyQ", "KeyE", "KeyR", "KeyF"]); // the mainsheet, or the mast with the sheet led there
-const POST_SHEET_KEYS = codes(["KeyQ", "KeyE", "KeyF"]); // a post with the sheet only
-const MAST_KEYS = codes(["KeyR", "KeyF"]); // the mast, the halyard only
-const BARE_KEYS = codes(["KeyF"]); // a post with no sail, a winch with no jib
-const WINCH_KEYS = codes(["KeyQ", "KeyE", "KeyR", "KeyB", "KeyF"]);
-const HELM_KEYS = codes(["KeyA", "KeyD", "ArrowLeft", "ArrowRight", "KeyQ", "KeyE", "KeyR", "KeyB", "KeyF"]); // a sail and a jib
-const HELM_SAIL_KEYS = codes(["KeyA", "KeyD", "ArrowLeft", "ArrowRight", "KeyQ", "KeyE", "KeyR", "KeyF"]); // a sail, no jib
-const HELM_JIB_KEYS = codes(["KeyA", "KeyD", "ArrowLeft", "ArrowRight", "KeyB", "KeyF"]); // a jib, no sail
-const HELM_BARE_KEYS = codes(["KeyA", "KeyD", "ArrowLeft", "ArrowRight", "KeyF"]); // neither
+const [Q, E, R, FURL, B, F] = [["KeyQ", "Haul in"], ["KeyE", "Ease out"], ["KeyR", "Halyard"], ["KeyR", "Furler"], ["KeyB", "Back jib / let fly"], ["KeyF", "Leave"]];
+const STEER = [["KeyA", "Steer to port"], ["KeyD", "Steer to starboard"], ["ArrowLeft", "Steer to port"], ["ArrowRight", "Steer to starboard"]];
+const POST_KEYS = L([Q, E, R, F]); // the mainsheet, or the mast with the sheet led there
+const MAST_KEYS = L([R, F]); // the mast, the halyard only
+const BARE_KEYS = L([F]); // a post with no sail, a winch with no jib
+const WINCH_KEYS = L([Q, E, FURL, B, F]);
+const HELM_KEYS = L([...STEER, Q, E, R, B, F]); // a sail and a jib
+const HELM_SAIL_KEYS = L([...STEER, Q, E, R, F]); // a sail, no jib
+const HELM_JIB_KEYS = L([...STEER, B, F]); // a jib, no sail
+const HELM_BARE_KEYS = L([...STEER, F]); // neither
 /** arena/src/play.js GUN_KEYS */
 const GUN_KEYS = L([["KeyR", "Reload"]]);
 /** machine/src/patchwork/input.js KEYS.doom */
@@ -50,7 +50,7 @@ const SNES_KEYS = L([
 // Look, Edit and a seat all declare [] (stage/bodies.js, seats/src/body.js): one row.
 const BODIES = {
   none: [], walk: WALK_KEYS, aboard: ABOARD_KEYS,
-  post: POST_KEYS, postSheet: POST_SHEET_KEYS, mast: MAST_KEYS, bare: BARE_KEYS, winch: WINCH_KEYS,
+  post: POST_KEYS, mast: MAST_KEYS, bare: BARE_KEYS, winch: WINCH_KEYS,
   helm: HELM_KEYS, helmSail: HELM_SAIL_KEYS, helmJib: HELM_JIB_KEYS, helmBare: HELM_BARE_KEYS,
 };
 // bag's drawn piece declares CARRY_KEYS (bag/src/extension.js); the machine's pad declares its kind's KEYS
@@ -68,8 +68,8 @@ const DOOM_REST = "t.ShiftLeft=Run, t.ControlLeft=Fire, t.Space=Use, t.Digit1=We
 const SNES = "t.ArrowUp=Up@up, t.ArrowDown=Down@down, t.ArrowLeft=Left@left, t.ArrowRight=Right@right, t.KeyZ=B, t.KeyX=A, t.KeyA=Y, t.KeyS=X";
 const SNES_REST = "t.KeyW=R, t.Enter=Start, t.ShiftRight=Select"; // after L (KeyQ), which a carry takes
 const WALK = "b.KeyW=Forward@up, b.KeyA=Left@left, b.KeyS=Back@down, b.KeyD=Right@right, b.ShiftLeft=Run, b.Space=Jump";
-const ABOARD = "b.KeyW=W, b.KeyA=A, b.KeyS=S, b.KeyD=D, b.ArrowUp=↑@up, b.ArrowDown=↓@down, b.ArrowLeft=←@left, b.ArrowRight=→@right, b.ShiftLeft=Shift, b.Space=Space";
-const WHEEL = "b.KeyA=A, b.KeyD=D, b.ArrowLeft=←@left, b.ArrowRight=→@right";
+// A and ← are one "Steer to port", in the pad's left place; D and → one "Steer to starboard"
+const WHEEL = "b.KeyA=Steer to port@left, b.KeyD=Steer to starboard@right";
 
 // Each case's controls, in order: from (g)esture, (t)ool or (b)ody, the code
 // pressed, the label, and the pad slot if any. The gesture's and the tool's
@@ -98,18 +98,17 @@ const BELOW = {
   // D (Right, a button: the pad's right place is snes's), ShiftLeft and Space. Labels are one per
   // reserver, not across them: snes's "Right" and walk's "Right" are both shown (the pad shows `from`)
   walk: [WALK, WALK, WALK, WALK, WALK, WALK, "", "", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump"],
-  aboard: [ABOARD, ABOARD, ABOARD, ABOARD, ABOARD, ABOARD, "", "", "b.KeyD=D, b.ShiftLeft=Shift, b.Space=Space", "b.KeyD=D, b.ShiftLeft=Shift, b.Space=Space"],
+  aboard: [WALK, WALK, WALK, WALK, WALK, WALK, "", "", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump"], // labelled as walk's: the same
   // the carry's Q, E, F over a station's; the gun's R over the post's
-  post: ["b.KeyQ=Q, b.KeyE=E, b.KeyR=R, b.KeyF=F", "b.KeyR=R", "b.KeyQ=Q, b.KeyE=E, b.KeyF=F", "", "b.KeyR=R", "b.KeyR=R", "b.KeyQ=Q, b.KeyR=R, b.KeyF=F", "b.KeyR=R", "b.KeyE=E, b.KeyR=R, b.KeyF=F", "b.KeyR=R"],
-  postSheet: ["b.KeyQ=Q, b.KeyE=E, b.KeyF=F", "", "b.KeyQ=Q, b.KeyE=E, b.KeyF=F", "", "", "", "b.KeyQ=Q, b.KeyF=F", "", "b.KeyE=E, b.KeyF=F", ""],
-  mast: ["b.KeyR=R, b.KeyF=F", "b.KeyR=R", "b.KeyF=F", "", "b.KeyR=R", "b.KeyR=R", "b.KeyR=R, b.KeyF=F", "b.KeyR=R", "b.KeyR=R, b.KeyF=F", "b.KeyR=R"],
-  bare: ["b.KeyF=F", "", "b.KeyF=F", "", "", "", "b.KeyF=F", "", "b.KeyF=F", ""],
-  winch: ["b.KeyQ=Q, b.KeyE=E, b.KeyR=R, b.KeyB=B, b.KeyF=F", "b.KeyR=R, b.KeyB=B", "b.KeyQ=Q, b.KeyE=E, b.KeyB=B, b.KeyF=F", "b.KeyB=B", "b.KeyR=R, b.KeyB=B", "b.KeyR=R, b.KeyB=B", "b.KeyQ=Q, b.KeyR=R, b.KeyB=B, b.KeyF=F", "b.KeyR=R, b.KeyB=B", "b.KeyE=E, b.KeyR=R, b.KeyB=B, b.KeyF=F", "b.KeyR=R, b.KeyB=B"],
+  post: ["b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyF=Leave", "", "b.KeyR=Halyard", "b.KeyR=Halyard", "b.KeyQ=Haul in, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyE=Ease out, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard"],
+  mast: ["b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyF=Leave", "", "b.KeyR=Halyard", "b.KeyR=Halyard", "b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard"],
+  bare: ["b.KeyF=Leave", "", "b.KeyF=Leave", "", "", "", "b.KeyF=Leave", "", "b.KeyF=Leave", ""],
+  winch: ["b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyR=Furler, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyR=Furler, b.KeyB=Back jib / let fly", "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyB=Back jib / let fly", "b.KeyR=Furler, b.KeyB=Back jib / let fly", "b.KeyR=Furler, b.KeyB=Back jib / let fly", "b.KeyQ=Haul in, b.KeyR=Furler, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyR=Furler, b.KeyB=Back jib / let fly", "b.KeyE=Ease out, b.KeyR=Furler, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyR=Furler, b.KeyB=Back jib / let fly"],
   // doom takes the wheel's A, D, ← and → (and E); snes takes A, ← and → (and Q)
-  helm: [J(WHEEL, "b.KeyQ=Q, b.KeyE=E, b.KeyR=R, b.KeyB=B, b.KeyF=F"), J(WHEEL, "b.KeyR=R, b.KeyB=B"), J(WHEEL, "b.KeyQ=Q, b.KeyE=E, b.KeyB=B, b.KeyF=F"), J(WHEEL, "b.KeyB=B"), J(WHEEL, "b.KeyR=R, b.KeyB=B"), J(WHEEL, "b.KeyR=R, b.KeyB=B"), "b.KeyQ=Q, b.KeyR=R, b.KeyB=B, b.KeyF=F", "b.KeyR=R, b.KeyB=B", "b.KeyD=D, b.KeyE=E, b.KeyR=R, b.KeyB=B, b.KeyF=F", "b.KeyD=D, b.KeyR=R, b.KeyB=B"],
-  helmSail: [J(WHEEL, "b.KeyQ=Q, b.KeyE=E, b.KeyR=R, b.KeyF=F"), J(WHEEL, "b.KeyR=R"), J(WHEEL, "b.KeyQ=Q, b.KeyE=E, b.KeyF=F"), WHEEL, J(WHEEL, "b.KeyR=R"), J(WHEEL, "b.KeyR=R"), "b.KeyQ=Q, b.KeyR=R, b.KeyF=F", "b.KeyR=R", "b.KeyD=D, b.KeyE=E, b.KeyR=R, b.KeyF=F", "b.KeyD=D, b.KeyR=R"],
-  helmJib: [J(WHEEL, "b.KeyB=B, b.KeyF=F"), J(WHEEL, "b.KeyB=B"), J(WHEEL, "b.KeyB=B, b.KeyF=F"), J(WHEEL, "b.KeyB=B"), J(WHEEL, "b.KeyB=B"), J(WHEEL, "b.KeyB=B"), "b.KeyB=B, b.KeyF=F", "b.KeyB=B", "b.KeyD=D, b.KeyB=B, b.KeyF=F", "b.KeyD=D, b.KeyB=B"],
-  helmBare: [J(WHEEL, "b.KeyF=F"), WHEEL, J(WHEEL, "b.KeyF=F"), WHEEL, WHEEL, WHEEL, "b.KeyF=F", "", "b.KeyD=D, b.KeyF=F", "b.KeyD=D"],
+  helm: [J(WHEEL, "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyR=Halyard, b.KeyB=Back jib / let fly, b.KeyF=Leave"), J(WHEEL, "b.KeyR=Halyard, b.KeyB=Back jib / let fly"), J(WHEEL, "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyB=Back jib / let fly, b.KeyF=Leave"), J(WHEEL, "b.KeyB=Back jib / let fly"), J(WHEEL, "b.KeyR=Halyard, b.KeyB=Back jib / let fly"), J(WHEEL, "b.KeyR=Halyard, b.KeyB=Back jib / let fly"), "b.KeyQ=Haul in, b.KeyR=Halyard, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyR=Halyard, b.KeyB=Back jib / let fly", "b.KeyD=Steer to starboard, b.KeyE=Ease out, b.KeyR=Halyard, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyD=Steer to starboard, b.KeyR=Halyard, b.KeyB=Back jib / let fly"],
+  helmSail: [J(WHEEL, "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyR=Halyard, b.KeyF=Leave"), J(WHEEL, "b.KeyR=Halyard"), J(WHEEL, "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyF=Leave"), WHEEL, J(WHEEL, "b.KeyR=Halyard"), J(WHEEL, "b.KeyR=Halyard"), "b.KeyQ=Haul in, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyD=Steer to starboard, b.KeyE=Ease out, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyD=Steer to starboard, b.KeyR=Halyard"],
+  helmJib: [J(WHEEL, "b.KeyB=Back jib / let fly, b.KeyF=Leave"), J(WHEEL, "b.KeyB=Back jib / let fly"), J(WHEEL, "b.KeyB=Back jib / let fly, b.KeyF=Leave"), J(WHEEL, "b.KeyB=Back jib / let fly"), J(WHEEL, "b.KeyB=Back jib / let fly"), J(WHEEL, "b.KeyB=Back jib / let fly"), "b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyB=Back jib / let fly", "b.KeyD=Steer to starboard, b.KeyB=Back jib / let fly, b.KeyF=Leave", "b.KeyD=Steer to starboard, b.KeyB=Back jib / let fly"],
+  helmBare: [J(WHEEL, "b.KeyF=Leave"), WHEEL, J(WHEEL, "b.KeyF=Leave"), WHEEL, WHEEL, WHEEL, "b.KeyF=Leave", "", "b.KeyD=Steer to starboard, b.KeyF=Leave", "b.KeyD=Steer to starboard"],
 };
 const EXPECTED = Object.fromEntries(Object.entries(BELOW).flatMap(([b, row]) => COLUMNS.map((col, i) => [`${b}|${col}`, J(ABOVE[col], row[i])])));
 
@@ -126,9 +125,9 @@ const parse = (s) =>
 const viewOf = (b, t, g) => ({ body: { keys: BODIES[b] }, held: TOOLS[t] && { keys: TOOLS[t] }, gesture: GESTURES[g] && { keys: GESTURES[g] } });
 const CASES = Object.keys(BODIES).flatMap((b) => Object.keys(TOOLS).flatMap((t) => Object.keys(GESTURES).map((g) => [b, t, g])));
 
-describe("touchControls: every keys declaration in the repo, in every combination (12 bodies × 5 tools × 2 gestures)", () => {
+describe("touchControls: every keys declaration in the repo, in every combination (11 bodies × 5 tools × 2 gestures)", () => {
   it("the table covers every case and only those", () => {
-    expect(CASES.length).toBe(120);
+    expect(CASES.length).toBe(110);
     expect(Object.keys(EXPECTED).sort()).toEqual(CASES.map((c) => c.join("|")).sort());
   });
 

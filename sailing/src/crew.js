@@ -35,7 +35,18 @@ const EASE = 12; // how fast an avatar closes on its latest record (1/s)
 const STILL = Object.freeze({ forward: 0, strafe: 0 });
 /** How far the crew reaches (m), walking her deck or at a station: the bodies' reach (scene/TOOLS.md §4). */
 export const REACH = 2.5;
-const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
+/**
+ * Walking her deck: the keys "aboard" declares, labelled as walk's are (a copy
+ * of walk/src/body.js WALK_KEYS: codes labelled alike do the same thing, so a
+ * touch pad shows W and ↑ as one Forward; scene/TOOLS.md §4, §5).
+ */
+const WALK_KEYS = Object.freeze(
+  [
+    ["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"],
+    ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"],
+    ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"],
+  ].map(([code, label]) => Object.freeze({ code, label })),
+);
 
 const NAME_CSS = `.scene-stage .label.sail-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: #f6f3ea;
@@ -528,8 +539,6 @@ export function createCrew(api, ctx) {
   let overOrbit = true; // "aboard" went on over the stage's orbit camera, Look (else over a body that has a view of its own: a seat)
   let suspended = false; // another body (a seat) is over "aboard"
 
-  const walkKeys = Object.freeze([...MOVE_KEYS].map((code) => ({ code })));
-
   /** Stand where the view is (a seat's eye, dropped by a seated eye's height), on the ship it's over: the walker after a seat. */
   function standAtEye() {
     const cam = api.camera.get();
@@ -553,7 +562,7 @@ export function createCrew(api, ctx) {
   const aboardBody = {
     id: AB,
     label: "Aboard",
-    keys: walkKeys,
+    keys: WALK_KEYS,
     lock: true,
     reach: REACH,
     enter() {
@@ -567,7 +576,7 @@ export function createCrew(api, ctx) {
       releaseCamera = api.camera.hold();
       publish(true);
       return {
-        keys: walkKeys,
+        keys: WALK_KEYS,
         input: {
           ...looking,
           key(ev) {
@@ -616,10 +625,9 @@ export function createCrew(api, ctx) {
       pendingStation = null;
       if (!p || !playing) return null;
       const s = arrive(id, p.handlers);
-      const declared = Object.freeze((p.handlers.keys ?? []).map((code) => ({ code })));
       return {
         label: stationLabel(id),
-        keys: declared,
+        keys: Object.freeze([...(p.handlers.keys ?? [])]),
         input: {
           ...looking,
           key: (ev) => !!s.handlers.key?.(ev),
@@ -680,11 +688,13 @@ export function createCrew(api, ctx) {
 
   /**
    * Stand at a station: the "station" body over walking, which hears the
-   * keys the station declares first (`keys`: codes). You're put just aft of
+   * keys the station declares first (`keys`). You're put just aft of
    * it, facing forward; the mouse still turns your head.
    * @param {string} id
-   * @param {{ keys: string[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
-   *   keys: the codes the station takes (scene/TOOLS.md §5: declared, so a shown key works);
+   * @param {{ keys: { code: string, label: string }[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
+   *   keys: the keys the station takes, each with what it does (the shape every body,
+   *   tool and gesture declares, scene/TOOLS.md §4, §5: declared, so a shown key works;
+   *   labelled alike, the same thing, so a touch pad shows them as one control);
    *   look: a world point to turn the eye to on arriving (else forward)
    * @returns {() => void} leave
    */
