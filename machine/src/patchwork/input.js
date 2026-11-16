@@ -12,6 +12,8 @@ const SNES_KEYS = {
   KeyZ: SNES.B, KeyX: SNES.A, KeyA: SNES.Y, KeyS: SNES.X, KeyQ: SNES.L, KeyW: SNES.R,
   Enter: SNES.START, ShiftRight: SNES.SELECT, Backspace: SNES.SELECT,
 };
+/** Each SNES pad button's name, by its bit. */
+const SNES_NAMES = { [SNES.UP]: "Up", [SNES.DOWN]: "Down", [SNES.LEFT]: "Left", [SNES.RIGHT]: "Right", [SNES.B]: "B", [SNES.A]: "A", [SNES.Y]: "Y", [SNES.X]: "X", [SNES.L]: "L", [SNES.R]: "R", [SNES.START]: "Start", [SNES.SELECT]: "Select" };
 // The standard gamepad layout, by button index.
 const SNES_PAD = [SNES.B, SNES.A, SNES.Y, SNES.X, SNES.L, SNES.R, 0, 0, SNES.SELECT, SNES.START, 0, 0, SNES.UP, SNES.DOWN, SNES.LEFT, SNES.RIGHT];
 
@@ -31,9 +33,10 @@ export const KEYS = {
     ["Comma", "Strafe left"], ["Period", "Strafe right"], ["AltLeft", "Strafe"], ["AltRight", "Strafe"],
     ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["ControlLeft", "Fire"], ["ControlRight", "Fire"],
     ["Space", "Use"], ["KeyE", "Use"],
-    ...[1, 2, 3, 4, 5, 6, 7].map((n) => [`Digit${n}`, `Weapon ${n}`]),
+    ...[1, 2, 3, 4, 5, 6, 7].map((n) => [`Digit${n}`, "Weapon"]),
   ].map(([code, label]) => ({ code, label })),
-  snes: Object.keys(SNES_KEYS).map((code) => ({ code, label: code })),
+  // each key labelled with the pad's button it presses (SNES_KEYS)
+  snes: Object.entries(SNES_KEYS).map(([code, bit]) => ({ code, label: SNES_NAMES[bit] })),
 };
 
 /**
