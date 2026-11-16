@@ -355,8 +355,9 @@ happened to start in never counts.
 part runs in every scene, a game's included; what keeps the editor's chrome
 out of a game is that it shows only where attention asks for it. The
 inspector is a drawer tab a selection opens in Edit (a beat later,
-DOUBLE_MS, if it's shut, so a double-click's second press finds the canvas
-its first did); it stays open, on
+DOUBLE_MS after the selection and after any press in the view, if
+it's shut, so a double-click's second press and its dblclick find the
+canvas its first click did); it stays open, on
 the scene when nothing is selected, until its × (shut until the selection
 changes), the toolbar's Inspector or leaving Edit shuts it; the outline (Objects), Dimensions and Parts are
 drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
@@ -1012,8 +1013,8 @@ swallowed.
 **Double-clicks.** A `dblclick`'s `hit` and `widget` are those of the press
 that began it, resolved as that press was pressed, so the chain is decided
 at that one moment: a thing that moved between the clicks (a boat pitching
-on her sea) or a canvas that narrowed under the pointer (the inspector
-opening on the first click's selection) still has the double-click. Its
+on her sea) or a canvas that narrowed under the pointer (a drawer opening
+between the clicks) still has the double-click. Its
 `x`, `y`, `ndc` and `ray` are the dblclick's own, so `hit.point` was on the
 first press's ray, not on `ev.ray`, and a moving nested stage localises
 that world point with its frame now. This holds only within the router's
@@ -1026,7 +1027,7 @@ the dblclick casts a new ray like any other event. A first hit whose object
 the first click removed is kept: what it comes to is its consumer's. The
 500 ms gates time the clicks as they were made, by each event's own
 `timeStamp` (one clock for every pointer event), not as the page handled
-them: a page busy between the clicks (the inspector opening on the first
+them: a page busy between the clicks (a drawer opening on the first
 click's selection) still has the double-click the browser fired, and one
 catching up on queued events doesn't pass clicks made too far apart. The
 dblclick is timed as the release that made it (the `pointerup` after the

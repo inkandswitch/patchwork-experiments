@@ -3,9 +3,10 @@
 // first selection and then stays open, showing whatever is selected and the
 // scene when nothing is (TOOLS.md Decisions 6, "The inspector stays open"),
 // so the canvas doesn't change width at every select and deselect. A
-// selection opens a shut tab a beat later (DOUBLE_MS, on the stage's time),
-// so the second press of a double-click lands on the canvas its first did
-// (TOOLS.md Decisions 6, "The inspector waits a beat"). Its ×
+// selection opens a shut tab a beat later (DOUBLE_MS, on the stage's time,
+// from the selection or the latest press in the view), so a
+// double-click's second press and its dblclick land on the canvas its first
+// click did (TOOLS.md Decisions 6, "The inspector waits a beat"). Its ×
 // shuts it until the selection changes; leaving Edit shuts it; the
 // toolbar's Inspector opens it with nothing selected, on the scene.
 //
@@ -978,15 +979,28 @@ function create(api) {
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
   let lastSel = null;
-  // The selection changed while the tab was shut, less than a beat (DOUBLE_MS,
-  // the double-click's interval) ago: its cancel until the beat passes, else
-  // null. A selection opens a shut tab only once it has, so the canvas keeps
-  // its width under a double-click's second press.
+  // The selection changed while the tab was shut, and a beat (DOUBLE_MS,
+  // each of the router's double-click gates: press to press, second press
+  // to dblclick) hasn't passed since it or since the latest press in the
+  // view: its cancel until it has, else null. A selection opens a shut tab
+  // only once it has. So no double-click the router takes sees the canvas
+  // change width: the selection its first click makes (or the first press,
+  // when a beat is already running and the click re-selects what is
+  // selected) holds the tab to the second press, and the second press
+  // holds it to the dblclick.
   let waiting = null;
   const stopWaiting = () => {
     waiting?.();
     waiting = null;
   };
+  const wait = () => {
+    stopWaiting();
+    waiting = api.clock.after(DOUBLE_MS, () => {
+      waiting = null;
+      follow(api.scene(), now());
+    });
+  };
+  api.listen(api.root, "pointerdown", () => waiting && wait(), true);
   const tab = drawerTab(api, {
     id: "inspector",
     title: "Inspector",
@@ -1021,11 +1035,7 @@ function create(api) {
       lastSel = sel;
       dismissed = false;
       stopWaiting();
-      if (!tab.isOpen())
-        waiting = api.clock.after(DOUBLE_MS, () => {
-          waiting = null;
-          follow(api.scene(), now());
-        });
+      if (!tab.isOpen()) wait();
     }
     // the inspector is the editor's (../stage/bodies.js): only in Edit, where
     // a selection opens it (a beat later, if it's shut) and it stays open (on

@@ -517,7 +517,8 @@ describe("scene.inspector: the pure side", () => {
 
 describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §6)", () => {
   const tab = () => s.instance("scene.inspector").tab;
-  // the stage's time, stepped: a beat is the double-click's interval (DOUBLE_MS), and a frame past it
+  // the stage's time, stepped: a beat is the double-click's interval (DOUBLE_MS), and a frame past it;
+  // part of one is half a beat and a frame, so two parts pass a beat and one doesn't
   let time = null;
   const still = async () => {
     await time.step(1, { still: true });
@@ -527,11 +528,17 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await time.advance(DOUBLE_MS + FRAME_MS);
     await settle(1);
   };
+  const part = async () => {
+    await time.advance(DOUBLE_MS / 2 + FRAME_MS);
+    await settle(1);
+  };
   async function bare(objects, extensions = []) {
     time = manualTime();
     s = await mountStage({ time, extensions: [INSPECTOR, ...extensions], doc: { objects, order: Object.keys(objects) } });
     await still();
   }
+  /** A press in the view (anything a double-click begins with), taking no stage time. */
+  const press = () => s.debug.view.root.dispatchEvent(new Event("pointerdown", { bubbles: true }));
   /** Select, and let the stage flush: no stage time passes. */
   async function pick(id) {
     s.local.swap((m) => ({ ...m, selected: id }));
@@ -586,6 +593,55 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await pick(null);
     await beat();
     expect(tab().isOpen()).toBe(false);
+    // a newer selection within the beat starts it again: a beat from "b", not from "a"
+    await pick("a");
+    await part();
+    await pick("b");
+    await part();
+    expect(tab().isOpen()).toBe(false);
+    await part();
+    expect(tab().isOpen()).toBe(true);
+    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("object");
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
+    await pick(null);
+    await beat();
+    // so does a press in the view: the slowest double-click the router takes (firstOfDouble: second press DOUBLE_MS
+    // after the first, dblclick DOUBLE_MS after that) runs past a beat from its first click's selection, and its
+    // second press holds the tab to the dblclick. Selected at the first release (120 ms in), second press at 480,
+    // dblclick at 650 (its release, 970 at most): shut throughout
+    await pick("a");
+    await time.advance(DOUBLE_MS - 140);
+    const pressed = time.now();
+    press();
+    await time.advance(170);
+    await settle(1);
+    expect(tab().isOpen()).toBe(false);
+    await time.advance(pressed + DOUBLE_MS - FRAME_MS - time.now());
+    await settle(1);
+    expect(tab().isOpen()).toBe(false);
+    await time.advance(2 * FRAME_MS);
+    await settle(1);
+    expect(tab().isOpen()).toBe(true);
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
+    await pick(null);
+    await beat();
+    // and a double-click whose first click re-selects what is selected changes no selection: its presses hold the tab
+    await pick("a");
+    await part();
+    press();
+    await part();
+    expect(tab().isOpen()).toBe(false);
+    await part();
+    expect(tab().isOpen()).toBe(true);
+    // with no beat running, a press opens nothing
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
+    await still();
+    press();
+    await beat();
+    expect(tab().isOpen()).toBe(false);
+    await pick(null);
+    await beat();
+    expect(tab().isOpen()).toBe(false);
     // asked for from the toolbar: at once, the scene's with nothing selected
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
     await still();
@@ -602,7 +658,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     expect(tab().body.querySelector(".inspector").dataset.kind).toBe("object");
   });
 
-  it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, a beat, Enter, and of 3 of an object, nothing, ×, Look, Edit, a beat, Enter: open exactly as the rule says", async () => {
+  it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, a beat, part of one, a press, Enter; of 3 of an object, nothing, ×, Look, Edit, a beat, part of one, Enter; and of 4 of two objects, part of a beat and a press: open exactly as the rule says", async () => {
     // The rule, as a model: in Edit, open once the toolbar opened it, or a
     // beat (DOUBLE_MS on the stage's time) after a selection of something
     // it shows made while it was shut, until × / toolbar off (then shut
@@ -616,25 +672,32 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     // So: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was open ∨ (an object
     // selected ∧ a beat since it was)))). The old rule, opening at once,
     // fails "select then Enter before the beat": the inspector opened
-    // under the double-click's second press.
-    const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit", "beat", "enter"];
+    // under the double-click's second press. The beat is counted from the
+    // latest selection change or press in the view: `part` (half a beat and
+    // a frame) twice passes one, once doesn't, and a newer selection or a
+    // press starts it again (`waited` is the parts since it began); a press
+    // with no beat running does nothing.
+    const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit", "beat", "part", "press", "enter"];
     const SEL = { obj: "a", obj2: "b", ref: "dimension:d1", none: null };
     const shows = (sel) => sel === "a" || sel === "b";
     const model = (m, e) => {
       const sel = SEL[e];
       if (sel !== undefined) {
         if (sel === m.sel) return m;
-        return { ...m, sel, open: m.edit && m.open, dismissed: false, waiting: !m.open };
+        return { ...m, sel, open: m.edit && m.open, dismissed: false, waiting: !m.open, waited: 0 };
       }
       if (e === "x") return m.open ? { ...m, open: false, dismissed: true } : m;
       if (e === "on") return m.edit ? { ...m, open: true, dismissed: false } : m;
       if (e === "off") return m.edit ? { ...m, open: false, dismissed: true } : m;
       if (e === "look") {
         if (!m.edit) return m;
-        return m.sel === null ? { ...m, edit: false, open: false } : { ...m, edit: false, open: false, sel: null, dismissed: false, waiting: !m.open };
+        return m.sel === null ? { ...m, edit: false, open: false } : { ...m, edit: false, open: false, sel: null, dismissed: false, waiting: !m.open, waited: 0 };
       }
       if (e === "edit") return m.edit ? m : { ...m, edit: true, open: !m.dismissed && shows(m.sel) && !m.waiting };
-      if (e === "beat") return m.waiting ? { ...m, waiting: false, open: m.open || (m.edit && !m.dismissed && shows(m.sel)) } : m;
+      const passed = (m) => ({ ...m, waiting: false, open: m.open || (m.edit && !m.dismissed && shows(m.sel)) });
+      if (e === "beat") return m.waiting ? passed(m) : m;
+      if (e === "part") return !m.waiting ? m : m.waited === 1 ? passed(m) : { ...m, waited: 1 };
+      if (e === "press") return m.waiting ? { ...m, waited: 0 } : m;
       // Enter: the general parts start again inside, the tab as it was
       if (e === "enter") return m.inside ? m : { ...m, inside: true, sel: null, dismissed: false, waiting: false };
       return m;
@@ -658,11 +721,16 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
         if (view.atom.get().body.id === "edit") inspectorApi().run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
       } else if (e === "look" || e === "edit") view.enterBody(e);
       else if (e === "enter") view.enter(["L"]);
+      else if (e === "press") view.root.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       if (e === "beat") await beat();
+      else if (e === "part") await part();
       else await still();
     };
     const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((q) => alphabet.map((e) => [...q, e])));
-    const seqs = [0, 1, 2].flatMap((n) => words(EVENTS, n)).concat(words(["obj", "none", "x", "look", "edit", "beat", "enter"], 3));
+    const seqs = [0, 1, 2]
+      .flatMap((n) => words(EVENTS, n))
+      .concat(words(["obj", "none", "x", "look", "edit", "beat", "part", "enter"], 3))
+      .concat(words(["obj", "obj2", "part", "press"], 4));
     let cases = 0;
     for (const q of seqs) {
       // from Edit at the outermost scene, nothing selected, the tab shut, no beat pending
@@ -673,7 +741,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
       view.enterBody("edit");
       await still();
       expect(open()).toBe(false);
-      let m = { edit: true, sel: null, open: false, dismissed: false, waiting: false, inside: false };
+      let m = { edit: true, sel: null, open: false, dismissed: false, waiting: false, waited: 0, inside: false };
       for (const e of q) {
         await apply(e);
         m = model(m, e);
@@ -682,8 +750,8 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
       }
       cases++;
     }
-    expect(cases).toBe(1 + 11 + 121 + 343);
-  }, 240_000);
+    expect(cases).toBe(1 + 13 + 169 + 512 + 256);
+  }, 480_000);
 
   it("following the selection, it comes in behind a pane already shown (the parts bin), a tab to pick; alone, it shows", async () => {
     const pane = document.createElement("div");

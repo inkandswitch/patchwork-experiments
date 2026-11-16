@@ -130,7 +130,10 @@ try {
   report.screens = { default: await c.shot("default.png") };
   report.benchDefault = await c.evaluate("window.__probe.benchDefault()");
   report.search = await c.evaluate(`window.__probe.searchSelect("mesh hull")`);
-  report.search.clickedHull = await c.evaluate(`(async () => { const ok = window.__probe.selectFirst("HULL"); await new Promise((r) => setTimeout(r, 300)); return { ok, about: document.querySelector(".about-title")?.textContent ?? null, status: document.querySelector(".inspector-body .status-line")?.textContent ?? null }; })()`);
+  // the outline's Select opens the shut inspector a beat later (DOUBLE_MS, TOOLS.md Decisions 6): wait for it
+  // to show an object, up to 3 s, and say so if it never does rather than report an empty inspector
+  report.search.clickedHull = await c.evaluate(`(async () => { const ok = window.__probe.selectFirst("HULL"); const t0 = performance.now(); while (!document.querySelector('.inspector-body .inspector[data-kind="object"]') && performance.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 50)); await new Promise((r) => setTimeout(r, 100)); return { ok, waited: Math.round(performance.now() - t0), shown: !!document.querySelector('.inspector-body .inspector[data-kind="object"]'), about: document.querySelector(".about-title")?.textContent ?? null, status: document.querySelector(".inspector-body .status-line")?.textContent ?? null }; })()`);
+  if (!report.search.clickedHull.shown) throw new Error(`the inspector never showed the hull: ${JSON.stringify(report.search.clickedHull)}`);
   report.screens.inspector = await c.shot("inspector-hull.png");
   report.search.afterEsc = await c.evaluate("window.__probe.clearSearch()");
   report.screens.outline = await c.shot("outline-revealed.png");

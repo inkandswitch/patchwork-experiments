@@ -29,6 +29,12 @@
 //     another of G's things such as its board, the boat outside the focus,
 //     nothing) and the body after; none boards, and each hit inside G
 //     selects what it hit.
+//  5. back at the boat, in Edit, nothing selected: a slow double-click at a
+//     card of G's, slow but one the router still takes (second press
+//     480 ms after the first, dblclick 170 ms after that, on the stage's
+//     clock): the canvas keeps its width to the dblclick (the inspector's
+//     beat starts again at the second press, so it can't end between the
+//     first click's selection and the dblclick).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,6 +186,35 @@ try {
   const tally = misses.reduce((t, m) => ((t[m.where] = (t[m.where] ?? 0) + 1), t), {});
   check(`4: ${MISSES} single clicks at cards on her moving table, in Edit inside G: none changes the body`, misses.every((m) => m.body === "edit"), { tally, misses });
   check("4: …each one on something of G's (a card, or its board) selects that thing", misses.filter((m) => m.where?.startsWith("G ")).every((m) => J(m.selected) === J(m.hit.slice(0, 2))), tally);
+
+  // ── 5: a slow double-click, at the boat ──
+  await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
+  await editOver();
+  // the inspector shut (steps 3 and 4 opened it), as the toolbar's Inspector shuts it
+  await js(`(() => { const t = document.getElementById("a").querySelector('.toolbar [data-command="inspector"]'); if (t?.getAttribute("aria-pressed") === "true") t.click(); return true; })()`);
+  await b.rest(300);
+  check("5: the inspector shut to start the slow double-click", await js(`!document.getElementById("a").querySelector('.stage-drawer [data-panel="inspector"]')`), null);
+  // aimed on the canvas at its full width: the view takes the wider canvas in (a ResizeObserver, on the page's
+  // own time) on a frame after it
+  await sleep(300);
+  await b.rest(100);
+  await events();
+  const slowAt = await P(`aimBest(${J(await cards())}, 'a')`);
+  if (!slowAt) check("5: a card of G's in plain sight for the slow double-click", false, null);
+  else {
+    await b.move(slowAt.x, slowAt.y);
+    await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 1 });
+    await b.advance(120);
+    await b.mouse("mouseReleased", slowAt.x, slowAt.y, { clickCount: 1 });
+    await b.advance(360);
+    await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 2 });
+    await b.advance(170);
+    await b.mouse("mouseReleased", slowAt.x, slowAt.y, { clickCount: 2 });
+    await b.rest(400);
+    const ev = await events();
+    report.numbers.slowDouble = { at: slowAt, events: ev, after: await state(), entered: J((await state()).focus) === J([ids.link]) };
+    check("5: a slow double-click's presses and dblclick all reach the canvas at the width the first press found", ev.length >= 3 && ev.some((e) => e.type === "dblclick") && ev.every((e) => e.on === "canvas" && e.cw === ev[0].cw), ev.map((e) => `${e.type} ${e.on} ${e.cw}`));
+  }
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
 }

@@ -147,12 +147,18 @@ Fixed since (each item names its Decisions section below):
   first try, every run: a 700 px view narrowed to 480 px between the
   presses; the real Patchwork's presence-check.nopause run 3, B's first
   try, the second press on the inspector's behaviour picker). A selection
-  now opens a shut inspector a beat later, DOUBLE_MS on the stage's time
+  now opens a shut inspector a beat later, DOUBLE_MS (the router's
+  double-click gate) on the stage's time, counted from the latest
+  selection change or press in the view
   (TOOLS.md, Decisions 6, "The inspector waits a beat"; lane/n11). In
-  editclick-run (seeds 1 and 2, each before and after) every press and
+  editclick-run (seeds 1, 2 and 3; seed 2 before too) every press and
   dblclick now reaches the canvas at the width the first press found
-  (700 px), where before the second press found it 480 px. Seed 2's first
-  try enters; seed 1's first press still misses the card for the Card
+  (700 px), where before the second press found it 480 px; its step 5, a
+  slow double-click (second press 480 ms after the first, dblclick 170 ms
+  after that), keeps the width to the dblclick and enters (with the beat
+  counted from the selection alone, as first built, the tab opened under
+  it: the dblclick at 480 px, and no Enter). Seeds 2 and 3's first
+  tries enter; seed 1's first press still misses the card for the Card
   table, which is the single-click item under "Still open", not this one.
   Not yet checked in the real Patchwork (enter-check, presence-check.nopause
   on scratch copies, once the integrator has synced the scene package).

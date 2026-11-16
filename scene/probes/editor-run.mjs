@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { browser, checklist } from "./cdp.mjs";
+import { DOUBLE_MS } from "../src/stage/router.js";
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -114,14 +115,27 @@ try {
   // ── click selects; B sees it; Escape deselects ─────────────────────────────
   {
     const p = await scr("b0", [0, 0.016, 0]);
+    // when the outline first shows b0 selected, and when the Inspector's tab first appears: stamped on the
+    // page's own (manual) clock as each happens (a MutationObserver), so how long the tab waited is the stage's
+    // measure, not the probe's
+    await A(`(() => {
+      const h = p.hostA, at = (window.__beat = { selected: null, tab: null });
+      const look = () => {
+        if (at.selected == null && h.querySelector('.object-row[data-id="b0"][data-selected]')) at.selected = window.__time.now();
+        if (at.tab == null && [...h.querySelectorAll('.stage-drawer-tab-name')].some((e) => e.textContent.trim() === "Inspector")) at.tab = window.__time.now();
+      };
+      new MutationObserver(look).observe(h, { subtree: true, childList: true, attributes: true, characterData: true });
+      return true;
+    })()`);
     await b.click(p.x, p.y);
     await b.rest(250);
     check("clickSelects", (await selected()) === "b0", await selected());
     check("outlineRowHighlighted", await A(`!!p.hostA.querySelector('.object-row[data-id="b0"][data-selected]')`));
-    // the inspector, shut, waits a beat (the double-click's 500 ms, TOOLS.md Decisions 6): 250 ms in, no tab yet
-    const early = await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`);
-    check("inspectorWaitsABeat", JSON.stringify(early) === '["Objects"]', early);
-    await b.rest(300);
+    // the inspector, shut, waits a beat (the double-click's DOUBLE_MS, TOOLS.md Decisions 6) from the
+    // selection before its tab comes in: as the page timed them, give or take the frame that drew the
+    // outline's row
+    const beat = await soon(`window.__beat.tab != null && window.__beat`, 4000);
+    check("inspectorWaitsABeat", !!beat && beat.selected != null && beat.tab - beat.selected >= DOUBLE_MS - 1000 / 60, { ...beat, waited: beat && beat.tab - beat.selected });
     // then its tab comes in behind the Objects tab the viewer is using
     const insp = await A(`(() => ({ tabs: [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()), shown: p.hostA.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null }))()`);
     check("inspectorShowsIt", JSON.stringify(insp.tabs) === '["Objects","Inspector"]' && insp.shown === "Objects" && insp.name === "Block 1", insp);

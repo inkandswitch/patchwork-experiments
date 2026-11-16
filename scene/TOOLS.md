@@ -1090,22 +1090,39 @@ The project lead decided the five open questions on 2026-11-12.
      selected thing often is, moves the view's visible centre off the
      camera's, and the drawer also holds docked editors (Camber's Shape)
      that need their own width. Tested over every sequence of up to two of
-     eleven events and three of seven (`parts/inspector.test.js`; the
-     beat and Enter joined them with the next bullet).
+     thirteen events, three of eight and four of four
+     (`parts/inspector.test.js`; the beat, part of one, a press and Enter
+     joined them with the next bullet).
    - **The inspector waits a beat** (decided unattended (2026-11-16,
      lane/n11), for the lead). A selection made while the tab is shut
-     opens it DOUBLE_MS (500 ms, the double-click's interval,
-     `stage/router.js`) later, on the stage's time (`api.clock.after`),
-     and only if the rule above still wants it then. An open tab shows
+     opens it a beat later, DOUBLE_MS (500 ms, `stage/router.js`) on the
+     stage's time (`api.clock.after`), and only if the rule above still
+     wants it then. A newer selection starts the beat again, and so does
+     a press anywhere in the view while it runs; a press with no beat
+     running starts none. The beat is the router's double-click gate
+     (`firstOfDouble`: the second press within DOUBLE_MS of the first, the
+     dblclick within DOUBLE_MS of the second), and each gate begins at
+     something that holds the tab: the first click's selection (Edit
+     selects on its release) holds it to the second press, and the second
+     press holds it to the dblclick. Without the press, a slow double
+     (press 0, release 120, press 480, release 650) had the tab open at
+     620, under its dblclick, which `onDblClick` takes only on the canvas;
+     and a double-click whose first click re-selected what was selected
+     (changing nothing) met a beat begun by an earlier selection
+     (editclick-run seed 1, a second try 1070 ms after the first one's
+     dblclick selected the link). An open tab shows
      each new selection at once, and the toolbar's Inspector opens it at
      once. Before, the first click of a double-click opened the tab and
      narrowed the canvas, so the second press and the dblclick landed on
      the inspector, or on whatever the narrower canvas now put under the
      pointer, and the double-click never entered (COMPOSITION.md, "Fixed
      since"). The invariant: with the tab shut, the canvas keeps its width
-     for DOUBLE_MS after a selection changes. The model the test holds the
+     for DOUBLE_MS after the latest selection change and after every press
+     in the view, so for the whole of any double-click the router takes.
+     The model the test holds the
      tab to: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was open ∨ (an object
-     selected ∧ a beat since it was)))); Enter carries the tab as it was.
+     selected ∧ a beat since it or a press)))); Enter carries the tab as
+     it was.
      It applies to every selection change, the outline's and the menu's
      Select too, since the inspector can't tell a click from a Select: a
      question for the lead whether only Edit's click selections should
