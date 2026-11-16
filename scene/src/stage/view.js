@@ -1233,6 +1233,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     inputOf,
     base: { id: base.id, lock: false, keys: [], input: lookInput },
     cameraHeld: () => viewport.held,
+    // a double-click's first hit is still there while its stage is (a key's n is never reused): one whose stage
+    // closed between the clicks is cast again; one whose object the first click removed is kept, and what it comes
+    // to is its consumer's (from outside a link, the link, still there: Enter; a frame target, nothing), rather
+    // than a new ray landing on whatever is behind it
+    live: (hit) => hit.id == null || pathOfKey(hit.id) != null,
     onHover: (ev) => {
       const h = ev?.hit ?? null;
       hoverHit = h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;

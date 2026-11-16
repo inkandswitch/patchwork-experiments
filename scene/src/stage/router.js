@@ -73,6 +73,47 @@ export const withHolder = (ev, holder) => copyWith(ev, "holder", holder ?? null)
 export const retype = (ev, type) => copyWith(ev, "type", type);
 
 /**
+ * A double-click's second click is resolved to its first click's hit (and
+ * widget): what was under the pointer when the double-click began, so a
+ * thing that moves between the clicks (a boat pitching on her sea), or a
+ * canvas that narrows under the pointer (the inspector opening on the first
+ * click's selection), still has the double-click, not whatever has come
+ * under the pointer since.
+ *
+ * The browser has already decided that a `dblclick` is a double; these
+ * gates only check that the router's last two presses are the two clicks it
+ * was made of: the second press within DOUBLE_MS of the first and the
+ * dblclick within DOUBLE_MS of the second (time between the clicks, as the
+ * OS measures it, not from the first), each press within DOUBLE_PX of the
+ * dblclick (DOUBLE_PX_TOUCH for a touch press, whose taps land further
+ * apart), and neither press nor the dblclick under pointer lock (a locked
+ * press's hit is the centre ray's, never under the pointer). Outside them
+ * the dblclick casts a new ray, as an ordinary event does: the fallback is
+ * the old behaviour, never a hit from some other press. A slower double
+ * (an OS interval set longer than DOUBLE_MS) falls back the same way.
+ */
+export const DOUBLE_MS = 500;
+export const DOUBLE_PX = 6;
+export const DOUBLE_PX_TOUCH = 16;
+
+/**
+ * The first press of a double-click whose dblclick lands at (x, y) at `now`
+ * (unlocked): the earlier of the last two presses when both pass the gates
+ * above, else null (cast a new ray). Pure.
+ * @param {{ t: number, x: number, y: number, pointerType?: string, locked?: boolean }[]} presses  the last two, oldest first
+ */
+export function firstOfDouble(presses, now, x, y) {
+  if (!presses || presses.length !== 2) return null;
+  const [a, b] = presses;
+  if (!(b.t - a.t <= DOUBLE_MS) || !(now - b.t <= DOUBLE_MS)) return null;
+  for (const p of presses) {
+    const slop = p.pointerType === "touch" ? DOUBLE_PX_TOUCH : DOUBLE_PX;
+    if (p.locked || Math.abs(x - p.x) > slop || Math.abs(y - p.y) > slop) return null;
+  }
+  return a;
+}
+
+/**
  * Build an event value (STAGE.md, the `event` shape) from a DOM event. `hit`,
  * `widget` and `ray` are lazy, memoised getters: nothing is picked unless
  * someone reads them. Under pointer lock x, y and ndc are the canvas centre
@@ -90,6 +131,8 @@ export const retype = (ev, type) => copyWith(ev, "type", type);
  *   pickWidget?: (ev: object) => object | null,
  *   ray?: (x: number, y: number) => { origin: any, dir: any },
  *   centerRay?: () => { origin: any, dir: any },
+ *   hit?: object | null,                               // handed in: the event's hit is this, no pick (a double-click's first click's)
+ *   widget?: object | null,                            // handed in, likewise
  * }} ctx
  */
 export function buildEvent(type, e, ctx) {
@@ -138,8 +181,9 @@ export function buildEvent(type, e, ctx) {
   const noHit = ctx.noHit || !known;
   const lazy = {
     ray: () => (locked ? (ctx.centerRay?.() ?? null) : known ? (ctx.ray?.(x, y) ?? null) : null),
-    hit: () => (noHit ? null : (ctx.pick?.(x, y, { snapPx: 0 }) ?? null)),
-    widget: () => (noHit ? null : (ctx.pickWidget?.(ev) ?? null)),
+    // a hit and widget handed in (a double-click's first click's: createRouter) are those, not a new ray
+    hit: () => (ctx.hit !== undefined ? ctx.hit : noHit ? null : (ctx.pick?.(x, y, { snapPx: 0 }) ?? null)),
+    widget: () => (ctx.widget !== undefined ? ctx.widget : noHit ? null : (ctx.pickWidget?.(ev) ?? null)),
   };
   const memo = {};
   const ev = { ...fields };
@@ -196,6 +240,7 @@ function call(owner, obj, name, ...args) {
  *   requestLock?: () => Promise<void> | void,
  *   exitLock?: () => void,
  *   mac?: boolean,
+ *   live?: (hit: object) => boolean,     // is a double-click's first hit still there to resolve to? false: cast a new ray (its stage closed)
  * }} o
  */
 export function createRouter(o) {
@@ -210,6 +255,7 @@ export function createRouter(o) {
 
   const isLocked = () => doc.pointerLockElement === canvas;
   let lastAt = null; // { clientX, clientY }: where the pointer last was over the canvas
+  let presses = []; // the last two presses on the canvas, oldest first: { t, x, y, pointerType, locked, hit, widget } (firstOfDouble)
 
   const make = (type, e, extra) =>
     buildEvent(type, e, {
@@ -403,6 +449,9 @@ export function createRouter(o) {
     // brought (a touch has none before it), so the look, the use prompt and
     // a menu from this press all name the thing under it
     o.onHover?.(ev);
+    // this press, kept for a double-click it may begin: its hit and widget resolved now, as it is pressed (the
+    // event's own memo, so no second pick), so a double-click later reuses them rather than casting a new ray
+    presses = [...presses.slice(-1), { t: time.now(), x: e.clientX, y: e.clientY, pointerType: g.pointerType, locked: ev.locked, hit: ev.hit, widget: ev.widget }];
     const r = dispatch("press", ev);
     if (gesture !== g) return; // something in press tore it down
     if (r) {
@@ -540,7 +589,12 @@ export function createRouter(o) {
 
   function onDblClick(e) {
     if (e.target !== canvas) return;
-    if (dispatch("dblclick", make("dblclick", e))) e.preventDefault();
+    // the second click resolves to the first click's hit and widget (firstOfDouble's gates), unless the host
+    // says that hit is gone (its stage closed between the clicks): then, as outside the gates, a new ray
+    const found = isLocked() ? null : firstOfDouble(presses, time.now(), e.clientX, e.clientY);
+    const first = found && (found.hit == null || o.live?.(found.hit) !== false) ? found : null;
+    presses = [];
+    if (dispatch("dblclick", make("dblclick", e, first ? { hit: first.hit, widget: first.widget } : undefined))) e.preventDefault();
   }
 
   function onContextMenu(e) {
