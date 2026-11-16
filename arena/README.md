@@ -14,7 +14,7 @@ pnpm install && pnpm build && pnpm test
 
 | type | id | for |
 |---|---|---|
-| `scene:extension` | `arena` | the gun (a held tool), the targets and *Stand targets up* in the menu, in a scene with any of its traits, whatever anyone is doing (`src/play.js`, `src/reset.js`) |
+| `scene:extension` | `arena` | *Play* and *Stand targets up* (world commands: buttons on the stage's bar of tools in every body, and in the menu), the gun (a held tool), the targets and the HUD, in a scene with any of its traits, whatever anyone is doing (`src/play.js`, `src/reset.js`) |
 | `scene:template` | `arena-level` | "Arena level" on an empty scene's start screen: the sample arena, starting people walking at a spawn point (`src/template.js`) |
 | `scene:part` | `arena.target`, `arena.crate`, `arena.spawn` | the editor's parts bin, under "Arena" (`src/parts.js`) |
 
@@ -42,9 +42,9 @@ quarter about its foot (its origin), away from the shooter, in one change:
 its fallen rotation, `stand` (the rotation it stood at) and `down` (who, and
 when). The position isn't touched. Scores aren't stored: they are counted
 from `down.by`, so two players hitting one target at once agree whose it is.
-*Stand them up* (the lobby's button in play, *Stand targets up* in the
-editor's menu; `standTargetsUp` in `src/level.js`) puts each back at its
-`stand` rotation, where it is now, and clears both keys.
+*Stand targets up* (a button on the bar of tools whenever a target is down,
+in any body, and in the menu; `standTargetsUp` in `src/level.js`) puts each
+back at its `stand` rotation, where it is now, and clears both keys.
 
 **Copies** (scene/STAGE.md, "Copying objects"). `down` is play state, marked
 `runtime` in the trait's description, so a copy of a knocked-over target, in
@@ -55,7 +55,9 @@ it came from.)
 
 ## Playing
 
-Enter, the toolbar's Play, or the lobby's **▶ Play** walks you in: the walk
+Enter, or **Play** on the bar of tools (scene/TOOLS.md §6: a world command,
+`show: ["world", "menu"]`, so it is at the bar's right end looking, walking
+or editing) walks you in: the walk
 body (scene/TOOLS.md §4, the walk package's) entered at a spawn point (a
 random one; with none, at the eye), with the gun in hand. The pointer is
 locked (where it can't be, drag to look). W A S D or the arrows move, Shift
@@ -63,10 +65,14 @@ runs, Space jumps: those keys are the walk body's.
 
 The **gun** is a held tool (`gun`, G; scene/TOOLS.md §4): a click shoots
 (12 in the magazine, reloading when it's empty), R or a right-click reloads
-sooner, and Escape (the stage's ladder) puts it down; walking goes on. Leave
-walking with the body chip. Falling out of the world respawns you. The
+sooner, and Escape (the stage's ladder) puts it down; walking goes on, and
+Play on the bar says **Pick up the gun** (it only hands you the gun then).
+Leave walking with the body chip. Falling out of the world respawns you. The
 lobby and the HUD count the targets standing only in a level that has some:
-an imported map with none shows no count.
+an imported map with none shows no count. The HUD only reads (the count,
+the scores, the crosshair, the ammo, the keys): it holds no button and
+takes no press, so nothing of the arena's sits over the canvas to catch a
+click meant for the level.
 
 Every other key goes on to the key map, so whatever in the level has a verb
 can be used while walking: look at a door within reach and press F to open
@@ -121,7 +127,7 @@ nothing.
 | file | what |
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe), with the traits' descriptions |
-| `src/play.js`, `src/play.css` | the play extension: the lobby and HUD, the gun, tracers, the atmosphere |
+| `src/play.js`, `src/play.css` | the play extension: Play, the lobby and HUD, the gun, tracers, the atmosphere |
 | `src/level.js` | the kinds' meshes, the sample arena, a target's fall and standing it up (pure) |
 | `src/layout.js` | putting blocks into a scene doc: a kind's file, a block's object, the whole arena |
 | `src/template.js`, `src/parts.js`, `src/reset.js` | the template, the parts, Stand targets up |
@@ -139,7 +145,9 @@ nothing.
   the sample arena, a target's fall (walking's tests moved to `walk/`);
 - `src/play.test.js`: what play asks of the stage when you walk in, pick
   up the gun, shoot and put it down; a hit knocks a target over once,
-  scores it and tells the others; the lobby's Stand them up;
+  scores it and tells the others; Play's state (holding × walking × target,
+  every row), Stand targets up's (no targets, all standing, one down), the
+  commands' surfaces, and a HUD with no button looking, walking or holding;
 - `src/edit.test.js`: the template (one file per kind, the group, the look,
   starting people walking at a spawn point), the parts (where each goes,
   what makes a level, one file per kind per scene), Stand targets up, a
@@ -156,8 +164,10 @@ node probes/arena-run.mjs [--show] [--shots <dir>]
 ```
 
 A picks **Arena level** on an empty scene's start screen and is in the game;
-B joins after. A switches to Edit and back, presses Play (the walk body at a
-spawn point, the gun in hand), walks, runs into a wall, climbs the ramp onto
+B joins after. A switches to Edit and back, presses Play on the bar of
+tools (the walk body at a spawn point, the gun in hand; the bar holds only
+world commands outside Edit, and the canvas stays put looking, walking and
+holding the gun), walks, runs into a wall, climbs the ramp onto
 the tower, jumps and shoots a target over; Escape puts the gun down and the
 body chip's Leave stops walking; B must see A's avatar move and A's tracer.
 Then a scene that knows nothing of arenas (a tilted deck GLB): the inspector

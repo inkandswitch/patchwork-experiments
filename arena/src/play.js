@@ -7,6 +7,11 @@
 // is a trait on an object, so a boat with a few targets on its deck is a
 // level too.
 //
+// Play and Stand targets up are world commands (show "world"): buttons on
+// the stage's bar of tools in every body (scene/TOOLS.md §6, Decisions 10),
+// and in the menu. The HUD only reads: the count, the scores, the
+// crosshair, the ammo. It holds no button and takes no press.
+//
 // State lives where the scene's contract says it should:
 // - doc: a target knocked over ({ down: { by, at }, stand: { rotation } }:
 //   level.js isDown) and its fallen pose. Scores aren't stored; they're
@@ -21,7 +26,7 @@
 // targets on its deck keeps its own.
 
 import css from "./play.css?inline";
-import { isDown, knockedOver, standTargetsUp } from "./level.js";
+import { isDown, knockedOver } from "./level.js";
 import { resetCommand } from "./reset.js";
 
 const TARGET = "arena.target";
@@ -67,6 +72,18 @@ export function hueOf(key) {
   let h = 0;
   for (const c of String(key)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % 360;
+}
+
+/**
+ * Play's state for the null target: null while the gun is in hand (or for
+ * any other target); else its label, "Pick up the gun" while walking (Play
+ * only hands you the gun then), "Play" otherwise. Pure.
+ * @param {string | null} target
+ * @param {{ holding: boolean, walking: boolean }} at
+ */
+export function playState(target, { holding, walking }) {
+  if (target != null || holding) return null;
+  return walking ? { label: "Pick up the gun", title: "Take the gun in hand: a click shoots, R reloads" } : { label: "Play", title: "Walk the level with the gun" };
 }
 
 /** Who knocked down how many: { [viewer]: n }, from the targets themselves. */
@@ -185,29 +202,17 @@ export default {
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
       const now = api.clock.now();
       const reloading = now < reloadUntil;
-      const walking = api.view.get()?.body?.id === "walk";
-      const key = JSON.stringify([holding, walking, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
+      const key = JSON.stringify([holding, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
       if (key === hudKey) return;
       hudKey = key;
       const scoreList = el("ol", { class: "arena-scores" }, ...board.slice(0, 6).map(([viewer, n]) => el("li", { "data-you": viewer === api.viewer }, el("span", {}, nameOf(viewer)), el("strong", {}, String(n)))));
       const show = (...kids) => hud.replaceChildren(...kids.filter((k) => k != null));
       if (!holding) {
-        // the start bar with the scores under it, in one column (so a narrow view wraps rather than overlaps)
-        show(
-          el(
-            "div",
-            { class: "arena-lobby" },
-            el(
-              "div",
-              { class: "arena-start" },
-              el("button", { type: "button", class: "arena-play", onclick: () => start() }, walking ? "▶ Pick up the gun" : "▶ Play"),
-              // a level without targets (an imported map) has nothing to count
-              targets.length ? el("span", { class: "arena-count" }, `${standing} of ${targets.length} targets standing`) : null,
-              standing < targets.length ? el("button", { type: "button", class: "arena-reset", onclick: () => resetTargets() }, "Stand them up") : null,
-            ),
-            board.length ? scoreList : null,
-          ),
-        );
+        // the count with the scores under it, in one column (so a narrow view
+        // wraps rather than overlaps); a level without targets (an imported
+        // map) has nothing to count. Play and Stand targets up are the bar's.
+        const count = targets.length ? el("span", { class: "arena-count" }, `${standing} of ${targets.length} targets standing`) : null;
+        show(count || board.length ? el("div", { class: "arena-lobby" }, count, board.length ? scoreList : null) : null);
         return;
       }
       show(
@@ -268,10 +273,6 @@ export default {
       render();
     }
 
-    function resetTargets() {
-      api.change((d) => standTargetsUp(d));
-    }
-
     // a bare session: a press the gun took is a shot (or a reload), never a drag
     const bare = { move() {}, end() {}, cancel() {}, tap: () => true };
     // the gun's input, while it's the held tool: under the lock a press
@@ -316,16 +317,16 @@ export default {
     }
 
     return {
-      update(s, local, prev, view) {
+      update(s, local, prev) {
         scene = s;
-        if (s !== prev?.scene || view?.body !== prev?.view?.body) render();
+        if (s !== prev?.scene) render();
       },
       receive(type, data, from) {
         if (type !== "shot" || !Array.isArray(data?.from) || !Array.isArray(data?.to)) return;
         tracer(data.from, data.to, hueOf(from?.viewer ?? from?.session));
       },
       commands: [
-        { id: "play", name: "Play", key: "Enter", show: ["toolbar", "menu"], state: (t) => (t == null && !holding ? { title: "Walk the level with the gun" } : null), run: () => start() },
+        { id: "play", name: "Play", key: "Enter", show: ["world", "menu"], state: (t, ctx) => playState(t, { holding, walking: ctx.view?.body?.id === "walk" }), run: () => start() },
         {
           // a tool: its run's input goes in the stage's one slot
           id: "gun",

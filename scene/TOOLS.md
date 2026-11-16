@@ -1240,13 +1240,25 @@ The project lead decided the five open questions on 2026-11-12.
       the HUD's own button, a private copy of the command that sat over the
       canvas's top edge in Edit (triage (f)), is gone, and the HUD only
       reads (`sailing/src/hud.js`, `probes/editclick-run.mjs` steps 5-6).
-      Arena's Play and Stand targets up, and the cups' Lift all, follow
-      (lane/n8 steps 3-4). The button reaches further than the HUD did:
-      it's on the bar wherever sailing runs on the focus path (an entered
-      boat in a harbour, the Model room's boat), where the HUD is hidden
-      because her doc isn't the world. It applies there exactly where
-      Enter and a click on her already did, so nothing new can happen;
-      the focus-path question above covers it.
+      Arena's Play and Stand targets up (`show: ["world", "menu"]`): its
+      HUD's lobby drew its own "▶ Play" / "▶ Pick up the gun" and "Stand
+      them up" buttons, private copies of the two commands, so N8's "Play
+      only by menu and key" was stale for arena; they're gone, Play's
+      `state` carries the label ("Pick up the gun" while walking, when it
+      only hands you the gun), and the HUD only reads: the count, the
+      scores, the crosshair, the ammo (`arena/src/play.js` `playState`,
+      `probes/arena-run.mjs`: the canvas rect is the same looking, walking,
+      holding the gun and as Stand targets up comes). The Gun toggle stays
+      Edit's toolbar, the menu and G: outside Edit, Play offers the gun.
+      *Question for the lead:* a big Play call to action over the level
+      (what the lobby had) is gone with it; should a game keep one, and if
+      so as what, given that a HUD button is the triage (f) hazard? The
+      cups' Lift all follows (lane/n8 step 4). Sailing's button reaches
+      further than her HUD did: it's on the bar wherever sailing runs on
+      the focus path (an entered boat in a harbour, the Model room's boat),
+      where the HUD is hidden because her doc isn't the world. It applies
+      there exactly where Enter and a click on her already did, so nothing
+      new can happen; the focus-path question above covers it.
     - **Known: entering a link moves the canvas.** Entered in Edit (a
       double-click on G's card aboard Lost Cities), the canvas moves down
       about 31 px as the entered path's chrome appears. That's after the
