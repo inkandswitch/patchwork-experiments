@@ -1236,6 +1236,17 @@ The project lead decided the five open questions on 2026-11-12.
       help line, the Esc hint) are not commands and stay as they are; one
       stage-drawn legend of declared keys is a *question for the lead*,
       likely with N9's touch controls, which need the same keys.
+    - **Order within the world cluster.** It is right-aligned and in
+      command order, so its last entry's place is anchored and an entry
+      coming or going slides everything to its left. B3 holds the bar's
+      height, not a button's x, so a package lists a world command that
+      comes and goes (Stand targets up, there while a target is down)
+      before the one people reach for (Play), which then never moves under
+      a pending click. Between packages the order is running order, which
+      the stage doesn't promise; nothing has two packages' world commands
+      on one path yet. *Decided unattended (2026-11-16, lane/n8), for the
+      lead:* a convention, not a mechanism; a stable slot per command (a
+      declared, disabled one) is the first question above.
     - **Consumers.** Sailing's Come aboard (`aboard`, `show: ["world"]`):
       the HUD's own button, a private copy of the command that sat over the
       canvas's top edge in Edit (triage (f)), is gone, and the HUD only
@@ -1248,7 +1259,8 @@ The project lead decided the five open questions on 2026-11-12.
       only hands you the gun), and the HUD only reads: the count, the
       scores, the crosshair, the ammo (`arena/src/play.js` `playState`,
       `probes/arena-run.mjs`: the canvas rect is the same looking, walking,
-      holding the gun and as Stand targets up comes). The Gun toggle stays
+      holding the gun and as Stand targets up comes, and Play's rect as
+      Stand targets up comes and goes to its left). The Gun toggle stays
       Edit's toolbar, the menu and G: outside Edit, Play offers the gun.
       *Question for the lead:* a big Play call to action over the level
       (what the lobby had) is gone with it; should a game keep one, and if

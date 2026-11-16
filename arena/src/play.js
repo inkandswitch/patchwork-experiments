@@ -325,7 +325,11 @@ export default {
         if (type !== "shot" || !Array.isArray(data?.from) || !Array.isArray(data?.to)) return;
         tracer(data.from, data.to, hueOf(from?.viewer ?? from?.session));
       },
+      // the bar's world cluster is right-aligned and in this order, so Play
+      // goes last: its place is anchored, and Stand targets up comes and goes
+      // to its left, never sliding Play under a pending click (TOOLS.md §6)
       commands: [
+        resetCommand(api),
         { id: "play", name: "Play", key: "Enter", show: ["world", "menu"], state: (t, ctx) => playState(t, { holding, walking: ctx.view?.body?.id === "walk" }), run: () => start() },
         {
           // a tool: its run's input goes in the stage's one slot
@@ -343,7 +347,6 @@ export default {
             return gun;
           },
         },
-        resetCommand(api),
       ],
       // only a laid-out level has the arena's look (see the top): adding a
       // target to a boat writes the level trait too, but not its look

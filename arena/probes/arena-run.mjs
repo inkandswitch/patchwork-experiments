@@ -467,12 +467,15 @@ try {
   // stand them up: the bar's Stand targets up, there while a target is down
   const downBar = await bar();
   canvasAt.lookWithReset = await canvasRect();
-  check("a target down, Look: the bar holds Play and Stand targets up, no editor command", downBar.tools.length === 0 && J(downBar.world) === J(["play", "reset"]), downBar);
+  const playWithReset = await P(`rect('${PLAY}')`);
+  check("a target down, Look: the bar holds Stand targets up then Play, no editor command", downBar.tools.length === 0 && J(downBar.world) === J(["reset", "play"]), downBar);
+  check("Play stays put as Stand targets up comes (it appears to Play's left): a click meant for Play never lands on it", !!playWithReset && J(playWithReset) === J(playInLook), { playInLook, playWithReset });
   check("the bar's height is the same looking, walking, holding the gun and as Stand targets up comes: the canvas never moves", Object.values(canvasAt).every((r) => J(r) === J(canvasAt.look)), canvasAt);
   await click(await P(`rect('${RESET}')`));
   await rest(200);
   const reset = await js(`window.__p.doc().objects['${tid}']`);
   check("Stand targets up (the bar's) stands it back where it was, and goes from the bar", !reset.traits["arena.target"].down && reset.transform.rotation.every((v, i) => Math.abs(v - [0, tdoc.traits["arena.target"].stand?.rotation?.[1] ?? 0, 0][i]) < 1e-6) && (await until(`!window.__p.hostA.querySelector('${RESET}')`, 2000)), reset.transform);
+  check("and Play stays put as it goes", J(await P(`rect('${PLAY}')`)) === J(playInLook), { playInLook, playAfter: await P(`rect('${PLAY}')`) });
 
   // ─── the player plays: B, who has only the game ──────────────────────────
   // B gets the big view for this (A shrinks); the stage follows its port's size
