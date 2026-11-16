@@ -19,75 +19,43 @@
 //   held twice.
 //   That is the keyboard's geometry, not the label's words: the stage knows
 //   nothing about "Forward".
-// - keyOf(code) is the KeyboardEvent.key a US keyboard sends for the code,
-//   since handlers read ev.key ("q", "Alt") as often as ev.code.
+// - A control presses its code with the key a US keyboard sends for it
+//   (keymap.js keyOfCode), since handlers read ev.key as often as ev.code.
+//
+// The contract this reads into a declaration (TOOLS.md §4): codes one
+// reserver labels alike do the same thing, so touch shows one control for
+// them. Labels are one per reserver, not across them: a pad shows each
+// control under its reserver (`from`).
 
-import { labelOf, reservedBy } from "./keymap.js";
+import { declaredKeys, keyOfCode, nameOfCode, reservedBy } from "./keymap.js";
 
-/** The router's key order: the open gesture, the held tool, the body (keymap.js). */
+/** The router's key order: the open gesture, the held tool, the body (keymap.js). "tool" is the view's `held` slot, by reservedBy's name for it. */
 const ORDER = ["gesture", "tool", "body"];
 
 /** The pad's places, by the arrow code that names each. */
 const SLOTS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
-// codes whose key is the code itself
-const SAME = new Set(["Enter", "Escape", "Delete", "Backspace", "Tab", "Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Insert", ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`)]);
-const MODIFIERS = { ShiftLeft: "Shift", ShiftRight: "Shift", AltLeft: "Alt", AltRight: "Alt", ControlLeft: "Control", ControlRight: "Control", MetaLeft: "Meta", MetaRight: "Meta" };
-// the punctuation codes, as keymap.js codeOfKey reads them (inverted)
-const PUNCT = { Space: " ", Period: ".", Comma: ",", Slash: "/", Semicolon: ";", Quote: "'", BracketLeft: "[", BracketRight: "]", Minus: "-", Equal: "=", Backquote: "`", Backslash: "\\" };
-
-/**
- * The KeyboardEvent.key a US keyboard sends for a code, with no modifier
- * held, or "Unidentified" for a code not in the table.
- * @param {string} code  KeyboardEvent.code
- */
-export function keyOf(code) {
-  if (typeof code !== "string") return "Unidentified";
-  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  if (SAME.has(code)) return code;
-  return MODIFIERS[code] ?? PUNCT[code] ?? "Unidentified";
-}
-
-/** A code as a person reads it, when its declaration has no label: "Q", "Shift", "↑", "Space"; else the code itself. */
-export function nameOf(code) {
-  const key = keyOf(code);
-  return key === "Unidentified" ? String(code) : labelOf(key);
-}
-
-/** A declaration's entries as { code, label }, the first of each code only. */
-function entries(declared) {
-  const out = [];
-  const seen = new Set();
-  for (const k of Array.isArray(declared) ? declared : []) {
-    const code = typeof k === "string" ? k : k?.code;
-    if (typeof code !== "string" || !code || seen.has(code)) continue;
-    seen.add(code);
-    const label = typeof k === "object" && typeof k.label === "string" && k.label ? k.label : nameOf(code);
-    out.push({ code, label });
-  }
-  return out;
-}
-
 /**
  * The touch controls for a view, in the key order and then declared order.
  * @param {{ gesture?: { keys? } | null, held?: { keys? } | null, body?: { keys? } | null }} view  api.view.get()'s fields
  * @returns {{ code: string, key: string, label: string, slot: "up" | "down" | "left" | "right" | null, from: "gesture" | "tool" | "body" }[]}
+ *   `from` is reservedBy's name for the layer ("tool" is `held`), so reservedBy(code, …) === from for every control
  */
 export function touchControls({ gesture = null, held = null, body = null } = {}) {
   const layers = { gesture, tool: held, body };
   const out = [];
   for (const from of ORDER) {
     const groups = new Map(); // label → { code, label, codes }
-    for (const { code, label } of entries(layers[from]?.keys)) {
+    for (const { code, label: declared } of declaredKeys(layers[from]?.keys)) {
       if (reservedBy(code, layers) !== from) continue;
+      const label = declared ?? nameOfCode(code);
       const g = groups.get(label);
       if (g) g.codes.push(code);
       else groups.set(label, { code, label, codes: [code] });
     }
     for (const { code, label, codes } of groups.values()) {
       const slot = codes.map((c) => SLOTS[c]).find(Boolean) ?? null;
-      out.push({ code, key: keyOf(code), label, slot, from });
+      out.push({ code, key: keyOfCode(code), label, slot, from });
     }
   }
   return out;

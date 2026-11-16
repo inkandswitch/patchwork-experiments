@@ -1086,6 +1086,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, 
            here?,                                               // false: it needs a place, so the body chip doesn't offer it
            enter(place) → { input, eye?() → { position, direction }, ride?: { id, at?, turn?, rise?, tilt? },
                             keys?, label?, leave() } | null }]
+// keys: the codes it takes. Codes one declaration labels alike do the same thing (walk's W and ↑
+// are both "Forward"): touch shows them as one control (TOOLS.md §5), so distinct actions need
+// distinct labels. The same holds for a tool's and a gesture's keys.
 ```
 
 The bodies there are: **Look** and **Edit** (the stage's, `src/stage/bodies.js`:

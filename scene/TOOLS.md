@@ -238,6 +238,8 @@ picking one replaces it, Esc empties it. `local.tool`, `effectiveTool` and
 bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres | Infinity
            enter(place) → { input, eye() → { position, direction }, ride?, leave() } }]
 // a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
+// keys (a body's, a tool's, a gesture's): codes labelled alike do the same thing (walk's W and ↑
+// are both "Forward"); touch shows them as one control (§5), so distinct actions need distinct labels
 ```
 
 - **Look** and **Edit**, the stage's (`src/stage/bodies.js`; they replace
@@ -325,6 +327,11 @@ shown alike are one control (the label, else the code's name: walk's W and
 leave it. A control with an arrow among its codes takes that arrow's place
 on the pad, the rest are buttons: keyboard geometry, so the stage knows
 nothing of "Forward". Look, Edit and a seat declare no keys and show none.
+Labels are one per reserver, not across them (snes's "Right" and walk's
+"Right" are both shown under a held pad), so the pad shows each control
+under its reserver. A control presses its code with the key a US keyboard
+sends (keymap.js `keyOfCode`, `codeOfKey` read the other way), since
+handlers read `ev.key` as often as `ev.code`.
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused
 field, popover or dock field (a search field with text clears first, then
@@ -657,7 +664,7 @@ and Dee still walks. To try his changes, he plays a copy.
 |---|---|---|
 | H1 | **What runs is the doc's.** The host resyncs only on a registry or doc change | Over each fixture doc, every change to body, held tool, selection, focus, prefs or clock triggers no sync |
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
-| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every declared, reserved key has one, none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo, 7 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`) |
+| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them), 12 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`) |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
 | H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release, or a finger, the next mouse press on the world only relocks; a finger never locks; nothing but a relock, a body or the pointer unwanted takes the lock | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router); finger then mouse on a button, on an edge, on the world with the grant after the handler (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
@@ -1203,13 +1210,29 @@ The project lead decided the five open questions on 2026-11-12.
    unlabelled Shifts are one "Shift" and no reserver ever shows two
    controls that look the same; a control presses its first unshadowed
    code. The pad's places come from the arrow codes alone (a code is in at
-   most one control, so no place is held twice); `keyOf(code)` is the US
-   layout's `KeyboardEvent.key` (KeyQ "q", Space " ", AltLeft "Alt"),
-   checked against `codeOfKey` as its inverse and against what Chrome
-   sends, since handlers read `ev.key` as often as `ev.code`. The cost of
-   grouping by label: codes a declaration labels alike but that act
-   differently collapse to the first. machine's doom pad labels Digit1–7
-   all "Weapon", so its touch control picks weapon 1 only; the fix is the
-   declaration's ("Weapon 1"…), left to machine. Open for the lead: a
+   most one control, so no place is held twice), and geometry wins over
+   the label: a "Forward" declared on ArrowDown sits in the down place. A
+   body that declares only W A S D gets four buttons, not a pad: WASD is
+   geometry too, but arrows alone is the smaller rule. Labels are unique
+   per reserver only; across reservers two controls can read the same
+   (walk's "Right" under snes's), so the pad shows each control under its
+   reserver (`from`, reservedBy's names: "tool" is the view's `held`).
+   `keyOfCode(code)` and `nameOfCode(code)` live in keymap.js beside
+   `codeOfKey`, built from the same tables read the other way, and
+   `declaredKeys` is the one reading of a declaration (`codesOf` and the
+   touch controls both use it). `keyOfCode` is the US layout's
+   `KeyboardEvent.key` (KeyQ "q", Space " ", AltLeft "Alt"), checked
+   against what Chrome sends, since handlers read `ev.key` as often as
+   `ev.code`. Grouping by label makes "labelled alike is the same action"
+   part of the declaration contract, now stated where packages read it
+   (§4's code block, STAGE.md's bodies). The cost: codes a declaration
+   labels alike but that act differently collapse to the first. machine's
+   doom pad labels Digit1–7 all "Weapon" (its controls panel reads one
+   label as a row of keys, "Weapon: 1 2 3 4 5 6 7"), so its touch control
+   picks weapon 1 only; the test asserts that loss as it stands. The fix
+   is the declaration's ("Weapon 1"…), left to machine. Open for the lead:
+   label-as-identity, or an explicit grouping field in the declaration
+   (e.g. `{ code, label, same: "KeyW" }`), which would let machine keep
+   one "Weapon" row and still show seven controls. Open for the lead: a
    digital d-pad from the arrow codes, or an analog stick (a new body input
-   contract, an axis).
+   contract, an axis), and whether WASD should make a pad too.

@@ -36,8 +36,51 @@ export function codeOfKey(key) {
 const PUNCT = { " ": "Space", ".": "Period", ",": "Comma", "/": "Slash", ";": "Semicolon", "'": "Quote", "[": "BracketLeft", "]": "BracketRight", "-": "Minus", "=": "Equal", "`": "Backquote", "\\": "Backslash" };
 const NAMED = new Set(["Enter", "Escape", "Delete", "Backspace", "Tab", "Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Insert", ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`)]);
 
+const KEY_OF_PUNCT = Object.fromEntries(Object.entries(PUNCT).map(([key, code]) => [code, key]));
+const MODIFIERS = { ShiftLeft: "Shift", ShiftRight: "Shift", AltLeft: "Alt", AltRight: "Alt", ControlLeft: "Control", ControlRight: "Control", MetaLeft: "Meta", MetaRight: "Meta" };
+
+/**
+ * The KeyboardEvent.key a US keyboard sends for a physical code with no
+ * modifier held: codeOfKey's inverse from the same tables, plus the
+ * modifiers (which no command's `key` names). "Unidentified" for a code
+ * outside them. Handlers read `ev.key` ("q", "Alt") as often as `ev.code`,
+ * so whatever presses a declared code sends both.
+ * @param {string} code  KeyboardEvent.code
+ */
+export function keyOfCode(code) {
+  if (typeof code !== "string") return "Unidentified";
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (NAMED.has(code)) return code;
+  return MODIFIERS[code] ?? KEY_OF_PUNCT[code] ?? "Unidentified";
+}
+
+/** A code as a person reads it, for a declaration with no label: "Q", "Shift", "↑", "Space"; else the code itself. */
+export function nameOfCode(code) {
+  const key = keyOfCode(code);
+  return key === "Unidentified" ? String(code) : labelOf(key);
+}
+
+/**
+ * A keys declaration ([{ code, label? } | code]) read once: its entries as
+ * { code, label }, the first of each code only, `label` the declared one or
+ * null (an empty label is none). The one reading of a declaration: codesOf
+ * and the touch controls both go through it.
+ */
+export function declaredKeys(declared) {
+  const out = [];
+  const seen = new Set();
+  for (const k of Array.isArray(declared) ? declared : []) {
+    const code = typeof k === "string" ? k : k?.code;
+    if (typeof code !== "string" || !code || seen.has(code)) continue;
+    seen.add(code);
+    out.push({ code, label: (typeof k === "object" && typeof k.label === "string" && k.label) || null });
+  }
+  return out;
+}
+
 /** Declared keys ([{ code, label }]) as a set of codes. */
-export const codesOf = (declared) => new Set((Array.isArray(declared) ? declared : []).map((k) => (typeof k === "string" ? k : k?.code)).filter((c) => typeof c === "string" && c));
+export const codesOf = (declared) => new Set(declaredKeys(declared).map((k) => k.code));
 
 /**
  * Who a key's physical code is reserved by, in the key order: "gesture",
