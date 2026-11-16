@@ -4,8 +4,9 @@
 // Water is a scene extension (see the scene package's STAGE.md, "Ambients"
 // and "Water", and WATER.md, "Water bodies"): water is a shape, an object
 // with the `water` trait. Without a size it is open water, everything below
-// its origin: weather, so only the outermost doc's counts, offered as the
-// world's `water` ambient. With a size it is a box hanging from its origin:
+// its origin: weather, offered as the `water` ambient, so a doc floats on the
+// open water of the outermost doc on its path that has some (its own where
+// no host offers any). With a size it is a box hanging from its origin:
 // a thing, which counts for its own doc wherever that doc is placed and is
 // never offered. What floats asks the extension which water it is in. What
 // makes waves (sailing's sea) and a current (`water.current`, here) are
@@ -21,7 +22,7 @@ export const plugins = [
       water: {
         name: "Water",
         on: "object",
-        blurb: "This object is water, its origin the surface at rest. With a size (width, depth, length) it is a box hanging from its origin, its doc's own wherever the doc is placed; without one it is open water below its origin, and a world linked into another floats on that world's open water instead. Its waves come from whatever makes them (a sea)",
+        blurb: "This object is water, its origin the surface at rest. With a size (width, depth, length) it is a box hanging from its origin, its doc's own wherever the doc is placed; without one it is open water below its origin, and a world linked into another that has open water floats on that water instead (in a host with none, it keeps its own). Its waves come from whatever makes them (a sea)",
         fields: [{ key: "size", label: "Size (m: [width, depth, length]; empty: open water)", kind: "json" }],
         init: {},
       },
