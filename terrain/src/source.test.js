@@ -66,6 +66,18 @@ describe("the terrain-mesh source", () => {
     expect(source.fingerprint(handle.doc())).not.toBe(a);
   });
 
+  it("reads the swell's direction (the surf's) and nothing else of it: a direction rebuilds, its height doesn't", async () => {
+    const { handle } = await stored();
+    const none = source.fingerprint(handle.doc());
+    handle.change((d) => (d.swell = { hs: 1.2, tp: 8.3, from: 285 }));
+    const a = source.fingerprint(handle.doc());
+    expect(a).not.toBe(none);
+    handle.change((d) => (d.swell.hs = 2));
+    expect(source.fingerprint(handle.doc())).toBe(a);
+    handle.change((d) => (d.swell.from = 270));
+    expect(source.fingerprint(handle.doc())).not.toBe(a);
+  });
+
   it("keeps its fingerprint when the docs are copied under new urls (as publishing does), and changes it when the data does", async () => {
     const { handle } = await stored();
     const d = handle.doc();
@@ -116,11 +128,13 @@ describe("plugins", () => {
       expect(typeof load).toBe("function");
       expect(() => structuredClone(meta)).not.toThrow();
     }
-    expect(plugins.map((p) => `${p.type}:${p.id}`)).toEqual(["patchwork:datatype:terrain", "patchwork:tool:terrain", "scene:source:terrain-mesh", "scene:template:terrain.cadboro-bay", "scene:extension:terrain.credit"]);
+    expect(plugins.map((p) => `${p.type}:${p.id}`)).toEqual(["patchwork:datatype:terrain", "patchwork:tool:terrain", "scene:source:terrain-mesh", "scene:template:terrain.cadboro-bay", "scene:template:terrain.ucluelet", "scene:extension:terrain.sky", "scene:extension:terrain.credit"]);
   });
   it("load what they say", async () => {
-    const [dt, tool, src, tpl, credit] = await Promise.all(plugins.map((p) => p.load()));
+    const [dt, tool, src, tpl, tplU, sky, credit] = await Promise.all(plugins.map((p) => p.load()));
     expect(typeof credit.create).toBe("function");
+    expect(typeof sky.create).toBe("function");
+    expect(typeof tplU.create).toBe("function");
     expect(typeof dt.init).toBe("function");
     expect(typeof tool).toBe("function");
     expect(typeof src.build).toBe("function");

@@ -1,65 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { layOut, headTo, differences, AT_ANCHOR, MOORING, RODE, CREDIT } from "./template.js";
-import { WIND, HOME, EXPECTED, OSM_DATE, cadboroDoc } from "./cadboro.js";
+import { WIND, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
 import { credits } from "./credit.js";
-import { FakeRepo } from "./test/fake-repo.js";
-import { emptyScene } from "./test/empty-scene.js";
-
-/** A drop context on a fake scene, with a registry that may or may not have sailing's sloop (a stand-in that writes a hull and three stations as sailing's would). */
-function sceneCtx({ sailing }) {
-  const repo = new FakeRepo();
-  const scene = repo.add(emptyScene());
-  let k = 0;
-  const newId = (p = "o") => `${p}${++k}`;
-  const placed = [];
-  const sloop = {
-    async create(ctx, at) {
-      placed.push(at);
-      const hull = ctx.newId("o");
-      ctx.change((d) => {
-        // (sailing's Sloop brings a Sea and weather only where the scene has no open water)
-        if (!Object.values(d.objects).some((o) => o.traits?.water && !o.traits.water.size)) d.objects[ctx.newId("o")] = { name: "Sea", traits: { water: {}, "sailing.sea": { seed: 1, scale: 1 } } };
-        if (!d.traits["sailing.weather"]) d.traits["sailing.weather"] = { wind: { speed: 7, from: 45 }, seed: 1 };
-        d.objects[hull] = { name: "Sloop", parent: null, transform: { position: [...at.world.position], rotation: [...at.world.rotation], scale: 1 }, traits: { "sailing.ship": {} } };
-        const mast = ctx.newId("o");
-        d.objects[mast] = { name: "Mast", parent: hull };
-        d.objects[ctx.newId("o")] = { name: "Boom and sail", parent: mast, traits: { "sailing.sail": { raised: 1, sheet: 0.5 } } };
-        d.objects[ctx.newId("o")] = { name: "Jib", parent: mast, traits: { "sailing.jib": { sheet: 0.5, held: null, furl: 0 } } };
-        d.objects[ctx.newId("o")] = { name: "Windlass", parent: hull, traits: { "sailing.anchor": { down: false, rode: 0 } } };
-        d.order.push(hull);
-      });
-      return hull;
-    },
-  };
-  const ctx = {
-    repo,
-    handle: scene,
-    url: scene.url,
-    doc: () => scene.doc(),
-    scene: () => scene.doc(),
-    change: (fn) => scene.change(fn),
-    newId,
-    notify: () => {},
-    async addObject(url, opts) {
-      const id = newId("o");
-      scene.change((d) => {
-        d.objects[id] = { name: opts.name, sourceUrl: url, providerId: opts.providerId, parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, ...opts.fields, hint: opts.hint };
-        d.order.push(id);
-      });
-      return id;
-    },
-    async registry(type) {
-      return {
-        async load(id) {
-          if (type === "scene:part" && id === "sailing.sloop" && sailing) return { module: sloop };
-          return undefined;
-        },
-      };
-    },
-  };
-  return { ctx, scene, placed };
-}
+import { sceneCtx } from "./test/scene-ctx.js";
 
 describe("the Cadboro Bay template's layout", () => {
   it("puts the terrain at the origin, locked; the summer breeze; the bay's Sea at the chart's y = 0; a home view from the club; play", async () => {
@@ -72,8 +16,15 @@ describe("the Cadboro Bay template's layout", () => {
     expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7 });
     expect(d.traits["sailing.sea"]).toBeUndefined();
     expect(d.traits.water).toBeUndefined();
-    expect(d.objects[sea]).toMatchObject({ name: "Sea", sourceUrl: null, providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
-    expect(d.objects[sea].traits).toEqual({ water: {}, "sailing.sea": { seed: 7, scale: WIND.scale } });
+    // the Sea keeps the terrain's footprint, from its known grid, down to the hint's deepest seabed, where its world has no open water
+    const span = (GRID.n - 1) * GRID.cell;
+    expect(d.objects[sea]).toMatchObject({ name: "Sea", sourceUrl: null, providerId: null, transform: { position: [GRID.x0 + span / 2, 0, GRID.z0 + span / 2], rotation: [0, 0, 0], scale: 1 } });
+    expect(d.objects[sea].traits).toEqual({ water: { clip: [span, 150, span] }, "sailing.sea": { seed: 7, scale: WIND.scale } });
+    // every corner of the grid is inside the clip (its centre the Sea's place)
+    for (const x of [GRID.x0, GRID.x0 + span]) for (const z of [GRID.z0, GRID.z0 + span]) {
+      expect(Math.abs(x - d.objects[sea].transform.position[0])).toBeLessThanOrEqual(span / 2);
+      expect(Math.abs(z - d.objects[sea].transform.position[2])).toBeLessThanOrEqual(span / 2);
+    }
     // one open water: the sloop brought none of her own
     expect(Object.values(d.objects).filter((o) => o.traits?.water)).toHaveLength(1);
     expect(d.view.start).toEqual({ home: { position: [...HOME.position], target: [...HOME.target] } });

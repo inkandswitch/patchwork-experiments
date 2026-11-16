@@ -1,10 +1,9 @@
 // A world's ambients (COMPOSITION.md §3, STAGE.md "Ambients"): the named
 // values a world has once, however many things it holds (its atmosphere, its
 // water). Each running extension may offer some (`instance.ambient()`); a
-// stage stacks its extensions' offers per name in running order; each name a
-// stage reads with `api.ambient(name)` is the outermost offer on its own path
-// (view.js, ambientOn), which it evaluates with its own code; and the
-// viewport's atmosphere is the outermost stage's.
+// stage stacks its extensions' offers per name in running order; and the
+// view's are its outermost stage's alone, which every stage reads with
+// `api.ambient(name)` and its own code.
 //
 // Only data crosses, by construction: an offer is copied here into frozen
 // plain JSON, so what a reader gets can't call back into the provider, can't

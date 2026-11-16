@@ -67,7 +67,7 @@ import { isLink } from "./links.js";
 import { isStageBody } from "./bodies.js";
 import { createView, projectView } from "./view.js";
 import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
-import { frameOf, scopeViewport, hitIn, rayIn } from "./scope.js";
+import { scopeViewport, hitIn, rayIn } from "./scope.js";
 import { elementOf, keyOf, parseKey, pathOf } from "./paths.js";
 import { lookChain } from "../keymap.js";
 import { commandState } from "../parts/toolbar-commands.js";
@@ -115,8 +115,6 @@ const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 
 /** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
 const cpuNow = () => globalThis.performance?.now?.() ?? Date.now();
 const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
-/** The identity matrix (column-major 16). */
-const UNIT = Object.freeze([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
@@ -575,7 +573,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const veils = new Map(); // id → veilKey of the veil it is shown as (a look with `veil: true`)
   const veilBytes = new Map(); // veilKey → its GLB
   let lastLooksKey = "[]";
-  let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js)
+  let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js): the view's when it's the outermost
   const nameOf = (id) => looks.get(id)?.name ?? derive().objects[id]?.name ?? null;
 
   // ─── the doc → the viewport ───────────────────────────────────────────────
@@ -1438,9 +1436,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // names through a lens changed: let every extension read them again
       displayChanged();
     }
-    // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js); each name a
-    // stage reads is the outermost offer on its path (COMPOSITION.md §3, view.ambientOn), and the
-    // viewport's atmosphere the outermost stage's
+    // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
+    // the outermost doc's are the world's (COMPOSITION.md §3), which the view reads (view.ambient)
     const offered = mergeAmbients(
       running.map((r) => {
         try {
@@ -2385,22 +2382,17 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (live()) scope.setExtent(id, box ?? null);
       },
       /**
-       * An ambient (STAGE.md, "Ambients"): the outermost offer under `name`
-       * on this stage's path (frozen plain JSON, the same object until it
-       * changes), with `mine` (this stage offers it), this stage's frame in
-       * the offering doc's root (scope.js; the identity when mine) and the
-       * offering doc's world time as of now; null when nothing on the path
-       * offers it.
+       * One of the world's ambients (STAGE.md, "Ambients"): the outermost
+       * doc's value under `name` (frozen plain JSON, the same object until it
+       * changes), with `mine` (this is the outermost stage), this stage's
+       * frame (scope.js: the world is the outermost's root) and the
+       * outermost's world time as of now; null when it offers none.
        */
       ambient: (name) => {
-        const got = view.ambientOn(stage, name);
-        if (!got) return null;
-        const { value, from } = got;
-        const mine = from === stage;
-        const there = from.frame();
-        const here = scope.frame();
-        const frame = mine ? frameOf(null) : there.matrix ? frameOf(there.matrixIn(here.matrix ?? UNIT)) : here;
-        return Object.freeze({ value, mine, frame, clock: Object.freeze(from.worldTime()) });
+        const value = view.ambient(name);
+        if (value === undefined) return null;
+        const world = view.outermost();
+        return Object.freeze({ value, mine: world === stage, frame: scope.frame(), clock: Object.freeze(world.worldTime()) });
       },
       invalidate: () => viewport.invalidate(),
       loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
@@ -2784,9 +2776,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     reached,
     path: Object.freeze([...path]),
     url: handle.url ?? null,
-    /** what its extensions offer as ambients (./ambients.js), read through api.ambient by the stages on whose path it is the outermost to offer each name */
+    /** what its extensions offer as ambients (./ambients.js): the world's, read through api.ambient, when it's the outermost */
     ambients: () => ambients,
-    /** its doc's world time now: { t, running } (what api.ambient's clock says of the doc offering a value) */
+    /** its doc's world time now: { t, running } (what api.ambient's clock says of the outermost) */
     worldTime: () => ({ t: clock.t(), running: clock.running() }),
     handle,
     doc,

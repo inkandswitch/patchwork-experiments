@@ -105,11 +105,13 @@ export default function TerrainTool(handle, element) {
     render();
     try {
       const d = handle.doc();
-      const fetched = await fetchTerrainData(JSON.parse(JSON.stringify({ origin: d.origin, grid: d.grid, demToMWL: d.demToMWL ?? 0, datum: d.datum ?? null, osmDate: d.osmDate ?? null })), { fetch: (...a) => globalThis.fetch(...a), log: (s) => log(s) });
+      // everything a fetch reads from the doc: a layered place's heights, its look, its provenance and credits too
+      const spec = { origin: d.origin, grid: d.grid, demToMWL: d.demToMWL ?? 0, datum: d.datum ?? null, osmDate: d.osmDate ?? null, heightScale: d.heightScale ?? null, heights: d.heights ?? null, look: d.look ?? null, provenance: d.provenance ?? null, attribution: d.heights ? d.attribution || null : null, credit: d.heights ? d.credit || null : null };
+      const fetched = await fetchTerrainData(JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(spec).filter(([, v]) => v != null)))), { fetch: (...a) => globalThis.fetch(...a), log: (s) => log(s) });
       if (dead) return;
       log("Storing…");
       await storeTerrainData(handle.repo ?? element.repo ?? window.repo, handle, fetched);
-      log(`Done: ${fetched.summary.coastWays} coastline ways, ${fetched.summary.structures} structures, ${fetched.summary.marks} marks; heights ${fetched.summary.min.toFixed(1)} to ${fetched.summary.max.toFixed(1)} m (NAVD88).`);
+      log(`Done: ${fetched.summary.coastWays} coastline ways, ${fetched.summary.structures} structures, ${fetched.summary.marks} marks; heights ${fetched.summary.min.toFixed(1)} to ${fetched.summary.max.toFixed(1)} m (${fetched.dem.record.datum}).`);
     } catch (err) {
       log(String(err?.message ?? err), "error");
     } finally {
@@ -128,13 +130,14 @@ export default function TerrainTool(handle, element) {
       const { dem, features } = await readTerrainData(repo, d);
       if (dead || drawing !== key) return;
       const grid = d.data.dem;
-      const sh = shape(grid, dem, { scale: grid.scale, offset: grid.offset ?? 0, toMWL: d.demToMWL ?? 0 }, features, { datum: d.datum ?? null });
+      const S = d.heightScale ?? HEIGHT_SCALE;
+      const sh = shape(grid, dem, { scale: grid.scale, offset: grid.offset ?? 0, toMWL: d.demToMWL ?? 0 }, features, { datum: d.datum ?? null, scale: S });
       const n = grid.n;
       canvas.width = canvas.height = n;
       const img = ctx2d.createImageData(n, n);
       const cache = new Map();
       for (let k = 0; k < n * n; k++) {
-        const h = Math.round(sh.heights[k] * HEIGHT_SCALE * 5) / 5;
+        const h = Math.round(sh.heights[k] * S * 5) / 5;
         let c = cache.get(h);
         if (!c) cache.set(h, (c = [1, 3, 5].map((o) => parseInt(hexAt(h).slice(o, o + 2), 16))));
         img.data.set(c, k * 4);

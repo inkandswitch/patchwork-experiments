@@ -8,7 +8,7 @@ import { FIT, LIFT, STAND, TAGS, jibDrawing, winchTrait } from "./ship.js";
 import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, SAIL, SEA, SHIP, WEATHER, WINCH, partsOf } from "./traits.js";
 import { placeIn } from "./body.js";
 import { apply } from "./frames.js";
-import { createSim } from "./sim.js";
+import { DEPTH, createSim } from "./sim.js";
 import { emptyScene, fakeDrop, fakeWorld } from "./test/fakes.js";
 
 const near = (a, b, digits = 9) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], digits));
@@ -229,7 +229,13 @@ describe("the sloop", () => {
     await parts.sloop.create(ctx, { parent: null, transform: {}, world: {} });
     expect(doc.traits[WEATHER]).toMatchObject({ wind: { speed: 7, from: 45 } });
     const sea = doc.objects[doc.order[0]];
-    expect(sea.traits).toEqual({ water: {}, [SEA]: { seed: doc.traits[WEATHER].seed, scale: 1 } });
+    // a 60 m box centred on her, turned with her, where its world offers no open water; 11 m
+    // deep, so an anchor her crew lets go (it lies at sim.js DEPTH, 10 m) and its chain stay in it
+    expect(sea.traits).toEqual({ water: { clip: [60, 11, 60] }, [SEA]: { seed: doc.traits[WEATHER].seed, scale: 1 } });
+    expect(sea.traits.water.clip[1]).toBeGreaterThan(DEPTH);
+    const her = doc.objects[Object.keys(doc.objects).find((id) => doc.objects[id].name === "Sloop")];
+    expect(sea.transform.position).toEqual([her.transform.position[0], 0, her.transform.position[2]]);
+    expect(sea.transform.rotation).toEqual([0, her.transform.rotation[1], 0]);
     // open water there already (with or without a sea, with or without weather): nothing more of either water or weather is written
     for (const weather of [null, { wind: { speed: 3, from: 200 }, seed: 5 }]) {
       const other = emptyScene();
@@ -255,6 +261,7 @@ describe("the sloop", () => {
     const id = await parts.sea.create(ctx, { parent: null, transform: {}, world: { position: [4, 9, 4], rotation: [0, 1, 0], scale: 1 } });
     expect(doc.order[0]).toBe(id);
     expect(doc.objects[id]).toMatchObject({ name: "Sea", sourceUrl: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    // an ocean alone has no natural size: the Sea part writes no clip
     expect(doc.objects[id].traits).toEqual({ water: {}, [SEA]: { seed: doc.traits[WEATHER].seed, scale: 1 } });
   });
 

@@ -367,7 +367,8 @@ re-steps, not correctness.
 
 ## Not done yet
 
-- **The scene extension:** half built ("Phase 2b, in a scene" below).
+- **The scene extension:** built, all eight wiring steps ("Phase 2b, in a
+  scene" below), and published in the Arcade (Decision 47).
 - **Running the engine in a worker:** built ("Phase 2, the host side"),
   not yet used in a scene.
 - **Deep rebases** to before the oldest retained checkpoint replay from
@@ -765,7 +766,9 @@ The first four of the eight wiring steps (FOLLOWUPS, "Machine phase 2b"):
 
 And, to play it at all: **Play** (P, within reach) takes a free port (the
 one the screen shows if it's free) and puts the pad in hand as the held
-tool, its keys its own; Escape puts it down and gives the port back.
+tool, its keys its own; Escape puts it down and gives the port back. On a
+cabinet with seats (step 6), Play is the way in too: it sits you at a free
+port's seat (Decision 48).
 
 Then steps 5, 6 and 8 (round 2):
 
@@ -802,7 +805,13 @@ Then steps 5, 6 and 8 (round 2):
    seat, or leaving) gives it back, and the seat with it. Input is the
    host's as ever: messages first, the seat's own input document after.
    Escape puts the pad down and the port stays yours while you sit; P
-   picks it up again.
+   picks it up again. **Play sits you down** (Decision 48): not sitting at
+   the cabinet, Play (P, the use prompt's button, the menu) sits you at
+   the first port, the screen's player's first, that nobody holds and
+   whose seat the seats' roster says is free (`openPorts`), through the
+   roster's `sit({ of, seat })`; the port and the pad follow the seat on
+   the next frame, as for any sitting. Every port taken, Play is greyed out
+   and its label says so.
 8. **Content** (`src/scene/part.js`, `give` in `extension.js`). The
    machine's `scene:part`, Machine, puts an empty cabinet in from the parts
    bin: a machine doc of its own with no game. A ROM (.sfc, .smc) or an
@@ -1213,8 +1222,93 @@ Round 3's review (Decisions 41-45):
     middle. arcade-check asserts that every corner of each cabinet's bezel
     and of its bounding box projects inside the pane, and that each cabinet
     shows one label of its own, whole inside the pane; it is run on a first
-    visit (notes) and a later one (tags). Both screens are black on
-    arrival, by design: a machine runs only while someone plays it.
+    visit (notes) and a later one (tags). Both screens were black on
+    arrival: a machine runs only while someone plays it, and one never
+    played is at tick 0, where neither engine has drawn anything. Decision
+    48 ends that.
+48. **Play is the way in, a stopped screen is never black, and a held pad
+    shows its keys** (the lead, 2026-11-16: "in the arcade, i wasn't able
+    to play - the screen was dark and play had no keyboard shortcut and
+    clicking had no effect. how am i meant to play?"). Reproduced in the
+    real Patchwork on the published Arcade: in Look, hovering a cabinet,
+    the use prompt offered Play greyed out, its reason only in a tooltip
+    ("Sit at one of its seats to play (F)", and F does nothing in Look); P
+    and a click did nothing; both screens were black (Doom's 320x200 all zeros, the SNES's
+    1 by 1) since both sessions were at tick 0, never played. What changed:
+    - **Play sits you down.** On a cabinet with seats, Play (P, the
+      prompt's button, the menu) sits you at the first free port's seat:
+      the screen's player's port first (Doom's trait `player`, else P1),
+      then the rest in port order, skipping a port someone holds or whose
+      seat isn't free. The machine asks the seats' roster, late-bound as
+      ever, through two capabilities seats gained for any package:
+      `stateOf({ of, seat })` and `sit({ of, seat })`, which sits you as the
+      picker does (claim, notice, seat body) but refuses, silently, a seat
+      that's taken or away, so a package never takes over someone's seat
+      and says why in its own words. The port and pad then follow the seat
+      as they always did, so getting up gives the port back as before.
+      Every port taken: Play is greyed out and its label says so, "Play
+      (every port is taken)", not only a tooltip, since a greyed verb's key
+      does nothing and a keyboard user would get nothing at all. Without the
+      seats package, "Play (needs the seats package)".
+    - **A click on a cabinet is Play** (round 2 of the review: the lead's
+      "clicking had no effect" was about the cabinet, not the prompt). The
+      extension's `input.click`, offered as the machine trait's holder
+      (scene STAGE.md, "The input chain", step 3), runs Play through
+      `api.run` on the cabinet with the click's hit, so the verb's state
+      and reach apply as on every surface. It is Play's only while it is
+      the way in: no pad in hand and sitting nowhere (`hands.js` `clicks`);
+      sitting or holding a pad, a click on the cabinet is a stray one and
+      goes on, as sailing's click to come aboard does. What Play refuses for
+      the machine's own reason (every port taken, no seats package, still
+      starting) is said in a notice and the click taken; refused by the
+      stage with the verb enabled (out of reach) it goes on. Its cursor is a
+      pointer there. In Edit, Edit's click comes first and selects (TOOLS.md
+      Decisions 6), and P plays the selection. The note under a stopped
+      screen says both ways: "Stopped while nobody plays: click it, or point
+      at it and press P" (P acts only on what it's pointed at, the
+      selection, or the pad or seat you have; with none of those it does
+      nothing, and the note no longer suggests otherwise).
+    - **A stopped screen is never black** (`src/present/poster.js`). A
+      machine stopped where someone left it already shows the last picture
+      played: the host restores the newest checkpoint and steps to the stop.
+      Only a state whose own picture is blank (none, or one colour all over)
+      needs more. That is a session never played (Doom at tick 0 is black,
+      its first picture is tick 1; Unarmed's title is tick 7), or a game
+      stopped on a black frame. Then the screen shows the engine's first
+      picture from that very state, stepped on with every port vacant on
+      a private engine (the same engine and content, booted, the state
+      restored into it), never the host's: nothing is written, the
+      session's time is untouched, and every view computes the same poster.
+      It looks at most 2 s of the engine's ticks ahead, a few steps a
+      frame. Considered: restoring the newest checkpoint's picture without
+      stepping (a never-played session has no checkpoint, and its genesis
+      is the blank state itself); a picture written into the machine doc
+      when it's published (a second source of truth, stale as soon as the
+      content changes).
+    - **The keys are shown while a pad is in hand** (`src/scene/controls.js`):
+      a compact panel at the top left of the view (clear of the use prompt,
+      which follows the look, and of the legends at the bottom left), the
+      machine extension's own overlay in the scene's label colours, made
+      from the keys the pad reads (input.js `KEYS`, whose labels now say
+      what each key does: "Forward", "Fire"; the SNES's, the pad button it
+      presses), so what's shown is what's read. One item per action, keys
+      then label, wrapping; a run of three or more digits is one cap
+      ("1–7"). It says the pad's title and port and how to put it down. It
+      folds to its title 8 s (the stage's own time) after that pad came into
+      hand, and opens while hovered; a pad picked up again opens it again.
+      It goes with the pad.
+    - **What the screen shows and says is pure** (`src/scene/shown.js`):
+      `screenShows` (the poster only while stopped and only over a blank
+      last picture, asked only then) and `stoppedNote`, so the extension's
+      frame loop only draws what they answer.
+    - **The use prompt's buttons can be clicked with a mouse** (a fix in
+      scene, general to every package's verbs). The prompt sits under the
+      pointer, and moving the pointer onto it left the canvas, which cleared
+      the look, hiding the prompt; and the prompt followed the pointer, so
+      it moved off from under it. Now the prompt says it keeps the look
+      (`data-keeps-look`): the router keeps the look while the pointer is on
+      such an element and lets it go anywhere else, and the prompt stays put
+      while the pointer is on it.
 
 ### Tests
 
@@ -1395,6 +1489,79 @@ Round 3's review (Decisions 41-45):
   (every seat lasting; the roster counting an object's seats; Leave
   keeping the claim; a removed seat's claim kept; the picker never an
   object's; a brief seat written like a lasting one).
+- **Play, posters and controls (Decision 48), finite and mutation-checked.**
+  `hands.test.js`: Play at a seated cabinet over who holds each of two
+  ports × each seat free or taken × seats the roster refuses though they
+  read free (a race lost) × where the view sits now (nowhere, another
+  cabinet, the table) × the roster there, absent, or one that can't sit
+  anyone (576 cases): the ports offered in order, the roster asked for each
+  until one takes you, the port and pad following, getting up giving them
+  back; full, the greyed label and the notice. `seating.test.js`
+  `openPorts`: every way 1-4 ports are held × every seat taken or free ×
+  every preference (1,252 cases), and no port for any state but free.
+  `present/poster.test.js`: `blank` over every picture up to 2 by 2 in four
+  colours and two alphas (584); the search over every pattern of five
+  ticks × every bound 0-5 × chunk 1-3 (576: the first drawn picture within
+  the bound, every port vacant each step, a pause every chunk); the posters'
+  life (one search a state, keyed by tick, revision and view, the host's
+  engine never stepped, none while loading or with no engine, a failure
+  that state's none, nothing after dispose); and both real engines from
+  their first state (blank there; the poster is the engine's own picture at
+  tick 7, Unarmed, and 1, Doom, as an engine stepped with nobody playing
+  draws it, and nothing before it; the live state's hash unchanged).
+  `controls.test.js`: each pad's rows exactly; every key a pad reads in
+  exactly one row; key names; a key's two sides; `caps` over every set of
+  digits (1,024) alone and between other keys; the panel over every three
+  pads in a row from seven (none, two ports, another machine, a new
+  title, another kind, no port) × four spacings each (5,488: open from when
+  the pad came into hand, the key changing just when what's shown does).
+  `hands.test.js` a click: what's clicked (five) × where the view sits
+  (three) × the seatless pad and its ports (five) × seats taken × roster ×
+  reach (600): Play's only with no pad and no seat, the stage asked then
+  only, its refusal's reason said, out of reach going on.
+  `shown.test.js`: `screenShows` over running × now × last (none, blank,
+  drawn) × poster (36, the poster asked exactly when shown); `stoppedNote`
+  over started × running × world × five holdings (40).
+  `extension.test.js`: the surface has `input` (click, cursor); a click
+  held by nothing of its is no click and the stage isn't asked; a click on
+  a cabinet goes to `api.run` as Play on it with the hit, and refused there
+  says the machine's reason. Mutants killed (round 2, nineteen): no pad
+  or seat check, any target clicks, a refusal taken silently or passed on,
+  the stage's answer ignored; the poster while running, the last picture
+  not kept, the kept one shown, the world's pause or holders ignored; a
+  two-digit run capped, any ascending run, the fold never or always reset,
+  the fold a frame late, the key blind to folding or to the port; the
+  cursor everywhere, the hit dropped. Mutants killed (round 1): Play
+  stopping after one refusal, never full, a fixed port, the roster
+  unchecked; no preference, holders or seat state ignored, an away seat
+  counted free; alpha counted, a step past the bound, no cache, two
+  searches at once, a key without its tick, revision or view, a loading
+  host searched; no de-duplication, both sides shown.
+- **`probes/play.mjs`** (headless Chrome, two people on real Automerge
+  docs, simulated time; scene, seats and machine built): Doom (one port)
+  and the Super NES (four) pasted in, both views in Look. 41 checks: both
+  stopped at tick 0 with a picture each, not one colour (Doom's E1M1 view,
+  Unarmed's title), the same on both views, the note saying a click or P
+  plays it; hovering Doom, the prompt offers Play with its key, enabled; P
+  sits Ana at P1 in the seat body with the pad, port 0 hers, the machine
+  running; the controls panel says Doom's keys ("1–7" for the weapons) at
+  the top left of her view, folds to its title after 8 s and opens again
+  hovered; walking and turning write Doom ticcmds into her port's input
+  documents, draw far more pictures than standing still, and Ben's view
+  drew the same picture at the ticks both drew; Ben's click on Doom says
+  every port is taken and sits him nowhere, and he sees "Play (every port
+  is taken)" greyed out and P sits him nowhere; Ana watches: the pad and
+  panel gone, port 0 ended, the machine stopped on both views at one tick
+  holding the last picture (not the poster, not blank); now Ben's click on
+  the Doom screen sits him at P1 with the pad; Escape puts it down (still
+  seated, port 0 his, the panel gone), P picks it up on the same port, a
+  second Escape leaves him seated (Escape never pops the body: STAGE.md),
+  and Leave (the body chip's Look) stands him up and gives the port back;
+  at the Super NES a click on the prompt's Play button sits Ana at its P1,
+  the panel says the SNES's keys, Start moves the picture, and getting up
+  stops it with the picture held; in Edit a click on the Super NES selects
+  it and sits nobody, and P with it selected and the pointer on the floor
+  sits her at its P1, standing up landing her in Look; no errors.
 - **`probes/seats.mjs`** (headless Chrome, two people on real Automerge
   docs, simulated time; scene, seats and machine built): Ana puts in an
   empty cabinet from the parts bin and drops Unarmed's ROM on it; a view

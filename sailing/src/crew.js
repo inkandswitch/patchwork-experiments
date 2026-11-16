@@ -453,12 +453,11 @@ export function createCrew(api, ctx) {
   // ship goes (sideways only: no bobbing), so a sailing ship stays in view:
   // a base ride (the stage's camera.ride), which a body with a ride of its
   // own (a seat at a table aboard her) wins over with no flag. A camera nobody has moved (not
-  // even from a saved view) starts off the ship's quarter. Only where she
-  // sails in her own weather (a boat alone, or in a dry room: ctx.sea.world(),
-  // the wind ambient's `mine`, a read that depends on placement on purpose,
-  // COMPOSITION I4): linked into a harbour, the camera is the harbour's to
-  // place, and two boats there would fight over it (two boats each in her own
-  // weather in one dry room do: the latest ride applies, WATER.md Decision 90).
+  // even from a saved view) starts off the ship's quarter. Only where her doc
+  // is the world (a boat alone: ctx.sea.world(), the wind ambient's `mine`,
+  // a read that depends on placement on purpose, COMPOSITION I4): linked
+  // into a harbour, the camera is the harbour's to place, and two boats there
+  // would fight over it.
   let riding = null; // { ship, off }
   let framed = false; // the quarter view for a camera nobody moved: once, on first sight of her (stop() puts you off her quarter itself)
   function follow() {

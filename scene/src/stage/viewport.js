@@ -340,12 +340,19 @@ export function shadowFrame(sphere, direction, mapSize = 2048) {
 // The sky: one triangle over the whole screen, drawn first, that turns each
 // pixel back into the direction it looks along and shades that by height:
 // horizon to top above, horizon to bottom below, and a soft sun where there
-// is one. It writes no depth and is never picked or boxed.
+// is one. It writes no depth and is never picked or boxed. The direction is
+// read on the near plane, never the far: the far plane's w is 1 + c where c
+// is about −(1 + 2·near/far), so with near tiny against far (depthRange: near
+// half the nearest clearance, far a hundred times the focus) it cancels to
+// nothing in float, the direction comes out NaN and the whole sky black. A
+// perspective camera looks from the origin through its near-plane point; an
+// orthographic one straight along −z.
 const SKY_VERTEX = /* glsl */ `
 varying vec3 vDir;
 void main() {
-  vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
-  vDir = (inverse(viewMatrix) * vec4(view.xyz / view.w, 0.0)).xyz;
+  vec4 near = inverse(projectionMatrix) * vec4(position.xy, -1.0, 1.0);
+  vec3 view = projectionMatrix[2][3] == -1.0 ? near.xyz / near.w : vec3(0.0, 0.0, -1.0);
+  vDir = (inverse(viewMatrix) * vec4(view, 0.0)).xyz;
   gl_Position = vec4(position.xy, 1.0, 1.0);
 }`;
 const SKY_FRAGMENT = /* glsl */ `

@@ -10,8 +10,11 @@
 // Everything here takes what it needs ({ file or repo, change, newId }),
 // which a template's context has.
 
-import { PIECES, WIND, bringSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
+import { PIECES, SEA_CLIP_DEPTH, WIND, bringSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
+import { ISLET_REACH } from "./ship.js";
 import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP, WEATHER } from "./traits.js";
+import { SLOOP } from "./hull-model.js";
+import { DEPTH } from "./sim.js";
 
 export { SEA, SHIP, WEATHER, WIND, partObject };
 
@@ -70,6 +73,55 @@ export const ANCHORAGE_AIR = Object.freeze({ speed: 6.5, from: 45 });
 /** Her stations at anchor: the main down, the jib rolled away, the anchor down with its rode out. */
 export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [JIB]: Object.freeze({ furl: 1 }), [ANCHOR]: Object.freeze({ down: true, rode: RODE }) });
 
+/** How far the template's Sea reaches past what it covers (m). */
+export const CLIP_MARGIN = 10;
+/** The islet's reach from its middle (m): ship.js's bound on its rock, 31.2 (the mesh reaches 27.8, at its base). */
+export { ISLET_REACH };
+/** How deep every Sea sailing writes a clip for is (m): a metre below the bottom a dropped anchor lies on (sim.js DEPTH), so her chain is in it wherever her crew lets it go. */
+export { SEA_CLIP_DEPTH };
+/** A buoy's reach (m). */
+export const BUOY_REACH = 2;
+
+/**
+ * What a template's Sea keeps where its world offers no open water
+ * (water/WATER.md, "Clipped open water"; WATER Decision 102), worked out from
+ * its own layout as data: the rectangle, in the layout's turned frame (yaw),
+ * covering
+ *   - at anchor: her swing circle, the anchor under her bow at the start
+ *     (sim.js dropPoint) ± the rode's horizontal reach to the bottom (RODE
+ *     over DEPTH) and her length;
+ *   - under way: a circle of her length about her start;
+ *   - every landmark (the islet ISLET_REACH about its middle, a buoy
+ *     BUOY_REACH),
+ * and CLIP_MARGIN more all round. Under way or at anchor it is SEA_CLIP_DEPTH
+ * deep: a metre below the bottom a dropped anchor lies on (DEPTH), so her
+ * chain is in it whenever it goes down. Pure.
+ * @returns {{ clip: number[], position: number[], yaw: number, covers: { at: number[], r: number }[] }}  the clip, the Sea's place (its centre, level at at[1]) and heading, and what it covers (in the world)
+ */
+export function seaClip({ anchored = false, at = [0, 0, 0], yaw = 0, loa = SLOOP.length } = {}) {
+  const covers = anchored ? [{ at: [0, 0, -loa / 2], r: Math.sqrt(RODE * RODE - DEPTH * DEPTH) + loa }] : [{ at: [0, 0, 0], r: loa }];
+  for (const l of anchored ? ANCHORAGE : LANDMARKS) covers.push({ at: l.at, r: l.part === "islet" ? ISLET_REACH : BUOY_REACH });
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const { at: p, r } of covers) {
+    x0 = Math.min(x0, p[0] - r);
+    x1 = Math.max(x1, p[0] + r);
+    z0 = Math.min(z0, p[2] - r);
+    z1 = Math.max(z1, p[2] + r);
+  }
+  x0 -= CLIP_MARGIN;
+  x1 += CLIP_MARGIN;
+  z0 -= CLIP_MARGIN;
+  z1 += CLIP_MARGIN;
+  const tidy = (v) => Math.round(v * 1e6) / 1e6 + 0;
+  const centre = turn([(x0 + x1) / 2, 0, (z0 + z1) / 2], yaw, at);
+  return {
+    clip: [tidy(x1 - x0), SEA_CLIP_DEPTH, tidy(z1 - z0)],
+    position: [tidy(centre[0]), at[1], tidy(centre[2])],
+    yaw,
+    covers: covers.map(({ at: p, r }) => ({ at: turn(p, yaw, at), r })),
+  };
+}
+
 /**
  * Lay out a sloop under way on open water in one change: the weather and a
  * Sea (a water object with a sea on it, first in the order), the Sloop part
@@ -100,8 +152,9 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
   const marks = landmarks.flatMap((l) =>
     objectsFor(l.part, { parent: null, transform: { position: turn(l.at, yaw, at), rotation: [0, yaw + (l.yaw ?? 0), 0] } }, files, ctx.newId, { group, locked: true }),
   );
+  const sea = seaClip({ anchored, at, yaw });
   ctx.change((d) => {
-    bringSea(d, ctx.newId, { wind, seed });
+    bringSea(d, ctx.newId, { wind, seed, clip: sea.clip, position: sea.position, yaw: sea.yaw });
     // people start off her quarter, in Look (no body named: the stage's orbit
     // camera, not the editor), where a click on her comes aboard (crew.js: an
     // untouched camera follows her quarter wherever she has sailed to)

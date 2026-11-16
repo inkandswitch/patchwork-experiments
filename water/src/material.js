@@ -227,6 +227,8 @@ export function foamThreshold(sea, coverage = sea.stats?.whitecaps ?? 0, samples
 // ─── shaders ────────────────────────────────────────────────────────────────
 
 const VERTEX = /* glsl */ `
+attribute float aDisp;
+attribute float aFace;
 uniform vec4 uWaves[WAVES];
 uniform float uPhase[WAVES];
 uniform float uCell;
@@ -234,6 +236,8 @@ uniform float uInner;
 varying vec2 vRest;
 varying vec3 vWorld;
 varying float vHeight;
+varying float vFace;
+varying float vBelow;
 #include <fog_pars_vertex>
 void main() {
   vec2 p = position.xz;
@@ -254,10 +258,14 @@ void main() {
     d.xz -= f * w.w * dir * sin(th);
     d.y += f * w.z * cos(th);
   }
-  vec4 world = modelMatrix * vec4(p.x + d.x, d.y, p.y + d.z, 1.0);
+  // a block's skirt bottoms and floor stay where they are; the rim and the top move
+  d *= aDisp;
+  vec4 world = modelMatrix * vec4(p.x + d.x, position.y + d.y, p.y + d.z, 1.0);
   vRest = p;
   vWorld = world.xyz;
   vHeight = d.y;
+  vFace = aFace;
+  vBelow = -(position.y + d.y);
   vec4 mvPosition = viewMatrix * world;
   gl_Position = projectionMatrix * mvPosition;
   // the sea reaches the horizon whatever the camera's far plane: past it, it's pinned just inside
@@ -287,6 +295,8 @@ uniform vec2 uWind;
 varying vec2 vRest;
 varying vec3 vWorld;
 varying float vHeight;
+varying float vFace;
+varying float vBelow;
 #include <fog_pars_fragment>
 
 float hash(vec2 c) {
@@ -305,6 +315,17 @@ vec3 sky(vec3 d) {
 }
 
 void main() {
+  if (vFace > 0.5) {
+    // a block's skirt and floor: the water's own body, darker with depth
+    vec3 lit = mix(uSkyHorizon, uSkyTop, 0.5);
+    float sunUp = clamp(normalize(uSunDir).y * 4.0, 0.0, 1.0) * uSunOn;
+    vec3 shallow = (uDeep * 1.4 + uScatter * 0.35) * (0.6 + 0.4 * sunUp) * (0.7 + 0.6 * dot(lit, vec3(0.2126, 0.7152, 0.0722)));
+    vec3 deep = uDeep * 0.45;
+    gl_FragColor = vec4(mix(shallow, deep, clamp(vBelow / 6.0, 0.0, 1.0)), 1.0);
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+    return;
+  }
   vec2 p = vRest;
   vec2 fw = fwidth(p);
   float foot = max(max(fw.x, fw.y), 1e-4);
@@ -420,20 +441,46 @@ const DEFAULTS = {
   foam: "#e8eef0",
 };
 
+/** A floor as patchGrid takes it: a depth below the level (m), or [f0, fx, fz] (its height above the level at offset (dx, dz) is f0 + fx·dx + fz·dz). */
+const floorPlane = (floor) => (Array.isArray(floor) ? floor : [-(Number(floor) || 0), 0, 0]);
+
 /**
- * A finite patch over a bounded body's footprint (WATER.md, "Who draws
- * what"): a w×l grid of cells about `cell` metres, turned by `yaw` about +Y,
- * its positions offsets from the body's origin in the stage's own axes (so
- * the shader's waves, which are in the stage's frame, need no turning).
- * Every triangle faces up.
- * @returns {{ positions: Float32Array, indices: Uint32Array, nx: number, nz: number }}
+ * A bounded body's drawn block (WATER.md, "Who draws what", and Decision 99):
+ * one mesh, its positions offsets from the body's origin in the stage's own
+ * axes (so the shader's waves, which are in the stage's frame, need no
+ * turning), in three parts:
+ *   - the top: a w×l grid of cells about `cell` metres, turned by `yaw` about
+ *     +Y, every triangle facing up; displaced by the waves;
+ *   - the skirt: the top's rim vertices again, in order round it, each
+ *     displaced exactly as the rim (`disp` 1), down to the floor (`disp` 0),
+ *     so the drawn edge is the water's edge with no gap on a crest;
+ *   - the floor: a quad on the floor plane under the footprint.
+ * `disp` says which vertices the waves move; `face` is 0 on the top and 1
+ * on the skirt and floor (drawn as the water's body, tinted by depth).
+ * Without a floor (null) there is no skirt and no floor: the top alone.
+ * `spacing` is the top's real vertex spacing (patchCounts), which is what the
+ * shader's short-wave fade must be told.
+ * @param {number | number[] | null} [floor]  a depth below the level, or the floor plane (floorPlane)
+ * @returns {{ positions: Float32Array, disp: Float32Array, face: Float32Array, indices: Uint32Array, nx: number, nz: number, spacing: number, solid: boolean, top: number, topTriangles: number, rim: number[] }}
  */
-export function patchGrid(w, l, yaw = 0, cell = 0.5) {
-  const nx = Math.max(1, Math.min(256, Math.ceil(w / cell)));
-  const nz = Math.max(1, Math.min(256, Math.ceil(l / cell)));
-  const positions = new Float32Array((nx + 1) * (nz + 1) * 3);
-  placePatch(positions, w, l, yaw, nx, nz);
-  const indices = new Uint32Array(nx * nz * 6);
+export function patchGrid(w, l, yaw = 0, cell = 0.5, floor = null) {
+  const { nx, nz, spacing } = patchCounts(w, l, cell);
+  const top = (nx + 1) * (nz + 1);
+  // the rim, in order round the top: along j = 0, up i = nx, back along j = nz, down i = 0
+  const rim = [];
+  for (let i = 0; i < nx; i++) rim.push(i);
+  for (let j = 0; j < nz; j++) rim.push(j * (nx + 1) + nx);
+  for (let i = nx; i > 0; i--) rim.push(nz * (nx + 1) + i);
+  for (let j = nz; j > 0; j--) rim.push(j * (nx + 1));
+  const solid = floor !== null && floor !== undefined;
+  const count = top + (solid ? 2 * rim.length + 4 : 0);
+  const positions = new Float32Array(count * 3);
+  const disp = new Float32Array(count);
+  const face = new Float32Array(count);
+  disp.fill(1, 0, top);
+  placePatch(positions, w, l, yaw, nx, nz, solid ? floorPlane(floor) : null, rim);
+  const triangles = nx * nz * 2 + (solid ? 2 * rim.length + 2 : 0);
+  const indices = new Uint32Array(triangles * 3);
   let k = 0;
   for (let j = 0; j < nz; j++)
     for (let i = 0; i < nx; i++) {
@@ -442,11 +489,49 @@ export function patchGrid(w, l, yaw = 0, cell = 0.5) {
       indices.set([a, c, b, b, c, d], k);
       k += 6;
     }
-  return { positions, indices, nx, nz };
+  if (solid) {
+    const n = rim.length;
+    for (let r = 0; r < n; r++) {
+      const up = top + 2 * r, down = up + 1;
+      disp[up] = 1;
+      face[up] = 1;
+      face[down] = 1;
+      const up2 = top + 2 * ((r + 1) % n), down2 = up2 + 1;
+      indices.set([up, down, up2, up2, down, down2], k);
+      k += 6;
+    }
+    const f = top + 2 * n;
+    for (let c = 0; c < 4; c++) face[f + c] = 1;
+    indices.set([f, f + 1, f + 2, f, f + 2, f + 3], k);
+    k += 6;
+  }
+  return { positions, disp, face, indices, nx, nz, spacing, solid, top, topTriangles: nx * nz * 2, rim };
 }
 
-/** Fill a patch's positions for a size and a yaw (the counts unchanged). */
-function placePatch(positions, w, l, yaw, nx, nz) {
+/** Most cells a patch's top has along a side: past 256 × `cell` metres its cells widen. */
+export const PATCH_MAX_CELLS = 256;
+
+/**
+ * A patch's cell counts for a w×l top asked for at about `cell` metres, and
+ * its real vertex spacing: the wider of its two cell sides, w/nx and l/nz.
+ * Over PATCH_MAX_CELLS × cell on a side the count is capped and the real
+ * spacing is wider than `cell` (a 100×207 m clip at 0.5 m: 207/256 ≈ 0.81 m;
+ * Cadboro Bay's 8192 m: 32 m). Pure.
+ */
+export function patchCounts(w, l, cell = 0.5) {
+  const nx = Math.max(1, Math.min(PATCH_MAX_CELLS, Math.ceil(w / cell)));
+  const nz = Math.max(1, Math.min(PATCH_MAX_CELLS, Math.ceil(l / cell)));
+  return { nx, nz, spacing: Math.max(w / nx, l / nz) };
+}
+
+/** The vertex shader's short-wave fade for a wave of wavenumber k at vertex spacing `cell` (GLSL smoothstep): 1 carried in full, 0 not drawn. */
+export function waveFade(k, cell) {
+  const x = Math.min(1, Math.max(0, k * cell - 1));
+  return 1 - x * x * (3 - 2 * x);
+}
+
+/** Fill a patch's positions for a size, a yaw and a floor plane (the counts unchanged). */
+function placePatch(positions, w, l, yaw, nx, nz, floor = null, rim = null) {
   const c = Math.cos(yaw), s = Math.sin(yaw);
   let k = 0;
   for (let j = 0; j <= nz; j++)
@@ -456,7 +541,48 @@ function placePatch(positions, w, l, yaw, nx, nz) {
       positions[k++] = 0;
       positions[k++] = -u * s + v * c;
     }
+  if (!floor) return positions;
+  const below = (x, z) => floor[0] + floor[1] * x + floor[2] * z;
+  for (const r of rim) {
+    const x = positions[r * 3], z = positions[r * 3 + 2];
+    // the rim again (displaced as the rim is), then straight down to the floor
+    positions[k++] = x;
+    positions[k++] = 0;
+    positions[k++] = z;
+    positions[k++] = x;
+    positions[k++] = below(x, z);
+    positions[k++] = z;
+  }
+  for (const [u, v] of [[-w / 2, -l / 2], [w / 2, -l / 2], [w / 2, l / 2], [-w / 2, l / 2]]) {
+    const x = u * c + v * s, z = -u * s + v * c;
+    positions[k++] = x;
+    positions[k++] = below(x, z);
+    positions[k++] = z;
+  }
   return positions;
+}
+
+/**
+ * Where the shader puts vertex `i` of a patch mesh (its positions, `disp` and
+ * `spacing`), its origin at `origin` in the stage's frame, at time t: the
+ * vertex shader's displacement in double precision, its short-wave fade at
+ * the mesh's real spacing included, so a test can hold the drawn block to the
+ * read water (and, wave by wave, see which ones the drawing fades). Pure.
+ */
+export function drawnVertex(mesh, i, components, origin, t) {
+  const x = mesh.positions[i * 3], y = mesh.positions[i * 3 + 1], z = mesh.positions[i * 3 + 2];
+  let dx = 0, dy = 0, dz = 0;
+  if (mesh.disp[i] > 0)
+    for (const c of components) {
+      const f = waveFade(c.k, mesh.spacing);
+      if (f <= 0) continue;
+      const th = c.k * (c.dir[0] * (x + origin[0]) + c.dir[1] * (z + origin[2])) + c.phase - c.omega * t;
+      dx -= f * c.steep * c.amp * c.dir[0] * Math.sin(th);
+      dz -= f * c.steep * c.amp * c.dir[1] * Math.sin(th);
+      dy += f * c.amp * Math.cos(th);
+    }
+  const m = mesh.disp[i];
+  return [origin[0] + x + m * dx, origin[1] + y + m * dy, origin[2] + z + m * dz];
 }
 
 /**
@@ -465,22 +591,32 @@ function placePatch(positions, w, l, yaw, nx, nz) {
  * @param {ReturnType<import("./ocean.js").createOcean>} sea
  * @param {{ cell?: number, size?: number, rings?: number, skirt?: number, snapLevel?: number, detail?: number,
  *           sky?: { top?, horizon? }, sun?: { direction?, color?, intensity? } | null,
- *           deep?, scatter?, foam?, foamCoverage?: number, patch?: { w: number, l: number, yaw?: number, cell?: number } }} [opts]
- *   With `patch`, a finite patch over a bounded body's footprint (patchGrid) instead of the
- *   grid round the camera: update's second argument is then the body's origin, and setPatch
- *   turns or resizes it.
+ *           deep?, scatter?, foam?, foamCoverage?: number, patch?: { w: number, l: number, yaw?: number, floor?: number | number[] | null, cell?: number } }} [opts]
+ *   With `patch`, a finite block over a bounded body's footprint (patchGrid: its top, and
+ *   with a floor its skirt and floor) instead of the grid round the camera: update's second
+ *   argument is then the body's origin, and setPatch turns, resizes or deepens it.
  * @returns {{ object: any, update(t: number, cameraPosition: any, sun?: object | null, sky?: object | null): void, setSea(sea: object): void, dispose(): void }}
  */
 export function createOceanSurface(THREE, sea, opts = {}) {
-  const patch = opts.patch ? { w: opts.patch.w, l: opts.patch.l, yaw: opts.patch.yaw ?? 0 } : null;
+  const patch = opts.patch ? { w: opts.patch.w, l: opts.patch.l, yaw: opts.patch.yaw ?? 0, floor: opts.patch.floor ?? null } : null;
   const cell = patch ? (opts.patch.cell ?? Math.max(0.05, Math.min(0.5, Math.max(patch.w, patch.l) / 64))) : (opts.cell ?? 0.5);
-  const grid = patch ? patchGrid(patch.w, patch.l, patch.yaw, cell) : oceanGrid({ cell, size: opts.size ?? 64, rings: opts.rings ?? 10, skirt: opts.skirt ?? 60000 });
+  const grid = patch ? patchGrid(patch.w, patch.l, patch.yaw, cell, patch.floor) : oceanGrid({ cell, size: opts.size ?? 64, rings: opts.rings ?? 10, skirt: opts.skirt ?? 60000 });
+  // the open grid is all top: every vertex moves with the waves
+  if (!patch) {
+    grid.disp = new Float32Array(grid.vertexCount).fill(1);
+    grid.face = new Float32Array(grid.vertexCount);
+  }
   // the grid moves in steps of this ring's spacing: it and every ring inside
   // it always land on the same world points
   const step = cell * 2 ** (opts.snapLevel ?? 4);
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(grid.positions, 3));
-  geometry.setIndex(new THREE.BufferAttribute(grid.indices, 1));
+  const setGeometry = (g) => {
+    geometry.setAttribute("position", new THREE.BufferAttribute(g.positions, 3));
+    geometry.setAttribute("aDisp", new THREE.BufferAttribute(g.disp, 1));
+    geometry.setAttribute("aFace", new THREE.BufferAttribute(g.face, 1));
+    geometry.setIndex(new THREE.BufferAttribute(g.indices, 1));
+  };
+  setGeometry(grid);
   const detailCount = opts.detail ?? 24;
 
   const uniforms = {
@@ -489,7 +625,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uPhase: { value: [] },
     uDetail: { value: [] },
     uDetailPhase: { value: [] },
-    uCell: { value: cell },
+    // a patch's real spacing, which is wider than `cell` once its sides are capped (patchCounts)
+    uCell: { value: patch ? grid.spacing : cell },
     // a patch's spacing is the same everywhere: no rings
     uInner: { value: patch ? 1e9 : grid.inner },
     uSunDir: { value: new THREE.Vector3(...DEFAULTS.sun.direction).normalize() },
@@ -517,6 +654,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
     fog: true,
+    // a block is seen from inside it and from below too
+    ...(patch ? { side: THREE.DoubleSide } : {}),
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = patch ? "water-patch" : "ocean";
@@ -611,20 +750,30 @@ export function createOceanSurface(THREE, sea, opts = {}) {
   if (opts.sun !== undefined || opts.sky) update(0, [0, 0, 0], opts.sun, opts.sky);
   else update(0, [0, 0, 0]);
 
-  /** A patch turned or resized: its positions moved in place, or made again when its counts change. */
-  function setPatch(w, l, yaw = 0) {
-    if (!patch || (patch.w === w && patch.l === l && patch.yaw === yaw)) return;
+  /**
+   * A patch turned, resized or deepened: its positions filled in place when
+   * its counts are unchanged (a tank on a heeling hull turns every frame, and
+   * allocates nothing), made again only when they change. The fade's spacing
+   * follows the real one.
+   */
+  function setPatch(w, l, yaw = 0, floor = patch?.floor ?? null) {
+    if (!patch) return;
+    const same = patch.w === w && patch.l === l && patch.yaw === yaw && JSON.stringify(patch.floor) === JSON.stringify(floor);
+    if (same) return;
+    const { nx, nz, spacing } = patchCounts(w, l, cell);
+    const solid = floor !== null && floor !== undefined;
     const pos = geometry.attributes.position;
-    if (patch.w === w && patch.l === l) {
-      placePatch(pos.array, w, l, yaw, grid.nx, grid.nz);
+    if (nx === grid.nx && nz === grid.nz && solid === grid.solid) {
+      placePatch(pos.array, w, l, yaw, nx, nz, solid ? floorPlane(floor) : null, grid.rim);
       pos.needsUpdate = true;
     } else {
-      const g = patchGrid(w, l, yaw, cell);
+      const g = patchGrid(w, l, yaw, cell, floor);
       Object.assign(grid, g);
-      geometry.setAttribute("position", new THREE.BufferAttribute(g.positions, 3));
-      geometry.setIndex(new THREE.BufferAttribute(g.indices, 1));
+      setGeometry(g);
     }
-    Object.assign(patch, { w, l, yaw });
+    grid.spacing = spacing;
+    uniforms.uCell.value = spacing;
+    Object.assign(patch, { w, l, yaw, floor });
   }
 
   return {

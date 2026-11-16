@@ -84,8 +84,10 @@ they are display. Measure, a brush, Camber's Shape and a gun take every
 press, so they are held, one at a time.
 
 Weighed and kept out: a stage `carry` service that holders call (Santorini
-has no holder to call it; a trait needs no API); a water `surface` the walk
-body reads (the floor is the ray's hit: water height doesn't cross docs);
+has no holder to call it; a trait needs no API); a water reader the walk
+body reads (deferred, water/WATER.md Decision 71: the floor is the ray's
+hit until walk asks the water package's `water` contribution, which does
+answer across docs for the world's open water);
 `units` as content (the model is metres; units are a viewer's reading).
 
 ## 1. What runs: traits only
@@ -294,7 +296,10 @@ what offers verbs; presses have one, so the body comes last there.
 each hint with the resolver that dispatches keys. A verb whose key is
 reserved shows without one and is in the menu (walking, Draw is a button,
 not D). The prompt shows three verbs, the menu all; verbs are buttons, for
-touch. Held-key sessions (`use.js:20-33`) move into the one key map, the
+touch and for a mouse: the prompt keeps the look (`data-keeps-look`, the
+router's) and stays put while the pointer is on it, so moving onto a button
+to click it doesn't take the look, and the prompt, away (machine/HOST.md,
+Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused

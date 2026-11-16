@@ -40,6 +40,7 @@
 
 import { join, resolve, dirname } from "node:path";
 import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs";
+import { clipProblems } from "./clip-check.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -156,6 +157,9 @@ try {
   const boatDoc = snap.docs[snap.scene];
   const seas = Object.values(boatDoc.objects).filter((o) => o.traits?.water);
   check("the boat has one Sea (open water with a sea on it) and the weather, as the template writes them (WATER.md, \"Water bodies\")", seas.length === 1 && !seas[0].traits.water.size && !!seas[0].traits["sailing.sea"] && !!boatDoc.traits?.["sailing.weather"] && !boatDoc.traits?.["sailing.sea"] && !boatDoc.traits?.water, { seas, traits: Object.keys(boatDoc.traits ?? {}) });
+  // the box her Sea keeps where the world she is placed in offers no open water (water/WATER.md, "Clipped open water"): her swing circle and the landmarks
+  const clipped = clipProblems(boatDoc, { anchored: true });
+  check("her Sea's clip covers her swing circle and the landmarks, with the margin (clip-check.mjs)", clipped.length === 0, { clip: seas[0]?.traits?.water?.clip, problems: clipped });
   snapshot = snap;
   await P("openB()");
   check("B arrives watching from a seat (view.start)", await until("bodyLabel('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000));

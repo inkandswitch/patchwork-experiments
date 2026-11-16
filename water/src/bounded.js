@@ -8,17 +8,20 @@
 //     its doc's wave field instead of carrying one. The free surface stays
 //     level in the doc's frame through the body's origin, however the box is
 //     turned (gravity is the doc's -Y, as it is for sailing).
-//   - heightAt is the displaced surface inside the footprint and the floor
-//     outside it: a dry column.
+//   - The reader is total (WATER Decision 98, replacing 63): it answers the
+//     body's surface field everywhere, continued past the footprint, and
+//     which body a point is in is choose.js's alone. So a hull astride a
+//     box's edge reads level water in every column and stays level; once her
+//     origin leaves, `at` no longer hands her this reader.
 //   - velocityAt is the orbital velocity, plus the current, plus the body's
 //     rigid velocity in its doc (v + ω×r): the water in a tank on a moving
-//     hull moves with the tank. Outside the footprint, only the carrier's.
+//     hull moves with the tank.
 //
 // `cell` is mutable: the extension sets its box (drawn pose) and its rigid
 // velocity once a frame, and the reader reads them at each call. Pure but for
 // reading the cell.
 
-import { carried, floorAt, inFootprint } from "./bodies.js";
+import { carried } from "./bodies.js";
 import { createSurface } from "./surface.js";
 
 const STATS = Object.freeze({ hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 });
@@ -34,21 +37,11 @@ export function boundedReader(body, cell) {
   const C = [0, 0, 0];
   const S = [0, 0, 1, 0];
   const D = [0, 0, 0, 1];
-  const inside = (x, z) => inFootprint(cell.box, [x, 0, z]);
 
   function heightAt(x, z, t) {
-    if (!inside(x, z)) return floorAt(cell.box, x, z).y;
     return cell.box.level + surface.heightAt(x, z, t);
   }
   function sampleAt(x, z, t, out = [0, 0, 1, 0]) {
-    if (!inside(x, z)) {
-      const f = floorAt(cell.box, x, z);
-      out[0] = f.y;
-      out[1] = f.normal[0];
-      out[2] = f.normal[1];
-      out[3] = f.normal[2];
-      return out;
-    }
     surface.sampleAt(x, z, t, S);
     out[0] = cell.box.level + S[0];
     out[1] = S[1];
@@ -65,12 +58,6 @@ export function boundedReader(body, cell) {
   }
   function velocityAt(x, y, z, t, out = [0, 0, 0]) {
     carried(cell.rv, [x, y, z], C);
-    if (!inside(x, z)) {
-      out[0] = C[0];
-      out[1] = C[1];
-      out[2] = C[2];
-      return out;
-    }
     surface.velocityAt(x, y - cell.box.level, z, t, out);
     out[0] += U[0] + C[0];
     out[1] += C[1];

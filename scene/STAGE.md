@@ -1723,7 +1723,7 @@ people lists the seats package like any other.
 
 | | |
 |---|---|
-| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → { of, seat } \| null }`. `seats`, `viewers`, `open` and `nameOf` are the doc's own seats, its table's: a doc has one table's seats (a second game is a doc of its own, linked), and an object's seats are never among them. All but `who` and `sitting` are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's); `sitting` is the seat this view sits in now, anywhere in the doc (`of`: the object whose seat it is, null for the doc's own; the seat body on top), which a machine's port follows |
+| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → { of, seat } \| null, stateOf({ of, seat }) → state \| null, sit({ of, seat }) → boolean }`. `seats`, `viewers`, `open` and `nameOf` are the doc's own seats, its table's: a doc has one table's seats (a second game is a doc of its own, linked), and an object's seats are never among them. All but `who`, `sitting`, `stateOf` and `sit` are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's); `sitting` is the seat this view sits in now, anywhere in the doc (`of`: the object whose seat it is, null for the doc's own; the seat body on top), which a machine's port follows; `stateOf` is any seat as this view sees it now (free, mine, taken, away…), and `sit` sits this view there as the picker does, refusing a taken or away seat silently: a machine's Play sits you at a free port this way |
 | `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, of?, id, min, max }]`: a box in object `id`'s own frame (a hand tray) for seat `seat` of object `of` (absent: the doc's own). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
 | `lay(d, seats, of?)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, lasting?, camera? } }` into a scene doc being set up, each seat empty (a seat already there keeps its player and takes the new name, view and lasting): the doc's own, or object `of`'s on it; setup code calls it instead of writing seats |
 
@@ -1834,9 +1834,11 @@ ambient() → { atmosphere: null | {
 `water` and `water.waves`; provided by the `water` package). Water is an
 object: open (no size) or a box (a size). The ambient is the world's open
 water, the outermost doc's; bounded water is its own doc's, read only by
-that doc's parts wherever it is placed, and never offered. Its values, its
-reader and who draws what are the package's to document:
-[water/WATER.md](../water/WATER.md), "Water bodies".
+that doc's parts wherever it is placed, and never offered. An open body may
+carry a clip, the box it keeps where the world offers no open water. Its
+values, its reader and who draws what are the package's to document:
+[water/WATER.md](../water/WATER.md), "Water bodies" and "Clipped open
+water".
 
 **Wind** (the ambient `wind`; offered by sailing's weather). How the world's
 air moves, read by sailing's physics and the water package's surface. Its
