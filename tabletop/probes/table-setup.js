@@ -8,7 +8,7 @@ import { emptyScene } from "../src/empty-scene.js";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
-import { findSeats, makeHolders } from "../src/table/made-with.js";
+import { prepareTable } from "../src/table/made-with.js";
 import { TabletopGameDatatype } from "../src/datatype.js";
 import { gameOf, writeGame } from "../src/game.js";
 
@@ -42,10 +42,9 @@ export async function lostCitiesTable(repo, { title = "Probe table", secure = tr
   const g = game.doc();
   const fileOf = (k) => (g.drawn?.[k]?.url ? { url: g.drawn[k].url, hint: g.drawn[k].bounds ? { bounds: g.drawn[k].bounds } : null } : null);
   const layout = tableLayout(gameOf(g), { fileOf, gameUrl: game.url });
-  const made = await makeHolders({ repo, registry }, layout);
-  const lay = await findSeats(registry);
+  const made = await prepareTable({ repo, registry }, layout);
   const table = emptyScene({ title });
-  writeTable(table, layout, made, { seats: lay });
+  writeTable(table, layout, made);
   const scene = repo.add(table);
   return { game, scene, layout, kinds: made.kinds, deckUrl: deckUrlOf(table.objects) };
 }

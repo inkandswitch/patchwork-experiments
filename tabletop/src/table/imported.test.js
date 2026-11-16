@@ -1,13 +1,13 @@
 // A Tabletop Simulator mod's game, as tts-import translates it (the
 // contract's valid/tts-tiny-mod.json is its tiny fixture mod, translated),
 // set up and played with nothing of its own: the same tableLayout,
-// makeHolders and writeTable as a built-in game, then the table extension and
+// prepareTable and writeTable as a built-in game, then the table extension and
 // the rule over the scene that makes. Shuffle, Draw, a private hand, a secure
 // deck, a bag and a die all act on traits the setup wrote, never on where the
 // game came from. Keepers, the bag maker and the seats' owner are stand-ins.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { tableLayout, writeTable } from "../setup.js";
-import { makeHolders } from "./made-with.js";
+import { prepareTable } from "./made-with.js";
 import { extrasOf } from "../look/look.js";
 import { emptyScene } from "../empty-scene.js";
 import Extension from "./extension.js";
@@ -29,10 +29,9 @@ async function setUp(g = game(), keepers = ["joint", "plain"]) {
   const installed = async (t) => registries(...keepers.map(keeperPlugin), bagPlugin(), seatsPlugin())[t] ?? null;
   const layout = tableLayout(g, { fileOf, rng: () => 0.5 });
   const repo = fakeRepo();
-  const made = await makeHolders({ repo, registry: installed }, layout);
-  const lay = (await (await installed("scene:extension")).load("t.seats")).module.lay;
+  const made = await prepareTable({ repo, registry: installed }, layout);
   const scene = emptyScene({ title: g.title });
-  writeTable(scene, layout, made, { seats: lay });
+  writeTable(scene, layout, made);
   scene.traits[SEATS].white.player = "alice";
   // what each object's GLB carries, as the game page draws it (look.js): the hand's card slots
   const content = Object.fromEntries(Object.entries(scene.objects).flatMap(([id, o]) => (o.sourceUrl ? [[id, { extras: extrasOf(g.pieces[kindOf(o.sourceUrl)]) }]] : [])));

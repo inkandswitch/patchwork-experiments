@@ -5,7 +5,7 @@ import { boundsOf, connectorsOf, drawer, lookKey } from "./look/look.js";
 import { turned } from "./look/slab.js";
 import { ensurePieceGLBs } from "./pieces.js";
 import { composePose, copyPose, isCard, kindsUsed, LOOSE, shuffle, tableLayout, writeTable } from "./setup.js";
-import { makeHolders } from "./table/made-with.js";
+import { prepareTable } from "./table/made-with.js";
 import { composeMatrix, multiply } from "./table/frame.js";
 import { TabletopGameDatatype } from "./datatype.js";
 import { gameOf, writeGame } from "./game.js";
@@ -48,7 +48,7 @@ function setUp(game, fileOf, o = {}) {
   const layout = tableLayout(game, { fileOf, ...o });
   const binds = Object.fromEntries(Object.keys(layout.containers).map((k) => [k, bindTo(`automerge:deck-${k}`)]));
   const scene = skeleton();
-  writeTable(scene, layout, { binds }, { seats: lay });
+  writeTable(scene, layout, { binds, seats: lay });
   return { layout, scene, containers: layout.containers, binds };
 }
 
@@ -563,14 +563,14 @@ describe("Lost Cities", () => {
     const made = { binds: { deck0: bindTo("automerge:main") } };
     const fresh = skeleton();
     const asked = [];
-    writeTable(fresh, layout, made, { seats: (d, seats) => (asked.push(seats), lay(d, seats)) });
+    writeTable(fresh, layout, { ...made, seats: (d, seats) => (asked.push(seats), lay(d, seats)) });
     expect(asked).toEqual([layout.seats]);
     expect(Object.keys(fresh.traits[SEATS])).toEqual(["p1", "p2"]);
     expect(fresh.view).toEqual({ units: "cm", grid: false, axes: false, bounds: false, snap: true, start: { body: "seat", home: g.camera } });
     expect(fresh.order).toEqual(layout.order);
     const mine = { north: { name: "North", player: "automerge:ana" } };
     const busy = { ...skeleton(), objects: { x: { name: "Lamp" } }, order: ["x"], traits: { [SEATS]: structuredClone(mine) } };
-    writeTable(busy, layout, made, { seats: lay });
+    writeTable(busy, layout, { ...made, seats: lay });
     expect(busy.traits[SEATS]).toEqual({ ...mine, p1: { name: "Player 1", player: null, camera: layout.seats.p1.camera }, p2: { name: "Player 2", player: null, camera: layout.seats.p2.camera } });
     expect(busy.order[0]).toBe("x");
     expect(busy.order).toHaveLength(1 + layout.order.length);
@@ -644,7 +644,7 @@ describe("cards anywhere, and bags", () => {
     const g = small();
     const layout = tableLayout(g, { fileOf: fakeFiles(g) });
     const repo = fakeRepo();
-    const made = await makeHolders({ repo, registry: async (t) => registries(keeperPlugin("plain"), bagPlugin())[t] ?? null }, layout);
+    const made = await prepareTable({ repo, registry: async (t) => registries(keeperPlugin("plain"), bagPlugin(), seatsPlugin())[t] ?? null }, layout);
     expect(made.notes).toEqual([]);
     const bagDocs = [...repo.docs.values()].filter((d) => d["@patchwork"].type === "t-bag");
     // the inner bag was made first, so the outer one holds it already given its document
@@ -664,8 +664,8 @@ describe("cards anywhere, and bags", () => {
   it("without a bag maker, the bags are written empty and a note says so", async () => {
     const g = small();
     const layout = tableLayout(g, { fileOf: fakeFiles(g) });
-    const made = await makeHolders({ repo: fakeRepo(), registry: async (t) => registries(keeperPlugin("plain"))[t] ?? null }, layout);
-    expect(made.notes).toEqual(["8 things in bags weren't laid out: nothing installed here holds a bag's contents"]);
+    const made = await prepareTable({ repo: fakeRepo(), registry: async (t) => registries(keeperPlugin("plain"), seatsPlugin())[t] ?? null }, layout);
+    expect(made.notes).toEqual(["8 things in bags weren't laid out: nothing installed here holds a bag's contents."]);
     expect(made.bags).toEqual({});
   });
 

@@ -75,7 +75,7 @@ import lostCities from "../games/lost-cities.json" with { type: "json" };
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
 import { emptyScene } from "../src/empty-scene.js";
-import { findSeats, makeHolders } from "../src/table/made-with.js";
+import { prepareTable } from "../src/table/made-with.js";
 import { TabletopGameDatatype } from "../src/datatype.js";
 import { gameOf, writeGame } from "../src/game.js";
 import { packageProblems, pushworkUrl, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
@@ -190,13 +190,13 @@ const registry = async (type) => {
   const all = new Map(installed.filter((p) => p.type === type).map((p) => [p.id, { ...p }]));
   return { filter: (fn) => [...all.values()].filter(fn), load: async (id) => { const p = all.get(id); if (p && !p.module) p.module = await p.load(); return p; } };
 };
-// the decks' containers first, so the scene never names one that isn't there
-const holders = await makeHolders({ repo, registry }, layout);
-const { binds, kinds } = holders;
-const lay = await findSeats(registry);
-if (!lay) throw new Error("nothing built here owns seats (the seats package)");
+// the decks' containers and the seats' owner first, so the scene never names one that isn't there;
+// a published example is made with everything, so any warning is a failure
+const made = await prepareTable({ repo, registry }, layout);
+const { binds, kinds } = made;
+if (made.notes.length) throw new Error(`the table was made short: ${made.notes.join(" ")}`);
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
-writeTable(table, layout, holders, { seats: lay });
+writeTable(table, layout, made);
 // each deck's container, as its cards name it
 const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
 const deckUrls = Object.fromEntries(Object.keys(decks).map((deckId) => [deckId, binds[deckId](0)]).map(([deckId, t]) => [deckId, Object.values(t)[0].by]));
@@ -221,7 +221,6 @@ for (const [id, o] of hidden) if (!Object.values(deckUrls).includes(keptBy(o)?.b
 if (new Set(hidden.map(([, o]) => `${keptBy(o)?.by}#${keptBy(o)?.slot}`)).size !== hidden.length) problems.push("two cards name one slot");
 const deckTypes = Object.keys(decks).map((deckId) => `${kinds[deckId]} keeper`);
 if (!hidden.length) problems.push("no cards in a deck");
-if (Object.entries(decks).some(([deckId, dk]) => dk.secure && kinds[deckId] !== "joint")) problems.push("a deck that asks for its players to shuffle it went to a plain keeper");
 // no trace of the old shapes, and the traits of the three packages the scene lists
 const text = JSON.stringify(s);
 for (const old of ["tabletop.hidden", "tabletop.seats", "scene.seats", "plain-deck"]) if (text.includes(old)) problems.push(`the scene still says ${old}`);
