@@ -45,10 +45,13 @@ import { clipProblems } from "./clip-check.mjs";
 // What each doc's contents come from (scene/STAGE.md, "Packages"): each
 // lists its own only (the view's one prompt covers every open doc's:
 // COMPOSITION.md, Decisions, links loose ends 1), and the page checks that
-// each, open alone, calls for plugins of exactly those packages. (The docs
-// as the page made them list more: a doc's packages list grows as parts are
-// added and isn't pruned when they go, so S still lists the companionway's
-// joints and traversal. Published, each lists the packages here.)
+// each, open alone, calls for plugins of exactly those packages. The boat as
+// the page made her lists exactly hers too: her own companionway's joints
+// and traversal were listed when the start screen made her and taken off
+// when it went (the stage prunes what nothing calls for). F, made with
+// sailing's part in a view of its own, lists sailing too there (a part run
+// in a view keeps its package there); published, each lists the packages
+// here.
 const PACKAGES = { s: ["scene", "sailing", "water"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
 const SLIDE = "joints.slide";
 
@@ -116,13 +119,18 @@ try {
   check("S's view opens F pinned, W acting and mirrored", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.mirror?.role === "mirror" && Object.values(links).every((l) => l.open), links);
   check("everything loads", await loads("loaded().loaded === __p.loaded().total", 120_000), await P("loaded()"));
   // each doc, open alone, calls for plugins of exactly its stated packages: the boat none of F's or W's
-  // (joints, traversal), which they list themselves (what the page's docs list is shown, not checked: see PACKAGES)
+  // (joints, traversal), which they list themselves
   for (const [w, who] of [["s", "the boat"], ["f", "the fit-out"], ["w", "the hatch"]]) {
     const pk = await P(`packages(${J(w)})`);
     const answering = [...new Set((pk?.answering ?? []).map((p) => folderOf(p.importUrl)))];
     const listed = (pk?.listed ?? []).map(folderOf);
     const stated = PACKAGES[w];
     check(`${who} calls for plugins of exactly its stated packages`, !!pk && answering.includes("scene") && answering.every((p) => stated.includes(p)) && stated.every((p) => answering.includes(p)), { answering, stated, listedInPage: listed });
+  }
+  {
+    const pk = await P(`packages("s")`);
+    const listed = (pk?.listed ?? []).map(folderOf);
+    check("the boat as the tools made her lists exactly her own packages (her companionway's joints and traversal taken off when it went)", !!pk && listed.length === PACKAGES.s.length && PACKAGES.s.every((p) => listed.includes(p)), { listed, stated: PACKAGES.s });
   }
   check("F alone opens its hatch: F has changed since it was fixed", (await P("openF()")) === true && (await until("slideOf('f')?.at === 'open'", 6000)), await P("slideOf('f')"));
   await b.step(30);
