@@ -483,6 +483,17 @@ try {
       return out;
     },
     /**
+     * the page x nearest `x` on page row `y` where view w's canvas is what a pointer reaches (not the use
+     * prompt or other chrome over it): `x` itself when nothing covers it; null when nothing on the row is canvas
+     */
+    canvasNear(w, x, y) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      for (let dx = 0; dx < r.width; dx++)
+        for (const q of [x - dx, x + dx]) if (q > r.left + 1 && q < r.right - 1 && document.elementFromPoint(q, y) === v.canvas) return q;
+      return null;
+    },
+    /**
      * a page point over object `id` in view `w` (around its origin, until a pick hits it), where the view's
      * canvas is what a click there reaches: not under the view's own chrome (a HUD's button, a chip), which a
      * person would click instead, as sailing-probe.html's aimAt has it

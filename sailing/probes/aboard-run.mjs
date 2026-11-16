@@ -652,6 +652,12 @@ try {
       check("13: a click selects the card itself: the boat sees the link, G the card", J(await P("selectionPath('a')")) === J([ids.link, target]) && seen.some(([p, x]) => p.length === 0 && x === ids.link) && seen.some(([p, x]) => J(p) === J([ids.link]) && x === target), { path: await P("selectionPath('a')"), seen });
       const halo = await P("halo('a')");
       check("13: its halo is on it, in its parent's frame (G's root: the table, by the link)", halo?.id === target && halo.parent === null, { halo, why: await P("haloWhy('a')") });
+      // and she orbits to look down on the card again before reaching for its arrow: she has sailed on since she
+      // last did (two clicks and the inspector settling, over two seconds), and the orbit camera rides her
+      // sideways only (crew.js follow: no bobbing), so on a swell the table can have risen most of a metre
+      // towards an eye a metre above it, the card and its halo with it, off the canvas's top
+      await P(`setCam('a', __p.overObject(${J(target)}, 'a'))`);
+      await b.rest(100);
       const h0 = await P("haloAt('a', 0)"), h1 = await P("haloAt('a', 0, 0.02)");
       if (h0 && h1) {
         const len = Math.hypot(h1.x - h0.x, h1.y - h0.y);
@@ -660,6 +666,14 @@ try {
         const parent = await P(`parentOf(${J(target)})`);
         const boatLink0 = J(await P("linkRecord()"));
         const hull0 = await P(`worldOf(${J(ids.hull)}, 'a')`);
+        // her pointer slides along the arrow's row to it over the canvas, as a hand does: the use prompt follows the
+        // pointer 36 px under it but stays put while the pointer is on it, so where she last pointed (at the card,
+        // before the look down moved it) it can lie over the arrow, and a jump straight there would press its button
+        const side = await P(`canvasNear('a', ${h0.x}, ${h0.y})`);
+        if (side != null) {
+          await b.move(side, h0.y);
+          await b.move(h0.x, h0.y);
+        }
         const mid = await b.drag([h0.x, h0.y], [h0.x + u[0] * 40, h0.y + u[1] * 40], {
           steps: 12,
           beforeRelease: async () => {
