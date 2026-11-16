@@ -1,0 +1,21 @@
+{
+  "name": "@tiny-patchwork/weather",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "description": "A world's weather as physical data: where and when (place, lat/lon, date, hour), the air (wind, gusts) and the sky (cloud cover, kind and base, visibility, rain). A scene trait offers it as the world's `wind` and `atmosphere` ambients, the sun from a solar-position algorithm, so every peer and the sim agree. Dial it in, or fetch a place's real conditions from Open-Meteo into the doc. Built only from scene extensions.",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "sync": "vite build && pushwork sync",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.3.2",
+    "happy-dom": "^15.11.7",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}
