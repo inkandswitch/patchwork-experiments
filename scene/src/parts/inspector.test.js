@@ -9,6 +9,7 @@ import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
+import { sanitizeLayers } from "../layers.js";
 
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };
 
@@ -55,6 +56,55 @@ const fire = (input, value, type = "change") => {
   else input.value = value;
   input.dispatchEvent(new Event(type, { bubbles: true }));
 };
+
+describe("scene.inspector: layers", () => {
+  // what the viewport says boat's GLB is: hull, deck in it, rig hidden in the file
+  const TABLE = sanitizeLayers([{ id: "hull", name: "Hull" }, { id: "deck", name: "Deck", parent: "hull" }, { id: "rig", name: "Rig", visible: false }]);
+  async function mountBoat(extra = {}) {
+    await mount({ objects: { boat: object({ name: "Boat", ...extra }), plain: object({ name: "Plain" }) } });
+    const real = s.debug.viewport.contentOf.bind(s.debug.viewport);
+    s.debug.viewport.contentOf = (key) =>
+      String(key).endsWith("boat") ? { loaded: true, box: null, extras: { layers: TABLE }, stats: { triangles: 12, drawCalls: 3, instanced: 0 }, root: null } : real(key);
+    await select("boat");
+  }
+  const rows = () => [...body().querySelectorAll(".layers .layer")].map((r) => `${"  ".repeat(Number(r.style.getPropertyValue("--depth")))}${r.querySelector("input").checked ? "x" : "_"} ${r.textContent}${r.dataset.shown === "false" ? " (hidden)" : ""}`);
+  const box = (name) => [...body().querySelectorAll(".layers .layer")].find((r) => r.textContent === name).querySelector("input");
+
+  it("lists the GLB's layers as a tree, ticked as the file shows them", async () => {
+    await mountBoat();
+    expect(rows()).toEqual(["x Hull", "  x Deck", "_ Rig (hidden)"]);
+    expect($(".layers-reset").hidden).toBe(true);
+  });
+
+  it("has no Layers section for an object whose GLB has none", async () => {
+    await mountBoat();
+    await select("plain");
+    expect($(".layers")?.hidden ?? true).toBe(true);
+  });
+
+  it("writes one layer's choice; a hidden parent dims what's in it; Reset drops them all", async () => {
+    await mountBoat();
+    fire(box("Hull"), false);
+    await settle();
+    expect({ ...s.doc().objects.boat.layers }).toEqual({ hull: false });
+    expect(rows()).toEqual(["_ Hull (hidden)", "  x Deck (hidden)", "_ Rig (hidden)"]);
+    fire(box("Rig"), true);
+    await settle();
+    expect({ ...s.doc().objects.boat.layers }).toEqual({ hull: false, rig: true });
+    expect($(".layers-reset").hidden).toBe(false);
+    $(".layers-reset").click();
+    await settle();
+    expect("layers" in s.doc().objects.boat).toBe(false);
+    expect(rows()).toEqual(["x Hull", "  x Deck", "_ Rig (hidden)"]);
+  });
+
+  it("drops a choice that goes back to what the file says, rather than keeping it", async () => {
+    await mountBoat({ layers: { rig: true } });
+    fire(box("Rig"), false);
+    await settle();
+    expect("layers" in s.doc().objects.boat).toBe(false);
+  });
+});
 
 describe("scene.inspector: the panel", () => {
   it("shows the scene when nothing is selected, the selection when there is one, and hides for a ref", async () => {

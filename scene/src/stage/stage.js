@@ -72,6 +72,7 @@ import { elementOf, keyOf, parseKey, pathOf } from "./paths.js";
 import { lookChain } from "../keymap.js";
 import { commandState } from "../parts/toolbar-commands.js";
 import * as ops from "../ops.js";
+import { layersKey } from "../layers.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc, seededRenderDoc } from "../datatype.js";
@@ -125,7 +126,7 @@ export function docUrl(v) {
 /** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
 export function displayKey(o, parent, inh) {
   const t = o.transform ?? {};
-  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${o.tags ?? ""}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh?.visible}|${inh?.opacity}`;
+  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${o.tags ?? ""}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh?.visible}|${inh?.opacity}|${layersKey(o.layers)}`;
 }
 
 /** How big an object's hint says it is (bigger loads first). */

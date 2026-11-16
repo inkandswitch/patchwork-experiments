@@ -103,9 +103,65 @@ describe("blocks", () => {
     expect(groups((await convert3dm(blockFile({ partSource: "ColorFromParent", refColor: red }), {})).glb)).toEqual([{ name: "B", color: "#ff0000" }]);
   });
 
-  it("hides a part on a hidden layer unless hidden objects are asked for", async () => {
-    const bytes = blockFile({ partLayerVisible: false });
-    expect(gltfJSON((await convert3dm(bytes, {})).glb).meshes).toBeUndefined();
-    expect(groups((await convert3dm(bytes, { hidden: true })).glb)).toEqual([{ name: "B", color: "#00ff00" }]);
+  it("builds a part on a hidden layer, and declares that layer hidden (the scene shows or hides it)", async () => {
+    const { glb } = await convert3dm(blockFile({ partLayerVisible: false }), {});
+    expect(groups(glb)).toEqual([{ name: "B", color: "#00ff00" }]);
+    const j = gltfJSON(glb);
+    expect(j.scenes[0].extras.layers.map((l) => [l.name, l.visible])).toEqual([["B", false]]);
+    expect(j.nodes[0].extras.layer).toBe(j.scenes[0].extras.layers[0].id);
+  });
+});
+
+describe("layers", () => {
+  // layers: Outside (hidden) > Inside; Spare (no geometry); Loose. One sphere
+  // on Inside, one on Loose, one hidden object on Loose.
+  function layeredFile() {
+    const f = new rhino.File3dm();
+    f.settings().modelUnitSystem = rhino.UnitSystem.Meters;
+    const add = (name, { parent = null, visible = true } = {}) => {
+      const l = new rhino.Layer();
+      l.name = name;
+      l.visible = visible;
+      if (parent != null) l.parentLayerId = f.layers().get(parent).id;
+      return f.layers().add(l);
+    };
+    const outside = add("Outside", { visible: false });
+    const inside = add("Inside", { parent: outside });
+    add("Spare");
+    const loose = add("Loose");
+    const on = (layerIndex, x, visible = true) => {
+      const a = new rhino.ObjectAttributes();
+      a.layerIndex = layerIndex;
+      a.visible = visible;
+      f.objects().add(new rhino.Sphere([x, 0, 0], 0.5).toBrep(), a);
+    };
+    on(inside, 0);
+    on(loose, 10);
+    on(loose, 20, false);
+    return f.toByteArray();
+  }
+
+  it("declares each layer with geometry and the layers it's in, in the file's order, by Rhino's layer id", async () => {
+    const j = gltfJSON((await convert3dm(layeredFile(), {})).glb);
+    const table = j.scenes[0].extras.layers;
+    expect(table.map((l) => [l.name, l.visible, l.parent ? table.find((p) => p.id === l.parent).name : null])).toEqual([
+      ["Outside", false, null],
+      ["Inside", true, "Outside"],
+      ["Loose", true, null],
+    ]);
+    for (const l of table) expect(l.id).toMatch(/^[0-9a-f-]{36}$/);
+    // each mesh node is on its layer
+    const nameOf = Object.fromEntries(table.map((l) => [l.id, l.name]));
+    expect(j.nodes.map((n) => nameOf[n.extras.layer]).sort()).toEqual(["Inside", "Loose"]);
+  });
+
+  it("leaves out an object hidden in the file unless asked for, and bounds what the file shows", async () => {
+    const shown = await convert3dm(layeredFile(), {});
+    // Inside is hidden with Outside: only Loose's sphere at x = 10 counts
+    expect([shown.meta.bounds.min[0], shown.meta.bounds.max[0]]).toEqual([9.5, 10.5]);
+    expect(shown.meta.notes).toMatch(/^2 objects, .* 3 layers \(2 hidden\)/);
+    const all = await convert3dm(layeredFile(), { hidden: true });
+    expect(all.meta.notes).toMatch(/^3 objects/);
+    expect([all.meta.bounds.min[0], all.meta.bounds.max[0]]).toEqual([9.5, 20.5]);
   });
 });

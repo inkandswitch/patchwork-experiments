@@ -185,7 +185,10 @@ STAGE.md, "Extract and bundle".
   word, case-insensitively, against each object's name and its group path, and
   shows the matches with their groups (dimmed) and a count ("12 of 507").
   Enter selects and frames the first match; Esc clears. It never touches the doc.
-- **Inspector**: name, colour, opacity, wireframe, **In group** (the groups,
+- **Inspector**: name, colour, opacity, wireframe, **Layers** (when the
+  object's GLB has layers: a tree of ticks, each writing that one layer's
+  choice; unticking a layer dims what's in it; a choice that matches the file
+  is dropped, and **Reset** drops them all), **In group** (the groups,
   as a tree; filing moves nothing), **Attached to** (objects), position
   (display units), rotation (degrees), scale; **Group** puts the object in a
   new group where it's filed; for a group, name, visibility, opacity and the
@@ -500,6 +503,20 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
   object colour replaces the base colour only, so a material's metalness and
   roughness survive it (a white metal part tinted bronze stays metal), and
   `KHR_materials_unlit` draws baked colours exactly.
+- Optional **layers** (a CAD file's: Rhino's layers, SketchUp's tags):
+  `extras.layers = [{ id, name?, parent?, visible? }, …]` on the glTF scene,
+  and `extras.layer = id` on a node, which puts that node and everything under
+  it on that layer unless a nearer node says otherwise. `id` is a string that
+  stays the same when the source is rebuilt (Rhino's layer id), `parent`
+  another entry's id, `visible` (default true) whether the source shows it.
+  An object's `layers` choices (Object, above) override `visible`, and a layer
+  is drawn only when it and every layer above it are shown. A hidden layer's
+  meshes aren't drawn, picked or snapped to, and aren't in the object's bounds.
+  Meshes are only instanced within a layer. Entries without an id, repeats,
+  parents that aren't there and parent loops are dropped or cut (`src/layers.js`);
+  a mesh on no layer, or on an id that isn't in the table, is always drawn.
+  Emit every layer the user might want to turn on, hidden ones included:
+  showing a layer is a display change, not a rebuild.
 - Optional **connectors**: `extras.connectors = [{ position: [x, y, z],
   rotation?: [x, y, z], tags?: string[] }, …]` on any node (or on the glTF
   scene), in that node's frame: places where something goes. `rotation`
@@ -533,6 +550,7 @@ live here in `src/`:
 |---|---|
 | `src/glb.js` | the GLB encoder (and a minimal reader), below |
 | `src/render-read.js` | reading a `scene-render` doc and its GLB from another package |
+| `src/layers.js` | a GLB's layer table, checked, and which layers an object's choices show (GLB conventions, above) |
 
 To change one, edit the canonical copy, bump its version, and run
 `node scripts/check-kit.mjs --fix` at the repo root to copy it over every other;
@@ -668,6 +686,7 @@ Object = {
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
     locked?: boolean,               // true: it can't be carried, and its halo has no handles
     tags?: string[],                // what tagged connectors it fits (GLB conventions, below)
+    layers?: { [layerId: string]: boolean },  // shown or not, per layer of its GLB (GLB conventions, below); only where chosen
     traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
     hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number },
     at?: { heads: string[], deps?: { [url: AutomergeUrl]: string[] } } | null  // fixed version; absent/null = latest

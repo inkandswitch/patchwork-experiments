@@ -1,6 +1,10 @@
 // "3D Model Viewer": orbit any 3D file (glb, stl, 3dm, 3mf, obj, ply) outside a scene.
+// A model with layers (a .3dm, or a GLB that declares them: layers.js) gets a
+// Layers panel. Its ticks are this view's, like Wireframe and Grid: they start
+// as the file has them and aren't saved (a scene keeps its own, per object).
 import { loadThree } from "./three.js";
 import { loadModel, fileBytes, extOf } from "./load.js";
+import { layerChoices, layerShown, layerStates, nodeLayer } from "./layers.js";
 
 const CSS = `
 @layer package { :root, :host, [theme] {
@@ -21,6 +25,13 @@ const CSS = `
 .model-viewer .mv-spacer { flex: 1; }
 .model-viewer button { background: var(--mv-panel); color: var(--mv-fg); border: 1px solid var(--mv-border); border-radius: 6px; padding: 4px 8px; font: inherit; cursor: pointer; }
 .model-viewer button[data-on] { border-color: var(--mv-fg); }
+.model-viewer .mv-layers { position: absolute; top: 44px; right: 8px; max-width: min(320px, 60%); max-height: calc(100% - 52px); overflow: auto; background: var(--mv-panel); border: 1px solid var(--mv-border); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.model-viewer .mv-layers[hidden], .model-viewer [hidden] { display: none; }
+.model-viewer .mv-layers-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; color: var(--mv-muted); }
+.model-viewer .mv-layers-head button { border: none; background: none; padding: 0; color: var(--mv-muted); text-decoration: underline; }
+.model-viewer .mv-layer { display: flex; align-items: center; gap: 4px; padding-inline-start: calc(var(--depth, 0) * 14px); white-space: nowrap; cursor: pointer; }
+.model-viewer .mv-layer span { overflow: hidden; text-overflow: ellipsis; }
+.model-viewer .mv-layer[data-shown="false"] { color: var(--mv-muted); }
 .model-viewer .mv-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--mv-muted); padding: 24px; text-align: center; pointer-events: none; }
 `;
 
@@ -37,7 +48,10 @@ export default function ModelViewer(handle, element) {
   const info = document.createElement("div");
   info.className = "mv-info";
   bar.append(info);
-  root.append(style, status, bar);
+  const layersPanel = document.createElement("div");
+  layersPanel.className = "mv-layers";
+  layersPanel.hidden = true;
+  root.append(style, status, bar, layersPanel);
   element.append(root);
 
   let disposed = false, raf = 0, ro = null, renderer = null, controls = null, model = null, scene, camera, grid, T;
@@ -49,9 +63,78 @@ export default function ModelViewer(handle, element) {
 
   const btn = (label, fn) => { const b = document.createElement("button"); b.textContent = label; b.onclick = () => fn(b); return b; };
 
+  // layers: the model's table, this view's ticks, and whether the panel is open
+  let layerTable = [];
+  let choices = {};
+  let layersOpen = true;
+  const layersBtn = btn("Layers", () => { layersOpen = !layersOpen; renderLayers(); });
+  layersBtn.hidden = true;
+
+  function applyLayers() {
+    if (!model || !layerTable.length) return;
+    const states = layerStates(layerTable, choices);
+    model.traverse((o) => {
+      if (o.isMesh || o.isLine || o.isPoints) o.visible = layerShown(states, nodeLayer(o, model));
+    });
+  }
+
+  function setLayer(layer, on) {
+    // a tick back to what the file says is no choice at all
+    if (on === layer.visible) delete choices[layer.id];
+    else choices[layer.id] = on;
+    applyLayers();
+    renderLayers();
+  }
+
+  function renderLayers() {
+    layersBtn.hidden = !layerTable.length;
+    layersBtn.toggleAttribute("data-on", layersOpen && layerTable.length > 0);
+    layersPanel.hidden = !layersOpen || !layerTable.length;
+    if (layersPanel.hidden) return;
+    const states = layerStates(layerTable, choices);
+    const head = document.createElement("div");
+    head.className = "mv-layers-head";
+    const title = document.createElement("span");
+    title.textContent = `Layers (${layerTable.length})`;
+    const reset = btn("Reset", () => { choices = {}; applyLayers(); renderLayers(); });
+    reset.title = "Show each layer as the file does";
+    reset.hidden = !Object.keys(layerChoices(choices)).length;
+    head.append(title, reset);
+    const rows = layerTable.map((l) => {
+      const st = states.get(l.id);
+      const row = document.createElement("label");
+      row.className = "mv-layer";
+      row.style.setProperty("--depth", String(l.depth));
+      row.dataset.shown = String(st.shown);
+      if (st.on && !st.shown) row.title = "Hidden with a layer it's in";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = st.on;
+      box.onchange = () => setLayer(l, box.checked);
+      const name = document.createElement("span");
+      name.textContent = l.name;
+      row.append(box, name);
+      return row;
+    });
+    layersPanel.replaceChildren(head, ...rows);
+  }
+
+  /** The box of what's drawn (hidden layers left out); empty if nothing is. */
+  function shownBox() {
+    const { THREE } = T;
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    model.traverseVisible((o) => {
+      if (!(o.isMesh || o.isLine || o.isPoints) || !o.geometry) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    });
+    return box;
+  }
+
   function frame() {
     const { THREE } = T;
-    const box = new THREE.Box3().setFromObject(model);
+    const box = shownBox();
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
     const r = Math.max(size.length() / 2, 1e-6);
@@ -115,6 +198,7 @@ export default function ModelViewer(handle, element) {
       btn("Fit", () => model && frame()),
       btn("Wireframe", (b) => { wire = !wire; b.toggleAttribute("data-on", wire); applyWire(); }),
       gridBtn,
+      layersBtn,
     );
   }
 
@@ -145,12 +229,16 @@ export default function ModelViewer(handle, element) {
     try {
       await ensureSetup();
       if (disposed || !renderer) return;
-      const { object, notes } = await loadModel(fileBytes(doc), ext);
+      const { object, notes, layers } = await loadModel(fileBytes(doc), ext);
       if (disposed || loadedKey !== key) return;
       disposeModel();
       model = object;
       scene.add(model);
       applyWire();
+      // the ticks carry over a new version of the same file (ids are stable); unknown ones are ignored
+      layerTable = layers;
+      applyLayers();
+      renderLayers();
       const size = frame();
       status.style.display = "none";
       const name = document.createElement("b");

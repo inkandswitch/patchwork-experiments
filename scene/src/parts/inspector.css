@@ -316,3 +316,41 @@
   line-height: 1.4;
   color: var(--scene-muted);
 }
+
+/* Layers: the selected object's GLB layers, a tree of ticks */
+.scene-stage .inspector .layers[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .inspector .layers-head:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.scene-stage .inspector .layers-reset[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .inspector .layer-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.scene-stage .inspector .layer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding-inline-start: calc(var(--depth, 0) * 14px);
+  min-width: 0;
+}
+
+.scene-stage .inspector .layer-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* hidden with a layer it's in: its own tick stays, dimmed */
+.scene-stage .inspector .layer[data-shown="false"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+}

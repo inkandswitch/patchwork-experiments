@@ -1,6 +1,7 @@
 // Minimal GLB (glTF 2.0 binary) encoder: indexed triangle meshes with normals
-// and a flat base colour per mesh. Same conventions as the scene kit's glb.js
-// (Y-up, metres, asset.extras.units = "m").
+// and a flat base colour per mesh, one node each (with the mesh's `extras`,
+// if any), and optional `extras` on the glTF scene. Same conventions as the
+// scene kit's glb.js (Y-up, metres, asset.extras.units = "m").
 
 export function computeBounds(p) {
   if (p.length < 3) return null;
@@ -33,7 +34,7 @@ function hexToLinear(h) {
   return [lin(n(0)), lin(n(2)), lin(n(4)), 1];
 }
 
-export function encodeGLB({ meshes, generator = "patchwork glb" }) {
+export function encodeGLB({ meshes, generator = "patchwork glb", extras = null }) {
   const parts = [], views = [], accessors = [], gMeshes = [], materials = [], nodes = [];
   let len = 0;
   const add = (typed, target) => {
@@ -66,7 +67,7 @@ export function encodeGLB({ meshes, generator = "patchwork glb" }) {
     });
     prim.material = materials.length - 1;
     gMeshes.push({ name: m.name, primitives: [prim] });
-    nodes.push({ name: m.name, mesh: gMeshes.length - 1 });
+    nodes.push({ name: m.name, mesh: gMeshes.length - 1, ...(m.extras ? { extras: m.extras } : {}) });
   }
   const binLen = len + ((4 - (len % 4)) % 4);
   const bin = new Uint8Array(binLen);
@@ -75,7 +76,7 @@ export function encodeGLB({ meshes, generator = "patchwork glb" }) {
   const gltf = {
     asset: { version: "2.0", generator, extras: { units: "m" } },
     scene: 0,
-    scenes: [{ nodes: nodes.map((_, i) => i) }],
+    scenes: [{ nodes: nodes.map((_, i) => i), ...(extras ? { extras } : {}) }],
   };
   if (nodes.length) { gltf.nodes = nodes; gltf.meshes = gMeshes; gltf.materials = materials; gltf.accessors = accessors; gltf.bufferViews = views; gltf.buffers = [{ byteLength: binLen }]; }
   const jsonRaw = new TextEncoder().encode(JSON.stringify(gltf));

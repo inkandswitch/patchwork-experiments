@@ -305,8 +305,78 @@ describe("content extras", () => {
     expect(Object.isFrozen(x)).toBe(true);
   });
   it("are empty-handed without connectors", () => {
-    expect(contentExtras({ snap: { points: [], radius: null }, legend: null })).toEqual({ connectors: [], snapRadius: null, legend: null });
+    expect(contentExtras({ snap: { points: [], radius: null }, legend: null })).toEqual({ connectors: [], snapRadius: null, legend: null, layers: [] });
     expect(contentExtras({ snap: { points: [{ position: [0, 0, 0] }], radius: 0.3 }, legend: { min: 0 } })).toMatchObject({ snapRadius: 0.3, legend: { min: 0 } });
+  });
+});
+
+describe("layers", () => {
+  // three 1 m boxes in a row along x: hull at 0, deck (in hull) at 2, rig at 4
+  // (hidden in the file), plus one on no layer at -2
+  const unit = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const layered = () =>
+    encodeGLB({
+      meshes: [{ name: "piece", positions: new Float32Array(unit), indices: [0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2] }],
+      nodes: [
+        { name: "hull", mesh: 0, translation: [0, 0, 0], extras: { layer: "hull" } },
+        { name: "deck", mesh: 0, translation: [2, 0, 0], extras: { layer: "deck" } },
+        { name: "rig", mesh: 0, translation: [4, 0, 0], extras: { layer: "rig" } },
+        { name: "loose", mesh: 0, translation: [-2, 0, 0] },
+      ],
+      extras: { layers: [{ id: "hull", name: "Hull" }, { id: "deck", name: "Deck", parent: "hull" }, { id: "rig", name: "Rig", visible: false }] },
+    });
+  const shownNames = (vp) => {
+    const out = [];
+    vp.objects.get("o").content.traverse((m) => m.isMesh && m.visible && out.push(...(m.userData.instancedFrom ?? [m.name])));
+    return out.sort();
+  };
+  const xSpan = (vp) => {
+    const b = vp.objectBox("o");
+    return b ? [+b.min.x.toFixed(6), +b.max.x.toFixed(6)] : null;
+  };
+
+  it("shows what the file shows, boxes only that, and says what the layers are", async () => {
+    const vp = headless();
+    vp.applyDisplay("o", { transform: {} });
+    await vp.setGLB("o", layered());
+    expect(shownNames(vp)).toEqual(["deck", "hull", "loose"]);
+    expect(xSpan(vp)).toEqual([-2, 3]);
+    expect(vp.contentOf("o").extras.layers.map((l) => [l.id, l.depth])).toEqual([["hull", 0], ["deck", 1], ["rig", 0]]);
+  });
+
+  it("follows the object's choices: a hidden parent hides what's in it, and turning on a hidden layer shows it", async () => {
+    const vp = headless();
+    vp.applyDisplay("o", { transform: {} });
+    await vp.setGLB("o", layered());
+    vp.applyDisplay("o", { transform: {}, layers: { hull: false, rig: true } });
+    expect(shownNames(vp)).toEqual(["loose", "rig"]);
+    expect(xSpan(vp)).toEqual([-2, 5]);
+    vp.applyDisplay("o", { transform: {}, layers: { hull: false, rig: false } });
+    expect(shownNames(vp)).toEqual(["loose"]);
+    expect(xSpan(vp)).toEqual([-2, -1]);
+    vp.applyDisplay("o", { transform: {} });
+    expect(shownNames(vp)).toEqual(["deck", "hull", "loose"]);
+  });
+
+  it("applies choices made before the GLB arrived", async () => {
+    const vp = headless();
+    vp.applyDisplay("o", { transform: {}, layers: { deck: false } });
+    await vp.setGLB("o", layered());
+    expect(shownNames(vp)).toEqual(["hull", "loose"]);
+  });
+
+  it("doesn't pick a hidden layer", async () => {
+    const vp = headless();
+    vp.applyDisplay("o", { transform: {}, layers: { rig: true } });
+    await vp.setGLB("o", layered());
+    const content = vp.objects.get("o").content;
+    const hit = () => {
+      vp.raycaster.set(new Vector3(4.25, 0.25, 5), new Vector3(0, 0, -1));
+      return vp.nearestHit([content]);
+    };
+    expect(hit()).not.toBeNull();
+    vp.applyDisplay("o", { transform: {}, layers: { rig: false } });
+    expect(hit()).toBeNull();
   });
 });
 

@@ -20,6 +20,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { toArrayBuffer } from "./file-content.js";
 import { resolveMaterialSet } from "./material-rules.js";
 import { sanitizeConnectors } from "./carry-rules.js";
+import { nodeLayer, sanitizeLayers } from "./layers.js";
 
 let loader = null;
 
@@ -171,8 +172,22 @@ export function applyMaterialRules(materials, rules) {
 }
 
 /**
- * Collapse meshes that share a geometry and a material into one InstancedMesh
- * each, under `root`. root must be at identity (it isn't in a scene yet).
+ * Put on every mesh-like node under root the layer it's on (layers.js:
+ * its own `extras.layer`, else its nearest ancestor's), as userData.layer, or
+ * null. Done before collapseInstances moves meshes out from under the nodes
+ * that said so; after it, a mesh's layer is on the mesh itself.
+ */
+export function stampLayers(root) {
+  root.traverse((o) => {
+    if (meshLike(o)) o.userData.layer = nodeLayer(o, root);
+  });
+}
+
+/**
+ * Collapse meshes that share a geometry, a material and a layer into one
+ * InstancedMesh each, under `root`. root must be at identity (it isn't in a
+ * scene yet). Meshes on different layers stay apart, so each can be hidden
+ * with its layer (stampLayers first).
  * @returns {{ before: number, after: number, instanced: number }} draw calls (mesh-like nodes) before and after
  */
 export function collapseInstances(root, minCount = 2) {
@@ -187,7 +202,7 @@ export function collapseInstances(root, minCount = 2) {
     // object's own determinant), so a mirrored placement would be drawn
     // inside out as an instance: it stays a plain Mesh
     if (o.matrixWorld.determinant() < 0) return;
-    const key = `${o.geometry.uuid}|${o.material.uuid}`;
+    const key = `${o.geometry.uuid}|${o.material.uuid}|${o.userData.layer ?? ""}`;
     let g = groups.get(key);
     if (!g) groups.set(key, (g = []));
     g.push(o);
@@ -278,8 +293,9 @@ export function localBox(root) {
  * of an InstancedMesh) as its geometry's own box plus the matrix from that
  * geometry into root's frame. Boxing these one by one under a rotated object's
  * world matrix gives the same world box as boxing every mesh under its own
- * world matrix (tighter than rotating one box of the whole content).
- * @returns {{ box: Box3, matrix: Matrix4 }[]}
+ * world matrix (tighter than rotating one box of the whole content). Each
+ * carries its mesh's layer (stampLayers), so what's shown can be boxed alone.
+ * @returns {{ box: Box3, matrix: Matrix4, layer: string | null }[]}
  */
 export function localParts(root) {
   root.updateMatrixWorld(true);
@@ -295,16 +311,16 @@ export function localParts(root) {
     if (o.isInstancedMesh) {
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, inst);
-        parts.push({ box: g.boundingBox, matrix: base.clone().multiply(inst) });
+        parts.push({ box: g.boundingBox, matrix: base.clone().multiply(inst), layer: o.userData.layer ?? null });
       }
-    } else parts.push({ box: g.boundingBox, matrix: base });
+    } else parts.push({ box: g.boundingBox, matrix: base, layer: o.userData.layer ?? null });
   });
   return parts;
 }
 
 /**
  * Bytes → display-ready content.
- * @returns {Promise<{ content, materials: object[], legend: object | null, extras: object, box: Box3 | null, parts: { box, matrix }[],
+ * @returns {Promise<{ content, materials: object[], legend: object | null, extras: object, layers: ReturnType<typeof sanitizeLayers>, box: Box3 | null, parts: { box, matrix, layer }[],
  *   stats: { drawCalls: number, nodes: number, instanced: number, triangles: number, dequantized: number } }>}
  */
 export async function prepareGLB(bytes, rules = []) {
@@ -316,6 +332,7 @@ export async function prepareGLB(bytes, rules = []) {
   const materials = prepareMaterials(content, gltf.parser);
   applyMaterialRules(materials, rules);
   const snap = findSnapPoints(content);
+  stampLayers(content);
   const inst = collapseInstances(content);
   return {
     content,
@@ -323,6 +340,7 @@ export async function prepareGLB(bytes, rules = []) {
     snap,
     legend: findLegend(content),
     extras,
+    layers: sanitizeLayers(extras.layers),
     box: localBox(content),
     parts: localParts(content),
     stats: { drawCalls: inst.after, nodes: inst.before, instanced: inst.instanced, triangles: countTriangles(content), dequantized },

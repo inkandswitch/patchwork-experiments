@@ -38,6 +38,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { applyMaterialRules, prepareGLB } from "../gltf-content.js";
 import { rulesKey, sanitizeRules } from "../material-rules.js";
+import { layerShown, layerStates } from "../layers.js";
 import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
 import { defaultSnapRadius } from "../carry-rules.js";
 import { onThemeChange, resolveCssColor } from "../theme.js";
@@ -378,7 +379,7 @@ void main() {
 export function contentExtras(prepared) {
   const points = prepared?.snap?.points ?? [];
   const radius = prepared?.snap?.radius ?? (points.length ? defaultSnapRadius(points) : null);
-  return Object.freeze({ ...(prepared?.extras ?? {}), connectors: points, snapRadius: radius ?? null, legend: prepared?.legend ?? null });
+  return Object.freeze({ ...(prepared?.extras ?? {}), connectors: points, snapRadius: radius ?? null, legend: prepared?.legend ?? null, layers: prepared?.layers ?? [] });
 }
 
 /**
@@ -1546,8 +1547,11 @@ export class Viewport {
         inherited: { visible: true, opacity: 1 },
         materials: [],
         extras: null, // contentExtras() of its GLB
-        box: null, // content's box in body space, cached per GLB
-        parts: [], // its pieces' boxes, for a rotated body (see objectBox)
+        box: null, // the box of what's shown of its content, in body space (applyLayers)
+        parts: [], // the shown pieces' boxes, for a rotated body (see objectBox)
+        allBox: null, // the whole content's box, cached per GLB
+        allParts: [], // every piece, with its layer
+        layers: [], // its GLB's layer table, checked (layers.js)
         hint: null, // a Box3 from hint.bounds, shown (and framed) until the GLB arrives
         placeholder: null,
         stats: null,
@@ -1704,11 +1708,13 @@ export class Viewport {
     entry.content = prepared.content;
     entry.materials = prepared.materials;
     entry.extras = contentExtras(prepared);
-    entry.box = prepared.box;
-    entry.parts = prepared.parts ?? [];
+    entry.box = entry.allBox = prepared.box;
+    entry.parts = entry.allParts = prepared.parts ?? [];
+    entry.layers = prepared.layers ?? [];
     entry.stats = prepared.stats;
     this.removePlaceholder(entry);
     entry.body.add(prepared.content);
+    this.applyLayers(entry);
     if (this.shadows) castShadows(prepared.content, true);
     this.queueBVH(prepared.content);
     this.applyMaterials(entry);
@@ -1791,7 +1797,26 @@ export class Viewport {
     }
     placeLocal(g, this.poses.get(id) ?? obj?.transform ?? {});
     this.applyMaterials(entry);
+    this.applyLayers(entry);
     this.contentChanged();
+  }
+
+  /**
+   * Show each of an object's meshes as its layer is shown (layers.js: the
+   * object's own `layers` choices over its GLB's table), and box only what's
+   * shown, so a hidden layer is neither drawn, picked, snapped to, nor counted
+   * in the object's bounds. A GLB with no layer table is left as it is.
+   */
+  applyLayers(entry) {
+    if (!entry.content || !entry.layers?.length) return;
+    const states = layerStates(entry.layers, entry.display?.layers);
+    entry.content.traverse((o) => {
+      if (o.isMesh || o.isLine || o.isPoints) o.visible = layerShown(states, o.userData.layer ?? null);
+    });
+    entry.parts = entry.allParts.filter((p) => layerShown(states, p.layer ?? null));
+    const box = new Box3();
+    for (const p of entry.parts) box.union(p.box.clone().applyMatrix4(p.matrix));
+    entry.box = box.isEmpty() ? null : box;
   }
 
   /** Colour / opacity / wireframe onto an object's materials, over their (rule-adjusted) base values. */

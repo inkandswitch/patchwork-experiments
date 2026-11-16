@@ -412,6 +412,58 @@ export function setField(snapshot, id, key, value) {
 }
 
 /**
+ * Choose whether one of an object's layers is shown (layers.js): `shown` a
+ * boolean, or undefined to drop the choice and go back to what its GLB says.
+ * Writes that one key of `layers` only (making the map if it isn't there,
+ * removing it once empty), never the whole map, so two people toggling
+ * different layers at once both land. `layerId` isn't checked against the
+ * GLB: the doc doesn't know it, and a choice for a layer a rebuild dropped is
+ * harmless (an unknown id is ignored).
+ * @returns plan with `id`, `layer` and `shown`; null when `id` isn't there,
+ *   isn't an object (a group has no layers), or already holds that choice
+ */
+export function setLayerShown(snapshot, id, layerId, shown) {
+  const { objects } = read(snapshot);
+  const o = objects[id];
+  if (!o || o.kind === "group" || typeof layerId !== "string" || !layerId) return null;
+  if (shown !== undefined && typeof shown !== "boolean") return null;
+  const has = o.layers && typeof o.layers === "object" && Object.hasOwn(o.layers, layerId);
+  if (shown === undefined ? !has : has && o.layers[layerId] === shown) return null;
+  return planned(
+    (d) => {
+      const x = d.objects?.[id];
+      if (!x) return;
+      if (shown === undefined) {
+        if (!x.layers || typeof x.layers !== "object") return;
+        delete x.layers[layerId];
+        if (!Object.keys(x.layers).length) delete x.layers;
+        return;
+      }
+      if (!x.layers || typeof x.layers !== "object" || Array.isArray(x.layers)) x.layers = {};
+      x.layers[layerId] = shown;
+    },
+    { id, layer: layerId, shown },
+  );
+}
+
+/**
+ * Drop every layer choice an object has: its layers go back to what its GLB
+ * says. @returns plan with `id`; null when there's nothing to drop
+ */
+export function clearLayers(snapshot, id) {
+  const { objects } = read(snapshot);
+  const o = objects[id];
+  if (!o || !("layers" in o)) return null;
+  return planned(
+    (d) => {
+      const x = d.objects?.[id];
+      if (x) delete x.layers;
+    },
+    { id },
+  );
+}
+
+/**
  * Write a transform into an object, field by field and number by number,
  * touching only the numbers that differ: never a new map or list where one is
  * there, so a concurrent write to another number (someone typing X, a shot

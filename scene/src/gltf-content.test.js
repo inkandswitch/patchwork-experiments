@@ -126,6 +126,36 @@ describe("gltf content", () => {
     expect(authoredMaterials(gltf.parser, gltf.scene).has(byName.bare.material)).toBe(false);
   });
 
+  it("instances a shared mesh only within a layer, and every mesh keeps the layer it was on", async () => {
+    // a, b on "hull" (b through its parent node), c on "rig", d on none: one
+    // geometry and material throughout
+    const glb = encodeGLB({
+      meshes: [{ name: "cleat", positions: tri, normals: computeNormals(tri), color: "#808080" }],
+      nodes: [
+        { name: "a", mesh: 0, translation: [0, 0, 0], extras: { layer: "hull" } },
+        { name: "hullGroup", children: [2], extras: { layer: "hull" } },
+        { name: "b", mesh: 0, translation: [2, 0, 0] },
+        { name: "c", mesh: 0, translation: [4, 0, 0], extras: { layer: "rig" } },
+        { name: "c2", mesh: 0, translation: [6, 0, 0], extras: { layer: "rig" } },
+        { name: "d", mesh: 0, translation: [8, 0, 0] },
+      ],
+      extras: { layers: [{ id: "hull" }, { id: "rig", visible: false }] },
+    });
+    const p = await prepareGLB(glb);
+    const drawn = [];
+    p.content.traverse((o) => o.isMesh && drawn.push(o));
+    const byLayer = Object.groupBy(drawn, (o) => String(o.userData.layer));
+    // hull: a + b as one InstancedMesh; rig: c + c2 as another; d alone
+    expect(Object.keys(byLayer).sort()).toEqual(["hull", "null", "rig"]);
+    expect(byLayer.hull.map((o) => o.isInstancedMesh && o.count)).toEqual([2]);
+    expect(byLayer.rig.map((o) => o.isInstancedMesh && o.count)).toEqual([2]);
+    expect(byLayer.null.map((o) => !!o.isInstancedMesh)).toEqual([false]);
+    expect(p.stats).toMatchObject({ nodes: 5, drawCalls: 3, instanced: 2 });
+    // each part (an instance) knows its layer; the table came through, checked
+    expect(p.parts.map((x) => x.layer).sort()).toEqual(["hull", "hull", "rig", "rig", null].sort());
+    expect(p.layers.map((l) => [l.id, l.visible])).toEqual([["hull", true], ["rig", false]]);
+  });
+
   it("leaves a mirrored placement of a shared mesh as a plain Mesh (three picks winding per object, not per instance)", async () => {
     const glb = encodeGLB({
       meshes: [{ name: "fitting", positions: tri, normals: computeNormals(tri), color: "#808080" }],

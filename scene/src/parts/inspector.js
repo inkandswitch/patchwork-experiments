@@ -59,6 +59,7 @@ import { EDIT, LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
+import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
 // each inspector's own radio group: two views of one scene on a page mustn't share one
@@ -453,6 +454,51 @@ function create(api) {
     };
   }
 
+  /**
+   * The object's layers (its GLB's table: layers.js), each with a checkbox
+   * for whether it's shown here. Unticking a layer hides what's in it too
+   * (those rows dim; their own ticks stay, to come back with it). A choice
+   * that matches what the file says is dropped rather than kept, so the
+   * object follows the file again; Reset drops them all.
+   */
+  function layersView(id) {
+    const list = el("div", { class: "layer-list" });
+    const reset = el("button", { type: "button", class: "button link layers-reset", title: "Show each layer as the file does", onclick: () => apply(api.ops.clearLayers(api.scene(), id), "Reset layers") }, "Reset");
+    const section = el("div", { class: "field-group layers", hidden: true }, el("div", { class: "layers-head" }, el("span", { class: "group-label" }, "Layers"), reset), list);
+    let key = null;
+    const toggle = (layer, on) => {
+      const v = on === layer.visible ? undefined : on;
+      apply(api.ops.setLayerShown(api.scene(), id, layer.id, v), `${on ? "Show" : "Hide"} ${layer.name}`);
+    };
+    return {
+      section,
+      update(o) {
+        const table = api.content(id)?.extras?.layers ?? [];
+        const states = layerStates(table, o?.layers);
+        const choices = Object.keys(layerChoices(o?.layers)).length;
+        const k = JSON.stringify([choices, table.map((e) => [e.id, e.name, e.depth, states.get(e.id)])]);
+        if (k === key) return;
+        key = k;
+        section.hidden = !table.length;
+        reset.hidden = !choices;
+        list.replaceChildren(
+          ...table.map((e) => {
+            const st = states.get(e.id);
+            const box = el("input", { type: "checkbox" });
+            box.checked = st.on;
+            box.addEventListener("change", () => toggle(e, box.checked));
+            return el(
+              "label",
+              { class: "toggle layer", style: `--depth: ${e.depth}`, dataset: { layer: e.id, shown: String(st.shown) }, title: st.on && !st.shown ? "Hidden with a layer it's in" : null },
+              box,
+              el("span", { class: "layer-name" }, e.name),
+            );
+          }),
+        );
+      },
+    };
+  }
+
   function build(id, o) {
     teardown();
     const group = isGroup(o);
@@ -483,6 +529,7 @@ function create(api) {
     const posUnit = group ? null : el("span", { class: "unit" });
 
     const behaviours = behavioursView(id, "object");
+    const layers = group ? null : layersView(id);
     const commands = el("div", { class: "cluster commands" });
     const content = contentKind(api.loadState?.(id));
     const openFile = content === "file" ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
@@ -526,6 +573,7 @@ function create(api) {
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Position ", posUnit), el("div", { class: "triple" }, ...pos.map((f) => f.row))),
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Rotation °"), el("div", { class: "triple" }, ...rot.map((f) => f.row))),
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Scale"), el("div", { class: "triple" }, scale.row)),
+      layers?.section,
       behaviours.section,
       commands,
       openFile ? el("div", { class: "cluster" }, openFile) : null,
@@ -560,6 +608,7 @@ function create(api) {
       scale,
       posUnit,
       behaviours,
+      layers,
       commands,
       commandsKey: null,
       about,
@@ -659,6 +708,7 @@ function create(api) {
       setVal(view.scale.input, String(t.scale), force);
     }
 
+    view.layers?.update(o);
     view.behaviours.update(scene);
     fillCommands(scene, local);
     fillAbout(scene);

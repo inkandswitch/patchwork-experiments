@@ -4,7 +4,7 @@
 // several-id removal and the refusals.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { attachTo, docOf, fileIn, moveRow, newGroup, orderedIds, removeObjects, repairCycles, REASONS, setField, setTransform, setTransformPart, ungroup } from "./ops.js";
+import { attachTo, clearLayers, docOf, fileIn, moveRow, newGroup, orderedIds, removeObjects, repairCycles, REASONS, setField, setLayerShown, setTransform, setTransformPart, ungroup } from "./ops.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { placementFor } from "./tree-drop.js";
 import { outlineParents } from "./groups.js";
@@ -395,6 +395,42 @@ describe("moveRow", () => {
 });
 
 describe("plain writes", () => {
+  it("setLayerShown writes one layer's choice; undefined drops it, and the map once empty", () => {
+    const doc = docWith({ boat: leaf("Boat"), g: group("G") });
+    const one = apply(doc, setLayerShown(doc, "boat", "rig", false));
+    expect(one.objects.boat.layers).toEqual({ rig: false });
+    const two = apply(one, setLayerShown(one, "boat", "hull", true));
+    expect(two.objects.boat.layers).toEqual({ rig: false, hull: true });
+    expect(setLayerShown(two, "boat", "rig", false)).toBeNull(); // already so
+    const back = apply(two, setLayerShown(two, "boat", "rig", undefined));
+    expect(back.objects.boat.layers).toEqual({ hull: true });
+    const none = apply(back, setLayerShown(back, "boat", "hull", undefined));
+    expect("layers" in none.objects.boat).toBe(false);
+    expect(setLayerShown(none, "boat", "hull", undefined)).toBeNull(); // nothing to drop
+  });
+
+  it("setLayerShown refuses what isn't a layer choice on an object", () => {
+    const doc = docWith({ boat: leaf("Boat"), g: group("G") });
+    for (const [id, layer, shown] of [["nope", "rig", true], ["g", "rig", true], ["boat", "", true], ["boat", 3, true], ["boat", "rig", "yes"], ["boat", "rig", null]]) {
+      expect(setLayerShown(doc, id, layer, shown)).toBeNull();
+    }
+  });
+
+  it("clearLayers drops every choice; nothing to drop is null", () => {
+    const doc = docWith({ boat: leaf("Boat", { layers: { rig: false, hull: true } }), bare: leaf("Bare") });
+    expect("layers" in apply(doc, clearLayers(doc, "boat")).objects.boat).toBe(false);
+    expect(clearLayers(doc, "bare")).toBeNull();
+    expect(clearLayers(doc, "nope")).toBeNull();
+  });
+
+  it("two people choosing different layers at once both land", () => {
+    let a = Automerge.from({ objects: { boat: leaf("Boat", { layers: { keel: true } }) }, order: ["boat"], dimensions: {}, view: {} });
+    let b = Automerge.clone(a);
+    a = Automerge.change(a, setLayerShown(a, "boat", "rig", false));
+    b = Automerge.change(b, setLayerShown(b, "boat", "hull", false));
+    expect({ ...Automerge.merge(a, b).objects.boat.layers }).toEqual({ keel: true, rig: false, hull: false });
+  });
+
   it("setField writes one field; undefined deletes; structure is refused", () => {
     const doc = vessel();
     expect(apply(doc, setField(doc, "hull", "name", "Hull")).objects.hull.name).toBe("Hull");

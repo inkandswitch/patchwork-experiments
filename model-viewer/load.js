@@ -1,5 +1,6 @@
 // bytes + extension → a three.js Object3D, Y-up. One place that knows formats.
 import { loadThree } from "./three.js";
+import { sanitizeLayers } from "./layers.js";
 
 export const FORMATS = ["glb", "gltf", "stl", "3mf", "3dm", "obj", "ply"];
 const Z_UP = new Set(["stl", "3mf", "ply"]);
@@ -21,7 +22,7 @@ export function extOf(doc) {
   return String(e ?? "").toLowerCase().replace(/^\./, "");
 }
 
-/** Returns { object, notes }. */
+/** Returns { object, notes, layers }: layers, the GLB's layer table (layers.js), checked; [] for formats without one. */
 export async function loadModel(bytes, ext) {
   const T = await loadThree();
   const { THREE } = T;
@@ -64,6 +65,8 @@ export async function loadModel(bytes, ext) {
     default:
       throw new Error(`Can't show .${ext} files (supported: ${FORMATS.join(", ")})`);
   }
+  // a glTF scene's extras (GLTFLoader puts them in userData), before any wrapping below
+  const layers = sanitizeLayers(object.userData?.layers);
   if (Z_UP.has(ext)) {
     const g = new THREE.Group();
     object.rotation.x = -Math.PI / 2;
@@ -75,5 +78,5 @@ export async function loadModel(bytes, ext) {
     object.traverse((o) => { if (o.isMesh) { const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
     notes = `${Math.round(tris).toLocaleString()} triangles`;
   }
-  return { object, notes };
+  return { object, notes, layers };
 }
