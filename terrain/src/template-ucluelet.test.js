@@ -67,7 +67,7 @@ describe("the Ucluelet template's layout", () => {
 
 describe("terrain.sky", () => {
   it("offers its sky, fog, sun and exposure as the atmosphere, and nothing else", () => {
-    expect(skyOffer({ ...SKIES["ukee-grey"], extra: 1 })).toEqual({ sky: SKIES["ukee-grey"].sky, fog: SKIES["ukee-grey"].fog, sun: SKIES["ukee-grey"].sun, exposure: 1.05 });
+    expect(skyOffer({ ...SKIES["ukee-grey"], extra: 1 })).toEqual({ sky: SKIES["ukee-grey"].sky, fog: SKIES["ukee-grey"].fog, sun: SKIES["ukee-grey"].sun, exposure: 1.05, clouds: { cover: 1, contrast: 0.12, scale: 500, base: 600 } });
     expect(skyOffer({})).toBe(null);
     expect(skyOffer(null)).toBe(null);
   });

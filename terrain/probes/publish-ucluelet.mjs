@@ -43,9 +43,12 @@
 //    - screens: the home view, the boatyard close, the inlet, Amphitrite Point,
 //      the town's waterfront from the water, the surf, the cloud on Mount
 //      Ozzard, three low on the water (off the yard, off the town, under
-//      the lighthouse), the basins' floats, Whiskey Dock and mid-harbour; the
-//      top of every one isn't black; no height legend (the ground is
-//      coloured by what covers it);
+//      the lighthouse), the basins' floats, Whiskey Dock and mid-harbour, and
+//      the third look critic's four (among the basin's trees, low over the
+//      pile decks, the waterfront as a postcard, the yard's shore); the
+//      top of every one isn't black; the water off the yard glassy (under 8%
+//      of its pixels darker than half their median); no height legend (the
+//      ground is coloured by what covers it);
 //    - every view's frame time (40 frames of the stage's render and a
 //      1-pixel readPixels: median, p90, draw calls, triangles); with --gpu
 //      (the machine's GPU, Metal on a Mac, not SwiftShader) the home view's
@@ -57,7 +60,7 @@ import { join, resolve, dirname } from "node:path";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
 import { publishDocs } from "./publish-stamp.mjs";
 import { lockDir } from "./chrome-lock.mjs";
-import { pngPixel } from "./png-pixel.mjs";
+import { pngPixel, pngRegion } from "./png-pixel.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -163,7 +166,7 @@ try {
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
   check("the GLB's layers: forest, buildings, boats, surf, the shore's dressing, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden) (no cloud mesh: the stratus is baked into the hills)", ["forest", "buildings", "boats", "surf", "shore", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
   check("the trees are drawn instanced (a species a tile, so the stage culls the forest a tile at a time)", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
-  check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
+  check("the place's sky is the world's atmosphere (Ukee grey, its stratocumulus deck, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false && t.atmosphere?.clouds?.cover === 1, t.atmosphere);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
 
   check("no height legend over a ground coloured by what covers it", !t.legend, { legend: t.legend });
@@ -208,6 +211,11 @@ try {
     "ucluelet-midharbour": [[560, 6, 60], [1000, 10, 800]],
     // the yard close: the red Quonset, the galvanised one, the courtyard's slab and the frontage's stones
     "ucluelet-courtyard": [[-50, 4, 150], [0, 5, 95]],
+    // the third look critic's: among the basin's trees, low over the waterfront's pile decks, the town's waterfront as a postcard from the harbour, the yard's shore
+    "ucluelet-x-basin-mid": [[300, 14, 300], [370, 1, 470]],
+    "ucluelet-x-basin-low": [[420, 3, 240], [360, 3, 450]],
+    "ucluelet-x-harbour-postcard": [[900, 40, 250], [400, 5, 650]],
+    "ucluelet-x-yard-shore": [[60, 6, -60], [-30, 3, 90]],
   };
   for (const [name, [pos, tgt]] of Object.entries(views)) {
     await P(`setCamera(${J(pos)}, ${J(tgt)})`);
@@ -223,6 +231,12 @@ try {
   const grain = await P("grain()");
   check("the ground carries its grain and the place dresses it (every ground mesh's material, a program compiled with it)", grain.meshes > 0 && grain.dressed === grain.meshes && grain.grainPrograms > 0, grain);
   check("no view's top is black (the sky drawn at every eye)", Object.values(topPixels).every((c) => Math.max(...c) > 24), topPixels);
+  // calm overcast water is a glassy mirror, not a camouflage of dark blobs: off the yard, the water's pixels (the frame's lower third) darker than half their median luminance are under 8% of them
+  const waterLum = pngRegion(join(SHOTS, "ucluelet-low-yard.png"), 0, 470, 1280, 720).map(([r, g, bl]) => 0.2126 * r + 0.7152 * g + 0.0722 * bl).sort((a, z) => a - z);
+  const waterMedian = waterLum[waterLum.length >> 1];
+  const darkShare = (f) => waterLum.filter((l) => l < f * waterMedian).length / waterLum.length;
+  report.numbers.lowYardWater = { median: +waterMedian.toFixed(1), darkerThanHalf: +darkShare(0.5).toFixed(4), darkerThan08: +darkShare(0.8).toFixed(4) };
+  check("the water off the yard is glassy: under 8% of its pixels darker than half its median", darkShare(0.5) < 0.08, report.numbers.lowYardWater);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);
   await sleep(500);

@@ -1,6 +1,6 @@
 // Harbour structures from OSM, extruded: floats (man_made=pier,
 // floating=yes) as low pontoons among their tall black guide piles, fixed piers as decks above the
-// highest tide (a slab: the piles aren't drawn), breakwaters as rock walls,
+// highest tide among the same black piles, breakwaters as rock walls,
 // groynes as low walls. An area
 // is extruded as drawn; a line is widened (its width tag, else the kind's).
 // Heights are above mean water level (the floats don't ride the tide).
@@ -9,9 +9,11 @@ import { hashString } from "./buildings.js";
 import { soup, prism, widen, cylinder } from "./shapes.js";
 
 export const KINDS = Object.freeze({
-  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#a8a398", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
-  pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#7a7368" },
-  breakwater: { width: 8, top: 3, bottom: -6, colour: "#8d877c" },
+  // decks weathered grey, not beige; black creosote piles every 15 m along a float's and a pier's sides
+  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#8d8a82", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
+  pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#74726c", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
+  // rock rubble, dark, not a pale slab
+  breakwater: { width: 8, top: 3, bottom: -6, colour: "#57544e" },
   groyne: { width: 3, top: 1.5, bottom: -2, colour: "#807a6e" },
 });
 

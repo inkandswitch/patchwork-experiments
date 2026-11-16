@@ -14,6 +14,11 @@ export function soup() {
   };
   return {
     tri,
+    /** a triangle with a colour at each corner */
+    triC(a, b, c, ca, cb, cc) {
+      pos.push(...a, ...b, ...c);
+      col.push(...ca, ...cb, ...cc);
+    },
     /** quad a b c d, counter-clockwise seen from where it faces */
     quad(a, b, c, d, rgb) {
       tri(a, b, c, rgb);

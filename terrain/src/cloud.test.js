@@ -202,3 +202,59 @@ describe("the stratus as a band across the hills (Ucluelet's)", () => {
     }
   });
 });
+
+import { stratusFactor, wispShare, WISPS } from "./cloud.js";
+describe("the stratus torn into wisps (Ucluelet's bake)", () => {
+  const bake = { from: 280, peak: 420, span: 200, max: 0.75, above: 0.5, colour: "#737b7e", wisps: true, low: { from: 60, peak: 120, span: 120, max: 0.35, above: 0.12, within: [{ x: 0, z: 0, radius: 2000 }] } };
+  const G = Array.from({ length: 32 }, (_, q) => q * 61.7);
+  const H = Array.from({ length: 41 }, (_, q) => q * 20);
+  const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  it("stays in [0, 0.75] at every height to 800 m, at every point of a 32 × 32 grid, in the low band's circle and out of it", () => {
+    for (const ox of [0, 5000]) for (const y of H) for (const a of G) for (const b of G) {
+      const f = stratusFactor(ox + a, y, b, bake) ?? 0;
+      expect(f).toBeGreaterThanOrEqual(0);
+      expect(f).toBeLessThanOrEqual(0.75);
+      // out of the low band's circle, nothing under `from`
+      if (ox && y <= 280) expect(f).toBe(0);
+      // in it, the mist is never more than its own max under the band
+      if (!ox && y <= 280) expect(f).toBeLessThanOrEqual(0.35);
+    }
+  });
+  it("never makes a hill lighter than the horizon (every height to 800 m, a 32 × 32 grid, the forest's and the ground's colours)", () => {
+    const horizon = hexToLinear("#959ea1").slice(0, 3);
+    for (const hex of ["#16241c", "#2a3a2c", "#55585a", "#5d5850"]) {
+      const base = hexToLinear(hex).slice(0, 3);
+      const positions = [], colors = [];
+      for (const y of H) for (const a of G) for (const b of G) positions.push(a + 3000, y, b), colors.push(...base);
+      const P = new Float32Array(positions), C = new Float32Array(colors);
+      bakeStratus(P, C, bake);
+      for (let v = 0; v < C.length / 3; v++) expect(lum([C[v * 3], C[v * 3 + 1], C[v * 3 + 2]])).toBeLessThanOrEqual(lum(horizon) + 1e-6);
+    }
+  });
+  it("covers between 30% and 55% of Mount Ozzard's flank at the band's thickest (factor over 0.4), and leaves at least 40% of it at 0.2 or less: wisps with forest between", () => {
+    // Ozzard's box in the frame (its radome at about (4770, −1045)), at the band's thickest heights
+    let over = 0, under = 0, all = 0;
+    for (const y of [400, 420, 440]) for (let a = 0; a < 32; a++) for (let b = 0; b < 32; b++) {
+      const f = stratusFactor(4000 + a * 50, y, -1800 + b * 50, bake);
+      if (f > 0.4) over++;
+      if (f <= 0.2) under++;
+      all++;
+    }
+    expect(over / all).toBeGreaterThanOrEqual(0.3);
+    expect(over / all).toBeLessThanOrEqual(0.55);
+    expect(under / all).toBeGreaterThanOrEqual(0.4);
+  });
+  it("takes between the floor and all of the band, and runs along a slope more than across it (wisps, not blobs)", () => {
+    let along = 0, across = 0;
+    for (let a = 0; a < 32; a++) for (let b = 0; b < 32; b++) {
+      const x = a * 83, z = b * 83, y = 420;
+      const s = wispShare(x, y, z);
+      expect(s).toBeGreaterThanOrEqual(WISPS.floor);
+      expect(s).toBeLessThanOrEqual(1);
+      // a hillside rising 1 in 2 toward +x: 30 m along the contour (z) changes less than 30 m up the slope (x and y)
+      along += Math.abs(wispShare(x, y, z + 30) - s);
+      across += Math.abs(wispShare(x + 30, y + 15, z) - s);
+    }
+    expect(along).toBeLessThan(across);
+  });
+});

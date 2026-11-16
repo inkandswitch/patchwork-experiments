@@ -7,6 +7,21 @@ import { inflateSync } from "node:zlib";
 
 /** [r, g, b] (0–255) of the pixel at (x, y) of the PNG at `path`. */
 export function pngPixel(path, x, y) {
+  const { rows, width, height } = pngRows(path, y);
+  if (x < 0 || y < 0 || x >= width || y >= height) throw new Error(`(${x}, ${y}) is outside the ${width} × ${height} image`);
+  return rows[y].slice(x * 3, x * 3 + 3);
+}
+
+/** Every pixel's [r, g, b] (0–255) in the box [x0, x1) × [y0, y1) of the PNG at `path`, row by row. */
+export function pngRegion(path, x0, y0, x1, y1) {
+  const { rows } = pngRows(path, y1 - 1);
+  const out = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) out.push(Array.from(rows[y].slice(x * 3, x * 3 + 3)));
+  return out;
+}
+
+/** The PNG's rows 0…last as RGB (3 bytes a pixel). */
+function pngRows(path, last) {
   const buf = readFileSync(path);
   let p = 8, width = 0, height = 0, type = 0, depth = 0, interlace = 0;
   const idat = [];
@@ -18,11 +33,12 @@ export function pngPixel(path, x, y) {
     p += 12 + len;
   }
   if (depth !== 8 || (type !== 2 && type !== 6) || interlace) throw new Error(`pngPixel reads 8-bit RGB(A), not interlaced: depth ${depth}, type ${type}, interlace ${interlace}`);
-  if (x < 0 || y < 0 || x >= width || y >= height) throw new Error(`(${x}, ${y}) is outside the ${width} × ${height} image`);
+  if (last >= height) throw new Error(`row ${last} is outside the ${width} × ${height} image`);
   const bpp = type === 6 ? 4 : 3, stride = width * bpp;
   const raw = inflateSync(Buffer.concat(idat));
   let prev = new Uint8Array(stride), row = new Uint8Array(stride);
-  for (let r = 0; r <= y; r++) {
+  const rows = [];
+  for (let r = 0; r <= last; r++) {
     const f = raw[r * (stride + 1)], src = raw.subarray(r * (stride + 1) + 1, (r + 1) * (stride + 1));
     for (let i = 0; i < stride; i++) {
       const a = i >= bpp ? row[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
@@ -37,6 +53,9 @@ export function pngPixel(path, x, y) {
       row[i] = v & 255;
     }
     [prev, row] = [row, prev];
+    const rgb = new Uint8Array(width * 3);
+    for (let x = 0; x < width; x++) (rgb[x * 3] = prev[x * bpp]), (rgb[x * 3 + 1] = prev[x * bpp + 1]), (rgb[x * 3 + 2] = prev[x * bpp + 2]);
+    rows.push(rgb);
   }
-  return [prev[x * bpp], prev[x * bpp + 1], prev[x * bpp + 2]];
+  return { rows, width, height };
 }

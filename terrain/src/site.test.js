@@ -4,7 +4,7 @@ import { SITE, LANDMARKS, ORIGIN, GRID, PLACES, HEIGHTS, DATUM, ANCHORAGE, HOME,
 import { builtRings } from "./build.js";
 import { localFrame } from "./tmerc.js";
 import { latLonBox } from "./fetch-data.js";
-import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES, facade, pileDeck, paletteSoup } from "./buildings.js";
+import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES, facade, pileDeck, paletteSoup, deckOf, pileSpots, DECK_REACH, DETAIL } from "./buildings.js";
 import { COVER } from "./cover.js";
 
 const frame = localFrame(ORIGIN);
@@ -264,20 +264,64 @@ describe("buildings", () => {
       expect(facade(soup(), ring, { floor: 0, eave: 5, ribs: "#d8d2bf" })).toBe(2 * 12 + 2 * 7);
     }
   });
-  it("stands a building at the water on a pile deck: piles every 4 m only where the ground is under the deck", () => {
+  it("stands a building at the water on a pile deck: piles no more than 4 m apart, a row at each edge, only where the ground is under the deck", () => {
     const s = soup();
-    // the ground falls from 5 m at x = 0 to −5 at x = 20
-    const count = pileDeck(s, [[0, 0], [20, 0], [20, 8], [0, 8]], { deck: 3, groundAt: (x) => 5 - x / 2 });
-    // pile columns at x = 2, 6, 10, 14, 18 (rows at z = 2, 6): ground there 4, 2, 0, −2, −4; under 3 − 0.5 − 0.3 = 2.2: x ≥ 6
-    expect(count).toBe(4 * 2);
-    const out = buildingMesh([{ id: "way/9", kind: "warehouse", points: [[0, 0], [20, 0], [20, 8], [0, 8]] }], { groundAt: (x) => 5 - x / 2, sinkAt: () => 0.5, coverAt: () => 0, deckAbove: 3.1, details: true, palette: { ...CLASSES && {}, walls: [["#7a5a40", 1]], roofs: [["#3d3f42", 1]], cladding: [["#b8bcbc", 1]], metalRoofs: [["#9ea3a6", 1]], plant: "#d8d2bf" } });
-    expect(out.decks).toBe(1);
-    // the plant's cream cladding is among its colours; nothing goes below 6 m under (the piles)
-    const cream = [0xd8, 0xd2, 0xbf].map((c) => ((c / 255 + 0.055) / 1.055) ** 2.4);
-    expect(out.primitives.some((p) => p.color.every((c, i) => Math.abs(c - cream[i]) < 1e-4))).toBe(true);
-    let lo = Infinity;
-    for (const p of out.primitives) for (let v = 1; v < p.positions.length; v += 3) lo = Math.min(lo, p.positions[v]);
-    expect(lo).toBeCloseTo(-6, 6);
+    // the ground falls from 5 m at z = 0 to 1 m at z = 8 (the water's side +z, the long side along x)
+    const groundAt = (x, z) => 5 - z / 2;
+    const d = deckOf([[0, 0], [20, 0], [20, 8], [0, 8]], groundAt, { mlw: -1.2 });
+    expect(d.side).toBeGreaterThan(0);
+    // the water half a metre under the lower low water (−1.7) under the outer row (inset 0.3) from z = 13.4: the deck reaches 6 m out (in 2 m steps)
+    expect(d.reached).toBe(true);
+    expect(d.out).toBe(6);
+    const count = pileDeck(s, d, { deck: 3, groundAt });
+    const spots = pileSpots(d.box, d.side);
+    expect(count).toBe(spots.filter((p) => groundAt(p.x, p.z) <= 3 - 0.5 - 0.3).length);
+    // a row at each long edge, 0.3 in, and none more than 4 m apart
+    const zs = [...new Set(spots.map((p) => Math.round(p.z * 1000) / 1000))].sort((a, b) => a - b);
+    expect(zs[0]).toBeCloseTo(0.3, 6);
+    expect(zs.at(-1)).toBeCloseTo(14 - 0.3, 6);
+    for (let q = 1; q < zs.length; q++) expect(zs[q] - zs[q - 1]).toBeLessThanOrEqual(4 + 1e-9);
+  });
+  it("reaches every deck out until its outer piles stand a metre under the lowest tide, or not at all (every slope, shore direction and offset)", () => {
+    const mlw = -1.2;
+    let reachedSome = 0;
+    for (const slope of [1 / 3, 1 / 5, 1 / 10, 1 / 20]) for (let a = 0; a < 8; a++) for (const off of [-6, 0, 6]) {
+      const th = (a * Math.PI) / 4 + 0.1;
+      const n = [Math.cos(th), Math.sin(th)];
+      // the ground falls toward n: 0 at the line through (off·n)
+      const groundAt = (x, z) => -slope * (x * n[0] + z * n[1] - off);
+      const pts = [[-12, -5], [12, -5], [12, 5], [-12, 5]];
+      const d = deckOf(pts, groundAt, { mlw });
+      if (d.reached) {
+        reachedSome++;
+        for (const p of pileSpots(d.box, d.side).filter((p) => p.outer)) expect(groundAt(p.x, p.z)).toBeLessThanOrEqual(mlw - DECK_REACH.depth + 1e-9);
+        expect(d.out).toBeLessThanOrEqual(DECK_REACH.reach);
+      } else expect(d.out).toBe(0);
+      // steep enough shores are always reached
+      if (slope >= 1 / 10) expect(d.reached).toBe(true);
+    }
+    expect(reachedSome).toBeGreaterThan(48);
+  });
+  it("draws every building on a deck as a fish plant (cream ribs, no window grid, roller doors) unless the place draws it itself, its piles to the seabed (every kind)", () => {
+    const groundAt = (x, z) => 4 - z / 2;
+    const palette = { walls: [["#7a5a40", 1]], roofs: [["#3d3f42", 1]], cladding: [["#b8bcbc", 1]], metalRoofs: [["#9ea3a6", 1]], plant: "#d8d2bf" };
+    const lin = (hex) => [1, 3, 5].map((k) => ((parseInt(hex.slice(k, k + 2), 16) / 255 + 0.055) / 1.055) ** 2.4);
+    const has = (out, hex) => out.primitives.some((p) => p.color.every((c, i) => Math.abs(c - lin(hex)[i]) < 1e-4));
+    for (const kind of ["house", "commercial", "hotel", "warehouse", "yes"]) {
+      const out = buildingMesh([{ id: `way/${kind}`, kind, points: [[0, 0], [20, 0], [20, 8], [0, 8]] }], { groundAt, sinkAt: () => 0.5, coverAt: () => 0, deckAbove: 3.1, details: true, palette });
+      expect(out.decks).toBe(1);
+      expect(out.reached).toBe(1);
+      expect(has(out, "#d8d2bf")).toBe(true);
+      expect(has(out, DETAIL.glass)).toBe(false);
+      expect(has(out, "#3d6f9a") || has(out, "#c9b04a")).toBe(true);
+      // the piles go into the seabed (half a metre under it at least, never above −6)
+      let lo = Infinity;
+      for (const p of out.primitives) for (let v = 1; v < p.positions.length; v += 3) lo = Math.min(lo, p.positions[v]);
+      expect(lo).toBeLessThanOrEqual(-6);
+    }
+    // a building the place draws itself (an override's colour) keeps its own form and windows
+    const own = buildingMesh([{ id: "way/1", kind: "house", colour: "#6b4a2e", points: [[0, 0], [20, 0], [20, 8], [0, 8]] }], { groundAt, sinkAt: () => 0.5, coverAt: () => 0, deckAbove: 3.1, details: true, palette });
+    expect(has(own, DETAIL.glass)).toBe(true);
     void paletteSoup;
   });
   it("simplifies a footprint's jogs under 0.4 m, and keeps its corners", () => {

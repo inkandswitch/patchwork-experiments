@@ -32,6 +32,7 @@ import {
   Triangle,
   Vector2,
   Vector3,
+  Vector4,
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -160,7 +161,9 @@ const finite = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v))
  * is left out, and nothing usable at all is null. A sky missing a colour takes
  * a neighbour's; fog without a colour takes the sky's horizon; a sun without
  * a direction stands where the key light does.
- * @returns {{ sky?: { top, horizon, bottom }, fog?: { color, near, far }, sun?: { direction, color, intensity, shadows }, exposure?: number } | null}
+ * Clouds (over a sky only) need a cover over 0; their contrast, scale and
+ * base default to CLOUDS'.
+ * @returns {{ sky?: { top, horizon, bottom }, fog?: { color, near, far }, sun?: { direction, color, intensity, shadows }, exposure?: number, clouds?: { cover, contrast, scale, base } } | null}
  */
 export function cleanAtmosphere(a) {
   if (!a || typeof a !== "object") return null;
@@ -191,7 +194,42 @@ export function cleanAtmosphere(a) {
   }
   const exposure = finite(a.exposure);
   if (exposure != null && exposure > 0) out.exposure = exposure;
+  // clouds over a sky: cover in [0, 1], contrast in [0, 0.5], scale and base positive metres
+  if (out.sky && a.clouds && typeof a.clouds === "object") {
+    const cover = finite(a.clouds.cover), contrast = finite(a.clouds.contrast) ?? CLOUDS.contrast, scale = finite(a.clouds.scale) ?? CLOUDS.scale, base = finite(a.clouds.base) ?? CLOUDS.base;
+    if (cover != null && cover > 0 && contrast > 0 && scale > 0 && base > 0) out.clouds = { cover: Math.min(1, cover), contrast: Math.min(0.5, contrast), scale, base };
+  }
   return Object.keys(out).length ? out : null;
+}
+
+/** A cloud deck's defaults (STAGE.md, "Atmosphere"): its cells' size and its height, metres; how far it moves the sky's luminance either way. */
+export const CLOUDS = Object.freeze({ contrast: 0.1, scale: 600, base: 800 });
+
+/**
+ * How a cloud deck changes the sky's luminance in direction `d` (unit, y up):
+ * the direction carried up to a deck `base` metres overhead, two octaves of
+ * value noise over it in cells `scale` across (`noise(x, z)` in [0, 1]: the
+ * shader's own); an overcast (cover 1) every part of it, ±`contrast`; a sky
+ * of scattered cloud (cover under 1) only the noise's top `cover`, brighter
+ * overhead and darker underneath toward the horizon; faded out toward the
+ * horizon (where the deck's cells shrink under a pixel and the fog takes
+ * over), and nothing below it. A factor in [1 − contrast, 1 + contrast], and
+ * how white (0 to 1) a scattered cloud makes the sky there. Pure: the sky
+ * shader's own working, tested over directions and covers.
+ */
+export function cloudAt(d, { cover, contrast, scale, base }, noise) {
+  if (!(d[1] > 0)) return { factor: 1, white: 0 };
+  const k = (base / Math.max(d[1], 0.02)) / scale;
+  const x = d[0] * k, z = d[2] * k;
+  const n = noise(x, z) * 0.65 + noise(x * 2.3 + 17, z * 2.3 + 17) * 0.35;
+  const sm = (a, b, t) => {
+    const u = Math.max(0, Math.min(1, (t - a) / (b - a)));
+    return u * u * (3 - 2 * u);
+  };
+  const fade = sm(0.03, 0.3, d[1]);
+  const w = cover >= 1 ? n : sm(1 - cover - 0.12, 1 - cover + 0.12, n);
+  const shape = cover >= 1 ? 2 * w - 1 : w * (2 * sm(0.05, 0.35, d[1]) - 1);
+  return { factor: 1 + contrast * shape * fade, white: cover >= 1 ? 0 : w * fade * 0.6 };
 }
 
 /**
@@ -362,10 +400,31 @@ uniform vec3 bottom;
 uniform vec3 sunDir;
 uniform vec3 sunColor;
 uniform float sunOn;
+uniform vec4 clouds; // cover, contrast, scale, base (cover 0: none)
 varying vec3 vDir;
+float cloudHash(vec2 c) {
+  c = mod(c, 289.0);
+  return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+float cloudNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(cloudHash(i), cloudHash(i + vec2(1.0, 0.0)), u.x), mix(cloudHash(i + vec2(0.0, 1.0)), cloudHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// a cloud deck over the sky (cloudAt in viewport.js is this, in JS): the luminance's factor and how white a scattered cloud makes it
+vec2 cloudAt(vec3 d) {
+  if (clouds.x <= 0.0 || d.y <= 0.0) return vec2(1.0, 0.0);
+  vec2 p = d.xz * (clouds.w / max(d.y, 0.02)) / clouds.z;
+  float n = cloudNoise(p) * 0.65 + cloudNoise(p * 2.3 + 17.0) * 0.35;
+  float fade = smoothstep(0.03, 0.3, d.y);
+  float w = clouds.x >= 1.0 ? n : smoothstep(1.0 - clouds.x - 0.12, 1.0 - clouds.x + 0.12, n);
+  float shape = clouds.x >= 1.0 ? 2.0 * w - 1.0 : w * (2.0 * smoothstep(0.05, 0.35, d.y) - 1.0);
+  return vec2(1.0 + clouds.y * shape * fade, clouds.x >= 1.0 ? 0.0 : w * fade * 0.6);
+}
 void main() {
   vec3 d = normalize(vDir);
   vec3 c = d.y > 0.0 ? mix(horizon, top, pow(d.y, 0.55)) : mix(horizon, bottom, pow(-d.y, 0.4));
+  vec2 cl = cloudAt(d);
+  c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), cl.y) * cl.x;
   float s = max(dot(d, sunDir), 0.0);
   c += sunOn * sunColor * (smoothstep(0.9993, 0.9997, s) * 1.5 + pow(s, 16.0) * 0.3);
   gl_FragColor = vec4(c, 1.0);
@@ -1272,7 +1331,7 @@ export class Viewport {
       this.scene.fog.near = next.fog.near;
       this.scene.fog.far = next.fog.far;
     } else this.scene.fog = new Fog(next.fog.color, next.fog.near, next.fog.far);
-    this.setSky(next?.sky ?? null, next?.sun ?? null);
+    this.setSky(next?.sky ?? null, next?.sun ?? null, next?.clouds ?? null);
     this.setShadows(l.key.shadows);
     // a new sun direction needs a new frame
     this.sunKey = null;
@@ -1281,7 +1340,7 @@ export class Viewport {
     this.contentChanged();
   }
 
-  setSky(sky, sun) {
+  setSky(sky, sun, clouds = null) {
     if (!sky) {
       if (this.sky) this.sky.visible = false;
       return;
@@ -1298,6 +1357,7 @@ export class Viewport {
           sunDir: { value: new Vector3(0, 1, 0) },
           sunColor: { value: new Color() },
           sunOn: { value: 0 },
+          clouds: { value: new Vector4(0, 0, 1, 1) },
         },
         vertexShader: SKY_VERTEX,
         fragmentShader: SKY_FRAGMENT,
@@ -1317,6 +1377,8 @@ export class Viewport {
     u.horizon.value.set(sky.horizon);
     u.bottom.value.set(sky.bottom);
     u.sunOn.value = sun ? 1 : 0;
+    if (clouds) u.clouds.value.set(clouds.cover, clouds.contrast, clouds.scale, clouds.base);
+    else u.clouds.value.set(0, 0, 1, 1);
     if (sun) {
       u.sunDir.value.set(...sun.direction);
       u.sunColor.value.set(sun.color);

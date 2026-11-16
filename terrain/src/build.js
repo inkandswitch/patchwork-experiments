@@ -30,8 +30,11 @@ import { groundRGB, linear, COLOURS, toRGB, hash01 } from "./palette.js";
 import { shoreSlabs, levelsOf, cutShore } from "./shore.js";
 import { SURF, coastPieces, surfMesh, reefPatches, boulders } from "./surf.js";
 import { CLOUDS, sheetsAt, capsAt, cloudMesh, bakeStratus } from "./cloud.js";
-import { effectiveCanopy, placeTrees, forestRoof, treeInstances, builtMask, scrubCover, skinZone, placeSkin, skinInstances, beyondCircles, tileInstances } from "./forest.js";
-import { buildingMesh, PALETTE } from "./buildings.js";
+import { effectiveCanopy, placeTrees, forestRoof, treeInstances, builtMask, scrubCover, skinZone, placeSkin, skinInstances, beyondCircles, tileInstances, townTreeAt } from "./forest.js";
+import { buildingMesh, deckRings, PALETTE } from "./buildings.js";
+
+/** How far round a pile deck the ground under it is wet and black (m). */
+export const DECK_SHORE = 10;
 import { siteMesh, inBox } from "./site.js";
 import { unpackLayers, FILLED, FLOOR } from "./layered.js";
 import { mooredBoats, boatMesh, BOATS } from "./boats.js";
@@ -217,6 +220,37 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   const wetRGB = apron && ap.wet ? linear(toRGB(ap.wet)) : null;
   const vergeRGB = apron && ap.verge ? linear(toRGB(ap.verge.colour)) : null;
   const cobbleRGB = apron && ap.shore ? linear(toRGB(ap.shore)) : null;
+  // the forest floor's shade from a lower canopy where the place says (look.shade.over: 2 m at Ucluelet, else 5), and under every town tree (forest.js townTreeAt: the node it stands on)
+  const shadeOver = doc.look?.shade?.over ?? 5;
+  const shadeTowns = !!doc.look?.shade?.towns;
+  const townTrees = ((doc.look?.trees?.townPerHectare ?? 25) * grid.cell * grid.cell) / 1e4;
+  // the ground as things stand on it
+  const hf = sampler({ nx: n, nz: n, x0: grid.x0, z0: grid.z0, cell: grid.cell }, heights, S);
+  const inside = (x, z) => hf.heightAt(x, z) != null;
+  const groundAt = (x, z) => {
+    const g = hf.heightAt(x, z);
+    return g == null ? null : yOf(g);
+  };
+  // OSM's buildings a place's own structures stand for: inside the site's lot, and what a landmark draws itself (its `replaces`: the lighthouse, the radome)
+  const clear = doc.site?.clear ?? null;
+  // (the decks' ground is coloured before the site is drawn: every landmark's `replaces` then; the buildings themselves leave out what the site drew)
+  const leaveOutBuilding = (replaced) => (b) => {
+    if (replaced.has(b.id)) return true;
+    if (!clear?.box) return false;
+    const cx = b.points.reduce((a, q) => a + q[0], 0) / b.points.length, cz = b.points.reduce((a, q) => a + q[1], 0) / b.points.length;
+    const [lat, lon] = frame.toLatLon(cx, cz);
+    return inBox(clear.box, lat, lon);
+  };
+  // pile decks at the water where the place has them (buildings.js deckOf): the ground under each and 10 m round it wet and black, a rockweed band at mid-tide, not a dry pale beach
+  const lbk = doc.look?.buildings ?? {};
+  const deckAbove = lbk.decks ? (tide.HHWLT ?? 1.3) + 1.2 : null;
+  const mlw = tide.MLLW ?? -1.2;
+  const decks = natural && p.buildings && deckAbove != null && look?.buildings?.length ? deckRings(look.buildings, { groundAt, leaveOut: leaveOutBuilding(new Set((doc.landmarks ?? []).map((l) => l.replaces).filter(Boolean))), deckAbove, mlw }) : [];
+  const underDeck = decks.length ? builtMask(grid, decks, DECK_SHORE) : null;
+  const deckWet = linear(toRGB(colours.deckWet)), deckWeed = linear(toRGB(colours.deckWeed));
+  // mid-tide: the rockweed's band (palette.js bands), under a deck too
+  const weedLo = (tide.MLLW ?? -1.2) * 0.25, weedHi = (tide.MHHW ?? 0.9) * 0.5;
+  const deckRGB = (k, y) => (underDeck?.[k] && y <= deckAbove ? (y > weedLo && y <= weedHi ? deckWeed : deckWet) : null);
   const apronAt = (k) => (vergeRGB && toWater[k] <= ap.verge.width ? vergeRGB : wetRGB && hash01(k, 91) < (ap.wetShare ?? 0.3) ? wetRGB : apronRGB);
   const V = mesh.nodes.length;
   const positions = new Float32Array(V * 3);
@@ -227,7 +261,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     positions[v * 3] = grid.x0 + i * grid.cell;
     positions[v * 3 + 1] = yOf(h[k]);
     positions[v * 3 + 2] = grid.z0 + j * grid.cell;
-    const c = apron?.[k] && h[k] > apronAbove ? apronAt(k) : natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell, { shoreRock })) : colourAt(h[k]);
+    const c = apron?.[k] && h[k] > apronAbove ? apronAt(k) : deckRGB(k, h[k]) ?? (natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell, { shoreRock, shadeOver, shaded: shadeTowns && !built?.[k] && cls.label[k] > 0 && townTreeAt(k, cover, townTrees) })) : colourAt(h[k]));
     colors[v * 3] = c[0];
     colors[v * 3 + 1] = c[1];
     colors[v * 3 + 2] = c[2];
@@ -257,6 +291,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       // the apron above the highest normal tide is the apron (its verge, at the shore, where it has one); below it, its cobble where it has one
       if (apron?.[top] && s.lo >= apronAbove - 1e-9) return vergeRGB ?? apronRGB;
       if (apron?.[top] && cobbleRGB && s.hi > 0) return cobbleRGB;
+      // under a pile deck: wet and black, the rockweed's band its own
+      if (underDeck?.[top] && s.lo < deckAbove) return s.key === "rockweed" ? deckWeed : deckWet;
       // a beach is beach above the water; bare rock above the lichen only where nothing else covers the ground (as groundRGB), or under anything where the place's shore is rock
       if ((cv === COVER.beach && s.hi > 0) || (s.key === "rock" && !shoreRock && cv !== COVER.none && cv !== COVER.rock)) return null;
       return flat[q];
@@ -266,7 +302,12 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     shoreCut = { cut: r.cut, pieces: r.pieces, added: r.added };
   }
   // stratus baked into the colours above a height, where the place's clouds ask (cloud.js bakeStratus): the ground's, and the forest roof's and scrub's below
-  const bake = p.clouds && natural && doc.look?.clouds?.bake ? doc.look.clouds.bake : null;
+  const bake0 = p.clouds && natural && doc.look?.clouds?.bake ? doc.look.clouds.bake : null;
+  // its low band's circles, in the frame
+  const bake = bake0?.low?.within ? { ...bake0, low: { ...bake0.low, within: bake0.low.within.map((c) => {
+    const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+    return { x, z, radius: c.radius };
+  }) } } : bake0;
   let baked = 0;
   if (bake) {
     ground = { ...ground, colors: Float32Array.from(ground.colors) };
@@ -317,12 +358,6 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   }
 
   // ─── what stands on it ───
-  const hf = sampler({ nx: n, nz: n, x0: grid.x0, z0: grid.z0, cell: grid.cell }, heights, S);
-  const inside = (x, z) => hf.heightAt(x, z) != null;
-  const groundAt = (x, z) => {
-    const g = hf.heightAt(x, z);
-    return g == null ? null : yOf(g);
-  };
   // how far below the true ground a foot must reach for the drawn (simplified) ground not to show beneath it
   const sinkAt = (g) => toleranceAt(g, p) + 0.4;
   const layerTable = [...LAYERS.map((l) => ({ ...l }))];
@@ -332,7 +367,6 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   };
   // the place's own structures (site.js): drawn from its doc; OSM's drawing of the same things is left out
   const site = p.site && (doc.site || doc.landmarks?.length) ? siteMesh(doc.site ?? null, doc.landmarks ?? [], frame, groundAt, sinkAt) : null;
-  const clear = doc.site?.clear ?? null;
   const clearIds = new Set(clear?.osm ?? []);
   let made = 0, placed = [];
   if (p.structures) {
@@ -350,7 +384,18 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       return { x, z, radius: c.radius, taken: c.taken };
     });
     const takenAt = fuller.length ? (x, z) => fuller.find((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius ** 2)?.taken ?? null : null;
-    const moored = mooredBoats((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside, takenAt });
+    // and along the fixed piers where the place says (look.moorPiers: circles; boats.js PIER_MOORING), in water deep enough (at mean water, or at chart datum with datum: "chart"); its own mix about some (look.moorMix: circles, each a mix)
+    const circlesOf = (list) => (list ?? []).map((c) => {
+      const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+      return { ...c, x, z };
+    });
+    const within = (cs) => (x, z) => cs.find((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius ** 2) ?? null;
+    const mp = doc.look?.moorPiers;
+    const pierCircles = within(circlesOf(mp?.within));
+    const piers = mp ? { within: (x, z) => !!pierCircles(x, z), taken: mp.taken, every: mp.every, depth: mp.depth, groundAt, datum: mp.datum === "chart" ? doc.datum?.mwlAboveChartDatum ?? 0 : 0 } : null;
+    const mixCircles = within(circlesOf(doc.look?.moorMix));
+    const mixAt = doc.look?.moorMix?.length ? (x, z) => mixCircles(x, z)?.mix ?? null : null;
+    const moored = mooredBoats((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside, takenAt, piers, mixAt });
     boatCount = moored.length;
     if (moored.length) {
       const bm = boatMesh(moored);
@@ -366,29 +411,23 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     }
   }
   // buildings from OSM's footprints (buildings.js); inside the site's lot, the site draws them
-  let buildingsMade = 0, buildingDecks = 0;
+  let buildingsMade = 0, buildingDecks = 0, decksInWater = 0;
   if (p.buildings && look?.buildings?.length) {
     const coverAt = (x, z) => {
       const i = Math.round((x - grid.x0) / grid.cell), j = Math.round((z - grid.z0) / grid.cell);
       return i >= 0 && j >= 0 && i < n && j < n ? cover[j * n + i] : 0;
     };
     // and what a landmark draws itself (its `replaces`: the lighthouse, the radome) is left out too
-    const replacedBuildings = site?.replaces ?? new Set();
-    const leaveOut = (b) => {
-      if (replacedBuildings.has(b.id)) return true;
-      if (!clear?.box) return false;
-      const cx = b.points.reduce((a, q) => a + q[0], 0) / b.points.length, cz = b.points.reduce((a, q) => a + q[1], 0) / b.points.length;
-      const [lat, lon] = frame.toLatLon(cx, cz);
-      return inBox(clear.box, lat, lon);
-    };
+    const leaveOut = leaveOutBuilding(site?.replaces ?? new Set());
     // a place's look may give its own walls (look.buildings.palette, merged over buildings.js PALETTE), facade details, and pile decks for buildings at the water
     const lb = doc.look?.buildings ?? {};
     // a place's own look for some of OSM's buildings (its look's buildings.overrides: { [osm id]: { colour, roofColour, levels, form, gables, stone, trim } }): landmarks drawn from photographs
     const over = lb.overrides ?? {};
     const theirs = look.buildings.map((b) => (over[b.id] ? { ...b, ...over[b.id] } : b));
-    const bm = buildingMesh(theirs, { groundAt, sinkAt, coverAt, leaveOut, palette: { ...PALETTE, ...(lb.palette ?? {}) }, details: !!lb.details, deckAbove: lb.decks ? (tide.HHWLT ?? 1.3) + 1.2 : null });
+    const bm = buildingMesh(theirs, { groundAt, sinkAt, coverAt, leaveOut, palette: { ...PALETTE, ...(lb.palette ?? {}) }, details: !!lb.details, deckAbove, mlw });
     buildingsMade = bm.made;
     buildingDecks = bm.decks;
+    decksInWater = bm.reached;
     if (bm.primitives.length) add("Buildings", { primitives: bm.primitives.map((q) => ({ ...q, roughness: 0.8 })) }, "buildings");
   }
   // the forest: its roof, and trees in front of it (forest.js)
@@ -476,7 +515,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     // white water over the exposed shallows, and black boulders at the most exposed waterline, where the place's surf asks for them
     const reef = so.reef ? reefPatches(grid, h, cls.label, doc.swell.from, { ...so, ...so.reef }) : null;
     const rocksAt = so.boulders ? boulders(pieces, so.boulders) : null;
-    surf = { pieces: pieces.length, exposed: sm.pieces, runs: sm.runs, ...(reef ? { reef: reef.patches } : {}), ...(rocksAt ? { boulders: rocksAt.boulders } : {}) };
+    surf = { pieces: pieces.length, exposed: sm.pieces, runs: sm.runs, ...(sm.sprays ? { sprays: sm.sprays } : {}), ...(reef ? { reef: reef.patches } : {}), ...(rocksAt ? { boulders: rocksAt.boulders } : {}) };
     const foam = reef?.patches ? { positions: concat(sm.positions, reef.positions), colors: concat(sm.colors, reef.colors) } : sm;
     if (foam.positions.length) add("Surf", { positions: foam.positions, colors: foam.colors, unlit: true }, "surf", { dressing: `Foam where the coast is open to the swell from ${doc.swell.from}° (exposure by rays over the grid): not observed.` });
     if (rocksAt?.boulders) add("Boulders at the exposed shore", { positions: rocksAt.positions, colors: rocksAt.colors, roughness: 0.7 }, "surf", { dressing: "Boulders by hash at the most exposed waterline: assumed, not mapped." });
@@ -616,6 +655,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     agreement: sh.agreement.share,
     buildings: buildingsMade,
     buildingDecks,
+    decksInWater,
     boats: boatCount,
     trees: treeCount,
     roofTriangles,

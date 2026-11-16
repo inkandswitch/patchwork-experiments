@@ -27,6 +27,48 @@ const TAU = Math.PI * 2;
 const NOISE_CELL = 3;
 const NOISE_PERIOD = 256 * NOISE_CELL;
 
+/**
+ * The shore in the water (WATER.md, "The shore in the water"): how calm the
+ * normal the reflection is taken off is (SHORE_CALM of the way from the
+ * waves' normal to straight up, fading to none as the significant wave
+ * height goes from CALM_UNTIL[0] to CALM_UNTIL[1] m), how soft the band's
+ * edge is (SHORE_EDGE: `foot` × the pixel's footprint of the ray's rise,
+ * held to [min, max] radians), and how ragged its top (SHORE_RAG: in each
+ * of `bins` azimuth bins a tooth, a tree's tip, its height by hash, the land
+ * lowered up to `depth` radians toward the bin's edges; its tint ±`tint`
+ * over `tintCells` cells round the compass).
+ */
+export const SHORE_CALM = 0.6;
+export const CALM_UNTIL = Object.freeze([0.6, 2.5]);
+export const SHORE_EDGE = Object.freeze({ foot: 1.5, min: 0.012, max: 0.05 });
+export const SHORE_RAG = Object.freeze({ bins: 360, depth: 0.012, tint: 0.15, tintCells: 90 });
+
+/** The calm a sea of significant wave height `hs` gets (the shader's `calm`). Pure. */
+export function calmFor(hs) {
+  const t = Math.max(0, Math.min(1, (hs - CALM_UNTIL[0]) / (CALM_UNTIL[1] - CALM_UNTIL[0])));
+  return SHORE_CALM * (1 - t * t * (3 - 2 * t));
+}
+
+/**
+ * How much of the shore's tint a pixel's reflection takes (the shader's
+ * `under`), as the fragment shader works it out: the view direction `V`
+ * (unit, toward the eye) reflected off the waves' normal `N` (unit) calmed
+ * by `calm`, its rise (radians, 0 for a ray level or down), against the
+ * land's elevation `land` (radians) less `rag` (radians, the bin's), the
+ * edge `foot` × the pixel's footprint `fw` of the rise. In [0, 1]. Pure.
+ */
+export function shoreWeight({ V, N, calm = SHORE_CALM, land, rag = 0, fw = 0 }) {
+  const m = [N[0] * (1 - calm), N[1] * (1 - calm) + calm, N[2] * (1 - calm)];
+  const l = Math.hypot(...m);
+  const n = m.map((c) => c / l);
+  const d = V[0] * n[0] + V[1] * n[1] + V[2] * n[2];
+  const Ry = 2 * d * n[1] - V[1];
+  const rise = Math.asin(Math.max(0, Math.min(1, Ry)));
+  const edge = Math.max(SHORE_EDGE.min, Math.min(SHORE_EDGE.max, SHORE_EDGE.foot * fw));
+  const x = Math.max(0, Math.min(1, (land - rag - rise + edge) / (2 * edge)));
+  return { weight: x * x * (3 - 2 * x), rise };
+}
+
 /** a in [0, m), for negative a too */
 const wrap = (a, m) => ((a % m) + m) % m;
 
@@ -284,6 +326,7 @@ uniform float uSunIntensity;
 uniform float uSunOn;
 uniform vec3 uSkyTop;
 uniform vec3 uSkyHorizon;
+uniform vec4 uClouds;
 uniform vec3 uDeep;
 uniform vec3 uScatter;
 uniform float uScatterGain;
@@ -317,9 +360,29 @@ float noise(vec2 p) {
   vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+float cloudHash(vec2 c) {
+  c = mod(c, 289.0);
+  return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+float cloudNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(cloudHash(i), cloudHash(i + vec2(1.0, 0.0)), u.x), mix(cloudHash(i + vec2(0.0, 1.0)), cloudHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// the sky's cloud deck, as the stage draws it (scene's viewport.js cloudAt; cloudAt here is it in JS): the luminance's factor and how white a scattered cloud makes it
+vec2 cloudAt(vec3 d) {
+  if (uClouds.x <= 0.0 || d.y <= 0.0) return vec2(1.0, 0.0);
+  vec2 p = d.xz * (uClouds.w / max(d.y, 0.02)) / uClouds.z;
+  float n = cloudNoise(p) * 0.65 + cloudNoise(p * 2.3 + 17.0) * 0.35;
+  float fade = smoothstep(0.03, 0.3, d.y);
+  float w = uClouds.x >= 1.0 ? n : smoothstep(1.0 - uClouds.x - 0.12, 1.0 - uClouds.x + 0.12, n);
+  float shape = uClouds.x >= 1.0 ? 2.0 * w - 1.0 : w * (2.0 * smoothstep(0.05, 0.35, d.y) - 1.0);
+  return vec2(1.0 + uClouds.y * shape * fade, uClouds.x >= 1.0 ? 0.0 : w * fade * 0.6);
+}
 vec3 sky(vec3 d) {
   float y = max(d.y, 0.0);
-  return mix(uSkyHorizon, uSkyTop, pow(y, 0.55));
+  vec3 c = mix(uSkyHorizon, uSkyTop, pow(y, 0.55));
+  vec2 cl = cloudAt(d);
+  return mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), cl.y) * cl.x;
 }
 
 void main() {
@@ -381,23 +444,36 @@ void main() {
   vec3 L = normalize(uSunDir);
   float sunUp = clamp(L.y * 4.0, 0.0, 1.0) * uSunOn;
 
-  // reflection: the sky, as the stage draws it, with the sun's halo
-  vec3 R = reflect(-V, N);
+  // reflection: the sky, as the stage draws it, with the sun's halo. The ray is reflected off a
+  // calmed normal (SHORE_CALM of the way to straight up, less in a big sea): over calm water what the
+  // waves do to a reflection is stretch it into vertical streaks, not tear it into blobs
+  float calm = ${SHORE_CALM.toFixed(3)} * (1.0 - smoothstep(${CALM_UNTIL[0].toFixed(2)}, ${CALM_UNTIL[1].toFixed(2)}, uHs));
+  vec3 R = reflect(-V, normalize(mix(N, vec3(0.0, 1.0, 0.0), calm)));
   vec3 refl = sky(R) + uSunOn * uSunColor * pow(max(dot(normalize(vec3(R.x, max(R.y, 0.0), R.z)), L), 0.0), 16.0) * 0.3;
   float fresnel = 0.02 + 0.98 * pow(1.0 - NV, 5.0);
 #ifdef SHORE
   // the shore in the water (WATER.md, "The shore in the water"): where the reflected ray is under the
   // land as the mirror eye sees it, at this water's distance or beyond, it shows the shore's tint, not the sky
-  if (R.y > 0.0) {
+  {
     float az = fract(atan(R.z, R.x) / 6.2831853 + 1.0);
     float across = max(length(vWorld.xz - uShoreEye.xz), uShoreNear);
     float bin = clamp(log(across / uShoreNear) / log(uShoreReach / uShoreNear), 0.0, 1.0);
     // r: the highest land's elevation, g: its distance (km), b: the nearest land's (km), a: the near shore's top (its elevation)
     vec4 land = texture2D(uShore, vec2(az, (bin * (SHORE_BINS - 1.0) + 0.5) / SHORE_BINS));
+    // a ray reflected level or down (a wave's face seen edge on) is at the horizon: the shore's foot if
+    // there's land there, else the horizon's colour (sky() at y <= 0), never a white rim inside the shore
     float rise = asin(clamp(R.y, 0.0, 1.0));
-    // a soft edge (about a degree): the ripples break it up rather than cut it into hard blobs
-    float under = smoothstep(-0.012, 0.012, land.r - rise);
-    vec3 tint = uShoreTint;
+    // the band's top ragged as the forest it mirrors (shoreWeight: the land a little lower in some
+    // azimuth bins, by hash), and its edge as soft as a pixel's footprint of the ray's rise, so far off
+    // the ripples average to a mixed tone instead of aliasing into hard dark blobs
+    // teeth: in each azimuth bin a tree's tip at the bin's middle, as tall as the bin's hash, the land falling away to its edges
+    float bins = floor(az * ${SHORE_RAG.bins.toFixed(1)});
+    float tooth = (1.0 - abs(2.0 * fract(az * ${SHORE_RAG.bins.toFixed(1)}) - 1.0)) * (0.5 + 0.5 * hash(vec2(mod(bins, 256.0), floor(bins / 256.0) + 11.0)));
+    float rag = ${SHORE_RAG.depth.toFixed(4)} * (1.0 - tooth);
+    float edge = clamp(${SHORE_EDGE.foot.toFixed(2)} * fwidth(rise), ${SHORE_EDGE.min.toFixed(4)}, ${SHORE_EDGE.max.toFixed(4)});
+    float under = smoothstep(-edge, edge, land.r - rag - rise);
+    // the tint varies along the shore (±SHORE_RAG.tint), as a forest's mirror isn't one flat slab
+    vec3 tint = uShoreTint * (1.0 + ${SHORE_RAG.tint.toFixed(3)} * (2.0 * noise(vec2(az * ${SHORE_RAG.tintCells.toFixed(1)}, 3.5)) - 1.0));
     #if defined(USE_FOG) && !defined(FOG_EXP2)
     // the land is further off than the water it shows in: fogged so that, with the water's own fog after it, it is fogged as far as the land
     // (a ray under the near shore's top meets the near shore, one over it the far hills)
@@ -456,6 +532,31 @@ void main() {
   // a smooth gradient to the horizon bands in 8 bits: half a level of noise either way
   gl_FragColor.rgb += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
 }`;
+
+/** A cloud deck as the stage's atmosphere gives it (scene STAGE.md, "Atmosphere": clouds), checked as the stage checks it: { cover, contrast, scale, base } or null. Pure. */
+export function cloudsOf(c) {
+  if (!c || typeof c !== "object") return null;
+  const num = (v, d) => (v == null || v === "" ? d : Number.isFinite(Number(v)) ? Number(v) : null);
+  const cover = num(c.cover, null), contrast = num(c.contrast, 0.1), scale = num(c.scale, 600), base = num(c.base, 800);
+  if (!(cover > 0 && contrast > 0 && scale > 0 && base > 0)) return null;
+  return { cover: Math.min(1, cover), contrast: Math.min(0.5, contrast), scale, base };
+}
+
+/** The cloud deck's factor on the sky's luminance in direction d, and how white it makes it: the fragment shader's cloudAt (and the stage's sky's), in JS, `noise` its value noise. Pure. */
+export function cloudAt(d, { cover, contrast, scale, base }, noise) {
+  if (!(d[1] > 0)) return { factor: 1, white: 0 };
+  const k = base / Math.max(d[1], 0.02) / scale;
+  const x = d[0] * k, z = d[2] * k;
+  const n = noise(x, z) * 0.65 + noise(x * 2.3 + 17, z * 2.3 + 17) * 0.35;
+  const sm = (a, b, t) => {
+    const u = Math.max(0, Math.min(1, (t - a) / (b - a)));
+    return u * u * (3 - 2 * u);
+  };
+  const fade = sm(0.03, 0.3, d[1]);
+  const w = cover >= 1 ? n : sm(1 - cover - 0.12, 1 - cover + 0.12, n);
+  const shape = cover >= 1 ? 2 * w - 1 : w * (2 * sm(0.05, 0.35, d[1]) - 1);
+  return { factor: 1 + contrast * shape * fade, white: cover >= 1 ? 0 : w * fade * 0.6 };
+}
 
 /** How much of the light scattered through a crest shows under a sun: all of it under a sun that casts shadows, a third under an overcast's (shadows: false). Pure. */
 export const scatterGain = (sun) => (sun?.shadows === false ? 0.35 : 1);
@@ -669,6 +770,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uSunOn: { value: 1 },
     uSkyTop: { value: new THREE.Color(DEFAULTS.sky.top) },
     uSkyHorizon: { value: new THREE.Color(DEFAULTS.sky.horizon) },
+    // the sky's cloud deck (cover, contrast, scale, base; cover 0: none), as the stage's atmosphere gives it
+    uClouds: { value: new THREE.Vector4(0, 0, 1, 1) },
     uDeep: { value: new THREE.Color(DEFAULTS.deep) },
     uScatter: { value: new THREE.Color(DEFAULTS.scatter) },
     // under an overcast (a sun that casts no shadows) little light gets through a crest: the water holds the shore's darkness
@@ -830,6 +933,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     if (sky) {
       setColour(uniforms.uSkyTop.value, sky.top ?? sky.horizon);
       setColour(uniforms.uSkyHorizon.value, sky.horizon ?? sky.top);
+      const c = cloudsOf(sky.clouds);
+      uniforms.uClouds.value.set(c?.cover ?? 0, c?.contrast ?? 0, c?.scale ?? 1, c?.base ?? 1);
     }
   }
 

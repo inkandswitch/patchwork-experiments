@@ -11,6 +11,8 @@ import {
   LabelLayer,
   Viewport,
   cleanAtmosphere,
+  cloudAt,
+  CLOUDS,
   contentExtras,
   declutter,
   depthRange,
@@ -770,6 +772,37 @@ describe("atmosphere", () => {
     // a sun with no direction stands where the key light does
     const k = Math.hypot(...LIGHTS.keyFrom);
     expect(cleanAtmosphere({ sun: {} }).sun.direction).toEqual(LIGHTS.keyFrom.map((v) => v / k));
+  });
+
+  it("takes clouds over a sky only, a cover over 0, its numbers held to their ranges and defaulted", () => {
+    const sky = { top: "#c4cacc", horizon: "#959ea1" };
+    expect(cleanAtmosphere({ clouds: { cover: 1 } })).toBeNull();
+    expect(cleanAtmosphere({ sky, clouds: { cover: 0 } }).clouds).toBeUndefined();
+    expect(cleanAtmosphere({ sky, clouds: { cover: "x" } }).clouds).toBeUndefined();
+    expect(cleanAtmosphere({ sky, clouds: { cover: 2, contrast: 9 } }).clouds).toEqual({ cover: 1, contrast: 0.5, scale: CLOUDS.scale, base: CLOUDS.base });
+    expect(cleanAtmosphere({ sky, clouds: { cover: 0.35, contrast: 0.25, scale: 700, base: 1200 } }).clouds).toEqual({ cover: 0.35, contrast: 0.25, scale: 700, base: 1200 });
+    expect(cleanAtmosphere({ sky, clouds: { cover: 0.5, scale: -1 } }).clouds).toBeUndefined();
+  });
+
+  it("moves the sky's luminance by its clouds at most ±contrast, and below the horizon not at all (64 directions × 3 covers × every noise level)", () => {
+    const dirs = [];
+    for (let a = 0; a < 8; a++) for (let e = 0; e < 8; e++) {
+      const el = -0.6 + (e / 7) * 2.1, az = (a / 8) * Math.PI * 2;
+      dirs.push([Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)]);
+    }
+    for (const cover of [0.35, 0.7, 1]) for (const level of [0, 0.25, 0.5, 0.75, 1]) {
+      const c = { cover, contrast: 0.2, scale: 600, base: 800 };
+      for (const d of dirs) {
+        const { factor, white } = cloudAt(d, c, () => level);
+        expect(factor).toBeGreaterThanOrEqual(1 - c.contrast - 1e-12);
+        expect(factor).toBeLessThanOrEqual(1 + c.contrast + 1e-12);
+        expect(white).toBeGreaterThanOrEqual(0);
+        expect(white).toBeLessThanOrEqual(0.6);
+        if (d[1] <= 0) expect([factor, white]).toEqual([1, 0]);
+        // at the horizon the sky is its gradient (the fog meets it there)
+        if (Math.abs(d[1]) < 0.03) expect(factor).toBe(1);
+      }
+    }
   });
 
   it("no atmosphere is the stage's own lighting, exactly", () => {

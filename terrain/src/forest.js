@@ -35,7 +35,7 @@ import { COVER } from "./cover.js";
 import { hash01 } from "./palette.js";
 import { rtinErrors, rtinMesh } from "./rtin.js";
 import { hexToLinear } from "./glb.js";
-import { dsin, dcos } from "./detmath.js";
+import { dsin, dcos, len } from "./detmath.js";
 import { insideRing } from "./terrain-sample.js";
 
 /** Species: a crown (cones, or a round crown), its width over its height, its colours. Unit height. */
@@ -57,6 +57,7 @@ export function treeMesh(name, foot = -0.05, lowest = 1) {
   const s = soup();
   const r = sp.width / 2;
   cylinder(s, 0, 0, foot, sp.base + 0.08, 0.022, 0.018, sp.trunk, 6);
+  const trunk = s.count;
   if (sp.crown === "cones") {
     const tiers = sp.tiers;
     const span = 1 - sp.base;
@@ -73,7 +74,13 @@ export function treeMesh(name, foot = -0.05, lowest = 1) {
     cylinder(s, 0, 0, ym, 0.88, r, r * 0.55, sp.foliage, 7);
     cylinder(s, 0, 0, 0.88, 1, r * 0.55, 0, sp.foliage, 7);
   }
-  return s.done();
+  // the foliage shaded from CROWN_SHADE[0] at the crown's foot to CROWN_SHADE[1] at its top: the inside of a crown, and the gaps between, read as shadow
+  const out = s.done();
+  for (let v = trunk; v < out.positions.length / 3; v++) {
+    const f = CROWN_SHADE[0] + (CROWN_SHADE[1] - CROWN_SHADE[0]) * Math.max(0, Math.min(1, (out.positions[v * 3 + 1] - sp.base) / (1 - sp.base)));
+    for (let c = 0; c < 3; c++) out.colors[v * 3 + c] *= f;
+  }
+  return out;
 }
 
 /**
@@ -275,7 +282,7 @@ export function treesAt({ grid, label, cover, canopy, dist, trees, built = null,
         crowns = lo + Math.min(hi - lo, Math.floor(hash01(k, 5) * (hi - lo + 1)));
         count = 1;
       }
-    } else if (cover[k] === COVER.residential && hash01(k, 2) < town) {
+    } else if (townTreeAt(k, cover, town)) {
       mix = trees.town;
       // a whole tree a node for every full one the density gives, and one more by the rest's chance
       count = Math.max(1, Math.floor(town) + (hash01(k, 3) < town - Math.floor(town) ? 1 : 0));
@@ -285,10 +292,20 @@ export function treesAt({ grid, label, cover, canopy, dist, trees, built = null,
       const species = pick(mix ?? trees.inland, hash01(k, 10 + t));
       if (!species) continue;
       const height = Math.min(55, Math.max(3, h * (0.85 + 0.3 * hash01(k, 20 + t))));
+      // leaning: a stand at the water toward the water (down the distance's slope), 8 to 12°; any other tree up to 6° by hash
+      const a = hash01(k, 72 + t) * Math.PI * 2;
+      let lean = [TREE_LEAN.any * hash01(k, 70 + t), dcos(a), dsin(a)];
+      if (crowns > 1 || (forest && dist[k] <= fringe)) {
+        const d = (di, dj) => { const ii = Math.max(0, Math.min(n - 1, i + di)), jj = Math.max(0, Math.min(n - 1, j + dj)); return dist[jj * n + ii]; };
+        const gx = d(1, 0) - d(-1, 0), gz = d(0, 1) - d(0, -1);
+        // toward the water: against the distance's gradient
+        if (gx || gz) lean = [TREE_LEAN.shore[0] + (TREE_LEAN.shore[1] - TREE_LEAN.shore[0]) * hash01(k, 74 + t), -gx / len(gx, gz), -gz / len(gx, gz)];
+      }
       out.push({
         k,
         t,
         species,
+        lean,
         x: x0 + (i + (hash01(k, 30 + t) - 0.5) * (2 * JITTER)) * cell,
         z: z0 + (j + (hash01(k, 40 + t) - 0.5) * (2 * JITTER)) * cell,
         height,
@@ -302,6 +319,9 @@ export function treesAt({ grid, label, cover, canopy, dist, trees, built = null,
   }
   return out;
 }
+
+/** Whether a town lot's node k (not built on, not forest) gets a tree or more: its hash under the town's trees a node (`town`: the look's townPerHectare over a cell's area). */
+export const townTreeAt = (k, cover, town) => cover[k] === COVER.residential && hash01(k, 2) < town;
 
 /** Every tree in the grid, thinned to `max` by each tree's own key (the lowest kept). */
 export function placeTrees(o) {
@@ -504,16 +524,69 @@ export const PROFILE_NAMES = Object.freeze(Object.keys(SKIN_PROFILES));
 /** A crown's radius against its profile's: 0.92 to 1.08, by its place in the layout. */
 export const crownRadius = (profile, q, variant) => SKIN_PROFILES[profile].radius * (0.92 + 0.16 * ((q * 0.37 + variant * 0.21) % 1));
 
-/** One crown: a wide six-sided cone (foot → waist) and a narrow one over it (upper → tip), no caps (they're never seen from under the roof): 12 triangles. */
-function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN) {
-  const lit = colour.map((c) => c * 1.12), dark = colour.map((c) => c * 0.82);
-  const ring = (y, rr, q) => [cx + rr * dcos((q * Math.PI) / 3), y, cz - rr * dsin((q * Math.PI) / 3)];
-  for (let q = 0; q < 6; q++) {
-    // faces toward the sun's side a little lighter: shading baked in, as the trees' are
-    const shade = q < 2 || q === 5 ? lit : q === 3 ? dark : colour;
-    s.tri(ring(foot * k, r, q), ring(foot * k, r, q + 1), [cx, waist * k, cz], shade);
-    s.tri(ring(upper * k, r * 0.58, q), ring(upper * k, r * 0.58, q + 1), [cx, tip * k, cz], shade);
+/**
+ * The crowns' shapes (the skin's, but the scrub's plain bushes): three of
+ * the coast's conifers, each a stack of six-sided cones, its tiers' feet
+ * and tips as fractions of the crown's span (its profile's foot to its tip)
+ * and their radii of the crown's, the lowest tier always centred and as
+ * wide as the crown (so the canopy still closes from above), the ones over
+ * it pushed off the axis by up to `offset` of the radius by hash, so no two
+ * crowns of a layout stand quite alike and the silhouette is ragged:
+ * - western red cedar: three stacked frusta, 1, 0.72 and 0.4 of the radius,
+ *   its leader bent over (its tip `bend` of the top tier's radius off the
+ *   axis);
+ * - western hemlock: narrower tiers over a full skirt, its tip drooping
+ *   (`bend` off the axis and `droop` of the span lower);
+ * - Sitka spruce: four short, flat tiers, stiff and tiered.
+ * Each tier is 6 triangles: 18 for a cedar, 24 for a hemlock or a spruce.
+ * Each vertex is coloured by its height in the crown, CROWN_SHADE[0] of its
+ * colour at the foot to CROWN_SHADE[1] at the tip, so the gaps between
+ * crowns read as shadow, and its faces toward the light a little lighter.
+ */
+export const CROWN_SHAPES = Object.freeze({
+  cedar: Object.freeze({ tiers: Object.freeze([[0, 0.62, 1], [0.3, 0.86, 0.72], [0.6, 1, 0.4]]), offset: 0.08, bend: 0.45, droop: 0 }),
+  hemlock: Object.freeze({ tiers: Object.freeze([[0, 0.5, 1], [0.26, 0.7, 0.62], [0.48, 0.88, 0.44], [0.7, 1, 0.26]]), offset: 0.06, bend: 0.7, droop: 0.05 }),
+  spruce: Object.freeze({ tiers: Object.freeze([[0, 0.38, 1], [0.26, 0.6, 0.8], [0.48, 0.8, 0.58], [0.7, 1, 0.34]]), offset: 0.05, bend: 0, droop: 0 }),
+});
+/** A crown's shade from its foot to its tip (of its colour). */
+export const CROWN_SHADE = Object.freeze([0.55, 1]);
+/** How many triangles a crown of a shape is (6 a tier), and the scrub's plain bush (two six-sided cones). */
+export const crownTriangles = (shape) => (shape ? CROWN_SHAPES[shape].tiers.length * 6 : 12);
+/** The shape of crown q of layout `variant` of `crowns` (its sign the layout's): a spruce where the layout says, else a cedar or a hemlock by hash; none (a plain bush) for a plain profile. */
+export const crownShape = (plain, sign, crowns, variant, q) => (plain ? null : sign === "spruce" ? "spruce" : hash01((crowns * 16 + variant) * 8 + q, 73) < 0.5 ? "cedar" : "hemlock");
+
+/** One crown: of `shape` (CROWN_SHAPES), or a plain bush (null: a wide six-sided cone, foot → waist, and a narrow one over it, upper → tip); no caps (never seen from under the roof). `seed` turns its tiers' offsets. */
+function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN, shape = null, seed = 0) {
+  const shadeAt = (y) => CROWN_SHADE[0] + (CROWN_SHADE[1] - CROWN_SHADE[0]) * Math.max(0, Math.min(1, (y / k - foot) / (tip - foot)));
+  // faces toward the sun's side a little lighter: shading baked in, as the trees' are
+  const side = (q) => (q < 2 || q === 5 ? 1.12 : q === 3 ? 0.82 : 1);
+  const at = (p, f) => colour.map((c) => c * f * shadeAt(p[1]));
+  const cone = (ox, oz, y0, rr, apex, y1) => {
+    const ring = (q) => [cx + ox + rr * dcos((q * Math.PI) / 3), y0, cz + oz - rr * dsin((q * Math.PI) / 3)];
+    const top = [cx + apex[0], y1, cz + apex[1]];
+    for (let q = 0; q < 6; q++) {
+      const a = ring(q), b = ring(q + 1), f = side(q);
+      s.triC(a, b, top, at(a, f), at(b, f), at(top, f));
+    }
+  };
+  if (!shape) {
+    cone(0, 0, foot * k, r, [0, 0], waist * k);
+    cone(0, 0, upper * k, r * 0.58, [0, 0], tip * k);
+    return;
   }
+  const sh = CROWN_SHAPES[shape];
+  const span = tip - foot;
+  sh.tiers.forEach(([f0, f1, rf], t) => {
+    const last = t === sh.tiers.length - 1;
+    // the lowest tier centred (the canopy closes on it); those over it off the axis by hash
+    const u = t ? (hash01(seed * 8 + t, 74) - 0.5) * 2 * sh.offset * r : 0;
+    const w = t ? (hash01(seed * 8 + t, 75) - 0.5) * 2 * sh.offset * r : 0;
+    // the leader bent over (and a hemlock's drooping) toward a side the seed picks
+    const lean = last && sh.bend ? sh.bend * rf * r : 0;
+    const dir = (hash01(seed, 76) * Math.PI * 2);
+    const apex = [u + lean * dcos(dir), w - lean * dsin(dir)];
+    cone(u, w, (foot + span * f0) * k, rf * r, apex, (foot + span * f1 - (last ? sh.droop * span : 0)) * k);
+  });
 }
 
 /** A snag: a four-sided grey spike from SNAG.from to SNAG.top of the clump's height (8 triangles). */
@@ -545,7 +618,8 @@ export function skinMesh(crowns, variant, cell, colours = SKIN_COLOURS, profile 
       continue;
     }
     const tall = !pr.plain && sign === "spruce" ? SPRUCE.taller : 1;
-    crown(s, u * cell, v * cell, k * tall, crownRadius(profile, q, variant), crownColour(lin, q, crowns, variant, sign, pr.plain), pr);
+    const shape = crownShape(pr.plain, sign, crowns, variant, q);
+    crown(s, u * cell, v * cell, k * tall, crownRadius(profile, q, variant), crownColour(lin, q, crowns, variant, sign, pr.plain), pr, shape, (crowns * 16 + variant) * 8 + q);
     q++;
   }
   return s.done();
@@ -626,13 +700,37 @@ export function skinAt(o, k0 = 0, k1 = o.grid.n * o.grid.n) {
       crowns,
       variant: pickLayout(crowns, hash01(k, 83)),
       ...(profile !== "roof" ? { profile } : {}),
-      // a quarter turn, and never shrunk: neighbouring cells' crowns still interlock and close the canopy
+      // a quarter turn, and never shrunk (stretched up to 15% on each of x and z by its own hash): neighbouring cells' crowns still interlock and close the canopy
       yaw: Math.floor(hash01(k, 84) * 4) * (Math.PI / 2),
-      width: 1 + 0.12 * hash01(k, 85),
+      width: 1 + CLUMP_STRETCH * hash01(k, 85),
+      depth: 1 + CLUMP_STRETCH * hash01(k, 87),
+      // leaning up to CLUMP_LEAN toward a side by hash: no two clumps stand quite plumb alike
+      lean: [CLUMP_LEAN * hash01(k, 88), dcos(hash01(k, 89) * Math.PI * 2), dsin(hash01(k, 89) * Math.PI * 2)],
       key: hash01(k, 86),
     });
   }
   return out;
+}
+
+/** How much a clump is stretched, at most, on each of x and z (never shrunk), and how far it leans at most (radians: 6°). */
+export const CLUMP_STRETCH = 0.15;
+export const CLUMP_LEAN = Math.PI / 30;
+/** How far a tree leans (radians): any tree up to `any` toward a side by hash; one at the water's edge (a stand) `shore` toward the water, the sea's wind's lean. */
+export const TREE_LEAN = Object.freeze({ any: Math.PI / 30, shore: Object.freeze([(8 * Math.PI) / 180, (12 * Math.PI) / 180]) });
+
+/**
+ * The rotation (a quaternion [x, y, z, w]) of a thing turned `yaw` about +Y
+ * and then leaned `angle` radians, its top toward the horizontal unit
+ * direction (dx, dz), each component to 4 places. Pure.
+ */
+export function leanYaw(yaw, angle = 0, dx = 1, dz = 0) {
+  const r4 = (v) => Math.round(v * 1e4) / 1e4 + 0;
+  const sy = dsin(yaw / 2), cy = dcos(yaw / 2);
+  if (!angle) return [0, r4(sy), 0, r4(cy)];
+  // the axis the lean turns about: up × the lean's direction (dx, 0, dz)
+  const ax = dz, az = -dx;
+  const s = dsin(angle / 2), c = dcos(angle / 2);
+  return [r4(cy * ax * s - az * s * sy), r4(c * sy), r4(cy * az * s + ax * s * sy), r4(c * cy)];
 }
 
 /** Every clump in the grid, thinned to the skin's `max` by each clump's own key (the lowest kept). */
@@ -663,7 +761,7 @@ export function skinInstances(clumps, groundAt, { meshBase, cell, colours = SKIN
   const r4 = (v) => Math.round(v * 1e4) / 1e4;
   // a low or scrub clump's foot sunk CLUMP_SINK into the ground (its crowns reach out over a slope), its top where it was
   const sink = (t) => (t.profile ? CLUMP_SINK : 0);
-  const nodes = clumps.map((t) => ({ mesh: index.get(kindOf(t)), translation: [r2(t.x), r2(groundAt(t.x, t.z) - sink(t)), r2(t.z)], rotation: [0, r4(dsin(t.yaw / 2)), 0, r4(dcos(t.yaw / 2))], scale: [r2(t.width), r2(t.height + sink(t)), r2(t.width)] }));
+  const nodes = clumps.map((t) => ({ mesh: index.get(kindOf(t)), translation: [r2(t.x), r2(groundAt(t.x, t.z) - sink(t)), r2(t.z)], rotation: leanYaw(t.yaw, ...(t.lean ?? [])), scale: [r2(t.width), r2(t.height + sink(t)), r2(t.depth ?? t.width)] }));
   return { meshes, nodes, kinds: kinds.map(([, , , key]) => key) };
 }
 /** How far a low or scrub clump's foot is sunk into the ground (m), so its crowns don't float over a slope. */
@@ -723,7 +821,7 @@ export function treeInstances(trees, groundAt, sinkAt, { meshBase, layer = "fore
     const sink = sinkAt(g);
     const h = t.height + sink;
     const yaw = t.yaw;
-    return { mesh: index[kindOf(t)], translation: [r2(t.x), r2(g - sink), r2(t.z)], rotation: [0, r4(dsin(yaw / 2)), 0, r4(dcos(yaw / 2))], scale: [r2(h * t.girth), r2(h), r2(h * t.girth)] };
+    return { mesh: index[kindOf(t)], translation: [r2(t.x), r2(g - sink), r2(t.z)], rotation: leanYaw(yaw, ...(t.lean ?? [])), scale: [r2(h * t.girth), r2(h), r2(h * t.girth)] };
   });
   return { meshes, nodes, species, layer };
 }

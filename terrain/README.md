@@ -572,6 +572,55 @@ rest).
   Their layer says they are dressing. Every float stands among tall black
   guide piles (`structures.js floatPiles`: every 15 m, alternating sides,
   5 to 7 m above mean water).
+- **The third look round** (Ucluelet; the general parts Cadboro's too):
+  - *Glassy water* (water/WATER.md, "The shore in the water"): the shore's
+    and the sky's reflection taken off a calmed normal, its edge as soft as
+    a pixel's footprint, a tree's tip in each degree of its top edge.
+  - *Crowns that aren't cones* (`forest.js CROWN_SHAPES`): the skin's
+    crowns are western red cedar (three stacked, ragged frusta, the leader
+    bent over), western hemlock (narrow tiers, the tip drooping) and Sitka
+    spruce (four flat tiers), 18 to 24 triangles, each shaded from 0.55 of
+    its colour at its foot to its full colour at its tip (the trees' too),
+    so the gaps between crowns read as shadow; every clump stretched 1 to
+    1.15 on x and z on its own and leaning up to 6°; a stand at the water
+    leaning 8 to 12° toward it (down the distance's slope). The canopy
+    still closes over 90% of every cell (tested over every layout).
+  - *Dark ground between crowns* (`look.shade`, `palette.js groundRGB`):
+    the forest floor's shade wherever the canopy is over 2 m and on every
+    node a town tree stands on (`forest.js townTreeAt`); a lot without
+    trees lawn and garden, mottled ±12%, a third of its nodes dark shrub
+    (`colours.lawnPatch`); the barnacles' band, the rock and the scrub
+    darker.
+  - *Stratus as wisps* (`cloud.js WISPS`, `stratusFactor`): the band torn
+    by a coarse 3-D value noise (350 and 120 m cells, three times finer in
+    height, so a wisp lies along a slope's contour), about 40% of it the
+    band's whole factor and the rest a quarter of it at most; and mist low
+    on the hills (from 60 m, at most 0.35) only in three named circles.
+  - *Fish plants over the water* (`buildings.js deckOf`): a building on a
+    pile deck is a fish plant (cream ribs, no window grid, one or two blue
+    or yellow roller doors to its deck, a low metal roof) unless the place
+    draws it itself; its deck reaches seaward (2 m steps, up to 50 m) until
+    the water under every pile of its outer row is half a metre under the
+    lower low water, piles in rows from edge to edge, a black tyre fender on
+    every third outer pile; the ground under it and 10 m round wet and
+    black, a rockweed band at mid-tide.
+  - *Every pier lined* (`boats.js PIER_MOORING`, `look.moorPiers`,
+    `look.moorMix`): boats alongside every fixed pier in the harbour (an
+    area pier's outline too, outside it), six slips in ten, never two empty
+    deep slips running, each only where the water under her ends and her
+    middle is 2 m deep at mean water (the 20 m grid smooths a dredged
+    berth: at chart datum nearly every pier would be bare); whale-watching
+    boats and water taxis, grey aluminium, round the Whiskey Dock; decks
+    weathered grey, black creosote piles every 15 m on piers as on floats,
+    the breakwaters dark rubble.
+  - *Surf in bursts* (`surf.js BURSTS`, `look.surf.bursts`): each end of a
+    run white or a lull by a Weyl sequence along its chain (36 to 52% white
+    by its exposure, never more than two running), a lull's foam a quarter
+    of its width or less in grey-white, domes of spray over the exposed
+    white ends; stones stretched 0.6 to 1.4 on each axis (`stretch`).
+  - *A textured overcast* (scene STAGE.md's atmosphere `clouds`): Ukee
+    grey a stratocumulus deck 600 m up (cover 1, ±12%); sailing's bright
+    day fair-weather cumulus over a third of its sky, which Cadboro shows.
 
 ## Layers
 
