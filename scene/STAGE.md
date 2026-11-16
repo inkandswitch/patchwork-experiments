@@ -35,7 +35,7 @@ each build step.
 | **Invocation** | A command call as a value: `{ ext, command, target, value? }`. |
 | **Body** | Where a viewer is in the world and how they move and look: Look or Edit (the stage's own, both the orbit camera, one always at the bottom: `src/stage/bodies.js`), walk (`walk/`), a seat (`seats/`), sailing's `aboard` and `station`. One stack per view; the top one is current, and its eye and reach are what verbs are measured from. Nothing stands on Edit. Contributed as `bodies` (the stage's two aren't). |
 | **Look** | The stage's body for looking: the orbit camera, no default press, none of the editor. Where a doc that names no body starts people. |
-| **Edit** (body) | The stage's body for editing: the orbit camera whose plain click selects, and the only body the editor's chrome shows in (TOOLS.md §3, "What is Edit's"): the halo and knobs, the inspector, the toolbar, grid, axes and bounds, and every command that says `edit: true`. |
+| **Edit** (body) | The stage's body for editing: the orbit camera whose plain click selects, and the only body the editor's chrome shows in (TOOLS.md §3, "What is Edit's"): the halo and knobs, the inspector, the toolbar's editor commands, grid, axes and bounds, and every command that says `edit: true`. |
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
 | **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
@@ -359,7 +359,7 @@ the scene when nothing is selected, until its × (shut until the selection
 changes), the toolbar's Inspector or leaving Edit shuts it; the outline (Objects), Dimensions and Parts are
 drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
 drawn only in the Edit body (and, as display prefs, a doc may suggest them
-off: a table does). All of that, the toolbar, and every command that says
+off: a table does). All of that, the toolbar's editor commands, and every command that says
 `edit: true` are the Edit body's alone (TOOLS.md §3, "What is Edit's"):
 looking, walking or seated, nobody sees an editor. The use prompt shows attention's verbs wherever there
 are any. A part that was an edit-only verb is a verb with no mode: a bag's
@@ -1539,7 +1539,7 @@ A **command**:
 ```js
 { id, name,
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
-  show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
+  show?: string | string[],  // the surfaces that show it ("toolbar", "world", "menu", "inspector", "use"); [] none; absent: every surface it applies to, except the strict ones ("world", and the menu for the scene)
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
   reach?: true,              // applies only within the body's reach (below)
   edit?: true,               // the editor's: applies only in the Edit body (below)
@@ -1581,8 +1581,17 @@ A **command**:
   Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste,
   Measure, the dimensions', the drawer tabs' toggles, Grid, Axes, Bounds,
   Units, Snap, Inspector, Undo, Redo); a package may mark its own.
-- Toolbars show commands for the null target. The toolbar (`scene.toolbar`)
-  shows only in Edit.
+- Toolbars show commands for the null target. The toolbar (`scene.toolbar`,
+  the bar of tools) holds two clusters: the editor's (`show` names
+  "toolbar", or says nothing) only in Edit, and at its right end the
+  world's (`show` names "world": strict, only an explicit mention counts,
+  as for the menu's scene commands) in every body: a game's Play, say.
+  "world" is for scene commands, as "toolbar" is: an object verb tagged
+  "world" never applies there, and would keep an empty bar up. A command
+  naming both is a world command. The bar shows while some command on the
+  focus path is the bar's in this body, applying now or not, so its height
+  doesn't change with a command's state (`src/parts/toolbar-commands.js`
+  `barEntries`; TOOLS.md Decisions 10).
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - **Attention** is one target per view (TOOLS.md §3): the selection if

@@ -24,8 +24,8 @@ finite cases, permissions left to Keyhive.
   reversing this note's first answer, "Editing is the selection's halo,
   with no switch and no pref"): Edit is the orbit camera with the editor
   on it, where a click selects and the selection's halo shows handles where
-  you may write, the inspector follows the selection and the toolbar,
-  grid, axes and bounds show. Look is the same camera without any of it.
+  you may write, the inspector follows the selection and the toolbar's
+  editor commands, grid, axes and bounds show. Look is the same camera without any of it.
   Playing is any other body, or Look, with the empty hand. One person
   editing while another plays is ordinary; one person can't do both at
   once.
@@ -174,7 +174,7 @@ table or walking a level sees no editor.
 | a plain click selecting (Edit's click, ahead of the chain) | Select in every target's menu, Esc to deselect; the selection's box |
 | the halo's handles and build-param knobs | carrying (press-drag, Q / E, F to flip), and every package's verbs |
 | the inspector (opening on the selection; Starts in) and the outline, Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
-| the toolbar, all of it (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint |
+| the bar of tools' editor commands (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint; the bar of tools' world commands (a game's Play, Lift all cups, Come aboard) |
 | grid, axes and bounds | the seat picker, the clock chip (Pause is anyone's: Decisions 5) |
 | Measure; selecting and deleting a dimension (saved ones are drawn everywhere: the doc's annotation) | notices and HUD pills, legends, the packages prompt |
 | Remove (Delete), Group, Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste | Frame (`.`) and a double-click to frame |
@@ -190,9 +190,10 @@ when the body leaves Edit, and so is the selection (Decisions 6: attention
 is the selection, so one kept from Edit would aim F and the use prompt at
 what was last edited). A menu's Select works in every body, and that
 selection stays until something clears it or Edit is left.
-A package's command meant for the toolbar (arena's Play and Gun, the cups'
-Lift all) shows there only in Edit; elsewhere it's in the menu and on its
-key, until §6's bar of tools exists for games.
+A package's command meant for the toolbar (`show: ["toolbar"]`, or no
+`show`) is the editor's and shows there only in Edit. One meant for games
+says `show: ["world"]`: the bar of tools holds it in every body, at its
+right end (§6, Decisions 10).
 
 **Focus scopes selection only.** Selection lives at the focus (COMPOSITION
 §3): with the focus on the boat, selecting a card aboard selects the link.
@@ -335,7 +336,10 @@ it's refused and said, as for any later write.
 +--------------------------------------------------------------------------------------+
 ```
 *Walking aboard, empty hand. Left of the bar is the world's, right is yours.
-No editor: the bar of tools (Measure, Dimensions…) is Edit's.*
+No editor: the bar of tools' editor commands (Measure, Dimensions…) are
+Edit's. (Since Decisions 10 the bar of tools also holds the world's
+commands, a game's Play or Come aboard, at its right end in every body:
+not this sketch's world bar, which is not built.)*
 
 ```
 +-- Harbour > Wanderer -- ▶ sea -- o Ana · helm  o Ben · walk -- | [Walk v] [View v] -+
@@ -366,11 +370,20 @@ right-click Select still selects it (no handles, no inspector).*
 *A linked scene entered while the boat is paused: the focus moves in; tools and body stay.*
 
 - **The bar of tools** holds the general tools and those of the stages on
-  the focus path. *Built* as the toolbar, which is Edit's (Decisions 6):
-  outside Edit there is no bar, and a package's toolbar command is in the
-  menu and on its key. Since COMPOSITION step 14 it is the focus path's:
-  each stage's scene commands from the focus out, worked out and run in
-  that stage, whatever the pointer is over.
+  the focus path. *Built* as the toolbar (`scene.toolbar`), in two
+  clusters (Decisions 10): the editor's commands (`show` names "toolbar",
+  or says nothing) at the left, only in Edit (Decisions 6), and the world's
+  (`show` names "world": only an explicit mention counts) at the right, in
+  every body, so a game's Play, a table's Lift all cups and a boat's Come
+  aboard sit at the same place looking, walking, seated or editing. It
+  shows while some extension on the focus path has a command that is the
+  bar's in this body, applying just now or not, and every cluster and
+  control is one control tall: the canvas under it doesn't move as a
+  command comes and goes. In a narrow view the editor's cluster scrolls
+  sideways and the world's stays in view. A plain scene, looking, has no
+  bar. Since COMPOSITION step 14 it is the focus path's: each stage's
+  scene commands from the focus out, worked out and run in that stage,
+  whatever the pointer is over.
 - **The body chip** offers Look and Edit first, then the bodies that can
   start here (Walk), then Leave while a body stands over the base. **Who's here** shows each person's body and held tool,
   from presence: the view says its viewer's on every channel it acts on, so
@@ -798,7 +811,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   parts and outline filters' own Escape went to the field rung, which
   clears a search field's text before it leaves the field). The
   body chip, who's here (body and held tool from presence) and the Esc hint
-  are `scene.body`, bottom right; the world bar of §6 is not built. Tabletop's
+  are `scene.body`, bottom right; the world bar of §6 is not built (games'
+  world commands are on the bar of tools instead: Decisions 10). Tabletop's
   verbs no longer hide walking: their keys are the walk body's, so they show
   without them. Bag's drawn piece in hand is a held tool.
   Three deviations, each the smaller step: (1) **walk** is a new package,
@@ -982,7 +996,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   Look before pushing any other, and on arrival sets the base from
   `view.start.body` at once (`startBase`). The halo (`haloTarget`), the
   knobs (`knobsShown`), the inspector's follow, the drawer tabs, grid, axes
-  and bounds, the toolbar (`toolbarShown`), add, transfer, undo's keys and
+  and bounds, the toolbar's editor cluster (`onBar`), add, transfer, undo's keys and
   dimensions' label select ask `editing`; the stage's editing commands say
   `edit: true`. The scene datatype's `init` writes `view.start = { body:
   "edit" }`, and so does every package's copy of `emptyScene`. Packages
@@ -993,7 +1007,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   seat" once. *Proves* (finite, exhaustive): every body (Look, Edit, walk,
   seat, station) × nothing, an object or a ref selected × writable or not,
   on the real parts mounted together: handles, knobs, inspector on select,
-  grid, axes, bounds and the toolbar show exactly in Edit (handles and
+  grid, axes, bounds and the toolbar (with no world command running) show exactly in Edit (handles and
   knobs only where writable, the inspector only on an object; 30 cases,
   `parts/edit-body.test.js`); a click on an object or on nothing in each
   body from each selection (30, `parts/select.test.js`); every sequence of
@@ -1140,8 +1154,8 @@ The project lead decided the five open questions on 2026-11-12.
      before leaving Edit stay, to take back on returning (§5).
    What it costs: editing a thing in a running game is a body change (Ben
    stops walking to move the winch, §6), and a package's toolbar command
-   (arena's Play, the cups' Lift all) is in the menu and on its key outside
-   Edit, until there is a bar of tools for games.
+   (arena's Play, the cups' Lift all) was only in the menu (and on a key,
+   where it had one) outside Edit, until there was a bar of tools for games (Decisions 10).
 7. **No tie rule for verbs beyond running order** (decided unattended,
    2026-11-14, final fixer). The domino prompt shows Flip, Draw and Wash
    (the cap is three), and Stand on edge is on U and in the menu: carry's
@@ -1216,3 +1230,161 @@ The project lead decided the five open questions on 2026-11-12.
    owner have its own width? Should the widths be one per viewer across
    all scenes, as screen layout usually is, rather than per scene? Should
    a pane still be able to declare a preferred width on top of the grip?
+10. **The bar of tools holds the world's commands in every body**
+    (decided unattended, 2026-11-16, lane/n8, for the lead). Outside Edit,
+    a game's Play and the cups' Lift all were reachable only by menu (and
+    key, where they had one) or a HUD's private copy of the command,
+    because the toolbar was Edit's whole. A command that says `show: ["world"]` (only an explicit
+    mention counts, as for the menu's scene commands; for scene commands,
+    the null target, as "toolbar" is) is now on the bar of tools in every
+    body, in a cluster at its right end; the editor's commands stay at the
+    left, in Edit only. One mechanism, the existing toolbar part
+    (`scene.toolbar`, the id unchanged): `onBar` and `barEntries` in
+    `src/parts/toolbar-commands.js`. What it keeps true:
+    - **B1** outside Edit the bar holds exactly the world commands that
+      apply, never an editor command;
+    - **B2** in Edit it holds the editor's commands, then the world's (a
+      command naming both surfaces is a world command);
+    - **B3** it shows ⇔ some command on the focus path is the bar's in this
+      body (a world command, or in Edit an editor command), whatever that
+      command's state; one rule for both clusters;
+    - **B4** a shown key works (H3): the bar's world entries, in every
+      body, are among the hints the key resolver's table checks.
+    - **When it shows (B3).** So the bar's height depends only on which
+      extensions run, never on a command's state, and every cluster and
+      every control (button, toggle or picker) is one control tall, even an
+      empty cluster: the canvas doesn't jump as Play, Lift all or Come
+      aboard comes and goes (the 36 px shift that made a double-click near
+      the canvas's top edge miss in Edit). The cost is not an edge case:
+      outside Edit an empty row is the usual state wherever a world command
+      applies only now and then (aboard a boat whose Come aboard applies
+      only in the lobby, so walking, at a station or seated; a dice table
+      while no cup is down; holding arena's gun). Showing the bar only
+      while a world command applies was rejected for that jump. *Question
+      for the lead:* is the empty row acceptable? The other way that keeps
+      the height and the x: a world command that is declared but doesn't
+      apply shows disabled (§6's "Can't shows"), at the cost of a greyed
+      Come aboard while aboard; the contract has no way today for a
+      command to say "don't apply" apart from "can't now".
+    - **Where it sits.** At the right end of the bar of tools, the same x
+      in every body and at every width: the editor's cluster scrolls
+      sideways in a narrow view and the world's sits outside that scroll.
+      This runs against §6's sketch, where the world bar's left is the
+      world's and its right is yours, and "world bar" (§6: breadcrumb,
+      clock chips, who's here, body chip; not built) and `show: "world"`
+      (a cluster on the bar of tools) are now two things with one word.
+      *Question for the lead:* should world commands go at the bar's left
+      (the world's side) or join the clock chips' slim bar, making the two
+      top strips one, and should the surface have another name?
+    - **A new surface, or `edit: true` alone?** The alternative not taken:
+      the bar shows in every body and `edit: true` keeps the editor's
+      commands Edit-only, with no new surface name. Nearly every stage
+      command on the bar already says `edit: true` (Snap, Units, Grid,
+      Axes, Bounds, Undo, Redo, Objects, Dimensions, Parts, Inspector,
+      Measure); only Frame all doesn't, and §3's table lists Frame as
+      everyone's. That would be fewer words (no strict special case, no
+      precedence between clusters, games keeping `show: ["toolbar"]`), but
+      any package command with `show` absent or "toolbar", no `edit: true`,
+      that applies to the scene would appear outside Edit (arena's Gun is
+      one; the rest would want an audit), and a game would say where its
+      button goes by saying it isn't the editor's. The lane chose the
+      explicit surface: a package says "this is for players". `show`'s
+      vocabulary is an API every package writes against, so this is a
+      *question for the lead*.
+    - **The focus path's only**, as the toolbar and the clock chips: in a
+      mashup a game's world commands show once the game is entered (Games
+      night's Lift all inside Liar's dice; the Model room's Come aboard
+      inside Ship at anchor). *Question for the lead:* should a game's
+      world commands show without entering it?
+    - A bar button doesn't take the focus from a mouse press (it stays on
+      the tool's root, where keys are heard), so outside Edit an unclaimed
+      Space or Enter after a click goes on to the stage and doesn't run the
+      button again.
+    - Key legends (machine's controls panel, sailing's keys line, arena's
+      help line, the Esc hint) are not commands and stay as they are; one
+      stage-drawn legend of declared keys is a *question for the lead*,
+      likely with N9's touch controls, which need the same keys.
+    - **Order within the world cluster.** It is right-aligned and in
+      command order, so its last entry's place is anchored and an entry
+      coming or going slides everything to its left. B3 holds the bar's
+      height, not a button's x, so a package lists a world command that
+      comes and goes (Stand targets up, there while a target is down)
+      before the one people reach for (Play), which then never moves under
+      a pending click. Between packages the order is running order, which
+      the stage doesn't promise; nothing has two packages' world commands
+      on one path yet. *Decided unattended (2026-11-16, lane/n8), for the
+      lead:* a convention, not a mechanism; a stable slot per command (a
+      declared, disabled one) is the first question above.
+    - **Consumers.** Sailing's Come aboard (`aboard`, `show: ["world"]`):
+      the HUD's own button, a private copy of the command that sat over the
+      canvas's top edge in Edit (triage (f)), is gone, and the HUD only
+      reads (`sailing/src/hud.js`, `probes/editclick-run.mjs` steps 5-6).
+      Arena's Play and Stand targets up (`show: ["world", "menu"]`): its
+      HUD's lobby drew its own "▶ Play" / "▶ Pick up the gun" and "Stand
+      them up" buttons, private copies of the two commands, so N8's "Play
+      only by menu and key" was stale for arena; they're gone, Play's
+      `state` carries the label ("Pick up the gun" while walking, when it
+      only hands you the gun), and the HUD only reads: the count, the
+      scores, the crosshair, the ammo (`arena/src/play.js` `playState`,
+      `probes/arena-run.mjs`: the canvas rect is the same looking, walking,
+      holding the gun and as Stand targets up comes, and Play's rect as
+      Stand targets up comes and goes to its left). The Gun toggle stays
+      Edit's toolbar, the menu and G: outside Edit, Play offers the gun.
+      *Question for the lead:* a big Play call to action over the level
+      (what the lobby had) is gone with it; should a game keep one, and if
+      so as what, given that a HUD button is the triage (f) hazard? The
+      cups' Lift all (`lift-all`, `show: ["menu", "world"]`, was
+      `["menu", "toolbar"]`) is now a button outside Edit too, where it
+      had been the menu's alone: seated watching, walking, Look. Its state
+      is unchanged (some cup covers, or is shaken blind with a holder),
+      and since it's declared the bar is up at a cups table whether or not
+      a cup is down (`dice/src/cup-extension.test.js`: its surfaces, and
+      the 21-row state table, knocked-over cups among its cases, and a run that
+      lifts exactly the cups the state counts; `dice/probes/liars-dice.mjs`: seated, the
+      bars are up with nothing on them, both shake and each bar offers it
+      with neither canvas moved, and at the end A's click lifts every cup
+      down in both docs and leaves the knocked-over one alone). It's the
+      cups' only world command, so the order convention doesn't come up.
+      Sailing's button reaches
+      further than her HUD did: it's on the bar wherever sailing runs on
+      the focus path (an entered boat in a harbour, the Model room's boat),
+      where the HUD is hidden because her doc isn't the world. It applies
+      there exactly where Enter and a click on her already did, so nothing
+      new can happen; the focus-path question above covers it.
+    - **Known: entering a link moves the canvas.** Entered in Edit (a
+      double-click on G's card aboard Lost Cities), the canvas moves down
+      about 31 px as the entered path's chrome appears. That's after the
+      entering press, so it isn't triage (f), but a click straight after
+      lands that far off; B3 holds the bar of tools still, not the other
+      strips. Left for a later item (a constant-height strip for the
+      path's chrome).
+    *Proves* (finite, exhaustive, `src/parts/toolbar.test.js`): every
+    `show` (absent, [], toolbar, world, both, menu, the string "world") ×
+    Look, Edit and a walk × `edit: true` or not lands in exactly the
+    cluster B1 and B2 say (42 rows); Look and Edit × an editor command
+    (none, there, applying) × a world command (likewise), the bar shows
+    exactly when B3 says and holds exactly what applies (18 rows); on the
+    stage, Look, Edit, a walk and Look again × playing or not, the world's
+    button is there exactly while it applies, the editor's only in Edit,
+    and the bar never hides; a mouse press on a button is kept from moving
+    the focus; entered in a link, looking, the game's and the host's world
+    commands are both on it, each run in its own doc (`stage/focus.test.js`).
+    The key resolver's H3 table enumerates the bar's world entries in
+    every body, Edit's among them, and keeps a keyed command on no surface
+    (`keymap.test.js`, B4). In a browser (`probes/toolbar-run.mjs`), wide
+    and narrow: a button and a picker are one control tall, as is an empty
+    cluster; Play clicked goes and neither the bar nor the canvas moves; in
+    Edit the world's controls are where they were in Look, still in view
+    and clickable while the editor's cluster overflows. In the real
+    Patchwork (worldbar-check, on scratch copies of Ship at anchor and Lost
+    Cities aboard, in a 639 px pane beside comments): Look's bar holds
+    exactly Come aboard and the HUD no button; Edit adds the editor's
+    commands with Come aboard where it was; the bar's Come aboard, clicked
+    from Edit, comes aboard; the canvas's top and height are the same in
+    Look, Edit and aboard; and in Edit on Lost Cities aboard a double-click
+    on a card 16 px below the canvas's top edge enters the game. Before
+    this change, against the published packages (2026-11-16), it fails 11
+    of its 17 checks, triage (f) among them: the first press lands on the
+    HUD's Come aboard, comes aboard, leaves Edit and lifts the canvas
+    38.5 px (Look's canvas sat at 101 px and Edit's at 140, the bar being
+    Edit's alone), and nothing is entered.

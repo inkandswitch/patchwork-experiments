@@ -893,16 +893,26 @@ describe("the commands", () => {
     expect(s.ctx.crew.board).toHaveBeenCalledWith("hull");
   });
 
-  it("Enter comes aboard, for the scene, until you have", () => {
+  it("Come aboard: Enter, and a button on the stage's bar of tools in every body (show world); for the scene, until you have (S2)", () => {
     const s = stage();
-    s.me.playing = false;
     const c = s.cmd("aboard");
     expect(c.key).toBe("Enter");
-    expect(c.state(null, s.look(null))).toBeTruthy();
-    expect(c.state("hull", s.look(null))).toBe(null);
+    expect(c.show).toEqual(["world"]);
+    // target × playing → applies (exactly the lobby: the scene's target and nobody aboard)
+    const TABLE = [
+      [null, false, true],
+      [null, true, false],
+      ["x", false, false],
+      ["x", true, false],
+    ];
+    for (const [target, playing, applies] of TABLE) {
+      s.me.playing = playing;
+      const st = c.state(target, s.look(null));
+      expect(st != null, `target ${target}, playing ${playing}`).toBe(applies);
+      if (applies) expect(st).toEqual({ title: "Walk the deck in first person (Enter)" });
+    }
+    s.me.playing = false;
     c.run(null);
     expect(s.ctx.crew.start).toHaveBeenCalled();
-    s.me.playing = true;
-    expect(c.state(null, s.look(null))).toBe(null);
   });
 });

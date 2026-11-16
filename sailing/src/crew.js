@@ -862,14 +862,14 @@ export function createCrew(api, ctx) {
   return {
     input: {
       // a click that reaches her comes aboard (Enter does too: stations.js's
-      // "aboard"; and the HUD's button). It reaches her only through
+      // "aboard", and so does its button on the bar of tools). It reaches her only through
       // something of hers, her hull, a fitting or what's aboard her, nearer
       // takers (a card's carry, a game linked onto her table) first (scene
       // STAGE.md, "Input"): the ships' part holds no scene trait, so the
       // world's sea, sky and shore aren't hers to take. Seated at a table
       // aboard (another extension's body), a click on her is a stray one
-      // round the table, and doesn't throw you out of the game: the button
-      // or Enter does.
+      // round the table, and doesn't throw you out of the game: the bar's
+      // Come aboard or Enter does.
       click() {
         if (playing || seatedView(api)) return false;
         start();

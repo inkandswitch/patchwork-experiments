@@ -8,6 +8,6 @@ import { layOutArena } from "./layout.js";
 export default {
   async create(ctx) {
     await layOutArena(ctx);
-    ctx.notify?.("Arena laid out. Press Play (or Enter) to pick up the gun.", "info");
+    ctx.notify?.("Arena laid out. Pick up the gun on the bar (or press Enter) to play.", "info");
   },
 };

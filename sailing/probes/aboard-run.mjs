@@ -22,8 +22,9 @@
 //  6. Flip turns it over on the table;
 //  7. a plain click on a card doesn't board; a drag on the wheel orbits
 //     (the hand doesn't carry her fittings); seated, a plain click on the
-//     hull doesn't board, and the HUD offers Enter, not the walking keys,
-//     its dial top left clear of the hand;
+//     hull doesn't board, the bar offers Come aboard (Enter) and the HUD
+//     has no button and not the walking keys, its dial top left clear of
+//     the hand;
 //  8. B gets her under way with the keys in the template's own breeze: Enter,
 //     R held at the mast (the main up at anchor), F held at the windlass, F
 //     at the wheel; head to wind (the HUD's: within 40°, slow; else the step fails as not
@@ -390,9 +391,9 @@ try {
       await b.rest(400);
       check("7: seated, a plain click on the hull round the table doesn't board", !(await P("me('a')")).playing && !(await P("walking('a')")), { me: await P("me('a')") });
     } else check("7: the hull round the table is on A's screen", false);
-    // seated: the HUD offers Enter, not the walking keys, and keeps clear of the hand at the bottom
+    // seated: the bar of tools offers Come aboard (Enter); the HUD holds no button, no walking keys, and keeps clear of the hand at the bottom
     const hud = await P("hud('a')");
-    check("7: seated, the HUD says Enter to come aboard, without the walking keys, its dial top left", hud?.seated && /Enter/.test(hud.button ?? "") && !/WASD/.test(hud.keys) && hud.panel && hud.panel.bottom < hud.panel.hostHeight * 0.4, hud);
+    check("7: seated, the bar offers Come aboard (Enter); the HUD has no button and no walking keys, its dial top left", hud?.seated && hud.bar?.text === "Come aboard" && hud.bar.enabled && /\(Enter\)$/.test(hud.bar.title) && hud.buttons === 0 && hud.hint === "" && !/WASD/.test(hud.keys) && hud.panel && hud.panel.bottom < hud.panel.hostHeight * 0.4, hud);
     // back in the seat for what follows
     await P("pick('a', '')");
     await P("pick('a', 'p1')");
