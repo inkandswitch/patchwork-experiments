@@ -17,7 +17,7 @@
 // with OSM's coastline (and the same DEM flipped, mirrored or shifted 200 m
 // would be refused); every OSM islet with a node clears the highest tide;
 // the data is what was checked on 2026-11-09 (SHA-256, OSM pinned to that
-// moment); a list of places known to be land or water (the clubhouse, the
+// moment), and the buildings and land cover what was checked on 2026-11-15; a list of places known to be land or water (the clubhouse, the
 // islands, the channels) come out so; the water under the mooring field is
 // deep enough for a 2 m keel at the lowest normal tide.
 
@@ -80,6 +80,8 @@ const demRec = { scale: got.dem.record.scale, toMWL: spec.demToMWL };
 const sh = shape(grid, dem, demRec, features, { datum: spec.datum });
 check("the DEM is the grid asked for", dem.length === grid.n * grid.n, { n: grid.n, values: dem.length });
 check("the data is what was checked on 2026-11-09 (OSM as of its pinned moment)", got.dem.record.sha256 === EXPECTED.dem && got.features.record.sha256 === EXPECTED.features && features.osmBase === OSM_DATE, { dem: got.dem.record.sha256, features: got.features.record.sha256, osmBase: features.osmBase });
+const look = got.look ? JSON.parse(new TextDecoder().decode(got.look.bytes)) : null;
+check("the buildings and land cover are what was checked on 2026-11-15 (OSM pinned to the same moment)", got.look?.record.sha256 === EXPECTED.look && look?.osmBase === OSM_DATE, { look: got.look?.record.sha256, osmBase: look?.osmBase, buildings: look?.buildings.length, areas: look?.areas.length });
 check("the DEM lines up with OSM's coastline: off the shore, its nodes are on OSM's side of the water", sh.agreement.share >= 0.98, sh.agreement);
 // the same DEM, misplaced: each must be refused (the sign agreement is the only thing that sees the DEM's position)
 const n = grid.n;
@@ -127,7 +129,8 @@ if (OUT) {
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, "dem.bin"), got.dem.bytes);
   writeFileSync(join(OUT, "features.json"), got.features.bytes);
-  writeFileSync(join(OUT, "fetched.json"), JSON.stringify({ dem: got.dem.record, features: got.features.record, sources: got.sources, summary: got.summary }, null, 2));
+  if (got.look) writeFileSync(join(OUT, "look.json"), got.look.bytes);
+  writeFileSync(join(OUT, "fetched.json"), JSON.stringify({ dem: got.dem.record, features: got.features.record, look: got.look?.record ?? null, sources: got.sources, summary: got.summary }, null, 2));
   console.error(`  wrote ${OUT}`);
 }
 process.exit(Object.values(checks).every(Boolean) ? 0 : 1);

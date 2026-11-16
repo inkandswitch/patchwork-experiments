@@ -9,6 +9,12 @@
 //
 // The GLB is in the terrain's local frame (tmerc.js): metres, x east, y up,
 // z south, y = 0 mean water level, the origin the doc's `origin`.
+//
+// The small solids (structures, marks, rocks, buildings, trees, a place's
+// own structures) are triangle soups with no normals: a glTF loader draws a
+// primitive without normals flat-shaded (three's GLTFLoader does), which is
+// what they are, at two thirds of the bytes. The ground and the forest
+// canopy carry smooth normals.
 
 import { encodeGLB, computeNormals, computeBounds } from "./glb.js";
 import { joinCoast, openEnds, distanceToGrid, classify } from "./coast.js";
@@ -19,6 +25,12 @@ import { structureMesh, rockMesh } from "./structures.js";
 import { markMesh } from "./marks.js";
 import { sampler, int16ToBytes, toBase64, packQuality } from "./terrain-sample.js";
 import { localFrame, PROJECTION } from "./tmerc.js";
+import { coverGrid, distanceToWater, COVER, COVERS } from "./cover.js";
+import { groundRGB, linear, naturalLegend, COLOURS } from "./palette.js";
+import { effectiveCanopy, placeTrees, forestRoof, treeInstances } from "./forest.js";
+import { buildingMesh } from "./buildings.js";
+import { siteMesh, inBox } from "./site.js";
+import { unpackLayers, FILLED, FLOOR } from "./layered.js";
 
 export const HEIGHT_SCALE = 0.02;
 export const FRAME = "x east, y up, z south; metres; y = 0 mean water level";
@@ -32,7 +44,19 @@ export const DEFAULTS = Object.freeze({
   structures: true,
   marks: true,
   skirt: true,
+  forest: true,
+  buildings: true,
+  site: true,
 });
+
+/** The GLB's layers (scene README, "GLB conventions"): what can be shown or hidden. The ground is on none: always shown. */
+export const LAYERS = Object.freeze([
+  { id: "forest", name: "Forest (canopy and trees)" },
+  { id: "buildings", name: "Buildings (OpenStreetMap footprints)" },
+  { id: "harbour", name: "Docks, floats and breakwaters (OpenStreetMap)" },
+  { id: "marks", name: "Lights, buoys and beacons" },
+  { id: "landmarks", name: "Landmarks" },
+]);
 
 /**
  * How far the mesh may stray from the grid at a node of height h (metres):
@@ -53,14 +77,14 @@ export function toleranceAt(h, p = DEFAULTS) {
  * @param {{ coast: object[] }} features
  * @param {{ landFloor?: number, datum?: object }} [o]  the land floor (default: 0.3 m above the datum's HHWLT)
  */
-export function shape(grid, dem, demRec, features, { datum = null, landFloor = landFloorFor(datum) } = {}) {
+export function shape(grid, dem, demRec, features, { datum = null, landFloor = landFloorFor(datum), scale = HEIGHT_SCALE, made = null } = {}) {
   const chains = joinCoast(features.coast ?? []);
   const cls = classify(grid, chains);
   const ends = openEnds(chains).map((e) => ({ ...e, away: distanceToGrid(grid, e.point) }));
   const near = ends.filter((e) => e.away <= cls.band + grid.cell);
   const problems = [...cls.problems];
   if (near.length) problems.push(`The coastline data stops inside the grid at ${near.map((e) => `${e.id} (${e.end})`).join(", ")}.`);
-  const { heights, quality, islets, agreement } = burn(grid, dem, demRec, cls, chains, { scale: HEIGHT_SCALE, landFloor });
+  const { heights, quality, islets, agreement } = burn(grid, dem, demRec, cls, chains, { scale, landFloor, made });
   const wrong = checkSigns(heights, cls.label);
   if (wrong.length) problems.push(`${wrong.length} nodes are on the wrong side of the water after burning the shore in.`);
   if (islets.low.length) problems.push(`${islets.low.length} islets stay below the land floor (${islets.low.slice(0, 5).map((r) => r.id).join(", ")}).`);
@@ -68,7 +92,7 @@ export function shape(grid, dem, demRec, features, { datum = null, landFloor = l
   if (agreement.total >= 100 && agreement.share < MIN_AGREEMENT) {
     problems.push(`The heights don't line up with OpenStreetMap's coastline: away from the shore only ${(agreement.share * 100).toFixed(1)}% of the DEM's nodes are on OSM's side of the water (at least ${MIN_AGREEMENT * 100}% expected), so the DEM is likely flipped, mirrored or shifted.`);
   }
-  return { chains, cls, heights, quality, islets, agreement, landFloor, ends, problems };
+  return { chains, cls, heights, quality, islets, agreement, landFloor, ends, problems, scale };
 }
 
 /** Every `stride`-th node of an n × n grid. */
@@ -82,18 +106,29 @@ function subsample(n, values, stride) {
 
 /**
  * Build the GLB.
- * @param {{ doc: object, dem: Int16Array, features: object, params?: object }} input
- *   doc: the Terrain doc's fields (origin, grid, exaggeration, datum, demToMWL, places, sources, attribution)
+ * @param {{ doc: object, dem: Int16Array, features: object, layers?: Uint8Array | null, look?: object | null, params?: object }} input
+ *   doc: the Terrain doc's fields (origin, grid, heightScale, exaggeration, datum, demToMWL, places, sources, attribution, look, site, landmarks);
+ *   layers: the layered heights' source layer and canopy (layered.js packLayers); look: the OSM buildings and land cover (look-osm.js)
  * @returns {{ glb: Uint8Array, meta: { bounds, notes }, stats: object, heights: Int16Array, cls: object }}
  */
-export function buildTerrain({ doc, dem, features, params = {} }) {
+export function buildTerrain({ doc, dem, features, layers = null, look = null, params = {} }) {
   const p = { ...DEFAULTS, ...params };
   const grid = { n: doc.grid.n, cell: doc.grid.cell, x0: doc.grid.x0, z0: doc.grid.z0 };
   if (dem.length !== grid.n * grid.n) throw new Error(`The DEM has ${dem.length} heights, not ${grid.n}².`);
   const frame = localFrame(doc.origin);
-  const demRec = { scale: doc.data?.dem?.scale ?? HEIGHT_SCALE, offset: doc.data?.dem?.offset ?? 0, toMWL: doc.demToMWL ?? 0 };
+  const S = doc.heightScale ?? HEIGHT_SCALE;
+  const demRec = { scale: doc.data?.dem?.scale ?? S, offset: doc.data?.dem?.offset ?? 0, toMWL: doc.demToMWL ?? 0 };
   const t0 = Date.now();
-  const sh = shape(grid, dem, demRec, features, { datum: doc.datum });
+  // the layered heights' own record: which source each node took, the canopy; a node no source measured is flagged by burn()
+  const lay = layers ? unpackLayers(layers, grid.n * grid.n) : null;
+  const layerNames = doc.data?.layers?.names ?? null;
+  let madeUp = null;
+  if (lay && layerNames) {
+    const filled = layerNames.indexOf(FILLED), floor = layerNames.indexOf(FLOOR);
+    madeUp = new Uint8Array(lay.source.length);
+    for (let k = 0; k < madeUp.length; k++) if (lay.source[k] === filled || lay.source[k] === floor) madeUp[k] = 1;
+  }
+  const sh = shape(grid, dem, demRec, features, { datum: doc.datum, scale: S, made: madeUp });
   if (sh.problems.length) throw new Error(`Can't tell land from water: ${sh.problems.join(" ")}`);
   const { heights, cls, quality, islets } = sh;
   const n = grid.n;
@@ -105,7 +140,7 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
   const tol = new Float32Array(N);
   let hmin = Infinity, hmax = -Infinity;
   for (let k = 0; k < N; k++) {
-    h[k] = heights[k] * HEIGHT_SCALE;
+    h[k] = heights[k] * S;
     tol[k] = toleranceAt(h[k], p);
     if (h[k] < hmin) hmin = h[k];
     if (h[k] > hmax) hmax = h[k];
@@ -114,6 +149,18 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
   const check = checkMesh(n, h, tol, mesh);
   if (!check.ok) throw new Error(`The ground mesh strays from the heights: ${JSON.stringify(check)}`);
   const yOf = (v) => (v > 0 ? v * ex : v);
+  // the look: what covers the ground (OSM), the canopy (lidar, or assumed in OSM's woods), the distance to the water
+  const natural = !!(look || doc.look);
+  const cover = natural ? coverGrid(grid, look) : null;
+  const measured = lay && doc.heights?.canopy && layerNames ? (() => {
+    const dtm = layerNames.indexOf(doc.heights.canopy.dtm);
+    const m = new Uint8Array(N);
+    for (let k = 0; k < N; k++) if (lay.source[k] === dtm) m[k] = 1;
+    return m;
+  })() : null;
+  const canopy = natural ? effectiveCanopy({ n, label: cls.label, cover, canopy: lay?.canopy ?? null, measured, assumed: doc.look?.trees?.assumed }) : null;
+  const colours = { ...COLOURS, ...(doc.look?.colours ?? {}) };
+  const tide = doc.datum?.tide ?? {};
   const V = mesh.nodes.length;
   const positions = new Float32Array(V * 3);
   const colors = new Float32Array(V * 3);
@@ -123,7 +170,7 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
     positions[v * 3] = grid.x0 + i * grid.cell;
     positions[v * 3 + 1] = yOf(h[k]);
     positions[v * 3 + 2] = grid.z0 + j * grid.cell;
-    const c = colourAt(h[k]);
+    const c = natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k)) : colourAt(h[k]);
     colors[v * 3] = c[0];
     colors[v * 3 + 1] = c[1];
     colors[v * 3 + 2] = c[2];
@@ -133,7 +180,7 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
     {
       name: "Ground",
       primitives: tiles(positions, normals, colors, mesh.triangles, 65535).map((t) => ({ ...t, roughness: 0.95 })),
-      extras: { legend: legend(hmin, hmax) },
+      extras: { legend: natural ? naturalLegend(hmin, hmax, tide, colours) : legend(hmin, hmax) },
     },
   ];
   const nodes = [{ name: "Ground", mesh: 0 }];
@@ -171,32 +218,90 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
   }
 
   // ─── what stands on it ───
-  const hf = sampler({ nx: n, nz: n, x0: grid.x0, z0: grid.z0, cell: grid.cell }, heights, HEIGHT_SCALE);
+  const hf = sampler({ nx: n, nz: n, x0: grid.x0, z0: grid.z0, cell: grid.cell }, heights, S);
   const inside = (x, z) => hf.heightAt(x, z) != null;
+  const groundAt = (x, z) => {
+    const g = hf.heightAt(x, z);
+    return g == null ? null : yOf(g);
+  };
+  // how far below the true ground a foot must reach for the drawn (simplified) ground not to show beneath it
+  const sinkAt = (g) => toleranceAt(g, p) + 0.4;
+  const layerTable = [...LAYERS.map((l) => ({ ...l }))];
+  const add = (name, mesh, layer, extras) => {
+    meshes.push({ name, ...mesh });
+    nodes.push({ name, mesh: meshes.length - 1, ...(layer || extras ? { extras: { ...(layer ? { layer } : {}), ...(extras ?? {}) } } : {}) });
+  };
+  // the place's own structures (site.js): drawn from its doc; OSM's drawing of the same things is left out
+  const site = p.site && (doc.site || doc.landmarks?.length) ? siteMesh(doc.site ?? null, doc.landmarks ?? [], frame, groundAt, sinkAt) : null;
+  const clear = doc.site?.clear ?? null;
+  const clearIds = new Set(clear?.osm ?? []);
   let made = 0, placed = [];
   if (p.structures) {
-    const st = structureMesh(features.structures ?? [], { inside });
+    const st = structureMesh((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside });
     made = st.made;
-    if (st.positions.length) {
-      meshes.push({ name: "Harbour structures", positions: st.positions, normals: computeNormals(st.positions), colors: st.colors, roughness: 0.9 });
-      nodes.push({ name: "Harbour structures", mesh: meshes.length - 1 });
+    if (st.positions.length) add("Harbour structures", { positions: st.positions, colors: st.colors, roughness: 0.9 }, "harbour");
+  }
+  if (site) {
+    for (const l of doc.site?.layers ?? []) if (!layerTable.some((x) => x.id === l.id)) layerTable.push({ ...l });
+    for (const [layer, m] of Object.entries(site.layers)) {
+      if (!layerTable.some((x) => x.id === layer)) layerTable.push({ id: layer, name: layer });
+      const name = layerTable.find((x) => x.id === layer)?.name ?? layer;
+      add(name, { positions: m.positions, colors: m.colors, roughness: 0.85 }, layer);
+    }
+  }
+  // buildings from OSM's footprints (buildings.js); inside the site's lot, the site draws them
+  let buildingsMade = 0;
+  if (p.buildings && look?.buildings?.length) {
+    const coverAt = (x, z) => {
+      const i = Math.round((x - grid.x0) / grid.cell), j = Math.round((z - grid.z0) / grid.cell);
+      return i >= 0 && j >= 0 && i < n && j < n ? cover[j * n + i] : 0;
+    };
+    const leaveOut = clear?.box
+      ? (b) => {
+          const cx = b.points.reduce((a, q) => a + q[0], 0) / b.points.length, cz = b.points.reduce((a, q) => a + q[1], 0) / b.points.length;
+          const [lat, lon] = frame.toLatLon(cx, cz);
+          return inBox(clear.box, lat, lon);
+        }
+      : () => false;
+    const bm = buildingMesh(look.buildings, { groundAt, sinkAt, coverAt, leaveOut });
+    buildingsMade = bm.made;
+    if (bm.primitives.length) add("Buildings", { primitives: bm.primitives.map((q) => ({ ...q, roughness: 0.8 })) }, "buildings");
+  }
+  // the forest: its roof, and trees in front of it (forest.js)
+  let treeCount = 0, roofTriangles = 0;
+  if (p.forest && natural) {
+    const dist = distanceToWater(n, cls.label, grid.cell);
+    const trees = doc.look?.trees ?? { fringe: { fir: 60, cedar: 20, oak: 20 }, inland: { fir: 70, cedar: 30 }, town: { fir: 40, oak: 30, cedar: 30 }, wetland: { pine: 100 }, max: 20000 };
+    const roof = forestRoof({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, setback: trees.roofSetback ?? 20 });
+    if (roof) {
+      roofTriangles = roof.indices.length / 3;
+      const normalsR = computeNormals(roof.positions, roof.indices);
+      add("Forest canopy", { primitives: tiles(roof.positions, normalsR, roof.colors, roof.indices, 65535).map((t) => ({ ...t, roughness: 1 })) }, "forest");
+    }
+    const placedTrees = placeTrees({ grid, label: cls.label, cover, canopy, dist, trees });
+    treeCount = placedTrees.trees.length;
+    if (treeCount) {
+      const inst = treeInstances(placedTrees.trees, (x, z) => groundAt(x, z) ?? 0, sinkAt, { meshBase: meshes.length });
+      for (const m of inst.meshes) meshes.push(m);
+      // one group node on the forest layer, every tree a child sharing its species' mesh (the scene draws a species as one InstancedMesh)
+      const first = nodes.length;
+      for (const nd of inst.nodes) nodes.push(nd);
+      nodes.push({ name: "Trees", children: inst.nodes.map((_, q) => first + q), extras: { layer: "forest", trees: { count: treeCount, before: placedTrees.before, species: inst.species } } });
     }
   }
   const rocks = rockMesh(islets.rocks, (x, z) => hf.heightAt(x, z), yOf);
+  const replaced = site?.replaces ?? new Set();
   if (rocks.positions.length) {
-    meshes.push({ name: "Rocks", positions: rocks.positions, normals: computeNormals(rocks.positions), colors: rocks.colors, roughness: 0.95 });
+    meshes.push({ name: "Rocks", positions: rocks.positions, colors: rocks.colors, roughness: 0.95 });
     nodes.push({ name: "Rocks", mesh: meshes.length - 1 });
   }
   if (p.marks) {
-    const mk = markMesh(features.marks ?? [], (x, z) => {
+    const mk = markMesh((features.marks ?? []).filter((m) => !replaced.has(m.id)), (x, z) => {
       const g = hf.heightAt(x, z);
       return g == null ? null : yOf(g);
     });
     placed = mk.placed;
-    if (mk.positions.length) {
-      meshes.push({ name: "Marks", positions: mk.positions, normals: computeNormals(mk.positions), colors: mk.colors, roughness: 0.6 });
-      nodes.push({ name: "Marks", mesh: meshes.length - 1, extras: { marks: placed } });
-    }
+    if (mk.positions.length) add("Marks", { positions: mk.positions, colors: mk.colors, roughness: 0.6 }, natural ? "marks" : null, { marks: placed });
   }
 
   // ─── the heightfield, for whatever needs a depth (sailing: grounding, the anchor) ───
@@ -219,7 +324,7 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
     origin: { lat: frame.origin.lat, lon: frame.origin.lon },
     projection: PROJECTION,
     grid: { nx: hfOut.n, nz: hfOut.n, x0: grid.x0, z0: grid.z0, cell: grid.cell * stride },
-    heights: { encoding: "int16le-base64", scale: HEIGHT_SCALE, offset: 0, data: toBase64(int16ToBytes(hfOut.values)) },
+    heights: { encoding: "int16le-base64", scale: S, offset: 0, data: toBase64(int16ToBytes(hfOut.values)) },
     // what each node's height is made from (burn.js): read it with the sampler's qualityAt; treat "clamped" depths as unknown
     quality: {
       encoding: "uint2-base64",
@@ -231,6 +336,8 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
     },
     // rings of OSM coastline too small to hold a node: not in the heights, so here, for anything that can run aground
     rocks: islets.rocks.map((r) => ({ id: r.id, top: r.top, points: r.points })),
+    // which source each node's height is from (layered heights only): 4 bits a node, the first in a byte's low bits
+    ...(lay && layerNames ? { source: sourceLayer(subsample(n, lay.source, stride), layerNames) } : {}),
     outside: null,
     seaLevel: 0,
     exaggeration: ex,
@@ -240,7 +347,9 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
     attribution,
     credit: doc.credit ?? "",
   };
-  const glb = encodeGLB({ meshes, nodes, extras: { terrain }, generator: "patchwork terrain", copyright: attribution || undefined });
+  const usedLayers = new Set(nodes.map((nd) => nd.extras?.layer).filter(Boolean));
+  const layerList = layerTable.filter((l) => usedLayers.has(l.id) || layerTable.some((c) => c.parent === l.id && usedLayers.has(c.id)));
+  const glb = encodeGLB({ meshes, nodes, extras: { terrain, ...(layerList.length ? { layers: layerList } : {}) }, generator: "patchwork terrain", copyright: attribution || undefined });
   const all = computeBounds(positions);
   const bounds = { min: [all.min[0], Math.min(all.min[1], Math.min(hmin, 0) - 10), all.min[2]], max: all.max };
   const stats = {
@@ -263,12 +372,29 @@ export function buildTerrain({ doc, dem, features, params = {} }) {
     isletsRaised: islets.raised.length,
     rocks: islets.rocks.length,
     agreement: sh.agreement.share,
+    buildings: buildingsMade,
+    trees: treeCount,
+    roofTriangles,
+    site: site ? site.made.length : 0,
+    measures: site?.measures ?? null,
   };
-  const notes = `${stats.triangles.toLocaleString("en")} triangles over ${n}² nodes (every node within tolerance, none on the wrong side of the water), ${made} structures, ${placed.length} marks; ${hmin.toFixed(1)} to ${hmax.toFixed(1)} m. The DEM is on OSM's side of the water at ${(sh.agreement.share * 100).toFixed(1)}% of nodes off the shore. ${islets.raised.length} OSM islets raised above the land floor (+${sh.landFloor.toFixed(2)} m), ${islets.rocks.length} too small for the grid drawn as rocks; ${counts.clamped.toLocaleString("en")} water nodes in ${clamped.length} places where the DEM is shallower than the water floor have made-up depths (extras.terrain.quality).`;
+  const notes = `${stats.triangles.toLocaleString("en")} triangles over ${n}² nodes (every node within tolerance, none on the wrong side of the water), ${made} structures, ${placed.length} marks${natural ? `, ${buildingsMade} buildings, ${treeCount.toLocaleString("en")} trees before a ${roofTriangles.toLocaleString("en")}-triangle forest canopy` : ""}${site ? `, ${site.made.length} of the place's own structures` : ""}; ${hmin.toFixed(1)} to ${hmax.toFixed(1)} m. The DEM is on OSM's side of the water at ${(sh.agreement.share * 100).toFixed(1)}% of nodes off the shore. ${islets.raised.length} OSM islets raised above the land floor (+${sh.landFloor.toFixed(2)} m), ${islets.rocks.length} too small for the grid drawn as rocks; ${counts.clamped.toLocaleString("en")} water nodes in ${clamped.length} places where the DEM is shallower than the water floor have made-up depths (extras.terrain.quality).`;
   return { glb, meta: { bounds, notes }, stats, heights, cls };
 }
 
 const round = (v) => Math.round(v * 100) / 100;
+
+/** A source layer for extras.terrain: { encoding, names, counts, data } (4 bits a node). */
+function sourceLayer({ values }, names) {
+  const N = values.length;
+  const bytes = new Uint8Array(Math.ceil(N / 2));
+  const counts = Object.fromEntries(names.map((s) => [s, 0]));
+  for (let k = 0; k < N; k++) {
+    bytes[k >> 1] |= (values[k] & 15) << ((k & 1) * 4);
+    counts[names[values[k]]]++;
+  }
+  return { encoding: "uint4-base64", names: [...names], counts, data: toBase64(bytes) };
+}
 
 /**
  * An indexed mesh cut into pieces of at most `max` vertices (so each takes
