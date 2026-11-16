@@ -39,6 +39,16 @@ export function routeOf(o, kindOf) {
   return kind === "built" ? null : kind;
 }
 
+/**
+ * Does an object show content that loads: a source, or a render of one? An
+ * object with neither (its shape is its traits' data, as a water body's) has
+ * nothing to load, so nothing waits for it. A group never does.
+ */
+export function showsContent(o) {
+  if (!o || typeof o !== "object" || isGroup(o)) return false;
+  return (typeof o.sourceUrl === "string" && o.sourceUrl !== "") || (typeof o.renderUrl === "string" && o.renderUrl !== "");
+}
+
 /** Lower-case, no leading dot. */
 export function normalizeExtension(ext) {
   return String(ext ?? "")

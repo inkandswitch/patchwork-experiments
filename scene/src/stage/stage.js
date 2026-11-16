@@ -76,7 +76,7 @@ import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc, seededRenderDoc } from "../datatype.js";
 import { atKey, defaultParams } from "../staleness.js";
-import { contentOf, describeForHumans, describeSource, matchProviders, routeOf } from "../providers.js";
+import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "../providers.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
@@ -1701,7 +1701,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (!viewport.ok) return true;
     const status = local.get().status ?? {};
     for (const [oid, o] of Object.entries(doc().objects ?? {})) {
-      if (!o || isGroup(o) || o.visible === false) continue;
+      // (an object with nothing to load, its shape its traits' data, is in)
+      if (!showsContent(o) || o.visible === false) continue;
       // a link's content is its doc's, whose stage answers for it
       if (routes.get(oid) === "scene") continue;
       if (scope.contentOf(oid)?.loaded) continue;
