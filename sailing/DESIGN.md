@@ -636,6 +636,17 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   Σfh·z needs no reading of compose's internals; both moments are then
   taken to her CG. Sailing's (`sailingWindage`) is her wrench in the
   point's wind less in air moving with her, sails stowed.
+- *`ctx.sea` has no clock.* It had `clock: () => api.clock.t()`, the same
+  function under a second name: a seam, not a source of run-to-run
+  divergence. Every reader (the crew's swimmer, the HUD's wind, the looks'
+  bobbing and flutter) asks `api.clock.t()` itself, with no fallback for a
+  missing clock (the HUD's and the crew's `?? 0` are gone: a stage always
+  has one). `ctx.sea` is exactly `{ oceanAt, wind, world, tick }`, and a
+  test reads the package's source, tests and probes for any clock read off
+  the sea or a defaulted `api.clock` (sea-view.test.js, "the sea's time is
+  api.clock.t()"). The probe pages' `clock(w)` reads the sailing
+  extension's own `api.clock.t()`. water/WATER.md's "`ctx.sea.clock` is
+  `api.clock.t`" is now stale; it is water's, left for the integrator.
 
 ## Trim feedback
 
@@ -652,9 +663,8 @@ the deck. The cloth is one camber, scaled. This section makes every one of
 those cues a **pure function of the physics' own state**: the fields
 `riggedSails` already computes, read out by `read()`. Nothing is animated
 on its own clock, so nothing can disagree with the forces. The one time
-input is the doc's world time, which every view shares (`ctx.sea.clock()`,
-`api.clock.t()`). It
-only sets the phase of a flutter whose amplitude the physics gives.
+input is the doc's world time, which every view shares (`api.clock.t()`).
+It only sets the phase of a flutter whose amplitude the physics gives.
 
 It covers five things, each below:
 1. the stock sloop carrying the contract;
@@ -1834,9 +1844,9 @@ api.loop((dt) => {
 // sea-view.js — createSeaView(api) → ctx.sea
 ctx.sea.oceanAt(p, not)  // the water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries (the water package's reader), null with none, tilted or the world's at another scale
 ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, or null
-ctx.sea.clock()          // the sea's time t (s): the doc's world time, api.clock.t()
 ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard
-ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads
+ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads; answers api.clock.t()
+// ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the crew's swimmer, the HUD's wind, the looks) asks api.clock.t()
 
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)

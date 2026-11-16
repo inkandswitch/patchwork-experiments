@@ -20,8 +20,10 @@
 //     world, so it holds whatever packages are installed; elsewhere the wind
 //     is another doc's, or nobody's (a dry room). Her camera ride and HUD
 //     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
-//   - clock: the doc's world time, api.clock.t() (scene TOOLS.md §7): the
-//     computing view's own, every other view's following it.
+//
+// It has no clock of its own: the sea's time is the doc's world time, which
+// every reader asks of api.clock.t() (scene TOOLS.md §7: the computing
+// view's own, every other view's following it).
 //
 // A boat at another scale than her world's doesn't sail (gravity doesn't
 // scale): no ocean, and a notice once.
@@ -166,8 +168,6 @@ export function createSeaView(api) {
       if (!windFrom) refreshWind();
       return wind;
     },
-    /** the sea's time: the doc's world time (s) */
-    clock: () => api.clock.t(),
     /** is this boat's doc the world (the outermost: a boat alone)? Her camera ride and her HUD show only then, or while you're aboard */
     world: () => !!api.ambient(WIND_AMBIENT)?.mine,
     /** One frame, after every clock has ticked: the wind's offset for the next frame's reads. */

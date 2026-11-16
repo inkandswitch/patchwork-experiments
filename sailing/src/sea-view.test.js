@@ -5,6 +5,9 @@
 // two flushes, compared by value), and how a boat reads her water and wind,
 // alone (exactly her own sea: W1) and through a link's frame (the wind's half
 // of W5), on a fake stage (test/fakes.js) whose doc is its own world.
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./test/ocean.js";
 import { GUSTINESS, createWind } from "./wind.js";
@@ -235,19 +238,23 @@ describe("createSeaView: a boat alone is her own world", () => {
       }
   });
 
-  it("its time is the doc's world time, the same on every view; paused, it stands still", () => {
+  it("is the water, the wind, whether she's the world, and its frame's tick: no clock of its own (the sea's time is api.clock.t())", () => {
     w = fakeWorld(scene());
-    const a = w.join("A");
-    const sa = createSeaView(a);
-    const sb = createSeaView(w.join("B"));
-    a.clock.process({ step() {} });
-    a.loop(() => sa.tick());
-    w.tick(1 / 60, 60);
-    expect(sa.clock()).toBeCloseTo(1, 6);
-    expect(sb.clock()).toBe(sa.clock());
-    w.join("C").clock.pause();
-    w.tick(1 / 60, 60);
-    expect(sa.clock()).toBeCloseTo(1, 6);
+    const sea = createSeaView(w.join("A"));
+    expect(Object.keys(sea).sort()).toEqual(["oceanAt", "tick", "wind", "world"]);
+  });
+
+  it("its tick answers the doc's world time, at every t of the table", () => {
+    for (const t of [0, 1.5, 30]) {
+      w?.done();
+      w = fakeWorld({ ...scene(), clock: { running: false, t } });
+      const api = w.join("A");
+      const sea = createSeaView(api);
+      let seen = null;
+      api.loop(() => (seen = sea.tick()));
+      w.tick(1 / 60, 1);
+      expect([t, api.clock.t(), seen]).toEqual([t, t, t]);
+    }
   });
 });
 
@@ -322,5 +329,48 @@ describe("the world's wind through a link (windFor): mapped by the frame, at the
   it("a paused world's wind is frozen at its latched time", () => {
     const wf = windFor(value, { matrix: place(0.3, [5, 0, 5]) }, { mine: false, delta: 9, running: false, worldT: 42 });
     expect(wf.at(1, 2, 0)).toEqual(wf.at(1, 2, 100));
+  });
+});
+
+// The sea's time is the doc's world time and nothing else: ctx.sea has no
+// clock, and nothing in the package (source, tests, probes) reads one off
+// it or defaults a missing clock. Every .js, .mjs and .html file is read,
+// as standalone.test.js reads them: the whole package, nothing sampled,
+// but for this file, whose table below names the forms on purpose.
+describe("the sea's time is api.clock.t(), read the one way", () => {
+  const SELF = fileURLToPath(import.meta.url);
+  const ROOT = resolve(dirname(SELF), "..");
+  const SKIP = new Set(["node_modules", "dist", ".pushwork", ".git"]);
+  const files = (dir, out = []) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP.has(e.name)) continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) files(p, out);
+      else if (/\.(m?js|html)$/.test(e.name) && p !== SELF) out.push(p);
+    }
+    return out;
+  };
+  /** a clock read off the sea */
+  const SEA_CLOCK = /\bsea\??\.clock\b/;
+  /** the stage's clock (api.clock, its t()) read as if it might be missing; a doc's stored clock field (doc.clock?.t) may be */
+  const DEFAULTED = /\bapi\??\.clock\?\.|\bclock\.t\?\.\(|\bclock\.t\(\)\s*\?\?/;
+
+  it("the patterns find every form they name, and nothing else", () => {
+    const hits = (re) => (line) => re.test(line);
+    expect(["ctx.sea.clock()", "s.sea?.clock?.()", "ctx.sea.clock", "x.sea.clockwise", "x.overseas.clock"].map(hits(SEA_CLOCK))).toEqual([true, true, true, false, false]);
+    expect(["api.clock?.t()", "api.clock.t?.()", "api.clock.t() ?? 0", "a.api?.clock?.t()", "api.clock.t()", "doc.clock?.running", "doc.clock?.t", "api ? api.clock.t() : null"].map(hits(DEFAULTED))).toEqual([true, true, true, true, false, false, false, false]);
+  });
+
+  const all = files(ROOT);
+  it(`reads every file (${all.length})`, () => expect(all.length).toBeGreaterThan(10));
+  it("no file reads a clock off the sea, or defaults a missing clock", () => {
+    const found = [];
+    for (const f of all)
+      readFileSync(f, "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          if (SEA_CLOCK.test(line) || DEFAULTED.test(line)) found.push(`${relative(ROOT, f)}:${i + 1}: ${line.trim()}`);
+        });
+    expect(found).toEqual([]);
   });
 });
