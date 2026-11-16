@@ -914,7 +914,12 @@ Made after review (round 1), also unattended:
     stage could shrink "replicated" to that (a process every view has,
     never saved, with nothing to step), or keep the grid for a future
     deterministic simulation that is stepped. That is a stage decision,
-    left to you.
+    left to you. *Closed as decided, 2026-11-15: the lead said the machine
+    doesn't need to be a stepped process ("i dont think it needs to"). It
+    stays pulled, its process only keeping world time going. Nothing in
+    the stage changes: the replicated grid stays as it is, waiting for a
+    simulation that is stepped, and is not shrunk on the machine's
+    account.*
 14. **Starting is patient** (`src/scene/start.js`). A view that doesn't win
     the object's `machine.session` claim asks again every 2 s on the
     stage's time (`api.clock.after`). So does the claim holder when it
@@ -1060,7 +1065,12 @@ Round 2's review (Decisions 29-34):
     the stage takes a rule only with two unrelated consumers, and this is
     one. With Decision 25, a cabinet that has a game no longer takes a WAD,
     so the overlap is only an empty cabinet's. Left for the lead, with the
-    rule written down here as the proposal.
+    rule written down here as the proposal. *Answered 2026-11-15: not this
+    rule, and not now. The lead wants the drop interfaces cleaned up so
+    that the overlapping affordance can't exist at all ("we should clean
+    up the interfaces so that this affordance doesn't exist but not yet").
+    Recorded as a next-phase item; nothing is built and the stage takes no
+    drop-order rule.*
 34. **The pad and the port are `hands.js`.** What sitting, Escape and P do
     moved out of the extension into a module of its own, given the
     machines, the held-tool slot, the roster's `sitting` and the trait's
@@ -1443,15 +1453,15 @@ Round 3's review (Decisions 41-45):
   a player from the 3D world", has what step 7 showed about it.
 - A WAD dropped on an empty cabinet where the doom package is installed
   too goes to whichever of the two is first in registry order (Decision
-  33): the stage rule that would settle it waits for a second consumer.
+  33). Next phase, by the lead's word: clean up the drop interfaces so the
+  overlapping affordance can't exist, rather than a stage rule that orders
+  the offers.
 - Doom's mouse in a seat (Decision 15 stands: keys only).
 - The host in a worker, in a scene (decision 9).
 - A checkpoint nobody wrote in time is written by any peer a period later
   (with a clock passed in there is no `SyncedWall` reference). The view
   computing the world (`api.clock.computer()`) is the natural reference.
 - A read-only viewer spectating (decision 10).
-- Whether the stage keeps its replicated grid stepping (Decision 13), the
-  lead's call.
 - The Machine tool's own changes here are mechanical (the content helpers
   and `newSession` moved to load.js, the pad split from its DOM listeners;
   in round 2 its sound on the speaker and its game from `gameOf`). Checked
