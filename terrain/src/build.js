@@ -31,6 +31,7 @@ import { effectiveCanopy, placeTrees, forestRoof, treeInstances } from "./forest
 import { buildingMesh } from "./buildings.js";
 import { siteMesh, inBox } from "./site.js";
 import { unpackLayers, FILLED, FLOOR } from "./layered.js";
+import { mooredBoats, boatMesh } from "./boats.js";
 
 export const HEIGHT_SCALE = 0.02;
 export const FRAME = "x east, y up, z south; metres; y = 0 mean water level";
@@ -47,6 +48,7 @@ export const DEFAULTS = Object.freeze({
   forest: true,
   buildings: true,
   site: true,
+  boats: true,
 });
 
 /** The GLB's layers (scene README, "GLB conventions"): what can be shown or hidden. The ground is on none: always shown. */
@@ -56,6 +58,7 @@ export const LAYERS = Object.freeze([
   { id: "harbour", name: "Docks, floats and breakwaters (OpenStreetMap)" },
   { id: "marks", name: "Lights, buoys and beacons" },
   { id: "landmarks", name: "Landmarks" },
+  { id: "boats", name: "Moored boats (dressing: not data)" },
 ]);
 
 /**
@@ -243,6 +246,16 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     made = st.made;
     if (st.positions.length) add("Harbour structures", { positions: st.positions, colors: st.colors, roughness: 0.9 }, "harbour");
   }
+  // boats along the floats: dressing (boats.js)
+  let boatCount = 0;
+  if (p.boats && natural && p.structures) {
+    const moored = mooredBoats((features.structures ?? []).filter((x) => !clearIds.has(x.id)), { inside });
+    boatCount = moored.length;
+    if (moored.length) {
+      const bm = boatMesh(moored);
+      add("Moored boats", { positions: bm.positions, colors: bm.colors, roughness: 0.6 }, "boats", { dressing: "Boats placed by hash along the floats: not data." });
+    }
+  }
   if (site) {
     for (const l of doc.site?.layers ?? []) if (!layerTable.some((x) => x.id === l.id)) layerTable.push({ ...l });
     for (const [layer, m] of Object.entries(site.layers)) {
@@ -375,6 +388,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     rocks: islets.rocks.length,
     agreement: sh.agreement.share,
     buildings: buildingsMade,
+    boats: boatCount,
     trees: treeCount,
     roofTriangles,
     site: site ? site.made.length : 0,

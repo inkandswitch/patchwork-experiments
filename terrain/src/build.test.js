@@ -46,12 +46,13 @@ describe("buildTerrain", () => {
     expect(built.stats.water).toBeGreaterThan(0);
   });
 
-  it("is a valid GLB that three.js loads: ground, skirt, structures and marks, in metres", async () => {
+  it("is a valid GLB that three.js loads: ground, skirt, structures, boats and marks, in metres", async () => {
     const gltf = await load(built.glb);
     const names = [];
     gltf.scene.traverse((o) => o.isMesh && names.push(o.name || o.parent?.name));
     // (three.js writes a name's spaces as underscores)
-    expect(names).toEqual(["Ground", "Skirt", "Harbour_structures", "Marks"]);
+    // (the fixture is a place with a look: its float gets boats)
+    expect(names).toEqual(["Ground", "Skirt", "Harbour_structures", "Moored_boats", "Marks"]);
     const { json } = parseGLB(built.glb);
     expect(json.asset.extras.units).toBe("m");
     expect(json.meshes[0].extras.legend.stops.length).toBe(32);

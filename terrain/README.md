@@ -269,11 +269,17 @@ which they are), and the buildings are a primitive a colour: Ucluelet's GLB
 is about 22.5 MB, Cadboro Bay's 15.3 MB (it was 7.8 MB; its 5,910
 buildings are most of the rest).
 
+- **Boats on the floats** (`boats.js`): dressing, not data. Nobody maps
+  which boat is in which slip, so each float's slips (one every 12 m a side,
+  about two in three taken) get a troller, a small seiner or crabber, or an
+  aluminium sportfisher by hash of the float's id and the slip, the same
+  every build. Their layer says they are dressing.
+
 ## Layers
 
 The GLB declares layers (scene README, "GLB conventions"): **Forest**,
 **Buildings**, **Docks, floats and breakwaters**, **Lights, buoys and
-beacons**, **Landmarks**, and a place's own (Ucluelet's boatyard and its four
+beacons**, **Landmarks**, **Moored boats (dressing)**, and a place's own (Ucluelet's boatyard and its four
 sub-layers, the removed buildings hidden by default). The ground is on none.
 
 ## The frame
