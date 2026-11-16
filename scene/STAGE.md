@@ -1136,11 +1136,12 @@ view grants it while nothing else wants the pointer (a held tool with
 `pointer: true`, a selection, an open popover or drawer). The browser's
 Escape releases it; the next press on the world only relocks. A refused
 lock leaves the body looking by drag, and so does touch (`touch`: every
-press on the view, wherever it lands, says whether it was a finger; a
-coarse pointer starts as touch; keys never change it). A finger on a locked
-view lets the lock go; a mouse press after touch is an ordinary press, on
-which the lock follows the formula (TOOLS.md Decisions 9). `locked ⇔
-body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch`.
+press on the view, wherever it lands, edges included, says whether it was
+a finger; a coarse pointer starts as touch; keys never change it). A finger
+on a locked view lets the lock go and leaves nothing released; a mouse
+after touch finds the lock released, so the next press on the world only
+relocks (TOOLS.md Decisions 9). `locked ⇔ body.lock ∧ ¬wanted ∧ ¬released
+∧ ¬refused ∧ ¬touch`.
 
 ## `api`
 

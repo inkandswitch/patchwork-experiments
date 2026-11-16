@@ -248,7 +248,7 @@ function call(owner, obj, name, ...args) {
  * @param {{
  *   port: HTMLElement,                   // the canvas's positioned parent; x, y are relative to it
  *   canvas: HTMLCanvasElement,
- *   keyRoot: HTMLElement,                // keys are heard here (the tool's root)
+ *   keyRoot: HTMLElement,                // keys are heard here, and what the input is (every press): the tool's root, around the port and its edges
  *   pick: (x: number, y: number, opts?: object) => object | null,
  *   pickWidget: (ev: object) => object | null,
  *   ray: (x: number, y: number) => { origin: any, dir: any },
@@ -432,11 +432,15 @@ export function createRouter(o) {
     if (dispatch(kind, retype(ev, kind))) e?.preventDefault?.();
   }
 
-  function onPointerDown(e) {
-    // every press on the view says what the input is, wherever it lands (the
-    // chip, a prompt's button): a finger never locks the pointer, a mouse
-    // press locks by the formula, in this handler, with user activation
+  // Every press on the view says what the input is, wherever it lands (the
+  // canvas, the chip, a prompt's button, an edge's bar), before anything
+  // hears it: a finger lets the lock go and never takes it; a mouse after a
+  // finger leaves it to the next press on the world (stage/pointer.js).
+  function onInput(e) {
     pointerEvent({ type: "input", touch: e.pointerType === "touch" });
+  }
+
+  function onPointerDown(e) {
     if (e.target !== canvas) return;
     // a second pointer while a gesture is claimed is swallowed; while one is
     // unclaimed it belongs to orbit (a pinch), and the first is no longer a click
@@ -1028,6 +1032,7 @@ export function createRouter(o) {
   // ─── wiring ───────────────────────────────────────────────────────────────
 
   const listeners = [
+    [keyRoot ?? port, "pointerdown", onInput, { capture: true }],
     [port, "pointerdown", onPointerDown, { capture: true }],
     [port, "pointermove", onPointerMove, { capture: true }],
     [port, "pointerup", onPointerUp, { capture: true }],

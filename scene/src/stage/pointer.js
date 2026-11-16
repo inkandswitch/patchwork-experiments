@@ -9,7 +9,11 @@
 // refuses (`refused`) leaves the body looking by drag, until the body
 // changes. While the input is touch (`touch`: the last press on the view was
 // a finger) there is no mouse to look with: the body looks by drag, as when
-// refused, and a press by a mouse takes the lock back as an ordinary press.
+// refused, and nothing is released (there is no lock to take back). A mouse
+// after a finger finds the lock released, as after the browser's Escape:
+// wherever it pressed, the next press on the world only takes the lock back,
+// so the lock is only ever taken by a press on the world that is nothing
+// else (never by a press on the chip or a button, never mid-click).
 //
 //   locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch
 
@@ -23,7 +27,8 @@ export const lockedNow = ({ lock = false, wanted = false, released = false, refu
  * { type: "release" } (the browser let go: its Escape, the window losing
  * focus), { type: "refuse" } (a request was refused), { type: "body",
  * lock } (the top body changed), { type: "want", wanted }, { type: "input",
- * touch } (a press on the view, by a finger or not).
+ * touch } (a press anywhere on the view, by a finger or not; it comes before
+ * that press's own `press`).
  * @param {{ lock: boolean, wanted: boolean, released: boolean, refused: boolean, touch: boolean }} s
  * @param {object} ev
  * @returns {{ state: object, consumed: boolean }}  consumed: the press only relocked
@@ -44,8 +49,14 @@ export function pointerStep(s, ev) {
       return { state: { ...s, lock: !!ev.lock, released: false, refused: false }, consumed: false };
     case "want":
       return { state: { ...s, wanted: !!ev.wanted }, consumed: false };
-    case "input":
-      return { state: { ...s, touch: !!ev.touch }, consumed: false };
+    case "input": {
+      const touch = !!ev.touch;
+      if (touch === !!s.touch) return { state: s, consumed: false };
+      // a finger: no lock, and none to take back
+      if (touch) return { state: { ...s, touch, released: false }, consumed: false };
+      // a mouse after a finger: the lock it would take waits for a press on the world
+      return { state: { ...s, touch, released: !!s.released || lockedNow({ ...s, touch }) }, consumed: false };
+    }
     default:
       return { state: s, consumed: false };
   }

@@ -34,9 +34,12 @@ describe("the pointer (H5), exhaustively", () => {
       for (const ev of EVENTS) {
         n++;
         const { state: t, consumed } = pointerStep(s, ev);
-        // the formula holds after every event: no field outside the five
+        // no field outside the five
         expect(Object.keys(t).sort()).toEqual([...FIELDS].sort());
         if (ev.type !== "press") expect(consumed).toBe(false);
+        // what may take the lock: a press on the world that is then nothing else, a new body, or the pointer no
+        // longer wanted (both chosen in the view: a menu, a key); never a key, a release, a refusal or an input
+        if (!lockedNow(s) && lockedNow(t)) expect(consumed || ev.type === "body" || (ev.type === "want" && !ev.wanted)).toBe(true);
         switch (ev.type) {
           case "press":
             // only a press after a release, on a body that locks, with nothing wanting the pointer and no finger,
@@ -67,10 +70,21 @@ describe("the pointer (H5), exhaustively", () => {
             expect(t).toEqual({ ...s, wanted: ev.wanted });
             break;
           case "input":
-            // only what the input is: a finger never locks; a mouse locks by the formula
-            expect(t).toEqual({ ...s, touch: ev.touch });
+            if (ev.touch === s.touch) {
+              // the same input again: nothing
+              expect(t).toBe(s);
+            } else if (ev.touch) {
+              // a finger: no lock, and none to take back
+              expect(t).toEqual({ ...s, touch: true, released: false });
+            } else {
+              // a mouse after a finger: what it would lock waits for a press on the world, which only relocks
+              const waits = s.lock && !s.wanted && !s.refused;
+              expect(t).toEqual({ ...s, touch: false, released: s.released || waits });
+              expect(pointerStep(t, { type: "press" }).consumed).toBe(waits);
+            }
+            // an input never locks: the lock is only ever taken by a press on the world that is nothing else
+            if (!lockedNow(s)) expect(lockedNow(t)).toBe(false);
             if (ev.touch) expect(lockedNow(t)).toBe(false);
-            else expect(lockedNow(t)).toBe(lockedNow({ ...s, touch: false }));
             break;
         }
       }
