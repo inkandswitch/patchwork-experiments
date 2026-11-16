@@ -49,27 +49,46 @@ const within = (circles, x, z) => !circles?.length || circles.some((c) => (x - c
 
 /**
  * Stratus baked into colours (a place's clouds.bake): from `from` metres up,
- * every vertex lerped toward the fog's colour by (y − from) / span (at most
- * `max`), ± `noise` of that by a hash of where it is (to the metre), so the
- * hilltops dissolve into the overcast in ragged patches, not bands, and no
- * sheet seen edge-on draws a stripe. In place; returns how many vertices it
- * touched. Pure but for `colors`.
+ * every vertex lerped toward `colour` by the band's factor at its height
+ * (stratusAt), ± `noise` of that by a hash of where it is (to the metre), so
+ * the hills dissolve into the overcast in ragged patches, not bands, and no
+ * sheet seen edge-on draws a stripe. The colour is the one the sky's horizon
+ * reads as once lit (darker than the horizon's own: lit by the sky and the
+ * sun a hill comes out lighter than its colour), so a summit never shows
+ * brighter than the sky behind it, as snow. In place; returns how many
+ * vertices it touched. Pure but for `colors`.
  * @param {Float32Array} positions  xyz
  * @param {Float32Array} colors  rgb (linear), as many
  */
-export function bakeStratus(positions, colors, { from = 250, span = 300, max = 0.85, noise = 0.3, colour = "#959ea1" } = {}) {
-  const fog = hexToLinear(colour).slice(0, 3);
+export function bakeStratus(positions, colors, o = {}) {
+  const fog = hexToLinear(o.colour ?? "#959ea1").slice(0, 3);
+  const from = o.from ?? 250, noise = o.noise ?? 0.3, max = o.max ?? 0.85;
   let touched = 0;
   for (let v = 0; v < positions.length / 3; v++) {
     const y = positions[v * 3 + 1];
     if (y <= from) continue;
     const x = Math.round(positions[v * 3]), z = Math.round(positions[v * 3 + 2]);
     const u = hash01((Math.imul(x, 73856093) ^ Math.imul(z, 19349663)) >>> 0, 96);
-    const t = Math.max(0, Math.min(max, Math.min(1, (y - from) / span) * (1 + (u - 0.5) * 2 * noise)));
+    const t = Math.max(0, Math.min(max, stratusAt(y, o) * (1 + (u - 0.5) * 2 * noise)));
     for (let c = 0; c < 3; c++) colors[v * 3 + c] += (fog[c] - colors[v * 3 + c]) * t;
     touched++;
   }
   return touched;
+}
+
+/**
+ * The stratus's share at height y (before the noise): with a `peak`, a band
+ * (cloud lies across the hills, their tops in and out of it): 0 at `from`,
+ * rising (smoothly) to `max` at `peak`, easing back to `above` over the
+ * next `span` metres and holding there; without, a ramp, (y − from) / span
+ * (at most 1). Pure.
+ */
+export function stratusAt(y, { from = 250, span = 300, peak = null, max = 0.85, above = 0.45 } = {}) {
+  if (y <= from) return 0;
+  if (peak == null) return Math.min(1, (y - from) / span);
+  const smooth = (t) => t * t * (3 - 2 * t);
+  if (y <= peak) return max * smooth(Math.min(1, (y - from) / (peak - from)));
+  return max + (above - max) * smooth(Math.min(1, (y - peak) / span));
 }
 
 /** A bank's polar grid: RINGS rings out from its middle, SECTORS sectors round. */

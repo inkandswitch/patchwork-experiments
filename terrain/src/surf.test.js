@@ -224,3 +224,44 @@ describe("white water over the shallows, and boulders", () => {
     expect(boulders(pieces, { chance: 0 }).boulders).toBe(0);
   });
 });
+
+import { hexToLinear as hexLin } from "./glb.js";
+describe("boulders as a place's stones: clusters, 7 or 9 sides, three sizes, two greys", () => {
+  // a straight shore along x = 0, 40 pieces, all exposed
+  const pieces = Array.from({ length: 40 }, (_, q) => ({ a: [0, q * 20], b: [0, q * 20 + 20], sea: [-1, 0], key: `way/3#${q}`, exposure: 1 }));
+  const o = { chance: 1, count: [3, 5], sides: [7, 9], sizes: [0.45, 0.9, 1.4], colours: ["#4d4b47", "#5a5752"] };
+  const b = boulders(pieces, o);
+  it("puts 3 to 5 on every piece, each 7- or 9-sided (5 triangles a side: a rounded shoulder), at most 1.4 × 1.1 m in radius, in one of the two greys (every stone)", () => {
+    const greys = o.colours.map((h) => hexLin(h).slice(0, 3));
+    let tri = 0, stones = 0;
+    const sides = new Set();
+    while (tri * 9 < b.positions.length) {
+      // a stone's triangles: its middle is the apex of each third triangle; count its sides by its colour's run
+      let n = 0;
+      const cx = b.positions[(tri + 4) * 9 + 6];
+      while ((tri + 5 * n) * 9 < b.positions.length && b.positions[(tri + 5 * n + 4) * 9 + 6] === cx) n++;
+      // two stones never share a middle here (spread along the piece), so the run is one stone's
+      expect([7, 9]).toContain(n);
+      sides.add(n);
+      for (let k = 0; k < 5 * n; k++) {
+        const c = [b.colors[(tri + k) * 9], b.colors[(tri + k) * 9 + 1], b.colors[(tri + k) * 9 + 2]];
+        expect(greys.some((g) => { const f = c[0] / g[0]; return f >= 0.8 - 1e-6 && f <= 1.05 + 1e-6 && Math.abs(c[1] / g[1] - f) < 1e-5; })).toBe(true);
+        for (let v = 0; v < 3; v++) {
+          const x = b.positions[(tri + k) * 9 + v * 3];
+          expect(x).toBeLessThanOrEqual(-1 + 1.4 * 1.1 + 1e-6);
+          expect(x).toBeGreaterThanOrEqual(-4 - 1.4 * 1.1 - 1e-6);
+        }
+      }
+      tri += 5 * n;
+      stones++;
+    }
+    expect(stones).toBe(b.boulders);
+    expect(b.boulders).toBeGreaterThanOrEqual(3 * pieces.length);
+    expect(b.boulders).toBeLessThanOrEqual(5 * pieces.length);
+    expect(sides).toEqual(new Set([7, 9]));
+  });
+  it("is the same every time, and the default (one six-sided black boulder) unchanged by the new options' absence", () => {
+    expect(Array.from(boulders(pieces, o).positions)).toEqual(Array.from(b.positions));
+    expect(boulders(pieces, { chance: 1 }).positions.length / 9).toBe(18 * pieces.length);
+  });
+});

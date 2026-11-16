@@ -14,6 +14,7 @@
  *     heights: { encoding: "int16le-base64", scale, offset, data },   // height = offset + scale·v, row-major (i fastest)
  *     quality: { encoding: "uint2-base64", names, meaning, data, counts, clamped },  // what each node's height is made from
  *     rocks: [{ id, top, points: [[x, z], …] }],   // islets too small for the grid: not in the heights
+ *     canopy?: { encoding: "uint8-base64", grid: { nx, nz, x0, z0, cell }, data },  // the trees' (and roofs') height over the ground, metres, the most in each coarse cell (where the place has a look)
  *     outside: null,                        // off the grid: open water with no bottom
  *     seaLevel: 0, datum, origin, projection, places, sources, attribution, credit }
  *
@@ -32,6 +33,7 @@
  *                             //   "clamped"  water where the DEM says shallower than the water floor (or land): the depth is
  *                             //              made up (−0.57 m); treat it as unknown (a marina, a drying flat, a DEM error)
  *   t.rockAt(x, z)            // the rock (extras.terrain.rocks) whose outline holds the point, or null: ground there at rock.top
+ *   t.surfaceAt(x, z)         // the ground and what stands on it (the canopy's height, bilinear between its coarse nodes), or null off the grid: a skyline
  */
 
 /** Base64 to bytes (no atob/Buffer needed). */
@@ -162,8 +164,21 @@ export function decodeTerrain(t) {
     names = t.quality.names;
   }
   const rocks = Array.isArray(t.rocks) ? t.rocks : [];
+  // the canopy over the ground, coarse: a skyline (a horizon's shape), not a height to stand on
+  let canopyAt = () => 0;
+  if (t.canopy?.encoding === "uint8-base64") {
+    const cg = t.canopy.grid;
+    const cb = fromBase64(t.canopy.data ?? "");
+    if (cb.length !== cg.nx * cg.nz) throw new Error(`${cb.length} bytes of canopy for a ${cg.nx} × ${cg.nz} grid.`);
+    const cs = sampler(cg, cb, 1);
+    canopyAt = (x, z) => cs.heightAt(x, z) ?? 0;
+  }
   return {
     ...base,
+    surfaceAt(x, z) {
+      const g0 = base.heightAt(x, z);
+      return g0 == null ? null : g0 + canopyAt(x, z);
+    },
     seaLevel: t.seaLevel ?? 0,
     datum: t.datum ?? null,
     places: t.places ?? [],

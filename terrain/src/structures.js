@@ -22,7 +22,7 @@ export const kindOf = (s) => (s.kind === "pier" ? (s.floating ? "float" : "pier"
  * @param {{ inside?: (x: number, z: number) => boolean }} [o]  keep only structures with a point inside (the grid)
  * @returns {{ positions: Float32Array, colors: Float32Array, made: number, skipped: string[] }}
  */
-export function structureMesh(structures, { inside = () => true } = {}) {
+export function structureMesh(structures, { inside = () => true, dress = {} } = {}) {
   const s = soup();
   let made = 0;
   const skipped = [];
@@ -35,6 +35,8 @@ export function structureMesh(structures, { inside = () => true } = {}) {
     if (ring && prism(s, ring, k.bottom, k.top, k.colour)) made++;
     else skipped.push(st.id);
     if (k.piles && !st.area) floatPiles(s, st, width, k.piles, inside);
+    // a place's dressing for one structure (its look's structures: a wharf's railings and curb)
+    if (ring && dress[st.id]?.rail) railing(s, ring, k.top, dress[st.id]);
   }
   return { ...s.done(), made, skipped };
 }
@@ -62,6 +64,29 @@ export function floatPiles(s, st, width, { every, top: [t0, t1], colour, r }, in
     }
   }
   return q;
+}
+
+/**
+ * Railings round a deck's outline at `top`: a curb (0.2 m wide, 0.15 m
+ * high) in `curb`, square posts every `every` metres and a top rail at 1.05 m
+ * in `rail`, along every edge of the ring. Returns the posts made.
+ */
+export function railing(s, ring, top, { rail, curb = null, every = 2.5 }) {
+  let posts = 0;
+  for (let a = 0; a < ring.length; a++) {
+    const A = ring[a], B = ring[(a + 1) % ring.length];
+    const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    if (L < 0.5) continue;
+    if (curb) prism(s, widen([A, B], 0.2), top, top + 0.15, curb);
+    prism(s, widen([A, B], 0.08), top + 0.97, top + 1.05, rail);
+    const n = Math.max(1, Math.round(L / every));
+    for (let i = 0; i < n; i++) {
+      const t = i / n, x = A[0] + (B[0] - A[0]) * t, z = A[1] + (B[1] - A[1]) * t;
+      prism(s, [[x - 0.05, z - 0.05], [x + 0.05, z - 0.05], [x + 0.05, z + 0.05], [x - 0.05, z + 0.05]], top, top + 1.05, rail);
+      posts++;
+    }
+  }
+  return posts;
 }
 
 export const ROCK = Object.freeze({ colour: "#7a7267" });

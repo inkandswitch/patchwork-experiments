@@ -161,7 +161,7 @@ try {
   check("the heightfield is the whole grid at 20 m", J(t.grid) === J({ nx: GRID.n, nz: GRID.n, x0: GRID.x0, z0: GRID.z0, cell: GRID.cell }), t.grid);
   check("the boatyard and the lighthouse are among its places", ["Rising Tide Boat Works (the hangar), 1970 Harbour Crescent", "Amphitrite Point Lighthouse"].every((n) => t.places.some((p) => p.name === n)), t.places.map((p) => p.name));
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
-  check("the GLB's layers: forest, buildings, boats, surf, low cloud, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden)", ["forest", "buildings", "boats", "surf", "weather", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
+  check("the GLB's layers: forest, buildings, boats, surf, the shore's dressing, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden) (no cloud mesh: the stratus is baked into the hills)", ["forest", "buildings", "boats", "surf", "shore", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
   check("the trees are drawn instanced (a species a tile, so the stage culls the forest a tile at a time)", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
   check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
@@ -206,6 +206,8 @@ try {
     "ucluelet-basin-high": [[220, 45, 330], [390, 0, 520]],
     "ucluelet-whiskey": [[1000, 5, 520], [910, 6, 710]],
     "ucluelet-midharbour": [[560, 6, 60], [1000, 10, 800]],
+    // the yard close: the red Quonset, the galvanised one, the courtyard's slab and the frontage's stones
+    "ucluelet-courtyard": [[-50, 4, 150], [0, 5, 95]],
   };
   for (const [name, [pos, tgt]] of Object.entries(views)) {
     await P(`setCamera(${J(pos)}, ${J(tgt)})`);
@@ -218,6 +220,8 @@ try {
   console.error(`frame times (${args.gpu ? "GPU" : "software: not a budget"}), median ms: ${Object.entries(frames).map(([k, v]) => `${k.replace("ucluelet-", "")} ${v.median}`).join(", ")}`);
   // on the machine's GPU (--gpu): the home view within the budget it had before the forest was made denser (22.7 ms on an M4, 2026-11-16)
   if (args.gpu) check(`the home view renders in ${FRAME_BUDGET} ms or less (median of 40, GPU)`, frames["ucluelet-home"].median <= FRAME_BUDGET, frames["ucluelet-home"]);
+  const grain = await P("grain()");
+  check("the ground carries its grain and the place dresses it (every ground mesh's material, a program compiled with it)", grain.meshes > 0 && grain.dressed === grain.meshes && grain.grainPrograms > 0, grain);
   check("no view's top is black (the sky drawn at every eye)", Object.values(topPixels).every((c) => Math.max(...c) > 24), topPixels);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);

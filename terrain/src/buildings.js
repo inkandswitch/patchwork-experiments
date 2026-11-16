@@ -307,12 +307,82 @@ export function buildingMesh(buildings, { groundAt, sinkAt, coverAt, leaveOut = 
     const floor = onDeck ? Math.max(hi, deckAbove) : hi;
     const base = onDeck ? floor - 0.5 : lo - sinkAt(lo);
     const cream = onDeck && industrial && palette.plant ? palette.plant : null;
-    house(s, pts, { base, eave: floor + eaveH, rise, roof: rise > 0 ? "gable" : "flat", walls: cream ?? walls, roofColour, box });
+    // a place's own form for a landmark (its look's buildings.overrides): cross-gables to the water, or a curved metal roof
+    const form = rectangular ? b.form ?? null : null;
+    const fRise = form === "gables" ? Math.max(rise, 0.45 * box.hv) : rise;
+    house(s, pts, { base, eave: floor + eaveH, rise: form === "curved" ? 0 : fRise, roof: form === "curved" ? "none" : fRise > 0 ? "gable" : "flat", walls: cream ?? walls, roofColour, box });
+    if (form === "gables") crossGables(s, box, { eave: floor + eaveH, rise: fRise, bays: b.gables ?? 4, side: waterSide(box, groundAt), walls, roofColour, trim: b.trim ?? DETAIL.trim });
+    if (form === "curved") barrel(s, box, { eave: floor + eaveH, rise: b.rise ?? Math.max(1.2, 0.35 * box.hv), walls, roofColour });
+    if (b.stone) band(s, pts, base, floor + (b.stoneHeight ?? 1.4), b.stone);
     if (onDeck) (pileDeck(s, pts, { deck: floor, groundAt }), decks++);
-    if (details) facade(s, pts, { floor, eave: floor + eaveH, ...(industrial ? { ribs: cream ?? walls } : {}), windows: cls !== "shed" });
+    if (details) facade(s, pts, { floor, eave: floor + eaveH, ...(industrial ? { ribs: cream ?? walls } : {}), windows: cls !== "shed", ...(b.trim ? { trim: b.trim } : {}) });
     made++;
   }
   return { ...s.done(), made, skipped, decks };
+}
+
+/** Which long side of a box faces the water: +1 (its +v side) or −1, the side whose middle has the lower ground. */
+export function waterSide(box, groundAt) {
+  const g = (sv) => groundAt(box.c[0] + box.v[0] * sv, box.c[1] + box.v[1] * sv) ?? 0;
+  return g(box.hv + 3) <= g(-box.hv - 3) ? 1 : -1;
+}
+
+/**
+ * Cross-gables along a gabled box's long side `side` (+1 its +v side): `bays`
+ * gable bays, each a wall triangle on the facade from the eave to 0.85 of the
+ * main roof's rise, a white rake trim, and two roof slopes running back into
+ * the main roof (Whiskey Landing's four to the water). Returns the bays made.
+ */
+export function crossGables(s, box, { eave, rise, bays, side, walls, roofColour, trim }) {
+  const { c, u, v, hu, hv } = box;
+  const at = (su, sv, y) => [c[0] + u[0] * su + v[0] * side * sv, y, c[1] + u[1] * su + v[1] * side * sv];
+  const W = rgb(walls), R = rgb(roofColour), T = rgb(trim);
+  const pitch = (2 * hu) / bays, half = (pitch * 0.66) / 2, g = rise * 0.85, front = hv + 0.35;
+  for (let q = 0; q < bays; q++) {
+    const m = -hu + pitch * (q + 0.5);
+    const out = at(m, hv + 5, eave);
+    triOut(s, at(m - half, hv + 0.05, eave), at(m + half, hv + 0.05, eave), at(m, hv + 0.05, eave + g), W, out);
+    // the rake trim: a band under each slope's edge
+    quadOut(s, at(m - half, front, eave - 0.05), at(m, front, eave + g - 0.05), at(m, front, eave + g + 0.12), at(m - half, front, eave + 0.12), T, out);
+    quadOut(s, at(m, front, eave + g - 0.05), at(m + half, front, eave - 0.05), at(m + half, front, eave + 0.12), at(m, front, eave + g + 0.12), T, out);
+    // the slopes, back to the main roof's ridge line (where they're under it, the main roof hides them)
+    quadUp(s, at(m - half, front, eave), at(m, front, eave + g), at(m, 0, eave + g), at(m - half, 0, eave), R);
+    quadUp(s, at(m, front, eave + g), at(m + half, front, eave), at(m + half, 0, eave), at(m, 0, eave + g), R);
+  }
+  return bays;
+}
+
+/** A curved metal roof over a box: a half-ellipse `rise` high across its short span, 8 strips along its length, its ends closed in the walls' colour. */
+export function barrel(s, box, { eave, rise, walls, roofColour, segments = 8 }) {
+  const { c, u, v, hu, hv } = box;
+  const at = (su, k) => {
+    const t = (Math.PI * k) / segments;
+    return [c[0] + u[0] * su + v[0] * hv * dcos(t), eave + rise * dsin(t), c[1] + u[1] * su + v[1] * hv * dcos(t)];
+  };
+  const R = rgb(roofColour), W = rgb(walls);
+  for (let k = 0; k < segments; k++) {
+    const t = (Math.PI * (k + 0.5)) / segments;
+    const out = [c[0] + v[0] * hv * 3 * dcos(t), eave + rise * 3 * dsin(t), c[1] + v[1] * hv * 3 * dcos(t)];
+    quadOut(s, at(-hu - 0.3, k), at(hu + 0.3, k), at(hu + 0.3, k + 1), at(-hu - 0.3, k + 1), R.map((x) => x * (0.85 + 0.2 * dsin(t))), out);
+    for (const e of [-1, 1]) triOut(s, [c[0] + u[0] * hu * e, eave, c[1] + u[1] * hu * e], at(hu * e, k), at(hu * e, k + 1), W, [c[0] + u[0] * hu * e * 3, eave, c[1] + u[1] * hu * e * 3]);
+  }
+}
+
+/** A band round a ring a hand proud of its walls (a stone base): from y0 to y1. */
+export function band(s, ring, y0, y1, colour) {
+  const pts = dedupe(ring);
+  const ccw = signedArea(pts) > 0 ? pts : pts.slice().reverse();
+  const cx = ccw.reduce((a, p) => a + p[0], 0) / ccw.length, cz = ccw.reduce((a, p) => a + p[1], 0) / ccw.length;
+  const C = rgb(colour);
+  for (let a = 0; a < ccw.length; a++) {
+    const A = ccw[a], B = ccw[(a + 1) % ccw.length];
+    let nx = B[1] - A[1], nz = -(B[0] - A[0]);
+    // outward: away from the middle
+    if (nx * ((A[0] + B[0]) / 2 - cx) + nz * ((A[1] + B[1]) / 2 - cz) < 0) (nx = -nx), (nz = -nz);
+    const l = len(nx, nz) || 1;
+    const o = 0.1, ax = A[0] + (nx / l) * o, az = A[1] + (nz / l) * o, bx = B[0] + (nx / l) * o, bz = B[1] + (nz / l) * o;
+    quadOut(s, [ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az], C, [ax + (ax - cx), y0, az + (az - cz)]);
+  }
 }
 
 // ─── geometry helpers ───

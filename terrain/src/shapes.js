@@ -128,8 +128,9 @@ export function cylinder(s, x, z, y0, y1, r0, r1, hex, seg = 12) {
  * way they face (up lighter, down darker), so a pile reads without normals.
  * `hex` a colour or [r, g, b] linear.
  */
-export function log(s, a, b, r, hex, seg = 6) {
+export function log(s, a, b, r, hex, seg = 6, capHex = null) {
   const c = Array.isArray(hex) ? hex : rgb(hex);
+  const cap = capHex == null ? c.map((v) => v * 0.9) : Array.isArray(capHex) ? capHex : rgb(capHex);
   const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const l = Math.hypot(d[0], d[1], d[2]);
   const u = [d[0] / l, d[1] / l, d[2] / l];
@@ -146,7 +147,7 @@ export function log(s, a, b, r, hex, seg = 6) {
     const up = q[1] * dsin(t) + p[1] * dcos(t);
     const shade = c.map((v) => v * (0.82 + 0.25 * Math.max(-0.6, Math.min(1, up))));
     s.quad(ring(a, k), ring(a, k + 1), ring(b, k + 1), ring(b, k), shade);
-    s.tri(a, ring(a, k + 1), ring(a, k), c.map((v) => v * 0.9));
-    s.tri(b, ring(b, k), ring(b, k + 1), c.map((v) => v * 0.9));
+    s.tri(a, ring(a, k + 1), ring(a, k), cap);
+    s.tri(b, ring(b, k), ring(b, k + 1), cap);
   }
 }

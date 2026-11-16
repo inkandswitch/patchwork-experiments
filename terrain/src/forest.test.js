@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS, skinZone, skinAt, placeSkin, skinMesh, skinInstances, SKIN_LAYOUTS, SKIN_CROWN, scrubCover, isScrub } from "./forest.js";
+import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS, skinZone, skinAt, placeSkin, skinMesh, skinInstances, SKIN_LAYOUTS, SKIN_CROWN, SPRUCE, SNAG, crownsOf, scrubCover, isScrub } from "./forest.js";
 import { insideRing } from "./terrain-sample.js";
 import { COVER } from "./cover.js";
 
@@ -297,7 +297,7 @@ describe("the forest's skin", () => {
       expect(zone[k]).toBe(circles.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius ** 2) ? 1 : 0);
     }
   });
-  it("puts one clump on every roof node in the zone and nowhere else (every node), of 3 or 4 crowns, its canopy's height ±8%", () => {
+  it("puts one clump on every roof node in the zone and nowhere else (every node), of 4 crowns (a roof's), its canopy's height ±8%, a quarter turn, never shrunk", () => {
     const by = new Map(all.map((c) => [c.k, c]));
     expect(by.size).toBe(all.length);
     let some = 0;
@@ -309,17 +309,17 @@ describe("the forest's skin", () => {
       const c = by.get(k);
       const i = k % n, j = (k - i) / n;
       expect([c.x, c.z]).toEqual([x0 + i * cell, z0 + j * cell]);
-      expect([3, 4]).toContain(c.crowns);
+      expect(c.crowns).toBe(4);
+      expect(((c.yaw / (Math.PI / 2)) % 1 + 1) % 1).toBeCloseTo(0, 9);
       expect(c.variant).toBeGreaterThanOrEqual(0);
       expect(c.variant).toBeLessThan(SKIN_LAYOUTS[c.crowns].length);
       expect(c.height).toBeGreaterThanOrEqual(canopy[k] * 0.92 - 1e-9);
       expect(c.height).toBeLessThanOrEqual(canopy[k] * 1.08 + 1e-9);
-      expect(c.width).toBeGreaterThanOrEqual(0.9);
-      expect(c.width).toBeLessThanOrEqual(1.1);
+      expect(c.width).toBeGreaterThanOrEqual(1);
+      expect(c.width).toBeLessThanOrEqual(1.12);
     }
     expect(some).toBeGreaterThan(20);
-    // both sizes and more than one layout occur
-    expect(new Set(all.map((c) => c.crowns))).toEqual(new Set([3, 4]));
+    // more than one layout occurs
     expect(new Set(all.map((c) => `${c.crowns}/${c.variant}`)).size).toBeGreaterThan(2);
   });
   it("is local: tile by tile is the whole (every split into rows of tiles)", () => {
@@ -346,13 +346,16 @@ describe("the forest's skin", () => {
   it("draws a clump as its crowns: 12 triangles each, inside its cell's reach, from its foot to its top (every layout)", () => {
     for (const crowns of [3, 4]) for (let v = 0; v < SKIN_LAYOUTS[crowns].length; v++) {
       const m = skinMesh(crowns, v, cell);
-      expect(m.positions.length / 9).toBe(12 * crowns);
-      const lowest = Math.min(...SKIN_LAYOUTS[crowns][v].map((c) => c[2]));
+      const layout = SKIN_LAYOUTS[crowns][v];
+      const snags = layout.filter((c) => c[3] === "snag").length;
+      expect(m.positions.length / 9).toBe(12 * crownsOf(layout).length + 8 * snags);
+      const lowest = Math.min(...crownsOf(layout).map((c) => c[2]), snags ? SNAG.from / SKIN_CROWN.foot : Infinity);
+      const top = Math.max(...crownsOf(layout).map((c) => c[2] * (c[3] === "spruce" ? SPRUCE.taller : 1)), snags ? SNAG.top : 0);
       for (let q = 0; q < m.positions.length; q += 3) {
-        expect(Math.abs(m.positions[q])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.15 + 1e-6);
-        expect(Math.abs(m.positions[q + 2])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.15 + 1e-6);
+        expect(Math.abs(m.positions[q])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.08 + 1e-6);
+        expect(Math.abs(m.positions[q + 2])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.08 + 1e-6);
         expect(m.positions[q + 1]).toBeGreaterThanOrEqual(SKIN_CROWN.foot * lowest - 1e-6);
-        expect(m.positions[q + 1]).toBeLessThanOrEqual(1 + 1e-6);
+        expect(m.positions[q + 1]).toBeLessThanOrEqual(top + 1e-6);
       }
     }
   });

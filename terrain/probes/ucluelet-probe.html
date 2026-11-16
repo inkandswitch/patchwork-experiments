@@ -184,6 +184,19 @@ try {
       const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group" && objects()[id].sourceUrl != null);
       return { total: all.length, loaded: all.filter((id) => dbg.viewport.contentOf(id)?.loaded).length };
     },
+    /** the ground's grain (grain.js): its meshes, and how many of their materials the place's extension has dressed, and whether a program with the grain was compiled */
+    grain() {
+      const c = dbg.viewport.contentOf(terrainId());
+      if (!c?.loaded) return { loaded: false };
+      let meshes = 0, dressed = 0;
+      c.root.traverse((o) => {
+        if (!o.isMesh || !o.geometry?.attributes?._grain) return;
+        meshes++;
+        if (String(o.material?.customProgramCacheKey?.() ?? "").includes("terrain-grain")) dressed++;
+      });
+      const programs = dbg.viewport.renderer?.info?.programs ?? [];
+      return { meshes, dressed, programs: programs.length, grainPrograms: programs.filter((p) => String(p.cacheKey).includes("terrain-grain")).length };
+    },
     /** what the terrain's GLB says, read the way sailing will: content(id).extras.terrain through the copyable sampler */
     terrain() {
       const id = terrainId();

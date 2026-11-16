@@ -40,6 +40,34 @@ grey-green). Under a sun that casts no shadows (an overcast's) a crest
 scatters a third of the light (`scatterGain`), so the water keeps the
 shore's darkness.
 
+### The shore in the water
+
+In a calm overcast the forest, hulls and masts of a shore are mirrored as a
+dark band under it: the most Pacific-Northwest cue there is, and a plane of
+water reflecting only the sky makes land float on it. Over a flat mirror,
+the reflected ray from a point of water is the ray from the **mirror eye**
+(as far under the level as the eye is over it) through that point, so
+whether it meets land is a question of the land's elevation as the mirror
+eye sees it. A part of the stage may contribute **`water.shore`**
+(`extension.js SHORE`): `{ v, azimuths, bins, near, reach, profile(eye) →
+{ key, eye, data } | null }`, where `data` holds, for every azimuth (angle
+2π(a + ½)/azimuths from +x toward +z) and every distance bin (log-spaced,
+bin b from near·(reach/near)^(b/(bins−1))), the highest elevation (radians)
+of land at that distance or beyond, that point's distance (km), the
+nearest land's at or beyond it (km), and the highest elevation within a
+kilometre past that nearest land (the near shore's top). A
+body's trait may give the shore's tint (`colour.shore`, sRGB hex). Where
+both are, the surface uploads the profile as an RGBA half-float texture
+(made again only when its `key` changes) and, for a ray reflected upward,
+looks it up at the ray's azimuth and the water's own distance from the
+profile's eye (land nearer than that water is in front of it, not in it):
+under the land, the reflection is the tint, fogged to the land's distance
+(the near shore's for a ray under its top, the far hills' for one over
+it), not the sky; the waves' normals break it up as they do the sky. Without
+either it draws the sky alone, and the shader has no shore at all (a
+define). Terrain contributes it for its places (terrain README, "The shore
+in the water"): Ucluelet and Cadboro Bay.
+
 ## The problem
 
 Sailing's sea is a pure function of the `sailing.sea` trait (wind, seed,

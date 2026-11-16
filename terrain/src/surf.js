@@ -276,32 +276,51 @@ export function reefPatches(grid, heights, label, from, { depth = 2.5, reef = 0.
 export const BOULDER = Object.freeze({ colour: "#2a2927", exposure: 0.6, chance: 0.3 });
 
 /**
- * Black boulders at the waterline of the most exposed shore: on a piece
- * exposed `exposure` or more whose hash passes `chance`, one boulder, a
- * squat six-sided bicone 1.2 to 3.2 m across its middle, standing 0.6 to
- * 2 m out of the water, 1 to 4 m out from the shore, turned by hash.
- * Dressing, assumed (the place's rock benches, not mapped). Each piece's
- * own. → { positions, colors, boulders }.
+ * Boulders at the waterline of the most exposed shore: on a piece exposed
+ * `exposure` or more whose hash passes `chance`, one boulder (or, where
+ * `count` says [lo, hi], lo to hi of them along it), each a squat bicone
+ * standing out of the water, 1 to 4 m out from the shore, turned by hash.
+ * By default six-sided, 1.2 to 3.2 m across, 0.6 to 2 m out of the water,
+ * in `colour`; where the place gives `sides` (a list: by hash, 7 or 9 make
+ * a stone not a nut), `sizes` (radii, by hash: three sizes) and `colours`
+ * (by hash), those, each standing out half its width (squashed). Dressing,
+ * assumed (the place's rock benches, not mapped). Each piece's own. →
+ * { positions, colors, boulders }.
  */
-export function boulders(pieces, { exposure: emin = BOULDER.exposure, chance = BOULDER.chance, colour = BOULDER.colour } = {}) {
-  const base = hexToLinear(colour).slice(0, 3);
+export function boulders(pieces, { exposure: emin = BOULDER.exposure, chance = BOULDER.chance, colour = BOULDER.colour, count: [lo, hi] = [1, 1], sides = null, sizes = null, colours = null } = {}) {
   const P = [], C = [];
-  let count = 0;
+  let made = 0;
   for (const pc of pieces) {
     if (pc.exposure < emin || hashKey(pc.key, 20) >= chance) continue;
-    count++;
-    const t = 0.2 + 0.6 * hashKey(pc.key, 21), off = 1 + 3 * hashKey(pc.key, 22);
-    const cx = pc.a[0] + (pc.b[0] - pc.a[0]) * t + pc.sea[0] * off, cz = pc.a[1] + (pc.b[1] - pc.a[1]) * t + pc.sea[1] * off;
-    const r = 0.6 + hashKey(pc.key, 23), top = 0.6 + 1.4 * hashKey(pc.key, 24), turn = hashKey(pc.key, 25) * Math.PI;
-    const ring = (yy, rr, q) => [cx + rr * dcos(turn + (q * Math.PI) / 3), yy, cz - rr * dsin(turn + (q * Math.PI) / 3)];
-    for (let q = 0; q < 6; q++) {
-      const shade = base.map((c) => c * (0.8 + 0.25 * ((q * 0.43) % 1)));
-      // the lower cone from under the water to the waist, the upper to its top
-      P.push(...ring(-1.2, r * 0.8, q), ...ring(-1.2, r * 0.8, q + 1), ...ring(top * 0.45, r, q + 1));
-      P.push(...ring(-1.2, r * 0.8, q), ...ring(top * 0.45, r, q + 1), ...ring(top * 0.45, r, q));
-      P.push(...ring(top * 0.45, r, q), ...ring(top * 0.45, r, q + 1), cx, top, cz);
-      for (let v = 0; v < 9; v++) C.push(...shade);
+    const many = lo + Math.min(hi - lo, Math.floor(hashKey(pc.key, 26) * (hi - lo + 1)));
+    for (let q = 0; q < many; q++) {
+      made++;
+      // the first as it always was; the rest by their own seeds, spread along the piece
+      const sd = q * 10;
+      const t = many > 1 ? (q + 0.2 + 0.6 * hashKey(pc.key, 21 + sd)) / many : 0.2 + 0.6 * hashKey(pc.key, 21), off = 1 + 3 * hashKey(pc.key, 22 + sd);
+      const cx = pc.a[0] + (pc.b[0] - pc.a[0]) * t + pc.sea[0] * off, cz = pc.a[1] + (pc.b[1] - pc.a[1]) * t + pc.sea[1] * off;
+      const n = sides ? sides[Math.floor(hashKey(pc.key, 27 + sd) * sides.length)] : 6;
+      const r = sizes ? sizes[Math.floor(hashKey(pc.key, 23 + sd) * sizes.length)] * (0.9 + 0.2 * hashKey(pc.key, 28 + sd)) : 0.6 + hashKey(pc.key, 23);
+      const top = sizes ? r * (0.9 + 0.3 * hashKey(pc.key, 24 + sd)) : 0.6 + 1.4 * hashKey(pc.key, 24), turn = hashKey(pc.key, 25 + sd) * Math.PI;
+      const base = hexToLinear(colours ? colours[Math.floor(hashKey(pc.key, 29 + sd) * colours.length)] : colour).slice(0, 3);
+      const ring = (yy, rr, k) => [cx + rr * dcos(turn + (k * 2 * Math.PI) / n), yy, cz - rr * dsin(turn + (k * 2 * Math.PI) / n)];
+      for (let k = 0; k < n; k++) {
+        const shade = base.map((c) => c * (0.8 + 0.25 * ((k * 0.43) % 1)));
+        // the lower cone from under the water to the waist, the upper to its top
+        P.push(...ring(-1.2, r * 0.8, k), ...ring(-1.2, r * 0.8, k + 1), ...ring(top * 0.45, r, k + 1));
+        P.push(...ring(-1.2, r * 0.8, k), ...ring(top * 0.45, r, k + 1), ...ring(top * 0.45, r, k));
+        if (sides) {
+          // a stone's shoulder: a ring at 0.8 of its height, 0.6 of its width, so its top is rounded, not a point
+          P.push(...ring(top * 0.45, r, k), ...ring(top * 0.45, r, k + 1), ...ring(top * 0.8, r * 0.6, k + 1));
+          P.push(...ring(top * 0.45, r, k), ...ring(top * 0.8, r * 0.6, k + 1), ...ring(top * 0.8, r * 0.6, k));
+          P.push(...ring(top * 0.8, r * 0.6, k), ...ring(top * 0.8, r * 0.6, k + 1), cx, top, cz);
+          for (let v = 0; v < 15; v++) C.push(...shade);
+          continue;
+        }
+        P.push(...ring(top * 0.45, r, k), ...ring(top * 0.45, r, k + 1), cx, top, cz);
+        for (let v = 0; v < 9; v++) C.push(...shade);
+      }
     }
   }
-  return { positions: new Float32Array(P), colors: new Float32Array(C), boulders: count };
+  return { positions: new Float32Array(P), colors: new Float32Array(C), boulders: made };
 }

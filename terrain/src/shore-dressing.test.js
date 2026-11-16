@@ -43,3 +43,27 @@ describe("drift logs", () => {
     expect(logMesh(logs).positions.length / 9).toBe(24 * logs.length);
   });
 });
+
+describe("drift logs half buried, their ends darker (a place's)", () => {
+  const o = { circles, level: 1.93, diameter: [0.8, 1.2], bury: 0 };
+  const heavy = driftLogs(pieces, groundAt, o);
+  it("lies with its axis on the ground (half buried), 0.8 to 1.2 m across (every log)", () => {
+    expect(heavy.length).toBe(logs.length);
+    for (const g of heavy) {
+      expect(g.a[1]).toBeCloseTo(groundAt(g.a[0], g.a[2]), 6);
+      expect(2 * g.r).toBeGreaterThanOrEqual(0.8 - 1e-9);
+      expect(2 * g.r).toBeLessThanOrEqual(1.2 + 1e-9);
+    }
+  });
+  it("draws its ends `cap` of its sides' colour (every cap triangle)", () => {
+    const m = logMesh(heavy, "#a8a49a", 0.55);
+    // each log: 6 segments of [quad (2 tris), cap a, cap b]
+    for (let g = 0; g < heavy.length; g++) for (let k = 0; k < 6; k++) {
+      const t0 = g * 24 + k * 4;
+      const side = m.colors[t0 * 9 + 1], capA = m.colors[(t0 + 2) * 9 + 1], capB = m.colors[(t0 + 3) * 9 + 1];
+      expect(capA).toBeCloseTo(capB, 6);
+      // the side's shading is 0.82 × (1 + up·0.25), the cap exactly 0.55 of the log's colour
+      expect(capA).toBeLessThan(side);
+    }
+  });
+});

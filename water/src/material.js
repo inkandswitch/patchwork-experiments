@@ -293,6 +293,13 @@ uniform float uRough;
 uniform float uHs;
 uniform vec2 uNoiseOrigin;
 uniform vec2 uWind;
+#ifdef SHORE
+uniform sampler2D uShore;
+uniform vec3 uShoreTint;
+uniform vec3 uShoreEye;
+uniform float uShoreNear;
+uniform float uShoreReach;
+#endif
 varying vec2 vRest;
 varying vec3 vWorld;
 varying float vHeight;
@@ -378,6 +385,29 @@ void main() {
   vec3 R = reflect(-V, N);
   vec3 refl = sky(R) + uSunOn * uSunColor * pow(max(dot(normalize(vec3(R.x, max(R.y, 0.0), R.z)), L), 0.0), 16.0) * 0.3;
   float fresnel = 0.02 + 0.98 * pow(1.0 - NV, 5.0);
+#ifdef SHORE
+  // the shore in the water (WATER.md, "The shore in the water"): where the reflected ray is under the
+  // land as the mirror eye sees it, at this water's distance or beyond, it shows the shore's tint, not the sky
+  if (R.y > 0.0) {
+    float az = fract(atan(R.z, R.x) / 6.2831853 + 1.0);
+    float across = max(length(vWorld.xz - uShoreEye.xz), uShoreNear);
+    float bin = clamp(log(across / uShoreNear) / log(uShoreReach / uShoreNear), 0.0, 1.0);
+    // r: the highest land's elevation, g: its distance (km), b: the nearest land's (km), a: the near shore's top (its elevation)
+    vec4 land = texture2D(uShore, vec2(az, (bin * (SHORE_BINS - 1.0) + 0.5) / SHORE_BINS));
+    float rise = asin(clamp(R.y, 0.0, 1.0));
+    // a soft edge (about a degree): the ripples break it up rather than cut it into hard blobs
+    float under = smoothstep(-0.012, 0.012, land.r - rise);
+    vec3 tint = uShoreTint;
+    #if defined(USE_FOG) && !defined(FOG_EXP2)
+    // the land is further off than the water it shows in: fogged so that, with the water's own fog after it, it is fogged as far as the land
+    // (a ray under the near shore's top meets the near shore, one over it the far hills)
+    float fl = smoothstep(fogNear, fogFar, mix(land.b, land.g, smoothstep(land.a - 0.004, land.a + 0.004, rise)) * 1000.0);
+    float fw = smoothstep(fogNear, fogFar, dist);
+    tint = mix(tint, fogColor, clamp(1.0 - (1.0 - fl) / max(1.0 - fw, 1e-3), 0.0, 1.0));
+    #endif
+    refl = mix(refl, tint, under);
+  }
+#endif
 
   // the water's own colour: light scattered back up from below, lit by the
   // sky and the sun, and a turquoise lift where a crest stands high and you
@@ -649,6 +679,12 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uHs: { value: 0 },
     uNoiseOrigin: { value: new THREE.Vector2() },
     uWind: { value: new THREE.Vector2(0, 1) },
+    // the shore in the water (setShore): its profile as a texture, its tint, the eye it was made for
+    uShore: { value: null },
+    uShoreTint: { value: new THREE.Color("#1a231d") },
+    uShoreEye: { value: new THREE.Vector3() },
+    uShoreNear: { value: 15 },
+    uShoreReach: { value: 6000 },
   };
   setColour(uniforms.uDeep.value, opts.deep);
   setColour(uniforms.uScatter.value, opts.scatter);
@@ -697,13 +733,56 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     const from = ((Number(next.wind?.from) || 0) * Math.PI) / 180;
     uniforms.uWind.value.set(-Math.sin(from), Math.cos(from));
     uniforms.uFoamAt.value = Math.max(-1e9, foamThreshold(next, opts.foamCoverage ?? next.stats?.whitecaps ?? 0));
-    const defines = { WAVES: n, DETAIL: Math.max(1, detail.length) };
-    if (material.defines?.WAVES !== defines.WAVES || material.defines?.DETAIL !== defines.DETAIL) {
-      material.defines = defines;
-      material.needsUpdate = true;
-    }
+    setDefines({ WAVES: n, DETAIL: Math.max(1, detail.length) });
+  }
+  /** Merge `more` into the material's defines (a key set to undefined is dropped), recompiling only when they change. */
+  function setDefines(more) {
+    const next = { ...(material.defines ?? {}), ...more };
+    for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+    if (JSON.stringify(next) === JSON.stringify(material.defines ?? {})) return;
+    material.defines = next;
+    material.needsUpdate = true;
   }
   setSea(sea);
+
+  /**
+   * The shore in the water: a profile (`water.shore`'s, WATER.md) { key,
+   * eye, data (bins × azimuths × [radians, km, km, radians]), azimuths, bins, near, reach }
+   * and the shore's tint (sRGB hex), or null to draw the sky alone. The
+   * texture is made again only when the profile's key or shape changes.
+   */
+  let shoreKey = null;
+  let shoreTex = null;
+  function setShore(profile, tint) {
+    const on = !!(profile?.data && tint && THREE.DataTexture);
+    if (!on) {
+      if (shoreKey !== null) {
+        shoreKey = null;
+        setDefines({ SHORE: undefined, SHORE_BINS: undefined });
+      }
+      return;
+    }
+    setColour(uniforms.uShoreTint.value, tint);
+    const { azimuths: W, bins: H } = profile;
+    if (shoreKey === profile.key && shoreTex?.image.width === W && shoreTex?.image.height === H) return;
+    shoreKey = profile.key;
+    const half = new Uint16Array(W * H * 4);
+    for (let i = 0; i < half.length; i++) half[i] = THREE.DataUtils.toHalfFloat(profile.data[i]);
+    if (!shoreTex || shoreTex.image.width !== W || shoreTex.image.height !== H) {
+      shoreTex?.dispose();
+      shoreTex = new THREE.DataTexture(half, W, H, THREE.RGBAFormat, THREE.HalfFloatType);
+      shoreTex.wrapS = THREE.RepeatWrapping;
+      shoreTex.wrapT = THREE.ClampToEdgeWrapping;
+      shoreTex.magFilter = shoreTex.minFilter = THREE.LinearFilter;
+      shoreTex.generateMipmaps = false;
+    } else shoreTex.image.data.set(half);
+    shoreTex.needsUpdate = true;
+    uniforms.uShore.value = shoreTex;
+    uniforms.uShoreEye.value.set(profile.eye[0], profile.eye[1], profile.eye[2]);
+    uniforms.uShoreNear.value = profile.near;
+    uniforms.uShoreReach.value = profile.reach;
+    setDefines({ SHORE: 1, SHORE_BINS: H.toFixed(1) });
+  }
 
   const origin = [0, 0, 0];
 
@@ -801,12 +880,14 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     setSea,
     setPatch,
     setColour: setBodyColour,
+    setShore,
     get origin() {
       return [...origin];
     },
     dispose() {
       geometry.dispose();
       material.dispose();
+      shoreTex?.dispose();
       mesh.removeFromParent?.();
     },
   };
