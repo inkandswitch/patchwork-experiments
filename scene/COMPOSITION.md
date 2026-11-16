@@ -89,11 +89,12 @@ pieces, each published and checked in the real Patchwork:
   outermost's) or a thing (a box its doc keeps wherever it is placed); the
   sea and a current are behaviours put on it, and the weather is a scene
   trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
-  sloop in a box of water, floats in a dry room beside Ship at sea (*Model
-  basin and Ship at sea*, automerge:2zRpAT67Uuzp71YCaw3jeAhUtDdH, a doc of
-  two links, laid out again on 2026-11-16 so her block clears the basin,
-  WATER.md Decision 121, its home fitted to frame both in a 640 px pane,
-  Decision 122); every sea example was republished in the new shape. One stage correction
+  sloop in a box of water, floats in a dry room beside Ship at anchor
+  (*Model basin and Ship at anchor*, automerge:3YCHXSNChAC1zLeC16hXcoVKAgTR,
+  a doc of two links, laid out so her block clears the basin by 10 m or
+  more, WATER.md Decisions 121 and 123, its home fitted to frame both in a
+  640 px pane, Decision 122; it linked Ship at sea until the lead chose
+  Ship at anchor on 2026-11-16, Decision 123); every sea example was republished in the new shape. One stage correction
   (arriving doesn't wait for objects with nothing to load, WATER.md
   Decision 73) and one removal (the trait-level `needs`, which this left
   with no consumer, Decision 77).
@@ -197,19 +198,18 @@ Known and accepted as is:
   back as any peer does (Decisions, final fixer after the next phase, 2).
   The lead accepted it on 2026-11-15 ("it's fine").
 
+Confirmed by the lead on 2026-11-16, and moved to the decisions they
+belong to: in Edit a click on the host inside an entered link is Edit's
+and does nothing (Decisions, Edit's click is Edit's, 1, reversing
+Decisions, step 14, 7, and narrowing TOOLS Decisions 4 for Edit's click
+alone; TOOLS Decisions 6 says so); the options not chosen there, a click
+outside the focus clearing the selection or leaving the focus out to
+where it landed ("fine for now"; Decisions, Edit's click is Edit's, 2);
+and the dry-room mashup links Ship at anchor, not Ship at sea ("clearly
+better"; WATER.md Decision 123).
+
 Waiting on the lead (decided unattended on 2026-11-16; each stands until
 the lead confirms or reverses it):
-- **In Edit, a click on the host inside an entered link is Edit's and
-  does nothing** (Decisions, Edit's click is Edit's, 1; lane/bodyswitch).
-  This reverses Decisions, step 14, 7 ("Edit's click outside the focus
-  isn't Edit's", itself unattended), and narrows TOOLS Decisions 4 (the
-  lead's 2026-11-12 answer that what is outside an entered link stays
-  live) for Edit's click alone: presses, keys, the menu, the prompt and
-  every verb on them still reach outside from Edit. TOOLS Decisions 6
-  gained a sentence saying this, marked there as unattended.
-- **Not chosen there** (Decisions, Edit's click is Edit's, 2): a click
-  outside the focus clearing the selection, and a click outside the focus
-  leaving the focus out to where it landed.
 - **The asymmetry this leaves** (found by the merge's critic): in Edit a
   click on nothing (or on a stale hit) with something selected clears the
   selection, while a click on something outside the focus keeps it. The
@@ -1838,7 +1838,8 @@ Made while building Edit in context, with the project lead away.
    game's stage with the focus on the boat selects the link (it used to
    store the game's path). Why: H10 by construction, whoever asks.
 7. *Reversed on 2026-11-16 (Decisions, Edit's click is Edit's): the click
-   is Edit's and does nothing.* **Edit's click outside the focus isn't Edit's**: it goes down the chain.
+   is Edit's and does nothing. The reversal confirmed by the lead
+   2026-11-16.* **Edit's click outside the focus isn't Edit's**: it goes down the chain.
    Why: Edit can't select there, so it's Edit's to ignore, as a click on
    nothing with nothing selected is (TOOLS.md Decisions 6), and the verbs
    out there stay live.
@@ -2174,7 +2175,7 @@ The gate's page time (the Still open item, now under Fixed since).
    presence-check.nopause plan their stamps from the first press since
    2026-11-16. Real OS input has not been checked by any run.
 
-## Decisions, Edit's click is Edit's (2026-11-16, made unattended in `lane/bodyswitch`)
+## Decisions, Edit's click is Edit's (2026-11-16, made unattended in `lane/bodyswitch`; 1 and 2 confirmed by the lead 2026-11-16)
 
 Found by presence-check.nopause: in the real Patchwork, B entered Lost
 Cities aboard's game G in Edit (a double-click), her world running, and
@@ -2193,7 +2194,7 @@ near-misses at cards on her moving table: all boarded before, none after).
    selected is still left to the chain. This reverses Decisions, step 14, 7
    ("isn't Edit's"), and narrows TOOLS Decisions 4 ("outside an entered
    link stays live") for Edit's click alone; both were the lead's to
-   confirm, unattended. Why: TOOLS
+   confirm, unattended, and the lead confirmed this on 2026-11-16. Why: TOOLS
    Decisions 6 (the lead's) is that in Edit a plain click selects before
    any package's click verb, "a click on the ship selects her rather than
    coming aboard", and that nothing stands on Edit; step 14's exception
@@ -2207,7 +2208,8 @@ near-misses at cards on her moving table: all boarded before, none after).
    the menu, the prompt and every verb on them still reach outside an
    entered link from Edit (TOOLS Decisions 4, "verbs aren't edits"); Look
    and every other body hand the click down the chain as before. Not
-   chosen (unattended, for the lead to confirm): a click outside the focus
+   chosen (unattended; confirmed by the lead 2026-11-16, "fine for now"):
+   a click outside the focus
    clearing the selection (the selection model is unchanged, and a missed
    card should not drop what is selected), or leaving the focus out to
    where the click landed (a near miss would throw the editor out of the

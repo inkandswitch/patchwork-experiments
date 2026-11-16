@@ -1270,7 +1270,10 @@ room, side by side, each block's floor on the room's floor.
    section box) would add that on top without changing the clip.
 2. **A boat under way and a fixed box.** Ship at sea opened alone sails on
    and checkpoints far from her box; in a dry room she is then outside it,
-   resting beside an empty block. Exhibits use boats at anchor.
+   resting beside an empty block. Exhibits use boats at anchor: the Model
+   room, and since 2026-11-16 the basin's mashup too (Model basin and Ship
+   at anchor, Decision 123; it linked Ship at sea, who had coasted off her
+   block by then).
 3. **Wet-in-dry nesting** shows overlapping blocks (Decision 103; D1).
 4. **Calm still lives** in dry rooms; a room that offers weather is the
    answer.
@@ -2155,7 +2158,7 @@ minor faults. Each fix has a test that fails without it.
      0,0,17.5: every point of the basin's rim is at least 11.1 m outside her
      block. She is under way, so a solo visit sails her on, and after enough
      of them the room shows her beside an empty block (Costs 2). (Its home
-     is superseded by 122.)
+     is superseded by 122; its boat, and her place typed at x = 20, by 123.)
 
 ## Decisions, framing (2026-11-16, made unattended in `lane/framing`)
 
@@ -2198,7 +2201,8 @@ minor faults. Each fix has a test that fails without it.
      - **publish-links** gains `--frame [--pitch] [--heading]` and `--box`;
        with either, the home (fitted, given or the started link's) is
        checked in both panes and refused if anything is out.
-     - **publish-basin --mashup --basin <url> --ship <url>** prints the
+     - **publish-basin --mashup --basin <url> --ship <url>** (since 123,
+       `--ship "NAME=<url>"`, and the boat's x worked out) prints the
        mashup's publish-links command with both `--box`es read from the
        docs and `--heading` her block's turn (−45°: looking along her
        block, the basin in front of it, about 295 m out; from the front
@@ -2215,6 +2219,41 @@ minor faults. Each fix has a test that fails without it.
      from far off and both boats are small in the mashup's picture. The
      Arcade's home (pane width and the widest label, HOST Decision 47) and
      the Harbour's (88) are left as they are; both could use the fitter.
+
+## Decisions, the mashup's boat (2026-11-16, the lead's)
+
+123. **The basin's dry room links Ship at anchor, not Ship at sea** (the
+     lead, 2026-11-16: "clearly better"). Ship at sea is under way, and
+     every writable visit to her advances her world time, so she coasted
+     off her block and the room showed her beside an empty one (Costs 2;
+     basin-check 12/14 after the framing republish). At anchor she swings
+     inside her block for good, as in the Model room. Not chosen:
+     republishing Ship at sea, which would only start the clock again. The
+     page is *Model basin and Ship at anchor*, named for its two links as
+     the Model room names its links by its boats;
+     `publish-basin --mashup --basin <url> --ship "NAME=<url>"` takes the
+     boat by name as publish-model-room's `--boat` does (it had Ship at sea
+     written in) and titles the page "Model basin and NAME".
+     - **Where the boat goes is worked out, not typed.** At Decision 121's
+       place, x = 20, Ship at anchor's block (100 × 160 m, turned −45°,
+       smaller than Ship at sea's 116 × 223 but centred nearer the boat,
+       at 25.5, −32.7 in her frame) covers the basin's corner: two water
+       surfaces over each other ("Water bodies", Costs 4). The first
+       publish (automerge:27EK7w5xJwE5BcTMfD4iVrCvRf6o, unlisted) had it,
+       and passed frame-check 62/62, frame-real 5/5 and basin-check 15/15,
+       none of which looks for it. Now the basin keeps Decision 121's place
+       and `--mashup` puts the boat on the x axis at the first whole metre
+       from 20 at which her block, in plan, is 10 m or more from the
+       basin's (the exact distance of two convex polygons: 0 if no edge's
+       normal parts them, else the least vertex-to-edge distance). Ship at
+       sea stays at 20 (11.10 m, Decision 121's 11.1); Ship at anchor goes
+       to 43 (10.45 m). basin-check gained the same test, read from the
+       server before the page opens (`--plan-only` runs it alone): the
+       first publish fails it (gap 0), the second passes.
+     - Published as automerge:3YCHXSNChAC1zLeC16hXcoVKAgTR, home fitted
+       (Decision 122): frame-check 62/62; in the real Patchwork frame-real
+       5/5 and basin-check 16/16 (her anchor down, she and her block held
+       through the samples: drift 0, the block where her doc puts it).
 
 ## Invariants
 
@@ -2439,3 +2478,12 @@ which every writable visit advances (she was 18 m further on than at the
 clip integration's check, past her block's edge). The fitted home frames
 her block, not her; the choice (link Ship at anchor, as the Model room
 does, or republish her) is the lead's.
+
+The lead answered on 2026-11-16: link Ship at anchor ("clearly better";
+Decision 123). The folder's link, renamed *Model basin and Ship at anchor*,
+now names automerge:3YCHXSNChAC1zLeC16hXcoVKAgTR (the boat at x = 43, her
+block 10.45 m clear of the basin); frame-check 62/62, frame-real 5/5,
+basin-check 16/16. A run of the real checks writes what any viewer
+writes: the clock's claim in the Model basin and Ship at anchor and the
+basin's `clock.t`, and Patchwork's shell gives the mashup a
+`@patchwork.mainDraftUrl` on its first open.
