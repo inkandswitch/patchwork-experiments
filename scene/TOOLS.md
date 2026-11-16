@@ -1077,7 +1077,8 @@ The project lead decided the five open questions on 2026-11-12.
      A package's click verb is reached outside Edit, or by its key and the
      menu. This holds inside an entered link too: a click on the host there
      is Edit's, and does nothing (decided unattended, 2026-11-16,
-     lane/bodyswitch; confirmed by the lead 2026-11-16: COMPOSITION.md,
+     lane/bodyswitch; confirmed by the lead 2026-11-16, "fine for now":
+     COMPOSITION.md,
      Decisions, Edit's click is Edit's).
    - **The inspector stays open** (decided unattended, 2026-11-14; lane/loose).
      It used to open on a selection and shut on deselecting, so the canvas

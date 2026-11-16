@@ -200,7 +200,7 @@ Known and accepted as is:
 
 Confirmed by the lead on 2026-11-16, and moved to the decisions they
 belong to: in Edit a click on the host inside an entered link is Edit's
-and does nothing (Decisions, Edit's click is Edit's, 1, reversing
+and does nothing ("fine for now"; Decisions, Edit's click is Edit's, 1, reversing
 Decisions, step 14, 7, and narrowing TOOLS Decisions 4 for Edit's click
 alone; TOOLS Decisions 6 says so); the options not chosen there, a click
 outside the focus clearing the selection or leaving the focus out to
@@ -1839,7 +1839,7 @@ Made while building Edit in context, with the project lead away.
    store the game's path). Why: H10 by construction, whoever asks.
 7. *Reversed on 2026-11-16 (Decisions, Edit's click is Edit's): the click
    is Edit's and does nothing. The reversal confirmed by the lead
-   2026-11-16.* **Edit's click outside the focus isn't Edit's**: it goes down the chain.
+   2026-11-16, "fine for now".* **Edit's click outside the focus isn't Edit's**: it goes down the chain.
    Why: Edit can't select there, so it's Edit's to ignore, as a click on
    nothing with nothing selected is (TOOLS.md Decisions 6), and the verbs
    out there stay live.
@@ -2194,7 +2194,8 @@ near-misses at cards on her moving table: all boarded before, none after).
    selected is still left to the chain. This reverses Decisions, step 14, 7
    ("isn't Edit's"), and narrows TOOLS Decisions 4 ("outside an entered
    link stays live") for Edit's click alone; both were the lead's to
-   confirm, unattended, and the lead confirmed this on 2026-11-16. Why: TOOLS
+   confirm, unattended, and the lead confirmed this on 2026-11-16 ("fine
+   for now"). Why: TOOLS
    Decisions 6 (the lead's) is that in Edit a plain click selects before
    any package's click verb, "a click on the ship selects her rather than
    coming aboard", and that nothing stands on Edit; step 14's exception
