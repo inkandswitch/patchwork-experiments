@@ -523,7 +523,8 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
   (Euler XYZ, radians) is the connector's frame, and the scene keeps it
   whole: `content(id).extras.connectors` gives each one in the object's body
   frame, its node's rotation composed in (a connector on a tilted node stays
-  tilted; a node's scale, even an uneven one, never shears it), with its yaw
+  tilted; a node's scale, even an uneven one, never shears it, and a
+  mirrored node mirrors where it faces without turning it inside out), with its yaw
   (where the frame turns +Z, seen from above; none pointing straight up)
   derived from it. A carry turns whatever it puts there to face that yaw (so
   a card in the far player's column reads right for them); a package that

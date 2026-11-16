@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, placeConnector, restHeight, sanitizeConnectors, yawDelta, yawOfEuler } from "./carry-rules.js";
-import { composeMatrix } from "./transform.js";
+import { composeMatrix, multiplyMatrices } from "./transform.js";
+
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 import { axesOf, connectorCases, nodeMatrix, sameYaw } from "./test/connector-cases.js";
 
 describe("connectors", () => {
@@ -40,8 +42,29 @@ describe("connectors", () => {
     expect(close(placed.position, expected.position)).toBe(true);
     if (expected.frame == null) expect(placed.rotation).toBeNull();
     else axesOf(composeMatrix({ rotation: placed.rotation })).forEach((axis, k) => expect(close(axis, expected.frame[k])).toBe(true));
-    expect(sameYaw(placed.yaw, expected.yaw)).toBe(true);
+    // a yaw near straight up is only as sure as the frame (its angles kept to 1e-12) over the facing's length in plan
+    const plan = expected.frame ? Math.hypot(expected.frame[2][0], expected.frame[2][2]) : 1;
+    expect(sameYaw(placed.yaw, expected.yaw, Math.max(1e-9, 1e-11 / plan))).toBe(true);
     if (placed.rotation) expect(placed.yaw).toBe(yawOfEuler(placed.rotation)); // one source
+  });
+
+  // a node under a parent stretched unevenly: its columns are skewed, so they are no rotation even made unit
+  it("on a node a stretched parent skews, a frame stays a rotation: its up carried, its facing squared to it", () => {
+    const parent = [2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; // stretched 2 along X
+    const node = multiplyMatrices(parent, composeMatrix({ rotation: [0, Math.PI / 4, 0] })); // turned an eighth inside it
+    const n = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
+    for (const rotation of [[0, 0, 0], [Math.PI / 2, Math.PI / 2, 0], [0.3, 0.2, 0.1]]) {
+      const c = composeMatrix({ rotation });
+      const placed = placeConnector({ position: [0, 0, 0], rotation, tags: [] }, node);
+      const [x, y, z] = axesOf(composeMatrix({ rotation: placed.rotation }));
+      // the up as drawn: the connector's Y through the node's columns made unit
+      const cols = [0, 1, 2].map((k) => n([node[4 * k], node[4 * k + 1], node[4 * k + 2]]));
+      const up = n([0, 1, 2].map((r) => cols[0][r] * c[4] + cols[1][r] * c[5] + cols[2][r] * c[6]));
+      expect(close(y, up)).toBe(true);
+      const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      expect(Math.abs(dot(x, y)) + Math.abs(dot(y, z)) + Math.abs(dot(z, x))).toBeLessThan(1e-9); // square
+      expect(dot(cross3(x, y), z)).toBeCloseTo(1, 9); // right-handed
+    }
   });
 
   it("an untagged connector takes anything; a tagged one only objects sharing a tag", () => {

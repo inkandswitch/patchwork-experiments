@@ -2369,20 +2369,41 @@ second time under the GLB's `extras["tabletop.slots"]`; that copy is gone.
    (`yawOfEuler`), never taken from beside it, so the two can't disagree.
    Without one, the connector gives only a yaw (the older `snapPoints`), or
    nothing.
-2. **The frame on a node is the node's rotation · the connector's.** Scale
-   is left out by making each column of the node's matrix unit, so an
-   uneven scale (a CAD export's stretch) never shears the frame. The result
-   goes back to Euler XYZ (`decomposeMatrix`), which is exact as a matrix,
-   though near gimbal lock the three angles may be another triple for the
-   same frame (the rack's [π/2, π/2, 0] comes back as itself).
+2. **The frame on a node is the connector's up and facing carried by the
+   node** (`carryFrame`): the node's matrix with each column made unit (its
+   scale's sizes left out, a mirror's sign kept) carries the connector's Y
+   and Z as directions; Y is kept, Z is squared to it, and X = Y × Z. On an
+   ordinary node (any scale, even uneven: a CAD export's stretch) that is
+   exactly the node's rotation · the connector's. On a mirrored node (a
+   negative scale; glTF allows it, and mirrored CAD parts use it) where the
+   connector faces is mirrored but its frame stays a right-handed rotation,
+   never inside out or upside down. Under a parent stretched unevenly (which
+   skews a turned child's columns) it stays a rotation, its up as drawn.
+   The result goes back to Euler XYZ by `decomposeMatrix`, which is now
+   exact as a matrix everywhere, gimbal lock included: it used to give up
+   part of the turn within about 4.5e-4 rad of y = ±π/2 (three's rule),
+   which is exactly where a rack's standing places are on a rack turned a
+   hair (a rack yawed 1e-4 lost its yaw). It now takes z from the first two
+   columns turned back by x (Day's method), so whatever x comes out near the
+   lock, the frame is kept; exactly on edge z is 0, as three's. It is one
+   function, `eulerOfRotation`, that the presence smoothing's
+   `eulerFromQuat` (`src/stage/smooth.js`) now uses too, so a peer's tile
+   standing in a rack turned a hair is drawn turned while it glides.
+   Tabletop's copy (`src/table/frame.js` `decompose`, used for every slot
+   pose) has the same fix. The angles may be another triple for the same frame (the
+   rack's [π/2, π/2, 0] comes back as itself).
 3. **A yaw-only connector on a node** gets the yaw at which the node turns
    its facing (+Z turned by its yaw). On an upright node that is its yaw
    plus the node's, as before. On a node whose +Z is vertical the old rule
    added a yaw taken from a vector with no plan length, which is noise; the
    new one is defined and is null only when the facing itself goes vertical.
+   A connector facing +Z on a node tilted about X faces straight down: null
+   (the old sum gave 0). The table pins it (forms with yaw 0 and π/4).
 4. **"Straight up" is within 1e-6** (`VERTICAL`), not 1e-9: a GLB stores
    32-bit floats, so a connector pointing up on a turned node comes out a
    few 1e-8 off vertical and would otherwise get a yaw from float noise.
+   The table has a frame 5e-7 off straight up (no yaw) and one 2e-6 off (a
+   yaw), and a GLB case whose float32 node leaves 6e-8 of noise.
 5. **The hand's candidates carry the frame** (`snapCandidates` gives
    `rotation` in the carry's frame beside `world` and `yaw`). Nothing turns
    a piece by it yet (step 4 of this lane). The candidate's yaw is the
@@ -2393,8 +2414,15 @@ second time under the GLB's `extras["tabletop.slots"]`; that copy is gone.
    already carry the rotation (`connectorsOf` wrote it), so it reads the
    same; the leftover key is ignored. A golden test reads every built-in
    game's places both ways and finds them equal.
-7. **Tabletop trusts the stage's yaw** and keeps no Euler maths of its own
-   (`slots.js` lost its `yawOfEuler` copy); its tests read GLB extras
-   through a stand-in for the stage (`test/stand-ins.js` `stageExtras`).
+7. **Tabletop trusts the stage's frame** and keeps no Euler maths of its own
+   for places: `slots.js` lost its `yawOfEuler` and `yawOfMatrix`, a place
+   is `{ position, rotation, tags }` (a yaw-only connector as [0, yaw, 0]),
+   and `worldSlots` gives `{ world, radius, local: { position, rotation } }`,
+   no world yaw (nothing read it, and summing yaws is the rule the scene
+   dropped). Its tests read GLB extras through a stand-in for the stage
+   (`test/stand-ins.js` `stageExtras`) that writes each frame back through
+   decompose as the stage does, so they see the triples real docs get; the
+   golden compares frames as matrices. The seam with the real stage is the
+   probes' (dominoes.mjs, table.mjs).
    So Tabletop now needs a scene that keeps the frame: syncing one without
    the other leaves rack places yaw-only (a drawn tile would lie flat).

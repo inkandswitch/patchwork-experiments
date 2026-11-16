@@ -249,7 +249,7 @@ export default {
     function slotPose(snap, id, slot, scale) {
       const r6 = (v) => +v.toFixed(6) + 0;
       const r9 = (v) => +v.toFixed(9) + 0; // a turn to a nanoradian: a quarter turn is a quarter turn
-      const rotation = slot.local.rotation ?? [0, slot.local.yaw ?? 0, 0];
+      const rotation = slot.local.rotation;
       const box = bodyBox(snap, id);
       const b = box ? boxUnder(composeMatrix({ rotation }), box) : null;
       const off = b ? [-(b.min[0] + b.max[0]) / 2, -b.min[1], -(b.min[2] + b.max[2]) / 2] : [0, 0, 0];

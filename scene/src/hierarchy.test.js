@@ -36,6 +36,21 @@ describe("matrix maths", () => {
     expect(d.scale).toBeCloseTo(T1.scale, 9);
   });
 
+  // near gimbal lock (y → ±π/2), where three's decompose gives up part of the turn: every row keeps the matrix
+  it.each([0, 1e-13, 1e-10, 1e-7, 1e-5, 1e-4, 3e-4, 4.4e-4, 1e-3])("keeps the whole turn %s short of gimbal lock", (eps) => {
+    for (const sign of [1, -1]) {
+      for (const [x, z] of [[0, 0], [0.3, 0.2], [Math.PI / 2, 0], [-2.5, 1.1], [1e-4, 0], [0, Math.PI - 1e-4]]) {
+        const m = composeMatrix({ position: [0, 0, 0], rotation: [x, sign * (Math.PI / 2 - eps), z], scale: 1 });
+        const back = composeMatrix(decomposeMatrix(m));
+        for (let k = 0; k < 16; k++) expect(Math.abs(back[k] - m[k]), `y = ${sign}(π/2 − ${eps}), x ${x}, z ${z}: [${k}]`).toBeLessThan(1e-9);
+      }
+    }
+  });
+  it("on edge exactly, z is 0 and x takes the whole turn (three's choice)", () => {
+    const d = decomposeMatrix(composeMatrix({ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], scale: 1 }));
+    expect(d.rotation).toEqual([+(Math.PI / 2).toFixed(12), +(Math.PI / 2).toFixed(12), 0]);
+  });
+
   it("decomposes like three (Matrix4.decompose + Euler XYZ)", () => {
     const m = multiplyMatrices(composeMatrix(T1), composeMatrix(T2));
     const p = new Vector3(), q = new Quaternion(), s = new Vector3();

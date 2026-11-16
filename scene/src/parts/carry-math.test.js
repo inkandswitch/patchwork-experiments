@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { castClearance, createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./carry-math.js";
 import { composeMatrix } from "../transform.js";
+import { yawDelta } from "../carry-rules.js";
 
 const I = composeMatrix({});
 const close = (a, b, eps = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) < eps);
@@ -90,6 +91,19 @@ describe("carry maths", () => {
     const [tilted] = snapCandidates([{ id: "b", matrix: onSide, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], tags: [] }] }], []);
     expect(close(axes(tilted.rotation).flat(), [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(true);
     expect(tilted.yaw).toBeCloseTo(0, 9);
+  });
+
+  // a rack sits at 0, π or ±π/2: its places' standing frame is then at gimbal lock, and a hair off it nothing is lost
+  it.each([1e-6, 1e-4, 3e-4, 1e-3, Math.PI - 1e-4, -Math.PI / 2 + 1e-5])("keeps a rack's standing place whole on a rack yawed %s", (t) => {
+    const rack = composeMatrix({ position: [0, 0, 0], rotation: [0, t, 0], scale: 1 });
+    const [c] = snapCandidates([{ id: "rack", matrix: rack, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], tags: [] }] }], []);
+    const m = composeMatrix({ rotation: c.rotation });
+    // the place's X is up, its Y faces +Z and its Z lies along +X, each turned by t about Y
+    const turn = ([a, b, z]) => [Math.cos(t) * a + Math.sin(t) * z, b, -Math.sin(t) * a + Math.cos(t) * z];
+    expect(close([m[0], m[1], m[2]], turn([0, 1, 0]))).toBe(true);
+    expect(close([m[4], m[5], m[6]], turn([0, 0, 1]))).toBe(true);
+    expect(close([m[8], m[9], m[10]], turn([1, 0, 0]))).toBe(true);
+    expect(Math.abs(yawDelta(c.yaw, Math.PI / 2 + t))).toBeLessThan(1e-9);
   });
 
   it("finds the table: the first object hit, else the ground, else nothing", () => {

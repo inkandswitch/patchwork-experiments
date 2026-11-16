@@ -9,6 +9,7 @@ import { CARD_TAGS, accepts, nearestSlot, worldSlots } from "./slots.js";
 import { SEATS, stageExtras } from "../test/stand-ins.js";
 import { extrasOf } from "../look/look.js";
 import { composeMatrix, fakeDrop } from "../test/fakes.js";
+import { multiply } from "./frame.js";
 import { emptyScene } from "../empty-scene.js";
 
 const KINDS = { pawn: "pawn", token: "token", cardSpot: "card-spot" };
@@ -110,7 +111,9 @@ describe("the card spot", () => {
     const slot = nearestSlot(worldSlots(m, extras, CARD_TAGS), [0.42, 0, 0.11]);
     expect(slot.world[0]).toBeCloseTo(0.4, 9);
     expect(slot.world[2]).toBeCloseTo(0.1, 9);
-    expect(slot.yaw).toBeCloseTo(0.7, 9);
+    const f = multiply(m, composeMatrix({ rotation: slot.local.rotation })); // the slot's frame in the world: squared to the mat
+    expect(Math.atan2(f[8], f[10])).toBeCloseTo(0.7, 9);
+    expect(f[5]).toBeCloseTo(1, 9);
     expect(nearestSlot(worldSlots(m, extras, CARD_TAGS), [0.5, 0, 0.1])).toBeNull();
     expect(accepts(extras.connectors[0].tags, undefined)).toBe(false);
   });

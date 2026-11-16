@@ -297,7 +297,7 @@ describe("snap points (extras.snapPoints)", () => {
   });
 
   // every connector form on every kind of node (test/connector-cases.js), read from a real GLB: a connector on a tilted node stays tilted
-  it("keeps every connector's whole frame, turned with its node, tilt and all (6 forms × 5 nodes)", async () => {
+  it(`keeps every connector's whole frame, turned with its node, tilt and all (${Object.keys(FORMS).length} forms × ${Object.keys(NODES).length} nodes)`, async () => {
     const forms = Object.values(FORMS).map((f) => f.raw);
     const nodes = Object.values(NODES).map((n) => ({ translation: AT, ...(n.quaternion ? { rotation: n.quaternion } : {}), ...(n.scale.some((v) => v !== 1) ? { scale: n.scale } : {}), extras: { connectors: forms } }));
     const { points } = (await prepareGLB(encodeGLB({ meshes: [], nodes }))).snap;

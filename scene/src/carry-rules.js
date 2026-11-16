@@ -12,7 +12,7 @@
 //   physics: nothing tips, slides or bounces, and only the final pose is
 //   written to the doc.
 
-import { composeMatrix, decomposeMatrix, multiplyMatrices } from "./transform.js";
+import { composeMatrix, decomposeMatrix } from "./transform.js";
 
 /** The trait that says an object can be picked up: "can", as data (TOOLS.md §1). */
 export const CARRY = "scene.carry";
@@ -75,8 +75,8 @@ export function sanitizeConnectors(raw) {
   return out;
 }
 
-/** The rotation part of a column-major 4×4 (each column made unit: a node's T·R·S, any scale), as a 4×4. */
-function rotationPart(m) {
+/** The linear part of a column-major 4×4 with each column made unit: a node's T·R·S with its scale's sizes taken out (a mirror's sign kept). */
+function unitColumns(m) {
   const out = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
   for (let c = 0; c < 3; c++) {
     const len = Math.hypot(m[4 * c], m[4 * c + 1], m[4 * c + 2]) || 1;
@@ -85,14 +85,40 @@ function rotationPart(m) {
   return out;
 }
 
+const unit = (v) => {
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+};
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/**
+ * A frame (column-major 4×4) carried by `r` (unitColumns of a node): its up
+ * (Y) and facing (Z) go through r as directions, the up kept, the facing
+ * squared to it, and X = Y × Z. So the result is a rotation whatever r is: a
+ * mirrored node mirrors where a connector faces but never turns it inside
+ * out or upside down, and a parent's uneven scale (which skews r's columns)
+ * never shears it.
+ */
+function carryFrame(r, f) {
+  const turn = (k) => [r[0] * f[k] + r[4] * f[k + 1] + r[8] * f[k + 2], r[1] * f[k] + r[5] * f[k + 1] + r[9] * f[k + 2], r[2] * f[k] + r[6] * f[k + 1] + r[10] * f[k + 2]];
+  const y = unit(turn(4));
+  const z0 = turn(8);
+  const d = z0[0] * y[0] + z0[1] * y[1] + z0[2] * y[2];
+  const z = unit([z0[0] - d * y[0], z0[1] - d * y[1], z0[2] - d * y[2]]);
+  const x = cross(y, z);
+  return [...x, 0, ...y, 0, ...z, 0, 0, 0, 0, 1];
+}
+
 /**
  * A clean connector (sanitizeConnectors) as seen from a frame `m` that holds
  * it (column-major 4×4: its node's matrix in the GLB, or its object's in the
- * world): the position through m, and the frame turned by m's rotation (scale
- * left out). A whole frame becomes m · rotation, its yaw derived from that.
- * A yaw-only connector stays yaw-only: the yaw at which m turns the direction
- * it faces (+Z turned by its yaw), so on an upright m it is the yaw plus m's
- * own, and where m turns it straight up or down it is null.
+ * world): the position through m, and the frame carried by m with its scale's
+ * sizes left out (carryFrame: up kept, facing squared to it, right-handed, so
+ * a mirror or a skewed parent never turns it inside out). A whole frame's yaw
+ * is derived from the result. A yaw-only connector stays yaw-only: the yaw at
+ * which m turns the direction it faces (+Z turned by its yaw), so on an
+ * upright m it is the yaw plus m's own, and where m turns it straight up or
+ * down it is null.
  * One source per connector: when `rotation` is there, yaw ≡ yawOfEuler(rotation).
  * @param {{ position: number[], rotation?: number[] | null, yaw?: number | null, tags?: string[] }} c
  * @param {ArrayLike<number>} m
@@ -102,9 +128,9 @@ export function placeConnector(c, m) {
   const [x, y, z] = c.position.map(Number);
   const position = [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
   const tags = Array.isArray(c.tags) ? c.tags : [];
-  const r = rotationPart(m);
+  const r = unitColumns(m);
   if (finite3(c.rotation)) {
-    const rotation = decomposeMatrix(multiplyMatrices(r, composeMatrix({ rotation: c.rotation }))).rotation;
+    const rotation = decomposeMatrix(carryFrame(r, composeMatrix({ rotation: c.rotation.map(Number) }))).rotation;
     return { position, rotation, yaw: yawOfEuler(rotation), tags };
   }
   if (c.yaw == null || !Number.isFinite(Number(c.yaw))) return { position, rotation: null, yaw: null, tags };
