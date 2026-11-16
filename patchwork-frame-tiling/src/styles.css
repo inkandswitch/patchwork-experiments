@@ -4,7 +4,6 @@
   [theme] {
     --tile-fill: var(--studio-fill, oklch(1 0 0));
     --tile-fill-offset: var(--studio-fill-offset-10, oklch(0.96 0.005 270));
-    --tile-fill-sunk: var(--studio-fill-offset-20, oklch(0.93 0.01 270));
     --tile-border: var(--studio-fill-offset-20, oklch(0.9 0.01 270));
     --tile-fg: var(--studio-line, oklch(0.2 0.02 270));
     --tile-accent: var(--studio-primary-fill, oklch(0.6 0.18 250));
@@ -14,9 +13,9 @@
     --tile-marker-text: var(--studio-secondary-text, oklch(0.55 0.15 160));
     --tile-danger-wash: color-mix(in oklch, var(--studio-danger-fill, oklch(0.62 0.22 25)) 15%, transparent);
     --tile-danger-text: var(--studio-danger-text, oklch(0.55 0.22 25));
-    --tile-shadow-sm: var(--studio-shadow-sm, 0 1px 2px oklch(0 0 0 / 0.04));
-    --tile-shadow-md: var(--studio-shadow-md, 0 6px 20px oklch(0 0 0 / 0.12));
-    --tile-shadow-lg: var(--studio-shadow-lg, 0 8px 24px oklch(0 0 0 / 0.12));
+    /* The drawer's surface: a shade off the documents', so it reads as a
+       sheet over them without a shadow. */
+    --tile-drawer-fill: color-mix(in oklch, var(--tile-fill-offset) 55%, var(--tile-fill));
   }
 }
 
@@ -34,7 +33,7 @@ patchwork-view {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--tile-fill-offset);
+  background: var(--tile-fill);
   color: var(--tile-fg);
   overflow: hidden;
 }
@@ -45,7 +44,7 @@ patchwork-view {
   min-height: 0;
   width: 100%;
   display: flex;
-  background: var(--tile-fill-offset);
+  background: var(--tile-fill);
   color: var(--tile-fg);
   overflow: hidden;
 }
@@ -67,14 +66,24 @@ patchwork-view {
   z-index: 40;
 }
 
+/*
+ * The chrome follows one rule: it says as little as it can. Panes sit
+ * edge to edge, divided by single hairlines. Nothing is boxed, filled or
+ * shadowed. Controls that only matter when you reach for them stay hidden
+ * until the pointer is over their header. State shows through the lightest
+ * mark that still reads: the focused pane has a darker title, the selected
+ * document has a rule in the marker colour, and a context pane names its
+ * subject in that same colour.
+ */
+
 /* App-level top strip */
 .tile-topbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  height: 44px;
-  padding: 0 0.5rem;
+  gap: 0.25rem;
+  height: 32px;
+  padding: 0 0.375rem;
   background: var(--tile-fill);
   border-bottom: 1px solid var(--tile-border);
   user-select: none;
@@ -83,7 +92,7 @@ patchwork-view {
 .tile-topbar__group {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0;
 }
 
 .tile-topbar__spacer {
@@ -111,28 +120,27 @@ patchwork-view {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 3px;
   background: transparent;
   color: var(--tile-fg);
-  opacity: 0.8;
+  opacity: 0.55;
   cursor: pointer;
-  transition: background 0.12s ease, opacity 0.12s ease, color 0.12s ease;
 }
 
-.tile-topbar__btn:hover:not(:disabled) {
-  background: var(--tile-fill-offset);
+.tile-topbar__btn:hover:not(:disabled),
+.tile-topbar__btn[data-pressed] {
   opacity: 1;
 }
 
 .tile-topbar__btn[data-pressed] {
-  background: var(--tile-fill-offset);
+  color: var(--tile-accent);
 }
 
 .tile-topbar__btn:disabled {
-  opacity: 0.3;
+  opacity: 0.2;
   cursor: default;
 }
 
@@ -140,8 +148,9 @@ patchwork-view {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
+  margin-left: 0.25rem;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -149,39 +158,39 @@ patchwork-view {
   color: var(--tile-fg);
   cursor: pointer;
   overflow: hidden;
-  transition: box-shadow 0.12s ease;
 }
 
 .tile-topbar__avatar-btn:hover {
-  box-shadow: 0 0 0 2px var(--tile-accent);
+  box-shadow: 0 0 0 1px var(--tile-fg);
 }
 
 .tile-topbar__avatar-btn patchwork-view {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   pointer-events: none;
 }
 
-/* Create-new popover */
+/* The create-new menu: a ruled list, lightly lifted. */
 .tile-topbar__popover {
   position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 50;
-  width: 16rem;
+  top: calc(100% + 2px);
   display: flex;
   flex-direction: column;
   background: var(--tile-fill);
   border: 1px solid var(--tile-border);
-  border-radius: 8px;
-  box-shadow: var(--tile-shadow-lg);
+  border-radius: 3px;
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.08);
   overflow: hidden;
+  left: 0;
+  z-index: 50;
+  width: 16rem;
 }
 
 .tile-topbar__filter {
   flex: 0 0 auto;
-  height: 34px;
+  height: 30px;
   padding: 0 0.6rem;
+  font: inherit;
   font-size: 0.8125rem;
   border: 0;
   border-bottom: 1px solid var(--tile-border);
@@ -193,35 +202,36 @@ patchwork-view {
 .tile-topbar__list {
   max-height: 18rem;
   overflow-y: auto;
-  padding: 0.25rem;
+  padding: 0.25rem 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
 }
 
 .tile-topbar__item {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 0.4rem 0.6rem;
+  padding: 0.3rem 0.6rem;
+  font: inherit;
   font-size: 0.8125rem;
   text-align: left;
   border: 0;
-  border-radius: 5px;
+  border-radius: 0;
   background: transparent;
   color: var(--tile-fg);
   cursor: pointer;
 }
 
-.tile-topbar__item:hover {
-  background: var(--tile-accent);
-  color: var(--tile-accent-ink);
+.tile-topbar__item:hover,
+.tile-topbar__item:focus-visible {
+  background: var(--tile-fill-offset);
+  outline: none;
 }
 
 .tile-topbar__empty {
-  padding: 0.5rem 0.6rem;
+  padding: 0.3rem 0.6rem;
   font-size: 0.8125rem;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .tile-frame__empty {
@@ -246,7 +256,7 @@ patchwork-view {
   height: 100%;
 }
 
-/* A single tiled panel */
+/* A single tiled panel: no box of its own; its neighbours' hairlines frame it. */
 .tile-panel {
   display: flex;
   flex-direction: column;
@@ -255,110 +265,319 @@ patchwork-view {
   min-width: 0;
   min-height: 0;
   background: var(--tile-fill);
-  border: 1px solid var(--tile-border);
-  border-radius: 8px;
   overflow: hidden;
-  box-shadow: var(--tile-shadow-sm);
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
-}
-
-.tile-panel--active {
-  border-color: var(--tile-accent);
-  box-shadow: 0 0 0 1px var(--tile-accent);
-}
-
-/* The current "selected document" gets an accent rail along the top of its
-   header so context panels visibly point back to it. */
-.tile-panel--selected .tile-panel__header {
-  box-shadow: inset 0 2px 0 var(--tile-marker);
-}
-
-/* Context panels read as secondary chrome rather than primary content. */
-.tile-panel--context .tile-panel__header {
-  background: var(--tile-fill-sunk);
-}
-
-.tile-panel--context .tile-panel__title {
-  opacity: 0.85;
 }
 
 .tile-panel__header {
+  --tile-header-ink: color-mix(in oklch, var(--tile-fg) 55%, transparent);
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  height: 34px;
-  padding: 0 0.4rem;
-  background: var(--tile-fill-offset);
+  gap: 0.125rem;
+  height: 28px;
+  padding: 0 0.25rem;
+  position: relative;
+  color: var(--tile-header-ink);
+  background: var(--tile-fill);
   border-bottom: 1px solid var(--tile-border);
   user-select: none;
 }
 
+/* Focus: the title comes up to full ink. Nothing else changes. */
+.tile-panel--active .tile-panel__header {
+  --tile-header-ink: var(--tile-fg);
+}
+
+/* The selected document (the one context panes describe) is underlined in
+   the marker colour; its context panes name it in the same colour. */
+.tile-panel--selected .tile-panel__header {
+  border-bottom-color: var(--tile-marker);
+  box-shadow: inset 0 -1px 0 var(--tile-marker);
+}
+
+/* The title, tool label and subject read left to right as one phrase
+   ("Notes on boats · Raw", "Comments › Notes on boats"); actions sit right. */
 .tile-panel__title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 0 0.25rem;
 }
 
+.tile-panel--active .tile-panel__title {
+  font-weight: 500;
+}
+
+
 .tile-panel__actions {
   flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* A stack: its documents as text, the showing one in the header's ink and the
+   rest fainter. No tab shapes; a hover wash shows each one's extent, and its
+   × appears only then. */
+.tile-panel__tabs {
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.125rem;
+  overflow: hidden;
 }
 
-.tile-panel__tool-picker {
-  max-width: 8.5rem;
-  height: 24px;
-  margin-right: 0.25rem;
-  padding: 0 0.4rem;
-  font-size: 0.75rem;
-  color: var(--tile-fg);
-  background: var(--tile-fill);
-  border: 1px solid var(--tile-border);
-  border-radius: 5px;
+.tile-panel__tab {
+  flex: 0 1 auto;
+  min-width: 3rem;
+  max-width: 12rem;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 0.15rem 0 0.3rem;
+  font-size: 0.8125rem;
+  color: color-mix(in oklch, var(--tile-header-ink) 60%, transparent);
+  border-radius: 3px;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.12s ease;
 }
 
-.tile-panel__tool-picker:hover {
-  border-color: var(--tile-accent);
+.tile-panel__tab--active {
+  flex-shrink: 0.5;
+  color: var(--tile-header-ink);
 }
 
-.tile-panel__tool-picker:focus-visible {
-  border-color: var(--tile-accent);
-  box-shadow: 0 0 0 1px var(--tile-accent);
+.tile-panel--active .tile-panel__tab--active {
+  font-weight: 500;
 }
 
-.tile-panel__icon-btn {
+.tile-panel__tab:hover,
+.tile-panel__tab:focus-visible {
+  color: var(--tile-fg);
+  background: var(--tile-fill-offset);
+}
+
+/* Each tab carries its datatype's icon, the showing one's being the panel's
+   interactive icon (drag, "View as…"). */
+.tile-panel__tab-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.3rem;
+}
+
+.tile-panel__tab .tile-panel__doc-icon {
+  width: 18px;
+  height: 18px;
+  margin: 0 0.15rem 0 -0.2rem;
+}
+
+.tile-panel__tab-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-panel__tab-close {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 5px;
+  width: 14px;
+  height: 14px;
+  margin-left: 0.15rem;
+  padding: 0;
+  color: inherit;
   background: transparent;
-  color: var(--tile-fg);
-  opacity: 0.7;
+  border: 0;
+  border-radius: 2px;
+  opacity: 0;
   cursor: pointer;
-  transition: background 0.12s ease, opacity 0.12s ease, color 0.12s ease;
 }
 
-.tile-panel__icon-btn:hover:not(:disabled) {
-  background: var(--tile-fill-sunk);
+.tile-panel__tab:hover .tile-panel__tab-close,
+.tile-panel__tab:focus-visible .tile-panel__tab-close {
+  opacity: 0.6;
+}
+
+.tile-panel__tab-close:hover {
   opacity: 1;
+  background: var(--tile-danger-wash);
+  color: var(--tile-danger-text);
 }
 
-.tile-panel__icon-btn:disabled {
-  opacity: 0.25;
-  cursor: default;
+@media (hover: none) {
+  .tile-panel__tab--active .tile-panel__tab-close {
+    opacity: 0.6;
+  }
+}
+
+/* A name being edited in place: its own type, sized to its text, marked only
+   by an accent underline. */
+.tile-title-input {
+  flex: 0 1 auto;
+  min-width: 4ch;
+  max-width: 100%;
+  field-sizing: content;
+  height: 20px;
+  margin: 0;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: inset 0 -1px 0 var(--tile-accent);
+}
+
+/* Where a document dragged over the header will land in the strip. */
+.tile-panel__strip-marker {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--tile-accent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* A non-default tool is named after the title, quietly; it reopens the menu. */
+.tile-panel__tool-label {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 0.25rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: color-mix(in oklch, var(--tile-fg) 55%, transparent);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* Inside a stack's showing tab, the label is part of its name. */
+.tile-panel__tab .tile-panel__tool-label {
+  height: 18px;
+  padding: 0 0.15rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.tile-panel__tool-label::before {
+  content: "· ";
+}
+
+.tile-panel__tool-label:hover,
+.tile-panel__tool-label:focus-visible {
+  color: var(--tile-fg);
+  background: var(--tile-fill-offset);
+  outline: none;
+}
+
+/* "View as…": the datatype's tools, then a rule, then tools for any doc. */
+.tile-tool-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  min-width: 10rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem 0;
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
+  border-radius: 3px;
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.08);
+}
+
+.tile-tool-menu__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.3rem 0.6rem 0.3rem 1.4rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  position: relative;
+}
+
+.tile-tool-menu__item:hover,
+.tile-tool-menu__item:focus-visible {
+  background: var(--tile-fill-offset);
+  outline: none;
+}
+
+.tile-tool-menu__item[aria-checked="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tile-tool-menu__name {
+  flex: 1 1 auto;
+}
+
+.tile-tool-menu__note,
+.tile-tool-menu__heading {
+  font-size: 0.6875rem;
+  opacity: 0.5;
+}
+
+.tile-tool-menu__heading {
+  padding: 0.3rem 0.6rem 0.15rem 1.4rem;
+}
+
+.tile-tool-menu__rule {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--tile-border);
+}
+
+.tile-panel__icon-btn,
+.tile-panel__doc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+}
+
+.tile-panel__icon-btn {
+  cursor: pointer;
+}
+
+.tile-panel__icon-btn:hover:not(:disabled),
+.tile-panel__doc-icon:hover {
+  color: var(--tile-fg);
+  background: var(--tile-fill-offset);
 }
 
 .tile-panel__icon-btn--close:hover:not(:disabled) {
@@ -366,74 +585,22 @@ patchwork-view {
   color: var(--tile-danger-text);
 }
 
-/* Subject chip on a context panel: names + reveals the document it describes. */
-.tile-panel__subject {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  max-width: 9rem;
-  height: 22px;
-  padding: 0 0.45rem;
-  font-size: 0.7rem;
-  color: var(--tile-fg);
-  background: var(--tile-fill);
-  border: 1px solid var(--tile-border);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
+/* Layout controls (close) appear only when the pointer or keyboard focus is
+   in the header. On touch they always show. */
+.tile-panel__actions .tile-panel__icon-btn {
+  opacity: 0;
+  transition: opacity 0.1s ease;
 }
 
-.tile-panel__subject:hover {
-  border-color: var(--tile-marker);
-  color: var(--tile-marker-text);
+.tile-panel__header:hover .tile-panel__actions .tile-panel__icon-btn,
+.tile-panel__header:focus-within .tile-panel__actions .tile-panel__icon-btn {
+  opacity: 1;
 }
 
-.tile-panel__subject-label {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Context-tool launcher dropdown. */
-.tile-context-launcher {
-  position: relative;
-  display: inline-flex;
-}
-
-.tile-context-launcher__menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 20;
-  min-width: 9rem;
-  display: flex;
-  flex-direction: column;
-  padding: 0.25rem;
-  background: var(--tile-fill);
-  border: 1px solid var(--tile-border);
-  border-radius: 8px;
-  box-shadow: var(--tile-shadow-md);
-}
-
-.tile-context-launcher__item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.8rem;
-  text-align: left;
-  color: var(--tile-fg);
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.tile-context-launcher__item:hover {
-  background: var(--tile-fill-offset);
+@media (hover: none) {
+  .tile-panel__actions .tile-panel__icon-btn {
+    opacity: 1;
+  }
 }
 
 .tile-panel__body {
@@ -450,8 +617,203 @@ patchwork-view {
   inset: 0;
 }
 
+/* Documents, then (if open) the drawer, side by side. */
 .tile-panel__content-inner {
-  display: contents;
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.tile-panel__docs {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* --- Drawer: context tools docked along a document panel's right edge --- */
+
+.tile-drawer {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  background: var(--tile-drawer-fill);
+  border-left: 1px solid var(--tile-border);
+}
+
+/* The left hairline is the resize handle: a wider invisible grab area over it
+   (above the document, so it still catches the pointer over an iframe). */
+.tile-drawer__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 7px;
+  z-index: 3;
+  cursor: col-resize;
+}
+
+.tile-drawer__resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+
+.tile-drawer__resize:hover::after,
+.tile-drawer[data-resizing] .tile-drawer__resize::after {
+  background: var(--tile-accent);
+}
+
+.tile-drawer[data-resizing] {
+  user-select: none;
+}
+
+/* Tool content on the inside, the rail of tools on the outer edge. */
+.tile-drawer__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The shown tool's name: the drawer's only heading. */
+.tile-drawer__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--tile-border);
+  user-select: none;
+}
+
+/* --- The rail of context tools: the drawer's spine (see ToolRail) --- */
+
+.tile-rail {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 30px;
+  background: var(--tile-drawer-fill);
+  border-left: 1px solid var(--tile-border);
+}
+
+/* Every tool as an icon, faint; the lit one (the drawer's shown tool) in full
+   ink on the documents' white, a window into the sheet. Scrolls if there are
+   ever more than fit. */
+.tile-rail__icons {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.tile-rail__btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: color-mix(in oklch, var(--tile-fg) 45%, transparent);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tile-rail__btn:hover,
+.tile-rail__btn:focus-visible {
+  color: var(--tile-fg);
+  outline: none;
+}
+
+.tile-rail__btn[aria-selected="true"] {
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+}
+
+/* Hover (or keyboard focus) names an icon at once, in a label to its left,
+   over the content. Positioned by ToolRail beside the icon list, so the
+   list's scrolling can't clip it. */
+.tile-rail__label {
+  position: absolute;
+  right: calc(100% + 6px);
+  z-index: 5;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
+  border-radius: 3px;
+  box-shadow: 0 2px 6px oklch(0 0 0 / 0.06);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+/* While the drawer is closed, the rail peeks in over the panel's right edge
+   when the pointer comes to that edge (`data-visible`, see usePeekAtEdge) or
+   focus is in it, laid over the document rather than pushing it aside, so
+   nothing reflows. Below the drop zones, which take over during a drag.
+   Always there on touch screens. */
+.tile-rail--peek {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.tile-rail--peek[data-visible],
+.tile-rail--peek:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .tile-rail--peek {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.tile-drawer__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.tile-drawer__tool {
+  position: absolute;
+  inset: 0;
+}
+
+.tile-drawer__tool[hidden] {
+  display: none;
 }
 
 .tile-park {
@@ -461,6 +823,26 @@ patchwork-view {
 .tile-panel__view {
   position: absolute;
   inset: 0;
+}
+
+/* Each stacked document keeps its tool mounted; only the showing one shows.
+   A tab is a row: its document, then (showing, with the drawer open) the
+   drawer. The providers between them are display: contents, so both are this
+   row's items. */
+.tile-panel__tab-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.tile-panel__tab-doc {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tile-panel__tab-content[hidden] {
+  display: none;
 }
 
 /* Placeholder shown in an empty content frame (no document open yet). */
@@ -478,71 +860,35 @@ patchwork-view {
 
 .tile-panel__empty p {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 500;
-  opacity: 0.65;
+  font-size: 0.8125rem;
+  opacity: 0.55;
 }
 
 .tile-panel__empty span {
-  font-size: 0.8rem;
-  opacity: 0.45;
+  font-size: 0.75rem;
+  opacity: 0.4;
 }
 
 /* --- Drag & drop to rearrange panels --- */
 
-/* Drag handle (grip) at the head of each panel header. */
-.tile-panel__grip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 24px;
-  flex: 0 0 auto;
-  border: 0;
-  background: transparent;
-  color: var(--tile-fg);
-  opacity: 0.45;
+/* The header is the panel's handle (see TilePanel); the datatype icon drags
+   the document. */
+.tile-panel__header {
   cursor: grab;
-  border-radius: 5px;
-  transition: opacity 0.12s ease, background 0.12s ease;
 }
 
-.tile-panel__grip:hover {
-  opacity: 0.9;
-  background: var(--tile-fill-sunk);
-}
-
-.tile-panel__grip:active {
-  cursor: grabbing;
-}
-
-/* The datatype icon before the title: a drag handle for the document. */
-.tile-panel__doc-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 24px;
-  flex: 0 0 auto;
-  color: var(--tile-fg);
-  opacity: 0.7;
-  cursor: grab;
-  border-radius: 5px;
-  transition: opacity 0.12s ease, background 0.12s ease;
-}
-
-.tile-panel__doc-icon:hover {
-  opacity: 1;
-  background: var(--tile-fill-sunk);
-}
-
+.tile-panel__header:active,
 .tile-panel__doc-icon:active {
   cursor: grabbing;
 }
 
-/* The panel being dragged reads as lifted/ghosted. */
+.tile-panel__doc-icon {
+  cursor: grab;
+}
+
+/* The panel being dragged recedes. */
 .tile-panel--dragging {
-  opacity: 0.55;
+  opacity: 0.4;
 }
 
 /* Drop surface over a candidate target panel's body during a drag. */
@@ -552,73 +898,73 @@ patchwork-view {
   z-index: 2;
 }
 
-/* Edge preview: a translucent slab on the half the drop will land in. */
+/* Edge preview: a wash over the half the drop will land in, ruled on the
+   edge that will become the new seam. */
 .tile-dropzone__preview {
   position: absolute;
   background: var(--tile-accent-wash);
-  outline: 2px solid var(--tile-accent);
-  outline-offset: -2px;
-  border-radius: 4px;
   pointer-events: none;
   transition: inset 0.08s ease;
 }
 
 .tile-dropzone__preview--left {
   inset: 0 50% 0 0;
+  border-right: 1px solid var(--tile-accent);
 }
 .tile-dropzone__preview--right {
   inset: 0 0 0 50%;
+  border-left: 1px solid var(--tile-accent);
 }
 .tile-dropzone__preview--top {
   inset: 0 0 50% 0;
+  border-bottom: 1px solid var(--tile-accent);
 }
 .tile-dropzone__preview--bottom {
   inset: 50% 0 0 0;
+  border-top: 1px solid var(--tile-accent);
+}
+/* The middle: stack into this panel. The whole panel washes, ruled all round. */
+.tile-dropzone__preview--center {
+  inset: 0;
+  outline: 1px solid var(--tile-accent);
+  outline-offset: -1px;
 }
 
-/* Resize handles between tiled panels */
+/* Resize handles: the hairline between panes *is* the handle. It's 1px of
+   ink with a wider invisible grab area either side (above the panes, so it
+   still catches the pointer over an iframe). */
 .tile-resize-handle {
   position: relative;
-  background: transparent;
-  transition: background 0.12s ease;
+  z-index: 3;
   flex: 0 0 auto;
+  background: var(--tile-border);
+  transition: background 0.1s ease;
 }
 
 .tile-resize-handle--vertical {
-  width: 8px;
+  width: 1px;
   cursor: col-resize;
 }
 
 .tile-resize-handle--horizontal {
-  height: 8px;
+  height: 1px;
   cursor: row-resize;
 }
 
 .tile-resize-handle::after {
   content: "";
   position: absolute;
-  background: var(--tile-border);
-  border-radius: 2px;
-  transition: background 0.12s ease;
 }
 
 .tile-resize-handle--vertical::after {
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 3px;
-  height: 36px;
+  inset: 0 -3px;
 }
 
 .tile-resize-handle--horizontal::after {
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 36px;
-  height: 3px;
+  inset: -3px 0;
 }
 
-.tile-resize-handle:hover::after,
-.tile-resize-handle[data-resize-handle-active]::after {
+.tile-resize-handle:hover,
+.tile-resize-handle[data-resize-handle-active] {
   background: var(--tile-accent);
 }

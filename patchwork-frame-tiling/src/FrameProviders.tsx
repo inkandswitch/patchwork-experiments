@@ -23,7 +23,7 @@ import { DraftRelay } from "./drafts";
  * Selection (`patchwork:selected-doc` / `patchwork:selected-view`) is answered
  * by our own {@link SelectionProvider} instead, so it tracks the active panel.
  */
-const BASE_PROVIDER_IDS = {
+export const BASE_PROVIDER_IDS = {
   account: "patchwork-account-provider",
   comments: "patchwork-comments-provider",
   focus: "patchwork-focus-provider",
@@ -53,7 +53,7 @@ export type OpenView = {
  * everything on screen, not just the selection. Frames that show one document
  * at a time needn't answer it; subscribers fall back to `selected-doc`.
  */
-const SelectionProvider = ({
+export const SelectionProvider = ({
   selectedDocUrl,
   selectedToolId,
   openViews,
@@ -61,7 +61,12 @@ const SelectionProvider = ({
 }: {
   selectedDocUrl: AutomergeUrl | undefined;
   selectedToolId: string | null;
-  openViews: OpenView[];
+  /**
+   * Every document on screen. Omitted for a provider scoped to one panel (a
+   * drawer's), which answers only what's selected *for it* and lets
+   * `open-views` reach the frame's.
+   */
+  openViews?: OpenView[];
   children: ReactNode;
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -71,7 +76,9 @@ const SelectionProvider = ({
   );
   const openSubscribers = useRef(new Set<(views: OpenView[]) => void>());
   const currentOpen = useRef<OpenView[]>([]);
-  currentOpen.current = openViews;
+  currentOpen.current = openViews ?? [];
+  const answersOpenViews = useRef(openViews !== undefined);
+  answersOpenViews.current = openViews !== undefined;
 
   // Hold the latest selection so newly-arriving subscribers get the current
   // value synchronously inside `accept`.
@@ -102,7 +109,7 @@ const SelectionProvider = ({
           viewSubscribers.current.add(respond);
           return () => viewSubscribers.current.delete(respond);
         });
-      } else if (type === "patchwork:open-views") {
+      } else if (type === "patchwork:open-views" && answersOpenViews.current) {
         accept<OpenView[]>(subscribeEvent, (respond) => {
           respond(currentOpen.current);
           openSubscribers.current.add(respond);
