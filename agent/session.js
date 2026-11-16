@@ -99,8 +99,15 @@ export const DEFAULT_CONFIG = {
   params: { maxTokens: 8192 },
 }
 
+export const SESSION_TYPE = "agent-session"
+
 /** Seed a brand-new session document. Runs inside a `handle.change`. */
 export function initSession(doc, opts = {}) {
+  // The type is set here, not by each caller: a session created any other way
+  // than through Patchwork's own create path (a workflow step, say) otherwise
+  // came out untyped, and Patchwork could not tell what it was.
+  if (doc["@patchwork"]) doc["@patchwork"].type = SESSION_TYPE
+  else doc["@patchwork"] = { type: SESSION_TYPE }
   doc.schemaVersion = SCHEMA_VERSION
   // Null, not "Agent". A fresh session has not earned a name yet, and a
   // placeholder here is worse than nothing: it defeats every fallback that

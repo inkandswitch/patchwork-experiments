@@ -96,6 +96,7 @@ describe("running a plan", () => {
     expect(w.grants).toEqual({ "files@*": "session" })
     expect(w.subject).toBe("automerge:subj")
     expect(w.workflow).toEqual({ planUrl: plan.url, stepId: "w", orchestratorUrl: expect.any(String) })
+    expect(w["@patchwork"]).toEqual({ type: "agent-session" })
   })
 
   it("never runs more at once than the limit", async () => {

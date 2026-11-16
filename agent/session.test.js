@@ -266,3 +266,17 @@ describe("what a result costs to keep", () => {
     expect(typeof result.image).toBe("string")
   })
 })
+
+describe("a new session's type", () => {
+  it("is set by initSession, so no way of creating a session can leave it out", () => {
+    const doc = {}
+    initSession(doc, {})
+    expect(doc["@patchwork"]).toEqual({ type: "agent-session" })
+  })
+
+  it("keeps what Patchwork already put beside it", () => {
+    const doc = { "@patchwork": { mainDraftUrl: "automerge:draft" } }
+    initSession(doc, {})
+    expect(doc["@patchwork"]).toEqual({ mainDraftUrl: "automerge:draft", type: "agent-session" })
+  })
+})

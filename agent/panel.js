@@ -35,7 +35,6 @@ export async function ensureSession(repo, docUrl) {
   const session = await repo.create2()
   session.change((doc) => {
     initSession(doc, { title: "Agent", subject: docUrl })
-    doc["@patchwork"] = { type: "agent-session" }
   })
 
   subject.change((doc) => {

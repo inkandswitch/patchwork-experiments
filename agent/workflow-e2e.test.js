@@ -119,6 +119,14 @@ describe("a workflow, end to end", () => {
     expect(woke).toContain("The workflow is over")
     const last = orchestrator.doc().turns.at(-1)
     expect(last.blocks.map((b) => b.text).join("")).toBe("Both problems matter.")
+
+    // Every document the workflow made says what it is: Patchwork opens a
+    // document by its type, and an untyped one is a dead end.
+    const untyped = Object.values(repo.handles)
+      .filter((h) => h.isReady?.() !== false && h.doc())
+      .filter((h) => typeof h.doc()["@patchwork"]?.type !== "string")
+      .map((h) => h.url)
+    expect(untyped).toEqual([])
     events.stop()
   }, 20000)
 

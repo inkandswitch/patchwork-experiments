@@ -104,7 +104,6 @@ export async function createSession(repo) {
   const session = await repo.create2()
   session.change((doc) => {
     initSession(doc, { subject: null })
-    doc["@patchwork"] = { type: "agent-session" }
   })
   return session
 }
