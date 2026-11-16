@@ -1351,6 +1351,17 @@ The project lead decided the five open questions on 2026-11-12.
       where the HUD is hidden because her doc isn't the world. It applies
       there exactly where Enter and a click on her already did, so nothing
       new can happen; the focus-path question above covers it.
+    - **Where the bar is now up on arrival.** Outside Edit the bar is up
+      wherever a world command is declared on the arrival's focus path,
+      so these published examples now arrive with it, their canvas one
+      control row (about 38 px) shorter than before: Ship at anchor, Ship
+      at sea, Cadboro Bay and Ucluelet (a sloop at the root: Come aboard);
+      Lost Cities aboard (watching the game, the boat on the focus path:
+      Come aboard); Arena level (walking: Play, "Pick up the gun"); Liar's
+      dice (seated: Lift all cups declared, the bar empty while every cup
+      is up). The cameras' fov is vertical, so a shorter canvas crops
+      nothing above or below; it narrows the view's aspect. A plain scene
+      (no world command) arrives with no bar at all, as before.
     - **Known: entering a link moves the canvas.** Entered in Edit (a
       double-click on G's card aboard Lost Cities), the canvas moves down
       about 31 px as the entered path's chrome appears. That's after the
@@ -1375,16 +1386,22 @@ The project lead decided the five open questions on 2026-11-12.
     and narrow: a button and a picker are one control tall, as is an empty
     cluster; Play clicked goes and neither the bar nor the canvas moves; in
     Edit the world's controls are where they were in Look, still in view
-    and clickable while the editor's cluster overflows. In the real
-    Patchwork (worldbar-check, on scratch copies of Ship at anchor and Lost
-    Cities aboard, in a 639 px pane beside comments): Look's bar holds
-    exactly Come aboard and the HUD no button; Edit adds the editor's
-    commands with Come aboard where it was; the bar's Come aboard, clicked
-    from Edit, comes aboard; the canvas's top and height are the same in
-    Look, Edit and aboard; and in Edit on Lost Cities aboard a double-click
-    on a card 16 px below the canvas's top edge enters the game. Before
-    this change, against the published packages (2026-11-16), it fails 11
-    of its 17 checks, triage (f) among them: the first press lands on the
+    and clickable while the editor's cluster overflows. Two checks for the
+    real Patchwork (recovered/publish/). worldbar-check, on scratch copies
+    of Ship at anchor and Lost Cities aboard in a 639 px pane beside
+    comments, checks that Look's bar holds exactly Come aboard and the HUD
+    no button; that Edit adds the editor's commands with Come aboard where
+    it was; that the bar's Come aboard, clicked from Edit, comes aboard;
+    that the canvas's top and height are the same in Look, Edit and
+    aboard; and that in Edit on Lost Cities aboard a double-click on a
+    card 16 px below the canvas's top edge enters the game, the first
+    press read two frames on. realcheck-editbody's rows say what the bar
+    is outside Edit, on arrival and after a press: none on a plain scene
+    (the Geometry showcase, Santorini), and on the examples above exactly
+    their world commands, with no editor command. Before this change,
+    against the published packages (2026-11-16), worldbar-check fails 11
+    of its 17 checks then (an 18th, no error in the page's log, came
+    later), triage (f) among them: the first press lands on the
     HUD's Come aboard, comes aboard, leaves Edit and lifts the canvas
     38.5 px (Look's canvas sat at 101 px and Edit's at 140, the bar being
     Edit's alone), and nothing is entered. After the merge (7aba1de4) and
@@ -1392,8 +1409,6 @@ The project lead decided the five open questions on 2026-11-12.
     and the page log's), the canvas at 140 px in Look, Edit and aboard; the
     first run showed Come aboard's tooltip as "… (Enter) (Enter)" (the
     command's title named its key and the bar adds the key's hint), fixed
-    in sailing (c0f79738) and pinned in the check. realcheck-editbody over
-    eight published examples (8/8): outside Edit no editor command on the
-    bar, and the world cluster exactly as declared (none on the Geometry
-    showcase and Santorini, Come aboard on the three boats and Lost Cities
-    aboard, Play on the Arena level, up and empty at Liar's dice).
+    in sailing (c0f79738) and pinned in the check. realcheck-editbody passes
+    on its eight rows (8/8), Play on the Arena level and the bar up and
+    empty at Liar's dice among them.
