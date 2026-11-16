@@ -427,8 +427,8 @@ right-click Select still selects it (no handles, no inspector).*
   view, the menu's Select or Escape marks and reveals the row, and a
   selection made while the pane was shut is revealed as it opens. Both
   halves are drawn only while it's docked. The tree takes at most about
-  40% of the pane's height and scrolls under its bar; the fields scroll
-  under it. It opens by the inspector's rule (a selection in Edit, or the
+  40% of the pane's height, its rows scrolling below its bar; the fields
+  scroll under it. It opens by the inspector's rule (a selection in Edit, or the
   toolbar's Inspector), so the tree comes with it; there is no Objects tab
   or toggle.
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
@@ -1046,6 +1046,23 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   drag-run times out on scene-stage too (not this change). The real
   Patchwork checks (realcheck-editbody, grip-check, enter-check) wait for
   the integrator's build and sync.
+  *Review fixes:* the tree is drawn by the tab's update, only while the
+  pane is docked, and reveals the selection as the pane opens (drawerTab's
+  new `opened()`); the rows scroll below a fixed bar. *Proves*
+  (`parts/inspector.test.js`, "one pane"): the six-source table reads the
+  row and the fields in every flush from the one the selection lands in
+  (an extension running after the inspector) and the doc unchanged; three
+  ways a selection comes before the pane opens (Look then Edit, × then the
+  toolbar, a later select) × the row drawn and scrolled into view in the
+  drawer, never in a detached pane; shut by × or by Look, a doc change
+  isn't drawn, and is on opening. Each fails on the code before (and the
+  first table with the tree's update a tick late). Local probes after
+  merging scene-stage (N8): editor-run 86/86 with arena built (new
+  `tallTree*`: 76 rows, the tree 245 of the pane's 613 px, the fields 368;
+  the last row revealed below the bar, the first again on the way up, and
+  again after × and the toolbar's Inspector), xdnd-run 60/60 (it failed
+  `outlineDropCopies` with a sticky bar, which covered the row it dropped
+  on), parts-run 20/20, hand-run 33/33.
 
 ## What it costs
 
@@ -1439,7 +1456,9 @@ The project lead decided the five open questions on 2026-11-12.
     - **The name stays Inspector** (the tab, its `data-panel`, the toolbar
       button), so every probe hook and the open rule are unchanged.
     - **A fixed split:** the tree takes at most about 40% of the pane's
-      height and scrolls under its bar (filter, New group); the fields
+      height; its bar (filter, New group) stays put and only its rows
+      scroll, so a row scrolled into view is never under the bar (a sticky
+      bar over a scrolling tree hid the row a drop aimed at); the fields
       fill the rest. With a ref selected (a dimension: no fields here) the
       tree has the whole pane.
     - **The tree arrives with a selection**, by the inspector's open rule,
