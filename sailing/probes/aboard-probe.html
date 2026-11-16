@@ -466,8 +466,8 @@ try {
     wind: () => scene.doc().traits?.["sailing.weather"]?.wind ?? null,
     /** the sea's wind freshened (as the inspector's Sea field writes it) */
     setWind(speed) { scene.change((d) => { d.traits["sailing.weather"].wind.speed = speed; }); return true; },
-    /** the sea's own seed (its waves and gusts), as the inspector's Sea field writes it on the Sea object */
-    setSea(seed) { scene.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = seed; }); return true; },
+    /** the sea's own seed: its waves (the Sea object's) and its gusts (the weather's), one seed as the template draws them */
+    setSea(seed) { scene.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = seed; d.traits["sailing.weather"].seed = seed; }); return true; },
     /**
      * Sample, every frame for `ms` of the page's clock, where a point on the
      * table is on each view's page, and where the table is in the world.
