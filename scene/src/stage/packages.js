@@ -7,7 +7,9 @@
 //     `{ url }` for each package that a registered plugin the doc calls for
 //     comes from and the list doesn't name (packagesToList), and, once the
 //     registry has gone quiet, take off each listed package this viewer has
-//     and nothing in the doc calls for (packagesToPrune), in one change.
+//     and nothing in the doc calls for (packagesToPrune: never while a need
+//     goes unanswered here, nor a source package while a render doc hasn't
+//     said which provider it names), in one change.
 //     Never rewrites an entry, never makes the list. The same pass writes
 //     the scene package's own URL as `@patchwork.suggestedImportUrl` on a
 //     doc that names nothing loadable there.
@@ -183,11 +185,12 @@ export function resetPackages() {
  *   plugins: object | Promise<object | null>,    // the host's @inkandswitch/patchwork-plugins (or a promise of it)
  *   local: { get(): object, swap(fn): object },  // the stage's local atom (local.packages out)
  *   providerIds?: () => Iterable<string>,        // the providers render docs have asked the stage for
+ *   rendersKnown?: () => boolean,                // has every render doc built here said which provider it names?
  *   declined?: Set<string>,                      // "Not now": the view's, shared by every stage it opens
  *   settleMs?: number,
  * }} o
  */
-export function createPackages({ repo, handle, plugins, local, providerIds = () => [], declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
+export function createPackages({ repo, handle, plugins, local, providerIds = () => [], rendersKnown = () => true, declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
   let dead = false;
   let mod = null; // the plugins module, once it's here
   let settled = !(settleMs > 0);
@@ -196,8 +199,6 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
   let noRegistry = false; // the host has no plugin registry: nothing is listed against it, so nothing is missing
   let completeFor = null; // { doc, stamp, value }: complete()'s last answer
   let stamp = 0; // bumped whenever what's registered or loaded here may have changed
-  const used = new Set(); // importUrls of the parts and templates run in this view
-  let pruned = new Set(); // packages this view took off the list and hasn't listed since (reconcileList)
   const failed = new Map(); // url → what went wrong
   const accepted = readAccepted();
   const offs = [];
@@ -242,8 +243,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     // their way, and one half-registered could look unneeded), and name the
     // scene package itself as the doc's suggested import, if it names none
     const readOnly = !!handle.isReadOnly?.();
-    const plan = readOnly ? { add: [], prune: [], pruned } : reconcileList({ doc, registries: regs, used, providerIds: providerIds(), pruned, prune: settled });
-    const { add, prune } = plan;
+    const { add, prune } = readOnly ? { add: [], prune: [] } : reconcileList({ doc, registries: regs, providerIds: providerIds(), rendersKnown: !!rendersKnown(), prune: settled });
     const suggest = readOnly ? null : suggestedImportToSet(doc, regs);
     if (add.length || prune.length || suggest) {
       try {
@@ -253,7 +253,6 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
           // a scalar in the map the doc was made with: nothing two peers could each create
           if (suggest && d["@patchwork"] && typeof d["@patchwork"] === "object" && !packageUrl(d["@patchwork"].suggestedImportUrl)) d["@patchwork"].suggestedImportUrl = suggest;
         });
-        pruned = plan.pruned;
       } catch (err) {
         console.warn("[scene] couldn't list the scene's packages", err);
       }
@@ -379,19 +378,6 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     check,
     complete,
     coming,
-    /** A part or template was run here: its package belongs on the list too. */
-    used(type, id) {
-      if (dead || !mod) return;
-      let importUrl = null;
-      try {
-        importUrl = mod.getRegistry?.(type)?.get?.(id)?.importUrl ?? listOf(mod.getRegistry?.(type)).find((p) => p?.id === id)?.importUrl ?? null;
-      } catch {
-        // unknown: nothing to note
-      }
-      if (typeof importUrl !== "string" || used.has(importUrl)) return;
-      used.add(importUrl);
-      check();
-    },
     /**
      * The viewer said yes: load these (default: all that are asked about or
      * failed), and remember each that loads. Only packages the doc lists.

@@ -11,13 +11,15 @@
 //   - the prompt: one card naming both packages, nothing imported, the
 //     scene's trait extension not running and its object without a provider;
 //     the registered package gets listed (reconcile), bare, and the one
-//     nothing calls for is taken off once the registry has gone quiet;
+//     nothing calls for stays while the scene calls for what nothing here
+//     answers;
 //   - Not now: the card goes, nothing is imported or remembered; opened
 //     again, it asks again;
 //   - Load: the served package is imported at its heads and registered under
 //     its bare URL, its extension starts, its provider builds the object;
 //     the other's failure is on the card and stopped nothing; only the one
-//     that loaded is remembered;
+//     that loaded is remembered; every need answered now, the one nothing
+//     calls for is taken off;
 //   - opened again: the remembered one loads without a click, and only the
 //     other is asked about;
 //   - the trait the third package answers taken off the scene: its entry
@@ -96,11 +98,12 @@ try {
       before.imported.length === 0 && before.registered.every((p) => p.id === "probe.local" || p.id === "probe.stale") && !before.running.includes("probe.sea") && before.sea.started === 0 && before.status === "warn",
       before,
     );
-    // reconcile: the package this viewer has, and the scene's trait calls for, is now listed (bare), after the two that were;
-    // the one this viewer has and nothing calls for was taken off (by now the registry has gone quiet: the card is up)
+    // reconcile: the package this viewer has, and the scene's trait calls for, is now listed (bare), after those that were;
+    // the one this viewer has and nothing calls for stays while the scene calls for what nothing here answers (the
+    // served package's provider and trait: it may be what answers them elsewhere), though the registry has gone quiet
     const listed = await P("listed()");
-    check("listsWhatThisViewerHas", JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]), listed);
-    check("takesOffWhatNothingCallsFor", earlyListed.includes(STALE) && !listed.includes(STALE) && (await P("registered()")).some((p) => p.id === "probe.stale"), { earlyListed, listed, STALE });
+    check("listsWhatThisViewerHas", JSON.stringify(listed) === JSON.stringify([PKG, STALE, BROKEN, LOCAL]), listed);
+    check("takesNothingOffWhileANeedIsUnanswered", earlyListed.includes(STALE) && listed.includes(STALE) && (await P("registered()")).some((p) => p.id === "probe.stale"), { earlyListed, listed, STALE });
   }
 
   // ── Not now ───────────────────────────────────────────────────────────────
@@ -139,8 +142,10 @@ try {
     );
     const accepted = await P("accepted()");
     check("onlyWhatLoadedIsRemembered", JSON.stringify(accepted) === JSON.stringify([PKG]), accepted);
+    // every need answered now: the one nothing calls for goes, the one that failed (not here) stays, and nothing is added
+    const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.STALE)`, 5_000);
     const listed = await P("listed()");
-    check("loadingAddsNothingToTheList", JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]), listed);
+    check("takesOffWhatNothingCallsForOnceEveryNeedIsAnswered", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]) && (await P("registered()")).some((p) => p.id === "probe.stale"), listed);
   }
 
   // ── remembered ────────────────────────────────────────────────────────────

@@ -140,10 +140,10 @@ Fixed since (each item names its Decisions section below):
 - a doc's packages list grew as parts were added and wasn't pruned when
   they went (Fitting out's boat, as the tools made her, still listed her
   companionway's joints and traversal). Reconcile now goes both ways: a
-  listed package this viewer has, that nothing in the doc calls for, wasn't
-  used in this view and isn't the scene package is taken off once the
-  registry has gone quiet (STAGE.md, "Packages"; Decisions, packages
-  pruned, below; lane/n11). publish-fitout's page now lists exactly the
+  listed package this viewer has, that nothing in the doc calls for and
+  isn't the scene package, is taken off once the registry has gone quiet,
+  while every need of the doc is answered here (STAGE.md, "Packages";
+  Decisions, packages pruned, below; lane/n11). publish-fitout's page now lists exactly the
   boat's own (scene, sailing, water: its new check, 15/15 dry run), and
   packages-run takes off a listed package nothing calls for and, later,
   one whose trait goes (21/21). Not yet checked in the real Patchwork.
@@ -2259,62 +2259,99 @@ near-misses at cards on her moving table: all boarded before, none after).
    Decisions 6 (nothing stands on Edit), not something the stage would
    cut, since a carry out there is meant to work.
 
-## Decisions, packages pruned (2026-11-16, decided unattended in `lane/n11`, for the lead)
+## Decisions, packages pruned (2026-11-16): decided unattended (2026-11-16, lane/n11), for the lead
 
 The doc's packages list reconciles both ways (STAGE.md, "Packages";
-`packagesToPrune`, `reconcileList` and `changeList` in `src/packages.js`).
+`reconcileList`, `packagesToList`, `packagesToPrune`, `unansweredNeeds` and
+`changeList` in `src/packages.js`). Both halves are a function of the doc and
+the viewer's registry; the view remembers nothing.
 
-1. **What may be taken off.** A listed package goes only when this viewer
-   has it registered, none of its registered plugins answers a need of the
-   doc's (the registry's question, `answeringPlugins`, with the providers
-   render docs asked for), no part or template of it was run in this view,
-   and it isn't the scene package. So a package missing here (never
-   installed, loading, failed, declined) is never dropped, and nor is one
+1. **What may be taken off.** A listed package goes only when every need of
+   the doc's is answered here, this viewer has the package registered, none
+   of its registered plugins answers a need (the registry's question,
+   `answeringPlugins`, with the providers render docs asked for), it isn't
+   the scene package, and, while a render doc built here hasn't said which
+   provider it names, it registers no source. So a package missing here
+   (never installed, loading, failed, declined) is never dropped, nor one
    that answers a need: a doc edited while a package is missing keeps it.
-   Tested over every case of (registered × answers × used × scene package),
-   for each kind of need (a source, a render doc's provider, a scene trait,
-   an object trait): pruned iff (yes, no, no, no), 64 cases; and the fixed
-   point over two packages in every state (listed not/once/twice ×
-   registered × called for × used: 576 pairs), where one pass reaches
-   listed = (answering ∪ used) ∪ (listed ∩ unregistered) and the next
+   Tested over every case of (registered × answers × scene package × every
+   need answered × render docs heard), for each kind of need (a source, a
+   render doc's provider, a scene trait, an object trait): pruned iff (yes,
+   no, no, yes, yes or not a source), 128 cases; and the fixed point over
+   two packages in every state (listed not/once/twice × registered × a
+   source or an extension × called for) with the scene package, render docs
+   heard and a need nothing answers: 4608 cases, where one pass reaches
+   `answering ∪ (listed ∩ (unregistered ∪ {scene} ∪ kept))` and the next
    writes nothing.
 2. **Not before the registry has gone quiet.** Additions are made at once,
-   as before; removals wait for `PACKAGE_SETTLE_MS`, as the prompt does,
-   since the viewer's own packages may still be registering as the scene
-   opens.
-3. **A view doesn't take off again what another put back** (rule 5 in
-   STAGE.md). Found while building it: two viewers whose copies of a
-   package answer differently (an older version without the plugin the doc
-   calls for, two installs registering the same plugin id) would otherwise
-   remove and re-add it on every change, forever. Each view remembers what
-   it took off and leaves it if it is listed again by anyone else,
-   forgetting it when it lists that package itself; with the needs held
-   still each view writes each package at most once, so any number settle
-   with it listed (the one that has a use for it wins). The test plays two
-   such viewers to a fixed point (two writes) and shows the rule without
-   it never settles. The cost: a package taken off, put back by a peer
-   and then truly unneeded stays listed until a view that hasn't taken it
-   off before visits.
-4. **Concurrent prune and add.** One peer taking P off while another adds
-   an object needing P ends with P listed for both, in every order of
-   their passes around the merge (real Automerge merges, 4 orders): after
-   the merge the need is there and P isn't listed, so whoever has P lists
-   it again.
-5. **Published examples.** No doc shape changes, so nothing is
-   republished by this step (the no-back-compat rule is about a doc's shape). A
-   writable visit by a viewer who has the packages now takes stale entries
-   off, a viewer's ordinary write like the clock. Worked out in node from
-   each published doc and every package's built plugin metadata (main
-   checkout, 2026-11-16), these would shrink: Santorini table, both copies
-   (tabletop and card-table: its pieces carry only `scene.carry` and
-   `seats`, so neither package's extension runs there); Lost Cities aboard
-   (tabletop: her game is a link that lists its own); Quiet games room
-   (tabletop: its tables are links); Fitting out's boat (joints,
-   traversal) and its hatch W (traversal, sailing). Every other example
-   in the folder keeps its list. The publishers that state more than a doc
-   calls for (publish-office's room and games, publish-aboard's boat)
-   still pass their own checks (what a doc calls for is within what it
-   states), and `withPackages` appends to what the page listed; whether a
-   publisher should state exactly what its doc calls for is a question for
-   the lead, as is republishing those six so a fresh viewer isn't first
-   asked about a package nothing in the doc uses.
+   as before; removals wait for `PACKAGE_SETTLE_MS`, as the prompt does.
+   The unanswered-needs gate already holds a removal while a package the doc
+   needs is still registering; the wait also keeps the list still while a
+   viewer's own packages arrive.
+3. **Parts and templates list nothing of their own.** The list used to keep
+   the package of a part or template run in the view (the step 13 rule,
+   written when the list only grew). That made the list a function of who
+   had visited: the next viewer took it off and the one that ran it put it
+   back. A part or template counts by what it makes, objects and traits,
+   which are needs like any other; one whose result calls for nothing of its
+   package leaves it unlisted. (The plan for this step had it as a fourth
+   condition; the review dropped it.)
+4. **A viewer who can't answer the whole doc takes nothing off.** Two
+   viewers can hold different versions of one package URL. When the older
+   lacks the plugin the doc calls for, that need goes unanswered there, and
+   the older version's viewer prunes nothing (the listed package may be what
+   answers it elsewhere). This replaces the first build's per-view memory
+   (`relisted`: a view didn't take off again what someone else put back),
+   which made the list depend on the view's history, didn't survive a
+   reload, and left a stale package listed. Over the published examples (the
+   folder, and every doc a live link reaches, against every package's built
+   metadata) only Geometry showcase has a need nothing here answers
+   (camber-hull-surface), so the gate costs nothing there today.
+5. **Two packages registering one source id** both answer it, whichever the
+   registry hands out, so viewers registering them in different orders
+   agree (tested: both listed, one write).
+6. **The render docs' providers.** A render doc may name a provider other
+   than its object's field. Until every render doc built here has said
+   (hidden or veiled objects never load theirs), no package registering a
+   source is taken off. Tested in the stage: P listed for a hidden object's
+   render doc stays while it is hidden, and is never off the list on the way
+   to being called for once it shows; R, a source nothing calls for, goes
+   then.
+7. **Extensions of every doc** (`traits: ["*"]`, walk's people) answer no
+   need: they run wherever they are installed, so a doc doesn't list them
+   for having them. A package that wants a doc to bring it declares a trait
+   the doc carries (walk's spawn point does). Late-bound references (an
+   `infoToolId`, a tool by id) aren't needs either, and a package listed
+   only for one is taken off.
+8. **Concurrent prune and add.** One peer taking P off while another adds
+   an object needing P ends with P listed for both, in every order of their
+   passes around the merge (real Automerge merges, 4 orders).
+9. **Publishers state exactly what each doc calls for.** `withPackages`
+   (every `*/probes/scene-packages.mjs`, all copies the same) now sets the
+   list to the stated packages, where it used to append them to what the
+   page listed, and `packageProblems` checks equality, each once. The stated
+   lists that said more are cut: publish-office's room (scene, walk) and its
+   Santorini (scene, seats), publish-aboard's boat (no tabletop), and
+   publish-table's Santorini (seats and a deck decide: no deck, no tabletop
+   or card-table). publish-office, publish-aboard, publish-table and
+   publish-fitout check on the page that the stage's answering packages are
+   exactly those stated.
+10. **Published examples.** Six lists shrink on a writable visit (worked out
+    in node from each doc in the folder and every doc its live links reach,
+    against every package's built plugin metadata): Santorini table, both
+    copies (tabletop and card-table: its pieces carry only `scene.carry` and
+    `seats`); Lost Cities aboard (tabletop: her game is a link that lists
+    its own); Quiet games room (tabletop: its tables are links); Fitting
+    out's boat (joints, traversal) and its hatch W (traversal, sailing:
+    published with the old appending `withPackages`). By the no-back-compat
+    rule they are republished from the fixed publishers and swapped in the
+    folder by the integrator, before any check visits them writable.
+
+Questions for the lead:
+- The one disagreement left takes turns: P's versions differ on a trait
+  another package answers on both viewers. Each is right by its own
+  registry, so while both are open on different versions one takes P off
+  and the other lists it again, until their versions meet (a test plays
+  it: 20 writes in 10 rounds, none once the versions agree). Acceptable,
+  or should something (a version on the entry, a hold on removals while
+  another viewer is here) settle it?

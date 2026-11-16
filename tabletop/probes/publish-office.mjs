@@ -44,10 +44,12 @@ import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs";
 
-// the room's own: the scene, the tables (tabletop's), and walk (the entrance
-// mat is a spawn point). Each game lists its own (GAME_PACKAGES): a view
-// offers every open doc's packages together (scene/STAGE.md, "Packages")
-const PACKAGES = ["scene", "tabletop", "walk"];
+// the room's own: the scene, and walk (the entrance mat is a spawn point).
+// Each game lists its own (GAME_PACKAGES): a view offers every open doc's
+// packages together (scene/STAGE.md, "Packages"). Each list is exactly what
+// its doc calls for: the stage takes off a listed package nothing in the doc
+// calls for, so a longer list would be rewritten by the first writable visit.
+const PACKAGES = ["scene", "walk"];
 
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1, art: 0, game: 1 };
 const args = {};
@@ -82,14 +84,17 @@ const TITLE = typeof args.title === "string" ? args.title : "Quiet games room";
 // --game <url>: the Lost Cities game doc the room's Lost Cities table links (publish-aboard.mjs prints it), so
 // the room and the boat play the same game (scene/COMPOSITION.md, worked example 3). Without it, the room's own.
 const GAME = typeof args.game === "string" ? args.game : null;
-// each game is a doc of its own, listing what its contents come from
-const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];
+// each game is a doc of its own, listing what its contents come from, in the
+// room's order: Lost Cities and Dominoes have hands and a kept deck
+// (tabletop's, card-table's); Santorini has seats and pieces only
+const DECKED = ["scene", "seats", "tabletop", "card-table"];
+const GAME_PACKAGES = [DECKED, ["scene", "seats"], DECKED];
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
 for (const p of ["scene", "seats", "tabletop", "card-table", "keep", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-office"));
-const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES])].map((p) => [p, pushworkUrl(p)]));
+const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES.flat()])].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 
 const { browser, checklist, sleep } = await import("./cdp.mjs");
@@ -137,7 +142,7 @@ try {
     const answering = new Set(pk.answering.map((p) => folderOf(p.importUrl)));
     // (the room's own stage calls for the scene's and the spawn point's; seats and the keeper are its games', which
     // each game lists: the view asks for every open doc's together, so the room doesn't list them for its games)
-    check("the stage lists the package of every plugin the room calls for, each one stated", ["scene", "walk"].every((p) => answering.has(p) && pk.listed.includes(urls[p])) && [...answering].every((p) => PACKAGES.includes(p)) && (pk.suggested == null || pk.suggested === urls.scene), { answering: [...answering], listed: pk.listed.map(folderOf), suggested: pk.suggested });
+    check("the stage lists the package of every plugin the room calls for, exactly those stated", PACKAGES.every((p) => answering.has(p) && pk.listed.includes(urls[p])) && answering.size === PACKAGES.length && (pk.suggested == null || pk.suggested === urls.scene), { answering: [...answering], listed: pk.listed.map(folderOf), suggested: pk.suggested });
     check("the room lists none of its games' packages for them (seats, the keeper)", !["seats", "card-table"].some((p) => pk.listed.includes(urls[p])), { listed: pk.listed.map(folderOf) });
     snapshot = await P("snapshot()");
     report.shots.push(await b.shot(join(SHOTS, "office-built.png")));
@@ -194,7 +199,7 @@ async function art() {
 async function publish(snapshot0) {
   let snap = snapshot0;
   const docs = { ...snap.docs, [snap.scene]: withPackages(snap.docs[snap.scene], PACKAGES) };
-  for (const g of snap.games) docs[g] = withPackages(snap.docs[g], GAME_PACKAGES);
+  snap.games.forEach((g, i) => (docs[g] = withPackages(snap.docs[g], GAME_PACKAGES[i])));
   // the room's Lost Cities links the given game (the boat's): its own game doc, deck and files aren't published
   if (GAME) {
     const own = snap.games[0];

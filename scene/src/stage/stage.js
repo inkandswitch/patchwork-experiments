@@ -387,7 +387,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // The doc lists the packages its contents come from, and the ones this
   // viewer doesn't have are offered (STAGE.md, "Packages"). The render
   // manager reports the provider each render doc names (objState), so one a
-  // render doc asks for is listed even when the object's own field differs.
+  // render doc asks for is listed even when the object's own field differs,
+  // and no source package is taken off the list while a render doc built
+  // here hasn't said yet (one shown, not veiled, may name any provider).
   // (through the view's repo, not the stage's: a package is the viewer's to load, at its live heads,
   // never a doc this one reaches, so fixing a link never records one)
   const packages = createPackages({
@@ -396,6 +398,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     plugins: patchworkPlugins,
     local,
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
+    // (an object with a source is built through a render doc, which says its provider once it has loaded: hidden or veiled, never)
+    rendersKnown: () => {
+      const objects = doc()?.objects ?? {};
+      for (const [id, route] of routes) if (route === "built" && objects[id]?.sourceUrl && !said(objState.get(id))) return false;
+      return true;
+    },
     // ("Not now" is the view's: a doc opened after it isn't asked again either)
     declined: view.declinedPackages,
     // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
@@ -484,6 +492,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   const routes = new Map(); // id → where its content was routed at the last sync: "built", "file" or null (providers.js routeOf)
   const objState = new Map(); // id → what the manager or the queue last said (its `content` says which)
+  // has the manager said which provider this object's render doc names? (its first word, before the doc has loaded, hasn't)
+  const said = (st) => st?.content === "built" && "providerId" in st;
   const displayKeys = new Map(); // id → displayKey last applied
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
   // render docs this scene made itself, this session: nothing to wait to sync before building
@@ -518,9 +528,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     announce: role === "pinned" ? null : view.announcer,
     loadProvider,
     onState: (id, s) => {
-      const before = objState.get(id)?.bounds;
+      const was = objState.get(id);
+      const before = was?.bounds;
       // the provider its render doc names is one the scene calls for (packages)
-      if (objState.get(id)?.providerId !== s.providerId) packages.check();
+      if (said(was) !== said({ ...s, content: "built" }) || was?.providerId !== s.providerId) packages.check();
       objState.set(id, { ...s, content: "built" });
       // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
       if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
@@ -2052,7 +2063,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       return null;
     }
     if (dead) return null;
-    packages.used("scene:part", partId);
     const id = typeof made === "string" && doc().objects?.[made] ? made : null;
     if (id) view.select([...path, id]);
     return id;
@@ -2088,7 +2098,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       return false;
     }
     if (dead) return false;
-    packages.used("scene:template", templateId);
     if (n === 0) view.arrive();
     return true;
   }

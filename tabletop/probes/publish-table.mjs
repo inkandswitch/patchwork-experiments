@@ -55,9 +55,11 @@
 // the joint keeper's (a `secure-deck`, the card-table package's). Setting up
 // writes it as plain data, waiting for players: the encrypted shuffle
 // happens later, in the seated players' own browsers, so nothing here needs
-// WebCrypto. The published scene lists the four packages it is made of:
-// the scene's, the seats', tabletop's (hands and cards) and card-table's
-// (the keeper). A table with no deck (Santorini) lists no keeper.
+// WebCrypto. The published scene lists the packages it is made of, exactly
+// (the stage takes off a listed package nothing in it calls for): the
+// scene's, the seats' when it has seats, and with a deck tabletop's (hands
+// and cards) and card-table's (the keeper). A table with no deck
+// (Santorini) lists neither.
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -82,11 +84,12 @@ import { packageProblems, pushworkUrl, scenePackages, scenePatchwork, withPackag
 
 // A published table names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the seats (where anyone sits at it), the table's own, and the
-// keeper's. In the browser the stage works these out from the registry;
-// here they're stated.
-const packagesOf = ({ seated }) => ["scene", ...(seated ? ["seats"] : []), "tabletop", "card-table"];
-const PACKAGES = packagesOf({ seated: true });
+// the scene, the seats (where anyone sits at it), and with a deck the
+// table's own and the keeper's. In the browser the stage works these out
+// from the registry; here they're stated, and --template checks them
+// against the stage's.
+const packagesOf = ({ seats = 0, deck = null }) => ["scene", ...(seats > 0 ? ["seats"] : []), ...(deck ? ["tabletop", "card-table"] : [])];
+const PACKAGES = packagesOf({ seats: 2, deck: "deck" });
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -192,11 +195,11 @@ const registry = async (type) => {
 };
 // the decks' containers and the seats' owner first, so the scene never names one that isn't there;
 // a published example is made with everything, so any warning is a failure
-const made = await prepareTable({ repo, registry }, layout);
-const { binds, kinds } = made;
-if (made.notes.length) throw new Error(`the table was made short: ${made.notes.join(" ")}`);
+const prepared = await prepareTable({ repo, registry }, layout);
+const { binds, kinds } = prepared;
+if (prepared.notes.length) throw new Error(`the table was made short: ${prepared.notes.join(" ")}`);
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
-writeTable(table, layout, made);
+writeTable(table, layout, prepared);
 // each deck's container, as its cards name it
 const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
 const deckUrls = Object.fromEntries(Object.keys(decks).map((deckId) => [deckId, binds[deckId](0)]).map(([deckId, t]) => [deckId, Object.values(t)[0].by]));
@@ -260,7 +263,7 @@ async function fromTemplate(gameId) {
   const ROOT = resolve(PKG, "..");
   for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
   // the packages this template's table is made of: the seats' only where anyone sits at it
-  const PACKAGES = packagesOf({ seated: TABLES[gameId].seats > 0 });
+  const PACKAGES = packagesOf(TABLES[gameId]);
   const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-template"));
   const id = `tabletop.${gameId}`;
   // where each built package is published (its pushwork URL), so the page
@@ -306,16 +309,17 @@ async function fromTemplate(gameId) {
     check(`every piece not fixed to the table carries scene.carry (${d.loose})`, d.loose > 0 && d.carried === d.loose, { loose: d.loose, carried: d.carried });
     check(`A lands ${lands === "Look" ? "in Look" : "watching from a seat"}`, await until(`bodyLabel('a') === ${JSON.stringify(lands)}`, 20_000), await P("bodyLabel('a')"));
     // What the table needs is the stage's to say, not this script's: A's stage
-    // lists the package of every plugin the scene calls for (and of the
-    // template it ran) and names the scene package as the suggested import.
-    // Each must be one this script states, or the published table would ask
-    // for a package nobody said it uses.
+    // lists the package of every plugin the scene calls for and names the
+    // scene package as the suggested import. They must be exactly what this
+    // script states: one more and the published table would ask for a
+    // package nobody uses (and lose it on the first writable visit), one
+    // fewer and it wouldn't ask for one it needs.
     const stated = PACKAGES.map((dir) => urls[dir]);
     const listedAll = await until("packages('a') && ((k) => k.suggested !== null && k.answering.length > 0 && k.answering.every((p) => p.importUrl && k.listed.includes(p.importUrl)))(__p.packages('a'))", 10_000);
     const pk = await P("packages('a')");
     check(
-      `A's stage lists the package of every plugin the table calls for, each one of ${PACKAGES.join(", ")}, and names the scene package as its suggested import`,
-      listedAll && pk.listed.every((u) => stated.includes(u)) && pk.suggested === urls.scene,
+      `A's stage lists the package of every plugin the table calls for, exactly ${PACKAGES.join(", ")}, and names the scene package as its suggested import`,
+      listedAll && pk.listed.every((u) => stated.includes(u)) && new Set(pk.answering.map((p) => p.importUrl)).size === stated.length && stated.every((u) => pk.answering.some((p) => p.importUrl === u)) && pk.suggested === urls.scene,
       { answering: pk.answering.map((p) => `${p.id} ← ${p.importUrl ? folderOf(p.importUrl) : "nowhere"}`), listed: pk.listed.map(folderOf), suggested: folderOf(pk.suggested), stated: PACKAGES }
     );
     snapshot = await P("snapshot()");

@@ -91,7 +91,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([]);
   });
 
-  it("takes off only what this viewer has and nothing calls for, every entry naming it, in one change; a package missing here and the scene package stay, and a part's package used here", async () => {
+  it("takes off only what this viewer has and nothing calls for, every entry naming it, in one change; a package missing here and the scene package stay, and a part lists only what it made calls for", async () => {
     const JOINTS = fakeUrl();
     const TRAVERSAL = fakeUrl();
     const MISSING = fakeUrl();
@@ -114,12 +114,13 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(s.doc()["@patchwork"].suggestedImportUrl).toBe(SCENE);
     // taking off is never a way to stop asking: the one missing here is still asked about
     expect(state(s).ask).toEqual([MISSING]);
-    // a part run here: listed, and kept though nothing it made calls for it
+    // a part run here: what it made calls for nothing, so nothing of the part's is listed
     await s.api("t.user").part("buoy", { parent: null });
     await settle();
     s.change((d) => (d.title = "Fitted"));
     await settle();
-    expect(urls(s)).toEqual([SAILING, MISSING, SCENE, PARTS]);
+    expect(s.doc().objects.b?.name).toBe("Buoy");
+    expect(urls(s)).toEqual([SAILING, MISSING, SCENE]);
   });
 
   it("not before the registry has gone quiet: the viewer's own packages may still be on their way", async () => {
@@ -132,24 +133,48 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([SAILING]);
   });
 
-  it("a package it took off that a peer lists again stays, until it lists that package itself", async () => {
+  it("while a need goes unanswered here nothing is taken off: a package listed for it may be what answers it elsewhere", async () => {
     const JOINTS = fakeUrl();
-    const s = await mount({ extensions: [weather, { meta: { id: "joints", traits: ["joints.slide"], importUrl: JOINTS }, module: { create: () => ({}) } }], doc: { packages: [{ url: JOINTS }] } });
+    const s = await mount({ extensions: [weather, { meta: { id: "joints", traits: ["joints.slide"], importUrl: JOINTS }, module: { create: () => ({}) } }], doc: { traits: { "joints.hinge": {} }, packages: [{ url: JOINTS }] } });
     await settle();
-    expect(urls(s)).toEqual([]);
-    // a peer whose joints answers something here this one's doesn't puts it back
-    s.change((d) => d.packages.push({ url: JOINTS }));
-    await settle();
+    // (a hinge: an older joints here has no plugin for it, a newer one elsewhere may)
     expect(urls(s)).toEqual([JOINTS]);
     s.change((d) => (d.title = "Again"));
     await settle();
     expect(urls(s)).toEqual([JOINTS]);
-    // a slide here: still listed; the slide gone: this view listed nothing itself, so it stays
-    s.change((d) => (d.traits["joints.slide"] = {}));
+    // every need answered here: joints answers none of them, so it goes
+    s.change((d) => delete d.traits["joints.hinge"]);
     await settle();
-    s.change((d) => delete d.traits["joints.slide"]);
+    expect(urls(s)).toEqual([]);
+    // a peer listing it again changes nothing that decides it: taken off again
+    s.change((d) => d.packages.push({ url: JOINTS }));
     await settle();
-    expect(urls(s)).toEqual([JOINTS]);
+    expect(urls(s)).toEqual([]);
+  });
+
+  it("a render doc names its provider: that provider's package is listed though the object's field names another, and no source package goes before every render doc built here has said", async () => {
+    const P = fakeUrl();
+    const Q = fakeUrl();
+    const R = fakeUrl();
+    const repo = new FakeRepo();
+    await mount({ repo });
+    for (const [id, url] of [["p-mesh", P], ["q-mesh", Q], ["r-mesh", R]]) getRegistry("scene:source").register({ type: "scene:source", id, content: "built", load: async () => ({}) }, url);
+    const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing" });
+    const render = repo.add({ providerId: "p-mesh", status: "idle" });
+    // hidden, so its render doc isn't loaded yet: P and R are both sources, so both stay
+    const h = repo.add(emptyScene({ title: "T", objects: { a: object({ providerId: "q-mesh", sourceUrl: source.url, renderUrl: render.url, visible: false }) }, order: ["a"], packages: [{ url: P }, { url: R }] }));
+    const seen = [];
+    h.on("change", () => seen.push(urls({ doc: () => h.doc() })));
+    const s = await mount({ handle: h, repo });
+    await settle();
+    expect(urls(s)).toEqual([P, R, Q]);
+    // shown: its render doc says p-mesh, so P is called for, and R, called for by nothing, goes
+    s.change((d) => (d.objects.a.visible = true));
+    await until(() => !urls(s).includes(R), 2000);
+    await settle();
+    expect(urls(s)).toEqual([P, Q]);
+    // P was never off the list on the way
+    expect(seen.every((list) => list.includes(P))).toBe(true);
   });
 
   it("the scene's own plugins, registered here without an importUrl, and a dev server's, name nothing", async () => {
@@ -194,21 +219,28 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(listing.doc().packages).toEqual([{ url: SAILING }]);
   });
 
-  it("a part or a template run here names its package, though it leaves no mark of its own", async () => {
+  it("a part or a template run here lists what it made calls for, and nothing of its own", async () => {
     const PARTS = fakeUrl();
     const TEMPLATES = fakeUrl();
-    const part = { meta: { id: "buoy", importUrl: PARTS }, module: { create: async (ctx) => (ctx.change((d) => ((d.objects.b = { name: "Buoy", providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } }), d.order.push("b"))), "b") } };
+    const at = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
+    const part = { meta: { id: "buoy", importUrl: PARTS }, module: { create: async (ctx) => (ctx.change((d) => ((d.objects.b = { name: "Buoy", providerId: null, transform: at }), d.order.push("b"))), "b") } };
+    const lit = { meta: { id: "lit-buoy", importUrl: PARTS }, module: { create: async (ctx) => (ctx.change((d) => ((d.objects.c = { name: "Lit buoy", providerId: null, transform: at, traits: { "buoy.light": {} } }), d.order.push("c"))), "c") } };
+    const light = { meta: { id: "buoy.light", traits: ["buoy.light"], importUrl: PARTS }, module: { create: () => ({}) } };
     const template = { meta: { id: "level", importUrl: TEMPLATES }, module: { create: async (ctx) => ctx.change((d) => (d.title = "Level")) } };
     const user = { meta: { id: "t.user" }, module: { create: (api) => ({ api }) } };
-    const s = await mount({ extensions: [user], parts: [part], templates: [template] });
+    const s = await mount({ extensions: [user, light], parts: [part, lit], templates: [template] });
     await settle();
     expect(urls(s)).toEqual([]); // offered in the bin, not used: not listed
     await s.api("t.user").part("buoy", { parent: null });
-    await settle();
-    expect(urls(s)).toEqual([PARTS]);
     await s.api("t.user").template("level");
     await settle();
-    expect(urls(s)).toEqual([PARTS, TEMPLATES]);
+    expect(urls(s)).toEqual([]); // what they made calls for nothing
+    await s.api("t.user").part("lit-buoy", { parent: null });
+    await settle();
+    expect(urls(s)).toEqual([PARTS]); // the light the lit buoy carries is the package's
+    s.change((d) => delete d.objects.c);
+    await settle();
+    expect(urls(s)).toEqual([]);
   });
 
   it("two views of one scene: the package is listed once", async () => {

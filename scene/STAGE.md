@@ -764,66 +764,75 @@ answered by looking in the plugin registry.
 
 | In the doc | Looked up as |
 |---|---|
-| an object's `providerId` (and the provider its render doc names) | the `scene:source` with that id |
+| an object's `providerId` (and the provider its render doc names) | every `scene:source` registered with that id (two packages may register one id, in an order that differs between viewers) |
 | a trait key on the scene or on an object | every `scene:extension` whose `traits` include it |
 
 `view.start` is no mark of its own: its body's package comes with its
-place's trait (above). A part or a
-template leaves no mark of its own (what it makes is objects and traits,
-found above), so the stage notes it when one is run in this view. Nothing
-else in a scene doc names a plugin: general extensions (the editor's own)
-run for whoever has them, whatever the doc says.
+place's trait (above). A part or a template leaves no mark of its own: what
+it makes is objects and traits, found above, and a part whose result calls
+for nothing of its package doesn't list it. Nothing else in a scene doc
+names a plugin: general extensions (the editor's own) and extensions of
+every doc (`traits: ["*"]`, walk's people) run for whoever has them,
+whatever the doc says, so no doc calls for them by having them; a package
+that wants a doc to bring it declares a trait the doc carries (walk's spawn
+point). References bound late by id (an `infoToolId`, a
+`<patchwork-view tool-id>`, a datatype) aren't needs either: they degrade
+to nothing where the tool isn't installed (CLAUDE.md), and a package
+listed only for one is taken off.
 
-**Reconcile: the list is true by construction.** After every doc change and
-every registry change the stage adds `{ url }` for each package that
-- a registered plugin answering one of those needs (or a part or template
-  run here) was registered from (its `importUrl`),
-- the URL rule gives a URL for, and
-- the list doesn't name.
+**Reconcile: the list is what the doc calls for.** After every doc change
+and every registry change the stage writes, in one change (`reconcileList`,
+`changeList`):
+- **Add** `{ url }` for each package that a registered plugin answering one
+  of those needs was registered from (its `importUrl`), that the URL rule
+  gives a URL for and that the list doesn't name (`packagesToList`).
+- **Prune**, once the registry has gone quiet (`PACKAGE_SETTLE_MS`), every
+  entry naming a listed package (twice, at heads) that
+  (`packagesToPrune`)
+  1. is registered here: one missing on this machine, still loading, failed
+     or declined answers nothing here, which says nothing about the doc, so
+     it stays;
+  2. answers none of the doc's needs (none of its registered plugins does);
+  3. isn't the scene package (the stage itself, and the doc's suggested
+     import);
+  4. while a render doc built here hasn't said yet which provider it names
+     (one hidden or veiled never loads), registers no `scene:source`: a
+     render doc may name any provider, its object's field notwithstanding;
+  and only while every need of the doc is answered here
+  (`unansweredNeeds` is empty). A need nothing here answers may be answered
+  elsewhere by any listed package (a newer version of one, say), so a
+  viewer who can't answer the whole doc takes nothing off.
 
 So whoever adds content has its plugin (they couldn't have added it
 otherwise), and their stage names its package: a scene can't call for a
 plugin whose package its list doesn't name, short of a doc written by hand
 or made with a plugin from a dev server. Only someone who has a plugin can
-say where it comes from; a viewer without it adds nothing. This includes the
-scene package itself (its `file-glb` shows most objects): it can't help load
-itself, but no rule is needed to leave it out, and the list is then the whole
-of what the scene is made of.
+say where it comes from; a viewer without it adds nothing and takes nothing
+off. This includes the scene package itself (its `file-glb` shows most
+objects): it can't help load itself, but no rule is needed to leave it out,
+and the list is then the whole of what the scene is made of. A trait taken
+away, or the last object a package's provider built, takes its package off.
+Each doc lists only its own packages (a linked doc lists its own; the
+view's one prompt covers every open doc's), so the doc's own needs are the
+whole question.
 
-**Prune: the list reconciles both ways.** In the same pass, once the registry has gone
-quiet (`PACKAGE_SETTLE_MS`: the viewer's own packages may still be on their
-way), the stage takes off every entry naming a listed package that
-(`packagesToPrune`)
-1. is registered here: one missing on this machine, still loading, failed
-   or declined answers nothing here, which says nothing about the doc, so it
-   stays;
-2. answers none of the doc's needs (none of its registered plugins does);
-3. wasn't used here (a part or template run in this view keeps its
-   package, though what it made may call for nothing of it);
-4. isn't the scene package (the stage itself, and the doc's suggested
-   import); and
-5. this view hasn't taken off before and seen listed again by someone else
-   (`relisted`, below).
-
-So a trait taken away, or the last object a package's provider built,
-takes its package off, and the list holds what the doc calls for. Each
-doc lists only its own packages (a linked doc lists its own; the view's
-one prompt covers every open doc's), so the doc's own needs are the whole
-question. At the fixed point of the pass, the list is (the packages of
-the plugins answering the doc's needs ∪ those used here) ∪ (what was
-listed ∩ what isn't registered here). The additions and removals are one
-change (`changeList`), and a removal takes every entry naming the package
-(twice, at heads).
+Both halves are a function of the doc and this viewer's registry, nothing
+the view remembers. At their fixed point the list is
+`answering ∪ (listed ∩ (unregistered ∪ {scene package} ∪ kept))`, where
+`kept` is everything listed while a need goes unanswered here, and the
+source packages while a render doc hasn't said; the next pass writes
+nothing.
 
 - **Two viewers who disagree.** Two viewers can answer differently with
-  the same package (one has an older version without the plugin the doc
-  calls for). The one without the answer takes it off, the other lists it
-  again, and without rule 5 they would take turns forever. A view keeps the
-  packages it took off (`reconcileList`'s `pruned`), and leaves one listed
-  again by anyone but itself; it forgets one when it lists that package
-  itself. With what the doc needs held still, a view writes each package
-  at most once, so any number of viewers settle; the one that has a use
-  for it wins.
+  the same package URL, when each has loaded a different version of it.
+  When the older lacks the plugin the doc calls for, the need goes
+  unanswered there and it takes nothing off. When another package answers
+  that need on both, the older takes the package off and the newer lists it
+  again, in turn, while both are open; that ends when their versions meet.
+  They do: a package is listed by its bare URL and loaded at its current
+  heads, an installed one following its folder as the module watcher does,
+  one a scene loaded on the next page load. (A question for the lead:
+  COMPOSITION, Decisions, packages pruned.)
 - **Never made, never rewritten.** An entry is added or removed whole, and
   the list is never made: a scene without one is from before `packages`
   and is republished, not patched (see "Shared maps").
