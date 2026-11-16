@@ -67,6 +67,23 @@ export function siteMesh(site, landmarks, frame, groundAt, sinkAt) {
   return { layers, made, replaces, measures };
 }
 
+/**
+ * A door face's sliding leaves, about `count` of them over main.from…main.to
+ * (metres along the face), none over the small door: the stretches either
+ * side of it share the leaves by length, at least one each. → [[d0, d1], …]
+ * in order along the face.
+ */
+export function doorLeaves(main, small, count) {
+  const runs = small && small.to > main.from && small.from < main.to ? [[main.from, small.from], [small.to, main.to]].filter(([a, b]) => b - a > 0.01) : [[main.from, main.to]];
+  const total = runs.reduce((t, [a, b]) => t + (b - a), 0);
+  const out = [];
+  for (const [a, b] of runs) {
+    const k = Math.max(1, Math.round((count * (b - a)) / total));
+    for (let q = 0; q < k; q++) out.push([a + ((b - a) * q) / k, a + ((b - a) * (q + 1)) / k]);
+  }
+  return out;
+}
+
 /** A box (an oriented rectangle in plan) from y0 to y1: { c, u, hu, hv } as buildings.js orientedBox, walls and both lids. */
 function block(s, c, u, hu, hv, y0, y1, hex) {
   const v = [-u[1], u[0]];
@@ -159,13 +176,10 @@ export const KINDS = {
       quadOut(s, [q0[0], y0, q0[1]], [q1[0], y0, q1[1]], [q1[0], y1, q1[1]], [q0[0], y1, q0[1]], rgb(hex), [(q0[0] + q1[0]) / 2 + outN[0] * 5, y0 + 1, (q0[1] + q1[1]) / 2 + outN[1] * 5]);
     };
     face(0, span, st.floor + D.main.head, st.eave, 0.05, C.header);
-    const leaves = 8;
-    for (let q = 0; q < leaves; q++) {
-      const d0 = D.main.from + ((D.main.to - D.main.from) * q) / leaves, d1 = D.main.from + ((D.main.to - D.main.from) * (q + 1)) / leaves;
-      face(d0 + 0.03, d1 - 0.03, st.floor, st.floor + D.main.head - 0.05, 0.12 + (q % 2) * 0.1, C.doors[Math.floor(hash01(q, 9) * C.doors.length)]);
-    }
+    const leaves = doorLeaves(D.main, D.small, 8);
+    leaves.forEach(([d0, d1], q) => face(d0 + 0.03, d1 - 0.03, st.floor, st.floor + D.main.head - 0.05, 0.12 + (q % 2) * 0.1, C.doors[Math.floor(hash01(q, 9) * C.doors.length)]));
     if (D.small) face(D.small.from, D.small.to, st.floor, st.floor + D.small.head, 0.3, "#2f2a26");
-    return { length, span, area: length * span, floor: st.floor, eave: st.eave, ridge: st.ridge, pitch: (Math.atan(rise / box.hv) * 180) / Math.PI, doorHead: D.main.head, bearing: ((Math.atan2(ux, -uz) * 180) / Math.PI + 360) % 360 };
+    return { length, span, area: length * span, floor: st.floor, eave: st.eave, ridge: st.ridge, pitch: (Math.atan(rise / box.hv) * 180) / Math.PI, doorHead: D.main.head, leaves, small: D.small ? [D.small.from, D.small.to] : null, bearing: ((Math.atan2(ux, -uz) * 180) / Math.PI + 360) % 360 };
   },
 
   /** A building on four corners: walls and a flat, gable or mono-pitch roof (buildings.js house). */

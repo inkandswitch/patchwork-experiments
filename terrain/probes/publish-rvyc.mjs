@@ -3,7 +3,7 @@
 // stock sloop on the club's moorings, people starting in Look at a home view.
 //
 //   (in scene/, sailing/ and terrain/) pnpm build
-//   node probes/publish-rvyc.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--shots <dir>] [--lock <dir>] [--show]
+//   node probes/publish-rvyc.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--shots <dir>] (--lock <dir> | $CHROME_LOCK) [--show]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -44,6 +44,8 @@
 
 import { join, resolve, dirname } from "node:path";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
+import { publishDocs } from "./publish-stamp.mjs";
+import { lockDir } from "./chrome-lock.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -69,6 +71,11 @@ if (unknown.length) {
   process.exit(unknown.includes("help") ? 0 : 2);
 }
 const DRY = !!args["dry-run"];
+// never Chrome without the lock (chrome-lock.mjs): refused before anything is fetched
+if (!lockDir(args)) {
+  console.error("No Chrome lock: pass --lock <dir> or set CHROME_LOCK (one Chrome at a time across every probe and session).");
+  process.exit(2);
+}
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
@@ -89,8 +96,8 @@ if (fetched.status !== 0) {
 
 // ─── 2. the scene, in the browser ───────────────────────────────────────────
 const { browser, checklist, sleep } = await import("./cdp.mjs");
-// one Chrome at a time across probes that honour --lock (chrome-lock.mjs)
-await (await import("./chrome-lock.mjs")).chromeLock(typeof args.lock === "string" ? resolve(args.lock) : null);
+// one Chrome at a time across every probe and session: --lock or $CHROME_LOCK, never without (chrome-lock.mjs)
+await (await import("./chrome-lock.mjs")).chromeLock(lockDir(args));
 const PORT = 4851;
 const b = await browser({ root: ROOT, port: PORT, cdp: 9851, page: "/terrain/probes/rvyc-probe.html", width: 1280, height: 760, show: !!args.show, timeout: 900_000, mounts: { "/terrain-cache/": CACHE, "/snap/": SNAP } });
 const js = (expr, ms = 120_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -230,20 +237,14 @@ function revive(doc) {
 
 // ─── 3. publish ─────────────────────────────────────────────────────────────
 async function publish(snap) {
-  // nobody who made it is here: their claims (who simulated her) don't travel, nor their contact doc
-  const unclaimed = (doc) => {
-    const d = structuredClone(doc);
-    delete d.claims;
-    for (const o of Object.values(d.objects ?? {})) delete o.claims;
-    return d;
-  };
-  const docs = Object.fromEntries(Object.entries(snap.docs).filter(([, d]) => d["@patchwork"]?.type !== "contact").map(([u, d]) => [u, u === snap.scene ? withPackages(unclaimed(d), PACKAGES) : d]));
+  // the contact doc left out, claims dropped, the scene stamped with its packages (publish-stamp.mjs: a dry run goes on without them where nothing's synced)
+  const { docs, problems: stamped, note } = publishDocs(snap, PACKAGES, { dry: DRY, withPackages, packageProblems });
   const urls = Object.keys(docs);
-  const stamped = packageProblems(docs[snap.scene], PACKAGES);
   if (stamped.length) {
     for (const p of stamped) console.error(`  ${p}`);
     return b.stop(1);
   }
+  if (note) console.log(`dry run: ${note}`);
   if (DRY) {
     console.log(`dry run: ${urls.length} docs to publish (${urls.map((u) => docs[u]["@patchwork"]?.type).join(", ")}; nothing published)`);
     return b.stop(0);

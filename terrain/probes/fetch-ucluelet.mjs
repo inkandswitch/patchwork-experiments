@@ -19,16 +19,21 @@
 // refused); every water node has a depth from a survey or a flagged fill,
 // every land node a height or a flagged floor, in the counts research found;
 // every islet clears the land floor; known places are land or water; the
-// data is what was checked (SHA-256, OSM pinned); the boatyard's hangar
-// stands on land and the anchorage is deep enough for a 2 m keel at the
-// lowest normal tide all round a 30 m swing.
+// data is what was checked (SHA-256, OSM pinned); the anchorage is deep
+// enough for a 2 m keel at the lowest normal tide all round a 30 m swing;
+// the yard's lidar heights the site is conformed to (ucluelet.js YARD) are
+// the fetched lidar's, and the hangar's slab is within 0.3 m of the drawn
+// ground; the depths at the haul-out pier's head (its `headDepth`) are the
+// fetched heights'.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fetchTerrainData, nceiUrl, overpassQuery, latLonBox } from "../src/fetch-data.js";
 import { lookQuery } from "../src/look-osm.js";
-import { uclueletDoc, DATUM, EXPECTED, OSM_DATE, ANCHORAGE, HEIGHTS } from "../src/ucluelet.js";
+import { uclueletDoc, DATUM, EXPECTED, OSM_DATE, ANCHORAGE, HEIGHTS, YARD, SITE } from "../src/ucluelet.js";
+import { readTiff } from "../src/tiff.js";
+import { resampleLatLon, sampleModel } from "../src/resample.js";
 import { QUALITY, regionsOf } from "../src/burn.js";
 import { shape } from "../src/build.js";
 import { unpackLayers, sourceAgreement } from "../src/layered.js";
@@ -123,13 +128,12 @@ check("the data is what was checked on 2026-11-15 (OSM as of its pinned moment)"
 check("the coastline tells land from water at every node", sh.problems.length === 0 && sh.cls.stats.unknown === 0, { problems: sh.problems, stats: sh.cls.stats });
 check("every open end of the coastline is well outside the grid", sh.ends.every((e) => e.away > sh.cls.band + grid.cell), sh.ends.map((e) => ({ id: e.id, away: Math.round(e.away) })));
 check("the lidar lines up with OSM's coastline (off the shore, above +1 m exactly where OSM says land)", got.summary.check?.share >= 0.98, got.summary.check);
+// the lidar's bare earth, as fetched
+const dtmKey = Object.keys(index).find((k) => index[k].url === HEIGHTS.rasters["nrcan-hrdem-dtm"].url);
+const dtm = readTiff(readFileSync(join(CACHE, index[dtmKey].file)));
 // the lidar, misplaced: each must be refused
 {
-  const { readTiff } = await import("../src/tiff.js");
-  const { resampleLatLon } = await import("../src/resample.js");
-  const key = Object.keys(index).find((k) => index[k].url === HEIGHTS.rasters["nrcan-hrdem-dtm"].url);
-  const t = readTiff(readFileSync(join(CACHE, index[key].file)));
-  const v = resampleLatLon(t, grid, frame, -0.12);
+  const v = resampleLatLon(dtm, grid, frame, HEIGHTS.rasters["nrcan-hrdem-dtm"].toMWL);
   const shifted = (f) => {
     const out = new Float32Array(N);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) out[j * n + i] = f(i, j);
@@ -164,6 +168,23 @@ const swing = [];
 for (let a = 0; a < 16; a++) for (const r of [0, 10, 20, 30]) swing.push(-hf.heightAt(ax + r * Math.cos((a * Math.PI) / 8), az + r * Math.sin((a * Math.PI) / 8)));
 const shallowest = Math.min(...swing);
 check("the anchorage is deep enough for a 2 m keel at the lowest normal tide, all round a 30 m swing", shallowest + DATUM.tide.LLWLT > 2.2, { at: [Math.round(ax), Math.round(az)], depth: +(-hf.heightAt(ax, az)).toFixed(2), shallowest: +shallowest.toFixed(2), llwlt: DATUM.tide.LLWLT });
+// the yard: the survey and the lidar disagree; the site is drawn on the lidar's ground (ucluelet.js YARD)
+{
+  const toMWL = HEIGHTS.rasters[YARD.lidar.source].toMWL;
+  const got = YARD.lidar.points.map(([lat, lon, h]) => ({ recorded: h, lidar: +(sampleModel(dtm, lon, lat) + toMWL).toFixed(2) }));
+  const mean = got.reduce((a, p) => a + p.lidar, 0) / got.length;
+  check("the yard's lidar heights the site is conformed to are the fetched lidar's (each to 2 cm; their mean, and the survey's offset from it)", got.every((p) => Math.abs(p.lidar - p.recorded) <= 0.02) && Math.abs(mean - YARD.lidar.mean) <= 0.01 && Math.abs(Math.round((mean - YARD.surveySlab) * 100) / 100 - YARD.offset) <= 0.01, { mean: +mean.toFixed(3), offset: YARD.offset, points: got });
+  const hangar = SITE.structures.find((st) => st.id === "hangar");
+  const pts = [...hangar.corners, [hangar.corners.reduce((a, p) => a + p[0], 0) / 4, hangar.corners.reduce((a, p) => a + p[1], 0) / 4]];
+  const drawn = pts.map(([lat, lon]) => hf.heightAt(...frame.toLocal(lat, lon)));
+  const drawnMean = drawn.reduce((a, b) => a + b, 0) / drawn.length;
+  check("the hangar's slab is within 0.3 m of the drawn ground (its middle, and the mean of its corners and middle)", Math.abs(hangar.floor - drawnMean) <= 0.3 && Math.abs(hangar.floor - drawn[4]) <= 0.3, { floor: hangar.floor, drawn: drawn.map((v) => +v.toFixed(2)), mean: +drawnMean.toFixed(2) });
+  // the haul-out pier's seaward ends, in the fetched heights (before the shore's burn and the water floor)
+  const raw = sampler({ nx: n, nz: n, x0: grid.x0, z0: grid.z0, cell: grid.cell }, dem, S);
+  const haul = SITE.structures.find((st) => st.id === "haulout");
+  const heads = haul.runways.map((r) => +raw.heightAt(...frame.toLocal(...r[1])).toFixed(2));
+  check("the depths recorded at the haul-out pier's head are the fetched heights' (to 5 cm)", heads.every((h, q) => Math.abs(h - haul.headDepth.mwl[q]) <= 0.05), { heads, recorded: haul.headDepth.mwl });
+}
 const clamped = regionsOf(grid, sh.quality, QUALITY.CLAMPED);
 console.log(JSON.stringify({ summary: got.summary, stats: sh.cls.stats, agreement: sh.agreement, islets: { rings: sh.islets.rings, raised: sh.islets.raised.length, rocks: sh.islets.rocks.length }, clamped: clamped.slice(0, 6), sources: got.sources.map(({ id, url, fetched, sha256 }) => ({ id, url: url?.slice(0, 100), fetched, sha256 })), sums, cache: CACHE, names }, null, 2));
 if (OUT) {

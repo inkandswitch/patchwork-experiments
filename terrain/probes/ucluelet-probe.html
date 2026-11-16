@@ -95,6 +95,23 @@ try {
   }
   const repo = new FakeRepo();
   window.repo = repo;
+  // every write to a Terrain doc, when and which fields, so a render built before one can be found
+  const terrainWrites = [];
+  const addDoc = repo.add.bind(repo);
+  repo.add = (doc, url) => {
+    const h = addDoc(doc, url);
+    if (doc?.["@patchwork"]?.type === "terrain") {
+      const change = h.change.bind(h);
+      h.change = (fn) => {
+        const before = JSON.parse(JSON.stringify(h.doc()));
+        change(fn);
+        const after = h.doc();
+        const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => JSON.stringify(after[k]) !== JSON.stringify(before[k]));
+        terrainWrites.push({ at: Date.now(), heads: h.heads(), keys, stack: new Error().stack.split("\n").slice(2, 7).map((l) => l.trim()).join(" | ") });
+      };
+    }
+    return h;
+  };
   const me = repo.add({ "@patchwork": { type: "contact" }, name: "Pat" });
   let scene;
   if (REPLAY) {
@@ -118,7 +135,14 @@ try {
   setInterval(() => { for (const n of dbg.local.get().notices ?? []) if (!told.includes(n)) told.push(n); }, 20);
 
   const P = (window.__p = {
-    errors, fetched,
+    errors, fetched, terrainWrites,
+    /** the Terrain doc now: its fingerprint by the provider's own module, and its JSON (to diff against a later one) */
+    async terrainNow() {
+      const o = objects()[terrainId()];
+      const doc = repo.handles.get(o.sourceUrl).doc();
+      const src = (await getRegistry("scene:source").load("terrain-mesh")).module;
+      return { fingerprint: (src.default ?? src).fingerprint(doc), heads: repo.handles.get(o.sourceUrl).heads(), json: JSON.stringify(doc) };
+    },
     get dbg() { return dbg; },
     templates: () => [...host.querySelectorAll("[data-template]")].map((b) => b.dataset.template),
     notices: () => told.map((n) => n.text ?? String(n)),

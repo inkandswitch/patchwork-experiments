@@ -3,9 +3,11 @@
 //
 // - The canopy at a node is the lidar's (layers.js: surface less terrain)
 //   where the place has lidar there, else an assumed height where OSM says
-//   wood or scrub (look.trees.assumed), else none. A node is forest where
-//   its canopy is over 5 m and nothing OSM maps there forbids trees (yards,
-//   beaches, bare rock, lakes).
+//   wood or scrub (look.trees.assumed), else none; and none at a node built
+//   on (builtMask: on or near a building's footprint, or a site's own lot),
+//   since the lidar's surface less its terrain is a roof's height there as
+//   much as a tree's. A node is forest where its canopy is over 5 m and
+//   nothing OSM maps there forbids trees (yards, beaches, bare rock, lakes).
 // - The roof: the ground plus the canopy (smoothed over 3 × 3), over every
 //   forest node at least `roofSetback` from the water whose eight
 //   neighbours are forest too (so a copse of a node or two is trees, not a
@@ -34,6 +36,7 @@ import { hash01 } from "./palette.js";
 import { rtinErrors, rtinMesh } from "./rtin.js";
 import { hexToLinear } from "./glb.js";
 import { dsin, dcos } from "./detmath.js";
+import { insideRing } from "./terrain-sample.js";
 
 /** Species: a crown (cones, or a round crown), its width over its height, its colours. Unit height. */
 export const SPECIES = Object.freeze({
@@ -88,15 +91,60 @@ export function pick(mix, u) {
 
 const NO_TREES = new Set([COVER.yard, COVER.lake, COVER.beach, COVER.rock]);
 
+/** How far from its node a tree's trunk can stand, in cells: treesAt jitters it under 0.45 of a cell each way. */
+export const JITTER = 0.45;
+export const TREE_REACH = JITTER * Math.SQRT2;
+
+/**
+ * The nodes built on (1): inside a footprint (a ring of [x, z]) or within
+ * `reach` metres of its edge. By default `reach` is as far as a tree's
+ * trunk can stand from its node, so a node that isn't built on can't put a
+ * tree on a footprint; and as the forest roof needs a node and its eight
+ * neighbours all forest, its nearest node is two cells from anything built.
+ */
+export function builtMask(grid, rings, reach = TREE_REACH * grid.cell) {
+  const { n, cell, x0, z0 } = grid;
+  const out = new Uint8Array(n * n);
+  const r2 = reach * reach;
+  for (const pts of rings) {
+    if (!pts || pts.length < 3) continue;
+    let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+    for (const [x, z] of pts) (xmin = Math.min(xmin, x)), (xmax = Math.max(xmax, x)), (zmin = Math.min(zmin, z)), (zmax = Math.max(zmax, z));
+    const i0 = Math.max(0, Math.ceil((xmin - reach - x0) / cell)), i1 = Math.min(n - 1, Math.floor((xmax + reach - x0) / cell));
+    const j0 = Math.max(0, Math.ceil((zmin - reach - z0) / cell)), j1 = Math.min(n - 1, Math.floor((zmax + reach - z0) / cell));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const k = j * n + i;
+        if (out[k]) continue;
+        const x = x0 + i * cell, z = z0 + j * cell;
+        if (insideRing(pts, x, z) || nearRing(pts, x, z, r2)) out[k] = 1;
+      }
+    }
+  }
+  return out;
+}
+
+/** Whether (x, z) is within √r2 of a ring's edge. */
+function nearRing(pts, x, z, r2) {
+  for (let a = 0, b = pts.length - 1; a < pts.length; b = a++) {
+    const [xa, za] = pts[b], [xb, zb] = pts[a];
+    const dx = xb - xa, dz = zb - za, l2 = dx * dx + dz * dz;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - xa) * dx + (z - za) * dz) / l2)) : 0;
+    const ex = xa + dx * t - x, ez = za + dz * t - z;
+    if (ex * ex + ez * ez <= r2) return true;
+  }
+  return false;
+}
+
 /**
  * The canopy each node stands for (metres): the lidar's where `measured`,
- * else the assumed height where OSM says wood (or scrub), else 0. The
- * assumed height varies ±20% by node.
+ * else the assumed height where OSM says wood (or scrub), else 0; 0 where
+ * `built` (builtMask). The assumed height varies ±20% by node.
  */
-export function effectiveCanopy({ n, label, cover, canopy = null, measured = null, assumed = { wood: 18, scrub: 3 } }) {
+export function effectiveCanopy({ n, label, cover, canopy = null, measured = null, assumed = { wood: 18, scrub: 3 }, built = null }) {
   const out = new Float32Array(n * n);
   for (let k = 0; k < n * n; k++) {
-    if (label[k] <= 0) continue;
+    if (label[k] <= 0 || built?.[k]) continue;
     if (canopy && measured?.[k]) out[k] = canopy[k];
     else if (cover[k] === COVER.wood) out[k] = (assumed.wood ?? 18) * (0.8 + 0.4 * hash01(k, 3));
     else if (cover[k] === COVER.scrub) out[k] = (assumed.scrub ?? 3) * (0.8 + 0.4 * hash01(k, 3));
@@ -129,9 +177,9 @@ export function isRoof(k, { n, label, cover, canopy, dist, setback }) {
 /**
  * The trees standing on nodes [k0, k1) (all of them by default): each
  * { k, t, species, x, z, height, yaw, girth, key } before any thinning.
- * @param {object} o  { grid, label, cover, canopy (effective), dist (to water), trees (the place's look.trees) }
+ * @param {object} o  { grid, label, cover, canopy (effective), dist (to water), trees (the place's look.trees), built? (builtMask: no tree there) }
  */
-export function treesAt({ grid, label, cover, canopy, dist, trees }, k0 = 0, k1 = grid.n * grid.n) {
+export function treesAt({ grid, label, cover, canopy, dist, trees, built = null }, k0 = 0, k1 = grid.n * grid.n) {
   const { n, cell, x0, z0 } = grid;
   const fringe = trees.fringeWidth ?? 40;
   const setback = trees.roofSetback ?? 20;
@@ -139,7 +187,7 @@ export function treesAt({ grid, label, cover, canopy, dist, trees }, k0 = 0, k1 
   const town = (trees.townPerHectare ?? 25) * (cell * cell) / 1e4;
   const out = [];
   for (let k = k0; k < k1; k++) {
-    if (label[k] <= 0 || NO_TREES.has(cover[k])) continue;
+    if (label[k] <= 0 || NO_TREES.has(cover[k]) || built?.[k]) continue;
     const i = k % n, j = (k - i) / n;
     const forest = isForest(k, label, cover, canopy);
     let mix = null, count = 0, h = 0;
@@ -163,8 +211,8 @@ export function treesAt({ grid, label, cover, canopy, dist, trees }, k0 = 0, k1 
         k,
         t,
         species,
-        x: x0 + (i + (hash01(k, 30 + t) - 0.5) * 0.9) * cell,
-        z: z0 + (j + (hash01(k, 40 + t) - 0.5) * 0.9) * cell,
+        x: x0 + (i + (hash01(k, 30 + t) - 0.5) * (2 * JITTER)) * cell,
+        z: z0 + (j + (hash01(k, 40 + t) - 0.5) * (2 * JITTER)) * cell,
         height,
         yaw: hash01(k, 50 + t) * Math.PI * 2,
         girth: 0.9 + 0.2 * hash01(k, 60 + t),

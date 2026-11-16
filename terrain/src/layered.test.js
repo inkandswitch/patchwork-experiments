@@ -37,6 +37,27 @@ describe("layerHeights", () => {
     }
     expect(Object.values(out.counts).reduce((a, b) => a + b, 0)).toBe(N);
   });
+  it("takes a raw 0 from a source that writes 0 for 'no depth' (NCEI) as no value on water, and as a height on land (every case, at two datum offsets)", () => {
+    for (const toMWL of [0, -2.04]) {
+      const h = { water: ["Z", "B"], land: ["Z"], rasters: { Z: { zeroIsNoValueOnWater: true, toMWL }, B: {} } };
+      // nodes: land or water × Z none, a raw 0 or 5 × B none or 7
+      const cases = [];
+      for (const lab of [1, -1]) for (const z of [NaN, 0, 5]) for (const bv of [NaN, 7]) cases.push([lab, z, bv]);
+      // 12 cases on a 4 × 4 grid, the last four land with nothing (floored, not checked)
+      while (cases.length < 16) cases.push([1, NaN, NaN]);
+      const label = Int8Array.from(cases.map((c) => c[0]));
+      const values = { Z: Float32Array.from(cases.map((c) => c[1] + toMWL)), B: Float32Array.from(cases.map((c) => c[2])) };
+      const out = layerHeights({ n: 4, heights: h, values, label, landFloor: 2.23 });
+      const names = sourceNames(h);
+      cases.forEach(([lab, z, bv], k) => {
+        const zHas = !Number.isNaN(z) && !(lab < 0 && z === 0);
+        const want = lab > 0 ? (zHas ? "Z" : FLOOR) : zHas ? "Z" : !Number.isNaN(bv) ? "B" : FILLED;
+        expect([k, names[out.source[k]]]).toEqual([k, want]);
+        if (want === "Z") expect(out.heights[k]).toBe(Math.fround(z + toMWL));
+        if (want === "B") expect(out.heights[k]).toBe(7);
+      });
+    }
+  });
   it("refuses more sources than four bits hold", () => {
     expect(() => sourceNames({ water: Array.from({ length: 15 }, (_, k) => `s${k}`), land: [] })).toThrow(/at most 14/);
   });

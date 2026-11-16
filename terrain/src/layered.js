@@ -11,7 +11,12 @@
 //   water: NONNA-10 → NONNA-100 → NCEI 1″ → NCEI 3″ → filled (harmonic, fill.js), flagged
 //   land:  HRDEM lidar → NCEI 1″ → the land floor, flagged
 //
-// and the source it took is kept per node (4 bits), beside the canopy (the
+// A source whose raster writes exactly 0 for "here's the shore, no depth"
+// (NCEI's DEMs: `zeroIsNoValueOnWater` in its description) has no value
+// there on a water node, so the node falls through to the next source or
+// the fill, and is flagged as such; on land a 0 is a height.
+//
+// The source it took is kept per node (4 bits), beside the canopy (the
 // lidar's first return less its bare earth, 0.25 m a step), in a `layers`
 // file doc. The heights are stored about mean water level (toMWL applied),
 // so the build reads them as Cadboro's are read, with demToMWL 0.
@@ -49,13 +54,15 @@ export function layerHeights({ n, heights, values, label, landFloor }) {
   const code = Object.fromEntries(names.map((s, k) => [s, k]));
   const N = n * n;
   const out = new Float32Array(N), source = new Uint8Array(N), want = new Uint8Array(N);
-  const water = (heights.water ?? []).map((id) => [code[id], values[id]]), land = (heights.land ?? []).map((id) => [code[id], values[id]]);
+  // a raw 0 is, at the node, the source's toMWL (as a Float32Array holds it)
+  const blank = (id) => (heights.rasters?.[id]?.zeroIsNoValueOnWater ? Math.fround(heights.rasters[id].toMWL ?? 0) : null);
+  const water = (heights.water ?? []).map((id) => [code[id], values[id], blank(id)]), land = (heights.land ?? []).map((id) => [code[id], values[id], null]);
   for (let k = 0; k < N; k++) {
     const list = label[k] > 0 ? land : label[k] < 0 ? water : [...water, ...land];
     let got = false;
-    for (const [c, v] of list) {
+    for (const [c, v, zeroBlank] of list) {
       const x = v?.[k];
-      if (x === undefined || Number.isNaN(x)) continue;
+      if (x === undefined || Number.isNaN(x) || x === zeroBlank) continue;
       out[k] = x;
       source[k] = c;
       got = true;
