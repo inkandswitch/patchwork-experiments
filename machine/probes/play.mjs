@@ -13,27 +13,36 @@
 // criteria):
 //  1. never black: before anyone plays, both cabinets are stopped at tick 0
 //     and each screen shows a picture (the engine's first, found from that
-//     state: present/poster.js), not one colour; the note says P plays it;
+//     state: present/poster.js), not one colour; the note says a click or
+//     P plays it;
 //  2. the way in: hovering the Doom cabinet in Look, the use prompt offers
 //     Play with its key, enabled; P sits Ana at P1 (the seat body, the
 //     roster says so), with the pad in hand, port 0 hers in the session,
 //     and the machine runs;
-//  3. the controls: while the pad is in hand, a panel says what Doom's keys
-//     do, in the view, below the screen's labels;
+//  3. the controls: while the pad is in hand, a panel at the top left of
+//     her view says what Doom's keys do; after a few seconds it folds to its
+//     title, and hovered it opens again;
 //  4. keys reach the engine: Ana walks and turns; her port's input document
 //     holds Doom ticcmds that move (forward and turn non-zero), the picture
 //     changes far more than while she stood still, and Ben's view draws the
 //     same pictures at the same ticks;
-//  5. every port taken: Ben's P on Doom (its one port Ana's) is refused, the
-//     verb greyed out saying so, a notice saying so, nothing sat in;
+//  5. every port taken: Ben's click on Doom (its one port Ana's) says so and
+//     sits him nowhere; his P is refused, the verb greyed out saying so;
 //  6. getting up gives the port back: Ana watches (the picker); out of the
 //     seat body, the pad and the panel gone, port 0 ended in the session,
 //     the machine stopped, its screen holding the last picture (not blank);
-//     now Ben's P sits him at P1;
+//     now Ben's click on the Doom screen sits him at P1 with the pad;
+//     Escape puts the pad down and keeps the port (still seated), P picks it
+//     up, Escape again, and Leave (the body chip's Look) stands him up and
+//     gives the port back;
 //  7. the use prompt's button: a click on Play at the Super NES sits Ana at
 //     its P1 with the pad; the panel says the SNES's keys; Start (Enter)
 //     moves its picture; getting up stops it, the picture held;
-//  8. no errors. Screenshots of each moment.
+//  8. Play from Edit: Ana in Edit selects the Super NES (a click there
+//     selects, it doesn't play) and presses P with the pointer off it: sat
+//     at its P1 with the pad; standing up lands her in Look (nothing stands
+//     on Edit);
+//  9. no errors. Screenshots of each moment.
 // Prints a JSON report; exits non-zero if any check fails.
 import { mkdirSync, rmdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -127,12 +136,14 @@ try {
   );
   check("1. both views show the same poster", still.doom[0]?.shown?.hash === still.doom[1]?.shown?.hash && still.snes[0]?.shown?.hash === still.snes[1]?.shown?.hash, still);
   const labels0 = await P(`labels("a")`);
-  check("1. the note under each screen says P plays it", labels0.length === 2 && labels0.every((t) => t === "Stopped while nobody plays: P to play"), labels0);
+  const NOTE = "Stopped while nobody plays: click it, or point at it and press P";
+  check("1. the note under each screen says a click or P plays it", labels0.length === 2 && labels0.every((t) => t === NOTE), labels0);
   await shot("1-stopped");
 
   // ---- 2. the way in: Play on the use prompt, and P
   const doomFront = await P(`project("a", [${AT.doom[0]}, 1.0, 0.36])`);
-  await b.click(doomFront.x, doomFront.y); // in Look a press selects nothing; it gives the view the keys
+  await P(`focus("a")`); // the keys to her view (a click on the cabinet would play it: step 6)
+  await b.move(doomFront.x, doomFront.y);
   await b.move(doomFront.x, doomFront.y + 1);
   await b.step(10);
   const prompt = await P(`prompt("a")`);
@@ -154,10 +165,10 @@ try {
   const doomRows = Object.fromEntries(panel?.rows?.map(([k, l]) => [l, k]) ?? []);
   check(
     "3. while the pad is in hand, the controls say what Doom's keys do",
-    !!panel && /P1$/.test(panel.title) && doomRows.Forward === "↑W" && doomRows.Fire === "Ctrl" && doomRows.Use === "SpaceE" && doomRows.Weapon === "1234567" && /Esc puts the pad down/.test(panel.foot),
+    !!panel && /P1 · keys$/.test(panel.title) && doomRows.Forward === "↑W" && doomRows.Fire === "Ctrl" && doomRows.Use === "SpaceE" && doomRows.Weapon === "1–7" && /Esc puts the pad down/.test(panel.foot) && !panel.folded && panel.keysShown,
     panel,
   );
-  check("3. the panel is inside Ana's view", !!panel && panel.box[0] >= 0 && panel.box[2] <= 720 && panel.box[3] <= 560, panel?.box);
+  check("3. the panel is at the top left of Ana's view, compact", !!panel && panel.box[0] >= 0 && panel.box[0] <= 30 && panel.box[1] <= 60 && panel.box[2] <= 380 && panel.box[3] - panel.box[1] <= 160, panel?.box);
   await shot("3-seated-controls");
 
   // ---- 4. keys reach the engine
@@ -193,12 +204,25 @@ try {
   check("4. the picture moves with the keys: walking and turning draws far more pictures than standing still", walking >= 60 && walking > 3 * Math.max(1, idle), { idle, walking });
   check("4. and Ben's view drew the same pictures at the same ticks (mostly: a prediction put right)", pairs >= 80 && mismatched / pairs < 0.1, { pairs, mismatched });
   await shot("4-walked");
+  // the panel folds to its title once the pad's been in hand a while (8 s of the stage's time), and opens again while hovered
+  await b.step(300);
+  const folded = await P(`controls("a")`);
+  check("3. after a few seconds the panel folds to its title alone", !!folded && folded.folded && !folded.keysShown && /P1 · keys$/.test(folded.title), folded);
+  if (folded) await b.move((folded.box[0] + folded.box[2]) / 2, (folded.box[1] + folded.box[3]) / 2);
+  await b.step(2);
+  const hovered = await P(`controls("a")`);
+  check("3. and hovered it opens again", !!hovered && hovered.keysShown, hovered);
+  await shot("4-folded-hovered");
+  await b.move(doomFront.x, doomFront.y);
 
   // ---- 5. every port taken: Ben at Doom
   const benFront = await P(`project("b", [${AT.doom[0]}, 1.0, 0.36])`);
-  await b.click(benFront.x, benFront.y);
+  const benNotices0 = (await P(`notices("b")`)).length;
+  await b.click(benFront.x, benFront.y); // a click on a cabinet whose every port is taken: says so
   await b.move(benFront.x, benFront.y + 1);
   await b.step(10);
+  const benClick = { notices: (await P(`notices("b")`)).slice(benNotices0), body: await P(`body("b")`), sitting: await P(`sitting("b")`) };
+  check("5. Ben's click on Doom, whose one port is Ana's, says every port is taken and sits him nowhere", benClick.notices.includes("Every port is taken") && benClick.body === "look" && benClick.sitting === null, benClick);
   const benPrompt = await P(`prompt("b")`);
   check("5. Ben, at Doom whose one port is Ana's: Play is greyed out, its label saying every port is taken", benPrompt.some((v) => /Play \(every port is taken\)$/.test(v.text) && v.disabled), benPrompt);
   const benNotices = (await P(`notices("b")`)).length;
@@ -220,17 +244,37 @@ try {
   check("6. port 0 given back in the session; the machine stopped on both views at one tick", !open(0) && ins.every((s) => s.until !== null) && !!stopped && after.every((s) => !s.running) && after[0].tick === after[1].tick && after[0].tick > before.tick - 1, { ins, after });
   check("6. the stopped screen holds the last picture played, not a blank one, the same on both views", after.every((s) => s.shown && !s.shown.blank) && after[0].shown.hash === after[1].shown.hash && after[0].shown.hash !== still.doom[0].shown.hash, after);
   const labels6 = await P(`labels("a")`);
-  check("6. and its note says P plays it", labels6.includes("Stopped while nobody plays: P to play"), labels6);
+  check("6. and its note says a click or P plays it", labels6.includes(NOTE), labels6);
   await shot("6-up");
-  await b.click(benFront.x, benFront.y);
-  await b.move(benFront.x, benFront.y + 1);
-  await b.step(5);
-  await b.key("p");
+  // a click on the Doom screen, in Look: Play
+  const benScreen = await P(`project("b", [${AT.doom[0]}, 1.25, 0.3])`);
+  await b.click(benScreen.x, benScreen.y);
   await b.step(30);
   const benSat = { body: await P(`body("b")`), sitting: await P(`sitting("b")`), held: await P(`held("b")`) };
-  check("6. now the port is free: Ben's P sits him at P1 with the pad", benSat.body === "seat" && J(benSat.sitting) === J({ of: ids.doom, seat: "p1" }) && /P1/.test(benSat.held?.name ?? ""), benSat);
-  await P(`pickSeat("b", "")`);
+  check("6. now the port is free: Ben's click on the Doom screen sits him at P1 with the pad", benSat.body === "seat" && J(benSat.sitting) === J({ of: ids.doom, seat: "p1" }) && /P1/.test(benSat.held?.name ?? ""), benSat);
+  await shot("6-ben-clicked");
+  // Escape: the pad down, the port his while he sits; P: back in hand; Escape again, and Leave stands him up
+  const benPort = async () => (await P(`inputs(${J(laid.doom.session)})`)).filter((x) => x.until === null).map((x) => [x.port, x.by]);
+  await P(`focus("b")`);
+  await b.key("Escape");
+  await b.step(10);
+  const esc1 = { body: await P(`body("b")`), held: await P(`held("b")`), sitting: await P(`sitting("b")`), ports: await benPort(), panel: await P(`controls("b")`) };
+  check("6. Escape puts Ben's pad down: still seated, port 0 still his, the panel gone", esc1.body === "seat" && !esc1.held && J(esc1.sitting) === J({ of: ids.doom, seat: "p1" }) && J(esc1.ports) === J([[0, viewers.b]]) && esc1.panel === null, esc1);
+  await b.key("p");
+  await b.step(10);
+  const back = { held: await P(`held("b")`), ports: await benPort() };
+  check("6. P picks it up again, on the same port", /P1/.test(back.held?.name ?? "") && J(back.ports) === J([[0, viewers.b]]), back);
+  await b.key("Escape");
+  await b.step(5);
+  const esc2 = { body: await P(`body("b")`), held: await P(`held("b")`) };
+  await b.key("Escape");
+  await b.step(10);
+  const esc3 = { body: await P(`body("b")`), held: await P(`held("b")`), sitting: await P(`sitting("b")`) };
+  check("6. a second Escape doesn't stand him up (Escape never pops the body: scene STAGE.md); he's still seated with the pad down", esc2.body === "seat" && !esc2.held && esc3.body === "seat" && !esc3.held && esc3.sitting !== null, { esc2, esc3 });
+  await P(`enter("b", "look")`);
   await b.step(30);
+  const left = { body: await P(`body("b")`), sitting: await P(`sitting("b")`), ports: await benPort() };
+  check("6. Leave (the body chip's Look) stands him up and gives the port back", left.body === "look" && left.sitting === null && J(left.ports) === J([]), left);
 
   // ---- 7. the use prompt's button, at the Super NES (Ana's camera back where it was: getting up leaves Look at the seat's eye)
   await P(`setCamera("a", { position: [0, 1.45, 2.9], target: [0, 1.1, 0] })`);
@@ -266,9 +310,31 @@ try {
   check("7. getting up stops it, the last picture held (not blank)", !!snesStopped && snesAfter.every((s) => !s.running && s.shown && !s.shown.blank) && (await P(`body("a")`)) === "look", snesAfter);
   await shot("7-snes-up");
 
+  // ---- 8. Play from Edit: a click selects there; P plays the selection
+  await P(`enter("a", "edit")`);
+  await P(`setCamera("a", { position: [0, 1.45, 2.9], target: [0, 1.1, 0] })`);
+  await b.step(10);
+  const snesAgain = await P(`project("a", [${AT.snes[0]}, 1.0, 0.36])`);
+  await b.click(snesAgain.x, snesAgain.y);
+  await b.step(10);
+  const edit = { body: await P(`body("a")`), selected: await P(`selected("a")`), sitting: await P(`sitting("a")`) };
+  check("8. in Edit a click on the Super NES selects it, and sits nobody", edit.body === "edit" && J(edit.selected) === J(ids.snes) && edit.sitting === null, edit);
+  const off = await P(`project("a", [0, 0.05, 1.6])`); // the floor in front, off both cabinets
+  await b.move(off.x, off.y);
+  await b.step(5);
+  await P(`focus("a")`);
+  await b.key("p");
+  await b.step(30);
+  const fromEdit = { body: await P(`body("a")`), sitting: await P(`sitting("a")`), held: await P(`held("a")`) };
+  check("8. P with it selected, the pointer off it, sits Ana at its P1 with the pad", fromEdit.body === "seat" && J(fromEdit.sitting) === J({ of: ids.snes, seat: "p1" }) && /P1/.test(fromEdit.held?.name ?? ""), fromEdit);
+  await shot("8-from-edit");
+  await P(`pickSeat("a", "")`);
+  await b.step(30);
+  check("8. standing up lands her in Look (nothing stands on Edit)", (await P(`body("a")`)) === "look" && (await P(`sitting("a")`)) === null, await P(`body("a")`));
+
   const errors = await P("errors");
   const ours = errors.filter((e) => !/KHR_parallel_shader_compile|AudioContext was not allowed to start/.test(e));
-  check("8. no errors or warnings on the page", ours.length === 0, ours.slice(0, 8));
+  check("9. no errors or warnings on the page", ours.length === 0, ours.slice(0, 8));
 } catch (e) {
   check("the probe ran to the end", false, String(e?.stack ?? e));
 }

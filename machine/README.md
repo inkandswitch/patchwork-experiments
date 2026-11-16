@@ -34,14 +34,19 @@ own. In a scene a machine is an object (`src/scene/`): its cabinet, its
 session run on the scene's world time, its picture and sound at the
 cabinet's screen, a seat per port (sit down to play that port, stand up to
 give it back), and an empty cabinet from the parts bin that takes a ROM or
-an IWAD dropped on it. **To play one:** look at its cabinet and press P,
-or click Play on the prompt that appears (or choose it from the menu).
-That sits you at its first free seat with that port's pad in hand, and a
-panel at the bottom left says what the keys do. Escape puts the pad down
-(P picks it up again), and standing up, or Watching in the seat picker,
-gives the port back. A cabinet nobody is playing is stopped, and its screen
-shows the last picture played or, if it has never been played, the game's
-first picture, with "Stopped while nobody plays: P to play" under it. And a Doom's world beside it: "Lay out its world"
+an IWAD dropped on it. **To play one:** click its cabinet, or point at it
+and press P, or click Play on the prompt that appears (or choose it from
+the menu). That sits you at its first free seat with that port's pad in
+hand, and a panel at the top left says what the keys do (it folds to its
+title after a few seconds; hover it to open it again). Escape puts the pad
+down (P picks it up again), and standing up, or Watching in the seat
+picker, gives the port back. Every port taken, it says so. A cabinet
+nobody is playing is stopped, and its screen shows the last picture
+played; where that picture is blank (a game never played, or one stopped
+on a black frame), it shows the next picture the game draws from there
+instead, with "Stopped while nobody plays: click it, or point at it and
+press P" under it. In Edit a click selects the cabinet, and P plays it.
+And a Doom's world beside it: "Lay out its world"
 puts doom/'s own 3D map of the level beside the cabinet, and the game is
 drawn in it from the engine's state, every frame, its monsters, players
 and doors where the engine has them (HOST.md, "Phase 2b, in a scene").

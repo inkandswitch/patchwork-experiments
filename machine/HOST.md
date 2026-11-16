@@ -1248,9 +1248,25 @@ Round 3's review (Decisions 41-45):
       Every port taken: Play is greyed out and its label says so, "Play
       (every port is taken)", not only a tooltip, since a greyed verb's key
       does nothing and a keyboard user would get nothing at all. Without the
-      seats package, "Play (needs the seats package)". The note under a
-      stopped screen is "Stopped while nobody plays: P to play" for every
-      cabinet.
+      seats package, "Play (needs the seats package)".
+    - **A click on a cabinet is Play** (round 2 of the review: the lead's
+      "clicking had no effect" was about the cabinet, not the prompt). The
+      extension's `input.click`, offered as the machine trait's holder
+      (scene STAGE.md, "The input chain", step 3), runs Play through
+      `api.run` on the cabinet with the click's hit, so the verb's state
+      and reach apply as on every surface. It is Play's only while it is
+      the way in: no pad in hand and sitting nowhere (`hands.js` `clicks`);
+      sitting or holding a pad, a click on the cabinet is a stray one and
+      goes on, as sailing's click to come aboard does. What Play refuses for
+      the machine's own reason (every port taken, no seats package, still
+      starting) is said in a notice and the click taken; refused by the
+      stage with the verb enabled (out of reach) it goes on. Its cursor is a
+      pointer there. In Edit, Edit's click comes first and selects (TOOLS.md
+      Decisions 6), and P plays the selection. The note under a stopped
+      screen says both ways: "Stopped while nobody plays: click it, or point
+      at it and press P" (P acts only on what it's pointed at, the
+      selection, or the pad or seat you have; with none of those it does
+      nothing, and the note no longer suggests otherwise).
     - **A stopped screen is never black** (`src/present/poster.js`). A
       machine stopped where someone left it already shows the last picture
       played: the host restores the newest checkpoint and steps to the stop.
@@ -1269,12 +1285,21 @@ Round 3's review (Decisions 41-45):
       when it's published (a second source of truth, stale as soon as the
       content changes).
     - **The keys are shown while a pad is in hand** (`src/scene/controls.js`):
-      a small panel at the bottom left of the view, the machine
-      extension's own overlay, made from the keys the pad reads (input.js
-      `KEYS`, whose labels now say what each key does: "Forward", "Fire";
-      the SNES's, the pad button it presses), so what's shown is what's
-      read. It says the pad's title and port and how to put it down. It goes
-      with the pad.
+      a compact panel at the top left of the view (clear of the use prompt,
+      which follows the look, and of the legends at the bottom left), the
+      machine extension's own overlay in the scene's label colours, made
+      from the keys the pad reads (input.js `KEYS`, whose labels now say
+      what each key does: "Forward", "Fire"; the SNES's, the pad button it
+      presses), so what's shown is what's read. One item per action, keys
+      then label, wrapping; a run of three or more digits is one cap
+      ("1–7"). It says the pad's title and port and how to put it down. It
+      folds to its title 8 s (the stage's own time) after that pad came into
+      hand, and opens while hovered; a pad picked up again opens it again.
+      It goes with the pad.
+    - **What the screen shows and says is pure** (`src/scene/shown.js`):
+      `screenShows` (the poster only while stopped and only over a blank
+      last picture, asked only then) and `stoppedNote`, so the extension's
+      frame loop only draws what they answer.
     - **The use prompt's buttons can be clicked with a mouse** (a fix in
       scene, general to every package's verbs). The prompt sits under the
       pointer, and moving the pointer onto it left the canvas, which cleared
@@ -1484,7 +1509,28 @@ Round 3's review (Decisions 41-45):
   tick 7, Unarmed, and 1, Doom, as an engine stepped with nobody playing
   draws it, and nothing before it; the live state's hash unchanged).
   `controls.test.js`: each pad's rows exactly; every key a pad reads in
-  exactly one row; key names; a key's two sides. Mutants killed: Play
+  exactly one row; key names; a key's two sides; `caps` over every set of
+  digits (1,024) alone and between other keys; the panel over every three
+  pads in a row from seven (none, two ports, another machine, a new
+  title, another kind, no port) × four spacings each (5,488: open from when
+  the pad came into hand, the key changing just when what's shown does).
+  `hands.test.js` a click: what's clicked (five) × where the view sits
+  (three) × the seatless pad and its ports (five) × seats taken × roster ×
+  reach (600): Play's only with no pad and no seat, the stage asked then
+  only, its refusal's reason said, out of reach going on.
+  `shown.test.js`: `screenShows` over running × now × last (none, blank,
+  drawn) × poster (36, the poster asked exactly when shown); `stoppedNote`
+  over started × running × world × five holdings (40).
+  `extension.test.js`: the surface has `input` (click, cursor); a click
+  held by nothing of its is no click and the stage isn't asked; a click on
+  a cabinet goes to `api.run` as Play on it with the hit, and refused there
+  says the machine's reason. Mutants killed (round 2, nineteen): no pad
+  or seat check, any target clicks, a refusal taken silently or passed on,
+  the stage's answer ignored; the poster while running, the last picture
+  not kept, the kept one shown, the world's pause or holders ignored; a
+  two-digit run capped, any ascending run, the fold never or always reset,
+  the fold a frame late, the key blind to folding or to the port; the
+  cursor everywhere, the hit dropped. Mutants killed (round 1): Play
   stopping after one refusal, never full, a fixed port, the roster
   unchecked; no preference, holders or seat state ignored, an away seat
   counted free; alpha counted, a step past the bound, no cache, two
@@ -1492,22 +1538,29 @@ Round 3's review (Decisions 41-45):
   host searched; no de-duplication, both sides shown.
 - **`probes/play.mjs`** (headless Chrome, two people on real Automerge
   docs, simulated time; scene, seats and machine built): Doom (one port)
-  and the Super NES (four) pasted in, both views in Look. 28 checks: both
+  and the Super NES (four) pasted in, both views in Look. 41 checks: both
   stopped at tick 0 with a picture each, not one colour (Doom's E1M1 view,
-  Unarmed's title), the same on both views, the note "P to play";
-  hovering Doom, the prompt offers Play with its key, enabled; P sits Ana
-  at P1 in the seat body with the pad, port 0 hers, the machine running;
-  the controls panel says Doom's keys, inside her view; walking and turning
-  write Doom ticcmds into her port's input documents (96 ticks forward, 35
-  turning), draw 102 different pictures against 16 standing still, and
-  Ben's view drew the same picture at all 99 ticks both drew; Ben at Doom
-  sees "Play (every port is taken)" greyed out and P sits him nowhere;
-  Ana watches: the pad and panel gone, port 0 ended, the machine stopped on
-  both views at one tick holding the last picture (not the poster, not
-  blank); now Ben's P sits him at P1; at the Super NES a click on the
-  prompt's Play button sits Ana at its P1, the panel says the SNES's keys,
-  Start moves the picture, and getting up stops it with the picture held;
-  no errors.
+  Unarmed's title), the same on both views, the note saying a click or P
+  plays it; hovering Doom, the prompt offers Play with its key, enabled; P
+  sits Ana at P1 in the seat body with the pad, port 0 hers, the machine
+  running; the controls panel says Doom's keys ("1–7" for the weapons) at
+  the top left of her view, folds to its title after 8 s and opens again
+  hovered; walking and turning write Doom ticcmds into her port's input
+  documents, draw far more pictures than standing still, and Ben's view
+  drew the same picture at the ticks both drew; Ben's click on Doom says
+  every port is taken and sits him nowhere, and he sees "Play (every port
+  is taken)" greyed out and P sits him nowhere; Ana watches: the pad and
+  panel gone, port 0 ended, the machine stopped on both views at one tick
+  holding the last picture (not the poster, not blank); now Ben's click on
+  the Doom screen sits him at P1 with the pad; Escape puts it down (still
+  seated, port 0 his, the panel gone), P picks it up on the same port, a
+  second Escape leaves him seated (Escape never pops the body: STAGE.md),
+  and Leave (the body chip's Look) stands him up and gives the port back;
+  at the Super NES a click on the prompt's Play button sits Ana at its P1,
+  the panel says the SNES's keys, Start moves the picture, and getting up
+  stops it with the picture held; in Edit a click on the Super NES selects
+  it and sits nobody, and P with it selected and the pointer on the floor
+  sits her at its P1, standing up landing her in Look; no errors.
 - **`probes/seats.mjs`** (headless Chrome, two people on real Automerge
   docs, simulated time; scene, seats and machine built): Ana puts in an
   empty cabinet from the parts bin and drops Unarmed's ROM on it; a view

@@ -14,6 +14,11 @@
 //   it back.
 // - P acts on the machine looked at; looking at anything else, on the one
 //   whose pad you hold or whose seat you sit in.
+// - A click on a machine is Play too, while it would be the way in: no pad
+//   in hand and sitting nowhere (`clicks`). Then a click Play can't act on
+//   says why (every port taken, no seats package, still starting) rather
+//   than nothing; sitting or holding a pad, a click on it is a stray one and
+//   goes on (P and Escape are what play then).
 //
 // A machine `e` is { id, m, pad, ports, kind, title, note }: `m` is
 // runMachine's (host.seat, holders(), play(port), leave()), `pad` input.js's.
@@ -90,49 +95,80 @@ export function hands({ machines, hold, sitting, seatsOf, prefer, notify, roster
       });
     },
     /** The Play command's state, for a look at `target`. */
-    verb(target) {
-      const id = playing(target);
-      const e = id != null ? machines.get(id) : null;
-      if (!e) return null;
-      if (!e.m) return { label: "Play", disabled: true, title: e.note ?? "Starting…" };
-      if (held?.id === id) return { label: "Put the pad down" };
-      if (seated(e)) {
-        if (seatedAt(e) !== null) return { label: "Pick up the pad" };
-        const r = sitter();
-        if (!r) return { label: "Play (needs the seats package)", disabled: true, title: NO_SEATS };
-        const [port] = open(e, r);
-        return port === undefined ? FULL : { label: "Play", title: `Sit at P${port + 1} with its pad` };
-      }
-      if (!e.m.holders().includes(null)) return FULL;
-      return { label: "Play" };
-    },
+    verb,
     /** The Play command's run, for a look at `target`. */
-    play(target) {
-      const id = playing(target);
-      const e = id != null ? machines.get(id) : null;
-      if (!e?.m) return;
-      if (held?.id === id) return void held.put();
-      if (seated(e)) {
-        // sitting at it: the pad back in hand (the port is the seat's)
-        const port = seatedAt(e);
-        if (port !== null) {
-          if (e.m.host.seat?.port === port) holdPad(e, port);
-          return;
-        }
-        // not sitting at it: sat at the first free port's seat that takes you (the port and its pad follow the seat, next frame)
-        const r = sitter();
-        if (!r) return void notify(NO_SEATS);
-        const seats = seatsOf(e.id);
-        for (const p of open(e, r)) if (r.sit({ of: e.id, seat: seats[p] })) return;
-        return void notify("Every port on that machine is taken");
-      }
-      const port = portToPlay(e.m.holders(), prefer(e));
-      if (port === null || e.m.play(port) === null) return void notify("Every port on that machine is taken");
-      holdPad(e, port);
-    },
+    play,
+    /** Whether a click on `target` is Play's (below). */
+    clicks,
+    /** A click on `target` (below). */
+    click,
     /** Machine `id` is going: its pad, if in hand, is put down. */
     drop(id) {
       if (held?.id === id) held.put();
     },
   };
+
+  /** The Play command's state, for a look at `target`. */
+  function verb(target) {
+    const id = playing(target);
+    const e = id != null ? machines.get(id) : null;
+    if (!e) return null;
+    if (!e.m) return { label: "Play", disabled: true, title: e.note ?? "Starting…" };
+    if (held?.id === id) return { label: "Put the pad down" };
+    if (seated(e)) {
+      if (seatedAt(e) !== null) return { label: "Pick up the pad" };
+      const r = sitter();
+      if (!r) return { label: "Play (needs the seats package)", disabled: true, title: NO_SEATS };
+      const [port] = open(e, r);
+      return port === undefined ? FULL : { label: "Play", title: `Sit at P${port + 1} with its pad` };
+    }
+    if (!e.m.holders().includes(null)) return FULL;
+    return { label: "Play" };
+  }
+
+  /** The Play command's run, for a look at `target`. */
+  function play(target) {
+    const id = playing(target);
+    const e = id != null ? machines.get(id) : null;
+    if (!e?.m) return;
+    if (held?.id === id) return void held.put();
+    if (seated(e)) {
+      // sitting at it: the pad back in hand (the port is the seat's)
+      const port = seatedAt(e);
+      if (port !== null) {
+        if (e.m.host.seat?.port === port) holdPad(e, port);
+        return;
+      }
+      // not sitting at it: sat at the first free port's seat that takes you (the port and its pad follow the seat, next frame)
+      const r = sitter();
+      if (!r) return void notify(NO_SEATS);
+      const seats = seatsOf(e.id);
+      for (const p of open(e, r)) if (r.sit({ of: e.id, seat: seats[p] })) return;
+      return void notify("Every port on that machine is taken");
+    }
+    const port = portToPlay(e.m.holders(), prefer(e));
+    if (port === null || e.m.play(port) === null) return void notify("Every port on that machine is taken");
+    holdPad(e, port);
+  }
+
+  /** Whether a click on `target` is Play's: a machine here, no pad in hand, and this view sits nowhere. */
+  function clicks(target) {
+    return target != null && machines.has(target) && held === null && sitting() === null;
+  }
+
+  /**
+   * A click on `target`: Play's (`clicks`), run through `run` (the stage's
+   * api.run, which applies the verb's state and reach: true if it ran).
+   * What Play refuses for the machine's own reason (`verb` disabled) is
+   * said, and the click is taken; one the stage refuses with the verb
+   * enabled (out of reach) goes on. → whether the click was taken.
+   */
+  function click(target, run) {
+    if (!clicks(target)) return false;
+    if (run()) return true;
+    const st = verb(target);
+    if (!st?.disabled) return false;
+    notify(st.title ?? st.label);
+    return true;
+  }
 }
