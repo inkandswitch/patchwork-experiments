@@ -8,9 +8,9 @@ those (the viewport's sky, sun and fog, water's tint, reflection and roughness,
 sailing's sea and every boat's physics) follows the weather without knowing
 this package exists.
 
-Status: W0 (this scaffold) is in. The trait is described and the extension
-runs, but it offers nothing until W2. The plan's steps are listed under "Plan"
-below.
+Status: W0 (the scaffold) and W1 (the sun from time and place: `time.js`,
+`solar.js`) are in. The trait is described and the extension runs, but it
+offers nothing until W2. The plan's steps are listed under "Plan" below.
 
 ## The data
 
@@ -62,12 +62,19 @@ existing conventions and adds no new ambient:
   direction ±33°·g), so nothing converts it. The convention's own
   documentation moves here from sailing/DESIGN.md in W5.
 - **`atmosphere`** = `atmosphereOf(trait)` (STAGE.md's shape):
-  - **sun**: the direction comes from `solar.js` (the NOAA/Meeus low-accuracy
-    algorithm, with apparent elevation through Bennett's refraction) at
-    `instantOf(date, hour, zone)` and `lat`/`lon`. It is mapped to the stage's
-    frame, north -Z and east +X (terrain tmerc.js, sailing wind.js), as
+  - **sun**: the direction comes from `solar.js`'s `sunAt` at
+    `instantOf({ date, hour, zone })` (`time.js`) and `lat`/`lon`: Meeus's
+    low-accuracy algorithm, the one NOAA's calculator uses, with the hour
+    angle from apparent sidereal time and the apparent elevation through
+    Sæmundsson's refraction (Bennett's, inverted; Decision 14). It is
+    mapped to the stage's frame, north -Z and east +X (terrain tmerc.js,
+    sailing wind.js), by `sunDirection(azimuth, elevation)` =
     `[sin A cos E, sin E, -cos A cos E]`. The sun is present only while its
-    apparent elevation is above -0.833° (its upper limb on the horizon).
+    *geometric* elevation (`sunAt`'s `geometric`) is above -0.833°: the
+    almanac's sunrise, where refraction lifts the upper limb onto the
+    horizon. The bands below (civil twilight to -6°, night by -12°) are
+    geometric too, as the almanac's are; only the direction uses the
+    apparent elevation.
   - **The look** (sky gradient, sun colour and intensity, exposure, fog near)
     comes from a finite table of looks, each a complete daytime atmosphere,
     combined in three steps:
@@ -197,8 +204,8 @@ nothing is selected. There is no menu diving.
 | Step | What | State |
 |---|---|---|
 | W0 | package scaffold, this doc, the fetch-from-Patchwork spike; review fixes (gustiness, the doc's table as spec, the entry evaluated alone, the sky model settled) | done |
-| W1 | `time.js` (`instantOf`) and `solar.js` (`sunAt`, `sunDirection`), against published ephemerides; an invalid zone or a malformed date falls back to the default (table rows for each) | |
-| W2 | `windOf` (a pass-through), `atmosphereOf` (pure) as specified under "The look", with the four anchors as fixed points | |
+| W1 | `time.js` (`instantOf`, `localOf`, `offsetAt`, `validDate`, `validZone`) and `solar.js` (`sunAt`, `sunDirection`, `refraction`), against Meeus's, NREL's and USNO's published values; every quarter hour of three Vancouver days round-tripped. `validDate` and `validZone` are the predicates W2's params use to fall back to the default (Decision 16) | done |
+| W2 | `weatherParams` (defaults, and the fallback rows: an invalid zone or a malformed date is the default, from W1's predicates), `windOf` (a pass-through), `atmosphereOf` (pure) as specified under "The look", with the four anchors as fixed points; presence and bands on the geometric elevation | |
 | W3 | the extension's ambient, inspector fields, the Place and Now commands; local probe | |
 | W4 | `open-meteo.js`, Fetch commands, recorded fixtures; table rows for gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3} and for clamping (wind 45, rain 80) | |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes | |
@@ -304,6 +311,57 @@ nothing is selected. There is no menu diving.
     and so on: no clash). The other proof is the folder copied out alone
     (`git archive`): `pnpm install --frozen-lockfile`, build and test all
     pass. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+13. **A local time that names no instant, or two, is resolved as clocks
+    do.** In a fall-back overlap (01:30 on 2026-11-01 in Vancouver happens
+    twice) it is the earlier instant, 01:30 PDT. In a spring-forward gap
+    (02:30 on 2026-03-08 never happens) it is the later instant, the clock
+    pushed forward by the gap: 03:30 PDT. That is Temporal's and Date's
+    "compatible" rule; the plan's "the later offset" for the gap meant this
+    (the later instant uses the offset in force *before* the jump). So on
+    the spring-forward date the hour slider's 02:00–02:45 put the sun where
+    it is at 03:00–03:45 PDT, and 03:00 steps it back to 03:00 PDT. The
+    slider's hour that no clock shows is a repeat, rather than a sun that
+    pauses. Table rows in time.test.js
+    cover both directions in both hemispheres. *Decided unattended
+    (2026-11-16, lane/weather), for the lead.*
+14. **The sun is Meeus's low-accuracy algorithm, in UT, with three
+    choices.** (a) The hour angle comes from apparent sidereal time (Meeus
+    ch. 12, plus the nutation's principal term) and the sun's apparent
+    right ascension, not from NOAA's equation-of-time shortcut, which errs
+    by seconds of time and is no shorter. (b) Time is UT, not TT: ΔT
+    (about 69 s) moves the sun 0.003°, a third of the algorithm's 0.01°,
+    and a ΔT table would be an appendage. (c) Refraction is Sæmundsson's
+    formula (Meeus 16.4), the true-to-apparent inverse of Bennett's, which
+    the plan named (Bennett's runs apparent to true). It diverges at
+    -5.11°, so below -1° it holds its -1° value: continuous, and it only
+    moves a sun that is below the horizon. It assumes standard air (1010
+    hPa, 10 °C). Measured: Meeus Example 25.a to 0.000005° in right
+    ascension and declination; the NREL SPA example to 0.005° in zenith and
+    azimuth; USNO's 2026 equinoxes and solstices to 0.006°. *Decided
+    unattended (2026-11-16, lane/weather), for the lead.*
+15. **The zone's rules are the runtime's.** `instantOf` reads offsets
+    through `Intl.DateTimeFormat`, so a doc's sun is the same on every peer
+    whose time-zone data agrees for that date and zone, which is every
+    up-to-date browser and node for any real zone today. A zone whose rules
+    change (a country dropping DST) moves the sun by an hour on peers that
+    haven't updated, until they do. Storing a UTC offset instead would
+    pin it, but no one dials an offset, and it would be wrong half the year
+    for a date dialled across a DST change. *Decided unattended
+    (2026-11-16, lane/weather), for the lead.*
+16. **`instantOf` throws on an invalid date, zone or hour; the params fall
+    back.** W0 carried "an invalid zone or a malformed date falls back to
+    the default" to W1. A pure time function shouldn't know the weather's
+    defaults, so W1 provides the predicates, `validDate` (a real proleptic
+    Gregorian `YYYY-MM-DD`, years 1–9999) and `validZone` (a zone this
+    runtime's Intl knows), each with a table, and W2's `weatherParams`
+    uses them to fall back field by field. The ambient never throws.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+17. **`localOf(t, zone)`, the inverse, is in W1.** The Now and Fetch now
+    commands (W3, W4) need the zone's clock at an instant, and the inverse
+    makes `instantOf`'s exhaustive table possible: every quarter hour of a
+    summer day, the spring-forward day and the fall-back day round-trips
+    (in the gap it reads an hour later, as Decision 13 says). *Decided
+    unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -329,6 +387,10 @@ nothing is selected. There is no menu diving.
 - **W0**: none at run time. The extension runs where the trait is and
   offers nothing. In the tests, `index.test.js` spawns one node (about
   50 ms) to evaluate the entry alone.
+- **W1**: none at run time until W2 calls it. `sunAt` is about 40
+  transcendental calls; `instantOf` is three or four `formatToParts` calls on a
+  formatter cached per zone (a few microseconds each). Both run only when
+  the trait changes.
 - **Planned**: `ambient()` runs on every flush but is a cache hit unless the
   trait changed. `atmosphereOf` (a solar position, about a hundred flops, and
   a table lookup) runs only on a change. Dragging the hour slider writes a
