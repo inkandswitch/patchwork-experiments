@@ -169,6 +169,22 @@ describe("createSim on a stage", () => {
     expect(a.sim.value(ids.wheel).angle).toBe(0);
   });
 
+  it("specOf is the spec her physics steps with on the computing view (her GLB's dimensions); null before her first step, and on a follower", async () => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const a = play(w.join("A"));
+    const b = play(w.join("B"));
+    expect([a.sim.specOf(ids.hull), b.sim.specOf(ids.hull)]).toEqual([null, null]);
+    w.tick(1 / 60, 2);
+    expect([a.sim.simulating(), b.sim.simulating()]).toEqual([true, false]);
+    const spec = a.sim.specOf(ids.hull);
+    for (const k of ["length", "beam", "draft", "freeboard"]) expect(spec[k]).toBeCloseTo(DIMS[k]);
+    expect(b.sim.specOf(ids.hull)).toBeNull();
+    // the same spec, frame after frame, while nothing about her changes
+    w.tick(1 / 60, 2);
+    expect(a.sim.specOf(ids.hull)).toBe(spec);
+  });
+
   it("steps on the clock's grid but holds each pose once a frame: a frame of fifteen steps is one hold each, where fifteen frames of one step would leave her", async () => {
     const run = async (dt, frames) => {
       const { doc, ids, content } = await sloop();

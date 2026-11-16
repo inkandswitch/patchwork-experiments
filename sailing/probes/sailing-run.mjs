@@ -246,8 +246,8 @@ try {
   check("exactly one view computes the ships, and the doc's clock claim names its session", simA !== simB && simClaim?.session === (simA ? sess.a : sess.b), { simA, simB, simClaim, sess });
   const SIM = simA ? "a" : "b", FOL = simA ? "b" : "a";
   report.measured.simulator = SIM;
-  // The anchoring's timeline (sea time, her pose and read at each move), so a node harness can replay it
-  // (src/breakout.slow.test.js) and say whether it reaches the same verdict at breakout.
+  // The anchoring's timeline (sea time, her pose and the simulator's read at each move), so a node harness can
+  // replay it (src/test/breakout.js; src/breakout.slow.test.js starts from these timings and positions).
   const anchoring = (report.measured.anchoring = { marks: {}, weigh: [] });
   const poseNow = async () => {
     const m = await P(`worldOf('${hull}', '${SIM}')`);
@@ -525,8 +525,8 @@ try {
   check("B, the wheel to port, backs the jib on the side opposite the bow the hint names, then lets it fly", headToWind && leave.bow != null && leave.held != null && leave.held !== leave.bow && /B (unroll jib backed|back jib), bow to /.test(leave.hint ?? "") && leave.let == null, leave);
   // compass + is her bow to starboard
   // (within 30 s, not 15: on a sea where she breaks out luffing with a little headway, going ahead the wheel to
-  // port turns her bow to port first until the backed jib wins: sea 383967344 passes 45° in 16.35 s; the default
-  // sea, in irons going astern, in 5.55 s. From rest the stock rig does it in 6–10 s: stock-rig.test.js,
+  // port turns her bow to port first until the backed jib wins: sea 383967344 passes 45° in 18.9 s; the default
+  // sea, in irons going astern, in 5.85 s (2026-11-16). From rest the stock rig does it in 6–10 s: stock-rig.test.js,
   // DESIGN.md "Leaving the anchor", which lists every sea measured.)
   check("backed, she falls off the way the hint said: her heading swings past 45° that way within 30 s of sea time", headToWind && leave.past != null && Math.sign(leave.turned) === (leave.bow === "starboard" ? 1 : -1), leave);
   // the tack she's on: +1 the wind on her port side (her heading the wind's + 90°), −1 starboard

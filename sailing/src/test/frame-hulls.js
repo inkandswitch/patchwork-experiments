@@ -1,6 +1,7 @@
 // The stock hull as read off its GLB, and the same hull drawn a quarter turn
 // round (bow along +X, as camber draws one): shared by frame.test.js and
-// frame.slow.test.js.
+// frame.slow.test.js; and readGLB, by every test that reads a stock GLB as
+// the stage would (stock-rig.test.js, test/breakout.js).
 import { expect } from "vitest";
 import { encodeGLB } from "../glb.js";
 import { partGLB, partMeshes } from "../ship.js";

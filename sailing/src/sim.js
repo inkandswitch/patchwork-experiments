@@ -640,6 +640,8 @@ export function createSim(api, ctx) {
       if (!m) modelMemo.set(contract, (m = Object.fromEntries(contract.sails.map((x) => [x.id, trimModelOf(x)]))));
       return m;
     },
+    /** The spec her physics steps with here (createShip's own); null on a view that isn't computing, or before her first step. */
+    specOf: (id) => ships.get(id)?.model?.spec ?? null,
     stationsOf(id) {
       const { helm, sail, anchor, mainsheet, jib, ladder, winches } = parts(api.scene(), id);
       return { helm, sail, anchor, mainsheet, jib, ladder, winches };
