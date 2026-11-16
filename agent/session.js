@@ -965,46 +965,61 @@ export function grantCovering(doc, toolId, target) {
 export const MAX_IMAGES_IN_REQUEST = 2
 
 /**
- * How much of the older tool results still travels, and what replaces the rest.
+ * Which large tool results still travel in full, and which go as a one-line
+ * stand-in (taperedResult).
  *
- * A transcript is almost entirely tool results — measured on a real session,
- * 133k characters of them against 4k of the agent's own words, 97% of the
- * weight. Every one was re-sent on every later turn, so twenty-seven turns cost
- * 1.2M input tokens. An 880-line file read at turn 40 was still being sent at
- * turn 64, by which point it was noise.
+ * A transcript is almost all tool results, and every one is re-sent on every
+ * turn — measured, 97% of a real session's weight. So old large results are
+ * shortened. But how they are shortened matters as much as how much:
  *
- * So results taper. The newest keep their full text, because that is what the
- * next turn is about; older large ones become their own one-line summary and a
- * note saying how to get them back. Small ones are never touched — dropping
- * them saves nothing and costs the model context it can actually use.
+ *   - It used to keep only the newest 40,000 characters of large results.
+ *     That is about four file reads: an agent working across a handful of
+ *     files lost each one a few turns after reading it, recalled it, lost the
+ *     recall, and recalled the recall — one real step read the same three files
+ *     four to seven times each.
+ *   - The line between kept and shortened moved on every turn, so the request
+ *     changed in the middle on every turn, and prompt caching — which bills a
+ *     repeated prefix at a tenth of the price — could never get past it.
  *
- * This is the treatment screenshots already got, generalised. It is only
- * possible because every tool has a `summarize`, which the documentation audit
- * made a test rather than a convention.
+ * So results are now shortened in batches. Large results stay whole until they
+ * pass HIGH characters in all; then the oldest are shortened, in one go, until
+ * what stays whole is under LOW. Between batches nothing earlier in the
+ * request changes. The decision is a fold over the results in order, so it
+ * depends on nothing but the transcript, and a result once shortened stays
+ * shortened (each prefix's choice is contained in the next one's).
+ *
+ * A small result always travels whole, and so does a pinned one (a result the
+ * agent asked to have back).
  */
 export const TAPER_ABOVE = 2000
-export const RECENT_RESULT_BUDGET = 40000
+export const RESULTS_HIGH = 160_000
+export const RESULTS_LOW = 80_000
 
 export function resultsToKeepWhole(results, config = {}) {
   const taperAbove = config.taperAbove ?? TAPER_ABOVE
-  const budget = config.resultBudget ?? RECENT_RESULT_BUDGET
-  const keep = new Set()
-  let spent = 0
+  const high = config.resultsHigh ?? RESULTS_HIGH
+  const low = Math.min(config.resultsLow ?? RESULTS_LOW, high)
+  const size = (block) => String(block.output ?? "").length
 
-  // Newest first: recency is what decides, and the budget is spent on the
-  // large results only.
-  for (let i = results.length - 1; i >= 0; i--) {
-    const block = results[i]
-    const size = String(block.output ?? "").length
-    if (size <= taperAbove) {
-      keep.add(block.id)
-      continue
-    }
-    if (spent + size <= budget) {
-      keep.add(block.id)
-      spent += size
+  const whole = [] // large results still whole, oldest first
+  let wholeChars = 0
+  const shortened = new Set()
+  for (const block of results) {
+    if (size(block) <= taperAbove || block.pinned) continue
+    whole.push(block)
+    wholeChars += size(block)
+    if (wholeChars <= high) continue
+    // A batch: down to LOW, but never the result just added — it is what the
+    // agent asked for this turn.
+    while (wholeChars > low && whole.length > 1) {
+      const oldest = whole.shift()
+      shortened.add(oldest.id)
+      wholeChars -= size(oldest)
     }
   }
+
+  const keep = new Set()
+  for (const block of results) if (!shortened.has(block.id)) keep.add(block.id)
   return keep
 }
 

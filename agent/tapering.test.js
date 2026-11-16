@@ -9,7 +9,8 @@ import {
   callBlock,
   resultBlock,
   TAPER_ABOVE,
-  RECENT_RESULT_BUDGET,
+  RESULTS_HIGH,
+  RESULTS_LOW,
   _resetIds,
 } from "./session.js"
 import { sessionRecall } from "./tools/recall.js"
@@ -46,22 +47,20 @@ describe("which results still travel in full", () => {
     expect(kept.size).toBe(50)
   })
 
-  it("keeps the newest large ones and tapers the rest", () => {
+  it("keeps large results whole until they pass the high mark, then shortens the oldest in one batch", () => {
     const doc = sessionOf(Array.from({ length: 10 }, () => ({ output: big(20000) })))
     const results = allResults(doc)
-    const kept = resultsToKeepWhole(results, {})
-
-    // 40000 of budget, 20000 each: the last two survive.
-    expect(kept.size).toBe(2)
-    expect(kept.has(results.at(-1).id)).toBe(true)
-    expect(kept.has(results.at(-2).id)).toBe(true)
-    expect(kept.has(results[0].id)).toBe(false)
+    // 20,000 each: whole up to 8 of them (160,000); the 9th tips it over, and
+    // the oldest go until what is whole is under 80,000 — the newest 4.
+    for (let n = 1; n <= 8; n++) expect(resultsToKeepWhole(results.slice(0, n), {}).size).toBe(n)
+    expect([...resultsToKeepWhole(results.slice(0, 9), {})]).toEqual(results.slice(5, 9).map((r) => r.id))
+    expect([...resultsToKeepWhole(results, {})]).toEqual(results.slice(5, 10).map((r) => r.id))
   })
 
-  it("spends the budget on large results only", () => {
-    // A thousand tiny results must not crowd out the one big recent one.
+  it("spends the marks on large results only", () => {
+    // A thousand tiny results must not crowd out a big recent one.
     const doc = sessionOf([
-      { output: big(30000) },
+      { output: big(150000) },
       ...Array.from({ length: 100 }, () => ({ output: big(200) })),
       { output: big(30000) },
     ])
@@ -72,16 +71,79 @@ describe("which results still travel in full", () => {
     expect([...kept]).toHaveLength(101) // the newest big one plus every small one
   })
 
+  it("never shortens the result just added, however large", () => {
+    const doc = sessionOf([{ output: big(500000) }, { output: big(500000) }])
+    const results = allResults(doc)
+    expect([...resultsToKeepWhole(results.slice(0, 1), {})]).toEqual([results[0].id])
+    expect([...resultsToKeepWhole(results, {})]).toEqual([results[1].id])
+  })
+
+  it("never shortens a pinned result", () => {
+    const doc = sessionOf(Array.from({ length: 12 }, () => ({ output: big(20000) })))
+    const results = allResults(doc)
+    results[0].pinned = true // what session_recall sets when the agent asks for it back
+    expect(resultsToKeepWhole(results, {}).has(results[0].id)).toBe(true)
+  })
+
   it("is configurable, and can be turned off", () => {
     const doc = sessionOf(Array.from({ length: 10 }, () => ({ output: big(20000) })))
     const results = allResults(doc)
-    expect(resultsToKeepWhole(results, { resultBudget: 100000 }).size).toBe(5)
+    // Marks 100,000 / 50,000: the 6th tips it (120,000) down to 40,000; the 10th
+    // tips it again, down to the newest two.
+    expect(resultsToKeepWhole(results, { resultsHigh: 100000, resultsLow: 50000 }).size).toBe(2)
     expect(resultsToKeepWhole(results, { taperAbove: Number.MAX_SAFE_INTEGER }).size).toBe(10)
   })
 
   it("uses defaults that are actually the defaults", () => {
     expect(TAPER_ABOVE).toBe(2000)
-    expect(RECENT_RESULT_BUDGET).toBe(40000)
+    expect(RESULTS_HIGH).toBe(160000)
+    expect(RESULTS_LOW).toBe(80000)
+  })
+})
+
+/**
+ * The rules, over every sequence of result sizes up to length 7 from a small
+ * alphabet, with small marks (above 2, high 10, low 5): a result is small (1),
+ * large (3) or larger than the high mark on its own (12).
+ */
+describe("batching, over every small transcript", () => {
+  const config = { taperAbove: 2, resultsHigh: 10, resultsLow: 5 }
+  const SIZES = [1, 3, 12]
+  function* sequences(n) {
+    if (n === 0) { yield []; return }
+    for (const rest of sequences(n - 1)) for (const s of SIZES) yield [...rest, s]
+  }
+  const blocks = (sizes) => sizes.map((n, i) => ({ id: `r${i}`, output: "x".repeat(n) }))
+  const shortened = (results) => {
+    const kept = resultsToKeepWhole(results, config)
+    return new Set(results.filter((r) => !kept.has(r.id)).map((r) => r.id))
+  }
+
+  it("holds every rule for every sequence", () => {
+    let count = 0
+    for (let n = 1; n <= 7; n++) {
+      for (const sizes of sequences(n)) {
+        const results = blocks(sizes)
+        for (let k = 1; k <= results.length; k++) {
+          const before = shortened(results.slice(0, k - 1))
+          const after = shortened(results.slice(0, k))
+          const newest = results[k - 1]
+          // Once shortened, always shortened: each prefix's choice is in the next.
+          for (const id of before) expect(after.has(id)).toBe(true)
+          // Small results and the newest one always travel whole.
+          for (const r of results.slice(0, k)) if (r.output.length <= 2) expect(after.has(r.id)).toBe(false)
+          expect(after.has(newest.id)).toBe(false)
+          // What stays whole (large) is within the high mark, unless it is the newest alone.
+          const wholeLarge = results.slice(0, k).filter((r) => r.output.length > 2 && !after.has(r.id))
+          const wholeChars = wholeLarge.reduce((sum, r) => sum + r.output.length, 0)
+          expect(wholeChars <= 10 || wholeLarge.length === 1).toBe(true)
+          // In batches: when anything new is shortened, what stays whole drops to the low mark (or to the newest alone).
+          if (after.size > before.size) expect(wholeChars <= 5 || wholeLarge.length === 1).toBe(true)
+          count++
+        }
+      }
+    }
+    expect(count).toBe([1, 2, 3, 4, 5, 6, 7].reduce((sum, n) => sum + n * 3 ** n, 0))
   })
 })
 
@@ -134,8 +196,9 @@ describe("the request that comes out", () => {
     const sent = outputsSent(doc)
 
     expect(sent).toHaveLength(10) // every call still has an answer
-    expect(sent.filter((o) => o.startsWith("[Not re-sent"))).toHaveLength(8)
-    expect(JSON.stringify(sent).length).toBeLessThan(0.3 * 10 * 20000)
+    // One batch at the 9th (180,000 > 160,000) down to the newest four; the 10th joins them.
+    expect(sent.filter((o) => o.startsWith("[Not re-sent"))).toHaveLength(5)
+    expect(JSON.stringify(sent).length).toBeLessThan(0.55 * 10 * 20000)
   })
 
   it("leaves every call paired with a result, which is a protocol requirement", () => {
@@ -163,8 +226,7 @@ describe("the request that comes out", () => {
   it("keeps an elided failure marked as a failure", () => {
     const doc = sessionOf([
       { output: big(30000), isError: true },
-      { output: big(30000) },
-      { output: big(30000) },
+      ...Array.from({ length: 5 }, () => ({ output: big(30000) })),
     ])
     const parts = toRequest(doc, { system: "" })
       .messages.flatMap((m) => m.content ?? [])
@@ -178,7 +240,7 @@ describe("the request that comes out", () => {
     const doc = {}
     initSession(doc, {})
     doc.turns = [makeTurn("user", [textBlock("go")])]
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       doc.turns.push(makeTurn("assistant", [callBlock("view_mount", {}, { id: `c${i}` })]))
       doc.turns.push(
         makeTurn("tool", [
