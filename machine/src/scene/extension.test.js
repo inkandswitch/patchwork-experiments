@@ -5,11 +5,19 @@ import ext, { playerOf, screenMatrix, give, sessionOf } from "./extension.js";
 import part from "./part.js";
 import { screenOf } from "./cabinet.js";
 
-test("its surface is the extension contract's: update, commands, dispose, and the seats' places it contributes (nothing for probes)", () => {
-  const api = { THREE, world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [] };
+test("its surface is the extension contract's: input, update, commands, dispose, and the seats' places it contributes (nothing for probes)", () => {
+  const ran = [];
+  const api = { THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null, run: (inv) => (ran.push(inv), true) };
   const instance = ext.create(api);
-  expect(Object.keys(instance).sort()).toEqual(["commands", "dispose", "seatPlaces", "update"]);
+  expect(Object.keys(instance).sort()).toEqual(["commands", "dispose", "input", "seatPlaces", "update"]);
+  expect(Object.keys(instance.input).sort()).toEqual(["click", "cursor"]);
   expect(instance.commands.map((c) => c.id)).toEqual(["play", "world"]);
+  // a click held by no machine here (the scene, or an object it has no entry for) is no click of its, and the stage isn't asked
+  for (const holder of [null, "crate"]) {
+    expect(instance.input.click({ holder, hit: { id: holder } })).toBe(false);
+    expect(instance.input.cursor({ holder })).toBe(null);
+  }
+  expect(ran).toEqual([]);
   instance.dispose();
 });
 
@@ -174,5 +182,29 @@ test("the part puts in an empty cabinet: a machine doc of its own with no game, 
     const [{ url, opts }] = added;
     expect(repo.docs[url]).toEqual({ "@patchwork": { type: "machine" }, title: "Machine" });
     expect(opts).toEqual({ providerId: "machine", parent: at.parent, transform: at.transform, fields: { traits: { machine: {} } } });
+  }
+});
+
+test("a click on a cabinet goes through the stage as Play, on that cabinet with the click's hit; refused there for the machine's reason, it says why", async () => {
+  for (const answer of [true, false]) {
+    const ran = [];
+    const notices = [];
+    const scene = { objects: { cab: { sourceUrl: "automerge:game", traits: { machine: {} } } } };
+    const api = {
+      THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => scene, loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null,
+      repo: { find: async () => ({ doc: () => ({ title: "Empty" }) }) }, // no game yet: it never starts
+      clock: { after: () => () => {} },
+      notify: (t) => notices.push(t),
+      run: (inv) => (ran.push(inv), answer),
+    };
+    const instance = ext.create(api);
+    await new Promise((r) => setTimeout(r, 0));
+    const hit = { id: "cab", point: [0, 1, 0] };
+    expect(instance.input.cursor({ holder: "cab", hit })).toBe("pointer");
+    expect(instance.input.click({ holder: "cab", hit })).toBe(true);
+    expect(ran).toEqual([{ ext: "machine.pkg", command: "play", target: "cab", hit }]);
+    // the stage refused it (as it does for a machine that hasn't started): Play's own reason, said; ran, nothing said
+    expect(notices).toEqual(answer ? [] : [expect.stringMatching(/No game yet/)]);
+    instance.dispose();
   }
 });

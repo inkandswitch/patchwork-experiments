@@ -48,6 +48,9 @@ export function releaseKind({ button, ctrl }, mac) {
   return null;
 }
 
+/** Is `el` in something over the canvas that keeps the look while the pointer is on it (`data-keeps-look`: the use prompt)? */
+export const keepsLook = (el) => !!el?.closest?.("[data-keeps-look]");
+
 /** Is someone typing into this element (so it keeps its keys)? */
 export function isTyping(el) {
   if (!el || el.nodeType !== 1) return false;
@@ -431,7 +434,11 @@ export function createRouter(o) {
     // (put back, never committed where nobody saw it land), rather than
     // carrying on with the hover. (Chrome says so first, as a lost capture.)
     if (g && !g.dead && g.pointerType === "mouse" && e.buttons === 0) return onPointerCancel(e);
-    if (e.target !== canvas && !g) return;
+    if (e.target !== canvas && !g) {
+      // off the canvas: a look kept for something over it (the use prompt) lasts only while the pointer is on that thing
+      if (kept && !keepsLook(e.target)) onPointerLeave();
+      return;
+    }
     const locked = isLocked();
     if (!locked) lastAt = { clientX: e.clientX, clientY: e.clientY };
     let ev = null;
@@ -507,7 +514,24 @@ export function createRouter(o) {
     onPointerCancel(e);
   }
 
+  // The look is what's under the pointer on the canvas. Off the canvas onto
+  // something over it that keeps the look ([data-keeps-look]: the use
+  // prompt, whose buttons are the verbs of what's looked at), it is kept
+  // while the pointer stays on that thing, so a button there can be reached
+  // and clicked; anywhere else (other overlays, out of the port) it goes.
+  let kept = false;
+  function onCanvasLeave(e) {
+    if (keepsLook(e?.relatedTarget)) {
+      kept = true;
+      return;
+    }
+    onPointerLeave();
+  }
+  function onPortLeave() {
+    if (kept) onPointerLeave();
+  }
   function onPointerLeave() {
+    kept = false;
     cancelHover();
     o.onHover?.(null);
     call(top().owner ?? "scene", top().input, "leave");
@@ -919,7 +943,8 @@ export function createRouter(o) {
     [port, "dblclick", onDblClick, { capture: true }],
     [port, "contextmenu", onContextMenu, { capture: true }],
     [port, "wheel", onWheel, { capture: true, passive: false }],
-    [canvas, "pointerleave", onPointerLeave, undefined],
+    [canvas, "pointerleave", onCanvasLeave, undefined],
+    [port, "pointerleave", onPortLeave, undefined],
     [canvas, "lostpointercapture", onLostCapture, undefined],
     [keyRoot, "keydown", onKeyDown, undefined],
     [keyRoot, "keyup", onKeyUp, undefined],

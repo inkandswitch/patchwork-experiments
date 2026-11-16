@@ -205,6 +205,31 @@ describe("scene.use", () => {
     expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
+  it("a verb's button can be reached with a mouse: the prompt follows the pointer over the world, and stays put while the pointer is over the prompt", async () => {
+    await mount();
+    await hover("helm");
+    const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
+    const move = (target, x, y) => target.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
+    const origin = s.port.getBoundingClientRect();
+    const px = (x, y) => [`${x - origin.left}px`, `${y - origin.top}px`];
+    const button = prompt().querySelector('[data-command="helm"]');
+    // every way the pointer goes: over the world (the port, the canvas), onto the prompt, onto its button, back to the world
+    for (const [where, target, x, y, want] of [
+      ["the world", () => s.port, 100, 80, px(100, 80)],
+      ["the canvas", () => s.canvas, 120, 90, px(120, 90)],
+      ["the prompt", () => prompt(), 120, 130, px(120, 90)],
+      ["its button", () => button, 125, 132, px(120, 90)],
+      ["its key", () => button.querySelector("kbd"), 110, 131, px(120, 90)],
+      ["the world again", () => s.canvas, 200, 50, px(200, 50)],
+    ]) {
+      move(target(), x, y);
+      expect([where, at()]).toEqual([where, want]);
+    }
+    // and the click on it runs the verb
+    button.click();
+    expect(log).toEqual([["helm", "helm", undefined]]);
+  });
+
   it("looking at a part offers what it's attached to", async () => {
     await mount();
     await hover("spoke");

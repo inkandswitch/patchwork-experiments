@@ -121,7 +121,7 @@ try {
   const ready = await b.waitFor(`(() => { const s = [__p.shows("a")?.["${id}"], __p.shows("b")?.["${id}"]]; return s.every((x) => x && x.tick !== null && x.shown) })()`, 180_000);
   check("both views opened it and show a picture", !!ready, await both(id));
   await b.step(30);
-  check("stopped while nobody plays, and the screen says to sit at it", (await both(id)).every((s) => s.tick === 0 && !s.running) && (await P(`labels("a")`)).some((t) => /sit at it/.test(t)), { shows: await both(id), labels: await P(`labels("a")`) });
+  check("stopped while nobody plays, and the screen says P plays it", (await both(id)).every((s) => s.tick === 0 && !s.running) && (await P(`labels("a")`)).some((t) => /point at it and press P/.test(t)), { shows: await both(id), labels: await P(`labels("a")`) });
   await shot("given");
 
   // ---- 2. seats: Ana at P1, Ben at P2

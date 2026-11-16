@@ -34,7 +34,19 @@ own. In a scene a machine is an object (`src/scene/`): its cabinet, its
 session run on the scene's world time, its picture and sound at the
 cabinet's screen, a seat per port (sit down to play that port, stand up to
 give it back), and an empty cabinet from the parts bin that takes a ROM or
-an IWAD dropped on it. And a Doom's world beside it: "Lay out its world"
+an IWAD dropped on it. **To play one:** click its cabinet, or point at it
+and press P, or click Play on the prompt that appears (or choose it from
+the menu). That sits you at its first free seat with that port's pad in
+hand, and a panel at the top left says what the keys do (it folds to its
+title after a few seconds; hover it to open it again). Escape puts the pad
+down (P picks it up again), and standing up, or Watching in the seat
+picker, gives the port back. Every port taken, it says so. A cabinet
+nobody is playing is stopped, and its screen shows the last picture
+played; where that picture is blank (a game never played, or one stopped
+on a black frame), it shows the next picture the game draws from there
+instead, with "Stopped while nobody plays: click it, or point at it and
+press P" under it. In Edit a click selects the cabinet, and P plays it.
+And a Doom's world beside it: "Lay out its world"
 puts doom/'s own 3D map of the level beside the cabinet, and the game is
 drawn in it from the engine's state, every frame, its monsters, players
 and doors where the engine has them (HOST.md, "Phase 2b, in a scene").
@@ -52,8 +64,8 @@ and doors where the engine has them (HOST.md, "Phase 2b, in a scene").
 | `src/doom.js` | Doom's host side: content, ticcmds, demos, sound events, PCM, the queries' decoders, the listener, a camera |
 | `src/doom-music.js` | Doom's music player: `music(wasm, lumps, rate)`, following the engine's music record |
 | `src/content.js` | content provisioning: recipes, `identify`, a per-hash cache in IndexedDB, `provide(hash, …)` |
-| `src/scene/` | a machine in a scene: `extension.js` (scene:extension `machine`: screens, sound, seats, Play, drops, worlds), `worlds.js` (what decides a machine's world: when it draws, its command, where it goes, its WAD), `running.js` (one machine on one view: the host on world time, the process, the quiet stop), `seating.js` (a seat per port: what's laid, the places, following a seat), `part.js` (scene:part `machine`: an empty cabinet), `cabinet.js` and `source.js` (scene:source `machine`: the cabinet GLB, its screen's place in its extras) |
-| `src/present/` | presentation (phase 2b): `screen.js` (a picture as a three.js texture), `sound.js` (WebAudio routing of `output()`), `speaker.js` (a machine's sound on one AudioContext, for the tool and a scene), `doom-world.js` (Doom's things and sectors for a spectator), `spectator.js` (them drawn in doom/'s whole map: billboards, doors moved), `adapters/unarmed.js` (Unarmed's players and arena from WRAM) |
+| `src/scene/` | a machine in a scene: `extension.js` (scene:extension `machine`: screens, sound, seats, Play, the controls panel, drops, worlds), `hands.js` (the pad in hand and the port it holds: what sitting, Play, Escape and P do), `controls.js` (what the keys do, from the keys the pad reads), `worlds.js` (what decides a machine's world: when it draws, its command, where it goes, its WAD), `running.js` (one machine on one view: the host on world time, the process, the quiet stop), `seating.js` (a seat per port: what's laid, the places, following a seat, the ports Play offers), `part.js` (scene:part `machine`: an empty cabinet), `cabinet.js` and `source.js` (scene:source `machine`: the cabinet GLB, its screen's place in its extras) |
+| `src/present/` | presentation (phase 2b): `screen.js` (a picture as a three.js texture), `poster.js` (a stopped screen's picture when its state's own is blank: the engine's first, found on a private engine), `sound.js` (WebAudio routing of `output()`), `speaker.js` (a machine's sound on one AudioContext, for the tool and a scene), `doom-world.js` (Doom's things and sectors for a spectator), `spectator.js` (them drawn in doom/'s whole map: billboards, doors moved), `adapters/unarmed.js` (Unarmed's players and arena from WRAM) |
 | `src/test-tier.js` | the test tiers' flag |
 | `engines/machine.h` | the ABI, in C |
 | `engines/toy` | a toy engine (C, 9 KB), for the exhaustive tests |
@@ -501,7 +513,9 @@ automerge-repo's scheduling; it is left open.
 - **The scene extension** (phase 2b): the clock, the process, queries
   across the worker and the screen are built (HOST.md, "Phase 2b, in a
   scene"); positional sound (`output()`, with Doom's events carrying
-  positions), a station per port and the spectator's world are built too;
+  positions), a station per port, Play as the way in (it sits you at a
+  free port), a stopped screen's poster, the controls panel and the
+  spectator's world are built too;
   Doom's mouse in a scene (it plays by keys there), the world's sound at
   its origins, and lifts and locked doors in the world are not (HOST.md,
   "Not done yet").
