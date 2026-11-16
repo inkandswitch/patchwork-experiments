@@ -6,12 +6,22 @@
 //   - every output, over a grid of every kind, cover, visibility, rain and
 //     hour, is one the stage's own check passes unchanged (a copy of
 //     cleanAtmosphere, as water copies cloudAt), and pure JSON;
+//   - the model between its anchors: rows whose expected values are
+//     computed here from the anchors, by the rule WEATHER.md states (linear
+//     RGB midpoints and quarters along cover and haze, cirrus as a thinner
+//     cumulus), and the bands checked cell by cell against WEATHER.md's
+//     table;
 //   - exposure never rises as the sun sinks; the colours don't jump at a
 //     band's edge, a cover node or the haze's ends; the sun gives light iff
-//     it is up; shadows, haze, rain and the deck by their rules.
+//     it is up; shadows, haze, rain and the deck by their rules;
+//   - the deck as the stage draws it (a copy of its cloudAt and its noise):
+//     no jump anywhere along cover or haze.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { plugins } from "./index.js";
-import { BANDS, KINDS, LOOKS, atmosphereAt, atmosphereOf, conditionsOf, dayLook, hazeOf, skyAt, sunOf, toHex, toLinear, visibilityOf, wetOf } from "./atmosphere.js";
+import { BANDS, KINDS, LOOKS, SCATTERED_MAX, atmosphereAt, atmosphereOf, bandAt, conditionsOf, dayLook, deckOf, hazeOf, skyAt, sunOf, toHex, toLinear, toSrgb, visibilityOf, wetOf } from "./atmosphere.js";
 import { sunDirection } from "./solar.js";
 import { weatherParams } from "./weather.js";
 
@@ -124,6 +134,106 @@ describe("the anchors: the art direction they were, exactly, at their conditions
   });
 });
 
+// Between the anchors. Each expected value is computed here, from the anchors' hex and the rule WEATHER.md states
+// ("The look"): the look interpolated linearly, in linear RGB, along effective cover between the nodes and along the
+// haze weight toward the marine layer; numbers (intensity, exposure, fog near's ratio) linearly. The sun is 56° up, so
+// the bands are the identity. Midpoints and quarter points both: a smoothstep or an h² agrees with the line at a
+// midpoint and an end, never at a quarter.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const mixHex = (a, b, t) => toHex(toLinear(a).map((v, i) => v * (1 - t) + toLinear(b)[i] * t));
+const mixNum = (a, b, t) => a * (1 - t) + b * t;
+/** The look t of the way from anchor `a` to `b` (LOOKS' keys) at fog far `far`: sky, fog, sun colour and intensity, exposure. */
+function between(a, b, t, far) {
+  const [A, B] = [LOOKS[a], LOOKS[b]];
+  const sky = Object.fromEntries(["top", "horizon", "bottom"].map((k) => [k, mixHex(A.sky[k], B.sky[k], t)]));
+  return { sky, fog: { color: sky.horizon, near: Math.round(mixNum(A.near, B.near, t) * far), far }, sun: { color: mixHex(A.sun.color, B.sun.color, t), intensity: mixNum(A.sun.intensity, B.sun.intensity, t) }, exposure: mixNum(A.exposure, B.exposure, t) };
+}
+const lookOf = (a) => ({ sky: a.sky, fog: a.fog, sun: { color: a.sun.color, intensity: a.sun.intensity }, exposure: a.exposure });
+const closeLook = (got, want) => {
+  expect({ ...got, sun: { ...got.sun, intensity: 0 }, exposure: 0 }).toStrictEqual({ ...want, sun: { ...want.sun, intensity: 0 }, exposure: 0 });
+  expect(got.sun.intensity).toBeCloseTo(want.sun.intensity, 12);
+  expect(got.exposure).toBeCloseTo(want.exposure, 12);
+};
+
+describe("between the anchors: the rule WEATHER.md states, computed independently", () => {
+  // [name, the weather, from, to, t, fog far]
+  it.each([
+    ["cumulus at cover 0.0875: a quarter of the way from the clear afternoon to the bright day", { cover: 0.0875 }, "clear", "bright", 0.25, 9000],
+    ["cumulus at cover 0.175: halfway from the clear afternoon to the bright day", { cover: 0.175 }, "clear", "bright", 0.5, 9000],
+    ["cumulus at cover 0.5125: a quarter of the way from the bright day to Ukee grey", { cover: 0.5125 }, "bright", "grey", 0.25, 9000],
+    ["cumulus at cover 0.675: halfway from the bright day to Ukee grey", { cover: 0.675 }, "bright", "grey", 0.5, 9000],
+    ["stratus at cover 0.675: the same look (opacity 1)", { cover: 0.675, clouds: "stratus" }, "bright", "grey", 0.5, 9000],
+    ["cirrus at cover 1: effective cover 0.3, six sevenths of the way from the clear afternoon to the bright day", { cover: 1, clouds: "cirrus" }, "clear", "bright", 0.3 / 0.35, 9000],
+    ["the bright day at visibility 10^3.75 m (h = 0.25): a quarter of the way into the marine layer", { visibility: 10 ** 3.75 }, "bright", "fog", 0.25, Math.round(0.9 * 10 ** 3.75)],
+    ["the bright day at visibility 10^3.5 m (h = 0.5): halfway into the marine layer", { visibility: 10 ** 3.5 }, "bright", "fog", 0.5, Math.round(0.9 * 10 ** 3.5)],
+    ["Ukee grey at visibility 10^3.5 m: halfway from it into the marine layer", { cover: 1, clouds: "stratocumulus", visibility: 10 ** 3.5 }, "grey", "fog", 0.5, Math.round(0.9 * 10 ** 3.5)],
+  ])("%s", (_, t, a, b, f, far) => closeLook(lookOf(atmosphereOf(params(t))), between(a, b, f, far)));
+
+  it("cumulus at cover 0.675: intensity 1.65, exposure 1.025, shadows (effective cover under 0.75)", () => {
+    const a = atmosphereOf(params({ cover: 0.675 }));
+    expect(a.sun.intensity).toBeCloseTo(1.65, 12);
+    expect(a.exposure).toBeCloseTo(1.025, 12);
+    expect(a.sun.shadows).toBe(true);
+  });
+
+  it("cirrus at cover 1 is cumulus at cover 0.3 in everything but its deck (opacity 0.3)", () => {
+    const [ci, cu] = [atmosphereOf(params({ cover: 1, clouds: "cirrus" })), atmosphereOf(params({ cover: 0.3 }))];
+    expect({ ...ci, clouds: null }).toStrictEqual({ ...cu, clouds: null });
+  });
+
+  // At s = 1 (a full overcast, or a fog) every tint is tempered to white, the sun's too: whatever the band, the sun's
+  // colour is the day's times one gain, so an overcast sunset's sun dims and never turns orange.
+  it("at s = 1 the sun's channels scale alike at every node and between", () => {
+    for (const t of [{ cover: 1, clouds: "stratus" }, { cover: 1, clouds: "stratocumulus" }, { cover: 0, visibility: 1000 }]) {
+      const c = conditionsOf(params(t));
+      expect(c.s).toBe(1);
+      const day = skyAt(c, 45).sun;
+      for (const e of [...BANDS.map((b) => b.at), 13, 3, 0.5, -0.4, -3, -9, -20]) {
+        const r = skyAt(c, e).sun.map((v, i) => v / day[i]);
+        for (const x of r) expect(x).toBeCloseTo(r[0], 12);
+        expect(r[0]).toBeCloseTo(bandAt(e).disc, 12);
+      }
+    }
+  });
+});
+
+describe("the bands are WEATHER.md's table, cell by cell", () => {
+  /** WEATHER.md's bands table (under "The look"), each row as a band: the doc is the spec BANDS is checked against. */
+  function docBands(md) {
+    const lines = md.split("\n").map((l) => l.trim());
+    const start = lines.findIndex((l) => l.startsWith("| Band |"));
+    const head = lines[start].split("|").slice(1, -1).map((c) => c.trim());
+    expect(head).toEqual(["Band", "Geometric", "Top", "Horizon", "Bottom", "Sun tint", "`disc`", "`light`", "Exposure", "Key light"]);
+    const rows = [];
+    for (let i = start + 2; lines[i]?.startsWith("|"); i++) rows.push(lines[i].split("|").slice(1, -1).map((c) => c.trim()));
+    const nums = (c) => c.replace(/[()]/g, "").split(",").map(Number);
+    const tint = (c) => (c === "1" ? [1, 1, 1] : nums(c));
+    const gain = (c) => (c === "1" ? [1, [1, 1, 1]] : [Number(c.split("×")[0]), nums(c.split("×")[1])]);
+    return rows.map((r) => ({ at: parseFloat(r[1]), name: r[0], top: gain(r[2]), horizon: gain(r[3]), bottom: gain(r[4]), sun: tint(r[5]), disc: Number(r[6]), light: Number(r[7]), exposure: Number(r[8]), key: Number(r[9]) }));
+  }
+  const rows = docBands(readFileSync(join(HERE, "..", "WEATHER.md"), "utf8"));
+
+  it("has a row for every band, in order", () => expect(rows.map((r) => [r.name, r.at])).toEqual(BANDS.map((b) => [b.name, b.at])));
+  for (const r of rows)
+    it(`${r.name}: every cell is BANDS', and the key light column is disc · light · exposure`, () => {
+      const { key, ...band } = r;
+      expect(BANDS.find((b) => b.name === r.name)).toStrictEqual(band);
+      expect(key).toBeCloseTo(r.disc * r.light * r.exposure, 3);
+    });
+
+  it("bandAt has one shape everywhere: the nodes' values at a node, linear between, held beyond", () => {
+    const keys = ["top", "horizon", "bottom", "sun", "disc", "light", "exposure"];
+    const pick = (b) => Object.fromEntries(keys.map((k) => [k, b[k]]));
+    for (const e of [90, 20, 13, 6, 0, -0.833, -3, -6, -12, -40]) expect(Object.keys(bandAt(e))).toEqual(keys);
+    for (const b of BANDS) expect(bandAt(b.at)).toStrictEqual(pick(b));
+    expect(bandAt(90)).toStrictEqual(pick(BANDS[0]));
+    expect(bandAt(-40)).toStrictEqual(pick(BANDS.at(-1)));
+    const mid = bandAt(13);
+    expect(mid.exposure).toBeCloseTo((BANDS[0].exposure + BANDS[1].exposure) / 2, 12);
+    expect(mid.top[1][2]).toBeCloseTo((BANDS[0].top[1][2] + BANDS[1].top[1][2]) / 2, 12);
+  });
+});
+
 // The grid: every kind × cover × visibility × rain, at hours through two days (a summer day at Cadboro Bay and a
 // winter one at Ucluelet), so every band of the sun and the night are crossed.
 const GRID = [];
@@ -189,31 +299,38 @@ describe("the sun's elevation", () => {
       for (const e of [-12, -15, -20, -90]) expect(at(t, e).exposure).toBe(day * BANDS.at(-1).exposure);
     });
 
-  // At each band's edge, and at the 2° shadow gate, the look a hundredth of a degree either side: no colour jumps
-  // more than 1/255 (linear RGB, before the hex rounds it), over every kind × cover, three visibilities, and rain.
+  // At each band's edge, and at the 2° shadow gate, the look a hundredth of a degree either side, over every kind ×
+  // cover, three visibilities, and rain: no sky colour moves more than 1/255 in sRGB, the space the doc writes it in
+  // (before the hex rounds it); the sun's colour, which fades to black and so crosses sRGB's steep toe, no more than
+  // 1/255 in linear RGB, the space it lights in (Decision 22).
   const EDGES = [...BANDS.map((b) => b.at), 2];
   const CONDS = SKIES.flatMap((s) => [20000, 3000, 1000].flatMap((visibility) => [0, 10].map((rain) => conditionsOf(params({ ...s, visibility, rain })))));
   for (const e of EDGES)
     it(`continuous at ${e}° ± 0.01°`, () => {
       for (const c of CONDS) {
         const [a, b] = [skyAt(c, e + 0.01), skyAt(c, e - 0.01)];
-        for (const k of COLOURS) expect(dist(a[k], b[k]), `${k} at ${JSON.stringify(c)}`).toBeLessThanOrEqual(1 / 255);
+        for (const k of ["top", "horizon", "bottom"]) expect(dist(toSrgb(a[k]), toSrgb(b[k])), `${k} at ${JSON.stringify(c)}`).toBeLessThanOrEqual(1 / 255);
+        expect(dist(a.sun, b.sun), `sun at ${JSON.stringify(c)}`).toBeLessThanOrEqual(1 / 255);
       }
     });
 
-  // The sun gives light, and shows a disc, iff its geometric elevation is above the almanac's sunrise, -0.833°.
+  // The sun gives light iff its geometric elevation is above the almanac's sunrise, -0.833°. Its disc fades with it
+  // and is black from there down; just above, the colour rounds to black a thousandth of a degree early (-0.8329°),
+  // while the light is still 2e-4 of the day's (Decision 19).
   it.each([
-    [10, true],
-    [0, true],
-    [-0.8, true],
-    [-0.833, false],
-    [-1, false],
-    [-30, false],
-  ])("geometric %s° → the sun is up: %s", (e, up) => {
+    [10, true, true],
+    [0, true, true],
+    [-0.8, true, true],
+    [-0.832, true, true],
+    [-0.8329, true, false],
+    [-0.833, false, false],
+    [-1, false, false],
+    [-30, false, false],
+  ])("geometric %s° → gives light: %s; a disc that isn't #000000: %s", (e, light, disc) => {
     for (const t of SKIES) {
       const sun = at(t, e).sun;
-      expect(sun.intensity > 0).toBe(up);
-      expect(sun.color !== "#000000").toBe(up);
+      expect(sun.intensity > 0).toBe(light);
+      expect(sun.color !== "#000000").toBe(disc);
     }
   });
 
@@ -336,9 +453,54 @@ describe("haze, rain and the fog", () => {
   });
 });
 
+// ─── the stage's deck, copied: cloudAt (scene/src/stage/viewport.js at e74b9ef7) and the sky shader's noise ───
+// (cloudHash, cloudNoise, in double precision rather than the GPU's float: the same field, statistically).
+const fract = (x) => x - Math.floor(x);
+const mod289 = (x) => x - 289 * Math.floor(x / 289);
+const cloudHash = (x, y) => fract(Math.sin(mod289(x) * 127.1 + mod289(y) * 311.7) * 43758.5453);
+function cloudNoise(px, pz) {
+  const [ix, iz] = [Math.floor(px), Math.floor(pz)];
+  const [fx, fz] = [px - ix, pz - iz];
+  const [ux, uz] = [fx * fx * (3 - 2 * fx), fz * fz * (3 - 2 * fz)];
+  const mix = (a, b, t) => a * (1 - t) + b * t;
+  return mix(mix(cloudHash(ix, iz), cloudHash(ix + 1, iz), ux), mix(cloudHash(ix, iz + 1), cloudHash(ix + 1, iz + 1), ux), uz);
+}
+function cloudAt(d, { cover, contrast, scale, base }, noise) {
+  if (!(d[1] > 0)) return { factor: 1, white: 0 };
+  const k = (base / Math.max(d[1], 0.02)) / scale;
+  const x = d[0] * k, z = d[2] * k;
+  const n = noise(x, z) * 0.65 + noise(x * 2.3 + 17, z * 2.3 + 17) * 0.35;
+  const sm = (a, b, t) => {
+    const u = Math.max(0, Math.min(1, (t - a) / (b - a)));
+    return u * u * (3 - 2 * u);
+  };
+  const fade = sm(0.03, 0.3, d[1]);
+  const w = cover >= 1 ? n : sm(1 - cover - 0.12, 1 - cover + 0.12, n);
+  const shape = cover >= 1 ? 2 * w - 1 : w * (2 * sm(0.05, 0.35, d[1]) - 1);
+  return { factor: 1 + contrast * shape * fade, white: cover >= 1 ? 0 : w * fade * 0.6 };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A finite set of directions over the sky: 24 elevations × 36 azimuths. */
+const SKY_DIRS = [];
+for (let i = 1; i <= 24; i++)
+  for (let j = 0; j < 36; j++) {
+    const [el, az] = [((i - 0.5) / 24) * (Math.PI / 2), (j * 10 * Math.PI) / 180];
+    SKY_DIRS.push([Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)]);
+  }
+/** The deck as the sky shader draws it, at every direction: [factor, whitening] pairs (no deck: 1 and 0). */
+const drawn = (atm) => SKY_DIRS.map((d) => (atm.clouds ? cloudAt(d, atm.clouds, cloudNoise) : { factor: 1, white: 0 }));
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+/** The largest change, at any direction, in the drawn factor or whitening between two atmospheres. */
+const drawnStep = (a, b) => {
+  const [p, q] = [drawn(a), drawn(b)];
+  return Math.max(...p.map((x, i) => Math.max(Math.abs(x.factor - q[i].factor), Math.abs(x.white - q[i].white))));
+};
+
 describe("the cloud deck", () => {
-  it("its kinds are the trait's options, each a deck the stage accepts", () => {
+  it("its kinds are the trait's options, each a deck the stage accepts, drawn scattered or as a layer", () => {
     expect(KIND_NAMES).toEqual(plugins[0].describes.weather.fields.find((f) => f.key === "clouds").options.map((o) => o.value));
+    expect(Object.fromEntries(KIND_NAMES.map((k) => [k, KINDS[k].deck]))).toEqual({ cumulus: "scattered", stratocumulus: "layer", stratus: "layer", cirrus: "scattered" });
     for (const k of Object.values(KINDS)) {
       expect(k.contrast).toBeGreaterThan(0);
       expect(k.contrast).toBeLessThanOrEqual(0.5);
@@ -347,15 +509,31 @@ describe("the cloud deck", () => {
     }
   });
 
+  it("a kind never crosses from one of the stage's decks to the other: a layer is always the stage's cover 1, a scattered deck never reaches it", () => {
+    for (const t of GRID) {
+      const p = params(t);
+      const deck = deckOf(conditionsOf(p));
+      if (!deck) continue;
+      if (KINDS[p.clouds].deck === "layer") expect(deck.cover).toBe(1);
+      else expect(deck.cover).toBeLessThanOrEqual(SCATTERED_MAX);
+      expect(atmosphereOf(p).clouds).toStrictEqual(deck);
+    }
+  });
+
   // [the weather, the deck]
   it.each([
     [{ cover: 0 }, undefined],
+    [{ cover: 0, clouds: "stratus" }, undefined],
     [{ cover: 0.5, clouds: "cumulus", base: 1500 }, { cover: 0.5, contrast: 0.25, scale: 700, base: 1500 }],
-    [{ cover: 0.8, clouds: "stratocumulus", base: 600 }, { cover: 0.8, contrast: 0.12, scale: 500, base: 600 }],
+    [{ cover: 1, clouds: "cumulus" }, { cover: 0.95, contrast: 0.25, scale: 700, base: 1200 }],
+    [{ cover: 0.8, clouds: "stratocumulus", base: 600 }, { cover: 1, contrast: 0.096, scale: 500, base: 600 }],
     [{ cover: 1, clouds: "stratus", base: 200 }, { cover: 1, contrast: 0.05, scale: 1500, base: 200 }],
     [{ cover: 0.6, clouds: "cirrus", base: 9000 }, { cover: 0.6, contrast: 0.08, scale: 3000, base: 9000 }],
+    [{ cover: 1, clouds: "cirrus", base: 9000 }, { cover: 0.95, contrast: 0.08, scale: 3000, base: 9000 }],
     [{ cover: 1, visibility: 1000 }, undefined],
-    [{ cover: 1, visibility: 10000 / Math.sqrt(10) }, { cover: 1, contrast: 0.125, scale: 700, base: 1200 }],
+    [{ cover: 1, clouds: "stratus", visibility: 1000 }, undefined],
+    [{ cover: 1, visibility: 10 ** 3.5 }, { cover: 0.475, contrast: 0.125, scale: 700, base: 1200 }],
+    [{ cover: 1, clouds: "stratocumulus", visibility: 10 ** 3.5 }, { cover: 1, contrast: 0.06, scale: 500, base: 1200 }],
   ])("%j → %j", (t, deck) => {
     const clouds = atmosphereOf(params(t)).clouds;
     if (deck === undefined) expect(clouds).toBeUndefined();
@@ -364,6 +542,44 @@ describe("the cloud deck", () => {
       for (const k of Object.keys(deck)) expect(clouds[k]).toBeCloseTo(deck[k], 12);
     }
   });
+
+  // The stage draws a deck of cover under 1 scattered (whitened up to 0.6, brightened overhead) and of cover 1 as a
+  // layer (textured, never whitened): handing it the trait's cover straight would jump at cover 1 (cumulus's mean
+  // factor 1.21 → 0.98, its whitening 0.54 → 0). As drawn, 0.95, 0.99 and 1 are one sky, for every kind.
+  for (const kind of KIND_NAMES)
+    it(`as drawn, ${kind} at cover 0.95, 0.99 and 1 is one sky: mean factor and whitening agree to 1e-3`, () => {
+      const [a, b, c] = [0.95, 0.99, 1].map((cover) => drawn(atmosphereOf(params({ cover, clouds: kind }))));
+      for (const x of [b, c])
+        for (const f of ["factor", "white"]) expect(Math.abs(mean(x.map((d) => d[f])) - mean(a.map((d) => d[f])))).toBeLessThan(1e-3);
+    });
+
+  // Continuity as drawn, along both levers, per direction. The stage's smoothstep over the noise is 1.5 / 0.24 = 6.25
+  // steep, so a deck cover step of 0.01 whitens a direction by at most 0.6 × 6.25 × 0.01 = 0.0375 and moves its factor
+  // by less; a jump between decks moves one by up to 0.6. So: no direction moves more than 0.04 for a 0.01 step.
+  const STEP = 0.04;
+  for (const kind of KIND_NAMES) {
+    it(`as drawn, ${kind}: no jump along cover 0 → 1 (steps of 0.01, at visibility 10 km and 3 km)`, () => {
+      for (const visibility of [10000, 3000]) {
+        let last = atmosphereOf(params({ cover: 0, clouds: kind, visibility }));
+        for (let i = 1; i <= 100; i++) {
+          const next = atmosphereOf(params({ cover: i / 100, clouds: kind, visibility }));
+          expect(drawnStep(last, next), `cover ${(i - 1) / 100} → ${i / 100} at ${visibility} m`).toBeLessThanOrEqual(STEP);
+          last = next;
+        }
+      }
+    });
+    it(`as drawn, ${kind}: no jump along the haze 0 → 1, into the fog where the deck goes (steps of 0.01, at cover 0.35 and 1)`, () => {
+      for (const cover of [0.35, 1]) {
+        let last = atmosphereOf(params({ cover, clouds: kind, visibility: 10000 }));
+        for (let i = 1; i <= 100; i++) {
+          const next = atmosphereOf(params({ cover, clouds: kind, visibility: 10000 / 10 ** (i / 100) }));
+          expect(drawnStep(last, next), `h ${(i - 1) / 100} → ${i / 100} at cover ${cover}`).toBeLessThanOrEqual(STEP);
+          last = next;
+        }
+        expect(last.clouds).toBeUndefined();
+      }
+    });
+  }
 
   it("cirrus lets the blue through: at cover 1 the sky is nearer the bright day than Ukee grey", () => {
     const cirrus = atmosphereOf(params({ cover: 1, clouds: "cirrus" })).sky.top;

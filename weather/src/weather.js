@@ -11,7 +11,7 @@ import { plugins } from "./index.js";
 import { validDate, validZone } from "./time.js";
 
 /** The weather trait's described fields (index.js), in order. */
-export const FIELDS = plugins[0].describes.weather.fields;
+export const FIELDS = plugins.find((p) => p.describes?.weather).describes.weather.fields;
 
 /** Every field's default: the trait a new world's weather starts as. */
 export const DEFAULTS = Object.freeze(Object.fromEntries(FIELDS.map((f) => [f.key, f.default])));
@@ -42,7 +42,7 @@ function fieldOf(f, v) {
  */
 export function weatherParams(trait) {
   const t = trait && typeof trait === "object" ? trait : {};
-  return Object.fromEntries(FIELDS.map((f) => [f.key, fieldOf(f, t[f.key])]));
+  return Object.fromEntries(FIELDS.map((f) => [f.key, fieldOf(f, Object.hasOwn(t, f.key) ? t[f.key] : undefined)]));
 }
 
 /**
@@ -53,21 +53,4 @@ export function weatherParams(trait) {
  */
 export function windOf(p) {
   return { speed: p.wind, from: p.from, seed: p.seed, gustiness: p.gustiness };
-}
-
-/** The gustiness field's default and slider step. */
-const GUSTINESS = FIELDS.find((f) => f.key === "gustiness");
-
-/**
- * The gustiness of an hour whose mean wind is `mean` and whose peak gust is
- * `peak` (m/s; a fetch's wind_speed_10m and wind_gusts_10m): the peak over
- * the mean, less 1, clamped to 0..1 and rounded to the slider's step
- * (Decision 10: the model's hourly peak is mean · (1 + g)). In a calm (mean
- * under 0.5 m/s) a gust factor means nothing, and with no peak there is
- * none: both are the default.
- */
-export function gustinessOf(mean, peak) {
-  if (!(Number.isFinite(mean) && mean >= 0.5 && Number.isFinite(peak))) return GUSTINESS.default;
-  const g = Math.min(GUSTINESS.max, Math.max(GUSTINESS.min, peak / mean - 1));
-  return Number((Math.round(g / GUSTINESS.step) * GUSTINESS.step).toFixed(2)); // 0.05 steps: two decimals are exact
 }
