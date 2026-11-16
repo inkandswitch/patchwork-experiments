@@ -968,3 +968,98 @@ patchwork-view {
 .tile-resize-handle[data-resize-handle-active] {
   background: var(--tile-accent);
 }
+
+/* --- Narrow screens: the panes as an accordion ---
+ *
+ * Below 700px the split tree is laid out as one column, in reading order,
+ * without handles. Only the active pane is open: it, and every split that
+ * holds it, takes the height that's left. Every other pane folds to its
+ * header, so its tabs stay one tap away, and a tap there makes it the active
+ * pane (the panel's own mousedown, which a tap fires too). Nothing is written
+ * to the layout doc: the splits and their sizes are all still there for a
+ * wider screen, and the folded panes' tools stay mounted, as hidden tabs do.
+ *
+ * The split library sizes its panels inline, so the sizes here are
+ * `!important`. Before any pane is active the panes share the column.
+ */
+@media (max-width: 700px) {
+  .tile-frame [data-panel-group] {
+    flex-direction: column !important;
+  }
+
+  .tile-frame .tile-resize-handle {
+    display: none;
+  }
+
+  .tile-frame [data-panel] {
+    flex: 1 1 0 !important;
+    min-height: 0;
+  }
+
+  /* Once a pane is active: everything folds to its headers but its branch. */
+  .tile-frame:has(.tile-panel--active) [data-panel] {
+    flex: 0 0 auto !important;
+  }
+
+  .tile-frame:has(.tile-panel--active) [data-panel]:has(.tile-panel--active) {
+    flex: 1 1 0 !important;
+  }
+
+  .tile-frame:has(.tile-panel--active)
+    [data-panel]:not(:has(.tile-panel--active))
+    > [data-panel-group] {
+    height: auto !important;
+  }
+
+  .tile-frame:has(.tile-panel--active) .tile-panel:not(.tile-panel--active) {
+    height: auto;
+  }
+
+  /* A folded pane below the open one is ruled off from it (those above are
+     ruled off by their own headers). */
+  .tile-frame [data-panel]:has(.tile-panel--active) ~ [data-panel] {
+    border-top: 1px solid var(--tile-border);
+  }
+
+  .tile-frame:has(.tile-panel--active)
+    .tile-panel:not(.tile-panel--active)
+    > .tile-panel__body {
+    display: none;
+  }
+
+  /* Headers sized for a finger; a long stack scrolls sideways. */
+  .tile-panel__header {
+    height: 36px;
+  }
+
+  .tile-panel__tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tile-panel__tab {
+    flex: 0 0 auto;
+    max-width: 10rem;
+    height: 28px;
+  }
+
+  /* The rail stands beside the document rather than over its edge. */
+  .tile-rail--peek {
+    position: relative;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* An open drawer covers its document; its width is a wide screen's. */
+  .tile-drawer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: auto !important;
+    border-left: 0;
+  }
+
+  .tile-drawer__resize {
+    display: none;
+  }
+}
