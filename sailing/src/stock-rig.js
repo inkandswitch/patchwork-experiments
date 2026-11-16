@@ -18,7 +18,11 @@
 //   fixture's own proportion up the luff, its leads by §3.9's rule put down
 //   on her drawn deck;
 // - the sets, rig dimensions, hardpoints, the CG roll-up and the lumped
-//   sail follow §3.6–3.12 and §6.8.
+//   sail follow §3.6–3.12 and §6.8;
+// - the windage (§3.13): the hull's element is the fixture's (kept, as her
+//   canoe body is); the mast's two and the rigging's are windage.js's rules
+//   on her drawn mast and on the kept righting curve's RM30 over her drawn
+//   chainplates.
 //
 // The contract is in its own frame (x forward, y port, z up, the waterplane
 // at z = 0); her hull GLB is drawn in her body frame (x starboard, y up,
@@ -30,6 +34,7 @@ import KEPT from "./stock-rig-12m.js";
 import { toContract } from "./rig-contract.js";
 import { areaCentroid, furledClew, reefed, sailSlope } from "./rig-sails.js";
 import { rigSailCoeffs } from "./physics-foils.js";
+import { WINDAGE_SOURCE, contractElement, rigElements } from "./windage.js";
 
 /** The family of hull GLBs this contract describes: the stock hull, any `@n` (parts.js fileKey). */
 export const STOCK_GLB_KEY = "sailing/hull";
@@ -180,6 +185,34 @@ export function rollUp(items) {
   const s = [0, 0, 0];
   for (const it of items) for (let i = 0; i < 3; i++) s[i] += it.massKg * it.atM[i];
   return { massKg: m, cgM: s.map((v) => v / m + 0) };
+}
+
+/**
+ * §3.10's RM30: the righting curve's (§3.4: the boat's and the crew's
+ * moments, N·m) at 30° of heel, linear between its heels.
+ */
+export function rm30Of(righting) {
+  const h = righting.heelsDeg;
+  const at = (i) => righting.boatNm[i] + righting.crewNm[i];
+  for (let i = 1; i < h.length; i++) {
+    if (h[i] < 30) continue;
+    const t = (30 - h[i - 1]) / (h[i] - h[i - 1]);
+    return at(i - 1) + (at(i) - at(i - 1)) * t;
+  }
+  throw new Error("stock-rig: the righting curve stops short of 30°");
+}
+
+/**
+ * §3.13's windage: the kept hull element, then windage.js's mast and
+ * rigging elements on the rig as stated (its partners, height, rake, BAS,
+ * P, I and mast section), the rigging sized for `rm30Nm` over the
+ * chainplates' half-breadth.
+ */
+export function windageOf(rig, chainplates, rm30Nm) {
+  const ps = rig.mast.partnersM;
+  const plan = { mast: { partners: [ps[0], ps[2]], heightM: rig.mast.heightM }, rakeDeg: rig.rakeDeg, BAS: rig.BAS, P: rig.P, I: rig.I, type: rig.type, sails: [{ id: "main" }] };
+  const chainplateBaseM = Math.abs(chainplates[0].atM[1]);
+  return { source: WINDAGE_SOURCE, elements: [clone(KEPT.windageHull), ...rigElements({ plan, mastWidthM: rig.mast.sectionM, rm30Nm, chainplateBaseM }).map(contractElement)] };
 }
 
 /** A sail's coefficients tabulated (§6.2's table) at δ = 0 on its α grid. */
@@ -397,6 +430,7 @@ export function stockContract(d) {
       run: [],
     },
     lumpedSail: { tackM: C(lumped.tack), luffM: lumped.luff, footM: lumped.foot, areaM2: lumped.area, ceM: C(lumped.ce), ceHeightFrac: lumped.ceHeightFrac },
+    windage: windageOf(rig, hardpoints.chainplates, rm30Of(loading.righting)),
     warnings: [...KEPT.warnings],
     rules: KEPT.rules,
   };

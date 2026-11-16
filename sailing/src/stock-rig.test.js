@@ -389,6 +389,79 @@ describe("the lumped sail (§6.8) and the CG roll-up (§3.4)", () => {
   });
 });
 
+describe("the windage (§3.13): one row per element, each re-derived by hand from her drawing", () => {
+  // the formulas are §3.13's, written out here; none goes through windage.js
+  const W = c.windage;
+  const el = (id) => W.elements.find((e) => e.id === id);
+  const partners = toContract(drawing.mast.step); // she is stepped on deck: her partners are her step
+  const up = (h) => [partners[0], 0, partners[2] + h]; // her drawn mast is plumb (rake 0)
+  const BAS = drawing.boom.gooseneck[1] - drawing.mast.step[1];
+  const P = main.luffM;
+  const H = drawing.mast.height;
+  const I = drawing.forestay.to[1] - drawing.mast.step[1];
+  const w = drawing.mast.section;
+  const hullFix = fixture.windage.elements.find((e) => e.id === "hull");
+
+  it("her drawn mast is plumb, stepped on deck, the section the rig states", () => {
+    near(sub(drawing.mast.head, drawing.mast.step), [0, H, 0], 1e-12);
+    expect(c.rig.rakeDeg).toBe(0);
+    expect(c.rig.mast.sectionM).toBe(w);
+    near(c.rig.mast.partnersM, partners, 1e-12);
+    expect(W.source).toBe(fixture.windage.source);
+    expect(W.elements.map((e) => e.id)).toEqual(["hull", "mast-sail", "mast-bare", "rigging"]);
+  });
+
+  it("hull: the fixture's own element (kept, as her canoe body is), and §3.13's rule on the fixture's hull", () => {
+    expect(el("hull")).toEqual(hullFix);
+    expect(KEPT.windageHull).toEqual(hullFix);
+    const FBAV = fixture.hull.stemheadM[2]; // the fixture's flat sheer, 1.2 m over the waterplane
+    const B = fixture.hull.beamM;
+    const LOA = fixture.hull.loaM;
+    const h = el("hull");
+    expect(h.shape).toBe("body");
+    expect(h.areaFrontM2).toBeCloseTo(FBAV * B, 9);
+    expect(h.areaSideM2).toBeCloseTo(FBAV * LOA, 9);
+    expect(h.sidePerSinHeelM2).toBeCloseTo(0.75 * (B / 2) * LOA, 9);
+    expect([h.cdFront, h.cdSide]).toEqual([0.816, 0.816]);
+    near(h.atM, [(fixture.hull.stemheadM[0] + fixture.hull.sternM[0]) / 2, 0, 0.66 * FBAV], 1e-9);
+    expect(h.zPerSinHeelM).toBeCloseTo(0.66 * B, 9);
+  });
+
+  it("mast-sail: her mast beside the main's luff, section × P, Cd 0.4 head-on and 0.6 abeam, at BAS + P/2 up it", () => {
+    const e = el("mast-sail");
+    expect(e).toMatchObject({ shape: "spar", sidePerSinHeelM2: 0, cdFront: 0.4, cdSide: 0.6, zPerSinHeelM: 0 });
+    expect(e.areaFrontM2).toBeCloseTo(w * P, 12);
+    expect(e.areaSideM2).toBeCloseTo(w * P, 12);
+    near(e.atM, up(BAS + P / 2), 1e-12);
+  });
+
+  it("mast-bare: below the boom and above the head, section × their length, Cd 0.8, at their length-weighted middle", () => {
+    const below = BAS;
+    const above = H - (BAS + P);
+    expect(above).toBeGreaterThan(0);
+    const e = el("mast-bare");
+    expect(e).toMatchObject({ shape: "spar", sidePerSinHeelM2: 0, cdFront: 0.8, cdSide: 0.8, zPerSinHeelM: 0 });
+    expect(e.areaFrontM2).toBeCloseTo(w * (below + above), 12);
+    expect(e.areaSideM2).toBeCloseTo(w * (below + above), 12);
+    near(e.atM, up(((below / 2) * below + ((BAS + P + H) / 2) * above) / (below + above)), 1e-12);
+  });
+
+  it("rigging: four stays of the cap shroud's d, I × 4·d, Cd 1.0 × 1.2, at I/2; d from the kept curve's RM30 over her drawn chainplates", () => {
+    const r = KEPT.loading.righting;
+    const i30 = r.heelsDeg.indexOf(30);
+    const RM30 = r.boatNm[i30] + r.crewNm[i30];
+    const base = Math.abs(toContract(drawing.chainplates.port)[1]);
+    expect(Math.abs(toContract(drawing.chainplates.starboard)[1])).toBeCloseTo(base, 12);
+    const d = Math.sqrt((4 * 2.5 * (RM30 / base)) / (Math.PI * 1e9));
+    const e = el("rigging");
+    expect(e).toMatchObject({ shape: "spar", sidePerSinHeelM2: 0, cdFront: 1.2, cdSide: 1.2, zPerSinHeelM: 0 });
+    expect(e.areaFrontM2).toBeCloseTo(I * 4 * d, 12);
+    expect(e.areaSideM2).toBeCloseTo(I * 4 * d, 12);
+    near(e.atM, up(I / 2), 1e-12);
+    expect(I).toBe(c.rig.I);
+  });
+});
+
 describe("which ships take it", () => {
   it("the stock hull (any sailing/hull@n) at her stand: the contract path, with nothing to warn about", () => {
     for (const key of ["sailing/hull@2", "sailing/hull@3", "sailing/hull@1"]) {
@@ -419,6 +492,15 @@ describe("which ships take it", () => {
 
   it("a rig file without a contract (extras.sail alone) on the stock hull: no contract, the plain spec, key for key", () => {
     const spec = specOn(PLAIN, fileKey("hull"));
+    expect(spec.rig).toBeUndefined();
+    expect(specKey(spec)).toBe(PLAIN_KEY);
+  });
+
+  it("her rig file as stated before §3.13 (rig@3: the contract without `windage`) on the stock hull: not read, the plain spec, key for key", () => {
+    const { windage, ...old } = c;
+    expect(windage.elements).toHaveLength(4);
+    expect(rigContract(old)).toBeNull();
+    const spec = specOn({ ...rigGLB, rig: old }, fileKey("hull"));
     expect(spec.rig).toBeUndefined();
     expect(specKey(spec)).toBe(PLAIN_KEY);
   });

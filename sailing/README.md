@@ -107,7 +107,7 @@ DESIGN.md, "The rig contract").
 
 The stock sloop carries such a contract too, drawn from her own lines and
 rig (DESIGN.md, "Trim feedback"): a "Mast and sail" filed as
-`sailing/rig@3` on the stock hull sails her separate main and jib. A rig
+`sailing/rig@4` on the stock hull sails her separate main and jib. A rig
 whose file carries no contract is a plain one, and so is the stock rig on
 any other hull (camber's): its contract describes the stock hull only.
 

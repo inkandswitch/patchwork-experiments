@@ -172,9 +172,10 @@ export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mai
  * the mast's 3, and 2 for the winch, windlass, mainsheet, wheel, anchor and
  * islet. The rig's 3 and the jib's 2 mark their cloth as taking no shadows
  * (a one-sided sheet: mesh extras receiveShadow false). The hull's 5 has no
- * companionway (it is a part of its own) and a stand for it.
+ * companionway (it is a part of its own) and a stand for it. The rig's 4
+ * states its windage in her contract (§3.13: stock-rig.js windageOf).
  */
-const VERSIONS = Object.freeze({ hull: 5, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 });
+const VERSIONS = Object.freeze({ hull: 5, rig: 4, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 });
 
 /** The key of a kind's GLB in the scene's files (doc.assets). Bump its version (VERSIONS) when its drawing changes. */
 export const fileKey = (kind) => `sailing/${kind}@${VERSIONS[kind] ?? 1}`;
