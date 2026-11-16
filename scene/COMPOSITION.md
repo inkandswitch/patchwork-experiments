@@ -96,7 +96,7 @@ pieces, each published and checked in the real Patchwork:
   Decision 73) and one removal (the trait-level `needs`, which this left
   with no consumer, Decision 77).
 - **Clipped open water** (WATER.md, "Clipped open water", Decisions 90 to
-  114, built in `lane/clip`, not yet merged or published): the lead's
+  119, built in `lane/clip`, not yet merged or published): the lead's
   answer to "should an inner world keep its own water?" (2026-11-15). The
   path rule was rejected; open water may carry a `clip`, the box of its
   own sea a doc keeps where the world it is placed in offers no open
@@ -129,8 +129,9 @@ Still open:
   a double-click on a card of her game G landed on the Card table, because
   the boat pitched on her own sea between the clicks and the second
   click's ray hit something else. This is not the inspector-narrowing item
-  above: nothing moves the canvas, the thing under the pointer moves. Fixed
-  in `lane/clip` (WATER Decision 112): the second click of a double-click
+  above: nothing moves the canvas, the thing under the pointer moves. A
+  fix is proposed, not merged, on its own lane `lane/dblclick` (WATER
+  Decision 112), for its own review: the second click of a double-click
   resolves to the first click's hit, its object and stage, when both
   presses are within 500 ms and 6 px, instead of casting a new ray
   (`scene/src/stage/router.js`, with a finite test). Not yet checked in the
