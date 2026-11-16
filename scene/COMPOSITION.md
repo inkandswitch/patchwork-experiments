@@ -117,8 +117,9 @@ pieces, each published and checked in the real Patchwork:
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a
   screen, sound, a seat per port and Doom's world beside them, and no stage
-  change. The *Arcade* (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) holds both,
-  each cabinet whole in the home view with its own label beside it.
+  change. The *Arcade* (automerge:3T4KdCM2LxkxGj9rwy4bWjZdfXMF,
+  republished with one Doom world on 2026-11-16: Decisions, N7, 7) holds
+  both, each cabinet whole in the home view with its own label beside it.
 
 Still open:
 - out of focus isn't tinted;
@@ -156,6 +157,10 @@ Still open:
   viewer with an older terrain provider rebuilt Cadboro Bay's published
   render without its buildings and trees (Decisions, N7, 6; Questions for
   the lead).
+- machine's "Lay out its world" never refuses a second world for a
+  cabinet, and the published Arcade had come to hold two (republished;
+  machine/HOST.md, phase 2b, Not done yet; Decisions, N7, 7; Questions for
+  the lead);
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -250,7 +255,13 @@ Questions for the lead (not decided; each names what stands meanwhile):
   kept with the lane's report, not run), or re-render with the current
   terrain? And is a viewer whose provider is older than a render's
   allowed to rebuild it? Stands meanwhile: Cadboro Bay as it is now, and
-  no more real-Patchwork checks from N7 until the lead says.
+  no real-Patchwork checks from N7 of published docs with older renders
+  until the lead says (checks of docs N7 made itself go ahead, guarded:
+  Decisions, N7, 6 and 7).
+- **A second world for a cabinet** (Decisions, N7, 7): should machine's
+  "Lay out its world" be disabled on a cabinet that has one, or replace
+  it? Stands meanwhile: the Arcade republished with one world; the
+  command unchanged.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2395,3 +2406,39 @@ the finding; row 6 failed to a stale package, 6 below).
    that load, and any viewer whose provider is older than a render's can
    overwrite it. The lane ran no more real-Patchwork checks once this was
    seen.
+
+   Narrowed by 7 below: a check may open docs the lane itself made (fresh
+   render docs, nothing older to overwrite) when it reads, node-side,
+   before and after, the heads of every published doc it reaches but must
+   not write. Checks that open published docs with renders built before
+   (Games night, Cadboro Bay, the Quiet games room) still wait for the lead.
+7. **The Arcade republished with one Doom world.** The published Arcade
+   (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) had come to hold two objects
+   carrying `machine.world` for the Doom cabinet, `world` and `okg5pjo09`,
+   at one pose with their own render docs, so every view drew Doom's map
+   twice. Its publisher writes one (`machine/probes/publish-arcade.mjs`);
+   the second came from "Lay out its world" pressed on the published doc,
+   which never refuses a second world (`machine/src/scene/worlds.js`
+   `worldCommand`; machine/HOST.md, phase 2b, Not done yet). With no
+   back-compat, the Arcade is republished by the unchanged publisher, at
+   automerge:3T4KdCM2LxkxGj9rwy4bWjZdfXMF, and the folder's *Arcade* link
+   swapped by name; the old doc stays, unlisted. The invariant, read
+   node-side from a repo that never saw the doc, before any visit and
+   again after every check: for each cabinet id, the number of objects
+   whose `machine.world.machine` names it is 1 for `doom` and 0 for
+   `snes`, and no world names an object that isn't a cabinet (the old doc
+   reads 2 and 0). Checked in the real Patchwork by `arcade-check` (kept
+   with the lane's publish scripts): 27/27 with play on its own scratch
+   clone, then 13/13 with `--no-play` as a later visit. The machine docs
+   it links, their content docs and the old Arcade kept their heads
+   through every run. The first two runs scored 16/27: in a fresh profile
+   the shell's first page came up with the stage but none of the doc's
+   packages and no prompt to load them for 7 minutes, while the next
+   navigation, to the scratch clone, prompted, loaded and played (part 2,
+   14/14 both times). The check now reloads once, and says so, after 150 s
+   with nothing loaded and nothing to click; the third run didn't need
+   it. The world's render, built in the real Patchwork, has the old docs'
+   GLB hash, so the same provider version built it.
+   *For the lead:* should "Lay out its world" be disabled on a cabinet
+   that has its world ("It has its world"), or replace it? Either is a
+   small change in machine, outside N7.
