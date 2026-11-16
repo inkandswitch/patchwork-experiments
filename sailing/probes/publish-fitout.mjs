@@ -48,10 +48,8 @@ import { clipProblems } from "./clip-check.mjs";
 // each, open alone, calls for plugins of exactly those packages. The boat as
 // the page made her lists exactly hers too: her own companionway's joints
 // and traversal were listed when the start screen made her and taken off
-// when it went (the stage prunes what nothing calls for). F, made with
-// sailing's part in a view of its own, lists sailing too there (a part run
-// in a view keeps its package there); published, each lists the packages
-// here.
+// when it went (the stage prunes what nothing calls for). Published, each
+// lists exactly the packages here.
 const PACKAGES = { s: ["scene", "sailing", "water"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
 const SLIDE = "joints.slide";
 
