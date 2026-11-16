@@ -12,9 +12,14 @@ describe("the grain's shader edits", () => {
     expect(addGrain(s)).toBe(true);
     expect(s.vertexShader.startsWith("attribute float _grain;")).toBe(true);
     expect(s.vertexShader.indexOf("vGrain = _grain;")).toBeGreaterThan(s.vertexShader.indexOf(ANCHORS.vertex));
-    expect(s.fragmentShader.indexOf("diffuseColor.rgb *= 1.0 + grainAt * g;")).toBeGreaterThan(s.fragmentShader.indexOf(ANCHORS.fragment));
+    expect(s.fragmentShader.indexOf("grainLight *= 1.0 + grainAt * g;")).toBeGreaterThan(s.fragmentShader.indexOf(ANCHORS.fragment));
+    // no light anchor here: the grain goes on the colour
+    expect(s.fragmentShader.indexOf("diffuseColor.rgb *= grainLight;")).toBeGreaterThan(s.fragmentShader.indexOf("grainLight *= 1.0 + grainAt * g;"));
     for (const [m, a] of GRAIN_LOOK.octaves) expect(s.fragmentShader).toContain(`vGrainPos.xz / ${Number.isInteger(m) ? `${m}.0` : m}`) && expect(s.fragmentShader).toContain(`${a} * (2.0 * grainNoise`);
     expect(s.fragmentShader).toContain("smoothstep(150.0, 300.0, length(vViewPosition))");
+    // the fine octave underfoot, faded out near the eye
+    expect(s.fragmentShader).toContain(`${GRAIN_LOOK.fine.share} * (2.0 * grainNoise(vGrainPos.xz / ${GRAIN_LOOK.fine.metres} + 29.0)`);
+    expect(s.fragmentShader).toContain(`smoothstep(${GRAIN_LOOK.fine.fade[0]}.0, ${GRAIN_LOOK.fine.fade[1]}.0, length(vViewPosition))`);
     const again = { ...s };
     expect(addGrain(again)).toBe(false);
     expect(again).toEqual(s);
@@ -118,5 +123,13 @@ describe("a worked yard's puddles (grain over 1)", () => {
     const f = shader.fragmentShader;
     expect(f.indexOf("grainWet = clamp")).toBeGreaterThan(f.indexOf("#include <color_fragment>"));
     expect(f.indexOf("roughnessFactor = mix")).toBeGreaterThan(f.indexOf("#include <roughnessmap_fragment>"));
+  });
+  it("puts the grain on all the light the ground sends back (its sheen too), just before it is written, where the shader has that anchor; not on the colour as well", () => {
+    const shader = { vertexShader: "void main(){\n#include <project_vertex>\n}", fragmentShader: "void main(){\n#include <color_fragment>\n#include <roughnessmap_fragment>\nvec3 outgoingLight = vec3(1.0);\n#include <opaque_fragment>\n}" };
+    expect(addGrain(shader)).toBe(true);
+    const f = shader.fragmentShader;
+    expect(f.indexOf("outgoingLight *= grainLight;")).toBeGreaterThan(f.indexOf("vec3 outgoingLight"));
+    expect(f.indexOf("outgoingLight *= grainLight;")).toBeLessThan(f.indexOf("#include <opaque_fragment>"));
+    expect(f).not.toContain("diffuseColor.rgb *= grainLight;");
   });
 });

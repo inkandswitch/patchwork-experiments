@@ -510,7 +510,16 @@ rest).
   cobble and rock, bare rock 1, beach 0.8, other land 0.6, the site's apron
   0.5, under the water 0), and the place's extension (`sky.js`) dresses
   the ground's materials: two octaves of world-space luminance noise, ±12%
-  at 1.5 m and ±18% at 8 m (at ±8% and ±12% it didn't show), by the grain, fading out from 150 to 300 m.
+  at 1.5 m and ±18% at 8 m (at ±8% and ±12% it didn't show), by the grain, fading out from 150 to 300 m,
+  and a fine one underfoot, ±12% at 0.35 m, fading out from 25 to 60 m.
+  The grain scales all the light the ground sends back (`outgoingLight`,
+  its sheen as well as its colour): from a standing eye the ground is seen
+  at a grazing angle, where the overcast's sheen on a dark ground is as
+  bright as its colour, and grain on the colour alone washed out. The noise's
+  hash is sine-free (Hoskins' hash12 shape on the cell wrapped to 256), and
+  `grainHash` mirrors it in 32-bit floats: a sine of a dot product in the
+  tens of thousands, the hash before, is only as precise as the GPU's sin,
+  and on a laptop's it came out correlated along lines.
   Both places; the materials are put back when the extension stops.
 - **The shore in the water** (`horizon.js`; water/WATER.md, "The shore in
   the water"): extras.terrain carries the canopy too (`canopy`: the most
@@ -667,7 +676,8 @@ rest).
     barnacle band over it; black rock (`#1f1f1e`) on the coast open to the
     swell round Amphitrite (`build.js blackRockMask`, `look.blackRock`).
   - *A worked yard* (`grain.js PUDDLES`, `site.js wetPanels`, `slabCurb`):
-    the apron takes the full grain and puddles (about 18%, 30% darker); the
+    the apron takes the full grain and puddles (about 18%, 35% darker, 2–4 m
+    across: `cells` 4 and 1.75 m, so a few metres of yard have some); the
     courtyard slab's seams dark enough to hold at 60 m, a fifth of its
     panels wet, a 0.2 m curb; drift logs grey and half sunk.
 
