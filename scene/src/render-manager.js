@@ -14,6 +14,7 @@
 import { fileBytes } from "./file-content.js";
 import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, knowsHeads, pinnedRepo, runBuild, validBounds, viewAt } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
+import { handleReadOnly } from "./stage/readonly.js";
 import { atFromBuilt, atKey, builtInputsKey, changedKeys, debounceFor, heldDeps, inputsKey, isContested, normalizeAt, sortedHeads, staleReason } from "./staleness.js";
 
 // How long to hold off building inputs a peer says (or the doc says) it is building.
@@ -70,8 +71,11 @@ function parseKey(key) {
  * @param {() => number} [o.now]
  * @param {number} [o.syncSettleMs]  see SYNC_SETTLE_MS
  * @param {boolean} [o.readOnly]  show what is built; never build or write a render doc
+ * @param {{ hold(url: string): void, release(url: string): void } | null} [o.announce]
+ *        told which docs it shows live (./stage/announce.js): a live object's
+ *        source and render, and what its build reads; none for a fixed one
  */
-export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now, syncSettleMs = SYNC_SETTLE_MS, readOnly = false }) {
+export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now, syncSettleMs = SYNC_SETTLE_MS, readOnly = false, announce = null }) {
   const entries = new Map();
   let disposed = false;
   const selfId = repo?.peerId ?? null;
@@ -86,6 +90,22 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       else if (String(id) < String(selfId)) stagger = PEER_STAGGER_MS;
     }
     return stagger;
+  }
+
+  /**
+   * May it write this object's render doc? Not when the manager is read-only,
+   * nor while the render doc's handle refuses writes: a version of it pinned
+   * from outside (a history checkpoint) is shown as it was, never rebuilt.
+   */
+  const mayWrite = (entry) => !readOnly && !handleReadOnly(entry.renderHandle);
+
+  /** Announce (or retract) a live object's docs: a fixed one keeps its own version, so isn't. */
+  function announceEntry(entry) {
+    entry.deps?.reannounce();
+    const want = !!announce && !entry.dead && !entry.at;
+    if (want === !!entry.announced) return;
+    entry.announced = want;
+    for (const url of [entry.sourceUrl, entry.renderUrl]) want ? announce.hold(url) : announce.release(url);
   }
 
   function emit(entry, patch = {}) {
@@ -276,7 +296,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       deps: entry.deps.urls(),
     });
 
-    if (readOnly || entry.building) return; // (build() re-evaluates when it finishes)
+    if (!mayWrite(entry) || entry.building) return; // (build() re-evaluates when it finishes)
 
     if (othersBuilding) {
       if (now() - entry.buildingSeenAt >= STUCK_BUILDING_MS) return settleStatus(entry); // re-enters via "change"
@@ -356,7 +376,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
   }
 
   async function build(entry) {
-    if (readOnly || disposed || entry.dead || entry.building) return;
+    if (!mayWrite(entry) || disposed || entry.dead || entry.building) return;
     const render = entry.renderHandle.doc();
     const sourceHandle = sourceView(entry);
     if (!sourceHandle) return evaluate(entry); // fixed at heads not here yet
@@ -460,6 +480,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       // dependencies and judge again; nothing else about the entry changes.
       existing.at = fixed;
       existing.atKey = fixedKey;
+      announceEntry(existing);
       existing.viewCache = null;
       existing.depsAsked = null;
       existing.failedKey = null;
@@ -506,6 +527,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       repo,
       timers,
       now,
+      announce,
       // read at snapshot time, so it follows the provider once that has loaded
       keyOf: (url, handle) => dependencyKeyOf(entry.provider?.module, url, handle.doc?.()),
       // a fixed object's listed dependencies are read at their fixed heads
@@ -516,6 +538,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       },
     });
     entries.set(objectId, entry);
+    announceEntry(entry);
     emit(entry);
 
     const onChange = () => evaluate(entry);
@@ -571,6 +594,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     const entry = entries.get(objectId);
     if (!entry) return;
     entry.dead = true;
+    announceEntry(entry);
     clearTimer(entry);
     clearTimer(entry, "statusTimer");
     clearTimer(entry, "glbTimer");

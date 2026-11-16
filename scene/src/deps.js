@@ -33,8 +33,11 @@ const RETRY_MAX_MS = 30_000;
  *        heads to read a dependency at instead of its latest; null = latest
  * @param {{ setTimeout, clearTimeout }} [o.timers]
  * @param {() => number} [o.now]
+ * @param {{ hold(url: string): void, release(url: string): void } | null} [o.announce]
+ *        told which dependencies it watches live (./stage/announce.js); a
+ *        fixed one keeps its own version, so isn't
  */
-export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, timers = globalThis, now = Date.now }) {
+export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, timers = globalThis, now = Date.now, announce = null }) {
   /** What a loaded dependency records: ["fp:<key>"] when keyOf gives one, else its sorted heads. */
   function recorded(url, handle, heads) {
     if (typeof keyOf === "function") {
@@ -67,10 +70,19 @@ export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, t
   const deps = new Map(); // url → { handle, pending, since, failures, retry, off }
   let disposed = false;
 
+  /** Announce (or retract) a watched dependency: while it's live, not once fixed or dropped. */
+  function announceRec(url, rec) {
+    const want = !!announce && !rec.dead && !disposed && !fixedHeads(url);
+    if (want === !!rec.announced) return;
+    rec.announced = want;
+    want ? announce.hold(url) : announce.release(url);
+  }
+
   function drop(url) {
     const rec = deps.get(url);
     if (!rec) return;
     rec.dead = true;
+    announceRec(url, rec);
     if (rec.retry != null) timers.clearTimeout(rec.retry);
     rec.off?.();
     deps.delete(url);
@@ -132,6 +144,7 @@ export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, t
         if (deps.has(url)) continue;
         const rec = { handle: null, loadHeads: null, lastFixed: null, pending: false, since: null, failures: 0, retry: null, off: null, dead: false };
         deps.set(url, rec);
+        announceRec(url, rec);
         load(url, rec);
         changed = true;
       }
@@ -179,9 +192,13 @@ export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, t
       if (fixedHeads(url)) return current(url, rec.handle);
       return recorded(url, rec.handle, rec.loadHeads);
     },
+    /** Fixed or let go: announce the dependencies live now, retract the rest. */
+    reannounce() {
+      for (const [url, rec] of deps) announceRec(url, rec);
+    },
     dispose() {
-      disposed = true;
       for (const url of [...deps.keys()]) drop(url);
+      disposed = true;
     },
   };
 }

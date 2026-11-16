@@ -20,6 +20,7 @@
 // it still work. Focus and selection change only through selectionStep.
 
 import * as THREE from "three";
+import { createAnnouncer } from "./announce.js";
 import css from "./stage.css?inline";
 import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
@@ -233,6 +234,10 @@ function urlsIn(doc) {
  */
 export function createView(element, { url = "scene", openStage = null } = {}) {
   const repo = element.repo ?? globalThis.repo;
+  // the docs this view shows live, told to the host (./announce.js): the
+  // linked stages' here, their objects' through each stage's render manager
+  const announcer = createAnnouncer(element);
+  let announcedLinks = new Set();
   let dead = false;
   const cleanups = [];
   // the one source of time everything here moves with (time.js): the
@@ -521,6 +526,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const root = outermost();
     if (!root) return;
     expansion = expand({ url: root.url }, docOf, { budget: LINK_BUDGET });
+    // the linked docs shown live (acting or mirrored; a pin keeps its own version) are announced, and only those
+    const live = new Set();
+    for (const o of expansion) if (o.depth > 0 && o.role !== "closed" && !o.heads) live.add(o.url);
+    for (const u of live) if (!announcedLinks.has(u)) announcer.hold(u);
+    for (const u of announcedLinks) if (!live.has(u)) announcer.release(u);
+    announcedLinks = live;
     const want = new Map();
     for (const o of expansion) if (o.depth > 0 && o.role !== "closed") want.set(pathKey(o.path), o);
     // a stage whose occurrence is gone, or is now another role or identity, closes, and everything opened under it (its claims go with it)
@@ -1366,6 +1377,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (dead) return;
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
     for (const d of docs.values()) d.off?.();
+    announcer.dispose();
     dead = true;
     router.dispose();
     for (const cancel of timers) cancel();
@@ -1385,6 +1397,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const api = {
     time,
     repo,
+    announcer,
     viewer,
     // (lets a probe or a test not wait for the registry to go quiet)
     packageSettleMs: element.packageSettleMs ?? null,

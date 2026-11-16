@@ -516,6 +516,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const manager = createRenderManager({
     repo,
     readOnly,
+    // what it shows live is announced (./announce.js); a pin's docs keep their own version
+    announce: role === "pinned" ? null : view.announcer,
     loadProvider,
     onState: (id, s) => {
       const before = objState.get(id)?.bounds;
