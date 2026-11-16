@@ -131,6 +131,13 @@ and resize freely.
   sidebar, the drawer's tools remount when the panel shows another tab.
   Overlays, outside every document, reach the selected document's draft state
   through the frame's `DraftRelay`.
+- **On a narrow screen** (under 700px) the panes become an accordion, in CSS
+  alone: every split is laid out as one column, in reading order, and only
+  the active pane is open — the rest fold to their headers, so their tabs are
+  a tap away, and a tap there opens that pane. The tab strip scrolls
+  sideways, the rail of context tools stands beside the document, and an open
+  drawer covers it (tap the lit tool to close it). Nothing is written to the
+  layout, so the splits are still there on a wide screen.
 
 ## Architecture
 
