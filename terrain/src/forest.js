@@ -276,11 +276,60 @@ export function placeTrees(o) {
  * edge dives into the ground. → { positions, normals?, colors, indices, roofNodes } (no normals: computed by the caller).
  */
 export function forestRoof({ grid, heights, label, cover, canopy, dist, setback = 20, tolerance = 4, floor = -80, colours = ["#16231a", "#1d2c1b", "#263524", "#34432a", "#2c3b33"], jitter = 0 }) {
-  const { n, cell, x0, z0 } = grid;
+  const { n } = grid;
   const N = n * n;
   const roof = new Uint8Array(N);
+  for (let k = 0; k < N; k++) if (isRoof(k, { n, label, cover, canopy, dist, setback })) roof[k] = 1;
+  return sheetOver({ grid, heights, mask: roof, tolerance, floor, colours, jitter, seeds: [77, 79] }, (k) => {
+    const i = k % n, j = (k - i) / n;
+    let s = 0, c = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+      const m = jj * n + ii;
+      if (roof[m]) (s += canopy[m]), c++;
+    }
+    return heights[k] + s / c;
+  });
+}
+
+/** The colours of the low scrub (salal and shore pine) where the lidar's canopy is under 5 m: a place's `trees.scrub.colours` overrides them. */
+export const SCRUB_COLOURS = Object.freeze(["#3e4a2c", "#37432a", "#44502f", "#333f27", "#3b4630"]);
+
+/** What low scrub grows on: wild ground (nothing mapped, wood, scrub, wetland), not lots, lawns or yards. */
+const WILD = new Set([COVER.none, COVER.wood, COVER.scrub, COVER.wetland]);
+
+/** Whether node k is low scrub: wild land (WILD), not built, `setback` from the water, its canopy from `min` to 5 m (forest above). */
+export const isScrub = (k, { label, cover, canopy, dist, built = null, setback = 20, min = 0.8 }) => label[k] > 0 && !built?.[k] && WILD.has(cover[k]) && dist[k] > setback && canopy[k] >= min && canopy[k] <= 5;
+
+/**
+ * The low scrub: salal and shore pine, where the lidar says the canopy is
+ * under 5 m (Amphitrite's headland, Ozzard's upper slopes): not turf, a
+ * bumpy low skin over the ground, its canopy's height (at least `lift`)
+ * and ±`jitter` by hash, the same RTIN as the roof, its edge just under the
+ * ground. → as forestRoof (roofNodes: the scrub's nodes), or null.
+ */
+export function scrubCover({ grid, heights, label, cover, canopy, dist, built = null, setback = 20, min = 0.8, lift = 1, tolerance = 0.6, floor = -80, colours = SCRUB_COLOURS, jitter = 1.5 }) {
+  const N = grid.n * grid.n;
+  const mask = new Uint8Array(N);
+  for (let k = 0; k < N; k++) if (isScrub(k, { label, cover, canopy, dist, built, setback, min })) mask[k] = 1;
+  return sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [87, 89] }, (k) => heights[k] + Math.max(lift, canopy[k]));
+}
+
+/**
+ * A sheet over the ground at `mask`'s nodes (their height topOf(k)): an RTIN
+ * (tolerance `tolerance` there, 0.5 at the ring round it, which is just under
+ * the ground so the sheet's edge dives into it; every other node far down
+ * at `floor` and the triangles with no mask node dropped), each mask node
+ * up or down by its own hash (±jitter), coloured by another (seeds: [colour,
+ * jitter]). Null if the mask is empty.
+ */
+function sheetOver({ grid, heights, mask, tolerance, floor, colours, jitter, seeds: [colourSeed, jitterSeed] }, topOf) {
+  const { n, cell, x0, z0 } = grid;
+  const N = n * n;
+  const roof = mask;
   let count = 0;
-  for (let k = 0; k < N; k++) if (isRoof(k, { n, label, cover, canopy, dist, setback })) (roof[k] = 1), count++;
+  for (let k = 0; k < N; k++) if (roof[k]) count++;
   if (!count) return null;
   const top = new Float32Array(N), tol = new Float32Array(N);
   for (let k = 0; k < N; k++) {
@@ -291,15 +340,7 @@ export function forestRoof({ grid, heights, label, cover, canopy, dist, setback 
       if (top[k] !== floor) tol[k] = 0.5;
       continue;
     }
-    const i = k % n, j = (k - i) / n;
-    let s = 0, c = 0;
-    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-      const ii = i + di, jj = j + dj;
-      if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
-      const m = jj * n + ii;
-      if (roof[m]) (s += canopy[m]), c++;
-    }
-    top[k] = heights[k] + s / c;
+    top[k] = topOf(k);
   }
   const mesh = rtinMesh(n, rtinErrors(n, top, tol));
   const tris = [];
@@ -319,14 +360,134 @@ export function forestRoof({ grid, heights, label, cover, canopy, dist, setback 
     const i = k % n, j = (k - i) / n;
     positions[q * 3] = x0 + i * cell;
     // a roof node a little up or down by its own hash (±jitter): crowns, not turf
-    positions[q * 3 + 1] = top[k] + (roof[k] && jitter ? (hash01(k, 79) - 0.5) * 2 * jitter : 0);
+    positions[q * 3 + 1] = top[k] + (roof[k] && jitter ? (hash01(k, jitterSeed) - 0.5) * 2 * jitter : 0);
     positions[q * 3 + 2] = z0 + j * cell;
-    const u = hash01(k, 77);
+    const u = hash01(k, colourSeed);
     const c = lin[u < 0.25 ? 0 : u < 0.55 ? 1 : u < 0.8 ? 2 : u < 0.9 ? 3 : 4];
     colors.set(c, q * 3);
   });
   const indices = Uint32Array.from(tris, (v) => used[v]);
   return { positions, colors, indices, roofNodes: count };
+}
+
+// ─── the forest's skin ──────────────────────────────────────────────────────
+//
+// From the water the roof alone is a smooth dark hill: its ridgelines and
+// shores are curves. Where the place says people look from close by (its
+// look's `trees.skin.within`: circles in the frame), every roof node gets a
+// clump of crowns standing out of the roof, so the forest's edge against
+// the sky is serrated, as a conifer forest's is. The roof stays under them
+// as the dark underlayer. A clump is one instance (the scene draws each
+// clump mesh as one InstancedMesh): `crowns` cheap crowns (12 triangles
+// each: two six-sided cones, a wide one and a narrow one over it), laid out
+// in the node's cell by one of SKIN_LAYOUTS, their tops at the node's
+// canopy ±8%. Every choice is the node's index and its data, so the skin
+// of a grid is the union of its tiles' (tested by enumeration).
+
+/** Where a clump's crowns stand in its cell (fractions of a cell from the node) and how tall each is (of the clump's height): three layouts each for 3 and 4 crowns. */
+export const SKIN_LAYOUTS = Object.freeze({
+  3: Object.freeze([
+    [[-0.22, -0.17, 1], [0.24, -0.08, 0.9], [0.02, 0.26, 0.95]],
+    [[-0.2, 0.2, 0.92], [0.22, 0.16, 1], [0.0, -0.25, 0.88]],
+    [[-0.26, 0.0, 0.95], [0.12, -0.24, 0.9], [0.18, 0.22, 1]],
+  ].map((l) => Object.freeze(l.map((c) => Object.freeze(c))))),
+  4: Object.freeze([
+    [[-0.24, -0.22, 1], [0.24, -0.2, 0.88], [-0.2, 0.24, 0.93], [0.25, 0.22, 0.97]],
+    [[0.0, -0.28, 0.9], [-0.28, 0.02, 1], [0.27, 0.04, 0.94], [0.02, 0.28, 0.86]],
+    [[-0.18, -0.26, 0.95], [0.28, -0.12, 1], [-0.26, 0.16, 0.87], [0.12, 0.27, 0.92]],
+  ].map((l) => Object.freeze(l.map((c) => Object.freeze(c))))),
+});
+/** The crowns' colours (a little lighter and greener than the roof, so they read against it); a place's `trees.skin.colours` overrides them. */
+export const SKIN_COLOURS = Object.freeze(["#1d2e1f", "#243627", "#2b3b26", "#1a291d", "#304229"]);
+/** A crown's radius in metres, and where it starts and its narrow tier starts and ends (of the clump's height). */
+export const SKIN_CROWN = Object.freeze({ radius: 4.2, foot: 0.55, waist: 0.86, upper: 0.72, tip: 1 });
+
+/** One crown: a wide six-sided cone (foot → waist) and a narrow one over it (upper → tip), no caps (they're never seen from under the roof): 12 triangles. */
+function crown(s, cx, cz, k, r, colour, { foot, waist, upper, tip } = SKIN_CROWN) {
+  const lit = colour.map((c) => c * 1.12), dark = colour.map((c) => c * 0.82);
+  const ring = (y, rr, q) => [cx + rr * dcos((q * Math.PI) / 3), y, cz - rr * dsin((q * Math.PI) / 3)];
+  for (let q = 0; q < 6; q++) {
+    // faces toward the sun's side a little lighter: shading baked in, as the trees' are
+    const shade = q < 2 || q === 5 ? lit : q === 3 ? dark : colour;
+    s.tri(ring(foot * k, r, q), ring(foot * k, r, q + 1), [cx, waist * k, cz], shade);
+    s.tri(ring(upper * k, r * 0.58, q), ring(upper * k, r * 0.58, q + 1), [cx, tip * k, cz], shade);
+  }
+}
+
+/** A clump mesh: layout `variant` of `crowns` crowns in a cell `cell` metres across, unit height (y = 1 is the clump's height), positions in metres across. */
+export function skinMesh(crowns, variant, cell, colours = SKIN_COLOURS) {
+  const s = soup();
+  const lin = colours.map((c) => hexToLinear(c).slice(0, 3));
+  SKIN_LAYOUTS[crowns][variant].forEach(([u, v, k], q) => crown(s, u * cell, v * cell, k, SKIN_CROWN.radius * (0.85 + 0.3 * ((q * 0.37 + variant * 0.21) % 1)), lin[(q + variant * 2) % lin.length]));
+  return s.done();
+}
+
+/** The nodes inside any of `circles` ([{ x, z, radius }] in the frame): 1, else 0. */
+export function skinZone(grid, circles) {
+  const { n, cell, x0, z0 } = grid;
+  const out = new Uint8Array(n * n);
+  for (const c of circles ?? []) {
+    const r2 = c.radius * c.radius;
+    const i0 = Math.max(0, Math.ceil((c.x - c.radius - x0) / cell)), i1 = Math.min(n - 1, Math.floor((c.x + c.radius - x0) / cell));
+    const j0 = Math.max(0, Math.ceil((c.z - c.radius - z0) / cell)), j1 = Math.min(n - 1, Math.floor((c.z + c.radius - z0) / cell));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const dx = x0 + i * cell - c.x, dz = z0 + j * cell - c.z;
+      if (dx * dx + dz * dz <= r2) out[j * n + i] = 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The clumps on nodes [k0, k1): one on every roof node (isRoof) in `zone`,
+ * none where `built`. Each { k, x, z, height, crowns, variant, yaw, width, key }.
+ * @param {object} o  { grid, label, cover, canopy (effective), dist, zone (skinZone), skin (the look's trees.skin), setback?, built? }
+ */
+export function skinAt({ grid, label, cover, canopy, dist, zone, skin, setback = 20, built = null }, k0 = 0, k1 = grid.n * grid.n) {
+  const { n, cell, x0, z0 } = grid;
+  const [lo, hi] = skin.crowns ?? [3, 4];
+  const out = [];
+  for (let k = k0; k < k1; k++) {
+    if (!zone[k] || built?.[k] || !isRoof(k, { n, label, cover, canopy, dist, setback })) continue;
+    const i = k % n, j = (k - i) / n;
+    const crowns = lo + Math.min(hi - lo, Math.floor(hash01(k, 82) * (hi - lo + 1)));
+    out.push({
+      k,
+      x: x0 + i * cell,
+      z: z0 + j * cell,
+      height: canopy[k] * (0.92 + 0.16 * hash01(k, 81)),
+      crowns,
+      variant: Math.floor(hash01(k, 83) * SKIN_LAYOUTS[crowns].length),
+      yaw: hash01(k, 84) * Math.PI * 2,
+      width: 0.9 + 0.2 * hash01(k, 85),
+      key: hash01(k, 86),
+    });
+  }
+  return out;
+}
+
+/** Every clump in the grid, thinned to the skin's `max` by each clump's own key (the lowest kept). */
+export function placeSkin(o) {
+  const all = skinAt(o);
+  const max = o.skin.max ?? Infinity;
+  if (all.length <= max) return { clumps: all, threshold: 1, before: all.length };
+  const threshold = all.map((c) => c.key).sort((a, b) => a - b)[max - 1];
+  return { clumps: all.filter((c) => c.key <= threshold), threshold, before: all.length };
+}
+
+/** The GLB meshes for the clumps (one a size and layout) and a node per clump, its foot on the ground at its node. */
+export function skinInstances(clumps, groundAt, { meshBase, cell, colours = SKIN_COLOURS } = {}) {
+  const kinds = [];
+  for (const c of [3, 4]) for (let v = 0; v < SKIN_LAYOUTS[c].length; v++) if (clumps.some((t) => t.crowns === c && t.variant === v)) kinds.push([c, v]);
+  const meshes = kinds.map(([c, v]) => {
+    const m = skinMesh(c, v, cell, colours);
+    return { name: `Forest skin (${c} crowns, layout ${v + 1})`, positions: m.positions, colors: m.colors, roughness: 1 };
+  });
+  const index = new Map(kinds.map(([c, v], q) => [`${c}/${v}`, meshBase + q]));
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const r4 = (v) => Math.round(v * 1e4) / 1e4;
+  const nodes = clumps.map((t) => ({ mesh: index.get(`${t.crowns}/${t.variant}`), translation: [r2(t.x), r2(groundAt(t.x, t.z)), r2(t.z)], rotation: [0, r4(dsin(t.yaw / 2)), 0, r4(dcos(t.yaw / 2))], scale: [r2(t.width), r2(t.height), r2(t.width)] }));
+  return { meshes, nodes, kinds: kinds.map(([c, v]) => `${c}/${v}`) };
 }
 
 /** The GLB meshes for the trees' species, and a node per tree (instanced by the scene: one draw a species). */

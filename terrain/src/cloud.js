@@ -8,18 +8,26 @@
 // - sheets: for each level, the grid is walked every `every` nodes; where
 //   the ground there is within `below` under the level and `above` over it
 //   (a slope the cloud base meets), and the node's hash passes `chance`, a
-//   soft sheet `size` metres across lies at the level, ± a few metres by
-//   hash. A sheet is a small grid of vertices whose alpha falls to nothing
-//   at its edge and wherever the ground there is less than `clear` under
-//   it (so a sheet never shows as a hard line cut into the hillside, it
-//   thins into it);
+//   bank `size` metres across lies at the level, ± a few metres by hash;
 // - mist: the same walk over the forest's hollows (a node lower than the
 //   mean of the ring `every` nodes round it by at least `hollow`), a thin
-//   sheet `lift` metres over the canopy.
+//   bank `lift` metres over the canopy;
+// - caps: where the place names one (its look's clouds.caps: a summit), a
+//   bank wrapped round it `below` metres under the top (Mount Ozzard's,
+//   under the radome).
 //
-// Every sheet is a function of its node and the heights round it, and
-// nothing else (tested: tile by tile is the whole). One indexed mesh with
-// RGBA colours, each sheet three layers deep, drawn unlit and blended.
+// A bank is a lens, not a flat sheet: a flat sheet seen from the water, a
+// few degrees under it, is a thin pale stripe across the hill, like a
+// contour line. A lens has a body: its top domes `thick` metres over its
+// base at the middle and its underside sags a third of that, both thinning
+// to nothing at the rim; the rim is ragged, its radius by a smoothed hash
+// a sector (0.6 to 1 of the bank's half-size), and the alpha falls to 0 at
+// every rim and wherever the ground is less than `clear` under it (so a
+// bank never shows as a hard line cut into the hillside, it thins into it).
+//
+// Every bank is a function of its node (or its cap) and the heights round
+// it, and nothing else (tested: tile by tile is the whole). One indexed mesh
+// with RGBA colours, each bank two surfaces, drawn unlit and blended.
 //
 // Pure.
 
@@ -29,11 +37,13 @@ import { dsin, dcos, len } from "./detmath.js";
 
 export const CLOUDS = Object.freeze({
   colour: "#d3d9d9",
-  sheets: { levels: [320, 460], every: 8, below: 90, above: 30, chance: 0.35, size: 520, alpha: 0.55, clear: 12 },
-  mist: { every: 10, hollow: 25, chance: 0.3, size: 360, lift: 12, alpha: 0.32, clear: 6 },
+  sheets: { levels: [380], every: 14, below: 110, above: 40, chance: 0.3, size: 900, alpha: 0.5, clear: 15, thick: 70 },
+  mist: { every: 10, hollow: 25, chance: 0.25, size: 380, lift: 12, alpha: 0.32, clear: 6, thick: 18 },
+  caps: [],
 });
 
-const R = 3; // a sheet's grid: (2R + 1)² vertices
+/** A bank's polar grid: RINGS rings out from its middle, SECTORS sectors round. */
+export const RINGS = 4, SECTORS = 14;
 
 /**
  * The sheets standing on nodes [k0, k1): [{ k, kind, x, z, y, size, alpha }].
@@ -52,7 +62,7 @@ export function sheetsAt(grid, ground, canopy, clouds = CLOUDS, k0 = 0, k1 = gri
     if (S && i % S.every === 0 && j % S.every === 0) {
       S.levels.forEach((L, q) => {
         if (g < L - S.below || g > L + S.above || hash01(k, 200 + q) >= S.chance) return;
-        out.push({ k, kind: "stratus", x: x0 + i * cell, z: z0 + j * cell, y: L + (hash01(k, 210 + q) - 0.5) * 30, size: S.size * (0.75 + 0.5 * hash01(k, 220 + q)), alpha: S.alpha * (0.7 + 0.3 * hash01(k, 230 + q)), clear: S.clear });
+        out.push({ k, kind: "stratus", x: x0 + i * cell, z: z0 + j * cell, y: L + (hash01(k, 210 + q) - 0.5) * 30, size: S.size * (0.75 + 0.5 * hash01(k, 220 + q)), alpha: S.alpha * (0.7 + 0.3 * hash01(k, 230 + q)), clear: S.clear, thick: (S.thick ?? CLOUDS.sheets.thick) * (0.7 + 0.6 * hash01(k, 235 + q)) });
       });
     }
     if (M && canopy && canopy[k] > 5 && i % M.every === 5 % M.every && j % M.every === 5 % M.every && hash01(k, 240) < M.chance) {
@@ -64,7 +74,7 @@ export function sheetsAt(grid, ground, canopy, clouds = CLOUDS, k0 = 0, k1 = gri
         s += ground[jj * n + ii];
         c++;
       }
-      if (c === 8 && s / c - g >= M.hollow) out.push({ k, kind: "mist", x: x0 + i * cell, z: z0 + j * cell, y: g + canopy[k] + M.lift, size: M.size * (0.75 + 0.5 * hash01(k, 250)), alpha: M.alpha, clear: M.clear });
+      if (c === 8 && s / c - g >= M.hollow) out.push({ k, kind: "mist", x: x0 + i * cell, z: z0 + j * cell, y: g + canopy[k] + M.lift, size: M.size * (0.75 + 0.5 * hash01(k, 250)), alpha: M.alpha, clear: M.clear, thick: M.thick ?? CLOUDS.mist.thick });
     }
   }
   return out;
@@ -80,37 +90,67 @@ function groundAt(grid, ground, x, z) {
 }
 
 /**
- * The sheets as one indexed mesh with RGBA colours (linear): each sheet a
- * (2R + 1)² grid, `layers` deep (`gap` metres apart, so from the side it
- * has a body, not an edge), its alpha the sheet's shared among its layers
- * at the middle, falling to 0 at its rim, and 0 where the ground is less
- * than `clear` under it. Triangles with no alpha at any corner are left out.
+ * The caps the place names: [{ x, z, below, size, alpha?, clear?, thick? }]
+ * (in the frame) → banks round each summit, `below` metres under the
+ * highest node within a cell of it, keyed −1, −2, … (not a node).
+ */
+export function capsAt(grid, ground, caps = []) {
+  const { n, cell, x0, z0 } = grid;
+  return caps.map((c, q) => {
+    const i = Math.round((c.x - x0) / cell), j = Math.round((c.z - z0) / cell);
+    let top = -Infinity;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii >= 0 && jj >= 0 && ii < n && jj < n) top = Math.max(top, ground[jj * n + ii]);
+    }
+    return { k: -1 - q, kind: "cap", x: c.x, z: c.z, y: top - c.below, size: c.size, alpha: c.alpha ?? 0.6, clear: c.clear ?? 4, thick: c.thick ?? 60 };
+  });
+}
+
+/** A bank's rim radius in each sector, of its half-size: 0.6 to 1, a hash a sector smoothed with its neighbours'. */
+export function rimOf(sh) {
+  const raw = Array.from({ length: SECTORS }, (_, q) => hash01(sh.k >>> 0, 270 + q + (sh.kind === "cap" ? 40 : 0)));
+  return raw.map((h, q) => 0.6 + 0.4 * (raw[(q + SECTORS - 1) % SECTORS] + 2 * h + raw[(q + 1) % SECTORS]) / 4);
+}
+
+/**
+ * The banks as one indexed mesh with RGBA colours (linear): each bank a
+ * lens of two surfaces (its top domed `thick` over its base, its underside
+ * sagging a third of that), each a polar grid (a middle and RINGS rings of
+ * SECTORS), its rim ragged (rimOf), its alpha the bank's (shared between
+ * the two surfaces) at the middle, falling to 0 at the rim, and 0 where the
+ * ground is less than `clear` under it. Triangles with no alpha at any
+ * corner are left out.
  * @returns {{ positions: Float32Array, colors: { array: Float32Array, itemSize: 4 }, indices: Uint32Array }}
  */
-export function cloudMesh(grid, ground, sheets, { colour = CLOUDS.colour, layers = 3, gap = 12 } = {}) {
+export function cloudMesh(grid, ground, sheets, { colour = CLOUDS.colour } = {}) {
   const [r, g, b] = hexToLinear(colour);
   const P = [], C = [], I = [];
-  const W = 2 * R + 1;
+  // vertex index of ring `ring` (1…RINGS), sector q; 0 the middle
+  const vi = (ring, q) => (ring === 0 ? 0 : 1 + (ring - 1) * SECTORS + (q % SECTORS));
   for (const sh of sheets) {
-    const step = sh.size / (2 * R);
-    for (let layer = 0; layer < layers; layer++) {
+    const rim = rimOf(sh);
+    const half = sh.size / 2;
+    for (const side of [1, -1 / 3]) {
       const base = P.length / 3;
-      const lift = layer * gap, share = layers > 1 ? 1.6 / layers : 1;
       const va = [];
-      for (let q = -R; q <= R; q++) for (let p = -R; p <= R; p++) {
-        const x = sh.x + p * step, z = sh.z + q * step;
-        // a little roll in the sheet, by its own hash, each layer its own
-        const y = sh.y + lift + 6 * dsin((p + 3 * hash01(sh.k, 260 + layer)) * 0.9) * dcos((q + 3 * hash01(sh.k, 263 + layer)) * 0.7);
-        const rr = len(p, q) / R;
-        const under = y - groundAt(grid, ground, x, z);
-        const a = rr >= 1 || under < sh.clear ? 0 : Math.min(1, sh.alpha * share) * (1 - rr * rr) * Math.min(1, (under - sh.clear) / (2 * sh.clear));
-        P.push(x, y, z);
-        C.push(r, g, b, a);
-        va.push(a);
+      for (let ring = 0; ring <= RINGS; ring++) {
+        for (let q = 0; q < (ring === 0 ? 1 : SECTORS); q++) {
+          const rho = ring / RINGS, a = (q * 2 * Math.PI) / SECTORS;
+          const rr = rho * half * rim[q];
+          const x = sh.x + rr * dcos(a), z = sh.z - rr * dsin(a);
+          // the lens: domed over (or sagging under) its base, thinning to the rim, a little roll by hash
+          const y = sh.y + side * sh.thick * (1 - rho * rho) + 4 * dsin(a * 3 + 6 * hash01(sh.k >>> 0, 263)) * rho;
+          const under = y - groundAt(grid, ground, x, z);
+          const al = rho >= 1 || under < sh.clear ? 0 : Math.min(1, sh.alpha * 0.6) * (1 - rho * rho) * Math.min(1, (under - sh.clear) / (2 * sh.clear));
+          P.push(x, y, z);
+          C.push(r, g, b, al);
+          va.push(al);
+        }
       }
-      for (let q = 0; q < 2 * R; q++) for (let p = 0; p < 2 * R; p++) {
-        const A = q * W + p, B = A + 1, Cc = A + W, D = Cc + 1;
-        for (const [u, v, w] of [[A, Cc, B], [B, Cc, D]]) if (va[u] || va[v] || va[w]) I.push(base + u, base + v, base + w);
+      for (let ring = 0; ring < RINGS; ring++) for (let q = 0; q < SECTORS; q++) {
+        const tris = ring === 0 ? [[vi(0, 0), vi(1, q), vi(1, q + 1)]] : [[vi(ring, q), vi(ring + 1, q), vi(ring + 1, q + 1)], [vi(ring, q), vi(ring + 1, q + 1), vi(ring, q + 1)]];
+        for (const [u, v, w] of tris) if (va[u] || va[v] || va[w]) I.push(base + u, base + v, base + w);
       }
     }
   }

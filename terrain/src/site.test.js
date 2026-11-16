@@ -99,7 +99,19 @@ describe("the boatyard, against its spec (README, \"Ucluelet\"; the survey and R
     expect(site.made.map((m) => m.id)).toEqual([...SITE.structures.map((s) => s.id), ...LANDMARKS.map((l) => l.id)]);
     expect(SITE.layers.find((l) => l.id === "boatyard.removed").visible).toBe(false);
     expect(SITE.structures.filter((s) => s.layer === "boatyard.removed").map((s) => s.id)).toEqual(["C", "E", "F", "G", "H", "I", "J", "K", "Q"]);
-    expect([...site.replaces]).toEqual(["way/374651008"]);
+    expect([...site.replaces]).toEqual(["way/374651008", "way/1423469476"]);
+  });
+  it("the lighthouse: a squat tower on its rock, its gallery, lantern and dome to 5.6 + 0.25 + 1.4 + 0.9 m over the ground; the radome a ball to OSM's 17 m", () => {
+    // each says its ground and its top
+    const lh = M.amphitrite, oz = M.ozzard;
+    const Z = LANDMARKS[0].size;
+    expect(lh.top - lh.ground).toBeCloseTo(Z.height + 0.25 + Z.lanternHeight + Z.dome, 9);
+    const R = LANDMARKS[1].size;
+    expect(oz.top - oz.ground).toBeCloseTo(R.building[2] + R.radius * Math.sin(Math.PI / 3) + R.radius, 6);
+    expect(oz.top - oz.ground).toBeCloseTo(17, 1);
+    // the radome's ball is OSM's footprint across
+    expect(2 * R.radius).toBeCloseTo(16.8, 9);
+    for (const lm of LANDMARKS) expect(lm.assumed.length).toBeGreaterThan(40);
   });
   it("the hangar stands on its floor and reaches its ridge: its mesh's top is the ridge", () => {
     const P = site.layers["boatyard.kept"].positions;

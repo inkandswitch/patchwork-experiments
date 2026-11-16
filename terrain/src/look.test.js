@@ -125,6 +125,18 @@ describe("the ground's palette", () => {
     for (let d = 3; d < 300; d += 3) expect(lum(-d - 3)).toBeLessThanOrEqual(lum(-d) + 1e-9);
     expect(groundRGB(1.5, COVER.beach, 0, ukee, COLOURS, -1).map(Math.round)).toEqual([0x7d, 0x77, 0x6c]);
   });
+  it("draws the bare rock band under a town's lots only where the place's shore is rock (shoreRock), and never on a beach (every cover, through the band)", () => {
+    const rock = bands(ukee).at(-1)[0], lichen = bands(ukee).at(-2)[0];
+    const hex = (rgb) => "#" + rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+    for (const cv of Object.values(COVER)) for (let q = 1; q < 10; q++) {
+      const h = lichen + ((rock - lichen) * q) / 10;
+      const plain = hex(groundRGB(h, cv, 0, ukee, COLOURS, -1)), rocky = hex(groundRGB(h, cv, 0, ukee, COLOURS, -1, true, { shoreRock: true }));
+      if (cv === COVER.beach) expect(rocky).toBe(plain);
+      else expect(rocky).toBe(COLOURS.rock);
+      if (cv === COVER.none || cv === COVER.rock) expect(plain).toBe(COLOURS.rock);
+      else expect(plain).not.toBe(COLOURS.rock);
+    }
+  });
   it("varies a node's colour by its index alone, by at most 6%", () => {
     for (let k = 0; k < 2000; k++) expect(Math.abs(hash01(k, 7) - hash01(k, 7))).toBe(0), expect(hash01(k, 7)).toBeLessThan(1);
   });

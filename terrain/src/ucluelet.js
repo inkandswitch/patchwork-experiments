@@ -214,10 +214,15 @@ export const SWELL = Object.freeze({ hs: 1.2, tp: 8.3, from: 285, note: "not mod
  * 13%; visibility median 19 km, p10 1.2 km. "Ukee grey", overcast but
  * bright, is how it looks most afternoons. The sun is where it is on 15 July
  * at 15:00 PDT at 48.95 N (elevation 57°, azimuth 222°). Colours are art
- * direction, not measurements.
+ * direction, not measurements, but an overcast's gradient is the CIE
+ * standard overcast sky's way round: brightest overhead, darker toward the
+ * horizon (there about a third of the zenith's luminance; here gentler), so
+ * the far water, which reflects the horizon at a grazing angle, reads as
+ * pewter, not a white band, and the far hills fade into a grey that matches
+ * it (the fog is the horizon's colour).
  */
 export const SKIES = Object.freeze({
-  "ukee-grey": { name: "Ukee grey (overcast, bright)", sky: { top: "#7f8b94", horizon: "#c5cbcc", bottom: "#8f9a9b" }, fog: { color: "#bcc3c4", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05 },
+  "ukee-grey": { name: "Ukee grey (overcast, bright)", sky: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" }, fog: { color: "#959ea1", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05 },
   "marine-layer": { name: "Marine layer (fog, 20% of afternoons)", sky: { top: "#bfc6c7", horizon: "#c9cfcf", bottom: "#b4bbbb" }, fog: { color: "#c9cfcf", near: 30, far: 900 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#f2f3f2", intensity: 0.6, shadows: false }, exposure: 1 },
   "clear-afternoon": { name: "Clear afternoon", sky: { top: "#5b86b0", horizon: "#d5e0e4", bottom: "#a9bcc4" }, fog: { color: "#d5e0e4", near: 800, far: 18000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#fff4e2", intensity: 2.2, shadows: true }, exposure: 1 },
 });
@@ -273,6 +278,8 @@ export const SITE = Object.freeze({
     note: "OSM's buildings inside the lot's extent (the survey's shoreline and lot lines: 48.94833–48.94989 N, 125.55867–125.55482 W) are left out: the survey draws them. OSM's L-pier (way 751431449) is drawn from the site's data: its north leg as existing, its east arm on boatyard.today (the planned dock replaces it). No trees stand in the box (forest.js builtMask).",
   },
   ground: YARD,
+  // the yard's ground inside the lot's box, above the highest normal tide: one even gravel tone, its edge the shore's cut at MHHW (build.js apronMask)
+  apron: { colour: "#958b76", assumed: "A gravel and packed-earth yard, one tone (imagery's general look; the surface isn't surveyed)" },
   layers: [
     { id: "boatyard", name: "Boatyard (1970 Harbour Crescent)" },
     { id: "boatyard.kept", name: "Buildings staying (March 2026 survey)", parent: "boatyard" },
@@ -440,20 +447,21 @@ export const LANDMARKS = Object.freeze([
     name: "Amphitrite Point Lighthouse (1915)",
     replaces: "way/374651008",
     at: [48.9212, -125.54125],
-    size: { base: 4.6, baseHeight: 2.6, tower: 3.0, towerHeight: 5.6, lantern: 1.0, lanternHeight: 1.6 },
-    colours: { walls: "#f2f1ec", lantern: "#b0292a", roof: "#b0292a", balcony: "#d8d6d0" },
-    source: "OpenStreetMap way 374651008 (ODbL; Fl W 12 s, focal height 15 m, range 15 nm, ref G 5246)",
-    assumed: "A squat square concrete tower about 6 m tall with a balcony and a red lantern (built 1915 against westerly seas): dimensions are typical, not surveyed.",
+    size: { base: 4.4, top: 3.8, height: 5.6, gallery: 5.0, rail: 1.0, lantern: 1.0, lanternHeight: 1.4, dome: 0.9, rock: { radius: 9, height: 4, colour: "#262523" } },
+    colours: { walls: "#f2f1ec", gallery: "#e4e2dc", rail: "#d8d6d0", lantern: "#b0292a", glass: "#2b3338", roof: "#b0292a" },
+    source: "OpenStreetMap way 374651008 (ODbL; Fl W 12 s, focal height 15 m, range 15 nm, ref G 5246); a squat 1915 concrete tower built to stand the storms on black volcanic rock (Lighthouse Digest; the Wild Pacific Trail's descriptions)",
+    assumed: "A square concrete tower battered from 4.4 m at its foot to 3.8 m at 5.6 m up, a projecting gallery 5 m square with a 1 m railing, a round red lantern 2 m across and 1.4 m tall with its glazing, a red dome: proportions from photographs' general look, not surveyed. On a dark rock outcrop 9 m across falling 4 m to the sea (dressing; the rock's shape assumed). OSM's footprint of it (way 374651008) is left out of the buildings: this draws it.",
   },
   {
     id: "ozzard",
     kind: "dome",
     name: "Mount Ozzard radar dome",
+    replaces: "way/1423469476",
     at: [48.95939, -125.49298],
-    size: { radius: 6.5, drum: 5 },
-    colours: { dome: "#f1f1ee", drum: "#c9cbc8" },
-    source: "OpenStreetMap way 1423469476 (ODbL)",
-    assumed: "A white dome about 13 m across on a 5 m drum: size assumed.",
+    size: { radius: 8.4, building: [10, 10, 1.3] },
+    colours: { dome: "#f4f4f1", building: "#c9cbc8" },
+    source: "OpenStreetMap way 1423469476 (ODbL): a round footprint 16.8 m across, height=17; the 'golf ball' locals point to (District of Ucluelet)",
+    assumed: "Drawn as a white ball 16.8 m across (OSM's footprint), its foot cut off 60° below its equator, on a 1.3 m plinth so its top is OSM's 17 m: the shape assumed (OSM draws a cylinder). OSM's footprint is left out of the buildings: this draws it.",
   },
 ]);
 
@@ -476,6 +484,8 @@ export const LANDMARKS = Object.freeze([
  */
 export const LOOK = Object.freeze({
   palette: "west-coast",
+  // the shore is rock under the town's lots too: a dark bank above the lichen, not lawn to the waterline (palette.js groundRGB shoreRock)
+  shoreRock: true,
   colours: {
     rockweed: "#35311f",
     barnacle: "#585752",
@@ -493,23 +503,36 @@ export const LOOK = Object.freeze({
   trees: {
     fringe: { spruce: 45, hemlock: 25, cedar: 20, pine: 10 },
     inland: { hemlock: 50, cedar: 35, spruce: 10, alder: 5 },
-    town: { hemlock: 30, cedar: 30, alder: 25, spruce: 15 },
+    // conifers among the houses: alder is the only broadleaf here, and rare
+    town: { hemlock: 35, cedar: 35, spruce: 25, alder: 5 },
     wetland: { pine: 100 },
     // the canopy grid is the truth for where trees stand and how tall: they're placed only where it is over 5 m
     canopy: true,
     fringeWidth: 40,
     // a stand of 4 to 6 crowns on each fringe node (forest.js standMesh)
     stands: [4, 6],
-    // two trees a residential node (20 m): the town among spruce and cedar
-    townPerHectare: 50,
+    // three trees a residential node (20 m) where none is built: the town peeking out of spruce, hemlock and cedar
+    townPerHectare: 80,
     roofColours: ["#141f17", "#18251a", "#1b2a1d", "#1f2d1d", "#1c2a24"],
     roofJitter: 3,
-    max: 40000,
+    // the fringe's first, then the rest by hash: room for the town's trees among the edges'
+    max: 55000,
+    // the forest's skin (forest.js skinAt): a clump of 3–4 crowns on every roof node within these circles, so the ridgelines and shores seen from the water are serrated, not smooth: the harbour and Ucluelet Inlet to Hitacu, and the Wild Pacific Trail's coast round Amphitrite Point (where people sail and walk; art direction, not data)
+    skin: {
+      within: [
+        { at: [48.945, -125.548], radius: 2300, note: "the harbour, the inlet to Hitacu and its far shore" },
+        { at: [48.928, -125.558], radius: 2000, note: "the Wild Pacific Trail's coast and Amphitrite Point" },
+      ],
+      crowns: [3, 4],
+      max: 40000,
+    },
+    // salal and shore pine where the lidar's canopy is under 5 m (forest.js scrubCover): a bumpy low skin, not turf; darker than salal's own #3e4a2c, which lit flat read as lawn
+    scrub: { min: 0.8, lift: 1, jitter: 1.5, colours: ["#323d25", "#2c3622", "#38432a", "#28311f", "#303a27"] },
   },
-  // foam where the coast is open to the swell (doc.swell.from): surf.js's defaults
-  surf: {},
-  // stratus on the hills at 320 and 460 m, mist over the forest's hollows: cloud.js's defaults
-  clouds: {},
+  // foam where the coast is open to the swell (doc.swell.from), fading to the water's grey as the stage draws it under Ukee grey: surf.js's ribbons, white water over the exposed shallows under 2.5 m, and black boulders at the most exposed waterline (dressing, assumed)
+  surf: { fade: "#64737c", reef: { depth: 2.5, reef: 0.6, chance: 0.4 }, boulders: { exposure: 0.6, chance: 0.3 } },
+  // stratus banks on the hills at about 380 m, mist over the forest's hollows (cloud.js's defaults), and a collar of cloud round Mount Ozzard's top just under the radome (dressing)
+  clouds: { caps: [{ at: [48.95939, -125.49298], below: 50, size: 760, alpha: 0.6, thick: 30, clear: 4, note: "Mount Ozzard: cloud caught under the summit" }] },
   // dressing about the harbour (boats.js), not data: assumed, each in at least 10 m of water (checked against the heights)
   boats: [
     { id: "troller-outbound", type: "troller", lat: 48.9485, lon: -125.551, heading: 125, length: 12, trim: "#8e2f27", note: "a troller under way, outbound down the harbour" },
@@ -519,8 +542,8 @@ export const LOOK = Object.freeze({
   ],
 });
 
-/** Where the scene opens: about 60 m above the old seaplane base's frontage, looking south-east (about 138°) down the harbour, past the basins and the town's waterfront and Lyche Island, to the inlet's mouth. */
-export const HOME = Object.freeze({ position: Object.freeze([-40, 62, 20]), target: Object.freeze([760, 0, 900]) });
+/** Where the scene opens: 30 m over the water 140 m off the old seaplane base's frontage, looking south-south-east (about 159°) over the planned dock and the sloop at anchor to the basins and the forested peninsula behind the town; the hangar, the wharf and the haul-out pier at the frame's right. */
+export const HOME = Object.freeze({ position: Object.freeze([60, 30, -140]), target: Object.freeze([420, 0, 800]) });
 
 /**
  * Where the sloop lies: at anchor in the harbour about 70 m north of the

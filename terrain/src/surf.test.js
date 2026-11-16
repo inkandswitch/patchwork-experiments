@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { exposure, coastPieces, surfMesh, toward, SURF } from "./surf.js";
+import { exposure, coastPieces, surfMesh, toward, SURF, endOf, widthAt, reefPatches, boulders, BOULDER } from "./surf.js";
 
 // a made-up 41 × 41 coast, 20 m cells: land east of x = 0 (a straight north–south shore facing west), a
 // breakwater-like spit of land running west from the shore along the south, sheltering what lies north of it from
@@ -70,14 +70,14 @@ describe("the foam", () => {
   it("lies only along pieces exposed at least `min`, on the sea side, at the foam's height, every triangle facing up", () => {
     const exposed = pieces.filter((p) => p.exposure >= SURF.min);
     expect(m.pieces).toBe(exposed.length);
-    expect(m.dashes).toBeGreaterThan(0);
+    expect(m.runs).toBeGreaterThan(0);
     const P = m.positions;
     let flat = 0, spray = 0;
     for (let t = 0; t < P.length; t += 9) {
       const ys = [P[t + 1], P[t + 4], P[t + 7]];
       for (let v = t; v < t + 9; v += 3) {
-        // from 1.5 m inside the shore to at most 4 + 12 × 1.3 + 4 + 8 + 4 m out
-        expect(P[v]).toBeGreaterThanOrEqual(-35.6 - 1e-5);
+        // from 1.5 m inside the shore to at most 12 (the widest foam) + 8 + 4 (the lace) m out (a straight shore: no bend to widen it)
+        expect(P[v]).toBeGreaterThanOrEqual(-24 - 1e-5);
         expect(P[v]).toBeLessThanOrEqual(1.5 + 1e-5);
       }
       if (ys.every((y) => Math.abs(y - SURF.y) < 1e-6)) {
@@ -86,7 +86,7 @@ describe("the foam", () => {
         const ux = P[t + 3] - P[t], uz = P[t + 5] - P[t + 2], vx = P[t + 6] - P[t], vz = P[t + 8] - P[t + 2];
         expect(uz * vx - ux * vz).toBeGreaterThanOrEqual(0);
       } else {
-        // the spray: from just under the water to at most 0.5 + 1.5 m
+        // the spray: from just under the water to at most 0.4 + 1.6 m
         spray++;
         for (const y of ys) {
           expect(y).toBeGreaterThanOrEqual(-0.2 - 1e-6);
@@ -113,5 +113,114 @@ describe("the foam", () => {
   it("draws nothing where nothing is exposed, and the same bytes every time", () => {
     expect(surfMesh(pieces.map((p) => ({ ...p, exposure: 0 }))).positions.length).toBe(0);
     expect(Array.from(surfMesh(pieces).positions)).toEqual(Array.from(m.positions));
+  });
+});
+
+describe("the foam is one ribbon along the shore, not dashes", () => {
+  const pieces = coastPieces(chains, grid, label, 270, { reach: 300 });
+  it("knows each piece's neighbours along the coast (none across the spit, where no piece is)", () => {
+    for (let q = 0; q < pieces.length; q++) {
+      const p = pieces[q];
+      const before = pieces.find((o) => o.b[1] === p.a[1]), after = pieces.find((o) => o.a[1] === p.b[1]);
+      expect(p.prev).toEqual(before ? { exposure: before.exposure, sea: before.sea } : null);
+      expect(p.next).toEqual(after ? { exposure: after.exposure, sea: after.sea } : null);
+    }
+  });
+  it("gives both pieces at a shared end the same end (point, direction, bend, exposure, width): every shared end", () => {
+    let shared = 0;
+    for (const p of pieces) {
+      const after = pieces.find((o) => o.a[1] === p.b[1]);
+      if (!after || p.exposure < SURF.min || after.exposure < SURF.min) continue;
+      shared++;
+      const B = endOf(p, "b"), A = endOf(after, "a");
+      expect(B).toEqual(A);
+      expect(widthAt(B)).toBe(widthAt(A));
+      expect(widthAt(B)).toBeGreaterThanOrEqual(2);
+      expect(widthAt(B)).toBeLessThanOrEqual(12);
+    }
+    expect(shared).toBeGreaterThan(10);
+  });
+  it("tapers to nothing at a run's ends (where the next piece isn't exposed enough, or there is none)", () => {
+    let tips = 0;
+    for (const p of pieces) {
+      if (p.exposure < SURF.min) continue;
+      for (const end of ["a", "b"]) {
+        const other = end === "a" ? p.prev : p.next;
+        if (other && other.exposure >= SURF.min) continue;
+        tips++;
+        expect(widthAt(endOf(p, end))).toBe(0);
+      }
+    }
+    expect(tips).toBeGreaterThan(0);
+  });
+  it("runs round a closed ring's join: its last piece's neighbour is its first", () => {
+    // a square island in open water, its ring as OSM draws a coastline (land on the left: counter-clockwise seen from above is clockwise in x east, z south)
+    const isl = new Int8Array(n * n).fill(-1);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (Math.abs(x0 + i * cell) <= 100 && Math.abs(z0 + j * cell) <= 100) isl[j * n + i] = 1;
+    const ring = [{ closed: true, ids: ["way/9"], points: [[-110, -110], [-110, 110], [110, 110], [110, -110]] }];
+    const ps = coastPieces(ring, grid, isl, 270, { reach: 200 });
+    // 4 sides of 220 m in 11 pieces each, the closing side among them
+    expect(ps.length).toBe(44);
+    const first = ps[0], last = ps.at(-1);
+    expect(last.next).toEqual({ exposure: first.exposure, sea: first.sea });
+    expect(first.prev).toEqual({ exposure: last.exposure, sea: last.sea });
+  });
+});
+
+describe("white water over the shallows, and boulders", () => {
+  // the fixture's sea, shoaling toward the shore: 1 m deep within 60 m of it, 10 m beyond
+  const heights = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const k = j * n + i, x = x0 + i * cell;
+    heights[k] = label[k] > 0 ? 5 : x > -60 ? -1 : -10;
+  }
+  const o = { reach: 300, chance: 1 };
+  const all = reefPatches(grid, heights, label, 270, o);
+  it("lies on every shallow water node exposed enough and nowhere else (every node), seven up-facing triangles each, white fading to the sea", async () => {
+    let want = 0;
+    for (let k = 0; k < n * n; k++) {
+      const i = k % n, j = (k - i) / n;
+      if (label[k] < 0 && heights[k] < -0.2 && heights[k] >= -2.5 && exposure(grid, label, x0 + i * cell, z0 + j * cell, 270, { reach: 300 }) >= 0.55) want++;
+    }
+    expect(want).toBeGreaterThan(0);
+    expect(all.patches).toBe(want);
+    expect(all.positions.length / 9).toBe(7 * want);
+    const P = all.positions;
+    for (let t = 0; t < P.length; t += 9) {
+      const ux = P[t + 3] - P[t], uz = P[t + 5] - P[t + 2], vx = P[t + 6] - P[t], vz = P[t + 8] - P[t + 2];
+      expect(uz * vx - ux * vz).toBeGreaterThanOrEqual(0);
+      // within 0.3 of a cell and 8 m of its node: only over the shallows (x from −60 m, less the jitter and rim)
+      expect(P[t]).toBeGreaterThan(-60 - 6 - 8 - 1e-6);
+    }
+    const { hexToLinear } = await import("./glb.js");
+    const white = hexToLinear(SURF.colour), sea = hexToLinear(SURF.fade);
+    for (let v = 0; v < all.colors.length; v += 3) {
+      const w = (all.colors[v] - sea[0]) / (white[0] - sea[0]);
+      expect(w).toBeGreaterThanOrEqual(-1e-6);
+      // never more than 0.7 of the way to white
+      expect(w).toBeLessThanOrEqual(0.7 + 1e-6);
+    }
+  });
+  it("is local: tile by tile is the whole", () => {
+    for (const rows of [1, 9, 41]) {
+      const P = [];
+      for (let j0 = 0; j0 < n; j0 += rows) P.push(...reefPatches(grid, heights, label, 270, o, j0 * n, Math.min(n, j0 + rows) * n).positions);
+      expect(P).toEqual(Array.from(all.positions));
+    }
+  });
+  it("puts a boulder on each piece exposed enough whose hash passes, near its middle, on the sea side, the same every time", () => {
+    const pieces = coastPieces(chains, grid, label, 270, { reach: 300 });
+    const b = boulders(pieces, { chance: 1 });
+    expect(b.boulders).toBe(pieces.filter((p) => p.exposure >= BOULDER.exposure).length);
+    expect(b.positions.length / 9).toBe(18 * b.boulders);
+    for (let v = 0; v < b.positions.length; v += 3) {
+      // off the straight shore at x = 0, 1 to 4 m out, at most 1.6 m in radius
+      expect(b.positions[v]).toBeLessThanOrEqual(-1 + 1.6 + 1e-6);
+      expect(b.positions[v]).toBeGreaterThanOrEqual(-4 - 1.6 - 1e-6);
+      expect(b.positions[v + 1]).toBeGreaterThanOrEqual(-1.2 - 1e-6);
+      expect(b.positions[v + 1]).toBeLessThanOrEqual(2 + 1e-6);
+    }
+    expect(Array.from(boulders(pieces, { chance: 1 }).positions)).toEqual(Array.from(b.positions));
+    expect(boulders(pieces, { chance: 0 }).boulders).toBe(0);
   });
 });

@@ -259,6 +259,25 @@ describe("buildTerrain with a look and a site", () => {
     expect(built.stats.clouds).toBe(null);
     for (const name of ["Surf", "Low cloud and mist", "Boats about the harbour"]) expect(json.nodes.some((n) => n.name === name)).toBe(false);
   });
+  it("leaves out an OSM building a landmark draws itself, lays the forest's skin where the look asks, and paints the site's apron one tone above the highest tide", () => {
+    const [mlat, mlon] = ll(-114, -224);
+    const withAll = {
+      ...doc,
+      landmarks: [{ id: "ball", kind: "dome", replaces: "way/50", at: [mlat, mlon], size: { radius: 4, building: [6, 6, 1] }, colours: { dome: "#ffffff", building: "#cccccc" } }],
+      site: { ...doc.site, apron: { colour: "#958b76" } },
+      look: { ...doc.look, trees: { ...doc.look.trees, skin: { within: [{ at: ll(0, -200), radius: 400 }], crowns: [3, 4] } } },
+    };
+    const b = buildTerrain({ doc: withAll, dem: dem(), features: features(), look });
+    const j = parseGLB(b.glb).json;
+    // way/50 is the landmark's; way/51 is inside the site's box
+    expect(b.stats.buildings).toBe(0);
+    expect(b.stats.skin).toBeGreaterThan(0);
+    const skin = j.nodes.find((n) => n.name === "Forest skin");
+    expect(skin.extras.layer).toBe("forest");
+    expect(skin.children.length).toBe(b.stats.skin);
+    expect(new Set(skin.children.map((c) => j.nodes[c].mesh)).size).toBeLessThanOrEqual(6);
+    expect(Buffer.from(buildTerrain({ doc: withAll, dem: dem(), features: features(), look }).glb).equals(Buffer.from(b.glb))).toBe(true);
+  });
   it("draws surf where the place has a swell, cloud and boats where its look asks, each on its layer, and is deterministic", () => {
     const [blat, blon] = ll(30, 100);
     const dressed = { ...doc, swell: { from: 270 }, look: { ...(doc.look ?? {}), surf: { reach: 600, min: 0.2 }, clouds: { sheets: { levels: [8], every: 4, below: 30, above: 30, chance: 1, size: 200, alpha: 0.5, clear: 2 }, mist: null }, boats: [{ type: "troller", lat: blat, lon: blon, heading: 90, length: 12 }] } };
@@ -288,5 +307,26 @@ describe("buildTerrain with a look and a site", () => {
     expect(b.stats.buildings).toBe(0);
     void COVER;
     void SITE;
+  });
+});
+
+import { apronMask } from "./build.js";
+describe("the site's apron", () => {
+  it("is exactly the land nodes whose position is inside the box (every node of a small grid)", () => {
+    const g = { n: 21, cell: 10, x0: -100, z0: -100 };
+    const lab = new Int8Array(21 * 21);
+    for (let k = 0; k < lab.length; k++) lab[k] = k % 21 < 12 ? 1 : -1;
+    const [s1, w1] = frame.toLatLon(-45, 35), [n1, e1] = frame.toLatLon(55, -65);
+    const box = { south: Math.min(s1, n1), north: Math.max(s1, n1), west: Math.min(w1, e1), east: Math.max(w1, e1) };
+    const m = apronMask(g, frame, box, lab);
+    let some = 0;
+    for (let k = 0; k < lab.length; k++) {
+      const i = k % 21, jj = (k - i) / 21;
+      const [lat, lon] = frame.toLatLon(-100 + i * 10, -100 + jj * 10);
+      const inside = lat >= box.south && lat <= box.north && lon >= box.west && lon <= box.east;
+      expect(m[k]).toBe(inside && lab[k] > 0 ? 1 : 0);
+      some += m[k];
+    }
+    expect(some).toBeGreaterThan(10);
   });
 });
