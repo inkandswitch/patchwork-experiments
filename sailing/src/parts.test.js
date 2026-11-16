@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as parts from "./parts.js";
 import { PIECES, fileKey, placement } from "./parts.js";
 import { FIT, LIFT, STAND, TAGS, jibDrawing, winchTrait } from "./ship.js";
-import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, SAIL, SEA, SHIP, WINCH, partsOf } from "./traits.js";
+import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, SAIL, SEA, SHIP, WEATHER, WINCH, partsOf } from "./traits.js";
 import { placeIn } from "./body.js";
 import { apply } from "./frames.js";
 import { createSim } from "./sim.js";
@@ -223,17 +223,39 @@ describe("the sloop", () => {
     expect(p.winches.map((w) => doc.objects[w].traits[WINCH].side)).toEqual(["port", "starboard"]);
   });
 
-  it("brings her sea when the scene has none, and leaves one that's there alone", async () => {
+  it("brings a Sea and the weather when the scene has no open water, and leaves open water that's there alone", async () => {
     const doc = emptyScene();
     const { ctx } = fakeDrop(doc);
     await parts.sloop.create(ctx, { parent: null, transform: {}, world: {} });
-    expect(doc.traits[SEA]).toMatchObject({ wind: { speed: 7, from: 45 }, scale: 1 });
-    const sea = { wind: { speed: 3, from: 200 }, seed: 5, scale: 0.5 };
-    const other = emptyScene();
-    other.traits[SEA] = structuredClone(sea);
-    const second = fakeDrop(other);
-    await parts.sloop.create(second.ctx, { parent: null, transform: {}, world: {} });
-    expect(other.traits[SEA]).toEqual(sea);
+    expect(doc.traits[WEATHER]).toMatchObject({ wind: { speed: 7, from: 45 } });
+    const sea = doc.objects[doc.order[0]];
+    expect(sea.traits).toEqual({ water: {}, [SEA]: { seed: doc.traits[WEATHER].seed, scale: 1 } });
+    // open water there already (with or without a sea, with or without weather): nothing more of either water or weather is written
+    for (const weather of [null, { wind: { speed: 3, from: 200 }, seed: 5 }]) {
+      const other = emptyScene();
+      other.objects.w = { name: "Water", parent: null, transform: { position: [0, 2, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {} } };
+      other.order.push("w");
+      if (weather) other.traits[WEATHER] = structuredClone(weather);
+      const second = fakeDrop(other);
+      await parts.sloop.create(second.ctx, { parent: null, transform: {}, world: {} });
+      expect(Object.values(other.objects).filter((o) => o.traits?.water)).toHaveLength(1);
+      expect(other.traits[WEATHER] ?? null).toEqual(weather);
+    }
+    // a pond (bounded water) is not open water: she brings a Sea
+    const pond = emptyScene();
+    pond.objects.p = { name: "Pond", parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: { size: [10, 1, 10] } } };
+    pond.order.push("p");
+    await parts.sloop.create(fakeDrop(pond).ctx, { parent: null, transform: {}, world: {} });
+    expect(Object.values(pond.objects).filter((o) => o.traits?.water && !o.traits.water.size)).toHaveLength(1);
+  });
+
+  it("the Sea part: open water with a sea on it, first in the order, and the weather where there's none", async () => {
+    const doc = emptyScene();
+    const { ctx } = fakeDrop(doc);
+    const id = await parts.sea.create(ctx, { parent: null, transform: {}, world: { position: [4, 9, 4], rotation: [0, 1, 0], scale: 1 } });
+    expect(doc.order[0]).toBe(id);
+    expect(doc.objects[id]).toMatchObject({ name: "Sea", sourceUrl: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    expect(doc.objects[id].traits).toEqual({ water: {}, [SEA]: { seed: doc.traits[WEATHER].seed, scale: 1 } });
   });
 
   it("dropped on something, goes on the water under where it was dropped, not attached to it", async () => {

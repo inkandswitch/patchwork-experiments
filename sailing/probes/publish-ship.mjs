@@ -1,13 +1,15 @@
 // Publish a ship at sea to a real sync server and print its Patchwork URL.
 //
-//   node probes/publish-ship.mjs [--sync wss://…] [--settle 8000]
-//   node probes/publish-ship.mjs --dry-run
+//   node probes/publish-ship.mjs [--anchor] [--sync wss://…] [--settle 8000]
+//   node probes/publish-ship.mjs [--anchor] --dry-run
+//
+// --anchor runs the "Ship at anchor" template instead (titled so).
 //
 // Makes NEW docs on every run (no dedupe): an empty scene, made the way the
 // scene datatype makes one, then the "Ship at sea" template run on it with a
 // context built on this node repo, exactly as the start screen runs it. So
-// the doc is what a maker gets from New → scene → Ship at sea: the sea trait,
-// the sloop and its stations, landmarks, the scene's one GLB file doc per
+// the doc is what a maker gets from New → scene → Ship at sea: the weather
+// and a Sea (open water with a sea on it), the sloop and its stations, landmarks, the scene's one GLB file doc per
 // kind of piece (recorded at doc.assets[key] by ctx.file, as the stage's
 // sceneFile does), and `view.start` off her quarter (Look, no body named, where a click
 // comes aboard).
@@ -16,7 +18,7 @@
 // publishes nothing. Otherwise it flushes and asks a repo that has never seen
 // them for every doc it made (as the arena's publish-level does).
 
-import template from "../src/template.js";
+import shipAtSea, { atAnchor } from "../src/template.js";
 import { fileKey } from "../src/parts.js";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
 import { emptyScene } from "./empty-scene.js";
@@ -25,6 +27,9 @@ const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
 );
 const DRY = !!args["dry-run"];
+const ANCHORED = !!args.anchor;
+const template = ANCHORED ? atAnchor : shipAtSea;
+const TITLE = ANCHORED ? "Ship at anchor" : "Ship at sea";
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 
 const { Repo, initSubduction } = await import("@automerge/automerge-repo");
@@ -38,7 +43,7 @@ if (!DRY) console.log(`connected to ${SYNC}`);
 // stage works these out from the registry; here they're stated (joints and
 // traversal for the sloop's companionway: its hatch's slide, its exit)
 const PACKAGES = ["scene", "sailing", "water", "joints", "traversal"];
-const scene = await repo.create2(emptyScene({ title: "Ship at sea", patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
+const scene = await repo.create2(emptyScene({ title: TITLE, patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
 
 // ─── ctx.file, as the stage's sceneFile (scene/src/stage/stage.js) ──────────
 // The scene's own file doc for `key`: the one doc.assets[key] names, else one
@@ -82,7 +87,7 @@ async function sceneFile(key, make) {
 // ─── the template's create(ctx), with the drop context's parts it uses ──────
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 await template.create({
-  id: "ship-at-sea",
+  id: ANCHORED ? "ship-at-anchor" : "ship-at-sea",
   repo,
   handle: scene,
   url: scene.url,
@@ -100,8 +105,10 @@ const objects = Object.values(d.objects);
 const has = (trait) => objects.filter((o) => o.traits?.[trait]).length;
 const problems = [];
 if (!d.view?.start?.home || "body" in d.view.start || "activity" in (d.view ?? {})) problems.push(`view is ${JSON.stringify(d.view)}: no view.start.home, a body named (she starts people in Look), or an old view.activity`);
-if (!d.traits?.["sailing.sea"]) problems.push("no sailing.sea trait");
-if (!d.traits?.water) problems.push("no water trait (the water package's: she floats on her world's water)");
+if (!d.traits?.["sailing.weather"]) problems.push("no sailing.weather trait");
+const seas = objects.filter((o) => o.traits?.water);
+if (seas.length !== 1 || seas[0].traits.water.size != null || !seas[0].traits["sailing.sea"] || d.objects[d.order[0]] !== seas[0]) problems.push(`want one Sea first in the order (open water with a sea on it), have ${JSON.stringify(seas.map((o) => o.name))}`);
+if (d.traits?.["sailing.sea"] || d.traits?.water) problems.push("a sea or water trait left on the scene (they are a Sea object's now)");
 for (const t of ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"]) if (has(t) !== 1) problems.push(`${has(t)} objects with ${t}`);
 const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "companionway", "hatch", "redBuoy", "greenBuoy"];
 const keys = KINDS.map(fileKey).sort();
@@ -137,7 +144,7 @@ for (const url of made) {
     const got = (await within(30000, checker.find(url))).doc();
     if (!got || !Object.keys(got).length) missing.push(`${url} (empty)`);
     else if (url === scene.url && packageProblems(got, PACKAGES).length) missing.push(`${url} (came back wrong: ${packageProblems(got, PACKAGES).join("; ")})`);
-    else if (url === scene.url && !got.traits?.["sailing.sea"]) missing.push(`${url} (came back without its sea)`);
+    else if (url === scene.url && !Object.values(got.objects ?? {}).some((o) => o.traits?.water && o.traits["sailing.sea"])) missing.push(`${url} (came back without its Sea)`);
     else if (url === scene.url && Object.keys(got.assets ?? {}).length !== keys.length) missing.push(`${url} (came back without its assets)`);
     else if (url !== scene.url && !(got.content?.byteLength > 0)) missing.push(`${url} (a GLB doc with no bytes)`);
   } catch (err) {

@@ -342,12 +342,12 @@ export function published(diag, state) {
 // ─── the stage side ─────────────────────────────────────────────────────────
 
 /**
- * ctx.sim. Reads ctx.sea (ocean, wind) at every step; the doc's clock steps
+ * ctx.sim. Reads ctx.sea (oceanAt per ship, wind) at every step; the doc's clock steps
  * it (api.clock.process); play.js ticks it each frame for what every view
  * does (inputs, following) and, computing, to hold the poses the steps
  * reached.
  * @param {any} api
- * @param {{ sea: { ocean, wind } }} ctx
+ * @param {{ sea: { oceanAt, wind } }} ctx
  */
 export function createSim(api, ctx) {
   let computing = false; // between the process's start and stop
@@ -451,8 +451,8 @@ export function createSim(api, ctx) {
   function step(_dt, t) {
     savedSinceStep = false;
     const sc = api.scene();
-    const env = { water: ctx.sea.ocean, wind: ctx.sea.wind };
-    const ids = env.water ? shipsOf(sc) : []; // no sea, nothing sails
+    const wind = ctx.sea.wind;
+    const ids = shipsOf(sc);
     for (const id of ids) {
       const o = sc.objects[id];
       const doc = plainTransform(o.transform);
@@ -468,6 +468,13 @@ export function createSim(api, ctx) {
       const key = specKey(spec);
       let s = ships.get(id);
       if (!s) ships.set(id, (s = track(id, o, t, null)));
+      // the water she is in, asked once a step at her body's origin (her waterline), leaving out what she carries;
+      // none (a dry room, a tilted link): she isn't stepped, and rests where the doc has her
+      const env = { water: ctx.sea.oceanAt(s.state.position, id), wind };
+      if (!env.water) {
+        ships.delete(id);
+        continue;
+      }
       if (JSON.stringify(s.frame) !== JSON.stringify(frame)) {
         // her frame changed (her model loaded and said which way is forward, or someone set it):
         // her hull stays where it is, and her body turns in it

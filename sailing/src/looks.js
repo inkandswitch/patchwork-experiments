@@ -424,12 +424,14 @@ export function createLooks(api, ctx) {
   }
 
   function bob(t) {
-    if (!ctx.sea.ocean) return;
     for (const id of floats) {
       const root = api.content(id)?.root;
       const m = api.worldOf(id);
       if (!root || !m) continue;
-      const { offset, tilt } = floatPose(ctx.sea.ocean, m, t);
+      // the water it's moored in, leaving out any it carries
+      const water = ctx.sea.oceanAt([m[12], m[13], m[14]], id);
+      if (!water) continue;
+      const { offset, tilt } = floatPose(water, m, t);
       // the content node, not the object: where it's moored stays the doc's
       root.position.set(offset[0], offset[1], offset[2]);
       root.rotation.set(tilt[0], 0, tilt[1]);

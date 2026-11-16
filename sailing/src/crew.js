@@ -342,7 +342,8 @@ export function createCrew(api, ctx) {
     mesh: meshOf,
     frame: frameOfShip,
     ships: () => ctx.sim?.ships?.() ?? [],
-    surface: (x, z) => ctx.sea?.ocean?.heightAt?.(x, z, clock()) ?? 0,
+    // the water there, from above (a swimmer is in whatever water's surface is highest in her column)
+    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, clock()) ?? 0,
     blockers(ship) {
       if (boomsAt !== frameNo) (booms.clear(), (boomsAt = frameNo));
       if (!booms.has(ship)) booms.set(ship, boomOf(api, ship, frameOfShip(ship)));

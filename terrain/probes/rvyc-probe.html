@@ -141,7 +141,8 @@ try {
         title: d.title,
         start: d.view?.start ?? null,
         home: d.view?.start?.home ?? null,
-        sea: d.traits?.["sailing.sea"] ?? null,
+        // the weather's wind and the bay's Sea (an open water object with a sea on it: WATER.md, "Water bodies")
+        sea: (() => { const w = Object.values(objects()).filter((o) => o.traits?.water); const s = w.find((o) => o.traits["sailing.sea"]); return { wind: d.traits?.["sailing.weather"]?.wind ?? null, scale: s?.traits["sailing.sea"].scale ?? null, waters: w.length, level: s?.transform.position[1] ?? null, open: !!s && s.traits.water.size == null }; })(),
         terrain: t ? { transform: t.transform, locked: !!t.locked, providerId: t.providerId, parent: t.parent, sourceUrl: t.sourceUrl, infoUrl: t.infoUrl ?? null, credit: !!t.traits?.["terrain.credit"] } : null,
         terrainDoc: terrainDoc ? { title: terrainDoc.title, type: terrainDoc["@patchwork"]?.type, origin: terrainDoc.origin, grid: terrainDoc.grid, data: !!terrainDoc.data, sources: (terrainDoc.sources ?? []).map((s) => s.id), sourceUrls: (terrainDoc.sources ?? []).map((s) => s.url ?? null), requests: (terrainDoc.sources ?? []).reduce((a, s) => a + (s.requests?.length ?? 0), 0), osmDate: terrainDoc.osmDate ?? null, matchesChecked: terrainDoc.data?.summary?.matchesChecked ?? null, attribution: terrainDoc.attribution } : null,
         featuresFile: terrainDoc?.data?.features?.url ? (({ licence, attribution }) => ({ licence, attribution }))(repo.handles.get(terrainDoc.data.features.url)?.doc() ?? {}) : null,
@@ -155,7 +156,8 @@ try {
     bodyLabel: () => dbg.local.get().body?.label ?? null,
     status: (id) => dbg.local.get().status?.[id] ?? null,
     loaded() {
-      const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
+      // (what has content: not a group, or an object with no source, as the Sea)
+      const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group" && objects()[id].sourceUrl != null);
       return { total: all.length, loaded: all.filter((id) => dbg.viewport.contentOf(id)?.loaded).length };
     },
     /** what the terrain's GLB says, read the way sailing will: content(id).extras.terrain through the copyable sampler */

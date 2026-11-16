@@ -199,7 +199,7 @@ try {
         await time.step(1, { draw: false }); // (no picture: a sample)
         const m = dbg[w]?.viewport.worldOf(id);
         const sea = P.ctx(w)?.sea;
-        if (m && sea) out.push(m[13] - sea.ocean.heightAt(m[12], m[14], sea.clock()));
+        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], sea.clock()));
       }
       return out;
     },

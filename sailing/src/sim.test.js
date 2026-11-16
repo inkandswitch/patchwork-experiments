@@ -478,3 +478,67 @@ describe("createSim on a stage", () => {
     expect(w.holds.get(ids.wheel)?.session).not.toBe("A");
   });
 });
+
+describe("one body per hull per step (W25): env.water is the water package's at(her origin, { not: her })", () => {
+  let w;
+  afterEach(() => w?.done());
+  // flat water at a level, as a reader (the water package's shape)
+  const flatAt = (level, body = null) => ({
+    body,
+    level,
+    components: [],
+    heightAt: () => level,
+    sampleAt: (x, z, t, out = [0, 0, 1, 0]) => ((out[0] = level), (out[1] = 0), (out[2] = 1), (out[3] = 0), out),
+    normalAt: (x, z, t, out = [0, 1, 0]) => ((out[0] = 0), (out[1] = 1), (out[2] = 0), out),
+    velocityAt: (x, y, z, t, out = [0, 0, 0]) => ((out[0] = out[1] = out[2] = 0), out),
+    displaced: (x, z, t, out = [0, 0, 0, 1]) => ((out[0] = x), (out[1] = level), (out[2] = z), (out[3] = 1), out),
+    stats: { hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 },
+  });
+  const OPEN = flatAt(0);
+  const POND = flatAt(1.5, "pond");
+  const BASIN = flatAt(0.5, "basin");
+  const TANK = flatAt(-0.4, "tank");
+  // each case: what at(p, { not }) answers; `hull` is her id. The pond's edge runs along x = 0 in her frame of the world
+  const CASES = {
+    "in open water": () => OPEN,
+    "in a pond": () => POND,
+    "astride the pond's edge, her origin inside": (p) => (p[0] >= -1e3 ? POND : OPEN),
+    "astride the pond's edge, her origin outside": (p) => (p[0] >= 1e3 ? POND : OPEN),
+    "in a dry room": () => null,
+    "in a dry room, in a basin of her own": () => BASIN,
+    "with a tank aboard, in open water": (p, not, hull) => (not === hull ? OPEN : TANK),
+    "with a flooded hold attached under her, in a dry room": (p, not, hull) => (not === hull ? null : TANK),
+  };
+  const run = async (answer) => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const api = w.join("A");
+    const asked = [];
+    const collect = api.collect;
+    api.collect = (name) => (name === "water" ? [{ id: "water", value: { at: (p, o) => (asked.push({ p: [...p], not: o?.not ?? null }), answer(p, o?.not ?? null, ids.hull)) } }] : collect(name));
+    play(api);
+    w.tick(1 / 60, 8 * 60);
+    const out = { asked, held: heldAt(w, ids.hull) ?? null, hull: ids.hull, doc: structuredClone(doc.objects[ids.hull].transform) };
+    w.done();
+    w = null;
+    return out;
+  };
+  for (const [label, answer] of Object.entries(CASES))
+    it(label, async () => {
+      const base = await run(CASES["in open water"]);
+      const r = await run(answer);
+      // asked once a step about her, with her left out, at a finite point (the floats and swimmers ask for themselves)
+      const hers = r.asked.filter((a) => a.not === r.hull);
+      expect(hers.length).toBeGreaterThanOrEqual(470);
+      expect(hers.length).toBeLessThanOrEqual(490);
+      for (const a of hers) expect(a.p.every(Number.isFinite)).toBe(true);
+      const got = answer([0, 0, 0], r.hull, r.hull);
+      if (!got) {
+        // no water: she isn't stepped, and rests where the doc has her
+        expect(r.held).toBeNull();
+      } else {
+        // she floats on the water she was given: her draft off its level is her draft in open water
+        expect(r.held.position[1] - got.level).toBeCloseTo(base.held.position[1], 1);
+      }
+    });
+});
