@@ -20,6 +20,7 @@
 // metadata does, so the carry snaps it to the same stand the bin does.
 
 import { FIT, HATCH_SPEED, HATCH_TRAVEL, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
+import { DEPTH } from "./sim.js";
 import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WATER_TRAIT, WEATHER, WINCH, isOpenWater } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
@@ -59,8 +60,11 @@ export function seaObject({ seed, scale = 1, level = 0, name = "Sea", clip = nul
   };
 }
 
-/** The box a Sloop part's Sea keeps, centred on her, where the world offers no open water: 60 m square, 6 m deep. */
-export const SLOOP_CLIP = Object.freeze([60, 6, 60]);
+/** How deep every Sea sailing writes a clip for is (m): a metre below the bottom a dropped anchor lies on (sim.js DEPTH), so her anchor and chain stay in her water wherever her crew lets it go. */
+export const SEA_CLIP_DEPTH = DEPTH + 1;
+
+/** The box a Sloop part's Sea keeps, centred on her, where the world offers no open water: 60 m square, SEA_CLIP_DEPTH deep. */
+export const SLOOP_CLIP = Object.freeze([60, SEA_CLIP_DEPTH, 60]);
 
 /** Does a doc have open water (an object with the water trait and no size)? */
 export const hasOpenWater = (d) => Object.values(d?.objects ?? {}).some(isOpenWater);

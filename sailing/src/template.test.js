@@ -2,7 +2,7 @@
 // drop context): what it lays out, where, and with which traits.
 import { describe, it, expect } from "vitest";
 import template from "./template.js";
-import { FIT } from "./ship.js";
+import { FIT, partMeshes } from "./ship.js";
 import { BUOY_REACH, CLIP_MARGIN, ISLET_REACH, REACH, WAY, headTo, layOutShip, seaClip, turn } from "./layout.js";
 import { DEPTH } from "./sim.js";
 import { RODE } from "./traits.js";
@@ -10,6 +10,19 @@ import { SLOOP } from "./hull-model.js";
 import { emptyScene, fakeDrop } from "./test/fakes.js";
 
 const fakeScene = (doc, o) => fakeDrop(doc, o);
+/** The islet's mesh as it is drawn (every primitive: the rock and the lighthouse). */
+const ISLET_MESH = partMeshes("islet").flatMap((m) => m.primitives);
+
+describe("the islet's reach is the mesh's", () => {
+  it("ISLET_REACH (24 m × 1.3, 31.2) is at least the farthest vertex of the drawn islet from its middle", () => {
+    expect(ISLET_REACH).toBeCloseTo(31.2, 9);
+    let far = 0;
+    for (const p of ISLET_MESH) for (let i = 0; i < p.positions.length; i += 3) far = Math.max(far, Math.hypot(p.positions[i], p.positions[i + 2]));
+    // the rock reaches some 27.8 m at its base (y −4), well past "some 25 m across"
+    expect(far).toBeGreaterThan(27);
+    expect(ISLET_REACH).toBeGreaterThanOrEqual(far);
+  });
+});
 
 
 describe("the Ship at sea template", () => {
@@ -186,7 +199,9 @@ describe("the templates' clips (W26 extended): every template doc's Sea keeps a 
         expect(seas).toHaveLength(1);
         const sea = seas[0];
         const [w, depth, l] = sea.traits.water.clip;
-        expect(depth).toBe(anchored ? DEPTH + 1 : 6);
+        // under way too: her crew may let the anchor go, and it lies at DEPTH (10 m) with her chain above it
+        expect(depth).toBe(11);
+        expect(depth).toBeGreaterThan(DEPTH);
         expect(depth).toBeGreaterThan(SLOOP.draft);
         // a point in the Sea's own frame (its yaw undone, the long way)
         const yaw = sea.transform.rotation[1];
@@ -208,6 +223,21 @@ describe("the templates' clips (W26 extended): every template doc's Sea keeps a 
           expect(Math.abs(x) + c.r + CLIP_MARGIN).toBeLessThanOrEqual(w / 2 + 1e-6);
           expect(Math.abs(z) + c.r + CLIP_MARGIN).toBeLessThanOrEqual(l / 2 + 1e-6);
         }
+        // the islet as drawn: every vertex of its mesh (at its object's place, turn and
+        // scale), not the constant, is inside the box with the margin to spare
+        const islet = by("Islet");
+        const [ix, iz] = local(islet.transform.position);
+        const ir = islet.transform.rotation[1], is = islet.transform.scale ?? 1;
+        let worst = Infinity;
+        for (const p of ISLET_MESH)
+          for (let i = 0; i < p.positions.length; i += 3) {
+            const mx = p.positions[i] * is, mz = p.positions[i + 2] * is;
+            // the mesh's offset in the world, then in the Sea's frame (both turns about +Y)
+            const wx = mx * Math.cos(ir) + mz * Math.sin(ir), wz = -mx * Math.sin(ir) + mz * Math.cos(ir);
+            const lx = ix + wx * Math.cos(yaw) - wz * Math.sin(yaw), lz = iz + wx * Math.sin(yaw) + wz * Math.cos(yaw);
+            worst = Math.min(worst, w / 2 - Math.abs(lx), l / 2 - Math.abs(lz));
+          }
+        expect(worst).toBeGreaterThanOrEqual(CLIP_MARGIN - 1e-6);
         // and no bigger than that: some circle touches each side
         for (const [k, half] of [[0, w / 2], [1, l / 2]]) {
           const lo = Math.min(...circles.map((c) => local(c.at)[k] - c.r - CLIP_MARGIN));

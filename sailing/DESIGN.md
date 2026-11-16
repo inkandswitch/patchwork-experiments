@@ -1555,7 +1555,7 @@ a scene:part in index.js under "Sailing":
 | Part | Pieces (the first is selected) | Tags | Traits |
 |---|---|---|---|
 | Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `sailing.weather` if the scene has none |
-| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 6 × 60 m, centred on her) and `sailing.weather` if the scene has no open water |
+| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `sailing.weather` if the scene has no open water |
 | Mast and sail | the mast; the boom and sail, and the jib on its forestay, under it | `sailing.mast` | `sailing.sail`, `sailing.jib` |
 | Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
 | Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |

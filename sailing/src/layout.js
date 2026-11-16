@@ -10,7 +10,8 @@
 // Everything here takes what it needs ({ file or repo, change, newId }),
 // which a template's context has.
 
-import { PIECES, WIND, bringSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
+import { PIECES, SEA_CLIP_DEPTH, WIND, bringSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
+import { ISLET_REACH } from "./ship.js";
 import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP, WEATHER } from "./traits.js";
 import { SLOOP } from "./hull-model.js";
 import { DEPTH } from "./sim.js";
@@ -74,8 +75,10 @@ export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [
 
 /** How far the template's Sea reaches past what it covers (m). */
 export const CLIP_MARGIN = 10;
-/** The islet's reach from its middle (m): the rock is some 25 m across, and its skirt of surf. */
-export const ISLET_REACH = 15;
+/** The islet's reach from its middle (m): ship.js's bound on its rock, 31.2 (the mesh reaches 27.8, at its base). */
+export { ISLET_REACH };
+/** How deep every Sea sailing writes a clip for is (m): a metre below the bottom a dropped anchor lies on (sim.js DEPTH), so her chain is in it wherever her crew lets it go. */
+export { SEA_CLIP_DEPTH };
 /** A buoy's reach (m). */
 export const BUOY_REACH = 2;
 
@@ -90,9 +93,9 @@ export const BUOY_REACH = 2;
  *   - under way: a circle of her length about her start;
  *   - every landmark (the islet ISLET_REACH about its middle, a buoy
  *     BUOY_REACH),
- * and CLIP_MARGIN more all round. Under way it is 6 m deep (more than any
- * hull's draft); at anchor it reaches a metre below the bottom her anchor
- * lies on (DEPTH), so her chain is in it. Pure.
+ * and CLIP_MARGIN more all round. Under way or at anchor it is SEA_CLIP_DEPTH
+ * deep: a metre below the bottom a dropped anchor lies on (DEPTH), so her
+ * chain is in it whenever it goes down. Pure.
  * @returns {{ clip: number[], position: number[], yaw: number, covers: { at: number[], r: number }[] }}  the clip, the Sea's place (its centre, level at at[1]) and heading, and what it covers (in the world)
  */
 export function seaClip({ anchored = false, at = [0, 0, 0], yaw = 0, loa = SLOOP.length } = {}) {
@@ -112,7 +115,7 @@ export function seaClip({ anchored = false, at = [0, 0, 0], yaw = 0, loa = SLOOP
   const tidy = (v) => Math.round(v * 1e6) / 1e6 + 0;
   const centre = turn([(x0 + x1) / 2, 0, (z0 + z1) / 2], yaw, at);
   return {
-    clip: [tidy(x1 - x0), anchored ? DEPTH + 1 : 6, tidy(z1 - z0)],
+    clip: [tidy(x1 - x0), SEA_CLIP_DEPTH, tidy(z1 - z0)],
     position: [tidy(centre[0]), at[1], tidy(centre[2])],
     yaw,
     covers: covers.map(({ at: p, r }) => ({ at: turn(p, yaw, at), r })),
