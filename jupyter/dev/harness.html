@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Jupyter tool harness</title>
+    <!-- stands in for Patchwork's sync server preconnect; nothing listens here -->
+    <link rel="preconnect" href="http://127.0.0.1:9" />
+    <style>
+      html, body, #app { margin: 0; block-size: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./harness.ts"></script>
+  </body>
+</html>

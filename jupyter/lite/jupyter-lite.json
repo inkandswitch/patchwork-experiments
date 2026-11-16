@@ -1,0 +1,20 @@
+{
+  "jupyter-lite-schema-version": 0,
+  "jupyter-config-data": {
+    "appName": "Patchwork Notebook",
+    "disabledExtensions": [
+      "@jupyterlab/codemirror-extension:binding",
+      "@jupyterlite/application-extension:service-worker-manager",
+      "@jupyterlab/apputils-extension:announcements",
+      "@jupyter-notebook/notebook-extension:open-tree-tab",
+      "@jupyter-notebook/application-extension:logo",
+      "@jupyterlite/notebook-application-extension:logo",
+      "@jupyter-notebook/application-extension:pages"
+    ],
+    "litePluginSettings": {
+      "@jupyterlite/pyodide-kernel-extension:kernel": {
+        "disablePyPIFallback": true
+      }
+    }
+  }
+}
