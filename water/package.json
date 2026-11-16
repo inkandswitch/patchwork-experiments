@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "main": "./dist/index.js",
-  "description": "Water for a scene's world: one surface per world, the outermost doc's, that whatever floats in a linked doc reads in its own frame and on its own clock. Its waves come from whoever contributes them (sailing's sea). Built only from scene extensions.",
+  "description": "Water as a shape: an object whose extent says whether it is weather (open water, the outermost doc's, read by everything in that world in its own frame and clock) or a thing (a box of water its own doc keeps wherever it is placed). Waves (sailing's sea) and a current are behaviours put on it. Built only from scene extensions.",
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
