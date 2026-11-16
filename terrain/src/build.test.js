@@ -253,6 +253,33 @@ describe("buildTerrain with a look and a site", () => {
   it("is deterministic with all of it", () => {
     expect(Buffer.from(buildTerrain({ doc, dem: dem(), features: features(), look }).glb).equals(Buffer.from(built.glb))).toBe(true);
   });
+  it("cuts the shore's bands crisp, and draws no surf, cloud or boats about the harbour for a place whose look has none", () => {
+    expect(built.stats.shore.cut).toBeGreaterThan(0);
+    expect(built.stats.surf).toBe(null);
+    expect(built.stats.clouds).toBe(null);
+    for (const name of ["Surf", "Low cloud and mist", "Boats about the harbour"]) expect(json.nodes.some((n) => n.name === name)).toBe(false);
+  });
+  it("draws surf where the place has a swell, cloud and boats where its look asks, each on its layer, and is deterministic", () => {
+    const [blat, blon] = ll(30, 100);
+    const dressed = { ...doc, swell: { from: 270 }, look: { ...(doc.look ?? {}), surf: { reach: 600, min: 0.2 }, clouds: { sheets: { levels: [8], every: 4, below: 30, above: 30, chance: 1, size: 200, alpha: 0.5, clear: 2 }, mist: null }, boats: [{ type: "troller", lat: blat, lon: blon, heading: 90, length: 12 }] } };
+    const b = buildTerrain({ doc: dressed, dem: dem(), features: features(), look });
+    const j = parseGLB(b.glb).json;
+    const layers = j.scenes[0].extras.layers.map((l) => l.id);
+    expect(layers).toContain("surf");
+    expect(layers).toContain("weather");
+    expect(b.stats.surf.exposed).toBeGreaterThan(0);
+    expect(b.stats.clouds.sheets).toBeGreaterThan(0);
+    expect(j.nodes.find((n) => n.name === "Surf").extras.layer).toBe("surf");
+    expect(j.nodes.find((n) => n.name === "Low cloud and mist").extras.layer).toBe("weather");
+    expect(j.nodes.find((n) => n.name === "Boats about the harbour").extras.layer).toBe("boats");
+    // the surf opaque and unlit, the cloud blended and unlit
+    const matOf = (name) => j.materials[j.meshes[j.nodes.find((n) => n.name === name).mesh].primitives[0].material];
+    expect(matOf("Surf").alphaMode).toBe(undefined);
+    expect(matOf("Surf").extensions.KHR_materials_unlit).toEqual({});
+    expect(matOf("Low cloud and mist").alphaMode).toBe("BLEND");
+    expect(matOf("Low cloud and mist").extensions.KHR_materials_unlit).toEqual({});
+    expect(Buffer.from(buildTerrain({ doc: dressed, dem: dem(), features: features(), look }).glb).equals(Buffer.from(b.glb))).toBe(true);
+  });
   it("a place with no look at all builds as before: the chart palette, no forest, no buildings", () => {
     const { look: _l, ...plain } = terrainDoc();
     void _l;

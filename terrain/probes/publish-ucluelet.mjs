@@ -40,7 +40,8 @@
 //    - node builds the same GLB from the same docs, byte for byte; the
 //      fingerprint survives every url rewritten; a viewer without the
 //      terrain plugin still sees it;
-//    - screens: the home view, the boatyard close, the inlet, Amphitrite Point.
+//    - screens: the home view, the boatyard close, the inlet, Amphitrite Point,
+//      the town's waterfront from the water, the surf, the cloud on Mount Ozzard.
 // 3. Unless --dry-run: as publish-rvyc.mjs, every doc made anew on the
 //    server and read back from a fresh repo.
 
@@ -147,7 +148,7 @@ try {
   check("the heightfield is the whole grid at 20 m", J(t.grid) === J({ nx: GRID.n, nz: GRID.n, x0: GRID.x0, z0: GRID.z0, cell: GRID.cell }), t.grid);
   check("the boatyard and the lighthouse are among its places", ["Rising Tide Boat Works (the hangar), 1970 Harbour Crescent", "Amphitrite Point Lighthouse"].every((n) => t.places.some((p) => p.name === n)), t.places.map((p) => p.name));
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
-  check("the GLB's layers: forest, buildings, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden)", ["forest", "buildings", "boats", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
+  check("the GLB's layers: forest, buildings, boats, surf, low cloud, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden)", ["forest", "buildings", "boats", "surf", "weather", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
   check("the trees are drawn as one InstancedMesh a species", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
   check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#bcc3c4" && t.atmosphere?.sky?.top === "#7f8b94" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
@@ -164,6 +165,10 @@ try {
     "ucluelet-inlet": [[1100, 260, 900], [-1600, 0, -1900]],
     "ucluelet-amphitrite": [[1080, 32, 3340], [1228, 9, 3203]],
     "ucluelet-overview": [[3000, 4200, 9000], [5500, 0, 2500]],
+    // from the water: the town's waterfront, the surf under the lighthouse, the cloud on Mount Ozzard
+    "ucluelet-low-harbour": [[1450, 4, 650], [800, 10, 820]],
+    "ucluelet-surf": [[930, 22, 3480], [1228, 6, 3203]],
+    "ucluelet-ozzard": [[600, 40, 300], [4770, 320, -1045]],
   };
   for (const [name, [pos, tgt]] of Object.entries(views)) {
     await P(`setCamera(${J(pos)}, ${J(tgt)})`);

@@ -298,8 +298,8 @@ export const SITE = Object.freeze({
       confidence: "footprint high (edges 39.15, 39.28, 34.92, 34.91 m against the labelled 39.1/39.2/34.8; 1,369 m²); floor EL 4.08–4.22 test pits; ridge EL 15.93; door head EL 11.51. Absolute height in doubt: the survey's slab (+4.20 about MWL) is 1.14 m above the lidar's ground here (+3.06, YARD)",
       assumed: "Heights conformed to the lidar's ground (YARD): floor +3.06 about MWL, not the survey's +4.20; the survey's differences kept (door head 7.39 m, ridge 11.81 m above the floor). Eave 10.6 m above the floor, from the July 2026 photo's proportions (±0.5 m), so a 4° gable with the ridge north-west–south-east and the trusses spanning the 34.8 m faces. Main doors: sliding leaves across nearly the whole north-west face to the 7.4 m door head (the photo; leaves and their number not surveyed), painted green with some stripped. The spec gives that face two ways, as 12.7 + 3.1 + 19.0 m (the 3.1 m small door between two stretches) and as leaves across 0.8–34.0 m; drawn as leaves either side of the small door (0.8–12.7 and 15.8–34.0 m), which is both if the small door is a wicket in its own panel. Walls: diagonal timber sheathing, stripped and weathered cedar brown and red (Ha-Shilth-Sa photo, 2026-07-01). Roof dark grey.",
     },
-    { id: "B", kind: "box", name: "Building B (former cold storage; Rising Tide's office and event space?)", layer: "boatyard.kept", corners: [[48.9489373, -125.5576566], [48.9490182, -125.5573702], [48.9488633, -125.5572702], [48.9487821, -125.5575579]], base: fromSurvey(4.12), top: fromSurvey(10.61), roof: "flat", colours: { walls: "#cfd3cf", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}, but Rising Tide's office is a "remediation of former cold storage" of this size: drawn as staying until a newer source says. Colours assumed (pale cladding).` },
-    { id: "D", kind: "box", name: "Building D (silver corrugated)", layer: "boatyard.kept", corners: [[48.9491696, -125.5582186], [48.9492953, -125.5583005], [48.9493521, -125.5580994], [48.9492262, -125.5580181]], base: fromSurvey(4.12), top: fromSurvey(13.03), eave: fromSurvey(12.0), roof: "gable", colours: { walls: "#b9bdbf", roof: "#a4a9ac" }, source: SURVEY, assumed: "Survey \"(TO PL)\", not marked to be removed; roof EL 13.03 taken as the ridge, the eave 1 m lower and the slab at the hangar's (assumed)." },
+    { id: "B", kind: "box", name: "Building B (former cold storage; Rising Tide's office and event space?)", layer: "boatyard.kept", corners: [[48.9489373, -125.5576566], [48.9490182, -125.5573702], [48.9488633, -125.5572702], [48.9487821, -125.5575579]], base: fromSurvey(4.12), top: fromSurvey(10.61), roof: "flat", cladding: "corrugated", colours: { walls: "#cfd3cf", roof: "#8e9295", trim: "#5d6266" }, source: SURVEY, assumed: `${TBR}, but Rising Tide's office is a "remediation of former cold storage" of this size: drawn as staying until a newer source says. Colours and cladding assumed (pale corrugated, a dark trim at the roof).` },
+    { id: "D", kind: "box", name: "Building D (silver corrugated)", layer: "boatyard.kept", corners: [[48.9491696, -125.5582186], [48.9492953, -125.5583005], [48.9493521, -125.5580994], [48.9492262, -125.5580181]], base: fromSurvey(4.12), top: fromSurvey(13.03), eave: fromSurvey(12.0), roof: "gable", cladding: "corrugated", colours: { walls: "#b9bdbf", roof: "#a4a9ac", trim: "#6f7477" }, source: SURVEY, assumed: "Survey \"(TO PL)\", not marked to be removed; roof EL 13.03 taken as the ridge, the eave 1 m lower and the slab at the hangar's (assumed). Silver corrugated with a darker trim (the 2025 drone photo's look; trim assumed)." },
     { id: "C", kind: "box", name: "Lean-to C along the hangar's south-west wall", layer: "boatyard.removed", corners: [[48.9492073, -125.5580862], [48.9488781, -125.5578716], [48.9488559, -125.5579466], [48.9491857, -125.5581619]], base: fromSurvey(4.12), top: fromSurvey(4.12) + 5, eave: fromSurvey(4.12) + 3.6, roof: "shed", colours: { walls: "#9cc3ae", roof: "#8e9295" }, source: SURVEY, assumed: `${TBR}. Heights assumed (5 m against the hangar, 3.6 m outside); mint-green corrugated as in the 2025 drone photo.` },
     { id: "E", kind: "box", name: "Building E", layer: "boatyard.removed", corners: [[48.9490173, -125.5573702], [48.9490389, -125.5572908], [48.9488837, -125.5571916], [48.9488621, -125.557271]], base: fromSurvey(4.12), top: fromSurvey(7.37), roof: "flat", colours: { walls: "#d9dbd8", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 7.37; colours assumed.` },
     { id: "F", kind: "box", name: "Building F", layer: "boatyard.removed", corners: [[48.9489589, -125.5571331], [48.9489359, -125.5572157], [48.9490412, -125.5572837], [48.9490645, -125.5572005]], base: fromSurvey(4.12), top: fromSurvey(9.5), eave: fromSurvey(8.6), roof: "gable", colours: { walls: "#b8bcbc", roof: "#9ea3a6" }, source: SURVEY, assumed: `${TBR}; roof EL 9.50 as the ridge; colours assumed.` },
@@ -316,7 +316,7 @@ export const SITE = Object.freeze({
       layer: "boatyard.wharf",
       corners: [[48.94982, -125.5572937], [48.9502144, -125.5573043], [48.9502116, -125.5575711], [48.9498421, -125.557566]],
       deck: fromSurvey(4.12),
-      shed: { along: [0.82, 0.98], across: [0.15, 0.85], height: 4.5, colour: "#eceae4", roof: "#8e9295" },
+      shed: { along: [0.82, 0.98], across: [0.15, 0.85], height: 4.5, colour: "#eceae4", roof: "#8e9295", cladding: "corrugated", trim: "#5d6266" },
       colours: { deck: "#6f675c", piles: "#2e2721" },
       source: SURVEY,
       confidence: "position high: 43.9 × 19.5 m, its axis about due north",
@@ -462,9 +462,34 @@ export const LANDMARKS = Object.freeze([
  * Colours are art direction for the general West Coast vernacular, not
  * checked house by house; the tree mixes are assumptions on the Coastal
  * Western Hemlock very-wet hypermaritime zone (CWHvh1).
+ *
+ * The ground's colours are darker than the default palette's: this coast
+ * is black rock (the splash zone's lichen, wet basalt and greywacke) with
+ * dark conifers standing on it, not a sand-and-mud shore, and the town's
+ * lots are among trees, not lawns. The fringe at the water is stands of
+ * four to six crowns a node; the forest roof is darker and ragged (±3 m a
+ * node). Surf where the coast is open to the swell (surf.js), and low
+ * cloud on the hills and mist in the forest's hollows (cloud.js). All art
+ * direction, from the District's own photographs' general look and
+ * descriptions ("a true working harbour", Mount Ozzard "looming over" it),
+ * not measurements.
  */
 export const LOOK = Object.freeze({
   palette: "west-coast",
+  colours: {
+    rockweed: "#35311f",
+    barnacle: "#585752",
+    lichen: "#1b1b1a",
+    rock: "#3b3a37",
+    forestFloor: "#1e281b",
+    shrub: "#2b3524",
+    lawn: "#363d2e",
+    yard: "#55585a",
+    grass: "#3f4a30",
+    bog: "#4a4831",
+    beach: "#5d5850",
+    bareRock: "#403f3b",
+  },
   trees: {
     fringe: { spruce: 45, hemlock: 25, cedar: 20, pine: 10 },
     inland: { hemlock: 50, cedar: 35, spruce: 10, alder: 5 },
@@ -473,12 +498,29 @@ export const LOOK = Object.freeze({
     // the canopy grid is the truth for where trees stand and how tall: they're placed only where it is over 5 m
     canopy: true,
     fringeWidth: 40,
-    max: 30000,
+    // a stand of 4 to 6 crowns on each fringe node (forest.js standMesh)
+    stands: [4, 6],
+    // two trees a residential node (20 m): the town among spruce and cedar
+    townPerHectare: 50,
+    roofColours: ["#141f17", "#18251a", "#1b2a1d", "#1f2d1d", "#1c2a24"],
+    roofJitter: 3,
+    max: 40000,
   },
+  // foam where the coast is open to the swell (doc.swell.from): surf.js's defaults
+  surf: {},
+  // stratus on the hills at 320 and 460 m, mist over the forest's hollows: cloud.js's defaults
+  clouds: {},
+  // dressing about the harbour (boats.js), not data: assumed, each in at least 10 m of water (checked against the heights)
+  boats: [
+    { id: "troller-outbound", type: "troller", lat: 48.9485, lon: -125.551, heading: 125, length: 12, trim: "#8e2f27", note: "a troller under way, outbound down the harbour" },
+    { id: "whalewatch", type: "whalewatch", lat: 48.9445, lon: -125.5415, heading: 140, length: 12, note: "a whale-watching boat heading out past Lyche Island" },
+    { id: "water-taxi", type: "watertaxi", lat: 48.943, lon: -125.5385, heading: 305, length: 9, note: "a water taxi coming in" },
+    { id: "seiner-anchored", type: "seiner", lat: 48.95, lon: -125.548, heading: 300, length: 14, trim: "#2f3e55", note: "a seiner at anchor, head to the north-westerly (in about 7 m)" },
+  ],
 });
 
-/** Where the scene opens: above the boatyard's south-west corner, looking north-north-east (about 36°) over the hangar and the planned dock, across Ucluelet Inlet to the mountains beyond. */
-export const HOME = Object.freeze({ position: Object.freeze([-210, 105, 360]), target: Object.freeze([170, 0, -170]) });
+/** Where the scene opens: about 60 m above the old seaplane base's frontage, looking south-east (about 138°) down the harbour, past the basins and the town's waterfront and Lyche Island, to the inlet's mouth. */
+export const HOME = Object.freeze({ position: Object.freeze([-40, 62, 20]), target: Object.freeze([760, 0, 900]) });
 
 /**
  * Where the sloop lies: at anchor in the harbour about 70 m north of the

@@ -112,9 +112,10 @@ On an empty scene's start screen, **Ucluelet (Rising Tide Boat Works)**:
    about 70 m north of the planned dock's arm (48.95078 N, 125.5561 W, an
    assumed spot: no anchorage is charted there) in about 12 m of water,
    head to wind, sails down;
-5. starts people in Look above the boatyard's south-west corner, looking
-   north-north-east (about 36°) over the hangar and the planned dock,
-   across Ucluelet Inlet to the mountains.
+5. starts people in Look about 60 m above the old seaplane base's
+   frontage, looking south-east (about 138°) down the harbour past the
+   basins, the town's waterfront and Lyche Island to the inlet's mouth,
+   with a few boats about the harbour (dressing: below).
 
 Without sailing it is the place alone, and says so.
 
@@ -208,9 +209,9 @@ confidence and what is assumed; the GLB puts them on layers:
 
 | Layer | What | Confidence |
 |---|---|---|
-| Buildings staying | **The hangar** (survey building A): 39.2 × 34.9 m, 1,369 m², floor +3.06, ridge +14.87, eave +13.66 about MWL (the survey's +4.20 / +16.01 conformed to the lidar: below); a 4° gable, its ridge north-west–south-east (157° true), trusses spanning the 34.8 m faces; sliding doors across the north-west face to a 7.39 m door head, either side of a 3.1 m small door, a timber header band above; walls diagonal timber sheathing weathered cedar brown and red, doors green, part stripped; dark grey roof. Building B (the old cold storage, possibly their office), building D (silver) | footprint and heights high; eave ±0.5 m, doors and colours from the July 2026 photo |
+| Buildings staying | **The hangar** (survey building A): 39.2 × 34.9 m, 1,369 m², floor +3.06, ridge +14.87, eave +13.66 about MWL (the survey's +4.20 / +16.01 conformed to the lidar: below); a 4° gable, its ridge north-west–south-east (157° true), trusses spanning the 34.8 m faces, white rake trim up both gables and fascia along the eaves; sliding doors across the north-west face to a 7.39 m door head, either side of a 3.1 m small door, a timber header band above, the roof 1.2 m over it; walls diagonal timber sheathing weathered cedar brown and red, doors green, part stripped; dark grey roof. Building B (the old cold storage, possibly their office), building D (silver), both corrugated with a dark trim under the roof (cladding and trim assumed) | footprint and heights high; eave ±0.5 m, doors and colours from the July 2026 photo |
 | Buildings marked to be removed | C (the lean-to), E, F, G, H, I (white roof), J (rust roof), K, Q, **hidden by default** (the scene shows the plan; turn the layer on for March 2026) | footprints high; heights partly assumed |
-| Existing wharf and pier | the 43.9 × 19.5 m pile wharf with its white shed, at yard level; the L-pier's north leg (OSM way 751431449); the Pat Leslie public launch | position high; deck heights assumed |
+| Existing wharf and pier | the 43.9 × 19.5 m pile wharf with its white corrugated shed, at yard level; the L-pier's north leg (OSM way 751431449); the Pat Leslie public launch | position high; deck heights assumed |
 | Today's pier arm | the L-pier's 64 m east arm as OSM draws it, a fixed pier at yard level, **hidden by default**: the planned dock starts at the same corner and is taken to replace it. For today's harbour turn "planned" off and this and "removed" on. OSM doesn't tag it floating, so no boats are dressed along it | position medium (OSM); width and deck assumed; that the plan replaces it is assumed |
 | Planned haul-out pier and dock | two concrete runways about 40 m long, 12.7 m apart, 2.4 m wide (a 10.3 m well for a 30 ft beam), Corten-look screens; a **110 t travel lift** straddling them; a 15 m gangway; the dock's arm, 3.6 m floats at +0.5 m with guide piles and a **solar canopy**, and **three DC fast chargers** | **low**: Rising Tide's schematic registered to the L-pier (position ±15 m, bearing ±5°, length ±10 m); the heights at the runways' heads are only −1.7 and −2.5 m about MWL (`headDepth`: dry, or 0.3 m, at the lowest normal tide; a 110 t lift's well wants 3 m or more), further evidence the position, or the 12 m-west fit, is unsettled; the travel lift's size and colour (blue), the gangway and the canopy's form are assumed |
 
@@ -277,7 +278,26 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   rockweed, barnacle to MHHW, black lichen to HHWLT + 1.1 m, bare rock), a
   darker, greener sea floor with depth, lawns, yards, bog, beach (Cadboro's
   sand, Ucluelet's cobble), forest floor. Art direction, `COLOURS`; a place
-  overrides any in `look.colours`. At 20 m the bands get only a few vertices.
+  overrides any in `look.colours` (Ucluelet's are darker throughout: black
+  rock and dark forest, the town's lots among trees, the yard grey gravel).
+- **The shore's bands, crisp** (`shore.js`): per-vertex colour smears a
+  band a metre or two high across a whole 20 m cell, and a rocky shore
+  reads as a tan mudflat. So every ground triangle that spans a band's
+  edge (rockweed's top, MHHW, the lichen's, the bare rock's) is cut along
+  the level its height crosses it at, and at the shore each piece is its
+  band's one colour (the wet ones, rockweed and below, 25% darker); the
+  ground doesn't move. A point on an edge is made from the edge's two
+  nodes, lower id first, and the level, so both triangles on the edge make
+  it to the bit, and every triangle that spans a level is cut, at the shore
+  or not, so no edge is cut on one side and whole on the other (away from
+  the shore a piece keeps the triangle's colours exactly). Ucluelet: 29,326
+  triangles cut, 134,638 vertices more (about 4.5 MB). What it can't fix:
+  `burn.js` holds the shore band (the first ~28 m of land) on a 1-in-20
+  slope, so the first node inland sits at about +1 m and a rocky point like
+  Amphitrite has a 20 m shelf at the waterline, now drawn as banded rock
+  rather than mud. Steepening the band where the land behind it is high
+  would move the drawn shoreline off OSM's (the band is symmetric about it)
+  and change the depths sailing reads there: not done here.
 - **The forest**: the canopy (the lidar's where measured; else an assumed
   height in OSM's woods: `look.trees.assumed`, 18 m ±20%), and none where
   something is built: the lidar's surface less its terrain is a roof's
@@ -293,7 +313,16 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   (an RTIN over the ground plus the smoothed canopy, where a node and its
   eight neighbours are forest at least 20 m from the water), and
   **instanced trees** in front of it: on the 40 m fringe at the water, along
-  the roof's edges, sparsely on residential lots. Species by the place's
+  the roof's edges, sparsely on residential lots (`townPerHectare`, two a
+  node at Ucluelet's 50). Where a place's trees have `stands` (Ucluelet's
+  4 to 6), a fringe node gets one stand of that many crowns by its hash,
+  in place of a tree or two: the tallest in the middle, the rest round it
+  0.16 of its height out and shorter, crowns overlapping, trunks to 0.2
+  below the foot (a mesh a species and size, instanced like the trees), so
+  the forest stands tight at the top of the rock. A place may darken the
+  roof (`roofColours`) and roughen it (`roofJitter`: each roof node up or
+  down by its own hash, Ucluelet ±3 m) so the hills read as ragged
+  conifers, not turf. Species by the place's
   mixes (assumptions: Ucluelet's on the Coastal Western Hemlock zone, spruce,
   hemlock, cedar, shore pine, alder; Cadboro's on the Coastal Douglas-fir
   zone, fir, Garry oak, arbutus, cedar), heights the canopy's ±15%, all by
@@ -309,9 +338,39 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
 
 The small solids carry no normals (a glTF loader draws them flat-shaded,
 which they are), and the buildings are a primitive a colour: Ucluelet's GLB
-is about 23.5 MB, Cadboro Bay's 15.3 MB (it was 7.8 MB; its 5,910
-buildings are most of the rest).
+is about 32.9 MB (23.5 MB before the shore's cut, the stands, 40,000 trees,
+the surf and the cloud), Cadboro Bay's was 15.3 MB before the shore's cut
+(not measured since; it was 7.8 MB before its 5,910 buildings, most of the
+rest).
 
+- **Surf** (`surf.js`, where a place has a `swell` and `look.surf`):
+  dressing, from the place's shape (the source reads the swell's `from`
+  and nothing else of it, so its fingerprint follows the direction). OSM's coastline cut into pieces a cell
+  long, each with its sea side (where the grid is water a cell out) and its
+  exposure: the share of 9 rays fanned ±75° about the swell's direction
+  (285°, Ucluelet's assumed; wide, as a swell bends round a headland) that
+  get 3 km over open water. Where it is at least 0.35, a dashed band of
+  foam on the water (out to 4 + 12·exposure m), a sheet of spray standing
+  on it (white at the water, greying by 0.5 + 1.5·exposure m up: a flat
+  band is a hairline from a boat), and lace further out where it is open.
+  Unlit and opaque, `#e4ebe8` fading to the sea's grey-green `#5f6e6e` at
+  its edges (drawn blended, at the water's surface, it didn't show in the
+  stage). Ucluelet: 1,870 of 14,462 pieces (Amphitrite, the
+  Wild Pacific Trail shore, the outer islets).
+- **Low cloud and mist** (`cloud.js`, where a place's look has `clouds`):
+  weather dressing. Stratus sheets at 320 and 460 m wherever the ground at
+  every 8th node is near that level (the cloud base meeting a slope:
+  Mount Ozzard, the Mackenzie Range's flanks), by hash; thin mist over the
+  canopy in the forest's hollows. Each sheet three layers deep, its alpha
+  falling to nothing at its rim and wherever the ground is close under it,
+  so it thins into a hillside rather than cutting it. 285 sheets at
+  Ucluelet. The sky's "marine layer" doesn't thicken them (they are in
+  the GLB, the sky in a trait): a follow-up.
+- **Boats about the harbour** (`look.boats`): a few placed by hand, each
+  an assumption in at least 10 m of water: a troller outbound, a
+  whale-watching boat past Lyche Island, a water taxi coming in, a seiner
+  at anchor. Not the *Canadian Princess*: she was towed out of Ucluelet
+  in 2016 (CBC, Times Colonist).
 - **Boats on the floats** (`boats.js`): dressing, not data. Nobody maps
   which boat is in which slip, so each float's slips (one every 12 m a side,
   about two in three taken) get a troller, a small seiner or crabber, or an
@@ -322,7 +381,8 @@ buildings are most of the rest).
 
 The GLB declares layers (scene README, "GLB conventions"): **Forest**,
 **Buildings**, **Docks, floats and breakwaters**, **Lights, buoys and
-beacons**, **Landmarks**, **Moored boats (dressing)**, and a place's own (Ucluelet's boatyard and its five
+beacons**, **Landmarks**, **Moored boats (dressing)**, **Surf**, **Low
+cloud and mist**, and a place's own (Ucluelet's boatyard and its five
 sub-layers, the removed buildings and today's pier arm hidden by default:
 the scene shows the plan). The ground is on none.
 
@@ -517,10 +577,32 @@ land in the mesh is stretched; the heightfield stays true.
 - the land cover painted largest first with holes, at every node; the
   chamfer distance to water within 8.3% at every node; the shore's bands
   ordered by the tide and coloured as named;
+- the shore's cut: every triangle with corner heights from seven round
+  three levels (343) tiled exactly by its pieces, each inside its slab, its
+  winding kept, one piece a slab it reaches; a 5 × 5 mesh cut with no
+  crack (every inner edge two triangles', point for point), its bands
+  painted where they lie, every other colour exactly as it was;
+- the surf: exposure all, none and between behind a spit; pieces a cell
+  long facing the sea, none where land is on both sides, the same pieces
+  however the chain is cut; foam only where exposed, flat foam facing up,
+  spray within its height, every colour between white and the sea's, the
+  same bytes every time;
+- the clouds: the sheets of the grid the sheets of its tiles (every split
+  into rows); a sheet at a level exactly where the ground meets it; mist
+  only in the forest's hollows; nothing seen where the ground is close
+  under it; three layers a sheet;
+- the stands: one stand of 4–6 on every fringe node (each size used), the
+  same tree otherwise, two town trees a node at 50 a hectare, local tile by
+  tile; a stand's mesh its crowns, within its reach; each kind instanced
+  from its own mesh; the roof's jitter within ±3 m on roof nodes only;
+- corrugated cladding: ribs every 0.9 m and a band under the eave, just
+  outside the walls, either way round;
 - buildings: the oriented box of a rectangle at twelve turns and four
   starting corners; classes; a house's eave and ridge; what's left out;
 - a build with a look and a site: layers declared and used, the trees as
   nodes of a few shared meshes, what the site clears left out, determinism;
+  the shore cut; no surf, cloud or boats about without a swell and a look
+  asking, and with them each on its layer, unlit (the cloud blended), determinism;
 - the deterministic sine, cosine and length the geometry uses (the engines'
   Math.sin and Math.hypot have been seen to differ by an ulp between node
   and Chrome, which made the two GLBs differ);
@@ -573,7 +655,8 @@ node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>]   # buil
 #   render's when it is built and nothing written to the doc after (every write is logged
 #   with its stack: one run of the url-rewrite check saw a stale render, not seen since),
 #   a viewer without the terrain plugin,
-#   and screens: home, the boatyard close, the dock, the inlet, Amphitrite Point
+#   and screens: home, the boatyard close, the dock, the inlet, Amphitrite Point, the
+#   town's waterfront from the water, the surf under the lighthouse, the cloud on Mount Ozzard
 node probes/fetch-cadboro.mjs [--cache <dir>] [--offline] [--out <dir>]
 #   fetches (or replays its recording of) NCEI and Overpass, and checks: the grid; every node
 #   classified with no conflicts; no open coastline end near the grid; the data is what was checked

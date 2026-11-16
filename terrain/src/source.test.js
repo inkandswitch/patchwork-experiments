@@ -66,6 +66,18 @@ describe("the terrain-mesh source", () => {
     expect(source.fingerprint(handle.doc())).not.toBe(a);
   });
 
+  it("reads the swell's direction (the surf's) and nothing else of it: a direction rebuilds, its height doesn't", async () => {
+    const { handle } = await stored();
+    const none = source.fingerprint(handle.doc());
+    handle.change((d) => (d.swell = { hs: 1.2, tp: 8.3, from: 285 }));
+    const a = source.fingerprint(handle.doc());
+    expect(a).not.toBe(none);
+    handle.change((d) => (d.swell.hs = 2));
+    expect(source.fingerprint(handle.doc())).toBe(a);
+    handle.change((d) => (d.swell.from = 270));
+    expect(source.fingerprint(handle.doc())).not.toBe(a);
+  });
+
   it("keeps its fingerprint when the docs are copied under new urls (as publishing does), and changes it when the data does", async () => {
     const { handle } = await stored();
     const d = handle.doc();
