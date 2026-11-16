@@ -272,7 +272,7 @@ the calls named here, never swapped.
 | `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
 | `held` | the view | the held tool, `{ ext, command, name, keys, pointer }`, or null |
 | `gesture` | the view | the open press session's declared keys, `{ owner, keys }`, or null |
-| `pointer` | the view | `{ locked, lock, wanted, released, refused }` (`src/stage/pointer.js`) |
+| `pointer` | the view | `{ locked, lock, wanted, released, refused, touch }` (`src/stage/pointer.js`; `touch`: the last press on the view was a finger, or none yet on a coarse pointer) |
 | `escape` | the view | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`). Leaving the focus is a layer only a general part sees |
 | `theme` | the view | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | `api.notify` | `[{ id, text, kind, at }]` |
@@ -1135,8 +1135,12 @@ event first, and its declared keys are its own.
 view grants it while nothing else wants the pointer (a held tool with
 `pointer: true`, a selection, an open popover or drawer). The browser's
 Escape releases it; the next press on the world only relocks. A refused
-lock leaves the body looking by drag. `locked ⇔ body.lock ∧ ¬wanted ∧
-¬released ∧ ¬refused`.
+lock leaves the body looking by drag, and so does touch (`touch`: every
+press on the view, wherever it lands, says whether it was a finger; a
+coarse pointer starts as touch; keys never change it). A finger on a locked
+view lets the lock go; a mouse press after touch is an ordinary press, on
+which the lock follows the formula (TOOLS.md Decisions 9). `locked ⇔
+body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch`.
 
 ## `api`
 
@@ -1920,7 +1924,7 @@ value and compass convention are sailing's to document:
 | `stage/ride.js` | riding: the camera carried by a moving object (pure) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the body stack, the held tool, popovers, lock, the ladder, keys, menu, cursor |
-| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused (pure) |
+| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch (pure) |
 | `stage/ladder.js` | the Escape ladder: which layer one Escape pops, and its hint (pure) |
 | `stage/bodies.js` | the stage's two bodies, Look and Edit; `editing(local)`, the one question the editor's chrome asks; `inBody`, the `edit: true` rule; the stack's model (`enterStep`, `leaveStep`) and where a doc starts people (`startBase`) (pure) |
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |

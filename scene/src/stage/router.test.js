@@ -3,7 +3,7 @@ import { DOUBLE_MS, DOUBLE_PX, DOUBLE_PX_TOUCH, buildEvent, createRouter, firstO
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
-function setup({ held = false, holders = {}, mac = false, base = {}, time, live } = {}) {
+function setup({ held = false, holders = {}, mac = false, base = {}, time, live, touch } = {}) {
   const root = document.createElement("div");
   root.tabIndex = 0;
   const port = document.createElement("div");
@@ -61,6 +61,7 @@ function setup({ held = false, holders = {}, mac = false, base = {}, time, live 
     mac,
     ...(time ? { time } : {}),
     ...(live ? { live } : {}),
+    ...(touch !== undefined ? { touch } : {}),
   });
   cleanups.push(() => {
     t.router.dispose();
@@ -887,7 +888,7 @@ describe("the pointer", () => {
     for (let i = 0; i < 4; i++) await Promise.resolve();
   };
 
-  it("H5: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused, for all 2⁴ cases × each body × {press, key}; after a release the next press only relocks", async () => {
+  it("H5: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch, for all 2⁵ cases × each body × {mouse press, touch press, key}; after a release the next mouse press only relocks; a finger never locks", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const bodies = [
       { id: "look", lock: false, base: true },
@@ -897,12 +898,13 @@ describe("the pointer", () => {
     ];
     let cases = 0;
     for (const body of bodies) {
-      for (let bits = 0; bits < 16; bits++) {
-        const want = { lock: !!(bits & 1), wanted: !!(bits & 2), released: !!(bits & 4), refused: !!(bits & 8) };
+      for (let bits = 0; bits < 32; bits++) {
+        // touch is where the view starts (a coarse pointer); refused, that the browser would refuse a request
+        const want = { lock: !!(bits & 1), wanted: !!(bits & 2), released: !!(bits & 4), refused: !!(bits & 8), touch: !!(bits & 16) };
         // the body's own lock decides `lock`: a case asking for lock on a body that doesn't lock is that body's
         if (want.lock !== body.lock) continue;
-        for (const ev of ["press", "key"]) {
-          const t = setup();
+        for (const ev of ["press", "touch", "key"]) {
+          const t = setup({ touch: want.touch });
           const lock = fakeLock(t, { refuse: want.refused });
           const press = vi.fn(() => true);
           const keyFn = vi.fn(() => true);
@@ -912,6 +914,8 @@ describe("the pointer", () => {
             t.inputs.view = { click: press, key: keyFn };
           }
           await settleLock();
+          // under touch nothing was ever asked for
+          if (want.touch) expect(t.requestLock).not.toHaveBeenCalled();
           if (want.released && lock.locked) lock.release();
           if (want.wanted) {
             t.wanted = true;
@@ -919,34 +923,108 @@ describe("the pointer", () => {
           }
           await settleLock();
           const st = t.router.state().pointer;
-          const expected = body.lock && !want.wanted && !(want.released && !want.refused) && !want.refused;
+          // (a release can only happen to a lock that was held: refused or under touch, there was none)
+          const released = want.released && body.lock && !want.refused && !want.touch;
+          const expected = body.lock && !want.wanted && !released && !want.refused && !want.touch;
           expect(lock.locked).toBe(expected);
           expect(st.locked).toBe(expected);
-          // (a release can only happen to a lock that was held: refused, there was none)
-          const released = want.released && body.lock && !want.refused;
           expect(st.released).toBe(released);
+          expect(st.touch).toBe(want.touch);
           if (ev === "press") {
+            // a mouse press: the input is no longer touch, and the lock follows the formula on it
             down(t);
             up(t);
             await settleLock();
             const relocks = released && !want.wanted;
             expect(press).toHaveBeenCalledTimes(relocks ? 0 : 1);
             expect(lock.locked).toBe(body.lock && !want.wanted && !want.refused);
+            expect(t.router.state().pointer.touch).toBe(false);
+          } else if (ev === "touch") {
+            // a finger: never locked after, and never only a relock
+            down(t, { pointerType: "touch" });
+            up(t, { pointerType: "touch" });
+            await settleLock();
+            expect(press).toHaveBeenCalledTimes(1);
+            expect(lock.locked).toBe(false);
+            expect(t.router.state().pointer).toMatchObject({ locked: false, touch: true, released });
           } else {
             key(t.root, "keydown", "w");
             await settleLock();
             expect(keyFn).toHaveBeenCalledTimes(1);
-            // a key never relocks
+            // a key never relocks, and never says what the input is
             expect(lock.locked).toBe(expected);
+            expect(t.router.state().pointer.touch).toBe(want.touch);
           }
           cases++;
           while (cleanups.length) cleanups.pop()();
         }
       }
     }
-    // look, edit and seat: 8 cases each (lock false) × 2; walk: 8 × 2
-    expect(cases).toBe(64);
+    // look, edit and seat: 16 cases each (lock false) × 3; walk: 16 × 3
+    expect(cases).toBe(192);
     warn.mockRestore();
+  });
+
+  it("a lock body pushed after a touch press never asks for the lock; a mouse press then asks once, and is an ordinary press", async () => {
+    const t = setup();
+    const lock = fakeLock(t);
+    down(t, { pointerType: "touch" });
+    up(t, { pointerType: "touch" });
+    expect(t.router.state().pointer.touch).toBe(true);
+    const click = vi.fn(() => true);
+    t.router.pushBody("w", { id: "walk", input: { click }, lock: true });
+    await settleLock();
+    expect(t.requestLock).not.toHaveBeenCalled();
+    expect(lock.locked).toBe(false);
+    expect(t.router.state().pointer).toMatchObject({ lock: true, locked: false, touch: true });
+    down(t);
+    // asked in the press's own handler (user activation)
+    expect(t.requestLock).toHaveBeenCalledTimes(1);
+    up(t);
+    await settleLock();
+    expect(t.requestLock).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1); // not consumed
+    expect(lock.locked).toBe(true);
+    expect(t.router.state().pointer).toMatchObject({ locked: true, touch: false });
+  });
+
+  it("locked, a finger on something over the canvas (not the canvas) lets the lock go, and the press still reaches it", async () => {
+    const t = setup();
+    const lock = fakeLock(t);
+    const button = document.createElement("button");
+    t.port.append(button);
+    const heard = vi.fn((e) => expect(e.defaultPrevented).toBe(false));
+    button.addEventListener("pointerdown", heard);
+    t.router.pushBody("w", { id: "walk", input: {}, lock: true });
+    await settleLock();
+    expect(lock.locked).toBe(true);
+    ptr("pointerdown", button, { pointerType: "touch" });
+    expect(t.exitLock).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledTimes(1);
+    ptr("pointerup", button, { pointerType: "touch" });
+    await settleLock();
+    expect(lock.locked).toBe(false);
+    // the page let go, not the browser: not released, so a mouse press is ordinary and locks
+    expect(t.router.state().pointer).toMatchObject({ locked: false, released: false, touch: true });
+    ptr("pointerdown", button, { pointerType: "mouse" });
+    await settleLock();
+    expect(lock.locked).toBe(true);
+    expect(t.router.state().pointer.touch).toBe(false);
+  });
+
+  it("a coarse pointer starts as touch: a lock body is not locked before any press", async () => {
+    const t = setup({ touch: true });
+    const lock = fakeLock(t);
+    expect(t.router.state().pointer.touch).toBe(true);
+    t.router.pushBody("w", { id: "walk", input: {}, lock: true });
+    await settleLock();
+    expect(t.requestLock).not.toHaveBeenCalled();
+    expect(lock.locked).toBe(false);
+    expect(t.router.state().pointer).toMatchObject({ lock: true, locked: false, touch: true });
+    // and the view is told
+    expect(t.onState.mock.calls.at(-1)[0].pointer.touch).toBe(true);
+    key(t.root, "keydown", "w");
+    expect(t.router.state().pointer.touch).toBe(true);
   });
 
   it("wanted frees the pointer and its going back relocks; a body change starts afresh", async () => {

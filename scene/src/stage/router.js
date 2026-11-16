@@ -267,6 +267,7 @@ function call(owner, obj, name, ...args) {
  *   leaveFocus?: () => void,
  *   requestLock?: () => Promise<void> | void,
  *   exitLock?: () => void,
+ *   touch?: boolean,                     // is the input touch before any press (a coarse pointer)? Every press then says
  *   mac?: boolean,
  *   live?: (hit: object) => boolean,     // is a double-click's first hit still there to resolve to? false: cast a new ray (its stage closed)
  * }} o
@@ -432,6 +433,10 @@ export function createRouter(o) {
   }
 
   function onPointerDown(e) {
+    // every press on the view says what the input is, wherever it lands (the
+    // chip, a prompt's button): a finger never locks the pointer, a mouse
+    // press locks by the formula, in this handler, with user activation
+    pointerEvent({ type: "input", touch: e.pointerType === "touch" });
     if (e.target !== canvas) return;
     // a second pointer while a gesture is claimed is swallowed; while one is
     // unclaimed it belongs to orbit (a pinch), and the first is no longer a click
@@ -792,7 +797,7 @@ export function createRouter(o) {
 
   // ─── the pointer (stage/pointer.js) ───────────────────────────────────────
 
-  let ptr = { lock: !!stack[0].lock, wanted: false, released: false, refused: false };
+  let ptr = { lock: !!stack[0].lock, wanted: false, released: false, refused: false, touch: !!o.touch };
   let exiting = false; // the lock is going because this page let it go, not the browser
   let requested = false; // a request is out, unanswered
 
@@ -889,7 +894,7 @@ export function createRouter(o) {
       bodies: stack.map((x) => ({ id: x.id, owner: x.owner })),
       held: tool ? { ext: tool.owner, command: tool.command, name: tool.name ?? tool.command, keys: [...(tool.keys ?? [])], pointer: !!tool.pointer } : null,
       gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])] } : null,
-      pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused },
+      pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused, touch: ptr.touch },
       escape: escapeLayer(ladderState()),
     };
   }

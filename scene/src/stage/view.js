@@ -1233,6 +1233,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     chainFor,
     inputOf,
     base: { id: base.id, lock: false, keys: [], input: lookInput },
+    // a coarse pointer is touch until a press says otherwise (TOOLS.md §4)
+    touch: !!globalThis.matchMedia?.("(pointer: coarse)")?.matches,
     cameraHeld: () => viewport.held,
     // a double-click's first hit is still there while its stage is (a key's n is never reused): one whose stage
     // closed between the clicks is cast again; one whose object the first click removed is kept, and what it comes

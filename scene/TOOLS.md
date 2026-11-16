@@ -284,7 +284,13 @@ nothing else wants the pointer (a held tool with `pointer: true`, a
 selection, an open menu, dialog or dock). The browser's Esc **releases** it
 unseen by the page; the next press on the world only relocks. A **refused**
 lock leaves the body looking by drag, as arena does (`play.js:90-95`).
-**locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused.**
+While the input is **touch** there is no mouse to look with, so the body
+looks by drag as when refused: every press on the view (on the canvas or on
+anything over it, the chip and the prompt's buttons included) says whether
+it was a finger, and a coarse pointer starts as touch. A finger on a locked
+view lets the lock go; a mouse press after it is an ordinary press, and
+the lock follows the formula on it (Decisions 9). Keys never change it.
+**locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch.**
 
 ## 5. Keys and Escape
 
@@ -637,7 +643,7 @@ and Dee still walks. To try his changes, he plays a copy.
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
 | H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
-| H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused; after a release the next press only relocks | All 2⁴ cases × each body × {press, key} |
+| H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release the next mouse press only relocks; a finger never locks | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
 | H7 | **Clock**: ≤1 computer per doc once claims arrive, only eligible views; t monotone per view (a cold start after a crash is a new view's first t); once a view has seen paused, no `step` of a kept process (a replicated one only up to `clock.t`) | ≤3 views × {visible, hidden, gone} × {writable, read-only, missing a package} × every order of ≤5 of join, leave, hide, crash, pause, resume, save, on in-memory Automerge |
 | H8 | **Three times**: a pause changes no actor or liveness outcome | Each dice, lots and cup protocol test, and joints' slide, paused at every step |
@@ -1148,3 +1154,17 @@ The project lead decided the five open questions on 2026-11-12.
    the view already says each viewer's body on every channel it acts on, so
    it lists everyone with that doc open anywhere. Pause and Resume act on
    the chip's own doc, never the focus's.
+9. **Touch is part of the pointer's state; a mouse press after touch is
+   ordinary** (decided unattended (2026-11-16, lane/n9), for the lead).
+   `touch` sits beside `refused` in the formula, set by every press on the
+   view (`pointerType === "touch"`) and by a coarse pointer at the start;
+   keys never change it, so a keyboard on a tablet leaves it be. Going back
+   from touch to a mouse is not a relock-only press: the press goes to the
+   world as any other, and the lock is asked for in its handler (it has user
+   activation) when the formula says so. Making that press only relock, as
+   after a release, was rejected: the viewer never saw a lock to take back,
+   so a swallowed click would be a click lost for no visible reason. A
+   finger on a locked view (a touch laptop, Chrome's touch emulation) lets
+   the lock go and still reaches what it pressed. Open for the lead: whether
+   the touch controls show from the first touch, always on a coarse pointer,
+   or by a toggle in the chip's menu (lane/n9's plan asks).
