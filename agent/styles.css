@@ -902,53 +902,70 @@
 }
 .patchwork-agent .agent-view-body > .agent-mount { min-height: 100%; }
 
-/* ---- Block: the ambient box (ambient.js) ------------------------------ */
+/* ---- Block: the ambient pop-over (ambient.js) -------------------------- */
 
 /*
- * Positioned within the frame's overlay layer, which covers the frame and
- * lets pointer events through; only the box itself takes them.
+ * Bottom centre of the frame's overlay layer, which covers the frame and lets
+ * pointer events through; only the surfaces themselves take them. Everything
+ * grows up from the bottom edge: the pill, the peek, the open session.
  */
-.agent-float {
+.agent-pop {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: 420px;
-  height: min(600px, calc(100% - 32px));
-  min-width: 300px;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  font-family: var(--agent-family);
+  color: var(--agent-fg);
+}
+
+.agent-float {
+  width: 100%;
+  height: min(70vh, 640px);
   min-height: 240px;
-  max-width: calc(100% - 16px);
-  max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
   pointer-events: auto;
-  resize: both;
   overflow: hidden;
   background: var(--agent-bg);
   color: var(--agent-fg);
   border: 1px solid var(--agent-border);
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.08);
-  font-family: var(--agent-family);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.2), 0 2px 8px rgb(0 0 0 / 0.08);
+  animation: agent-rise 140ms ease-out;
 }
 
-.agent-float[hidden] { display: none; }
+.agent-float[hidden],
+.agent-pill[hidden],
+.agent-peek[hidden] { display: none; }
+
+@keyframes agent-rise {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-float,
+  .agent-peek,
+  .agent-pill { animation: none; }
+}
 
 .agent-float-bar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.25rem 0.375rem 0.25rem 0.5rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
   background: var(--agent-surface);
   border-bottom: 1px solid var(--agent-border);
-  cursor: grab;
   user-select: none;
   font-size: 0.8125rem;
 }
-
-.agent-float-bar:active { cursor: grabbing; }
-
-.agent-float-grip { color: var(--agent-faint); }
 
 .agent-float-on {
   flex: 1 1 auto;
@@ -960,7 +977,7 @@
 }
 
 .agent-float-history {
-  max-width: 9rem;
+  max-width: 12rem;
   font: inherit;
   font-size: 0.75rem;
 }
@@ -976,6 +993,8 @@
   cursor: pointer;
 }
 
+.agent-float-bar .agent-float-bell[aria-pressed="false"] { opacity: 0.45; }
+
 .agent-float-bar .agent-float-close {
   border-color: transparent;
   background: transparent;
@@ -986,6 +1005,105 @@
 .agent-float-body {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* The pill: the agent is working, and on what. */
+.agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(520px, 100%);
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  border: 1px solid var(--agent-border);
+  border-radius: 999px;
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  animation: agent-rise 140ms ease-out;
+}
+
+.agent-pill-dot,
+.agent-peek-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--agent-accent);
+}
+
+.agent-pill-dot { animation: agent-pulse 1.4s ease-in-out infinite; }
+
+@keyframes agent-pulse {
+  50% { opacity: 0.35; }
+}
+
+.agent-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-pill-more,
+.agent-peek-more { color: var(--agent-muted); font-size: 0.75rem; }
+
+.agent-pill-key {
+  font-family: var(--agent-family-code);
+  font-size: 0.7rem;
+  color: var(--agent-faint);
+}
+
+/* The peek: something needs you, answered right here. */
+.agent-peek {
+  width: min(560px, 100%);
+  animation: agent-rise 160ms ease-out;
+}
+
+.agent-peek-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--agent-border);
+  border-left: 3px solid var(--agent-warning);
+  border-radius: 10px;
+  background: var(--agent-bg);
+  box-shadow: 0 10px 32px rgb(0 0 0 / 0.18);
+  font-size: 0.875rem;
+}
+
+.agent-peek-card[data-kind="finished"] { border-left-color: var(--agent-added); }
+.agent-peek-card[data-kind="finished"] .agent-peek-dot { background: var(--agent-added); }
+.agent-peek-card:not([data-kind="finished"]) .agent-peek-dot { background: var(--agent-warning); }
+
+.agent-peek-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agent-peek-question {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.agent-peek-card .agent-waiting-item {
+  border-left: none;
+  padding: 0;
+}
+
+.agent-peek-card input[type="text"] {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.agent-peek-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.375rem;
 }
 
 .patchwork-agent .agent-context {

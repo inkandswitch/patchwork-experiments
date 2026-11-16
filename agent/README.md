@@ -23,6 +23,9 @@ claimed by a node process with no tab open.
 | `tab-runner.js` | runs a session in this tab, with or without a view of it |
 | `workflow/` | workflows: the plan model, the driver that runs it, its datatype and view |
 | `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
+| `ambient.js` | the pop-over at the bottom centre: the session (⌘J), a pill while it works, a peek when it needs you |
+| `ui/attention.js` | what across your sessions and their workflows is working, waiting on you, or just finished |
+| `ui/notify.js` | opt-in browser notifications for those, while the tab is in the background |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
 | `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
 | `tools/` | the tool surface — documents, discovery, folders, environment, web, http, ingest, authoring, checking |
