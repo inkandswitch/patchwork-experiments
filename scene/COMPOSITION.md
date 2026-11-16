@@ -87,7 +87,13 @@ pieces, each published and checked in the real Patchwork:
   outermost's) or a thing (a box its doc keeps wherever it is placed); the
   sea and a current are behaviours put on it, and the weather is a scene
   trait. The Model basin, a sloop in a box of water, floats in a dry room
-  beside Ship at sea, who rests. No stage change.
+  beside Ship at sea. The lead's yes to "should an inner world keep its own
+  water?" is delivered only for water authored as a box: Ship at sea, the
+  case the question was asked about, still rests in a dry room, and the
+  choice that would change it is open (below). One stage correction
+  (arriving doesn't wait for objects with nothing to load, WATER.md
+  Decision 73) and one removal (the trait-level `needs`, which this left
+  with no consumer, Decision 77).
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a
   screen, sound, a seat per port and Doom's world beside them, and no stage
@@ -106,7 +112,11 @@ Still open:
   remaining fix is opening the inspector a beat after a click that may
   become a double-click;
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go.
+  they go;
+- whether a boat linked into a dry room keeps her own open sea: the path
+  rule (each ambient name the outermost offer on the stage's own path)
+  against water kept only as a box, as built (WATER.md, "Open for the
+  lead").
 
 - a mirror trails its acting placement while a part moves (about 4 cm on
   Fitting out's hatch; equal at rest): it plays the acting stage's held pose
@@ -636,7 +646,7 @@ which is why section 9 keeps traversal a `url`.
 ## Worked examples
 
 **1. Lost Cities aboard a moving ship.** Boat doc B: the hull, stations, the
-card table, `sailing.sea`, and a link to game doc G on the table top,
+card table, a Sea (a water object with `sailing.sea` on it), and a link to game doc G on the table top,
 locked. G: 60 cards bound to the deck container, piles, two trays, seats p1
 and p2 in G's root frame, its own title, `scene.carry` on its cards, its
 art and packages.

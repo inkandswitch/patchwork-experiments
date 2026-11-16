@@ -19,7 +19,10 @@ On 2026-11-15 the note gained a second design, "Water bodies": water as a
 shape that sea behaviour is put on, with bounded water that an inner world
 keeps wherever it is placed. It follows the lead's answers of that day
 (Decisions 43 to 56) and replaces the parts of "The design" it names. It was
-built the same day in `lane/water` (Decisions 57 to 74; "Where it stands").
+built the same day in `lane/water` (Decisions 57 to 74) and fixed after
+review (75 to 83; "Where it stands"). It keeps water an inner world authors
+as a box; whether a boat's open sea should come along into a dry room, the
+case the lead's yes was about, is still open ("Open for the lead").
 
 ## The problem
 
@@ -414,14 +417,15 @@ Doc edits with step 1:
 
 Designed 2026-11-15 in the lane `lane/water`, and built there the same day
 (steps 1 to 5 and 7; step 6, republishing, is dry runs only, and step 8 is
-deferred: Decisions 57 to 74). It follows two of the lead's answers of that
-day (Decisions 43 to 56):
+deferred: Decisions 57 to 74; after review, 75 to 83). It follows two of
+the lead's answers of that day (Decisions 43 to 56):
 
 - To Decision 42 (should the sea bring water with it?): "should the water
   be a shape that gets sea behaviour on it?" This section builds exactly
   that.
 - To the last open question (should an inner world be able to keep its own
-  water?): yes.
+  water?): yes. This section delivers it for water authored as a box, not
+  for a boat's open sea in a dry room (Decision 76).
 
 It supersedes these parts of "The design" above:
 - the scene trait `water`;
@@ -711,10 +715,13 @@ The steps:
   once per step. The origin is her body origin, which is on her waterline
   (`physics.js`: "waterline at y = 0"), mapped by her current pose.
   `physics.js` doesn't change: it still gets one reader per step, or null
-  and holds still.
+  and holds still. With null she isn't stepped and stays where she is,
+  still, even when the water went from under her partway through a run
+  (she left a pond's footprint): never back at her last checkpoint
+  (Decision 75).
 - `looks.js` asks per float, leaving out the float's descendants.
 - `crew.js` asks per swimmer.
-- `hud.js` asks at her origin.
+- `hud.js` asks nothing: it shows her readings and the wind (Decision 62).
 - `sailing.ship` drops `needs: ["water"]` and its paste notice. A ship
   floats on whatever water `at` finds around her, or rests.
 
@@ -758,7 +765,9 @@ the sky.
 
 **A boat in a dry room.**
 - Ship at sea's water is open, so it is weather and doesn't come along.
-  She rests at her saved pose, as today.
+  She rests at her saved pose, as today. This is the case the lead's yes
+  was about, and it is not changed by this design: the choice that would
+  change it is open (Costs, 2; "Open for the lead").
 - A doc whose water is bounded keeps it in the room: a basin around a
   boat, a ship in a bottle, a lock. Her boat floats in it, flat and calm,
   and her sails have no wind, because the room has no weather.
@@ -836,9 +845,14 @@ In every doc, today's sea values move:
 - **Model basin and its mashup:** new, as above. The mashup is published
   by `scene/probes/publish-links.mjs`.
 
-### Scene: no change
+### Scene: one correction, one removal
 
-The stage gives all of it already:
+Designed as no change. The build found one correction (Decision 73:
+arriving doesn't wait for content from an object with nothing to load),
+and the review removed the trait-level `needs`, which this design left with
+no consumer (Decision 77). Neither adds a concept or a word about water.
+
+Otherwise the stage gives all of it already:
 - an object-held trait runs its extension (`seats` is held by the scene
   or an object);
 - `describes` with `on: "object"`;
@@ -875,7 +889,16 @@ need. None is built.
   - Candidate second consumer: trigger volumes (traversal exits, arena
     kill zones).
 - **D3. A per-object `needs`,** so the inspector offers a sea only on a
-  water object. It has one consumer, so it is not built.
+  water object. It has one consumer, so it is not built. (Scene's older,
+  trait-level `needs`, a notice on copying into a scene without a scene
+  trait, is removed: Decision 77.)
+- **D4. Whether a stage is the outermost, without an offer.**
+  `api.ambient(name)` says `mine` only beside a value, so a stage whose
+  world offers nothing can't tell that it is the world.
+  - First consumer: sailing's `world()`, which shows her HUD and camera
+    ride only where her doc is the world. It reads it off the wind, so the
+    Model basin alone, which has no weather, shows neither (Decision 64).
+  - No second consumer is known, so it is not built (Decision 81).
 
 ### Costs
 
@@ -883,11 +906,15 @@ need. None is built.
    toy yacht linked into a park's pond takes the open water beneath, or
    rests if there is none. On Cadboro Bay she falls through the terrain to
    y = 0. Things in the pond's own doc work. The consistent fix is D1.
-2. **Ship at sea in a dry room still rests.** Q4's yes holds for water
-   authored as bounded. One doc that both gives way to a harbour's sea and
-   keeps its own water in a dry room would need a precedence flag in the
-   data, the `standIn` of Decision 5. This may not be what the lead
-   pictured; it is put to the lead below.
+2. **Ship at sea in a dry room still rests.** Q4's yes is delivered only
+   for water authored as bounded. The case the question was asked about,
+   a boat linked into a dry room, is unchanged. An earlier draft said that
+   changing it would need a precedence flag in the data (Decision 5's
+   `standIn`). That was wrong (Decision 76): a rule needs no flag. The path
+   rule, under which each ambient name takes the outermost offer on the
+   stage's own path, gives a harbour's boats the harbour's sea and a boat
+   in a dry room her own. It has costs of its own, and the choice is put to
+   the lead below.
 3. **Boxes only.**
    - An irregular pond relies on terrain above its level to hide the box's
      corners. Dry ground below the level inside the box reads as flooded.
@@ -900,7 +927,11 @@ need. None is built.
    is the author's to avoid.
 5. **Edges.**
    - A hull straddling a box's edge reads the floor for her outside
-     columns, so her plane fit pushes her off the edge.
+     columns, so her plane fit pushes her off the edge. Once her origin is
+     out of the footprint she is in whatever water holds it there (the
+     open water around a pond); with none (a basin in a dry room) she
+     holds still where she left the water, until she is moved or water
+     comes back under her (Decision 75).
    - Moving from one body into another at a different level is a jump.
    - Gerstner waves in a box don't reflect at the walls; they are clipped
      there.
@@ -1460,7 +1491,8 @@ it chose this, each with its reason.
     weather alone (the Model basin) shows her no HUD and no camera ride
     until someone is aboard. A second reading of "is my doc the world"
     (the water ambient's `mine`, or the atmosphere's) would be a guess; a
-    basin has neither. Recorded as a cost.
+    basin has neither. Recorded as a cost, and after review as the stage
+    gap D4 with its one consumer (Decision 81).
 65. **"Ship at anchor" is published by `publish-ship.mjs --anchor`.** There
     was no publisher for it; a flag on the one that runs "Ship at sea" is
     the smallest addition.
@@ -1474,7 +1506,9 @@ it chose this, each with its reason.
 68. **The Sloop brings a Sea and the weather only where the doc has no open
     water;** where it has open water and no weather it adds neither (a flat
     Water is calm on purpose). The Sea part always adds a Sea, and the
-    weather where there is none.
+    weather where there is none. (After review, `bringSea` keeps this rule
+    itself, and the Sea part puts its sea on the open water that is there:
+    Decision 80.)
 69. **The sea notices a sea without water once per object;** the inspector
     has no per-field notice to hang it on (that is D3's per-object `needs`).
 70. **sailing.sea and sailing.weather are two extensions**, not one with
@@ -1508,14 +1542,111 @@ it chose this, each with its reason.
     asked for); D3, a per-object `needs`, is its candidate future, or its
     removal. scene/probes/xdnd-run.mjs's sail mode still checks a scene
     `sailing.sea` trait and the needs notice, so it fails until it is
-    rewritten; it was not run here.
+    rewritten; it was not run here. (Superseded by 77: `needs` is removed
+    and xdnd-run's sail mode rewritten.)
+
+## Decisions, after review of water bodies (2026-11-15, made unattended)
+
+The review of "Water bodies" in `lane/water` found three major and seven
+minor faults. Each fix has a test that fails without it.
+
+75. **A ship whose water goes from under her partway is held still where
+    she is, not thrown away.** Before, `sim.js` deleted her state when
+    `at` answered null, and the next step rebuilt her from the doc's
+    transform, her last checkpoint. That was harmless while water could
+    only be missing for a whole doc. With bounded water she can leave a
+    footprint, by the plane fit pushing her off an edge or by a current,
+    and would have snapped back to the checkpoint, drifted out and snapped
+    back again. Now the water is asked after the editor and hold checks,
+    and with none her state stays, with velocity and spin zeroed. She
+    stays where she left the water, and goes on from there if water comes
+    back under her. A ship never stepped has nothing drawn, so she still
+    rests where the doc has her. One more rule follows: put down out of
+    the water by a person, her hold is let go, so she rests where she was
+    put and isn't held at the rest pose's sea level. W25 gains the three
+    cases: she leaves and stays out, she leaves and comes back, and she is
+    put down out of it.
+76. **Q4 is not delivered as asked, and no flag is needed to deliver it.**
+    The lead's yes was to "should an inner world be able to keep its own
+    water?", asked about a boat linked into a dry room. The build answers
+    yes only for water authored as a box. The design said the boat's case
+    needed a precedence flag (`standIn`). That was wrong: the path rule
+    (each ambient name takes the outermost offer on the stage's own path)
+    needs no data at all. Costs 2, the cases, COMPOSITION's "Where we
+    are" and "Open for the lead" now say so, and the choice is put to the
+    lead with each side's costs. The path rule is not built: it changes
+    W2, the ambient rule every package reads, and Decision 1's accepted
+    sentence, and that is the lead's to choose.
+77. **Scene's trait-level `needs` is removed.** It had no consumer after
+    `sailing.ship` dropped `needs: ["water"]` (Decision 74), and a
+    mechanism with none is the kind of appendage the stage keeps out. No
+    back-compat is the standing rule. `missingNeeds`, its notice on paste
+    and bundle, `bundlePlan`'s `needsTraits`, its test and its STAGE.md
+    entries are gone. The notice text stays, because the entry rule uses it
+    ("This private zone needs seats: add Seats to the scene."): an `entry`
+    field naming a scene trait the scene lacks. The paste test keeps
+    `needs` in its fixture and asserts that nothing is said, so restoring
+    the mechanism fails it. xdnd-run's sail mode is rewritten around what
+    is left: the sloop brings a Sea object and the weather; the Sea isn't
+    under her, so it stays in A; B gains no weather and is told nothing;
+    her `motion` is left behind. Run in Chrome under the lock, it passes
+    13/13 and main mode passes 60/60. packages.test's fixture trait is
+    renamed from `sailing.sea` to `tiny.weather`. D3, a per-object
+    `needs`, is a different mechanism and stays a deferred design.
+78. **The contentIn correction (73) has a stage test, and its words are
+    the stage's own.** `scene/src/stage/content-in.test.js` mounts a doc
+    holding each kind of visible object: nothing; an object with no source
+    and no render; the same hidden; a group; a file not yet loaded; the
+    same hidden. It says, as if the viewport worked, which of them arrival
+    waits for. Reverting `!showsContent(o)` to `isGroup(o)` fails it.
+    providers.js's comment and providers.test's fixture no longer name
+    water: the example is an object whose shape is a trait's data, under a
+    neutral trait name.
+79. **The words match the code.** "Scene: no change" is now "Scene: one
+    correction, one removal" (73, 77), and COMPOSITION says the same. The
+    line saying the HUD asks at her origin is corrected, since it asks
+    nothing (62). The counts in "Where it stands" are brought up to date.
+80. **`bringSea` keeps Decision 68 itself, and the Sea part never makes a
+    second open body.** `bringSea` wrote the weather before it checked for
+    open water, so only the Sloop's own guard kept 68; the weather is now
+    written after the check, and the Sloop just calls `bringSea`. The Sea
+    part dropped on a doc with open water used to add a second open body,
+    flagged and inert. It now puts its sea on the doc's open body, the
+    keeper, lowest id first (W24's rule), when that has none. When the
+    keeper has a sea already, it says "This scene's water has a sea
+    already." and adds nothing. It still brings the weather where there is
+    none. Checked as W26.
+81. **"Is my doc the world" stays read off the wind, and the stage gap is
+    recorded (D4).** The api has no fact that says a stage is the
+    outermost when its world offers nothing: `ambient(name)` gives `mine`
+    only beside a value, and frames and paths aren't in the api.
+    Sailing could offer an ambient of its own just to learn it, but that
+    would use a world's values as a probe. So the Model basin alone shows
+    no HUD and no camera ride until someone is aboard, D4 names its one
+    consumer, and nothing is built until a second one appears.
+82. **The session's real-Patchwork harbour check reads the new shapes.**
+    `harbour-check.mjs` (in the session's publish folder) read
+    `debug.sea.ocean` and the water instance's reader, which this build
+    replaced with `oceanAt(p, not)` and `water.at(p)`. It now asks those,
+    at the hull's origin with herself left out, and says it is for a
+    Harbour republished from this build. Its run follows the Harbour's
+    republish in the deferred order.
+83. **W15 enumerates levels.** Every body in W15's table sat at level 0,
+    so the fallback's ranking across levels was checked only by hand
+    cases. A levels axis is added: A and N each at {-1, 0, 1}, against
+    open water at 0 and none, in three columns (both footprints, A's only,
+    neither) at twelve heights, from above among them, none on a level,
+    floor or band edge. The expectation is the rule written over plain
+    numbers. Preferring open water at an equal level fails 32 cases,
+    taking the lowest surface fails 6, and the highest id on a tie fails
+    27.
 
 ## Invariants
 
 Every check enumerates a finite space; none is randomized. Each new rule
 has a mutation check: revert it and the named test fails. The "Finite
 check" column says what is actually enumerated. W1 to W14 are the first
-design's; W15 to W25 are "Water bodies"', built in `lane/water` (W3 is
+design's; W15 to W26 are "Water bodies"', built in `lane/water` (W3 is
 replaced by W17, and W10, W11 and W13 are re-run with `at`).
 
 | | Invariant | Finite check | Mutation that must fail it |
@@ -1534,7 +1665,7 @@ replaced by W17, and W10, W11 and W13 are re-run with `at`).
 | W12 | **The harbour as built** | `sailing/probes/harbour-run.mjs` in Chrome under the lock: 22/22, run again after the review's fixes and on the merged tree (one surface, both boats on the harbour's water and in its `wind`, no HUD or camera ride, the harbour's sky, no warnings). In the real Patchwork: the published Harbour by the session's harbour-check.mjs (both boats in view on arrival, one surface, each boat's reading of the water equal to the harbour's, hulls floating, one wind, no HUD or camera ride, no error notices; Decisions 41) | — |
 | W13 | **Time passes only where waves need it.** A process is held exactly where the doc is the world and its water has waves | W3's 9 configurations, flat water alone and a boat in a flat-water harbour × every stage; waves stilled, restored, the water removed (`extension.test.js`) | Hold the process everywhere: 10 fail |
 | W14 | **One wind.** The wind is offered once, as `wind`; the surface draws with it; nothing else carries it | The sea's offer read whole for every field that says how the wind blows; the surface's wind direction for from {0, 90, 180, 270} and with no wind ambient (calm) while the water's `look` names a wind (`sea-view.test.js`, `extension.test.js`) | The surface reading the water's `look.wind`: 1 fails |
-| W15 | **The choice.** `at(p, { not })` returns the body the rule says | World open water {none, flat, waved} × every subset of {A, N inside A, C elsewhere, D attached under the asker} × 5 points × `not` {asker, none}, the expectation written out per kind of point (`water/src/choose.test.js`, 48 cases, and 4 more: the band, from above, a turned footprint, equal volumes) | Drop the exclusion: 18 fail. Prefer open over bounded: 28. Largest first: 24. No fallback: 48. A displaced surface for the band: 36 |
+| W15 | **The choice.** `at(p, { not })` returns the body the rule says | World open water {none, flat, waved} × every subset of {A, N inside A, C elsewhere, D attached under the asker} × 5 points × `not` {asker, none}, the expectation written out per kind of point (`water/src/choose.test.js`, 48 cases, and 4 more: the band, from above, a turned footprint, equal volumes); and a levels axis, A and N each at {-1, 0, 1} × open water {at 0, none} × 3 columns × 12 heights (9 cases, Decision 83) | Drop the exclusion: 18 fail. Prefer open over bounded: 28. Largest first: 24. No fallback: 48. A displaced surface for the band: 36. Open water winning an equal level: 32. The lowest surface below: 6. The highest id on a tie: 27 |
 | W16 | **Things travel, weather doesn't.** | {a boat with a tank alone; a harbour with A and B each holding a tank; a dry room with A and B; A mirrored; A pinned; A two deep} × every stage × a 5×5 grid in each tank: its own tank answers; with the hull as `not`, the world's open water or none; every reader is the world's or the stage's own doc's (`water/src/extension.test.js`) | No exclusion: 6 fail. Bounded only where the doc is the world: 7 |
 | W17 | **The draw count** (replaces W3) | W3's 9 configurations, W16's 6 and the Model basin beside Ship at sea in a dry room: open surfaces 1 or 0 by the outermost, patches the sum over every placement of its doc's bounded bodies, the open slab only at the outermost (`extension.test.js`); in Chrome, `basin-run.mjs` | Bounded only where `mine`: 6 fail. Open everywhere: 10 |
 | W18 | **Bounded water ignores placement.** | A doc G with a tank, flat and waved (fixed components): alone, yawed 30°, under a 20° heeled frame, mirrored, two deep: height and normal on a 3×3 grid × 3 times bit for bit, flat water exactly at its level with the normal up (`extension.test.js`) | (by construction: a bounded reader takes no frame; none to mutate) |
@@ -1544,7 +1675,8 @@ replaced by W17, and W10, W11 and W13 are re-run with `at`).
 | W22 | **The spectrum clip.** | 5 seas × span {1, 10, 37.5, 200 m, open}; the span scaled (`bounded.test.js`) | No clip: 4 fail |
 | W23 | **The current.** | Current {none, 0.5 m/s toward 0°, 90°, 180°, 270°} × frame yaw {0, 90°} × 5 points × 3 times, for the world's open water through a link and for a bounded body; the value's frequency shift and nothing else (`bounded.test.js`) | No shift: 8 fail. U not added to the open reader: 8 |
 | W24 | **One open body per doc.** | 1, 2 and 3 open bodies in every id order × with and without a tank: the lowest id's level offered, one surface, the others flagged; a tilted open body offers nothing, once; yaw and place change nothing; an invalid size is no water (`extension.test.js`) | Highest id: 16 fail |
-| W25 | **One body per hull per step.** | The sim with a scripted `at`: open water, a pond, astride its edge (origin in, out), a dry room with and without a basin of her own, a tank aboard in open water, a flooded hold in a dry room: asked once a step about her with herself as `not`; no water, she rests unstepped; else her draft off the water she was given is her open-water draft (`sailing/src/sim.test.js`) | No exclusion: 8 fail |
+| W25 | **One body per hull per step.** | The sim with a scripted `at`: open water, a pond, astride its edge (origin in, out), a dry room with and without a basin of her own, a tank aboard in open water, a flooded hold in a dry room: asked once a step about her with herself as `not`; no water, she rests unstepped; else her draft off the water she was given is her open-water draft. Water gone partway: she leaves it and stays out (held where she left it, never back at a checkpoint), leaves it and comes back (goes on from where she was held), is put down out of it (let go, resting where the doc has her) (`sailing/src/sim.test.js`, Decision 75) | No exclusion: 8 fail. Deleting her state when the water goes: 2. Holding her at the rest pose when put down out of it: 1 |
+| W26 | **The parts make no second open body.** | `bringSea` and the Sea part × the doc's water {none, a pond only, open water without a sea, open water with a sea, two open bodies with the keeper without and with a sea} × weather {none, some}: `bringSea` leaves any doc with open water exactly as it was and otherwise adds a Sea first in order and the weather where there's none; the Sea part leaves as many open bodies as there were (one where there were none), puts its sea on the keeper or says the water has one already, and changes nothing else (`sailing/src/parts.test.js`, 24 cases, Decision 80) | Weather before the open-water check: 5 fail. Always a new Sea: 8. The highest id as the keeper: 4 |
 
 ## Open for the lead
 
@@ -1552,13 +1684,30 @@ Answered on 2026-11-15: Decision 1's amended sentence (43), boarding by
 click (44), whether the sea should bring water (45, dissolved), and whether
 an inner world may keep its own water (46). Open from "Water bodies":
 
-- **Ship at sea in a dry room still rests.** The yes to Q4 holds for water
-  authored as bounded: a basin, a lock, a bottle or a tank comes along
-  wherever its doc goes. Ship at sea's water is open (it has to be, to give
-  way to the Harbour's), and open water is weather. One doc that both
-  gives way to a host's sea and keeps its own in a dry room needs a
-  precedence flag (Decision 5's `standIn`), so it isn't designed. If that
-  case is what was meant, say so.
+- **Should a boat linked into a dry room keep her own open sea?** This is
+  the case the yes to Q4 was about, and it isn't delivered (Decision 76).
+  As built, water authored as a box comes along wherever its doc goes (a
+  basin, a lock, a bottle, a tank), but Ship at sea's water is open, and
+  open water is weather, so in a dry room she rests. There are two ways to
+  go:
+  - **The path rule.** Each ambient name takes the outermost offer on the
+    stage's own path, not only the outermost doc's. In the Harbour the
+    harbour's water still wins and its boats are silent. In a dry room
+    each boat has her own sea, on her own clock, and floats. It needs no
+    flag in the data. What it costs:
+    - one scene change, to W2, the rule every package reads, and to
+      Decision 1's accepted sentence;
+    - siblings in one dry room each draw an open sea, overlapping in space
+      at their own levels, and a swimmer can't cross from one to the
+      other (the same kind of cost as Costs 4's z-fighting);
+    - wind and sky follow the same rule, so her sails fill in the room
+      unless the room offers still air, and the view must choose whose sky
+      to show when two boats each offer one;
+    - a host that wants its guests dry has to say so, by offering an
+      empty value rather than nothing.
+  - **Bounded only, as built.** A boat that should float in a room is
+    authored with water of her own as a box, as the Model basin is. Open
+    water stays one world's weather, and W2 is unchanged.
 - **A thing linked into a host's pond doesn't float on it** (Costs, 1)
   until enclosing offers (D1) find a second consumer. Atmosphere interiors
   are the likeliest, for example the Arcade linked into the Harbour, lit by
@@ -1594,7 +1743,7 @@ patches, `water.current`, and the Water and Pond parts; sailing's
 `sailing.weather`, the sea as an object behaviour built from the world's
 wind, `oceanAt` and the per-step hull sampling, the Sea part, templates and
 the Sloop writing a Sea object; terrain's template writing the bay's Sea;
-the words in `scene/`; and one scene correction (73). Suites: water 290,
+the words in `scene/`; and one scene correction (73). Suites: water 291,
 sailing 744 (slow tier 37 of 39, the two agreement fails as on
 `scene-stage`), terrain 108, scene 1450. Every new invariant mutation-checked
 (the table above). Chrome under the lock: harbour-run 22/22, basin-run
@@ -1603,3 +1752,13 @@ head-to-wind failures it had before, aboard-run 65 with the six step-13
 failures it had before. Publisher dry runs: ship, ship --anchor, harbour
 (--offline), basin, aboard, fitout, rvyc. Nothing republished, synced or
 merged from the lane; walk's reader (71) is not built.
+
+After review, the same day in `lane/water` (Decisions 75 to 83): a ship
+whose water goes partway is held where she left it; Q4 is put back to the
+lead as the choice it is; scene's trait-level `needs` is removed and
+xdnd-run rewritten; contentIn has a stage test; `bringSea` and the Sea part
+make no second open body; D4 is recorded; the session's harbour check
+reads the new shapes; W15 enumerates levels. Suites: water 300, sailing
+774, terrain 108, scene 1455. Chrome under the lock: xdnd-run sail 13/13
+and main 60/60, basin-run 14/14. Still nothing republished, synced or
+merged from the lane.
