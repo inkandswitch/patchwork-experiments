@@ -69,17 +69,16 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  *   surge residual), but §6.1's hull element grows with heel (side area
  *   + 0.75·(B/2)·LOA·sin φ, its centre 0.66·B·sin φ higher), so on a
  *   heeled reach it heels her far more: at 20 kn 75° the sloop's windage
- *   pushes her to leeward with 455 N in sailing and 789 N in §6.1 (a
- *   heeling moment of 834 N·m about her CG against §6.1's 2675 N·m about
- *   the hull's side-force height). The predicted heel holds that, so she
+ *   pushes her to leeward with 455 N in sailing and 789 N in §6.1. The
+ *   predicted heel holds that, so she
  *   heels less than predicted wherever her curve is flat enough for it to
  *   show: the sloop at 20 kn 75° (−2.4°), the Catalina at 16–20 kn 70–90°
  *   (−2.0 to −2.3°), and 22 of the J/24's points from 12 kn (−2.1 to −7.9°:
- *   at 20 kn 75°, 175 N against 305 N, 220 N·m against 735). It is also
+ *   at 20 kn 75°, 175 N against 305 N). It is also
  *   the J/24's settle: her leeway 7.4°
  *   against 9.0°. No surge or sway residual is past 0.35 tolerances on any
- *   keelboat. Reading §3.13's elements (step 2 of N6) is what should close
- *   these; nothing here is re-tuned to them.
+ *   keelboat. These should close when sailing's physics reads §3.13's
+ *   elements; nothing here is re-tuned to them.
  * - the Laser's windage drag: sailing's rule costs her about twice §6.1's
  *   (at 16 kn 40°: 55 N against 24 N), so close-hauled and reaching from
  *   12 kn she fails surge (worst −1.06 tolerances) and roll (worst 1.81),
