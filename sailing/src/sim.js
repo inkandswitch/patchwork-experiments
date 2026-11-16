@@ -468,13 +468,6 @@ export function createSim(api, ctx) {
       const key = specKey(spec);
       let s = ships.get(id);
       if (!s) ships.set(id, (s = track(id, o, t, null)));
-      // the water she is in, asked once a step at her body's origin (her waterline), leaving out what she carries;
-      // none (a dry room, a tilted link): she isn't stepped, and rests where the doc has her
-      const env = { water: ctx.sea.oceanAt(s.state.position, id), wind };
-      if (!env.water) {
-        ships.delete(id);
-        continue;
-      }
       if (JSON.stringify(s.frame) !== JSON.stringify(frame)) {
         // her frame changed (her model loaded and said which way is forward, or someone set it):
         // her hull stays where it is, and her body turns in it
@@ -488,7 +481,8 @@ export function createSim(api, ctx) {
         // what her rig's contract can't vouch for, said once per spec
         for (const w of spec.rig?.warnings ?? []) console.warn(`sailing: ${w}`);
       }
-      if (movedByEditor(doc, o.saved, s.seen)) {
+      const moved = movedByEditor(doc, o.saved, s.seen);
+      if (moved) {
         // someone moved it (the halo, the inspector, a carry put down): start again from there, at rest, and drop the anchor again
         const body = toBody({ position: doc.position, quaternion: quatFromEuler(doc.rotation) }, frame, doc.scale);
         s.state = s.model.rest({ position: body.position, yaw: yawOf(body.quaternion), t });
@@ -502,6 +496,19 @@ export function createSim(api, ctx) {
         // move above starts her again at rest where she landed.
         s.state = { ...s.state, t, acc: 0 };
         s.good = s.state;
+        continue;
+      }
+      // the water she is in, asked once a step at her body's origin (her waterline), leaving out what she carries.
+      // None (a dry room, a tilted link, or she has left a pond's footprint): she isn't stepped, and stays where
+      // she is, still. Never stepped, she rests where the doc has her; out of the water partway, she stays where she
+      // left it (not back at her last checkpoint, which may be in the water again: she would loop) and goes on from
+      // there if water comes back under her.
+      const env = { water: ctx.sea.oceanAt(s.state.position, id), wind };
+      if (!env.water) {
+        s.state = { ...s.state, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0 };
+        s.good = s.state;
+        // put down out of the water, she is where the doc has her: nothing of ours to hold
+        if (moved) s.drawn = null;
         continue;
       }
 
