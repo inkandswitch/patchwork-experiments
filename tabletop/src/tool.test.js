@@ -228,3 +228,25 @@ describe("what the game page's status line warns the maker of (test/table-notes.
       }
     });
 });
+
+describe("a deck's summary on the game page says how it's shuffled, for every combination of shuffle and secure", () => {
+  // a secure deck is shuffled by its players whatever `shuffle` says (card-table: the first shuffle is of
+  // every card); ticking secure on an imported deck (which never says shuffle) once read "… kinds by the players"
+  const CASES = [
+    { shuffle: false, secure: false, says: "Deck: 3 cards of 1 kinds face down" },
+    { shuffle: true, secure: false, says: "Deck: 3 cards of 1 kinds, shuffled face down" },
+    { shuffle: false, secure: true, says: "Deck: 3 cards of 1 kinds, shuffled by the players face down" },
+    { shuffle: true, secure: true, says: "Deck: 3 cards of 1 kinds, shuffled by the players face down" },
+  ];
+  for (const c of CASES)
+    it(`shuffle ${c.shuffle ? "yes" : "no"}, secure ${c.secure ? "yes" : "no"}`, () => {
+      const g = cardsGame({ secure: c.secure, seats: false });
+      if (c.shuffle) g.setup[0].deck.shuffle = true;
+      const game = fakeRepo().add({ "@patchwork": { type: "tabletop-game" }, ...g });
+      const element = document.createElement("div");
+      element.repo = fakeRepo();
+      const cleanup = TabletopGameTool(game, element);
+      expect(element.querySelector(".deck summary").textContent).toBe(c.says);
+      cleanup();
+    });
+});

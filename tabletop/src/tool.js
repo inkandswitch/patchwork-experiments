@@ -238,7 +238,7 @@ export default function TabletopGameTool(handle, element) {
       return el(
         "details",
         { class: "deck" },
-        el("summary", {}, `${deck.name || `Deck ${i + 1}`}: ${deck.cards?.length ?? 0} cards of ${inDeck.length} kinds${deck.shuffle ? ", shuffled" : ""}${deck.secure ? " by the players" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
+        el("summary", {}, `${deck.name || `Deck ${i + 1}`}: ${deck.cards?.length ?? 0} cards of ${inDeck.length} kinds${deck.secure ? ", shuffled by the players" : deck.shuffle ? ", shuffled" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
         el(
           "label",
           { class: "toggle", title: "With a keeper whose players shuffle installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without one, the cards are hidden from the table but listed in an ordinary document." },
