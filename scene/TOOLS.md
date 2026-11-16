@@ -424,11 +424,13 @@ right-click Select still selects it (no handles, no inspector).*
 - **The inspector is one pane**: the object tree on top and the
   selection's fields below, one tab, one selection (Decisions 11). A row
   click selects and the fields follow in the same flush; a click in the
-  view, the menu's Select or Escape marks and reveals the row. The tree
-  takes at most about 40% of the pane's height and scrolls; the fields
-  scroll under it. It opens by the inspector's rule (a selection in Edit,
-  or the toolbar's Inspector), so the tree comes with it; there is no
-  Objects tab or toggle.
+  view, the menu's Select or Escape marks and reveals the row, and a
+  selection made while the pane was shut is revealed as it opens. Both
+  halves are drawn only while it's docked. The tree takes at most about
+  40% of the pane's height and scrolls under its bar; the fields scroll
+  under it. It opens by the inspector's rule (a selection in Edit, or the
+  toolbar's Inspector), so the tree comes with it; there is no Objects tab
+  or toggle.
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -1420,27 +1422,28 @@ The project lead decided the five open questions on 2026-11-12.
 11. **The object tree and the inspector are one pane** (the lead,
     2026-11-16: "the sidebar's objects / inspector should be integrated
     together"; the shape of it decided unattended, 2026-11-16,
-    lane/sidebar, for the lead). `scene.inspector` owns a single drawer tab
-    (chrome, `data-panel="inspector"`, titled Inspector) holding the tree
-    over the selection's fields. There is no `scene.outline` extension and
-    no `objects` command: the tree is a module the inspector mounts
-    (`createOutline(api)`), so it is mounted exactly while the pane is and
-    two tabs can't disagree about what's selected. The selection stays one
-    value (`view.selected`), so the tree's marked row (`aria-selected`) and
-    the fields' object are the same in every flush, and a ref (a
-    dimension) marks no row and hides the fields, leaving the tree.
-    - The pane opens by the inspector's rule, untouched: a selection in
-      Edit, or the toolbar's Inspector; its × shuts it until the selection
-      changes; leaving Edit shuts it; a focus move reopens it inside. So
-      the tree now arrives with a selection, where Objects opened only
-      when asked.
-    - The tree keeps everything it did as its own tab: expand state in
-      localStorage, the filter, the arrow keys (stopped before the scene's
-      keys), row drags and document drops, New group, presence marks and
-      revealing a selection made elsewhere.
-    - Layout: a fixed split, the tree capped at about 40% of the pane's
-      height and scrolling, the fields filling the rest. Nothing of it is
-      written to the doc.
+    lane/sidebar, for the lead). The rule is §6's ("The inspector is one
+    pane"); what was decided, and why:
+    - **One extension, the tree a module.** `scene.outline` and its
+      `objects` toggle went; the tree is `createOutline(api, { shown })`
+      (`parts/outline.js`), which `scene.inspector` mounts at the top of
+      its one tab. Two tabs over one selection could disagree for a flush
+      and opened by two rules; one tab can't, and needs no second toggle.
+    - **Both halves are drawn by one rule:** the tab's update, only while
+      it's docked. A shut pane is drawn into by nothing (the tree used to
+      redraw a detached list on every flush, every frame of a sailing sim),
+      and what to reveal is noted on every flush and revealed as the pane
+      opens, whichever way it opens (a selection in Look then Edit, the
+      toolbar after ×, a later open), since a scroller put back comes back
+      at the top.
+    - **The name stays Inspector** (the tab, its `data-panel`, the toolbar
+      button), so every probe hook and the open rule are unchanged.
+    - **A fixed split:** the tree takes at most about 40% of the pane's
+      height and scrolls under its bar (filter, New group); the fields
+      fill the rest. With a ref selected (a dimension: no fields here) the
+      tree has the whole pane.
+    - **The tree arrives with a selection**, by the inspector's open rule,
+      where Objects opened only when asked.
     Questions for the lead: is "Inspector" the right name for the pane
     (or "Objects", or "Scene")? Should the split be draggable (a view
     pref, like the drawer's grip) or the tree foldable, rather than a fixed
