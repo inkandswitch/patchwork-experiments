@@ -200,6 +200,10 @@ Deck = {
 - `contents` is what a bag holds (its piece must have `bag`): pieces and
   decks, laid out into the bag, never the scene; a bag may hold a bag.
 - `id` names a thing for a deal.
+- A `secure` deck kept by a joint keeper is shuffled by its players once
+  every seat is taken, whatever `shuffle` says: its listed order is nobody's
+  to know (card-table's first shuffle is of every card). Kept by a plain
+  keeper instead, it is laid out as `shuffle` says.
 
 ## 6. Seats and camera
 
