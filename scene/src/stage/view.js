@@ -396,32 +396,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
-  // Ambients (STAGE.md, "Ambients"): each name a stage reads is the
-  // outermost offer on its own path, the outermost doc first and the stage's
-  // own doc last, so a host that offers a name decides it for everything it
-  // holds, and a doc whose hosts offer none keeps its own. The viewport's
-  // atmosphere is the outermost stage's, the view's one sky.
-  /** The stages on `s`'s path, the outermost first and `s` last. */
-  function pathStages(s) {
-    const out = [];
-    const root = outermost();
-    if (root && root !== s) out.push(root);
-    for (let k = 1; k < s.path.length; k++) {
-      const at = opened.get(pathKey(s.path.slice(0, k)))?.stage;
-      if (at) out.push(at);
-    }
-    out.push(s);
-    return out;
-  }
-  /** Ambient `name` for stage `s`: { value (frozen), from (the stage offering it) } from the outermost offer on its path, or null. */
-  function ambientOn(s, name) {
-    for (const at of pathStages(s)) {
-      const value = at.ambients()[name];
-      if (value !== undefined) return { value, from: at };
-    }
-    return null;
-  }
-  /** The view's ambient `name`: the outermost stage's frozen value, or undefined (the viewport's atmosphere). */
+  // A world's ambients (STAGE.md, "Ambients") are its outermost stage's: the
+  // one read path, which every stage's api.ambient and the viewport's
+  // atmosphere both go through, so the viewport is a reader like any other.
+  /** The world's ambient `name`: the outermost stage's frozen value, or undefined. */
   const ambient = (name) => outermost()?.ambients()[name];
   let atmosphereShown; // what the viewport was last told (undefined: nothing yet)
   /** A stage's ambients changed (it flushed new ones, or it went): the viewport shows the world's atmosphere. */
@@ -1428,7 +1406,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     stage: (n) => stages.get(n) ?? null,
     outermost,
     ambient,
-    ambientOn,
     ambientsChanged,
     focusStage,
     acting,

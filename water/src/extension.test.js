@@ -1,8 +1,7 @@
-// The water extension on a fake view of linked stages (test/fake-view.js),
-// on scene's path rule (each ambient the outermost offer on a stage's own
-// path): W17 (the draw count, replacing W3), W10 (the same water for two
-// boats in a harbour), W11 (no water holds still, never the wrong water), W16
-// (things travel; open water is the outermost on the path's), W18 (bounded water ignores placement), W21 (the
+// The water extension on a fake view of linked stages (test/fake-view.js):
+// W17 (the draw count, replacing W3), W10 (the same water for two boats in a
+// harbour), W11 (no water holds still, never the wrong water), W16 (things
+// travel, weather doesn't), W18 (bounded water ignores placement), W21 (the
 // extent is data), W24 (one open body per doc), the processes (W13 widened),
 // and what it offers (waterValue). Every configuration is enumerated;
 // nothing is randomized.
@@ -83,94 +82,73 @@ describe("what a doc offers (waterValue, wavesByBody)", () => {
   });
 });
 
-/**
- * W3's configurations, and the path rule's: [label, specs (outermost first),
- * the stages whose own open water is the outermost offer on their path: the
- * ones that draw an open surface, each stage reading the first of them on
- * its path].
- */
+/** W3's configurations: [label, specs (outermost first), does the outermost offer open water]. */
 function configurations() {
   return [
-    ["one boat alone", [wet(A_SEA)], [0]],
-    ["a dry room alone", [dry("Room")], []],
-    ["one boat in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }], [0]],
-    ["two boats in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }, { ...wet(B_SEA), matrix: AT_B }], [0]],
-    ["one boat in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }], [1]],
-    ["two boats in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }, { ...wet(B_SEA), matrix: AT_B }], [1, 2]],
-    ["a boat two links deep in a harbour", [wet(H_SEA), { ...dry("Shed"), matrix: AT_B }, { ...wet(A_SEA), matrix: mulM(AT_B, AT_A), parent: 1 }], [0]],
-    ["a boat two links deep in a dry room", [dry("Room"), { ...dry("Shed"), matrix: AT_B }, { ...wet(A_SEA), matrix: mulM(AT_B, AT_A), parent: 1 }], [2]],
-    ["a boat in a boat in a dry room", [dry("Room"), { ...wet(B_SEA), matrix: AT_B }, { ...wet(A_SEA), matrix: mulM(AT_B, AT_A), parent: 1 }], [1]],
-    ["a boat mirrored in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }, { ...wet(A_SEA), matrix: AT_B, drawn: true }], [0]],
-    ["a boat mirrored in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }, { ...wet(A_SEA), matrix: AT_B, drawn: true }], [1, 2]],
-    ["a boat linked into another boat", [wet(B_SEA), { ...wet(A_SEA), matrix: AT_A }], [0]],
+    ["one boat alone", [wet(A_SEA)], true],
+    ["a dry room alone", [dry("Room")], false],
+    ["one boat in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }], true],
+    ["two boats in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }, { ...wet(B_SEA), matrix: AT_B }], true],
+    ["one boat in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }], false],
+    ["two boats in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }, { ...wet(B_SEA), matrix: AT_B }], false],
+    ["a boat two links deep in a harbour", [wet(H_SEA), { ...dry("Shed"), matrix: AT_B }, { ...wet(A_SEA), matrix: mulM(AT_B, AT_A) }], true],
+    ["a boat mirrored in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }, { ...wet(A_SEA), matrix: AT_B, drawn: true }], true],
+    ["a boat linked into another boat", [wet(B_SEA), { ...wet(A_SEA), matrix: AT_A }], true],
   ];
 }
 
-/** The stage whose open water stage n reads: the first on its path (its parents, the outermost first) among `opens`; or null. */
-function sourceOf(specs, opens, n) {
-  const path = [];
-  for (let at = n; at != null; at = at === 0 ? null : (specs[at].parent ?? 0)) path.unshift(at);
-  return path.find((k) => opens.includes(k)) ?? null;
-}
-
-/** W16's configurations, each boat with a tank: [label, specs, the stages whose open water is the outermost on their path]. */
+/** W16's configurations, each boat with a tank: [label, specs, the outermost offers open water]. */
 function tankConfigurations() {
   const A = (m, extra = {}) => ({ ...withTank(wet(A_SEA)), matrix: m, ...extra });
   const B = (m) => ({ ...withTank(wet(B_SEA)), matrix: m });
   return [
-    ["a boat with a tank alone", [withTank(wet(A_SEA))], [0]],
-    ["a harbour with A and B each holding a tank", [wet(H_SEA), A(AT_A), B(AT_B)], [0]],
-    ["a dry room with A and B each holding a tank", [dry("Room"), A(AT_A), B(AT_B)], [1, 2]],
-    ["A mirrored in a harbour", [wet(H_SEA), A(AT_A), A(AT_B, { drawn: true })], [0]],
-    ["A pinned in a harbour", [wet(H_SEA), A(AT_B, { drawn: true, running: false })], [0]],
-    ["A pinned in a dry room", [dry("Room"), A(AT_B, { drawn: true, running: false })], [1]],
-    ["A two links deep in a harbour", [wet(H_SEA), { ...dry("Shed"), matrix: AT_B }, A(mulM(AT_B, AT_A), { parent: 1 })], [0]],
+    ["a boat with a tank alone", [withTank(wet(A_SEA))], true],
+    ["a harbour with A and B each holding a tank", [wet(H_SEA), A(AT_A), B(AT_B)], true],
+    ["a dry room with A and B each holding a tank", [dry("Room"), A(AT_A), B(AT_B)], false],
+    ["A mirrored in a harbour", [wet(H_SEA), A(AT_A), A(AT_B, { drawn: true })], true],
+    ["A pinned in a harbour", [wet(H_SEA), A(AT_B, { drawn: true, running: false })], true],
+    ["A two links deep in a harbour", [wet(H_SEA), { ...dry("Shed"), matrix: AT_B }, A(mulM(AT_B, AT_A))], true],
   ];
 }
 
 /** The Model basin (no open water, no weather) beside Ship at sea, in a dry room. */
 const BASIN = () => ({ doc: { title: "Model basin", traits: {}, objects: { basin: at([0, 0, 0], { name: "Basin", traits: { [TRAIT]: { size: [30, 3, 30] } } }), sloop: at([0, 0, 0], { name: "Sloop" }) } }, extensions: [water] });
 
-describe("the draw count (W17): an open surface by each stage whose open water is the outermost on its path, and a patch per bounded body per placement that draws its doc", () => {
+describe("the draw count (W17): one open surface where the outermost has an open body, and a patch per bounded body per placement that draws its doc", () => {
   const all = [
     ...configurations(),
     ...tankConfigurations(),
-    ["the Model basin beside Ship at sea, in a dry room", [dry("Room"), { ...BASIN(), matrix: AT_A }, { ...wet(A_SEA), matrix: AT_B }], [2]],
+    ["the Model basin beside Ship at sea, in a dry room", [dry("Room"), { ...BASIN(), matrix: AT_A }, { ...wet(A_SEA), matrix: AT_B }], false],
   ];
-  for (const [label, specs, opens] of all)
+  for (const [label, specs, offers] of all)
     it(label, () => {
       v = fakeView(specs);
       for (let i = 0; i < 3; i++) v.frame();
-      expect(surfaces(v)).toBe(opens.length);
+      expect(surfaces(v)).toBe(offers ? 1 : 0);
       const want = specs.reduce((n, s) => n + Object.values(s.doc.objects ?? {}).filter((o) => o.traits?.[TRAIT]?.size).length, 0);
       expect(patches(v)).toBe(want);
-      // only a stage drawing open water sets the open slab; a stage drawing patches sets its own extent, else none is set
+      // only the outermost sets the open slab; a stage drawing patches sets its own extent, else none is set
       v.stages.forEach((s, n) => {
         const own = Object.values(specs[n].doc.objects ?? {}).some((o) => o.traits?.[TRAIT]?.size);
-        const open = opens.includes(n);
-        expect([label, n, open ? 1 : 0]).toEqual([label, n, inst(v, n)?.debug?.surface ? 1 : 0]);
-        if (open || own) expect(s.extent).not.toBeNull();
+        if ((n === 0 && offers) || own) expect(s.extent).not.toBeNull();
         else expect(s.extentSets).toBe(0);
-        if (open) {
-          expect(s.extent.max[0]).toBe(20_000);
-          expect(inst(v, n).debug.surface.object.position.y).toBe(specs[n].doc.objects.sea.transform.position[1]);
-        } else if (own) expect(s.extent.max[0]).toBeLessThan(100);
+        if (n === 0 && offers) expect(s.extent.max[0]).toBe(20_000);
+        else if (own) expect(s.extent.max[0]).toBeLessThan(100);
       });
+      if (offers) {
+        const drawn = inst(v, 0).debug.surface;
+        expect(drawn.object.position.y).toBe(specs[0].doc.objects.sea.transform.position[1]);
+      }
     });
 
-  it("the outermost's open water going away takes its surface and extent with it, and a boat's own open water serves her", () => {
+  it("the outermost's open water going away takes the surface and the extent with it", () => {
     v = fakeView(configurations()[2][1]);
     v.frame();
     expect(surfaces(v)).toBe(1);
-    expect(inst(v, 1).water.at([0, 0, 0]).components).toEqual(H_SEA.components);
     delete v.stages[0].doc.objects.sea;
     v.frame();
+    expect(surfaces(v)).toBe(0);
     expect(v.stages[0].extent).toBeNull();
-    expect(inst(v, 0).debug.surface).toBeNull();
-    // nothing above her offers water now: her own is the outermost on her path, and she draws it
-    expect(surfaces(v)).toBe(1);
-    expect(inst(v, 1).debug.surface).not.toBeNull();
-    expect(inst(v, 1).water.at([0, 0, 0]).components).toEqual(A_SEA.components);
   });
 
   it("a tank going away takes its patch with it", () => {
@@ -222,39 +200,31 @@ describe("the same water for two boats (W10)", () => {
 });
 
 describe("no water holds still, never the wrong water (W11)", () => {
-  // a boat whose doc holds no water (a hull alone), so only water on her path could serve her
-  const DRY_BOAT = (m, extra = {}) => ({ ...dry("Dry boat", { hull: HULL() }), matrix: m, ...extra });
   for (const [label, specs] of [
-    ["a dry boat in a dry room", [dry("Room"), DRY_BOAT(AT_A)]],
-    ["two dry boats in a dry room", [dry("Room"), DRY_BOAT(AT_A), DRY_BOAT(AT_B)]],
-    ["a dry boat two deep in dry rooms", [dry("Room"), { ...dry("Shed"), matrix: AT_B }, DRY_BOAT(mulM(AT_B, AT_A), { parent: 1 })]],
+    ["one boat in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }]],
+    ["two boats in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }, { ...wet(B_SEA), matrix: AT_B }]],
     // the outermost has open water but this view lacks its water package: nothing of it runs there, so nothing is offered
-    ["the outermost's water package missing", [{ doc: { title: "Harbour", traits: {}, objects: { sea: seaObject() } }, extensions: [waves(H_SEA.components)] }, DRY_BOAT(AT_A)]],
+    ["the outermost's water package missing", [{ doc: { title: "Harbour", traits: {}, objects: { sea: seaObject() } }, extensions: [waves(H_SEA.components)] }, { ...wet(A_SEA), matrix: AT_A }]],
   ])
     it(`${label}: every boat's reader is null for 600 frames, wherever she asks`, () => {
       v = fakeView(specs);
       for (let f = 0; f < 600; f++) {
         v.frame();
-        // (a shed holding nothing runs no water)
-        for (const s of v.stages.slice(1)) if (s.doc.title !== "Shed") for (const p of [[0, 0, 0], [0, -5, 0], [3, null, 4]]) expect(s.instances.at(-1).water.at(p)).toBeNull();
+        for (const s of v.stages.slice(1)) for (const p of [[0, 0, 0], [0, -5, 0], [3, null, 4]]) expect(s.instances.at(-1).water.at(p)).toBeNull();
       }
     });
 });
 
 describe("things travel, weather doesn't (W16)", () => {
   const GRID = [-0.8, -0.4, 0, 0.4, 0.8];
-  for (const [label, specs, opens] of tankConfigurations())
+  for (const [label, specs, offers] of tankConfigurations())
     it(label, () => {
       v = fakeView(specs);
       for (let i = 0; i < 3; i++) v.frame();
+      const H = offers ? inst(v, 0).water.at([0, 0, 0]) : null;
       v.stages.forEach((s, n) => {
         const x = s.instances.at(-1);
         if (!x?.water) return;
-        // the open water this stage reads: the outermost on its path's, by its own reader there
-        const src = sourceOf(specs, opens, n);
-        const offers = src !== null;
-        const H = offers ? inst(v, src).water.at([0, 0, 0]) : null;
-        expect([label, n, H?.body ?? null]).toEqual([label, n, null]);
         const tanks = Object.entries(specs[n].doc.objects ?? {}).filter(([, o]) => o.traits?.[TRAIT]?.size).map(([id]) => id);
         for (const id of tanks) {
           const M = s.api.worldOf(id);
@@ -270,7 +240,7 @@ describe("things travel, weather doesn't (W16)", () => {
               expect([label, n, carried?.body ?? null, carried === null ? null : carried.components]).toEqual([label, n, null, offers ? H.components : null].map((e, i) => (i === 3 && !offers ? null : e)));
             }
         }
-        // every reader is the open water of the outermost on its path that has one, or a body of this doc
+        // every reader is the world's open water or a body of this doc
         for (const p of [[0, 0, 0], [0, -0.7, 2], [50, 0, 50], [0, null, 2]]) {
           const r = x.water.at(p);
           if (!r) continue;
@@ -292,7 +262,7 @@ describe("bounded water ignores placement (W18): a doc's tank reads the same in 
         ["in X yawed 30°", (g) => [dry("X"), { ...g, matrix: placement((30 * Math.PI) / 180, [7, 0, -3]) }]],
         ["in X′ with a 20° heeled frame", (g) => [dry("X′"), { ...g, matrix: heeled }]],
         ["mirrored", (g) => [dry("X"), { ...g, matrix: AT_A }, { ...g, matrix: AT_B, drawn: true }]],
-        ["two deep", (g) => [dry("X"), { ...dry("Shed"), matrix: AT_B }, { ...g, matrix: mulM(AT_B, AT_A), parent: 1 }]],
+        ["two deep", (g) => [dry("X"), { ...dry("Shed"), matrix: AT_B }, { ...g, matrix: mulM(AT_B, AT_A) }]],
       ];
       const readings = placements.map(([name, make]) => {
         v = fakeView(make(G(waved)));
@@ -365,24 +335,25 @@ describe("one open body per doc (W24): the lowest id is its open water; the othe
 });
 
 describe("a reason for time to pass (W13, widened)", () => {
-  // a process is held where a stage's own open water is the outermost on its path and has waves, or where a stage acts
-  // for a doc whose bounded body has waves (the fake's drawn stages, a mirror and a pin, hold none, as the stage's don't)
+  // a process is held where the doc is the world and its open water has waves, or where a stage acts for a doc whose
+  // bounded body has waves (the fake's drawn stages, a mirror and a pin, hold none, as the stage's don't)
   const waved = (spec) => (spec.extensions ?? []).length > 1;
   const cases = [
     ...configurations(),
-    ["flat water alone", [flat("Pond")], [0]],
-    ["a boat in a flat-water harbour", [flat("Pond"), { ...wet(A_SEA), matrix: AT_A }], [0]],
-    ["a waved tank in a dry room", [dry("Room"), { doc: { title: "G", traits: {}, objects: { hull: HULL(), tank: TANK() } }, extensions: [waves(A_SEA.components.slice(-3), {}, ["tank"]), water], matrix: AT_A }], []],
-    ["a waved tank mirrored", [dry("Room"), { doc: { title: "G", traits: {}, objects: { hull: HULL(), tank: TANK() } }, extensions: [waves(A_SEA.components.slice(-3), {}, ["tank"]), water], matrix: AT_A, drawn: true }], []],
+    ["flat water alone", [flat("Pond")], true],
+    ["a boat in a flat-water harbour", [flat("Pond"), { ...wet(A_SEA), matrix: AT_A }], true],
+    ["a waved tank in a dry room", [dry("Room"), { doc: { title: "G", traits: {}, objects: { hull: HULL(), tank: TANK() } }, extensions: [waves(A_SEA.components.slice(-3), {}, ["tank"]), water], matrix: AT_A }], false],
+    ["a waved tank mirrored", [dry("Room"), { doc: { title: "G", traits: {}, objects: { hull: HULL(), tank: TANK() } }, extensions: [waves(A_SEA.components.slice(-3), {}, ["tank"]), water], matrix: AT_A, drawn: true }], false],
   ];
-  for (const [label, specs, opens] of cases)
-    it(`${label}: a process only where its own open water is the outermost on its path and has waves, or it acts for a waved tank`, () => {
+  for (const [label, specs] of cases)
+    it(`${label}: a process only where the doc is the world and has waves, or acts for a waved tank`, () => {
       v = fakeView(specs);
       for (let i = 0; i < 3; i++) v.frame();
       v.stages.forEach((s, n) => {
         const objects = Object.values(specs[n].doc.objects ?? {});
+        const open = objects.some((o) => o.traits?.[TRAIT] && !o.traits[TRAIT].size);
         const tank = objects.some((o) => o.traits?.[TRAIT]?.size);
-        const want = !specs[n].drawn && waved(specs[n]) && (opens.includes(n) || tank) ? 1 : 0;
+        const want = !specs[n].drawn && waved(specs[n]) && ((n === 0 && open) || tank) ? 1 : 0;
         expect([label, n, s.processes]).toEqual([label, n, want]);
       });
     });

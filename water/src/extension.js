@@ -8,10 +8,8 @@
 //     frame on its world time, { v, level, components, look?, current? },
 //     its waves whatever this stage's extensions contribute for it as
 //     `water.waves` (sailing's sea; none is flat water), the current's
-//     frequency shift already in them. A stage reads the outermost offer
-//     on its own path (scene's ambient rule): a host's open water wins, and
-//     a contained doc's open body is silent under it; under a host with
-//     none, a doc's own open water is its own.
+//     frequency shift already in them. The stage takes the outermost doc's;
+//     a contained doc's open body is silent.
 //   - Bounded water is a thing. Each bounded body counts for its own doc
 //     wherever that doc is drawn, in its doc's frame and on its doc's clock,
 //     and is never offered: no other doc reads it, not even when its doc is
@@ -20,15 +18,15 @@
 //     not }) → reader | null }, which water a point in this stage's frame is
 //     in (choose.js), as sailing's ocean shape (convert.js for the world's
 //     open water, bounded.js for a body of this doc), or null.
-//   - It draws the open surface where its own open water is the one its
-//     stage reads (the ambient's `mine`: around the camera, lit by the
-//     atmosphere and roughened by the wind its stage reads), and a finite patch over each bounded body in every stage that
+//   - It draws the open surface where its doc is the world (around the
+//     camera, lit by the world's atmosphere and roughened by the world's
+//     wind), and a finite patch over each bounded body in every stage that
 //     draws its doc (acting, mirror, pin), and sets the stage's extent to the
 //     union of what it draws.
 //
 // Waves are a function of time, so it registers a process with no state (a
-// reason for time to pass) where its own open water is the one its stage reads
-// and has waves, or where any of its own bounded bodies has waves; the stage holds
+// reason for time to pass) where its doc is the world and its open water has
+// waves, or where any of its own bounded bodies has waves; the stage holds
 // it only where the stage acts for the doc (never in a mirror or a pin).
 
 import { createOceanSurface } from "./material.js";
@@ -254,7 +252,7 @@ export default {
 
     // ─── drawing ───
     const group = api.world();
-    let surface = null; // the open surface: only where this doc's open water is the one its stage reads (mine)
+    let surface = null; // the open surface: the outermost's only
     let drawn = null; // the reader it was made for
     let drawnWind; // and the wind ambient's value
     const patches = new Map(); // id → { surface, key, wind }
