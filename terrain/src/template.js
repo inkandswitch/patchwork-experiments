@@ -44,7 +44,7 @@ export function bayClip(hint = HINT) {
  * its world offers no open water (bayClip of the place's hint). An object
  * with no source: its shape is the water trait's data. Pure.
  */
-export function bayWater(seed, hint = HINT) {
+export function bayWater(seed, hint = HINT, colour = BAY_WATER) {
   const { clip, position } = bayClip(hint);
   return {
     name: "Sea",
@@ -59,9 +59,11 @@ export function bayWater(seed, hint = HINT) {
     wireframe: false,
     locked: true,
     transform: { position, rotation: [0, 0, 0], scale: 1 },
-    traits: { [WATER]: { clip }, [SEA]: { seed, scale: WIND.scale } },
+    traits: { [WATER]: { clip, colour: { ...colour } }, [SEA]: { seed, scale: WIND.scale } },
   };
 }
+/** The bay's own water colour (the water trait's `colour`: water/WATER.md): the Salish Sea's grey-green under a summer sky, not the open ocean's blue. Art direction, from the place's photographs' general look. */
+export const BAY_WATER = Object.freeze({ deep: "#183b3c", scatter: "#2f7566" });
 /** This package's: the data's credit at the foot of the view (credit.js). */
 export const CREDIT = "terrain.credit";
 /** Chain out on the mooring (sailing's RODE: 25 m; the water is ~8 m deep). */

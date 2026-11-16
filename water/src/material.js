@@ -286,6 +286,7 @@ uniform vec3 uSkyTop;
 uniform vec3 uSkyHorizon;
 uniform vec3 uDeep;
 uniform vec3 uScatter;
+uniform float uScatterGain;
 uniform vec3 uFoamColor;
 uniform float uFoamAt;
 uniform float uRough;
@@ -389,7 +390,7 @@ void main() {
   float toward = pow(max(dot(look, sunFlat), 0.0), 3.0);
   // light gets through a crest's face, seen edge on, far more than its top seen from above
   float face = (0.2 + 2.5 * (1.0 - N.y)) * (0.45 + 0.55 * (1.0 - NV));
-  body += uScatter * pow(crest, 1.5) * (0.15 + 1.5 * toward * sunUp) * face;
+  body += uScatter * uScatterGain * pow(crest, 1.5) * (0.15 + 1.5 * toward * sunUp) * face;
 
   vec3 col = mix(body, refl, fresnel);
 
@@ -425,6 +426,9 @@ void main() {
   // a smooth gradient to the horizon bands in 8 bits: half a level of noise either way
   gl_FragColor.rgb += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
 }`;
+
+/** How much of the light scattered through a crest shows under a sun: all of it under a sun that casts shadows, a third under an overcast's (shadows: false). Pure. */
+export const scatterGain = (sun) => (sun?.shadows === false ? 0.35 : 1);
 
 /** A colour from a THREE.Color, a hex string or number, or [r, g, b] (linear). */
 function setColour(target, value) {
@@ -637,6 +641,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uSkyHorizon: { value: new THREE.Color(DEFAULTS.sky.horizon) },
     uDeep: { value: new THREE.Color(DEFAULTS.deep) },
     uScatter: { value: new THREE.Color(DEFAULTS.scatter) },
+    // under an overcast (a sun that casts no shadows) little light gets through a crest: the water holds the shore's darkness
+    uScatterGain: { value: 1 },
     uFoamColor: { value: new THREE.Color(DEFAULTS.foam) },
     uFoamAt: { value: -1e9 },
     uRough: { value: 0 },
@@ -737,6 +743,7 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     if (sun === null) uniforms.uSunOn.value = 0;
     else if (sun) {
       uniforms.uSunOn.value = 1;
+      uniforms.uScatterGain.value = scatterGain(sun);
       if (sun.direction) uniforms.uSunDir.value.set(sun.direction[0], sun.direction[1], sun.direction[2]).normalize();
       setColour(uniforms.uSunColor.value, sun.color);
       if (Number.isFinite(sun.intensity)) uniforms.uSunIntensity.value = sun.intensity;
@@ -776,11 +783,24 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     Object.assign(patch, { w, l, yaw, floor });
   }
 
+  /** The body's own colour ({ deep?, scatter? }, colourOf), or null for the options' (else the defaults): set only when it changes. */
+  let colourKey = null;
+  function setBodyColour(c) {
+    const key = c ? `${c.deep ?? ""}|${c.scatter ?? ""}` : "";
+    if (key === colourKey) return;
+    colourKey = key;
+    uniforms.uDeep.value.set(DEFAULTS.deep);
+    uniforms.uScatter.value.set(DEFAULTS.scatter);
+    setColour(uniforms.uDeep.value, c?.deep ?? opts.deep);
+    setColour(uniforms.uScatter.value, c?.scatter ?? opts.scatter);
+  }
+
   return {
     object: mesh,
     update,
     setSea,
     setPatch,
+    setColour: setBodyColour,
     get origin() {
       return [...origin];
     },

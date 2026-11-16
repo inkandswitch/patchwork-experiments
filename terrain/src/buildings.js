@@ -12,7 +12,7 @@
 
 import earcut from "earcut";
 import { rgb } from "./shapes.js";
-import { dtan, len } from "./detmath.js";
+import { dtan, dsin, dcos, len } from "./detmath.js";
 import { COVER } from "./cover.js";
 import { ringArea } from "./cover.js";
 
@@ -33,7 +33,99 @@ export const PALETTE = Object.freeze({
   cladding: [["#d9dbd8", 50], ["#b8bcbc", 35], ["#9cc3ae", 15]],
   metalRoofs: [["#9ea3a6", 60], ["#3f5a72", 25], ["#8b3a26", 15]],
   trim: "#ecebe6",
+  // an industrial building at the water (a fish plant): cream corrugated cladding
+  plant: "#d8d2bf",
 });
+
+/** What a building's details are drawn in: trim (corner boards, the eave's band), windows, cream cladding's ribs, a pile deck's piles and its edge. Art direction. */
+export const DETAIL = Object.freeze({ trim: "#e8e6df", glass: "#2b3136", piles: "#2e2721", deckEdge: "#3a3631", storey: 2.8 });
+
+/**
+ * A building's facade details (no geometry of its own changes): white corner
+ * boards and a band under the eave on every wall, and a row of dark windows
+ * a storey (about 1.1 m tall, 1.2 m wide, one every 3 m, clear of the
+ * corners), each 3 to 5 cm proud of its wall. For houses and the like; an
+ * industrial building takes `ribs` instead (vertical ribs every 0.9 m, the
+ * walls' colour darker: corrugated cladding). Exported for tests.
+ */
+export function facade(s, ring, { floor, eave, trim = DETAIL.trim, glass = DETAIL.glass, windows = true, ribs = null, storey = DETAIL.storey }) {
+  const pts = dedupe(ring);
+  if (pts.length < 3) return 0;
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  const T = rgb(trim), G = rgb(glass), R = ribs ? rgb(ribs).map((c) => c * 0.72) : null;
+  let quads = 0;
+  for (let a = 0; a < pts.length; a++) {
+    const A = pts[a], B = pts[(a + 1) % pts.length];
+    const dx = B[0] - A[0], dz = B[1] - A[1], L = len(dx, dz);
+    if (L < 1.5) continue;
+    const ux = dx / L, uz = dz / L;
+    // the wall's outward normal: away from the footprint's middle
+    let nx = uz, nz = -ux;
+    if (nx * ((A[0] + B[0]) / 2 - cx) + nz * ((A[1] + B[1]) / 2 - cz) < 0) (nx = -nx), (nz = -nz);
+    const P = (t, y, off) => [A[0] + ux * t + nx * off, y, A[1] + uz * t + nz * off];
+    const face = (t0, t1, y0, y1, off, col) => {
+      const m = P((t0 + t1) / 2, (y0 + y1) / 2, off + 1);
+      quadOut(s, P(t0, y0, off), P(t1, y0, off), P(t1, y1, off), P(t0, y1, off), col, m);
+      quads++;
+    };
+    if (ribs) {
+      for (let t = 0.9; t < L - 0.45; t += 0.9) face(t - 0.04, t + 0.04, floor, eave, 0.04, R);
+      continue;
+    }
+    // corner boards at both ends, the eave's band
+    face(0, 0.16, floor, eave, 0.05, T);
+    face(L - 0.16, L, floor, eave, 0.05, T);
+    face(0, L, eave - 0.28, eave, 0.05, T);
+    if (!windows || L < 3) continue;
+    const n = Math.max(1, Math.floor((L - 1.2) / 3));
+    for (let y = floor; y + storey <= eave + 0.4; y += storey) {
+      for (let q = 0; q < n; q++) {
+        const t = (L * (q + 0.5)) / n;
+        face(t - 0.6, t + 0.6, y + 0.9, Math.min(y + 2.0, eave - 0.35), 0.03, G);
+      }
+    }
+  }
+  return quads;
+}
+
+/**
+ * A pile deck under a building at the water (a fish plant, a wharf shed):
+ * a slab `thick` deep at `deck` over its footprint, a dark band round its
+ * edge, and black piles on a grid every `every` metres under it wherever
+ * the ground is below the deck (from 6 m under to the deck).
+ */
+export function pileDeck(s, ring, { deck, groundAt, every = 4, thick = 0.5 }) {
+  const pts = dedupe(ring);
+  if (pts.length < 3) return 0;
+  const edge = rgb(DETAIL.deckEdge);
+  const ccw = signedArea(pts) > 0 ? pts : pts.slice().reverse();
+  for (let a = 0; a < ccw.length; a++) {
+    const A = ccw[a], B = ccw[(a + 1) % ccw.length];
+    s.quad([A[0], deck - thick, A[1]], [B[0], deck - thick, B[1]], [B[0], deck, B[1]], [A[0], deck, A[1]], edge);
+  }
+  const box = orientedBox(pts);
+  let count = 0;
+  if (!box) return 0;
+  const { c, u, v, hu, hv } = box;
+  for (let a = -hu + every / 2; a <= hu; a += every) for (let b = -hv + every / 2; b <= hv; b += every) {
+    const x = c[0] + u[0] * a + v[0] * b, z = c[1] + u[1] * a + v[1] * b;
+    const g = groundAt(x, z);
+    if (g == null || g > deck - thick - 0.3) continue;
+    pile(s, x, z, -6, deck - thick, 0.2);
+    count++;
+  }
+  return count;
+}
+
+/** A six-sided pile, dark, from y0 to y1. */
+function pile(s, x, z, y0, y1, r) {
+  const c = rgb(DETAIL.piles);
+  for (let k = 0; k < 6; k++) {
+    const t0 = (k * Math.PI) / 3, t1 = ((k + 1) * Math.PI) / 3;
+    const a = [x + r * dcos(t0), z - r * dsin(t0)], b = [x + r * dcos(t1), z - r * dsin(t1)];
+    s.quad([a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]], c);
+  }
+}
 
 /** A string's 32-bit FNV-1a hash, in [0, 1). */
 export function hashString(s, seed = 0) {
@@ -171,9 +263,9 @@ export function paletteSoup() {
  * @param {object[]} buildings  look-osm.js buildings
  * @param {{ groundAt(x, z): number | null, sinkAt(h): number, coverAt(x, z): number, leaveOut?(b): boolean, palette? }} o
  */
-export function buildingMesh(buildings, { groundAt, sinkAt, coverAt, leaveOut = () => false, palette = PALETTE }) {
+export function buildingMesh(buildings, { groundAt, sinkAt, coverAt, leaveOut = () => false, palette = PALETTE, details = false, deckAbove = null }) {
   const s = paletteSoup();
-  let made = 0;
+  let made = 0, decks = 0;
   const skipped = [];
   for (const b of buildings) {
     if (leaveOut(b)) continue;
@@ -210,11 +302,17 @@ export function buildingMesh(buildings, { groundAt, sinkAt, coverAt, leaveOut = 
     const industrial = cls === "industrial";
     const walls = b.colour && /^#[0-9a-f]{6}$/i.test(b.colour) ? b.colour : weighted(industrial ? palette.cladding : palette.walls, hashString(b.id, 1));
     const roofColour = b.roofColour && /^#[0-9a-f]{6}$/i.test(b.roofColour) ? b.roofColour : weighted(industrial ? palette.metalRoofs : palette.roofs, hashString(b.id, 2));
-    const base = lo - sinkAt(lo);
-    house(s, pts, { base, eave: hi + eaveH, rise, roof: rise > 0 ? "gable" : "flat", walls, roofColour, box });
+    // at the water (where `deckAbove` is given: its lowest ground under it, the shore), on a pile deck above the highest tide, not walls down into the sea
+    const onDeck = deckAbove != null && lo < 1;
+    const floor = onDeck ? Math.max(hi, deckAbove) : hi;
+    const base = onDeck ? floor - 0.5 : lo - sinkAt(lo);
+    const cream = onDeck && industrial && palette.plant ? palette.plant : null;
+    house(s, pts, { base, eave: floor + eaveH, rise, roof: rise > 0 ? "gable" : "flat", walls: cream ?? walls, roofColour, box });
+    if (onDeck) (pileDeck(s, pts, { deck: floor, groundAt }), decks++);
+    if (details) facade(s, pts, { floor, eave: floor + eaveH, ...(industrial ? { ribs: cream ?? walls } : {}), windows: cls !== "shed" });
     made++;
   }
-  return { ...s.done(), made, skipped };
+  return { ...s.done(), made, skipped, decks };
 }
 
 // ─── geometry helpers ───

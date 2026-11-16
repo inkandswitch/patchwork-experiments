@@ -11,7 +11,7 @@
 //
 // Pure.
 
-import { soup, rgb, widen, cylinder, prism } from "./shapes.js";
+import { soup, rgb, widen, cylinder, prism, log } from "./shapes.js";
 import { house, quadOut, quadUp, triOut, orientedBox } from "./buildings.js";
 import { hash01 } from "./palette.js";
 import { len, dsin, dcos } from "./detmath.js";
@@ -153,6 +153,42 @@ export function cladding(s, P, y0, y1, { walls, trim, every = 0.9 }) {
 }
 
 export const KINDS = {
+  // yard gear (dressing): rows of totes (bins `size` across, each spot stacked 1 to `stack` high by hash, colours by hash)
+  totes(s, st, { L, ground }) {
+    const size = st.size ?? 1.2;
+    let q = 0;
+    for (const row of st.rows ?? []) {
+      const a = L(row.from), b = L(row.to);
+      const [ux, uz, span] = unit(a, b);
+      const count = Math.max(1, Math.floor(span / (size + 0.15)));
+      for (let i = 0; i < count; i++, q++) {
+        const c = lerp2(a, b, (i + 0.5) / count);
+        const g = ground(c[0], c[1]);
+        const high = 1 + Math.floor(hash01(q, 31) * (row.stack ?? 3));
+        const colour = st.colours[Math.floor(hash01(q, 32) * st.colours.length)];
+        block(s, c, [ux, uz], size / 2, size / 2, g - 0.1, g + high * size, colour);
+      }
+    }
+    return { totes: q };
+  },
+  // a pile of logs (dressing): `rows` rows, each a log fewer, `length` long, `radius` round, along `heading` (degrees true) at `at`
+  logpile(s, st, { L, ground }) {
+    const [cx, cz] = L(st.at);
+    const g = ground(cx, cz);
+    const th = ((st.heading ?? 0) * Math.PI) / 180, u = [dsin(th), -dcos(th)], v = [-u[1], u[0]];
+    const r = st.radius ?? 0.35, half = (st.length ?? 12) / 2, rows = st.rows ?? 4;
+    let count = 0;
+    for (let row = 0; row < rows; row++) {
+      const n = rows - row;
+      for (let q = 0; q < n; q++, count++) {
+        const off = (q - (n - 1) / 2) * 2 * r, y = g + r * (1 + row * 1.7);
+        const k = 0.85 + 0.25 * hash01(count, 33);
+        const ox = cx + v[0] * off, oz = cz + v[1] * off;
+        log(s, [ox - u[0] * half, y, oz - u[1] * half], [ox + u[0] * half, y, oz + u[1] * half], r, rgb(st.colour ?? "#8a6e52").map((c) => c * k));
+      }
+    }
+    return { logs: count };
+  },
   /** A hangar: a low gable over four corners (N, E, S, W), the gables on the faces doors.face and the one opposite; board-sheathed walls; sliding doors and a header band on the door face. */
   hangar(s, st, { L, footOf }) {
     const P = st.corners.map(L);

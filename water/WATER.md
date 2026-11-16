@@ -31,6 +31,15 @@ as 5ae3b34c. It answers the dry-room case (Decision 91): an inner world's
 open water may carry a clip, a box of its own sea that comes along where
 the world it is placed in has no open water.
 
+A body's trait may also carry its own **colour** (`colour: { deep,
+scatter }`, sRGB hex; `bodies.js colourOf`, drawn by `material.js`
+`setColour`), so a place's water is its own and not the open ocean's
+defaults (deep `#073f58`, scatter `#25b8a4`): terrain's two places set
+theirs (Cadboro Bay the Salish Sea's grey-green, Ucluelet's inlet a darker
+grey-green). Under a sun that casts no shadows (an overcast's) a crest
+scatters a third of the light (`scatterGain`), so the water keeps the
+shore's darkness.
+
 ## The problem
 
 Sailing's sea is a pure function of the `sailing.sea` trait (wind, seed,

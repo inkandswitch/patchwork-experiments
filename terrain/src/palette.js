@@ -97,7 +97,9 @@ export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shor
       break;
     }
     if (band && splash && !(beachy && h > 0) && !(band === "rock" && !shoreRock && cover !== COVER.none && cover !== COVER.rock)) rgb = toRGB(C[band]);
-    else if (cover === COVER.wood || (cover === COVER.none && canopy > 5)) rgb = toRGB(C.forestFloor);
+    // under trees (the lidar's canopy over 5 m), forest floor: on a town lot too (second growth round the houses), not lawn; in their shade where the place has one
+    else if (canopy > 5 && C.forestShade && cover !== COVER.yard && cover !== COVER.beach && cover !== COVER.rock && cover !== COVER.lake) rgb = toRGB(C.forestShade);
+    else if (cover === COVER.wood || ((cover === COVER.none || cover === COVER.residential) && canopy > 5)) rgb = toRGB(C.forestFloor);
     else if (cover === COVER.scrub) rgb = toRGB(C.shrub);
     else if (cover === COVER.residential) rgb = toRGB(C.lawn);
     else if (cover === COVER.yard) rgb = toRGB(C.yard);

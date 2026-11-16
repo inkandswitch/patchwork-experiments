@@ -40,7 +40,7 @@
 
 import { createOceanSurface } from "./material.js";
 import { createTiming, latch, levelOf, readerFor, VERSION } from "./convert.js";
-import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipToSpan, currentOf, CURRENT, isLevel, rigidVelocity, scaleOf, shapeOf, shiftByCurrent, TRAIT } from "./bodies.js";
+import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipToSpan, colourOf, currentOf, CURRENT, isLevel, rigidVelocity, scaleOf, shapeOf, shiftByCurrent, TRAIT } from "./bodies.js";
 import { boundedReader } from "./bounded.js";
 import { choose } from "./choose.js";
 
@@ -356,6 +356,9 @@ export default {
         }
         api.invalidate();
       }
+      // the doc's open body's own colour, if it has one (its trait's `colour`)
+      const open = bodiesOf(scene?.objects).open;
+      surface.setColour(colourOf(open ? scene.objects[open]?.traits?.[TRAIT] : null));
       const cam = api.camera.get()?.position;
       if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, atm?.sky);
       // around the camera, at the world's level
@@ -392,6 +395,7 @@ export default {
           api.invalidate();
         }
         p.surface.setPatch(w, l, yaw, floor);
+        p.surface.setColour(colourOf(scene?.objects?.[id]?.traits?.[TRAIT]));
         p.surface.update(t, [box.M[12], box.M[13], box.M[14]], atm ? (atm.sun ?? null) : undefined, atm?.sky);
         out.push(patchExtent(box, b.A));
       }

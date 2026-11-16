@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { createOcean } from "./test/spectrum.js";
 import { fakeThree } from "./test/fake-three.js";
-import { createOceanSurface, detailWaves, foamThreshold, oceanGrid, snapOrigin, surfaceSlopeVariance, waveUniforms } from "./material.js";
+import { createOceanSurface, detailWaves, foamThreshold, oceanGrid, scatterGain, snapOrigin, surfaceSlopeVariance, waveUniforms } from "./material.js";
+import { colourOf } from "./bodies.js";
 
 // This package doesn't depend on three (the stage hands it one), so the
 // surface is built here against just enough of three's shape to see what it
@@ -227,6 +228,48 @@ describe("createOceanSurface", () => {
     expect(u.uSunOn.value).toBe(0);
     s.update(0, [0, 0, 0]);
     expect(u.uSunOn.value).toBe(0);
+  });
+
+  it("takes a body's own colour, and back to the options' or the defaults without one; an overcast's sun scatters a third as much through a crest", () => {
+    const s = createOceanSurface(THREE, sea);
+    const u = s.object.material.uniforms;
+    const deep0 = u.uDeep.value.v, scatter0 = u.uScatter.value.v;
+    s.setColour({ deep: "#1e3a3c", scatter: "#3d6a5f" });
+    expect([u.uDeep.value.v, u.uScatter.value.v]).toEqual(["#1e3a3c", "#3d6a5f"]);
+    // only the deep: the scatter is the default again
+    s.setColour({ deep: "#183b3c" });
+    expect([u.uDeep.value.v, u.uScatter.value.v]).toEqual(["#183b3c", scatter0]);
+    s.setColour(null);
+    expect([u.uDeep.value.v, u.uScatter.value.v]).toEqual([deep0, scatter0]);
+    const o = createOceanSurface(THREE, sea, { deep: "#101010" });
+    o.setColour({ scatter: "#202020" });
+    expect([o.object.material.uniforms.uDeep.value.v, o.object.material.uniforms.uScatter.value.v]).toEqual(["#101010", "#202020"]);
+    // the sun's shadows: every case
+    for (const [sun, gain] of [[{ shadows: false }, 0.35], [{ shadows: true }, 1], [{}, 1], [null, 1]]) expect(scatterGain(sun)).toBe(gain);
+    s.update(0, [0, 0, 0], { direction: [0, 1, 0], shadows: false });
+    expect(u.uScatterGain.value).toBe(0.35);
+    s.update(0, [0, 0, 0], { direction: [0, 1, 0] });
+    expect(u.uScatterGain.value).toBe(1);
+  });
+
+  it("declares in its shaders every uniform of its own that they use (every one)", () => {
+    const m = createOceanSurface(THREE, sea).object.material;
+    for (const name of Object.keys(m.uniforms).filter((k) => /^u[A-Z]/.test(k))) {
+      for (const src of [m.vertexShader, m.fragmentShader]) {
+        if (!new RegExp(`\\b${name}\\b`).test(src)) continue;
+        expect(new RegExp(`uniform\\s+\\w+\\s+${name}\\b`).test(src), `${name} declared`).toBe(true);
+      }
+    }
+  });
+
+  it("reads a body's colour from its trait: each of deep and scatter only as #rrggbb (every case)", () => {
+    expect(colourOf({ clip: [1, 1, 1], colour: { deep: "#1e3a3c", scatter: "#3d6a5f" } })).toEqual({ deep: "#1e3a3c", scatter: "#3d6a5f" });
+    expect(colourOf({ colour: { deep: "#1e3a3c", scatter: "teal" } })).toEqual({ deep: "#1e3a3c" });
+    expect(colourOf({ colour: { deep: "#1e3a3" } })).toBe(null);
+    expect(colourOf({ colour: "#1e3a3c" })).toBe(null);
+    expect(colourOf({ colour: null })).toBe(null);
+    expect(colourOf({})).toBe(null);
+    expect(colourOf(null)).toBe(null);
   });
 
   it("setSea recompiles only when the number of waves changes; a calm still has one (still) wave", () => {
