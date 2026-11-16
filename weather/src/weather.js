@@ -8,7 +8,7 @@
 // source, which WEATHER.md's table is checked against.
 
 import { plugins } from "./index.js";
-import { validDate, validZone } from "./time.js";
+import { validDate } from "./time.js";
 
 /** The weather trait's described fields (index.js), in order. */
 export const FIELDS = plugins.find((p) => p.describes?.weather).describes.weather.fields;
@@ -17,7 +17,7 @@ export const FIELDS = plugins.find((p) => p.describes?.weather).describes.weathe
 export const DEFAULTS = Object.freeze(Object.fromEntries(FIELDS.map((f) => [f.key, f.default])));
 
 /** The checks a field's value must pass, by key, beyond its kind's. */
-const VALID = { zone: validZone, date: validDate };
+const VALID = { date: validDate };
 
 /** One field's value in force: the trait's when it is one the field can hold (clamped into a number's range), else the default. */
 function fieldOf(f, v) {
@@ -35,7 +35,7 @@ function fieldOf(f, v) {
 
 /**
  * The weather trait with every field in force: a missing or malformed field
- * is its default (an invalid zone or date too, by time.js's predicates), and
+ * is its default (an invalid date too, by time.js's predicate), and
  * a number outside its range is clamped into it. `source` is not a field and
  * is dropped: nothing the ambients compute reads it. Any trait, even none,
  * gives a whole set of params.
@@ -59,40 +59,56 @@ export function windOf(p) {
 
 /**
  * The places the Place command offers (WEATHER.md, "Setting it"): a name for
- * people and where the sun is computed from. Cadboro Bay is the defaults';
- * Ucluelet is terrain's origin there (terrain/src/ucluelet.js ORIGIN).
+ * people, where the sun is computed from, and the clock people there read
+ * (British Columbia's is UTC-7 all year from November 2026). Cadboro Bay is
+ * the defaults'; Ucluelet is terrain's origin there (terrain/src/ucluelet.js
+ * ORIGIN). The name lives here, not in the doc: the coordinates are the
+ * place, so nothing in the doc can say one place while meaning another.
  */
 export const PLACES = Object.freeze([
-  Object.freeze({ place: "Cadboro Bay", lat: 48.454, lon: -123.2915, zone: "America/Vancouver" }),
-  Object.freeze({ place: "Ucluelet", lat: 48.95, lon: -125.558, zone: "America/Vancouver" }),
+  Object.freeze({ name: "Cadboro Bay", lat: 48.454, lon: -123.2915, offset: -7 }),
+  Object.freeze({ name: "Ucluelet", lat: 48.95, lon: -125.558, offset: -7 }),
 ]);
 
-/** The place among PLACES the params are at (lat, lon and zone exactly; the name is a label), or null. */
-export const placeOf = (p) => PLACES.find((q) => q.lat === p.lat && q.lon === p.lon && q.zone === p.zone) ?? null;
+/** The place among PLACES the params are at (lat and lon exactly: the clock is when, not where), or null. */
+export const placeOf = (p) => PLACES.find((q) => q.lat === p.lat && q.lon === p.lon) ?? null;
 
 /**
  * The fields a fetched snapshot speaks for: the conditions (wind, gusts,
- * sky) and the place and moment they are of. Not `place` (a label) or
- * `seed` (which gust pattern plays, not the weather's).
+ * sky) and the place and moment they are of. Every field but `seed`, which
+ * picks the gust pattern and is not weather.
  */
-export const SUMMED = Object.freeze(FIELDS.map((f) => f.key).filter((k) => k !== "place" && k !== "seed"));
+export const SUMMED = Object.freeze(FIELDS.map((f) => f.key).filter((k) => k !== "seed"));
 
 /**
- * The key a fetch writes as `source.sum`: the summed fields in force, in
- * order, as JSON. Exact, not a hash, so no dialled weather can pass for a
- * fetched one.
+ * What a fetch writes as `source.fields`: the summed fields in force, as a
+ * map. Exact values, keyed by name, so no dialled weather can pass for a
+ * fetched one, the doc says what was fetched, and no field order is implied.
  */
-export const sumOf = (p) => JSON.stringify(SUMMED.map((k) => p[k]));
+export const fetchedFields = (p) => Object.fromEntries(SUMMED.map((k) => [k, p[k]]));
 
 /**
- * Where the weather in force came from (WEATHER.md, "The data"):
- * "fetched" while every summed field is as the fetch wrote it, "dialled
- * since fetch" once one isn't, and "dialled" with no fetch on record (no
- * `source`, or one without a string `sum`). Pure: nothing intercepts an
+ * The summed fields dialled since the fetch on record, in field order: those
+ * whose value in force isn't `source.fields`'s (a field the source doesn't
+ * name counts as dialled). null with no fetch on record: no `source` of the
+ * trait's own, or one without a `fields` map. Pure: nothing intercepts an
  * edit to know.
  */
+export function dialledSince(trait) {
+  const own = (o, k) => !!o && typeof o === "object" && !Array.isArray(o) && Object.hasOwn(o, k);
+  if (!own(trait, "source") || !own(trait.source, "fields")) return null;
+  const f = trait.source.fields;
+  if (!f || typeof f !== "object" || Array.isArray(f)) return null;
+  const p = weatherParams(trait);
+  return SUMMED.filter((k) => !Object.hasOwn(f, k) || f[k] !== p[k]);
+}
+
+/**
+ * Where the weather in force came from (WEATHER.md, "The data"): "fetched"
+ * while every summed field is as the fetch wrote it, "dialled since fetch"
+ * once one isn't, and "dialled" with no fetch on record.
+ */
 export function provenance(trait) {
-  const s = trait && typeof trait === "object" && Object.hasOwn(trait, "source") ? trait.source : null;
-  if (!s || typeof s !== "object" || typeof s.sum !== "string") return "dialled";
-  return s.sum === sumOf(weatherParams(trait)) ? "fetched" : "dialled since fetch";
+  const d = dialledSince(trait);
+  return d == null ? "dialled" : d.length ? "dialled since fetch" : "fetched";
 }

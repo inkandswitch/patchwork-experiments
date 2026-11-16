@@ -49,7 +49,7 @@ describe("sunAt's fields", () => {
 
 describe("the default weather's sun, end to end through instantOf (an independent ephemeris, astronomy-engine 2.1.19: 225.576°, 56.302°)", () => {
   // Cadboro Bay, 2026-07-15 15:00 America/Vancouver (index.js's init).
-  const r = sunAt(instantOf({ date: "2026-07-15", hour: 15, zone: "America/Vancouver" }), 48.454, -123.2915);
+  const r = sunAt(instantOf({ date: "2026-07-15", hour: 15, offset: -7 }), 48.454, -123.2915);
   it("azimuth 225.57°", () => near(r.azimuth, 225.57, 0.02));
   it("apparent elevation 56.30°", () => near(r.apparent, 56.30, 0.02));
 });
