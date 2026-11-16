@@ -40,6 +40,57 @@ describe("the patch", () => {
     expect(s.object.geometry.attributes.position.array).not.toBe(before);
     expect(s.object.material.uniforms.uInner.value).toBe(1e9);
   });
+
+  // a tank on a pitching, heeling hull: its yaw and floor plane change every frame, its counts never
+  const YAWS = [0, 0.17, (137 * Math.PI) / 180];
+  const FLOORS = [1, [-1, 0.1, 0], [-1.2, 0, -0.17], [-0.8, 0.05, 0.05]];
+  it("setPatch with its counts unchanged allocates no array, keeps every attribute, and fills the positions patchGrid would", () => {
+    const THREE = fakeThree();
+    const calm = { components: [], seed: 1, stats: {}, wind: { speed: 0, from: 0 } };
+    const s = createOceanSurface(THREE, calm, { patch: { w: 2, l: 3, yaw: 0, floor: 1 } });
+    const geo = s.object.geometry;
+    const before = { ...geo.attributes, index: geo.index, array: geo.attributes.position.array };
+    const cell = s.object.material.uniforms.uCell.value;
+    const real = { F: globalThis.Float32Array, U: globalThis.Uint32Array };
+    let made = 0;
+    const counting = (C) => new Proxy(C, { construct: (T, args) => (made++, Reflect.construct(T, args)) });
+    for (const yaw of YAWS)
+      for (const floor of FLOORS) {
+        globalThis.Float32Array = counting(real.F);
+        globalThis.Uint32Array = counting(real.U);
+        try {
+          s.setPatch(2, 3, yaw, floor);
+        } finally {
+          globalThis.Float32Array = real.F;
+          globalThis.Uint32Array = real.U;
+        }
+        expect(made).toBe(0);
+        for (const k of ["position", "aDisp", "aFace"]) expect(geo.attributes[k]).toBe(before[k]);
+        expect(geo.index).toBe(before.index);
+        expect(geo.attributes.position.array).toBe(before.array);
+        expect(Array.from(geo.attributes.position.array)).toEqual(Array.from(patchGrid(2, 3, yaw, cell, floor).positions));
+      }
+  });
+
+  it("the fade's spacing follows setPatch: past 256 cells a side it is the real one", () => {
+    const THREE = fakeThree();
+    const calm = { components: [], seed: 1, stats: {}, wind: { speed: 0, from: 0 } };
+    // 100 m asks for 0.5 m cells: 200 a side
+    const s = createOceanSurface(THREE, calm, { patch: { w: 100, l: 100, floor: 6 } });
+    const U = s.object.material.uniforms;
+    expect(U.uCell.value).toBe(0.5);
+    // 160 m: 256 cells (capped) of 0.625
+    s.setPatch(160, 100, 0, 6);
+    expect(U.uCell.value).toBe(0.625);
+    // 200 m, still 256 cells, so in place: of 0.78125
+    const array = s.object.geometry.attributes.position.array;
+    s.setPatch(200, 100, 0.3, 6);
+    expect(s.object.geometry.attributes.position.array).toBe(array);
+    expect(U.uCell.value).toBe(0.78125);
+    // back to 100: 0.5
+    s.setPatch(100, 100, 0, 6);
+    expect(U.uCell.value).toBe(0.5);
+  });
 });
 
 describe("water's parts", () => {
