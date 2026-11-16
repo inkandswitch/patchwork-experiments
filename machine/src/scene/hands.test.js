@@ -7,7 +7,7 @@
 // puts it down, a new one replaces it).
 import { hands } from "./hands.js";
 
-function stubMachine(id, { seats = null, held = [] } = {}) {
+function stubMachine(id, { seats = null, held = [], started = true } = {}) {
   const ports = 2;
   const h = Array.from({ length: ports }, (_, p) => (held.includes(p) ? { by: "them" } : null));
   const m = {
@@ -26,7 +26,7 @@ function stubMachine(id, { seats = null, held = [] } = {}) {
     },
   };
   const pad = { down: new Set(), cleared: 0, key: (code, on) => (on ? pad.down.add(code) : pad.down.delete(code)), clear: () => (pad.cleared++, pad.down.clear()) };
-  return { e: { id, m, pad, ports, kind: "snes", title: id.toUpperCase(), note: null }, seats };
+  return { e: { id, m: started ? m : null, pad, ports, kind: "snes", title: id.toUpperCase(), note: started ? null : "Starting…" }, seats };
 }
 
 /**
@@ -73,7 +73,7 @@ function view(specs, sat = null, { states = {}, refuse = [], roster = "seats" } 
     },
   };
   v.frame = () => {
-    for (const e of machines.values()) v.h.follow(e);
+    for (const e of machines.values()) if (e.m) v.h.follow(e); // as the extension: only a running machine follows
   };
   /** Escape: the held tool put down, as the stage does it. */
   v.escape = () => {
@@ -240,4 +240,76 @@ test("Play sits you at a seated machine's first free port's seat (the preferred 
             cases++;
           }
   expect(cases).toBe(3 * 4 * 4 * 4 * 3);
+});
+
+// A click on a machine, over everything that decides it: what's clicked (a
+// machine with seats, one without, one still starting, the floor, nothing),
+// where this view sits (nowhere, at the machine's seat, at a seat of no
+// machine's), the pad of the seatless machine in hand or not, who holds that
+// one's ports, whether the seated one's seats are taken, whether anything
+// owns seats, and whether the stage lets the verb run there (within reach or
+// not). `run` is the stage's api.run as it is: it runs Play only where Play's
+// state is enabled and within reach, and answers whether it ran.
+test("a click is Play while it's the way in (no pad in hand, sitting nowhere): it runs, or says why Play can't; sitting or holding a pad, or out of reach, it goes on", () => {
+  const TARGETS_C = ["m", "n", "s", "floor", null];
+  const SAT = [null, { of: "m", seat: "p1" }, { of: null, seat: "p1" }];
+  const FULLNESS = [[], [1], [0, 1]];
+  let cases = 0;
+  for (const target of TARGETS_C)
+    for (const sat of SAT)
+      for (const padOnN of [false, true])
+        for (const nHeld of FULLNESS)
+          for (const mTaken of [false, true])
+            for (const roster of ["seats", null])
+              for (const reach of ["within", "beyond"]) {
+                if (padOnN && nHeld.length === 2) continue; // no port free on n to take its pad with
+                const states = mTaken ? { "m:p1": "taken", "m:p2": "taken" } : {};
+                const v = view({ m: { seats: SEATS }, n: { held: nHeld }, s: { seats: SEATS, started: false } }, sat, { states, roster });
+                v.frame();
+                if (padOnN) v.h.play("n");
+                const before = { sat: v.sat, m: v.port("m"), n: v.port("n"), pad: v.pad(), notices: v.notices.length };
+                let ran = 0;
+                const run = () => {
+                  ran++;
+                  const st = v.h.verb(target);
+                  if (reach !== "within" || !st || st.disabled) return false;
+                  v.h.play(target);
+                  return true;
+                };
+                const holding = before.pad !== null;
+                const machine = ["m", "n", "s"].includes(target);
+                const clicks = machine && !holding && sat === null;
+                expect([target, sat, padOnN, v.h.clicks(target)]).toEqual([target, sat, padOnN, clicks]);
+                const verb = v.h.verb(target);
+                const taken = v.h.click(target, run);
+                const said = v.notices.slice(before.notices);
+                const label = [target, sat, padOnN, nHeld, mTaken, roster, reach];
+                if (!clicks) {
+                  // not Play's: the stage isn't asked, and nothing changes
+                  expect([label, taken, ran, said, v.sat, v.pad()]).toEqual([label, false, 0, [], before.sat, before.pad]);
+                } else if (verb.disabled) {
+                  // Play can't, for the machine's own reason: it says that reason, and takes the click
+                  expect([label, taken, ran, said, v.sat, v.pad()]).toEqual([label, true, 1, [verb.title], before.sat, before.pad]);
+                } else if (reach === "beyond") {
+                  // the stage refuses it (too far): the click goes on, nothing said
+                  expect([label, taken, ran, said, v.sat, v.pad()]).toEqual([label, false, 1, [], before.sat, before.pad]);
+                } else if (target === "m") {
+                  // sat at its preferred free seat, P2; its port and pad follow
+                  expect([label, taken, said, v.sat]).toEqual([label, true, [], { of: "m", seat: "p2" }]);
+                  v.frame();
+                  expect([v.port("m"), v.pad()]).toEqual([1, "M · P2"]);
+                } else {
+                  // n, no seats: its first free port (the preferred, P2, first) with the pad
+                  const first = nHeld.includes(1) ? 0 : 1;
+                  expect([label, taken, said, v.port("n"), v.pad()]).toEqual([label, true, [], first, `N · P${first + 1}`]);
+                }
+                // what Play refuses here: s starting; m every seat taken, or no seats package; n every port held
+                if (clicks) {
+                  const why = target === "s" ? "Starting…" : target === "m" ? (roster === null ? "Its seats need the seats package" : mTaken ? "Every port is taken" : null) : nHeld.length === 2 ? "Every port is taken" : null;
+                  expect([label, verb.disabled ? verb.title : null]).toEqual([label, why]);
+                }
+                cases++;
+              }
+  // 5 targets × 3 sittings × (2 × 3 − 1) pad and n's ports × 2 × 2 × 2
+  expect(cases).toBe(5 * 3 * 5 * 2 * 2 * 2);
 });

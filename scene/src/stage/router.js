@@ -48,10 +48,10 @@ export function releaseKind({ button, ctrl }, mac) {
   return null;
 }
 
-/** Is someone typing into this element (so it keeps its keys)? */
 /** Is `el` in something over the canvas that keeps the look while the pointer is on it (`data-keeps-look`: the use prompt)? */
 export const keepsLook = (el) => !!el?.closest?.("[data-keeps-look]");
 
+/** Is someone typing into this element (so it keeps its keys)? */
 export function isTyping(el) {
   if (!el || el.nodeType !== 1) return false;
   const tag = el.tagName;

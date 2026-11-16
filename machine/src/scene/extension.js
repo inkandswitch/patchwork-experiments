@@ -25,16 +25,18 @@
 //   laid on the object, not lasting, when its session is made, and listed
 //   by port on the trait (`seats`): sitting in port N's seat takes port N
 //   and puts its pad in your hand; standing up gives the port back. Play
-//   (P, the use prompt, the menu) is the way in: it sits you at the first
-//   free port's seat, through the seats' roster. Escape puts the pad down
+//   (a click on the cabinet, P, the use prompt, the menu) is the way in: it
+//   sits you at the first free port's seat, through the seats' roster. A
+//   click is Play's only while you hold no pad and sit nowhere (hands.js
+//   `clicks`); in Edit, Edit's click selects first. Escape puts the pad down
 //   (the port stays yours while you sit); P picks it up. A machine whose
 //   trait lists no seats is played by Play alone: P takes a free port with
 //   the pad, Escape gives it back;
-// - while you hold a pad, shows what its keys do (controls.js), at the
-//   bottom left of the view;
+// - while you hold a pad, shows what its keys do (controls.js), at the top
+//   left of the view, folding to its title after a few seconds;
 // - never shows a stopped machine's screen black: a blank picture there is
-//   replaced by the engine's first picture from that state (present/poster.js),
-//   with the stopped note under the screen saying P plays it.
+//   replaced by the engine's first picture from that state (present/poster.js,
+//   shown.js), with the stopped note under the screen saying how to play it.
 //
 // The screen shows one player's view for everyone (the trait's `player`,
 // for a machine with a view per player: Doom), and its sound is that
@@ -51,7 +53,7 @@
 // cabinet).
 
 import { Screen, ASPECT, viewOf } from "../present/screen.js";
-import { blank, posters } from "../present/poster.js";
+import { posters } from "../present/poster.js";
 import { compile } from "../engine.js";
 import { doomWorld, mapOf } from "../present/doom-world.js";
 import { Spectator } from "../present/spectator.js";
@@ -65,7 +67,8 @@ import { retrying, makeSession } from "./start.js";
 import { screenOf } from "./cabinet.js";
 import { seatsFor, placesFor } from "./seating.js";
 import { hands } from "./hands.js";
-import { controlsOf } from "./controls.js";
+import { panel as controlsPanel } from "./controls.js";
+import { screenShows, stoppedNote } from "./shown.js";
 import { WORLD, MAP_SOURCE, registered, worldCommand, stateOf, besideCabinet, wadFile } from "./worlds.js";
 
 export const TRAIT = "machine";
@@ -314,36 +317,41 @@ function create(api) {
     roster: () => rosterIn(api),
   });
 
-  // ---- what the keys do, while a pad is in hand (controls.js): this extension's own overlay
+  // ---- what the keys do, while a pad is in hand (controls.js): this extension's
+  // own overlay, at the top left, open for a few seconds and then folded to its
+  // title (hovered, it opens again)
   api.style?.(CONTROLS_CSS);
   const overlay = api.overlay?.() ?? null;
-  const panel = overlay ? overlay.ownerDocument.createElement("div") : null;
-  if (panel) {
-    panel.className = "machine-controls";
-    panel.hidden = true;
-    overlay.append(panel);
+  const box = overlay ? overlay.ownerDocument.createElement("div") : null;
+  if (box) {
+    box.className = "machine-controls";
+    box.hidden = true;
+    overlay.append(box);
   }
-  let panelKey = "";
+  const controlsAt = controlsPanel();
+  let panelKey = null;
   /** The controls of the pad in hand, or none. */
   function showControls() {
-    if (!panel) return;
+    if (!box) return;
     const h = pads.held();
     const e = h ? machines.get(h.id) : null;
-    const port = e?.m?.host.seat?.port ?? null;
-    const key = e ? `${e.id}:${e.kind}:${e.title}:${port}` : "";
+    const p = controlsAt(e ? { id: e.id, kind: e.kind, title: e.title, port: e.m?.host.seat?.port ?? null } : null, api.clock.now()); // the stage's own time, which never pauses
+    const key = p?.key ?? null;
     if (key === panelKey) return;
     panelKey = key;
-    panel.hidden = !e;
-    if (!e) return panel.replaceChildren();
-    const doc = panel.ownerDocument;
+    box.hidden = !p;
+    if (!p) return box.replaceChildren();
+    box.classList.toggle("folded", !p.open);
+    const doc = box.ownerDocument;
     const el = (tag, cls, text) => Object.assign(doc.createElement(tag), cls ? { className: cls } : {}, text != null ? { textContent: text } : {});
-    const rows = el("dl", "machine-controls-keys");
-    for (const { label, keys } of controlsOf(e.kind)) {
-      const dt = el("dt");
-      for (const k of keys) dt.append(el("kbd", null, k));
-      rows.append(dt, el("dd", null, label));
+    const rows = el("div", "machine-controls-keys");
+    for (const { label, keys } of p.rows) {
+      const item = el("span", "machine-controls-key");
+      for (const k of keys) item.append(el("kbd", null, k));
+      item.append(el("span", null, label));
+      rows.append(item);
     }
-    panel.replaceChildren(el("div", "machine-controls-title", port === null ? e.title : `${e.title} · P${port + 1}`), rows, el("div", "machine-controls-foot", "Esc puts the pad down · P picks it up"));
+    box.replaceChildren(el("div", "machine-controls-title", `${p.title} · keys`), rows, el("div", "machine-controls-foot", "Esc puts the pad down · P picks it up"));
   }
 
   // Every frame while there are machines: step each host, show its picture
@@ -371,11 +379,10 @@ function create(api) {
         e.m.frame();
         const player = playerOf(e.kind, traitOf(e.id)?.player, e.ports);
         if (e.view?.player !== player) e.view = Object.assign(viewOf(e.m.host, { player }), { player });
-        const picture = e.view();
-        if (picture) e.last = picture;
         // stopped on a blank picture: its poster, once found (until then, what's shown stays)
-        if (!e.m.clock.running() && blank(e.last)) e.screen.show(e.poster.get(e.m.host, player));
-        else e.screen.show(picture);
+        const shows = screenShows({ running: e.m.clock.running(), now: e.view(), last: e.last, poster: () => e.poster.get(e.m.host, player) });
+        e.last = shows.last;
+        e.screen.show(shows.show);
         if (screen && at) {
           screenMatrix(THREE, at, screen, e.mesh.matrix);
           e.mesh.matrixWorldNeedsUpdate = true;
@@ -387,7 +394,7 @@ function create(api) {
           e.sound.out.feed(e.m.host);
         } else e.m.host.output(); // taken either way, so it never piles up
       }
-      const note = e.note ?? stoppedNote(e);
+      const note = e.note ?? stoppedNote({ started: !!e.m, running: !!e.m?.clock.running(), world: api.clock.running(), holders: e.m?.holders() ?? [] });
       if (note && centre) items.push({ key: `machine:${e.id}`, text: note, position: [centre.x, centre.y - (screen.height / 2) - 0.08, centre.z], className: "machine-note" });
     }
     for (const w of worlds.values()) show(w);
@@ -459,19 +466,21 @@ function create(api) {
     listen(audio, { position: eye?.position ?? cam.position, forward, up: cam.up ?? [0, 1, 0] });
   }
 
-  function stoppedNote(e) {
-    if (!e.m || e.m.clock.running()) return null;
-    if (!api.clock.running()) return null; // the world's own pause says so already
-    if (e.m.holders().some(Boolean)) return "Paused";
-    return "Stopped while nobody plays: P to play";
-  }
-
   // doom/'s map source, here or not now (late-bound: the registry, by id, read when asked)
   const mapSource = registered(api.registry, "scene:source", MAP_SOURCE);
 
   sync();
 
   return {
+    // a click on a cabinet is Play while it's the way in (hands.js `clicks`:
+    // no pad in hand, sitting nowhere), through the stage, so the verb's
+    // state and reach apply as on every surface; what Play can't do there is
+    // said. It reaches a cabinet as its trait's holder (STAGE.md, "The input
+    // chain"), after Edit's click, which selects.
+    input: {
+      click: (ev) => pads.click(ev.holder, () => api.run({ ext: api.id, command: "play", target: ev.holder, hit: ev.hit })),
+      cursor: (ev) => (pads.clicks(ev.holder) ? "pointer" : null),
+    },
     update(scene, _local, prev) {
       if (scene !== prev?.scene) sync();
     },
@@ -512,7 +521,7 @@ function create(api) {
       stopLoop?.();
       stopLoop = null;
       labels.set([]);
-      panel?.remove();
+      box?.remove();
       plane.dispose();
       if (audio) audio.close().catch(() => {});
     },
@@ -567,18 +576,24 @@ export async function give(ctx, info) {
   return true;
 }
 
-/** The controls panel: small, at the bottom left of the view, over the picture, never in the way of a press. */
+/**
+ * The controls panel: compact, at the top left of the view (clear of the use
+ * prompt by the look and the legends at the bottom left), in the scene's
+ * label colours. Folded, it is its title alone, and opens while hovered.
+ */
 const CONTROLS_CSS = `
-.machine-controls { position: absolute; left: 12px; bottom: 12px; max-width: min(300px, calc(100% - 24px)); padding: 8px 10px; border-radius: 8px;
-  background: rgba(18, 18, 22, 0.84); color: #f2f2f2; font: 12px/1.35 system-ui, sans-serif; pointer-events: none; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+.machine-controls { position: absolute; left: 12px; top: 12px; max-width: min(340px, calc(100% - 24px)); padding: 6px 8px; border-radius: 6px;
+  background: var(--scene-label-bg, rgba(255, 255, 255, 0.82)); color: var(--scene-fg, black); border: 1px solid var(--scene-border, #ddd);
+  box-shadow: var(--scene-shadow, 0 2px 8px rgba(0, 0, 0, 0.12)); font: 11px/1.4 var(--scene-family, system-ui, sans-serif); }
 .machine-controls[hidden] { display: none; }
-.machine-controls-title { font-weight: 600; margin-bottom: 6px; }
-.machine-controls-keys { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 3px 10px; margin: 0; }
-.machine-controls-keys dt { margin: 0; white-space: nowrap; }
-.machine-controls-keys dd { margin: 0; opacity: 0.85; }
-.machine-controls kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; margin-right: 3px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 4px;
-  font: 11px/1.5 ui-monospace, monospace; text-align: center; background: rgba(255, 255, 255, 0.08); }
-.machine-controls-foot { margin-top: 6px; opacity: 0.7; }
+.machine-controls-title { font-weight: 600; }
+.machine-controls-keys { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 4px; }
+.machine-controls-key { white-space: nowrap; }
+.machine-controls kbd { display: inline-block; min-width: 1.3em; padding: 0 3px; margin-right: 2px; border: 1px solid var(--scene-border, #ccc); border-radius: 3px;
+  font: 10px/1.45 var(--scene-family-code, ui-monospace, monospace); text-align: center; background: var(--scene-surface, #f4f4f4); }
+.machine-controls-key > span { margin-left: 1px; color: var(--scene-muted, #666); }
+.machine-controls-foot { margin-top: 4px; color: var(--scene-muted, #666); }
+.machine-controls.folded:not(:hover) .machine-controls-keys, .machine-controls.folded:not(:hover) .machine-controls-foot { display: none; }
 `;
 
 export default { create, drop };

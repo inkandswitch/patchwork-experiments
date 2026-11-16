@@ -9,7 +9,7 @@ import { content as doomContent } from "../doom.js";
 
 const pic = (w, h, pixels) => ({ width: w, height: h, rgba: new Uint8Array(pixels.flat()) });
 
-test("blank: nothing, 0 by 0, or one colour all over (alpha aside); over every picture up to 2 by 2 in two colours and two alphas", () => {
+test("blank: nothing, 0 by 0, or one colour all over (alpha aside); over every picture up to 2 by 2 in four colours and two alphas", () => {
   expect(blank(null)).toBe(true);
   expect(blank(undefined)).toBe(true);
   expect(blank(pic(0, 0, []))).toBe(true);
