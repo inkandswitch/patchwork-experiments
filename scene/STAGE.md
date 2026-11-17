@@ -496,10 +496,8 @@ t`. Anyone who may write pauses and resumes. One clock per doc.
 
 Undo covers the stage's own edits, per person and per focus doc (`src/undo.js`);
 a package verb, clock act or process save is never one. A step restores only if
-the doc still holds everything it wrote, else it is dropped and said. A step
-that showed something can't be undone while another party (`parties`) has a
-stake; an unknown audience counts as showing everything. Kept objects come back
-as their keeper has them now.
+the doc still holds everything it wrote, else it is dropped and said. Kept
+objects come back as their keeper has them now.
 
 ## `instance`
 
@@ -507,7 +505,6 @@ as their keeper has them now.
 |---|---|
 | `update(scene, local, prev, view)` | the stage, once per flush when doc, local, view or what's shown changed |
 | `looks()`, `audience(scene)`, `ambient()` | see "Lenses", "Audience", "Ambients" |
-| `parties(scene)` → `(id) → viewer[] \| null` | undo: who has a stake |
 | `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
 | `messages`, `receive(type, data, from)` | see "Telling"; `receive` gets undeclared sends |
 | `beforeRemove(draft, ids)`, `dispose()` | the stage |

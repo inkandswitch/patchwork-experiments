@@ -801,55 +801,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── what an edit did, for undo (HISTORY.md, TOOLS Decisions 2; src/undo.js) ──────
   // Judged when a step of the stage's own editing is recorded, from the doc
-  // before its first change and after its last:
-  //   shows  the objects it revealed (who may see what one is grew, by the
-  //          running extensions' audience policies on each side; unknown on
-  //          either side counts as grown);
-  //   kept   the names of the objects it removed whose contents a keeper
-  //          holds: bound by the trait of an extension whose plugin says
-  //          `keeper` (STAGE.md, "Keepers").
-  // And when a step is taken back, who has a stake in those objects now:
-  // every running extension's `parties(scene)(id)`, merged, without this
-  // viewer. Where nothing answers (or answers null) there are no parties;
-  // where one throws, they can't be told.
+  // before its first change and after its last: `kept`, the names of the
+  // objects it removed whose contents a keeper holds (bound by the trait of
+  // an extension whose plugin says `keeper`: STAGE.md, "Keepers").
 
-  /** The snapshot of any version of the doc (the current one's is scene()). */
-  const snapOf = (d) => (d === doc() ? scene() : snapshotOf(modelOf(d)));
-
-  /** Every running extension's answer to `name(...args)`, a function of an object id, each made safe: [{ id, fn }]. */
-  function policiesOf(name, args) {
-    const out = [];
-    for (const r of host.instances()) {
-      if (typeof r.instance[name] !== "function") continue;
-      try {
-        const fn = r.instance[name](...args);
-        if (typeof fn === "function") out.push({ id: r.id, fn });
-      } catch (err) {
-        console.warn(`[scene] extension “${r.id}”: ${name} failed`, err);
-        out.push({ id: r.id, fn: null });
-      }
-    }
-    return out;
-  }
-  /** Who may see what each object is in this snapshot: (id) → "all" | viewer[] | null (unknown). As audienceOf, with policies of its own. */
-  function audiencesIn(snap) {
-    if (!packages.complete() || !host.settled()) return () => null;
-    const list = policiesOf("audience", [snap]);
-    return (id) =>
-      mergeAudience(
-        list.map(({ id: ext, fn }) => {
-          if (!fn) return CLOSED;
-          try {
-            return fn(id) ?? null;
-          } catch (err) {
-            console.warn(`[scene] extension “${ext}”: audience failed for ${id}`, err);
-            return CLOSED;
-          }
-        }),
-      );
-  }
-  /** Did who may see it grow, from `a` to `b`? Unknown (null) on either side: it may have. */
-  const grew = (a, b) => a == null || b == null || (b === "all" ? a !== "all" : a !== "all" && b.some((v) => !a.includes(v)));
   /** The traits a keeper binds objects by: those of every registered extension whose plugin says `keeper`. */
   function keeperTraits() {
     const out = new Set();
@@ -862,20 +817,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     for (const p of list) for (const t of Array.isArray(p.traits) ? p.traits : []) if (typeof t === "string") out.add(t);
     return out;
   }
-  /** What a step did to one doc: the scene's, judged; another (a render doc) shows nothing. */
+  /** What a step did to one doc: the scene's, judged; another (a render doc) keeps nothing. */
   function judgeEdit({ handle: h, before, after }) {
     if (h !== handle || !before || !after) return null;
     const was = before.objects ?? {};
     const now = after.objects ?? {};
-    const shows = new Set();
-    // a listed package missing, or an extension not started: whose policies are missing can't be told,
-    // so every object counts as shown (a hand's `only` among them would hide a reveal); said so on refusal
-    const unknown = !packages.complete() || !host.settled();
-    if (unknown || host.instances().some((r) => typeof r.instance.audience === "function")) {
-      const ab = audiencesIn(snapOf(before));
-      const aa = audiencesIn(snapOf(after));
-      for (const id of Object.keys(now)) if (was[id] && grew(ab(id), aa(id))) shows.add(id);
-    }
     const kept = [];
     const gone = Object.keys(was).filter((id) => !now[id]);
     if (gone.length) {
@@ -885,33 +831,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (t && typeof t === "object" && [...traits].some((k) => t[k] != null)) kept.push(String(was[id].name ?? id));
       }
     }
-    return { shows: [...shows], kept, ...(unknown && shows.size ? { unknown: true } : {}) };
-  }
-  /**
-   * Who has a stake in these objects now, other than this viewer: every
-   * running extension's `parties(scene)` answer, merged. An answer of null
-   * (or none) is no stake; one that throws can't be told, and nor can the
-   * whole: null (the take-back is refused, as an audience policy that
-   * throws hides).
-   */
-  function partiesOf(ids) {
-    const snap = scene();
-    const out = new Set();
-    for (const { id: ext, fn } of policiesOf("parties", [snap])) {
-      if (!fn) return null; // parties(scene) threw (policiesOf said so)
-      for (const id of ids) {
-        let list;
-        try {
-          list = fn(id);
-        } catch (err) {
-          console.warn(`[scene] extension “${ext}”: parties failed for ${id}`, err);
-          return null;
-        }
-        if (Array.isArray(list)) for (const v of list) if (typeof v === "string" && v) out.add(v);
-      }
-    }
-    out.delete(viewer);
-    return [...out].sort();
+    return { kept };
   }
 
   // ─── presence ─────────────────────────────────────────────────────────────
@@ -1579,7 +1499,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const edits = createEdits({
     handle,
     judge: (part) => judgeEdit(part),
-    parties: (ids) => partiesOf(ids),
     writable: () => !dead && writable(),
     notify: (text) => notify(text),
     changed: (next) => {
@@ -2321,7 +2240,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
               g.end();
             },
             edits: (label) => (writable() ? edits.begin(label) : NO_EDIT),
-            /** undo or redo this viewer's last edit in the focus doc: false when there's none, it has been changed since, or it needs the others' agreement */
+            /** undo or redo this viewer's last edit in the focus doc: false when there's none or it has been changed since */
             undo: () => edits.take("undo"),
             redo: () => edits.take("redo"),
           }

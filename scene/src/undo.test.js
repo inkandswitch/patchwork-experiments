@@ -144,7 +144,7 @@ describe("createEdits on real Automerge", () => {
     const seen = [];
     const judge = ({ before, after }) => {
       seen.push([plain(before.objects.die.transform.position), plain(after.objects.die.transform.position)]);
-      return { shows: ["die"], kept: ["Die"] };
+      return { kept: ["Die"] };
     };
     const e = createEdits({ handle: h, judge });
     const g = e.begin("Move");
@@ -153,7 +153,7 @@ describe("createEdits on real Automerge", () => {
     g.change((d) => (d.objects.die.transform.position = [2, 0, 0]));
     g.end();
     expect(seen).toEqual([[[0, 0, 0], [2, 0, 0]]]);
-    expect(e.stacks()[h.url].undo[0]).toMatchObject({ shows: ["die"], kept: ["Die"] });
+    expect(e.stacks()[h.url].undo[0]).toMatchObject({ kept: ["Die"] });
     h.free();
   });
 

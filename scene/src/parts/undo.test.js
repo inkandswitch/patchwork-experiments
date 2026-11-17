@@ -96,17 +96,15 @@ describe("scene.undo", () => {
   });
 });
 
-// Decisions 2's other rules: a step that showed or decided something is taken
-// back only with its parties' agreement (refused, until that protocol
-// exists); a step that removed something a keeper holds says what it can't
-// put back. And only the stage's own parts can edit at all.
-describe("undo's agreement and keeper rules, and who may edit", () => {
+// Undo's plain rule over reveals: a step that changed who may see something
+// is taken back like any other, whoever has a stake; a step that removed
+// something a keeper holds says what it can't put back. And only the stage's
+// own parts can edit at all.
+describe("undo over reveals, the keeper rule, and who may edit", () => {
   // A card with one physical state of four: in ann's hand, in bob's hand,
   // face up on the table, face down on it. Who may see what it is: the
-  // hand's player; everyone; nobody. The fixture table's parties are the
-  // seated, from the scene's `t.seated` trait.
+  // hand's player; everyone; nobody.
   const STATES = ["hand:ann", "hand:bob", "up", "down"];
-  const audienceOfState = (st) => (st === "up" ? "all" : st.startsWith("hand:") ? [st.slice(5)] : []);
   const TABLE = {
     meta: { id: "t.table", traits: ["t.card"] },
     module: {
@@ -118,28 +116,22 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
           if (st.startsWith("hand:")) return { show: [st.slice(5)], only: [st.slice(5)] };
           return null;
         },
-        parties: (snap) => {
-          const seated = [...(snap.traits?.["t.seated"]?.who ?? [])];
-          return () => seated;
-        },
         // a package's write (not an edit): how the tests set a state up
         set: (st) => api.change((d) => (d.objects.card.traits["t.card"].state = st)),
-        seat: (who) => api.change((d) => (d.traits["t.seated"] = { who })),
       }),
     },
   };
-  const cardDoc = (seated) => ({
-    traits: { "t.card": {}, "t.seated": { who: seated } },
+  const cardDoc = () => ({
+    traits: { "t.card": {} },
     objects: { card: object({ name: "Card", traits: { "t.card": { state: "down" } } }) },
     order: ["card"],
   });
-  const grew = (a, b) => (b === "all" ? a !== "all" : a !== "all" && b.some((v) => !a.includes(v)));
 
-  it("over every move of a card between four states × who is seated (nobody, ann, ann and bob): ann's undo is refused exactly when the move widened who may see it and someone else is seated", async () => {
+  it("over every move of a card between four states, with a listed package missing or not: ann's undo takes it back, and redo puts it again", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     let cases = 0;
-    for (const seated of [[], ["ann"], ["ann", "bob"]]) {
-      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: cardDoc(seated) });
+    for (const missing of [false, true]) {
+      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: { ...cardDoc(), ...(missing ? { packages: [{ url: fakeUrl() }] } : {}) } });
       await settle();
       const table = s.instance("t.table");
       const edit = s.api("scene.undo");
@@ -147,97 +139,19 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
         for (const to of STATES) {
           if (from === to) continue;
           cases++;
+          const where = `${missing ? "missing" : "complete"} ${from} → ${to}`;
           table.set(from);
           edit.edit((d) => (d.objects.card.traits["t.card"].state = to), { label: "Move" });
-          const refused = grew(audienceOfState(from), audienceOfState(to)) && seated.some((v) => v !== "ann");
-          const where = `${seated.join("+") || "nobody"} ${from} → ${to}`;
-          const took = edit.undo();
-          expect(took, where).toBe(!refused);
-          expect(s.doc().objects.card.traits["t.card"].state, where).toBe(refused ? to : from);
-          if (refused) {
-            expect(s.local.get().notices.at(-1).text, where).toBe("Can't undo “Move”: it showed or decided something, and taking it back needs the others' agreement.");
-            // it stays: the top of the stack, still refused
-            expect(s.local.get().edits.undo, where).toBe("Move");
-          }
+          expect(edit.undo(), where).toBe(true);
+          expect(s.doc().objects.card.traits["t.card"].state, where).toBe(from);
+          expect(edit.redo(), where).toBe(true);
+          expect(s.doc().objects.card.traits["t.card"].state, where).toBe(to);
         }
       }
       s.unmount();
       s = null;
     }
-    expect(cases).toBe(36);
-  });
-
-  it("a refused step stays, and is free once the others have stood up (parties are current); redo is judged the same way", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: cardDoc(["ann", "bob"]) });
-    await settle();
-    const table = s.instance("t.table");
-    const edit = s.api("scene.undo");
-    table.set("hand:ann");
-    // a card from ann's hand, face up onto the table: shown to bob
-    edit.edit((d) => (d.objects.card.traits["t.card"].state = "up"), { label: "Play" });
-    expect(edit.undo()).toBe(false);
-    table.seat(["ann"]);
-    expect(edit.undo()).toBe(true);
-    expect(s.doc().objects.card.traits["t.card"].state).toBe("hand:ann");
-    // the undo hid it again, and widened nothing: but its redo (which shows it) is judged by what the undo did, so free
-    table.seat(["ann", "bob"]);
-    expect(edit.redo()).toBe(true);
-    expect(s.doc().objects.card.traits["t.card"].state).toBe("up");
-  });
-
-  it("a CAD scene, two people, nothing answering who has a stake: every undo is free, even of a flip", async () => {
-    const CAD = { meta: { id: "t.cad", traits: ["t.card"] }, module: { create: () => ({ audience: TABLE.module.create({ change() {} }).audience }) } };
-    s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, CAD], doc: cardDoc(["ann", "bob"]) });
-    await settle();
-    const edit = s.api("scene.undo");
-    edit.edit((d) => (d.objects.card.traits["t.card"].state = "up"), { label: "Flip" });
-    expect(edit.undo()).toBe(true);
-    expect(s.doc().objects.card.traits["t.card"].state).toBe("down");
-  });
-
-  it("parties' answers, every kind × a reveal: [] and null are no stake (free); a viewer is a stake, and a throw can't be told (both refused)", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const boom = () => {
-      throw new Error("broken");
-    };
-    // what parties(snap) is: a function answering each kind, or itself throwing
-    const KINDS = { none: () => () => [], nobody: () => () => null, bob: () => () => ["bob"], throwsPerId: () => boom, throwsWhole: boom };
-    const refusedFor = { none: false, nobody: false, bob: true, throwsPerId: true, throwsWhole: true };
-    let cases = 0;
-    for (const [kind, parties] of Object.entries(KINDS)) {
-      const ASKED = { meta: { id: "t.asked", traits: ["t.card"] }, module: { create: () => ({ audience: TABLE.module.create({ change() {} }).audience, parties }) } };
-      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, ASKED], doc: cardDoc([]) });
-      await settle();
-      const edit = s.api("scene.undo");
-      edit.edit((d) => (d.objects.card.traits["t.card"].state = "up"), { label: "Flip" });
-      expect(edit.undo(), kind).toBe(!refusedFor[kind]);
-      expect(s.doc().objects.card.traits["t.card"].state, kind).toBe(refusedFor[kind] ? "up" : "down");
-      cases++;
-      s.unmount();
-      s = null;
-    }
-    expect(cases).toBe(5);
-  });
-
-  it("a listed package missing: who could see anything can't be told, so a step counts as showing everything; refused while someone else is seated, saying why; free alone", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const missing = { packages: [{ url: fakeUrl() }] };
-    for (const seated of [["ann", "bob"], ["ann"]]) {
-      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: { ...cardDoc(seated), ...missing } });
-      await settle();
-      const edit = s.api("scene.undo");
-      // a move on the table, face down: no reveal, were the audience known
-      edit.edit((d) => (d.objects.card.transform.position = [1, 0, 0]), { label: "Move" });
-      const alone = seated.length === 1;
-      expect(edit.undo(), seated.join("+")).toBe(alone);
-      if (!alone)
-        expect(s.local.get().notices.at(-1).text).toBe(
-          "Can't undo “Move”: who could see what it changed can't be told (a package the scene uses is missing or didn't start), and taking it back needs the others' agreement.",
-        );
-      s.unmount();
-      s = null;
-    }
+    expect(cases).toBe(24);
   });
 
   it("deleting something a keeper holds the contents of: undo puts the doc's part back and says the kept part is as its keeper has it now", async () => {
@@ -262,7 +176,7 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
   });
 
   it("only the stage's own parts can edit: a package's api has no edit, edits, undo or redo", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE, DICE], doc: cardDoc([]) });
+    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE, DICE], doc: cardDoc() });
     await settle();
     for (const k of ["edit", "edits", "undo", "redo"]) {
       expect(typeof s.api("scene.undo")[k], k).toBe("function");
@@ -271,7 +185,7 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
     }
     // a package passing a part's module through as its own isn't it: the mark is the module, not the id
     s.unmount();
-    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: { create: (api) => undo.create(api) } }], doc: cardDoc([]) });
+    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: { create: (api) => undo.create(api) } }], doc: cardDoc() });
     await settle();
     expect(s.api("scene.undo").edit).toBeUndefined();
     // nor can it swap a part's create for its own: the marked module is frozen

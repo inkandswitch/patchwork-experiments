@@ -504,3 +504,8 @@ Nothing implemented or called them, so they went: the `decided` instance
 hook, the `documents` contribution (the inspector keeps its own sections),
 `doc.materialRules`, `api.camera.limit`, `api.Counter`, `api.rebuild`,
 `api.presence.shownAt` (the clock still uses it inside), and sailing's `receive`.
+
+### 2026-11-17 — Undo consent removed
+Undo keeps only its plain rule: this viewer's own step, taken back if nothing
+it wrote has been written since. The reveal judgment, `parties` (seats'
+answer too) and the refusal "needs the others' agreement" went (PLANS.md).
