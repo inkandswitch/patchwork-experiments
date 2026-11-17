@@ -169,3 +169,77 @@ describe("the bake", { timeout: 60_000 }, () => {
     expect(boxTriangles([0, 0, 0], [1, 1, 1]).length).toBe(12 * 9);
   });
 });
+
+// Step 2's rule, case by case: a side lying on a line between columns is on the boundary of both
+// squares, so it is an obstacle in both but a floor in neither but its own (DESIGN.md, "The bake").
+// Each case beside its twin moved 3 mm in off the line, where nothing of it reaches the column
+// outside. At 10 cm cells, as the walker's enumerated cases bake.
+describe("a side on a column line makes no floor outside it", { timeout: 60_000 }, () => {
+  const P10 = { ...DECK, cell: 0.1 };
+  const IN = 0.003;
+  /** Bake at 10 cm, every component kept; B1 (each cell held up inside its open square), B3–B5, B2 and B7. */
+  const sound10 = (triangles) => {
+    const mesh = bake({ triangles, seeds: [] }, P10);
+    expect(checkMesh(mesh)).toEqual([]);
+    expect(checkAgainst(mesh, indexTriangles(triangles))).toEqual([]);
+    return mesh;
+  };
+  /** Every kept cell as [i, k, centre height], split by whether its centre is in the plan footprint. */
+  const split = (mesh, inside) => {
+    const out = { in: [], out: [] };
+    for (let a = 0; a < mesh.count; a++) {
+      const p = pointOf(mesh, a, 0.5, 0.5);
+      out[inside(p[0], p[2]) ? "in" : "out"].push([mesh.cells.i[a], mesh.cells.k[a], +p[1].toFixed(6)]);
+    }
+    return out;
+  };
+  const HEIGHTS = { "1 cm lip": 0.01, "15 cm stair": 0.15, "45 cm crate": 0.45, "120 cm wall": 1.2 };
+  const SIDES = { "−X": MX, "+X": PX, "−Z": MZ, "+Z": PZ };
+  /** A box on the floor over [−0.5, 0.5]², every side 3 mm in from its line but side `s` when `on`. */
+  const boxOf = (h, s, on) => {
+    const min = [-0.5 + IN, 0, -0.5 + IN];
+    const max = [0.5 - IN, h, 0.5 - IN];
+    if (on) [() => (min[0] = -0.5), () => (max[0] = 0.5), () => (min[2] = -0.5), () => (max[2] = 0.5)][s]();
+    return { min, max, inside: (x, z) => x > min[0] && x < max[0] && z > min[2] && z < max[2] };
+  };
+  const BOXES = Object.entries(HEIGHTS).flatMap(([hn, h]) => Object.entries(SIDES).flatMap(([sn, s]) => [true, false].map((on) => ({ name: `${hn}, side ${sn}, ${on ? "on the line" : "3 mm off it"}`, h, s, on }))));
+
+  it("the table: 4 heights × 4 sides × on the line or off it", () => expect(BOXES.length).toBe(32));
+
+  it.each(BOXES)("$name: no kept floor above the ground outside it; its top as its off-line twin's", ({ h, s, on }) => {
+    const b = boxOf(h, s, on);
+    const got = split(sound10([...floor(), ...box(b.min, b.max)]), b.inside);
+    // the column just outside the side, and every other outside the box: the ground or nothing
+    for (const [i, k, y] of got.out) expect([i, k, y]).toEqual([i, k, 0]);
+    const twin = boxOf(h, s, false);
+    const off = split(bake({ triangles: [...floor(), ...box(twin.min, twin.max)], seeds: [] }, P10), twin.inside);
+    expect(got.in).toEqual(off.in);
+    expect(got.in.length).toBeGreaterThan(0);
+    for (const [, , y] of got.in) expect(y).toBeCloseTo(h, 6);
+    // a side a step high or less: the ground beside it is exactly the twin's, edge and all
+    if (h <= P10.step) expect(got.out).toEqual(off.out);
+  });
+
+  // A 30° ramp 1.5 m long (its high end 0.87 up, above a step), rising toward each of the four
+  // ways, its high end on the line 0.8 out or 3 mm short of it; its long sides 3 mm in.
+  const RAMPS = [0, 1, 2, 3].flatMap((dir) => [true, false].map((on) => ({ name: `30° ramp facing ${dir}, high end ${on ? "on the line" : "3 mm off it"}`, dir, on })));
+  const rampOf = (dir, on) => {
+    const t = Math.tan(Math.PI / 6);
+    const [u0, u1, w] = [-0.7, on ? 0.8 : 0.8 - IN, 0.5 - IN];
+    const [cs, sn] = [[1, 0], [0, 1], [-1, 0], [0, -1]][dir];
+    const at = (u, v) => [u * cs - v * sn, (u - u0) * t, u * sn + v * cs];
+    const [a, b, c, d] = [at(u0, -w), at(u1, -w), at(u1, w), at(u0, w)];
+    return { triangles: [...a, ...b, ...c, ...a, ...c, ...d], inside: (x, z) => Math.abs(-x * sn + z * cs) < w && x * cs + z * sn > u0 && x * cs + z * sn < u1 };
+  };
+
+  it("the table: 4 facings × on the line or off it", () => expect(RAMPS.length).toBe(8));
+
+  it.each(RAMPS)("$name: no kept floor above the ground outside it; its slope as its off-line twin's", ({ dir, on }) => {
+    const r = rampOf(dir, on);
+    const got = split(sound10([...floor(), ...r.triangles]), r.inside);
+    for (const [i, k, y] of got.out) expect([i, k, y]).toEqual([i, k, 0]);
+    const twin = rampOf(dir, false);
+    expect(got.in).toEqual(split(bake({ triangles: [...floor(), ...twin.triangles], seeds: [] }, P10), twin.inside).in);
+    expect(got.in.some(([, , y]) => y > P10.step)).toBe(true);
+  });
+});

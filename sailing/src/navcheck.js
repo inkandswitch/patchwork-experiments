@@ -111,7 +111,11 @@ export function meets(index, q, y0, y1, r) {
   return null;
 }
 
-/** Is there a triangle with a point over the closed square [x0, x1] × [z0, z1] at a height in [ya, yb]? */
+/**
+ * Is there a triangle with a point over the open square (x0, x1) × (z0, z1) at a height in [ya, yb]?
+ * (Open by the bake's 1e-9, as its `meetsOpen`: a triangle lying along the square's boundary, a
+ * wall or a top on a column line, holds nothing up inside it.)
+ */
 export function supported(index, [x0, z0, x1, z1], ya, yb) {
   const { T } = index;
   for (const t of index.near(x0, z0, x1, z1)) {
@@ -120,7 +124,7 @@ export function supported(index, [x0, z0, x1, z1], ya, yb) {
     if (!poly) continue;
     // clip the slab's polygon to the square, in plan
     let p = poly.map((v) => [v[0], v[2]]);
-    for (const [axis, lim, lower] of [[0, x0 - 1e-9, true], [0, x1 + 1e-9, false], [1, z0 - 1e-9, true], [1, z1 + 1e-9, false]]) {
+    for (const [axis, lim, lower] of [[0, x0 + 1e-9, true], [0, x1 - 1e-9, false], [1, z0 + 1e-9, true], [1, z1 - 1e-9, false]]) {
       const out = [];
       for (let a = 0; a < p.length; a++) {
         const S = p[(a + p.length - 1) % p.length];
@@ -141,7 +145,7 @@ export function supported(index, [x0, z0, x1, z1], ya, yb) {
   return false;
 }
 
-/** The closed square of a cell's column. */
+/** The square of a cell's column: [x0, z0, x1, z1]. */
 export const squareOf = (mesh, a) => {
   const x0 = mesh.origin[0] + mesh.cells.i[a] * mesh.cell;
   const z0 = mesh.origin[1] + mesh.cells.k[a] * mesh.cell;

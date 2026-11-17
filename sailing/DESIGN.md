@@ -2574,18 +2574,35 @@ triangles from:
 **Steps**:
 1. **Rasterise.** For each triangle and each column its plan bounds touch:
    - clip the triangle to the column's closed square (Sutherland–Hodgman);
-   - record the clipped polygon's `[ymin, ymax]`, and whether the triangle
-     is walkable (`|n_y| ≥ cos slope`, either winding).
+   - record the clipped polygon's `[ymin, ymax]`, and its kind: walkable
+     (`|n_y| ≥ cos slope`, either winding) or steep where the polygon meets
+     the column's *open* square, EDGE where it only touches the square's
+     boundary (a wall, or a box's top, lying on a column line). "Open" is
+     the square shrunk by the clip's own 1e-9, so a piece on a line is on
+     the boundary of both columns and inside neither.
 
-   Then merge overlapping intervals per column. A vertical wall on a
-   column boundary lands in both columns, conservatively.
-2. **Floors.** An interval's top is a floor if either:
-   - (a) the triangle that reaches the top is walkable; the floor's plane is
-     that triangle's;
-   - (b) the interval also holds a walkable triangle's top within `step`
-     below its top: steep stuff standing on a floor (a curb, a toe rail, a
-     leaning cabin side straddling a column). The floor is flat at the
-     interval's top.
+   Then merge overlapping intervals per column, every kind alike. A wall
+   on a column line lands in both columns, conservatively: an EDGE piece is
+   an obstacle like any other.
+2. **Floors**, judged on the pieces that meet the open square alone. Let
+   `own` be the highest of their tops in the interval (none: no floor).
+   `own` is a floor if either:
+   - (a) a walkable triangle reaches `own`; the floor's plane is that
+     triangle's (the highest at the centre);
+   - (b) a walkable triangle's top lies within `step` below `own`: steep
+     stuff standing on a floor (a curb, a toe rail, a leaning cabin side
+     straddling a column). The floor is flat at `own`.
+
+   So every floor is held up by a triangle that meets its open square, at
+   its height: the invariant B1 checks (navcheck's `supported` asks of the
+   open square). An EDGE piece's top is never a floor, which is what kept a
+   box whose side lay on a column line from making a cell at its height
+   in the column outside it. When an EDGE piece rises above `own` (the
+   column beside a lip, a crate or a wall on the line), the floor stays at
+   `own` and its `top` stays the interval's top: erosion (step 5) measures
+   a step against that, so the floor goes if the EDGE stuff rises more than
+   a step over it (a wall) and stays if not (a lip, a crate), exactly as
+   beside the same box 3 mm off the line.
 
    Rule (b) is Recast's merge rule. It is what joins the side deck to the
    cabin top across her 4.7 cm of leaning wall. A stanchion (0.62 tall) or
@@ -2937,15 +2954,21 @@ not overboard). A second baked ship (a 4 × 4 m deck, with or without a
 rail) lies on each side of the first, touching or 1 m off, riding with her,
 the walker on deck or in the water between them: a swimmer must be clear of
 both ships (I, and no triangle of either within r), and a walker who steps
-across is checked against the other ship's triangles. 95 cases, under a
+across is checked against the other ship's triangles. 89 cases, under a
 second. They replaced a seeded `fast-check` property test (the project's
 tests are finite and exhaustive, never random), and on their first run
 found what it never had: a box's or ramp's side exactly on a line between
-columns also makes a cell at its height in the column outside it, so the
-walker can stand up to a column's width past the edge. The three on-grid
-cases that show it are listed as `KNOWN_GAPS` (the test asks that exactly
-those fail); the fix is the bake's (a triangle must cover part of a
-column's open square).
+columns also made a cell at its height in the column outside it, so the
+walker could stand up to a column's width past the edge. The fix is the
+bake's (step 2: a floor only where its triangle meets the column's open
+square), and every case passes; with the oracle's support check asked of
+the open square too, the old bake fails seven of them (the lip, stair,
+crate and the 30° ramp each way). `navmesh.test.js` pins the rule on its
+own: a box side on a 10 cm line or 3 mm off it × {1 cm lip, 15 cm stair,
+45 cm crate, 120 cm wall} × each side (32), and a 30° ramp's high end on
+the line or off it × each facing (8). In each, no kept cell outside the
+footprint is above the ground; the top is the off-line twin's, and beside
+a side a step high or less so is the ground.
 
 **Static checks** on each baked hull. They run on the stock sloop in vitest
 (`sloop-navmesh.test.js`, triangles from `ship.js`), and on the camber hull
@@ -3028,6 +3051,18 @@ marathons.
   so the camera stays in the checked volume; the horizon stays level.
 - **The ladder and stepping across** are links and checks at the mesh's
   edges. They are no longer rays.
+- **A floor needs a triangle that meets its column's open square**
+  (decided unattended (2026-11-17, lane/n10), for the lead). A piece that
+  only touches the square's boundary stays in the interval as an obstacle
+  but is no floor and holds none up; the floor is the open pieces' top
+  `own`, even under an EDGE piece above it, and erosion measures a step
+  against the interval's whole top. The plainer reading, no floor at all
+  in a column whose interval's top is an EDGE piece, would have cut the
+  ground beside every lip or crate on a line and eroded a moat a radius
+  wide round it, unlike the same box 3 mm off the line. Question for the
+  lead: is "the open square shrunk by 1e-9" the definition you want, or
+  should "on the line" carry a coarser tolerance (say 1 µm) for meshes
+  authored in single precision?
 
 ### As built
 
@@ -3047,7 +3082,8 @@ it measured.
   range in the column** (`cells.lo`, `cells.hi`). So there is always a
   point of the triangle, in the feet's column, at the feet's height. That
   is what the oracle's support check tests: the feet within h + 2 mm above
-  a triangle *in their 5 cm column*. Coplanar triangles that tie for a
+  a triangle *in their 5 cm column's open square* (a triangle touching it
+  only along a column line holds nothing up there: step 2). Coplanar triangles that tie for a
   column's floor share the plane and join their ranges, so triangle order
   can't matter (C9). Gradients are stored without −0.
 - **Sides carry `top`**: the highest a vault's feet may rise and keep its
@@ -3076,7 +3112,8 @@ it measured.
   - A disc column with no alive floor fails f; per-row prefix sums answer
     that in 2K + 1 looks.
   - In a square window of "plain" columns, f passes outright. Plain means:
-    one alive floor, open sky, all four neighbours connected to it within
+    one alive floor with no EDGE piece above it (its `top` its own),
+    open sky, all four neighbours connected to it within
     δ = (step − slope·c√2)/(4K + 2) of its height.
 
   D_r uses the same row sums. The march's disc gathers are cached per
@@ -3094,10 +3131,14 @@ it measured.
   14 overboard sides rise above the apex: beside the shrouds' and the
   backstay's feet, where the wires come down low. You can't jump over the
   side there, which is right.
-- **The sloop's mesh** has 8,088 cells (12,026 triangles), all one region;
-  2,456 of them have a finite headroom. It drops two components, both
-  inside her: the bilge under the cabin, and a 0.2 m² patch under the
-  sole. (Before the windlass was refitted it had 7,890 cells and dropped
+- **The sloop's mesh** has 8,086 cells (12,786 triangles), all one region;
+  2,402 of them have a finite headroom. It drops two components, both
+  inside her: the bilge under the cabin, and a 0.24 m² patch under the
+  sole. (Before step 2 judged floors on the open square it had 8,098: a
+  row of twelve cells 1.08 up at z 3.75–3.8, six each side, held up only
+  along a column line; and the two columns either side of the centre line
+  on the cabin top stood about 1 mm high, on the other half's plane.
+  Before the windlass was refitted it had 7,890 cells and dropped
   four more: the windlass's top, a sliver at the bow, and the whole
   foredeck beyond the windlass, which nothing checked.)
 
@@ -3109,7 +3150,7 @@ it measured.
   aim and under the test's 500 ms limit. In a loaded browser it measured
   219 ms.
 - **The walker's enumerated cases bake their arenas at 10 cm, not 5.**
-  95 cases then run in under a second. Everything reads the cell size from
+  89 cases then run in under a second. Everything reads the cell size from
   the mesh's own params; the unit cases and the hull checks run at 5 cm.
   (The random test they replaced found the seed fallback above on its
   first run: the "box over the spawn point" arena keeps it covered.)
