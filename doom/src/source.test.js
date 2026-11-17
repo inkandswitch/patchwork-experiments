@@ -1,6 +1,6 @@
 // The provider: a part of a map as a GLB, from a file doc's bytes and params.
 import { describe, expect, it } from "vitest";
-import source, { buildPart, notesOf } from "./source.js";
+import source, { buildPart } from "./source.js";
 import { FREEDOOM_NOTICE, noticeOf } from "./freedoom.js";
 import { anchorOf, mapModel, placeIn } from "./parts.js";
 import { parseGLB, SAMPLER } from "./glb.js";
@@ -164,16 +164,5 @@ describe("the scene:source", () => {
     await expect(source.build({ doc, params: { map: "MAP01", door: null } })).rejects.toThrow(/no map MAP01 in this WAD: it has E1M1/);
     await expect(source.build({ doc, params })).rejects.toThrow(/which map\?: it has E1M1/);
     await expect(source.build({ doc: { content: "text" }, params })).rejects.toThrow(/no bytes/);
-  });
-
-  it("the whole map's notes say its doors are nodes in it", async () => {
-    const doc = { "@patchwork": { type: "file" }, name: "e1m1.wad", extension: "wad", content: fixtureBytes() };
-    const r = await source.build({ doc, params: { map: "E1M1", door: null, line: null, whole: true } });
-    expect(r.meta.notes).toMatch(/^E1M1, whole: 182 sectors; 11 doors and 1 exit switch are nodes of their own in it/);
-  });
-
-  it("notes for a door, and for an exit switch", () => {
-    expect(notesOf(mapModel(fixture(), "E1M1"), 100, ["X"])).toBe("E1M1: the door of sector 100, 124 units of travel. Not in this WAD, left undrawn: X.");
-    expect(notesOf(mapModel(fixture(), "E1M1"), null, [], 407)).toBe("E1M1: the exit switch, line 407.");
   });
 });

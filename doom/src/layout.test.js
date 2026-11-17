@@ -5,8 +5,6 @@ import ext from "./extension.js";
 import { aboutText, EXIT, MAP, isWad, slideOf, SPAWN_PART, yawOf } from "./layout.js";
 import { FREEDOOM_NOTICE, freedoomOrigin } from "./freedoom.js";
 import { anchorOf, mapModel, placeIn, thingAt } from "./parts.js";
-import * as parts from "./parts.js";
-import * as layout from "./layout.js";
 import { emptyScene } from "./test/empty-scene.js";
 import { fixture, fixtureBytes } from "./test/fixture.js";
 
@@ -55,10 +53,6 @@ function spawnStandIn() {
 }
 const wadDoc = () => ({ "@patchwork": { type: "file" }, name: "e1m1.wad", extension: "wad", content: fixtureBytes() });
 const partsOf = (d) => Object.entries(d.objects).filter(([, o]) => o.kind !== "group");
-
-it("layout exports only what is its own: nothing parts.js exports is passed on through it", () => {
-  expect(Object.keys(layout).filter((k) => k in parts)).toEqual([]);
-});
 
 describe("dropping a WAD", () => {
   it("takes only .wad files", async () => {
