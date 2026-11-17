@@ -1192,7 +1192,17 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     games-room cascade twice, so they wait for W8, and W8 republishes them
     from the N11 publishers. Santorini table is no boat, so it was
     republished and swapped at the N11 merge. *Decided unattended
-    (2026-11-17, n11 integrator), for the lead.*
+    (2026-11-17, n11 integrator), for the lead.* **The lead's answer
+    (2026-11-17): republish now.** W8 does not wait for N10 or any later
+    lane; if one changes a boating doc's shape, those examples are
+    republished again then. Cadboro Bay's and Ucluelet's fresh render
+    docs are fine (COMPOSITION.md, Decisions, N7, 6: the lead's answer),
+    and Ucluelet's GPU frame budget is report-only. W8 ran on 2026-11-17
+    (scene-stage cb0e1a70, then da0c8f50): every example in the table,
+    plus the games-room cascade and N11's pruned lists, in one batch
+    (the W8 row has the URLs). Question 17 (`--game G` on
+    `publish-aboard`) was not taken: N11's pruning made the Quiet games
+    room republish anyway, so the cascade would have run regardless.
 55. **The real-Patchwork check comes before the examples it checks, and
     it expects only what the doc implies.** W9's real runs need the
     weather package synced and the examples republished (W8). Only the
