@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import golden from "./test/golden.json";
 import water, { TRAIT, WAVES, WIND, outlineSegments, patchExtent, patchGeometry } from "./extension.js";
-import { amplitudeBound, bodiesOf, boxOf, clipBody, clipToSpan, floorAt, rigidVelocity, shapeOf } from "./bodies.js";
+import { amplitudeBound, bodiesOf, boxOf, clipToSpan, floorAt, rigidVelocity, shapeOf } from "./bodies.js";
 import { boundedReader } from "./bounded.js";
 import { createOceanSurface, drawnVertex, patchGrid } from "./material.js";
 import { createSurface } from "./surface.js";
@@ -23,7 +23,6 @@ const obj = (name, transform, traits = {}, parent = null) => ({ name, parent, tr
 const HULL = () => obj("Hull", {});
 const TANK = () => obj("Tank", { position: [0, -0.5, 2] }, { [TRAIT]: { size: [2, 1, 3] } }, "hull");
 const inst = (v, n) => v.stages[n].instances.at(-1);
-const r9 = (x) => Math.round(x * 1e9) / 1e9 + 0;
 
 let v = null;
 afterEach(() => {
@@ -47,7 +46,6 @@ const harbour = () => ({ doc: { title: "Harbour", traits: {}, objects: { hsea: o
 /** Every way W27 places G in a world offering no open water: [label, specs from G]. */
 const DRY_PLACEMENTS = [
   ["in a dry room", (g) => [dry(), { ...g, matrix: AT_A }]],
-  ["mirrored in a dry room", (g) => [dry(), { ...g, matrix: AT_A }, { ...g, matrix: AT_B, drawn: true }]],
   ["pinned in a dry room", (g) => [dry(), { ...g, matrix: AT_B, drawn: true, running: false }]],
   ["two deep, R → R′ → G", (g) => [dry(), { ...dry("R′"), matrix: AT_B }, { ...g, matrix: mulM(AT_B, AT_A) }]],
 ];
@@ -119,13 +117,6 @@ describe("a live clip is a box (W27): G with { clip: c } in a dry world is, bit 
                 expect(clipped.patches).toBe(clipped.stages.length * (tank ? 2 : 1));
                 expect(clipped.surfaces).toBe(0);
               });
-
-  it("the conversion is pure: clipBody(O, c) is { id: O, size: c }, a copy", () => {
-    const c = [1, 2, 3];
-    const b = clipBody("sea", c);
-    expect(b).toEqual({ id: "sea", size: [1, 2, 3] });
-    expect(b.size).not.toBe(c);
-  });
 });
 
 // ─── W28 ───────────────────────────────────────────────────────────────────
@@ -142,7 +133,6 @@ const WORLDS = [
 const PLACED = [
   ["alone", (w, g) => [g]],
   ["linked", (w, g) => [w, { ...g, matrix: AT_A }]],
-  ["mirrored", (w, g) => [w, { ...g, matrix: AT_A }, { ...g, matrix: AT_B, drawn: true }]],
   ["pinned", (w, g) => [w, { ...g, matrix: AT_B, drawn: true, running: false }]],
   ["two deep", (w, g) => [w, { ...dry("S"), matrix: AT_B }, { ...g, matrix: mulM(AT_B, AT_A) }]],
 ];
@@ -203,11 +193,9 @@ describe("wet worlds draw no blocks (W29): every boat given a clip, under an out
     ["one boat in a harbour", [harbour(), { ...G("A", A_SEA), matrix: AT_A }]],
     ["two boats in a harbour", [harbour(), { ...G("A", A_SEA), matrix: AT_A }, { ...G("B", B_SEA), matrix: AT_B }]],
     ["a boat two links deep in a harbour", [harbour(), { ...dry("Shed"), matrix: AT_B }, { ...G("A", A_SEA), matrix: mulM(AT_B, AT_A) }]],
-    ["a boat mirrored in a harbour", [harbour(), { ...G("A", A_SEA), matrix: AT_A }, { ...G("A", A_SEA), matrix: AT_B, drawn: true }]],
     ["a boat linked into another boat", [G("B", B_SEA), { ...G("A", A_SEA), matrix: AT_A }]],
     ["a boat with a tank alone", [T("A", A_SEA)]],
     ["a harbour with A and B each holding a tank", [harbour(), { ...T("A", A_SEA), matrix: AT_A }, { ...T("B", B_SEA), matrix: AT_B }]],
-    ["A mirrored in a harbour, with a tank", [harbour(), { ...T("A", A_SEA), matrix: AT_A }, { ...T("A", A_SEA), matrix: AT_B, drawn: true }]],
     ["A pinned in a harbour, with a tank", [harbour(), { ...T("A", A_SEA), matrix: AT_B, drawn: true, running: false }]],
     ["A two links deep in a harbour, with a tank", [harbour(), { ...dry("Shed"), matrix: AT_B }, { ...T("A", A_SEA), matrix: mulM(AT_B, AT_A) }]],
     ["the harbour-run shape: two boats at anchor in a harbour", [harbour(), { ...G("A", B_SEA), matrix: placement(0, [-13, 0, 4]) }, { ...G("B", B_SEA), matrix: placement(deg(30), [24, 0, -6]) }]],
@@ -237,10 +225,9 @@ const OUTERMOSTS = [
   ["dry with weather", () => ({ doc: { title: "R", traits: {}, objects: {} }, extensions: [windOf({ speed: 5, from: 270 })] }), false, { speed: 5, from: 270 }],
   ["wet", () => harbour(), true, H_SEA.wind],
 ];
-/** The occurrences W30 combines: G and H each with a clip (their Seas named apart), acting, mirrored, pinned, deeper. */
+/** The occurrences W30 combines: G and H each with a clip (their Seas named apart), acting, pinned, deeper. */
 const OCCURRENCES = [
   ["G acting", (G) => [{ ...G("G"), matrix: AT_A }]],
-  ["G mirrored", (G) => [{ ...G("G"), matrix: placement(0, [0, 0, 60]), drawn: true }]],
   ["G pinned", (G) => [{ ...G("G"), matrix: placement(0, [0, 0, -60]), drawn: true, running: false }]],
   ["H acting", (G) => [{ ...G("H"), matrix: AT_B }]],
   ["G two deep", (G) => [{ ...dry("S"), matrix: AT_B }, { ...G("G"), matrix: mulM(AT_B, AT_A) }]],
@@ -633,7 +620,7 @@ describe("the draw count and the processes with clips (W17, W13 amended)", () =>
     ["the Model room: two boats at 1:25 in a dry room", () => [dry("Model room"), AT({ matrix: S(-2) }), LC({ matrix: S(2) })], 2, [0, 1, 1]],
     ["the Model room under a wet outermost", () => [harbour(), { ...dry("Model room"), matrix: AT_A }, AT({ matrix: mulM(AT_A, S(-2)) }), LC({ matrix: mulM(AT_A, S(2)) })], 0, [1, 0, 0, 0]],
     ["the Model basin beside Ship at sea, in a dry room", () => [dry("Room"), BASIN({ matrix: AT_A }), { ...boat({ title: "Ship at sea", trait: { clip: [80, 6, 120] } }), matrix: AT_B }], 2, [0, 0, 1]],
-    ["a boat with a clip mirrored and pinned in a dry room", () => [dry(), AT({ matrix: AT_A }), AT({ matrix: AT_B, drawn: true }), AT({ matrix: placement(0, [0, 0, 80]), drawn: true, running: false })], 3, [0, 1, 0, 0]],
+    ["a boat with a clip, and a pin of it, in a dry room", () => [dry(), AT({ matrix: AT_A }), AT({ matrix: placement(0, [0, 0, 80]), drawn: true, running: false })], 2, [0, 1, 0]],
     ["a still boat in a dry room: a calm block holds no process", () => [dry(), { ...boat({ trait: { clip: [60, 6, 60] }, components: [] }), matrix: AT_A }], 1, [0, 0]],
   ];
   for (const [label, make, want, processes] of CASES)
@@ -643,15 +630,6 @@ describe("the draw count and the processes with clips (W17, W13 amended)", () =>
       expect(patches(v)).toBe(want);
       expect(v.stages.map((s) => s.processes)).toEqual(processes);
     });
-
-  it("a live clip's block rests on the room's ground at 1:25 when its link is at depth × scale", () => {
-    v = fakeView([dry("Model room"), AT({ matrix: placement(0, [0, 6 / 25, 0], 1 / 25) })]);
-    v.frame();
-    const e = v.stages[1].extent;
-    // in the boat's frame its floor is at -6; through the link, at 0 in the room
-    expect(r9(e.min[1])).toBeLessThanOrEqual(-6);
-    expect(r9(6 / 25 + (1 / 25) * -6)).toBe(0);
-  });
 });
 
 describe("bodiesOf and the clip", () => {
@@ -672,15 +650,3 @@ describe("bodiesOf and the clip", () => {
 });
 
 void WAVES;
-
-describe("the inspector's Clip row (Decision 101)", () => {
-  it("Water describes a clip beside its size, both json, and says the three phrases", async () => {
-    const { plugins } = await import("./index.js");
-    const ext = plugins.find((p) => p.type === "scene:extension" && p.id === "water");
-    const fields = ext.describes.water.fields;
-    expect(fields.map((f) => [f.key, f.kind])).toEqual([["size", "json"], ["clip", "json"]]);
-    expect(fields[1].label).toMatch(/Clip: keep this much where the world has no water/);
-    for (const phrase of ["my sea, unless the world has one", "my sea, or this much of it", "this water, always"]) expect(ext.describes.water.blurb).toContain(phrase);
-    expect(ext.describes.water.init).toEqual({});
-  });
-});

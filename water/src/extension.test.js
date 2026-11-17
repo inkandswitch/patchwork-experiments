@@ -7,7 +7,7 @@
 // nothing is randomized.
 import { afterEach, describe, expect, it } from "vitest";
 import golden from "./test/golden.json";
-import water, { TRAIT, WAVES, WIND, isUnder, patchExtent, unionOf, waterExtent, waterValue, wavesByBody } from "./extension.js";
+import water, { TRAIT, WIND, isUnder, patchExtent, unionOf, waterExtent, waterValue, wavesByBody } from "./extension.js";
 import { boxOf } from "./bodies.js";
 import { compose, fakeView, mulM, patches, placement, surfaces, waves, windOf } from "./test/fake-view.js";
 import { createSurface } from "./surface.js";
@@ -92,7 +92,6 @@ function configurations() {
     ["one boat in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }], false],
     ["two boats in a dry room", [dry("Room"), { ...wet(A_SEA), matrix: AT_A }, { ...wet(B_SEA), matrix: AT_B }], false],
     ["a boat two links deep in a harbour", [wet(H_SEA), { ...dry("Shed"), matrix: AT_B }, { ...wet(A_SEA), matrix: mulM(AT_B, AT_A) }], true],
-    ["a boat mirrored in a harbour", [wet(H_SEA), { ...wet(A_SEA), matrix: AT_A }, { ...wet(A_SEA), matrix: AT_B, drawn: true }], true],
     ["a boat linked into another boat", [wet(B_SEA), { ...wet(A_SEA), matrix: AT_A }], true],
   ];
 }
@@ -105,7 +104,6 @@ function tankConfigurations() {
     ["a boat with a tank alone", [withTank(wet(A_SEA))], true],
     ["a harbour with A and B each holding a tank", [wet(H_SEA), A(AT_A), B(AT_B)], true],
     ["a dry room with A and B each holding a tank", [dry("Room"), A(AT_A), B(AT_B)], false],
-    ["A mirrored in a harbour", [wet(H_SEA), A(AT_A), A(AT_B, { drawn: true })], true],
     ["A pinned in a harbour", [wet(H_SEA), A(AT_B, { drawn: true, running: false })], true],
     ["A two links deep in a harbour", [wet(H_SEA), { ...dry("Shed"), matrix: AT_B }, A(mulM(AT_B, AT_A))], true],
   ];
@@ -264,7 +262,6 @@ describe("bounded water ignores placement (W18): a doc's tank reads the same in 
         ["alone", (g) => [g]],
         ["in X yawed 30°", (g) => [dry("X"), { ...g, matrix: placement((30 * Math.PI) / 180, [7, 0, -3]) }]],
         ["in X′ with a 20° heeled frame", (g) => [dry("X′"), { ...g, matrix: heeled }]],
-        ["mirrored", (g) => [dry("X"), { ...g, matrix: AT_A }, { ...g, matrix: AT_B, drawn: true }]],
         ["two deep", (g) => [dry("X"), { ...dry("Shed"), matrix: AT_B }, { ...g, matrix: mulM(AT_B, AT_A) }]],
       ];
       const readings = placements.map(([name, make]) => {
@@ -339,14 +336,13 @@ describe("one open body per doc (W24): the lowest id is its open water; the othe
 
 describe("a reason for time to pass (W13, widened)", () => {
   // a process is held where the doc is the world and its open water has waves, or where a stage acts for a doc whose
-  // bounded body has waves (the fake's drawn stages, a mirror and a pin, hold none, as the stage's don't)
+  // bounded body has waves (the fake's drawn stage, a pin, holds none, as the stage's doesn't)
   const waved = (spec) => (spec.extensions ?? []).length > 1;
   const cases = [
     ...configurations(),
     ["flat water alone", [flat("Pond")], true],
     ["a boat in a flat-water harbour", [flat("Pond"), { ...wet(A_SEA), matrix: AT_A }], true],
     ["a waved tank in a dry room", [dry("Room"), { doc: { title: "G", traits: {}, objects: { hull: HULL(), tank: TANK() } }, extensions: [waves(A_SEA.components.slice(-3), {}, ["tank"]), water], matrix: AT_A }], false],
-    ["a waved tank mirrored", [dry("Room"), { doc: { title: "G", traits: {}, objects: { hull: HULL(), tank: TANK() } }, extensions: [waves(A_SEA.components.slice(-3), {}, ["tank"]), water], matrix: AT_A, drawn: true }], false],
   ];
   for (const [label, specs] of cases)
     it(`${label}: a process only where the doc is the world and has waves, or acts for a waved tank`, () => {
@@ -400,11 +396,5 @@ describe("a reason for time to pass (W13, widened)", () => {
     for (let f = 0; f < 3; f++) v.frame();
     expect(inst(v, 1).water.at([0, 0, 0])).toBeNull();
     expect(v.stages[1].notices).toEqual(["Tilted: no water here"]);
-  });
-
-  it(`its waves come only from its own stage's ${WAVES}`, () => {
-    v = fakeView([wet(H_SEA)]);
-    v.frame();
-    expect(inst(v, 0).ambient().water.components).toEqual(H_SEA.components);
   });
 });

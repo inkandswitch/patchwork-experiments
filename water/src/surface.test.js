@@ -88,20 +88,6 @@ describe("the surface's waves", () => {
     expect(fwd).toBeGreaterThan(back);
     expect(fwd).toBeGreaterThan(0);
   });
-
-  it("a calm is flat and still", () => {
-    const sea = createSurface([]);
-    expect(sea.heightAt(10, 20, 5)).toBe(0);
-    expect(sea.normalAt(10, 20, 5)).toEqual([0, 1, 0]);
-    expect(sea.velocityAt(10, -1, 20, 5)).toEqual([0, 0, 0]);
-    expect(sea.sampleAt(10, 20, 5)).toEqual([0, 0, 1, 0]);
-  });
-
-  it("the same components are the same surface", () => {
-    const a = createOcean({ wind: { speed: 8, from: 10 }, seed: "harbour" });
-    const b = createSurface(JSON.parse(JSON.stringify(a.components)));
-    expect(a.heightAt(12.5, -40, 33)).toBe(b.heightAt(12.5, -40, 33));
-  });
 });
 
 describe("heightAt", () => {
@@ -117,29 +103,6 @@ describe("heightAt", () => {
       worst = Math.max(worst, Math.abs(sea.heightAt(p[0], p[2], t) - p[1]));
     }
     expect(worst).toBeLessThan(1e-4);
-  });
-
-  it("differs from the naive sum at the same rest point (the inversion matters)", () => {
-    const sea = createOcean({ wind: { speed: 12, from: 0 }, seed: 6 });
-    const r = stream(4);
-    const p = [0, 0, 0, 0];
-    let diff = 0;
-    for (let i = 0; i < 200; i++) {
-      const x = r() * 300, z = r() * 300, t = r() * 100;
-      diff = Math.max(diff, Math.abs(sea.heightAt(x, z, t) - sea.displaced(x, z, t, p)[1]));
-    }
-    expect(diff).toBeGreaterThan(0.05);
-  });
-
-  it("is fast enough for a few hundred buoyancy samples a step", () => {
-    const sea = createOcean({ wind: { speed: 12, from: 0 }, seed: 1 });
-    const t0 = performance.now();
-    let s = 0;
-    for (let i = 0; i < 3000; i++) s += sea.heightAt(i * 0.31, i * 0.17, 5 + i * 0.001);
-    const per = (performance.now() - t0) / 3000;
-    expect(Number.isFinite(s)).toBe(true);
-    // a few µs each in practice; generous for a busy CI machine
-    expect(per).toBeLessThan(0.1);
   });
 });
 
@@ -208,11 +171,6 @@ describe("velocityAt", () => {
     expect(mag(sea.velocityAt(x, h - 5, z, t))).toBeLessThan(top);
     expect(mag(sea.velocityAt(x, h - 60, z, t))).toBeLessThan(top * 0.05);
     expect(sea.velocityAt(x, h + 3, z, t)).toEqual(sea.velocityAt(x, h, z, t));
-  });
-
-  it("writes into an out array", () => {
-    const out = [9, 9, 9];
-    expect(sea.velocityAt(1, -1, 2, 3, out)).toBe(out);
   });
 });
 

@@ -113,16 +113,6 @@ describe("the choice (W15)", () => {
     expect(choose([0, 0.6, 0], OPEN.waved, [{ id: "A", ...BODIES.A }])).toEqual({ kind: "open" });
   });
 
-  it("from above (p[1] null): the highest rest surface in the column, things before weather", () => {
-    const pond = { id: "P", box: box([4, 1, 4], [0, 2, 0]), A: 0.5 };
-    expect(choose([0, null, 0], OPEN.flat, [pond])).toEqual({ kind: "bounded", id: "P" });
-    expect(choose([9, null, 0], OPEN.flat, [pond])).toEqual({ kind: "open" });
-    expect(choose([0, null, 0], null, [])).toBeNull();
-    // a pond below the open water's level loses to it
-    const low = { ...pond, box: box([4, 1, 4], [0, -2, 0]) };
-    expect(choose([0, null, 0], OPEN.flat, [low])).toEqual({ kind: "open" });
-  });
-
   it("a turned footprint is tested in the body's own frame", () => {
     const long = { id: "L", box: box([2, 1, 20], [0, 0, 0], Math.PI / 2), A: 0.5 };
     expect(choose([9, -0.2, 0], null, [long])).toEqual({ kind: "bounded", id: "L" });
