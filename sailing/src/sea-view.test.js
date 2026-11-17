@@ -1,5 +1,6 @@
-// The weather (weather.js), the sea (sea.js) and ctx.sea (sea-view.js):
-// what the weather offers (the wind and the sky as ambients), what a sea on
+// The world's wind (the weather package's offer, by a stand-in:
+// test/weather.js), the sea (sea.js) and ctx.sea (sea-view.js): that a boat's
+// physics reads exactly the wind the weather offers, what a sea on
 // a water body gives away (that body's waves, from the world's wind, for the
 // water package), W20 (the settle: waves follow the world's wind in at most
 // two flushes, compared by value), and how a boat reads her water and wind,
@@ -9,41 +10,62 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./test/ocean.js";
 import { GUSTINESS, createWind } from "./wind.js";
 import sea, { seaBodies, seaParams, seaWavesFor } from "./sea.js";
-import weather, { ATMOSPHERE, WIND_AMBIENT, weatherOffer, weatherParams } from "./weather.js";
+import { windOffer } from "./test/weather.js";
 import { createSeaView, levelOf, meanWindHere, windFor } from "./sea-view.js";
-import { FLOAT, SEA, WEATHER } from "./traits.js";
+import { FLOAT, SEA, WEATHER, WIND_AMBIENT } from "./traits.js";
 import { emptyScene, fakeWorld } from "./test/fakes.js";
 
 const object = (extra) => ({ name: "Object", parent: null, group: null, visible: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, ...extra });
 const place = (yaw, t, s = 1) => [Math.cos(yaw) * s, 0, -Math.sin(yaw) * s, 0, 0, s, 0, 0, Math.sin(yaw) * s, 0, Math.cos(yaw) * s, 0, t[0], t[1], t[2], 1];
 
-describe("the weather from the doc", () => {
-  it("fills in what the trait leaves out", () => {
-    expect(weatherParams(undefined)).toEqual({ wind: { speed: 7, from: 45 }, seed: 1 });
-    expect(weatherParams({ wind: { speed: 12 }, seed: 9 })).toEqual({ wind: { speed: 12, from: 45 }, seed: 9 });
-    expect(weatherParams({ wind: { speed: -3, from: "x" } })).toEqual({ wind: { speed: 0, from: 45 }, seed: 1 });
+describe("the wind a boat's physics reads is the weather's offer", () => {
+  // the weather trait's air, as sailing's parts and templates write it (wind, from, seed) and as it is dialled (gustiness)
+  const WINDS = [0, 7, 12], FROMS = [0, 90, 235, 300], GUSTS = [undefined, 0.5], SEEDS = [1, 7];
+  const rows = WINDS.flatMap((wind) => FROMS.flatMap((from) => GUSTS.flatMap((gustiness) => SEEDS.map((seed) => ({ wind, from, seed, ...(gustiness === undefined ? {} : { gustiness }) })))));
+  const POINTS = [[0, 0, 0], [37.5, -100, 13.37], [1000, 5, 1e4], [-250, 40, 3600]];
+  /** A boat alone (her doc the world) whose world offers `value` as its wind. */
+  const alone = (value) => ({ ambient: (name) => (name === WIND_AMBIENT && value ? { value, mine: true, frame: { matrix: null }, clock: { t: 0, running: true } } : null), collect: () => [], clock: { t: () => 0 } });
+
+  it("the names: the weather package's trait and the ambient it offers, as the weather documents them; sailing offers neither", () => {
+    expect([WEATHER, WIND_AMBIENT]).toEqual(["weather", "wind"]);
   });
 
-  it("offers plain data: the world's wind once, and the sky", () => {
-    const o = weatherOffer({ wind: { speed: 8, from: 90 }, seed: 2 });
-    expect(WIND_AMBIENT).toBe("wind");
-    expect(o).toEqual({ wind: { speed: 8, from: 90, seed: 2, gustiness: GUSTINESS }, atmosphere: ATMOSPHERE });
-    const made = createWind(o.wind);
-    expect(made.at(3, 4, 5)).toEqual(createWind({ speed: 8, from: 90, seed: 2 }).at(3, 4, 5));
-    expect(JSON.parse(JSON.stringify(o))).toEqual(o);
-    expect(weatherOffer(null)).toBeNull();
+  it("the offer of every row is the trait's own numbers, the gustiness its default where the trait has none", () => {
+    expect(rows).toHaveLength(48);
+    for (const t of rows) expect([t, windOffer(t)]).toEqual([t, { speed: t.wind, from: t.from, seed: t.seed, gustiness: t.gustiness ?? 0.3 }]);
+    expect(GUSTINESS).toBe(0.3);
+    expect(windOffer(null)).toBeNull();
+    expect(windOffer({})).toEqual({ speed: 4, from: 235, seed: 1, gustiness: 0.3 });
   });
 
-  it("as an extension: offers them for the doc's trait, the same value until it changes, nothing without one", () => {
-    let doc = { traits: { [WEATHER]: { wind: { speed: 8, from: 90 }, seed: 2 } } };
-    const x = weather.create({ doc: () => doc });
-    const a = x.ambient();
-    expect(x.ambient()).toBe(a);
-    expect(a.atmosphere).toBe(ATMOSPHERE);
-    doc = { traits: { [WEATHER]: { wind: { speed: 14, from: 90 }, seed: 2 } } };
-    expect(x.ambient()).not.toBe(a);
-    doc = { traits: {} };
-    expect(x.ambient()).toBeNull();
+  it("every row: her wind is createWind of the offer's four numbers, sampled exactly; speed, from and gustiness as offered", () => {
+    for (const t of rows) {
+      const offer = windOffer(t);
+      const got = createSeaView(alone(offer)).wind;
+      const want = createWind({ speed: t.wind, from: t.from, seed: t.seed, gustiness: t.gustiness ?? GUSTINESS });
+      expect([t, got.speed, got.from, got.gustiness]).toEqual([t, t.wind, t.from, t.gustiness ?? GUSTINESS]);
+      for (const [x, z, s] of POINTS) {
+        const [a, b] = got.at(x, z, s);
+        const [c, d] = want.at(x, z, s);
+        expect([t, x, z, s, a === c && b === d]).toEqual([t, x, z, s, true]);
+      }
+    }
+  });
+
+  it("each of the four reaches her: a row that differs in one field blows differently somewhere (a reader dropping it would pass the row above only by luck)", () => {
+    const differs = (p, q) => POINTS.some(([x, z, s]) => {
+      const [a, b] = createSeaView(alone(windOffer(p))).wind.at(x, z, s);
+      const [c, d] = createSeaView(alone(windOffer(q))).wind.at(x, z, s);
+      return a !== c || b !== d;
+    });
+    const base = { wind: 7, from: 90, seed: 1 };
+    for (const [field, other] of [["wind", 12], ["from", 235], ["seed", 7], ["gustiness", 0.5]]) expect([field, differs(base, { ...base, [field]: other })]).toEqual([field, true]);
+  });
+
+  it("no weather, no wind: a world that offers none leaves her becalmed, and not the world", () => {
+    const s = createSeaView(alone(null));
+    expect(s.wind).toBeNull();
+    expect(s.world()).toBe(false);
   });
 });
 
@@ -75,7 +97,7 @@ describe("the sea on a water body", () => {
     const st = { objects, wind, frame, scheduled: 0, notices: [] };
     st.api = {
       scene: () => ({ objects: st.objects }),
-      doc: () => ({ objects: st.objects, traits: { [WEATHER]: { wind: { speed: 1, from: 0 }, seed: 1 } } }),
+      doc: () => ({ objects: st.objects, traits: { [WEATHER]: { wind: 1, from: 0, seed: 1 } } }),
       // a fresh object every call: the sea must compare the wind by value
       ambient: (name) => (name === WIND_AMBIENT && st.wind ? { value: { ...st.wind }, mine: !frame, frame: { matrix: st.frame } } : null),
       schedule: () => st.scheduled++,
@@ -132,17 +154,17 @@ describe("the sea on a water body", () => {
           schedule: () => (scheduled = true),
           notify: () => {},
         };
-        const w = weather.create(api);
         const s = sea.create(api);
         const flush = () => {
           scheduled = false;
           const waves = s["water.waves"];
           const open = Object.keys(doc.objects).find((id) => doc.objects[id].traits?.water && !doc.objects[id].traits.water.size);
-          ambients = { ...(w.ambient() ?? {}), ...(open ? { water: { components: waves?.bodies?.[open]?.components ?? [] } } : {}) };
+          // the weather's offer (its wind), then the water's
+          ambients = { ...(doc.traits[WEATHER] ? { wind: windOffer(doc.traits[WEATHER]) } : {}), ...(open ? { water: { components: waves?.bodies?.[open]?.components ?? [] } } : {}) };
           return scheduled;
         };
         for (const step of order) {
-          if (step === "weather") doc.traits[WEATHER] = { wind, seed: 3 };
+          if (step === "weather") doc.traits[WEATHER] = { wind: wind.speed, from: wind.from, seed: 3 };
           if (step === "object") doc.objects.sea = object({ traits: { ...(doc.objects.sea?.traits ?? {}), [SEA]: { seed: 3 } } });
           if (step === "water") doc.objects.sea = object({ traits: { ...(doc.objects.sea?.traits ?? {}), water: {} } });
           // a doc change: one flush, then as many as were asked for
@@ -176,7 +198,7 @@ function scene() {
     ...emptyScene(),
     objects: { sea: object({ name: "Sea", traits: { water: {}, [SEA]: { seed: 2, scale: 1 } } }), buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }) },
     order: ["sea", "buoy"],
-    traits: { [WEATHER]: { wind: { speed: 8, from: 90 }, seed: 2 } },
+    traits: { [WEATHER]: { wind: 8, from: 90, seed: 2 } },
   };
 }
 

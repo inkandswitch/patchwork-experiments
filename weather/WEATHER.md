@@ -16,8 +16,9 @@ in, with W3's review fixes (the clock is a UTC offset, Decision 15; no
 place field, Decision 32; the commands the world's only, Decision 31). W4
 (Fetch for this time: `open-meteo.js`) is in, with its review fixes (the
 visibility field is the visibility in force, Decision 41; no Fetch now,
-since Now then Fetch is it, Decision 42). A doc with the
-trait has its weather's wind, sun and sky, dialled or fetched. The plan's
+since Now then Fetch is it, Decision 42). W5 is in: sailing offers no
+ambient, and every boat sails in this package's `wind` (Decisions 43–47). A
+doc with the trait has its weather's wind, sun and sky, dialled or fetched. The plan's
 steps are listed under "Plan" below.
 
 ## The data
@@ -78,13 +79,28 @@ they are a preset's (Decision 32).
 ## What it offers
 
 `ambient()` is a pure function of the trait, cached by its filled-in params
-(sailing's weather.js pattern), and null without the trait. It offers the two
+(the pattern of sailing's old weather.js), and null without the trait. It offers the two
 existing conventions and adds no new ambient:
 
 - **`wind`** = `{ speed: wind, from, seed, gustiness }`: the trait's own
-  fields, passed through. `gustiness` is sailing's quantity (g: speed ±g,
-  direction ±33°·g), so nothing converts it. The convention's own
-  documentation moves here from sailing/DESIGN.md in W5.
+  fields, passed through. This is the convention's documentation (it moved
+  here from sailing/DESIGN.md in W5; scene STAGE.md, "Conventions", points
+  here). How the world's air moves, one copy: nothing else carries it.
+  - `speed`: m/s at 10 m.
+  - `from`: the compass bearing it blows *from*, in degrees, measured from
+    −Z (north) toward +X (east), as sailors say it: 0 from −Z (it blows
+    toward +Z), 90 from +X.
+  - Both are in the outermost doc's root frame, on its world time. A reader
+    in a linked stage maps them by its frame (sailing's `sea-view.js`
+    `windFor`).
+  - `seed` (an integer) and `gustiness` (0..1) make its gusts: sailing's
+    `wind.js` turns the four into a wind field, speed ±g and direction
+    ±33°·g in smooth deterministic noise carried downwind. Nothing converts
+    `gustiness`; it is sailing's own quantity.
+  - Three readers: sailing's physics, which makes it a wind in each stage's
+    frame (`sea-view.js`); sailing's seas, whose waves are its spectrum
+    (`sea.js`); and the water package's surface, whose fine waves,
+    roughness and foam follow it.
 - **`atmosphere`** = `atmosphereOf(trait)` (STAGE.md's shape):
   - **sun**: the direction comes from `solar.js`'s `sunAt` at
     `instantOf({ date, hour, offset })` (`time.js`) and `lat`/`lon`: Meeus's
@@ -231,9 +247,15 @@ weather: no wind, and the stage's own look.
 
 ## What moves (W5, W6)
 
-- **sailing** loses `weather.js` and the `sailing.weather` trait. Its Sea and
-  Sloop parts bring the trait key `weather` as data: a late-bound runtime
-  lookup, never a build-time dependency.
+- **sailing** (done, W5) lost `weather.js`, its `sailing.weather` extension
+  and trait, and its constant bright-day atmosphere. It offers no ambient
+  and reads only `wind`. Its Sea and Sloop parts list the trait key
+  `weather` among what they bring, and they and its templates write the air
+  of it, `{ wind, from, seed }`, where a scene has none (parts.js
+  `newWeather`; Decision 43): data, a late-bound runtime lookup, never a
+  build-time dependency. Its tests stand in for this package's offer with a
+  copy of the rule (Decision 44). Its probes load this package's build and
+  check that the boat's wind is the weather's (Decision 47).
 - **terrain**'s place trait stops offering an atmosphere. It keeps the shore,
   exposure and grain, and is renamed `terrain.place`, because a trait called
   sky that gives no sky is a rough edge. `SKIES` leave terrain and become this
@@ -394,7 +416,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 | W2 | `weather.js`: `weatherParams` (every field in force: a missing or malformed field is its default, an invalid zone or date too, a number clamped into its range), `windOf` (a pass-through); `atmosphere.js`: `atmosphereOf` (pure) as specified under "The look", the four anchors exact fixed points, every output over a grid of 6720 weathers passing the stage's own check unchanged; presence, the bands and the gates on the geometric elevation. Review fixes: rows between the anchors computed independently (cover and haze quarters and midpoints, cirrus as thin cumulus, the sun untinted at s = 1), the bands table parsed as the spec, sky continuity in sRGB, the deck drawn without a jump (Decision 27), `gustinessOf` moved to W4 (Decision 24) | done |
 | W3 | `extension.js`: `ambient()` offers `{ wind, atmosphere }` of the trait, the same object while the params in force are unchanged, null without the trait; Place and Now on the toolbar and the menu, Edit's only (Decision 28); `provenance` (Decision 29); `placeOf`. Local probe `probes/weather-run.mjs` in the built scene tool: the ambients exactly the page's own `atmosphereOf`/`windOf`, the sun and the key light to 1e-9 at 9, 15, 21, Ucluelet and Now; the toolbar's picker and button; the inspector's fields. Its first run found the zone-data disagreement. Review fixes: the clock is an `offset`, not a zone, so `instantOf` is arithmetic and no peer's zone data enters the ambient (Decision 15; time.js loses `offsetAt`, `validZone` and Decision 13's gap and overlap rules); `place` dropped, the coordinates are the place (Decision 32); `source.fields`, a map, for the order-dependent `sum` (Decision 29); Now to the slider's quarter hour (Decision 30); the commands only in the world's stage, not a linked one's (Decision 31). The probe now also checks node's sun against the page's (a winter date among them) and a linked world entered: 61 of 61 checks pass in Chrome 157 | done |
 | W4 | `open-meteo.js`: `routeOf` and `requestFor` (the routing at every boundary, the URL's keys the whitelist, no other field reaching it), `fetchWeather` (one GET, no credentials, no referrer), `snapshotFrom` (six recorded replies to their fields, the derivations' tables: LCL, layers, kinds, WMO codes, visibility, rain rate, `gustinessOf` with its rows from 07a3a291 and the plan's gust factors, clamping wind 45 and rain 80), Fetch for this time (gated by `isWorlds`; the provenance on Fetch for this time's label; disabled for a time with no weather; a failure a notice that writes nothing; Fetch does not set `offset`, Decision 35); the one `fetch` call shown to be the only one. Live: `probes/live-fetch.mjs`, both places now and on 2025-07-15 15:00 PDT, every field finite and on its slider. Local probe: Now then Fetch for this time on the real network in the built tool, and a refused Fetch for this time. Review fixes: the visibility field is the visibility in force, so a fetch writes the observed one (Decision 41); Fetch now dropped, Now then Fetch is it (Decision 42); the present conditions checked against the press, the point routing measures from, with `source.for` their own time (Decision 34); every variable's unit checked by one loop; the stage's signal shown to reach the fetch; a notice only when a fetch wrote, and no fetch or notice when the trait is gone at the press; snow showers are cumulus, as the doc's rule says. 79 of 79 probe checks pass | done |
-| W5 | sailing reads the weather's wind; `sailing.weather` goes | |
+| W5 | sailing reads the weather's wind; `sailing.weather` goes: sailing's `weather.js`, its extension and describes, and `ATMOSPHERE` deleted; `traits.js` names the weather's trait `weather` and the ambient `wind` (`WIND_AMBIENT`); parts and templates write `{ wind, from, seed }` (Decision 43); the Sea and Sloop parts bring `weather`; the `wind` convention documented here. Tables: the 48 weathers {wind 0/7/12 × from 0/90/235/300 × gust none/0.5 × seed 1/7} → the offer's fields (here, `weather.test.js`) and → `createWind` sampled exactly (sailing `sea-view.test.js`, through its stand-in, Decision 44), each field shown to reach her; no sailing module offers an ambient or names the atmosphere (`index.test.js`). Probes (`sailing-run`, `harbour-run`) with this package's build loaded: her wind is her weather's, alone, and the harbour's, linked (Decision 47). Publishers write `weather` and list this package (Decision 46) | done |
 | W6 | `terrain.sky` → `terrain.place`; the place templates write weather | |
 | W7 | end-to-end local probe: weather reaches sky, water and boat | |
 | W8 | republish every boating example with weather; swap links | |
@@ -918,6 +940,66 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     present conditions. If one press for the present matters more than a
     shorter toolbar, Fetch now comes back as Now and Fetch in one change
     (Question 3). *Decided unattended (2026-11-16, lane/weather), for the lead.*
+43. **Sailing writes the air only, `{ wind, from, seed }`, and its wind
+    stays its own.** Where a scene has no open water, the Sea and Sloop
+    parts and the Ship at sea and Ship at anchor templates write
+    `weather: { wind, from, seed }` (sailing parts.js `newWeather`): the
+    breeze sailing chose (7 m/s from 45°; at anchor 6.5) and one seed for
+    the waves and the gusts, as before. Every other field is the weather's
+    default, so a new boat's world is a fair afternoon at Cadboro Bay,
+    15:00 PDT on 15 July 2026, under the bright day, which is the sky
+    sailing's constant atmosphere drew (W2's anchor). Writing the whole
+    trait (`init`) would need sailing to know this package's fields; not
+    writing one would need a defaulted wind the sim could not read from
+    the doc. Sailing never reads the trait back: what it reads is the
+    `wind` ambient (sea-view.js, sea.js). The cost: without this package
+    loaded, a sailing scene has no wind, and its boat lies becalmed.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+44. **Sailing's tests stand in for this offer with a copy of its rule.**
+    `sailing/src/test/weather.js` `windOffer(trait)` is `weatherParams`'s
+    rule for the four air fields (default, range, the falsy trait's null)
+    and `windOf`, copied as water copies the stage's `cloudAt`; sailing's
+    fakes offer it as the `wind` ambient. Both packages run the same table
+    (the 48 weathers of W5's plan row): here, trait → offer; in sailing,
+    offer → the boat's wind, sampled exactly against `createWind`. The two
+    meet at the convention's four numbers, which neither converts, so the
+    chain is the identity on the doc's own numbers. The copy can drift
+    from this package's defaults; the probes (Decision 47) run the real
+    offer. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+45. **A boat alone is the world by the wind's `mine`, as before.**
+    sailing's `world()` (her camera ride and HUD) reads the `wind`
+    ambient's `mine` (WATER.md Decisions 19, 28, 64). Its wind now comes
+    from this package, so a boat whose viewer lacks it shows her HUD only
+    once someone is aboard. Every doc that has the trait lists this package
+    (Decision 46), and the stage loads a listed package it lacks, so in
+    practice nothing changes. Reading the water ambient's `mine` instead
+    would drop the dependency, but WATER Decision 64 rejected that as a
+    guess, and the stage gap behind it (WATER D4, "whether a stage is the
+    outermost, without an offer") is still unbuilt. *Decided unattended
+    (2026-11-16, lane/weather), for the lead.*
+46. **Publishers list this package wherever they write `weather`.** Ship
+    at sea and Ship at anchor (`publish-ship`), Lost Cities aboard
+    (`publish-aboard`) and the Harbour (`publish-harbour`) list `weather`
+    with the rest; the Breezy pavilion (`publish-model-room --weather`)
+    lists `weather` instead of `sailing`, which it listed only for the
+    weather extension. They cannot run until W8 syncs this package (its
+    pushwork URL), and W8 runs them. `publish-fitout` writes a weather
+    through sailing's template, but lane/n11 is changing it, so W8 adds
+    `weather` to its list after n11 merges. The harbour still turns each
+    boat by her weather's `from` less its own (WATER Decision 22), now
+    read as `weather.from`. *Decided unattended (2026-11-16, lane/weather),
+    for the lead.*
+47. **The probes load this package's build and check the boat's wind is
+    its offer.** Every sailing probe page that loads water's build loads
+    `weather/dist` too (the harbour, basin, model room, aboard, camber,
+    links, pins and sailing probes). `sailing-run` checks that her wind in
+    both views is the doc's weather (speed, from, the default gustiness).
+    `harbour-run` checks that each boat alone sails in her own weather's
+    wind, and that the world ambient is exactly the offer, and that,
+    linked, both boats' winds turned back into the world are the
+    harbour's (5 m/s from 250°), not their own. The harbour's sky check
+    (`#2f6db5`) stands: the weather's default is the bright day.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -977,6 +1059,12 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
   fixtures are 26 kB. The review fixes cost nothing at run time: the unit
   loop is 13 lookups per reply, and dropping Fetch now and
   `airVisibility` removed code.
+- **W5 (sailing)**: a sailing scene runs one extension fewer
+  (`sailing.weather`) and this one instead, which computes an
+  atmosphere (tens of microseconds) only when the trait's params change,
+  where sailing returned a constant. Sailing's wind is the same four numbers
+  as before, so its physics costs the same. Each sailing probe page loads
+  one more build (this package's, about 21 kB).
 
 ## Questions for the lead
 

@@ -19,7 +19,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "sailing", "water", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
+for (const p of ["scene", "sailing", "water", "weather", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "harbour-probe"));
 const PORT = Number(arg("--port") ?? 4795);
@@ -59,6 +59,8 @@ async function sample(w, link, hull, seconds, every = 0.25) {
 }
 
 const n3 = (v) => Math.round(v * 1000) / 1000;
+/** Two mean winds { speed, from, gustiness } the same, to 1e-9 in speed and bearing (across 0/360), gustiness exactly. */
+const nearWind = (a, b) => !!a && !!b && Math.abs(a.speed - b.speed) < 1e-9 && Math.abs(((a.from - b.from + 540) % 360) - 180) < 1e-9 && a.gustiness === b.gustiness;
 
 try {
   check("page set up", await b.waitFor("window.__ready === true", 30_000, 60) && !(await P("errors")).some((e) => e.startsWith("setup")), await P("errors"));
@@ -79,6 +81,15 @@ try {
     const off = s.map((u) => u.y - u.hWorld);
     alone[which] = { mean: mean(off), sd: sd(off), exact: s.every((u) => u.hOwn === u.hWorld) };
     check(`${which} alone floats on it: her own reading of the water under her is the world's exactly, and her hull sits a steady draft off it`, alone[which].exact && alone[which].sd < 0.35, alone[which]);
+    // her wind is her own weather's offer (the weather package's, from her doc's `weather`): its numbers, the default gustiness
+    // (her mean wind turned back into the world: equal to 1e-9, the turn's rounding)
+    {
+      const air = await P(`weatherOf('${which}')`);
+      const want = { speed: air?.wind, from: air?.from, gustiness: air?.gustiness ?? 0.3 };
+      const got = await P("meanWind('a')");
+      const world = await P("worldWind('a')");
+      check(`${which} alone sails in her own weather's wind: her wind and the world's ambient are her doc's weather`, nearWind(got, want) && J(world) === J({ speed: want.speed, from: want.from, seed: air?.seed, gustiness: want.gustiness }), { air, got, world });
+    }
     check(`${which} alone shows her HUD (her doc is the world)`, (await P("huds('a')")).every(Boolean) && (await P("huds('a')")).length === 1, await P("huds('a')"));
     await shot(`alone-${which}`);
   }
@@ -98,7 +109,16 @@ try {
   check("no blocks in the harbour: each boat's clip is silent where the world offers water, and the harbour's Sea has none (W29)", (await P("blocks('h')")) === 0 && clips.every((c) => c.clip === null) && clips.filter((c) => c.path.length).every((c) => Array.isArray(c.sea)) && clips.find((c) => !c.path.length).sea === null, { blocks: await P("blocks('h')"), clips });
   const readers = await P("readers('h')");
   check("every stage's reader is the harbour's water (its components), and both boats sail on it", readers.length === 3 && readers.every((r) => r.reader && r.same) && readers.filter((r) => !r.mine).every((r) => r.sails), readers);
-  check("the sky is the harbour's (its sea's maritime day)", (await P("sky('h')")) === "#2f6db5", await P("sky('h')"));
+  // the harbour's weather has no sky of its own set: the weather's default, a fair afternoon at Cadboro Bay (WEATHER.md's bright day)
+  check("the sky is the harbour's (its weather's fair day)", (await P("sky('h')")) === "#2f6db5", await P("sky('h')"));
+  // linked in, each boat sails in the harbour's wind, not her own weather's (a linked world brings its things, not its weather)
+  {
+    const world = await P("worldWind('h')");
+    const want = { speed: 5, from: 250, gustiness: 0.3 };
+    const winds = { LA: await P("meanWind('h', 'LA')"), LB: await P("meanWind('h', 'LB')") };
+    report.numbers.winds = { world, ...winds };
+    check("the harbour's wind is its weather's offer, and each boat's wind turned back into the world is it (not her own 7 or 6.5 from 45)", J(world) === J({ ...want, seed: 7 }) && nearWind(winds.LA, want) && nearWind(winds.LB, want), report.numbers.winds);
+  }
   check("nobody aboard: neither boat shows her HUD in the harbour", (await P("huds('h')")).length === 2 && (await P("huds('h')")).every((v) => !v), await P("huds('h')"));
 
   const sa = await sample("h", "LA", built.hullA, 20);

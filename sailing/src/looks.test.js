@@ -131,7 +131,7 @@ describe("createLooks", () => {
       ...emptyScene(),
       objects: { sea: object({ name: "Sea", traits: { water: {}, [SEA]: { seed: 2, scale: 1 } } }), buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
       order: ["sea", "buoy", "rock"],
-      traits: { "sailing.weather": { wind: { speed: 8, from: 90 }, seed: 2 } },
+      traits: { weather: { wind: 8, from: 90, seed: 2 } },
     };
     const root = fakeNode();
     const rock = fakeNode();

@@ -52,7 +52,7 @@ import { staticChecks, walkReport, watchWalk } from "./navprobe.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["sailing/dist/index.js", "water/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-shots"));
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
@@ -213,8 +213,18 @@ try {
   await loads("!!window.__p.ctx('a') && !!window.__p.ctx('b')", 10_000);
   // loaded: the world, held paused while loading took the wall's time, runs from here (the same moment every run)
   // (one seed for the waves and the gusts, as the template draws them: the Sea object's and the weather's)
-  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits["sailing.weather"].seed = ${SEA}; })`);
+  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits.weather.seed = ${SEA}; })`);
   report.measured.resumedAt = await P("resume()");
+  // the wind she sails in is the weather's offer (the weather package's extension, from the doc's `weather`): its
+  // numbers as the doc has them, the gustiness the weather's default (0.3) where the doc has none, in both views
+  {
+    const air = (await P("doc()")).traits.weather;
+    const want = { speed: air.wind, from: air.from, gustiness: air.gustiness ?? 0.3 };
+    const got = {};
+    for (const w of ["a", "b"]) got[w] = await js(`(() => { const x = window.__p.ctx('${w}')?.sea.wind; return x ? { speed: x.speed, from: x.from, gustiness: x.gustiness } : null; })()`);
+    report.measured.wind = { doc: air, a: got.a, b: got.b };
+    check("her wind in both views is the weather's offer: the doc's weather (wind, from) with the default gustiness", JSON.stringify(got.a) === JSON.stringify(want) && JSON.stringify(got.b) === JSON.stringify(want), { want, got });
+  }
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
   const { hull, wheel, rig, windlass, ladder } = ids;
@@ -282,7 +292,7 @@ try {
   const way = { s: await P(`read('${hull}', '${SIM}')`), f: await P(`read('${hull}', '${FOL}')`) };
   const start = (await P("doc()")).objects;
   // the sea as the run sailed it (its seed the probe's --sea) and the weather it sailed in: kept with the report
-  { const d = await P("doc()"); report.measured.sea = { sea: Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"])?.traits["sailing.sea"], weather: d.traits["sailing.weather"] }; }
+  { const d = await P("doc()"); report.measured.sea = { sea: Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"])?.traits["sailing.sea"], weather: d.traits.weather }; }
   check("the template starts her under way: sail up, anchor up, making way on both views", start[rig].traits["sailing.sail"].raised === 1 && start[windlass].traits["sailing.anchor"].down === false && way.s?.speed > 1 && way.f?.speed > 1, { speed: { sim: n2(way.s?.speed), follower: n2(way.f?.speed) } });
   await shot("under-way", FOL);
 
@@ -293,7 +303,7 @@ try {
   // the centreline with each gust and sheer, a target that moves while the
   // look at it from the cockpit (below) is made; sheeted in it lies over the
   // well. It's eased again (0.5) once that look is done.
-  const windFrom = (await P("doc()")).traits["sailing.weather"].wind.from;
+  const windFrom = (await P("doc()")).traits.weather.from;
   await js(`window.__p.change((d) => {
     const o = d.objects;
     o['${hull}'].transform.rotation[1] = ${(-windFrom * Math.PI) / 180};
@@ -529,7 +539,7 @@ try {
   // ─── under sail: bear away onto a beam reach ─────────────────────────────
   if (section("helm")) throw new Done();
   // a beam reach on the tack she fell off on: the wind from 45°, the wind on her port beam she heads 135°
-  const wind = (await P("doc()")).traits["sailing.weather"].wind;
+  const wind = (await P("doc()")).traits.weather;
   const want = ((wind.from + side * 90) * Math.PI) / 180;
   await focus("b", aimH); // B's keys again
   const reach = await steer(ids, SIM, want);

@@ -1,5 +1,8 @@
 // The plugin metadata: plain data that survives the worker's structuredClone,
 // every trait described for "Add behaviour…", and modules that load.
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
 
@@ -7,9 +10,8 @@ const byId = (id) => plugins.find((p) => p.id === id);
 const TRAITS = ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "sailing.winch", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 describe("sailing's plugins", () => {
-  it("are three scene extensions (the weather, the sea, the ships), parts for the bin and two templates, and nothing else", () => {
+  it("are two scene extensions (the sea, the ships), parts for the bin and two templates, and nothing else: the weather is the weather package's", () => {
     expect(plugins.map((p) => [p.type, p.id])).toEqual([
-      ["scene:extension", "sailing.weather"],
       ["scene:extension", "sailing.sea"],
       ["scene:extension", "sailing"],
       ...["sea", "sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "winches", "companionway", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
@@ -22,9 +24,7 @@ describe("sailing's plugins", () => {
     const ships = byId("sailing");
     expect(ships.traits.length).toBeGreaterThan(0);
     for (const t of ships.traits) expect([t, ships.describes[t]?.on]).toEqual([t, "object"]);
-    // the weather is a scene trait, and the sea a behaviour on a water object, each its own part's alone
-    expect(byId("sailing.weather").traits).toEqual(["sailing.weather"]);
-    expect(byId("sailing.weather").describes["sailing.weather"].on).toBe("scene");
+    // the sea is a behaviour on a water object, its own part's alone
     expect(byId("sailing.sea").traits).toEqual(["sailing.sea"]);
     expect(byId("sailing.sea").describes["sailing.sea"].on).toBe("object");
   });
@@ -35,8 +35,8 @@ describe("sailing's plugins", () => {
       expect(p.category).toBe("Sailing");
       expect(p.name).toBeTruthy();
       expect(p.description).toBeTruthy();
-      // its own traits, the sea's and the weather's, and the other packages' its parts carry (an exit, a slide, water under a sea)
-      for (const t of p.traits ?? []) expect([...TRAITS, "sailing.sea", "sailing.weather", "traversal.exit", "joints.slide", "water"]).toContain(t);
+      // its own traits, the sea's, and the other packages' its parts carry (an exit, a slide, water under a sea, the weather over it)
+      for (const t of p.traits ?? []) expect([...TRAITS, "sailing.sea", "traversal.exit", "joints.slide", "water", "weather"]).toContain(t);
     }
     expect(byId("sailing.mast").tags).toEqual(["sailing.mast"]);
     expect(byId("sailing.wheel").tags).toEqual(["sailing.helm"]);
@@ -46,8 +46,9 @@ describe("sailing's plugins", () => {
     expect(byId("sailing.winches").tags).toEqual(["sailing.winch"]);
     expect(byId("sailing.companionway").tags).toEqual(["sailing.companionway"]);
     expect(byId("sailing.companionway").traits).toEqual(["traversal.exit", "joints.slide"]);
-    expect(byId("sailing.sloop").traits).toEqual(["sailing.ship", "water", "sailing.sea", "sailing.weather"]);
-    expect(plugins.find((p) => p.type === "scene:part" && p.id === "sailing.sea").traits).toEqual(["water", "sailing.sea", "sailing.weather"]);
+    // the Sea and the Sloop bring the weather package's trait, by its key: data, not an import
+    expect(byId("sailing.sloop").traits).toEqual(["sailing.ship", "water", "sailing.sea", "weather"]);
+    expect(plugins.find((p) => p.type === "scene:part" && p.id === "sailing.sea").traits).toEqual(["water", "sailing.sea", "weather"]);
   });
 
   it("are plain data apart from load()", () => {
@@ -63,13 +64,12 @@ describe("sailing's plugins", () => {
 
   it("runs by its traits alone: nothing about who's looking (no activities, nothing required)", () => {
     expect(byId("sailing").traits).toEqual(TRAITS);
-    // the sea and the weather are their own extensions, each on its own trait alone: a harbour's sea runs no ships
+    // the sea is its own extension on its own trait alone: a harbour's sea runs no ships
     expect(byId("sailing.sea").traits).toEqual(["sailing.sea"]);
-    expect(byId("sailing.weather").traits).toEqual(["sailing.weather"]);
-    for (const id of ["sailing", "sailing.sea", "sailing.weather"]) for (const k of ["activities", "requires", "always", "general"]) expect(k in byId(id)).toBe(false);
+    for (const id of ["sailing", "sailing.sea"]) for (const k of ["activities", "requires", "always", "general"]) expect(k in byId(id)).toBe(false);
   });
 
-  it("describes every trait each runs on, the weather on the scene and the rest on objects", () => {
+  it("describes every trait each runs on, all on objects: no scene trait, the weather being the weather package's", () => {
     const d = byId("sailing").describes;
     expect(Object.keys(d).sort()).toEqual([...TRAITS].sort());
     for (const k of TRAITS) expect(d[k].on).toBe("object");
@@ -77,10 +77,9 @@ describe("sailing's plugins", () => {
     expect(Object.keys(sea)).toEqual(["sailing.sea"]);
     expect(sea["sailing.sea"].on).toBe("object");
     expect(sea["sailing.sea"].fields.map((f) => f.key)).toEqual(["seed", "scale"]);
-    const weather = byId("sailing.weather").describes;
-    expect(Object.keys(weather)).toEqual(["sailing.weather"]);
-    expect(weather["sailing.weather"].on).toBe("scene");
-    expect(Object.fromEntries(weather["sailing.weather"].fields.map((f) => [f.key, f])).wind.default).toEqual({ speed: 7, from: 45 });
+    const all = plugins.flatMap((p) => Object.entries(p.describes ?? {}));
+    expect(all.filter(([, d]) => d.on === "scene")).toEqual([]);
+    expect(all.map(([k]) => k)).not.toContain("weather");
     const fields = (k) => Object.fromEntries(d[k].fields.map((f) => [f.key, f]));
     expect(fields("sailing.helm").angle).toMatchObject({ kind: "number", default: 0, min: -1, max: 1 });
     expect(fields("sailing.sail").raised.default).toBe(1);
@@ -109,6 +108,20 @@ describe("sailing's plugins", () => {
   it("offers the template with an icon and a description", () => {
     expect(byId("ship-at-sea")).toMatchObject({ name: "Ship at sea", icon: "Sailboat" });
     expect(byId("ship-at-sea").description).toMatch(/under way/);
+  });
+
+  it("offers no ambient: no runtime module defines ambient() or names the ambient atmosphere (the world's wind and sky are the weather package's)", () => {
+    const src = dirname(fileURLToPath(import.meta.url));
+    const runtime = readdirSync(src).filter((f) => f.endsWith(".js") && !/\.test\.js$/.test(f));
+    expect(runtime).toContain("sea.js");
+    expect(runtime).not.toContain("weather.js");
+    const offers = /\bambient\s*\(\s*\)\s*\{|\bambient\s*:/;
+    // the ambient's name as a key or a string (a comment pointing at STAGE.md's "Atmosphere" section is neither)
+    const atmosphere = /["'`]atmosphere["'`]|\batmosphere\s*:/;
+    for (const f of runtime) {
+      const text = readFileSync(join(src, f), "utf8");
+      expect([f, offers.test(text), atmosphere.test(text)]).toEqual([f, false, false]);
+    }
   });
 
   it("loads modules with create()", async () => {

@@ -39,7 +39,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["sailing/dist/index.js", "water/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-touch-shots"));
 const SEED = Number(arg("--seed") ?? 1);
@@ -96,7 +96,7 @@ try {
   await loads("window.__p.objects().length >= 10", 20_000);
   check("every part loads", await loads("(() => { const a = window.__p.loaded('a'); return a.total >= 10 && a.loaded === a.total; })()", 40_000), await P("loaded('a')"));
   await loads("!!window.__p.ctx('a')", 10_000);
-  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEED}; d.traits["sailing.weather"].seed = ${SEED}; })`);
+  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEED}; d.traits.weather.seed = ${SEED}; })`);
   await P("resume()");
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), mainsheet: by("Mainsheet"), windlass: by("Windlass") }; })()`);
   // where a part is on her (the hull's frame): up its chain of parents
