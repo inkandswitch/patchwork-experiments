@@ -39,11 +39,20 @@ export const staticChecks = (js, w, ship, kind = "sloop") =>
       });
       const checks = {};
       for (const [k, v] of Object.entries(r.checks)) checks[k] = { ok: v.ok, detail: JSON.stringify(v.detail).slice(0, 500) };
-      const key = (m, a) => nm.pointOf(m, a, 0.5, 0.5).map((v) => Math.round(v * 1e4)).join();
-      const all = new Set(Array.from({ length: own.count }, (_, a) => key(own, a)));
-      let lost = 0;
-      for (let a = 0; a < mesh.count; a++) if (!all.has(key(mesh, a))) lost++;
-      checks["walk's own mesh holds every cell"] = { ok: lost === 0, detail: JSON.stringify({ lost, own: own.count, pruned: mesh.count }) };
+      // a cell is its column (x, z: exact multiples of the cell size) and its floor's height there; the two bakes
+      // are the same function of the same triangles, so a height is the same to well under a millimetre, and
+      // keying it rounded would split a tie at a rounding edge: heights are compared within 1 mm instead
+      const col = (p) => Math.round(p[0] * 1e4) + ',' + Math.round(p[2] * 1e4);
+      const ys = new Map();
+      for (let a = 0; a < own.count; a++) { const p = nm.pointOf(own, a, 0.5, 0.5); const k = col(p); ys.set(k, [...(ys.get(k) ?? []), p[1]]); }
+      const lostAt = [];
+      for (let a = 0; a < mesh.count; a++) {
+        const p = nm.pointOf(mesh, a, 0.5, 0.5);
+        const near = ys.get(col(p)) ?? [];
+        if (!near.some((y) => Math.abs(y - p[1]) <= 1e-3)) lostAt.push({ at: p.map((v) => +v.toFixed(4)), own: near.map((v) => +v.toFixed(4)) });
+      }
+      const lost = lostAt.length;
+      checks["walk's own mesh holds every cell"] = { ok: lost === 0, detail: JSON.stringify({ lost, own: own.count, pruned: mesh.count, lostAt: lostAt.slice(0, 5) }) };
       return { ok: r.ok && lost === 0, cells: mesh.count, own: own.count, triangles: input.triangles.length / 9, links: mesh.links.map((l) => l.kind + (l.id ? ' ' + l.id : '')), at: mesh.links.map((l) => [l.kind, l.asked.map((v) => +v.toFixed(2)), nm.pointOf(mesh, l.at.cell, l.at.u, l.at.v).map((v) => +v.toFixed(2))]), bakeMs: Math.round(bakeMs), checks };
     })()`,
     240_000,
