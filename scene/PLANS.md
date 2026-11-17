@@ -108,8 +108,11 @@ example republished at the end of the queue.
 
 Each step leaves everything green and deletes a section of STAGE.md:
 1 hands, Edit the editor's hand (done 2026-11-17); 2 view plugins (`scene:view`; done 2026-11-17), every
-`general` branch gone; 3 undo leaves (`change → patches`, one `revert-veto`
-convention); 4 services and `channel` (claims, poses, clock, telling,
+`general` branch gone; 3 undo leaves (`change → patches`; the editor records its own writes; drops,
+parts and templates move to the editor; consent was removed, so no veto
+convention); 3b the board-game packages merge into `tabletop` (dice, bag,
+tts-import, card-table, keep; seats stays separate, machine uses it), so
+step 4 migrates one games package, not six; 4 services and `channel` (claims, poses, clock, telling,
 notices, drawer, prefs out one at a time); 5 `display` (lenses, veil,
 dressing, group hiding, pose playback); 6 links leave to a links plugin,
 focus to the editor; 7 content leaves (optional); 8 the page: STAGE.md
