@@ -56,7 +56,7 @@ are general except `scene.carry` (by trait) and `scene.others` (every doc).
   copies an object with what's attached under it. The copy shares GLB files,
   gets its own render docs, and leaves runtime state behind.
 - **Links.** A scene doc dropped on a scene is a link: its own world, drawn
-  in the link's frame. **Enter** it (double-click, menu, inspector) to edit
+  in the link's frame. **Enter** it (menu, inspector, its tree row) to edit
   inside it in place; Leave or Escape comes back out. **Extract** makes a
   selection its own linked doc; **Bundle** copies a linked doc back in.
 - **Fixed versions.** A URL with heads, or *Fix at this version*, holds an

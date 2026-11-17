@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { DOUBLE_MS, DOUBLE_PX, DOUBLE_PX_TOUCH, buildEvent, createRouter, firstOfDouble, isMac, stampOf, isTyping, releaseKind, retype, withHolder } from "./router.js";
+import { buildEvent, createRouter, isMac, isTyping, releaseKind, retype, withHolder } from "./router.js";
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
-function setup({ held = false, holders = {}, mac = false, base = {}, time, live, touch } = {}) {
+function setup({ held = false, holders = {}, mac = false, base = {}, time, touch } = {}) {
   const root = document.createElement("div");
   root.tabIndex = 0;
   const port = document.createElement("div");
@@ -60,7 +60,6 @@ function setup({ held = false, holders = {}, mac = false, base = {}, time, live,
     exitLock: t.exitLock,
     mac,
     ...(time ? { time } : {}),
-    ...(live ? { live } : {}),
     ...(touch !== undefined ? { touch } : {}),
   });
   cleanups.push(() => {
@@ -75,9 +74,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// `timeStamp`, given, is the event's own (as the browser stamps the input); 0 is an event without one
-const stamped = (e, timeStamp) => (timeStamp === undefined ? e : Object.defineProperty(e, "timeStamp", { value: timeStamp }));
-const ptr = (type, target, { x = 10, y = 10, button = 0, buttons, id = 1, pointerType = "mouse", timeStamp, ...rest } = {}) => {
+const ptr = (type, target, { x = 10, y = 10, button = 0, buttons, id = 1, pointerType = "mouse", ...rest } = {}) => {
   const e = new PointerEvent(type, {
     bubbles: true,
     cancelable: true,
@@ -89,7 +86,6 @@ const ptr = (type, target, { x = 10, y = 10, button = 0, buttons, id = 1, pointe
     pointerType,
     ...rest,
   });
-  stamped(e, timeStamp);
   target.dispatchEvent(e);
   return e;
 };
@@ -323,165 +319,14 @@ describe("clicks on unclaimed presses", () => {
     expect(t.inputs.sel.click).not.toHaveBeenCalled();
     expect(t.orbit).toHaveBeenCalledTimes(2);
   });
-  it("offers dblclick down the chain", () => {
-    const t = setup();
+  it("a dblclick on the canvas is no event of the stage's: nothing in the chain or the body is offered one", () => {
+    const t = setup({ base: { dblclick: vi.fn(() => true) } });
     t.inputs.a = { dblclick: vi.fn(() => true) };
     const e = new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
     t.canvas.dispatchEvent(e);
-    expect(t.inputs.a.dblclick).toHaveBeenCalledTimes(1);
-    expect(e.defaultPrevented).toBe(true);
-  });
-});
-
-describe("a double-click resolves to its first click's hit (a thing that moves between the clicks is still what was double-clicked)", () => {
-  // Each case: the presses (each a click: ms since the last, x and y px from the start, what is under the pointer
-  // then, and whether it is a touch or under pointer lock), then the dblclick likewise, and whose hit (and widget)
-  // it gets: a press's (by what was under it), "now" (a new ray), or null (the first press's hit, nothing).
-  // Each gate is taken exactly on and one past its bound, for each press alone.
-  // `dt` is the time between the inputs, on the events' own stamps; the page's clock (when the router handled each)
-  // moves by the same unless `page` says otherwise (the page busy, or catching up on queued events back to back), and
-  // `stamp: false` is an event with no stamp of its own (timeStamp 0). Each click is a press and its release, `hold`
-  // ms later (0 unless given; `holdPage` the page's, `upStamp: false` an unstamped release, `noUp` no release heard);
-  // the dblclick's `dt` is from the last release, and its own stamp counts only when no release followed the last
-  // press (Chrome stamps a dblclick as it dispatches it, not as the release that made it was made).
-  const P = DOUBLE_PX, PT = DOUBLE_PX_TOUCH, MS = DOUBLE_MS;
-  const at = (dt, x, y, under, o = {}) => ({ dt, x, y, under, ...o });
-  const CASES = [
-    // the stamps decide, whatever the page's clock says: on and one past each time gate, the page saying the opposite
-    ["the page busy 1 s meeting the second press, the clicks 200 ms apart", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { page: 1200 })], at(10, 0, 0), "first"],
-    ["the page busy 1 s meeting the second press, the clicks 600 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 1600 })], at(10, 0, 0), "now"],
-    ["the clicks DOUBLE_MS apart, met 1 s apart", [at(0, 0, 0, "first"), at(MS, 0, 0, "second", { page: 1000 })], at(10, 0, 0), "first"],
-    ["the clicks past DOUBLE_MS apart, met back to back", [at(0, 0, 0, "first"), at(MS + 1, 0, 0, "second", { page: 0 })], at(10, 0, 0), "now"],
-    ["the second click released DOUBLE_MS after its press, met 1 s after", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS, holdPage: 1000 })], at(0, 0, 0), "first"],
-    ["the second click released past DOUBLE_MS after its press, met at once", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS + 1, holdPage: 0 })], at(0, 0, 0), "now"],
-    // the dblclick is timed as the release that made it: its own stamp is when the page dispatched it
-    ["the dblclick stamped 1 s after its release (the page busy)", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(1000, 0, 0, undefined, { page: 1000 }), "first"],
-    ["the dblclick stamped before its release", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: 50 })], at(-80, 0, 0, undefined, { page: 0 }), "first"],
-    ["no release heard after the second press: the dblclick's own stamp, DOUBLE_MS after", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { noUp: true })], at(MS, 0, 0), "first"],
-    ["no release heard after the second press: the dblclick's own stamp, past DOUBLE_MS after", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { noUp: true })], at(MS + 1, 0, 0), "now"],
-    // an event without a stamp puts all three on the page's clock, never one clock against the other
-    ["no event stamped, met DOUBLE_MS apart", [at(0, 0, 0, "first", { stamp: false }), at(MS, 0, 0, "second", { stamp: false })], at(MS, 0, 0, undefined, { stamp: false }), "first"],
-    ["no event stamped, the presses met past DOUBLE_MS apart", [at(0, 0, 0, "first", { stamp: false }), at(MS + 1, 0, 0, "second", { stamp: false })], at(10, 0, 0, undefined, { stamp: false }), "now"],
-    ["no event stamped, the second release met past DOUBLE_MS after its press", [at(0, 0, 0, "first", { stamp: false }), at(200, 0, 0, "second", { stamp: false, hold: MS + 1 })], at(0, 0, 0, undefined, { stamp: false }), "now"],
-    ["the first press alone unstamped: the clicks 200 ms apart, met 1 s apart", [at(0, 0, 0, "first", { stamp: false }), at(200, 0, 0, "second", { page: 1200 })], at(10, 0, 0), "now"],
-    ["the second press alone unstamped: the clicks 200 ms apart, met 1 s apart", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { page: 1200, stamp: false })], at(10, 0, 0), "now"],
-    ["the second release alone unstamped: the clicks 600 ms apart, met 200 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 200, upStamp: false })], at(10, 0, 0), "first"],
-    ["the dblclick alone unstamped, its release stamped: the clicks 600 ms apart, met 200 ms apart", [at(0, 0, 0, "first"), at(600, 0, 0, "second", { page: 200 })], at(10, 0, 0, undefined, { stamp: false }), "now"],
-    // the other gates, both clocks agreeing
-    ["two quick clicks in one place", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0), "first"],
-    ["the second press DOUBLE_PX from the dblclick", [at(0, 0, 0, "first"), at(200, P, 0, "second")], at(10, 0, 0), "first"],
-    ["the second press alone past DOUBLE_PX from it", [at(0, 0, 0, "first"), at(200, P + 1, 0, "second")], at(10, 0, 0), "now"],
-    ["the first press DOUBLE_PX from the dblclick", [at(0, 0, 0, "first"), at(200, 0, P, "second")], at(10, 0, P), "first"],
-    ["the first press alone past DOUBLE_PX from it", [at(0, 0, 0, "first"), at(200, 0, P + 1, "second")], at(10, 0, P + 1), "now"],
-    ["the clicks DOUBLE_MS apart", [at(0, 0, 0, "first"), at(MS, 0, 0, "second")], at(10, 0, 0), "first"],
-    ["the clicks past DOUBLE_MS apart", [at(0, 0, 0, "first"), at(MS + 1, 0, 0, "second")], at(10, 0, 0), "now"],
-    ["the second click released DOUBLE_MS after its press (a held second click)", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS })], at(10, 0, 0), "first"],
-    ["the second click released past DOUBLE_MS after its press", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { hold: MS + 1 })], at(10, 0, 0), "now"],
-    ["a dblclick with one press before it", [at(0, 0, 0, "first")], at(10, 0, 0), "now"],
-    ["a stale click, then the double", [at(0, 0, 0, "stale"), at(MS + 100, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0), "first"],
-    ["nothing under the first press (the sea), something by the second", [at(0, 0, 0, null), at(200, 0, 0, "second")], at(10, 0, 0), null],
-    ["two taps DOUBLE_PX_TOUCH apart", [at(0, 0, 0, "first", { touch: true }), at(200, PT, 0, "second", { touch: true })], at(10, PT, 0), "first"],
-    ["two taps past DOUBLE_PX_TOUCH apart", [at(0, 0, 0, "first", { touch: true }), at(200, PT + 1, 0, "second", { touch: true })], at(10, PT + 1, 0), "now"],
-    ["the dblclick under pointer lock", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0, undefined, { locked: true }), "now"],
-    ["the first press alone under pointer lock", [at(0, 0, 0, "first", { locked: true }), at(200, 0, 0, "second")], at(10, 0, 0), "now"],
-    ["the second press alone under pointer lock", [at(0, 0, 0, "first"), at(200, 0, 0, "second", { locked: true })], at(10, 0, 0), "now"],
-    ["the first hit gone by the dblclick (live: false)", [at(0, 0, 0, "first"), at(200, 0, 0, "second")], at(10, 0, 0, undefined, { live: false }), "now"],
-    ["nothing under the first press, live: false (a null hit has no stage to lose)", [at(0, 0, 0, null), at(200, 0, 0, "second")], at(10, 0, 0, undefined, { live: false }), null],
-  ];
-
-  // A router on a wall clock the test sets, events stamped on a page clock it sets too (a different origin, as in a
-  // browser: the epoch against ms since the page began), a pointer lock the test holds, and a world where each pick
-  // lands on what is under the pointer now.
-  function rig() {
-    const r = { now: 1_700_000_000_000, stamp: 5000, under: null, lockEl: null, alive: true };
-    const advance = (s) => {
-      r.now += s.page ?? s.dt;
-      r.stamp += s.dt;
-      return s.stamp === false ? 0 : r.stamp;
-    };
-    Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => r.lockEl });
-    cleanups.push(() => delete document.pointerLockElement);
-    const time = { now: () => r.now, frame: (fn) => (setTimeout(() => fn(r.now), 0), () => {}), after: () => () => {} };
-    r.live = vi.fn(() => r.alive);
-    const t = setup({ time, live: (h) => r.live(h) });
-    t.pick.mockImplementation((x, y) => (r.under == null ? null : { id: r.under, point: [x, y, 0], normal: [0, 1, 0], distance: 1 }));
-    t.pickWidget.mockImplementation(() => (r.under == null ? null : { owner: null, id: `${r.under}:w` }));
-    r.got = [];
-    t.inputs.a = { press: () => null, dblclick: (ev) => (r.got.push([ev.hit?.id ?? null, ev.widget?.id ?? null]), true) };
-    r.t = t;
-    r.click = (s) => {
-      const timeStamp = advance(s);
-      r.under = s.under;
-      r.lockEl = s.locked ? t.canvas : null;
-      const o = { x: 10 + s.x, y: 10 + s.y, pointerType: s.touch ? "touch" : "mouse", timeStamp };
-      down(t, o);
-      if (s.noUp) return;
-      up(t, { ...o, timeStamp: advance({ dt: s.hold ?? 0, page: s.holdPage, stamp: s.upStamp ?? s.stamp }) });
-    };
-    r.dbl = (s) => {
-      const timeStamp = advance(s);
-      r.under = s.under === undefined ? "now" : s.under;
-      r.lockEl = s.locked ? t.canvas : null;
-      r.alive = s.live ?? true;
-      const e = stamped(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: 10 + s.x, clientY: 10 + s.y }), timeStamp);
-      t.canvas.dispatchEvent(e);
-      return e;
-    };
-    return r;
-  }
-
-  for (const [label, presses, dbl, want] of CASES)
-    it(`${label}: ${want === "now" ? "a new ray" : want === null ? "the first press's nothing" : `the ${want} press's hit`}`, () => {
-      const r = rig();
-      // the router alone fixes each press's hit: no hover reads it (a view's does, as it happens; nothing may rely on that)
-      for (const p of presses) r.click(p);
-      const picks = r.t.pick.mock.calls.length;
-      const e = r.dbl(dbl);
-      expect(r.got).toEqual([[want, want == null ? null : `${want}:w`]]);
-      // reusing a press's hit casts no new ray
-      if (want !== "now") expect(r.t.pick.mock.calls.length).toBe(picks);
-      expect(e.defaultPrevented).toBe(true);
-    });
-
-  it("the host is asked whether the first hit is still there, with that hit", () => {
-    const r = rig();
-    r.click(at(0, 0, 0, "first"));
-    r.click(at(200, 0, 0, "second"));
-    r.dbl(at(10, 0, 0));
-    expect(r.live.mock.calls.map(([h]) => h?.id)).toEqual(["first"]);
-  });
-
-  it("a dblclick straight after a dblclick has no presses of its own: a new ray", () => {
-    const r = rig();
-    r.click(at(0, 0, 0, "first"));
-    r.click(at(200, 0, 0, "second"));
-    r.dbl(at(10, 0, 0));
-    r.dbl(at(10, 0, 0, "later"));
-    expect(r.got).toEqual([
-      ["first", "first:w"],
-      ["later", "later:w"],
-    ]);
-  });
-
-  it("firstOfDouble: the earlier of the last two presses, when both pass the gates, on the stamps when all three have one", () => {
-    const a = { stamp: 10, t: 0, x: 0, y: 0 }, b = { stamp: 110, t: 100, x: 1, y: 1 };
-    const dbl = (stamp, t) => ({ stamp, t, x: 0, y: 0 });
-    expect(firstOfDouble([a, b], dbl(110, 100))).toBe(a);
-    expect(firstOfDouble([b], dbl(110, 100))).toBeNull();
-    expect(firstOfDouble([], dbl(10, 0))).toBeNull();
-    expect(firstOfDouble([a, b], dbl(110 + DOUBLE_MS + 1, 100))).toBeNull(); // stamped: the stamps, not t
-    expect(firstOfDouble([a, b], dbl(110, 100 + DOUBLE_MS + 1))).toBe(a);
-    expect(firstOfDouble([a, b], dbl(null, 100 + DOUBLE_MS + 1))).toBeNull(); // one unstamped: all on t
-    expect(firstOfDouble([a, b], dbl(null, 100 + DOUBLE_MS))).toBe(a);
-    expect(firstOfDouble([{ ...a, locked: true }, b], dbl(110, 100))).toBeNull();
-  });
-
-  it("stampOf: an event's own timeStamp, or null for none (absent, 0 or not a number)", () => {
-    expect(stampOf({ timeStamp: 12.5 })).toBe(12.5);
-    expect(stampOf({ timeStamp: 0 })).toBeNull();
-    expect(stampOf({})).toBeNull();
-    expect(stampOf({ timeStamp: NaN })).toBeNull();
-    expect(stampOf(null)).toBeNull();
+    expect(t.inputs.a.dblclick).not.toHaveBeenCalled();
+    expect(t.baseInput.dblclick).not.toHaveBeenCalled();
+    expect(e.defaultPrevented).toBe(false);
   });
 });
 

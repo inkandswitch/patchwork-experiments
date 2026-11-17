@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
+import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
@@ -280,99 +280,6 @@ describe("Enter and Leave", () => {
     // a general part, the view's own, is told what the move closed of its; a stage's part isn't
     expect("reopened" in s.api("scene.focus").view).toBe(true);
     expect("reopened" in host.view).toBe(false);
-  });
-
-  it("a double-click on a link enters it (scene.focus); on anything else it doesn't", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const m = await mountNested();
-    s = m.s;
-    const { view } = m;
-    const dbl = (n, id) => {
-      view.viewport.pick = () => ({ id: keyOf(n, id), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 });
-      const rect = s.canvas.getBoundingClientRect();
-      s.canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 20 }));
-    };
-    dbl(0, "table");
-    expect(view.atom.get().focus).toEqual([]);
-    dbl(0, "P");
-    expect(view.atom.get().focus).toEqual([]);
-    // a card of B's, from outside: the host's element is the link, so it enters B
-    dbl(stageOf(view, "L").n, "card");
-    expect(view.atom.get().focus).toEqual(["L"]);
-    await placed(view);
-    // inside B, a double-click on its card isn't a link: nothing
-    dbl(stageOf(view, "L").n, "card");
-    expect(view.atom.get().focus).toEqual(["L"]);
-    dbl(stageOf(view, "L/M").n, "piece");
-    expect(view.atom.get().focus).toEqual(["L", "M"]);
-  });
-
-  it("a double-click resolves to its first press's hit: kept when the first click removed its object, cast again when its stage closed between the clicks", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    let now = 5000;
-    const m = await mountNested({ time: wallAt(() => now) });
-    s = m.s;
-    const { view, b } = m;
-    const under = (n, id) => (view.viewport.pick = () => ({ id: keyOf(n, id), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }));
-    const dbl = () => {
-      const rect = s.canvas.getBoundingClientRect();
-      s.canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 20 }));
-    };
-    // B's card under the first press, which (as a first click may) is gone by the second; the host's table under the second
-    const L = stageOf(view, "L").n;
-    under(L, "card");
-    s.click(20, 20);
-    b.change((d) => {
-      delete d.objects.card;
-      d.order = d.order.filter((x) => x !== "card");
-    });
-    await until(() => !stageOf(view, "L").doc().objects.card);
-    now += 200;
-    under(0, "table");
-    s.click(20, 20);
-    now += 10;
-    dbl();
-    // the double-click was on the card, whose element here is the link L, still there: it enters L (a new ray, on the table, would not)
-    expect(view.atom.get().focus).toEqual(["L"]);
-    expect(view.leave()).toBe(true);
-    await placed(view);
-    // L closed and opened again between the clicks: the first press's key names a stage that is gone, so the dblclick casts again
-    under(L, "M");
-    s.click(20, 20);
-    const A = s.handle;
-    const was = JSON.parse(JSON.stringify(A.doc().objects.L));
-    A.change((d) => delete d.objects.L);
-    await until(() => !view.stages().some((x) => x.n === L));
-    A.change((d) => (d.objects.L = was));
-    await until(() => stageOf(view, "L") && stageOf(view, "L").n !== L && s.api("t.host")?.link("L")?.open, 3000);
-    const L2 = stageOf(view, "L").n;
-    expect(L2).not.toBe(L);
-    now += 200;
-    under(L2, "M");
-    s.click(20, 20);
-    now += 10;
-    dbl();
-    expect(view.atom.get().focus).toEqual(["L"]);
-  });
-
-  it("a double-click the page meets late (busy 1 s after the first press) is still one: the gate times the events' own stamps", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    let now = 5000;
-    const m = await mountNested({ time: wallAt(() => now) });
-    s = m.s;
-    const { view } = m;
-    const under = (n, id) => (view.viewport.pick = () => ({ id: keyOf(n, id), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }));
-    // B's card (from outside, the link L) under the first press; the page then busy a second on the stage's clock
-    // (the inspector opening), the table under the second press; the events themselves stamped as made, ms apart
-    under(stageOf(view, "L").n, "card");
-    s.click(20, 20);
-    now += 1000;
-    under(0, "table");
-    s.click(20, 20);
-    now += 1000;
-    const rect = s.canvas.getBoundingClientRect();
-    s.canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 20 }));
-    expect(view.atom.get().focus).toEqual(["L"]);
   });
 
   it("outside an entered link stays live: a press out there reaches its own parts, then the general ones (the focus's); in Edit a click there is Edit's, and selects nothing; in Look it goes down the chain", async () => {

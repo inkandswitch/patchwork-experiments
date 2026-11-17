@@ -305,14 +305,14 @@ the focus. **The halo** (`scene.halo`, `scene.handles`) works in the parent's
 drawn frame, has no keys, and writes once on release.
 
 ```js
-event = { type: "press" | "click" | "dblclick" | "menu" | "key" | "keyup" | "wheel" | "move",
+event = { type: "press" | "click" | "menu" | "key" | "keyup" | "wheel" | "move",
   x, y, clientX, clientY, ndc, ray: { origin, dir },
   hit,      // lazy: { id, point, normal, distance } | null
   widget,   // lazy: { owner, onTop, distance, ...data } | null
   holder, button, buttons, pointerId, pointerType,
   shift, alt, ctrl, meta, key, code, repeat, dx, dy, deltaY,
   locked }  // under lock, x, y and ray are the centre's
-input = { press(ev) → session | null, click, dblclick, menu, key, keyup, wheel,   // → boolean
+input = { press(ev) → session | null, click, menu, key, keyup, wheel,   // → boolean
           widgetAt(ev) → { onTop?, distance?, ...data } | null, cursor(ev) → string | null }
 session = { move(ev), end(ev), tap?(ev) → boolean, cancel(), key?(ev) → boolean, cursor? }
 ```
@@ -321,10 +321,9 @@ session = { move(ev), end(ev), tap?(ev) → boolean, cancel(), key?(ev) → bool
 release under 4 px is a `tap`, else a `click` goes down the chain. A release
 never heard cancels. **Widgets** are meshes in `world()` groups, or `widgetAt`;
 `onTop` beats any object, others compare by distance; `userData.noPick` is never
-picked. **Double-clicks** take their first press's `hit` and `widget`; the gates
-are `DOUBLE_MS`, `DOUBLE_PX` in `src/stage/router.js`. **Attention** is the
-selection, else the look: the pointer's hit, or the eye ray under lock
-(`looksFromEye`).
+picked. There is no double-click event: a `dblclick` on the canvas is no one's.
+**Attention** is the selection, else the look: the pointer's hit, or the eye
+ray under lock (`looksFromEye`).
 
 ### Keys
 

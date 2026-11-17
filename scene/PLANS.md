@@ -142,8 +142,6 @@ Each names where it came from (in git at d80a2bfa for the removed notes).
 - **Multi-select**: at all, or Group is enough? If so A2 (`several: true`)
   or A3 (every command takes a list); Shift-click Edit's alone or "Also
   select" in every menu; does the halo move several? (TOOLS D20, §3.)
-- **The inspector's beat**: should only Edit's click selections wait, not
-  the tree's or the menu's? (TOOLS D6.)
 - **Edit's click asymmetry**: a click on nothing clears the selection, one
   outside the focus keeps it; both should probably match. (COMPOSITION
   "Waiting on the lead".)
@@ -176,10 +174,8 @@ Each names where it came from (in git at d80a2bfa for the removed notes).
 - **The use prompt** (TOOLS D19; COMP the use prompt and the eye): the cap
   of three; close the opened prompt on an eye move; is "the viewer moved
   it" the right line? Known gap: not kept inside the view at the bottom.
-- **A single click on a moving thing can miss**; the double-click fix
-  covers only the second press. (COMPOSITION "Still open".)
-- **Double-click with no stamps** falls back to the stage's clock; real OS
-  input never checked. (COMP double-click stamps, 2 and 4.)
+- **A single click on a moving thing can miss.** (COMPOSITION "Still
+  open".)
 
 ### Touch (TOOLS D11–15)
 When the pad shows (first touch, always on a coarse pointer, or a chip

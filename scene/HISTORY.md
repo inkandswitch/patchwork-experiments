@@ -509,3 +509,9 @@ hook, the `documents` contribution (the inspector keeps its own sections),
 Undo keeps only its plain rule: this viewer's own step, taken back if nothing
 it wrote has been written since. The reveal judgment, `parties` (seats'
 answer too) and the refusal "needs the others' agreement" went (PLANS.md).
+
+### 2026-11-17 — Double-click in the world removed
+The stage has no `dblclick` event: the router's first-press resolution, its
+DOUBLE_MS/DOUBLE_PX gates and stamp handling, and `input.dblclick` went.
+Enter stays on the menu, the inspector and the tree's link rows; Frame on `.`
+and the toolbar. The inspector no longer waits a beat to open.

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import { fakeCamera } from "../test/fake-camera.js";
-import frame, { frameTarget } from "./frame.js";
+import frame from "./frame.js";
 
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
 
@@ -26,19 +26,7 @@ const B1 = { min: [0, 0, 0], max: [1, 1, 1] };
 const B2 = { min: [0, 0, 0], max: [2, 1, 1] };
 const B3 = { min: [-1, 0, 0], max: [2, 1, 1] };
 
-describe("scene.frame (pure)", () => {
-  it("frames the selected group a double-clicked object is in, else the object", () => {
-    const objects = { a: object(), g: group(), b: object() };
-    const scene = { objects, groups: new Map([["a", "g"]]) };
-    expect(frameTarget(scene, "a", null)).toBe("a");
-    expect(frameTarget(scene, "a", "g")).toBe("g");
-    expect(frameTarget(scene, "b", "g")).toBe("b");
-    expect(frameTarget(scene, "gone", null)).toBe(null);
-    expect(frameTarget(scene, "a", "dimension:d1")).toBe("a"); // a ref selection is no group
-  });
-});
-
-describe("scene.frame: commands and double-click", () => {
+describe("scene.frame: commands", () => {
   it("Frame (.) frames the selection, else the scene's box; F is left to carry's Flip", async () => {
     const { s, world, camera } = await mount();
     const c = s.instance("scene.frame").commands.find((k) => k.id === "frame");
@@ -54,23 +42,6 @@ describe("scene.frame: commands and double-click", () => {
     expect(c.state(null, { view: s.local.get() })).toMatchObject({ label: "Frame selection" });
     expect(run(s, "frame")).toBe(true);
     expect(camera.frames.at(-1)).toEqual(B1);
-    s.unmount();
-  });
-
-  it("a double-click on an object frames it, or the selected group it's in; on nothing it passes", async () => {
-    const { s, world, camera } = await mount({ objects: { a: object({ group: "g" }), g: group() }, order: ["a", "g"] });
-    world.boxes = { a: B1, g: B2 };
-    const input = s.instance("scene.frame").input;
-    expect(input.dblclick({ hit: { id: "a" } })).toBe(true);
-    expect(camera.frames.at(-1)).toEqual(B1);
-    s.local.swap((m) => ({ ...m, selected: "g" }));
-    expect(input.dblclick({ hit: { id: "a" } })).toBe(true);
-    expect(camera.frames.at(-1)).toEqual(B2);
-    const n = camera.frames.length;
-    expect(input.dblclick({ hit: null })).toBe(false);
-    world.boxes = {};
-    expect(input.dblclick({ hit: { id: "a" } })).toBe(false);
-    expect(camera.frames.length).toBe(n);
     s.unmount();
   });
 

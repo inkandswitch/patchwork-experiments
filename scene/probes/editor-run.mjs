@@ -17,7 +17,7 @@
 // the halo's drag); carrying by the trait (snaps to a
 // connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
 // board; Measure (its Dimensions tab); Delete; . (Frame); the Inspector's ×
-// and the toolbar's Inspector; double-click; the context menu; no modes (the
+// and the toolbar's Inspector; . on a selection; the context menu; no modes (the
 // Edit body the doc starts people in, no activity anywhere); a pasted automerge URL; a dimension
 // selected by its label and deleted; the inspector on the Scene (the
 // toolbar's Inspector: Starts in, Look or Edit) and "Add behaviour…" (an arena
@@ -440,18 +440,20 @@ try {
     check("inspectorOpensItAgain", back.drawer?.w > 200 && Math.abs(back.canvas.x + back.canvas.w - back.drawer.x) < 1, back);
   }
 
-  // ── double-click frames an object ───────────────────────────────────────
+  // ── . frames the selection (a click selects the pawn) ──────────────────
   {
     const p = await scr("p1", [0, 0.015, 0]);
-    await b.dblclick(p.x, p.y);
+    await b.click(p.x, p.y);
+    await b.rest(200);
+    await b.key(".");
     await b.rest(500);
     const cam = await camera();
     const t = (await obj("p1")).transform.position;
     const dist = Math.hypot(cam.target[0] - t[0], cam.target[1] - (t[1] + 0.015), cam.target[2] - t[2]);
     const span = Math.hypot(...cam.position.map((v, i) => v - cam.target[i]));
-    check("dblclickFramesObject", dist < 0.01 && span < 0.3, { target: round(cam.target), pawn: t, span: round(span) });
+    check("frameKeyFramesSelection", dist < 0.01 && span < 0.3, { target: round(cam.target), pawn: t, span: round(span) });
     await shot("9-framed-pawn");
-    // the double-click's first click selected the pawn: let it go, then . frames everything
+    // let the pawn go, then . frames everything
     await b.key("Escape");
     await b.key(".");
     await b.rest(400);

@@ -1,21 +1,12 @@
 // scene.frame: the editor's verbs for pointing the camera at things.
 //   - "Frame" (.): the selection, or with nothing selected the whole scene
 //     ("Frame all"). Not F: F is carry's Flip, on every surface (STAGE.md, "Bodies").
-//   - a double-click on an object frames it (or the selected group it's in).
 //   - "Set home view" (menu): this camera as the doc's suggested start
 //     (doc.view.start.home, STAGE.md, "Arriving"), which a viewer without a saved
 //     camera opens at. An edit: undo takes it back.
 // Following the content as it loads is scene.autoframe's.
 
-import { groupChain, isGroup } from "../groups.js";
 import { own } from "../stage/own.js";
-
-/** What a double-click on `hitId` frames: the selected group it's in, else the object itself. Pure. */
-export function frameTarget(scene, hitId, selected) {
-  if (hitId == null || !scene.objects[hitId]) return null;
-  if (selected != null && selected !== hitId && isGroup(scene.objects[selected]) && groupChain(scene.groups, hitId).includes(selected)) return selected;
-  return hitId;
-}
 
 export default own({
   create(api) {
@@ -57,15 +48,6 @@ export default own({
           },
         },
       ],
-      input: {
-        dblclick(ev) {
-          const target = frameTarget(api.scene(), ev.hit?.id ?? null, api.view.get().selected ?? null);
-          const box = target ? api.box(target) : null;
-          if (!box) return false;
-          api.camera.frame(box);
-          return true;
-        },
-      },
     };
   },
 });

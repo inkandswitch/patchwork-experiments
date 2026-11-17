@@ -1,7 +1,7 @@
 // Edit inside a game aboard, her world running: does a click that lands on
 // the boat (outside the entered link) change the viewer's body? Found by
 // presence-check.nopause (2026-11-16): in the real Patchwork, B entered Lost
-// Cities aboard (Edit, a double-click) and B's next single click, a card
+// Cities aboard (Edit) and B's next single click, a card
 // missed on the pitching boat, landed on her and came aboard: the Aboard
 // body, at the helm, the pointer locked (scene/HISTORY.md, COMPOSITION Decisions,
 // Edit's click is Edit's).
@@ -13,13 +13,8 @@
 // as the wall would move it):
 //  1. A builds Lost Cities aboard, her world running; A picks Edit and
 //     looks down on the table (the presence-check's camera);
-//  2. A double-clicks a card of G's as presence-check does it (press,
-//     release, 90 ms of her sea, press, release; real CDP events), up to
-//     three tries: what each press hit, the two gaps by the events' own
-//     timeStamps, whether every press and the dblclick reached the canvas
-//     at the width the first press found (the inspector, shut, opens a
-//     beat after the first press's selection: scene/HISTORY.md, TOOLS Decisions 6)
-//     and whether it entered G;
+//  2. A enters G (the view's Enter on the link, as the menu's and the
+//     inspector's Enter run it): the focus is G, the body still Edit;
 //  3. inside G, in Edit: a click on the boat's Card table, then one on her
 //     hull, each outside the focus: the body stays Edit, the focus and the
 //     selection are unchanged;
@@ -33,18 +28,12 @@
 //     a card of G's put ~16 px below the canvas's top edge, near its left
 //     (where the HUD's Come aboard button sat before the bar of tools took
 //     the command, scene HISTORY.md, TOOLS Decisions 10); nothing of sailing's HUD is
-//     a button or takes a press anywhere along that edge, and a double-click
-//     on the card enters G, the body Edit, the canvas where it was;
+//     a button or takes a press anywhere along that edge, and a click on the
+//     card leaves the body Edit, the pointer free, the canvas where it was;
 //  6. the bar's Come aboard in Edit: there, and a real click on it comes
 //     aboard (the crew's body), the canvas's top and height where they were
 //     (the bar stays: B3, Come aboard is declared; Edit's drawer goes, so
-//     its width grows);
-//  7. back at the boat, in Edit, nothing selected: a slow double-click at a
-//     card of G's, slow but one the router still takes (second press
-//     480 ms after the first, dblclick 170 ms after that, on the stage's
-//     clock): the canvas keeps its width to the dblclick (the inspector's
-//     beat starts again at the second press, so it can't end between the
-//     first click's selection and the dblclick).
+//     its width grows).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,7 +58,7 @@ const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, numbers: {} };
 
-// every press and double-click A's host hears: when (the event's own stamp), where, what the view picks there now
+// every press A's host hears: when (the event's own stamp), where, what the view picks there now
 // (what the router picks for it: no frame comes between), and A's body, focus and selection as it lands
 const LISTEN = `(() => {
   const host = document.getElementById("a"); const log = (window.__ev = []);
@@ -77,7 +66,6 @@ const LISTEN = `(() => {
     return { type: e.type, stamp: +e.timeStamp.toFixed(1), x: Math.round(e.clientX), y: Math.round(e.clientY), on: e.target === v.canvas ? "canvas" : e.target.tagName.toLowerCase() + "." + String(e.target.className || ""), cw: Math.round(r.width),
       hit: hit?.id ? v.pathOfKey(hit.id) : null, body: __p.A.local.get().body?.id ?? null, focus: v.atom.get().focus, selected: v.atom.get().selected }; };
   host.addEventListener("pointerdown", (e) => log.push(what(e)), true);
-  host.addEventListener("dblclick", (e) => log.push(what(e)), true);
   return true; })()`;
 const events = () => js("window.__ev.splice(0)");
 const state = async () => ({ body: (await P("body('a')")).id, stack: (await P("body('a')")).stack, focus: await P("focusPath('a')"), selected: await P("selectionPath('a')"), locked: await js("!!document.pointerLockElement") });
@@ -103,37 +91,11 @@ try {
   await editOver();
   check("1: A in Edit, over the table, the focus on the boat", J(await state()).includes('"body":"edit"') && J(await P("focusPath('a')")) === "[]", await state());
 
-  // ── 2: the presence-check's double-click ──
-  const tries = [];
-  let entered = false;
-  for (let i = 0; i < 3 && !entered; i++) {
-    const ids2 = await cards();
-    const at = await P(`aimBest(${J(ids2)}, 'a')`);
-    if (!at) { tries.push({ aim: null }); await b.rest(500); continue; }
-    await b.move(at.x, at.y);
-    await b.advance(80);
-    await press(at.x, at.y, 1);
-    await b.advance(90);
-    await press(at.x, at.y, 2);
-    await b.rest(400);
-    const ev = await events();
-    const downs = ev.filter((e) => e.type === "pointerdown"), dbl = ev.find((e) => e.type === "dblclick");
-    const gaps = downs.length === 2 && dbl ? { second: +(downs[1].stamp - downs[0].stamp).toFixed(1), dbl: +(dbl.stamp - downs[1].stamp).toFixed(1) } : null;
-    entered = J(await P("focusPath('a')")) === J([ids.link]);
-    tries.push({ aim: { id: at.id, x: Math.round(at.x), y: Math.round(at.y) }, gaps, events: ev, entered, after: await state() });
-    if (!entered) await editOver();
-  }
-  report.numbers.enterTries = tries;
-  check("2: a double-click on a card of G's enters G", entered, tries.map((t) => ({ gaps: t.gaps, hits: t.events?.map((e) => e.hit), entered: t.entered })));
-  // the stage's promise (HISTORY.md, COMPOSITION Decisions, double-click and its stamps): a double-click whose first press
-  // landed on G's card and whose dblclick reached the canvas enters, however the boat moved between the clicks
-  const onG = (t) => t.events?.find((e) => e.type === "pointerdown")?.hit?.[0] === ids.link && t.events.find((e) => e.type === "dblclick")?.on === "canvas";
-  check("2: every try whose first press landed on a card of G's and whose dblclick reached the canvas entered", tries.filter(onG).every((t) => t.entered), tries.map((t) => ({ onG: onG(t), entered: t.entered })));
-  // a first press's selection opens the shut inspector only a beat later (scene/HISTORY.md, TOOLS Decisions 6, "The inspector
-  // waits a beat"), so the canvas keeps its width under the second press: every press and the dblclick reach it
-  const onCanvas = (t) => t.events?.length >= 3 && t.events.every((e) => e.on === "canvas" && e.cw === t.events[0].cw);
-  check("2: every try's presses and dblclick reached the canvas at the width the first press found (no inspector opened under the second)", tries.filter((t) => t.aim).every(onCanvas), tries.map((t) => t.events?.map((e) => `${e.on} ${e.cw}`)));
-  report.numbers.firstTry = tries[0] && { entered: tries[0].entered, gaps: tries[0].gaps, presses: tries[0].events?.map((e) => ({ type: e.type, on: e.on, hit: e.hit, selected: e.selected })) };
+  // ── 2: A enters G ──
+  await js(`(__p.A.view.enter(${J([ids.link])}), true)`);
+  await b.rest(400);
+  await events();
+  check("2: Enter on the link enters G", J(await P("focusPath('a')")) === J([ids.link]), await state());
   check("2: entering leaves the body Edit", (await state()).body === "edit", await state());
 
   // ── 3: a click on the boat, outside the focus ──
@@ -197,7 +159,7 @@ try {
   check(`4: ${MISSES} single clicks at cards on her moving table, in Edit inside G: none changes the body`, misses.every((m) => m.body === "edit"), { tally, misses });
   check("4: …each one on something of G's (a card, or its board) selects that thing", misses.filter((m) => m.where?.startsWith("G ")).every((m) => J(m.selected) === J(m.hit.slice(0, 2))), tally);
 
-  // ── 5: triage (f): a double-click on a card by the canvas's top edge, in Edit on the boat ──
+  // ── 5: triage (f): a click on a card by the canvas's top edge, in Edit on the boat ──
   const canvasRect = () => js(`(() => { const r = __p.A.view.canvas.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; })()`);
   await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
   await editOver();
@@ -236,16 +198,12 @@ try {
   const x = cr.left + want.x, y = cr.top + want.y;
   await b.move(x, y);
   await press(x, y, 1);
-  // between the presses: what the first did (triage (f): it hit the HUD's button, came aboard, left Edit and moved the canvas 36 px)
-  const between = { body: (await P("body('a')")).id, canvas: await canvasRect() };
-  await b.rest(60);
-  await press(x, y, 2);
   await b.rest(400);
+  // what the click did (triage (f): it hit the HUD's button, came aboard, left Edit and moved the canvas 36 px)
   const after5 = await state();
   const ev5 = await events();
-  report.numbers.topEdgeDouble = { between, after: after5, canvas: await canvasRect(), events: ev5 };
-  check("5: the first press by the top edge leaves the body Edit and the canvas where it was", between.body === "edit" && J(between.canvas) === J(cr), { before: cr, between });
-  check("5: the double-click by the top edge enters G, the body Edit, the pointer free (triage (f))", J(after5.focus) === J([ids.link]) && after5.body === "edit" && !after5.locked, { after: after5, hits: ev5.map((e) => ({ type: e.type, on: e.on, hit: e.hit })) });
+  report.numbers.topEdgeClick = { after: after5, canvas: await canvasRect(), events: ev5 };
+  check("5: a click by the top edge leaves the body Edit, the pointer free, and the canvas's top where it was (triage (f))", after5.body === "edit" && !after5.locked && (await canvasRect()).top === cr.top, { before: cr, after: after5, hits: ev5.map((e) => ({ type: e.type, on: e.on, hit: e.hit })) });
 
   // ── 6: the bar's Come aboard, from Edit ──
   await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
@@ -264,34 +222,6 @@ try {
     check("6: …and the canvas's top and height stay (the bar stays: Come aboard is declared)", cr6b.top === cr6.top && cr6b.height === cr6.height, { before: cr6, after: cr6b });
   }
 
-  // ── 7: a slow double-click, at the boat ──
-  await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
-  await editOver();
-  // the inspector shut (steps 3 and 4 opened it), as the toolbar's Inspector shuts it
-  await js(`(() => { const t = document.getElementById("a").querySelector('.toolbar [data-command="inspector"]'); if (t?.getAttribute("aria-pressed") === "true") t.click(); return true; })()`);
-  await b.rest(300);
-  check("7: the inspector shut to start the slow double-click", await js(`!document.getElementById("a").querySelector('.stage-drawer [data-panel="inspector"]')`), null);
-  // aimed on the canvas at its full width: the view takes the wider canvas in (a ResizeObserver, on the page's
-  // own time) on a frame after it
-  await sleep(300);
-  await b.rest(100);
-  await events();
-  const slowAt = await P(`aimBest(${J(await cards())}, 'a')`);
-  if (!slowAt) check("7: a card of G's in plain sight for the slow double-click", false, null);
-  else {
-    await b.move(slowAt.x, slowAt.y);
-    await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 1 });
-    await b.advance(120);
-    await b.mouse("mouseReleased", slowAt.x, slowAt.y, { clickCount: 1 });
-    await b.advance(360);
-    await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 2 });
-    await b.advance(170);
-    await b.mouse("mouseReleased", slowAt.x, slowAt.y, { clickCount: 2 });
-    await b.rest(400);
-    const ev = await events();
-    report.numbers.slowDouble = { at: slowAt, events: ev, after: await state(), entered: J((await state()).focus) === J([ids.link]) };
-    check("7: a slow double-click's presses and dblclick all reach the canvas at the width the first press found", ev.length >= 3 && ev.some((e) => e.type === "dblclick") && ev.every((e) => e.on === "canvas" && e.cw === ev[0].cw), ev.map((e) => `${e.type} ${e.on} ${e.cw}`));
-  }
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
 }

@@ -6,9 +6,9 @@
 // in the game's frame, and the boat stays live around it (its verbs and
 // carries still work; HISTORY.md, TOOLS Decisions 4).
 //
-// - "Enter" is a verb on a link (menu, inspector), everyone's in every body:
-//   the selection is everyone's, so is where it is scoped. A double-click on
-//   a link enters it (scene.frame's double-click frames everything else).
+// - "Enter" is a verb on a link (menu, inspector; the tree's link rows too),
+//   everyone's in every body: the selection is everyone's, so is where it is
+//   scoped.
 // - A link enters where its doc acts: a live link there, a mirror (the same
 //   live doc drawn again) where it's live. A pin is a value and a closed link
 //   has no stage, so neither is entered; Enter says why.
@@ -37,13 +37,6 @@ export default {
           run: (target) => enter(target),
         },
       ],
-      input: {
-        dblclick(ev) {
-          const target = ev.hit?.id ?? null;
-          const can = target != null ? enterState(api.link(target)) : null;
-          return can && !can.disabled ? enter(target) : false;
-        },
-      },
     };
   },
 };

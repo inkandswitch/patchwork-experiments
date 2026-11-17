@@ -11,8 +11,7 @@ import { Box3, Vector3 } from "three";
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
-import { FRAME_MS, manualTime } from "../stage/time.js";
-import { DOUBLE_MS } from "../stage/router.js";
+import { manualTime } from "../stage/time.js";
 import halo from "./halo.js";
 import handles from "./handles.js";
 import inspector from "./inspector.js";
@@ -67,12 +66,8 @@ function stubViewport(s) {
 }
 
 let s = null;
-// the stage's time, stepped: a selection opens a shut inspector a beat later (HISTORY.md, TOOLS Decisions 6)
+// the stage's time, stepped
 let time = null;
-async function beat() {
-  await time.advance(DOUBLE_MS + FRAME_MS);
-  await settle();
-}
 /** A frame that takes no time: the stage's flushes and frame callbacks run. */
 async function still() {
   await time.step(1, { still: true });
@@ -144,7 +139,7 @@ describe("the editor is the Edit body", () => {
           await settle();
           for (const id of path) expect(api.body.enter(id)).toBe(true);
           s.local.swap((m) => ({ ...m, selected }));
-          await beat();
+          await still();
           expect(s.local.get().body.id).toBe(body);
           expect({ body, selected, writable, ...chrome() }).toEqual({ body, selected, writable, ...expected(body, selected, writable) });
           cases++;
@@ -164,7 +159,7 @@ describe("the editor is the Edit body", () => {
       const api = s.api("t.bodies");
       expect(s.local.get().body.id).toBe("edit"); // a scene made new
       s.local.swap((m) => ({ ...m, selected: "a" }));
-      await beat();
+      await still();
       expect(chrome().inspector).toBe(true);
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
       expect(s.local.get().held?.command).toBe("measure");
@@ -181,7 +176,7 @@ describe("the editor is the Edit body", () => {
       await still();
       expect(chrome()).toMatchObject({ inspector: false, handles: false, toolbar: true });
       s.local.swap((m) => ({ ...m, selected: "a" }));
-      await beat();
+      await still();
       expect(chrome()).toMatchObject({ inspector: true, handles: true, toolbar: true });
     } finally {
       PARTS.pop();
