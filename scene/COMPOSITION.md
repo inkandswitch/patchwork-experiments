@@ -179,7 +179,12 @@ Still open:
   the focus path's (I12) and machine shows no note while the world is
   paused, so Play on a cabinet in a link whose world is paused sits you at
   a machine that never moves (found by N7, 2026-11-16: the published
-  Arcade's world is paused; Decisions, N7, 9; Questions for the lead).
+  Arcade's world is paused; Decisions, N7, 9; Questions for the lead);
+- two docs' seat bodies, one stacked on the other, can't be told apart by
+  either doc's seats: every stage's seat body is `"seat"` and seats'
+  `seated()` reads the top body's id alone, so Watching in the lower
+  doc's picker stands you up from the upper doc's seat (by reading, not
+  run; seats/README.md, Still open; Decisions, N7, 14).
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -295,6 +300,22 @@ Questions for the lead (not decided; each names what stands meanwhile):
   adds depth, not a new kind of composition, and neither N7 mashup has a
   scaled link. Keep it in the folder, drop it, or swap it for E1M1 as a
   1:50 diorama in the Model room? Stands meanwhile: in the folder.
+- **A place as a mashup's ground** (Decisions, N7, 3 and 4): a linked world
+  brings its things, not its weather (STAGE.md, "Ambients"), so Cadboro
+  Bay linked under E1M1 loses its sky and its wind. Should a doc be able
+  to say "my world's ambients are link N's" (a stage capability), or is
+  the answer that the place's own doc holds the level (not a mashup)? And
+  E1M1 floats over the Gyro Park lawn by a median 4.8 m (p90 9.3, max
+  17 m), its spawn floor 4.9 m up: acceptable as a diorama on the shore,
+  or should it have a stand? Stands meanwhile: E1M1 at Cadboro Bay is not
+  published (Decisions, N7, 2), for 1's reason, not these.
+- **Dice cups at the Lost Cities table** (Decisions, N7, 14): by reading,
+  two games' seats in two linked docs can both be one person's, and the
+  card table's and the cups' keepers each count their own doc's players,
+  so no seat across docs looks needed. Try it (a doc of cups and seats to
+  link onto the table, and a seats test for two stacked seat bodies
+  first), or is "a game that wants both is one doc" the answer? Stands
+  meanwhile: not built.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2620,3 +2641,94 @@ the finding; row 6 failed to a stale package, 6 below).
    (each of nine mutants fails its own rows) and 4/4 on Games night (its
    controls are the room's). The runs before these, and the gate's, are
    in the lane's report.
+13. **Not built, by design: a game table in Fitting out's saloon, as a
+   mashup.** Fitting out (automerge:234hYUvZMozmQ3bo3c6BRcTJmVXB) has no
+   saloon of her own; the candidate is a table anywhere aboard her, linked
+   in a new doc. It can't ride her:
+   - A mashup places each link in its own frame: `publish-links` writes
+     every link on the doc's root (`parent: null`). Writing a parent
+     instead changes nothing, because a parent is doc-local: `rawParent`
+     (`src/hierarchy.js`) keeps one only if it names an object in the same
+     doc. Read node-side: a mashup with Fitting out as link 1 and a
+     table's link written with `parent` her Sloop's id (`oga3461ux`)
+     resolves to no parent.
+   - She moves in her own doc. Her Sloop carries `sailing.ship`, lies to
+     her own Windlass and Anchor, and pitches and swings on her own Sea in
+     her world time. What rides her is what her doc parents to her: her two
+     W hatches and F's companionway are links parented to the Sloop. Lost
+     Cities aboard is the shape that works: its game's link sits on the
+     Card table, and the Card table on the Sloop
+     (`omkjnt9w5 → onocu6k6f → oz3e3gr5o`), all in one doc.
+   - §9 leaves only a landing: a carry may snap to a linked doc's named
+     frame, but it stays where it landed ("no reference crosses docs"). A
+     table snapped to her cockpit stays put while she pitches and swings
+     out from under it.
+
+   So the candidate needs an attachment across docs, which §9 rules out.
+   By design, the answer is the boat's own doc holding the link (Lost
+   Cities aboard), which isn't a mashup. Nothing to ask.
+14. **Dice cups at the Lost Cities table: not the capability the plan
+   expected; not built; a question for the lead.** The plan held that a
+   view sits in one seat at a time (`roster.sitting()`), so a person could
+   be player 1 of G or of a dice doc linked onto the same table, never
+   both, and that this forces a seat spanning linked docs. Reading the
+   code says otherwise for the keepers:
+   - Players and claims are per doc. Each doc's seats part holds its own
+     lasting seat's claim (`held`; seats' `sit` and `reconcile`, in
+     `seats/src/seats.js`), and "a viewer has at most one lasting seat in
+     a doc" (seats/README.md) is per doc. Sitting in a second doc's seat
+     neither writes nor lets go of the first's, so one person can be
+     player 1 of both at once.
+   - Each keeper counts its own doc's players, from a roster that is pure
+     in that doc: card-table's hand keeper through `playing()` →
+     `roster.viewers(scene)` (`card-table/src/keeper.js`), dice's cups
+     through `seated()` → `roster.viewers(s)`
+     (`dice/src/cup-extension.js`). Neither reads `sitting()`.
+   - What is one per view is the body on top: you look from one doc's
+     seat at a time. At one table, the two seats' cameras can be the same.
+
+   So, by reading, the keepers compose with no new seats capability. Two
+   things stand in the way, neither of them stage code:
+   - No published doc holds dice cups alone. Liar's dice
+     (automerge:BEkpNoJVsGN4FXHUkC9yjJ9C1kT) is a round table of its own
+     (`dice/probes/publish-liars.mjs`), so this mashup needs a new doc of
+     cups and seats, which is more than publishing.
+   - A latent seats bug, met by the first person to sit in both (by
+     reading, not run). Every stage's seat body has the id `"seat"`, and
+     seats' `seated()` compares the top body's id alone
+     (`seats/src/seats.js`, `const seated`), not its `ext`; the stage
+     projects `ext` as its own extension's id only for its own body
+     (`src/stage/view.js` `projectView`). With the dice doc's seat body
+     pushed over G's, G's part also takes itself to be seated: its
+     `sitting()` reports G's seat, and Watching in G's picker (`getUp`)
+     leaves the top body, standing you up from the dice doc's seat while
+     G's seat body stays under. Play at a cabinet pressed while seated at a
+     game in the same mashup would stack the same way (the Arcade's seat
+     body over the game's). Recorded in seats/README.md, Still open; no
+     package code changed in N7, so no test pins it yet.
+
+   *For the lead:* try it (a doc of cups and seats to link onto the table,
+   and a seats test for two stacked seat bodies first), or is "a game that
+   wants both is one doc" the answer?
+15. **N7's findings, by owner** (the evidence is in the entries named):
+   - **scene:** a place handed across docs to a body (1); a linked
+     place's ambients are lost by rule (4; STAGE.md, "Ambients"); a
+     linked world's pause shown nowhere (9; scene's clock chips or
+     machine's note, the lead's call).
+   - **machine:** "Lay out its world" never refuses a second world
+     (7; `machine/src/scene/worlds.js` `worldCommand`; machine/HOST.md,
+     phase 2b, Not done yet).
+   - **seats:** two stacked seat bodies told apart by id alone (14).
+   - **terrain:** `terrain/src/terrain-sample.js`'s header says the canopy
+     layer holds "the trees' (and roofs') height", but the build leaves
+     built ground out of it ("no forest where something is built",
+     `terrain/src/build.js`; `forest.js` `effectiveCanopy`), so it never
+     shows a roof. E1M1's place reads the drawn GLB instead (3). A line of
+     terrain's docs, not edited here.
+   - **the Patchwork shell** (not ours; no core changes): package versions
+     days apart in one page, and an old provider rebuilding a published
+     render (6, 10, 12); a fresh profile's first page with no packages and
+     no prompt (7), and once, shore-check's first run, the scene package's
+     `package.json` failing with HTTP 557 for 10 minutes.
+   - **reported, not decided:** E1M1's float over Gyro Park (3), and the
+     Arcade's 3.5 cm over the games room's aisles (8).
