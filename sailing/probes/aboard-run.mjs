@@ -634,7 +634,7 @@ try {
       // and aim again, so the double-click lands on the card. The beat is the stage's time, which under way in
       // a headless Chrome runs behind the wall's (each frame's step is capped), so it waits for the canvas to
       // narrow, not for a time of its own
-      const beat = () => js(`({ frame: window.__time?.frames?.(), t: __p.A.host.record("sailing")?.api?.clock?.t?.() ?? null })`);
+      const beat = () => js(`(() => { const api = __p.A.host.record("sailing")?.api; return { frame: window.__time?.frames?.(), t: api ? api.clock.t() : null }; })()`);
       const wide = await js(`__p.A.view.canvas.getBoundingClientRect().width`);
       await b.click(at.x, at.y);
       const clicked = await beat();
