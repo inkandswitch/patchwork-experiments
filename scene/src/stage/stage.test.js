@@ -493,11 +493,9 @@ describe("the stage, mounted", () => {
     mount(newScene({ traits: { "t.scene": {} }, objects: { a: card() }, order: ["a"] }));
     await settle();
     const api = exts["t.always"].api;
-    // (this stage's, and at the focus the view's plugins': the editor's Edit)
     expect(api.collect("commands").map((c) => [c.id, c.value.map((k) => k.id)])).toEqual([
       ["t.scene", ["poke", "reset", "off"]],
       ["t.always", ["x"]],
-      ["scene.edit", ["edit"]],
     ]);
     expect(api.run({ ext: "t.scene", command: "poke", target: "a", value: 3 })).toBe(true);
     expect(api.run({ ext: "t.scene", command: "poke", target: null })).toBe(false); // doesn't apply to the scene
@@ -896,7 +894,7 @@ describe("the stage, mounted", () => {
     await settle();
     const api = m.debug.host.record("t.always").api;
     // (not editing: the Edit hand wants the pointer too)
-    api.run({ ext: "scene.edit", command: "edit", value: false });
+    m.debug.view.plugins.record("scene.edit").api.run({ ext: "scene.edit", command: "edit", value: false });
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
     expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) });
     const serials = [m.local.get().held.serial];

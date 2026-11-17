@@ -20,9 +20,9 @@
 // and carries outside it still work. Focus and selection change only through
 // selectionStep.
 //
-// The view's plugins (`scene:view`, ./view-plugins.js) run once per view,
+// The view's plugins (`scene:view`, ./host.js) run once per view,
 // for its whole life: each gets the view's api (makeApi below), and
-// api.focus() is the focus stage's facet for it (stage.js seats).
+// api.focus() is the focus stage's api for it (stage.js facetFor).
 
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
@@ -36,7 +36,7 @@ import { looksFromEye } from "./pointer.js";
 import { createDrawer } from "./dock.js";
 import { escapeHint, restLayer } from "./ladder.js";
 import { LOOK } from "./bodies.js";
-import { createViewPlugins } from "./view-plugins.js";
+import { collectFrom, createHost, updateAll } from "./host.js";
 import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath, viewKey } from "./paths.js";
@@ -717,19 +717,15 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** Leave: the focus one link out. */
   const leave = () => selectStep({ type: "leave" });
 
-  /**
-   * The view's plugins sit at the focus stage and no other (STAGE.md, "View
-   * plugins"): every other stage lets their seats go (one still holding
-   * something there keeps it until it lets go: stage.js unseat).
-   */
+  /** The view's plugins' facets are the focus stage's (STAGE.md, "View plugins"): every other stage lets its go. */
   function placeFocus() {
     const at = focusStage();
-    for (const s of stages.values()) if (s !== at) s.unseat();
+    for (const s of stages.values()) if (s !== at) s.dropFacets();
   }
   /**
    * The focus moved: a tool held from a stage it left behind is put down,
-   * the view's plugins' seats go from the stages it left, and the trail
-   * shows where it is.
+   * the view's plugins' facets of the stages it left go (they are told the
+   * new focus stage afresh), and the trail shows where it is.
    */
   function focusMoved() {
     if (dead) return;
@@ -739,6 +735,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // (a stage on the focus path is one whose path the focus starts with)
     if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown();
     placeFocus();
+    told = new WeakMap();
     showTrail();
     router?.refresh();
     requestFlush();
@@ -1105,7 +1102,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   let picking = false;
   // The widget under the pointer: the viewport's (meshes in world groups) and
-  // every stage's extensions' widgetAt; onTop beats the rest, else nearest.
+  // every stage's extensions' widgetAt (and the view's plugins', in the focus
+  // stage's frame); onTop beats the rest, else nearest.
   function pickWidget(ev) {
     if (picking) return null;
     picking = true;
@@ -1115,7 +1113,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         const w = viewport.pickWidget(ev.x, ev.y);
         if (w) out.push(w);
       }
-      for (const s of acting()) out.push(...s.widgetsAt(ev));
+      for (const s of acting()) out.push(...s.widgetsAt(ev, pluginsAt(s)));
       return bestWidget(out);
     } finally {
       picking = false;
@@ -1126,8 +1124,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * The chain for an event (STAGE.md, "The input chain"): the widget's owner, then one
    * segment per stage on the hit's path, innermost first (each its holders,
    * nearest first, then its root's), out to the outermost whatever the
-   * focus, then the view's plugins (seated at the focus stage). Owners are
-   * keys (stage, extension).
+   * focus, then the view's plugins (hearing it in the focus stage's frame).
+   * Owners are keys (stage, extension; a plugin's is the focus stage's).
    */
   function chainFor(ev) {
     const widget = ev.widget;
@@ -1147,12 +1145,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         holders.set(k, seg.holderOf(ext));
       }
     }
-    // then the view's plugins, wherever the hit is: seated at the focus stage, hearing its element of the path (null off it)
+    // then the view's plugins, wherever the hit is, hearing the focus stage's element of the path (null off it)
     const at = focusStage();
-    for (const ext of at?.seated() ?? []) {
-      const k = keyOf(at.n, ext);
-      if (!order.includes(k)) order.push(k);
-    }
+    for (const p of pluginsAt(at)) if (!order.includes(keyOf(at.n, p.id))) order.push(keyOf(at.n, p.id));
     return { order, holderOf: (k) => holders.get(k) ?? null };
   }
   /**
@@ -1172,7 +1167,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const out = [];
       for (let i = f.length; i >= 0; i--) {
         const s = stageAt(f.slice(0, i));
-        if (s) out.push(s.reader);
+        if (s) out.push(readerOf(s));
       }
       return out;
     }
@@ -1184,13 +1179,24 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const out = on.length ? on : [outermost()].filter(Boolean);
     const f = focusStage();
     if (f && !out.includes(f)) out.push(f);
-    return out.map((s) => s.reader);
+    return out.map(readerOf);
+  }
+  /**
+   * A stage's reader; the focus stage's with the view's plugins' commands
+   * and other contributions after its extensions', run in its context
+   * (STAGE.md, "View plugins").
+   */
+  function readerOf(s) {
+    const r = s.reader;
+    if (s !== focusStage()) return r;
+    const mine = (name) => collectFrom(plugins.running(), name).map((x) => ({ ...x, stage: s.n }));
+    return Object.freeze({ ...r, runs: (ext) => r.runs(ext) || !!plugins.instanceOf(ext), collect: (name) => [...r.collect(name), ...mine(name)], run });
   }
   /** What every acting stage offers as `name`: the input path's stages first, innermost first; each item tagged with its stage. */
   function collect(name) {
     const first = inputPath().map((r) => r.stage);
     const order = [...first, ...acting().map((s) => s.n).filter((x) => !first.includes(x))];
-    return order.flatMap((x) => stages.get(x)?.reader.collect(name) ?? []);
+    return order.flatMap((x) => (stages.has(x) ? readerOf(stages.get(x)).collect(name) : []));
   }
   /** The stages that act on a path, innermost first, out to the outermost (a pin on it is passed over: it is drawn, never acted on). */
   function onPath(path) {
@@ -1200,7 +1206,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   const inputOf = (key) => {
     const p = parseKey(key);
-    return p ? stages.get(p.n)?.inputOf(p.id) : undefined;
+    const s = p ? stages.get(p.n) : null;
+    return s?.inputOf(p.id) ?? (s === focusStage() ? s.framedInput(plugins.instanceOf(p.id)?.input) : undefined);
   };
 
   router = createRouter({
@@ -1342,7 +1349,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   function dispose() {
     if (dead) return;
-    // the view's plugins first (their seats go with them), then the stages, innermost first
+    // the view's plugins first (their facets go with them), then the stages, innermost first
     plugins.dispose();
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
     // the documents docked in the drawer are the view's: they go with it
@@ -1396,29 +1403,26 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * or close(). One pane per docKey(url, toolId). → close
    */
   const dockDocument = (doc) => (dead ? noop : drawer.dockDocument(doc ?? {}));
-
-  /**
-   * The api a view plugin gets, and release(): give back everything it
-   * acquired (the view plugins' host aborts its signal first and calls
-   * dispose() after). Its chrome, hands, listeners and frame hooks are the
-   * view's and last its whole life; api.focus() is the focus stage's facet
-   * for it, whose acquisitions are the stage's (stage.js seats).
-   */
-  function makeApi(rec) {
-    const id = rec.id;
-    const signal = rec.signal;
-    const key = viewKey(id);
-    const own = { offs: new Set(), frame: new Set(), cameraHolds: new Set(), hands: new Set(), els: new Set() };
-    const live = () => !signal.aborted && !dead;
-    const acquire = (bag, take) => {
-      if (!live()) return noop;
-      const give = take();
-      if (typeof give !== "function") return noop;
-      bag.add(give);
-      return () => {
-        if (bag.delete(give)) give();
-      };
+  /** Acquire something while `live()`: `take` gives a give-back, kept in `bag`; → off, giving it back once. */
+  const acquirer = (live) => (bag, take) => {
+    if (!live()) return noop;
+    const give = take();
+    if (typeof give !== "function") return noop;
+    bag.add(give);
+    return () => {
+      if (bag.delete(give)) give();
     };
+  };
+  /**
+   * What the view lends an extension or a view plugin (`id`, its router key
+   * `key`): overlays, edge parts, styles, docked elements, listeners, its
+   * cursor, popovers, frame hooks and timers. What it acquires goes in
+   * `own` (`els`, `offs`, `frame`), given back as it stops; `stage` marks its
+   * elements with the stage it is of.
+   */
+  function viewParts({ id, key, own, live, stage = null }) {
+    const acquire = acquirer(live);
+    /** A one-shot callback set through `set` (time.after or time.frame), cancelled if it stops first. */
     const timed = (set, fn) => {
       if (!live() || typeof fn !== "function") return noop;
       let cancel = null;
@@ -1432,7 +1436,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       own.offs.add(off);
       return off;
     };
-    const ownEl = (el, parent) => {
+    const add = (el, parent) => {
+      el.dataset.owner = id;
+      if (stage != null) el.dataset.stage = String(stage);
       if (!live()) return el;
       own.els.add(el);
       // (the drawer stays outermost: an edge part started while it's open goes inside it)
@@ -1440,12 +1446,57 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       else parent.append(el);
       return el;
     };
-    const madeEl = (tag, className) => {
-      const el = document.createElement(tag);
-      if (className) el.className = className;
-      el.dataset.owner = id;
-      return el;
+    const div = (className) => Object.assign(document.createElement("div"), { className });
+    return {
+      overlay: () => add(div("stage-overlay"), port),
+      edge: (side) => add(div("stage-edge-part"), edges[EDGES.includes(side) ? side : "right"]),
+      /** dock an element in the drawer, under a tab: closed by close(), its × (which calls onClose), or its owner stopping */
+      dock: (el, { title, onClose, embed = true, show = true } = {}) => {
+        if (!live() || !el) return noop;
+        // an open drawer wants the pointer (./pointer.js)
+        const close = acquire(own.offs, () => {
+          const off = drawer.dock(key, el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
+          return () => (off?.(), router?.refresh());
+        });
+        router?.refresh();
+        return close;
+      },
+      style: (text) => add(Object.assign(document.createElement("style"), { textContent: String(text ?? "") }), root),
+      listen: (target, type, fn, opts) =>
+        acquire(own.offs, () => {
+          target.addEventListener(type, fn, opts);
+          return () => target.removeEventListener(type, fn, opts);
+        }),
+      cursor: (name) => {
+        if (live()) cursor(key, name);
+      },
+      /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). → release, for when it closes itself */
+      popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(key, close)) : noop),
+      invalidate: () => viewport.invalidate(),
+      loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
+      afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
+      /** the view's time (./time.js): now() (ms), after(ms, fn) → cancel, frame(fn) → cancel */
+      clock: Object.freeze({
+        now: () => time.now(),
+        after: (ms, fn) => timed((cb) => time.after(ms, cb), fn),
+        frame: (fn) => timed((cb) => time.frame(cb), fn),
+      }),
     };
+  }
+
+  /**
+   * The api a view plugin gets, and release(): give back everything it
+   * acquired (./host.js aborts its signal first and calls dispose()
+   * after). What it acquires through it is the view's and lasts its whole
+   * life; api.focus() is the focus stage's api for it, whose acquisitions go
+   * with the focus (stage.js facetFor).
+   */
+  function makeApi(rec) {
+    const { id, signal } = rec;
+    const key = viewKey(id);
+    const own = { offs: new Set(), frame: new Set(), cameraHolds: new Set(), hands: new Set(), els: new Set() };
+    const live = () => !signal.aborted && !dead;
+    const acquire = acquirer(live);
     let watched = atom.get();
     const api = {
       id,
@@ -1461,17 +1512,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** the element the canvas fills, and the view's root (for DOM listeners: drops, paste, keys) */
       port,
       root,
-      /** the view's time (./time.js): now() (ms), after(ms, fn) → cancel, frame(fn) → cancel */
-      clock: Object.freeze({
-        now: () => time.now(),
-        after: (ms, fn) => timed((cb) => time.after(ms, cb), fn),
-        frame: (fn) => timed((cb) => time.frame(cb), fn),
-      }),
-      /**
-       * The viewer's value, whole: the selection and hover as paths, the
-       * focus path, body, hands, held tool, pointer, Escape, theme, notices,
-       * prefs, drawer, packages, clocks, arrived.
-       */
+      /** the viewer's value, whole (the selection, hover and focus as paths); step(ev): a selection step (../selection.js) but enter; dock(doc): a document in the drawer */
       view: Object.freeze({
         get: () => atom.get(),
         watch: (fn, select) =>
@@ -1484,15 +1525,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
               if (typeof select === "function" ? select(next) !== select(prev) : true) fn(next, prev);
             }),
           ),
-        /** select a full path (null: nothing): the element of the focus stage it goes through; outside the focus, nothing */
-        select: (p) => (live() ? select(p) : false),
-        /** a selection step (../selection.js) other than enter: press, select, clear, leave, escape */
         step: (ev) => (live() && ev?.type !== "enter" ? selectStep(ev) : false),
-        /** move the focus into the link at full path `p`: false if it can't be entered */
-        enter: (p) => (live() ? enter(p) : false),
-        /** the focus one link out */
-        leave: () => (live() ? leave() : false),
-        /** dock a document in the drawer ({ url, toolId?, title }): the view's, until its × or close() */
         dock: (doc) => (live() ? dockDocument(doc) : noop),
       }),
       /** a pref: the viewer's, else the focus doc's suggestion, else the fallback */
@@ -1503,38 +1536,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       notify: (text, kind) => (live() ? notify(text, kind, id) : null),
       /** every open doc's missing packages (view.packages): load them (a yes), or don't ask again in this view */
       packages,
-      overlay: () => ownEl(Object.assign(madeEl("div", "stage-overlay")), port),
-      edge: (side) => ownEl(madeEl("div", "stage-edge-part"), edges[EDGES.includes(side) ? side : "right"]),
-      /** dock an element in the drawer, under a tab: closed by close(), its × (which calls onClose), or the plugin stopping */
-      dock: (el, { title, onClose, embed = true, show = true } = {}) => {
-        if (!live() || !el) return noop;
-        const close = acquire(own.offs, () => {
-          const off = drawer.dock(key, el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
-          return () => (off?.(), router?.refresh());
-        });
-        router?.refresh();
-        return close;
-      },
-      style: (text) => {
-        const el = madeEl("style");
-        el.textContent = String(text ?? "");
-        return ownEl(el, root);
-      },
-      listen: (target, type, fn, opts) =>
-        acquire(own.offs, () => {
-          target.addEventListener(type, fn, opts);
-          return () => target.removeEventListener(type, fn, opts);
-        }),
-      cursor: (name) => {
-        if (live()) cursor(key, name);
-      },
-      invalidate: () => viewport.invalidate(),
-      loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
-      afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
-      /** run fn after the focus stage's next update flush */
-      schedule: (fn) => {
-        if (live()) focusStage()?.schedule(rec, fn);
-      },
+      ...viewParts({ id, key, own, live }),
+      /** run fn after the focus stage's next update flush (through its facet) */
+      schedule: (fn) => api.focus()?.schedule(fn),
       // the camera and picking, in the world (the outermost's frame); a hit's `path` is where it is
       camera: Object.freeze({
         get: () => viewport.getCamera(),
@@ -1573,65 +1577,78 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         const kind = typeof spec.kind === "string" && !["tool", "popover"].includes(spec.kind) ? spec.kind : "hand";
         return acquire(own.hands, () => router.pushHand(key, { ...spec, kind, input: viewInput(spec.input ?? {}) }));
       },
-      /** hold a tool ({ name, keys?, pointer? } and its input), putting down whatever was held. → put */
-      hold: (tool, input) => {
-        if (!live() || !input || typeof tool?.name !== "string") return noop;
-        return acquire(own.hands, () => router.hold(key, { command: null, name: tool.name, input: viewInput(input), keys: Array.isArray(tool.keys) ? tool.keys : [], pointer: !!tool.pointer }));
-      },
       /** put the held tool down, whoever's it is */
       putDown: () => (live() ? router.putDown() : false),
-      /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). → release */
-      popover: (close) => (live() && typeof close === "function" ? acquire(own.hands, () => router.popover(key, close)) : noop),
       /** offer an event to the widget under it, as the chain does first, if the widget is nearer than the hit: did its owner take it? */
       offerWidget: (type, ev) => (live() && widgetWins(ev?.widget, ev?.hit) ? !!offer([ev.widget.owner], inputOf, type, ev) : false),
       // the stages (STAGE.md, "Views, stages and links")
       /** what every acting stage offers as `name`, the input path's first, each item tagged with its `stage` */
       collect: (name) => collect(name),
       /** run a command in the stage it names (else the focus's): { stage?, ext, command, target, value?, hit? } */
-      run: (inv) => {
-        const s = inv?.stage != null ? stages.get(inv.stage) : focusStage();
-        return live() && s?.acts ? s.reader.run(inv) : false;
-      },
+      run: (inv) => live() && run(inv),
       /**
        * the input path's stages, innermost first: each its reader { stage, path, scene, collect, context, attention, look, pointed, run, nameOf, writable, clock }
        * (pointer: true for the pointer's path, what a menu is of; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's)
        */
       path: (o) => inputPath(o),
-      /** every acting stage's reader, outermost first */
-      stages: () => acting().map((s) => s.reader),
-      /** the focus stage's facet for this plugin (stage.js seats): its doc, scene, edits, content, world layers… or null */
+      /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, edits, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
     };
 
     function release() {
       router.stopOwner(key);
-      for (const give of [...own.hands]) give();
-      own.hands.clear();
-      for (const give of [...own.cameraHolds]) give();
-      own.cameraHolds.clear();
-      for (const give of [...own.frame]) give();
-      own.frame.clear();
+      for (const bag of [own.hands, own.cameraHolds, own.frame]) {
+        for (const give of [...bag]) give();
+        bag.clear();
+      }
       drawer.closeOwner(key);
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
       own.offs.clear();
       cursor(key, null);
-      for (const s of stages.values()) s.unseatPlugin(id);
+      for (const s of stages.values()) s.dropFacets(id);
       router.refresh();
     }
     return { api, release };
   }
 
-  const plugins = createViewPlugins({
+  /** Run a command in the stage it names, else the focus's; a view plugin's runs in the focus stage's context, a tool it holds held through its facet there. */
+  function run(inv) {
+    const s = inv?.stage != null ? stages.get(inv.stage) : focusStage();
+    if (dead || !s?.acts) return false;
+    const p = s === focusStage() ? plugins.record(inv.ext) : null;
+    let c = null;
+    try {
+      c = p?.instance ? ((p.instance.commands ?? []).find((k) => k?.id === inv.command) ?? null) : null;
+    } catch {
+      c = null;
+    }
+    if (!c) return s.reader.run(inv);
+    s.facetFor(p);
+    return s.runCommand(inv.ext, c, inv);
+  }
+  /** The view's plugins at stage `s`: all of them when it is the focus, else none. */
+  const pluginsAt = (s) => (s && s === focusStage() ? plugins.running() : []);
+  // What the view's plugins were last told (host.js updateAll), afresh as the focus moves.
+  let told = new WeakMap();
+  /** A stage flushed: the view's plugins hear it when it is the focus (STAGE.md, "View plugins"). */
+  function flushed(s, now, content) {
+    if (!dead && s === focusStage()) updateAll(plugins.running(), told, now, content);
+  }
+
+  // (every one registered runs: only the registry starts or stops one)
+  const plugins = createHost({
     registry: () => getRegistry("scene:view"),
     makeApi,
+    wanted: (metas) => metas.filter((m) => m?.id).map((meta) => ({ id: meta.id, meta, scope: "view" })),
     onChange: () => {
       if (dead) return;
       router.refresh();
       requestFlush();
     },
   });
+  plugins.sync({});
 
   const api = {
     time,
@@ -1669,8 +1686,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     clocksChanged,
     /** "Not now"'s packages, the view's: every stage's packages module shares it */
     declinedPackages,
-    /** the view's plugins (./view-plugins.js) */
+    /** the view's plugins (./host.js); those at a stage (the focus: all), the focus stage's flush told them, what the view lends an extension or one of them */
     plugins,
+    pluginsAt,
+    flushed,
+    acquirer,
+    viewParts,
     // the stages
     addStage,
     removeStage,

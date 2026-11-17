@@ -29,7 +29,7 @@ import { HANDLE_SIZE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
 import { own } from "../stage/own.js";
-import { focusInput, perFocus } from "./per-focus.js";
+import { perFocus } from "./per-focus.js";
 
 const AXIS_FALLBACK = [
   [0.9, 0.25, 0.25],
@@ -358,7 +358,10 @@ function haloAt(api, view) {
 function create(api) {
   const at = perFocus(api, (f) => haloAt(f, api));
   return {
-    input: focusInput(at),
+    // (its focus's: what the view offers is read as it offers it)
+    get input() {
+      return at()?.input ?? null;
+    },
     update: (...args) => at()?.update(...args),
     /** for tests and probes: the focus's halo's (see haloAt) */
     get debug() {

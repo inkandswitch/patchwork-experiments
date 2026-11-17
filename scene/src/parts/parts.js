@@ -393,8 +393,6 @@ function create(api) {
     dispose() {
       tab.dispose();
       for (const v of [...views]) v.dispose();
-      ring = null;
-      layer = null;
     },
     // for tests and probes
     landAt,

@@ -129,7 +129,7 @@ function create(api) {
 
   function show(ev) {
     close();
-    // (the event is the focus stage's, the view's plugins being seated there: its hit is that stage's element)
+    // (the event is in the focus stage's frame: its hit is that stage's element)
     const target = ev.hit?.id ?? null;
     const hit = ev.hit ? { id: ev.hit.id, point: ev.hit.point ?? null, distance: ev.hit.distance ?? null } : null;
     keys = resolverState(api);

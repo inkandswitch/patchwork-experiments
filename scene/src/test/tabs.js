@@ -7,7 +7,7 @@
 /** @param {string[]} which  "ext:command" for each toggle to turn on */
 export function openTabs(which, { once = false } = {}) {
   return {
-    meta: { id: "t.tabs" },
+    meta: { id: "t.tabs", type: "scene:view" },
     module: {
       create(api) {
         let done = false;

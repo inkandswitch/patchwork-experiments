@@ -5,7 +5,7 @@
 //
 // The harness is exhaustive over the view's state, not over sequences: the
 // view's focus and selection are its whole state as far as selection goes
-// (where the view plugins are seated is a function of the focus, checked), so
+// (where the view plugins' facets are is a function of the focus, checked), so
 // every reachable state × every event covers every sequence of any length.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +25,7 @@ import toolbar from "../parts/toolbar.js";
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const J = JSON.stringify;
 
-/** Trait parts that record what reaches them, a view plugin (seated at the focus), and Enter (scene.focus). */
+/** Trait parts that record what reaches them, a view plugin, and Enter (scene.focus). */
 function extensions(log) {
   const input = (who) => ({ press: (ev) => (log.push(`${who} ${ev.hit?.id ?? "-"}`), null), click: (ev) => (log.push(`click ${who} ${ev.hit?.id ?? "-"}`), null) });
   return [
@@ -37,15 +37,15 @@ function extensions(log) {
 }
 
 /**
- * Parts that hold something (STAGE.md, "Bodies"): a view plugin offering a body
- * (as walk does), a view plugin offering a tool (as Measure does), and the
- * host's trait part offering a seat. Each counts its starts.
+ * Parts that hold something (STAGE.md, "Bodies"): a part of every doc
+ * offering a body (as walk is), a view plugin offering a tool (as Measure
+ * does), and the host's trait part offering a seat. Each counts its starts.
  */
 function holders(started) {
   const count = (id) => (started[id] = (started[id] ?? 0) + 1);
   const body = (id) => ({ id, label: id, enter: () => ({ input: {} }) });
   return [
-    { meta: { id: "t.walk", type: "scene:view" }, module: { create: () => (count("t.walk"), { bodies: [body("t.walk")] }) } },
+    { meta: { id: "t.walk", traits: ["*"] }, module: { create: () => (count("t.walk"), { bodies: [body("t.walk")] }) } },
     { meta: { id: "t.measure", type: "scene:view" }, module: { create: () => (count("t.measure"), { commands: [{ id: "measure", name: "Measure", tool: {}, run: () => ({ press: () => null }) }] }) } },
     { meta: { id: "t.seat", traits: ["t.host"] }, module: { create: () => (count("t.seat"), { bodies: [body("t.seat")] }) } },
   ];
@@ -167,11 +167,11 @@ const projections = (view) =>
     }),
   );
 
-/** The view plugins are seated at the focus stage, and nowhere else. */
-const seatedAt = (view) => view.stages().filter((x) => x.seated().length).map((x) => x.path.join("/"));
-async function placed(view) {
-  const want = view.atom.get().focus.join("/");
-  await until(() => J(seatedAt(view)) === J([want]) && ["scene.focus", "t.general"].every((id) => view.focusStage().seated().includes(id)), 2000);
+/** The stages the view plugins have facets of (api.focus()): the focus stage's, once one asks, and no other. */
+const facetsAt = (view) => view.stages().filter((x) => x.debug.facets().length).map((x) => x.path.join("/"));
+function placed(view) {
+  view.plugins.record("scene.focus").api.focus();
+  expect(facetsAt(view)).toEqual([view.atom.get().focus.join("/")]);
 }
 
 let s = null;
@@ -231,13 +231,13 @@ describe("H10 across docs: the selection is always an element of the focus stage
 });
 
 describe("Enter and Leave", () => {
-  it("Enter seats the view plugins at the linked doc's stage, Leave seats them back, and they never start again; a repeat, a pin and a closed link don't", async () => {
+  it("Enter moves the view plugins' facets to the linked doc's stage, Leave moves them back, and the plugins never start again; a repeat, a pin and a closed link don't", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
     const { view } = m;
     const host = s.api("t.host");
-    expect(seatedAt(view)).toEqual([""]);
+    await placed(view);
     // Enter's verb says what each link does
     const plugins = ["scene.focus", "t.general"].map((id) => s.instance(id));
     const enterOf = (id) => s.instance("scene.focus").commands[0].state(id);
@@ -255,19 +255,17 @@ describe("Enter and Leave", () => {
     expect(host.view.enter("L")).toBe(true);
     expect(view.atom.get().focus).toEqual(["L"]);
     await placed(view);
-    expect(seatedAt(view)).toEqual(["L"]);
     // the camera came along, and nobody learns it was placed: not a stage's part (B's, or the host's: sailing's
     // quarter view still waits for a camera nobody placed), nor a view plugin (scene.autoframe knows the focus moved)
     const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), s.facet("scene.focus").camera.touched()];
     expect(touched()).toEqual([false, false, false]);
-    // what the doc runs is untouched (H1): only where the view plugins sit moved
+    // what the doc runs is untouched (H1): only the view plugins' facets moved
     const traitRun = (p) => stageOf(view, p).debug.host.running().map((r) => r.id);
     expect(traitRun("")).toEqual(["t.host"]);
     expect(traitRun("L")).toEqual(["t.card"]);
     // deeper, then the trail's way out, then Leave
     expect(apiIn(m, "L").view.enter("M")).toBe(true);
     await placed(view);
-    expect(seatedAt(view)).toEqual(["L/M"]);
     const trail = view.root.querySelector(".stage-trail");
     expect([...trail.querySelectorAll(".trail-crumb, .trail-here")].map((e) => e.textContent)).toEqual(["A", "B", "C"]);
     trail.querySelector(".trail-crumb").click(); // "A": out to the scene itself
@@ -278,7 +276,6 @@ describe("Enter and Leave", () => {
     expect(view.leave()).toBe(true);
     expect(view.leave()).toBe(false);
     await placed(view);
-    expect(seatedAt(view)).toEqual([""]);
     // the same instances all along
     expect(["scene.focus", "t.general"].map((id) => s.instance(id))).toEqual(plugins);
   });
@@ -330,14 +327,14 @@ describe("Enter and Leave", () => {
       const ov = other.debug.view;
       await until(() => stageOf(ov, "L/M")?.debug.host.instanceOf("t.card"), 3000);
       const runs = (v) => J(v.stages().map((x) => [x.path, x.role, x.debug.host.running().map((r) => r.id)]));
-      const before = { mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, seated: seatedAt(ov) };
+      const before = { mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, facets: facetsAt(ov) };
       const writes = [spy(s.handle), spy(m.b), spy(m.c)];
       s.api("t.host").view.enter("L");
       apiIn(m, "L").view.enter("M");
       apiIn(m, "L/M").view.select("piece");
       await placed(m.view);
       expect(m.view.atom.get().selected).toEqual(["L", "M", "piece"]);
-      expect({ mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, seated: seatedAt(ov) }).toEqual(before);
+      expect({ mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, facets: facetsAt(ov) }).toEqual(before);
       expect(ov.atom.get().selected).toBe(null);
       expect(writes.map((w) => w.filter((x) => x === "change"))).toEqual([[], [], []]);
     } finally {
@@ -359,7 +356,6 @@ describe("surfaces across docs", () => {
     await until(() => stageOf(view, "L")?.debug, 3000);
     s.edit(true);
     expect(s.api("t.host").view.enter("L")).toBe(true);
-    await until(() => stageOf(view, "L").seated().includes("scene.toolbar"), 2000);
     const labels = () => [...view.root.querySelectorAll(".toolbar button")].map((x) => x.textContent);
     await until(() => labels().includes("Ring"), 2000);
     const before = labels();
@@ -438,10 +434,9 @@ describe("the drawer follows the focus", () => {
   });
 });
 
-describe("what the viewer holds goes on across a focus move", () => {
-  // A view plugin never starts again; what it holds through a facet (a body, the held tool) it finishes
-  // where it was: that seat lingers, offering nothing, until it lets go (stage.js unseat), and the new
-  // focus's seat offers the same.
+describe("what the viewer holds across a focus move", () => {
+  // A view plugin never starts again. A body is a stage's extension's, held where it was entered; what a
+  // view plugin acquired through a facet (here a tool picked up through its command) goes with the focus.
   // ("edit": Look holding the editor, which is a hand, not a body)
   const BODIES = ["look", "edit", "t.walk", "t.seat"];
   const MOVES = [
@@ -453,7 +448,7 @@ describe("what the viewer holds goes on across a focus move", () => {
   const bodyId = (view) => (editing(view.atom.get()) ? "edit" : (view.atom.get().body?.id ?? null));
   const offered = (view, name, id) => view.collect(name).flatMap((x) => x.value).filter((v) => v?.id === id).length;
 
-  it("every body × every move: the body stays, the walk plugin is never started again, its seat holding the body lingers, and nothing is offered twice", async () => {
+  it("every body × every move: the body stays, held by the same stage; the view plugins never start again and offer each command once; a tool held through one is put down", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const body of BODIES) {
       for (const [label, from, to] of MOVES) {
@@ -464,98 +459,21 @@ describe("what the viewer holds goes on across a focus move", () => {
         const name = `${body} × ${label}`;
         expect(view.focusOn(from), name).toBe(true);
         await placed(view);
-        await until(() => s.instance("t.walk"), 2000);
+        await until(() => s.instance("t.measure"), 2000);
         s.edit(body === "edit");
         expect(view.enterBody(body === "edit" ? "look" : body), name).toBe(true);
         expect(bodyId(view), name).toBe(body);
-        const holder = body === "t.walk" ? view.focusStage() : null;
+        const holder = view.atom.get().body?.ext ?? null;
+        expect(s.api("t.measure").run({ ext: "t.measure", command: "measure" }), name).toBe(true);
+        expect(view.router.held()?.owner, name).toBe(keyOf(view.focusStage().n, "t.measure"));
         expect(view.focusOn(to), name).toBe(true);
         await placed(view);
-        await settle();
-        // the body is the one entered, held by the same instance as before
-        expect([name, bodyId(view)]).toEqual([name, body]);
-        // the view plugin started once, whatever moved
-        expect([name, started["t.walk"]]).toEqual([name, 1]);
-        if (holder) expect([name, holder.debug.seat("t.walk")], `${name}: the seat holding the body lingers, out of offer`).toEqual([name, { lingering: true }]);
-        // whatever's held, the view offers each body and command once: the focus stage's
-        expect([name, offered(view, "bodies", "t.walk"), offered(view, "commands", "measure")]).toEqual([name, 1, 1]);
-        expect([name, view.bodyDefs().get("t.walk")?.stage]).toEqual([name, view.focusStage()]);
-        // the view plugins are offered from the focus stage alone
-        expect(seatedAt(view), name).toEqual([to.join("/")]);
-        if (holder) {
-          // leaving the body, the seat that held it goes (a busy recheck later); back at Look
-          view.enterBody("look");
-          await until(() => !holder.debug.seat("t.walk"), 2000);
-          expect(holder.debug.seat("t.walk"), name).toBe(null);
-          expect(bodyId(view), name).toBe("look");
-        }
+        // the body is the one entered, held where it was; the tool went with the focus
+        expect([name, bodyId(view), view.atom.get().body?.ext ?? null, view.router.held()]).toEqual([name, body, holder, null]);
+        expect([name, started["t.measure"], offered(view, "commands", "measure")]).toEqual([name, 1, 1]);
         s.unmount();
         s = null;
       }
-    }
-  }, 60_000);
-
-  it("back where a busy seat lingers, it is kept, and the plugin never starts again", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const started = {};
-    const m = await mountNested({ extra: holders(started) });
-    s = m.s;
-    const { view } = m;
-    await until(() => s.instance("t.walk"), 2000);
-    const first = s.instance("t.walk");
-    s.edit(false);
-    expect(view.enterBody("t.walk")).toBe(true);
-    view.focusOn(["L"]);
-    await placed(view);
-    view.focusOn([]);
-    await placed(view);
-    expect(s.instance("t.walk")).toBe(first);
-    expect(view.stage(0).debug.seat("t.walk")).toEqual({ lingering: false });
-    expect(bodyId(view)).toBe("t.walk");
-    // started once; its seat in B went as the focus left it, holding nothing
-    expect(started["t.walk"]).toBe(1);
-    expect(stageOf(view, "L").debug.seat("t.walk")).toBe(null);
-  });
-
-  // the held tool × every move: kept while its stage is on the focus path (STAGE.md, "The input chain"), put down
-  // when it leaves it, and the seat holding it lingers there until then
-  const TOOL_MOVES = [
-    // [label, held from, from, to, still held]
-    ["held at the scene, Enter", [], [], ["L"], true],
-    ["held at the scene, Enter two deep", [], [], ["L", "M"], true],
-    ["held in B, Enter deeper", ["L"], ["L"], ["L", "M"], true],
-    ["held in B, Leave", ["L"], ["L"], [], false],
-    ["held in C, Leave out of two", ["L", "M"], ["L", "M"], [], false],
-    ["held in C, Leave one", ["L", "M"], ["L", "M"], ["L"], false],
-  ];
-  it("the held tool × every move: held while its stage is on the focus path, else put down; never offered twice", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    for (const [label, heldAt, from, to, still] of TOOL_MOVES) {
-      const started = {};
-      const m = await mountNested({ extra: holders(started) });
-      s = m.s;
-      const { view } = m;
-      expect(view.focusOn(from), label).toBe(true);
-      await placed(view);
-      await until(() => view.focusStage().seated().includes("t.measure"), 2000);
-      const at = view.stageAt(heldAt);
-      expect(at.reader.run({ ext: "t.measure", command: "measure" }), label).toBe(true);
-      expect(view.router.held()?.owner, label).toBe(keyOf(at.n, "t.measure"));
-      view.focusOn(to);
-      await placed(view);
-      await settle();
-      expect([label, view.router.held()?.owner ?? null]).toEqual([label, still ? keyOf(at.n, "t.measure") : null]);
-      // the seat that held it: lingering while it holds; gone at once once the tool's put down
-      if (still) expect([label, at.debug.seat("t.measure")]).toEqual([label, { lingering: true }]);
-      else expect([label, at.debug.seat("t.measure")]).toEqual([label, null]);
-      expect([label, offered(view, "commands", "measure"), started["t.measure"]]).toEqual([label, 1, 1]);
-      if (still) {
-        view.router.putDown();
-        await until(() => !at.debug.seat("t.measure"), 2000);
-        expect([label, at.debug.seat("t.measure")]).toEqual([label, null]);
-      }
-      s.unmount();
-      s = null;
     }
   }, 60_000);
 });
@@ -616,7 +534,6 @@ describe("putting the editor down puts the selection down; a body doesn't (HISTO
     for (const focus of FOCI) {
       expect(view.focusOn(focus)).toBe(true);
       await placed(view);
-      await until(() => view.focusStage().seated().includes("t.walk"), 2000);
       for (const from of STATES)
         for (const to of STATES)
           for (const withSel of [false, true]) {

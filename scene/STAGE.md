@@ -241,23 +241,19 @@ as its default.
 ## View plugins
 
 `{ type: "scene:view", id, name, async load() → { create(api) → instance } }`
-runs once per view, for its whole life, whatever the focus; only the registry
-starts or stops one (`src/stage/view-plugins.js`). It is **seated** at the focus
-stage: its `input` (the chain's step 4), `commands` and other contributions are
-offered there after the stage's own; its `update` hears that stage's flush. Its
-api has the stage `api`'s view members (those `focus()` leaves out), `clock`'s
-`now`, `after`, `frame`, and `camera`, `pick`, `ray`, `project` in the world:
+runs once per view, for its whole life; only the registry starts or stops one
+(`src/stage/host.js`). The view offers what it contributes at the focus
+stage: `input` at the chain's step 4 and `beforeRemove`, in that stage's frame;
+`commands` and other named contributions after its extensions', run in its
+context; `update` on its flush (told afresh after a focus move).
 
 | Member | |
 |---|---|
-| `view` | the viewer's value whole (`selected`, `hovered`, `focus` as paths; `packages`, `clocks`, `arrived`); `select(path)`, `step(ev)` (`src/selection.js`), `enter(path)`, `leave()`, `dock(doc)` |
-| `hand(spec)`, `putDown()`, `offerWidget(type, ev)` | see "Hands"; a hand hears events in the world, each hit with its `path` (what it hit) |
-| `collect(name)`, `run(inv)`, `path(opts)`, `stages()` | `collect`: every acting stage's, the input path's first, tagged `stage`; `run` in the stage named, else the focus; stage readers `{ stage, path, scene, collect, context, attention, look, pointed, run, nameOf, writable, clock }`: the input path's (`pointer: true`, `focus: true`, or `at` a full path), every acting one's |
-| `focus()` | the focus stage's **facet** for it: that stage's `api` less the view's members (chrome: `overlay`, `edge`, `dock`, `style`, `cursor`, `port`, `root`; `pref`, `setPref`, `notify`, `packages`, `hold`, `popover`, `body`, `registry`, `collect`, `run`); a new one when the focus moves |
-
-What it acquires through a facet (layers, labels, loops, watchers, poses,
-claims, sessions, a tool its command holds) goes when the focus leaves, or once
-it lets go of a body, the tool, a session or a pose; back first, it is kept.
+| as the stage `api`'s | `id`, `viewer`, `session`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `pref`, `setPref`, `notify`, `packages`, `overlay`, `edge`, `dock`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`; `clock`: `now`, `after`, `frame`; `camera`, `pick`, `ray`, `project`: in the world |
+| `view` | the viewer's value whole (`selected`, `hovered`, `focus` as paths; `packages`, `clocks`, `arrived`); `step(ev)` (`src/selection.js`), `dock(doc)` |
+| `hand(spec)`, `putDown()`, `offerWidget(type, ev)` | see "Hands"; a hand hears events in the world, each hit with its `path` |
+| `collect(name)`, `run(inv)`, `path(opts)` | every acting stage's offers, the input path's first, tagged `stage`; `run` in the stage named, else the focus; the input path's readers `{ stage, path, scene, collect, context, attention, look, pointed, run, runs, nameOf, writable, clock }` (`pointer: true`, `focus: true`, or `at` a full path) |
+| `focus()` | the focus stage's `api` for it; what it acquires through it goes when the focus leaves (a tool its command holds is put down), the plugin stops or the stage closes |
 
 ## Packages
 
@@ -675,7 +671,7 @@ The rest:
 |---|---|
 | `stage/stage.js` | the mount, doc loop, `makeApi`, content, lenses, audience, arriving, claims, the clock's wiring |
 | `stage/view.js` | the view: viewport, router, bodies, selection, prefs, camera saving, session, link expansion, cross-stage input, the view plugins' api |
-| `stage/host.js`, `stage/view-plugins.js` | starting and stopping extensions (`collect`, drops) and view plugins |
+| `stage/host.js` | starting and stopping extensions (`collect`, drops) and view plugins |
 | `stage/router.js` | DOM to events, sessions, the body stack, the hands, lock, keys, Escape, menu, cursor |
 | `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s), sends, poses |
 | `stage/viewport.js`, `stage/dock.js` | rendering and picking, one per view; the drawer |

@@ -436,7 +436,6 @@ describe("scene.others: wherever its doc is", () => {
     for (const focus of [[], ["L"]]) {
       for (const mine of [null, "die"]) {
         expect(view.focusOn(focus)).toBe(true);
-        await until(() => view.focusStage().seated().includes("scene.select"), 2000);
         if (mine) view.select([...focus, focus.length ? mine : "table"]);
         else view.select(null);
         const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), P: [] };

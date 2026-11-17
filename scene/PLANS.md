@@ -82,7 +82,7 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 | ~~Edit body, `ahead`, "nothing stands on Edit"~~ | done (steps 1, 2): the Edit hand, `scene.edit`'s (a view plugin) |
 | ~~held-tool slot, popover, Escape ladder~~; gesture | done (step 1): the hands stack; the open gesture is still its own Escape layer, not a hand |
 | Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
-| ~~"general" scope, `api.path`, `reopened`, general-only packages/clocks~~ | done (step 2): **view plugins** (`scene:view`), seated at the focus |
+| ~~"general" scope, `api.path`, `reopened`, general-only packages/clocks~~ | done (step 2): **view plugins** (`scene:view`), offered at the focus |
 | `own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading | **editor**, recording from `change → patches` |
 | audience, shown, veil, keepers' looks | **hidden** (doc, `"*"`); the veil a `display` override |
 | claims; pose holds and playback; world clock and processes; telling | **claims**, **poses** (playback a `display` override), **clock** (on `use("claims")`, `channel`, `settled()`), **telling**: each a doc plugin of every doc (`"*"`) |

@@ -5,8 +5,8 @@
 //
 // The people are drawn by a part of every doc (traits ["*"]): it runs in
 // every stage, as that doc's own part, and never restarts when the focus
-// moves; the body is a view plugin's, seated at the focus (its seat
-// lingering where the body is held until it lets go). The harness is exhaustive over what decides
+// moves; it also offers the body, held where it was entered, and a view
+// plugin says where its viewer is through its focus facet. The harness is exhaustive over what decides
 // it: every focus (each acting stage, depth ≤3) × where the viewer's body is
 // held (nowhere, or in each acting stage) × before and after the body is let
 // go, on one view of a tree with every stage role: acting at depths 0–3, a
@@ -32,9 +32,9 @@ const at = (x, y, z) => ({ position: [x, y, z], rotation: [0, 0, 0], scale: 1 })
 const link = (url, name, extra = {}) => object({ name, sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 
 /**
- * The body: a view plugin. Seated at the focus it offers a body, and says
- * on the focus doc's channel where its viewer is (`here`: a point in its
- * doc's frame, one per doc, from its title).
+ * Where the viewer is: a view plugin, shaped as walk's. It says on the focus
+ * doc's channel where its viewer is (`here`: a point in its doc's frame, one
+ * per doc, from its title), through its facet there.
  */
 const POINT = { A: [1, 0, 0], B: [0, 2, 0], C: [0, 0, 3], D: [4, 4, 0], E: [0, 5, 5] };
 const WALK = {
@@ -43,7 +43,6 @@ const WALK = {
     create(api) {
       const said = new WeakSet(); // the focus facets it has said where it is through
       return {
-        bodies: [{ id: "t.walk", label: "Walk", enter: () => ({ input: {} }) }],
         update() {
           const f = api.focus();
           if (!f || said.has(f)) return;
@@ -57,8 +56,8 @@ const WALK = {
 };
 /**
  * The people: a part of every doc, shaped as walk.people. It draws everyone
- * else who says where they are (under the body's key) on its doc's channel,
- * a marker per person in its world layer.
+ * else who says where they are (under the walk's key) on its doc's channel,
+ * a marker per person in its world layer, and offers the body.
  */
 const PEOPLE = {
   meta: { id: "t.people", traits: ["*"] },
@@ -89,6 +88,7 @@ const PEOPLE = {
         /** who it draws, where in its layer, and what its layer hangs under (the viewport's key of its stage's root: null, the outermost's) */
         drawn: () => [...marks.values()].map((m) => ({ viewer: m.userData.viewer, here: m.position.toArray(), under: m.parent?.userData.under ?? null })),
         update: draw,
+        bodies: [{ id: "t.walk", label: "Walk", enter: () => ({ input: {} }) }],
       };
     },
   },
@@ -153,17 +153,16 @@ async function others(repo, docs) {
   };
 }
 
-/** What the view draws, and runs, where: each stage's body part, its people part (which instance), and who that draws. */
+/** What the view draws, and runs, where: the walk's facet, the body, its people part (which instance), and who that draws. */
 function picture(view) {
   const out = {};
   // (in the model's order, so equal pictures are equal strings)
   for (const p of Object.keys(ROLE)) {
     const x = stageOf(view, p);
-    const walk = x.debug.seat("t.walk");
     const people = x.debug.host.record("t.people");
     out[p] = {
-      walk: !!walk,
-      lingering: !!walk?.lingering,
+      walk: x.debug.facets().includes("t.walk"),
+      body: view.atom.get().body?.ext === keyOf(x.n, "t.people"),
       people: people?.state === "running" ? people.scope : null,
       drawn: people?.state === "running" ? people.instance.drawn().sort((a, b) => (a.viewer < b.viewer ? -1 : 1)) : [],
     };
@@ -180,15 +179,14 @@ function rootOf(view, p) {
   return keyOf(stageOf(view, path.slice(0, -1).join("/")).n, path.at(-1));
 }
 
-/** What the model says the picture is, at focus `f`, with the body held by the body part at `held` (or null). */
+/** What the model says the picture is, at focus `f`, with the body held by the people part at `held` (or null). */
 function expected(view, f, held) {
   const out = {};
   for (const [p, [role, title]] of Object.entries(ROLE)) {
     const acts = role === "acting";
-    const walk = acts && (p === f || p === held);
     out[p] = {
-      walk,
-      lingering: walk && p !== f,
+      walk: acts && p === f,
+      body: p === held,
       // in every stage, as its doc's own part
       people: "scene",
       // the one other person of this doc, where they said, in this stage's frame; a pin has no channel
@@ -219,7 +217,7 @@ afterEach(() => {
 });
 
 describe("presence where it is", () => {
-  it("every focus × where the body is held (nowhere, or each acting stage, then let go): every stage but the pin draws its doc's people in its own frame, by the one instance of its part of every doc; the body is the focus's or where it lingers; the chips are the focus path's", async () => {
+  it("every focus × where the body is held (nowhere, or each acting stage, then let go): every stage but the pin draws its doc's people in its own frame, by the one instance of its part of every doc; the walk's facet is the focus's, the body where it was entered; the chips are the focus path's", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { s, view, repo, docs } = await mountTree();
     cleanups.push(() => s.unmount());
@@ -242,14 +240,11 @@ describe("presence where it is", () => {
         // hold the body where it's held: enter it at the focus there
         if (held != null) {
           expect(view.focusOn(pathOf(held)), label).toBe(true);
-          await until(() => view.focusStage().seated().includes("t.walk"), 4000);
-          expect(view.enterBody("t.walk"), label).toBe(true);
+          expect(view.enterBody("t.walk", undefined, view.focusStage()), label).toBe(true);
         }
         expect(view.focusOn(pathOf(f)), label).toBe(true);
         await settled(f, held)();
         expect([label, peopleOf(view)]).toEqual([label, first]);
-        // the view offers the body once: the focus stage's body part's
-        expect([label, view.collect("bodies").flatMap((x) => x.value).filter((b) => b?.id === "t.walk").length]).toEqual([label, 1]);
         // the clocks: the focus path's, outermost first, each named inside a link
         const want = expectedClocks(f);
         const clocksAt = () => view.atom.get().clocks.map((c) => view.stage(c.stage)?.path.join("/"));
@@ -260,7 +255,7 @@ describe("presence where it is", () => {
         expect([label, names]).toEqual([label, want.map((p) => (f === "" ? "" : NAME[p]))]);
         expect([label, s.root.querySelector(".clock-bar").hidden]).toEqual([label, want.length === 0]);
         cases++;
-        // let the body go: a lingering seat goes, and nothing else changes
+        // let the body go: nothing else changes
         if (held != null) {
           view.enterBody("look");
           await settled(f, null)();

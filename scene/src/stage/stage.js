@@ -38,9 +38,9 @@
 //     checkpoints, following; what the chip shows → local.clock.
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
-//   - the view's plugins, seated here while it is the focus: each a facet of
-//     this api (what it acquires through it goes when the focus leaves, or
-//     once it lets go), and its contributions offered with the extensions'.
+//   - the view's plugins' facets (api.focus() while it is the focus): this
+//     api, made for the plugin; what it acquires through one goes when the
+//     focus leaves, the plugin stops or the stage closes.
 //   - what the view asks of it: its segment of the input chain, its inputs
 //     (hearing events in its frame), its bodies and widgets.
 //   - the doc loop: derive, the running set, display and content; then the
@@ -50,9 +50,8 @@
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { createAtom, assoc } from "./atom.js";
-import { BUSY_RECHECK_MS, createHost } from "./host.js";
+import { createHost, updateAll } from "./host.js";
 import { HEARTBEAT_MS, createPresence } from "./presence.js";
-import { realTime } from "./time.js";
 import { createHolds } from "./holds.js";
 import { CLOCK, PRESENCE_KEY, PRESENCE_NS, createClock, eligibility } from "./clock.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
@@ -69,7 +68,7 @@ import { LOOK } from "./bodies.js";
 import { createView, projectView } from "./view.js";
 import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
-import { elementOf, keyOf, parseKey, pathOf } from "./paths.js";
+import { elementOf, keyOf, parseKey } from "./paths.js";
 import { lookChain } from "../keymap.js";
 import { commandState } from "../parts/toolbar-commands.js";
 import * as ops from "../ops.js";
@@ -106,7 +105,6 @@ export const CLAIM_GRACE_MS = HEARTBEAT_MS + 1_000;
 // coalesced into one pass per frame.
 const UI_BUDGET_MS = 4;
 const UI_PASSES = 3;
-const EDGES = ["top", "right", "bottom", "left"];
 /** Is this one of the router's events (so a stage hands it on in its own frame)? */
 const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
 const noop = () => {};
@@ -282,23 +280,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const repo = stageRepo(view.repo, { readOnly, deps, reached });
   /** May this view write the doc (it acts, and its handle lets it)? */
   const writable = () => !handleReadOnly(handle);
-  const sceneUrl = handle.url ?? "scene";
   let dead = false;
   const cleanups = [];
   const time = view.time;
-  const timers = new Set(); // cancels of what later() set
-  const later = (fn, ms) => {
-    const cancel = time.after(ms, () => {
-      timers.delete(cancel);
-      fn();
-    });
-    timers.add(cancel);
-    return cancel;
-  };
   const perf = { sync: timings(), flush: timings() };
   const raf = (f) => time.frame(f);
   const caf = (cancel) => cancel?.();
-  const { root, port, edges, drawer } = view;
+  const { root, port, drawer } = view;
   const vp = view.viewport;
   /** An extension of this stage, as the view and the router name it. */
   const ownerKey = (ext) => keyOf(n, ext);
@@ -1309,25 +1297,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const content = contentDirty;
     contentDirty = false;
     const running = host.instances();
-    const vw = viewValue();
-    for (const r of offered()) {
-      const was = seen.get(r.instance);
-      const changed = !was || was.scene !== snap || was.local !== loc || was.view !== vw;
-      if (!changed && !content) continue;
-      const now = { scene: snap, local: loc, view: vw };
-      seen.set(r.instance, now);
-      if (typeof r.instance.update !== "function") continue;
-      try {
-        r.instance.update(snap, loc, was ?? { scene: null, local: null, view: null }, vw);
-        // What's shown changed in the same flush as the doc or local state
-        // (a rebuilt GLB lands with its status going back to idle): say so
-        // too, the one way the contract has (prev === this scene, local and view),
-        // or a part that skips a status-only change never sees the new box.
-        if (content && changed && was) r.instance.update(snap, loc, now, vw);
-      } catch (err) {
-        console.warn(`[scene] extension “${r.id}”: update failed`, err);
-      }
-    }
+    const now = { scene: snap, local: loc, view: viewValue() };
+    updateAll(running, seen, now, content);
+    // (the view's plugins are told what its focus stage shows: view.js)
+    view.flushed?.(stage, now, content);
     // what was told and waits for the doc to bear it out: asked again now everyone has seen this flush
     telling.ask();
     view.tryArrive();
@@ -1364,7 +1337,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
     // the outermost doc's are the world's (STAGE.md, "Views, stages and links"), which the view reads (view.ambient)
-    const ambientOffers = mergeAmbients(
+    const offered = mergeAmbients(
       running.map((r) => {
         try {
           return { id: r.id, offer: r.instance.ambient?.() ?? null };
@@ -1376,8 +1349,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       ambients,
       (ext, name, err) => console.warn(`[scene] extension “${ext}”: ambient “${name}” refused: ${err.message}`),
     );
-    if (ambientOffers !== ambients) {
-      ambients = ambientOffers;
+    if (offered !== ambients) {
+      ambients = offered;
       view.ambientsChanged?.();
     }
     const ms = cpuNow() - t0;
@@ -1471,9 +1444,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
   const inputWrappers = new WeakMap(); // input → its wrapper
   function inputOf(id) {
-    const input = host.inputOf(id) ?? seatedOf(id)?.instance?.input;
     const own = owned.get(id);
-    if (!input || typeof input !== "object" || !own) return undefined;
+    return own ? framedInput(host.inputOf(id), own) : undefined;
+  }
+  function framedInput(input, own = { sessions: 0 }) {
+    if (!input || typeof input !== "object") return undefined;
     let w = inputWrappers.get(input);
     if (!w) inputWrappers.set(input, (w = withSessions(own, input)));
     return w;
@@ -1519,14 +1494,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   /**
    * Remove in one change, after every running extension's beforeRemove
-   * tidy-up. With `{ edit }` (an api.edits group), the change is that
-   * edit's, and undo puts it all back.
+   * tidy-up (at the focus, the view's plugins' too). With `{ edit }` (an
+   * api.edits group), the change is that edit's, and undo puts it all back.
    */
   function remove(ids, { edit = null } = {}) {
     if (!writable()) return null;
     const plan = ops.removeObjects(scene(), ids);
     if (!plan || !plan.ok) return plan;
-    const running = offered();
+    const running = [...host.running(), ...(view.pluginsAt?.(stage) ?? [])];
     write(edit, (d) => {
       for (const r of running) {
         if (typeof r.instance.beforeRemove !== "function") continue;
@@ -1553,14 +1528,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * @returns {boolean} whether it ran
    */
   function run(invocation) {
-    const { ext, command, target = null, value, hit = null } = invocation ?? {};
-    const x = instanceOf(ext);
-    let c = null;
-    try {
-      c = (x?.commands ?? []).find((k) => k?.id === command) ?? null;
-    } catch {
-      c = null;
-    }
+    return runCommand(invocation?.ext, commandOf(invocation?.ext, invocation?.command), invocation);
+  }
+  /** Run command `c` of `ext` (one of its extensions', or a view plugin's with a facet here) as run() does. */
+  function runCommand(ext, c, { command, target = null, value, hit = null } = {}) {
     if (!c || typeof c.run !== "function") return false;
     try {
       const ctx = context(hit);
@@ -1593,7 +1564,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   /** Every running extension's bodies, by id (the first to offer an id has it); the view asks only a stage that acts. */
   function bodyDefs() {
     const out = new Map();
-    for (const { id: ext, value } of collect("bodies")) {
+    for (const { id: ext, value } of host.collect("bodies")) {
       for (const def of Array.isArray(value) ? value : []) {
         if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || def.id === LOOK.id) continue;
         if (out.has(def.id)) {
@@ -2048,41 +2019,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     owned.set(id, own);
     const live = () => !signal.aborted && !dead;
     // Acquire something, unless stopped; the returned off gives it back once.
-    /** A one-shot callback set through `set` (time.after or time.frame), cancelled if the extension stops first. */
-    const timed = (o, set, fn) => {
-      if (!live() || typeof fn !== "function") return noop;
-      let cancel = null;
-      const off = () => {
-        if (o.offs.delete(off)) cancel();
-      };
-      cancel = set((...args) => {
-        if (!o.offs.delete(off) || !live()) return;
-        fn(...args);
-      });
-      o.offs.add(off);
-      return off;
-    };
-    const acquire = (bag, take) => {
-      if (!live()) return noop;
-      const give = take();
-      if (typeof give !== "function") return noop;
-      bag.add(give);
-      return () => {
-        if (bag.delete(give)) give();
-      };
-    };
+    const acquire = view.acquirer(live);
+    // what the view lends it: chrome, frame hooks, timers (view.js viewParts),
+    // its elements marked with this stage (several docs' extensions share one view's DOM)
+    const lent = view.viewParts({ id, key: ownerKey(id), own, live, stage: n });
     const viewNow = () => viewValue();
     let watched = viewNow(); // what api.view.watch last told of
-    const ownEl = (el, parent) => {
-      if (!live()) return el;
-      own.els.add(el);
-      // (which stage it is: several docs' extensions share one view's DOM)
-      el.dataset.stage = String(n);
-      // (the drawer stays outermost: an edge part started while it's open goes inside it)
-      if (drawer.el.parentNode === parent) parent.insertBefore(el, drawer.el);
-      else parent.append(el);
-      return el;
-    };
 
     const api = {
       // doc and identity
@@ -2272,43 +2214,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           },
         });
       },
-      overlay: () => {
-        const el = document.createElement("div");
-        el.className = "stage-overlay";
-        el.dataset.owner = id;
-        return ownEl(el, port);
-      },
-      edge: (side) => {
-        const el = document.createElement("div");
-        el.className = "stage-edge-part";
-        el.dataset.owner = id;
-        return ownEl(el, edges[EDGES.includes(side) ? side : "right"]);
-      },
-      /** dock an element of this extension's in the drawer, under a tab: closed by close(), its × (which calls onClose), or the extension stopping */
-      dock: (el, { title, onClose, embed = true, show = true } = {}) => {
-        if (!live() || !el) return noop;
-        // an open drawer wants the pointer (stage/pointer.js)
-        const close = acquire(own.offs, () => {
-          const off = drawer.dock(ownerKey(id), el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
-          return () => (off?.(), router?.refresh());
-        });
-        router?.refresh();
-        return close;
-      },
-      style: (text) => {
-        const el = document.createElement("style");
-        el.textContent = String(text ?? "");
-        el.dataset.owner = id;
-        return ownEl(el, root);
-      },
-      listen: (target, type, fn, opts) =>
-        acquire(own.offs, () => {
-          target.addEventListener(type, fn, opts);
-          return () => target.removeEventListener(type, fn, opts);
-        }),
-      cursor: (name) => {
-        if (live()) view.cursor(ownerKey(id), name);
-      },
+      ...lent,
       pose: Object.freeze({
         /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
         hold: (oid, transform, { yields = false } = {}) => live() && holdPose(id, own, oid, transform, yields),
@@ -2333,9 +2239,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         const world = view.outermost();
         return Object.freeze({ value, mine: world === stage, frame: scope.frame(), clock: Object.freeze(world.worldTime()) });
       },
-      invalidate: () => viewport.invalidate(),
-      loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
-      afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
       /**
        * World time (STAGE.md, "World time"): this view's t (s), running, pause and
        * resume (anyone who may write), and process({ start?, step, save?,
@@ -2345,9 +2248,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * is cancelled when the extension stops.
        */
       clock: Object.freeze({
-        now: () => time.now(),
-        after: (ms, fn) => timed(own, (cb) => time.after(ms, cb), fn),
-        frame: (fn) => timed(own, (cb) => time.frame(cb), fn),
+        ...lent.clock,
         t: () => clock.t(),
         running: () => clock.running(),
         /** who computes this doc's world time: { viewer, session, mine }, or null (nobody: no time passes) */
@@ -2388,8 +2289,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
-      /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). @returns release, for when it closes itself */
-      popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(ownerKey(id), close)) : noop),
       /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
       context: (hit) => context(hit),
       /** attention: { selected, hit } (the selection, else the look) */
@@ -2397,8 +2296,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
       look: () => look(),
 
-      // the others: what this stage's extensions (and, while it is the focus, the view's plugins) offer,
-      // each item tagged with its `stage`; a command runs in the stage it names
+      // the others: what this stage's extensions offer, each item tagged with its `stage`; a command runs in the stage it names
       collect: (name) => reader.collect(name),
       audience: audienceOf,
       shown: shownTo,
@@ -2464,7 +2362,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
-      view: facet(api.view, { select: noop, enter: () => false, edit: () => false }),
+      view: facet(api.view, { select: noop, enter: () => false }),
       setPref: noop,
       notify: () => null,
       overlay: () => loose("stage-overlay"),
@@ -2506,122 +2404,45 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   });
   hostMade = true;
 
-  // ─── the view's plugins, seated here while it is the focus (STAGE.md, "View plugins") ─────
-  // Each running view plugin gets a seat: a facet of this stage's api
-  // (makeApi, less what is the view's: chrome, prefs, notices, hands and
-  // bodies, the registry, collecting and running), and while this stage is the focus its
-  // input, commands and other contributions are offered here, after this
-  // stage's own extensions'. What it acquired through the facet (world
-  // layers, labels, loops, watchers, pose holds, claims, sessions, a tool
-  // held through one of its commands) is given back when the focus moves away, or, while it
-  // holds one of those (busy), once it lets go: a drag or a held Measure
-  // goes on across Enter and Leave. Back here before then, the seat is kept.
-  const seats = new Map(); // plugin id → { plugin, rec, controller, api, release, linger: cancel | null }
-  /** The view's members a facet leaves out: they are on the view plugin's own api. */
-  const VIEWS_OWN = ["overlay", "edge", "dock", "style", "cursor", "popover", "hold", "body", "notify", "pref", "setPref", "packages", "registry", "collect", "run", "port", "root"];
-  function facetOf(api) {
-    const out = {};
-    for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(api))) if (!VIEWS_OWN.includes(k)) Object.defineProperty(out, k, d);
-    out.view = Object.freeze({ get: api.view.get, watch: api.view.watch, select: api.view.select, enter: api.view.enter });
-    return out;
-  }
-  /** Is this stage the focus (where the view's plugins sit)? */
-  const isFocus = () => acts && !dead && view.focusStage?.() === stage;
-  /** A view plugin's seat here, made on first need; a lingering one is kept. */
-  function seatOf(p) {
-    let st = seats.get(p.id);
-    if (st && st.plugin !== p) {
-      releaseSeat(st);
-      st = null;
+  // ─── the view's plugins' facets (STAGE.md, "View plugins") ─────────────────
+  // A view plugin's api.focus(), while this stage is the focus: this stage's
+  // api, made for it on asking. What it acquires through one is given back
+  // when the focus leaves (the view drops it), the plugin stops or this
+  // stage closes; the plugin itself runs on.
+  const facets = new Map(); // plugin id → { controller, api, release }
+  function facetFor({ id, module }) {
+    if (dead || !acts) return null;
+    let f = facets.get(id);
+    if (!f) {
+      const controller = new AbortController();
+      f = { controller, ...makeApi({ id, module, signal: controller.signal }) };
+      facets.set(id, f);
     }
-    if (st) {
-      st.linger?.();
-      st.linger = null;
-      return st;
-    }
-    const controller = new AbortController();
-    const rec = { id: p.id, module: p.module, signal: controller.signal };
-    const made = makeApi(rec);
-    st = { plugin: p, rec, controller, api: facetOf(made.api), release: made.release, linger: null };
-    seats.set(p.id, st);
-    return st;
+    return f.api;
   }
-  function releaseSeat(st) {
-    if (seats.get(st.rec.id) === st) seats.delete(st.rec.id);
-    st.linger?.();
-    st.linger = null;
-    seen.delete(st.plugin.instance);
-    st.controller.abort();
-    try {
-      st.release();
-    } catch (err) {
-      console.warn(`[scene] view plugin “${st.rec.id}”: releasing what it held here failed`, err);
-    }
-  }
-  /** The view's plugins seated here now, in their order: all of them while this stage is the focus, else none. */
-  function seated() {
-    if (!isFocus()) return [];
-    const out = view.plugins?.running() ?? [];
-    for (const p of out) seatOf(p);
-    return out;
-  }
-  const seatedOf = (id) => seated().find((p) => p.id === id) ?? null;
-  /** What this stage offers (instances, in order): its extensions, then the view's plugins while it is the focus. */
-  const offered = () => [...host.running(), ...seated()];
-  const instanceOf = (id) => host.instanceOf(id) ?? seatedOf(id)?.instance ?? null;
-  /** Every offered `name` field, in order. @returns {{ id: string, value: any }[]} */
-  function collect(name) {
-    const out = host.collect(name);
-    for (const p of seated()) {
-      let value;
+  /** Let a plugin's facet go (or, with no id, every one): what was acquired through it goes. */
+  function dropFacets(id = null) {
+    for (const [k, f] of [...facets]) {
+      if (id != null && k !== id) continue;
+      facets.delete(k);
+      f.controller.abort();
       try {
-        value = p.instance[name];
+        f.release();
       } catch (err) {
-        console.warn(`[scene] view plugin “${p.id}”: reading ${name} failed`, err);
-        continue;
+        console.warn(`[scene] view plugin “${k}”: releasing what it held here failed`, err);
       }
-      if (value !== undefined) out.push({ id: p.id, value });
     }
-    return out;
-  }
-  /**
-   * The focus moved away (the view's to say): each seat goes, or, while busy,
-   * lingers until it lets go, offering nothing meanwhile.
-   */
-  function unseat() {
-    for (const st of [...seats.values()]) {
-      if (st.linger) continue;
-      if (!busy(st.rec.id)) {
-        releaseSeat(st);
-        continue;
-      }
-      const check = () => {
-        st.linger = null;
-        if (dead || seats.get(st.rec.id) !== st || isFocus()) return;
-        if (busy(st.rec.id)) st.linger = later(check, BUSY_RECHECK_MS);
-        else releaseSeat(st);
-      };
-      st.linger = later(check, BUSY_RECHECK_MS);
-    }
-  }
-  /** A view plugin stopped: its seat goes at once. */
-  function unseatPlugin(id) {
-    const st = seats.get(id);
-    if (st) releaseSeat(st);
-  }
-  /** A view plugin's facet of this stage (api.focus()): made on asking, while this stage is the focus. */
-  function facetFor(p) {
-    return isFocus() ? seatOf(p).api : null;
   }
 
   // ─── what the view asks of this stage ──────────────────────────────────────
 
-  // Its extensions' widgets under the pointer (each hearing the event in this
-  // stage's frame), owners as the view's keys, distances in the world.
-  function widgetsAt(ev) {
+  // Its extensions' widgets under the pointer (and, at the focus, the view's
+  // plugins': `more`), each hearing the event in this stage's frame, owners
+  // as the view's keys, distances in the world.
+  function widgetsAt(ev, more = []) {
     const out = [];
     const f = scope.frame();
-    for (const r of offered()) {
+    for (const r of [...host.running(), ...more]) {
       const input = r.instance.input;
       if (typeof input?.widgetAt !== "function") continue;
       try {
@@ -2635,9 +2456,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   // This stage's segment of the chain (STAGE.md, "The input chain") for its element of
-  // the hit's path: its holders, nearest first, then its root's. The view's
-  // plugins (seated here while it is the focus) are offered after every
-  // segment: seated().
+  // the hit's path: its holders, nearest first, then its root's. (The view
+  // offers its plugins after every segment.)
   function segment(element) {
     const running = host.running();
     const m = derive();
@@ -2649,7 +2469,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   /** One of this stage's extensions' commands, or null. */
   function commandOf(ext, command) {
     try {
-      return (instanceOf(ext)?.commands ?? []).find((k) => k?.id === command) ?? null;
+      return (host.instanceOf(ext)?.commands ?? []).find((k) => k?.id === command) ?? null;
     } catch {
       return null;
     }
@@ -2741,8 +2561,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     clock,
     /** does it act ("acting"), or is it drawn ("pinned")? */
     role,
-    /** a view plugin's seat here: { lingering } (held on to after the focus left, while busy), or null */
-    seat: (id) => (seats.has(id) ? { lingering: seats.get(id).linger != null } : null),
+    /** the view plugins with a facet here (api.focus()) */
+    facets: () => [...facets.keys()],
     /** the claims this view holds: [{ id, kind, ext }] */
     claims: () => [...claims.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),
     stats: () => ({
@@ -2757,9 +2577,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   function dispose() {
     if (dead) return;
     // world time stops first (one checkpoint, with every process's save), then
-    // the view's plugins' seats and the extensions, while everything they hold is still there to give back
+    // the view's plugins' facets and the extensions, while everything they hold is still there to give back
     clock.dispose();
-    for (const st of [...seats.values()]) releaseSeat(st);
+    dropFacets();
     host.dispose();
     clockLoopOff?.();
     clockLoopOff = null;
@@ -2768,8 +2588,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     presence.dispose();
     if (flushFrame != null) caf(flushFrame);
     if (uiResetReq != null) caf(uiResetReq);
-    for (const cancel of timers) cancel();
-    timers.clear();
     for (const c of cleanups) {
       try {
         c();
@@ -2792,8 +2610,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     path: Object.freeze([...path]),
     scene,
     /** does it run this extension now? */
-    runs: (extId) => offered().some((r) => r.id === extId),
-    collect: (name) => collect(name).map((x) => ({ ...x, stage: n })),
+    runs: (extId) => host.running().some((r) => r.id === extId),
+    collect: (name) => host.collect(name).map((x) => ({ ...x, stage: n })),
     context: (hit) => context(hit),
     attention: () => attention(),
     look: () => look(),
@@ -2839,17 +2657,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     inputOf,
     widgetsAt,
     segment,
-    /** the view's plugins seated here (it is the focus), in order: their ids */
-    seated: () => seated().map((p) => p.id),
     facetFor,
-    unseat,
-    unseatPlugin,
-    /** run fn after this stage's next flush, as a view plugin's (api.schedule) */
-    schedule: (rec, fn) => {
-      if (dead || typeof fn !== "function") return;
-      scheduled.push({ rec, fn });
-      requestFlush();
-    },
+    dropFacets,
+    /** a view plugin's input, hearing events in this stage's frame (the view offers it while this is the focus) */
+    framedInput: (input) => framedInput(input),
+    runCommand,
     /** what the view says of the viewer on this doc's channel: its body and held tool (presence.announce) */
     announce: (state) => presence.announce(state),
     displayedWorld,

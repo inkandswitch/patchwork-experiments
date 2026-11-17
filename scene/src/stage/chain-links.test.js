@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe("the chain across links (I8)", () => {
-  it("every hit × every focus × a widget or not: inner segments first, out to the outermost, each once, none from a pin, then the view plugins, seated at the focus", async () => {
+  it("every hit × every focus × a widget or not: inner segments first, out to the outermost, each once, none from a pin, then the view plugins, in the focus stage's frame", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
     const G = repo.add(emptyScene({ title: "G", traits: { "t.g": {} }, objects: { box: thing("t.box"), card: thing("t.card", { parent: "box" }) }, order: ["box", "card"] }));
@@ -69,10 +69,9 @@ describe("the chain across links (I8)", () => {
     let checked = 0;
     for (const focus of foci) {
       expect(view.focusOn(focus)).toBe(true);
-      // (the view plugins sit where the focus went, and nowhere else; the editor's hand, scene.edit, is one)
-      expect(view.stages().every((st) => st === view.focusStage() || !st.seated().length)).toBe(true);
+      // (the view plugins, in the focus stage's keys; the editor's hand, scene.edit, is one)
       const f = view.focusStage();
-      const generals = f.seated().map((ext) => keyOf(f.n, ext));
+      const generals = view.plugins.running().map((p) => keyOf(f.n, p.id));
       expect(generals).toEqual(["t.view-1", "t.view-2", "scene.edit"].map((ext) => keyOf(f.n, ext)));
       for (const hitKey of hits)
         for (const widget of [null, WIDGET]) {

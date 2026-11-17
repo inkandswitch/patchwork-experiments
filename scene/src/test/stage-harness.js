@@ -143,7 +143,7 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     facet: (id) => debug.view.plugins.record(id)?.api?.focus() ?? null,
     /** pick up the editor (scene.edit's Edit hand) or put it down; → whether the viewer is editing now */
     edit: (on = true) => {
-      debug.view.focusStage()?.reader.run({ ext: "scene.edit", command: "edit", target: null, value: !!on });
+      debug.view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: !!on });
       return editing(debug.view.atom.get());
     },
     doc: () => handle.doc(),

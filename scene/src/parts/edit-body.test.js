@@ -172,7 +172,7 @@ describe("the editor is the Edit hand", () => {
       expect(editing(s.local.get())).toBe(true); // a scene made new
       s.local.swap((m) => ({ ...m, selected: "a" }));
       await still();
-      expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
+      expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(true);
       api.body.enter("walk");
       await still();
       expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command, s.local.get().selected, chrome().inspector]).toEqual(["walk", true, "measure", "a", true]);
@@ -183,7 +183,7 @@ describe("the editor is the Edit hand", () => {
       await still();
       expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command]).toEqual(["look", true, "measure"]);
       // Measure put down, Edit is what peers see; an open menu over it is nobody else's business
-      api.run({ ext: "scene.measure", command: "measure", value: false });
+      s.api("scene.measure").run({ ext: "scene.measure", command: "measure", value: false });
       const close = api.popover(() => close());
       await still();
       expect([s.local.get().hands.map((h) => h.kind), await told()]).toEqual([["edit", "popover"], { body: "Look", held: "Edit" }]);
@@ -206,7 +206,7 @@ describe("the editor is the Edit hand", () => {
       s.local.swap((m) => ({ ...m, selected: "a" }));
       await still();
       expect(chrome().inspector).toBe(true);
-      expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
+      expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(true);
       expect(s.local.get().held?.command).toBe("measure");
       s.edit(false);
       await still();
@@ -214,7 +214,7 @@ describe("the editor is the Edit hand", () => {
       expect(s.local.get().held).toBe(null);
       expect(chrome().inspector).toBe(false);
       // Measure isn't on offer while not editing: not run, not on a key
-      expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(false);
+      expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(false);
       // the selection went with the editor (attention is the selection: F would act on what was last edited)
       expect(s.local.get().selected).toBe(null);
       s.edit(true);

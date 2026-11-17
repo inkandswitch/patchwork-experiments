@@ -123,15 +123,15 @@ describe("a live link opens a stage for its doc", () => {
     expect(s.doc().objects[self].providerId).toBe(LINK);
   });
 
-  it("the linked doc's extensions run in its stage, the host's in the host's, the view plugins once, seated at the focus", async () => {
+  it("the linked doc's extensions run in its stage, the host's in the host's, the view plugins once, offered at the focus", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();
     s = m.s;
     const ids = (st) => st.debug.host.running().map((r) => r.id).sort();
     expect(ids(m.g)).toEqual(["t.card", "t.game"]);
     expect(ids(s.debug.view.stage(0))).toEqual(["t.host"]);
-    expect(s.debug.view.stage(0).seated()).toEqual(["t.view", "scene.keys", "scene.edit"]);
-    expect(m.g.seated()).toEqual([]);
+    const at = (st) => s.debug.view.pluginsAt(st).map((p) => p.id);
+    expect([at(s.debug.view.stage(0)), at(m.g)]).toEqual([["t.view", "scene.keys", "scene.edit"], []]);
     expect(m.g.path).toEqual(["L"]);
     expect(m.g.url).toBe(m.game.url);
     expect(s.api("t.host").link("L")).toEqual({ role: "acting", open: true });

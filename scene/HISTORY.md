@@ -584,3 +584,7 @@ view-plugin tests (`src/stage/view-plugins.test.js`: every order of ≤4 of
 in, out, busy, idle and a recheck, 781 sequences, the plugin started once
 and never stopped, a seat offered only at the focus and given back only out
 and idle); a test's own extension with no traits is now a part of every doc.
+Simplified the same day: no seating, no lingering. The view offers its
+plugins' input, commands, `beforeRemove` and `update` at the focus stage,
+and `focus()` is that stage's api, given back as the focus leaves; the
+extension host runs them.

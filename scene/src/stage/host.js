@@ -1,4 +1,6 @@
-// Starting and stopping extensions (STAGE.md, "Activation" and "Stopping").
+// Starting and stopping extensions (STAGE.md, "Activation" and "Stopping"),
+// and a view's plugins (STAGE.md, "View plugins": `wanted` is every one
+// registered, so only the registry starts or stops one).
 //
 // The running set is a pure function of the registry's metadata and the doc
 // (activation.js activeSet): nothing the viewer does changes it (H1).
@@ -58,13 +60,57 @@ export function mergeOrder(prev, want, lingering) {
   return out;
 }
 
+/**
+ * The update flush (STAGE.md, "Extensions"): each instance's
+ * update(scene, local, prev, view) when any of the three is new to it
+ * (`seen`: instance → what it was last told). What's shown changing in the
+ * same flush as the doc or local state (`content`: a rebuilt GLB lands with
+ * its status going back to idle) is said too, the one way the contract has
+ * (prev === this scene, local and view), or a part that skips a status-only
+ * change never sees the new box.
+ * @param {{ id: string, instance: object }[]} list  @param {WeakMap} seen
+ * @param {{ scene, local, view }} now  @param {boolean} content
+ */
+export function updateAll(list, seen, now, content) {
+  for (const r of list) {
+    const was = seen.get(r.instance);
+    const changed = !was || was.scene !== now.scene || was.local !== now.local || was.view !== now.view;
+    if (!changed && !content) continue;
+    seen.set(r.instance, now);
+    if (typeof r.instance.update !== "function") continue;
+    try {
+      r.instance.update(now.scene, now.local, was ?? { scene: null, local: null, view: null }, now.view);
+      if (content && changed && was) r.instance.update(now.scene, now.local, now, now.view);
+    } catch (err) {
+      console.warn(`[scene] “${r.id}”: update failed`, err);
+    }
+  }
+}
+
+/** Every instance's `name` field that it has, in order. @returns {{ id: string, value: any }[]} */
+export function collectFrom(list, name) {
+  const out = [];
+  for (const r of list) {
+    let value;
+    try {
+      value = r.instance[name];
+    } catch (err) {
+      console.warn(`[scene] “${r.id}”: reading ${name} failed`, err);
+      continue;
+    }
+    if (value !== undefined) out.push({ id: r.id, value });
+  }
+  return out;
+}
+
 /** Same list of { id, scope }? */
 const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.every((r, i) => r.id === b[i].id && r.scope === b[i].scope);
 
 /**
  * @param {{
  *   registry: () => Promise<object | null>,     // the scene:extension registry
- *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.running out)
+ *   local?: { get(): object, swap(fn): object }, // the stage's local atom (local.running out)
+ *   wanted?: (metas: object[], doc: object) => { id, meta, scope }[],  // the running set (activeSet)
  *   makeApi: (rec: object) => { api: object, release: () => void },
  *   makeDropContext?: (id: string, opts?: { edit? }) => object,
  *   busy?: (id: string) => boolean,             // a body entered, the held tool, an open session or a pose hold
@@ -84,9 +130,9 @@ export function createHost({
   lingerMs = LINGER_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
+  wanted = (metas, d) => activeSet({ metas, doc: d }),
 }) {
   let dead = false;
-  const wanted = (metas, d) => activeSet({ metas, doc: d });
   let isReady = false;
   let reg = null;
   // rec: { id, meta, scope, state: "loading" | "running" | "failed" | "stopped",
@@ -266,7 +312,7 @@ export function createHost({
 
   /** local.running: the started extensions, in running order. */
   function publish() {
-    if (dead) return;
+    if (dead || !local) return;
     const next = running().map(({ id, scope }) => Object.freeze({ id, scope }));
     local.swap((m) => (sameRunning(m.running, next) ? m : { ...m, running: Object.freeze(next) }));
   }
@@ -295,20 +341,7 @@ export function createHost({
    * Every running extension's `name` field, in running order.
    * @returns {{ id: string, value: any }[]}
    */
-  function collect(name) {
-    const out = [];
-    for (const r of running()) {
-      let value;
-      try {
-        value = r.instance[name];
-      } catch (err) {
-        console.warn(`[scene] extension “${r.id}”: reading ${name} failed`, err);
-        continue;
-      }
-      if (value !== undefined) out.push({ id: r.id, value });
-    }
-    return out;
-  }
+  const collect = (name) => collectFrom(running(), name);
 
   /** An extension's `input`, or undefined. */
   const inputOf = (id) => instanceOf(id)?.input ?? undefined;

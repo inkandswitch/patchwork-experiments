@@ -24,7 +24,7 @@ import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { own } from "../stage/own.js";
 import { editing } from "../stage/bodies.js";
-import { focusInput, perFocus } from "./per-focus.js";
+import { perFocus } from "./per-focus.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
@@ -391,7 +391,10 @@ export default own({
     api.style(css);
     const at = perFocus(api, (f) => handlesAt(f, api));
     return {
-      input: focusInput(at),
+      // (its focus's: what the view offers is read as it offers it)
+      get input() {
+        return at()?.input ?? null;
+      },
       update: (...args) => at()?.update(...args),
       /** The selected object's handles, at the values shown (for probes and tests). */
       handles: () => at()?.handles() ?? [],
