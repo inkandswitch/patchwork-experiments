@@ -176,8 +176,9 @@ function play(c) {
   return { problems: [], aboard };
 }
 
-// Every arena twice: its edges where they're written, on the 10 cm cells' lines (which is where the
-// bake's gap shows, below), and moved 3 mm off them, where a feature usually is.
+// Every arena twice: its edges where they're written, on the 10 cm cells' lines (where a side lies
+// on the boundary of two columns, and makes a floor in neither but its own: the bake's step 2), and
+// moved 3 mm off them, where a feature usually is.
 const OFF = 0.3;
 const offGrid = (a) => ({
   ...a,
@@ -195,20 +196,6 @@ const CASES = [
   { ...ARENAS.at(-1), name: "everything, rafted touching, in the water", other: OTHERS.find((o) => o.side === 0 && o.gap === 0 && o.rail && o.wet) },
 ];
 
-// What these cases found and nobody has fixed yet, by case name: the test
-// asks that exactly these fail, so a fix (or a new failure) shows here.
-// All three are one gap in the bake: a box's or ramp's side lying exactly on
-// a line between 10 cm columns also makes a cell at its height in the
-// column outside it (the column's square is closed, and the triangle
-// touches it along that line), so the walker can stand on that cell up to
-// a column's width beyond the edge: the lip's 1 cm, the crate's 45 cm and
-// the ramp's height, over the floor. Moved 3 mm off the lines, every
-// arena passes. Found by these cases on 2026-11-14; the seeded random test
-// they replaced never walked onto such a cell. Fix in the bake (a triangle
-// must cover part of a column's open square to make a cell there), then
-// empty this set (FOLLOWUPS "Final fixer").
-const KNOWN_GAPS = new Set(["lip", "crate", "ramp 30° facing 0"]);
-
 describe("the walker, over every arena feature and every kind of step", () => {
   it("the legs cover every key combination, every heading, both ends of dt and every pose", () => {
     const steps = LEGS.flat();
@@ -225,18 +212,15 @@ describe("the walker, over every arena feature and every kind of step", () => {
     () => {
       const t0 = performance.now();
       const failed = [];
-      const gaps = [];
       const ashore = [];
       for (const c of CASES) {
         const { problems: bad, aboard } = play(c);
-        if (KNOWN_GAPS.has(c.name)) gaps.push([c.name, bad.length > 0]);
-        else if (bad.length) failed.push(`${c.name}: ${bad.slice(0, 3).join("; ")}`);
+        if (bad.length) failed.push(`${c.name}: ${bad.slice(0, 3).join("; ")}`);
         // a case that starts on deck spends most of its checks aboard, among the features
         else if (!c.other?.wet && aboard < 0.75 * LEGS.length * (LEG + 1)) ashore.push(`${c.name}: aboard ${aboard}`);
       }
       expect(ashore).toEqual([]);
       expect(failed).toEqual([]);
-      expect(gaps).toEqual([...KNOWN_GAPS].map((name) => [name, true]));
       // a quiet machine runs these in a few seconds; this only catches something pathological
       expect(performance.now() - t0).toBeLessThan(60_000);
     },
