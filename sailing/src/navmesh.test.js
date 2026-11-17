@@ -172,8 +172,9 @@ describe("the bake", { timeout: 60_000 }, () => {
 
 // Step 2's rule, case by case: a side lying on a line between columns is on the boundary of both
 // squares, so it is an obstacle in both but a floor in neither but its own (DESIGN.md, "The bake").
-// Each case beside its twin moved 3 mm in off the line, where nothing of it reaches the column
-// outside. At 10 cm cells, as the walker's enumerated cases bake.
+// Each case against its twin moved 3 mm in off the line, where nothing of it reaches the column
+// outside, and its twin moved 3 mm out over the line, where the column outside holds a floor by
+// the same rule: the boundary pinned from both sides. At 10 cm cells, as the walker's cases bake.
 describe("a side on a column line makes no floor outside it", { timeout: 60_000 }, () => {
   const P10 = { ...DECK, cell: 0.1 };
   const IN = 0.003;
@@ -193,53 +194,144 @@ describe("a side on a column line makes no floor outside it", { timeout: 60_000 
     }
     return out;
   };
+  /** Kept cells' centres above the ground, as [x, z, y] to the millimetre. */
+  const raised = (mesh) => {
+    const out = [];
+    for (let a = 0; a < mesh.count; a++) {
+      const p = pointOf(mesh, a, 0.5, 0.5);
+      if (p[1] !== 0) out.push([+p[0].toFixed(3), +p[2].toFixed(3), +p[1].toFixed(3)]);
+    }
+    return out.sort((u, v) => u[0] - v[0] || u[1] - v[1] || u[2] - v[2]);
+  };
   const HEIGHTS = { "1 cm lip": 0.01, "15 cm stair": 0.15, "45 cm crate": 0.45, "120 cm wall": 1.2 };
   const SIDES = { "−X": MX, "+X": PX, "−Z": MZ, "+Z": PZ };
-  /** A box on the floor over [−0.5, 0.5]², every side 3 mm in from its line but side `s` when `on`. */
-  const boxOf = (h, s, on) => {
+  const AT = { "on the line": 0, "3 mm out over it": IN };
+  /** A box on the floor over [−0.5, 0.5]², every side 3 mm in from its line but side `s`, `out` beyond it. */
+  const boxOf = (h, s, out) => {
     const min = [-0.5 + IN, 0, -0.5 + IN];
     const max = [0.5 - IN, h, 0.5 - IN];
-    if (on) [() => (min[0] = -0.5), () => (max[0] = 0.5), () => (min[2] = -0.5), () => (max[2] = 0.5)][s]();
+    if (out != null) [() => (min[0] = -0.5 - out), () => (max[0] = 0.5 + out), () => (min[2] = -0.5 - out), () => (max[2] = 0.5 + out)][s]();
     return { min, max, inside: (x, z) => x > min[0] && x < max[0] && z > min[2] && z < max[2] };
   };
-  const BOXES = Object.entries(HEIGHTS).flatMap(([hn, h]) => Object.entries(SIDES).flatMap(([sn, s]) => [true, false].map((on) => ({ name: `${hn}, side ${sn}, ${on ? "on the line" : "3 mm off it"}`, h, s, on }))));
+  const BOXES = Object.entries(HEIGHTS).flatMap(([hn, h]) =>
+    Object.entries(SIDES).flatMap(([sn, s]) => Object.entries(AT).map(([an, out]) => ({ name: `${hn}, side ${sn} ${an}`, h, s, out }))),
+  );
 
-  it("the table: 4 heights × 4 sides × on the line or off it", () => expect(BOXES.length).toBe(32));
+  it("the table: 4 heights × 4 sides × on the line or 3 mm out over it", () => expect(BOXES.length).toBe(32));
 
-  it.each(BOXES)("$name: no kept floor above the ground outside it; its top as its off-line twin's", ({ h, s, on }) => {
-    const b = boxOf(h, s, on);
+  it.each(BOXES)("$name: its top as its in-twin's; outside, a floor only where it reaches past the line", ({ h, s, out }) => {
+    const b = boxOf(h, s, out);
     const got = split(sound10([...floor(), ...box(b.min, b.max)]), b.inside);
-    // the column just outside the side, and every other outside the box: the ground or nothing
-    for (const [i, k, y] of got.out) expect([i, k, y]).toEqual([i, k, 0]);
-    const twin = boxOf(h, s, false);
-    const off = split(bake({ triangles: [...floor(), ...box(twin.min, twin.max)], seeds: [] }, P10), twin.inside);
-    expect(got.in).toEqual(off.in);
+    const twin = boxOf(h, s, null);
+    const inner = split(bake({ triangles: [...floor(), ...box(twin.min, twin.max)], seeds: [] }, P10), twin.inside);
+    // on the line, the in-twin's exactly; out over it, those and maybe more by the edge (the column
+    // outside now holds a floor at the top, so erosion there finds a floor reached)
+    if (out === 0) expect(got.in).toEqual(inner.in);
+    else expect(got.in).toEqual(expect.arrayContaining(inner.in));
     expect(got.in.length).toBeGreaterThan(0);
     for (const [, , y] of got.in) expect(y).toBeCloseTo(h, 6);
-    // a side a step high or less: the ground beside it is exactly the twin's, edge and all
-    if (h <= P10.step) expect(got.out).toEqual(off.out);
+    // outside: the ground, but for the row of columns the side reaches into, at its top when that's
+    // a step (a wall's is eroded: no floor in its disc is reached)
+    const row = [];
+    if (out > 0 && h <= P10.step) {
+      for (let v = -0.45; v < 0.5; v += 0.1) {
+        const [x, z] = [[-0.55, v], [0.55, v], [v, -0.55], [v, 0.55]][s];
+        row.push([+x.toFixed(3), +z.toFixed(3), h]);
+      }
+    }
+    const up = got.out.filter(([, , y]) => y !== 0).length;
+    expect(up).toBe(row.length);
+    if (row.length) expect(raised(bake({ triangles: [...floor(), ...box(b.min, b.max)], seeds: [] }, P10)).filter(([x, z]) => !b.inside(x, z))).toEqual(row.sort((u, v) => u[0] - v[0] || u[1] - v[1]));
+    // a side a step high or less, on the line: the ground beside it is exactly the in-twin's, edge and all
+    if (out === 0 && h <= P10.step) expect(got.out).toEqual(inner.out);
   });
 
   // A 30° ramp 1.5 m long (its high end 0.87 up, above a step), rising toward each of the four
-  // ways, its high end on the line 0.8 out or 3 mm short of it; its long sides 3 mm in.
-  const RAMPS = [0, 1, 2, 3].flatMap((dir) => [true, false].map((on) => ({ name: `30° ramp facing ${dir}, high end ${on ? "on the line" : "3 mm off it"}`, dir, on })));
-  const rampOf = (dir, on) => {
+  // ways, its high end on the line 0.8 out or 3 mm past it; its long sides 3 mm in. Against its
+  // twin 3 mm short of the line.
+  const RAMPS = [0, 1, 2, 3].flatMap((dir) => Object.entries(AT).map(([an, out]) => ({ name: `30° ramp facing ${dir}, high end ${an}`, dir, out })));
+  const rampOf = (dir, out) => {
     const t = Math.tan(Math.PI / 6);
-    const [u0, u1, w] = [-0.7, on ? 0.8 : 0.8 - IN, 0.5 - IN];
+    const [u0, u1, w] = [-0.7, 0.8 + out, 0.5 - IN];
     const [cs, sn] = [[1, 0], [0, 1], [-1, 0], [0, -1]][dir];
     const at = (u, v) => [u * cs - v * sn, (u - u0) * t, u * sn + v * cs];
     const [a, b, c, d] = [at(u0, -w), at(u1, -w), at(u1, w), at(u0, w)];
     return { triangles: [...a, ...b, ...c, ...a, ...c, ...d], inside: (x, z) => Math.abs(-x * sn + z * cs) < w && x * cs + z * sn > u0 && x * cs + z * sn < u1 };
   };
 
-  it("the table: 4 facings × on the line or off it", () => expect(RAMPS.length).toBe(8));
+  it("the table: 4 facings × on the line or 3 mm out over it", () => expect(RAMPS.length).toBe(8));
 
-  it.each(RAMPS)("$name: no kept floor above the ground outside it; its slope as its off-line twin's", ({ dir, on }) => {
-    const r = rampOf(dir, on);
+  it.each(RAMPS)("$name: no kept floor above the ground outside it; its slope as its in-twin's", ({ dir, out }) => {
+    const r = rampOf(dir, out);
     const got = split(sound10([...floor(), ...r.triangles]), r.inside);
+    // (3 mm out, the column past the line holds a floor at the ramp's top, which erosion drops: a
+    // drop of 0.87 in its disc. It is reached, though, so the high end inside may keep more.)
     for (const [i, k, y] of got.out) expect([i, k, y]).toEqual([i, k, 0]);
-    const twin = rampOf(dir, false);
-    expect(got.in).toEqual(split(bake({ triangles: [...floor(), ...twin.triangles], seeds: [] }, P10), twin.inside).in);
+    const twin = rampOf(dir, -IN);
+    const inner = split(bake({ triangles: [...floor(), ...twin.triangles], seeds: [] }, P10), twin.inside).in;
+    if (out === 0) expect(got.in).toEqual(inner);
+    else expect(got.in).toEqual(expect.arrayContaining(inner));
     expect(got.in.some(([, , y]) => y > P10.step)).toBe(true);
+  });
+
+  // A zero-thickness fence, z in [−0.5, 0.5], on the line x = 0.3 or 3 mm off it. On the line it
+  // is all boundary: an obstacle in both columns, a floor in neither, and erosion measures a step
+  // against it from both (the floor's `top` is its interval's, the fence's). Off it, its top is a
+  // floor where it's a step, as any lip.
+  const FENCES = Object.entries(HEIGHTS)
+    .filter(([hn]) => hn !== "15 cm stair")
+    .flatMap(([hn, h]) => [0.3, 0.3 + IN].map((x0) => ({ name: `${hn} fence ${x0 === 0.3 ? "on the line" : "3 mm off it"}`, h, x0 })));
+  const fence = (x0, h, z0 = -0.5, z1 = 0.5) => {
+    const [a, b, c, d] = [[x0, 0, z0], [x0, 0, z1], [x0, h, z1], [x0, h, z0]];
+    return [...a, ...b, ...c, ...a, ...c, ...d];
+  };
+
+  it("the table: 3 heights × on the line or off it", () => expect(FENCES.length).toBe(6));
+
+  it.each(FENCES)("$name: B1–B7 hold; a floor on its top only off the line and a step high", ({ h, x0 }) => {
+    const mesh = sound10([...floor(), ...fence(x0, h)]);
+    const row = [];
+    if (x0 !== 0.3 && h <= P10.step) for (let v = -0.45; v < 0.5; v += 0.1) row.push([0.35, +v.toFixed(3), h]);
+    expect(raised(mesh)).toEqual(row);
+    // a wall: no cell within the body's radius of it, on the line as off it
+    if (h > P10.step) for (let a = 0; a < mesh.count; a++) {
+      const p = pointOf(mesh, a, 0.5, 0.5);
+      if (Math.abs(p[2]) < 0.5) expect(Math.abs(p[0] - x0)).toBeGreaterThan(P10.radius);
+    }
+  });
+
+  // A cage: 1.2 m fences on every line from −1.5 to 1.5 both ways, so every column inside is
+  // walled on all four boundaries and holds nothing but the ground. Erosion's fast path must not
+  // take those columns as plain: each floor's interval top is the fences', above its own.
+  it("a cage of fences on every line: nothing kept inside it", () => {
+    const t = [...floor([-3, 3], [-3, 3])];
+    for (let n = -15; n <= 15; n++) {
+      t.push(...fence(n / 10, 1.2, -1.5, 1.5));
+      const [a, b, c, d] = [[-1.5, 0, n / 10], [1.5, 0, n / 10], [1.5, 1.2, n / 10], [-1.5, 1.2, n / 10]];
+      t.push(...a, ...b, ...c, ...a, ...c, ...d);
+    }
+    const mesh = sound10(t);
+    for (let a = 0; a < mesh.count; a++) {
+      const p = pointOf(mesh, a, 0.5, 0.5);
+      expect(Math.abs(p[0]) < 1.5 && Math.abs(p[2]) < 1.5).toBe(false);
+    }
+  });
+
+  // A wall 30 cm high whose top edge is on the line x = 0.3 and whose foot at z = +0.45 leans d
+  // into the column outside: a sliver of it meets that column's open square, below its top. A
+  // floor there (rule b, a step) is at the sliver's top, never at the top only the line reaches:
+  // B1 by construction, however thin the sliver (d at a float32 GLB vertex's offset, and above).
+  it.each([1e-8, 1e-6])("a wall on a line leaning %s into the column outside: its floor at the sliver's top", (d) => {
+    const t = [...floor(), 0.3, 0, -0.45, 0.3 + d, 0, 0.45, 0.3, 0.3, -0.45, 0.3, 0.3, -0.45, 0.3 + d, 0, 0.45, 0.3, 0.3, 0.45];
+    const mesh = sound10(t);
+    const up = raised(mesh);
+    expect(up.length).toBeGreaterThan(0);
+    // the wall's height where it's 1e-9 (the open square's margin) past the line (to rounding:
+    // 0.3 + d is a double), well under the 0.3 the line reaches
+    const top = 0.3 * (1 - 1e-9 / d);
+    for (let a = 0; a < mesh.count; a++) {
+      const p = pointOf(mesh, a, 0.5, 0.5);
+      if (p[1] !== 0) expect(p[0] > 0.3 && p[1] < top + 1e-7).toBe(true);
+    }
   });
 });

@@ -98,21 +98,16 @@ const CLIP_TMP = new Float64Array(30);
 const OPEN_X = new Float64Array(30);
 const OPEN_XZ = new Float64Array(30);
 
-/** A rasterised piece's kind: steep, walkable, or touching the column's square only along its boundary. */
-const STEEP = 0;
-const WALKABLE = 1;
-const EDGE = 2;
-
 /**
- * Does a polygon inside the closed square [x0, x1] × [z0, z1] meet its open square? (The square
- * shrunk by EPS, closed: the same EPS that widens the closed square, so a piece lying on a column
- * line is on the boundary of both columns and meets neither open square.) navcheck's `supported`
- * asks the same of the raw triangles.
+ * The part of a polygon inside the closed square [x0, x1] × [z0, z1] that is in its open square
+ * (the square shrunk by EPS, closed: the same EPS that widens the closed square, so a piece lying
+ * on a column line is on the boundary of both columns and in neither open square), into OPEN_XZ.
+ * navcheck's `supported` asks the same of the raw triangles. @returns its point count, 0 if none
  */
-function meetsOpen(poly, n, x0, x1, z0, z1) {
+const openPart = (poly, n, x0, x1, z0, z1) => {
   const m = clipAxis(poly, n, OPEN_X, 0, x0 + 2 * EPS, x1 - 2 * EPS);
-  return m > 0 && clipAxis(OPEN_X, m, OPEN_XZ, 2, z0 + 2 * EPS, z1 - 2 * EPS) > 0;
-}
+  return m > 0 ? clipAxis(OPEN_X, m, OPEN_XZ, 2, z0 + 2 * EPS, z1 - 2 * EPS) : 0;
+};
 const TRI = new Float64Array(9);
 const STRIP = new Float64Array(30);
 const PIECE = new Float64Array(30);
@@ -183,9 +178,10 @@ export function bake(input, params = NAV) {
   const X = (i) => (I0 + i) * c;
   const Z = (k) => (K0 + k) * c;
 
-  // 1. rasterise: per column, [ymin, ymax, triangle, kind] for each triangle in its closed square,
-  // its kind STEEP or WALKABLE where it meets the open square, EDGE where it only touches the
-  // square's boundary (a wall or a top on a column line): an obstacle there, never a floor
+  // 1. rasterise: per column, [ymin, ymax, triangle, oymin, oymax] for each triangle in its closed
+  // square: its y-range there (an obstacle), and its y-range where it meets the open square (what
+  // can hold a floor up), [∞, −∞] where it only touches the square's boundary (a wall or a top on
+  // a column line: an obstacle there, never a floor)
   const raw = new Array(ncol);
   const planes = new Float64Array(nt * 4); // walkable: [y0 at origin, gx, gz, 1]
   for (let t = 0; t < nt; t++) {
@@ -224,9 +220,8 @@ export function bake(input, params = NAV) {
     const ty0 = Math.min(T[o + 1], T[o + 4], T[o + 7]);
     const ty1 = Math.max(T[o + 1], T[o + 4], T[o + 7]);
     if (ia === ib && ka === kb) {
-      // inside one column: its own y-range
-      // (the bounds are EPS inside the square: the triangle meets the open square)
-      (raw[ka * nx + ia] ??= []).push(ty0, ty1, t, walk ? WALKABLE : STEEP);
+      // inside one column: its own y-range, both (its bounds are EPS inside the square: in the open square)
+      (raw[ka * nx + ia] ??= []).push(ty0, ty1, t, ty0, ty1);
       continue;
     }
     // clipped to each row's strip once, then the strip to each column in it
@@ -252,8 +247,15 @@ export function bake(input, params = NAV) {
           if (y < lo) lo = y;
           if (y > hi) hi = y;
         }
-        const open = meetsOpen(PIECE, np, X(i), X(i + 1), Z(k), Z(k + 1));
-        (raw[k * nx + i] ??= []).push(lo, hi, t, open ? (walk ? WALKABLE : STEEP) : EDGE);
+        let olo = Infinity;
+        let ohi = -Infinity;
+        const no = openPart(PIECE, np, X(i), X(i + 1), Z(k), Z(k + 1));
+        for (let p = 0; p < no; p++) {
+          const y = OPEN_XZ[p * 3 + 1];
+          if (y < olo) olo = y;
+          if (y > ohi) ohi = y;
+        }
+        (raw[k * nx + i] ??= []).push(lo, hi, t, olo, ohi);
       }
     }
   }
@@ -272,14 +274,14 @@ export function bake(input, params = NAV) {
     ivStart[col] = ivLo.length;
     const r = raw[col];
     if (!r) continue;
-    const n = r.length / 4;
+    const n = r.length / 5;
     // insertion sort by (ymin, ymax): columns hold a handful
     order.length = n;
     for (let a = 0; a < n; a++) {
       let b = a;
-      const lo = r[a * 4];
-      const hi = r[a * 4 + 1];
-      while (b > 0 && (r[order[b - 1] * 4] > lo || (r[order[b - 1] * 4] === lo && r[order[b - 1] * 4 + 1] > hi))) {
+      const lo = r[a * 5];
+      const hi = r[a * 5 + 1];
+      while (b > 0 && (r[order[b - 1] * 5] > lo || (r[order[b - 1] * 5] === lo && r[order[b - 1] * 5 + 1] > hi))) {
         order[b] = order[b - 1];
         b--;
       }
@@ -292,21 +294,23 @@ export function bake(input, params = NAV) {
     let a = 0;
     while (a < n) {
       const first = a;
-      let lo = r[order[a] * 4];
-      let hi = r[order[a] * 4 + 1];
+      let lo = r[order[a] * 5];
+      let hi = r[order[a] * 5 + 1];
       a++;
       // overlapping, or a gap no body's band could use (B2 needs H − step clear, a fit H): one interval
-      while (a < n && r[order[a] * 4] - hi < H - step - TOL) {
-        hi = Math.max(hi, r[order[a] * 4 + 1]);
+      while (a < n && r[order[a] * 5] - hi < H - step - TOL) {
+        hi = Math.max(hi, r[order[a] * 5 + 1]);
         a++;
       }
-      // the floor, judged on the pieces that meet the column's open square alone: an EDGE piece
-      // (a wall or a top lying on a column line) is in the interval, an obstacle, but holds
-      // nothing up here. `own` is the top of the others; the floor is there or nowhere.
+      // the floor, judged on the pieces' parts in the column's open square alone: a piece touching
+      // it only along its boundary (a wall or a top on a column line) is in the interval, an
+      // obstacle, but holds nothing up here. `own` is the top of those parts; the floor is there
+      // or nowhere, and whatever rule makes it, a triangle meets the open square at its height (B1).
       let own = -Infinity;
-      for (let b = first; b < a; b++) if (r[order[b] * 4 + 3] !== EDGE) own = Math.max(own, r[order[b] * 4 + 1]);
+      for (let b = first; b < a; b++) own = Math.max(own, r[order[b] * 5 + 4]);
       // (a): the walkable triangle reaching `own` that's highest at the centre; coplanar ties
-      // (a quad's two halves) share one plane, their ranges joined, so triangle order can't matter
+      // (a quad's two halves) share one plane, their ranges joined, so triangle order can't matter.
+      // Its surface is clamped to its range in the open square: there it meets a triangle.
       let best = -1;
       let bestY = -Infinity;
       let bestGx = 0;
@@ -315,25 +319,27 @@ export function bake(input, params = NAV) {
       let bestHi = -Infinity;
       let below = false;
       for (let b = first; b < a; b++) {
-        const e = order[b] * 4;
-        if (r[e + 3] !== WALKABLE) continue;
+        const e = order[b] * 5;
         const t = r[e + 2];
-        if (r[e + 1] >= own - TOL) {
+        const olo = r[e + 3];
+        const ohi = r[e + 4];
+        if (!planes[t * 4 + 3] || ohi === -Infinity) continue;
+        if (ohi >= own - TOL) {
           const gx = planes[t * 4 + 1];
           const gz = planes[t * 4 + 2];
           const y = planes[t * 4] + gx * cx + gz * cz;
           if (y === bestY && gx === bestGx && gz === bestGz) {
-            bestLo = Math.min(bestLo, r[e]);
-            bestHi = Math.max(bestHi, r[e + 1]);
+            bestLo = Math.min(bestLo, olo);
+            bestHi = Math.max(bestHi, ohi);
           } else if (y > bestY || (y === bestY && (gx < bestGx || (gx === bestGx && gz < bestGz)))) {
             best = e;
             bestY = y;
             bestGx = gx;
             bestGz = gz;
-            bestLo = r[e];
-            bestHi = r[e + 1];
+            bestLo = olo;
+            bestHi = ohi;
           }
-        } else if (r[e + 1] >= own - step - TOL) below = true;
+        } else if (ohi >= own - step - TOL) below = true;
       }
       // (b): steep stuff reaching `own`, a walkable top within a step under it: flat at `own`
       if (best < 0 && below) {
@@ -345,7 +351,8 @@ export function bake(input, params = NAV) {
         floor = F.col.length;
         F.col.push(col);
         F.iv.push(ivLo.length);
-        // the interval's top, everything in it: what erosion measures a step against
+        // the interval's top, everything in it, what's on the boundary too: what erosion measures a
+        // step against (a fence on a line stands in both columns), and whether that's above `own`
         F.top.push(hi);
         F.edged.push(hi > own ? 1 : 0);
         F.yc.push(bestY);
@@ -441,12 +448,13 @@ export function bake(input, params = NAV) {
   const colSeen = new Int32Array(ncol);
   const queue = new Int32Array(nf);
   let stamp = 0;
-  // The fast path, exact where it applies. A column is "plain" when it has one alive floor, no
-  // EDGE piece above it (so its interval's top is its own), open sky over it, and each of its four neighbours is one alive floor connected to it, no more than
-  // δ above or below. In a square window of plain columns round f, every disc column's floor is
-  // reached (the disc is 4-connected), none is more than 4K·δ + (f's own slope) above f, and all
-  // have open sky: so the BFS below would keep f, with unbounded headroom. A 2D prefix sum of
-  // the columns that aren't plain answers "is the window all plain?" at once.
+  // The fast path, exact where it applies. A column is "plain" when it has one alive floor, nothing
+  // on its boundary above it (so its interval's top is its own: not `edged`), open sky over it, and
+  // each of its four neighbours is one alive floor connected to it, no more than δ above or below.
+  // In a square window of plain columns round f, every disc column's floor is reached (the disc is
+  // 4-connected), none is more than 4K·δ + (f's own slope) above f, and all have open sky: so the
+  // BFS below would keep f, with unbounded headroom. A 2D prefix sum of the columns that aren't
+  // plain answers "is the window all plain?" at once.
   const delta = (step - Math.tan((P.slope * Math.PI) / 180) * c * Math.SQRT2 - TOL) / (4 * disc.K + 2);
   const notPlain = new Int32Array((nx + 1) * (nz + 1));
   for (let k = 0; k < nz; k++) {
