@@ -1,21 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { layOut, differences, anchorage, placeDoc, SKY, ATTRIBUTION, SHORT_CREDIT, PROVENANCE } from "./template-ucluelet.js";
-import { headTo, AT_ANCHOR, CREDIT } from "./template.js";
+import { layOut, differences, anchorage, placeDoc, ATTRIBUTION, SHORT_CREDIT, PROVENANCE } from "./template-ucluelet.js";
+import { headTo, AT_ANCHOR, CREDIT, PLACE } from "./template.js";
 import { WIND, HOME, SKIES, EXPECTED, ANCHORAGE, ORIGIN, GRID, WATER_COLOUR } from "./ucluelet.js";
-import { skyOffer, skyTrait } from "./sky.js";
 import { localFrame } from "./tmerc.js";
 import { sceneCtx } from "./test/scene-ctx.js";
 
+/** The weather the template writes under Ukee grey, written out (the weather package's tests draw it: Ukee grey exactly, the sun within a degree of the old hand-set one). */
+const UKEE_GREY_WEATHER = (seed) => ({ lat: 48.95, lon: -125.558, date: "2026-07-15", hour: 15, offset: -7, wind: 5, from: 300, seed, cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 });
+
 describe("the Ucluelet template's layout", () => {
-  it("puts the terrain at the origin, locked, with its credit and Ucluelet's sky; the north-westerly; the harbour's open water with a sea at 0.6; the home view over the boatyard", async () => {
+  it("puts the terrain at the origin, locked, the place with its credit; the weather: Ukee grey and the north-westerly; the harbour's open water with a sea at 0.6; the home view over the boatyard", async () => {
     const { ctx, scene } = sceneCtx({ sailing: false });
     const ids = await layOut(ctx, "automerge:terrain", { seed: 7 });
     const d = scene.doc();
     const t = d.objects[ids.terrain];
     expect(t).toMatchObject({ providerId: "terrain-mesh", locked: true, infoUrl: "automerge:terrain", infoToolId: "terrain" });
-    expect(t.traits[CREDIT]).toEqual({});
-    expect(t.traits[SKY]).toEqual(SKIES["ukee-grey"]);
-    expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: 5, from: 300 }, seed: 7 });
+    // the place, with no sky of its own: exactly its credit and the place
+    expect(t.traits).toStrictEqual({ [CREDIT]: {}, [PLACE]: {} });
+    // the world's weather: Ucluelet (the weather's Place), 15:00 on 15 July on BC's clock, the north-westerly (ECCC Amphitrite Point), Ukee grey
+    expect(d.traits).toStrictEqual({ weather: UKEE_GREY_WEATHER(7) });
     const sea = d.objects[ids.sea];
     // the Sea keeps Ucluelet's footprint (its grid, 20.48 km a side), 130 m deep, where its world has no open water (water/WATER.md, "Clipped open water")
     const span = (GRID.n - 1) * GRID.cell;
@@ -65,25 +68,22 @@ describe("the Ucluelet template's layout", () => {
   });
 });
 
-describe("terrain.sky", () => {
-  it("offers its sky, fog, sun and exposure as the atmosphere, and nothing else", () => {
-    expect(skyOffer({ ...SKIES["ukee-grey"], extra: 1 })).toEqual({ sky: SKIES["ukee-grey"].sky, fog: SKIES["ukee-grey"].fog, sun: SKIES["ukee-grey"].sun, exposure: 1.05, clouds: { cover: 1, contrast: 0.12, scale: 500, base: 600 } });
-    expect(skyOffer({})).toBe(null);
-    expect(skyOffer(null)).toBe(null);
+describe("its skies: a weather preset each (the template's sky option)", () => {
+  // [sky, the weather's sky fields it sets]: everything else as under Ukee grey
+  it.each([
+    ["ukee-grey", { cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 }],
+    ["marine-layer", { cover: 1, clouds: "stratus", base: 100, visibility: 1000 }],
+    ["clear-afternoon", { cover: 0, clouds: "cumulus", base: 1200, visibility: 20000 }],
+  ])("%s", async (sky, fields) => {
+    const { ctx, scene } = sceneCtx({ sailing: true });
+    await layOut(ctx, "automerge:terrain", { seed: 7, sky });
+    expect(scene.doc().traits).toStrictEqual({ weather: { ...UKEE_GREY_WEATHER(7), ...fields } });
   });
-  it("takes the lowest id's among shown objects", () => {
-    const doc = { objects: { b: { traits: { "terrain.sky": { fog: { far: 2 } } } }, a: { visible: false, traits: { "terrain.sky": { fog: { far: 1 } } } }, c: { traits: { "terrain.sky": { fog: { far: 3 } } } } } };
-    expect(skyTrait(doc)).toEqual({ fog: { far: 2 } });
-    expect(skyTrait({ objects: {} })).toBe(null);
-  });
-  it("offers it through ambient(), a new value only when the trait changes", async () => {
-    const { default: ext } = await import("./sky.js");
-    let doc = { objects: { o1: { traits: { "terrain.sky": SKIES["marine-layer"] } } } };
-    const inst = ext.create({ doc: () => doc });
-    const a = inst.ambient();
-    expect(a.atmosphere.fog).toEqual(SKIES["marine-layer"].fog);
-    expect(inst.ambient()).toBe(a);
-    doc = { objects: {} };
-    expect(inst.ambient()).toBe(null);
+  it("there are exactly these three", () => expect(Object.keys(SKIES)).toEqual(["ukee-grey", "marine-layer", "clear-afternoon"]));
+  it.each([["drizzle"], ["toString"], [""]])("a sky it hasn't (%j) is refused, and nothing is written", async (sky) => {
+    const { ctx, scene } = sceneCtx({ sailing: true });
+    const before = JSON.stringify(scene.doc());
+    await expect(layOut(ctx, "automerge:terrain", { seed: 7, sky })).rejects.toThrow(RangeError);
+    expect(JSON.stringify(scene.doc())).toBe(before);
   });
 });

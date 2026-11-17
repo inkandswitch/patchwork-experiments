@@ -5,14 +5,15 @@ import { forestRoof, farRoof, crestAt, inClearcut, patchAt, FAR_ROOF } from "./f
 import { bakeStratus } from "./cloud.js";
 import { hexToLinear } from "./glb.js";
 import { COVER } from "./cover.js";
-import { SKIES, LOOK } from "./ucluelet.js";
+import { LOOK } from "./ucluelet.js";
+import { UKEE_GREY } from "./test/ukee-grey.js";
 
 const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 // three.js's linear fog: (d - near) / (far - near), held to [0, 1]
 const fogAt = (d, { near, far }) => Math.max(0, Math.min(1, (d - near) / (far - near)));
 
 describe("Ukee grey's fog", () => {
-  const fog = SKIES["ukee-grey"].fog;
+  const fog = UKEE_GREY.fog;
   it("veils Ozzard (5 km) by at most 0.3 and the Mackenzie Range (15 km on) by at least 0.7, rising with distance (every km to 20)", () => {
     let last = -1;
     for (let km = 0; km <= 20; km++) {
@@ -97,7 +98,7 @@ describe("the far roof (outside the skin's zone)", () => {
     for (let v = 0; v < r.colors.length / 3; v++) L.push(lum([r.colors[v * 3], r.colors[v * 3 + 1], r.colors[v * 3 + 2]]));
     L.sort((a, b) => a - b);
     expect(L[Math.floor(L.length * 0.9)] / L[Math.floor(L.length * 0.1)]).toBeGreaterThanOrEqual(1.6);
-    const horizon = lum(hexToLinear(SKIES["ukee-grey"].sky.horizon));
+    const horizon = lum(hexToLinear(UKEE_GREY.horizon));
     expect(L.at(-1)).toBeLessThanOrEqual(horizon);
   });
 });

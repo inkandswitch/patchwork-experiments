@@ -47,6 +47,17 @@ export const DEM_TO_MWL = -0.68;
 export const WIND = Object.freeze({ speed: 4, from: 235, scale: 0.5, source: "ECCC climate-hourly, station 1012475 (Discovery Island), Jul–Aug 2019–2025, 13:00–18:00 PDT (LOCAL_HOUR 12–17 LST), 2,599 hours: from 235° (speed-weighted resultant; 237° unweighted), median 3.3 m/s, p75 4.2, p90 5.3" });
 
 /**
+ * The sky a summer afternoon here is shown under, as the weather package's
+ * sky fields (its WEATHER.md, "The data": cover 0..1, the cloud kind, the
+ * cloud base in metres, visibility in metres): fair-weather cumulus over a
+ * third of the sky, 1200 m up, 10 km visibility. The bright day sailing
+ * always drew, which the weather reproduces exactly at these conditions (its
+ * "anchors"). Art direction, not a measurement: Discovery Island reports
+ * wind, not sky.
+ */
+export const SKY = Object.freeze({ name: "Fair afternoon", cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 });
+
+/**
  * OpenStreetMap as it was when this place was fetched and checked
  * (probes/fetch-cadboro.mjs): the template and Fetch data ask Overpass for
  * this moment ([date:…]), so every scene gets the same shore, and an edit

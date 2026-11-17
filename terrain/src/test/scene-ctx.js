@@ -15,9 +15,9 @@ export function sceneCtx({ sailing }) {
       placed.push(at);
       const hull = ctx.newId("o");
       ctx.change((d) => {
-        // (sailing's Sloop brings a Sea and weather only where the scene has no open water)
+        // (sailing's Sloop brings a Sea where the scene has no open water, and the air of a weather where it has none: its parts.js newWeather)
         if (!Object.values(d.objects).some((o) => o.traits?.water && !o.traits.water.size)) d.objects[ctx.newId("o")] = { name: "Sea", traits: { water: {}, "sailing.sea": { seed: 1, scale: 1 } } };
-        if (!d.traits["sailing.weather"]) d.traits["sailing.weather"] = { wind: { speed: 7, from: 45 }, seed: 1 };
+        if (!d.traits.weather) d.traits.weather = { wind: 7, from: 45, seed: 1 };
         d.objects[hull] = { name: "Sloop", parent: null, transform: { position: [...at.world.position], rotation: [...at.world.rotation], scale: 1 }, traits: { "sailing.ship": {} } };
         const mast = ctx.newId("o");
         d.objects[mast] = { name: "Mast", parent: hull };
