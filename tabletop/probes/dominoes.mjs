@@ -319,6 +319,16 @@ try {
     check("…a click on the more opens the prompt to all four, Stand on edge last", await until("prompt('b').length === 4 && /Stand on edge/.test(__p.prompt('b')[3]) && __p.more('b') === null", 3000), { prompt: await P("prompt('b')"), more: await P("more('b')") });
   }
   {
+    // a mouse going down the opened prompt a pixel at a time, from the first verb to the fourth, crosses the gaps
+    // between them: those are the prompt's (it holds still), not the world's (it would follow the pointer off)
+    const v = await P("verbsAt('b')");
+    if (v.length === 4) for (let y = Math.round(v[0].y); y <= Math.round(v[3].y); y++) await b.move(Math.round(v[0].x), y);
+    await b.rest(200);
+    const after = await P("verbsAt('b')");
+    const end = v.length === 4 ? await P(`under(${Math.round(v[0].x)}, ${Math.round(v[3].y)})`) : null;
+    check("…a mouse moving down it a pixel at a time reaches Stand on edge, the prompt still where it was, still all four", after.length === 4 && Math.abs(after[3].y - v[3].y) < 1 && /Stand on edge/.test(end ?? ""), { before: v, after, end });
+  }
+  {
     const at = await P(`aimAt(${J(standB)}, 'b')`);
     await b.click(at.x, at.y, { button: "right" });
     check("…and B's right-click menu on it still offers Stand on edge", await until("menu('b').some((m) => /Stand on edge/.test(m.text))", 3000), await P("menu('b')"));

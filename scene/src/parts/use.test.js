@@ -94,50 +94,88 @@ describe("scene.use, the pure side", () => {
     ]);
   });
 
-  // The cap: n verbs apply to the target (0..5) × none held, or the last of them held (with none applying: one held
-  // that no longer does) × the prompt as it is, or opened → what shows ("*" held) and how many more. Every verb that
-  // applies is shown or counted in more, in running order, and a held one always shows.
+  // The cap: n verbs apply to the target (0..5) × which are held (none; the first, the last of them, or one that no
+  // longer applies; the first and the last) × the prompt as it is, or opened → what shows ("*" held) and how many
+  // more. Every verb that applies is shown or counted in more, in running order, and a held one always shows: in its
+  // place, or after the rest when it no longer applies. ("first", "last" need one verb, "both" two.)
   it("shows the first three and counts the rest; opened, every one; a held one in its place among them", () => {
     const verbs = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
+    const gone = { id: "vX", key: "x", state: () => ({}), run() {} };
     const ctx = { scene, local: {} };
     const show = (out) => (out ? [out.entries.map((e) => `${e.command.id}${e.state.held ? "*" : ""}`).join(" "), out.more] : null);
+    const heldOf = { none: () => [], first: (n) => [verbs[0]], last: (n) => [verbs[n - 1]], gone: () => [gone], both: (n) => [verbs[0], verbs[n - 1]] };
+    const need = { none: 0, first: 1, last: 1, gone: 0, both: 2 };
     const want = {
       "0 none 3": null,
       "0 none ∞": null,
+      "0 gone 3": ["vX*", 0],
+      "0 gone ∞": ["vX*", 0],
       "1 none 3": ["v0", 0],
       "1 none ∞": ["v0", 0],
+      "1 first 3": ["v0*", 0],
+      "1 first ∞": ["v0*", 0],
+      "1 last 3": ["v0*", 0],
+      "1 last ∞": ["v0*", 0],
+      "1 gone 3": ["v0 vX*", 0],
+      "1 gone ∞": ["v0 vX*", 0],
       "2 none 3": ["v0 v1", 0],
       "2 none ∞": ["v0 v1", 0],
+      "2 first 3": ["v0* v1", 0],
+      "2 first ∞": ["v0* v1", 0],
+      "2 last 3": ["v0 v1*", 0],
+      "2 last ∞": ["v0 v1*", 0],
+      "2 gone 3": ["v0 v1 vX*", 0],
+      "2 gone ∞": ["v0 v1 vX*", 0],
+      "2 both 3": ["v0* v1*", 0],
+      "2 both ∞": ["v0* v1*", 0],
       "3 none 3": ["v0 v1 v2", 0],
       "3 none ∞": ["v0 v1 v2", 0],
+      "3 first 3": ["v0* v1 v2", 0],
+      "3 first ∞": ["v0* v1 v2", 0],
+      "3 last 3": ["v0 v1 v2*", 0],
+      "3 last ∞": ["v0 v1 v2*", 0],
+      "3 gone 3": ["v0 v1 vX*", 1],
+      "3 gone ∞": ["v0 v1 v2 vX*", 0],
+      "3 both 3": ["v0* v1 v2*", 0],
+      "3 both ∞": ["v0* v1 v2*", 0],
       "4 none 3": ["v0 v1 v2", 1],
       "4 none ∞": ["v0 v1 v2 v3", 0],
+      "4 first 3": ["v0* v1 v2", 1],
+      "4 first ∞": ["v0* v1 v2 v3", 0],
+      "4 last 3": ["v0 v1 v3*", 1],
+      "4 last ∞": ["v0 v1 v2 v3*", 0],
+      "4 gone 3": ["v0 v1 vX*", 2],
+      "4 gone ∞": ["v0 v1 v2 v3 vX*", 0],
+      "4 both 3": ["v0* v1 v3*", 1],
+      "4 both ∞": ["v0* v1 v2 v3*", 0],
       "5 none 3": ["v0 v1 v2", 2],
       "5 none ∞": ["v0 v1 v2 v3 v4", 0],
-      "0 one 3": ["v0*", 0],
-      "0 one ∞": ["v0*", 0],
-      "1 one 3": ["v0*", 0],
-      "1 one ∞": ["v0*", 0],
-      "2 one 3": ["v0 v1*", 0],
-      "2 one ∞": ["v0 v1*", 0],
-      "3 one 3": ["v0 v1 v2*", 0],
-      "3 one ∞": ["v0 v1 v2*", 0],
-      "4 one 3": ["v0 v1 v3*", 1],
-      "4 one ∞": ["v0 v1 v2 v3*", 0],
-      "5 one 3": ["v0 v1 v4*", 2],
-      "5 one ∞": ["v0 v1 v2 v3 v4*", 0],
+      "5 first 3": ["v0* v1 v2", 2],
+      "5 first ∞": ["v0* v1 v2 v3 v4", 0],
+      "5 last 3": ["v0 v1 v4*", 2],
+      "5 last ∞": ["v0 v1 v2 v3 v4*", 0],
+      "5 gone 3": ["v0 v1 vX*", 3],
+      "5 gone ∞": ["v0 v1 v2 v3 v4 vX*", 0],
+      "5 both 3": ["v0* v1 v4*", 2],
+      "5 both ∞": ["v0* v1 v2 v3 v4*", 0],
     };
     const got = {};
+    const counted = [];
     for (const n of [0, 1, 2, 3, 4, 5])
-      for (const held of ["none", "one"])
+      for (const which of Object.keys(heldOf))
         for (const max of [3, Infinity]) {
+          if (n < need[which]) continue;
           const collected = [{ id: "x", value: verbs.slice(0, n) }];
-          // held: the last that applies (v0, no longer applying, when none does)
-          const h = { ext: "x", command: verbs[Math.max(0, n - 1)], state: { held: true } };
-          const out = held === "none" ? promptEntries(collected, { selected: "barrel" }, ctx, max) : heldEntries(collected, "barrel", [h], ctx, max);
-          got[`${n} ${held} ${max === 3 ? 3 : "∞"}`] = show(out);
+          const held = heldOf[which](n).map((command) => ({ ext: "x", command, state: { held: true } }));
+          const out = which === "none" ? promptEntries(collected, { selected: "barrel" }, ctx, max) : heldEntries(collected, "barrel", held, ctx, max);
+          got[`${n} ${which} ${max === 3 ? 3 : "∞"}`] = show(out);
+          // the invariant, row by row: each that applies once, shown or in more; each held shown
+          const ids = (out?.entries ?? []).map((e) => e.command.id);
+          const live = verbs.slice(0, n).map((v) => v.id);
+          counted.push(ids.filter((id) => live.includes(id)).length + (out?.more ?? 0) === n && new Set(ids).size === ids.length && held.every((h) => ids.includes(h.command.id)));
         }
     expect(got).toEqual(want);
+    expect(counted.every(Boolean)).toBe(true);
   });
 
   it("while something's held: the target's verbs in their places, each held one as pressed (after the rest where it no longer applies), and as many others as fit", () => {
@@ -889,20 +927,23 @@ describe("scene.use: a button with a key is that key", () => {
     expect(b.button.isConnected).toBe(true);
   });
 
-  it("attention on another target closes it: back on the crate, three and a more again", async () => {
+  // Opened on the crate, attention goes away (another target with verbs; one with none; nothing; a carry's gesture,
+  // which takes the prompt down) and comes back: three and a more again.
+  it.each([
+    ["another target", () => s.local.swap((m) => ({ ...m, hovered: "bell" })), ["RRing"]],
+    ["nothing", () => s.local.swap((m) => ({ ...m, hovered: null })), []],
+    ["a carry", () => s.local.swap((m) => ({ ...m, gesture: { owner: "scene.carry", keys: [{ code: "KeyF", label: "Flip" }] } })), []],
+  ])("attention on %s closes it: back on the crate, three and a more again", async (_, away, there) => {
     await at("crate", "mouse");
     press(more(), "mouse");
     await settle();
     expect(verbs()).toHaveLength(5);
-    for (const [hovered, want] of [
-      ["bell", ["RRing"]],
-      ["crate", ["HLid", "JTip", "KKick"]],
-    ]) {
-      s.local.swap((m) => ({ ...m, hovered }));
-      await settle();
-      expect([hovered, verbs()]).toEqual([hovered, want]);
-    }
-    expect(more().textContent).toBe("⋯ 2 more");
+    away();
+    await settle();
+    expect(verbs()).toEqual(there);
+    s.local.swap((m) => ({ ...m, hovered: "crate", gesture: null }));
+    await settle();
+    expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
   });
 
   it("a click on more whose press was elsewhere on the view opens nothing", async () => {

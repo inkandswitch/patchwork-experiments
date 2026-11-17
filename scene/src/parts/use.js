@@ -21,7 +21,8 @@
 // context every surface passes (from, reach, hit), so a verb beyond the
 // body's reach shows disabled, "too far". It shows the first three; past
 // three, a last button, "⋯ 2 more", opens the prompt to every one of them,
-// until attention moves to another target. So every verb on attention is
+// until attention moves to another target or none (or a carry takes the
+// prompt down). So every verb on attention is
 // on the prompt, shown or one press away, and each is its own button: on
 // its key, held as long as the finger, as the first three are. Each verb's key is the resolver's (hintFor): shown
 // only when pressing it does that, so a verb whose key the body reserves
@@ -132,7 +133,7 @@ function create(api) {
   let offLoop = null;
   let offWatch = null;
   // The target whose every verb shows (its "more" pressed): JSON [stage, target], or null. Attention on any
-  // other target (or none) closes it.
+  // other target, or none, closes it, as does the prompt going while a gesture is open (`found` is null then).
   let opened = null;
   const whereOf = (stage, target) => JSON.stringify([stage ?? null, target]);
 

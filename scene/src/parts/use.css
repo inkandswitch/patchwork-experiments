@@ -17,7 +17,7 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  pointer-events: none;
+  touch-action: none;
   font-family: var(--scene-family);
   font-size: 13px;
   line-height: 1.2;
@@ -30,6 +30,19 @@
   display: none;
 }
 
+/* a verb, and the "more" past three: a pill each */
+.scene-stage
+  .use-prompt
+  :is(.use-verb, .use-more):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--use-pill);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  max-width: min(22rem, 90vw);
+}
+
 .scene-stage
   .use-prompt
   .use-verb:where(:not(.about-embed *), .about-embed .scene-tool *) {
@@ -37,15 +50,8 @@
   align-items: center;
   gap: var(--use-gap);
   padding: 4px 12px 4px 5px;
-  border-radius: var(--studio-radius-round, 9999px);
-  background: var(--use-pill);
   color: var(--use-ink);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
-  white-space: nowrap;
-  max-width: min(22rem, 90vw);
 }
 
 .scene-stage
@@ -106,13 +112,15 @@
   opacity: 0.5;
 }
 
-/* a verb is a button, for touch and a mouse (the prompt itself lets
-   presses through); one with a key is that key held, so a finger on it
-   doesn't scroll, select or call out (as touch.css's controls) */
+/* a verb is a button, for touch and a mouse, and so is the more; one
+   with a key is that key held, so a finger on it doesn't scroll, select
+   or call out (as touch.css's controls). The prompt between and beside
+   them is the prompt's too, not the world's: a pointer going from one
+   button to the next crosses it and the prompt holds still (use.js
+   follow), not running off from under it */
 .scene-stage
   .use-prompt
-  button.use-verb:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  pointer-events: auto;
+  button:is(.use-verb, .use-more):where(:not(.about-embed *), .about-embed .scene-tool *) {
   border: 0;
   font: inherit;
   cursor: pointer;
@@ -128,26 +136,12 @@
   cursor: default;
 }
 
-/* past three verbs, the last button opens the prompt to every one: the
-   same pill, quieter, as it does nothing to the world */
+/* past three verbs, the last button opens the prompt to every one:
+   quieter, as it does nothing to the world */
 .scene-stage
   .use-prompt
   button.use-more:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  pointer-events: auto;
   padding: 3px 12px;
-  border: 0;
-  border-radius: var(--studio-radius-round, 9999px);
-  background: var(--use-pill);
   color: var(--use-ink-muted);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  font: inherit;
   font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
 }

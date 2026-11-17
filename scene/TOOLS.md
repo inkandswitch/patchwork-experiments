@@ -319,7 +319,8 @@ what offers verbs; presses have one, so the body comes last there.
 each hint with the resolver that dispatches keys. A verb whose key is
 reserved shows without one and is in the menu (walking, Draw is a button,
 not D). The prompt shows three verbs and, past three, a "⋯ N more" that
-opens it to all of them (Decisions 19); the menu shows all; verbs are buttons, for
+opens it to all of them (Decisions 19); the menu shows all that show on
+"menu"; verbs are buttons, for
 touch and for a mouse: the prompt keeps the look (`data-keeps-look`, the
 router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
@@ -1529,8 +1530,9 @@ The project lead decided the five open questions on 2026-11-12.
    declared priority because every new package would have to fit into
    it. Presses and verbs keep one order, so the prompt never offers first
    what a press wouldn't reach first. What the cap costs: a fourth verb
-   is on its key, in the menu, and one press away on the prompt, its
-   "⋯ 1 more" (Decisions 19; decided unattended, 2026-11-17, lane/n11).
+   is on its key, in the menu when it shows on "menu" (Stand on edge
+   does), and one press away on the prompt, its "⋯ 1 more" (Decisions 19;
+   decided unattended, 2026-11-17, lane/n11).
 8. **Presence is drawn where it is; the clock chips are the focus path's**
    (decided unattended, 2026-11-14, presence lane). Other people (walk's
    avatars, others' selection boxes) are drawn in every stage that hears
@@ -2161,11 +2163,18 @@ The project lead decided the five open questions on 2026-11-12.
     first three verbs that apply to attention's target, in running order
     (Decisions 7), and past three a last button, "⋯ N more"; a press on it
     opens the prompt to every one, until attention is on another target
-    (or none). *Invariant:* every verb that applies on "use" to the
-    prompt's target is on the prompt, shown or counted in its more, in
-    running order; a held verb always shows, in its place, and the more
-    counts the rest (`src/parts/use.test.js`: 0 to 5 verbs × none or one
-    held × closed or opened, 24 cases). The plan was for the more to open
+    or on none, or the prompt goes (a carry's gesture takes it down).
+    *Invariant:* every verb that applies on "use" to the prompt's target
+    is on the prompt, shown or counted in its more, in running order; a
+    held verb always shows, in its place, or after the rest when it no
+    longer applies, and the more counts the rest (`src/parts/use.test.js`:
+    0 to 5 verbs × none held, the first, the last, one that no longer
+    applies, or the first and the last × closed or opened, 52 cases). The
+    prompt between and beside its buttons is the prompt's, not the
+    world's, so a mouse going down it from button to button keeps it
+    still (`tabletop/probes/dominoes.mjs`, a pixel at a time to the
+    fourth); before, a gap's pointer was the world's, and the prompt ran
+    off from under it. The plan was for the more to open
     the target's menu at the prompt; it opens the prompt instead, because
     the menu lists what shows on "menu", not on "use" (a verb shown only on
     "use" would not be there), and its rows are clicks, so a held verb
@@ -2175,4 +2184,7 @@ The project lead decided the five open questions on 2026-11-12.
     had, as a verb's is, so a lift landing on it after a verb ran on the
     press opens nothing. *Questions for the lead:* raise the cap instead
     (or none: the prompt grows with the target)? Should the opened prompt
-    close on an eye move too, not only on another target?
+    close on an eye move too, not only on another target? *Known gap:*
+    the prompt is put under the pointer and not kept inside the view, so
+    near the bottom edge its last buttons (opened, more of them) can be
+    off it; a tap or a pointer higher up brings them back.

@@ -1699,7 +1699,8 @@ A **command**:
   eye's, else the pointer): on the selection, or the first object along the look's chain
   with a keyed command shown on `"use"`, the first three in running order
   and past them a "⋯ N more" that opens the prompt to all of them until
-  attention moves to another target (TOOLS.md Decisions 19), each a button, its
+  attention moves to another target or none, or a carry takes the prompt
+  down (TOOLS.md Decisions 19), each a button, its
   key the resolver's. It shows; the key map does. A button whose verb has
   a key is that key: a press presses it (the key `keyFor` says does that
   verb then) and the lift lets it up, so a held verb lasts as long as a
