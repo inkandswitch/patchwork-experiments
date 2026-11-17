@@ -5,7 +5,8 @@
 //   node probes/touch-run.mjs [--port 4766] [--cdp 9766] [--seed 1] [--show] [--shots <dir>]
 //
 // Every press is a finger (cdp.mjs's b.touch). It checks:
-//  1. "Ship at sea" by a tap, then the HUD's come-aboard button by a tap:
+//  1. "Ship at sea" by a tap, then Come aboard on the stage's bar of tools
+//     (scene/TOOLS.md Decisions 10) by a tap:
 //     A walks her deck ("aboard", a lock body) and the pointer lock is never
 //     asked for (scene/TOOLS.md Decisions 11);
 //  2. the stage's touch pad shows aboard's declared keys by what they do:
@@ -101,12 +102,12 @@ try {
   // where a part is on her (the hull's frame): up its chain of parents
   const local = (id) => js(`(() => { const d = window.__p.doc(), hull = ${JSON.stringify(ids.hull)}; let p = [0, 0, 0]; for (let at = ${JSON.stringify(id)}; at && at !== hull; at = d.objects[at].parent) p = p.map((x, i) => x + d.objects[at].transform.position[i]); return p; })()`);
   await b.rest(1000);
-  const come = await P(`rect('.sail-hint button', 'a')`);
+  const come = await P(`rect('.toolbar .world [data-command="aboard"]', 'a')`);
   await touch.tap([come.x, come.y]);
   await until("window.__p.me('a')?.playing === true", 3000);
   await b.rest(300);
   let v = await js(VIEW);
-  check("1. a tap on the HUD's come-aboard: walking her deck, and the pointer lock is never asked for", v.body === "aboard" && v.pointer.touch === true && v.pointer.locked === false && !(await js("document.pointerLockElement != null")) && (await js("window.__asks")) === 0, { v, asks: await js("window.__asks") });
+  check("1. a tap on the bar's Come aboard: walking her deck, and the pointer lock is never asked for", v.body === "aboard" && v.pointer.touch === true && v.pointer.locked === false && !(await js("document.pointerLockElement != null")) && (await js("window.__asks")) === 0, { v, asks: await js("window.__asks") });
 
   // ─── 2. the pad ──────────────────────────────────────────────────────────
   const padAboard = await js(PAD);
