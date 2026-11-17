@@ -132,9 +132,10 @@ try {
     ctx: () => dbg.host.record("sailing")?.instance?.debug ?? null,
     me: () => P.ctx()?.crew.me() ?? null,
     read: (id) => P.ctx()?.sim.read(id) ?? null,
-    clock: () => P.ctx()?.sea.clock() ?? null,
+    /** the doc's world time, the sea's, as the sailing extension's stage api reads it */
+    clock: () => { const api = P.api("sailing"); return api ? api.clock.t() : null; },
     /** the height of the water at (x, z), asked from above (the water package's reader through sailing's oceanAt) */
-    seaAt: (x, z) => { const s = P.ctx()?.sea; const r = s?.oceanAt([x, null, z]); return r ? r.heightAt(x, z, s.clock()) : null; },
+    seaAt: (x, z) => { const s = P.ctx()?.sea; const r = s?.oceanAt([x, null, z]); return r ? r.heightAt(x, z, P.api("sailing").clock.t()) : null; },
     simulating: () => !!P.ctx()?.sim.simulating(),
     stations: (ship) => P.ctx()?.sim.stationsOf(ship) ?? null,
     place: (on, position, yaw, pitch) => P.ctx().crew.place(on, position, yaw, pitch),

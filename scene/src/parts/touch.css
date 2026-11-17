@@ -3,6 +3,16 @@
    layer. The same soft dark pill as the use prompt, so they read over a
    bright sea and a night one; a held control lit with the accent. */
 
+/* The pad lies under every other part's overlay (theirs are z-index 2,
+   stage.css; ours goes above the labels, under them all), whatever order the
+   parts installed in: a menu opened over it (the chip's, the context menu)
+   takes the finger where it is drawn, never a pad key beneath it. */
+.scene-stage
+  > .viewport
+  > .stage-overlay.touch-layer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  z-index: 1;
+}
+
 .scene-stage
   .touch-layer
   > :is(.touch-pad, .touch-buttons):where(:not(.about-embed *), .about-embed .scene-tool *) {

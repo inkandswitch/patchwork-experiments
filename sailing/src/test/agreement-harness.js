@@ -25,6 +25,7 @@
 
 import { createShip } from "../physics.js";
 import { specFor } from "../sim.js";
+import { composer } from "./rig-contract/compose.js";
 
 const DEG = Math.PI / 180;
 export const RUDDER_MAX_DEG = 35; // physics.js's RUDDER_MAX, when the contract doesn't say
@@ -279,8 +280,9 @@ export function settleVerdict(p, got) {
  * furled), and the hull's
  * resistance upright at that speed (the contract's §6.5 with no side force;
  * sailing's as the wrench with the wind moving with her, so no windage),
- * and her windage there (the wind on her hull and bare mast, which §6.1
- * leaves out: N and N·m, signed as the residuals) beside her residual.
+ * and her windage there (sailing's, sailingWindage, and §6.1's, compose's:
+ * composeWindage; N and N·m about her centre of gravity, signed as the
+ * residuals) beside her residual.
  */
 export function breakdown(contract, ship, p, compose) {
   const s = stateAt(ship, contract, p);
@@ -315,14 +317,63 @@ export function breakdown(contract, ship, p, compose) {
   const rSailing = ship.wrench({ position: [0, y, 0], quaternion: [0, 0, 0, 1] }, { velocity: [0, 0, -V], spin: [0, 0, 0] }, { sail: 0 }, still).force[2];
   const rTheirs = compose ? compose.resistanceAt(V, 0, 0).total : NaN;
 
-  // the wind on her hull and bare mast, which §6.1 leaves out: her sails
-  // stowed, in the point's wind less in air moving with her
+  return { sail: { sailing, contract: theirs }, resistance: { sailing: rSailing, contract: rTheirs }, windage: { sailing: sailingWindage(ship, s), contract: composeWindage(contract, p) }, residual: residualsOf(up) };
+}
+
+/**
+ * Sailing's windage at a state, as the residuals have it (about her centre
+ * of gravity): the wrench with her sails stowed in the point's wind, less
+ * the same in air moving with her (no relative wind anywhere: she has no
+ * spin). Nothing else in the wrench depends on the air, so that is all her
+ * windage elements, read from outside the physics.
+ */
+export function sailingWindage(ship, s) {
   const v = s.motion.velocity;
   const withHer = { water: CALM, wind: { at: (x_, z_, t_, out = [0, 0]) => ((out[0] = v[0]), (out[1] = v[2]), out) } };
   const stowed = { ...s.controls, sail: 0, furl: 1 };
-  const inWind = residualsOf(down), calm = residualsOf(ship.wrench(s.pose, s.motion, stowed, withHer));
-  const windage = { surge: inWind.surge - calm.surge, sway: inWind.sway - calm.sway, roll: inWind.roll - calm.roll, yaw: inWind.yaw - calm.yaw };
-  return { sail: { sailing, contract: theirs }, resistance: { sailing: rSailing, contract: rTheirs }, windage, residual: residualsOf(up) };
+  const inWind = residualsOf(ship.wrench(s.pose, s.motion, stowed, s.env)), calm = residualsOf(ship.wrench(s.pose, s.motion, stowed, withHer));
+  return { surge: inWind.surge - calm.surge, sway: inWind.sway - calm.sway, roll: inWind.roll - calm.roll, yaw: inWind.yaw - calm.yaw };
+}
+
+/**
+ * §6.1's windage at a predicted point, from compose alone (none of sailing's
+ * code), in the residuals' terms about her centre of gravity: compose's
+ * forces with the contract's elements less without them (windageless) are
+ * Σfx (surge), −Σfh·cos φ (sway, + to windward in compose), Σfh·(z − zY)
+ * (its heeling moment about the water's side force's height zY) and
+ * Σ(−fh·cos φ·x + fx·z·sin φ) (yaw about the contract's x = 0); the same
+ * with every element's centre lowered to the waterplane (lowered: atM z and
+ * zPerSinHeelM 0, which changes no force) leaves −zY·Σfh, so Σfh·z is the
+ * difference. Taken to her centre of gravity (x_G, z_G, on the centreplane):
+ * roll Σfh·(z − z_G), yaw Σ(−fh·cos φ·(x − x_G) + fx·(z − z_G)·sin φ).
+ */
+export function composeWindage(contract, p) {
+  const [xG, yG, zG] = contract.loading.cgM;
+  if (yG !== 0) throw new Error("composeWindage: her centre of gravity is off the centreplane");
+  const set = contract.sets.find((x) => x.id === p.set);
+  const at = (k) => k.forcesAt({ set, flat: p.flat, twsMs: p.twsMs, twaDeg: p.twaDeg }, { V: p.VMs, heelDeg: p.heelDeg, leewayDeg: p.leewayDeg, rudderDeg: p.rudderDeg });
+  const all = at(composerOf(contract, "all")), none = at(composerOf(contract, "none")), low = at(composerOf(contract, "lowered"));
+  const phi = p.heelDeg * DEG;
+  const fx = all.surge - none.surge;
+  const fhCos = -(all.sway - none.sway); // Σfh·cos φ
+  const fh = fhCos / Math.cos(phi);
+  const fhZ = all.hm - low.hm; // Σfh·z
+  return { surge: fx, sway: fhCos, roll: fhZ - zG * fh, yaw: all.yaw - none.yaw + fhCos * xG - fx * zG * Math.sin(phi) };
+}
+
+/** The contract with its windage (§3.13) taken off: `elements` empty, the rest as it is. */
+export const windageless = (c) => ({ ...c, windage: { ...c.windage, elements: [] } });
+
+/** The contract with each windage element's centre lowered to the waterplane (atM z and zPerSinHeelM 0): the same forces, no height. */
+export const lowered = (c) => ({ ...c, windage: { ...c.windage, elements: c.windage.elements.map((e) => ({ ...e, atM: [e.atM[0], e.atM[1], 0], zPerSinHeelM: 0 })) } });
+
+const composers = new WeakMap();
+/** compose's composer of a contract (`all`), of windageless(c) (`none`) or of lowered(c), one each per contract. */
+function composerOf(c, which) {
+  if (!composers.has(c)) composers.set(c, {});
+  const byWhich = composers.get(c);
+  byWhich[which] ??= composer(which === "none" ? windageless(c) : which === "lowered" ? lowered(c) : c);
+  return byWhich[which];
 }
 
 /**
@@ -332,9 +383,12 @@ export function breakdown(contract, ship, p, compose) {
  * moving with her (no sail, no windage: the water's forces alone), the
  * contract's (§6.4–6.5) as compose has them: L = Y·cos φ and R_total, with
  * L from compose's sway equation at that point (its sail heeling force from
- * `breakdown`'s §6.3 reading, its residual included, so L is compose's own).
+ * `breakdown`'s §6.3 reading, its residual included, so L is compose's own),
+ * on the contract with no windage elements (windageless), so its sway holds
+ * no windage heeling force to take back out.
  */
-export function hydroAt(contract, ship, p, compose) {
+export function hydroAt(contract, ship, p) {
+  const compose = composerOf(contract, "none");
   const s = stateAt(ship, contract, p);
   const v = s.motion.velocity;
   const withHer = { water: CALM, wind: { at: (x_, z_, t_, out = [0, 0]) => ((out[0] = v[0]), (out[1] = v[2]), out) } };

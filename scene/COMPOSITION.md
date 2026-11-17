@@ -154,6 +154,16 @@ Still open:
   strips don't (lane/n8, editclick-run step 5).
 
 Fixed since (each item names its Decisions section below):
+- keyboard bodies (walk, aboard, a station) had no touch input: on a
+  phone nobody could walk, sail or take a station, and under a touch
+  laptop's granted pointer lock a drag stopped looking. A finger now never
+  locks the pointer, and the stage's own pad (`scene.touch`) presses the
+  keys the gesture, the held tool and the body declare, derived from their
+  labels, with no per-body touch code; a use-prompt button with a key is
+  that key, so held verbs (the windlass) work by finger (TOOLS Decisions
+  11 to 15, lane/n9, merge f66a7d0a). Checked in the real Patchwork on
+  2026-11-16 (touch-check under Chrome's touch emulation, on scratch
+  copies of the Quiet games room and Lost Cities aboard).
 - in Edit on a boat that is the world, sailing's HUD drew its own "Come
   aboard" button over the canvas's top edge, so the first press of a
   double-click on a card there came aboard, left Edit and moved the canvas,
@@ -245,6 +255,23 @@ the lead confirms or reverses it):
   called, a new `show` surface or `edit: true` alone, a game's world
   commands without entering it, one stage-drawn key legend, and whether a
   game keeps a big Play call to action. The questions are there.
+- **Touch controls for keyboard bodies** (TOOLS Decisions 11 to 15;
+  sailing DESIGN.md "A station's keys say what they do"; lane/n9, merge
+  f66a7d0a): when the pad shows (from the first touch, always on a coarse
+  pointer, or a chip toggle) and whether a pen is touch; a digital d-pad
+  or an analog stick, and whether WASD makes a pad; label-as-identity or
+  an explicit grouping field (machine's doom pad shows one "Weapon"); the
+  pad's layout and group names (a press session's `label`); whether the
+  500 ms touch hold opens the menu while a body looks by drag; a stage
+  crosshair under touch; whether a tapped look should expire; the station
+  labels' words (B above all); whether sailing's HUD hint keeps key names
+  on touch; whether arena's gun fires on a tap (today it fires only
+  locked). The questions are there.
+- **The pad and sailing's HUD share the bottom left** (lane/n9): the pad
+  lies under every other overlay (TOOLS Decisions 13, so a menu opened
+  over it takes the finger), and sailing's panel paints over its arrows
+  (they still work, the panel letting the pointer through); move the pad,
+  or have the HUD keep clear. Layout is the lead's taste.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left

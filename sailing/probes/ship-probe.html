@@ -146,10 +146,11 @@ if (q.get("trim")) {
     content: (id) => content[id] ?? null,
     worldOf: (id) => (objs[id] ? (objs[id].updateMatrixWorld(true), objs[id].matrixWorld.elements) : null),
     world: () => scene,
+    clock: { t: () => Number(q.get("t") ?? 1.3) },
   };
   const tw = [-V * Math.sin(SC.a * DEG), V * Math.cos(SC.a * DEG)];
   const ctx = {
-    sea: { ocean: null, wind: { at: (x, z, t, out = [0, 0]) => ((out[0] = tw[0]), (out[1] = tw[1]), out) }, clock: () => Number(q.get("t") ?? 1.3) },
+    sea: { wind: { at: (x, z, t, out = [0, 0]) => ((out[0] = tw[0]), (out[1] = tw[1]), out) } },
     sim: { ships: () => ["ship"], stationsOf: () => ({ sail: "rig", jib: "jib", winches: ["wp", "ws"] }), read: () => read, value: (id) => (id === "rig" ? { raised: SC.raised ?? 1 } : { furl: SC.furl ?? 0 }), sailModels: () => models },
   };
   const looks = createLooks(api, ctx);

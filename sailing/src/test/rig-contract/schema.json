@@ -5,7 +5,7 @@
   "description": "Structural schema for extras.rig (format patchwork-rig, version 1). The numerical and cross-field rules are in specification.md §5; validate.js applies both.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format", "version", "name", "frame", "source", "hull", "loading", "appendages", "sails", "sailModel", "sets", "rig", "resistance", "hardpoints", "loads", "predicted", "lumpedSail", "warnings", "rules"],
+  "required": ["format", "version", "name", "frame", "source", "hull", "loading", "appendages", "sails", "sailModel", "sets", "rig", "resistance", "hardpoints", "loads", "predicted", "lumpedSail", "windage", "warnings", "rules"],
   "properties": {
     "format": { "const": "patchwork-rig" },
     "version": { "const": 1 },
@@ -542,6 +542,33 @@
         "areaM2": { "$ref": "#/$defs/positive" },
         "ceM": { "$ref": "#/$defs/vec3" },
         "ceHeightFrac": { "$ref": "#/$defs/positive" }
+      }
+    },
+    "windage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "elements"],
+      "properties": {
+        "source": { "type": "string" },
+        "elements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "shape", "areaFrontM2", "areaSideM2", "sidePerSinHeelM2", "cdFront", "cdSide", "atM", "zPerSinHeelM"],
+            "properties": {
+              "id": { "enum": ["hull", "mast-sail", "mast-bare", "rigging"] },
+              "shape": { "enum": ["body", "spar"] },
+              "areaFrontM2": { "type": "number", "minimum": 0 },
+              "areaSideM2": { "type": "number", "minimum": 0 },
+              "sidePerSinHeelM2": { "type": "number", "minimum": 0 },
+              "cdFront": { "type": "number", "minimum": 0 },
+              "cdSide": { "type": "number", "minimum": 0 },
+              "atM": { "$ref": "#/$defs/vec3" },
+              "zPerSinHeelM": { "type": "number" }
+            }
+          }
+        }
       }
     },
     "warnings": { "type": "array", "items": { "type": "string" } },

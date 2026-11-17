@@ -37,7 +37,9 @@ export const toContract = (p, k = 1) => [-p[2] / k + 0, -p[0] / k + 0, p[1] / k 
 
 /**
  * The contract in a GLB's extras, if it is one sailing can read: v1, with a
- * frame matrix, a positive mass and a hull. Else null.
+ * frame matrix, a positive mass, a hull and its windage elements (§3.13,
+ * which the schema requires). Else null: a contract stated before v1 had
+ * windage sails the plain path, until it is restated.
  */
 export function rigContract(extrasRig) {
   const c = extrasRig;
@@ -45,6 +47,7 @@ export function rigContract(extrasRig) {
   const m = c.frame?.glbToFrame;
   if (!Array.isArray(m) || m.length !== 16 || !m.every(Number.isFinite)) return null;
   if (!(c.loading?.massKg > 0) || !isVec3(c.loading?.cgM) || !c.hull) return null;
+  if (!Array.isArray(c.windage?.elements)) return null;
   return c;
 }
 
@@ -278,8 +281,28 @@ export function bodyRig(contract, k = 1, { matrix = null, hullUrl = null, hullKe
     sailModel: c.sailModel,
     sets: (c.sets ?? []).map((s) => ({ id: s.id, reef: s.reef, sails: s.sails, areaM2: s.areaM2 * k * k, ceM: toBody(s.ceM, k), heM: s.heM * k, are: s.are, trimmed: s.trimmed })),
     resistance: c.resistance,
+    windage: windageInBody(c.windage.elements, k),
     lumpedSail: c.lumpedSail ? { tackM: toBody(c.lumpedSail.tackM, k), luffM: c.lumpedSail.luffM * k, footM: c.lumpedSail.footM * k, areaM2: c.lumpedSail.areaM2 * k * k, ceM: toBody(c.lumpedSail.ceM, k) } : null,
   };
+}
+
+/**
+ * §3.13's elements (in the contract's frame) in the body frame at scale k:
+ * areas ×k², their centres and how far a heel lifts them ×k. A contract's
+ * (bodyRig), and the plain path's (hull-model.js plainWindage).
+ */
+export function windageInBody(elements, k = 1) {
+  return elements.map((e) => ({
+    id: e.id,
+    shape: e.shape,
+    areaFrontM2: e.areaFrontM2 * k * k,
+    areaSideM2: e.areaSideM2 * k * k,
+    sidePerSinHeelM2: e.sidePerSinHeelM2 * k * k,
+    cdFront: e.cdFront,
+    cdSide: e.cdSide,
+    atM: toBody(e.atM, k),
+    zPerSinHeelM: e.zPerSinHeelM * k,
+  }));
 }
 
 /**

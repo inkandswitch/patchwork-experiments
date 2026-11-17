@@ -10,7 +10,7 @@ import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as un
 import { shipOf } from "./traits.js";
 import { boxTriangles } from "./navmesh.js";
 import { BODY, DECK, SWIM } from "./walk.js";
-import { meshNode } from "./test/fakes.js";
+import { brokenClocks, meshNode } from "./test/fakes.js";
 import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
 beforeAll(() => (globalThis.__SAILING_ASSERT__ = true));
@@ -195,6 +195,9 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     ship,
     contents,
     bodies: [{ id: "look", sitting: null }], // the stage's body stack, its Look at the bottom
+    t: 0, // the doc's world time (api.clock.t())
+    seaAsked: [], // the times the sea's surface was read at
+    seaHeight: () => 0, // the sea's surface height at a time: flat, unless a case says
     pointer: { locked: true, released: false, refused: false },
     loops: [],
     presence: {},
@@ -274,6 +277,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     },
     // the stage's time (scene/src/stage/time.js): now() moves with the frames; after() is the event loop's
     clock: {
+      t: () => s.t,
       now: () => s.now,
       after(ms, fn) {
         const h = setTimeout(fn, ms);
@@ -283,7 +287,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   };
   s.ctx = {
     // a boat alone: her doc is the world (ctx.sea.world)
-    sea: { ocean: { heightAt: () => 0 }, clock: () => 0, wind: null, world: () => true },
+    sea: { oceanAt: () => ({ heightAt: (x, z, t) => (s.seaAsked.push(t), s.seaHeight(t)) }), wind: null, world: () => true },
     sim: { ships: () => ["hull"], stationsOf: () => ({ helm: "wheel", sail: null, anchor: null, ladder: "ladder" }), simulating: () => false },
   };
   // play.js runs the crew's tick each frame
@@ -496,6 +500,37 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(crew.me().yaw).toBeCloseTo(Math.PI / 2); // facing inboard
   });
 
+  it("a swimmer's head rides the sea's surface at the doc's world time, api.clock.t(), at every t of the table", () => {
+    const s = stage();
+    const crew = s.make();
+    crew.start();
+    s.frames(2);
+    s.key("KeyD");
+    s.frames(60);
+    s.key("Space");
+    s.frames(90);
+    s.keyup("Space");
+    s.keyup("KeyD");
+    expect(crew.me().swimming).toBe(true);
+    s.seaHeight = (t) => 0.1 * t; // a surface that moves with time, so a wrong t shows
+    for (const t of [0, 1.5, 30]) {
+      s.t = t;
+      s.seaAsked.length = 0;
+      expect(crew.me().position[1]).toBeCloseTo(0.1 * t - SWIM.depth, 9);
+      expect(s.seaAsked.length).toBeGreaterThan(0);
+      expect(new Set(s.seaAsked)).toEqual(new Set([t]));
+    }
+    // and no fallback: with the clock broken each way, the read throws and the sea is asked at no time
+    const clock = s.api.clock;
+    for (const row of brokenClocks(clock)) {
+      s.api.clock = row.clock;
+      s.seaAsked.length = 0;
+      expect(() => crew.me(), row.name).toThrow(row.throws);
+      expect(s.seaAsked, row.name).toEqual([]);
+    }
+    s.api.clock = clock;
+  });
+
   it("at a station: its body over walking, with the keys the station declares; you stand aft of it, and every way out calls left()", () => {
     const s = stage();
     const crew = s.make();
@@ -524,8 +559,8 @@ describe("the crew", { timeout: 60_000 }, () => {
     s.frames(10);
     expect(handlers.tick).toHaveBeenCalledTimes(10);
     expect(handlers.tick).toHaveBeenLastCalledWith(1 / 60);
-    // its verbs run in sea time, as far as the ships step a frame (MAX_SUBSTEPS·SUBSTEP, 0.25 s), not the
-    // walker's 0.05 s: at SwiftShader's 2–3 frames a second the jib still unrolls in its 4 s of sea time
+    // its verbs run in world time, as far as the ships step a frame (MAX_SUBSTEPS·SUBSTEP, 0.25 s), not the
+    // walker's 0.05 s: at SwiftShader's 2–3 frames a second the jib still unrolls in its 4 s of world time
     s.frames(1, 0.2);
     expect(handlers.tick).toHaveBeenLastCalledWith(0.2);
     s.frames(1, 0.43);
