@@ -231,6 +231,48 @@ describe("on a support: presence while jumping, coming back from a station, a sc
     });
   }
 
+  // a stand spot (walk.stand) a body goes over walk at (a station): walk stands its walker at P1 of the
+  // spot and that walker's eye is the body's; when the body goes, walk resumes at P1 of the eye less
+  // BODY.eye along the deck's up, which is that same P1, however the deck is heeled or turned and wherever
+  // the spot is set against the deck (on it, in the air over it, sunk into it: on the deck under it)
+  const SPOT_Y = { "on the deck": 0, "0.3 m over it": 0.3, "0.2 m into it": -0.2 };
+  for (const [name, pose] of Object.entries(POSES))
+    for (const [where, h] of Object.entries(SPOT_Y)) {
+      it(`a stand spot ${where}, the deck ${name}: stand() puts the eye BODY.eye up the deck's up over the deck under it; resumed there, the feet are that point, to 1e-9`, () => {
+        const objects = { ...deckObjects(), post: { parent: "deck", transform: { position: [-0.7, 0, -0.1] }, traits: { "walk.stand": { at: [0, h, 0.5], claim: "post" } } } };
+        const f = stage({ objects });
+        f.pose("deck", pose);
+        const def = walkBody(f.api);
+        const s = def.enter("deckpad");
+        f.frames(2);
+        const at = def.stand("post");
+        s.input.suspended();
+        const feet = apply(pose, [-0.7, 0, 0.4]); // the deck's top under the spot
+        const eye = apply(pose, [-0.7, BODY.eye, 0.4]);
+        expect(close(at.eye(), eye, 1e-9)).toBe(true);
+        expect(wrap(at.yaw - Math.atan2(pose[8], pose[10]))).toBeCloseTo(0, 9); // facing its origin: forward on the deck (its −Z)
+        f.api.camera.set({ position: at.eye(), target: at.eye().map((v, i) => v - pose[8 + i]) });
+        s.input.resumed();
+        expect(s.state.on).toBe("deck");
+        expect(close(s.state.feet, feet, 1e-9)).toBe(true);
+        s.leave();
+      });
+    }
+
+  it("stand(): null when not walking here, for an object that isn't a stand spot, and after walk leaves", () => {
+    const objects = { ...deckObjects(), post: { parent: "deck", transform: { position: [-0.7, 0, -0.1] }, traits: { "walk.stand": { at: [0, 0, 0.5] } } } };
+    const f = stage({ objects });
+    f.pose("deck", DECK);
+    const def = walkBody(f.api);
+    expect(def.stand("post")).toBe(null);
+    const s = def.enter("deckpad");
+    f.frames(2);
+    expect([def.stand("deck"), def.stand("crate"), def.stand("nothing")]).toEqual([null, null, null]);
+    expect(def.stand("post")).not.toBe(null);
+    s.leave();
+    expect(def.stand("post")).toBe(null);
+  });
+
   it("the avatar contribution: this viewer's walker here (on top or waiting under a body), null before and after", () => {
     const f = stage({ objects: deckObjects() });
     f.pose("deck", DECK);

@@ -23,8 +23,8 @@
 import { BODY, easeEye, look, lookDir } from "./walk.js";
 import * as walker from "./walker.js";
 import { columnAt, isEmpty, pointOf } from "./navmesh.js";
-import { apply, headingOf, invert, rotateM } from "./frames.js";
-import { SPAWN, STAND, SUPPORT, createSupports, ownerOf, standAt } from "./supports.js";
+import { apply, headingOf, invert, rotateM, scaleOf } from "./frames.js";
+import { SPAWN, STAND, SUPPORT, createSupports, ownerOf, seedsOf, standAt } from "./supports.js";
 
 export { SPAWN };
 /** How far a walker reaches (m): arm's length and a step. */
@@ -187,6 +187,8 @@ export function walkBody(api, supports = createSupports(api)) {
     reach: REACH,
     /** This viewer's walker here, as its presence says it (avatarOf), whether on top or waiting under another body; null when not walking here. */
     avatar: () => current?.avatar() ?? null,
+    /** Stand this viewer's walker here at a stand spot, for a body going over it (the live session's stand); null when not walking here. */
+    stand: (id) => current?.stand(id) ?? null,
     enter(place = null) {
       const all = spawns();
       const named = typeof place === "string" && api.scene()?.objects?.[place] ? place : null;
@@ -319,6 +321,32 @@ export function walkBody(api, supports = createSupports(api)) {
           placeCamera();
           publish(true);
           return true;
+        },
+        /**
+         * Stand at stand spot `id` (walk.stand) for a body about to go over
+         * this one (DESIGN.md, "Presence under a body", Decision 39): the
+         * walker is put at P1 of the spot (on the floor under it), facing its
+         * `facing`. Its eye there, as drawn each frame, is that body's eye,
+         * so when the body goes, the resume (P1 of the eye less BODY.eye
+         * along the up of what it stands on) is the spot again. null when
+         * `id` isn't a stand spot here or nothing is baked yet.
+         * @returns {{ eye(): number[] | null, yaw: number } | null}  yaw in the world (0 looks down −Z)
+         */
+        stand(id) {
+          const scene = api.scene();
+          if (!supports.ready() || !Array.isArray(scene?.objects?.[id]?.traits?.[STAND]?.at)) return null;
+          const on = ownerOf(scene, id);
+          const M = env.frame(on);
+          const k = on == null ? 1 : scaleOf(api.worldOf(on) ?? M);
+          const seed = M ? seedsOf(scene, on, k).find((sd) => sd.kind === "stand" && sd.id === id) : null;
+          if (!seed) return null;
+          const yawW = seed.yaw + headingOf(M);
+          st = walker.placeAt(env, apply(M, seed.at));
+          yaw = yawW - headingIn(env, st);
+          pitch = 0;
+          lag = 0;
+          checked(null);
+          return { eye: () => walker.worldPose(st, env)?.eye ?? null, yaw: yawW };
         },
         /** L1: from the water up a ladder (its object id) onto its owner. */
         climb(ladderId) {

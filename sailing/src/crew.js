@@ -5,29 +5,28 @@
 // spawn point (the walk.* traits parts.js writes on her pieces). Sailing
 // reaches walk only at run time:
 // - Come aboard enters walk at her hull: api.body.enter("walk", hull);
-// - a station is the "station" body, pushed over walk. Its eye stands at
-//   the station's stand spot (her drawn frame · the spot placed in her by
-//   the doc · its `at`, on her deck), EYE up her up, and it holds the
-//   spot's STAND claim, so walk.people draws you standing there. Leaving
-//   pops it, and walk stands you at P1 of that eye less EYE along her up:
-//   the stand spot (walk's resume rule);
+// - a station is the "station" body, pushed over walk in her stage. Taking
+//   it asks walk to stand you at the station's stand spot (walk's `stand`
+//   contribution: walk puts its walker there, on her deck), and the body's
+//   eye is that walker's eye as walk draws it each frame. Leaving pops it,
+//   and walk resumes where it stands: the spot. Where the spot is and how
+//   high the eye is are walk's alone; who stands there is the station's
+//   own claim, which its verb holds (stations.js) and the spot names;
 // - what the viewer is doing is read, never kept here: the top body
-//   (api.body.current()), walk's avatar in this stage (its `avatar`
-//   contribution: on, feet, yaw, pitch, swimming) and the station this
-//   crew's body is at.
+//   (api.body.current(): its declared keys too), walk's avatar in this
+//   stage (its `avatar` contribution: on, feet, yaw, pitch, swimming) and
+//   the station this crew's body is at.
 //
 // Before anyone comes aboard the camera is the orbit's and rides her
 // (follow), where her doc is the world.
 
-import { apply, headingOf, multiply, onHeading, rotateM } from "./frames.js";
-import { QUARTER, STAND, WALK, partsOf, shipOf } from "./traits.js";
-import { bodyOf, placeIn } from "./body.js";
+import { headingOf, onHeading } from "./frames.js";
+import { QUARTER, partsOf, shipOf } from "./traits.js";
+import { bodyOf } from "./body.js";
 import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
 /** How far the station body reaches (m): the bodies' reach (scene/TOOLS.md §4). Walking, walk's own is the body's. */
 export const REACH = 2.5;
-/** walk's BODY.eye: how far over the feet the eye is (m). A copy of walk/src/walk.js's number (CLAUDE.md: copying is fine, linking isn't); walk's resume rule lowers the eye by it. */
-export const EYE = 1.6;
 /** How far down you look on taking a station (rad). */
 const PITCH = -0.2;
 
@@ -59,41 +58,6 @@ export const seatedView = (api) => {
   return (b?.depth ?? 0) > 0 && b.ext !== api.id && b.id !== "walk";
 };
 
-/** The object carrying a station's stand spot (walk.stand): the station, else the nearest above it, short of her hull, that has one (the sail's is its mast's: the rig swings). */
-export function standOf(scene, id) {
-  const up = (at) => (scene?.parents?.get ? (scene.parents.get(at) ?? null) : (scene?.objects?.[at]?.parent ?? null));
-  for (let at = id, n = 0; at != null && n < 64; at = up(at), n++) {
-    const o = scene?.objects?.[at];
-    if (!o || o.traits?.[WALK.support]) return null;
-    if (Array.isArray(o.traits?.[WALK.stand]?.at)) return at;
-  }
-  return null;
-}
-
-/**
- * Where a station's body puts you (pure over the snapshot and the drawn
- * world matrices): its stand spot through her drawn frame, the spot's object
- * placed in her by the doc (not as drawn: a wheel's turn is play's), so
- * `feet` = W_ship · placeIn(spot, ship) · at; the eye EYE up her up from
- * there; facing the spot's `facing` (default its object's origin), in plan.
- * @returns {{ ship, stand, feet: number[], eye: number[], up: number[], yaw: number } | null}  yaw in the world (0 looks down −Z)
- */
-export function standEye(scene, worldOf, stationId) {
-  const ship = shipOf(scene, stationId);
-  const stand = ship ? standOf(scene, stationId) : null;
-  const W = ship ? worldOf(ship) : null;
-  const P = stand ? placeIn(scene, stand, ship) : null;
-  if (!W || !P) return null;
-  const t = scene.objects[stand].traits[WALK.stand];
-  const M = multiply(W, P);
-  const feet = apply(M, t.at);
-  const f = apply(M, Array.isArray(t.facing) ? t.facing : [0, 0, 0]);
-  const u = rotateM(W, [0, 1, 0]);
-  const k = Math.hypot(u[0], u[1], u[2]) || 1;
-  const up = u.map((v) => v / k);
-  return { ship, stand, feet, eye: feet.map((v, i) => v + up[i] * EYE), up, yaw: Math.atan2(-(f[0] - feet[0]), -(f[2] - feet[2])) };
-}
-
 /**
  * What the viewer is doing, for the HUD, the stations and the sim (pure):
  * from the top body, walk's avatar here (null when not walking in this
@@ -116,6 +80,8 @@ export function viewerOf({ body = null, avatar = null, station = null, ship = nu
     station: station ?? null,
     swimming: walking && !!avatar.swimming,
     hint: station ? hint : null,
+    // what the top body declares it takes (walk's walking keys, while walking)
+    keys: Array.isArray(body?.keys) ? body.keys : [],
   };
 }
 
@@ -126,7 +92,7 @@ export function viewerOf({ body = null, avatar = null, station = null, ship = nu
  * @param {{ sea, sim }} ctx
  */
 export function createCrew(api, ctx) {
-  let station = null; // the station body's, while it's on the stack: { id, ship, stand, handlers, release, releaseCamera, yaw, pitch, eye, dir }
+  let station = null; // the station body's, while it's on the stack: { id, ship, spot, handlers, releaseCamera, yaw, pitch, eye, dir }
   let pending = null; // what a station's verb asked for, read by its body's enter (the place is the station's id)
 
   /** walk's avatar in this stage: this viewer's walker here, or null. */
@@ -137,17 +103,26 @@ export function createCrew(api, ctx) {
     }
     return null;
   };
+  /** walk's `stand` in this stage: its walker stood at stand spot `id`, { eye(), yaw }; null when not walking here. */
+  const standAt = (id) => {
+    for (const { value } of api.collect?.("stand") ?? []) {
+      const at = typeof value === "function" ? value(id) : null;
+      if (at) return at;
+    }
+    return null;
+  };
   const top = () => api.body?.current?.() ?? null;
   const walkingHere = () => top()?.id === "walk" && !!walker();
 
   // ─── the station body ───────────────────────────────────────────────────
 
-  /** Put the eye at the station's stand spot, where she is drawn now. */
+  /** Put the eye where walk's walker, stood at the station's spot, has it now (she moves under it). */
   function placeEye(s) {
-    const v = standEye(api.scene(), (id) => api.worldOf(id), s.id);
-    if (!v) return;
-    s.eye = v.eye;
-    s.dir = lookDir(s.yaw + headingOf(api.worldOf(v.ship)), s.pitch);
+    const eye = s.spot.eye();
+    const W = api.worldOf(s.ship);
+    if (!eye || !W) return;
+    s.eye = eye;
+    s.dir = lookDir(s.yaw + headingOf(W), s.pitch);
     api.camera.set({ position: [...s.eye], target: s.eye.map((x, i) => x + s.dir[i]) });
   }
 
@@ -192,14 +167,16 @@ export function createCrew(api, ctx) {
     enter(id) {
       const p = pending?.id === id ? pending : null;
       pending = null;
-      const v = p ? standEye(api.scene(), (o) => api.worldOf(o), id) : null;
-      if (!v) return null;
-      const heading = headingOf(api.worldOf(v.ship));
-      const s = { id, ship: v.ship, stand: v.stand, handlers: p.handlers, release: null, releaseCamera: null, yaw: v.yaw - heading, pitch: PITCH, eye: v.eye, dir: null };
+      const ship = p ? shipOf(api.scene(), id) : null;
+      const W = ship ? api.worldOf(ship) : null;
+      const spot = W ? standAt(id) : null;
+      const eye = spot?.eye();
+      if (!eye) return null;
+      const heading = headingOf(W);
+      const s = { id, ship, spot, handlers: p.handlers, releaseCamera: null, yaw: spot.yaw - heading, pitch: PITCH, eye, dir: null };
       // a station that says what its worker watches (a winch: the jib's luff) turns the eye to it
       const aim = p.handlers.look?.();
-      if (aim) Object.assign(s, aimOf(v.eye, aim, heading));
-      s.release = api.claim?.(v.stand, STAND) ?? null;
+      if (aim) Object.assign(s, aimOf(eye, aim, heading));
       s.releaseCamera = api.camera.hold();
       station = s;
       placeEye(s);
@@ -225,12 +202,11 @@ export function createCrew(api, ctx) {
     return names[kind] ?? "At a station";
   }
 
-  // the station body went off the stack: the eye left where she is now, so walk stands you at its stand spot
+  // the station body went off the stack: the eye left where walk's walker has it now, so walk resumes there
   function depart(s) {
     if (station !== s) return;
     placeEye(s);
     station = null;
-    s.release?.();
     s.releaseCamera?.();
     try {
       s.handlers.left?.();
@@ -241,14 +217,13 @@ export function createCrew(api, ctx) {
 
   // ─── coming aboard, taking and leaving a station ───────────────────────
 
-  /** Come aboard: walk, at her hull (waiting under a seat aboard her: stand up from it, into walk). */
-  function start() {
+  /** Come aboard (`ship`, else her first): walk, at her hull, in her stage (waiting under a seat aboard her: stand up from it, into walk). */
+  function start(ship = ctx.sim?.ships?.()[0] ?? null) {
     if (walkingHere() || station) return;
     if (walker()) {
-      while (top()?.depth > 0 && top()?.id !== "walk") if (!api.body.leave()) break;
+      while (top()?.depth > 0 && !walkingHere()) if (!api.body.leave()) break;
       return;
     }
-    const ship = ctx.sim?.ships?.()[0] ?? null;
     if (ship) api.body.enter("walk", ship);
   }
 
@@ -259,9 +234,10 @@ export function createCrew(api, ctx) {
   }
 
   /**
-   * Stand at a station: the "station" body over walk, which hears the keys
-   * the station declares first (`keys`), at its stand spot, facing it; the
-   * mouse still turns your head.
+   * Stand at a station: the "station" body over walk in her stage (coming
+   * aboard first, if you're walking anywhere else), which hears the keys the
+   * station declares first (`keys`), at its stand spot (walk.stand: the
+   * station carries its own), facing it; the mouse still turns your head.
    * @param {string} id
    * @param {{ keys: { code: string, label: string }[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
    *   keys: the keys the station takes, each with what it does (the shape every body,
@@ -271,8 +247,8 @@ export function createCrew(api, ctx) {
    * @returns {() => void} leave
    */
   function take(id, handlers = {}) {
-    if (!station && top()?.id !== "walk") start();
-    if (!station && top()?.id !== "walk") return () => {};
+    if (!station && !walkingHere()) start(shipOf(api.scene(), id));
+    if (!station && !walkingHere()) return () => {};
     leave();
     pending = { id, handlers };
     const ok = api.body.enter("station", id);

@@ -5,7 +5,7 @@
 // root catches drift). Read here through walk's own input adapter (her
 // support, its stand spots, ladder and spawn as seeds, the swept part, the
 // moving parts left out) and baked: the static checks C1–C9 over it, the
-// bake budget, and the bow. walk bakes with \`prune: false\` until the
+// bake budget, and the bow. walk bakes with `prune: false` until the
 // pruning by passable sides lands (DESIGN.md, Decision 29), which keeps the
 // bilge inside her hull too (C2 and C6 fail on it); so the checks run on the
 // seed-pruned bake of the same input, and walk's own bake is checked to hold

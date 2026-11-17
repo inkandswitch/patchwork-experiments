@@ -87,6 +87,16 @@ describe("what each support bakes", () => {
     ]);
     expect(seedsOf(sc, null).map((s) => s.id)).toEqual(["ground"]);
   });
+
+  it("a spawn point on an object with a stand spot is at that spot, facing its way: people come in where someone stands", () => {
+    const sc = sceneOf({
+      deck: { traits: { "walk.support": {} } },
+      helm: { parent: "deck", transform: { position: [0, 0.5, 2], rotation: [0, 0.4, 0] }, traits: { "walk.stand": { at: [0, -0.5, 1] }, "walk.spawn": {} } },
+    });
+    const [stand, spawn] = ["stand", "spawn"].map((k) => seedsOf(sc, "deck").find((s) => s.kind === k));
+    expect(spawn).toEqual({ ...stand, kind: "spawn" });
+    expect(stand.at.map((v) => Math.round(v * 1e9) / 1e9 + 0)).toEqual([+Math.sin(0.4).toFixed(9), 0, +(2 + Math.cos(0.4)).toFixed(9)]);
+  });
 });
 
 describe("the bake key", () => {

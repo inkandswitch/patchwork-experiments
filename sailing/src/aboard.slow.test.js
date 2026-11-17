@@ -1,14 +1,13 @@
 // Two people aboard one sloop, through play.js's whole join (sea, sim, crew,
 // stations, HUD) on the package's fake stage (test/fakes.js), with the
 // hull's deck as a box (what the rays see where it's drawn), and a stand-in
-// for walk (another package's body: its avatar here and its resume rule),
-// over which the station body is pushed.
+// for walk (another package's body: its avatar here, its `stand`, and where
+// it is resumed from), over which the station body is pushed.
 import { describe, it, expect, afterEach } from "vitest";
 import play from "./play.js";
 import { layOutShip, headTo } from "./layout.js";
 import { apply, invert, unrotateM as unrotate, rotateM as rotate } from "./frames.js";
 import { emptyScene, fakeDrop, fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
-import { EYE } from "./crew.js";
 
 const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
 const DECK = { min: [-1.8, -1.9, -6], max: [1.8, 1.25, 6] };
@@ -80,7 +79,9 @@ async function sloop() {
 function join(w, session, hull) {
   const base = w.join(session);
   const collect = base.collect;
-  const s = { bodies: [{ id: "look" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [] };
+  // walk's eye at a stand spot is walk's to work out: the stand-in's is a point on her helm's spot, 1.7 m up her up
+  const standEye = (W) => [0, 1, 2].map((i) => W[12 + i] + W[4 + i] * (0.72 + 1.7) + W[8 + i] * 4.85);
+  const s = { bodies: [{ id: "look" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [], standEye, stood: null };
   // what the crew's avatars are made of, beside what the sea asks for
   const T = base.THREE;
   class Group {
@@ -119,12 +120,17 @@ function join(w, session, hull) {
     local: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     view: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     // walk's avatar here, while its stand-in is on the stack (on her deck, at her helm's stand spot)
-    collect: (name) => (name === "avatar" ? [{ id: "walk", value: () => (s.bodies.some((b) => b.id === "walk") ? { on: hull, feet: [0, 0.72, 4.85], yaw: 0, pitch: 0, swimming: false } : null) }] : collect(name)),
+    collect: (name) =>
+      name === "avatar"
+        ? [{ id: "walk", value: () => (s.bodies.some((b) => b.id === "walk") ? { on: hull, feet: [0, 0.72, 4.85], yaw: 0, pitch: 0, swimming: false } : null) }]
+        : name === "stand"
+          ? [{ id: "walk", value: (id) => (s.bodies.some((b) => b.id === "walk") ? ((s.stood = id), { eye: () => s.standEye(base.worldOf(hull)), yaw: 0 }) : null) }]
+          : collect(name),
     body: {
       current: () => ({ id: s.bodies.at(-1).id, ext: s.bodies.at(-1).ext ?? "sailing", depth: s.bodies.length - 1 }),
       enter(id, place = null) {
-        // walk (another package's): resumed, it asks P1 of the eye less EYE along her up
-        const walk = { id: "walk", enter: () => ({ input: { resumed: () => (s.resumed = s.cam.position.map((v, i) => v - base.worldOf(hull)[4 + i] * EYE)) }, leave() {} }) };
+        // walk (another package's): resumed from where the eye was left
+        const walk = { id: "walk", enter: () => ({ input: { resumed: () => (s.resumed = [...s.cam.position]) }, leave() {} }) };
         const sitting = (id === "walk" ? walk : s.instance.bodies.find((b) => b.id === id))?.enter(place);
         if (!sitting) return false;
         const prev = s.bodies.at(-1);
@@ -186,7 +192,7 @@ describe("aboard, together", () => {
     b.command("helm").run(ids.wheel);
     expect(b.bodies.map((x) => x.id)).toEqual(["look", "walk", "station"]);
     expect(doc.objects[ids.wheel].claims.station.session).toBe("B");
-    expect(doc.objects[ids.wheel].claims.stand.session).toBe("B");
+    expect(b.stood).toBe(ids.wheel);
     expect(a.command("helm").state(ids.wheel, near())).toEqual({ disabled: true, label: "Someone's at the helm" });
     expect(b.instance.debug.crew.me().station).toBe(ids.wheel);
 
@@ -201,17 +207,15 @@ describe("aboard, together", () => {
     const m = w.view("A").api.worldOf(ids.hull);
     const turned = Math.atan2(Math.sin(Math.atan2(m[8], m[10]) - heading0), Math.cos(Math.atan2(m[8], m[10]) - heading0));
     expect(turned).toBeLessThan(-0.05); // yaw down: her bow swings to starboard
-    const spot = (W) => [0, 1, 2].map((i) => W[12 + i] + W[i] * 0 + W[4 + i] * 0.72 + W[8 + i] * 4.85);
-    const Wb = b.api.worldOf(ids.hull);
-    expect(b.cam.position.every((v, i) => Math.abs(v - (spot(Wb)[i] + Wb[4 + i] * EYE)) < 1e-9)).toBe(true);
+    // the eye is walk's at the spot, wherever she has gone: the stand-in's
+    expect(b.cam.position).toEqual(b.standEye(b.api.worldOf(ids.hull)));
 
     // F leaves the helm and writes where the wheel was left; walk is asked to stand B at the stand spot
     b.top().key({ code: "KeyF", key: "f" });
     expect(doc.objects[ids.wheel].traits["sailing.helm"].angle).toBe(1);
     expect(doc.objects[ids.wheel].claims?.station).toBe(undefined);
-    expect(doc.objects[ids.wheel].claims?.stand).toBe(undefined);
     expect(b.bodies.map((x) => x.id)).toEqual(["look", "walk"]);
-    expect(b.resumed.every((v, i) => Math.abs(v - spot(b.api.worldOf(ids.hull))[i]) < 1e-9)).toBe(true);
+    expect(b.resumed).toEqual(b.standEye(b.api.worldOf(ids.hull)));
     expect(b.instance.debug.crew.me()).toMatchObject({ playing: true, station: null });
   });
 

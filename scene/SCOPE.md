@@ -103,8 +103,8 @@ directly or not**, or being in a doc linked onto something attached.
 - **The camera rides.** A base ride (`camera.ride`: a ship keeping herself
   in view) or the top body's own ride, which wins; a ride may `tilt`, so a
   seat at a table aboard rolls with the table.
-- **People stand on things.** The walk body rides what it stands on;
-  sailing's aboard body walks her deck on a navmesh in her frame.
+- **People stand on things.** The walk body stands on supports, each
+  walked on a navmesh in its own frame, a boat's deck as a level's floor.
 - **Landing doesn't attach.** A carried thing keeps its doc parent, and a
   piece set down outside its doc stays in its doc.
 

@@ -80,7 +80,7 @@ that carries one calls for walk and lists it, as `walk.spawn` does today.
 
 | trait | on | value | what walk does with it |
 |---|---|---|---|
-| `walk.spawn` | object | `{}` (unchanged) | where people start, facing the way it faces (as now); a seed and a `spawn` link of its owner |
+| `walk.spawn` | object | `{}` (unchanged) | where people start, facing the way it faces (as now); on an object with a `walk.stand`, at that stand spot, facing its `facing` (Decision 41); a seed and a `spawn` link of its owner |
 | `walk.support` | object | `{}` | a support: its subtree, less sub-supports, loose things and moving parts, is baked in its frame |
 | `walk.moves` | object | `{ swept?: "x"\|"y"\|"z", blocks?: true }` | a moving part (above); never more than one of the two |
 | `walk.stand` | object | `{ at: [x,y,z], facing?: [x,y,z], claim?: kind }`, points in the object's own frame | a stand spot: a seed, and a `stand` link at `at` facing `facing` (default the object's origin). Whoever holds the object's claim of kind `claim` (`api.claimedBy`) is drawn standing there ("Presence under a body") |
@@ -405,9 +405,10 @@ asks `api.claimedBy(id, kind)` and draws that session's person (name and
 hue from its presence) at the spot's `at`, facing `facing`, in the spot's
 drawn frame. Sailing's stations hold `station` claims for their verbs
 (the sail's only while a key is down, so the helmsman can still trim);
-step 5 makes the station body also hold a claim of kind `"stand"` on its
-station object for as long as it is on top, and writes `claim: "stand"` on
-each station's `walk.stand`. Who may trim is unchanged. Claims are scene's generic "who",
+each station's `walk.stand` names the claim its verb holds for as long as
+you stand there (the helm's `"station"`, the sail's `"halyard"` at the
+mast: Decision 40), so one claim says who stands there and who may trim
+is unchanged. Claims are scene's generic "who",
 so nothing new crosses: walk reads a claim kind its own trait names. The
 alternative, a scene field on the sitting, is Q1.
 
@@ -766,6 +767,15 @@ windlass, winch, ladder} × {stock sloop, a camber hull fitted from the bin}
 → exactly its walk traits (20), station {helm, mainsheet, mast, windlass,
 winch} × {take, leave} → the eye at its stand spot EYE up her up / walk
 asked P1 of the spot, to 1e-9 (10), on a pose turned and heeled 20°.
+*Step 5 fixes*: the station's eye is walk's (`stand`, Decision 39), its
+claim the verb's own (Decision 40), the wheel her spawn (Decision 41);
+walk's table stand spot {on the deck, 0.3 m over it, 0.2 m into it} ×
+deck {still, turned, heeled 20°, heeled 30° the other way} → stand()'s eye
+BODY.eye up the deck's up over the deck under the spot, and resumed, the
+feet there, to 1e-9 (12; an eye up the world's Y fails the 6 heeled); and
+sailing's 10 rows check the protocol: the station taken at its own stand
+spot, the eye exactly walk's there, and walk resumed from walk's eye as
+she is drawn when you leave.
 
 **New check C10** (in the probes, not the bake; "The bake, Input"): every
 baked object stays at its doc pose, doc transform and drawn pose both, while
@@ -975,6 +985,31 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     (the floor under a seat's eye is often under the table), and the old
     direction then faced past the table; under a station, which leaves you
     where its eye was, the two are one.
+39. **walk stands its walker at a stand spot for a body going over it: the
+    `stand` contribution** (decided unattended (2026-11-17, lane/n10), for
+    the lead): `stand(id) → { eye(), yaw } | null`, this viewer's walker in
+    this stage put at P1 of stand spot `id` (on the floor under it), facing
+    its `facing`; `eye()` is that walker's eye as drawn now, and a body
+    over walk (a station) looks from it each frame. Leaving, the resume
+    (Decision 34) is P1 of that eye less BODY.eye along the up of what the
+    walker stands on, which is the walker's own feet: the round trip is
+    walk's alone (body.test, stand spot {on, over, into the deck} × deck
+    pose, to 1e-9), so no other package copies BODY.eye or the stand-spot
+    placement. It replaces a station body that placed its own eye BODY.eye
+    up from the spot and relied on walk's resume to undo it. null when not
+    walking in this stage, so a body can only stand over walk where walk
+    is (a station taken from another stage's walk comes aboard first).
+40. **One claim says who stands at a spot** (decided unattended
+    (2026-11-17, lane/n10), for the lead): `walk.stand`'s `claim` names the
+    claim the body's own verb holds while it stands there, not one held
+    for walk alone; a refused claim already stops that verb, so two people
+    are never drawn at one spot.
+41. **A spawn point on an object with a stand spot is at that spot**
+    (decided unattended (2026-11-17, lane/n10), for the lead): people come
+    in where someone stands (a boat's helm), with no object of its own for
+    the point, so every hull its wheel is fitted to is entered there. A
+    spawn point without a stand spot is at its origin, facing its way, as
+    before.
 
 ## Questions for the lead
 

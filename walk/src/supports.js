@@ -182,8 +182,8 @@ const toSupport = (scene, o, s, k) => {
   return m ? multiply(scaled(k), m) : null;
 };
 
-/** A yaw (0 looks down −Z) for a direction in plan. */
-const yawTo = (d) => Math.atan2(-d[0], -d[2]);
+/** A yaw (0 looks down −Z) for a direction in plan (never −0: straight ahead is 0). */
+const yawTo = (d) => Math.atan2(-d[0], -d[2]) + 0;
 
 /**
  * Where a stand spot (`walk.stand` { at, facing }) puts someone, through its
@@ -199,9 +199,10 @@ export function standAt(m, stand) {
 
 /**
  * Support s's seeds, in its frame: every spawn point (at its origin, facing
- * the way it faces), stand spot (`at`, facing `facing`, default its origin)
- * and ladder (`top`, hanging at its origin, facing from there to the top:
- * inboard) it owns.
+ * the way it faces; on an object with a stand spot, at that spot: people
+ * come in where someone stands), stand spot (`at`, facing `facing`, default
+ * its origin) and ladder (`top`, hanging at its origin, facing from there to
+ * the top: inboard) it owns.
  */
 export function seedsOf(scene, s, k = 1) {
   const out = [];
@@ -211,8 +212,8 @@ export function seedsOf(scene, s, k = 1) {
     const m = toSupport(scene, id, s, k);
     if (!m) continue;
     const origin = apply(m, [0, 0, 0]);
-    if (t[SPAWN]) out.push({ kind: "spawn", id, at: origin, yaw: headingOf(m) });
     const stand = standAt(m, t[STAND]);
+    if (t[SPAWN]) out.push({ kind: "spawn", id, ...(stand ?? { at: origin, yaw: headingOf(m) }) });
     if (stand) out.push({ kind: "stand", id, ...stand });
     if (Array.isArray(t[LADDER]?.top)) {
       const top = apply(m, t[LADDER].top);

@@ -59,10 +59,10 @@
 // down, as the sail's), so two people can't trim one sheet; each winch's own
 // "station" claim says who stands there.
 //
-// Looking at the mast (a part of the ship with no station trait of its own) works
+// Looking at the mast (a part of the ship with no traits of its own) works
 // the sail it carries: the rig hangs under it, or it carries the mast's tag.
 
-import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, WINCH, isUnder, shipOf, sideName, stationKind, wheelTransform } from "./traits.js";
+import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, WINCH, isUnder, shipOf, sideName, wheelTransform } from "./traits.js";
 import { heldEitherSide, trimOf } from "./trim.js";
 import { apply } from "./frames.js";
 
@@ -384,16 +384,15 @@ export function stationCommands(api, ctx) {
 
   /**
    * The sail station a look at `target` works, and whether that look is at
-   * its mast: the station itself; or (the mast) an object aboard the same
-   * ship with no station trait of its own (walk's stand spot is no station)
-   * that the rig hangs under, or one tagged as her mast.
+   * its mast: the station itself; or (the mast) a traitless object aboard
+   * the same ship that the rig hangs under, or one tagged as her mast.
    * Else null: anything else aboard (a table in the cockpit) is no part of
    * the sail.
    */
   function sailOf(sc, target) {
     if (traitOf(sc, target, SAIL)) return { id: target, mast: false };
     const o = objectOf(sc, target);
-    if (!o || stationKind(o)) return null;
+    if (!o || (o.traits && Object.keys(o.traits).length)) return null;
     const ship = shipOf(sc, target);
     const id = ship && ship !== target ? ctx.sim.stationsOf(ship)?.sail : null;
     if (!id || id === target) return null;

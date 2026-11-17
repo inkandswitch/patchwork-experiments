@@ -3,6 +3,10 @@ import { describe, it, expect, vi } from "vitest";
 import { brokenClocks } from "./test/fakes.js";
 import { compass, createHud, hudModel, inIrons, knots, luffing, nearEye, NEAR, sailDownNudge, sailRow, speedOver, stationGuide, windFrom } from "./hud.js";
 
+/** The keys walk's body declares (walk/src/body.js WALK_KEYS: data, as the top body hands it over), and the hint they make. */
+const WALK = [["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"], ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"], ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"]].map(([code, label]) => ({ code, label }));
+const WALKING = "W/↑ Forward · A/← Left · S/↓ Back · D/→ Right · Shift Run · Space Jump · F use";
+
 describe("the HUD's model", () => {
   it("knots and the compass", () => {
     expect(knots(1)).toBeCloseTo(1.9);
@@ -26,7 +30,7 @@ describe("the HUD's model", () => {
       expect(m, `seated ${seated}, near ${near}`).toMatchObject({ state: "lobby", keys: "", panel: false, seated, hint });
     }
     // aboard, near means nothing
-    expect(hudModel({ me: { playing: true }, near: true }).hint).toMatch(/^WASD walk/);
+    expect(hudModel({ me: { playing: true, keys: WALK }, near: true }).hint).toBe(WALKING);
   });
 
   it("is near within NEAR metres of the eye, from an array or a vector, and not without either", () => {
@@ -48,7 +52,10 @@ describe("the HUD's model", () => {
 
   it("aboard: the walking keys, a station's own hint, swimming, paused, no lock", () => {
     expect(hudModel({ me: { playing: true } })).toMatchObject({ state: "aboard", keys: "" });
-    expect(hudModel({ me: { playing: true } }).hint).toMatch(/^WASD walk/);
+    expect(hudModel({ me: { playing: true, keys: WALK } }).hint).toBe(WALKING);
+    // the keys are the top body's, whatever it declares
+    expect(hudModel({ me: { playing: true, keys: [{ code: "KeyZ", label: "Crouch" }, { code: "Digit1", label: "One" }, { code: "KeyX", label: "Crouch" }] } }).hint).toBe("Z/X Crouch · 1 One · F use");
+    expect(hudModel({ me: { playing: true } }).hint).toBe("F use");
     expect(hudModel({ me: { playing: true, hint: "A / D steer · F leave" } }).hint).toBe("A / D steer · F leave");
     expect(hudModel({ me: { playing: true, swimming: true } }).hint).toMatch(/ladder/);
     expect(hudModel({ me: { playing: true, paused: true } })).toMatchObject({ state: "paused", hint: "Click to carry on" });
@@ -320,10 +327,10 @@ describe("the HUD", () => {
   });
 
   it("aboard: the crosshair's state, the hint line, and the numbers as they change", () => {
-    const me = { current: { playing: true, on: "hull" } };
+    const me = { current: { playing: true, on: "hull", keys: WALK } };
     const s = stage(me);
     expect(s.root.dataset.state).toBe("aboard");
-    expect(s.root.querySelector('[data-k="hint"]').textContent).toMatch(/^WASD walk/);
+    expect(s.root.querySelector('[data-k="hint"]').textContent).toBe(WALKING);
     expect(s.root.querySelector('[data-k="wind"]').textContent).toBe("10 kn S");
     expect(s.root.querySelector('[data-k="sail"]').textContent).toBe("50% · sheet 50%");
     expect(s.root.querySelector('[data-k="anchor"]').textContent).toBe("Down");

@@ -260,7 +260,8 @@ thing, which its doc keeps wherever it is placed. A sloop is a hull with
 (helm, sail, winches, windlass, ladder). Her physics is a process on the
 doc's clock: one view steps it and streams her pose, the rest draw her
 where it says, at the moment its sea is drawn. Her crew walk her deck in
-sailing's aboard body and take a station with F, pushing the station body.
+walk's body (her hull a support) and take a station with F, pushing
+sailing's station body over walk.
 Her companionway is two other packages' traits: a hatch that slides
 (`joints.slide`) and an exit (`traversal.exit`).
 
