@@ -1,7 +1,12 @@
 // A die's GLB: at real size, standing on y = 0, its triangles facing out,
-// and saying what it is in extras.dice, for every preset.
+// and saying what it is in extras.dice, for every preset. And the cup's and
+// the pool's: real size, every triangle facing the way its normals say
+// (they're drawn one-sided, so one wound wrong is a hole you could see
+// under the cup through).
 import { describe, it, expect } from "vitest";
 import { builtDie, dieGLB, strokeOutlines } from "./die-glb.js";
+import { CUP_HEIGHT, CUP_MOUTH } from "./cup.js";
+import { POOL_RADIUS, cupGLB, poolGLB, shade } from "./cup-glb.js";
 import { PRESETS, dieOf } from "./die.js";
 import { parseGLB } from "./glb.js";
 import { builtOf, faceUp, showing } from "./roll.js";
@@ -143,5 +148,41 @@ describe("the scene:source", () => {
     const fp = Source.fingerprint(doc);
     expect(Source.fingerprint({ ...doc, title: "x", rolls: [{ face: 2, how: "rolled", at: 5 }] })).toBe(fp);
     expect(Source.fingerprint({ ...doc, body: "#123456" })).not.toBe(fp);
+  });
+});
+
+describe("the cup and the pool", () => {
+  for (const [name, made] of [["cup", cupGLB("#884422")], ["pool", poolGLB()]]) {
+    it(`${name}: every triangle is wound the way its normals face`, () => {
+      let tris = 0;
+      let wrong = 0;
+      for (const p of primitives(made.glb)) {
+        for (let t = 0; t < p.indices.length; t += 3, tris++) {
+          const [a, b, c] = [0, 1, 2].map((k) => [0, 1, 2].map((x) => p.positions[p.indices[t + k] * 3 + x]));
+          const n = [0, 1, 2].map((x) => [0, 1, 2].reduce((sum, k) => sum + p.normals[p.indices[t + k] * 3 + x], 0));
+          const u = a.map((v, k) => b[k] - v), w = a.map((v, k) => c[k] - v);
+          const cr = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+          if (Math.hypot(...cr) < 1e-14) continue; // a disc's centre: no area
+          if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] <= 0) wrong++;
+        }
+      }
+      expect(tris).toBeGreaterThan(50);
+      expect(wrong).toBe(0);
+    });
+  }
+
+  it("are their real sizes", () => {
+    const cup = cupGLB().bounds;
+    expect(cup.min[1]).toBe(0);
+    expect(cup.max[1]).toBeCloseTo(CUP_HEIGHT, 6);
+    expect(cup.max[0]).toBeGreaterThanOrEqual(CUP_MOUTH);
+    expect(cup.max[0]).toBeLessThan(CUP_MOUTH + 0.002);
+    const pool = poolGLB().bounds;
+    expect(pool.max[0]).toBeCloseTo(POOL_RADIUS, 6);
+    expect(pool.min[1]).toBe(0);
+  });
+
+  it("shade darkens a colour", () => {
+    expect(shade("#806040", 0.5)).toBe("#403020");
   });
 });

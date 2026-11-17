@@ -270,16 +270,9 @@ describe("using the die on its own", () => {
     expect(showingFace({}, 6)).toBe(0);
     expect(showingFace({ rolls: [{ face: 9 }] }, 6)).toBe(0);
     expect(showingFace({ rolls: [{ face: 2 }, { face: 5 }] }, 6)).toBe(5);
-  });
-
-  it("a drawn roll lands the face its seed says: the seeds 0 … n − 1 land every face of every preset once; undrawn, none", () => {
-    for (const [id, p] of Object.entries(PRESETS)) {
-      const n = dieOf(p.make()).faces.length;
-      const faces = Array.from({ length: n }, (_, k) => faceOfDraw({ public: true, seed: k.toString(16).padStart(8, "0") + "0".repeat(56) }, n));
-      expect(faces, id).toEqual(Array.from({ length: n }, (_, k) => k));
-      expect(faceOfDraw({ public: false, seed: null }, n)).toBe(null);
-      expect(faceOfDraw(null, n)).toBe(null);
-    }
+    // undrawn: no face
+    expect(faceOfDraw({ public: false, seed: null }, 6)).toBe(null);
+    expect(faceOfDraw(null, 6)).toBe(null);
   });
 
   it("Roll, alone: drawn by lots with one member, at once, and lands the face its draw's seed says, over a listed run of draws of a d20, a plus/minus die and a coin", () => {

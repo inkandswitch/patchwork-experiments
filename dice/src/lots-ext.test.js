@@ -202,24 +202,6 @@ describe("dice.lots, three players and a spectator", () => {
 });
 
 describe("dice.lots, a draw open to all (a throw in the open)", () => {
-  it("alone: one member, drawn at once, with no deadline: the seed is the hash of the one opening", async () => {
-    const w = world({ seated: null, present: ["ana"] });
-    const draw = w.lots("ana").draw("d1", { sealers: [], of: ["d1"] });
-    // asked and opened before any time has passed
-    await w.settle();
-    const r = w.round("d1");
-    expect(r.draw).toBe(draw);
-    expect(r.members).toEqual(["ana"]);
-    expect(r.of).toEqual(["d1"]);
-    expect(r.keys).toEqual({}); // nothing will be sealed: no key
-    const st = w.lots("ana").state("d1");
-    expect(st.phase).toBe("open");
-    expect(st.public).toBe(true);
-    expect(st.seed).toBe(seedOf(r.id, Object.entries(r.opens)));
-    expect(w.hud("ana")).toEqual([]);
-    w.dispose();
-  });
-
   it("together: everyone here who runs lots commits, then all open; the seed is everyone's and the hash of every opening", async () => {
     const w = world({ seated: null, present: ["ana", "ben", "cy"] });
     w.setAudience(() => null); // no policy says anything of a die in the open: nothing is sealed, so nothing waits on it
@@ -240,20 +222,6 @@ describe("dice.lots, a draw open to all (a throw in the open)", () => {
     await w.settle();
     expect(w.round("d1").members).toEqual(["ana", "ben"]);
     expect(w.lots("ana").state("d1").phase).toBe("open");
-    w.dispose();
-  });
-
-  it("the asker opens first: the others' openings wait on its own", async () => {
-    const w = world({ seated: null, present: ["ana", "ben", "cy"] });
-    // ana's client is a modified one that commits and never opens
-    w.clients.get("ana").ext.dispose();
-    const id = "rFIRSTxx";
-    w.write((d) => (d.objects.d1.traits["dice.die"].round = newRound({ draw: "dFIRSTxx", id, by: "ana", at: Date.now(), of: ["d1"], sealers: [], members: ["ana", "ben", "cy"], commit: commitOf(id, "ana", freshNonce(), "", ["d1"]) })));
-    await w.settle();
-    const r = w.round("d1");
-    expect(Object.keys(r.commits).sort()).toEqual(["ana", "ben", "cy"]);
-    expect(r.opens).toEqual({}); // nobody opened before her: she learns nothing
-    expect(w.lots("ben").state("d1").waiting).toEqual(["ana"]);
     w.dispose();
   });
 

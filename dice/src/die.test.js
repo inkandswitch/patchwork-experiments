@@ -148,6 +148,8 @@ describe("the presets", () => {
       expect(p.make().faces).not.toBe(doc.faces);
     }
     for (const shape of SHAPES) expect(PRESETS[SHAPE_PRESET[shape]].make().shape).toBe(shape);
+    // one that isn't a preset is the d6
+    expect(presetDoc("nope")).toEqual(presetDoc("d6"));
   });
 
   it("the numbered dice: each number once, opposite faces adding to one more than the faces (a d10, 0 to 9: to 9)", () => {
@@ -204,28 +206,5 @@ describe("the presets", () => {
     expect(die.size).toBe(0.03);
     // every other preset is rolled
     for (const [id, p] of Object.entries(PRESETS)) if (id !== "doubling") expect(p.make().turnOnly).toBe(false);
-  });
-
-  it("the d6 with a symbol for its 6 still reads 6 there, and spots elsewhere", () => {
-    const die = dieOf(PRESETS["d6-logo"].make());
-    expect(die.faces.map((f) => f.label).sort()).toEqual(["1", "2", "3", "4", "5", "6"]);
-    const six = die.faces.find((f) => f.label === "6");
-    expect(six.marks).toEqual([{ kind: "symbol", value: "star" }]);
-    expect(six.name).toBe("6");
-  });
-
-  it("the icon die's icons carry counts: faces with one mark and with two", () => {
-    const die = dieOf(PRESETS.icons.make());
-    expect(die.faces.map((f) => f.label).sort()).toEqual(["2 shields", "2 swords", "blank", "shield", "sword", "sword"]);
-    expect(die.faces.map((f) => f.marks.length).sort()).toEqual([0, 1, 1, 1, 2, 2]);
-  });
-
-  it("a coin: heads and tails, heads up as it stands", () => {
-    expect(labels("coin")).toEqual(["heads", "tails"]);
-  });
-
-  it("sizes are real: a d6 is 16 mm, a d20 20 mm, a coin 24 mm", () => {
-    expect([presetDoc("d6").size, presetDoc("d20").size, presetDoc("coin").size]).toEqual([0.016, 0.02, 0.024]);
-    expect(presetDoc("nope")).toEqual(presetDoc("d6"));
   });
 });

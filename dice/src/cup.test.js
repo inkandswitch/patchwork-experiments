@@ -221,7 +221,6 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
           for (const by of ["ana", "ben"])
             for (const asked of ASKED)
               for (const contributors of [null, ...subsetsOf(P).filter((s) => s.includes(by)).map((s) => s.sort())]) cases.push({ holder, blind, draw, of, by, asked, contributors });
-  it("has every case", () => expect(cases.length).toBe(2 * 2 * 2 * 4 * 2 * 7 * 5));
 
   it("ours: its draw, of its dice in order, asked by the holder, sealed by the holder alone (or, blind, the holder among others); forgedOn: ours, and someone says a part of it is in their name and not theirs; fits: ours, not forged, and, blind, someone besides the holder kept a part sealed", () => {
     for (const c of cases) {

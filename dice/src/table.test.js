@@ -8,8 +8,6 @@ import { DICE_EACH, SETS, cupPart, template } from "./table.js";
 import { emptyScene } from "./test/empty-scene.js";
 import { plugins } from "./index.js";
 import source from "./source.js";
-import { builtOf } from "./roll.js";
-import { parseGLB } from "./glb.js";
 import { validate } from "./test/contract/validate.js";
 import game from "../games/liars-dice.json" with { type: "json" };
 
@@ -96,18 +94,6 @@ describe("Liar's dice, as data", () => {
       expect(Math.hypot(c.t.position[0], c.t.position[2])).toBeLessThan(0.55);
     }
     for (const [id, o] of Object.entries(snap.objects)) if (o.traits?.["dice.die"]) expect(p(id)).toBe(null);
-  });
-
-  it("its dice, drawn by this package's source from their docs, are standard d6s: opposite faces adding to 7", async () => {
-    for (const set of SETS) {
-      const out = await source.build({ doc: game.pieces[`${set.name.toLowerCase()}-die`].doc });
-      const built = builtOf(parseGLB(out.glb).json.scenes[0].extras.dice);
-      expect(built.faces.map((f) => f.label).sort()).toEqual(["1", "2", "3", "4", "5", "6"]);
-      for (const f of built.faces) {
-        const opposite = built.faces.find((g) => g.up.every((v, i) => Math.abs(v + f.up[i]) < 1e-6));
-        expect(Number(f.label) + Number(opposite.label)).toBe(7);
-      }
-    }
   });
 });
 

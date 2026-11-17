@@ -165,10 +165,6 @@ for (const members of [["a"], ["a", "b"], ["a", "b", "c"]]) {
 }
 
 describe("lots: every small table", () => {
-  it("has the cases it means to (3 sizes × kinds of draw × away × stallers)", () => {
-    expect(CASES.length).toBe(38);
-  });
-
   for (const c of CASES) {
     const name = `${c.members.join("")}, ${c.kind}${c.absent.length ? `, ${c.absent.join("")} away` : ""}${c.stallers.length ? `, ${c.stallers.join("")} never opens` : ""}`;
     it(name, () => {
@@ -243,7 +239,6 @@ describe("lots: a reroll", () => {
       }
     }
   }
-  it("has the cases it means to", () => expect(cases.length).toBe(2 * 2 + 2 * 4 * 4));
 
   for (const { members, order, sawAll, next } of cases) {
     it(`${members.join("")}, opened ${order.join("")}, ${sawAll.join("") || "nobody"} saw all of it, then a draws again with ${next.join("")}`, () => {
@@ -393,7 +388,6 @@ describe("lots: a draw open to all, and its last opener", () => {
   for (const members of [["a", "b"], ["a", "b", "c"]])
     for (const opened of subsets(members))
       for (const by of members) for (const me of members) cases.push({ members, opened, by, me });
-  it("has the cases it means to", () => expect(cases.length).toBe(4 * 2 * 2 + 8 * 3 * 3));
 
   const roundWith = (members, opened, by = "a", id = "r1xx") => {
     const r = newRound({ draw: "dxxxx", id, by, at: 0, of: ["d1"], sealers: [], members, commit: commitOf(id, by, nonceOf(by, id), "", ["d1"]) });

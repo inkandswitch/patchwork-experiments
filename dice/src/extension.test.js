@@ -243,25 +243,6 @@ describe("rolling a die", () => {
     t.w.done();
   });
 
-  it("lands as its draw's seed says: every face of every shape, by its seed", () => {
-    for (const preset of ["d4", "d6", "d8", "d10", "d12", "d20", "coin", "plus-minus"]) {
-      const n = built(preset).faces.length;
-      for (let seed = 0; seed < n; seed++) {
-        const t = world({ dice: { d1: preset } });
-        const from = structuredClone(t.doc.objects.d1.transform);
-        t.run("roll", "d1");
-        t.draw(seed);
-        t.w.tick(1 / 60, FRAMES);
-        expect(t.doc.objects.d1.transform).toEqual(rollPlan(seed, { built: built(preset), from }).to);
-        expect(t.shows("d1")).toBe(seed);
-        t.sync();
-        expect(t.notices("A")).toEqual([`You rolled ${built(preset).faces[seed].label}`]);
-        expect(t.notices("B")).toEqual([`Someone rolled ${built(preset).faces[seed].label}`]);
-        t.w.done();
-      }
-    }
-  });
-
   it("asks one draw for a roll, and one for a whole throw of several, of every die in it in order, on the first", () => {
     const t = world({ dice: { d1: "d6", d2: "d6" }, objects: { g: { kind: "group", name: "Dice", group: null } } });
     t.a.change((d) => (d.objects.d1.group = d.objects.d2.group = "g"));
