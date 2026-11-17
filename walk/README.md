@@ -27,16 +27,21 @@ the walker's enumerated cases included.
   map, and a verb whose key it takes shows without one (walking, Draw is a
   button, not D). It asks for pointer lock and reaches **2 m**.
 - **Where it starts** (`startOf`, pure): at the place it's given (a support:
-  its spawn; any other object, a spawn point, a stand spot: P1 at it, facing
-  its way), else on the floor under the eye within 10 m, else at a spawn
-  point, else where the walker respawns. Until every support's first mesh
-  has landed it waits: no camera move, no avatar.
+  its spawn; a stand spot: P1 at its `at`, facing its `facing`; any other
+  object, a spawn point: P1 at it, facing its way), else on the floor under
+  the eye within 10 m, else at a spawn point, else where the walker
+  respawns. Until every support's first mesh has landed it waits: no camera
+  move, no avatar. A model still coming holds its support's bake back; a
+  link, a model that failed and an object with no model don't (the stage's
+  own rule for what has loaded). A support over 5M columns (E1M1's ground
+  is 4.2M) is not baked until tiles land: walk says so once and waits.
 - **Its floor is a navmesh per support** (DESIGN.md): the ground (the
   stage's frame, everything no support owns) and each `walk.support`, each
   baked from its objects' GLBs at their rest pose, placed by the doc's
-  transforms (`supports.js`, the input adapter), cached for the page by a
-  key and rebaked off the frame loop when the key changes, the old mesh in
-  use until the new one lands (then the walker is projected onto it: R1).
+  transforms (`supports.js`, the input adapter), kept for the page by a
+  key while some support uses it, and rebaked off the frame loop when the
+  key changes, the old mesh in use until the new one lands (then the
+  walker is projected onto it: R1).
   The walker (`walker.js`, pure) keeps the person on a kept cell of the
   support they stand on, in its frame: the world pose is that support's
   drawn frame times the local feet, never fed back, so standing still on a
@@ -88,10 +93,15 @@ point, eye over a floor, eye over nothing, a support} × world {ground only, a
 moving deck}), riding a deck that {translates, turns 90°, heels 30°} ×
 {standing, walking} (the local feet the still deck's, to the bit), a rebake
 under you {a part added, the floor removed} (P1), waiting for the first
-meshes, a seat. `supports.test.js`: what each support bakes, the key, the
-blockers (a door shut and open), water and the ladder's Climb.
-`extension.test.js`: the people part, and the presence round trip {ground,
-support, swimming} drawn to 1e-9. In a browser, doom's `probes/doom.mjs`
+meshes, a seat, a stand spot, an eye held low, presence while jumping on a
+deck, coming back on a turned deck, a support at scale 2, the eye easing up
+a STEP. `supports.test.js`: what each support bakes (a swept part round
+its hub), the key (every kind of seed), what holds a bake back {a link, a
+failed model, no provider, no model, loading}, the column cap, the meshes
+kept, the blockers (a door shut and open; hidden or carried ones don't),
+water and the ladder's Climb (in its own doc). `extension.test.js`: the
+people part, the avatar's ease and snap, and the presence round trip
+{ground, support, swimming} drawn to 1e-9. In a browser, doom's `probes/doom.mjs`
 walks E1M1 and arena's `probes/arena-run.mjs` the arena.
 
 ```

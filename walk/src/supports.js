@@ -9,7 +9,7 @@
 // new one lands; the blockers, where they are drawn this frame; and the
 // water, as the stage's `water` contribution answers it.
 
-import { bake, sweptAbout } from "./navmesh.js";
+import { bake, gridOf, sweptAbout } from "./navmesh.js";
 import { apply, headingOf, invert, matrixOf, multiply, scaleOf } from "./frames.js";
 import { BODY } from "./walk.js";
 
@@ -39,8 +39,15 @@ export function ownerOf(scene, id) {
   return null;
 }
 
-/** Every support in the doc, by id. */
-export const supportsOf = (scene) => idsOf(scene).filter((id) => traitsOf(scene, id)?.[SUPPORT]);
+const SUPPORTS = new WeakMap(); // a scene snapshot → its supports (the walker asks every query)
+
+/** Every support in the doc, by id (once per snapshot). */
+export function supportsOf(scene) {
+  if (!scene || typeof scene !== "object") return [];
+  let list = SUPPORTS.get(scene);
+  if (!list) SUPPORTS.set(scene, (list = Object.freeze(idsOf(scene).filter((id) => traitsOf(scene, id)?.[SUPPORT]))));
+  return list;
+}
 
 /**
  * Where `id` sits in `root`'s frame by the doc's transforms (not the poses
@@ -97,8 +104,8 @@ export function bakedObjects(scene, s) {
   return out;
 }
 
-/** The objects with `walk.moves { blocks }`, wherever they are: obstacles drawn where they are each frame. */
-export const blockersOf = (scene) => idsOf(scene).filter((id) => traitsOf(scene, id)?.[MOVES]?.blocks === true);
+/** The objects with `walk.moves { blocks }`, wherever they are, unless loose (hidden or carried): obstacles drawn where they are each frame. */
+export const blockersOf = (scene) => idsOf(scene).filter((id) => traitsOf(scene, id)?.[MOVES]?.blocks === true && !standing(scene, id, undefined).loose);
 
 // ─── geometry ───────────────────────────────────────────────────────────────
 
@@ -179,6 +186,18 @@ const toSupport = (scene, o, s, k) => {
 const yawTo = (d) => Math.atan2(-d[0], -d[2]);
 
 /**
+ * Where a stand spot (`walk.stand` { at, facing }) puts someone, through its
+ * object's matrix m: at `at`, facing `facing` (default: its origin). null
+ * without an `at`.
+ */
+export function standAt(m, stand) {
+  if (!Array.isArray(stand?.at)) return null;
+  const at = apply(m, stand.at);
+  const f = apply(m, Array.isArray(stand.facing) ? stand.facing : [0, 0, 0]);
+  return { at, yaw: yawTo([f[0] - at[0], 0, f[2] - at[2]]) };
+}
+
+/**
  * Support s's seeds, in its frame: every spawn point (at its origin, facing
  * the way it faces), stand spot (`at`, facing `facing`, default its origin)
  * and ladder (`top`, hanging at its origin, facing from there to the top:
@@ -193,12 +212,8 @@ export function seedsOf(scene, s, k = 1) {
     if (!m) continue;
     const origin = apply(m, [0, 0, 0]);
     if (t[SPAWN]) out.push({ kind: "spawn", id, at: origin, yaw: headingOf(m) });
-    const st = t[STAND];
-    if (Array.isArray(st?.at)) {
-      const at = apply(m, st.at);
-      const f = Array.isArray(st.facing) ? apply(m, st.facing) : origin;
-      out.push({ kind: "stand", id, at, yaw: yawTo([f[0] - at[0], 0, f[2] - at[2]]) });
-    }
+    const stand = standAt(m, t[STAND]);
+    if (stand) out.push({ kind: "stand", id, ...stand });
     if (Array.isArray(t[LADDER]?.top)) {
       const top = apply(m, t[LADDER].top);
       out.push({ kind: "ladder", id, at: top, yaw: yawTo([top[0] - origin[0], 0, top[2] - origin[2]]), hook: origin });
@@ -219,13 +234,31 @@ const fnv = (str) => {
 };
 const r6 = (v) => Math.round(v * 1e6) / 1e6;
 
+const named = (v) => typeof v === "string" && v !== "";
+
+/**
+ * Is an object's model still coming? The stage's own rule for whether what
+ * it shows has loaded (stage.js contentIn): content that loads (a source or
+ * a render) and hasn't, unless it is a link (its content is its doc, drawn
+ * by that doc's own stage: no triangles here) or failed (its status `error`,
+ * or `warn`: no provider). What isn't coming and hasn't loaded bakes as
+ * nothing, and its loading later changes the key.
+ */
+function coming(api, id, o) {
+  const c = api.content?.(id);
+  if (!c || c.loaded || !(named(o.sourceUrl) || named(o.renderUrl))) return false;
+  if (api.link?.(id) != null) return false;
+  const state = api.local?.get?.()?.status?.[id]?.state;
+  return state !== "error" && state !== "warn";
+}
+
 /**
  * Support s's bake key: a hash of its scale and, for each baked object and
  * each seed, its id, files, transform in s, swept axis, traits (their keys;
  * a seed's values too) and whether its model has loaded. s's own drawn pose
  * is not in it (a deck never rebakes because it moved), nor are the
- * blockers (read each frame). null until every baked object that has a
- * model has loaded it: nothing to bake yet.
+ * blockers (read each frame). null while a baked object's model is still
+ * coming: nothing to bake yet.
  */
 export function bakeKey(api, s) {
   const scene = api.scene?.();
@@ -233,10 +266,9 @@ export function bakeKey(api, s) {
   const k = scaleIn(api, s);
   const parts = [];
   for (const { id, swept } of bakedObjects(scene, s)) {
-    const c = api.content?.(id);
-    if (c && !c.loaded) return null;
     const o = scene.objects[id];
-    parts.push([id, o.sourceUrl ?? null, o.renderUrl ?? null, (toSupport(scene, id, s, 1) ?? I4).map(r6), !!c, swept ? [swept.part, swept.axis] : null, Object.keys(o.traits ?? {}).sort()]);
+    if (coming(api, id, o)) return null;
+    parts.push([id, o.sourceUrl ?? null, o.renderUrl ?? null, (toSupport(scene, id, s, 1) ?? I4).map(r6), !!api.content?.(id)?.loaded, swept ? [swept.part, swept.axis] : null, Object.keys(o.traits ?? {}).sort()]);
   }
   const seeds = seedsOf(scene, s, 1).map((sd) => [sd.kind, sd.id, sd.at.map(r6), r6(sd.yaw ?? 0), sd.hook?.map(r6) ?? null]);
   return fnv(JSON.stringify([r6(k), parts, seeds]));
@@ -274,9 +306,23 @@ export function bakeInput(api, s) {
   return { key, triangles, seeds: seedsOf(scene, s, k), prune: false };
 }
 
-/** Baked meshes by key, shared by every walker in the page (a mesh is never changed once baked). */
+/**
+ * Baked meshes by key, shared by every walker in the page (a mesh is never
+ * changed once baked), each kept while some support's entry uses it and no
+ * longer: key → { mesh, users }.
+ */
 const MESHES = new Map();
-const KEEP = 8;
+
+/** The keys of the meshes the page keeps now (tests). */
+export const keptMeshes = () => [...MESHES.keys()];
+
+/**
+ * The most columns a bake may have (its time and memory grow with them:
+ * E1M1's ground, 4.22M, takes 11 s and keeps 649 MB). A support over it is
+ * not baked (DESIGN.md, "When it runs, and the budget"): until tiles land,
+ * a walk there waits, and says why.
+ */
+export const MAX_COLUMNS = 5e6;
 
 /** The bytes a mesh keeps (its typed arrays). */
 export function meshBytes(mesh) {
@@ -292,21 +338,33 @@ export function meshBytes(mesh) {
 }
 
 /**
- * Bake an input, or the cached mesh with its key. A page that keeps an
- * array at globalThis.__WALK_BAKES__ (the probes) is told each bake's cost,
+ * Bake an input, or the kept mesh with its key. A page that keeps an array
+ * at globalThis.__WALK_BAKES__ (the probes) is told each bake's cost,
  * against the 500 ms budget (DESIGN.md, "When it runs, and the budget").
  */
 export function meshFor(input, P = BODY) {
-  let mesh = MESHES.get(input.key);
-  if (!mesh) {
-    const t0 = globalThis.performance?.now?.() ?? Date.now();
-    mesh = bake(input, P);
-    const log = globalThis.__WALK_BAKES__;
-    if (Array.isArray(log)) log.push({ key: input.key, ms: Math.round((globalThis.performance?.now?.() ?? Date.now()) - t0), triangles: input.triangles.length / 9, columns: mesh.nx * mesh.nz, cells: mesh.count, MB: +(meshBytes(mesh) / 1e6).toFixed(1) });
-    MESHES.set(input.key, mesh);
-    while (MESHES.size > KEEP) MESHES.delete(MESHES.keys().next().value);
-  }
+  const kept = MESHES.get(input.key);
+  if (kept) return kept.mesh;
+  const t0 = globalThis.performance?.now?.() ?? Date.now();
+  const mesh = bake(input, P);
+  const log = globalThis.__WALK_BAKES__;
+  if (Array.isArray(log)) log.push({ key: input.key, ms: Math.round((globalThis.performance?.now?.() ?? Date.now()) - t0), triangles: input.triangles.length / 9, columns: mesh.nx * mesh.nz, cells: mesh.count, MB: +(meshBytes(mesh) / 1e6).toFixed(1) });
   return mesh;
+}
+
+/** An entry takes up a mesh (by key), letting go of the one it had. */
+function use(e, key, mesh) {
+  if (e.key === key) return;
+  const kept = MESHES.get(key) ?? { mesh, users: 0 };
+  kept.users++;
+  MESHES.set(key, kept);
+  letGo(e.key);
+  e.mesh = mesh;
+  e.key = key;
+}
+function letGo(key) {
+  const kept = key == null ? null : MESHES.get(key);
+  if (kept && --kept.users <= 0) MESHES.delete(key);
 }
 
 // ─── the walker's world ─────────────────────────────────────────────────────
@@ -332,10 +390,13 @@ export function orientedBox(M, { min, max }) {
  * its key changes, off the frame loop (the stage's clock.after), the old
  * mesh answered until it lands. `changed()` says the doc or what's shown
  * changed (the extension's update), so keys are looked at again;
- * `frame()` starts a frame (blockers are read once in each).
+ * `frame()` starts a frame (blockers are read once in each). A support
+ * whose grid is over `maxColumns`, or whose bake failed, is not baked again
+ * for that key (it is said once, and walkers wait for it); `dispose()` lets
+ * go of every mesh.
  */
-export function createSupports(api, P = BODY) {
-  const entries = new Map(); // id (null: the ground) → { key, mesh, want, seen, timer }
+export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {}) {
+  const entries = new Map(); // id (null: the ground) → { key, mesh, want, seen, timer, failed }
   let version = 0;
   let frameNo = 0;
   const boxes = new Map(); // on → [box], this frame
@@ -343,23 +404,38 @@ export function createSupports(api, P = BODY) {
 
   const ids = () => [...supportsOf(api.scene?.()), null];
 
+  const what = (id) => (id == null ? "The ground" : `“${api.nameOf?.(id) ?? id}”`);
+  function refuse(id, e, key, why) {
+    e.failed = key;
+    api.notify?.(`${what(id)} can't be walked on: ${why}.`);
+  }
   function land(id, e) {
     e.timer = null;
     const input = bakeInput(api, id);
     if (!input) return;
-    e.mesh = meshFor(input, P);
-    e.key = input.key;
+    const kept = MESHES.get(input.key);
+    if (kept) return use(e, input.key, kept.mesh);
+    const { nx, nz } = gridOf(input.triangles, P);
+    if (nx * nz > maxColumns) return refuse(id, e, input.key, `it is ${(nx * nz).toLocaleString("en")} columns of ${P.cell * 100} cm, and walk bakes at most ${maxColumns.toLocaleString("en")} (until it bakes in tiles)`);
+    let mesh;
+    try {
+      mesh = meshFor(input, P);
+    } catch (err) {
+      console.error("[walk] a bake failed", err);
+      return refuse(id, e, input.key, "its bake failed");
+    }
+    use(e, input.key, mesh);
   }
   function entryOf(id) {
     let e = entries.get(id);
-    if (!e) entries.set(id, (e = { key: null, mesh: null, want: null, seen: -1, timer: null }));
+    if (!e) entries.set(id, (e = { key: null, mesh: null, want: null, seen: -1, timer: null, failed: null }));
     if (e.seen !== version) {
       e.want = bakeKey(api, id);
       e.seen = version;
     }
-    if (e.want && e.want !== e.key && !e.timer) {
-      const cached = MESHES.get(e.want);
-      if (cached) (e.mesh = cached), (e.key = e.want);
+    if (e.want && e.want !== e.key && e.want !== e.failed && !e.timer) {
+      const kept = MESHES.get(e.want);
+      if (kept) use(e, e.want, kept.mesh);
       else if (!e.mesh) land(id, e); // the first: baked when first needed
       else e.timer = api.clock.after(0, () => land(id, e)) ?? true; // a rebake: off the frame loop, the old mesh in use until it lands
     }
@@ -399,5 +475,12 @@ export function createSupports(api, P = BODY) {
     ready: () => ids().every((id) => env.mesh(id) != null),
     changed: () => void version++,
     frame: () => void frameNo++,
+    dispose() {
+      for (const e of entries.values()) {
+        if (typeof e.timer === "function") e.timer();
+        letGo(e.key);
+      }
+      entries.clear();
+    },
   };
 }

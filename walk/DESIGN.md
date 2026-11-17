@@ -152,7 +152,15 @@ For a support s with frame M_s (rigid) and its object's scale k:
   model has loaded, its `swept` axis and its trait keys (sailing's
   `navKey`, generalised). The support's own drawn pose is not in it, so
   sailing never rebakes her because she moved. Blockers are not in it
-  either: they are read each frame.
+  either: they are read each frame. There is no key while a baked object's
+  model is still coming, by the stage's own rule for what has loaded
+  (`contentIn`): content that loads (a source or a render) and hasn't,
+  unless it is a link (its content is its doc, drawn by that doc's stage:
+  no triangles here) or failed (status `error`, or `warn`: no provider).
+  What isn't coming and hasn't loaded bakes as nothing; its loading later
+  changes the key. A model rebuilt in place (the same urls) does not change
+  it: owed (a content root's identity would, but would stop two views of
+  one doc sharing a mesh).
 
 An object that moves in play must be a support, a moving part or loose,
 whether it moves by writing its doc transform or by a pose hold. The bake
@@ -221,7 +229,13 @@ with its area, centroid and why (sealed, or under π r²).
 - A support is baked when first needed (a walker on it, or entering it),
   then again off the frame loop whenever its key changes. The old mesh
   stays in use until the new one lands, and walkers on it are projected
-  onto the new one (R1). Meshes are cached by key for the page.
+  onto the new one (R1). Meshes are kept by key for the page while some
+  support's entry uses one, and no longer (E1M1's ground is 649 MB).
+- **A cap: 5M columns** (`MAX_COLUMNS`; E1M1's ground is 4.22M). Until
+  tiles land, a support whose grid is over it is not baked (its time and
+  memory grow with its columns: a terrain ground would be tens of GB); nor
+  is one whose bake threw. Either is said once (a notice) and not tried
+  again for that key; walkers wait for it.
 - **Budget: 500 ms** a bake, off the frame loop, measured where it runs
   (the sloop: 80–120 ms in Node, 219 ms in a loaded browser).
 - **Big supports bake in tiles.** At 5 cm a map of 80 × 125 m (E1M1) is
@@ -703,8 +717,11 @@ the page for that long and keeps that much.
 Still owed (not built in step 4): tiles; pruning by passable sides (every
 support bakes with `prune: false`: every component kept, which is safe);
 W6, SW2 and SW1's clamp; drawing a stand spot's claim holder (`claim`);
-Q6's check of the link-composed examples; C10; timing Cadboro Bay and
-Ucluelet.
+Q6's check of the link-composed examples in real Patchwork (a link now
+bakes as nothing and never holds a bake back, so none waits; whether any
+example stands on a link's floor is still to see, before walk syncs); C10;
+Cadboro Bay and Ucluelet (refused by the column cap until tiles); a model
+rebuilt in place rebaking.
 
 **Step 5** (sailing walks in walk):
 - part kind → walk trait, for the stock sloop and a camber hull;
@@ -839,22 +856,50 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 26. **Presence is at full precision** (decided unattended (2026-11-17,
     lane/n10), for the lead): rounded to the millimetre, a peer was drawn up
     to 0.5 mm off in a moving frame; the round trip is now exact to 1e-9.
-27. **Doom tags its doors in step 4** (decided unattended (2026-11-17,
-    lane/n10), for the lead). The step's brief said doom's source stays
-    unchanged; without the tag a door, which opens by pose hold, is baked
-    shut where its doc puts it, and walking through it open (doom.mjs)
-    cannot work. One trait per door, so E1M1's published docs must be
-    republished (no back-compat): until they are, their doors are walls.
-28. **Every walk trait is declared by the `walk.spawn` part** (decided
-    unattended (2026-11-17, lane/n10), for the lead), id kept so no doc
-    changes; it is now the part of walk's traits, with Climb beside Walk
-    from here.
+27. **Doom tags its doors in step 4, as built; whether is Q7** (decided
+    unattended (2026-11-17, lane/n10), for the lead). The step's brief said
+    doom's source and doc shapes stay unchanged; without the tag a door,
+    which opens by pose hold, is baked shut where its doc puts it, and
+    walking through it open (doom.mjs) cannot work. One trait per door, so
+    E1M1's published docs must be republished (no back-compat): until they
+    are, their doors are walls. **Release order:** walk must not be synced
+    before the E1M1 examples are republished with the tag.
+28. **Every walk trait is declared by the `walk.spawn` part, as built;
+    its id is Q8** (decided unattended (2026-11-17, lane/n10), for the
+    lead). It is now the part of walk's traits, with Climb beside Walk from
+    here.
 29. **Every support bakes with `prune: false` until the pruning by passable
     sides lands** (decided unattended (2026-11-17, lane/n10), for the lead):
     the seed-only rule would drop every floor of a level reached only by a
     jump or a drop; keeping everything is safe for I.
+30. **A ladder's Climb reaches the walker through a page registry, by
+    session and doc** (decided unattended (2026-11-17, lane/n10), for the
+    lead). The verb is the `walk.spawn` part's (it runs in the ladder's
+    doc); the walker is the `walk` part's (general, at the focus). body.js
+    keeps the live walkers, and `walkerOf(session, url)` finds the one of
+    this session walking this doc (by session alone it found the first,
+    possibly in another doc of the page). The alternative, Climb offered by
+    the general `walk` part itself where the walker is, depends on a general
+    part's verbs reaching targets in the doc being walked; the lead's call.
+31. **The column cap is 5M, a refused or failed bake is said once and not
+    retried for its key, and meshes are kept only while used** (decided
+    unattended (2026-11-17, lane/n10), for the lead), after step 4's
+    review: an uncapped ground bake would freeze or crash the page on any
+    terrain, a failed one was retried every frame, and eight kept meshes
+    could be 5 GB on E1M1. The cap admits E1M1 (4.22M, 10–11 s once) and
+    refuses Cadboro Bay and Ucluelet until tiles land; whether to hold walk
+    instead until tiles land is the lead's (Q4).
 
 ## Questions for the lead
+
+- **Q7. Doom's doors.** Step 4 tags each door `walk.moves { blocks }` in
+  doom's layout (Decision 27) though the brief kept doom's doc shapes. The
+  other way is walk treating any object under a pose hold as a blocker,
+  which needs no doom change but makes every held pose a wall. Keep the
+  tag (and republish E1M1 before walk syncs)?
+- **Q8. The traits' part id.** It is still `walk.spawn` though it declares
+  all five traits. Docs carry trait names and package urls, not part ids,
+  so a rename (say `walk.traits`) changes no doc. Rename?
 
 - **Q1. Who draws someone at a station?** As designed, walk.people draws
   the holder of a stand spot's named claim at the spot (no scene change;

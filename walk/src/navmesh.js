@@ -125,6 +125,39 @@ export function discOffsets(R, c) {
 // ─── the bake ───────────────────────────────────────────────────────────────
 
 /**
+ * A bake's grid (pure, cheap: one pass over the triangles): aligned to
+ * multiples of the cell, padded so what is round the triangles is on it.
+ * Its columns (nx · nz) are what a bake's time and memory grow with, so
+ * this is what a caller asks before baking (supports.js, MAX_COLUMNS).
+ * @returns {{ I0: number, K0: number, nx: number, nz: number }}
+ */
+export function gridOf(triangles, params = NAV) {
+  const P = navParams(params);
+  const c = P.cell;
+  const T = triangles ?? [];
+  const nt = Math.floor(T.length / 9);
+  let minx = Infinity;
+  let maxx = -Infinity;
+  let minz = Infinity;
+  let maxz = -Infinity;
+  for (let k = 0; k < nt * 9; k += 3) {
+    const x = Number(T[k]);
+    const y = Number(T[k + 1]);
+    const z = Number(T[k + 2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    minx = Math.min(minx, x);
+    maxx = Math.max(maxx, x);
+    minz = Math.min(minz, z);
+    maxz = Math.max(maxz, z);
+  }
+  if (!(minx <= maxx)) minx = maxx = minz = maxz = 0;
+  const pad = Math.ceil((P.radius + c * Math.SQRT1_2) / c) + 3;
+  const I0 = Math.floor(minx / c) - pad;
+  const K0 = Math.floor(minz / c) - pad;
+  return { I0, K0, nx: Math.floor(maxx / c) + pad - I0 + 1, nz: Math.floor(maxz / c) + pad - K0 + 1 };
+}
+
+/**
  * Bake a navmesh.
  * @param {{ triangles: ArrayLike<number>, seeds?: Array<{ kind: string, id?: string, at: number[], yaw?: number, hook?: number[] }>, key?: string, prune?: boolean }} input
  *   triangles: 9 numbers each, in the support's frame (metres, +Y up). seeds: where people must be able to stand
@@ -152,24 +185,7 @@ export function bake(input, params = NAV) {
   const T = new Float64Array(nt * 9);
   for (let k = 0; k < nt * 9; k++) T[k] = Number(src[k]);
 
-  // the grid: aligned to multiples of c, padded so what is round it is on it
-  let minx = Infinity;
-  let maxx = -Infinity;
-  let minz = Infinity;
-  let maxz = -Infinity;
-  for (let k = 0; k < nt * 9; k += 3) {
-    if (!Number.isFinite(T[k]) || !Number.isFinite(T[k + 1]) || !Number.isFinite(T[k + 2])) continue;
-    minx = Math.min(minx, T[k]);
-    maxx = Math.max(maxx, T[k]);
-    minz = Math.min(minz, T[k + 2]);
-    maxz = Math.max(maxz, T[k + 2]);
-  }
-  if (!(minx <= maxx)) minx = maxx = minz = maxz = 0;
-  const pad = Math.ceil(R / c) + 3;
-  const I0 = Math.floor(minx / c) - pad;
-  const K0 = Math.floor(minz / c) - pad;
-  const nx = Math.floor(maxx / c) + pad - I0 + 1;
-  const nz = Math.floor(maxz / c) + pad - K0 + 1;
+  const { I0, K0, nx, nz } = gridOf(T, P);
   const ncol = nx * nz;
   const X = (i) => (I0 + i) * c;
   const Z = (k) => (K0 + k) * c;

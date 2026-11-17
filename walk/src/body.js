@@ -24,7 +24,7 @@ import { BODY, easeEye, look, lookDir } from "./walk.js";
 import * as walker from "./walker.js";
 import { columnAt, isEmpty, pointOf } from "./navmesh.js";
 import { apply, headingOf, invert, rotateM } from "./frames.js";
-import { SPAWN, SUPPORT, createSupports, ownerOf } from "./supports.js";
+import { SPAWN, STAND, SUPPORT, createSupports, ownerOf, standAt } from "./supports.js";
 
 export { SPAWN };
 /** How far a walker reaches (m): arm's length and a step. */
@@ -94,12 +94,14 @@ const headingIn = (env, st) => {
  * Where a walk starts (pure over env and the scene; DESIGN.md, "The body",
  * enter), as a walker state, its yaw (in the state's frame) and a pitch:
  * - a support: its spawn link, else its first link, else its origin, on it;
- * - any other object (a spawn point, a stand spot, a crate): P1 at its world
- *   point, facing the way it faces;
- * - no place: P1 at the eye lowered by BODY.eye, looking the way the eye
- *   looks, when a floor is under it within EYE_FLOOR_M (more than a step
- *   down, that is falling: you land on it); else at `spawn` (an object id)
- *   as above; else the walker's respawn.
+ * - a stand spot: P1 at its `at`, facing its `facing`;
+ * - any other object (a spawn point, a crate): P1 at its world point,
+ *   facing the way it faces;
+ * - no place: when a floor is under the eye within EYE_FLOOR_M of the feet
+ *   (the eye lowered by BODY.eye), P1 at the feet, looking the way the eye
+ *   looks (more than a step down, that is falling: you land on it), or at
+ *   that floor if it is above the feet (an eye held low); else at `spawn`
+ *   (an object id) as above; else the walker's respawn.
  * @returns {{ state: object, yaw: number, pitch: number }}
  */
 export function startOf(env, { scene, worldOf, place = null, eye = null, spawn = null }) {
@@ -111,15 +113,18 @@ export function startOf(env, { scene, worldOf, place = null, eye = null, spawn =
       return { state: walker.spawnOn(env, id), yaw: link?.yaw ?? 0, pitch: 0 };
     }
     const m = worldOf(id);
-    return m ? into(walker.placeAt(env, [m[12], m[13], m[14]]), headingOf(m)) : null;
+    if (!m) return null;
+    const stand = standAt(m, scene?.objects?.[id]?.traits?.[STAND]);
+    return stand ? into(walker.placeAt(env, stand.at), stand.yaw) : into(walker.placeAt(env, [m[12], m[13], m[14]]), headingOf(m));
   };
   const fromPlace = place != null ? atObject(place) : null;
   if (fromPlace) return fromPlace;
   if (Array.isArray(eye?.position)) {
     const at = [eye.position[0], eye.position[1] - BODY.eye, eye.position[2]];
-    if (floorUnder(env, at)) {
+    const floor = floorUnder(env, eye.position, EYE_FLOOR_M + BODY.eye);
+    if (floor) {
       const a = Array.isArray(eye.direction) ? aimOf(eye.direction) : { yaw: 0, pitch: 0 };
-      return into(walker.placeAt(env, at), a.yaw, Math.max(-1.2, Math.min(1.2, a.pitch)));
+      return into(walker.placeAt(env, floor[1] > at[1] ? floor : at), a.yaw, Math.max(-1.2, Math.min(1.2, a.pitch)));
     }
   }
   const fromSpawn = spawn != null ? atObject(spawn) : null;
@@ -139,10 +144,10 @@ export function avatarOf(st, env, yaw, pitch) {
   return { on, feet: on != null ? walker.localFeet(st) : pose.feet, yaw, pitch, swimming: st.mode === "swimming" };
 }
 
-/** The live walk sessions in this page (a ladder's Climb finds its walker here). */
+/** The live walk sessions in this page (a ladder's Climb, walk.spawn's verb, finds its walker here: DESIGN.md, Decision 30). */
 const LIVE = new Set();
-/** The live walker of a stage session, if any: { state(), env, climb(ladderId) }. */
-export const walkerOf = (session) => [...LIVE].find((w) => w.session === session) ?? null;
+/** The live walker of a session in a doc (its url), if any: { url, session, state(), env, climb(ladderId) }. */
+export const walkerOf = (session, url) => [...LIVE].find((w) => w.session === session && w.url === url) ?? null;
 
 /**
  * The walk body, on one extension's api, as the stage's `bodies` takes it.
@@ -281,7 +286,10 @@ export function walkBody(api, supports = createSupports(api)) {
       };
 
       const live = {
-        session: api.session ?? null,
+        url: api.url ?? null,
+        get session() {
+          return api.session ?? null;
+        },
         state: () => st,
         env,
         /** L1: from the water up a ladder (its object id) onto its owner. */

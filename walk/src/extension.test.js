@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from "vitest";
 import walk from "./extension.js";
-import people from "./people.js";
+import people, { ease } from "./people.js";
 import { plugins } from "./index.js";
 import { walkBody } from "./body.js";
 import { model, stage } from "./test/stage.js";
@@ -113,6 +113,14 @@ describe("walk's parts", () => {
       }
     }
     expect(n).toBe(32);
+  });
+
+  it("an avatar eases in its record's frame, and snaps when the frame changes (on a deck → on the ground)", () => {
+    const prev = { on: "deck", feet: [1, 1, 1], yaw: 0, pitch: 0 };
+    const same = ease(prev, { on: "deck", feet: [5, 0, 5], yaw: 1, pitch: 0 }, 1 / 60);
+    expect(same.feet.every((v, i) => v > [1, 0, 1][i] && v < [5, 1, 5][i])).toBe(true); // eased, part way
+    expect(ease(prev, { on: null, feet: [5, 0, 5], yaw: 1, pitch: 0.2 }, 1 / 60)).toEqual({ on: null, feet: [5, 0, 5], yaw: 1, pitch: 0.2 });
+    expect(ease(prev, { on: "dinghy", feet: [5, 0, 5], yaw: 1, pitch: 0 }, 1 / 60).feet).toEqual([5, 0, 5]);
   });
 
   it("presence round trip × {on the ground, on a support, swimming}: the peer's drawn feet are the walker's, within 1e-9", () => {

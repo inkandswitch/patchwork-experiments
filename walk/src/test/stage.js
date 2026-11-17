@@ -2,8 +2,12 @@
 // transforms, parents), each with its model's triangles as a content root
 // (as api.content(id).root reads), drawn where the doc puts it unless a pose
 // is held (`pose(id, M)`: a deck under way), a camera, presence, loops, the
-// stage's timers (run before the loops each frame: off the frame loop) and,
-// optionally, water at a height everywhere.
+// stage's timers (run before the loops each frame: off the frame loop),
+// notices, and, optionally, water at a height everywhere. Its content(id) is
+// the real stage's (viewport.contentOf): every object has one, `loaded`
+// only once its model has (`tris`, unless `loaded: false`), so an object
+// with no model is `{ loaded: false, root: null }` forever; `links` are the
+// ids api.link answers for, and `status` is local.status.
 
 import { matrixOf, multiply } from "../frames.js";
 import { boxTriangles } from "../navmesh.js";
@@ -22,11 +26,11 @@ const boxOf = (tris) => {
 };
 
 /**
- * @param {{ objects: object, camera?: object, water?: number | null, session?: string }} o
- *   objects: { id: { traits?, transform?, parent?, kind?, visible?, tris?, loaded? } }
+ * @param {{ objects: object, camera?: object, water?: number | null, session?: string, url?: string, links?: string[], status?: object }} o
+ *   objects: { id: { traits?, transform?, parent?, kind?, visible?, sourceUrl?, tris?, loaded? } }
  */
-export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1.6, 0] }, water = null, session = "me" }) {
-  const calls = { holds: 0, released: 0, presence: {}, rate: [], camera: [], waterNot: [] };
+export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1.6, 0] }, water = null, session = "me", url = "automerge:here", links = [], status = {} }) {
+  const calls = { holds: 0, released: 0, presence: {}, rate: [], camera: [], waterNot: [], notices: [] };
   const loops = [];
   let timers = [];
   const poses = new Map();
@@ -45,6 +49,7 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
   };
   const api = {
     session,
+    url,
     clock: {
       now: () => now,
       t: () => now / 1000,
@@ -58,10 +63,15 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
     worldOf,
     content(id) {
       const o = objects[id];
-      if (!o?.tris) return null;
+      if (!o) return null;
+      if (!o.tris || o.loaded === false) return { loaded: false, root: null, box: o.tris ? boxOf(o.tris) : null };
       if (!roots.has(id) || roots.get(id).tris !== o.tris) roots.set(id, { tris: o.tris, root: meshRoot(o.tris) });
-      return { loaded: o.loaded !== false, root: o.loaded === false ? null : roots.get(id).root, box: boxOf(o.tris) };
+      return { loaded: true, root: roots.get(id).root, box: boxOf(o.tris) };
     },
+    link: (id) => (links.includes(id) ? { role: "acting", open: true } : null),
+    local: { get: () => ({ status }) },
+    nameOf: (id) => objects[id]?.name ?? id,
+    notify: (text) => calls.notices.push(text),
     collect: (name) =>
       name === "water" && water != null
         ? [{ id: "water", value: { at: (p, { not } = {}) => (calls.waterNot.push(not), { heightAt: () => water }) } }]

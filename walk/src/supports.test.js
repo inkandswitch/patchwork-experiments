@@ -3,9 +3,9 @@
 // asked of the stage, and a ladder's Climb (spawn.js) from the water.
 
 import { describe, it, expect } from "vitest";
-import { bakeKey, bakedObjects, createSupports, orientedBox, ownerOf, seedsOf, trianglesOf } from "./supports.js";
+import { MAX_COLUMNS, bakeInput, bakeKey, bakedObjects, blockersOf, createSupports, keptMeshes, orientedBox, ownerOf, seedsOf, trianglesOf } from "./supports.js";
 import { walkBody, walkerOf } from "./body.js";
-import { climbState } from "./spawn.js";
+import spawnPart, { climbState } from "./spawn.js";
 import { meetsBlock } from "./walker.js";
 import { BODY } from "./walk.js";
 import { matrixOf } from "./frames.js";
@@ -107,8 +107,111 @@ describe("the bake key", () => {
     expect([bakeKey(f.api, null), bakeKey(f.api, "deck")]).toEqual([k0[0], expect.not.stringMatching(k0[1])]);
     o.floor.traits = { other: {} };
     expect(bakeKey(f.api, null)).not.toBe(k0[0]);
-    o.floor.loaded = false;
+    Object.assign(o.floor, { sourceUrl: "automerge:floor", loaded: false });
     expect(bakeKey(f.api, null)).toBe(null);
+  });
+  it("is changed by each kind of seed moving: a spawn, a stand spot's `at`, a ladder's `top` (their links are in the mesh)", () => {
+    const o = {
+      deck: { traits: { "walk.support": {} }, tris: model([-2, -0.2, -2], [2, 0, 2]) },
+      sp: { parent: "deck", traits: { "walk.spawn": {} } },
+      helm: { parent: "deck", traits: { "walk.stand": { at: [0, 0, 1] } } },
+      ladder: { parent: "deck", transform: { position: [2, -0.5, 0] }, traits: { "walk.ladder": { top: [-0.5, 0.5, 0] } } },
+    };
+    const f = stage({ objects: o });
+    const keys = [bakeKey(f.api, "deck")];
+    o.sp.transform = { position: [0.5, 0, 0] };
+    keys.push(bakeKey(f.api, "deck"));
+    o.helm.traits["walk.stand"] = { at: [0, 0, 1.5] };
+    keys.push(bakeKey(f.api, "deck"));
+    o.ladder.traits["walk.ladder"] = { top: [-0.6, 0.5, 0] };
+    keys.push(bakeKey(f.api, "deck"));
+    expect(new Set(keys).size).toBe(4);
+  });
+  it("a swept part is baked as its turn's solid about its own axis, placed as the part is (a spoke off its hub sweeps round the hub)", () => {
+    // the wheel's hub at (1, 0.5, 0) on the deck, turning about its y; a 0.2 m spoke block 0.5 out along its x
+    const o = {
+      deck: { traits: { "walk.support": {} } },
+      wheel: { parent: "deck", transform: { position: [1, 0.5, 0] }, traits: { "walk.moves": { swept: "y" } } },
+      spoke: { parent: "wheel", transform: { position: [0.5, 0, 0] }, tris: model([-0.1, 0, -0.1], [0.1, 0.2, 0.1]) },
+    };
+    const f = stage({ objects: o });
+    const t = bakeInput(f.api, "deck").triangles;
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < t.length; i++) (lo[i % 3] = Math.min(lo[i % 3], t[i])), (hi[i % 3] = Math.max(hi[i % 3], t[i]));
+    const mid = lo.map((v, i) => +((v + hi[i]) / 2).toFixed(9) + 0);
+    expect(mid).toEqual([1, 0.6, 0]); // round the hub, not round the spoke
+    expect(hi[0] - 1).toBeGreaterThanOrEqual(Math.hypot(0.6, 0.1) - 1e-9); // reaching the spoke's far corner
+  });
+});
+
+describe("what holds a support's bake back: only a model still coming (the stage's contentIn rule)", () => {
+  // the ground (a floor and a spawn) and one more object, as the real stage's content(id) and status answer it
+  const KINDS = {
+    "a link (no GLB, ever)": [{ sourceUrl: "automerge:linked", providerId: "scene.link" }, { links: ["it"] }, false],
+    "a model that failed": [{ sourceUrl: "automerge:broken" }, { status: { it: { state: "error" } } }, false],
+    "a model with no provider": [{ sourceUrl: "automerge:odd" }, { status: { it: { state: "warn" } } }, false],
+    "an object with no model": [{}, {}, false],
+    "a model loading": [{ sourceUrl: "automerge:slow" }, { status: { it: { state: "loading" } } }, true],
+  };
+  for (const [kind, [fields, opts, holds]] of Object.entries(KINDS))
+    it(`${kind}: ${holds ? "the walk waits for it" : "baked as nothing; the walk starts"}`, () => {
+      const objects = { floor: { tris: model([-5, -0.2, -5], [5, 0, 5]) }, pad: { traits: { "walk.spawn": {} } }, it: { transform: { position: [2, 0, 2] }, ...fields } };
+      const f = stage({ objects, ...opts });
+      expect(bakeKey(f.api, null) === null).toBe(holds);
+      const s = walkBody(f.api).enter("pad");
+      f.frames(3);
+      expect(s.state.mode).toBe(holds ? "waiting" : "walking");
+      s.leave();
+    });
+  it("is 5 rows; a model that failed and then loads changes the key (it is baked in)", () => {
+    expect(Object.keys(KINDS).length).toBe(5);
+    const objects = { floor: { tris: model([-5, -0.2, -5], [5, 0, 5]) }, it: { sourceUrl: "automerge:late", tris: model([0, 0, 0], [1, 1, 1]), loaded: false } };
+    const status = { it: { state: "error" } };
+    const f = stage({ objects, status });
+    const k0 = bakeKey(f.api, null);
+    delete objects.it.loaded;
+    delete status.it;
+    expect(bakeKey(f.api, null)).not.toBe(k0);
+    expect(bakeInput(f.api, null).triangles.length).toBe(9 * 24);
+  });
+});
+
+describe("a support too big to bake, and the meshes the page keeps", () => {
+  it("over the column cap: not baked, said once, never retried for that key; the walk waits; made small, it walks", () => {
+    expect(MAX_COLUMNS).toBeGreaterThan(4.22e6); // E1M1's ground fits
+    const objects = { floor: { tris: model([-10, -0.2, -10], [10, 0, 10]) }, pad: { traits: { "walk.spawn": {} } } };
+    const f = stage({ objects });
+    const supports = createSupports(f.api, BODY, { maxColumns: 1e4 }); // the floor is ~ 420 × 420 columns
+    const s = walkBody(f.api, supports).enter("pad");
+    f.frames(60);
+    expect(s.state.mode).toBe("waiting");
+    expect(f.calls.notices).toEqual([expect.stringMatching(/^The ground can't be walked on: it is 1\d\d,\d\d\d columns of 5 cm, and walk bakes at most 10,000 /)]);
+    delete objects.floor;
+    objects.small = { tris: model([-1, -0.2, -1], [1, 0, 1]) }; // (a model's own triangles aren't in the key: its url and transform are)
+    supports.changed();
+    f.frames(2);
+    expect([s.state.mode, f.calls.notices.length]).toEqual(["walking", 1]);
+    s.leave();
+  });
+  it("a mesh is kept while a support uses it and no longer: five rebakes keep only the last; dispose lets it go", () => {
+    const objects = { floor: { tris: model([-5, -0.2, -5], [5, 0, 5]) } };
+    const f = stage({ objects, camera: { position: [0, 1.6, 0], target: [0, 1.6, -1] } });
+    const supports = createSupports(f.api);
+    const s = walkBody(f.api, supports).enter(null);
+    f.frames(2);
+    const keys = [bakeKey(f.api, null)];
+    for (let i = 1; i <= 5; i++) {
+      objects.box = { transform: { position: [i - 3, 0, 3] }, tris: model([-0.2, 0, -0.2], [0.2, 0.3, 0.2]) };
+      supports.changed();
+      f.frames(2);
+      keys.push(bakeKey(f.api, null));
+    }
+    expect(new Set(keys).size).toBe(6);
+    expect(keys.map((k) => keptMeshes().includes(k))).toEqual([false, false, false, false, false, true]);
+    s.leave();
+    supports.dispose();
+    expect(keptMeshes().includes(keys[5])).toBe(false);
   });
 });
 
@@ -131,6 +234,17 @@ describe("blockers: an oriented box drawn where it is, in the walker's support's
       else expect([z > -3 + 0.05 + BODY.radius - 1e-9, z < -3 + 0.05 + BODY.radius + 0.1]).toEqual([true, true]);
       s.leave();
     }
+  });
+  it("only what is shown blocks: a door, hidden, under a hidden part, or carried, doesn't", () => {
+    const sc = sceneOf({
+      shown: { traits: { "walk.moves": { blocks: true } } },
+      hidden: { visible: false, traits: { "walk.moves": { blocks: true } } },
+      frame: { visible: false },
+      inHidden: { parent: "frame", traits: { "walk.moves": { blocks: true } } },
+      carried: { traits: { "walk.moves": { blocks: true }, "scene.carry": {} } },
+      swept: { traits: { "walk.moves": { swept: "y" } } },
+    });
+    expect(blockersOf(sc)).toEqual(["shown"]);
   });
   it("its box in a support's frame: the door's drawn box through the inverse of the deck's frame", () => {
     const f = stage({ objects: { ...corridor(), deck: { transform: { position: [0, 0, -3], rotation: [0, Math.PI / 2, 0] }, traits: { "walk.support": {} }, tris: model([-1, -0.1, -1], [1, 0, 1]) } } });
@@ -166,7 +280,7 @@ describe("water and the ladder", () => {
       const s = walkBody(f.api).enter(place);
       f.frames(2);
       expect(s.state.mode).toBe("swimming");
-      const w = walkerOf(`s-${place}`);
+      const w = walkerOf(`s-${place}`, f.api.url);
       expect([place, !!climbState("ladder", f.api.scene(), w)]).toEqual([place, offered]);
       expect(climbState("deck", f.api.scene(), w)).toBe(null);
       if (offered) {
@@ -176,7 +290,22 @@ describe("water and the ladder", () => {
         expect(climbState("ladder", f.api.scene(), w)).toBe(null);
       }
       s.leave();
-      expect(walkerOf(`s-${place}`)).toBe(null);
+      expect(walkerOf(`s-${place}`, f.api.url)).toBe(null);
     }
+  });
+  it("Climb finds the walker of its own doc: the same session walking another doc in the page is not it", () => {
+    const other = stage({ objects: { floor: { tris: model([-5, -0.2, -5], [5, 0, 5]) } }, url: "automerge:other", session: "s" });
+    const away = walkBody(other.api).enter(null);
+    other.frames(2);
+    const f = stage({ objects: afloat(), water: 0, url: "automerge:boat", session: "s" });
+    const s = walkBody(f.api).enter("buoy");
+    f.frames(2);
+    const climb = spawnPart.create(f.api).commands.find((c) => c.id === "climb");
+    expect(climb.state("ladder", { scene: f.api.scene() })).toEqual({ title: "Climb out of the water" });
+    climb.run("ladder");
+    expect([s.state.mode, s.state.on, f.calls.notices]).toEqual(["walking", "deck", []]);
+    expect(away.state.mode).toBe("walking");
+    s.leave();
+    away.leave();
   });
 });

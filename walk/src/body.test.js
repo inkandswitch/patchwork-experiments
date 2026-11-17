@@ -100,6 +100,22 @@ describe("where a walk starts: place × world", () => {
       });
   it("is 8 rows", () => expect(Object.keys(WORLDS).length * Object.keys(PLACES).length).toBe(8));
 
+  it("a stand spot: at its `at`, facing its `facing`, not at its object's origin", () => {
+    // a helm at (2, 0, -2) turned a quarter about +Y: its `at` (0, 0, 1) is the world's (3, 0, -2), facing back at the helm (world −X)
+    const objects = { ...groundObjects(), helm: { transform: { position: [2, 0, -2], rotation: [0, Math.PI / 2, 0] }, traits: { "walk.stand": { at: [0, 0, 1], facing: [0, 0, 0] } } } };
+    const { s } = enterIn({ objects }, "helm");
+    expect([s.state.mode, ...s.state.feet.map((v) => +v.toFixed(6) + 0)]).toEqual(["walking", 3, 0, -2]);
+    expect(wrap(s.state.yaw - Math.PI / 2)).toBeCloseTo(0, 9);
+    s.leave();
+  });
+
+  it("the eye held low (1 m over the floor, under BODY.eye): on the floor under it at once, not at a spawn", () => {
+    const f = stage({ objects: groundObjects(), camera: { position: [1, 1, 1], target: [1, 1, 0] } });
+    const s = walkBody(f.api).enter(null);
+    expect([s.state.mode, ...s.state.feet.map((v) => +v.toFixed(6) + 0)]).toEqual(["walking", 1, 0, 1]);
+    s.leave();
+  });
+
   it("the first mesh is baked when first needed: entering, the walker stands at once (camera placed, avatar said)", () => {
     // a ground no test has baked before (meshes are cached for the page by key)
     const objects = { ...groundObjects(), crate: { transform: { position: [3, 0, -3] }, tris: model([-0.5, 0, -0.5], [0.5, 0.4, 0.5]) } };
@@ -112,7 +128,7 @@ describe("where a walk starts: place × world", () => {
 
   it("a model not loaded yet holds its support's first mesh back (it waits: no camera move, no avatar); told it loaded, the walk starts", () => {
     const objects = groundObjects();
-    objects.floor.loaded = false;
+    Object.assign(objects.floor, { sourceUrl: "automerge:floor", loaded: false });
     const f = stage({ objects });
     const supports = createSupports(f.api);
     const s = walkBody(f.api, supports).enter("pad");
@@ -162,6 +178,72 @@ describe("riding a moving support: move × walker", () => {
         if (!walking) for (const l of locals) expect(l).toEqual(locals[0]);
         else expect(locals.at(-1)[2]).toBeLessThan(locals[0][2] - 1);
       });
+});
+
+describe("on a support: presence while jumping, coming back from a station, a scaled support, the eye over a STEP", () => {
+  it("jumping on the deck, presence still says the deck (airborne is on it)", () => {
+    const f = stage({ objects: deckObjects() });
+    f.pose("deck", DECK);
+    const s = walkBody(f.api).enter("deckpad");
+    f.frames(2);
+    s.input.key({ code: "Space" });
+    f.frames(6);
+    expect([s.state.mode, s.state.on, f.calls.presence.avatar.on]).toEqual(["airborne", "deck", "deck"]);
+    s.leave();
+  });
+
+  it("coming back from a body over it on a turned deck: looking the way the eye looked, in the world", () => {
+    const f = stage({ objects: deckObjects() });
+    f.pose("deck", DECK);
+    const s = walkBody(f.api).enter("deckpad");
+    f.frames(2);
+    s.input.suspended();
+    const at = apply(DECK, [0, BODY.eye, 0]);
+    const d = lookDir(1, 0); // world yaw 1, where the deck's heading is 0.3
+    f.api.camera.set({ position: at, target: [at[0] + d[0], at[1] + d[1], at[2] + d[2]] });
+    s.input.resumed();
+    expect(s.state.on).toBe("deck");
+    expect(close(s.eye().direction, d, 1e-9)).toBe(true);
+    s.leave();
+  });
+
+  it("a support drawn at scale 2: its mesh in metres, its frame rigid (a spawn 1.5 of its units out is 3 m out)", () => {
+    const objects = {
+      deck: { transform: { position: [5, 1, -5], scale: 2 }, traits: { "walk.support": {} }, tris: model([-2, -0.3, -2], [2, 0, 2]) },
+      pad: { parent: "deck", transform: { position: [1.5, 0, 0] }, traits: { [SPAWN]: {} } },
+    };
+    const f = stage({ objects });
+    const s = walkBody(f.api).enter("pad");
+    f.frames(2);
+    expect([s.state.mode, s.state.on]).toEqual(["walking", "deck"]);
+    expect(s.state.local.map((v) => +v.toFixed(9) + 0)).toEqual([3, 0, 0]);
+    expect(s.state.feet.map((v) => +v.toFixed(9) + 0)).toEqual([8, 1, -5]);
+    // her deck reaches 4 m out (2 units): walking 3.5 m along her −Z from the middle, still on her
+    s.input.key(FWD);
+    f.frames(48);
+    expect([s.state.mode, s.state.on]).toEqual(["walking", "deck"]);
+    expect(s.state.local[2]).toBeLessThan(-3);
+    s.leave();
+  });
+
+  it("stepping up onto a platform: the drawn eye lags the step and eases up to it", () => {
+    // a spawn 1 m short of a platform 0.4 high (a STEP) and 6 m long, facing it
+    const objects = { floor: groundObjects().floor, platform: { tris: model([-1, 0, -6], [1, 0.4, 0]) }, at: { transform: { position: [0, 0, 1] }, traits: { [SPAWN]: {} } } };
+    const f = stage({ objects });
+    const s = walkBody(f.api).enter("at");
+    f.frames(2);
+    s.input.key(FWD);
+    const lags = [];
+    for (let i = 0; i < 40; i++) {
+      f.frames(1);
+      lags.push(+(s.eye().position[1] - f.calls.camera.at(-1).position[1]).toFixed(6));
+    }
+    expect(s.state.feet[1]).toBeCloseTo(0.4, 6);
+    const first = lags.findIndex((v) => v > 0);
+    expect(lags[first]).toBeGreaterThan(0.2); // most of the step, the frame it's taken
+    expect(lags.slice(first).every((v, i, a) => i === 0 || v <= a[i - 1])).toBe(true); // easing up, never back
+    expect(lags.at(-1)).toBe(0);
+  });
 });
 
 describe("a rebake under you → P1 (R1)", () => {

@@ -9,7 +9,7 @@ import { createSupports } from "./supports.js";
 
 function create(api) {
   const supports = createSupports(api);
-  return { bodies: [walkBody(api, supports)], update: () => supports.changed() };
+  return { bodies: [walkBody(api, supports)], update: () => supports.changed(), dispose: () => supports.dispose() };
 }
 
 export default { create };

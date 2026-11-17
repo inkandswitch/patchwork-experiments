@@ -53,9 +53,9 @@ export default {
           name: "Climb",
           key: "f",
           show: ["use", "menu"],
-          state: (target, ctx) => climbState(target, ctx?.scene ?? api.scene(), walkerOf(api.session ?? null)),
+          state: (target, ctx) => climbState(target, ctx?.scene ?? api.scene(), walkerOf(api.session ?? null, api.url ?? null)),
           run: (target) => {
-            if (!walkerOf(api.session ?? null)?.climb(target)) api.notify("Couldn't climb there.");
+            if (!walkerOf(api.session ?? null, api.url ?? null)?.climb(target)) api.notify("Couldn't climb there.");
           },
         },
       ],
