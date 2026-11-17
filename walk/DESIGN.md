@@ -3,7 +3,9 @@
 *Design, written 2026-11-17 in lane/n10 (step 2 of 6). Steps 3–5 build it:
 step 3 moves the walker into walk (pure; built, see "As built, step 3"),
 step 4 gives walk's body supports, step 5 makes sailing walk in walk, step 6
-republishes her examples and moves sailing's walking text here ("Foundations"). Every decision here was made
+republishes her examples and moves sailing's walking text here ("Foundations");
+merged into scene-stage 2026-11-17, not yet synced or republished
+("Integrated", under step 4's Verification). Every decision here was made
 without the lead and is marked so in "Decisions"; what is the lead's taste is
 asked in "Questions for the lead".*
 
@@ -730,6 +732,35 @@ bakes as nothing and never holds a bake back, so none waits; whether any
 example stands on a link's floor is still to see, before walk syncs); C10;
 Cadboro Bay and Ucluelet (refused by the column cap until tiles); a model
 rebuilt in place rebaking.
+
+**Integrated (2026-11-17, scene-stage merge cbdb53e2; lane/n10 took
+scene-stage first in cedfb178).** Suites: walk 225, sailing 1201 (slow
+70/80: the 10 red are the OPEN leave-the-anchor rows, red on scene-stage
+too), scene 2425, water 1121, doom 87, arena 56, terrain 447, seats 88,
+tabletop 628, weather 906; scripts/check-fixtures.mjs ok. Local probes (one
+Chrome hold each): aboard-run 72/72, sailing-run seas 1, 3, 4 89/89 and
+2, 5 86/89 (the three red rows are N6's leave-the-anchor rows; sea 5's
+ladder row passes), touch 11, harbour 26, model-room 18, basin 15, links
+37, pins 27, editclick 24, extract 25, weather-run 79, world-run 80,
+publish-fitout/aboard/e1m1 --dry-run 16/21/12, publish-ship (both) dry,
+doom.mjs 33 (E1M1's ground bake 10.5 s, 4.22M columns, 649 MB), arena-run
+79. camber-run 40/41 after its probe fix (9a45ebef: its places were
+sailing's body-frame points handed to walk as hull-local ones, and her
+links are `stand` spots): still red, **walk's own mesh lacks one cell of
+the seed-pruned bake of her input read later** (column 1.375, -0.625 in
+her frame: 1.0718 m in the later bake, 1.0703 in walk's). It passed on the
+run where nobody took the helm, so the likely cause is that the bake
+reads a swept part's drawn nodes (the wheel turned 36% at the helm) while
+the key reads only the doc: the wheel's swept solid changes, the key
+doesn't, and two peers can bake her differently. Owed: a swept part's
+triangles at its rest pose (or its turn in the key). **Not synced, not
+republished, no real-Patchwork check yet**: walk, sailing, water and doom
+sync together, after W8's checks are done (sailing is held for W8; walk
+alone would walk the published E1M1 through its shut doors until it is
+republished with the door tag, Decision 27; water's list `not` is compatible, but W8's checks are
+running on today's packages), then E1M1 and every boat
+are republished in the order the lane's step 6 gives (FOLLOWUPS, "N10
+integrated").
 
 **Step 5** (sailing walks in walk):
 - part kind → walk trait, for the stock sloop and a camber hull;
