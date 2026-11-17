@@ -56,10 +56,11 @@ const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.i
 const J = JSON.stringify;
 const LINK = "scene.link";
 const BARE = /^automerge:[1-9A-HJ-NP-Za-km-z]{20,60}$/;
-const PACKAGES = ["scene", "water", "sailing"];
+const PACKAGES = ["scene", "water", "sailing", "weather"];
 
 const [windSpeed, windFrom] = (args.wind ?? "5,250").split(",").map(Number);
-const weather = { wind: { speed: windSpeed, from: windFrom }, seed: Number(args.seed ?? 7) };
+// the weather package's trait, the air of it (every other field its default: a fair afternoon at Cadboro Bay)
+const weather = { wind: windSpeed, from: windFrom, seed: Number(args.seed ?? 7) };
 const sea = { seed: weather.seed, scale: Number(args.scale ?? 0.5) };
 if (![windSpeed, windFrom, sea.seed, sea.scale].every(Number.isFinite)) throw new Error(`--wind, --seed, --scale: numbers, please (${J({ weather, sea })})`);
 /** Is this object open water (the water package's trait with no size)? */
@@ -92,10 +93,14 @@ if (!OFFLINE) {
   for (const b of boats) {
     const d = (await within(60000, repo.find(b.url))).doc();
     if (d?.["@patchwork"]?.type !== "scene" || !d.objects) throw new Error(`${b.name} (${b.url}) isn't a scene doc on the server`);
-    b.from = Number(d.traits?.["sailing.weather"]?.wind?.from);
+    b.from = Number(d.traits?.weather?.from);
     const open = Object.values(d.objects).filter(isOpen);
     if (!open.length) problems.push(`${b.name} (${b.url}) has no open water object: she was published before water bodies; republish her first`);
-    if (!Number.isFinite(b.from)) problems.push(`${b.name} (${b.url}) has no weather of her own to turn her by`);
+    // a weather that leaves `from` out blows from the weather package's default, which this publisher doesn't copy (a
+    // package's defaults are its own): such a boat is refused by name, to be given an explicit `from` (sailing's parts
+    // and templates always write one)
+    if (!d.traits?.weather) problems.push(`${b.name} (${b.url}) has no weather of her own to turn her by`);
+    else if (!Number.isFinite(b.from)) problems.push(`${b.name} (${b.url}): her weather leaves its wind's \`from\` at the weather package's default; write it into her doc to turn her by`);
     console.error(`boat: ${b.name} = ${d.title} (${Object.keys(d.objects).length} objects, wind from ${b.from}, open water ${open.map((o) => o.name).join(", ") || "none"})`);
   }
 }
@@ -130,7 +135,7 @@ const doc = {
   order: ["sea", ...boats.map((b) => b.id)],
   dimensions: {},
   // the world's wind and sky (its Sea is an object, above)
-  traits: { "sailing.weather": weather },
+  traits: { weather },
   assets: {},
   packages: PACKAGES.map((p) => ({ url: urlOf(p) })),
   clock: { running: true, t: 0 },
@@ -156,7 +161,7 @@ const got = (await within(30000, checker.find(h.url))).doc();
 const after = packageProblems(got, PACKAGES);
 if (J(Object.keys(got?.objects ?? {}).sort()) !== J(["sea", ...boats.map((b) => b.id)].sort())) after.push("came back without its Sea and its boats");
 for (const b of boats) if (got?.objects?.[b.id]?.sourceUrl !== b.url) after.push(`${b.id} doesn't link ${b.url}`);
-if (!isOpen(got?.objects?.sea) || !got.objects.sea.traits?.["sailing.sea"] || !got?.traits?.["sailing.weather"]) after.push("came back without its Sea or its weather");
+if (!isOpen(got?.objects?.sea) || !got.objects.sea.traits?.["sailing.sea"] || !got?.traits?.weather) after.push("came back without its Sea or its weather");
 if (got?.objects?.sea?.traits?.water?.clip != null) after.push("came back with a clip on its Sea (the Harbour's has none: WATER Decision 103)");
 if (after.length) {
   console.error(`NOT verified from a fresh repo:\n  ${after.join("\n  ")}`);

@@ -10,7 +10,8 @@
 //     linked into a harbour, it is the harbour's), or a bounded body of her
 //     own doc, which she keeps wherever she is placed; or null (a dry room,
 //     a tilted link), and nothing floats there. p[1] null asks from above.
-//   - wind: the world's `wind` ambient (weather.js offers it), made into a wind
+//   - wind: the world's `wind` ambient (the weather package offers it from
+//     the outermost doc's `weather` trait: weather/WEATHER.md), made into a wind
 //     here (wind.js) and read the same way: mapped by this stage's frame, at
 //     the world's time for this stage's t, the offset latched once a frame
 //     after every clock has ticked (the water package's rule, copied: tick()).
@@ -18,8 +19,8 @@
 //     as it is when read: made again at the read the ambient changed, not at
 //     the next tick, which comes after the frame's steps.
 //   - world(): is her doc the world (the outermost: a boat alone)? Read from
-//     the wind ambient's `mine`, which her own sea offers wherever she is the
-//     world, so it holds whatever packages are installed; elsewhere the wind
+//     the wind ambient's `mine`, which her own weather offers wherever she is the
+//     world (the weather package's, which her doc lists); elsewhere the wind
 //     is another doc's, or nobody's (a dry room). Her camera ride and HUD
 //     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
 //
@@ -31,7 +32,7 @@
 // scale): no ocean, and a notice once.
 
 import { createWind } from "./wind.js";
-import { WIND_AMBIENT } from "./weather.js";
+import { WIND_AMBIENT } from "./traits.js";
 
 /** The water package's contribution that answers which water a point is in, as this stage reads it. */
 export const WATER = "water";

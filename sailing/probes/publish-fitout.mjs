@@ -6,7 +6,7 @@
 // hatch W that closes itself, linked live twice on her cabin top (the first
 // acts, the second is its mirror: open one and both open).
 //
-//   (in scene/, sailing/, joints/ and traversal/) pnpm build
+//   (in scene/, sailing/, water/, weather/, joints/ and traversal/) pnpm build
 //   node probes/publish-fitout.mjs [--sync wss://…] [--settle 8000] [--dry-run] [--show] [--shots <dir>] [--title "…"]
 //
 // Makes NEW docs on every run (no dedupe).
@@ -45,11 +45,12 @@ import { clipProblems } from "./clip-check.mjs";
 // What each doc's contents come from (scene/STAGE.md, "Packages"): each
 // lists its own only (the view's one prompt covers every open doc's:
 // COMPOSITION.md, Decisions, links loose ends 1), and the page checks that
-// each, open alone, calls for plugins of exactly those packages. (The docs
-// as the page made them list more: a doc's packages list grows as parts are
-// added and isn't pruned when they go, so S still lists the companionway's
-// joints and traversal. Published, each lists the packages here.)
-const PACKAGES = { s: ["scene", "sailing", "walk", "water"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
+// each, open alone, calls for plugins of exactly those packages. The boat as
+// the page made her lists exactly hers too: her own companionway's joints
+// and traversal were listed when the start screen made her and taken off
+// when it went (the stage prunes what nothing calls for). Published, each
+// lists exactly the packages here.
+const PACKAGES = { s: ["scene", "sailing", "walk", "water", "weather"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
 const SLIDE = "joints.slide";
 
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1 };
@@ -85,12 +86,12 @@ const TITLE = typeof args.title === "string" ? args.title : "Fitting out";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "sailing", "walk", "water", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
+for (const p of ["scene", "sailing", "walk", "water", "weather", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-fitout"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
 // each package's plugins registered from its URL, so the page can say which package each plugin is from
-const urls = Object.fromEntries(["scene", "sailing", "walk", "water", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
+const urls = Object.fromEntries(["scene", "sailing", "walk", "water", "weather", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 const { browser, checklist, sleep } = await import("./cdp.mjs");
 const b = await browser({ root: ROOT, port: 4797, cdp: 9797, page: `/sailing/probes/pins-probe.html?urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1700, height: 570, show: !!args.show, timeout: 600_000 });
@@ -116,13 +117,18 @@ try {
   check("S's view opens F pinned, W acting and mirrored", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.mirror?.role === "mirror" && Object.values(links).every((l) => l.open), links);
   check("everything loads", await loads("loaded().loaded === __p.loaded().total", 120_000), await P("loaded()"));
   // each doc, open alone, calls for plugins of exactly its stated packages: the boat none of F's or W's
-  // (joints, traversal), which they list themselves (what the page's docs list is shown, not checked: see PACKAGES)
+  // (joints, traversal), which they list themselves
   for (const [w, who] of [["s", "the boat"], ["f", "the fit-out"], ["w", "the hatch"]]) {
     const pk = await P(`packages(${J(w)})`);
     const answering = [...new Set((pk?.answering ?? []).map((p) => folderOf(p.importUrl)))];
     const listed = (pk?.listed ?? []).map(folderOf);
     const stated = PACKAGES[w];
     check(`${who} calls for plugins of exactly its stated packages`, !!pk && answering.includes("scene") && answering.every((p) => stated.includes(p)) && stated.every((p) => answering.includes(p)), { answering, stated, listedInPage: listed });
+  }
+  {
+    const pk = await P(`packages("s")`);
+    const listed = (pk?.listed ?? []).map(folderOf);
+    check("the boat as the tools made her lists exactly her own packages (her companionway's joints and traversal taken off when it went)", !!pk && listed.length === PACKAGES.s.length && PACKAGES.s.every((p) => listed.includes(p)), { listed, stated: PACKAGES.s });
   }
   check("F alone opens its hatch: F has changed since it was fixed", (await P("openF()")) === true && (await until("slideOf('f')?.at === 'open'", 6000)), await P("slideOf('f')"));
   await b.step(30);
@@ -134,6 +140,10 @@ try {
   await P("resume()");
   const snap = await P("snapshot()");
   check("her world is published running", snap.docs[snap.scene]?.clock?.running !== false, snap.docs[snap.scene]?.clock);
+  // S's weather is what the start screen's Ship at anchor writes, the air only (WEATHER.md Decision 43): every
+  // other field the weather package's default, a fair afternoon at Cadboro Bay. F and W are dry: no weather.
+  const air = snap.docs[snap.scene]?.traits?.weather;
+  check("S has the template's weather (wind, from and seed; the rest Cadboro Bay's defaults), and F and W have none", J(Object.keys(air ?? {}).sort()) === J(["from", "seed", "wind"]) && [air.wind, air.from].every(Number.isFinite) && Number.isSafeInteger(air.seed) && [snap.f, snap.w].every((u) => snap.docs[u] && !snap.docs[u].traits?.weather), { s: air, f: snap.docs[snap.f]?.traits, w: snap.docs[snap.w]?.traits });
   // S is Ship at anchor's shape: her Sea keeps the box her layout covers where her world offers no open water (water/WATER.md, "Clipped open water")
   const clipped = clipProblems(snap.docs[snap.scene], { anchored: true });
   check("S's Sea clip covers her swing circle and the landmarks, with the margin (clip-check.mjs)", clipped.length === 0, clipped);

@@ -44,13 +44,14 @@ import { clipProblems } from "./clip-check.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the seats, the ship's, the table's and the secure deck's, and the two her
-// companionway's traits are for (its hatch's slide, its exit). In a real
-// shell the stage works these out from the registry; the probe page
-// registers each package's plugins from its URL (?urls=), so the stages work
-// them out here too, and the probe checks that what each doc calls for is
-// within what is stated here.
-const PACKAGES = ["scene", "sailing", "walk", "water", "tabletop", "joints", "traversal"];
+// the scene, the ship's, walk's (how people stand on her), and the two her
+// companionway's traits are for (its hatch's slide, its exit); the table's, the seats and the secure deck's are
+// the game's. In a real shell the stage works these out from the registry;
+// the probe page registers each package's plugins from its URL (?urls=), so
+// the stages work them out here too, and the probe checks that what each doc
+// calls for is exactly what is stated here (the stage takes off a listed
+// package nothing in the doc calls for).
+const PACKAGES = ["scene", "sailing", "walk", "water", "weather", "joints", "traversal"];
 // The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
 // from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
 // together, so a viewer arriving at the boat is asked for what her linked game runs too.
@@ -143,7 +144,7 @@ try {
     const pk = await P(`packages('a', ${inGame})`);
     const answering = [...new Set((pk?.answering ?? []).map((p) => folderOf(p.importUrl)))];
     const listed = (pk?.listed ?? []).map(folderOf);
-    check(`the ${who} calls for plugins of its stated packages only, and lists only those`, !!pk && answering.includes("scene") && answering.every((p) => stated.includes(p)) && listed.every((p) => stated.includes(p)), { answering, listed, stated });
+    check(`the ${who} calls for plugins of exactly its stated packages, and lists only those`, !!pk && answering.length === stated.length && answering.every((p) => stated.includes(p)) && listed.every((p) => stated.includes(p)), { answering, listed, stated });
   }
   const boatPk = await P("packages('a')");
   check("the boat calls for nothing of seats' or the keeper's, nor lists them", !["seats", "card-table"].some((p) => boatPk.answering.some((x) => folderOf(x.importUrl) === p) || boatPk.listed.includes(urls[p])), boatPk);
@@ -156,7 +157,7 @@ try {
   check("every object shows one of its own doc's files (the link shows the game; the Sea has no source)", strays.length === 0, strays);
   const boatDoc = snap.docs[snap.scene];
   const seas = Object.values(boatDoc.objects).filter((o) => o.traits?.water);
-  check("the boat has one Sea (open water with a sea on it) and the weather, as the template writes them (WATER.md, \"Water bodies\")", seas.length === 1 && !seas[0].traits.water.size && !!seas[0].traits["sailing.sea"] && !!boatDoc.traits?.["sailing.weather"] && !boatDoc.traits?.["sailing.sea"] && !boatDoc.traits?.water, { seas, traits: Object.keys(boatDoc.traits ?? {}) });
+  check("the boat has one Sea (open water with a sea on it) and the weather, as the template writes them (WATER.md, \"Water bodies\")", seas.length === 1 && !seas[0].traits.water.size && !!seas[0].traits["sailing.sea"] && !!boatDoc.traits?.weather && !boatDoc.traits?.["sailing.sea"] && !boatDoc.traits?.water, { seas, traits: Object.keys(boatDoc.traits ?? {}) });
   // the box her Sea keeps where the world she is placed in offers no open water (water/WATER.md, "Clipped open water"): her swing circle and the landmarks
   const clipped = clipProblems(boatDoc, { anchored: true });
   check("her Sea's clip covers her swing circle and the landmarks, with the margin (clip-check.mjs)", clipped.length === 0, { clip: seas[0]?.traits?.water?.clip, problems: clipped });

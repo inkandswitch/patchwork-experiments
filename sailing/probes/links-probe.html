@@ -81,7 +81,7 @@ const COCKPIT_TABLE = { position: [0, 0.72, 2.85], rotation: [0, Math.PI / 2, 0]
 const TABLE_TOP = [0, 0.7006, 0];
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../../walk/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../../walk/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

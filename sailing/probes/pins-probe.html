@@ -102,7 +102,7 @@ try {
   // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
   // the stages can say which package each plugin comes from (publish-fitout checks what each doc lists)
   const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
+  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["weather", "../../weather/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
     registerPlugins((await import(url)).plugins, urls[dir]);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();

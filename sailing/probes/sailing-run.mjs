@@ -52,7 +52,7 @@ import { staticChecks, walkReport, watchWalk } from "./navprobe.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["sailing/dist/index.js", "water/dist/index.js", "scene/dist/index.js", "walk/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "scene/dist/index.js", "walk/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-shots"));
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
@@ -221,7 +221,7 @@ try {
   if (TRACE) await P("trace.start()");
   // loaded: the world, held paused while loading took the wall's time, runs from here (the same moment every run)
   // (one seed for the waves and the gusts, as the template draws them: the Sea object's and the weather's)
-  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits["sailing.weather"].seed = ${SEA}; })`);
+  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits.weather.seed = ${SEA}; })`);
   // and both views read it before the world runs: a doc change reaches a stage's extensions at once only while
   // few passes have run since its last frame (scene stage.js requestFlush, UI_PASSES), and how many loading's
   // wall-timed arrivals ran is the wall's, so the first step could read the template's sea or this one
@@ -230,6 +230,19 @@ try {
   check("both views read the sea's and the wind's seed before the world runs", !!seaRead);
   report.measured.resumedAt = await P("resume()");
   await traceMark("resumed");
+  // the wind she sails in is the weather's offer (the weather package's extension, from the doc's `weather`): the
+  // world's `wind` ambient carries the numbers the doc has (wind, from, seed; the rest is the weather's to fill), and
+  // her wind in both views is that ambient's, read from the stage, not rebuilt here from a copy of the weather's defaults
+  {
+    const air = (await P("doc()")).traits.weather;
+    const offer = await js(`(() => { const a = window.__p.api("a")?.ambient("wind"); return a ? { ...a.value, mine: a.mine } : null; })()`);
+    const want = offer && { speed: offer.speed, from: offer.from, gustiness: offer.gustiness };
+    const got = {};
+    for (const w of ["a", "b"]) got[w] = await js(`(() => { const x = window.__p.ctx('${w}')?.sea.wind; return x ? { speed: x.speed, from: x.from, gustiness: x.gustiness } : null; })()`);
+    report.measured.wind = { doc: air, offer, a: got.a, b: got.b };
+    check("the world's wind is the weather's offer of the doc's weather: its own wind, from and seed, offered by her own doc (mine)", seaRead && offer?.mine === true && offer.speed === air.wind && offer.from === air.from && offer.seed === air.seed, { air, offer });
+    check("her wind in both views is that offer: speed, from and gustiness", want != null && JSON.stringify(got.a) === JSON.stringify(want) && JSON.stringify(got.b) === JSON.stringify(want), { want, got });
+  }
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
   const { hull, wheel, rig, windlass, ladder } = ids;
@@ -306,7 +319,7 @@ try {
   const way = { s: await P(`read('${hull}', '${SIM}')`), f: await P(`read('${hull}', '${FOL}')`) };
   const start = (await P("doc()")).objects;
   // the sea as the run sailed it (its seed the probe's --sea) and the weather it sailed in: kept with the report
-  { const d = await P("doc()"); report.measured.sea = { sea: Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"])?.traits["sailing.sea"], weather: d.traits["sailing.weather"] }; }
+  { const d = await P("doc()"); report.measured.sea = { sea: Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"])?.traits["sailing.sea"], weather: d.traits.weather }; }
   check("the template starts her under way: sail up, anchor up, making way on both views", start[rig].traits["sailing.sail"].raised === 1 && start[windlass].traits["sailing.anchor"].down === false && way.s?.speed > 1 && way.f?.speed > 1, { speed: { sim: n2(way.s?.speed), follower: n2(way.f?.speed) } });
   await shot("under-way", FOL);
 
@@ -317,7 +330,7 @@ try {
   // the centreline with each gust and sheer, a target that moves while the
   // look at it from the cockpit (below) is made; sheeted in it lies over the
   // well. It's eased again (0.5) once that look is done.
-  const windFrom = (await P("doc()")).traits["sailing.weather"].wind.from;
+  const windFrom = (await P("doc()")).traits.weather.from;
   await mark("lay", { docAt: (await P("doc()")).objects[hull].transform.position });
   await js(`window.__p.change((d) => {
     const o = d.objects;
@@ -570,7 +583,7 @@ try {
   // ─── under sail: bear away onto a beam reach ─────────────────────────────
   if (await section("helm")) throw new Done();
   // a beam reach on the tack she fell off on: the wind from 45°, the wind on her port beam she heads 135°
-  const wind = (await P("doc()")).traits["sailing.weather"].wind;
+  const wind = (await P("doc()")).traits.weather;
   const want = ((wind.from + side * 90) * Math.PI) / 180;
   await focus("b", aimH); // B's keys again
   const reach = await steer(ids, SIM, want);

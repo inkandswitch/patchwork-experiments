@@ -34,8 +34,10 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   *Come aboard* comes aboard, so a stray click on the benches round the table
   doesn't throw you into first person; the HUD then shows no walking keys
   (S and D are the table's Shuffle and Draw), and before you're aboard its
-  panel is just the dial, top left, clear of your hand of cards. The HUD
-  only reads: it has no buttons. Nothing of hers can be picked up: what can be carries the
+  panel is just the dial, top left, clear of your hand of cards, with no
+  hint beside it (a click on her comes aboard in Look and selects her in
+  Edit, and the HUD can't tell which). The HUD only reads: it has no
+  buttons and takes no press. Nothing of hers can be picked up: what can be carries the
   scene's `scene.carry` trait (a game's cards and pieces), and the ship and
   her fittings don't, so a game aboard her can't dismast her.
 - **From the parts bin, in any scene.** The toolbar's Parts opens the bin,

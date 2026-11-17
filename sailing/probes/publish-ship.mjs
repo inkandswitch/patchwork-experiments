@@ -46,7 +46,7 @@ if (!DRY) console.log(`connected to ${SYNC}`);
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
 // stage works these out from the registry; here they're stated (joints and
 // traversal for the sloop's companionway: its hatch's slide, its exit)
-const PACKAGES = ["scene", "sailing", "walk", "water", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "walk", "water", "weather", "joints", "traversal"];
 const scene = await repo.create2(emptyScene({ title: TITLE, patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
 
 // ─── ctx.file, as the stage's sceneFile (scene/src/stage/stage.js) ──────────
@@ -109,7 +109,7 @@ const objects = Object.values(d.objects);
 const has = (trait) => objects.filter((o) => o.traits?.[trait]).length;
 const problems = [];
 if (!d.view?.start?.home || "body" in d.view.start || "activity" in (d.view ?? {})) problems.push(`view is ${JSON.stringify(d.view)}: no view.start.home, a body named (she starts people in Look), or an old view.activity`);
-if (!d.traits?.["sailing.weather"]) problems.push("no sailing.weather trait");
+if (!d.traits?.weather) problems.push("no weather trait");
 const seas = objects.filter((o) => o.traits?.water);
 if (seas.length !== 1 || seas[0].traits.water.size != null || !seas[0].traits["sailing.sea"] || d.objects[d.order[0]] !== seas[0]) problems.push(`want one Sea first in the order (open water with a sea on it), have ${JSON.stringify(seas.map((o) => o.name))}`);
 if (d.traits?.["sailing.sea"] || d.traits?.water) problems.push("a sea or water trait left on the scene (they are a Sea object's now)");

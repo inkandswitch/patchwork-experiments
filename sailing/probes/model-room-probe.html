@@ -75,7 +75,7 @@ const S = 1 / 25; // the room's scale for its dioramas
 const GAP = 0.6;
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -184,7 +184,7 @@ try {
     /** H: a wet harbour (a Sea and the weather) with R linked into it */
     wet: () => pumping(async () => {
       const H = emptyScene({ title: "Harbour", view: { grid: false, axes: false, start: { home: { position: [0, 6, 11.5], target: [0, 0, 0] } } } });
-      H.traits = { "sailing.weather": { wind: { speed: 5, from: 250 }, seed: 7 } };
+      H.traits = { weather: { wind: 5, from: 250, seed: 7 } };
       H.objects = {
         hsea: { name: "Sea", sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {}, "sailing.sea": { seed: 7, scale: 0.5 } } },
         LR: link("Model room", docs.R.url, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, 6),

@@ -14,9 +14,8 @@
 // world's water, and this extension reads it through ctx.sea.
 //
 // They meet through one context object, `ctx`, which each fills in as it's
-// made (ctx.sea, ctx.sim, ctx.crew), and they import nothing of each other
-// (but for hud.js, which takes crew.js's seatedView): what they share of the
-// doc is in traits.js, of the maths in frames.js.
+// made (ctx.sea, ctx.sim, ctx.crew), and they import nothing of each other:
+// what they share of the doc is in traits.js, of the maths in frames.js.
 //
 // The ships step as a process of the doc's clock (sim.js), before any of
 // this. Then one loop runs the rest, in the order a frame needs: the sea's

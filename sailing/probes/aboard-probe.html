@@ -122,7 +122,7 @@ try {
   // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
   // the stages can say which package each plugin comes from (publish-aboard checks what each doc lists)
   const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
+  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["weather", "../../weather/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
     registerPlugins((await import(url)).plugins, urls[dir]);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
@@ -445,7 +445,7 @@ try {
     tags: (w) => [...hosts[w].querySelectorAll(".label.seat-tag")].map((e) => { const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2, shown: e.style.display !== "none" && r.width > 0 }; }),
     me: (w) => ctx(w)?.crew.me() ?? null,
     walker: (w) => { const s = liveOf(dbg[w]?.host.record("sailing")?.api)?.state(); return s ? { mode: s.mode, ship: s.on ?? null } : null; },
-    /** what the sailing HUD says in a view: its state, how many buttons it holds (none: it only reads), its hint and keys lines, where its panel is; and the bar of tools' Come aboard (the way in) */
+    /** what the sailing HUD says in a view: its state, how many buttons it holds (none: it only reads), its hint line, where its panel is; and the bar of tools' Come aboard (the way in) */
     hud(w) {
       const h = hosts[w].querySelector(".sail-hud");
       if (!h) return null;
@@ -453,7 +453,7 @@ try {
       const panel = h.querySelector(".sail-panel");
       const r = panel && !panel.hidden ? panel.getBoundingClientRect() : null;
       const host = hosts[w].getBoundingClientRect();
-      return { state: h.dataset.state, seated: h.hasAttribute("data-seated"), buttons: h.querySelectorAll("button").length, hint: h.querySelector('[data-k="hint"]')?.textContent ?? "", bar: way ? { text: way.textContent.trim(), title: way.title, enabled: !way.disabled } : null, keys: h.querySelector('[data-k="keys"]')?.textContent ?? "", advice: h.querySelector('[data-k="advice"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
+      return { state: h.dataset.state, buttons: h.querySelectorAll("button").length, hint: h.querySelector('[data-k="hint"]')?.textContent ?? "", bar: way ? { text: way.textContent.trim(), title: way.title, enabled: !way.disabled } : null, advice: h.querySelector('[data-k="advice"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
     },
     /** a fitting's position in the hull's frame, as the doc has it */
     hullLocal(id) { const s = dbg.a.scene(); return s.toLocal(ids.hull, s.world(id).slice(12, 15)).map((v) => +v.toFixed(3)); },
@@ -469,11 +469,12 @@ try {
     commit: (w, id, fields) => ctx(w).sim.commit(id, fields),
     /** an editor's move of the hull: her doc transform turned to `yaw` (the sim starts again from there, at rest) */
     turnHull(yaw) { scene.change((d) => { d.objects[ids.hull].transform.rotation = [0, yaw, 0]; }); return true; },
-    wind: () => scene.doc().traits?.["sailing.weather"]?.wind ?? null,
-    /** the sea's wind freshened (as the inspector's Sea field writes it) */
-    setWind(speed) { scene.change((d) => { d.traits["sailing.weather"].wind.speed = speed; }); return true; },
+    /** the world's wind as its weather has it (the weather package's trait: wind m/s, from degrees) */
+    wind: () => { const t = scene.doc().traits?.weather; return t ? { speed: t.wind, from: t.from } : null; },
+    /** the wind freshened (as the inspector's Weather field writes it) */
+    setWind(speed) { scene.change((d) => { d.traits.weather.wind = speed; }); return true; },
     /** the sea's own seed: its waves (the Sea object's) and its gusts (the weather's), one seed as the template draws them */
-    setSea(seed) { scene.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = seed; d.traits["sailing.weather"].seed = seed; }); return true; },
+    setSea(seed) { scene.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = seed; d.traits.weather.seed = seed; }); return true; },
     /**
      * Sample, every frame for `ms` of the page's clock, where a point on the
      * table is on each view's page, and where the table is in the world.
@@ -518,13 +519,19 @@ try {
         if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
         const hit = v.pick(x, y);
         if (hit?.id !== key || !onCanvas(x, y)) continue;
-        // the middle of its run of pixels across the screen, not the first one the spiral meets (its edge): she rolls,
-        // and the eye stays level, so a pointer on the edge of a mast or a card is off it a moment later
-        const on = (px) => px > 2 && px < r.width - 2 && v.pick(px, y)?.id === key && onCanvas(px, y);
-        let lo = x, hi = x;
-        while (x - lo < 60 && on(lo - 1)) lo--;
-        while (hi - x < 60 && on(hi + 1)) hi++;
-        return { x: r.left + (lo + hi) / 2, y: r.top + y, id };
+        // the middle of its run of pixels down the screen, then across it at that height, not the first one the
+        // spiral meets (its edge): she rolls and pitches, and the eye stays level, so a pointer on any edge of a
+        // mast or a card is off it a moment later
+        const on = (px, py) => px > 2 && px < r.width - 2 && py > 2 && py < r.height - 2 && v.pick(px, py)?.id === key && onCanvas(px, py);
+        const mid = (at, step) => {
+          let lo = 0, hi = 0;
+          while (-lo < 60 && on(...step(lo - 1))) lo--;
+          while (hi < 60 && on(...step(hi + 1))) hi++;
+          return at + (lo + hi) / 2;
+        };
+        const my = mid(y, (d) => [x, y + d]);
+        const mx = mid(x, (d) => [x + d, my]);
+        return { x: r.left + mx, y: r.top + my, id };
       }
       return null;
     },
