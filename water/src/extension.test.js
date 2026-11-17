@@ -238,6 +238,9 @@ describe("things travel, weather doesn't (W16)", () => {
               // and what carries it is left out of it: the world's open water, or none
               const carried = x.water.at(p, { not: "hull" });
               expect([label, n, carried?.body ?? null, carried === null ? null : carried.components]).toEqual([label, n, null, offers ? H.components : null].map((e, i) => (i === 3 && !offers ? null : e)));
+              // `not` as a list: left out under any id in it, as under the one; a list without its carrier leaves it in
+              for (const not of [["hull"], ["nobody", "hull"], ["hull", "nobody"]]) expect([label, not, x.water.at(p, { not })]).toEqual([label, not, carried]);
+              for (const not of [[], ["nobody"]]) expect([label, not, x.water.at(p, { not })?.body]).toEqual([label, not, id]);
             }
         }
         // every reader is the world's open water or a body of this doc
