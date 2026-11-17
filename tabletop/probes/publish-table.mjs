@@ -48,8 +48,8 @@
 // - for two, with A and B seated, the first joint shuffle reaches every
 //   tile (each shuffled exactly once, nothing under way) and nothing is
 //   dealt: no tile in a rack, no face to either player; for more, with
-//   only A and B seated the shuffle waits for every seat, so nothing is
-//   shuffled or dealt;
+//   only A and B seated the deck waits for every seat (by its own state:
+//   both joined, still waiting), so nothing is shuffled or dealt;
 // - neither view veils a tile: all 28 are backs to both.
 // Then (unless --dry-run) it publishes the table as the template left it
 // (before anyone sat): its files, its deck and the scene, each made anew on
@@ -355,10 +355,15 @@ async function fromTemplate(gameId) {
       check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
       // a table whose players shuffle between them, with seats left empty: the shuffle waits for every seat
       if (deck && seats > 2) {
+        // the deck's own state, not an absence: A and B have joined it (so each
+        // one's keeper has stepped with the open seats in view) and it is waiting,
+        // nothing shuffled; and it still is, a while after both joined
+        const waiting = `shuffle() !== null && ((s) => s.phase === 'waiting' && s.participants === 2 && s.op === null && s.epochs.length === 0)(__p.shuffle())`;
+        const joined = await until(waiting, 60_000);
         await b.rest(3000);
         const where = await P("where()");
         const inHands = Object.entries(where).filter(([at]) => at !== "table").reduce((n, [, ids]) => n + ids.length, 0);
-        check(`with 2 of ${seats} seated the first shuffle waits for every seat: not playing, nothing dealt, no face to either player`, (await P("phase()")) !== "playing" && inHands === 0 && (await P("faces('a')")).length === 0 && (await P("faces('b')")).length === 0, { phase: await P("phase()"), shuffle: await P("shuffle()"), inHands });
+        check(`with 2 of ${seats} seated the deck waits for every seat: A and B joined, nothing shuffled or dealt, no face to either player`, joined && (await P(waiting)) && inHands === 0 && (await P("faces('a')")).length === 0 && (await P("faces('b')")).length === 0, { shuffle: await P("shuffle()"), inHands });
       }
       // a table with a deck: its first shuffle, and what reaches each hand
       else if (deck) {

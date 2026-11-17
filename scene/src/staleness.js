@@ -277,12 +277,14 @@ export function effectiveParams(specs, params) {
  * coerced to its spec, a default where one is missing or can't be), with
  * every key that has no spec dropped. What a template's create() is handed
  * (STAGE.md, "Templates"): a template runs once, from a form or for another
- * tool, so nothing it wasn't declared to take reaches it.
+ * tool, so nothing it wasn't declared to take reaches it. A spec counts
+ * only with a string key, as the start screen's form draws it (templatesOf,
+ * parts/add.js): create gets exactly what the form offers.
  */
 export function paramsBySpec(specs, given) {
   const all = effectiveParams(specs, given);
   const out = {};
-  for (const spec of specs ?? []) if (spec?.key && Object.hasOwn(all, spec.key)) out[spec.key] = all[spec.key];
+  for (const spec of specs ?? []) if (typeof spec?.key === "string" && Object.hasOwn(all, spec.key)) out[spec.key] = all[spec.key];
   return out;
 }
 

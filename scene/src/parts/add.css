@@ -42,6 +42,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: flex-start; /* a template with a form under it doesn't stretch its neighbours */
   gap: 8px;
 }
 

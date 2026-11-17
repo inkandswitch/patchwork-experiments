@@ -387,8 +387,8 @@ extension.
 **Templates** start an empty scene. An empty scene's start screen (the add
 extension's) lists every registered `scene:template` from the registry's
 metadata (`name`, `icon`, `description`, `params`; nothing is loaded to
-offer one), and Blank. A template that declares `params` (ParamSpecs, the
-kinds of `src/param-form.js`: Draw Dominoes' `players`, an `enum` of 2, 3
+offer one), and Blank. A template that declares `params` (ParamSpecs, each
+with a string `key`, or it is no spec to the form or to create; the kinds of `src/param-form.js`: Draw Dominoes' `players`, an `enum` of 2, 3
 or 4) has their form under its button, showing each default until changed;
 what's chosen is this view's until the template runs. Choosing one calls
 `api.template(id, params)`, which loads it and runs `create(ctx, params)`

@@ -224,6 +224,8 @@ describe("paramsBySpec (a template's params)", () => {
     expect(paramsBySpec([bare], { n: "x" })).toEqual({});
     expect(paramsBySpec([bare], { n: 2.6 })).toEqual({ n: 3 });
     expect(paramsBySpec([PLAYERS], { constructor: 1, toString: 2 })).toEqual({ players: 2 });
+    // a spec without a string key is no spec (the start screen's form doesn't draw it: templatesOf)
+    for (const key of [5, null, undefined, { toString: () => "5" }]) expect(paramsBySpec([{ key, kind: "integer", default: 1 }], { 5: 1 })).toEqual({});
   });
 });
 

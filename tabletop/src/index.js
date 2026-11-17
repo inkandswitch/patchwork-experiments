@@ -110,9 +110,10 @@ export const plugins = [
   })),
   // the games' tables on an empty scene's start screen: one click lays the
   // table out in that scene, with its own art (src/table/template.js).
-  // `game` names the game the table is of, from the template's params:
-  // Draw Dominoes is one template, how many play chosen under its button
-  // (STAGE.md "Templates"), each count its own game as data (above)
+  // `game` is the game the table is of: the template's id for a fixed one,
+  // a function of its params for one that takes them. Draw Dominoes is one
+  // template, how many play chosen under its button (STAGE.md "Templates"),
+  // each count its own game as data (above)
   ...[
     { id: "lost-cities", name: "Lost Cities", icon: "Map", description: "A two-player card table: five expeditions, a face-down deck and a private hand each" },
     { id: "santorini", name: "Santorini", icon: "Castle", description: "An island board with workers, building blocks and domes, everything in plain sight" },
@@ -124,7 +125,7 @@ export const plugins = [
       params: [{ key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 }],
       game: ({ players }) => `draw-dominoes-${players}`,
     },
-  ].map(({ id, game = () => id, ...t }) => ({
+  ].map(({ id, game = id, ...t }) => ({
     type: "scene:template",
     id: `tabletop.${id}`,
     ...t,

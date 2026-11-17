@@ -171,6 +171,24 @@ describe("scene.add", () => {
     getRegistry("scene:template").unregister("t.later");
   });
 
+  // {before, while, after} a template runs × {its button, its form's select, Blank} → disabled?
+  it("while a template runs, the start screen's buttons and its form's fields are disabled; after, enabled again", async () => {
+    const PLAYERS = { key: "players", label: "Players", kind: "enum", options: [2, 3].map((n) => ({ value: n, label: String(n) })), default: 2 };
+    let finish;
+    const running = new Promise((r) => (finish = r));
+    await mount({ templates: [{ meta: { id: "t.some", name: "Some", params: [PLAYERS] }, module: { create: () => running } }] });
+    const start = s.port.querySelector(".add-start");
+    const fields = () => [...start.querySelectorAll('button[data-template="t.some"], [data-params="t.some"] select, button[data-template=""]')].map((f) => f.disabled);
+    expect(fields()).toEqual([false, false, false]);
+    start.querySelector('button[data-template="t.some"]').click();
+    await settle();
+    expect(fields()).toEqual([true, true, true]);
+    finish();
+    await settle();
+    await settle();
+    expect(fields()).toEqual([false, false, false]);
+  });
+
   it("Blank puts the start screen away for this view, leaving the drop hint", async () => {
     await mount({ templates: [{ meta: { id: "t.level", name: "Test level" }, module: { create() {} } }] });
     const start = s.port.querySelector(".add-start");
