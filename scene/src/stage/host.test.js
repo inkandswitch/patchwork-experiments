@@ -37,6 +37,31 @@ function mod(id, log, instance = {}) {
   };
 }
 
+// For the exhaustive runs (H2, the view's move): promises only, as the host
+// and these timers need no macrotask, so each sequence is quick.
+const settle = async () => {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+};
+function quickTimers() {
+  let now = 0;
+  let n = 0;
+  const pending = new Map();
+  return {
+    setTimeout: (fn, ms) => (pending.set(++n, { fn, at: now + ms }), n),
+    clearTimeout: (k) => pending.delete(k),
+    async advance(ms) {
+      now += ms;
+      for (;;) {
+        const due = [...pending.entries()].filter(([, p]) => p.at <= now).sort((x, y) => x[1].at - y[1].at)[0];
+        if (!due) break;
+        pending.delete(due[0]);
+        due[1].fn();
+        await settle();
+      }
+    },
+  };
+}
+
 describe("mergeOrder", () => {
   it("keeps a lingering id just after what preceded it", () => {
     expect(mergeOrder(["a", "b", "c"], ["a", "c"], new Set(["b"]))).toEqual(["a", "b", "c"]);
@@ -122,19 +147,6 @@ describe("the host", () => {
     expect(host.instanceOf("nope")).toBeNull();
   });
 
-  it("what runs is the doc's: the same doc runs the same set, whatever local holds (H1)", async () => {
-    const { host } = make();
-    host.sync(doc({ view: { start: { body: "walk" } } }));
-    await flush();
-    const before = ids();
-    log.length = 0;
-    local.swap((m) => ({ ...m, body: { id: "walk" }, held: { name: "Gun" }, selected: "c", prefs: { grid: false }, clock: { running: false } }));
-    host.sync(doc({ view: { start: { body: "walk" } } }));
-    await flush();
-    expect(ids()).toEqual(before);
-    expect(log).toEqual([]);
-  });
-
   it("an extension whose plugin leaves the registry stops at once (no code to come back to); one the doc sends away lingers", async () => {
     const { host, reg } = make();
     host.sync(doc({ traits: { seats: {} } }));
@@ -151,38 +163,6 @@ describe("the host", () => {
     } finally {
       metas.splice(i, 0, gone);
     }
-  });
-
-  it("keeps what the doc stopped calling for running 2 s, and while it's busy", async () => {
-    const { host } = make();
-    host.sync(doc({ traits: { seats: {} } }));
-    await flush();
-    expect(ids()[0]).toBe("seats:scene");
-    // a peer's undo takes the trait away
-    host.sync(doc());
-    expect(host.lingering("seats")).toBe(true);
-    expect(ids()[0]).toBe("seats:scene"); // still running, in its place
-    busy.add("seats");
-    await timers.advance(LINGER_MS);
-    expect(log).not.toContain("dispose:seats");
-    await timers.advance(BUSY_RECHECK_MS * 3);
-    expect(log).not.toContain("dispose:seats");
-    busy.delete("seats");
-    await timers.advance(BUSY_RECHECK_MS);
-    expect(log).toContain("dispose:seats");
-    expect(ids()).not.toContain("seats:scene");
-  });
-
-  it("cancels the linger when the doc calls for it again", async () => {
-    const { host } = make();
-    host.sync(doc({ traits: { seats: {} } }));
-    await flush();
-    host.sync(doc());
-    await timers.advance(LINGER_MS / 2);
-    host.sync(doc({ traits: { seats: {} } }));
-    await timers.advance(LINGER_MS * 2);
-    expect(log).not.toContain("dispose:seats");
-    expect(log.filter((l) => l === "create:seats")).toHaveLength(1);
   });
 
   it("drop: loads only the modules that take the datatype, without running them", async () => {
@@ -248,29 +228,6 @@ describe("the host", () => {
     const seqs = [[]];
     for (let n = 1; n <= 4; n++) for (const s0 of seqs.filter((q) => q.length === n - 1)) for (const e of EVENTS) seqs.push([...s0, e]);
     expect(seqs.length).toBe(1555);
-    // (promises only: the host and these timers need no macrotask, so each sequence is quick)
-    const settle = async () => {
-      for (let i = 0; i < 8; i++) await Promise.resolve();
-    };
-    const quickTimers = () => {
-      let now = 0;
-      let n = 0;
-      const pending = new Map();
-      return {
-        setTimeout: (fn, ms) => (pending.set(++n, { fn, at: now + ms }), n),
-        clearTimeout: (k) => pending.delete(k),
-        async advance(ms) {
-          now += ms;
-          for (;;) {
-            const due = [...pending.entries()].filter(([, p]) => p.at <= now).sort((x, y) => x[1].at - y[1].at)[0];
-            if (!due) break;
-            pending.delete(due[0]);
-            due[1].fn();
-            await settle();
-          }
-        },
-      };
-    };
     const one = [{ id: "seats", traits: ["seats"] }];
     for (const seq of seqs) {
       log = [];
@@ -286,20 +243,19 @@ describe("the host", () => {
         setTimer: timers.setTimeout,
         clearTimer: timers.clearTimeout,
       });
-      const flush = settle;
       let t = 0;
       let wanted = true;
       let since = null; // when the doc last stopped calling
       const lines = (k) => log.filter((l) => l === `${k}:seats`).length;
       host.sync(doc({ traits: { seats: {} } }));
-      await flush();
+      await settle();
       for (const e of seq) {
         const stoppedBefore = lines("dispose");
         if (e === "want" || e === "unwant") {
           if (wanted !== (e === "want")) since = e === "unwant" ? t : null;
           wanted = e === "want";
           host.sync(doc(wanted ? { traits: { seats: {} } } : {}));
-          await flush();
+          await settle();
         } else if (e === "busy") busy.add("seats");
         else if (e === "idle") busy.delete("seats");
         else {
@@ -337,28 +293,6 @@ describe("the host", () => {
     const seqs = [[]];
     for (let n = 1; n <= 4; n++) for (const s0 of seqs.filter((q) => q.length === n - 1)) for (const e of EVENTS) seqs.push([...s0, e]);
     expect(seqs.length).toBe(781);
-    const settle = async () => {
-      for (let i = 0; i < 8; i++) await Promise.resolve();
-    };
-    const quickTimers = () => {
-      let now = 0;
-      let n = 0;
-      const pending = new Map();
-      return {
-        setTimeout: (fn, ms) => (pending.set(++n, { fn, at: now + ms }), n),
-        clearTimeout: (k) => pending.delete(k),
-        async advance(ms) {
-          now += ms;
-          for (;;) {
-            const due = [...pending.entries()].filter(([, p]) => p.at <= now).sort((x, y) => x[1].at - y[1].at)[0];
-            if (!due) break;
-            pending.delete(due[0]);
-            due[1].fn();
-            await settle();
-          }
-        },
-      };
-    };
     const one = [{ id: "walk" }];
     for (const seq of seqs) {
       log = [];

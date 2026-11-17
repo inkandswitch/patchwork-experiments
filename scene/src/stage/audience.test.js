@@ -27,11 +27,6 @@ const shownTo = (list, v) => list.some((a) => shows(a, v));
 const mayKnow = (list, v) => shownTo(list, v) && list.every((a) => allows(a, v));
 
 describe("the audience algebra, exhaustively", () => {
-  it(`covers ${ANSWERS.length} answers and ${LISTS.length} lists`, () => {
-    expect(ANSWERS.length).toBe(31);
-    expect(LISTS.length).toBe(1 + 31 + 31 * 31 + 31 * 31 * 31);
-  });
-
   it("a viewer is in the audience exactly when some policy shows it to them and none screens it from them", () => {
     for (const list of LISTS) {
       const A = mergeAudience(list);

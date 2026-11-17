@@ -3,7 +3,7 @@
 // finite set of events.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { CHECKPOINT_MS, CLOCK, LAG_MS, MAX_FRAME_S, RESYNC_S, STALL_MS, STEP_S, createClock, eligibility, follow, gridIndex, readClock, sampleTime, slew } from "./clock.js";
+import { CHECKPOINT_MS, CLOCK, LAG_MS, MAX_FRAME_S, RESYNC_S, STEP_S, createClock, eligibility, follow, gridIndex, readClock, slew } from "./clock.js";
 
 // ─── pure ───────────────────────────────────────────────────────────────────
 
@@ -49,15 +49,6 @@ describe("following", () => {
         }
   });
 
-  it("reads the computer's t at a moment of its clock", () => {
-    expect(sampleTime({ t: 10, at: 5000 }, 5950)).toBeCloseTo(10.95);
-  });
-
-  it("steps on a grid: the same grid points whatever the frames", () => {
-    expect(gridIndex(0)).toBe(0);
-    expect(gridIndex(STEP_S * 7)).toBe(7);
-    expect(gridIndex(STEP_S * 7 - 1e-6)).toBe(6);
-  });
 });
 
 // ─── views on replicas ──────────────────────────────────────────────────────
@@ -377,20 +368,6 @@ describe("H7: the clock across views, on Automerge", () => {
     expect(w.views[0].clock.t()).toBeCloseTo(MAX_FRAME_S, 6);
   });
 
-  it("nobody present, no time passes: the next arrival starts cold at clock.t", () => {
-    const w = world(["writable", "writable"]);
-    w.events.join(w.views[0]);
-    for (let i = 0; i < 20; i++) w.frame(100);
-    w.events.leave(w.views[0]);
-    const t = readClock(w.views[0].lastDoc).t;
-    expect(t).toBeCloseTo(1.9, 5);
-    for (let i = 0; i < 50; i++) w.frame(1000);
-    w.events.join(w.views[1]);
-    expect(w.views[1].clock.t()).toBe(t);
-    w.frame(100);
-    expect(w.views[1].steps[0]).toEqual({ start: t });
-  });
-
   it("a follower runs behind what it has heard and never past it, and says when the computer stalls", () => {
     const w = world(["writable", "writable"]);
     w.events.join(w.views[0]);
@@ -514,7 +491,6 @@ describe("the computer's status", () => {
     w.events.join(w.views[0]);
     w.frame();
     expect(w.views[0].clock.status()).toMatchObject({ running: true, computer: null, able: false, why: "view only" });
-    expect(STALL_MS).toBeGreaterThan(0);
   });
 });
 

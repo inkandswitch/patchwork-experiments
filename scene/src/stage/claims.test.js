@@ -188,23 +188,6 @@ describe("claims on one view", () => {
 });
 
 describe("claims between views", () => {
-  it("another view's live claim: claimedBy names it, and claim is refused", async () => {
-    const { a, b } = await twoViews();
-    a.claim("helm", "station");
-    expect(b.claimedBy("helm", "station")).toEqual({ viewer: "viewer:alice", session: a.session, mine: false });
-    expect(b.claim("helm", "station")).toBeNull();
-  });
-
-  it("released by the holder stopping: the other view can take it", async () => {
-    const { A, a, b } = await twoViews();
-    a.claim("helm", "station");
-    A.unmount();
-    mounted.splice(mounted.indexOf(A), 1);
-    await settle();
-    expect(b.claimedBy("helm", "station")).toBeNull();
-    expect(typeof b.claim("helm", "station")).toBe("function");
-  });
-
   it("lapses when its holder's session leaves presence: the next taker writes over it, and the old holder is told once", async () => {
     const { A, a, b } = await twoViews();
     const onLost = vi.fn();

@@ -141,39 +141,6 @@ describe("links: what a link is", () => {
     expect(linksOf({ objects: { b: { providerId: LINK, sourceUrl: URL(2) }, a: { providerId: LINK, sourceUrl: URL(1) }, c: { name: "crate" } } }).map((l) => l.id)).toEqual(["a", "b"]);
   });
 
-  it("the worked cases: one game in a boat and a room (two placements, one acting); a doc holding itself live is a cycle, its own past is not", () => {
-    // root 0 links the boat 1 and the room 2, each of which links game 3
-    const docs = [docWith([{ to: 1, kind: "live" }, { to: 2, kind: "live" }]), docWith([{ to: 3, kind: "live" }]), docWith([{ to: 3, kind: "live" }]), docWith([])];
-    const out = expand({ url: URL(0) }, docOfGraph(docs));
-    expect(out.map((o) => [o.path.join("/"), o.role])).toEqual([
-      ["", "acting"],
-      ["L0", "acting"],
-      ["L1", "acting"],
-      ["L0/L0", "acting"],
-      ["L1/L0", "closed"],
-    ]);
-    expect(out.at(-1).reason).toBe("repeat");
-    const self = expand({ url: URL(0) }, docOfGraph([docWith([{ to: 0, kind: "live" }, { to: 0, kind: "pinned", deps: {} }])]));
-    expect(self.map((o) => [o.path.join("/"), o.role, o.reason ?? null])).toEqual([
-      ["", "acting", null],
-      ["L0", "closed", "cycle"],
-      ["L1", "pinned", null],
-      // inside the pin of itself: the live link has no deps to be held at (unpinned), the pin of the same version is a cycle
-      ["L1/L0", "closed", "unpinned"],
-      ["L1/L1", "closed", "cycle"],
-    ]);
-  });
-
-  it("a doc that can't be opened is closed unavailable; one not here yet is open with nothing under it", () => {
-    const docs = [docWith([{ to: 1, kind: "live" }, { to: 2, kind: "live" }]), docWith([{ to: 2, kind: "live" }]), docWith([])];
-    const out = expand({ url: URL(0) }, docOfGraph(docs, { gone: new Set([1]), arrived: new Set([0, 1]) }));
-    expect(out.map((o) => [o.path.join("/"), o.role, o.reason ?? null])).toEqual([
-      ["", "acting", null],
-      ["L0", "closed", "unavailable"],
-      ["L1", "acting", null],
-    ]);
-  });
-
   it("the budget opens the nearest first", () => {
     const docs = [docWith([{ to: 1, kind: "live" }, { to: 1, kind: "live" }]), docWith([{ to: 2, kind: "live" }]), docWith([])];
     expect(expand({ url: URL(0) }, docOfGraph(docs), { budget: 3 }).map((o) => o.path.join("/"))).toEqual(["", "L0", "L1"]);

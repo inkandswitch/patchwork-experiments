@@ -36,6 +36,7 @@ describe("the order of holds", () => {
       for (const o of [x, y, z]) if (o !== w) expect(ranksAhead(o, w)).toBe(false);
       expect(winningHold([z, y, x])).toBe(winningHold([x, z, y]) === w ? w : winningHold([z, y, x]));
     }
+    expect(winningHold([])).toBe(null);
   });
 
   it("here, in one view: a person takes from a process, never the other way; of two of a kind the first stays", () => {

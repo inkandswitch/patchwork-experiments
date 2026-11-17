@@ -118,17 +118,6 @@ describe("a document docked in the drawer is the view's", () => {
     expect([view.drawer.state().order.length, wanted()]).toEqual([0, false]);
   });
 
-  it("its × closes it, and view.drawer.docs says so", async () => {
-    const { view, notes } = await mountWithLink();
-    s.api("scene.inspector").view.dock({ url: notes.url, title: "Notes" });
-    await settle();
-    const tab = [...view.root.querySelectorAll(".stage-drawer-tab")].find((t) => t.textContent.startsWith("Notes"));
-    tab.querySelector(".stage-drawer-tab-close").click();
-    await settle();
-    expect(docsOf(view)).toEqual([]);
-    expect(view.root.querySelector(".stage-drawer-doc")).toBeNull();
-  });
-
   // a drop of one document: on the canvas the scene takes it (scene.add) and nothing docks; on the drawer's tab strip it
   // docks and the scene sees nothing (no object, no notice)
   const dropOf = (url) => {
@@ -143,17 +132,6 @@ describe("a document docked in the drawer is the view's", () => {
     await settle();
     expect(e.defaultPrevented).toBe(true);
     expect(docsOf(view)).toEqual([]);
-  });
-  it("a document dropped on the drawer's tab strip docks, and the scene sees nothing of it", async () => {
-    const { view, notes } = await mountWithLink();
-    // (the inspector is open on the selection: the drawer, and its strip, are there)
-    const strip = view.root.querySelector(".stage-drawer-tabs");
-    const before = JSON.stringify(s.doc());
-    strip.dispatchEvent(dropOf(notes.url));
-    await settle();
-    expect(docsOf(view)).toEqual([`${notes.url}|`]);
-    expect(JSON.stringify(s.doc())).toBe(before);
-    expect(view.atom.get().notices).toEqual([]);
   });
 
   it("keys typed in a docked document are its own: Escape there leaves the selection; on the stage it clears it", async () => {

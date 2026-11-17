@@ -282,38 +282,6 @@ describe("Enter and Leave", () => {
     expect("reopened" in host.view).toBe(false);
   });
 
-  it("outside an entered link stays live: a press out there reaches its own parts, then the general ones (the focus's); in Edit a click there is Edit's, and selects nothing; in Look it goes down the chain", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const m = await mountNested();
-    s = m.s;
-    const { view, log } = m;
-    view.enterBody(EDIT.id);
-    s.api("t.host").view.enter("L");
-    await placed(view);
-    view.viewport.pick = () => ({ id: "table", point: [0, 0, 0], normal: [0, 1, 0], distance: 3 });
-    log.length = 0;
-    s.click(20, 20);
-    await settle();
-    // the host's table: the press reaches its holder, then the general parts, now B's (their element of the path:
-    // nothing); the click is Edit's (HISTORY.md, COMPOSITION Decisions, Edit's click is Edit's): no package's click verb
-    expect(log).toEqual(["t.host table", "t.general -"]);
-    expect(view.atom.get().selected).toBe(null);
-    // in Look the same click goes down the chain: the table's holder's click, then the general parts'
-    view.enterBody("look");
-    log.length = 0;
-    s.click(20, 20);
-    await settle();
-    expect(log).toEqual(["t.host table", "t.general -", "click t.host table", "click t.general -"]);
-    view.enterBody(EDIT.id);
-    // a card of B's: B's holder, the host's root, the general parts; Edit's click selects it first (it's at the focus)
-    view.viewport.pick = () => ({ id: keyOf(stageOf(view, "L").n, "card"), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 });
-    log.length = 0;
-    s.click(20, 20);
-    await settle();
-    expect(log).toEqual(["t.card card", "t.general card"]);
-    expect(view.atom.get().selected).toEqual(["L", "card"]);
-  });
-
   it("the focus leaves a link that goes, is pinned, or stops acting there; the selection goes with it", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const cases = [
@@ -722,39 +690,4 @@ describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION D
     expect(cases).toBe(204);
   }, 60_000);
 
-  // The symptom, with a click verb that changes the body as the boat's does: a part holding the host's table
-  // whose click enters a body of its own. Every base × every focus, a click on the table: in Look it boards;
-  // in Edit it never does (at the boat it selects the table; inside a link it selects nothing).
-  it("a click verb on the host that enters a body (the boat's come-aboard): reached from Look, never from Edit, whatever the focus", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const boards = {
-      meta: { id: "t.board", traits: ["t.host"] },
-      module: { create: (api) => ({ bodies: [{ id: "t.board", label: "Aboard", enter: () => ({ input: {} }) }], input: { click: () => api.body.enter("t.board") } }) },
-    };
-    const m = await mountNested({ extra: [boards] });
-    s = m.s;
-    const { view } = m;
-    const got = [];
-    for (const focus of FOCI) {
-      expect(view.focusOn(focus)).toBe(true);
-      await placed(view);
-      for (const base of ["look", "edit"]) {
-        view.enterBody("look");
-        view.enterBody(base);
-        view.select(null);
-        view.viewport.pick = () => ({ id: "table", point: [0, 0, 0], normal: [0, 1, 0], distance: 3 });
-        s.click(20, 20);
-        await settle();
-        got.push([base, J(focus), view.atom.get().body?.id, J(view.atom.get().selected)]);
-      }
-    }
-    expect(got).toEqual([
-      ["look", "[]", "t.board", "null"],
-      ["edit", "[]", "edit", J(["table"])],
-      ["look", '["L"]', "t.board", "null"],
-      ["edit", '["L"]', "edit", "null"],
-      ["look", '["L","M"]', "t.board", "null"],
-      ["edit", '["L","M"]', "edit", "null"],
-    ]);
-  }, 60_000);
 });

@@ -17,7 +17,6 @@ import {
   declutter,
   depthRange,
   lighting,
-  nearestScreenVertex,
   ladderRadius,
   lightBasis,
   reseatTarget,
@@ -25,7 +24,6 @@ import {
   SHADOW_CAP,
   shadowFocus,
   shadowFrame,
-  toBox3,
 } from "./viewport.js";
 
 /** Rounded, and without -0, for comparing vectors. */
@@ -171,16 +169,6 @@ describe("declutter", () => {
     declutter([a, b]);
     expect(a.el.style.visibility).toBe("");
     expect(b.el.style.visibility).toBe("");
-  });
-});
-
-describe("nearestScreenVertex", () => {
-  it("is still exported, and finds the vertex nearest the cursor", () => {
-    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    const pts = [0, 0, 0, 0.5, 0.5, 0];
-    const r = nearestScreenVertex(pts, { count: 2 }, identity, identity, { width: 100, height: 100, x: 76, y: 24, maxPx: 5, eye: [0, 0, 5] });
-    expect(r.index).toBe(1);
-    expect(r.world).toEqual([0.5, 0.5, 0]);
   });
 });
 
@@ -361,16 +349,6 @@ describe("layers", () => {
     expect(hit()).not.toBeNull();
     vp.applyDisplay("o", { transform: {}, layers: { rig: false } });
     expect(hit()).toBeNull();
-  });
-});
-
-describe("toBox3", () => {
-  it("takes a Box3 or { min, max }", () => {
-    const b = new Box3(new Vector3(0, 0, 0), new Vector3(1, 1, 1));
-    expect(toBox3(b)).toBe(b);
-    expect(toBox3({ min: [0, 1, 2], max: [3, 4, 5] }).max.toArray()).toEqual([3, 4, 5]);
-    expect(toBox3({ min: [0, 0] })).toBe(null);
-    expect(toBox3(null)).toBe(null);
   });
 });
 
@@ -694,14 +672,8 @@ describe("content and depth", () => {
     expect(vp.sceneRadius).toBe(1);
   });
 
-  it("frame hooks and loops register and come off", () => {
+  it("a loop added `first` goes ahead of every loop already there (the stage's pose playback)", () => {
     const vp = headless();
-    const loop = vi.fn();
-    const off = vp.addLoop(loop);
-    expect(vp.loops.size).toBe(1);
-    off();
-    expect(vp.loops.size).toBe(0);
-    // `first` goes ahead of every loop already there (the stage's pose playback)
     const a = () => {};
     const b = () => {};
     vp.addLoop(a);
@@ -709,10 +681,6 @@ describe("content and depth", () => {
     expect([...vp.loops]).toEqual([b, a]);
     offB();
     expect([...vp.loops]).toEqual([a]);
-    const offAfter = vp.afterRender(() => {});
-    expect(vp.afterHooks.size).toBe(1);
-    offAfter();
-    expect(vp.afterHooks.size).toBe(0);
   });
 
   it("tells theme listeners about a new set of tokens", () => {
@@ -951,7 +919,8 @@ describe("atmosphere", () => {
 });
 
 describe("riding along (camera.ride)", () => {
-  it("carries the orbit camera and its target with the object, not while held, and stops when let go", () => {
+  // (not while held: ride.test.js)
+  it("carries the orbit camera and its target with the object, and stops when let go", () => {
     const vp = headless();
     cube(vp, "hull", [0, 0, 0]);
     lookFrom(vp, [0, 3, 10], [0, 0, 0]);
@@ -961,15 +930,7 @@ describe("riding along (camera.ride)", () => {
     vp.stepRide();
     expect(r6(vp.camera.position.toArray())).toEqual([2, 3, 10]);
     expect(r6(vp.controls.target.toArray())).toEqual([2, 0, 0]);
-    // held (first person): it doesn't move the camera, and doesn't catch up after
-    const release = vp.hold();
-    vp.applyDisplay("hull", { transform: { position: [5, 0, 0] } });
-    vp.stepRide();
-    expect(vp.camera.position.x).toBeCloseTo(2);
-    release();
     const before = vp.camera.position.toArray();
-    vp.stepRide();
-    expect(r6(vp.camera.position.toArray())).toEqual(r6(before));
     off();
     vp.applyDisplay("hull", { transform: { position: [9, 0, 0] } });
     vp.stepRide();

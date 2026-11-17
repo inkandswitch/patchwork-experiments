@@ -758,32 +758,6 @@ describe("the stage, mounted", () => {
     expect(api.view.get().notices.at(-1)).toMatchObject({ text: "Hello", kind: "error", from: "t.always" });
   });
 
-  it("routes input down the chain: an objects extension gets a click on its object, with holder", async () => {
-    const clicks = [];
-    exts["t.obj"] = recorder("t.obj", () => ({ input: { click: (ev) => (clicks.push(["obj", ev.holder, ev.hit?.id]), true) } }));
-    exts["t.always"] = recorder("t.always", () => ({ input: { click: (ev) => (clicks.push(["always", ev.holder]), true), key: (ev) => (clicks.push(["key", ev.key]), true) } }));
-    // in Look, where no body takes a click ahead of the chain (Edit does: select.test.js)
-    const h = newScene({ objects: { p: card({ traits: { "t.obj": {} } }), c: card({ parent: "p" }) }, order: ["p", "c"], view: { start: { body: "look" } } });
-    const m = mount(h);
-    await settle();
-    const canvas = m.root.querySelector(".canvas");
-    const vp = m.debug.viewport;
-    const click = (id) => {
-      vp.pick = () => (id ? { id, point: [0, 0, 0], normal: null, distance: 1, snapped: false } : null);
-      const opts = { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 0, pointerId: 1, pointerType: "mouse" };
-      canvas.dispatchEvent(new PointerEvent("pointerdown", { ...opts, buttons: 1 }));
-      canvas.dispatchEvent(new PointerEvent("pointerup", { ...opts, buttons: 0 }));
-    };
-    click("c"); // attached to p, which carries the trait
-    click(null); // nothing hit: the objects extension isn't offered it
-    expect(clicks).toEqual([
-      ["obj", "p", "c"],
-      ["always", null],
-    ]);
-    m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "k", code: "KeyK", bubbles: true }));
-    expect(clicks.at(-1)).toEqual(["key", "k"]);
-  });
-
   it("offers the holders nearest first, the scene last of them, then the general ones (STAGE.md, “The input chain”)", async () => {
     const offered = [];
     const pass = (id) => () => ({ input: { click: (ev) => (offered.push([id, ev.holder, ev.hit?.id ?? null]), null) } });

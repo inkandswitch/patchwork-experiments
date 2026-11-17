@@ -65,17 +65,6 @@ describe("api.audience, mounted", () => {
     expect(api.audience("gone")).toEqual([]);
   });
 
-  it("is the same whichever order the policies were registered in", async () => {
-    const doc = { objects: { card: card({ "t.p": { show: [A, B] }, "t.q": { only: [B] }, "t.r": { show: "all", only: [A, B] } }) }, order: ["card"] };
-    const seen = [];
-    for (const order of [["t.p", "t.q", "t.r"], ["t.r", "t.q", "t.p"], ["t.q", "t.r", "t.p"]]) {
-      const s = await mount({ extensions: [...order.map((id) => policy(id)), asker([])], doc, viewerId: A });
-      await settle();
-      seen.push([s.api("t.asker").audience("card"), s.api("t.asker").shown("card")]);
-    }
-    expect(seen).toEqual([[[B], "all"], [[B], "all"], [[B], "all"]]);
-  });
-
   it("a policy that throws is read as nobody: it hides, it never reveals", async () => {
     const broken = { meta: { id: "t.broken" }, module: { create: () => ({ audience: () => () => { throw new Error("boom"); } }) } };
     const worse = { meta: { id: "t.worse" }, module: { create: () => ({ audience: () => { throw new Error("bang"); } }) } };

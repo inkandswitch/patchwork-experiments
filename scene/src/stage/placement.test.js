@@ -11,7 +11,10 @@
 //   - linked into a host X at 0°,
 //   - linked into a host X' at 20° of heel,
 //   - linked into Y through X (two links deep),
-// four views of one page on one repo, and in each view × body {look, edit,
+//   - pinned in a host P at G's heads when the case starts (checked in the
+//     first state only, the one its heads hold, with no tool held and no
+//     seat taken, as a pin acts for nobody),
+// five views of one page on one repo, and in each view × body {look, edit,
 // walk, seat} × held tool {none, one} × focus {outside, inside the link (a
 // view with a link to enter)}: every one of G's stages agrees with G alone,
 // every time, the doc's clock and what each stage's clock says among it.
@@ -142,6 +145,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       const X = repo.add(emptyScene({ title: "X", traits: host, objects: { L: link(G.url, { transform: FLAT }) }, order: ["L"] }));
       const X2 = repo.add(emptyScene({ title: "X'", traits: host, objects: { L: link(G.url, { transform: HEEL }) }, order: ["L"] }));
       const Y = repo.add(emptyScene({ title: "Y", traits: host, objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
+      const P = repo.add(emptyScene({ title: "P", traits: host, objects: { L: link(G.url, { transform: FLAT, at: { heads: G.heads() } }) }, order: ["L"] }));
       // the first view registers the extensions (the harness's), on G itself
       const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
       cleanups.push(() => s.unmount());
@@ -150,11 +154,13 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
         X: { v: await view(repo, X), into: ["L"] },
         "X'": { v: await view(repo, X2), into: ["L"] },
         Y: { v: await view(repo, Y), into: ["LX", "L"] },
+        P: { v: await view(repo, P), into: [], pinned: true },
       };
-      const gStages = (v) => v.stages().filter((st) => st.url === G.url);
+      // (a pin's url carries its heads)
+      const gStages = (v) => v.stages().filter((st) => st.url.split("#")[0] === G.url);
       const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.looks().size === 3;
       await until(() => Object.values(views).every(({ v }) => gStages(v).length === 1 && gStages(v).every(ready)), 4000);
-      for (const { v } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual(["acting"]);
+      for (const { v, pinned } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual([pinned ? "pinned" : "acting"]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)
       for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.seats"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
 
@@ -177,14 +183,16 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
           expect(w.cards[0][3]).toEqual(seats.p1 ? { name: "face h1" } : { veil: true });
           expect(w.cards[1][1]).toEqual(played ? "all" : seats.p2 ? [seats.p2] : []);
           expect(w.clock).toEqual({ doc: !paused, api: !paused });
-          await checkAll(want, `paused ${paused}, played ${played}`);
+          await checkAll(want, `paused ${paused}, played ${played}`, !paused && !played);
         }
-      async function checkAll(want, state) {
-        for (const [where, { v, into }] of Object.entries(views))
+      async function checkAll(want, state, first) {
+        for (const [where, { v, into, pinned }] of Object.entries(views)) {
+          if (pinned && !first) continue;
           for (const focus of into.length ? ["outside", "inside"] : ["outside"]) {
             if (focus === "inside") expect(v.enter(into)).toBe(true);
-            for (const body of ["look", "edit", "t.walk", "t.sit"])
-              for (const held of [false, true]) {
+            // (a pin offers no seat: it acts for nobody)
+            for (const body of pinned ? ["look", "edit", "t.walk"] : ["look", "edit", "t.walk", "t.sit"])
+              for (const held of pinned ? [false] : [false, true]) {
                 expect(v.enterBody(body, null)).toBeTruthy();
                 const acting = gStages(v).find((st) => st.acts);
                 const release = held ? v.holdTool(keyOf(acting.n, "t.table"), { name: "Measure" }, {}) : null;
@@ -208,9 +216,10 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
             if (focus === "inside") v.leave();
             await settle();
           }
+        }
       }
-      // (alone: 1 stage, outside only; X, X', Y: 1 stage each × 2 foci) × 4 bodies × 2 held × 2 clock × 2 card states
-      expect(checked).toBe((1 + 3 * 2) * 4 * 2 * 2 * 2);
+      // (alone: 1 stage, outside only; X, X', Y: 1 stage each × 2 foci) × 4 bodies × 2 held × 2 clock × 2 card states; P: 3 bodies, in the first state
+      expect(checked).toBe((1 + 3 * 2) * 4 * 2 * 2 * 2 + 3);
     }, 90_000);
   }
 });

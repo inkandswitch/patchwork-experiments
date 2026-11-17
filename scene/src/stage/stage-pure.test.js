@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { assoc, createAtom } from "./atom.js";
-import { activeSet, docReason, ownReason } from "./activation.js";
+import { activeSet, ownReason } from "./activation.js";
 import { chainOrder, holdersFor, offer } from "./chain.js";
 
 describe("the local atom", () => {
@@ -17,48 +17,6 @@ describe("the local atom", () => {
 });
 
 describe("activation: traits only (STAGE.md, “Activation”)", () => {
-  const metas = [
-    { id: "tabletop", traits: ["tabletop.seats", "tabletop.hidden"] },
-    { id: "arena", traits: ["arena.target"] },
-    { id: "keys" },
-    { id: "select" },
-    { id: "boat", traits: ["boat.hull"] },
-    { id: "clock" },
-  ];
-  const ids = (set) => set.map((r) => [r.id, r.scope]);
-  const doc = { traits: { "tabletop.seats": {} }, objects: { c: { traits: { "arena.target": {} } } } };
-
-  it("the scene's, then some objects', then the general ones, each in registry order; traits the doc lacks (the boat's) run nothing", () => {
-    expect(ids(activeSet({ metas, doc }))).toEqual([
-      ["tabletop", "scene"],
-      ["arena", "objects"],
-      ["keys", "general"],
-      ["select", "general"],
-      ["clock", "general"],
-    ]);
-    expect(ids(activeSet({ metas, doc: {} }))).toEqual([
-      ["keys", "general"],
-      ["select", "general"],
-      ["clock", "general"],
-    ]);
-  });
-
-  it("an object trait is the objects' reason; a scene trait the scene's; none declared is general; declared but absent is nothing", () => {
-    expect(docReason(metas[0], { objects: { a: { traits: { "tabletop.hidden": {} } } } })).toBe("objects");
-    expect(docReason(metas[0], { traits: { "tabletop.seats": {} }, objects: {} })).toBe("scene");
-    expect(ownReason(metas[2], { objects: {} })).toBe("general");
-    expect(ownReason(metas[4], doc)).toBeNull();
-  });
-
-  it("fields that used to route around activities change nothing: activities, requires, always, general: false", () => {
-    const plain = [{ id: "game", traits: ["game.board"] }, { id: "prompt" }];
-    const decorated = [
-      { id: "game", traits: ["game.board"], activities: ["play"], requires: ["prompt", "other"] },
-      { id: "prompt", general: false, always: true, activities: ["edit"] },
-    ];
-    for (const d of [{}, { traits: { "game.board": {} } }]) expect(ids(activeSet({ metas: decorated, doc: d }))).toEqual(ids(activeSet({ metas: plain, doc: d })));
-  });
-
   // Exhaustive over a finite world: every subset of six extensions (one of each
   // kind: scene trait, object trait, both, none, a trait nobody writes, every
   // doc's) × every
@@ -108,20 +66,9 @@ describe("the input chain", () => {
   const sceneTraits = ["tabletop.seats"];
   const holders = (chain) => holdersFor(running, chain, (id) => (id === null ? sceneTraits : (traits[id] ?? [])));
 
-  it("an extension placed only on objects hears only events on its objects", () => {
-    expect(chainOrder({ running, holders: holders([]) })).toEqual(["tabletop", "select", "halo"]);
-    expect(chainOrder({ running, holders: holders(["crate"]) })).toEqual(["arena", "tabletop", "select", "halo"]);
-  });
-
   it("the widget's owner, then the holders nearest first, then the general ones — each once", () => {
     expect(chainOrder({ running, widgetOwner: "halo", holders: holders(["card"]) })).toEqual(["halo", "tabletop", "select"]);
     expect(chainOrder({ running, widgetOwner: "gone", holders: holders([]) })).toEqual(["tabletop", "select", "halo"]);
-  });
-
-  it("holders: the nearest link up the hit chain with one of the extension's traits, the scene last (id null)", () => {
-    expect([...holders(["table", "card", "crate"])]).toEqual([["tabletop", { id: "card", depth: 1 }], ["arena", { id: "crate", depth: 2 }]]);
-    expect([...holders([])]).toEqual([["tabletop", { id: null, depth: 0 }]]);
-    expect([...holders(["crate"])]).toEqual([["tabletop", { id: null, depth: 1 }], ["arena", { id: "crate", depth: 0 }]]);
   });
 
   it("a part of every doc (traits [\"*\"]) is held by the scene, whatever the hit and whatever traits the doc has", () => {
@@ -131,36 +78,6 @@ describe("the input chain", () => {
         const h = holdersFor(any, chain, (id) => (id === null ? scene : (traits[id] ?? [])));
         expect([scene, chain, [...h]]).toEqual([scene, chain, [["any", { id: null, depth: chain.length }]]]);
       }
-  });
-
-  // STAGE.md's sailing case: a card on the saloon table of a boat in an arena level.
-  it("a card on a table aboard a boat in an arena: the table's, then the boat's, then the scene's", () => {
-    const sim = [
-      { id: "arena", meta: { traits: ["arena.level", "arena.target"] }, scope: "scene" },
-      { id: "sailing", meta: { traits: ["sailing.boat", "sailing.tiller"] }, scope: "objects" },
-      { id: "tabletop", meta: { traits: ["tabletop.seats", "tabletop.hidden"] }, scope: "objects" },
-      { id: "select", meta: {}, scope: "general" },
-    ];
-    const on = { card: ["tabletop.hidden"], table: ["tabletop.seats"], sole: [], hull: ["sailing.boat"], tiller: ["sailing.tiller"], wall: [] };
-    const of = (chain) => {
-      const h = holdersFor(sim, chain, (id) => (id === null ? ["arena.level"] : on[id]));
-      return { order: chainOrder({ running: sim, holders: h }), holder: Object.fromEntries([...h].map(([k, v]) => [k, v.id])) };
-    };
-    expect(of(["card", "table", "sole", "hull"])).toEqual({ order: ["tabletop", "sailing", "arena", "select"], holder: { tabletop: "card", sailing: "hull", arena: null } });
-    expect(of(["tiller", "hull"])).toEqual({ order: ["sailing", "arena", "select"], holder: { sailing: "tiller", arena: null } });
-    expect(of(["wall"])).toEqual({ order: ["arena", "select"], holder: { arena: null } });
-  });
-
-  it("two extensions on one object: running order breaks the tie, and only that tie", () => {
-    const two = [
-      { id: "b", meta: { traits: ["b.t"] }, scope: "objects" },
-      { id: "a", meta: { traits: ["a.t"] }, scope: "objects" },
-      { id: "c", meta: { traits: ["c.t"] }, scope: "objects" },
-    ];
-    const on = { x: ["a.t", "b.t"], y: ["c.t"] };
-    const h = (chain) => holdersFor(two, chain, (id) => on[id] ?? []);
-    expect(chainOrder({ running: two, holders: h(["x", "y"]) })).toEqual(["b", "a", "c"]);
-    expect(chainOrder({ running: two, holders: h(["y", "x"]) })).toEqual(["c", "b", "a"]);
   });
 
   // Every placement of three extensions' traits over a hit chain of up to

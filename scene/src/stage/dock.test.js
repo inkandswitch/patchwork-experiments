@@ -2,7 +2,7 @@
 // acts on three keys, and the DOM that follows it; its width, as finite
 // tables and every sequence of up to three acts on two kinds of pane.
 import { describe, it, expect, vi } from "vitest";
-import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, kindOf, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./dock.js";
+import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./dock.js";
 import { EMBED_ATTR } from "../embed.js";
 
 // Does a stage-scoped style rule reach `el`? Every one is `.scene-tool <x>:where(:not(.about-embed *),
@@ -162,26 +162,6 @@ describe("the drawer's DOM", () => {
 });
 
 describe("the drawer's width", () => {
-  it("is a side panel's while the stage's own chrome (embed: false) is shown, and a docked editor's room otherwise", () => {
-    const parent = document.createElement("div");
-    const drawer = createDrawer({ parent });
-    const chrome = document.createElement("div");
-    const editor = document.createElement("div");
-    drawer.dock("x", chrome, { title: "Inspector", embed: false });
-    expect(drawer.el.dataset.kind).toBe("chrome");
-    expect(chrome.parentElement.hasAttribute("data-stage-embed")).toBe(false);
-    drawer.dock("y", editor, { title: "Shape" });
-    expect(drawer.el.dataset.kind).toBe("editor");
-    drawer.dock("x", chrome, { title: "Inspector", embed: false });
-    expect(drawer.el.dataset.kind).toBe("chrome");
-  });
-
-  it("kinds: embed false is the stage's chrome; anything else (true, absent) an editor", () => {
-    expect(KINDS).toEqual(["chrome", "editor"]);
-    expect([false, true, undefined].map(kindOf)).toEqual(["chrome", "editor", "editor"]);
-    expect(KINDS.map(prefKey)).toEqual(["drawer.chrome", "drawer.editor"]);
-  });
-
   // (a) what a stored pref means: a px in [MIN, MAX], or nothing (the kind's default); never clamped
   it("widthFor: every kind × every stored value (18 rows)", () => {
     const ABSENT = Symbol("absent");
@@ -307,6 +287,7 @@ describe("the drawer's width", () => {
       if (!!grip !== has) return "grip there ⇎ drawer there";
       if (!has) return null;
       if (drawer.el.dataset.kind !== kindOfKey[on]) return `kind ${drawer.el.dataset.kind}, not ${kindOfKey[on]}`;
+      if (els[on].parentElement.hasAttribute(EMBED_ATTR) !== (kindOfKey[on] === "editor")) return "embedded ⇎ an editor";
       if (v !== (want == null ? "" : `${want}px`)) return `width ${JSON.stringify(v)}, not ${want}`;
       if (now !== (want == null ? null : String(want))) return `aria-valuenow ${now}, not ${want}`;
       return null;

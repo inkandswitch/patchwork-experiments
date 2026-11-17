@@ -1,10 +1,9 @@
 // One world's ambients (W2), and the atmosphere through them (W9): every
 // stage's api.ambient(name) is the outermost stage's stacked value or null,
-// `mine` exactly at the outermost, whatever the links' shape (alone, linked,
-// linked twice, pinned, two deep), whatever each doc offers (nothing, one
-// extension, two extensions in their running order), wherever the focus is
-// and whatever the viewer's body. Nothing a linked doc offers reaches its
-// host or a sibling; the viewport's atmosphere is the outermost's.
+// `mine` exactly at the outermost. Here, a pinned link, whatever the host
+// offers (nothing, one extension, two in their running order) and whatever
+// the viewer's body: nothing the pinned doc offers reaches its host, and the
+// viewport's atmosphere is the outermost's.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -65,69 +64,46 @@ function expected(world) {
 }
 
 describe("one world's ambients (W2): the outermost's, everywhere in the view", () => {
-  const SHAPES = ["alone", "linked", "linked twice", "pinned", "two deep"];
-  for (const shape of SHAPES)
-    for (const [hostOffers, hostTraits] of Object.entries(OFFERS))
-      it(`${shape}, the outermost offering ${hostOffers}; every linked doc offering both`, async () => {
-        vi.spyOn(console, "warn").mockImplementation(() => {});
-        const repo = new FakeRepo();
-        const s = await mountStage({ repo, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
-        cleanups.push(() => s.unmount());
-        const G = repo.add(emptyScene({ title: "G", traits: OFFERS.both }));
-        const X = repo.add(emptyScene({ title: "X", traits: OFFERS.both, objects: { L: link(G.url) }, order: ["L"] }));
-        const H = repo.add(
-          emptyScene({
-            title: "H",
-            traits: hostTraits,
-            ...(shape === "alone"
-              ? {}
-              : shape === "linked"
-                ? { objects: { L: link(G.url) }, order: ["L"] }
-                : shape === "linked twice"
-                  ? { objects: { L: link(G.url), M: link(G.url, { transform: { position: [5, 0, 0], rotation: [0, 0.4, 0], scale: 1 } }) }, order: ["L", "M"] }
-                  : shape === "pinned"
-                    ? { objects: { P: link(G.url, { at: { heads: G.heads() } }) }, order: ["P"] }
-                    : { objects: { LX: link(X.url) }, order: ["LX"] }),
-          }),
-        );
-        const v = await view(repo, H);
-        // (linked twice: the second link is closed, a repeat, with no stage)
-        const want = shape === "alone" ? 1 : shape === "linked" || shape === "pinned" || shape === "linked twice" ? 2 : 3;
-        const ready = (st) => !Object.keys(st.doc().traits ?? {}).length || st.debug.host.running().some((r) => r.id === "t.a" || r.id === "t.b");
-        await until(() => v.stages().length === want && v.stages().every(ready), 4000);
+  // (alone, linked and two deep, with every body and focus: placement.test.js's ambient reads; the stack: ambients.test.js)
+  for (const [hostOffers, hostTraits] of Object.entries(OFFERS))
+    it(`pinned, the outermost offering ${hostOffers}; the pinned doc offering both`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const repo = new FakeRepo();
+      const s = await mountStage({ repo, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
+      cleanups.push(() => s.unmount());
+      const G = repo.add(emptyScene({ title: "G", traits: OFFERS.both }));
+      const H = repo.add(emptyScene({ title: "H", traits: hostTraits, objects: { P: link(G.url, { at: { heads: G.heads() } }) }, order: ["P"] }));
+      const v = await view(repo, H);
+      const ready = (st) => !Object.keys(st.doc().traits ?? {}).length || st.debug.host.running().some((r) => r.id === "t.a" || r.id === "t.b");
+      await until(() => v.stages().length === 2 && v.stages().every(ready), 4000);
+      await settle();
+      const world = v.outermost();
+      const value = expected(world);
+      let checked = 0;
+      for (const body of ["look", "edit", "t.walk"]) {
+        expect(v.enterBody(body, null)).toBeTruthy();
         await settle();
-        const world = v.outermost();
-        const value = expected(world);
-        let checked = 0;
-        for (const focus of shape === "alone" || shape === "pinned" ? ["outside"] : ["outside", "inside"]) {
-          if (focus === "inside") expect(v.enter(shape === "two deep" ? ["LX", "L"] : ["L"])).toBe(true);
-          for (const body of ["look", "edit", "t.walk"]) {
-            expect(v.enterBody(body, null)).toBeTruthy();
-            await settle();
-            for (const st of v.stages()) {
-              for (const ext of ["t.a", "t.b"]) {
-                const inst = st.debug.host.instanceOf(ext);
-                if (!inst) continue;
-                const a = inst.read("x");
-                if (value === null) expect(a).toBeNull();
-                else {
-                  // the same frozen object to every caller
-                  expect(a.value).toBe(world.ambients().x);
-                  expect(a.value).toEqual(value);
-                  expect(a.mine).toBe(st === world);
-                }
-                checked++;
-              }
+        for (const st of v.stages()) {
+          for (const ext of ["t.a", "t.b"]) {
+            const inst = st.debug.host.instanceOf(ext);
+            if (!inst) continue;
+            const a = inst.read("x");
+            if (value === null) expect(a).toBeNull();
+            else {
+              // the same frozen object to every caller
+              expect(a.value).toBe(world.ambients().x);
+              expect(a.value).toEqual(value);
+              expect(a.mine).toBe(st === world);
             }
-            // the sky is the outermost's, never a linked doc's
-            const sky = world.debug.viewport.atmosphere?.sky?.top ?? null;
-            expect(sky).toBe(value ? (value.by === "t.a" ? "#111111" : "#222222") : null);
-            v.enterBody("look", null);
+            checked++;
           }
-          if (focus === "inside") v.leave();
-          await settle();
         }
-        // every linked doc runs both, so something was read unless the outermost, alone, offers nothing
-        expect(checked > 0).toBe(!(shape === "alone" && hostOffers === "none"));
-      }, 20_000);
+        // the sky is the outermost's, never a linked doc's
+        const sky = world.debug.viewport.atmosphere?.sky?.top ?? null;
+        expect(sky).toBe(value ? (value.by === "t.a" ? "#111111" : "#222222") : null);
+        v.enterBody("look", null);
+      }
+      // the pinned doc runs both, so something was read
+      expect(checked > 0).toBe(true);
+    }, 20_000);
 });

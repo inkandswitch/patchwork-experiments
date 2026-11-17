@@ -3,7 +3,6 @@ import {
   createPresence,
   effectiveHz,
   cleanKeys,
-  winningHold,
   same,
   HEARTBEAT_MS,
   PEER_TTL_MS,
@@ -99,12 +98,6 @@ describe("pure helpers", () => {
     expect(cleanKeys(undefined)).toEqual({});
     expect(cleanKeys("x")).toBe(null);
     expect(cleanKeys({ sel: { id: "o1" }, bad: 3, list: [1] })).toEqual({ sel: { id: "o1" } });
-  });
-  it("a held hold beats a landed one, then the earliest, then the lower session", () => {
-    expect(winningHold([{ session: "b", since: 1, landed: {} }, { session: "c", since: 5, landed: null }]).session).toBe("c");
-    expect(winningHold([{ session: "b", since: 5, landed: null }, { session: "c", since: 2, landed: null }]).session).toBe("c");
-    expect(winningHold([{ session: "b", since: 2, landed: null }, { session: "a", since: 2, landed: null }]).session).toBe("a");
-    expect(winningHold([])).toBe(null);
   });
 });
 

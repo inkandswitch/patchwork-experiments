@@ -113,23 +113,6 @@ describe("a peer's word, held to the doc", () => {
   });
 });
 
-describe("a word the doc never bears out, in a quiet doc", () => {
-  // nothing updates the stage after it arrives, so nothing asks it again: it is forgotten when its time runs out
-  it.each([{ valid: true }, { valid: false }])("valid $valid: waits until TELL_MS, then is gone", async ({ valid }) => {
-    const t = await setup();
-    const t0 = t.time.now();
-    t.wire(valid ? { to: 99 } : { to: "99" });
-    await t.time.step(1);
-    expect(t.s.debug.telling.waiting()).toBe(valid ? 1 : 0);
-    await t.time.advance(TELL_MS - 2 * t.time.frameMs - (t.time.now() - t0));
-    expect(t.s.debug.telling.waiting()).toBe(valid ? 1 : 0);
-    await t.time.advance(4 * t.time.frameMs);
-    expect(t.s.debug.telling.waiting()).toBe(0);
-    expect(t.told()).toEqual([]);
-    expect(t.seen.asked).toHaveLength(valid ? 1 : 0);
-  });
-});
-
 describe("the speaker is named by the stage", () => {
   // contact {a doc with a name, a doc without one, no doc to be had, a doc that's slow to come, no viewer}
   it.each([

@@ -132,6 +132,19 @@ describe("channels (I5): claims and holds on G's channel, wherever G is open", (
     }
   }, 30_000);
 
+  it("the host's channel is the host doc's: presence set in X's stage never reaches G open alone", async () => {
+    const w = await world();
+    const xStage = w.views[1].v.stages().find((st) => st.path.length === 0);
+    const gAlone = w.views[0].v.stages().find((st) => st.path.length === 0);
+    xStage.debug.presence.set("t.host", "here", true);
+    await w.deliver();
+    expect(Object.values(gAlone.debug.presence.get()).some((p) => p.keys?.["t.host"])).toBe(false);
+    // while G's own channel carries between them
+    w.acting(1).presence.set("here", true);
+    await w.deliver();
+    expect(Object.values(gAlone.debug.presence.get()).some((p) => p.keys?.["t.card"])).toBe(true);
+  }, 20_000);
+
   for (const holder of [0, 1, 2])
     for (const leaver of [0, 1, 2])
       it(`view ${holder} holds the seat and view ${leaver} leaves: every stage left agrees`, async () => {

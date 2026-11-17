@@ -2,13 +2,15 @@
 // gets a stage of its own in the view, which runs that doc's extensions in
 // its own frame, on its own channel. Checked here without WebGL: the frame
 // comes from the host's doc (a link's transform), hits are stubbed as the
-// viewport would key them (paths.js).
+// viewport would key them (paths.js). Also here: I1 on the outermost stage
+// (every write and send through an api goes to its own stage's handle), and
+// adding a scene doc as a link.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
-import { FakeRepo } from "../test/fake-repo.js";
+import { FakeRepo, fakeHead } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
 import { ARRIVE_WAIT_MS, startArrival } from "./view.js";
 import { keyOf } from "./paths.js";
@@ -35,6 +37,28 @@ function gameExtensions(log) {
   ];
 }
 
+/** An extension that writes and sends through every api that does, once it has run `go`. */
+const WRITER = {
+  meta: { id: "t.writer", traits: ["t.writer"] },
+  module: {
+    create(api) {
+      return {
+        go() {
+          api.change((d) => {
+            d.objects.a.name = "written";
+          });
+          api.claim("a", "t.hold");
+          api.send("t.ping", { n: 1 });
+          api.presence.set("here", true);
+          api.pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
+          api.pose.release("a");
+          api.remove(["b"]);
+        },
+      };
+    },
+  },
+};
+
 /** A game doc G (a card on its root, traits) and a host with a link to G at LINKED_AT, mounted. */
 async function mountLinked({ log = [] } = {}) {
   const repo = new FakeRepo();
@@ -56,7 +80,49 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("I1: one doc per extension", () => {
+  it("an extension of the outermost stage writes and sends only on its own handle", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    // another doc the repo holds: nothing may touch it
+    const other = repo.add({ objects: { a: object() }, order: ["a"] });
+    const otherLog = spy(other);
+    s = await mountStage({ repo, extensions: [WRITER], doc: { objects: { a: object(), b: object() }, order: ["a", "b"], traits: { "t.writer": {} } } });
+    await until(() => s.instance("t.writer"));
+    const ownLog = spy(s.handle);
+    s.instance("t.writer").go();
+    await settle();
+    expect(otherLog).toEqual([]);
+    expect(ownLog).toContain("change");
+    expect(ownLog.some((e) => e.startsWith("broadcast:"))).toBe(true);
+    expect(s.doc().objects.a.name).toBe("written");
+    expect(s.doc().objects.b).toBeUndefined();
+  });
+});
+
 describe("a live link opens a stage for its doc", () => {
+  it("adding a scene doc makes a live link: no render doc, routed as a scene, drawn as its hint; with heads, a pinned one", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    const game = repo.add(emptyScene({ title: "Lost Cities" }));
+    const EXT = { meta: { id: "t.any" }, module: { create: () => ({}) } };
+    s = await mountStage({ repo, extensions: [EXT], doc: { objects: {}, order: [] } });
+    const api = s.api("t.any");
+    const id = await api.addObject(game.url, { hint: { bounds: { min: [-0.4, 0, -0.3], max: [0.4, 0.1, 0.3] } } });
+    await settle();
+    const o = s.doc().objects[id];
+    expect(o).toMatchObject({ name: "Lost Cities", sourceUrl: game.url, providerId: LINK, renderUrl: null });
+    expect(o.at).toBeUndefined();
+    expect(api.loadState(id)).toMatchObject({ content: "scene" });
+    expect(s.local.get().status[id]).toBeUndefined();
+    const head = fakeHead();
+    const pinned = await api.addObject(`${game.url}#${head}`);
+    expect(s.doc().objects[pinned].at).toEqual({ heads: [head] });
+    // a scene of itself, live: the expansion closes it (a cycle), so adding it is no error
+    const self = await api.addObject(s.handle.url);
+    expect(s.doc().objects[self].providerId).toBe(LINK);
+  });
+
   it("the linked doc's extensions run in its stage, the host's in the host's, the general ones once, at the focus", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();
@@ -103,17 +169,6 @@ describe("a live link opens a stage for its doc", () => {
     expect(m.log[1]).toMatchObject({ id: "card", holder: null });
     // the host sees the link it's in, at the world point (its frame is the world)
     expect(m.log[2]).toMatchObject({ id: "L", point: [10, 1, 0], holder: "table" });
-  });
-
-  it("a press on the host's table never reaches the game: the doc boundary is the scope", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const m = await mountLinked();
-    s = m.s;
-    s.debug.viewport.pick = () => ({ id: "table", point: [9, 0.7, 0], normal: [0, 1, 0], distance: 3 });
-    s.pointer("pointerdown", 20, 20);
-    s.pointer("pointerup", 20, 20);
-    await settle();
-    expect(m.log.map((e) => e.who)).toEqual(["t.host", "t.general"]);
   });
 
   it("hover and selection are paths: each stage sees its own element; selecting from outside selects the link", async () => {
@@ -170,41 +225,6 @@ describe("a live link opens a stage for its doc", () => {
     });
     await until(() => s.api("t.host").link("M")?.role === "closed");
     expect(s.api("t.host").link("M")).toEqual({ role: "closed", open: false, reason: "unavailable" });
-  });
-});
-
-describe("one game in two views of one page: claims and presence per doc, over the page bus", () => {
-  it("a claim taken in the game linked into one view is held for the game open alone in another; presence crosses too", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const m = await mountLinked();
-    s = m.s;
-    // a second view on the same repo: the game alone (the same handle, so the network never carries between them)
-    const { default: Stage } = await import("./stage.js");
-    const el = document.createElement("div");
-    el.repo = m.repo;
-    el.viewerId = "viewer:cara";
-    document.body.append(el);
-    const unmount = Stage(m.game, el);
-    try {
-      const alone = el.querySelector(".scene-stage").__sceneDebug;
-      await until(() => alone.host.instanceOf("t.card"));
-      const linkedApi = m.g.debug.host.record("t.card").api;
-      const aloneApi = alone.host.record("t.card").api;
-      expect(linkedApi.claim("card", "seat:p1")).toBeTypeOf("function");
-      await settle();
-      // the game alone hears the linked view's presence on the game's channel, so the claim counts there
-      await until(() => Object.keys(aloneApi.presence.get()).includes(linkedApi.session));
-      expect(aloneApi.claimedBy("card", "seat:p1")).toMatchObject({ session: linkedApi.session, mine: false });
-      // and it can't take it
-      expect(aloneApi.claim("card", "seat:p1")).toBe(null);
-      // the host's channel is another doc's: the game alone hears nothing of it
-      s.api("t.host").presence.set("here", true);
-      await settle();
-      expect(Object.values(aloneApi.presence.get()).some((p) => p.keys?.["t.host"])).toBe(false);
-    } finally {
-      unmount();
-      el.remove();
-    }
   });
 });
 

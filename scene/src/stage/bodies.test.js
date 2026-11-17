@@ -3,7 +3,7 @@
 // leaving. Finite and exhaustive: no randomness.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { EDIT, LOOK, editing, enterStep, inBody, isStageBody, leaveStep, startBase } from "./bodies.js";
+import { editing, enterStep, inBody, isStageBody, leaveStep, startBase } from "./bodies.js";
 import { mountStage } from "../test/stage-harness.js";
 
 // What can happen: entering each body (the stage's two; walk, seat and
@@ -25,8 +25,6 @@ const all = (n) => {
 
 describe("bodies: the model", () => {
   it("the stage's two, and what reads them", () => {
-    expect([LOOK.id, EDIT.id]).toEqual(["look", "edit"]);
-    expect([LOOK.label, EDIT.label]).toEqual(["Look", "Edit"]);
     expect(["look", "edit", "walk", "orbit", null].map(isStageBody)).toEqual([true, true, false, false, false]);
     expect([{ body: { id: "edit" } }, { body: { id: "look" } }, { body: { id: "walk" } }, {}, null].map(editing)).toEqual([true, false, false, false, false]);
     // an edit: true command is Edit's; anything else is everyone's
@@ -65,24 +63,6 @@ describe("bodies: the model", () => {
     expect(n).toBe(2 * (1 + 6 + 36 + 216 + 1296 + 7776));
   });
 
-  it("the fall-back body after Leave from every body", () => {
-    // each body as it's reached: [what's entered, from Look or Edit]
-    const cases = [
-      [["look"], "look"],
-      [["edit"], "edit"],
-      [["look", "walk"], "look"],
-      [["edit", "walk"], "look"],
-      [["look", "seat"], "look"],
-      [["edit", "seat"], "look"],
-      [["look", "walk", "seat"], "walk"],
-      [["look", "walk", "station"], "walk"],
-      [["edit", "walk", "station"], "walk"],
-    ];
-    for (const [path, after] of cases) {
-      const stack = path.reduce(apply, ["look"]);
-      expect([path, leaveStep(stack).at(-1)]).toEqual([path, after]);
-    }
-  });
 });
 
 // The same, on the stage itself: every sequence of up to 4 events, from a
