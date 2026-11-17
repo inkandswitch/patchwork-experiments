@@ -248,82 +248,117 @@ describe("scene.use", () => {
     expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
-  // Held still under a pointer that went onto it only while the eye is the one it went there under (step 8 of
-  // lane/n11; COMPOSITION.md, Fixed since): every way the eye moves puts it back under the pointer, so a press at
-  // the pointer reaches what is under it (a halo handle), never a button left there; nothing else lets it go.
-  // Each event reaches the prompt as it does in a browser: an orbit's end (onEnd), a ride's frame or a Frame's
-  // (the camera moved, a frame drawn), a body entered or left (the view's update), a selection (the same).
-  describe("the eye moves: back under the pointer", () => {
-    // (a scene made new opens in Edit)
-    const inLook = async () => {
-      expect(s.api("t.game").body.enter("look")).toBe(true);
-      await settle();
+  // Held still where it is while the pointer is on it, until the viewer moves the eye (step 8 of lane/n11 and its
+  // fixes; COMPOSITION.md, "Decisions, the use prompt and the eye"): an orbit or a Frame ends, a body entered or
+  // left, a pointer lock taken or lost put it back under the pointer, so a press there reaches what is under it (a
+  // halo handle), never a button left there. An eye carried every frame (a ride) doesn't: it would never let the
+  // pointer catch the prompt. However the pointer came onto it, it holds where it is.
+  describe("the pointer on the prompt, and the eye", () => {
+    const LOOK = () => s.api("t.game").body.enter("look");
+    const EDIT = () => s.api("t.game").body.enter("edit");
+    const origin = () => s.port.getBoundingClientRect();
+    const px = (x, y) => [`${x - origin().left}px`, `${y - origin().top}px`];
+    const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
+    const verb = () => prompt().querySelector(".use-verb");
+    const mouse = (target, x, y) => target.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y }));
+    const tap = (target, x, y) => {
+      for (const type of ["pointerdown", "pointerup"]) target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch", button: 0, buttons: type === "pointerdown" ? 1 : 0, clientX: x, clientY: y }));
+      s.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
     };
-    const EVENTS = [
-      ["nothing", async () => {}],
-      ["an orbit ends", async (t) => {
-        t.cam = { ...t.cam, position: [3, 2, 4] };
-        for (const fn of [...s.debug.viewport.cameraEndListeners]) fn();
+    // How the pointer comes onto the prompt (shown at 120, 90; its button at 125, 132)
+    const ARRIVALS = [
+      ["moved onto it from the world", async () => {
+        mouse(s.canvas, 120, 90);
         await settle();
+        mouse(verb(), 125, 132);
       }],
-      ["a ride's frame", async (t) => {
-        t.cam = { ...t.cam, position: [0.01, 2, 5], target: [0.01, 0, 0] };
-        t.frame();
-      }],
-      ["Frame (.), its frames", async (t) => {
-        for (const x of [0.5, 0.9, 1]) {
-          t.cam = { ...t.cam, target: [x, 1, 0] };
-          t.frame();
-        }
-      }],
-      ["Edit entered (from Look)", async () => {
-        expect(s.api("t.game").body.enter("edit")).toBe(true);
+      ["back into the view straight onto it", async () => {
+        mouse(s.canvas, 120, 90);
         await settle();
-      }, inLook],
-      ["Look entered (Edit left)", async () => {
-        expect(s.api("t.game").body.enter("look")).toBe(true);
-        await settle();
+        s.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
+        mouse(verb(), 125, 132);
       }],
-      ["the selection changes", async () => {
-        s.api("t.game").view.select("capstan");
+      ["a finger's tap on it", async () => {
+        tap(s.canvas, 120, 90);
         await settle();
+        tap(verb(), 125, 132);
       }],
     ];
-    for (const onIt of [false, true])
-      for (const [event, run, before] of EVENTS) {
-        const moves = /orbit|ride|Frame|entered/.test(event);
-        it(`pointer ${onIt ? "on the prompt" : "off it"}, ${event}: ${onIt && !moves ? "held where it was" : "at the pointer"}`, async () => {
+    // What happens then, and whether it is the viewer moving the eye (true: back under the pointer)
+    const EVENTS = [
+      ["nothing", false, async () => {}],
+      ["an orbit or zoom ends", true, async () => s.debug.viewport.endCamera("orbit")],
+      ["a Frame (.)", true, async () => s.debug.viewport.endCamera("frame")],
+      ["a ride carries the eye, frame after frame", false, async () => {
+        for (let i = 1; i <= 5; i++) {
+          const cam = { position: [i * 0.01, 2, 5], target: [i * 0.01, 1, 0], fov: 50, up: [0, 1, 0] };
+          s.debug.viewport.getCamera = () => cam;
+          for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+          await settle(1);
+        }
+      }],
+      ["Edit entered (from Look)", true, async () => expect(EDIT()).toBe(true), LOOK],
+      ["Look entered (Edit left)", true, async () => expect(LOOK()).toBe(true)],
+      ["the selection changes", false, async () => s.api("t.game").view.select("capstan")],
+      ["a pointer lock taken and lost", true, async () => {
+        document.pointerLockElement = s.canvas;
+        document.dispatchEvent(new Event("pointerlockchange"));
+        await settle();
+        delete document.pointerLockElement;
+        document.dispatchEvent(new Event("pointerlockchange"));
+      }],
+    ];
+    for (const [arrival, arrive] of ARRIVALS)
+      for (const [event, moves, run, before] of EVENTS)
+        it(`${arrival}, then ${event}: ${moves ? "under the pointer" : "held where it was"}`, async () => {
           await mount();
-          await before?.();
-          expect(s.local.get().body.id).toBe(before ? "look" : "edit");
-          const t = { cam: { position: [0, 2, 5], target: [0, 1, 0], fov: 50, up: [0, 1, 0] } };
-          const api = s.api("scene.use");
-          api.camera = { ...api.camera, get: () => t.cam };
-          const hooks = () => s.debug.viewport.afterHooks.size;
-          t.frame = () => {
-            for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
-          };
+          if (before) expect(before()).toBe(true);
+          await settle();
           // the pointer is over the helm wherever it goes on the world (the view's pick)
           s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
-          const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
-          const move = (target, x, y) => target.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
-          const origin = s.port.getBoundingClientRect();
-          const px = (x, y) => [`${x - origin.left}px`, `${y - origin.top}px`];
-          const base = hooks();
-          move(s.canvas, 120, 90);
+          await arrive();
           await settle();
           expect(prompt().hidden).toBe(false);
-          if (onIt) move(prompt().querySelector(".use-verb"), 125, 132);
-          // on it: held where it was, its frame hook watching the eye; off it: no hook
-          expect(at()).toEqual(onIt ? px(120, 90) : px(120, 90));
-          expect(hooks()).toBe(base + (onIt ? 1 : 0));
-          await run(t);
+          expect(at()).toEqual(px(120, 90));
+          await run();
+          await settle();
           expect(prompt().hidden).toBe(false);
-          expect(at()).toEqual(onIt && !moves ? px(120, 90) : onIt ? px(125, 132) : px(120, 90));
-          // let go: the hook goes with it
-          expect(hooks()).toBe(base + (onIt && !moves ? 1 : 0));
+          expect(at()).toEqual(moves ? px(125, 132) : px(120, 90));
         });
-      }
+
+    it("off the prompt onto the world, it follows the pointer again; onto it again, it holds where it is then", async () => {
+      await mount();
+      s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
+      mouse(s.canvas, 120, 90);
+      await settle();
+      mouse(verb(), 125, 132);
+      mouse(s.canvas, 60, 70);
+      expect(at()).toEqual(px(60, 70));
+      mouse(verb(), 65, 112);
+      expect(at()).toEqual(px(60, 70));
+      // let go by a Frame, then caught again: held at its new place through a carried eye
+      s.debug.viewport.endCamera("frame");
+      await settle();
+      expect(at()).toEqual(px(65, 112));
+      mouse(verb(), 70, 150);
+      expect(at()).toEqual(px(65, 112));
+      s.debug.viewport.getCamera = () => ({ position: [1, 2, 5], target: [1, 1, 0], fov: 50, up: [0, 1, 0] });
+      for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+      await settle();
+      expect(at()).toEqual(px(65, 112));
+    });
+
+    it("the pointer leaving while it's held lets go: back on the world, it follows", async () => {
+      await mount();
+      s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
+      mouse(s.canvas, 120, 90);
+      await settle();
+      mouse(verb(), 125, 132);
+      s.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
+      expect(at()).toEqual(px(120, 90));
+      mouse(s.canvas, 40, 30);
+      expect(at()).toEqual(px(40, 30));
+    });
   });
 
   it("looking at a part offers what it's attached to", async () => {

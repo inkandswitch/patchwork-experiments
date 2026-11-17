@@ -183,14 +183,15 @@ Fixed since (each item names its Decisions section below):
   lane/arcade), so when the camera moved and the pointer didn't (a ride,
   Frame, a body change) it could be left over a halo handle or anything
   else, and a press there went to the prompt's button (found by
-  lane/xarrow, 2026-11-16). It now holds still only under the eye the
-  pointer went onto it under: any move of the eye puts it back under the
-  pointer, so a press reaches a button only if the eye hasn't moved since
-  the pointer reached it (TOOLS.md §3, "A shown key works"; Decisions, the
-  use prompt and the eye, below; lane/n11). editor-run's new step leaves
-  the prompt's button over Block 1's X arrow, presses `.`, and the press
-  at the pointer is the halo's drag. Not yet checked in the real
-  Patchwork.
+  lane/xarrow, 2026-11-16). It now holds still where it is only until the
+  viewer moves the eye (an orbit or a Frame ends, a body entered or left, a
+  pointer lock taken or lost), which puts it back under the pointer; an eye
+  carried (a ride) doesn't let go (TOOLS.md §3, "A shown key works";
+  Decisions, the use prompt and the eye, below; lane/n11). editor-run's
+  new step leaves the prompt's button over a spot on Block 1's halo (framed
+  that close, its rotate ring), presses `.`, and the press at the pointer
+  goes to the halo's widget and drag, and Flip doesn't run. Not yet checked
+  in the real Patchwork.
 - a doc's packages list grew as parts were added and wasn't pruned when
   they went (Fitting out's boat, as the tools made her, still listed her
   companionway's joints and traversal). Reconcile now goes both ways: a
@@ -2876,35 +2877,52 @@ between packages".
 ## Decisions, the use prompt and the eye (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
 
 The use prompt (`src/parts/use.js`) follows the pointer over the world and
-holds still while the pointer is on it, so a button can be reached. It now
-holds still only under the eye the pointer went onto it under. Invariant:
-a press reaches a prompt button only if the eye hasn't moved since the
-pointer reached that button. Pinned by use.test.js, "the eye moves: back
-under the pointer" (pointer off the prompt or on it × nothing, an orbit's
-end, a ride's frame, a Frame's frames, Edit entered, Look entered, a
-selection change = 14 cases; against the old use.js the 5 eye moves leave
-it held, 7 fail).
+holds still where it is while the pointer is on it, so a button can be
+reached. Invariant: a press reaches a prompt button only if the viewer
+hasn't moved the eye since the pointer reached that button; moves the eye
+makes on its own (a ride, a body's own going, a seat rolling with its
+table) carry the prompt's hold with them. Pinned by use.test.js, "the
+pointer on the prompt, and the eye": how the pointer came onto it (moved
+from the world, back into the view straight onto it, a finger's tap) ×
+{nothing, an orbit or zoom ends, a Frame, a ride carrying the eye for five
+frames, Edit entered, Look entered, a selection change, a pointer lock
+taken and lost} = 24 cases, plus off the prompt and onto it again, and the
+pointer leaving while held. Against the first cut of this (cb0458d7) 17
+fail: every ride, re-entry and lock row (and the orbit and Frame rows,
+since its camera compare sees no camera in the test's viewport).
 
-1. **The eye is the body and the camera**, compared as a value: the top
-   body's id and `api.camera.get()` (the stage's frame, so a stage moving
-   under the eye counts as the eye moving: what is under the pointer moved
-   either way). The plan named `api.camera.watch`, but that fires only when
-   the fov changes, so it can't see an orbit, a ride or a Frame. No stage
-   API was added: every move of the eye is drawn, so the prompt asks on
-   every frame drawn (`api.afterRender`), and only while it is held (the
-   hook goes with the hold); the view's update and an orbit's end ask too,
-   through `place`.
+1. **The viewer moving the eye lets go; the eye moving on its own doesn't.**
+   The first cut let go on any change of the eye seen on a frame drawn.
+   Review found that makes the prompt unreachable with a mouse whenever
+   the eye moves every frame: the base ride on a ship under way, walking
+   aboard without the lock, a seat at a rolling table. A held verb's button
+   (Haul in) is the one most often pressed there, and before this the
+   prompt was reachable. A ride and a body's own going can't be told from a
+   Frame by looking at the camera, so the prompt listens for the moves
+   themselves: `api.camera.onEnd` (an orbit, a zoom and now a Frame: the
+   viewport ends a `frame(box)` as it ends an orbit, never while held), the
+   view's update (the top body's id changed), `pointerlockchange`. One
+   place decides: no frame hook, no camera compare. Question for the lead:
+   is "the viewer moved it" the line you want? A package's own
+   `camera.set` jump (sailing's first framing of a ship) isn't seen.
 2. **A body entered or left lets go** even if the camera stays (Edit from
    Look): it is another eye, and Edit brings its halo, which is what a
    press at the pointer should reach.
 3. **A selection change doesn't let go**: the eye hasn't moved, so what is
    under the pointer is what it was, the prompt's button included.
-4. **The pointer is tracked over the prompt only.** Over another part's
-   overlay (the touch pad, the body chip) it is still ignored, as before:
-   nobody looks there. The pointer leaving the view lets go too.
+4. **Holding keeps the prompt where it is**, however the pointer came onto
+   it: moved from the world, a finger's tap, or back into the view straight
+   onto it (the first cut held it at the pointer's last place, none after a
+   leave, and sent it to the view's middle). The pointer is tracked over the
+   prompt only; over another part's overlay (the touch pad, the body chip)
+   it is still ignored. The pointer leaving the view lets go.
 5. **Let go means back under the pointer, 36 px below it** (use.css), so
    the pointer is no longer on the prompt; a still pointer stays off it
    until it moves onto it again, which holds it anew.
+6. **The view doesn't keep a Frame as the viewer's camera.** The view saves
+   the camera after an orbit (`onCameraEnd`'s `how` is "orbit"), not after a
+   Frame, as before, so the autoframe's frames still don't mark a scene as
+   placed for its viewer.
 
 ## Decisions, N7 (decided unattended (2026-11-16, lane/n7), for the lead)
 

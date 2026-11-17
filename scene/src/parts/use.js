@@ -4,11 +4,14 @@
 // (scene.keys) does. It runs in every scene, as the key map does: with
 // nothing that has verbs under attention, it shows nothing.
 //
-// The pointer on the prompt (going for a button) holds it still, but only
-// under the eye it went there under: once the eye moves (an orbit, a ride,
-// a Frame, a body entered or left) it goes back under the pointer, so a
-// press reaches a button only if the eye hasn't moved since the pointer
-// reached it, and never one left over what is under the pointer now.
+// The pointer on the prompt (going for a button) holds it still where it
+// is, until the viewer moves the eye (an orbit or zoom ends, a Frame, a
+// body entered or left, a pointer lock taken or lost): then it goes back
+// under the pointer, so a press never reaches a button left over what the
+// eye moved there (a halo handle). An eye carried (a ride, a body's own
+// going, a seat rolling with its table) doesn't let go: it moves every
+// frame, and a button that moved off from under the pointer every frame
+// could never be pressed.
 //
 // Attention is the selection if any, else the look (api.attention). The
 // prompt is on the selection, or the first object along the look's chain
@@ -116,8 +119,9 @@ function create(api) {
   let current = null; // { target, entries: [{ ext, command, state, key }], hit }
   let shownKey = "";
   let pointer = null; // port-local { x, y }: where the pointer is over the view (over the world or the prompt)
-  // The prompt holding still under a pointer that went onto it: { at, eye, off }, the place it was shown at,
-  // the eye then, and the frame hook that watches for the eye moving. Null while it follows the pointer.
+  let placed = null; // port-local { x, y } the prompt was last put under, or null: the view's middle
+  // The prompt holding still under a pointer that went onto it: { at, body }, where it was (`placed` then) and
+  // whose eye (the body's id). Null while it follows the pointer.
   let held = null;
   let offLoop = null;
   let offWatch = null;
@@ -277,40 +281,24 @@ function create(api) {
   }
   const toggle = (el, flag, on) => (on ? (el.dataset[flag] = "") : delete el.dataset[flag]);
 
-  // The eye the prompt was placed under: whose (the body) and where (the camera, in this stage's frame, so a
-  // stage moving under the eye moves it too). Any change moves what is under a still pointer.
-  const eye = () => JSON.stringify([api.view.get().body?.id ?? null, api.camera.get()]);
-  // Held while the eye is the one it was held under: once it moves, the prompt goes back under the pointer
-  // (36 px below it, use.css), so a press there reaches what is under it now (a halo handle), not a button the
-  // prompt left there.
+  const bodyId = () => api.view.get().body?.id ?? null;
+  // held where it is, whatever put it there (a pointer coming back into the view straight onto it, too)
   function hold() {
-    if (held) return;
-    held = { at: pointer, eye: eye(), off: null };
-    // (a ride, a Frame, an orbit: every move of the eye is drawn, so a frame drawn is where to ask)
-    held.off = api.afterRender(() => {
-      if (held && held.eye !== eye()) {
-        letGo();
-        place();
-      }
-    });
+    if (!held) held = { at: placed, body: bodyId() };
   }
+  // the viewer moved the eye: back under the pointer (36 px below it, use.css), so a press there reaches what
+  // is under it now, not a button the prompt left there
   function letGo() {
-    held?.off();
     held = null;
   }
-  const anchor = () => {
-    if (held && held.eye !== eye()) letGo();
-    return held ? held.at : pointer;
-  };
 
-  // Under the crosshair when the look is the eye's; under the pointer otherwise, held still while the pointer is
-  // on the prompt and the eye hasn't moved since it went there.
+  // Under the crosshair when the look is the eye's; under the pointer otherwise, or held where it is.
   function place() {
     if (prompt.hidden) return;
-    const a = anchor();
-    const at = fromEye() || !a ? null : a;
-    prompt.style.setProperty("--use-x", at ? `${at.x}px` : "50%");
-    prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
+    const a = held ? held.at : pointer;
+    placed = fromEye() || !a ? null : a;
+    prompt.style.setProperty("--use-x", placed ? `${placed.x}px` : "50%");
+    prompt.style.setProperty("--use-y", placed ? `${placed.y}px` : "50%");
   }
 
   // A loop runs only while the eye moves on its own: a body over the
@@ -327,7 +315,7 @@ function create(api) {
   }
 
   // it follows a pointer over the world, not over anything put over it: over the prompt itself (going for one of
-  // its buttons) it holds still, or it would move off from under the pointer, until the eye moves (hold); a
+  // its buttons) it holds still, or it would move off from under the pointer, until the viewer moves the eye; a
   // finger on the touch pad, the body chip, any part's overlay isn't where anyone looks. A press is where the
   // pointer is too: a finger has no moves before it, and what it taps is where the prompt shows.
   const follow = (e) => {
@@ -347,19 +335,27 @@ function create(api) {
     pointer = null;
     letGo();
   });
-  // an orbit or zoom moves the eye, and so what's in reach; a lock taken or
-  // lost moves the look between the pointer and the crosshair
-  api.camera.onEnd(() => refresh());
-  api.listen(document, "pointerlockchange", () => refresh());
+  // an orbit, a zoom or a Frame moves the eye, and so what's in reach; a lock
+  // taken or lost moves the look between the pointer and the crosshair (and,
+  // locked, the eye with the mouse)
+  api.camera.onEnd(() => {
+    letGo();
+    refresh();
+  });
+  api.listen(document, "pointerlockchange", () => {
+    letGo();
+    refresh();
+  });
 
   return {
     update() {
+      // a body entered or left (a seat, Look from Edit) puts the eye somewhere else
+      if (held && held.body !== bodyId()) letGo();
       wantLoop();
       refresh();
     },
     dispose() {
       for (const id of [...shown.keys()]) drop(id);
-      letGo();
       offLoop?.();
       offLoop = null;
       offWatch?.();

@@ -322,11 +322,11 @@ not D). The prompt shows three verbs, the menu all; verbs are buttons, for
 touch and for a mouse: the prompt keeps the look (`data-keeps-look`, the
 router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
-Decision 48), but only while the eye is the one the pointer went onto it
-under: an orbit, a ride, a Frame or a body entered or left puts it back under
-the pointer, so a press reaches a button only if the eye hasn't moved since
-the pointer reached it (COMPOSITION.md, Decisions, the use prompt and the
-eye). Held-key sessions (`use.js:20-33`) move into the one key map, the
+Decision 48), but only until the viewer moves the eye: an orbit or a Frame
+ending, a body entered or left, a pointer lock taken or lost puts it back
+under the pointer, so a press reaches a button only if the viewer hasn't moved
+the eye since the pointer reached it; a ride carrying the eye doesn't
+(COMPOSITION.md, Decisions, the use prompt and the eye). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
 
 **A prompt button with a key is that key** (Decisions 15). A press on a

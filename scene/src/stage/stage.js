@@ -2367,7 +2367,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? To a general part, the view's own, also: carried across a focus move */
         touched: () => viewport.touched() || view.cameraPlaced || (general && view.cameraCarried),
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
-        /** someone finished moving the camera (an orbit, a zoom); never while it's held */
+        /** someone finished moving the camera (an orbit, a zoom, a Frame); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
       }),
 

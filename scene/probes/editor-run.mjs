@@ -212,7 +212,8 @@ try {
   }
 
   // ── the use prompt goes back under the pointer when the eye moves (COMPOSITION.md, Fixed since) ──
-  // Block 1 selected, its halo up. Frame it (.) to learn where its X arrow lands then, and put the camera
+  // Block 1 selected, its halo up. Frame it (.) to learn where a spot the halo's widget pick takes (its X arrow, or framed
+  // this close its rotate ring) lands then, and put the camera
   // back; set the pointer so the prompt's first button lies over that spot, and go onto it: the prompt
   // holds still under it. Press .: the eye moves, the prompt goes back under the pointer (36 px below), and a
   // press there is the halo's, a halo drag, not the button the prompt left there.
@@ -274,12 +275,15 @@ try {
       const len = Math.hypot(H1.x - H.x, H1.y - H.y);
       const before = (await obj("b1")).transform;
       const at = await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); const x = ${H.x} - r.left, y = ${H.y} - r.top; const w = d.view.pickWidget({ x, y }); return { halo: p.halo()?.id ?? null, widget: w ? { owner: w.owner ?? null, part: w.part ?? null } : null, selected: d.local.get().selected ?? null }; })()`);
-      const mid = await b.drag([H.x, H.y], [H.x + ((H1.x - H.x) / len) * 120, H.y + ((H1.y - H.y) / len) * 120], { steps: 12, beforeRelease: async () => ({ gesture: await A(`d.local.get().gesture?.owner ?? null`), shown: await A(`d.viewport.worldOf("b1").slice(12, 15)`) }) });
+      const mid = await b.drag([H.x, H.y], [H.x + ((H1.x - H.x) / len) * 120, H.y + ((H1.y - H.y) / len) * 120], { steps: 12, beforeRelease: async () => ({ gesture: await A(`d.local.get().gesture?.owner ?? null`), written: (await obj("b1")).transform, shown: await A(`d.viewport.worldOf("b1").slice(12, 15)`) }) });
       await b.rest(300);
       const after = (await obj("b1")).transform;
       // (framed this close, the spot may be the halo's ring rather than its arrow: either way the press opens the
       // halo's drag, not the prompt's verb)
       check("pressThereIsTheHalos", at.widget?.owner === "scene.halo" && mid.gesture === "scene.halo", { before, after, at, mid, verb: bt.text });
+      // and the prompt's verb (Flip) didn't run: Block 1 as written is as it was until the drag lets go, and the
+      // gesture is the halo's, not a carry's
+      check("promptVerbDidNotRun", JSON.stringify(mid.written) === JSON.stringify(before) && mid.gesture === "scene.halo", { before, written: mid.written, gesture: mid.gesture, verb: bt.text });
     }
     // the camera as the steps after expect it
     await A(`(d.viewport.setCamera(${JSON.stringify(cam0)}), true)`);
