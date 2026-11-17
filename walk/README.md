@@ -11,6 +11,10 @@ Built only from the scene's extension contract (scene/STAGE.md).
 | `scene:extension` | `walk.spawn` | the spawn point's trait part: a doc with spawn points calls for this package by it (and lists it, as a `view.start` of `{ body: "walk", place: <a spawn point> }` needs); its verb, on a spawn point, is Walk from here (menu) |
 | trait | `walk.spawn` | on an object: where people start walking, facing the way it faces (`{}`). Written by whatever lays a level out: arena's spawn pad part, doom's layout through it |
 
+Next: [DESIGN.md](DESIGN.md), "Standing on supports" (designed, unbuilt): walk's
+walker becomes the navmesh walker on any support, the ground included, and
+sailing walks in walk.
+
 ## The body
 
 - **id** `walk`, **label** Walk. It declares the walking keys (W A S D, the
