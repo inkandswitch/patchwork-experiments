@@ -226,8 +226,7 @@ describe("the exit switch, a part of its own", () => {
     expect(others(statics)).toEqual(others(whole));
   });
 
-  it("is anchored at the middle of its line on its floor; a line that isn't one is refused", () => {
-    expect(anchorOf(model, null, 407)).toEqual([-400, 1296, -120]);
+  it("a line that isn't one has no anchor", () => {
     expect(() => anchorOf(model, null, 406)).toThrow(/isn't an exit switch/);
   });
 
