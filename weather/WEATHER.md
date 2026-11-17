@@ -998,7 +998,13 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     wind, and that the world ambient is exactly the offer, and that,
     linked, both boats' winds turned back into the world are the
     harbour's (5 m/s from 250°), not their own. The harbour's sky check
-    (`#2f6db5`) stands: the weather's default is the bright day.
+    (`#2f6db5`) stands: the weather's default is the bright day. Run
+    2026-11-16 in Chrome with the built scene, sailing, water and weather:
+    `sailing-run` 86 of 86 (her wind in both views 7 m/s from 45°,
+    gustiness 0.3, the doc's `{ wind: 7, from: 45, seed }`), `harbour-run`
+    26 of 26 (alone, each boat's wind and the world ambient her own
+    weather's; linked, both boats' winds 5 m/s from 250° to 1e-13, the
+    harbour's).
     *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
