@@ -272,6 +272,20 @@ export function effectiveParams(specs, params) {
   return out;
 }
 
+/**
+ * Exactly the params a spec list describes: effectiveParams's values (each
+ * coerced to its spec, a default where one is missing or can't be), with
+ * every key that has no spec dropped. What a template's create() is handed
+ * (STAGE.md, "Templates"): a template runs once, from a form or for another
+ * tool, so nothing it wasn't declared to take reaches it.
+ */
+export function paramsBySpec(specs, given) {
+  const all = effectiveParams(specs, given);
+  const out = {};
+  for (const spec of specs ?? []) if (spec?.key && Object.hasOwn(all, spec.key)) out[spec.key] = all[spec.key];
+  return out;
+}
+
 /** Just the defaults, for seeding a new render doc. */
 export function defaultParams(specs) {
   return withDefaults(specs, {});

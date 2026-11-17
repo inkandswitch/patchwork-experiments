@@ -2586,3 +2586,42 @@ and "is my own carry still holding this?".
    removal), so undo takes two steps. One change would need the put to be
    offered to rules before its write, which is a drop claim: a question
    for the lead, tied to N15.
+
+## Decisions, templates take parameters (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+A `scene:template` may declare `params` (ParamSpecs), drawn as a form under
+its button on the start screen; `api.template(id, params)` runs
+`create(ctx, params)` (STAGE.md "Templates"). Tabletop's three Draw Dominoes
+templates are one, `tabletop.dominoes`, with `players` 2, 3 or 4. This
+retires the stage gap "templates take no parameters (one template per
+count)".
+
+1. **The params are ParamSpecs, the kinds every other form here uses**
+   (`src/param-form.js`; an `enum` for a choice of counts). No new kind,
+   and the start screen draws the form from metadata alone, so nothing is
+   loaded to offer a template, as before.
+2. **The stage coerces, not the form.** `api.template` hands create
+   exactly its declared params: coerced to each spec, the default where a
+   value is missing or can't be, every other key dropped (`paramsBySpec`,
+   which is `effectiveParams` without the pass-through of unknown keys). A
+   render's params keep unknown keys because a doc outlives its provider's
+   metadata; a template runs once, so there's nothing to keep. Any caller
+   (the start screen, another tool, an agent) gets the same guarantee, and
+   a template trusts its params as `build()` trusts its own.
+3. **A template that declares none gets `{}`** and is offered as the same
+   bare button, so it runs as before. One shape for every template, rather
+   than calling create with one argument or two.
+4. **What's chosen is the view's until it runs**, and survives the list
+   being drawn again when another package registers a template (the start
+   screen keeps each template's values by id). It isn't written anywhere:
+   the template writes what it made of it.
+5. **Tabletop's games stay one per count, as data** (`draw-dominoes-2/3/4`,
+   GAME-FORMAT's shape); only the template is one. Its `game` maps
+   `players` to the game's id. The parts bin keeps its three Draw Dominoes
+   parts: a part takes no params. **Question for the lead:** should
+   `scene:part` take `params` the same way (the bin drawing a form, or the
+   part asking after it lands)? Not built: the bin is a drag, and where its
+   form would go is your call.
+6. No published example records which template made it (a template writes
+   a table, not its own id), so none needs republishing; the Draw Dominoes
+   (2 players) table in the examples folder is unchanged.

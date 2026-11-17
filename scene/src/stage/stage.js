@@ -76,7 +76,7 @@ import { layersKey } from "../layers.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc, seededRenderDoc } from "../datatype.js";
-import { atKey, defaultParams } from "../staleness.js";
+import { atKey, defaultParams, paramsBySpec } from "../staleness.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "../providers.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
@@ -2073,18 +2073,23 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * scene:template and run its create() with a drop context, which writes
    * whatever it needs into the doc. Then this viewer starts where the doc now
    * says, as arriving does (an arena's template starts people walking at a
-   * spawn point, so its maker lands in the game). True when it ran.
+   * spawn point, so its maker lands in the game). create gets exactly the
+   * params its metadata declares (`params`: ParamSpecs), coerced, defaults
+   * filled and every other key dropped: `{}` for a template that declares
+   * none. True when it ran.
    * @param {string} templateId
+   * @param {object} [params]
    * @returns {Promise<boolean>}
    */
-  async function applyTemplate(templateId) {
+  async function applyTemplate(templateId, params) {
     if (!writable()) return false;
     const reg = await getRegistry("scene:template");
     if (dead || !reg) return false;
-    let mod;
+    let mod, specs;
     try {
       const loaded = await reg.load(templateId);
       mod = loaded?.module?.default ?? loaded?.module;
+      specs = Array.isArray(loaded?.params) ? loaded.params : [];
     } catch (err) {
       notify(`Couldn't load that template: ${err?.message ?? err}`, "error");
       return false;
@@ -2092,7 +2097,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (dead) return false;
     if (typeof mod?.create !== "function") return false;
     try {
-      await mod.create(makeDropContext(templateId));
+      await mod.create(makeDropContext(templateId), paramsBySpec(specs, params));
     } catch (err) {
       notify(`That template failed: ${err?.message ?? err}`, "error");
       return false;
@@ -2282,7 +2287,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       rebuild,
       fixPoint,
       drop: (info, opts) => (writable() ? host.drop(info, opts) : Promise.resolve(false)),
-      template: (templateId) => applyTemplate(templateId),
+      template: (templateId, params) => applyTemplate(templateId, params),
       part: (partId, at, opts) => applyPart(partId, at, opts),
       /**
        * The stage's own editing (TOOLS.md, Decisions 2), on the stage's own

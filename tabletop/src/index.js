@@ -109,23 +109,27 @@ export const plugins = [
     },
   })),
   // the games' tables on an empty scene's start screen: one click lays the
-  // table out in that scene, with its own art (src/table/template.js)
+  // table out in that scene, with its own art (src/table/template.js).
+  // `game` names the game the table is of, from the template's params:
+  // Draw Dominoes is one template, how many play chosen under its button
+  // (STAGE.md "Templates"), each count its own game as data (above)
   ...[
     { id: "lost-cities", name: "Lost Cities", icon: "Map", description: "A two-player card table: five expeditions, a face-down deck and a private hand each" },
     { id: "santorini", name: "Santorini", icon: "Castle", description: "An island board with workers, building blocks and domes, everything in plain sight" },
-    ...[2, 3, 4].map((n) => ({
-      id: `dominoes-${n}`,
-      game: `draw-dominoes-${n}`,
-      name: `Draw Dominoes, ${n} players`,
+    {
+      id: "dominoes",
+      name: "Draw Dominoes",
       icon: "Grid2x2",
-      description: `A double-six set face down on a felt, and a rack for each of ${n} players where your tiles stand facing you`,
-    })),
-  ].map(({ id, game, ...t }) => ({
+      description: "A double-six set face down on a felt, and a rack for each player where your tiles stand facing you",
+      params: [{ key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 }],
+      game: ({ players }) => `draw-dominoes-${players}`,
+    },
+  ].map(({ id, game = () => id, ...t }) => ({
     type: "scene:template",
     id: `tabletop.${id}`,
     ...t,
     async load() {
-      return (await import("./table/template.js")).template(game ?? id);
+      return (await import("./table/template.js")).template(game);
     },
   })),
   // pieces for any table, in the editor's parts bin (src/table/parts.js)

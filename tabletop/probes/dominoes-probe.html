@@ -83,6 +83,10 @@ try {
     /** a start-screen button's middle, for a real click */
     templateAt: (w, id) => { const b = [...hosts[w].querySelectorAll(`[data-template="${id}"]`)].find((e) => e.getBoundingClientRect().width > 0); return b ? rect(b) : null; },
     templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    /** a field of a template's params form on the start screen: its options, or [] */
+    paramOptions: (w, id, key) => [...(hosts[w].querySelector(`[data-params="${id}"] [data-key="${key}"] select`)?.options ?? [])].map((o) => o.value),
+    /** choose a value in that field, as a person's pick does (its change event); true when it shows it */
+    param(w, id, key, value) { const f = hosts[w].querySelector(`[data-params="${id}"] [data-key="${key}"] select`); if (!f) return false; f.value = String(value); f.dispatchEvent(new Event("change", { bubbles: true })); return f.value === String(value); },
     openB() { if (!dbg.b) { Tool(scene.b, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
     seats: () => seatsOf(scene.a.doc()),
     picker: (w) => select(w)?.options.length ?? 0,

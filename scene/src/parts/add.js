@@ -14,10 +14,12 @@
 //   - While the scene has nothing in it, it's a start screen: "Start from:"
 //     every registered scene:template (from the registry's metadata, so
 //     nothing is loaded to offer one) and Blank, then how to add something.
-//     A template runs through api.template (it writes the doc, view.start
-//     included, and the stage starts this viewer where it says: an arena's
-//     maker lands in the game). Blank only puts the choice away, for this
-//     view; the drop hint stays.
+//     A template that declares `params` has their form under its button
+//     (param-form.js, from the same metadata), its values this view's until
+//     it runs. A template runs through api.template(id, params) (it writes
+//     the doc, view.start included, and the stage starts this viewer where
+//     it says: an arena's maker lands in the game). Blank only puts the
+//     choice away, for this view; the drop hint stays.
 // Pastes, drops and keys inside an embedded document (marked with the
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
 // Adding is the editor's (../stage/bodies.js): drops, pastes and the start
@@ -30,6 +32,8 @@ import { describeForHumans, describeSource, extensionOf } from "../providers.js"
 import { fromEmbed } from "../embed.js";
 import { own } from "../stage/own.js";
 import { editing } from "../stage/bodies.js";
+import { createParamForm } from "../param-form.js";
+import { paramsBySpec } from "../staleness.js";
 
 export { fromEmbed };
 
@@ -52,11 +56,17 @@ export function mimeOf(name, type) {
 /** A file's name without its extension (what the object is called). Pure. */
 export const baseName = (name) => String(name ?? "").replace(/\.[^.]+$/, "");
 
-/** scene:template metadata as the start screen offers it: those with an id, in registry order. Pure. */
+/** scene:template metadata as the start screen offers it: those with an id, in registry order, each with its ParamSpecs (those with a key; [] for none). Pure. */
 export const templatesOf = (list) =>
   (Array.isArray(list) ? list : [])
     .filter((t) => t && typeof t.id === "string")
-    .map((t) => ({ id: t.id, name: String(t.name ?? t.id), icon: typeof t.icon === "string" ? t.icon : null, description: typeof t.description === "string" ? t.description : null }));
+    .map((t) => ({
+      id: t.id,
+      name: String(t.name ?? t.id),
+      icon: typeof t.icon === "string" ? t.icon : null,
+      description: typeof t.description === "string" ? t.description : null,
+      params: Array.isArray(t.params) ? t.params.filter((p) => p && typeof p.key === "string") : [],
+    }));
 
 /** Is someone typing into this element? */
 function isTyping(el) {
@@ -101,6 +111,7 @@ function create(api) {
   let templates = []; // templatesOf(the scene:template registry)
   let blank = false; // Blank was chosen: no more asking, in this view
   let starting = false; // a template is running
+  const chosen = new Map(); // template id → its form's values (paramsBySpec), kept when the list is drawn again
   let startKey = null;
 
   function renderStart() {
@@ -119,7 +130,19 @@ function create(api) {
       b.append(el("span", "add-template-name", t.name));
       if (t.description) b.append(el("span", "add-template-description", t.description));
       b.addEventListener("click", () => void startFrom(t.id));
-      list.append(b);
+      if (t.params.length === 0) {
+        list.append(b);
+        continue;
+      }
+      // its params' form under its button: what it starts with, chosen here
+      const values = paramsBySpec(t.params, chosen.get(t.id));
+      chosen.set(t.id, values);
+      const form = el("div", "add-template-params");
+      form.dataset.params = t.id;
+      createParamForm(form, t.params, (key, v) => (values[key] = v)).update(values);
+      const group = el("div", "add-template-group");
+      group.append(b, form);
+      list.append(group);
     }
     const none = el("button", "button add-template add-blank");
     none.type = "button";
@@ -136,12 +159,13 @@ function create(api) {
   async function startFrom(id) {
     if (starting) return;
     starting = true;
-    for (const b of start.querySelectorAll("button")) b.disabled = true;
+    const inputs = () => start.querySelectorAll("button, input, select");
+    for (const b of inputs()) b.disabled = true;
     try {
-      await api.template(id);
+      await api.template(id, chosen.get(id) ?? {});
     } finally {
       starting = false;
-      if (live()) for (const b of start.querySelectorAll("button")) b.disabled = false;
+      if (live()) for (const b of inputs()) b.disabled = false;
     }
   }
 

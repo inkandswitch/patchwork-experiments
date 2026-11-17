@@ -2,7 +2,8 @@
 <meta charset="utf-8">
 <title>tabletop template probe</title>
 <!-- Driven by probes/publish-table.mjs --template <game> (?game=lost-cities,
-     santorini or dominoes-2: the template tabletop.<game>). The BUILT
+     santorini or dominoes: the template tabletop.<game>; &params=<json>, what
+     its form is set to before the click, Draw Dominoes' players). The BUILT
      scene tool (scene/dist) with the BUILT tabletop and card-table plugins
      (tabletop/dist, card-table/dist: a secure deck) in a stub registry, on an
      in-memory repo, on an EMPTY scene (as the scene datatype's init makes
@@ -30,14 +31,19 @@ import { PICKER, SEAT_TAG, cardIds, deckUrlOf, isCard, kept, lostCitiesTable, se
 import lostCities from "../games/lost-cities.json" with { type: "json" };
 import santorini from "../games/santorini.json" with { type: "json" };
 import dominoes2 from "../games/draw-dominoes-2.json" with { type: "json" };
+import dominoes3 from "../games/draw-dominoes-3.json" with { type: "json" };
+import dominoes4 from "../games/draw-dominoes-4.json" with { type: "json" };
 import { kindsUsed } from "../src/setup.js";
 import { lookFileKey } from "../src/table/files.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
 
 // each template's game, as data (its files are keyed by their looks: src/table/files.js)
-const GAMES = { "lost-cities": lostCities, santorini, "dominoes-2": dominoes2 };
-const gameId = new URLSearchParams(location.search).get("game") || "lost-cities";
+// (Draw Dominoes is one template; how many play picks the game: tabletop's index.js)
+const GAMES = { "lost-cities": () => lostCities, santorini: () => santorini, dominoes: ({ players }) => ({ 2: dominoes2, 3: dominoes3, 4: dominoes4 })[players] };
+const query = new URLSearchParams(location.search);
+const gameId = query.get("game") || "lost-cities";
+const params = JSON.parse(query.get("params") || "{}");
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -111,7 +117,7 @@ try {
   const objects = () => scene.doc().objects ?? {};
   const deckUrl = () => deckUrlOf(objects());
   const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
-  const game = structuredClone(GAMES[gameId]);
+  const game = structuredClone(GAMES[gameId](params));
   /** which seat's hand (a zone) a card lies in, by A's snapshot ("table" for none) */
   const placeOf = (id) => {
     const s = dbg.a.scene();
@@ -130,8 +136,17 @@ try {
     /** the start screen's choices in a view */
     templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
     openB() { if (!dbg.b) { Tool(B, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
-    /** choose a template on a view's start screen */
-    start(w, id) { const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true; },
+    /** choose a template on a view's start screen: its form set to the page's params (a select's change, as a pick fires it), then its button */
+    start(w, id) {
+      for (const [key, value] of Object.entries(params)) {
+        const f = hosts[w].querySelector(`[data-params="${id}"] [data-key="${key}"] select`);
+        if (!f) return false;
+        f.value = String(value);
+        f.dispatchEvent(new Event("change", { bubbles: true }));
+        if (f.value !== String(value)) return false;
+      }
+      const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true;
+    },
     /** the assets keys the game's every kind should be filed under */
     expectedKeys: () => [...new Set(kindsUsed(game).map((k) => lookFileKey(game.pieces[k])))],
     doc: () => ({ title: scene.doc().title, view: scene.doc().view, assets: scene.doc().assets, traits: scene.doc().traits, count: Object.values(objects()).filter((o) => o.kind !== "group").length, loose: Object.values(objects()).filter((o) => o.kind !== "group" && !o.locked).length, carried: Object.values(objects()).filter((o) => o.kind !== "group" && !o.locked && o.traits?.["scene.carry"]).length }),

@@ -304,7 +304,8 @@ says `avatar` and `walk.people` draws it.
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean>, … } } }
 
 { type: "scene:template", id, name, icon?, description?,
-  async load() { return { create(ctx) → Promise } } }
+  params?: ParamSpec[],               // what it is started with, chosen on the start screen (below)
+  async load() { return { create(ctx, params) → Promise } } }
 
 { type: "scene:part", id, name, icon?, category?, description?,
   tags?:   string[],                  // the connector tags it fits (as an object's tags, for the carry)
@@ -385,9 +386,20 @@ extension.
 
 **Templates** start an empty scene. An empty scene's start screen (the add
 extension's) lists every registered `scene:template` from the registry's
-metadata (`name`, `icon`, `description`; nothing is loaded to offer one),
-and Blank. Choosing one calls `api.template(id)`, which loads it and runs
-`create(ctx)` with the same `ctx` a drop gets. The template writes whatever
+metadata (`name`, `icon`, `description`, `params`; nothing is loaded to
+offer one), and Blank. A template that declares `params` (ParamSpecs, the
+kinds of `src/param-form.js`: Draw Dominoes' `players`, an `enum` of 2, 3
+or 4) has their form under its button, showing each default until changed;
+what's chosen is this view's until the template runs. Choosing one calls
+`api.template(id, params)`, which loads it and runs `create(ctx, params)`
+with the same `ctx` a drop gets and exactly the params its metadata
+declares: each coerced to its spec (`coerceParam`: an enum's option, a
+number clamped), the default where one is missing or can't be, and every
+other key dropped (`paramsBySpec`, `src/staleness.js`). A template that
+declares none gets `{}`, so it is offered and run as before params
+existed. So one template stands for a family (one Draw Dominoes, not one
+per count), and whoever calls `api.template` (the start screen, another
+tool) can't hand it what it didn't declare. The template writes whatever
 it needs into the doc: objects, traits, and `view.start`. Then this viewer
 starts where the doc now says, as arriving does (below), so an arena
 template that starts people walking at a spawn point lands its maker in the
@@ -1244,7 +1256,7 @@ that extension.
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix an object at exactly what it shows now: a render-doc object at what its render was last built from; a live link at its doc's heads, with every doc reached through it in `deps`; else null (not built or open here yet, not loaded, a file, already fixed). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info, { edit? })` | offer a dropped doc to the extensions that lay out its datatype; with `edit`, the drop context's `change` and `addObject` are that edit's |
-| `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
+| `template(id, params?)` → `Promise<boolean>` | run a `scene:template` with `params` coerced to its metadata's ParamSpecs, unknown keys dropped (see "Templates"); true when it ran |
 | `part(id, at, { edit? })` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made; with `edit`, what it writes is that edit's |
 
 **Picking and camera**
