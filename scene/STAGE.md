@@ -39,7 +39,7 @@ each build step.
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
 | **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
-| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock; a press moves the look to what it pressed, before anything handles it). Keys, the use prompt and a menu go to it. |
+| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock and for a lock body under touch, `looksFromEye`; a press moves the pointer's hit, and so the look where the look is the pointer's, to what it pressed, before anything handles it). Keys and the use prompt go to it; a menu is of the pointer's hit (what was pressed: under lock the crosshair's), which differs from the look only for a lock body under touch (TOOLS.md Decisions 14). |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
@@ -190,13 +190,17 @@ or identity closes, with what was opened under it, and opens again.
   each item tagged with its `stage`, and runs a command with
   `api.run({ stage, ext, command, target })`; `api.path()` is the input
   path's stages (each `{ stage, scene, collect, context, attention, look,
-  run, nameOf }`), attention's from the innermost out, then the focus stage
+  pointed, run, nameOf }`), attention's from the innermost out, then the focus stage
   if it isn't among them, which the key map, the use prompt and the menu
   walk a stage at a time, each in its own context (a held verb pins
   attention in the stage it was held in). So the focus's scene commands
   (Frame all, Measure, Undo) are on every surface wherever the pointer is.
   `api.path({ focus: true })` is the focus path instead (the focus stage
   out to the outermost): the toolbar's, which doesn't follow the pointer.
+  `api.path({ pointer: true })` is the pointer's hit's path (the hover a
+  press sets to what it pressed), whatever the selection and the eye, and a
+  reader's `pointed()` its element of that hit: the menu's, which is of
+  what was pressed.
   A reader also has `writable()` and its doc's `clock` (`status()`, as
   `local.clock`; `pause()`, `resume()`), so the clock chip shows and
   pauses each doc on the focus path (`view.clocks` says when any of them
@@ -268,11 +272,11 @@ the calls named here, never swapped.
 | Key | Changed by | Means |
 |---|---|---|
 | `selected` | `api.view.select(target)` (the selection, the inspector's tree, add, a game, dimensions), Edit's click | the selection, as this stage's element of its path: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null (nothing, or not in this stage) |
-| `hovered` | the view | the object under the pointer, as this stage's element, or null |
-| `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
-| `held` | the view | the held tool, `{ ext, command, name, keys, pointer }`, or null |
-| `gesture` | the view | the open press session's declared keys, `{ owner, keys }`, or null |
-| `pointer` | the view | `{ locked, lock, wanted, released, refused }` (`src/stage/pointer.js`) |
+| `hovered` | the view | the object under the pointer, as this stage's element, or null (a finger's: what it pressed, kept after a tap until the next press on the world, TOOLS.md Decisions 15) |
+| `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys, serial }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `serial` says which time it was entered: the same body left and entered again is a new serial (the keys it held were let go; the touch pad's controls are a serial's, TOOLS.md §5). `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
+| `held` | the view | the held tool, `{ ext, command, name, keys, pointer, serial }`, or null; held again, a new `serial` |
+| `gesture` | the view | the open press session's declared keys, `{ owner, keys, serial }` (each press its own `serial`), or null |
+| `pointer` | the view | `{ locked, lock, wanted, released, refused, touch }` (`src/stage/pointer.js`; `touch`: the last press on the view was a finger, or none yet on a coarse pointer) |
 | `escape` | the view | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`). Leaving the focus is a layer only a general part sees |
 | `theme` | the view | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | `api.notify` | `[{ id, text, kind, at }]` |
@@ -355,7 +359,7 @@ happened to start in never counts.
 part runs in every scene, a game's included; what keeps the editor's chrome
 out of a game is that it shows only where attention asks for it. The
 inspector is a drawer tab a selection opens in Edit, one pane holding the
-object tree over the selection's fields (TOOLS.md, Decisions 11); it stays
+object tree over the selection's fields (TOOLS.md, Decisions 16); it stays
 open, on the scene when nothing is selected, until its × (shut until the
 selection changes), the toolbar's Inspector or leaving Edit shuts it;
 Dimensions and Parts are drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
@@ -963,7 +967,7 @@ event = {
   widget,                     // lazy: { owner, onTop, distance, ...data } | null; a dblclick's: its first press's
   holder,                     // step 3: the holding object, null for the scene (and at every other step)
   button, buttons, pointerId, pointerType,
-  shift, alt, ctrl, meta,
+  shift, alt, ctrl, meta,     // the DOM's flag, or a modifier key down at the view's root, claimed or not (a touch pad's Alt: TOOLS.md §5)
   key, code, repeat,          // key events
   dx, dy, deltaY,             // move (locked) and wheel
   locked,                     // pointer lock: x, y and ndc are the canvas centre, ray and hit lie along the camera's forward ray
@@ -1088,6 +1092,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, 
            here?,                                               // false: it needs a place, so the body chip doesn't offer it
            enter(place) → { input, eye?() → { position, direction }, ride?: { id, at?, turn?, rise?, tilt? },
                             keys?, label?, leave() } | null }]
+// keys: the codes it takes. Codes one declaration labels alike do the same thing (walk's W and ↑
+// are both "Forward"): touch shows them as one control (TOOLS.md §5), so distinct actions need
+// distinct labels. The same holds for a tool's and a gesture's keys.
 ```
 
 The bodies there are: **Look** and **Edit** (the stage's, `src/stage/bodies.js`:
@@ -1137,8 +1144,13 @@ event first, and its declared keys are its own.
 view grants it while nothing else wants the pointer (a held tool with
 `pointer: true`, a selection, an open popover or drawer). The browser's
 Escape releases it; the next press on the world only relocks. A refused
-lock leaves the body looking by drag. `locked ⇔ body.lock ∧ ¬wanted ∧
-¬released ∧ ¬refused`.
+lock leaves the body looking by drag, and so does touch (`touch`: every
+press on the view, wherever it lands, edges included, says whether it was
+a finger; a coarse pointer starts as touch; keys never change it). A finger
+on a locked view lets the lock go and leaves nothing released; a mouse
+after touch finds the lock released, so the next press on the world only
+relocks (TOOLS.md Decisions 11). `locked ⇔ body.lock ∧ ¬wanted ∧ ¬released
+∧ ¬refused ∧ ¬touch`.
 
 ## `api`
 
@@ -1598,7 +1610,8 @@ A **command**:
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - **Attention** is one target per view (TOOLS.md §3): the selection if
-  any, else the look (the pointer's hit, or the eye ray under lock;
+  any, else the look (the pointer's hit, or the eye ray under lock and for
+  a lock body under touch, `pointer.js` `looksFromEye`;
   `api.attention()`, `api.look()`). The key map (`scene.keys`) tries
   attention's path (the selection; or the look's hit, then what it's
   attached to, nearest first), then the scene, whatever kind of target the
@@ -1607,15 +1620,20 @@ A **command**:
   shows a key asks it (`hintFor`): a key is shown only where pressing it
   does that (H3), so walking, Draw shows without D and is in the menu.
 - **The use prompt** (`scene.use`, general: it runs in every scene) shows
-  attention's verbs where attention is (the crosshair under lock, else the
-  pointer): on the selection, or the first object along the look's chain
+  attention's verbs where attention is (the crosshair when the look is the
+  eye's, else the pointer): on the selection, or the first object along the look's chain
   with a keyed command shown on `"use"`, at most three, each a button, its
-  key the resolver's. It shows; the key map does.
+  key the resolver's. It shows; the key map does. A button whose verb has
+  a key is that key: a press presses it (the key `keyFor` says does that
+  verb then) and the lift lets it up, so a held verb lasts as long as a
+  finger or a mouse button holds its button (TOOLS.md §5, Decisions 15);
+  a verb with no key that does it is a click.
 - **Held verbs.** `run` may return a session, `{ end(), cancel(), update?(dt) }`.
   The key map keeps it open while the key is down: `update(dt)` each frame,
   `end()` when the key is let go, `cancel()` when the window or the view
   loses focus, the target leaves the doc, or the command's extension stops.
-  `api.run` discards what `run` returns, so elsewhere a held verb is a press.
+  `api.run` discards what `run` returns, so elsewhere a held verb is a press
+  (the use prompt's button presses the verb's key, so it holds).
   A held verb keeps its target until its key is up: while anything is held,
   attention is pinned to that target wherever the look goes, and the prompt
   shows the held verb (marked held, as it was when pressed, even once it no
@@ -1985,7 +2003,7 @@ value and compass convention are sailing's to document:
 | `stage/ride.js` | riding: the camera carried by a moving object (pure) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the body stack, the held tool, popovers, lock, the ladder, keys, menu, cursor |
-| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused (pure) |
+| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch (pure) |
 | `stage/ladder.js` | the Escape ladder: which layer one Escape pops, and its hint (pure) |
 | `stage/bodies.js` | the stage's two bodies, Look and Edit; `editing(local)`, the one question the editor's chrome asks; `inBody`, the `edit: true` rule; the stack's model (`enterStep`, `leaveStep`) and where a doc starts people (`startBase`) (pure) |
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |

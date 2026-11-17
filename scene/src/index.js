@@ -166,6 +166,15 @@ export const plugins = [
     },
   },
   {
+    // the touch controls: the declared keys as controls a finger holds, while the input is touch (TOOLS.md §5)
+    type: "scene:extension",
+    id: "scene.touch",
+    name: "Touch controls",
+    async load() {
+      return (await import("./parts/touch.js")).default;
+    },
+  },
+  {
     type: "scene:extension",
     id: "scene.keys",
     name: "Keyboard shortcuts",

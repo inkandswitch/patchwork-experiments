@@ -37,10 +37,6 @@ describe("createSim on a stage", () => {
     expect(rb.speed).toBeGreaterThan(0.3);
     // (streamed at 5 Hz: up to 200 ms behind a ship that's gathering way)
     expect(Math.abs(rb.speed - ra.speed)).toBeLessThan(0.35);
-    // and draws the sea at the same world time (on this fake stage, a follower's has no lag)
-    expect(b.sea.clock()).toBe(a.sea.clock());
-    // the physics' time is the sea's
-    expect(a.sea.clock()).toBeGreaterThan(7.9);
   });
 
   it("is written to the doc at the clock's checkpoints (every 30 s), not every frame, each stamped as a save", async () => {

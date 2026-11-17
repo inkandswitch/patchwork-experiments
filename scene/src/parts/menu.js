@@ -139,12 +139,12 @@ function create(api) {
     // with its name; then the scene's, each stage's in its own
     // context. The focus is always on the path, so its scene (Frame all, Set
     // home view) is offered wherever the pointer is.
-    const path = typeof api.path === "function" ? api.path({ look: true }) : null;
+    const path = typeof api.path === "function" ? api.path({ pointer: true }) : null;
     const sections = [];
     let forScene;
     if (path?.length) {
       for (const seg of path) {
-        const l = seg.look();
+        const l = seg.pointed();
         const t = l?.id ?? null;
         if (t == null || !seg.scene().objects?.[t]) continue;
         const own = menuEntries(seg.collect("commands"), t, seg.context(l)).forObject;

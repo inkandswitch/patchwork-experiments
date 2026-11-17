@@ -35,7 +35,27 @@ const EASE = 12; // how fast an avatar closes on its latest record (1/s)
 const STILL = Object.freeze({ forward: 0, strafe: 0 });
 /** How far the crew reaches (m), walking her deck or at a station: the bodies' reach (scene/TOOLS.md §4). */
 export const REACH = 2.5;
-const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
+/**
+ * Walking her deck: the keys "aboard" declares, labelled as walk's are (a copy
+ * of walk/src/body.js WALK_KEYS: codes labelled alike do the same thing, so a
+ * touch pad shows W and ↑ as one Forward; scene/TOOLS.md §4, §5).
+ */
+const WALK_KEYS = Object.freeze(
+  [
+    ["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"],
+    ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"],
+    ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"],
+  ].map(([code, label]) => Object.freeze({ code, label })),
+);
+/** What the walker is asked for with these codes held (a Set): forward and strafe (-1, 0, 1), run, jump. */
+export function walkWanted(keys) {
+  return {
+    forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
+    strafe: (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0),
+    run: keys.has("ShiftLeft") || keys.has("ShiftRight"),
+    jump: keys.has("Space"),
+  };
+}
 
 const NAME_CSS = `.scene-stage .label.sail-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: #f6f3ea;
@@ -290,7 +310,6 @@ export function createCrew(api, ctx) {
   let warned = false;
   const keys = new Set();
 
-  const clock = () => ctx.sea?.clock?.() ?? 0;
   /** A ship's body frame as drawn (bow −Z), which a body aboard lives in; null when she's gone. */
   const frameOfShip = (id) => bodyOf(api, id);
 
@@ -343,7 +362,7 @@ export function createCrew(api, ctx) {
     frame: frameOfShip,
     ships: () => ctx.sim?.ships?.() ?? [],
     // the water there, from above (a swimmer is in whatever water's surface is highest in her column)
-    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, clock()) ?? 0,
+    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, api.clock.t()) ?? 0,
     blockers(ship) {
       if (boomsAt !== frameNo) (booms.clear(), (boomsAt = frameNo));
       if (!booms.has(ship)) booms.set(ship, boomOf(api, ship, frameOfShip(ship)));
@@ -393,13 +412,7 @@ export function createCrew(api, ctx) {
   // ─── each frame ─────────────────────────────────────────────────────────
 
   function wanted() {
-    if (station || suspended) return STILL;
-    return {
-      forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
-      strafe: (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0),
-      run: keys.has("ShiftLeft") || keys.has("ShiftRight"),
-      jump: keys.has("Space"),
-    };
+    return station || suspended ? STILL : walkWanted(keys);
   }
 
   /** Invariant I after a step: thrown while walker.asserting() (tests, the probe pages); else logged once and put right by projection. */
@@ -528,8 +541,6 @@ export function createCrew(api, ctx) {
   let overOrbit = true; // "aboard" went on over the stage's orbit camera, Look (else over a body that has a view of its own: a seat)
   let suspended = false; // another body (a seat) is over "aboard"
 
-  const walkKeys = Object.freeze([...MOVE_KEYS].map((code) => ({ code })));
-
   /** Stand where the view is (a seat's eye, dropped by a seated eye's height), on the ship it's over: the walker after a seat. */
   function standAtEye() {
     const cam = api.camera.get();
@@ -553,7 +564,7 @@ export function createCrew(api, ctx) {
   const aboardBody = {
     id: AB,
     label: "Aboard",
-    keys: walkKeys,
+    keys: WALK_KEYS,
     lock: true,
     reach: REACH,
     enter() {
@@ -567,7 +578,7 @@ export function createCrew(api, ctx) {
       releaseCamera = api.camera.hold();
       publish(true);
       return {
-        keys: walkKeys,
+        keys: WALK_KEYS,
         input: {
           ...looking,
           key(ev) {
@@ -616,10 +627,9 @@ export function createCrew(api, ctx) {
       pendingStation = null;
       if (!p || !playing) return null;
       const s = arrive(id, p.handlers);
-      const declared = Object.freeze((p.handlers.keys ?? []).map((code) => ({ code })));
       return {
         label: stationLabel(id),
-        keys: declared,
+        keys: Object.freeze([...(p.handlers.keys ?? [])]),
         input: {
           ...looking,
           key: (ev) => !!s.handlers.key?.(ev),
@@ -680,11 +690,13 @@ export function createCrew(api, ctx) {
 
   /**
    * Stand at a station: the "station" body over walking, which hears the
-   * keys the station declares first (`keys`: codes). You're put just aft of
+   * keys the station declares first (`keys`). You're put just aft of
    * it, facing forward; the mouse still turns your head.
    * @param {string} id
-   * @param {{ keys: string[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
-   *   keys: the codes the station takes (scene/TOOLS.md §5: declared, so a shown key works);
+   * @param {{ keys: { code: string, label: string }[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
+   *   keys: the keys the station takes, each with what it does (the shape every body,
+   *   tool and gesture declares, scene/TOOLS.md §4, §5: declared, so a shown key works;
+   *   labelled alike, the same thing, so a touch pad shows them as one control);
    *   look: a world point to turn the eye to on arriving (else forward)
    * @returns {() => void} leave
    */
@@ -914,7 +926,7 @@ export function createCrew(api, ctx) {
       frameNo++;
       const d = Math.min(dt, 0.05);
       // the walker's step is capped for its own sake; the station's verbs (the wheel, a sheet, the
-      // furler, the halyard, the windlass) run in sea time, as far as the ships step this frame
+      // furler, the halyard, the windlass) run in world time, as far as the ships step this frame
       if (playing && !suspended) walk(d, Math.min(Math.max(dt, 0), MAX_SUBSTEPS * SUBSTEP));
       else if (!playing) follow();
       drawPeers(d);

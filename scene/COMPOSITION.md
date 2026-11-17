@@ -146,9 +146,36 @@ Still open:
   (presence-check.nopause run 3, B's first try: the first press on the
   Card table, the second on the inspector's behaviour picker);
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go.
+  they go;
+- entering a link moves the canvas: entered in Edit (a double-click on G's
+  card aboard Lost Cities), the canvas moves down about 31 px as the
+  entered path's chrome appears, so a click straight after lands that far
+  off. The bar of tools holds still (TOOLS Decisions 10, B3), the other
+  strips don't (lane/n8, editclick-run step 5).
 
 Fixed since (each item names its Decisions section below):
+- keyboard bodies (walk, aboard, a station) had no touch input: on a
+  phone nobody could walk, sail or take a station, and under a touch
+  laptop's granted pointer lock a drag stopped looking. A finger now never
+  locks the pointer, and the stage's own pad (`scene.touch`) presses the
+  keys the gesture, the held tool and the body declare, derived from their
+  labels, with no per-body touch code; a use-prompt button with a key is
+  that key, so held verbs (the windlass) work by finger (TOOLS Decisions
+  11 to 15, lane/n9, merge f66a7d0a). Checked in the real Patchwork on
+  2026-11-16 (touch-check under Chrome's touch emulation, on scratch
+  copies of the Quiet games room and Lost Cities aboard).
+- in Edit on a boat that is the world, sailing's HUD drew its own "Come
+  aboard" button over the canvas's top edge, so the first press of a
+  double-click on a card there came aboard, left Edit and moved the canvas,
+  and nothing was entered (triage (f)). The HUD now holds no button: Come
+  aboard is a world command on the bar of tools in every body, and the bar
+  keeps its height whether or not a world command applies (TOOLS
+  Decisions 10, lane/n8, merge 7aba1de4). Checked in the real Patchwork on
+  2026-11-16 (worldbar-check, 18/18 on scratch copies of Ship at anchor and
+  Lost Cities aboard): the double-click 16 px below the canvas's top edge
+  enters the game, and the canvas sits at the same place in Look, Edit and
+  aboard; against the packages published before, the same check fails 11
+  of 17, the first press coming aboard.
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her
@@ -223,6 +250,28 @@ the lead confirms or reverses it):
   serves tests; and a test that drives the stage's manual clock no longer
   drives the gate unless it sets `timeStamp` (Decisions, double-click
   stamps, 4). Not chosen: refusing a double-click with a missing stamp.
+- **The bar of tools for games** (TOOLS Decisions 10; lane/n8): the empty
+  row outside Edit, where the world cluster sits and what the surface is
+  called, a new `show` surface or `edit: true` alone, a game's world
+  commands without entering it, one stage-drawn key legend, and whether a
+  game keeps a big Play call to action. The questions are there.
+- **Touch controls for keyboard bodies** (TOOLS Decisions 11 to 15;
+  sailing DESIGN.md "A station's keys say what they do"; lane/n9, merge
+  f66a7d0a): when the pad shows (from the first touch, always on a coarse
+  pointer, or a chip toggle) and whether a pen is touch; a digital d-pad
+  or an analog stick, and whether WASD makes a pad; label-as-identity or
+  an explicit grouping field (machine's doom pad shows one "Weapon"); the
+  pad's layout and group names (a press session's `label`); whether the
+  500 ms touch hold opens the menu while a body looks by drag; a stage
+  crosshair under touch; whether a tapped look should expire; the station
+  labels' words (B above all); whether sailing's HUD hint keeps key names
+  on touch; whether arena's gun fires on a tap (today it fires only
+  locked). The questions are there.
+- **The pad and sailing's HUD share the bottom left** (lane/n9): the pad
+  lies under every other overlay (TOOLS Decisions 13, so a menu opened
+  over it takes the finger), and sailing's panel paints over its arrows
+  (they still work, the panel letting the pointer through); move the pad,
+  or have the HUD keep clear. Layout is the lead's taste.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -1365,7 +1414,13 @@ The five open questions were put to the project lead and answered:
    hover's menu or the scene's. Rejected: passing the press's hit to the
    menu through `api.path({ hit })`, which would give the path a second
    notion of where the pointer is; one look, updated by the press, keeps
-   the use prompt, the keys and the menu on the same thing.
+   the use prompt, the keys and the menu on the same thing. Amended
+   (2026-11-16, lane/n9, decided unattended, for the lead): a lock body
+   under touch looks from its eye while a finger presses where it lands
+   (TOOLS.md Decisions 14), so the menu reads the pointer's hit
+   (`api.path({ pointer: true })`, a reader's `pointed()`): still not a
+   second notion, the same hover the press sets, which the look is in
+   every other pointer state.
 3. **Leaving Edit puts the selection down; the toolbar is one row with no
    scrollbar; no tie rule for verbs beyond running order**: TOOLS.md
    Decisions 6 and 7.
