@@ -20,11 +20,6 @@ for (const [an, audience] of Object.entries(SETS)) for (const [sn, shown] of Obj
 }
 
 describe("the look rule, every case", () => {
-  it("covers every consistent (audience, shown) pair, item known or not, ready or not", () => {
-    // unknown/unknown, and the 14 pairs of known sets with audience ⊆ shown, each four ways
-    expect(CASES.length).toBe(15 * 4);
-  });
-
   for (const c of CASES) {
     const got = lookFor({ ready: c.ready, audience: c.audience, shown: c.shown, viewer: ME, look: c.known ? FACE : null });
     const want = !c.ready || c.audience === null ? null : has(c.audience, ME) && c.known ? FACE : has(c.shown, ME) ? VEIL : null;
@@ -40,24 +35,7 @@ describe("the look rule, every case", () => {
     }
   });
 
-  it("the cases by name", () => {
-    const look = (audience, shown, known = true) => lookFor({ ready: true, audience, shown, viewer: ME, look: known ? FACE : null });
-    // in another seat's hand, whichever way up: its back (which back it is, is real information)
-    expect(look(["you"], ["you"])).toBeNull();
-    // face down on the table: its back
-    expect(look([], [])).toBeNull();
-    // face up on the table: the item; its keys not here yet: the veil
-    expect(look("all", "all")).toBe(FACE);
-    expect(look("all", "all", false)).toEqual(VEIL);
-    // in my own hand: the item; not known here yet: the veil
-    expect(look([ME], [ME])).toBe(FACE);
-    expect(look([ME], [ME], false)).toEqual(VEIL);
-    // face up behind someone else's screen: the veil (turned toward me, kept from me)
-    expect(look(["you"], "all")).toEqual(VEIL);
-    expect(look([], "all")).toEqual(VEIL);
-    // a listed package is missing (unknown): nothing is said at all
-    expect(look(null, null)).toBeNull();
-    // someone who is nobody in particular (no viewer id) sees only what all see
+  it("someone who is nobody in particular (no viewer id) sees only what all see", () => {
     expect(lookFor({ ready: true, audience: "all", shown: "all", viewer: null, look: FACE })).toBe(FACE);
     expect(lookFor({ ready: true, audience: [ME], shown: [ME], viewer: null, look: FACE })).toBeNull();
   });

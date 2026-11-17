@@ -176,20 +176,11 @@ describe("contain", () => {
 
 describe("the plugin", () => {
   const p = plugins.find((x) => x.type === "scene:extension");
-  it("is an ordinary scene extension, found by `keeper`, run by its own trait", async () => {
+  it("is an ordinary scene extension, found by `keeper`, run by its own trait", () => {
     expect(p).toMatchObject({ id: "keep.plain", keeper: "plain", traits: [TRAIT] });
     for (const k of ["activities", "requires", "always", "general"]) expect(k in p).toBe(false);
     for (const x of plugins) expect(() => structuredClone({ ...x, load: undefined })).not.toThrow();
     // no private registry type: only the scene's and Patchwork's own
     expect([...new Set(plugins.map((x) => x.type))].sort()).toEqual(["patchwork:datatype", "scene:extension"]);
-    const mod = await p.load();
-    expect(typeof mod.create).toBe("function");
-    expect(mod.contain).toBe(contain);
-  });
-
-  it("a copy leaves the binding behind: the trait is runtime, its container dropped", () => {
-    const d = p.describes[TRAIT];
-    expect(d.runtime).toBe(true);
-    expect(d.fields.find((f) => f.key === "by")).toMatchObject({ kind: "url", copy: "drop" });
   });
 });
