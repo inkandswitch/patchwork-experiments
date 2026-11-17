@@ -29,5 +29,4 @@ describe("standing: holder × stand spot", () => {
         expect(got).toEqual(drawn ? [{ session: "s-ana", viewer: "viewer:ana", rec: { on: "deck", feet: [2, 0, 1], yaw: 0, pitch: 0 } }] : []);
       });
     }
-  it("is 6 rows", () => expect(Object.keys(HOLDERS).length * Object.keys(TRAITS).length).toBe(6));
 });

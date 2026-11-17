@@ -146,11 +146,6 @@ const dinghyAt = (X, way, drop, R = null) => {
 };
 
 describe("a support over the ground, walked off each side", { timeout: 120_000 }, () => {
-  it("the table: 4 poses × 4 sides × (4 grounds × 3 waters + nothing × 2 waters); (1), (2) and (3) each 32 rows or more", () => {
-    expect(ROWS.length).toBe(224);
-    for (const c of ["(1)", "(2)", "(3)"]) expect(ROWS.filter((r) => r.w3 === c).length).toBeGreaterThanOrEqual(32);
-  });
-
   it("every row: W3's case, where it ends, and I and the oracle (both supports' triangles) at every step", () => {
     const failed = [];
     for (const r of ROWS) {

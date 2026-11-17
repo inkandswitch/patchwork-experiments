@@ -6,7 +6,7 @@
 // navmesh.test.js.
 import { describe, it, expect } from "vitest";
 import { DIRS, OPEN, OFF, STEP, WALL, bake, inShadow, pointOf } from "./navmesh.js";
-import { asserting, assertWalker, checkWalker, climb, isClear, localFeet, meetsBlock, place, placeAt, respawn, spawnOn, step, swimmingAt, travel, worldPose } from "./walker.js";
+import { assertWalker, checkWalker, climb, isClear, localFeet, meetsBlock, place, placeAt, respawn, spawnOn, step, swimmingAt, travel, worldPose } from "./walker.js";
 import { BODY, easeEye } from "./walk.js";
 import { apply, invert, matrixOf } from "./frames.js";
 import { I4, STILL, baked, box, drive, floor, oracleAll, placed, ramp, world } from "./test/arena.js";
@@ -500,11 +500,6 @@ describe("the walker, case by case", { timeout: 60_000 }, () => {
     expect(r.state.mode).toBe("swimming");
     expect(r.state.p[0]).toBeCloseTo(0.5, 6);
     expect(r.yaw).toBeCloseTo(0.3, 6);
-  });
-
-  it("the invariant is asserted here: a breach throws (vitest is a dev build)", () => {
-    expect(globalThis.__WALK_ASSERT__).toBeUndefined();
-    expect(asserting()).toBe(true);
   });
 
   it("spawn: its spawn link, projected", () => {

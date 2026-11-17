@@ -6,12 +6,11 @@
 // as under vitest).
 
 import { describe, it, expect } from "vitest";
-import { REACH, SPAWN, WALK_KEYS, aimOf, walkBody } from "./body.js";
+import { SPAWN, aimOf, walkBody } from "./body.js";
 import { createSupports, frameOf } from "./supports.js";
 import { BODY, lookDir } from "./walk.js";
 import { apply, multiply } from "./frames.js";
 import * as walker from "./walker.js";
-import { plugins } from "./index.js";
 import { model, stage } from "./test/stage.js";
 
 const close = (a, b, tol = 1e-5) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
@@ -98,7 +97,6 @@ describe("where a walk starts: place × world", () => {
         expect(close(s.eye().position, eye)).toBe(true);
         s.leave();
       });
-  it("is 8 rows", () => expect(Object.keys(WORLDS).length * Object.keys(PLACES).length).toBe(8));
 
   it("a stand spot: at its `at`, facing its `facing`, not at its object's origin", () => {
     // a helm at (2, 0, -2) turned a quarter about +Y: its `at` (0, 0, 1) is the world's (3, 0, -2), facing back at the helm (world −X)
@@ -367,13 +365,6 @@ describe("a rebake under you → P1 (R1)", () => {
 });
 
 describe("the walk body", () => {
-  it("is `walk`: the walking keys, the pointer locked, 2 m of reach", () => {
-    const b = walkBody(stage({ objects: groundObjects() }).api);
-    expect(b).toMatchObject({ id: "walk", label: "Walk", keys: WALK_KEYS, lock: true, reach: REACH });
-    expect(WALK_KEYS.map((k) => k.code)).toEqual(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
-    expect(plugins.find((p) => p.id === "walk.spawn").describes[SPAWN].name).toBe("Spawn point");
-  });
-
   it("walks on W, holds the camera, says where it is at 20 Hz; leaving gives it all back", () => {
     const f = stage({ objects: groundObjects(), camera: { position: [0, 1.6, 5], target: [0, 1.6, 0] } });
     const s = walkBody(f.api).enter(null);

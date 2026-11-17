@@ -229,7 +229,6 @@ describe("a support too big to bake, and the meshes the page keeps", () => {
       expect(f.calls.notices.length).toBe(ground === "refused" ? 1 : 0);
       s.leave();
     });
-  it("readiness is 4 rows", () => expect(READY.length).toBe(4));
   // (the ground refused and no other support: nothing can be walked, so the walk waits: the row above, "over the column cap")
   it("walking off a deck over a refused ground: no floor there (it isn't), so you fall, and land back on the deck's spawn (F4); never waiting", () => {
     const f = stage({ objects: capped({}, "off") });

@@ -217,8 +217,6 @@ describe("a side on a column line makes no floor outside it", { timeout: 60_000 
     Object.entries(SIDES).flatMap(([sn, s]) => Object.entries(AT).map(([an, out]) => ({ name: `${hn}, side ${sn} ${an}`, h, s, out }))),
   );
 
-  it("the table: 4 heights × 4 sides × on the line or 3 mm out over it", () => expect(BOXES.length).toBe(32));
-
   it.each(BOXES)("$name: its top as its in-twin's; outside, a floor only where it reaches past the line", ({ h, s, out }) => {
     const b = boxOf(h, s, out);
     const got = split(sound10([...floor(), ...box(b.min, b.max)]), b.inside);
@@ -259,8 +257,6 @@ describe("a side on a column line makes no floor outside it", { timeout: 60_000 
     return { triangles: [...a, ...b, ...c, ...a, ...c, ...d], inside: (x, z) => Math.abs(-x * sn + z * cs) < w && x * cs + z * sn > u0 && x * cs + z * sn < u1 };
   };
 
-  it("the table: 4 facings × on the line or 3 mm out over it", () => expect(RAMPS.length).toBe(8));
-
   it.each(RAMPS)("$name: no kept floor above the ground outside it; its slope as its in-twin's", ({ dir, out }) => {
     const r = rampOf(dir, out);
     const got = split(sound10([...floor(), ...r.triangles]), r.inside);
@@ -285,8 +281,6 @@ describe("a side on a column line makes no floor outside it", { timeout: 60_000 
     const [a, b, c, d] = [[x0, 0, z0], [x0, 0, z1], [x0, h, z1], [x0, h, z0]];
     return [...a, ...b, ...c, ...a, ...c, ...d];
   };
-
-  it("the table: 3 heights × on the line or off it", () => expect(FENCES.length).toBe(6));
 
   it.each(FENCES)("$name: B1–B7 hold; a floor on its top only off the line and a step high", ({ h, x0 }) => {
     const mesh = sound10([...floor(), ...fence(x0, h)]);

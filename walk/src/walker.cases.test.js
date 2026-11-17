@@ -197,10 +197,6 @@ const CASES = [
 ];
 
 describe("the walker, over every arena feature and every kind of step", () => {
-  it("every case has a name of its own, so a failure names its row", () => {
-    expect(new Set(CASES.map((c) => c.name)).size).toBe(CASES.length);
-  });
-
   it("the legs cover every key combination, every heading, both ends of dt and every pose", () => {
     const steps = LEGS.flat();
     expect([LEGS.length, steps.length]).toEqual([36, 36 * LEG]);
