@@ -5,7 +5,7 @@
 //
 // stations-probe.html: a Lost Cities table from the template, two views A
 // (Ana) and B (Ben), and a stand-in for a body that walks (`probe-walk`,
-// scene/TOOLS.md §4). Real mouse and keys over CDP:
+// scene/STAGE.md, "Bodies"). Real mouse and keys over CDP:
 // - in Look, not walking: hovering a tray offers no seat verb (the picker is
 //   the way there);
 // - walking, unseated, hovering Player 1's tray offers "Sit as Player 1"; F
@@ -97,7 +97,7 @@ try {
   await P("open('b')");
   check("B too", await until("picker('b') === 3", 30_000));
   // the table starts people watching from a seat (its view.start, read again after the template for
-  // its maker: TOOLS.md §2); each leaves to Look from the chip for what follows
+  // its maker: STAGE.md, "Arriving"); each leaves to Look from the chip for what follows
   check("each arrives watching from a seat, as the table starts people", (await until("body('a') === 'seat'", 3000)) && (await until("body('b') === 'seat'", 3000)), { a: await P("body('a')"), b: await P("body('b')") });
   await P("enter('a', 'look')");
   await P("enter('b', 'look')");

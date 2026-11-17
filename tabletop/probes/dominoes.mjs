@@ -311,7 +311,7 @@ try {
   const standB = (await P("where()")).down[0];
   // the prompt shows three verbs and a more (the stage's cap): carry's Flip holds the tile as nearly as
   // the table does and runs first, so Flip, Draw and Wash; Stand on edge is U's, the menu's, and one press
-  // on the prompt's "⋯ 1 more" away (scene/TOOLS.md Decisions 7, 19)
+  // on the prompt's "⋯ 1 more" away (scene/HISTORY.md, TOOLS Decisions 7, 19)
   check("B hovers a boneyard tile, and the prompt offers its first three verbs, Flip among them, and one more", !!(await hover(standB, "b")) && (await until("prompt('b').length === 3 && __p.prompt('b').some((t) => /Flip/.test(t)) && __p.more('b')?.text === '⋯ 1 more'", 3000)), { prompt: await P("prompt('b')"), more: await P("more('b')") });
   {
     const m = await P("more('b')");

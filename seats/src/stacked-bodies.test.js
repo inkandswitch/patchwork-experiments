@@ -1,4 +1,4 @@
-// Another doc's seat body stacked over this doc's (scene's COMPOSITION.md,
+// Another doc's seat body stacked over this doc's (scene's STAGE.md,
 // Decisions, N7, 14; README, Still open). Every stage's seat body has the id
 // "seat"; the stage gives a body's `ext` as this extension's id only when the
 // body is its own. In a mashup the stack can reach [look, seat(G), walk,

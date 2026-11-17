@@ -686,7 +686,7 @@ function create(api) {
       },
       sit: (ref) => sitFor(refArg(ref)),
     }),
-    // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
+    // who has a stake in a thing at this table (scene/HISTORY.md, TOOLS Decisions 2):
     // the people seated at it (the doc's own lasting seats), here or away;
     // not those watching, nor whoever sits at an object's seats (a machine's
     // ports). Asked when someone takes back an edit that showed or decided

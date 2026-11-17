@@ -112,7 +112,7 @@ export default {
       }
     }
 
-    // ── telling everyone: what happened, never which card; told on arrival, unchecked, as counts name no card to wait for (scene/COMPOSITION.md, telling 6) ──
+    // ── telling everyone: what happened, never which card; told on arrival, unchecked, as counts name no card to wait for (scene/STAGE.md, telling 6) ──
     /** Whoever told it: "You", else what the table calls them (the roster's `who`: their seat's name stands in for a missing contact's), else the stage's name. */
     const speaker = (who) => {
       if (who.mine) return who.name;

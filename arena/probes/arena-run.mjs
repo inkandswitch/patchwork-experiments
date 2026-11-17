@@ -9,7 +9,7 @@
 // arena and starts people walking at a spawn point (view.start): A, and B
 // joining after, both arrive walking there. A leaves walking and opens the
 // parts bin (a drawer tab: no mode), shuts it, presses Play on the bar of
-// tools (a world command, at the bar's right end in every body: scene/TOOLS.md
+// tools (a world command, at the bar's right end in every body: scene/STAGE.md
 // §6; the walk body at a spawn, the gun in hand: §4), walks with W/A/S/D, runs into a wall, climbs the ramp
 // onto the tower, jumps, turns to a target and shoots it with a click; Esc
 // puts the gun down (never the body) and the body chip's Leave stops walking;
@@ -173,7 +173,7 @@ async function walkTo([x, z], { ms = 8000, tol = 0.6 } = {}) {
   return eye();
 }
 const r3 = (p) => p.map((v) => +v.toFixed(2));
-/** The arena's world commands on the bar of tools (scene/TOOLS.md §6). */
+/** The arena's world commands on the bar of tools (scene/STAGE.md, "The interface"). */
 const PLAY = `.toolbar [data-command="play"]`;
 const RESET = `.toolbar [data-command="reset"]`;
 /** View w's bar of tools: whether it's laid out, and its two clusters' commands (the editor's, the world's). */
@@ -258,7 +258,7 @@ try {
   check("the arena runs in both views (its level trait), and so do the walk body and the spawn points' part", (await P("running('a')")).includes("arena") && (await P("running('b')")).includes("walk.spawn") && (await P("running('a')")).includes("walk"), { a: await P("running('a')"), b: await P("running('b')") });
 
   // ─── a level opens as a game: both arrive walking, at the doc's spawn point ─
-  // Arriving (scene/TOOLS.md §2): A, who chose the template, and B, who
+  // Arriving (scene/STAGE.md, "Arriving"): A, who chose the template, and B, who
   // joined the level, each enter the walk body at view.start's place once its
   // content is in. What runs is the doc's alone (H1): the same in both views.
   const arrived = await loads("window.__p.body('a') === 'walk' && window.__p.body('b') === 'walk'", 25_000);
@@ -276,7 +276,7 @@ try {
 
   // ─── the designer edits, in the same running level ───────────────────────
   // A leaves walking (Look: nothing of the editor), chooses Edit on the body
-  // chip (TOOLS.md Decisions 6), opens the parts bin from the toolbar, and B
+  // chip (HISTORY.md, TOOLS Decisions 6), opens the parts bin from the toolbar, and B
   // goes on walking.
   const leftToLook = await leaveBody("a");
   await settled("a");
@@ -568,7 +568,7 @@ try {
   check("hybrid: Esc deselects (Edit, nothing held)", (await P("A.local.get().selected")) == null, await P("A.local.get().selected"));
   await js("Math.random = () => 0");
   await until(`!!window.__p.hostA.querySelector('${PLAY}')`);
-  // look at the deck from above it: with no spawn point, walking starts at the eye (scene/TOOLS.md §4)
+  // look at the deck from above it: with no spawn point, walking starts at the eye (scene/STAGE.md, "Bodies")
   await js("window.__p.A.viewport.setCamera({ position: [0, 6, 2], target: [0, 3, -2] })");
   await rest(200);
   const camEye = (await P("cam()")).position;
@@ -595,7 +595,7 @@ try {
   // the canvas's requestPointerLock grants and exitPointerLock lets go, as a
   // browser does; the router then builds locked events (movementX/Y as dx/dy,
   // the ray down the middle) and the walk body turns by them. The lock was
-  // refused when walking began; a new body starts afresh (TOOLS.md §4), so
+  // refused when walking began; a new body starts afresh (STAGE.md, "Bodies"), so
   // leave walking and walk in again from here (the chip's Walk).
   await js(`(() => { const cv = window.__p.A.viewport.canvas; const changed = () => setTimeout(() => document.dispatchEvent(new Event("pointerlockchange")), 0); Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => window.__fakeLock ? cv : null }); cv.requestPointerLock = () => { window.__fakeLock = true; changed(); return Promise.resolve(); }; document.exitPointerLock = () => { window.__fakeLock = false; changed(); }; })()`);
   const refusedBefore = (await P("pointer()"))?.refused;

@@ -375,7 +375,7 @@ async function cockpit(seats, { claims, views = [] } = {}) {
   t.step = step;
   t.join = async (session, viewer, { walking = false } = {}) => {
     const api = (t.api[session] = w.join(session, { viewer, ext: "seats" }));
-    // a body to walk in: as far as a table knows one (scene/TOOLS.md §4), entered here as a walker would be
+    // a body to walk in: as far as a table knows one (scene/STAGE.md, "Bodies"), entered here as a walker would be
     const input = (t.walker[session] = { suspended: vi.fn(), resumed: vi.fn() });
     const walk = { id: "walk", label: "Walk", lock: true, reach: 2.5, enter: () => ({ input, leave() {} }) };
     w.view(session).collected = { seatPlaces, bodies: [walk] };

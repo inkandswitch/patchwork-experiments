@@ -1,4 +1,4 @@
-// The seat body (scene/TOOLS.md §4; COMPOSITION.md decision 5 puts it
+// The seat body (scene/STAGE.md, "Bodies"; HISTORY.md, COMPOSITION Decisions (2026-11-11) 5 puts it
 // here): a viewer sitting in a seat, the eye where the seat's camera says,
 // riding the object that camera is `in`, else its doc's root (a game linked
 // onto a table aboard a ship rides the table), rolling with it, so the table

@@ -82,7 +82,7 @@ const ART = !!args.art;
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const TITLE = typeof args.title === "string" ? args.title : "Quiet games room";
 // --game <url>: the Lost Cities game doc the room's Lost Cities table links (publish-aboard.mjs prints it), so
-// the room and the boat play the same game (scene/COMPOSITION.md, worked example 3). Without it, the room's own.
+// the room and the boat play the same game (scene/STAGE.md, worked example 3). Without it, the room's own.
 const GAME = typeof args.game === "string" ? args.game : null;
 // each game is a doc of its own, listing what its contents come from, in the
 // room's order: Lost Cities and Dominoes have hands and a kept deck

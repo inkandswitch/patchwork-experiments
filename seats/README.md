@@ -7,7 +7,7 @@ names nothing that uses it: a table learns whose hand is whose and a
 keeper who is playing through conventions (below), and the stage's body
 stack takes its seat body as it takes any body, never by this package's
 name. The stage knows nothing
-of seats either (scene/COMPOSITION.md, decision 5): a scene that seats
+of seats either (scene/HISTORY.md, COMPOSITION Decisions (2026-11-11) 5): a scene that seats
 people lists this package in its `packages`, like any other.
 
 ## What it is
@@ -19,7 +19,7 @@ people lists this package in its `packages`, like any other.
   it. The plugin describes it (*Seats*, a map of entries), so the inspector
   can add, name and remove seats.
 - **Whose seats.** On the scene, the trait is the doc's own seats: its
-  table's. A game is a doc of its own (scene's COMPOSITION.md): linked onto
+  table's. A game is a doc of its own (scene's STAGE.md): linked onto
   a table aboard, its root is the table. On an object, the trait is that
   object's own seats (a machine's ports), which go where it goes: copied
   with it (a copy has seats of its own) and removed with it. A seat is named
@@ -54,8 +54,8 @@ people lists this package in its `packages`, like any other.
   place within reach offers *Sit as Player 1* (F); sitting, a look at your
   own offers *Stand up* (a lasting seat stays yours; one that doesn't is
   free again). The verb says `reach: true`: the stage measures
-  reach from the body's eye against its reach (scene/TOOLS.md §4).
-- **The seat body** (`src/body.js`), contributed as `bodies` (scene/TOOLS.md
+  reach from the body's eye against its reach (scene/STAGE.md, "Bodies").
+- **The seat body** (`src/body.js`), contributed as `bodies` (scene/STAGE.md
   §4): sitting in a seat with a camera puts the view there (in the doc's
   root frame, which the stage takes to the world), and its ride (the body's,
   the only one that applies while seated) is the doc's root (or the object
@@ -114,7 +114,7 @@ a deck waits for players; the stage offers the package from the scene's
   `sitting()` gap as an expected failure (`it.fails`). The fix is one line,
   `seated()` checking `ext` as `pickerOwner` does, and then that test flips;
   it leaves a decision: `getUp`'s `downToSeat` would pop the other doc's
-  body to get down to this one's. Found in N7 (scene's COMPOSITION.md,
+  body to get down to this one's. Found in N7 (scene's STAGE.md,
   Decisions, N7, 14). Players and claims are per doc, so a person may hold
   lasting seats in two docs at once; only the body on top is one per view.
 

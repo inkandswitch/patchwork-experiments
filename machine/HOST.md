@@ -733,7 +733,7 @@ A machine is an object in a scene (`src/scene/`): its source a machine doc
 (the engine's kind and the content it boots), its content a cabinet the
 `machine` scene:source builds, its trait `machine` holding the session this
 object runs. The stage is not changed: everything here is the extension
-contract (scene/STAGE.md) and a replicated process (TOOLS.md §7).
+contract (scene/STAGE.md) and a replicated process (STAGE.md, "World time").
 
 ```js
 // one machine on one view (running.js), what extension.js does for each object:
@@ -870,7 +870,7 @@ Then step 7 (round 3):
    view ahead of the pauser by more than the margin. The views still meet
    at the stop kept. A pause and a resume made at once settle the same way.
 4. **The process is registered only while the machine runs.** A machine
-   nobody plays keeps no world going (TOOLS.md §7, "Nobody present, no time
+   nobody plays keeps no world going (STAGE.md, "World time", "Nobody present, no time
    passes"), and the first player's resume brings the computer back.
 5. **The session is the object's, not the machine doc's.** The machine doc
    is the program and what it boots; each object is one running game on
@@ -979,7 +979,7 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
     up, or walking off from it) gives the port back, so a machine everyone
     has got up from stops (Decision 4). Standing up frees the seat too
     (Decision 29); walking off from it keeps it for you to come back to.
-    Escape pops the held tool, never the body (scene/TOOLS.md §5), so it
+    Escape pops the held tool, never the body (scene/STAGE.md, "Keys"), so it
     puts the pad down and keeps the port. That needed one addition to the
     seats package: `roster.sitting()`.
 21. **A machine with no seats is played by Play alone.** Where no seats
@@ -1262,7 +1262,7 @@ Round 3's review (Decisions 41-45):
       the machine's own reason (every port taken, no seats package, still
       starting) is said in a notice and the click taken; refused by the
       stage with the verb enabled (out of reach) it goes on. Its cursor is a
-      pointer there. In Edit, Edit's click comes first and selects (TOOLS.md
+      pointer there. In Edit, Edit's click comes first and selects (STAGE.md
       Decisions 6), and P plays the selection. The note under a stopped
       screen says both ways: "Stopped while nobody plays: click it, or point
       at it and press P" (P acts only on what it's pointed at, the
@@ -1625,7 +1625,7 @@ Round 3's review (Decisions 41-45):
   Arcade (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) came to hold two, `world`
   and `okg5pjo09`, at one pose, so every view drew Doom's world twice;
   it was republished clean and the folder's link swapped (N7, 2026-11-16;
-  scene/COMPOSITION.md, Decisions, N7, 7). Whether the command should be
+  scene/HISTORY.md, COMPOSITION Decisions, N7, 7). Whether the command should be
   disabled ("It has its world") or replace the old one is a question for
   the lead (Decisions, N7, 7).
 - A WAD dropped on an empty cabinet where the doom package is installed
