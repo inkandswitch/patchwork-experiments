@@ -1,7 +1,8 @@
 # Plans
 
-**Everything in this file is deferred until further notice.** Nothing here
-is to be started without the lead asking.
+**Everything in this file is deferred until further notice, except section 1,
+which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
+deferred).** Nothing else here is to be started without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
