@@ -139,7 +139,11 @@ stage's doc).
 ## 3. Attention, selection and handles
 
 **Attention** is one target per view: the selection if any, else the look
-(the pointer's hit, or the eye ray under lock). The prompt and the halo are
+(the pointer's hit, or the eye ray under lock and for a lock body under
+touch, where a finger hovers nowhere: `pointer.js` `looksFromEye`,
+Decisions 14). A finger's hit is what it pressed, and a tap's stays the
+look when it lifts, until the next press on the world (a drag's doesn't;
+Decisions 15). The prompt and the halo are
 one surface over it, and keys go to it (§5): what is shown is what keys do.
 
 **A press** runs COMPOSITION §5's chain: the held tool, the widget owner
@@ -239,6 +243,11 @@ picking one replaces it, Esc empties it. `local.tool`, `effectiveTool` and
 bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres | Infinity
            enter(place) → { input, eye() → { position, direction }, ride?, leave() } }]
 // a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
+// keys (a body's, a tool's, a gesture's): codes labelled alike do the same thing (walk's W and ↑
+// are both "Forward"); touch shows them as one control (§5), so distinct actions need distinct labels.
+// A label names the action, not its state ("Halyard", not "Hoist" turning "Lower" once hoisted),
+// and an action may be unavailable in some states, its key declared and doing nothing then (the
+// jib's sheet at the lazy winch): the keys are declared on entering, and the state changes under them.
 ```
 
 - **Look** and **Edit**, the stage's (`src/stage/bodies.js`; they replace
@@ -285,7 +294,18 @@ nothing else wants the pointer (a held tool with `pointer: true`, a
 selection, an open menu, dialog or dock). The browser's Esc **releases** it
 unseen by the page; the next press on the world only relocks. A **refused**
 lock leaves the body looking by drag, as arena does (`play.js:90-95`).
-**locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused.**
+While the input is **touch** there is no mouse to look with, so the body
+looks by drag as when refused: every press on the view (on the canvas, on
+anything over it, on its edges: the chip, the prompt's buttons, the clock's
+bar) says whether it was a finger, before anything hears it, and a coarse
+pointer starts as touch. Keys never change it. A finger on a locked view
+lets the lock go, and leaves nothing released (there is no lock to take
+back). A mouse after a finger finds the lock **released**, as after the
+browser's Esc, wherever it pressed: the next press on the world only
+relocks (Decisions 11). So the lock is only ever taken by a press on the
+world that is nothing else, a new body, or the pointer no longer wanted;
+never by a press on a button, and never halfway through a click.
+**locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch.**
 
 ## 5. Keys and Escape
 
@@ -304,6 +324,71 @@ router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
 Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
+
+**A prompt button with a key is that key** (Decisions 15). A press on a
+verb's button presses the key that does that verb on that target, as the
+pad's controls press theirs (`src/hold-key.js`), and lifting it lets the
+key up: so the verb goes the one key order and the key map, and a held
+verb (winding a windlass, `hold: true`) lasts exactly as long as the finger
+or the mouse button, its session the key map's (`end` on the lift, `cancel`
+if the window goes or the target goes first). Which key is asked as it is
+pressed (keymap.js `keyFor`, what `hintFor` names), so a press presses only
+a key that does its verb then, by the same construction as a shown key. A
+verb with no key that does it (reserved: walking, D) is a click, run on its
+target; a held one has nothing to hold it by, so it shows disabled. A
+pointer's click runs a verb only on the button that had its press, and
+only when that press wasn't the key: a browser clicks whatever is under
+the lift once the button pressed has gone, so a verb that puts another
+button in its place would otherwise run that one too. Only a primary
+press is a key or a click (a right or middle press does nothing). A
+button stays the one element in the document while the prompt changes
+round it (its key going down marks it held), as a pad control does, so
+its capture takes the lift to it even if it moves on the screen.
+
+**Touch controls are the declared keys** (`touch-keys.js`, pure;
+Decisions 12). With no keyboard, the keys the gesture, the held tool and
+the body declare become controls a finger holds, in the key order: a code
+shows only under the reserver `reservedBy` names for it, so a shown control
+works by the same construction as a shown key. Within one reserver, codes
+shown alike are one control (the label, else the code's name: walk's W and
+↑ are one "Forward"), pressing the first of its codes the earlier layers
+leave it. A control with an arrow among its codes takes that arrow's place
+on the pad, the rest are buttons: keyboard geometry, so the stage knows
+nothing of "Forward". Look, Edit and a seat declare no keys and show none.
+Labels are one per reserver, not across them (snes's "Right" and walk's
+"Right" are both shown under a held pad), so the pad shows each control
+under its reserver. A control presses its code with the key a US keyboard
+sends (keymap.js `keyOfCode`, `codeOfKey` read the other way), since
+handlers read `ev.key` as often as `ev.code`.
+
+**The pad presses keys as a keyboard does** (`scene.touch`,
+`src/parts/touch.js`; Decisions 13). While the input is touch (the view's
+`pointer.touch`, §4) and there are controls, it shows them: the arrows'
+places bottom left, the other buttons bottom right over the body chip, a
+group per layer named for it (the body's label, the held tool's name; a
+gesture's group is unnamed, since the stage knows no gesture's name). A finger down on a control
+sends the keydown a keyboard sends for its code to the view's root, where
+the router hears keys, and its finger coming up (or cancelled, or its
+capture lost) the keyup (`src/hold-key.js`, which the Esc hint uses too).
+So a pad key goes the one key order and a shown control works as a shown
+key does; nothing is per body, and no new api. Fingers are each their own
+(Forward, Run and a look drag on the canvas at once); a control held by
+two is down until the last lifts. A control is a layer's key: that body,
+that tool, that gesture (each its own `serial`, STAGE.md). When its layer
+goes (the body left, even for one with the same id; a carry took its key;
+another tool) or the pad hides, it lets go and is gone, so a lit control
+is a key its layer holds; on a blur or a hidden page every finger lets go,
+as the router lets go of every key. A pressed control keeps focus where it
+is, so the key map's held verbs stay held. Modifiers are the router's, as
+a keyboard has them: a modifier key down at the view's root (claimed or
+not, by a keyboard or the pad) is in every event's `shift`, `alt`, `ctrl`,
+`meta` until its keyup anywhere in the window, a blur or a hidden page, so
+the pad's Alt places a carry freely, before the lift or after.
+
+**With no keyboard, the Esc hint is the Escape key.** It says what it
+does ("Put it back", "Put down Measure") and a finger on it presses
+Escape, so each rung the hint shows (a carry put back, a tool put down,
+a selection cleared, a link left) can be popped by touch.
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused
 field, popover or dock field (a search field with text clears first, then
@@ -650,9 +735,9 @@ and Dee still walks. To try his changes, he plays a copy.
 |---|---|---|
 | H1 | **What runs is the doc's.** The host resyncs only on a registry or doc change | Over each fixture doc, every change to body, held tool, selection, focus, prefs or clock triggers no sync |
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
-| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch |
+| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them, each asserted in sailing's `stations.test.js`), 11 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`); the pad presses each shown control's code into the key order, to the layer shown, and a lit control is one its layer holds (`src/parts/touch.test.js`; every finger sequence, `src/hold-key.test.js`); every modifier code × {claimed, reserved but passed, not reserved} × {let go at the root, elsewhere in the window, by a blur}: an event's flag is set iff that key is down, or the DOM's (`src/stage/router.test.js`); the Esc hint, by a finger, pops the rung it names |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
-| H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused; after a release the next press only relocks | All 2⁴ cases × each body × {press, key} |
+| H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release, or a finger, the next mouse press on the world only relocks; a finger never locks; nothing but a relock, a body or the pointer unwanted takes the lock | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router); finger then mouse on a button, on an edge, on the world with the grant after the handler (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
 | H7 | **Clock**: ≤1 computer per doc once claims arrive, only eligible views; t monotone per view (a cold start after a crash is a new view's first t); once a view has seen paused, no `step` of a kept process (a replicated one only up to `clock.t`) | ≤3 views × {visible, hidden, gone} × {writable, read-only, missing a package} × every order of ≤5 of join, leave, hide, crash, pause, resume, save, on in-memory Automerge |
 | H8 | **Three times**: a pause changes no actor or liveness outcome | Each dice, lots and cup protocol test, and joints' slide, paused at every step |
@@ -1021,7 +1106,12 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
 - Every piece carries a trait; a plain CAD scene moves things by handle
   until someone ticks Carryable. Selecting in a game takes the menu, and
   editing takes the Edit body (Decisions 6).
-- Keyboard bodies have no touch controls yet (`keys` carry labels for one).
+- Touch controls are digital keys, a d-pad and buttons: no stick, no
+  analog walk (Decisions 12, 13). They cover what keys do, not what a
+  locked press does: arena's gun shoots only on a locked press
+  (`arena/src/play.js`, `ev.locked`), so under touch its pad shows Reload
+  and nothing fires. Whether a tap fires from the eye is arena's call,
+  open for the lead.
 - One computer per doc: a weak machine slows everyone; a crash freezes the
   world up to 15 s; a running world adds a checkpoint every 30 s while
   anyone is present (~120 changes an hour) to its history.
@@ -1412,3 +1502,184 @@ The project lead decided the five open questions on 2026-11-12.
     in sailing (c0f79738) and pinned in the check. realcheck-editbody passes
     on its eight rows (8/8), Play on the Arena level and the bar up and
     empty at Liar's dice among them.
+11. **Touch is part of the pointer's state; a mouse after touch finds the
+   lock released** (decided unattended (2026-11-16, lane/n9), for the lead).
+   `touch` sits beside `refused` in the formula, set by every press on the
+   view (`pointerType === "touch"`, heard on the view's root in the capture
+   phase, so the edges count) and by a coarse pointer at the start; keys
+   never change it, so a keyboard on a tablet leaves it be. A finger on a
+   locked view lets the lock go as the page's own exit, and clears
+   `released` (nothing to take back under touch, so the chip never says
+   "Click the view to take the pointer back" to a finger). Going back to a
+   mouse sets `released` where the formula would lock: the press that ends
+   touch, wherever it lands, never asks for the lock itself, and the next
+   press on the world only relocks, as after the browser's Esc, and the
+   chip says so. Rejected: making that press ordinary and asking for the
+   lock in its handler. A press on the chip or a prompt's button would then
+   take the lock mid-click (Chrome grants it before the mouseup, so the
+   click lands on the lock target and the button never hears it), and a
+   press on the world would be half a press: dispatched unlocked, its click
+   resolved locked at the crosshair. The cost: the first mouse click on the
+   world after touch is swallowed, as the first after an Esc is.
+   `pointerType === "pen"` counts as a mouse (a pen has a position to
+   hover and usually a keyboard beside it); open for the lead whether a pen
+   should be touch. Open for the lead: whether the touch controls show from
+   the first touch, always on a coarse pointer, or by a toggle in the chip's
+   menu (lane/n9's plan asks).
+12. **Touch controls are derived from declared keys, grouped by what they
+   show** (decided unattended (2026-11-16, lane/n9), for the lead).
+   `touchControls({ gesture, held, body })` (`touch-keys.js`) is pure and
+   per view, never per body. Codes group by the label a person sees: the
+   declared one, else the code's name from one table (`nameOf`: KeyQ "Q",
+   ShiftLeft "Shift", ArrowUp "↑", via keymap.js `labelOf`), so two
+   unlabelled Shifts are one "Shift" and no reserver ever shows two
+   controls that look the same; a control presses its first unshadowed
+   code. The pad's places come from the arrow codes alone (a code is in at
+   most one control, so no place is held twice), and geometry wins over
+   the label: a "Forward" declared on ArrowDown sits in the down place. A
+   body that declares only W A S D gets four buttons, not a pad: WASD is
+   geometry too, but arrows alone is the smaller rule. Labels are unique
+   per reserver only; across reservers two controls can read the same
+   (walk's "Right" under snes's), so the pad shows each control under its
+   reserver (`from`, reservedBy's names: "tool" is the view's `held`).
+   `keyOfCode(code)` and `nameOfCode(code)` live in keymap.js beside
+   `codeOfKey`, built from the same tables read the other way, and
+   `declaredKeys` is the one reading of a declaration (`codesOf` and the
+   touch controls both use it). `keyOfCode` is the US layout's
+   `KeyboardEvent.key` (KeyQ "q", Space " ", AltLeft "Alt"), checked
+   against what Chrome sends, since handlers read `ev.key` as often as
+   `ev.code`. Grouping by label makes "labelled alike is the same action"
+   part of the declaration contract, now stated where packages read it
+   (§4's code block, STAGE.md's bodies). The cost: codes a declaration
+   labels alike but that act differently collapse to the first. machine's
+   doom pad labels Digit1–7 all "Weapon" (its controls panel reads one
+   label as a row of keys, "Weapon: 1 2 3 4 5 6 7"), so its touch control
+   picks weapon 1 only; the test asserts that loss as it stands. The fix
+   is the declaration's ("Weapon 1"…), left to machine. Open for the lead:
+   label-as-identity, or an explicit grouping field in the declaration
+   (e.g. `{ code, label, same: "KeyW" }`), which would let machine keep
+   one "Weapon" row and still show seven controls. Open for the lead: a
+   digital d-pad from the arrow codes, or an analog stick (a new body input
+   contract, an axis), and whether WASD should make a pad too.
+13. **The touch pad presses keys as a keyboard does** (decided unattended
+   (2026-11-16, lane/n9), for the lead). `scene.touch` presses a
+   control's key by dispatching the DOM `keydown`/`keyup` a keyboard
+   sends for its code (with the US key) on the view's root, so the router
+   hears it as any key, in the one key order; nothing new in the api.
+   Rejected: a router entry point (`api.input.key(code)`), which would
+   make pad keys distinguishable and skip the DOM; it adds a second way
+   in for no case that needs one. Where the pad is not a keyboard, and
+   why: a control that goes lets go at once (a keyboard's key stays down
+   till it's lifted, and its autorepeat presses it again for a new body;
+   a finger presses nothing until it comes down again, so a lit control
+   is always a key its layer holds); a pad key under a pad Shift sends
+   the unshifted key (`q`, not `Q`); handlers already take both.
+   Modifier state is the router's (§5): the modifier keys down at the
+   root, claimed or not, as a keyboard's are, set every event's flags,
+   and go on a keyup anywhere in the window, a blur or a hidden page.
+   (Rejected: only claimed modifiers, which made a reserver that declines
+   Alt before a lift lose the pad's Alt, and made "claimed" mean "set my
+   flag".) Modifiers on the pad are momentary, held by a second finger,
+   not latching. A control's identity is its layer (the body, tool or
+   gesture's `serial`: the router counts each one taken, so the same body
+   left and entered again is a new one), its code, its label and its
+   place; kept across renders its element stays put (moving one can lose
+   its pointer capture; only a change of order among kept controls moves
+   one, and then its key is let go). Labels name the action, not its
+   state (§4): a label that changed while held would be a new control.
+   The gesture's group is unnamed: the stage knows no gesture's name, and
+   one part's word ("Carrying") would be wrong for every other gesture.
+   The Esc hint is the Escape key on touch (§5), since a finger can't
+   press Escape and lifting it ends a carry where it is. The pad shows
+   from the first touch to the next mouse press (`pointer.touch`,
+   Decisions 11). Open for the lead: always on a coarse pointer, or a
+   toggle in the chip's menu; whether a finger held still on the world
+   while a body looks by drag should still open the menu after 500 ms
+   (the router's touch hold), as it does now; the layout (arrows bottom
+   left, buttons bottom right in groups under their layer's name, in
+   capitals) is provisional, the lead's taste; whether a press session
+   should declare a `label` of its own (as a body has a label and a tool
+   a name) to name its group, or the group take its extension's name
+   (which `local.running` would then have to carry).
+14. **A lock body under touch looks from its eye** (decided unattended
+   (2026-11-16, lane/n9), for the lead). A finger never locks the pointer
+   (Decisions 11) and never hovers (it only presses and drags, and the
+   router hovers only a pointer with no button down), so a first-person
+   body under touch had no look at all: no use prompt, no F, nothing to
+   take a station by. The look is now the eye ray's wherever the body
+   would lock and nothing wants the pointer, by mouse or finger:
+   `looksFromEye(pointer)` ⇔ locked ∨ (body.lock ∧ ¬wanted ∧ touch)
+   (`stage/pointer.js`, checked over all 32 pointer states), read by the
+   view's look and by the use prompt, which then sits in the middle of the
+   view as under lock and doesn't follow a finger dragging to look. So a
+   verb is a tap on the prompt's button, at what the eye looks at (sailing
+   takes the helm that way, `sailing/probes/touch-run.mjs`). A mouse that
+   isn't locked (released, refused) still looks where it hovers. A
+   press's hit is unchanged (a finger's press is still where it lands, and
+   the router still sets the hover to it), and a menu is of that, not of
+   the look: `api.path({ pointer: true })` and each reader's `pointed()`
+   read the pointer's hit (the hover the press set), which the look is in
+   every other pointer state, so only here do they differ. Before that, a
+   finger's long press in walk opened the menu of whatever the eye looked
+   at (menu.test.js "a menu is of what was pressed, in every pointer
+   state", four rows). The rejected alternative: the look gives way to
+   the press's hover while a finger is down on the world, which would pin
+   the use prompt to what a drag to look started on.
+   Open for the lead: whether a lock body under touch should draw the
+   stage's own crosshair (sailing draws its own; walk draws none).
+15. **A prompt button with a key is that key; a finger's tap is its look**
+   (decided unattended (2026-11-16, lane/n9), for the lead). Before, a
+   held verb's button was disabled ("a held verb is the keyboard's"), so
+   nobody on touch could wind sailing's windlass, its only way to raise
+   the anchor. Now a press on a verb's button presses the key that does
+   it (§5): keydown on the press, keyup on the lift, the cancel or a lost
+   capture, through `src/hold-key.js` as the pad does, default-prevented
+   so focus stays and the key map's held verb stays held. The key is
+   asked as the press comes (`keyFor`, against the resolver's state then),
+   not taken from what the prompt drew, so a stale button presses nothing
+   wrong. The same for a mouse, not only a finger: a mouse held on a held
+   verb's button holds it, which a mouse user could not do before, and a
+   plain verb runs on the press, as its key does, not on the release (the
+   click that follows a press that was the key is that press's). Rejected:
+   keeping the click path for a mouse, which would be two rules for one
+   button and leave held verbs to the keyboard there too. A pointercancel
+   lets the key up, as a lift does: a key has no cancel; when the window
+   went first the key map cancels (its keyup with the page away), and a
+   target gone cancels by its sweep before the lift. (The plan said a
+   pointercancel cancels the session; that would need a cancel channel
+   beside the keyboard's, for the case the window rule already covers.)
+   The buttons take no browser gesture (`touch-action: none`, no callout,
+   no context menu), so a held finger isn't taken for a scroll.
+   While a verb is held the prompt keeps the target's verbs in their
+   order (the held one as pressed, in its place; one that no longer
+   applies from here after the rest), not the held first as before:
+   moving the held button first took it out of the document, losing its
+   capture, and slid the next button under the finger, so a finger's lift
+   clicked that one and the held verb never ended (found in Chrome,
+   `probes/touch-run.mjs`; jsdom keeps no capture to lose). The same
+   browser rule, the lift's click going to whatever replaced the button
+   pressed, holds for a plain verb that runs on the press and puts
+   another button in its slot (the next target's verb, an Open for a
+   Close), so a pointer's click runs a verb only on the button that had
+   its press, and only when that press wasn't its key: the view's every
+   press clears it first, and a second finger on a held button is the
+   key's too (step 5 review). A right or middle press is neither a key
+   nor a click (`holdKey` takes only a primary press), as on any button.
+   A held button keeps its place in the document, not always on the
+   screen: a verb before it that comes to apply pushes it along, and its
+   capture still takes the lift to it.
+   And so a finger can reach the prompt at all where the look is the
+   pointer's (Look, Edit): a finger hovers nowhere and leaves as it lifts,
+   which cleared the look, so the prompt went with every tap. The router
+   now keeps the hover a finger's tap set when it lifts, until the next
+   press on the world; a finger that dragged (an orbit, a carry, a look)
+   or was cancelled keeps none, and a finger moving elsewhere (the pad)
+   is never the mouse leaving a kept look (the deferred "kept-look
+   jitter"). The prompt sits where the finger pressed (a press is where
+   the pointer is; a finger has no moves before it). Open for the lead:
+   whether the tapped look should also go after a while, or on a tap on
+   the prompt's own margin. It is shared, too: `hovered` is presence
+   (select.js), so other viewers see a touch viewer's tapped outline
+   until that viewer presses again, where before every lift cleared it;
+   and it outlives a body change (Look, walk, Look again brings the old
+   tapped prompt back).

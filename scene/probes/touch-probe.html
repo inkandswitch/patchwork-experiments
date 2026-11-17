@@ -1,0 +1,207 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene touch probe</title>
+<!-- Driven by probes/touch-run.mjs under Chrome's touch emulation: one scene
+     tool (the BUILT one, dist/) on a manual clock, a floor and a block that
+     can be carried, and a probe extension (registered here, to STAGE.md's
+     extension contract) that offers a keyboard body that locks the pointer
+     ("Walkish": walk's labelled keys plus an unlabelled Q; a drag on the
+     world looks), a tool with a key (a wrench: R, Reload), and verbs on a
+     post: Ring (T), Wind (hold G: every frame it's held winds a turn) and
+     its lid, Open then Shut in its place (Y, a doc change). Everything
+     each of them hears goes in window.__log, so the runner can tell what a
+     finger on the touch pad pressed. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js", "@automerge/automerge": "./automerge-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #a { width: 900px; height: 640px; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
+import { encodeGLB } from "../src/glb.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let time = null;
+async function loaded(pred, ms = 15_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+
+// requestPointerLock asked: counted, whoever asks
+window.__asks = 0;
+const request = HTMLCanvasElement.prototype.requestPointerLock;
+HTMLCanvasElement.prototype.requestPointerLock = function (...a) {
+  window.__asks++;
+  return request.apply(this, a);
+};
+
+const log = (window.__log = []);
+const WALKISH_KEYS = [
+  ["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"],
+  ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"],
+  ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"],
+].map(([code, label]) => ({ code, label })).concat([{ code: "KeyQ" }]);
+
+try {
+  const { plugins, loadTime } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  time = window.__time = (await loadTime()).manualTime();
+  const repo = new FakeRepo();
+  const box = (w, h, d, color, at = [0, 0, 0]) => {
+    const [x, y, z] = at, a = w / 2, c = d / 2;
+    const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
+    const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+    return { positions: f.flat().flatMap((i) => v[i]), color };
+  };
+  const file = (name, scene) => repo.add({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(scene) });
+  const floorGLB = file("floor.glb", { meshes: [box(6, 0.05, 6, "#7d9a6a")] });
+  const blockGLB = file("block.glb", { meshes: [box(0.5, 0.5, 0.5, "#d8643a")] });
+  const postGLB = file("post.glb", { meshes: [box(0.3, 1, 0.3, "#5a6f9a")] });
+  const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
+  const objects = {
+    floor: obj("Floor", floorGLB, [0, -0.05, 0], { locked: true }),
+    block: obj("Block", blockGLB, [0.6, 0, 0], { traits: { "scene.carry": {} } }),
+    post: obj("Post", postGLB, [-0.8, 0, 0], { locked: true, traits: {} }),
+  };
+  // the post's verbs: Ring once, Wind for as long as it's held (a turn a frame)
+  window.__turns = 0;
+
+  getRegistry("scene:extension").register({
+    type: "scene:extension", id: "probe", name: "Probe",
+    load: async () => ({
+      create(api) {
+        window.__probeApi = api;
+        const lidOf = (ctx) => !!ctx?.scene?.objects?.post?.traits?.["probe.lid"]?.open;
+        const setLid = (open) => api.change((d) => (d.objects.post.traits["probe.lid"] = { open }));
+        const eye = (window.__eye = { position: [0, 1.6, 3.2], yaw: 0, pitch: -0.35 });
+        const dir = () => [-Math.sin(eye.yaw) * Math.cos(eye.pitch), Math.sin(eye.pitch), -Math.cos(eye.yaw) * Math.cos(eye.pitch)];
+        const walker = {
+          key: (ev) => (log.push(`body key ${ev.code} ${ev.key}`), true),
+          keyup: (ev) => (log.push(`body keyup ${ev.code} ${ev.key}`), true),
+          // unlocked, a drag on the world looks round (as walk's does)
+          press: (ev) => {
+            if (ev.locked) return null;
+            let last = [ev.x, ev.y];
+            log.push("body press");
+            return {
+              move(m) {
+                eye.yaw += (m.x - last[0]) * 0.004;
+                eye.pitch -= (m.y - last[1]) * 0.004;
+                last = [m.x, m.y];
+                log.push("body look");
+              },
+              end: () => log.push("body look end"),
+              cancel: () => log.push("body look cancel"),
+              tap: () => false,
+            };
+          },
+        };
+        return {
+          bodies: [{
+            id: "walkish", label: "Walkish", lock: true, keys: WALKISH_KEYS,
+            enter: () => ({ input: walker, eye: () => ({ position: eye.position, direction: dir() }), leave() {} }),
+          }],
+          commands: [
+            { id: "ring", name: "Ring", key: "t", state: (t) => (t === "post" ? {} : null), run: () => log.push("ring") },
+            {
+              id: "wind", name: "Wind", key: "g", hold: true, state: (t) => (t === "post" ? {} : null),
+              run: () => (log.push("wind"), { update: () => window.__turns++, end: () => log.push("wind end"), cancel: () => log.push("wind cancel") }),
+            },
+            // the post's lid: Open, then Shut in its place (both Y), as a doc change: a verb that runs on the
+            // press puts another under the finger before it lifts
+            { id: "open", name: "Open", key: "y", state: (t, ctx) => (t === "post" && !lidOf(ctx) ? {} : null), run: () => (log.push("open"), setLid(true)) },
+            { id: "shut", name: "Shut", key: "y", state: (t, ctx) => (t === "post" && lidOf(ctx) ? {} : null), run: () => (log.push("shut"), setLid(false)) },
+            {
+              id: "wrench", name: "Wrench", tool: { keys: [{ code: "KeyR", label: "Reload" }] },
+              run: () => ({
+                key: (ev) => (log.push(`tool key ${ev.code} ${ev.key}`), true),
+                keyup: (ev) => (log.push(`tool keyup ${ev.code} ${ev.key}`), true),
+              }),
+            },
+          ],
+        };
+      },
+    }),
+  });
+  const scene = repo.add(emptyScene({
+    title: "Touch probe", objects, order: Object.keys(objects),
+    view: { units: "m", grid: false, axes: false, bounds: false, start: { home: { position: [0, 2.2, 4], target: [0, 0, 0] } } },
+  }));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  host.time = time;
+  host.viewerId = "viewer:a";
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const total = Object.values(scene.doc().objects).length;
+  await loaded(() => dbg.stats().loaded === total);
+  const vp = dbg.viewport;
+  const pageOf = (w) => { const p = vp.project(w); const r = vp.canvas.getBoundingClientRect(); return p && [Math.round(r.left + p.x), Math.round(r.top + p.y)]; };
+  const centre = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; };
+  window.__probe = {
+    errors,
+    dbg,
+    loaded: () => dbg.stats().loaded === total,
+    view: () => { const v = dbg.local.get(); return { body: v.body?.id, held: v.held?.name ?? null, gesture: v.gesture?.owner ?? null, pointer: v.pointer }; },
+    locked: () => document.pointerLockElement != null,
+    focused: () => document.activeElement === host.querySelector(".scene-stage") ? "root" : document.activeElement?.className || document.activeElement?.tagName,
+    /** what the pad shows: its places, and each group's name and buttons */
+    pad: () => {
+      const pad = host.querySelector(".touch-pad"), buttons = host.querySelector(".touch-buttons");
+      if (!pad || (pad.hidden && buttons.hidden)) return null;
+      return {
+        pad: pad.hidden ? [] : [...pad.children].map((b) => `${b.dataset.slot}=${b.title}`),
+        buttons: buttons.hidden ? [] : [...buttons.children].map((g) => [g.querySelector(".touch-layer-name").textContent, ...[...g.querySelectorAll(".touch-key")].map((b) => b.textContent)]),
+      };
+    },
+    /** page coords of a pad control, by what it shows (and its layer) */
+    control: (label, from = null) => centre([...host.querySelectorAll(".touch-key")].find((b) => (b.title || b.textContent) === label && (!from || b.dataset.from === from))),
+    chip: () => centre(host.querySelector(".body-chip")),
+    /** the Esc hint: what it says, whether it's a key, where */
+    hint: () => { const h = host.querySelector(".body-escape"); return h && !h.hidden ? { text: h.textContent, key: h.dataset.key ?? null, at: centre(h) } : null; },
+    menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
+    /** the open context menu's section titles, or null */
+    contextMenu: () => { const m = host.querySelector(".context-menu"); return m ? [...m.querySelectorAll(".menu-title")].map((t) => t.textContent) : null; },
+    closeMenu: () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true })),
+    /** what the look is on (the probe stage's element), or null */
+    look: () => window.__probeApi.look()?.id ?? null,
+    block: () => pageOf([0.6, 0.5, 0]),
+    blockRot: () => scene.doc().objects.block.transform.rotation,
+    blockPos: () => scene.doc().objects.block.transform.position,
+    world: () => pageOf([-1.2, 0, -1.5]),
+    wrench: () => api.run({ ext: "probe", command: "wrench" }),
+    post: () => pageOf([-0.8, 0.5, 0]),
+    /** the walker's eye turned to a world point, and the camera with it (held, as walk holds it) */
+    aim: (to) => {
+      const e = window.__eye, d = to.map((v, i) => v - e.position[i]);
+      e.yaw = Math.atan2(-d[0], -d[2]);
+      e.pitch = Math.atan2(d[1], Math.hypot(d[0], d[2]));
+      window.__camHeld ??= api.camera.hold();
+      api.camera.set({ position: e.position, target: to });
+    },
+    /** the use prompt's verbs (name, key, held), and where its first button is */
+    prompt: () => { const p = host.querySelector(".use-prompt"); return p && !p.hidden ? [...p.querySelectorAll(".use-verb")].map((b) => ({ name: b.querySelector(".use-name").textContent, key: b.querySelector("kbd")?.textContent ?? null, held: b.hasAttribute("data-held"), disabled: b.disabled, at: centre(b) })) : null; },
+    turns: () => window.__turns,
+    lid: () => !!scene.doc().objects.post.traits?.["probe.lid"]?.open,
+  };
+  const api = window.__probeApi;
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>

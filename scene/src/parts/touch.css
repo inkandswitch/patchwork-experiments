@@ -1,0 +1,140 @@
+/* scene.touch: the touch controls. The pad's arrows bottom left, in a cross;
+   the buttons bottom right, over the body chip and the Esc hint, a group per
+   layer. The same soft dark pill as the use prompt, so they read over a
+   bright sea and a night one; a held control lit with the accent. */
+
+.scene-stage
+  .touch-layer
+  > :is(.touch-pad, .touch-buttons):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --touch-ink: #f6f3ea;
+  --touch-pill: color-mix(in oklch, #0b0d10 55%, transparent);
+  --touch-size: 3.5rem;
+  position: absolute;
+  bottom: var(--studio-space-sm, 0.5rem);
+  pointer-events: none;
+  font-family: var(--scene-family);
+  z-index: 4;
+  /* a finger here is a held key: no scrolling, selecting or callout */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.scene-stage
+  .touch-layer
+  > :is(.touch-pad, .touch-buttons)[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage
+  .touch-layer
+  > .touch-pad:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  left: var(--studio-space-sm, 0.5rem);
+  display: grid;
+  grid-template: repeat(3, var(--touch-size)) / repeat(3, var(--touch-size));
+  grid-template-areas: ". up ." "left . right" ". down .";
+  gap: 4px;
+}
+
+.scene-stage
+  .touch-layer
+  > .touch-buttons:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  right: var(--studio-space-sm, 0.5rem);
+  /* over the body chip and the Esc hint above it: body.css's .body-bar (the
+     chip, bottom right) and .body-escape (bottom: --studio-space-xs + 2.25rem,
+     a finger's height tall when it is a key); move this if those move */
+  bottom: calc(var(--studio-space-xs, 0.375rem) + 5.25rem);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: calc(100% - 3 * var(--touch-size) - 2rem);
+}
+
+.scene-stage
+  .touch-layer
+  .touch-group:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-stage
+  .touch-layer
+  .touch-layer-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex-basis: 100%;
+  order: 1;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--touch-ink) 75%, transparent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.scene-stage
+  .touch-layer
+  .touch-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  touch-action: none;
+  min-width: var(--touch-size);
+  min-height: var(--touch-size);
+  padding: 4px 12px;
+  border: 1px solid color-mix(in oklch, var(--touch-ink) 25%, transparent);
+  border-radius: 14px;
+  background: var(--touch-pill);
+  color: var(--touch-ink);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.scene-stage
+  .touch-layer
+  .touch-arrow:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px;
+  width: var(--touch-size);
+  height: var(--touch-size);
+  overflow: hidden;
+}
+
+.scene-stage .touch-layer .touch-arrow[data-slot="up"]:where(:not(.about-embed *), .about-embed .scene-tool *) { grid-area: up; }
+.scene-stage .touch-layer .touch-arrow[data-slot="down"]:where(:not(.about-embed *), .about-embed .scene-tool *) { grid-area: down; }
+.scene-stage .touch-layer .touch-arrow[data-slot="left"]:where(:not(.about-embed *), .about-embed .scene-tool *) { grid-area: left; }
+.scene-stage .touch-layer .touch-arrow[data-slot="right"]:where(:not(.about-embed *), .about-embed .scene-tool *) { grid-area: right; }
+
+.scene-stage
+  .touch-layer
+  .touch-glyph:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 16px;
+}
+
+.scene-stage
+  .touch-layer
+  .touch-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+}
+
+/* down: lit with the accent, pressed in */
+.scene-stage
+  .touch-layer
+  .touch-key[data-held]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill, var(--touch-ink));
+  color: var(--scene-accent-line, #15181c);
+  transform: translateY(1px);
+}
