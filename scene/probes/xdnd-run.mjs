@@ -442,6 +442,43 @@ async function main() {
     report.counts.menuPastedInB = fresh.length + fresh2.length;
     await shot("7-menu");
   }
+  // ── 10. a section of the inspector dragged out to the drawer (TOOLS.md §6, "Documents in the drawer") ──
+  {
+    await P(`select("a", "bracket")`);
+    await b.rest(400);
+    const before = await P(`doc("a")`);
+    const head = await P(`sectionHead("a", "source")`);
+    const strip = await P(`strip("a")`);
+    const s0 = await P(`section("a", "source")`);
+    check("sourceSectionInline", !!head && s0?.inline && !s0.docked, s0);
+    const to = [Math.round(strip.left + strip.w - 24), Math.round(strip.y)];
+    const { types } = await b.htmlDrag([Math.round(head.x), Math.round(head.y)], [[Math.round(head.x - 8), Math.round(head.y)], ...towards([head.x, head.y], to, 5)].map(([x, y]) => [Math.round(x), Math.round(y)]));
+    await b.rest(400);
+    const d1 = await P(`drawer("a")`);
+    const s1 = await P(`section("a", "source")`);
+    report.detach = { types, drawer: d1, section: s1 };
+    check("headDragCarriesADocument", ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain"].every((t) => (types ?? []).includes(t)), types);
+    check("droppedOnStripDocks", sameJSON(d1?.docs, [`${files.stl}|`]) && d1.panes === 1 && d1.tabs.includes("Source") && d1.shown === "Source" && d1.kind === "editor" && d1.embedded, d1);
+    check("sectionFoldsWhileDocked", s1?.docked && !s1.inline && s1.away, s1);
+    check("stripDropAddsNothing", sameJSON(await P(`doc("a")`), before));
+    await shot("8-source-docked");
+    // the pane is the view's: another selection keeps it
+    await P(`select("a", "crate")`);
+    await b.rest(300);
+    check("dockedPaneOutlivesSelection", sameJSON((await P(`drawer("a")`))?.docs, [`${files.stl}|`]));
+    await P(`select("a", "bracket")`);
+    await b.rest(300);
+    // its ×: the pane goes, the section unfolds
+    const x = await P(`tabClose("a", "Source")`);
+    await b.click(x.x, x.y);
+    await b.rest(400);
+    const d2 = await P(`drawer("a")`);
+    const s2 = await P(`section("a", "source")`);
+    report.detach.closed = { drawer: d2, section: s2 };
+    check("closedPaneGoes", sameJSON(d2?.docs, []) && d2.panes === 0 && !d2.tabs.includes("Source"), d2);
+    check("sectionUnfoldsWhenClosed", s2?.inline && !s2.docked && !s2.away, s2);
+    await shot("9-source-closed");
+  }
   report.counts.bObjectsAtEnd = (await ids("b")).length;
   report.counts.aObjectsAtEnd = (await ids("a")).length;
 }

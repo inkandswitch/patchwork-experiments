@@ -198,7 +198,8 @@
 }
 
 /* its documents (STAGE.md "A document"): a section each, its head (the
-   label, which folds it, and Open) and the document, height-capped */
+   label, which folds it, Dock and Open; dragged to the drawer's tabs) and
+   the document, height-capped, or "In the drawer · Show" while it's docked */
 .scene-stage .inspector .doc-sections:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-direction: column;
@@ -244,6 +245,26 @@
 
 .scene-stage .inspector .doc-section[data-folded] .section-fold:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
   content: "▸";
+}
+
+.scene-stage .inspector .section-head[draggable="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: grab;
+}
+
+.scene-stage .inspector .section-acts:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  gap: 8px;
+}
+
+/* in the drawer: the head, and where it is */
+.scene-stage .inspector .section-docked:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 12px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector .section-docked[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
 }
 
 .scene-stage .inspector .section-fold:focus-visible:where(:not(.about-embed *), .about-embed .scene-tool *) {

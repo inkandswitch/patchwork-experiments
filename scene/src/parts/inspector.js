@@ -35,12 +35,15 @@
 // extension's `documents` that go with it, this extension's own first (the
 // object's Source, File or Linked scene, its Build controls, About:
 // inspector-model.js inspectorDocuments). Each is a section: a head with its label, a fold
-// (the viewer's pref) and Open (patchwork:open-document, the main view),
+// (the viewer's pref), Dock and Open (patchwork:open-document, the main view),
 // and the doc in a <patchwork-view> inside the stage's embed marker, so its
 // keys are its own; where the host has no <patchwork-view> (a local
-// probe, a test), a placeholder names the doc. A section stays mounted while
-// it's shown, however the sections around it come and go. Nothing else here
-// opens a document.
+// probe, a test), a placeholder names the doc (embed.js documentView). A
+// section stays mounted while it's shown, however the sections around it
+// come and go. Dock, or the head dragged (a Patchwork document) onto the
+// drawer's tab strip, puts the doc in a drawer pane of its own, the view's
+// (api.view.dock); while it's there the section says "In the drawer · Show"
+// rather than show it twice. Nothing else here opens a document.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
@@ -64,8 +67,8 @@ import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
-import { EMBED_ATTR } from "../embed.js";
-import { docKey } from "../dnd.js";
+import { EMBED_ATTR, documentView } from "../embed.js";
+import { DND_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
@@ -96,8 +99,6 @@ function el(tag, attrs = {}, ...children) {
   for (const c of children.flat()) if (c != null && c !== false) node.append(c instanceof Node ? c : String(c));
   return node;
 }
-
-const canEmbed = () => !!globalThis.customElements?.get?.("patchwork-view");
 
 /**
  * Make `parent`'s children exactly `roots`, in order, without taking out a
@@ -458,48 +459,69 @@ function create(api) {
 
   // ─── documents: a section each ────────────────────────────────────────────
 
-  /**
-   * Mount a document in `container`: a <patchwork-view> (the host's embed),
-   * or, where there's none (a local probe, a test), a placeholder that names
-   * it. → unmount.
-   */
-  function mountDocument(container, { url, toolId, label }) {
-    const v = canEmbed() ? el("patchwork-view", { "doc-url": url, "tool-id": toolId }) : el("p", { class: "hint section-placeholder" }, `${label}: ${url}`);
-    container.append(v);
-    return () => v.remove();
-  }
+  // A section's head being dragged from this pane: a drop back in it is nothing (not a document added to the scene)
+  let headDrag = false;
 
   /**
-   * One section: a head (its label, which folds it, and Open) and, while
-   * it's open, the document. Open asks the host to show the document as the
-   * main view, in the section's tool.
+   * One section: a head (its label, which folds it, Dock and Open) and, while
+   * it's open, the document (embed.js documentView, in the embed marker). Open
+   * asks the host to show the document as the main view, in the section's
+   * tool; Dock, or dragging the head onto the drawer's tab strip, puts it in a
+   * drawer pane of its own (api.view.dock), and while it's docked there the
+   * section shows "In the drawer · Show" instead, so one doc never has two
+   * live views in the stage. The head is dragged as a Patchwork document
+   * (dnd.js), so anything that takes one (the tab strip, Patchwork's frame)
+   * takes it.
    */
   function sectionView(doc) {
     const fold = el("button", { type: "button", class: "section-fold", "aria-expanded": "false" });
     const title = el("span", { class: "section-label" });
     fold.append(title);
+    const dock = el("button", { type: "button", class: "button link section-dock", title: "Put this document in a pane of its own, in the drawer" }, "Dock");
     const open = el("button", { type: "button", class: "button link section-open", title: "Open this document on its own" }, "Open");
+    const head = el("div", { class: "panel-head section-head", draggable: "true", title: "Drag to the drawer's tabs to dock it" }, fold, el("span", { class: "section-acts" }, dock, open));
+    const show = el("button", { type: "button", class: "button link section-show", title: "Show its pane in the drawer" }, "Show");
+    const away = el("p", { class: "hint section-docked", hidden: true }, "In the drawer · ", show);
     const embed = el("div", { class: "about-embed section-embed", [EMBED_ATTR]: "", hidden: true });
-    const root = el("section", { class: "doc-section", dataset: { ext: doc.ext, section: doc.id } }, el("div", { class: "panel-head section-head" }, fold, open), embed);
-    let unmount = null;
+    const root = el("section", { class: "doc-section", dataset: { ext: doc.ext, section: doc.id } }, head, away, embed);
+    let view = null;
     let shown = null;
     fold.addEventListener("click", () => api.setPref(sectionPref(doc.ext, doc.id), !shown.open));
     open.addEventListener("click", () => root.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url: doc.url, ...(doc.toolId ? { toolId: doc.toolId } : {}) }, bubbles: true, composed: true })));
+    const toDrawer = () => api.view.dock({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.label ?? doc.label });
+    dock.addEventListener("click", toDrawer);
+    show.addEventListener("click", toDrawer);
+    head.addEventListener("dragstart", (e) => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const item = { url: doc.url, name: shown?.label ?? doc.label, ...(doc.toolId ? { toolId: doc.toolId } : {}) };
+      dt.setData(DND_MIME, JSON.stringify({ source: "scene", items: [item] }));
+      dt.setData(URLS_MIME, JSON.stringify([doc.url]));
+      dt.setData("text/plain", doc.url);
+      dt.effectAllowed = "copy";
+      headDrag = true;
+    });
+    head.addEventListener("dragend", () => (headDrag = false));
     const close = () => {
-      unmount?.();
-      unmount = null;
+      view?.remove();
+      view = null;
     };
     return {
       root,
       update(next) {
         shown = next;
+        // shown inline exactly while it's open (the viewer's fold) and not in the drawer
+        const live = next.open && !next.docked;
         if (title.textContent !== next.label) title.textContent = next.label;
         fold.title = next.open ? `Fold ${next.label}` : `Show ${next.label}`;
         fold.setAttribute("aria-expanded", String(next.open));
         root.toggleAttribute("data-folded", !next.open);
-        embed.hidden = !next.open;
-        if (next.open && !unmount) unmount = mountDocument(embed, next);
-        else if (!next.open) close();
+        root.toggleAttribute("data-docked", next.docked);
+        dock.textContent = next.docked ? "In the drawer" : "Dock";
+        away.hidden = !(next.open && next.docked);
+        embed.hidden = !live;
+        if (live && !view) embed.append((view = documentView(next)));
+        else if (!live) close();
       },
       dispose: close,
     };
@@ -517,6 +539,7 @@ function create(api) {
       section,
       update(target) {
         const list = documentsFor(api.collect("documents"), target, api.context(null), ID);
+        const docked = new Set(api.view.get().drawer?.docs ?? []);
         const next = new Map();
         for (const d of list) {
           const k = `${d.ext}/${d.id}`;
@@ -528,7 +551,7 @@ function create(api) {
           }
           rec ??= { identity, view: sectionView(d) };
           const pref = api.pref(sectionPref(d.ext, d.id), null);
-          rec.view.update({ ...d, open: typeof pref === "boolean" ? pref : !d.folded });
+          rec.view.update({ ...d, open: typeof pref === "boolean" ? pref : !d.folded, docked: docked.has(identity) });
           next.set(k, rec);
         }
         for (const [k, rec] of live) if (!next.has(k)) rec.view.dispose();
@@ -1028,6 +1051,10 @@ function create(api) {
     },
   ];
 
+  // a head's drag is over once anything is dropped or the drag ends, wherever (its section may have gone meanwhile)
+  api.listen(globalThis, "dragend", () => (headDrag = false), { capture: true });
+  api.listen(globalThis, "drop", () => (headDrag = false));
+
   // ─── the tab: opened by a selection (or when asked), then open until shut ──
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
@@ -1041,6 +1068,8 @@ function create(api) {
     title: "Inspector",
     mount(host) {
       host.classList.add("inspector-pane");
+      // a section's head let go back in this pane is nothing (no document added to the scene): its drags stop here
+      for (const type of ["dragenter", "dragover", "drop"]) host.addEventListener(type, (e) => headDrag && e.stopPropagation());
       const treeHost = el("div", { class: "inspector-tree" });
       const fields = el("div", { class: "inspector-body" });
       host.replaceChildren(treeHost, fields);

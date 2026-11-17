@@ -348,6 +348,29 @@
   background: var(--scene-surface);
 }
 
+/* a document dragged over the tabs docks there (dock.js) */
+.scene-stage .stage-drawer-tabs.drop-over:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  outline: 2px dashed var(--studio-link, steelblue);
+  outline-offset: -2px;
+}
+
+/* a document docked in the drawer fills its pane */
+.scene-stage .stage-drawer-doc:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scene-stage .stage-drawer-doc > .doc-placeholder:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 8px;
+}
+
+.scene-stage .stage-drawer-doc > patchwork-view {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .scene-stage .stage-drawer-tab:where(:not(.about-embed *), .about-embed .scene-tool *) {
   flex: 0 1 auto;
   min-width: 0;

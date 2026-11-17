@@ -1,8 +1,10 @@
 // Accepting Patchwork documents: drag-and-drop payloads and pasted URLs.
 //
 // The sidebar (and anything following its convention, e.g. universal-dnd) sets
-// `text/x-patchwork-dnd` = { source, items: [{ url, name?, type? }] } and the
-// simpler `text/x-patchwork-urls` = [url]. `text/plain` is the raw url.
+// `text/x-patchwork-dnd` = { source, items: [{ url, name?, type?, toolId? }] }
+// and the simpler `text/x-patchwork-urls` = [url]. `text/plain` is the raw url.
+// An item's `toolId` (a string) is the tool it was shown in (an inspector
+// section's header carries its own): what docks it in the drawer keeps it.
 // Adapted from patchwork-experiments/openscad/src/dnd.ts.
 
 export const DND_MIME = "text/x-patchwork-dnd";
@@ -21,8 +23,9 @@ export function hasPatchworkDrop(dt) {
 }
 
 /**
- * @returns {{ url: string, heads?: string[], name?: string, type?: string }[]}
- *   `heads` only when the dropped URL names a version (see parseAutomergeLink)
+ * @returns {{ url: string, heads?: string[], name?: string, type?: string, toolId?: string }[]}
+ *   `heads` only when the dropped URL names a version (see parseAutomergeLink),
+ *   `toolId` only when the item names one. One entry per url, version and tool.
  */
 export function parsePatchworkDrop(dt) {
   const out = [];
@@ -30,10 +33,12 @@ export function parsePatchworkDrop(dt) {
     const link = parseAutomergeLink(item?.url);
     if (!link) return;
     const { url, heads } = link;
-    const same = (o) => o.url === url && (o.heads ?? []).join("|") === (heads ?? []).join("|");
+    const toolId = typeof item.toolId === "string" && item.toolId ? item.toolId : null;
+    const same = (o) => o.url === url && (o.heads ?? []).join("|") === (heads ?? []).join("|") && (o.toolId ?? null) === toolId;
     if (out.some(same)) return;
     const entry = { url, name: item.name, type: item.type };
     if (heads) entry.heads = heads;
+    if (toolId) entry.toolId = toolId;
     out.push(entry);
   };
 

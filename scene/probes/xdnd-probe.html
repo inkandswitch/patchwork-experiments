@@ -165,6 +165,13 @@ try {
     part: (w, id) => { const e = hosts[w].querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); return rect(e); },
     menuItems: () => [...document.querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rect(e) })),
     byName: (w, n) => Object.entries(handles[w].doc().objects).filter(([, o]) => o.name === n).map(([id]) => id),
+    /** an inspector section's head label (where its drag starts), scrolled into view; and the section as shown */
+    sectionHead: (w, id) => { const sec = hosts[w].querySelector(`.doc-section[data-section="${id}"]`); if (!sec) return null; sec.scrollIntoView({ block: "nearest" }); return rect(sec.querySelector(".section-head .section-label")); },
+    section: (w, id) => { const sec = hosts[w].querySelector(`.doc-section[data-section="${id}"]`); return sec && { docked: sec.hasAttribute("data-docked"), inline: !!sec.querySelector(".section-embed > *"), away: !sec.querySelector(".section-docked").hidden }; },
+    /** the drawer's tab strip (where a document docks), and the drawer as shown */
+    strip: (w) => rect(hosts[w].querySelector(".stage-drawer-tabs")),
+    drawer: (w) => { const d = hosts[w].querySelector(".stage-drawer"); return d && { tabs: [...d.querySelectorAll(".stage-drawer-tab-name")].map((e) => e.textContent), shown: d.querySelector('[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, kind: d.dataset.kind ?? null, docs: dbg[w].view.atom.get().drawer.docs, panes: d.querySelectorAll(".stage-drawer-doc").length, text: d.querySelector(".stage-drawer-doc")?.textContent ?? null, embedded: !!d.querySelector(".stage-drawer-doc")?.closest("[data-stage-embed]") }; },
+    tabClose: (w, title) => { const t = [...hosts[w].querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title); return t ? rect(t.querySelector(".stage-drawer-tab-close")) : null; },
   };
   window.__ready = true;
 } catch (err) {

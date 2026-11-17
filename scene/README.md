@@ -207,7 +207,11 @@ STAGE.md, "Extract and bundle".
   or **Linked scene** for a link, **Build** (the build controls on its render doc) and
   **About** (its `infoUrl` document, or its nearest group's, labelled
   "About <group>"). A package adds its own by declaring `documents`
-  (STAGE.md "A document").
+  (STAGE.md "A document"). **Dock**, or dragging a section's head onto the
+  drawer's tabs, puts the document in a drawer pane of its own, which stays
+  until its × whatever you select or wherever you go; the section then says
+  "In the drawer · Show". The drawer's tabs take any document dropped on
+  them, from Patchwork's sidebar too.
 - **Attaching**: pick an object under *Attached to* and this one moves with it
   from then on (a flow field attached to its hull, say). Attaching and
   detaching keep the object exactly where it is; only its stored transform

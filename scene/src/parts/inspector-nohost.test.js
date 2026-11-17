@@ -29,7 +29,7 @@ describe("scene.inspector: sections without a host embed", () => {
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     const body = s.instance("scene.inspector").tab.body;
-    const shown = () => [...body.querySelectorAll(".doc-section")].map((sec) => [sec.dataset.section, sec.querySelector(".section-placeholder")?.textContent ?? null]);
+    const shown = () => [...body.querySelectorAll(".doc-section")].map((sec) => [sec.dataset.section, sec.querySelector(".doc-placeholder")?.textContent ?? null]);
     expect(customElements.get("patchwork-view")).toBeUndefined();
     const build = shown().find(([id]) => id === "build");
     expect(build).toEqual(["build", `Build: ${render.url}`]);
@@ -38,6 +38,6 @@ describe("scene.inspector: sections without a host embed", () => {
     expect(body.querySelector(".scene-render-controls")).toBeNull();
     s.local.swap((m) => ({ ...m, selected: "b" }));
     await settle();
-    expect(body.querySelectorAll(".section-placeholder").length).toBe(0);
+    expect(body.querySelectorAll(".doc-placeholder").length).toBe(0);
   });
 });

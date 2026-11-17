@@ -648,6 +648,81 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     expect(rule(".scene-stage .inspector .section-embed > patchwork-view")).toMatch(/(^|[\s;])height:\s*100%/);
   });
 
+  // ─── detach: a section in the drawer (TOOLS.md §6, "Documents in the drawer") ───
+  const drawerViews = () => [...s.root.querySelectorAll(".stage-drawer-doc > patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
+  const docTab = (title) => [...s.root.querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title);
+  /** the Source section as shown: [docked?, its inline view's doc-url or null, "In the drawer" shown?] */
+  const sourceShown = () => {
+    const sec = section(`${ME}/source`);
+    return [sec.hasAttribute("data-docked"), sec.querySelector(".section-embed > patchwork-view")?.getAttribute("doc-url") ?? null, !sec.querySelector(".section-docked").hidden];
+  };
+  // [what's done, then the Source section as shown, then the documents in the drawer]
+  const FOLD_DOCKED = [
+    ["docked (its Dock)", async () => section(`${ME}/source`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.src.url}|`]],
+    ["docked, then its × closed", async () => (section(`${ME}/source`).querySelector(".section-dock").click(), await settle(), docTab("Source").querySelector(".stage-drawer-tab-close").click()), (m) => [false, m.src.url, false], () => []],
+    ["the same doc docked under another tool", async (m) => s.api(ME).view.dock({ url: m.src.url, toolId: "other", title: "Other" }), (m) => [false, m.src.url, false], (m) => [`${m.src.url}|other`]],
+  ];
+  it.each(FOLD_DOCKED)("folded while docked: %s", async (_name, act, want, inDrawer) => {
+    const m = await mountKinds();
+    await select("built");
+    await act(m);
+    await settle();
+    expect(sourceShown()).toEqual(want(m));
+    expect(drawerViews()).toEqual(inDrawer(m));
+    // never two live views of one doc and tool in the stage
+    const all = [...s.root.querySelectorAll("patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("Show (in the drawer) shows its pane again; another selection's section of it is folded too", async () => {
+    const m = await mountKinds();
+    await select("built");
+    section(`${ME}/source`).querySelector(".section-dock").click();
+    await settle();
+    // the drawer shows the Source; the Inspector's tab shows the pane again
+    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Source");
+    docTab("Inspector").querySelector(".stage-drawer-tab-name").click();
+    await settle();
+    section(`${ME}/source`).querySelector(".section-show").click();
+    await settle();
+    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Source");
+    expect(drawerViews()).toEqual([`${m.src.url}|`]);
+    // the doc pane outlives the selection; the section comes back folded to "In the drawer"
+    await select("boat");
+    await select("built");
+    expect(sourceShown()).toEqual([true, null, true]);
+    expect(drawerViews()).toEqual([`${m.src.url}|`]);
+  });
+
+  it("a section's head is dragged as a Patchwork document: exactly the three payload types, its url, label and tool", async () => {
+    const m = await mountKinds();
+    await select("built");
+    const data = {};
+    const e = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(e, "dataTransfer", { value: { setData: (t, v) => (data[t] = v), effectAllowed: "all" } });
+    section(`${ME}/build`).querySelector(".section-head").dispatchEvent(e);
+    expect(Object.keys(data).sort()).toEqual(["text/plain", "text/x-patchwork-dnd", "text/x-patchwork-urls"]);
+    expect(JSON.parse(data["text/x-patchwork-dnd"]).items).toEqual([{ url: m.render.url, name: "Build", toolId: "scene-render-controls" }]);
+    expect(JSON.parse(data["text/x-patchwork-urls"])).toEqual([m.render.url]);
+    expect(data["text/plain"]).toBe(m.render.url);
+    expect(e.dataTransfer.effectAllowed).toBe("copy");
+    expect(section(`${ME}/build`).querySelector(".section-head").getAttribute("draggable")).toBe("true");
+    // let go back in the pane, it's nothing: the drag goes no further than the pane (no document added to the scene)
+    const beyond = vi.fn();
+    s.root.addEventListener("dragover", beyond);
+    const over = new Event("dragover", { bubbles: true, cancelable: true });
+    Object.defineProperty(over, "dataTransfer", { value: { types: Object.keys(data), getData: (t) => data[t] ?? "" } });
+    body().dispatchEvent(over);
+    expect(beyond).not.toHaveBeenCalled();
+    expect(over.defaultPrevented).toBe(false);
+    // once it's over, a drag from elsewhere over the pane goes on as before
+    window.dispatchEvent(new Event("dragend"));
+    const later = new Event("dragover", { bubbles: true, cancelable: true });
+    Object.defineProperty(later, "dataTransfer", { value: { types: ["text/plain"], getData: () => m.src.url } });
+    body().dispatchEvent(later);
+    expect(beyond).toHaveBeenCalledTimes(1);
+  });
+
   it("the source shown is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {
     const secret = fakeUrl();
     const lens = { meta: { id: "t.lens" }, module: { create: () => ({ looks: () => new Map([["built", { sourceUrl: secret, name: "Ace" }]]) }) } };

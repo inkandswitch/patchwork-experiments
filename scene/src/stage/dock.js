@@ -26,11 +26,26 @@
 // panes of one kind never moves it, and a window resize never rewrites a
 // pref (the CSS clamps what it shows, so the scene keeps its share).
 //
+// A document can be docked as well as an element (TOOLS.md §6, "Documents
+// in the drawer"): dockDocument({ url, toolId, title }) docks the host's view
+// of it (embed.js documentView) in a pane of the editor kind, keyed by
+// docKey(url, toolId), so docking one key again only shows (and retitles)
+// its tab, and there is at most one pane per key. These panes are the view's
+// (api.view.dock), not an extension's: no extension stopping closes them,
+// only their ×, their close(), or the view going. The tab strip takes a drop
+// of any Patchwork document (dnd.js: a sidebar's, an outline row's, an
+// inspector section's header) and docks each one; a drag over the strip is
+// the strip's, so nothing dropped there reaches the scene.
+//
 // The model is pure and the DOM follows it: `docked`, `shown` and `undocked`
 // below, the widths' `kindOf`, `widthFor`, `dragged` and `stepped`, and
 // createDrawer, which keeps an element per docked key.
 
-import { EMBED_ATTR } from "../embed.js";
+import { EMBED_ATTR, documentView } from "../embed.js";
+import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
+
+/** The owner of the documents docked in the drawer: the view's, so no extension's closeOwner reaches them. */
+const DOCS = Symbol("the view's documents");
 
 /** No panes. `order` is the tabs' order (docking order); `recent` the same keys, the one shown first. */
 export const EMPTY = Object.freeze({ order: Object.freeze([]), recent: Object.freeze([]) });
@@ -118,10 +133,13 @@ let paneIds = 0;
 /**
  * The drawer's DOM, in `parent` (the stage's right edge) while anything is
  * docked. dock(owner, el, { title, onClose }) → close; closeOwner(owner)
- * closes everything an owner docked, without onClose (it is stopping).
- * `onChange({ tabs, shown })` hears every change of what's docked or shown
- * (the stage publishes it as local.drawer, so a surface showing whether a
- * tab is open, the toolbar's toggles, hears of it too).
+ * closes everything an owner docked, without onClose (it is stopping);
+ * dockDocument({ url, toolId, title }) → close docks a document, the view's.
+ * `onChange({ tabs, shown, docs })` hears every change of what's docked or
+ * shown (the stage publishes it as view.drawer, so a surface showing whether
+ * a tab is open, the toolbar's toggles, or whether a document is docked, an
+ * inspector section, hears of it too): `docs` is the docked documents' keys,
+ * in docking order.
  * The widths are the viewer's prefs: `prefs()` reads them and
  * `setPref(key, px)` stores one (undefined: back to the default); the stage
  * calls refreshWidth() when they change, here or in another tab.
@@ -146,8 +164,10 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   let drag = null;
   /** The keys the grip took that are still down (their codes) */
   const mine = new Set();
-  /** content element → { owner, pane, tab, name, onClose, close } */
+  /** content element → { owner, pane, tab, name, embed, doc, onClose, close } (`doc`: a document's key, else null) */
   const entries = new Map();
+  /** a docked document's key → its content element */
+  const docs = new Map();
 
   function render() {
     const on = shownOf(model);
@@ -166,7 +186,8 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     if (!drawer.isConnected) mine.clear();
     refreshWidth();
     const titles = model.order.map((k) => entries.get(k)?.name.textContent ?? "");
-    onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null });
+    const docKeys = model.order.map((k) => entries.get(k)?.doc).filter((k) => k != null);
+    onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null, docs: docKeys });
   }
 
   /** The kind of the pane shown, or null with none. */
@@ -266,6 +287,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     const e = entries.get(key);
     if (!e) return null;
     entries.delete(key);
+    if (e.doc != null && docs.get(e.doc) === key) docs.delete(e.doc);
     model = undocked(model, key);
     e.tab.remove();
     e.pane.remove();
@@ -273,7 +295,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     return e;
   }
 
-  function dock(owner, content, { title, onClose, embed = true, show = true } = {}) {
+  function dock(owner, content, { title, onClose, embed = true, show = true, doc = null } = {}) {
     const had = entries.get(content);
     if (had) {
       if (title != null) had.name.textContent = String(title);
@@ -296,7 +318,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     // (tabs and panes are only ever added at the end, so the DOM keeps the model's order)
     tabs.append(tab);
     panes.append(pane);
-    const e = { owner, pane, tab, name, embed: !!embed, onClose: typeof onClose === "function" ? onClose : null, close: () => void remove(content) };
+    const e = { owner, pane, tab, name, embed: !!embed, doc, onClose: typeof onClose === "function" ? onClose : null, close: () => void remove(content) };
     name.addEventListener("click", () => {
       if (!entries.has(content)) return;
       model = shown(model, content);
@@ -320,11 +342,61 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     for (const [key, e] of [...entries]) if (e.owner === owner) remove(key);
   }
 
+  /**
+   * Dock a document (the view's: TOOLS.md §6): its view in an editor pane,
+   * one per docKey(url, toolId); docking a key that's docked shows its tab
+   * (under `title`, if given). → close. A url that isn't a document's docks
+   * nothing (a version's heads are dropped: a pane follows the latest).
+   */
+  function dockDocument({ url, toolId = null, title } = {}) {
+    const u = parseAutomergeUrl(url);
+    if (!u) return () => {};
+    const tool = typeof toolId === "string" && toolId ? toolId : null;
+    const key = docKey(u, tool);
+    let content = docs.get(key);
+    if (!content) {
+      content = make("div", "stage-drawer-doc");
+      content.append(documentView({ url: u, toolId: tool, label: title }));
+      docs.set(key, content);
+    }
+    return dock(DOCS, content, { title: title || "Document", embed: true, doc: key });
+  }
+
+  // The tab strip takes documents: any drag over it is its own (none reaches the scene's drop, or anything
+  // else in the stage), and one that carries a Patchwork document may drop here, docking each.
+  const dropping = (on) => tabs.classList.toggle("drop-over", on);
+  const over = (e) => {
+    e.stopPropagation();
+    if (!hasPatchworkDrop(e.dataTransfer)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    dropping(true);
+  };
+  tabs.addEventListener("dragenter", over);
+  tabs.addEventListener("dragover", over);
+  tabs.addEventListener("dragleave", (e) => {
+    e.stopPropagation();
+    if (!(e.relatedTarget instanceof Node) || !tabs.contains(e.relatedTarget)) dropping(false);
+  });
+  tabs.addEventListener("drop", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dropping(false);
+    for (const item of parsePatchworkDrop(e.dataTransfer)) dockDocument({ url: item.url, toolId: item.toolId, title: item.name });
+  });
+
+  /** Close everything (the view is going): no onClose, nothing left docked. */
+  function dispose() {
+    for (const key of [...entries.keys()]) remove(key);
+  }
+
   return {
     el: drawer,
     grip,
     dock,
+    dockDocument,
     closeOwner,
+    dispose,
     /** the stored widths changed (a pref, here or in another tab): show the shown kind's */
     refreshWidth,
     /** for tests: the docked elements in tab order, and the one shown */

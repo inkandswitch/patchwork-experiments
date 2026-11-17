@@ -279,7 +279,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     parent: edges.right,
     onChange: (d) => {
       if (dead) return;
-      atom.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown }) }));
+      atom.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown, docs: Object.freeze([...d.docs]) }) }));
     },
     // its widths are this viewer's prefs, like the grid and the units (dock.js)
     prefs: () => atom.get().prefs,
@@ -304,7 +304,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     escape: Object.freeze({ layer: null, hint: "" }),
     theme: null,
     notices: Object.freeze([]),
-    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null }),
+    // the drawer's tabs by title, the one shown, and the documents docked in it (dock.js), by docKey
+    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (COMPOSITION.md §5): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
@@ -1309,7 +1310,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         drawer.refreshWidth();
       }
       if (next.body !== prev.body || next.held !== prev.held) announce();
-      if (next.selected !== prev.selected) router?.refresh();
+      // (an open drawer wants the pointer: a document docked or closed in it changes that)
+      if (next.selected !== prev.selected || next.drawer !== prev.drawer) router?.refresh();
       requestFlush();
     }),
   );
@@ -1368,6 +1370,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function dispose() {
     if (dead) return;
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
+    // the documents docked in the drawer are the view's: they go with it
+    drawer.dispose();
     for (const d of docs.values()) d.off?.();
     announcer.dispose();
     dead = true;
@@ -1420,6 +1424,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     },
     restoreCamera,
     reopened,
+    /**
+     * Dock a document in the drawer (api.view.dock): the view's, so it stays
+     * across selections, bodies, focus moves and extensions stopping, until
+     * its × or close(). One pane per docKey(url, toolId). → close
+     */
+    dockDocument: (doc) => (dead ? () => {} : drawer.dockDocument(doc ?? {})),
     packages,
     packagesChanged,
     /** a stage's clock said something new (local.clock): the focus path's clocks again */

@@ -68,3 +68,24 @@ describe("parsePatchworkDrop", () => {
     expect(parsePatchworkDrop(dt({ "text/plain": "just words" }))).toEqual([]);
   });
 });
+
+describe("parsePatchworkDrop: an item's tool", () => {
+  it("carries a string toolId through; anything else isn't one; one entry per url, version and tool", () => {
+    const items = parsePatchworkDrop(
+      dt({
+        "text/x-patchwork-dnd": JSON.stringify({
+          items: [
+            { url: `automerge:${ID}`, name: "Notes", toolId: "notes" },
+            { url: `automerge:${ID}`, name: "again", toolId: "notes" },
+            { url: `automerge:${ID}`, name: "Raw", toolId: 7 },
+            { url: `automerge:${ID}`, name: "Empty", toolId: "" },
+          ],
+        }),
+      }),
+    );
+    expect(items).toEqual([
+      { url: `automerge:${ID}`, name: "Notes", type: undefined, toolId: "notes" },
+      { url: `automerge:${ID}`, name: "Raw", type: undefined },
+    ]);
+  });
+});

@@ -43,7 +43,7 @@ each build step.
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
-| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (one pane: the object tree over the selection's fields; a selection opens it in Edit; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. Its width is the viewer's for the kind of pane shown (the stage's chrome or a docked editor), set with the grip on its left edge. |
+| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (one pane: the object tree over the selection's fields; a selection opens it in Edit; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's; and documents (`api.view.dock`, a drop on its tab strip, an inspector section's Dock), which are the view's: one pane per document and tool, kept across selections, bodies, focus moves and extensions stopping until its × or close(). Its width is the viewer's for the kind of pane shown (the stage's chrome or a docked editor), set with the grip on its left edge. |
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
 | **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector and its tree, transfer, add, remove): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
@@ -276,7 +276,7 @@ the calls named here, never swapped.
 | `escape` | the view | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`). Leaving the focus is a layer only a general part sees |
 | `theme` | the view | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | `api.notify` | `[{ id, text, kind, at }]` |
-| `drawer` | `api.dock` | `{ tabs, shown }`: the drawer's tabs by title, in docking order, and the one shown (null with none docked), so a surface showing whether a tab is open (the toolbar's Inspector, Dimensions, Parts) hears when it closes |
+| `drawer` | `api.dock`, `api.view.dock` | `{ tabs, shown, docs }`: the drawer's tabs by title, in docking order, the one shown (null with none docked), and the documents docked there, each `docKey(url, toolId)` (`src/dnd.js`), in docking order; so a surface showing whether a tab is open (the toolbar's Inspector, Dimensions, Parts) hears when it closes, and an inspector section knows its doc is in the drawer |
 | `prefs` | `api.setPref` | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | the view (general parts only) | every open doc's packages this viewer doesn't have, one prompt's worth (see "Packages") |
 | `clocks` | the view (general parts only) | the focus path's clocks, outermost first: `[{ stage, name, status }]`, one per stage on the path whose `clock` is not null, `name` the trail's for that doc. The clock chip's: a chip per doc, Pause and Resume through each stage's reader (`clock`) |
@@ -1060,7 +1060,8 @@ a selected dimension too, whatever order the two run in.
 - Keys, pastes and drops inside a document embedded in the stage (another
   tool, such as an inspector section) are that tool's. Whoever embeds marks
   the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
-  `src/embed.js`); every pane of the drawer (`dock`) is marked so.
+  `src/embed.js`); every pane of the drawer (`dock`, and a docked
+  document's, `view.dock`) is marked so.
 - **One key order** (TOOLS.md §5; `src/keymap.js`): a focused field (the
   DOM's), the open gesture's declared keys (a carry's Q/E/F), the held
   tool's, the top body's, then the chain, where the key map (`scene.keys`)
@@ -1203,7 +1204,7 @@ that extension.
 
 | | |
 |---|---|
-| `view` | `{ get(), watch(fn, select?), select(target), enter(linkId) → boolean }`, and a general part's `reopened(title)`: the viewer's local value as this stage sees it ("Three places for state"), selecting this stage's target (cut at the focus), and entering one of its links |
+| `view` | `{ get(), watch(fn, select?), select(target), enter(linkId) → boolean, dock({ url, toolId?, title }) → close }`, and a general part's `reopened(title)`: the viewer's local value as this stage sees it ("Three places for state"), selecting this stage's target (cut at the focus), entering one of its links, and docking a document in the drawer. `dock` puts the host's view of the doc (a `<patchwork-view doc-url tool-id>`, `src/embed.js` `documentView`) in a drawer pane of the editor kind, embedded (its keys its own), titled `title`; there is one pane per `docKey(url, toolId)`, so docking one again only shows (and retitles) its tab; a url that isn't an automerge URL docks nothing, and any heads are dropped (a pane follows the latest). The pane is the view's, not the extension's: it stays across selections, bodies, focus moves and its docker stopping, and goes by its ×, `close()` (idempotent) or the view going. `view.drawer.docs` lists what's docked. The drawer's tab strip docks any Patchwork document dropped on it the same way (`src/stage/dock.js`), and nothing dropped there reaches the scene |
 | `link(id)` | `{ role: "acting" \| "mirror" \| "pinned" \| "closed", open, reason? }` for one of this doc's links: what the view made of it here, and whether its doc is drawn |
 | `collect(name)` | `[{ id, value }]`: running extensions' contributions of that name, in running order; a general part's from every acting stage, each item tagged with its `stage` |
 | `run({ stage?, ext, command, target, value?, hit? })` | run a command, in the context surfaces compute (`context` below); `stage` (a general part's) runs it in that stage |
@@ -1649,9 +1650,10 @@ target, which the inspector shows as sections):
   (warned), or whose url and tool repeat one already listed (the first
   stays) is dropped.
 - Each is a section: its label (which folds it: the viewer's pref
-  `inspector.open.<ext>/<id>`, else `folded`), **Open**
-  (`patchwork:open-document` with its `url` and `toolId`, the main view),
-  and, while open, a `<patchwork-view>` of it inside the embed marker, so
+  `inspector.open.<ext>/<id>`, else `folded`), **Dock** (`api.view.dock`:
+  its own pane in the drawer), **Open** (`patchwork:open-document` with its
+  `url` and `toolId`, the main view), and, while open and not docked, a
+  `<patchwork-view>` of it (`documentView`) inside the embed marker, so
   its keys are its own, in a box of a definite height (the viewer can drag
   it taller) that a tool filling its host fills. A section stays mounted
   while it's shown: others coming and going beside it don't take it out.
@@ -1660,6 +1662,14 @@ target, which the inspector shows as sections):
   that mounts a package's own tools). It's a document, not a mount: something that needs
   this scene's context (a die's panel) is a command that docks its own
   element (`api.dock`).
+- Its head drags as a Patchwork document (`text/x-patchwork-dnd`
+  `{ source: "scene", items: [{ url, name: label, toolId? }] }`,
+  `text/x-patchwork-urls` and `text/plain`, nothing else), so whatever takes
+  one takes it: the drawer's tab strip docks it, as Dock does. Let go back
+  in the inspector's pane, it's nothing. While its `docKey(url, toolId)` is
+  in `view.drawer.docs`, an open section shows "In the drawer · Show"
+  (Show docks it again, which shows its tab) instead of the doc: a doc and
+  tool has one live view in the stage, never two.
 
 **Targets and refs.** A target is a string, or null for the scene:
 - an **object or group id** names that object;
@@ -1954,7 +1964,7 @@ value and compass convention are sailing's to document:
 | `stage/atom.js` | the local value |
 | `stage/activation.js` | the running set and scopes: traits only (pure) |
 | `stage/chain.js` | the chain order (pure) |
-| `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
+| `stage/dock.js` | the drawer: its model (pure) and its tabs and panes, the documents docked in it (the view's) and the drop on its tab strip |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
 | `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages, the focus path's clocks |
