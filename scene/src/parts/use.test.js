@@ -248,6 +248,84 @@ describe("scene.use", () => {
     expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
+  // Held still under a pointer that went onto it only while the eye is the one it went there under (step 8 of
+  // lane/n11; COMPOSITION.md, Fixed since): every way the eye moves puts it back under the pointer, so a press at
+  // the pointer reaches what is under it (a halo handle), never a button left there; nothing else lets it go.
+  // Each event reaches the prompt as it does in a browser: an orbit's end (onEnd), a ride's frame or a Frame's
+  // (the camera moved, a frame drawn), a body entered or left (the view's update), a selection (the same).
+  describe("the eye moves: back under the pointer", () => {
+    // (a scene made new opens in Edit)
+    const inLook = async () => {
+      expect(s.api("t.game").body.enter("look")).toBe(true);
+      await settle();
+    };
+    const EVENTS = [
+      ["nothing", async () => {}],
+      ["an orbit ends", async (t) => {
+        t.cam = { ...t.cam, position: [3, 2, 4] };
+        for (const fn of [...s.debug.viewport.cameraEndListeners]) fn();
+        await settle();
+      }],
+      ["a ride's frame", async (t) => {
+        t.cam = { ...t.cam, position: [0.01, 2, 5], target: [0.01, 0, 0] };
+        t.frame();
+      }],
+      ["Frame (.), its frames", async (t) => {
+        for (const x of [0.5, 0.9, 1]) {
+          t.cam = { ...t.cam, target: [x, 1, 0] };
+          t.frame();
+        }
+      }],
+      ["Edit entered (from Look)", async () => {
+        expect(s.api("t.game").body.enter("edit")).toBe(true);
+        await settle();
+      }, inLook],
+      ["Look entered (Edit left)", async () => {
+        expect(s.api("t.game").body.enter("look")).toBe(true);
+        await settle();
+      }],
+      ["the selection changes", async () => {
+        s.api("t.game").view.select("capstan");
+        await settle();
+      }],
+    ];
+    for (const onIt of [false, true])
+      for (const [event, run, before] of EVENTS) {
+        const moves = /orbit|ride|Frame|entered/.test(event);
+        it(`pointer ${onIt ? "on the prompt" : "off it"}, ${event}: ${onIt && !moves ? "held where it was" : "at the pointer"}`, async () => {
+          await mount();
+          await before?.();
+          expect(s.local.get().body.id).toBe(before ? "look" : "edit");
+          const t = { cam: { position: [0, 2, 5], target: [0, 1, 0], fov: 50, up: [0, 1, 0] } };
+          const api = s.api("scene.use");
+          api.camera = { ...api.camera, get: () => t.cam };
+          const hooks = () => s.debug.viewport.afterHooks.size;
+          t.frame = () => {
+            for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+          };
+          // the pointer is over the helm wherever it goes on the world (the view's pick)
+          s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
+          const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
+          const move = (target, x, y) => target.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
+          const origin = s.port.getBoundingClientRect();
+          const px = (x, y) => [`${x - origin.left}px`, `${y - origin.top}px`];
+          const base = hooks();
+          move(s.canvas, 120, 90);
+          await settle();
+          expect(prompt().hidden).toBe(false);
+          if (onIt) move(prompt().querySelector(".use-verb"), 125, 132);
+          // on it: held where it was, its frame hook watching the eye; off it: no hook
+          expect(at()).toEqual(onIt ? px(120, 90) : px(120, 90));
+          expect(hooks()).toBe(base + (onIt ? 1 : 0));
+          await run(t);
+          expect(prompt().hidden).toBe(false);
+          expect(at()).toEqual(onIt && !moves ? px(120, 90) : onIt ? px(125, 132) : px(120, 90));
+          // let go: the hook goes with it
+          expect(hooks()).toBe(base + (onIt && !moves ? 1 : 0));
+        });
+      }
+  });
+
   it("looking at a part offers what it's attached to", async () => {
     await mount();
     await hover("spoke");

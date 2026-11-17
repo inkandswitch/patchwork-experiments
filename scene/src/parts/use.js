@@ -4,6 +4,12 @@
 // (scene.keys) does. It runs in every scene, as the key map does: with
 // nothing that has verbs under attention, it shows nothing.
 //
+// The pointer on the prompt (going for a button) holds it still, but only
+// under the eye it went there under: once the eye moves (an orbit, a ride,
+// a Frame, a body entered or left) it goes back under the pointer, so a
+// press reaches a button only if the eye hasn't moved since the pointer
+// reached it, and never one left over what is under the pointer now.
+//
 // Attention is the selection if any, else the look (api.attention). The
 // prompt is on the selection, or the first object along the look's chain
 // (../keymap.js attentionPath) with any verbs for it (looking at a spoke of
@@ -109,7 +115,10 @@ function create(api) {
 
   let current = null; // { target, entries: [{ ext, command, state, key }], hit }
   let shownKey = "";
-  let pointer = null; // port-local { x, y }, the last place the pointer was over the view
+  let pointer = null; // port-local { x, y }: where the pointer is over the view (over the world or the prompt)
+  // The prompt holding still under a pointer that went onto it: { at, eye, off }, the place it was shown at,
+  // the eye then, and the frame hook that watches for the eye moving. Null while it follows the pointer.
+  let held = null;
   let offLoop = null;
   let offWatch = null;
 
@@ -268,10 +277,38 @@ function create(api) {
   }
   const toggle = (el, flag, on) => (on ? (el.dataset[flag] = "") : delete el.dataset[flag]);
 
-  // Under the crosshair when the look is the eye's; under the pointer otherwise.
+  // The eye the prompt was placed under: whose (the body) and where (the camera, in this stage's frame, so a
+  // stage moving under the eye moves it too). Any change moves what is under a still pointer.
+  const eye = () => JSON.stringify([api.view.get().body?.id ?? null, api.camera.get()]);
+  // Held while the eye is the one it was held under: once it moves, the prompt goes back under the pointer
+  // (36 px below it, use.css), so a press there reaches what is under it now (a halo handle), not a button the
+  // prompt left there.
+  function hold() {
+    if (held) return;
+    held = { at: pointer, eye: eye(), off: null };
+    // (a ride, a Frame, an orbit: every move of the eye is drawn, so a frame drawn is where to ask)
+    held.off = api.afterRender(() => {
+      if (held && held.eye !== eye()) {
+        letGo();
+        place();
+      }
+    });
+  }
+  function letGo() {
+    held?.off();
+    held = null;
+  }
+  const anchor = () => {
+    if (held && held.eye !== eye()) letGo();
+    return held ? held.at : pointer;
+  };
+
+  // Under the crosshair when the look is the eye's; under the pointer otherwise, held still while the pointer is
+  // on the prompt and the eye hasn't moved since it went there.
   function place() {
     if (prompt.hidden) return;
-    const at = fromEye() || !pointer ? null : pointer;
+    const a = anchor();
+    const at = fromEye() || !a ? null : a;
     prompt.style.setProperty("--use-x", at ? `${at.x}px` : "50%");
     prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
   }
@@ -290,12 +327,15 @@ function create(api) {
   }
 
   // it follows a pointer over the world, not over anything put over it: over the prompt itself (going for one of
-  // its buttons) it stays where it is, or it would move off from under the pointer; a finger on the touch pad, the
-  // body chip, any part's overlay isn't where anyone looks. A press is where the pointer is too: a finger has no
-  // moves before it, and what it taps is where the prompt shows.
+  // its buttons) it holds still, or it would move off from under the pointer, until the eye moves (hold); a
+  // finger on the touch pad, the body chip, any part's overlay isn't where anyone looks. A press is where the
+  // pointer is too: a finger has no moves before it, and what it taps is where the prompt shows.
   const follow = (e) => {
-    if (e.target instanceof Element && e.target.closest(".stage-overlay")) return;
+    const over = e.target instanceof Element ? e.target.closest(".stage-overlay") : null;
+    if (over && !prompt.contains(e.target)) return;
     const r = api.port.getBoundingClientRect();
+    if (over) hold();
+    else letGo();
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
     place();
   };
@@ -303,7 +343,9 @@ function create(api) {
   api.listen(api.port, "pointerdown", follow, { capture: true }); // (before a press claimed on the world stops it)
   // (a finger leaves as it lifts: where it tapped stays, as its look does: router.js)
   api.listen(api.port, "pointerleave", (e) => {
-    if (e.pointerType !== "touch") pointer = null;
+    if (e.pointerType === "touch") return;
+    pointer = null;
+    letGo();
   });
   // an orbit or zoom moves the eye, and so what's in reach; a lock taken or
   // lost moves the look between the pointer and the crosshair
@@ -317,6 +359,7 @@ function create(api) {
     },
     dispose() {
       for (const id of [...shown.keys()]) drop(id);
+      letGo();
       offLoop?.();
       offLoop = null;
       offWatch?.();

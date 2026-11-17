@@ -139,10 +139,6 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
-- the use prompt stays put while the pointer is on it (since lane/arcade),
-  so when the camera moves and the pointer doesn't (a ride, Frame, a body
-  change) it can be left over a halo handle or anything else, and a press
-  there goes to the prompt's button (found by lane/xarrow, 2026-11-16);
 - a single click on a moving thing can still miss it: aboard-run's step-13
   click selecting the card inside G missed on about one run in ten
   (lane/xarrow); the double-click fix covers only the second press. A miss
@@ -183,6 +179,18 @@ Still open:
   pinned by `seats/src/stacked-bodies.test.js`; Decisions, N7, 14).
 
 Fixed since (each item names its Decisions section below):
+- the use prompt stayed put while the pointer was on it (since
+  lane/arcade), so when the camera moved and the pointer didn't (a ride,
+  Frame, a body change) it could be left over a halo handle or anything
+  else, and a press there went to the prompt's button (found by
+  lane/xarrow, 2026-11-16). It now holds still only under the eye the
+  pointer went onto it under: any move of the eye puts it back under the
+  pointer, so a press reaches a button only if the eye hasn't moved since
+  the pointer reached it (TOOLS.md §3, "A shown key works"; Decisions, the
+  use prompt and the eye, below; lane/n11). editor-run's new step leaves
+  the prompt's button over Block 1's X arrow, presses `.`, and the press
+  at the pointer is the halo's drag. Not yet checked in the real
+  Patchwork.
 - a doc's packages list grew as parts were added and wasn't pruned when
   they went (Fitting out's boat, as the tools made her, still listed her
   companionway's joints and traversal). Reconcile now goes both ways: a
@@ -2864,6 +2872,39 @@ between packages".
    arrival + TELL_MS)`, the same for the timer and for asking.
 10. **Data is an object, checked by the stage** before `valid`: every
    package's `valid` began with the same guard, so it is said once.
+
+## Decisions, the use prompt and the eye (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+The use prompt (`src/parts/use.js`) follows the pointer over the world and
+holds still while the pointer is on it, so a button can be reached. It now
+holds still only under the eye the pointer went onto it under. Invariant:
+a press reaches a prompt button only if the eye hasn't moved since the
+pointer reached that button. Pinned by use.test.js, "the eye moves: back
+under the pointer" (pointer off the prompt or on it × nothing, an orbit's
+end, a ride's frame, a Frame's frames, Edit entered, Look entered, a
+selection change = 14 cases; against the old use.js the 5 eye moves leave
+it held, 7 fail).
+
+1. **The eye is the body and the camera**, compared as a value: the top
+   body's id and `api.camera.get()` (the stage's frame, so a stage moving
+   under the eye counts as the eye moving: what is under the pointer moved
+   either way). The plan named `api.camera.watch`, but that fires only when
+   the fov changes, so it can't see an orbit, a ride or a Frame. No stage
+   API was added: every move of the eye is drawn, so the prompt asks on
+   every frame drawn (`api.afterRender`), and only while it is held (the
+   hook goes with the hold); the view's update and an orbit's end ask too,
+   through `place`.
+2. **A body entered or left lets go** even if the camera stays (Edit from
+   Look): it is another eye, and Edit brings its halo, which is what a
+   press at the pointer should reach.
+3. **A selection change doesn't let go**: the eye hasn't moved, so what is
+   under the pointer is what it was, the prompt's button included.
+4. **The pointer is tracked over the prompt only.** Over another part's
+   overlay (the touch pad, the body chip) it is still ignored, as before:
+   nobody looks there. The pointer leaving the view lets go too.
+5. **Let go means back under the pointer, 36 px below it** (use.css), so
+   the pointer is no longer on the prompt; a still pointer stays off it
+   until it moves onto it again, which holds it anew.
 
 ## Decisions, N7 (decided unattended (2026-11-16, lane/n7), for the lead)
 

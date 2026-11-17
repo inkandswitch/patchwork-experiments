@@ -12,7 +12,9 @@
 // fields below; canvas the rest); click to select (the tree's row and the
 // fields in the one pane, B's box);
 // Escape; no tools to pick (G, R and H do nothing); a halo drag (B sees the
-// pose mid-drag, then the landed transform); carrying by the trait (snaps to a
+// pose mid-drag, then the landed transform); the use prompt left over a halo
+// handle goes back under the pointer when . moves the eye (a press there is
+// the halo's drag); carrying by the trait (snaps to a
 // connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
 // board; Measure (its Dimensions tab); Delete; . (Frame); the Inspector's ×
 // and the toolbar's Inspector; double-click; the context menu; no modes (the
@@ -207,6 +209,82 @@ try {
       const bLanded = await Bv(`d.viewport.worldOf("b1").slice(12, 15)`);
       check("peerSeesLandedTransform", near(bLanded, after, 1e-5), { bLanded, after });
     }
+  }
+
+  // ── the use prompt goes back under the pointer when the eye moves (COMPOSITION.md, Fixed since) ──
+  // Block 1 selected, its halo up. Frame it (.) to learn where its X arrow lands then, and put the camera
+  // back; set the pointer so the prompt's first button lies over that spot, and go onto it: the prompt
+  // holds still under it. Press .: the eye moves, the prompt goes back under the pointer (36 px below), and a
+  // press there is the halo's, a halo drag, not the button the prompt left there.
+  {
+    const btn = () => A(`(() => { const e = p.hostA.querySelector('.use-prompt:not([hidden]) .use-verb'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height, text: e.textContent }; })()`);
+    const under = (pt) => A(`(() => { const e = document.elementFromPoint(${pt.x}, ${pt.y}); return e ? (e.closest(".use-verb") ? "prompt" : e === d.viewport.canvas ? "canvas" : e.className || e.tagName) : null; })()`);
+    const cam0 = await A(`d.viewport.getCamera()`);
+    await b.key(".");
+    await b.rest(600);
+    const cam1 = await camera();
+    // a spot on the X arrow the view's widget pick takes as the halo's (framed close, its third along may not be)
+    const picks = [];
+    let H = null;
+    for (const along of [0, 0.002, 0.004, 0.006, 0.008, 0.01, 0.015, 0.02, -0.002, -0.004]) {
+      const q = await P(`haloAt("move", 0, ${along})`);
+      const w = q && (await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); const w = d.view.pickWidget({ x: ${q.x} - r.left, y: ${q.y} - r.top }); return w?.owner === "scene.halo"; })()`));
+      picks.push({ along, q, w });
+      if (w) {
+        H = { x: q.x, y: q.y, along };
+        break;
+      }
+    }
+    const H1 = H && (await P(`haloAt("move", 0, ${H.along + 0.05})`));
+    report.details.handleSpots = picks;
+    await A(`(d.viewport.setCamera(${JSON.stringify(cam0)}), true)`);
+    await b.rest(300);
+    let ptr = H && { x: H.x, y: H.y - 50 };
+    let bt = null;
+    if (ptr) {
+      await b.move(ptr.x, ptr.y);
+      await b.rest(120);
+      bt = await btn();
+      if (bt) {
+        ptr = { x: ptr.x + H.x - bt.x, y: ptr.y + H.y - bt.y };
+        await b.move(ptr.x, ptr.y);
+        await b.rest(120);
+        bt = await btn();
+      }
+    }
+    report.details.promptOverHandle = { H, ptr, bt, selected: await selected(), picks };
+    check("promptOverHandleSpot", !!bt && Math.abs(bt.x - H.x) < bt.w / 2 && Math.abs(bt.y - H.y) < bt.h / 2, report.details.promptOverHandle);
+    if (bt) {
+      // onto its button: it holds still, and the button is what's under the pointer
+      await b.move(H.x, H.y);
+      await b.rest(120);
+      const held = await btn();
+      const under0 = await under(H);
+      check("promptHoldsUnderThePointer", !!held && Math.abs(held.x - bt.x) < 0.5 && Math.abs(held.y - bt.y) < 0.5 && under0 === "prompt", { held, bt, under0 });
+      // the eye moves (Frame, as before): the prompt goes back under the pointer
+      await b.key(".");
+      await b.rest(600);
+      const cam2 = await camera();
+      const moved = await btn();
+      const under1 = await under(H);
+      report.details.promptAfterFrame = { cam1: round(cam1), cam2: round(cam2), moved, under1 };
+      check("framedAsBefore", near(cam2.position, cam1.position, 1e-3) && near(cam2.target, cam1.target, 1e-3), report.details.promptAfterFrame);
+      check("promptBackUnderThePointer", !!moved && Math.abs(moved.x - H.x) < 1 && moved.y > H.y + 30 && under1 === "canvas", report.details.promptAfterFrame);
+      // a press there is the halo's: a drag from it is the halo's gesture
+      const len = Math.hypot(H1.x - H.x, H1.y - H.y);
+      const before = (await obj("b1")).transform;
+      const at = await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); const x = ${H.x} - r.left, y = ${H.y} - r.top; const w = d.view.pickWidget({ x, y }); return { halo: p.halo()?.id ?? null, widget: w ? { owner: w.owner ?? null, part: w.part ?? null } : null, selected: d.local.get().selected ?? null }; })()`);
+      const mid = await b.drag([H.x, H.y], [H.x + ((H1.x - H.x) / len) * 120, H.y + ((H1.y - H.y) / len) * 120], { steps: 12, beforeRelease: async () => ({ gesture: await A(`d.local.get().gesture?.owner ?? null`), shown: await A(`d.viewport.worldOf("b1").slice(12, 15)`) }) });
+      await b.rest(300);
+      const after = (await obj("b1")).transform;
+      // (framed this close, the spot may be the halo's ring rather than its arrow: either way the press opens the
+      // halo's drag, not the prompt's verb)
+      check("pressThereIsTheHalos", at.widget?.owner === "scene.halo" && mid.gesture === "scene.halo", { before, after, at, mid, verb: bt.text });
+    }
+    // the camera as the steps after expect it
+    await A(`(d.viewport.setCamera(${JSON.stringify(cam0)}), true)`);
+    await b.move(10, 10);
+    await b.rest(300);
   }
 
   // ── carrying: by the trait, no tool to pick ──────────────────────────────
