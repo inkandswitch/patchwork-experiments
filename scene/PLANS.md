@@ -2,7 +2,7 @@
 
 **Everything in this file is deferred until further notice, except section 1,
 which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
-deferred; step 1 is done, HISTORY.md "Kernel step 1").** Nothing else here is to be started without the lead asking.
+deferred; steps 1 and 2 are done, HISTORY.md "Kernel step 1", "Kernel step 2").** Nothing else here is to be started without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
@@ -79,10 +79,10 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 
 | Today | Goes to |
 |---|---|
-| ~~Edit body, `ahead`, "nothing stands on Edit"~~ | done (step 1): the Edit hand, the view's for now; to the **editor** (view plugin) in step 2 |
+| ~~Edit body, `ahead`, "nothing stands on Edit"~~ | done (steps 1, 2): the Edit hand, `scene.edit`'s (a view plugin) |
 | ~~held-tool slot, popover, Escape ladder~~; gesture | done (step 1): the hands stack; the open gesture is still its own Escape layer, not a hand |
 | Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
-| "general" scope, `api.path`, `reopened`, general-only packages/clocks | **view plugins**; the ~25 `general` branches go |
+| ~~"general" scope, `api.path`, `reopened`, general-only packages/clocks~~ | done (step 2): **view plugins** (`scene:view`), seated at the focus |
 | `own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading | **editor**, recording from `change → patches` |
 | audience, shown, veil, keepers' looks | **hidden** (doc, `"*"`); the veil a `display` override |
 | claims; pose holds and playback; world clock and processes; telling | **claims**, **poses** (playback a `display` override), **clock** (on `use("claims")`, `channel`, `settled()`), **telling**: each a doc plugin of every doc (`"*"`) |
@@ -107,7 +107,7 @@ example republished at the end of the queue.
 ### Build order
 
 Each step leaves everything green and deletes a section of STAGE.md:
-1 hands, Edit the editor's hand (done 2026-11-17); 2 view plugins (`scene:view`), every
+1 hands, Edit the editor's hand (done 2026-11-17); 2 view plugins (`scene:view`; done 2026-11-17), every
 `general` branch gone; 3 undo leaves (`change → patches`, one `revert-veto`
 convention); 4 services and `channel` (claims, poses, clock, telling,
 notices, drawer, prefs out one at a time); 5 `display` (lenses, veil,

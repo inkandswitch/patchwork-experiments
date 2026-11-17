@@ -22,10 +22,11 @@ pnpm install && pnpm build && pnpm test
 | `scene:source` | `file-glb` | `.glb` file docs, `content: "file"` |
 | `scene:source` | `file-stl` | `.stl` file docs, `content: "built"` (params `unit`, `up`) |
 | `scene:source` | `scene.link` | a scene doc placed in a scene, `content: "scene"` |
-| `scene:extension` | `scene.*` | the editor and the surfaces every scene has, one module each in `src/parts/` |
+| `scene:view` | `scene.*` | the editor and the surfaces every scene has, one module each in `src/parts/` |
+| `scene:extension` | `scene.carry`, `scene.others` | carrying (by trait), others' selections (every doc) |
 
-`src/index.js` lists the extensions in the order input reaches them. All
-are general except `scene.carry` (by trait) and `scene.others` (every doc).
+`src/index.js` lists them in the order input reaches them. The view plugins
+run once per view, whatever the focus, and work on the focus doc.
 
 ## Using it
 

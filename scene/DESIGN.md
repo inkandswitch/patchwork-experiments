@@ -20,8 +20,9 @@ no toolbar, no sidebar, no modes, no verbs.
 ## Traits activate code
 
 What runs is a function of the registry and the doc. An extension runs where
-the doc has one of its traits, on an object or the scene; one with no traits
-is general. Nothing a viewer holds or does changes what runs, so a sailing
+the doc has one of its traits, on an object or the scene (`"*"`: every
+doc); what is the viewer's, not a doc's (the editor, the menu, the chips),
+is a view plugin, once per view. Nothing a viewer holds or does changes what runs, so a sailing
 sim doesn't stop because someone is editing her.
 
 ## Contributions and surfaces
@@ -76,7 +77,7 @@ chain first, then the host's from the link outward. There is no priority to
 declare: a global ranking would need every new package to fit into it.
 
 The whole chain: the held tool, the widget under the pointer, the holders,
-the general extensions, the top body, and last an unclaimed drag orbits.
+the view plugins, the top body, and last an unclaimed drag orbits.
 (Edit takes a plain click ahead of the holders, to select.) Keys have no
 position: the open gesture, the held tool and the body take theirs first,
 then the key map over **attention**, the selection or else what you look

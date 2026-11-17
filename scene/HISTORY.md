@@ -549,3 +549,38 @@ then leaves; a stage's `view.escape` shows leaving an entered link as what
 Escape does at the outermost (the hand put down), so no stage learns the
 focus. Old docs saying `body: "edit"` start in Look, not editing (no
 back-compat; republished later).
+
+### 2026-11-17 — Kernel step 2: view plugins replace the general scope
+An extension with no traits used to be "general": it ran once, in the focus
+stage, with an api no other extension had (`api.path`, `view.reopened`,
+view-wide packages and clocks, cross-stage `collect`, a `camera.touched`
+that included "carried across a focus move"), and the view stopped and
+restarted it on every Enter and Leave (`host.setGeneral`, lingering while
+busy). That was privilege by identity and a lifecycle special case. Now a
+**view plugin** (`scene:view`, `src/stage/view-plugins.js`) runs once per
+view for its whole life; only the registry starts or stops one. Its api is
+the view's (chrome, prefs, notices, hands and bodies, the viewer's value
+whole, `collect`/`run`/`path`/`stages` across acting stages, camera and
+picking in the world), and `api.focus()` is the focus stage's **facet**
+for it: that stage's api less the view's members. It is **seated** at the
+focus stage: its input (the chain's step 4), commands and other
+contributions are offered there, after the stage's own, and its `update`
+hears that stage's flush. What it acquired through a facet is given back
+when the focus leaves, or, while it holds a body, the tool, a session or a
+pose, once it lets go (H2's busy half, per acquisition, not per plugin);
+back first, the facet is kept. Every general part of scene's became a view
+plugin, rebuilding what is the focus doc's per facet (`src/parts/per-focus.js`:
+`perFocus`, `focusInput`, `atFocus`); carry and others stay extensions.
+Gone: the `general` scope (an extension needs a trait, `"*"` for every
+doc), `host.setGeneral` and `offering`, `placeGeneral`, `reopened` (a tab
+simply stays open across focus moves), `projectView`'s `general` flag,
+`cameraCarried` (scene.autoframe knows the focus moved), `chainFor`'s
+`widget`. The Edit hand moved to the editor: `scene.edit` pushes it with
+the ordinary `api.hand`, its click offering a widget's owner first
+(`api.offerWidget`); the body chip runs its `edit` command, and
+`view.start.edit` reaches it as `view.arrived`. The view knows nothing of
+editing beyond which hands are held. Tests: the general-part tests became
+view-plugin tests (`src/stage/view-plugins.test.js`: every order of ≤4 of
+in, out, busy, idle and a recheck, 781 sequences, the plugin started once
+and never stopped, a seat offered only at the focus and given back only out
+and idle); a test's own extension with no traits is now a part of every doc.
