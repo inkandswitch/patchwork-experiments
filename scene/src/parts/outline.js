@@ -380,7 +380,7 @@ export function createOutline(api, { shown = () => true } = {}) {
       // the tree said at the top, or in that group: under nothing, whatever's in front
       return { ...l, parent: null, parentWorld: null, yaw: l.snapped ? l.yaw : null, snapped: false, group: intoGroup ? into : null };
     };
-    const made = await copyObjects(here, drag, { land: where, before: place.before ?? null });
+    const made = await copyObjects(api.focus(), drag, { land: where, before: place.before ?? null });
     if (!made || api.signal.aborted) return;
     pendingReveal = made[0];
     flushReveal();

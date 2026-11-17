@@ -620,6 +620,7 @@ async function extensionMetas(api) {
  * @returns {Promise<string[] | null>} the new ids of the roots (the first is selected), or null
  */
 export async function copyObjects(api, payload, target) {
+  if (!api) return null;
   // the whole copy is one edit (HISTORY.md, TOOLS Decisions 2): undo takes it out again
   const edit = editor(api).edits("Paste");
   try {

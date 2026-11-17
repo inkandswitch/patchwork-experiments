@@ -9,7 +9,6 @@
 // package's module given a drop context made from the focus, its writes one
 // step.
 
-import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { EMPTY, createEdits } from "../undo.js";
 import { isGroup } from "../groups.js";
 import { paramsBySpec } from "../staleness.js";
@@ -31,18 +30,13 @@ const writer = (h) => ({
 /**
  * What a step did to a doc (undo.js `judge`): the names of the objects it
  * removed whose contents a keeper holds, bound by the trait of an extension
- * whose plugin says `keeper` (STAGE.md, "Keepers").
+ * whose plugin says `keeper` (STAGE.md, "Keepers"), read from `reg` (the
+ * focus's registry("scene:extension"), at once).
  */
-function judge({ before, after }) {
+function judge(reg, { before, after }) {
   const gone = Object.keys(before?.objects ?? {}).filter((id) => !after?.objects?.[id]);
   if (!gone.length) return null;
-  let keepers = [];
-  try {
-    keepers = patchworkPlugins.getRegistry("scene:extension")?.filter?.((p) => !!p?.keeper) ?? [];
-  } catch {
-    // no registry: nothing is kept
-  }
-  const traits = keepers.flatMap((p) => (Array.isArray(p.traits) ? p.traits : []));
+  const traits = (reg?.filter?.((p) => !!p?.keeper) ?? []).flatMap((p) => (Array.isArray(p.traits) ? p.traits : []));
   return { kept: gone.filter((id) => traits.some((k) => before.objects[id]?.traits?.[k] != null)).map((id) => String(before.objects[id].name ?? id)) };
 }
 
@@ -62,7 +56,7 @@ export function editor(f) {
     store: { get: () => local.get().edits ?? EMPTY, swap: (fn) => local.swap((m) => ({ ...m, edits: fn(m.edits ?? EMPTY) })) },
     writable: f.writable,
     notify: (text) => notify(text),
-    judge,
+    judge: (part) => judge(f.registry("scene:extension"), part),
   });
   const edits = (label) => {
     const g = e.begin(label);

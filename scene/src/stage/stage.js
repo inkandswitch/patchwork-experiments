@@ -326,7 +326,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     sourcesChanged();
   });
   if (typeof offSources === "function") cleanups.push(offSources);
-  const getRegistry = async (type) => patchworkPlugins.getRegistry(type) ?? null;
+  const getRegistry = (type) => patchworkPlugins.getRegistry(type) ?? null;
 
   const listProviders = () => {
     try {

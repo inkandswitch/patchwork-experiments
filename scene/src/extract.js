@@ -576,7 +576,7 @@ function tell(api, describes, { lost = [], entries = [] }) {
  * @returns {Promise<{ url: string, link: string } | null>}
  */
 export async function extractObjects(api, roots, traits = []) {
-  if (!api.writable()) return null;
+  if (!api?.writable()) return null;
   const live = () => !api.signal?.aborted;
   const { describes, runtime, refs } = await traitRules(api);
   if (!live()) return null;
@@ -612,7 +612,7 @@ export async function extractObjects(api, roots, traits = []) {
  * @returns {Promise<string[] | null>} the new ids of its top objects
  */
 export async function bundleLink(api, linkId, traits = []) {
-  if (!api.writable()) return null;
+  if (!api?.writable()) return null;
   const live = () => !api.signal?.aborted;
   const L = api.doc().objects?.[linkId];
   if (!isLink(L)) {

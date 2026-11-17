@@ -385,7 +385,7 @@ extension's.
 | Member | |
 |---|---|
 | `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal` | `session`: what claims and holds name |
-| `doc()`, `change(fn)`, `newId(prefix)`, `registry(type)` | `change` → its patches (`[]`: nothing written) |
+| `doc()`, `change(fn)`, `newId(prefix)`, `registry(type)` | `change` → its patches (`[]`: nothing written); `registry` → the registry, at once |
 | `writable()` | false in a pin or on a refusing handle |
 | `scene()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }` |
 | `ops` | pure planners (`src/ops.js`) → a change function or null |

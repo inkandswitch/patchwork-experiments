@@ -51,7 +51,9 @@ const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
 const { plugins } = await import("../index.js");
 const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
-const { add, drop, part, template: runTemplate } = await import("../parts/editor.js");
+const { add, drop, editor, part, template: runTemplate } = await import("../parts/editor.js");
+// the drop context (STAGE.md, "Drops"), whole: what a drop, a part and a template get
+const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: view.start.edit picks it up)
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || p.id === "scene.edit") getRegistry(p.type).register(p);
 
@@ -638,13 +640,15 @@ describe("the stage, mounted", () => {
       await settle();
       const api = exts["t.always"].api;
       const id = await part(api, "t.part", { parent: "hull", transform: { position: [1, 2, 3] } });
-      expect(seen[0].keys).toEqual(expect.arrayContaining(["addObject", "change", "content", "doc", "file", "newId", "notify", "registry", "repo", "scene"]));
+      expect(seen[0].keys).toEqual(CTX);
       // what it's dropped on can be read (a hull's stated bow), as api.content
       expect(seen[0].parentContent).toEqual(api.content("hull"));
       // and the same place in the world, for a part that would rather not ride along
       expect(seen[0].at).toEqual({ parent: "hull", transform: { position: [1, 2, 3], rotation: [0, 0, 0], scale: 1 }, world: { position: [12, 4, 6], rotation: [0, 0, 0], scale: 2 } });
       expect(h.doc().objects[id]).toMatchObject({ name: "Block", parent: "hull" });
       expect(m.local.get().selected).toBe(id);
+      // its writes are one step, the last made after its awaits: undo takes the block out; the file it made stays the scene's
+      expect([editor(api).undo(), h.doc().objects[id], editor(api).labels().undo, !!h.doc().assets["t/block@1"]]).toEqual([true, undefined, null, true]);
       // a parent that's gone or a group: the scene root
       await part(api, "t.part", { parent: "nope", transform: {} });
       await part(api, "t.part", { parent: "g" });
@@ -721,8 +725,8 @@ describe("the stage, mounted", () => {
     expect(await drop(api, { url: deck.url, doc: deck.doc(), handle: deck, group: null, at: null })).toBe(true);
     await settle();
     expect(dropped).toHaveLength(1);
-    expect(dropped[0].ctx).not.toContain("overlay");
-    expect(dropped[0].ctx).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "registry", "repo"]));
+    expect(dropped[0].ctx).toEqual(CTX);
+    expect(editor(api).labels().undo).toBe("Add");
     expect(running(m)).toContain("t.dropped:scene");
     expect(await drop(api, { url: deck.url, doc: { "@patchwork": { type: "other" } } })).toBe(false);
   });

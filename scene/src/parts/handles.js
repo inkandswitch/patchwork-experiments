@@ -119,8 +119,7 @@ function handlesAt(api, view) {
 
   const dead = () => api.signal.aborted;
 
-  view
-    .registry("scene:source")
+  Promise.resolve(view.registry("scene:source"))
     .then((reg) => {
       if (dead() || !reg) return;
       sources = reg;

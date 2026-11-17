@@ -225,7 +225,7 @@ function create(api) {
     e.preventDefault();
     const [x, y] = local(e);
     const free = e.altKey;
-    void copyObjects(here, payload, { land: (tags) => landAt(x, y, tags, free) });
+    void copyObjects(api.focus(), payload, { land: (tags) => landAt(x, y, tags, free) });
   });
 
   // ── copy and paste ───────────────────────────────────────────────────────
@@ -258,7 +258,7 @@ function create(api) {
   function paste(payload) {
     const { n, at, key } = repeat(payload);
     if (parseAutomergeUrl(payload.scene) === here.url) {
-      return copyObjects(here, payload, {
+      return copyObjects(api.focus(), payload, {
         beside: (roots) => {
           const objects = here.scene().objects;
           const ids = subtreeOf(objects, roots, here.doc().order ?? []).ids.filter((id) => !isGroup(objects[id]));
@@ -274,7 +274,7 @@ function create(api) {
     }
     const h = heldCopy();
     const radius = h && h.copy && h.copy === payload.copy ? h.radius : null;
-    return copyObjects(here, payload, {
+    return copyObjects(api.focus(), payload, {
       land: (tags) => {
         const l = land.ahead(tags, { step: pasteStep(radius, n), from: at });
         const rec = pasted.get(key);
@@ -367,7 +367,7 @@ function create(api) {
         if (!can.ok) return { disabled: true, title: can.reason };
         return { title: "Make this a scene of its own, linked here in its place (tick what of this scene goes with it)", options: traitOptions(Object.keys(doc.traits ?? {})) };
       },
-      run: (target, value) => void extractObjects(here, [target], traitsOf(value)),
+      run: (target, value) => void extractObjects(api.focus(), [target], traitsOf(value)),
     },
     {
       id: "bundle",
@@ -382,7 +382,7 @@ function create(api) {
         if (!l?.open) return { disabled: true, title: l?.role === "closed" ? `Not open here (${l.reason ?? "closed"})` : "Not open here yet" };
         return { title: "Copy the scene it shows into this one, in its place; the copy no longer follows it (tick what of that scene comes with it)", options: traitOptions(rootTraitsOf(o)) };
       },
-      run: (target, value) => void bundleLink(here, target, traitsOf(value)),
+      run: (target, value) => void bundleLink(api.focus(), target, traitsOf(value)),
     },
     {
       id: "copy",

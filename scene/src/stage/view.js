@@ -1396,7 +1396,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         return typeof v === "function" ? (...args) => v.apply(target, args.map((a) => (isEvent(a) ? viewEvent(a) : a))) : v;
       },
     });
-  const getRegistry = async (type) => patchworkPlugins.getRegistry(type) ?? null;
+  const getRegistry = (type) => patchworkPlugins.getRegistry(type) ?? null;
   /**
    * Dock a document in the drawer (api.view.dock): the view's, so it stays
    * across selections, bodies, focus moves and plugins stopping, until its ×

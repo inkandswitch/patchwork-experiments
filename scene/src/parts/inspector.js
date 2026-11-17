@@ -173,12 +173,12 @@ function create(api) {
 
   const selectedOf = (local) => local?.selected ?? null;
   // What the inspector reads, as one value: the view's (the selection, the
-  // body, prefs) with the stage's load status and edits; the same value
+  // body, prefs) with the stage's load status; the same value
   // while neither changes, so its "did anything change" checks hold.
   let seenL = null;
   let seenV = null;
   let seenS = null;
-  const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status, edits: local?.edits, running: local?.running }))));
+  const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status, running: local?.running }))));
   const now = () => seen(here.local.get(), here.view.get());
   const units = () => api.pref("units", "m");
   // the sections that go with a selection (or the scene): its Source, File or Linked scene, Build, About

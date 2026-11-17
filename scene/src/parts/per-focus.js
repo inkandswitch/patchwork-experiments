@@ -29,9 +29,9 @@ export function perFocus(api, make) {
 
 /**
  * The focus stage's api as one object, for code written for a stage's api
- * (the inspector's fields, the tree, the copy rule): each member read from
- * api.focus() as it is now, else (no focus, or a member it hasn't) from the
- * view plugin's api.
+ * (the inspector's fields, the tree): each member read from api.focus() as it
+ * is now, else from the view plugin's api. Never across an await (it would
+ * write where the focus has gone): take one api.focus() for that.
  * @param {{ focus(): object | null }} api  a view plugin's
  */
 export function atFocus(api) {

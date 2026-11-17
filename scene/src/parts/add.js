@@ -254,8 +254,9 @@ function create(api) {
     if (!link) return fail("That doesn't look like an automerge URL.");
     const url = link.url;
     const version = heads?.length ? heads : link.heads;
+    const f = api.focus(); // where it goes: the focus now, wherever the focus is by the time it's added
     // (a live link to itself would only be closed, a cycle: stage/links.js; a version of itself is fine)
-    if (url === here.url && !version?.length) return fail("A scene can't contain itself.");
+    if (url === f?.url && !version?.length) return fail("A scene can't contain itself.");
     let source;
     try {
       source = await here.repo.find(url);
@@ -264,10 +265,9 @@ function create(api) {
     }
     if (!live()) return null;
     const doc = source?.doc?.();
-    const f = api.focus();
     // what a drop lays out is one edit, as an added object is: undo takes it out again
     if (!f || (await drop(f, { url, doc, handle: source, group: null, at })) || !live()) return null;
-    const providers = (await here.providersFor(url, doc)) ?? [];
+    const providers = (await f.providersFor(url, doc)) ?? [];
     if (!providers.length) return fail(`Nothing can show ${describeForHumans(describeSource(doc))} in a scene.`);
     const what = name || doc?.title || doc?.name || "this document";
     const provider = providers.length === 1 ? providers[0] : await choose(providers, what);
@@ -279,7 +279,7 @@ function create(api) {
       return fail(err?.message ?? String(err));
     }
     if (!live()) return id;
-    if ((here.view.get().selected ?? null) !== id) here.view.select(id);
+    if ((f.view.get().selected ?? null) !== id) f.view.select(id);
     return id;
   }
 
