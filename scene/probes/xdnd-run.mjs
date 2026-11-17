@@ -512,7 +512,7 @@ async function sail() {
   const A = await P(`doc("a")`);
   const ship = Object.keys(A.objects).find((id) => A.objects[id].traits?.["sailing.ship"]);
   const aSea = Object.keys(A.objects).find((id) => A.objects[id].traits?.water && A.objects[id].traits?.["sailing.sea"]);
-  check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.["sailing.weather"], { ship, aSea, traits: Object.keys(A.traits ?? {}) });
+  check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.weather, { ship, aSea, traits: Object.keys(A.traits ?? {}) });
   if (!ship) return;
   for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "inspector")`);
   check("treesOpen", await b.waitFor(`__p.tab("a", "inspector") && __p.tab("b", "inspector")`, 5000));
@@ -547,7 +547,7 @@ async function sail() {
   check("shipRelationsKept", sameJSON(aChains, bChains), { aChains, bChains });
   check("shipTraitsCome", bIds.every((id) => sameJSON(Object.keys(B.objects[id].traits ?? {}).sort(), Object.keys(A0.objects[[...under].find((x) => names(A0, x) === names(B, id))]?.traits ?? {}).sort())));
   check("shipClaimsStayBehind", !("claims" in (B.objects[bShip] ?? {})));
-  check("seaStaysBehind", !bIds.some((id) => B.objects[id].traits?.water) && !B.traits?.["sailing.weather"], { bTraits: Object.keys(B.traits ?? {}) });
+  check("seaStaysBehind", !bIds.some((id) => B.objects[id].traits?.water) && !B.traits?.weather, { bTraits: Object.keys(B.traits ?? {}) });
   const assetKeys = Object.keys(A0.assets ?? {});
   check("shipAssetsCopied", assetKeys.length > 0 && assetKeys.filter((k) => bIds.some((id) => B.objects[id].sourceUrl === A0.assets[k].url)).every((k) => sameJSON(B.assets?.[k], A0.assets[k])), { a: assetKeys, b: Object.keys(B.assets ?? {}) });
   // sailing.ship's describes says runtime ["motion"] (sailing/src/index.js), so the copy leaves her motion

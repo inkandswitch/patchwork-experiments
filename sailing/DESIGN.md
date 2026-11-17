@@ -2,8 +2,8 @@
 
 A water body (the water package's `water` object trait) becomes a sea when
 it carries the `sailing.sea` trait, a scene has wind and sky when it carries
-`sailing.weather`, and an object becomes a ship when it carries
-`sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
+the weather package's `weather` (weather/WEATHER.md), and an object becomes
+a ship when it carries `sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
 attached under the ship (stations, the mast, the sail) and contributions from
 this package and the scene's shared parts. The requirements are use case 4
 in [../scene/DESIGN.md](../scene/DESIGN.md) and section 9 of
@@ -25,22 +25,19 @@ modules share.
   *from*, in degrees, measured from −Z (north) toward +X (east), as sailors
   say it. A wind "from 0" blows toward +Z. Velocities in code are vectors.
 - **Densities:** water 1025 kg/m³, air 1.225 kg/m³.
-- **The `wind` ambient** (scene/STAGE.md, "Conventions", names it; this
-  package's sea offers it). How the world's air moves:
-  `{ speed, from, seed, gustiness }`, speed in m/s at 10 m, `from` the
-  compass bearing it blows from in degrees (as above: 0 from −Z, 90 from
-  +X), in the outermost doc's root frame on its world time; `seed` and
-  `gustiness` (0..1) make its gusts (`wind.js`). Two readers: this
-  package's physics, which makes it a wind in each stage's frame
-  (`sea-view.js`), and the water package's surface, whose fine waves,
-  roughness and foam follow it. One copy: nothing else carries it.
+- **The `wind` ambient** is the weather package's: it offers it from the
+  outermost doc's `weather` trait, and documents its value
+  (weather/WEATHER.md, "What it offers"; scene/STAGE.md, "Conventions",
+  points there). Sailing offers no ambient. It reads the wind twice: its
+  physics makes it a wind in each stage's frame (`sea-view.js`, by
+  `wind.js`: `seed` and `gustiness` make its gusts), and every sea builds
+  its waves from it (`sea.js`). Its `from` is the compass convention above.
 
 ## Modules (sailing/src)
 
 | Module | Pure? | What it is |
 |---|---|---|
 | `ocean.js` | yes | The sea's spectrum: a wind-driven directional wave spectrum sampled into Gerstner components (`seaWaves`), plain data. The water package evaluates them, for the shader and for physics and walking (`heightAt`, `normalAt`, `velocityAt`), so what floats is what you see. Sailing keeps no evaluator: its tests' fakes use a copy of water's (`test/surface.js`), pinned by the golden file |
-| `weather.js` | yes but for create() | The weather, its own scene:extension on the scene trait `sailing.weather`: it offers the ambients `wind` (read by every boat's physics, by every sea for its waves and by the water package's surface) and `atmosphere` |
 | `sea.js` | yes but for create() | The sea, its own scene:extension on the object trait `sailing.sea`, a behaviour on a water body: for each object with both the sea and the water package's `water`, it builds the spectrum's components from the world's `wind` ambient in its stage's frame and gives them, with what only it knows of them (seed, stats), away as `water.waves` keyed by body (the water package's convention); on a new wind (by value) it asks for one more flush; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surfaces (the open grid round the camera, a bounded body's patch, the Gerstner shader) are the water package's `material.js` |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds, and the wind on her hull, mast and rigging, each a windage element of her contract's (§3.13) or of `plainWindage`'s, in its own air (§6.1, windage.js `elementForce`). `step(state, controls, env, dt)` |
@@ -2161,8 +2158,8 @@ a scene:part in index.js under "Sailing":
 
 | Part | Pieces (the first is selected) | Tags | Traits |
 |---|---|---|---|
-| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `sailing.weather` if the scene has none |
-| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `sailing.weather` if the scene has no open water |
+| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `weather` (the weather package's: `{ wind, from, seed }`) if the scene has none |
+| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `weather` if the scene has no open water |
 | Mast and sail | the mast; the boom and sail, and the jib on its forestay, under it | `sailing.mast` | `sailing.sail`, `sailing.jib` |
 | Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
 | Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |
@@ -2205,7 +2202,6 @@ a scene:part in index.js under "Sailing":
 
 | Trait | On | Fields |
 |---|---|---|
-| `sailing.weather` | scene | `{ wind: { speed, from }, seed? }` — speed m/s, from degrees; `seed` the gusts' |
 | `sailing.sea` | a water object (the water package's `water`) | `{ seed, scale }`: its waves are the spectrum of the world's wind, `scale` their height. On an object without water it does nothing, and says so |
 | `sailing.ship` | the hull object | `{ frame?, spec?, motion? }`: `frame: { position?, rotation? }`, where her body frame sits in her hull's, each part over what her GLB says ("The ship's frame"); spec overrides; `motion: { velocity, spin }` (world, her body's) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
@@ -2217,6 +2213,13 @@ a scene:part in index.js under "Sailing":
 | `sailing.hook` | the anchor itself, under the ship | `{}`: drawn lying on the bottom at `at` while its windlass has it down, at the bow (its doc place) when it's up |
 | `sailing.ladder` | the ladder under the ship | `{}`: the way aboard from the water |
 | `sailing.float` | any object | `{}`: bobs and tilts with the waves where it's moored (each view, from the shared clock; no hold) |
+
+The weather package's `weather` (a scene trait) is written by her Sea and
+Sloop parts and her templates where a scene has none (`newWeather`: the air
+of it only, `{ wind, from, seed }`, m/s, degrees and the gusts' seed; every
+other field is the weather's default), in the shape weather/WEATHER.md
+documents; sailing never reads it, only the `wind` ambient it becomes, and
+imports nothing of the weather's.
 
 Two other packages' traits ride on her companionway, written in the shapes
 those packages document (traits.js `SLIDE`, `EXIT`); sailing reads neither

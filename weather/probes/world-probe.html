@@ -1,0 +1,282 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>world probe</title>
+<!-- Driven by probes/world-run.mjs (WEATHER.md, W7): the weather reaches the
+     sky, the water and the boat. The BUILT scene, sailing, water, weather,
+     joints and traversal plugins in a stub registry, on one in-memory repo
+     and one manual clock (window.__time): a sloop under way on a Sea (the
+     sailing package's "Ship at sea" template, whose doc carries a `weather`
+     trait), then a harbour with a weather of its own that links her in.
+     Nothing here imports another package's source: each package's dist is
+     loaded as its plugins, as Patchwork's registry does; the expectations
+     are this package's own pure functions, evaluated here from the doc.
+     Open-Meteo is never reached: its URLs are answered from the committed
+     fixture src/fixtures/ucluelet-archive.json. window.__p is what the
+     runner reads and drives. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  #a { width: 100vw; height: 100vh; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+{
+  let a = 1;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "./empty-scene.js";
+import { BANDS, atmosphereOf, bandAt, sunOf } from "../src/atmosphere.js";
+import { sunDirection } from "../src/solar.js";
+import { provenance, weatherParams, windOf } from "../src/weather.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Open-Meteo, faked: every request to it is recorded and answered with the fixture's reply; nothing else is touched
+const realFetch = window.fetch.bind(window);
+const FIXTURE = await (await realFetch("../src/fixtures/ucluelet-archive.json")).json();
+const fetches = [];
+window.fetch = (url, init) => {
+  if (!/^https:\/\/[a-z-]*api\.open-meteo\.com\//.test(String(url))) return realFetch(url, init);
+  fetches.push(String(url));
+  return Promise.resolve(new Response(JSON.stringify(FIXTURE.json), { status: 200, headers: { "content-type": "application/json" } }));
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const mul = (A, B) => {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += A[k * 4 + r] * B[c * 4 + k];
+  return o;
+};
+const deg = (d) => (d * Math.PI) / 180;
+const I4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+let time = null;
+async function loaded(pred, ms = 30_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+async function pumping(fn) {
+  let done = false;
+  const out = fn().finally(() => (done = true));
+  while (!done) {
+    await time.step(1);
+    await sleep(16);
+  }
+  return out;
+}
+
+// the harbour's weather: unlike hers in every field of the wind (speed, from, seed, gustiness), hour and cover
+const HARBOUR_WEATHER = { wind: 5, from: 90, seed: 7, gustiness: 0.6, hour: 9, cover: 0.6 };
+// her sea's and her weather's seed, written once she's laid out (the template draws one from Math.random)
+const SEED = 4242;
+// her link turns her 30° in the harbour, so her frame matters when her wind is turned back into the world
+const AT = { position: [0, 0, 0], rotation: [0, deg(30), 0], scale: 1 };
+
+try {
+  for (const { plugins } of [
+    await import("../../scene/dist/index.js"),
+    await import("../../sailing/dist/index.js"),
+    await import("../../water/dist/index.js"),
+    await import("../dist/index.js"),
+    await import("../../joints/dist/index.js"),
+    await import("../../traversal/dist/index.js"),
+  ]) for (const p of plugins) getRegistry(p.type).register(p);
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const repo = new FakeRepo();
+  const me = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  Object.assign(host, { repo, viewerId: me.url, time });
+  let dbg = null, unmount = null, world = null;
+  const docs = { boat: null, harbour: null };
+  const ids = {};
+  const mount = (handle) => {
+    unmount?.();
+    host.replaceChildren();
+    unmount = Tool(handle, host);
+    world = handle;
+    dbg = host.querySelector(".scene-stage").__sceneDebug;
+  };
+  const withTrait = (h, t) => Object.entries(h.doc().objects ?? {}).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+  /** the outermost's stage ([]) or the one at link `id` */
+  const stageOf = (id = null) => dbg?.view.stages().find((s) => (id == null ? s.path.length === 0 : s.path.length === 1 && s.path[0] === id)) ?? null;
+  const inst = (st, ext) => st?.debug.host.instanceOf(ext) ?? null;
+  /** the sailing extension's stage api on a stage (the outermost's by default) */
+  const api = (st = stageOf()) => st?.debug.host.record("sailing")?.api ?? null;
+  const centre = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
+  const frameOf = (st) => st.frame()?.matrix ?? I4;
+  const worldOf = (st, oid) => mul(frameOf(st), st.displayedWorld(oid));
+  /** the drawn ocean (a visible mesh named "ocean"), or null */
+  const ocean = () => {
+    let out = null;
+    dbg.viewport.scene.traverse((o) => {
+      if (o.name !== "ocean") return;
+      for (let p = o; p; p = p.parent) if (p.visible === false) return;
+      out = o;
+    });
+    return out;
+  };
+  // every change to the boat's `weather` (a change that leaves it as it was isn't one)
+  let weatherChanges = 0;
+
+  const P = (window.__p = {
+    errors, ids, fixture: FIXTURE.request,
+    /**
+     * her doc: an empty scene with its clock held at 0, the "Ship at sea"
+     * template clicked as a person does, her sea's and weather's seed set to
+     * SEED; → once her stage has read that seed. The frames loading takes
+     * are the wall's, but held they pass no world time, so (c) starts her
+     * from the same t, the same seed and the same doc every run.
+     */
+    build: () => pumping(async () => {
+      const doc = (docs.boat = repo.add({ ...emptyScene({ title: "Sloop" }), clock: { running: false, t: 0 } }));
+      mount(doc);
+      const sel = '[data-template="ship-at-sea"]';
+      await loaded(() => host.querySelector(sel));
+      host.querySelector(sel).click();
+      await loaded(() => withTrait(doc, "sailing.ship") && withTrait(doc, "sailing.sail") && inst(stageOf(), "sailing") && inst(stageOf(), "water") && inst(stageOf(), "weather") && ocean());
+      ids.hull = withTrait(doc, "sailing.ship");
+      ids.mast = withTrait(doc, "sailing.sail");
+      ids.sea = withTrait(doc, "sailing.sea");
+      doc.change((d) => {
+        d.objects[ids.sea].traits["sailing.sea"].seed = SEED;
+        d.traits.weather.seed = SEED;
+      });
+      await loaded(() => api()?.ambient("wind")?.value?.seed === SEED && inst(stageOf(), "sailing")?.debug.sea?.oceanAt([0, 0, 0])?.seed === SEED);
+      let last = JSON.stringify(doc.doc().traits?.weather ?? null);
+      doc.on("change", ({ doc: d }) => {
+        const now = JSON.stringify(d.traits?.weather ?? null);
+        if (now !== last) weatherChanges++;
+        last = now;
+      });
+      return { ...ids, weather: doc.doc().traits?.weather ?? null, running: stageOf().debug.host.running().map((r) => r.id), body: dbg.local.get().body?.id ?? null, clock: P.clock() };
+    }),
+    /** the world's clock (her sailing's api.clock, as the clock chip reads it): { t, running } */
+    clock: () => ({ t: api().clock.t(), running: api().clock.running() }),
+    /** the world's clock running again, as the clock chip's ▶ does → its t */
+    resume() { api().clock.resume(); return api().clock.t(); },
+    body: () => dbg.local.get().body?.id ?? null,
+    /** the body chip and its menu's items, where they're drawn (centres), for the runner's clicks */
+    chip: () => centre(host.querySelector(".body-chip")),
+    menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
+    weather: () => world.doc().traits?.weather ?? null,
+    /** fields of the world's weather, written in one change (as the inspector writes several) */
+    set: (fields) => world.change((d) => Object.assign(d.traits.weather, fields)),
+    weatherChanges: () => weatherChanges,
+    fetches: () => [...fetches],
+    ambient: (name) => dbg.view.ambient(name) ?? null,
+    /** what this package's pure functions make of the world's weather: the expectation */
+    expected() {
+      const p = weatherParams(world.doc().traits.weather);
+      const sun = sunOf(p);
+      const band = bandAt(sun.geometric);
+      return { params: p, atmosphere: atmosphereOf(p), wind: windOf(p), sun, direction: sunDirection(sun.azimuth, sun.apparent), band: { exposure: band.exposure, light: band.light }, night: { exposure: BANDS.at(-1).exposure, at: BANDS.at(-1).at }, provenance: provenance(world.doc().traits.weather) };
+    },
+    /** the viewport as drawn: its atmosphere's sky and fog, the key light (from = position - target), the scene's fog */
+    viewport() {
+      const vp = dbg.viewport;
+      const k = vp.keyLight;
+      const from = k.position.toArray().map((x, i) => x - k.target.position.toArray()[i]);
+      return { sky: vp.atmosphere?.sky ?? null, fog: vp.atmosphere?.fog ?? null, sceneFog: vp.scene.fog ? `#${vp.scene.fog.color.getHexString()}` : null, key: { from, intensity: k.intensity, color: `#${k.color.getHexString()}`, shadows: k.castShadow } };
+    },
+    /** the ocean's material as the water extension set it */
+    water() {
+      const o = ocean();
+      const u = o?.material?.uniforms;
+      if (!u) return null;
+      return {
+        clouds: u.uClouds.value.toArray(),
+        scatterGain: u.uScatterGain.value,
+        sunOn: u.uSunOn.value,
+        sunDir: u.uSunDir.value.toArray(),
+        sunIntensity: u.uSunIntensity.value,
+        sunColor: `#${u.uSunColor.value.getHexString()}`,
+        skyTop: `#${u.uSkyTop.value.getHexString()}`,
+        skyHorizon: `#${u.uSkyHorizon.value.getHexString()}`,
+      };
+    },
+    /**
+     * The true wind at her mast now, as the stage she sails in reads it
+     * (its sailing extension's sea.wind, at the mast's world point mapped
+     * into her frame, at api.clock.t() as physics and the HUD ask it),
+     * turned back into the world; her mean wind (that sea's own speed, from
+     * and gustiness), from turned back into the world; and the `wind`
+     * ambient that stage's sailing reads ({ value, mine }), which its sea
+     * makes that wind of (seed included: sailing's sea-view tests pin the
+     * ambient → createWind step).
+     */
+    mastWind(link = null) {
+      const st = stageOf(link);
+      const sea = inst(st, "sailing")?.debug.sea;
+      if (!sea?.wind) return null;
+      const m = worldOf(st, ids.mast);
+      const F = frameOf(st);
+      const dx = m[12] - F[12], dz = m[14] - F[14];
+      const lx = F[0] * dx + F[2] * dz, lz = F[8] * dx + F[10] * dz;
+      const a = api(st);
+      // at the grid instant physics stepped her at (scene's STEP_S, 1/60 s): the clock's t can sit up to a
+      // microsecond past it (the doc keeps t rounded up to 1e-6, scene stage/clock.js), and when it does is the wall's
+      const t = Math.round(a.clock.t() * 60) / 60;
+      const [vx, vz] = sea.wind.at(lx, lz, t);
+      const r = deg(sea.wind.from), ux = -Math.sin(r), uz = Math.cos(r);
+      const wx = F[0] * ux + F[8] * uz, wz = F[2] * ux + F[10] * uz;
+      return {
+        at: [m[12], m[14]], t,
+        v: [F[0] * vx + F[8] * vz, F[2] * vx + F[10] * vz],
+        mean: { speed: sea.wind.speed, from: ((Math.atan2(-wx, wz) * 180) / Math.PI + 360) % 360, gustiness: sea.wind.gustiness },
+        ambient: (({ value, mine }) => ({ value, mine }))(a.ambient("wind") ?? {}),
+      };
+    },
+    /** the harbour: a weather of its own, water and a Sea, and her linked in live */
+    harbour: () => pumping(async () => {
+      const H = emptyScene({ title: "Harbour", traits: { weather: { ...structuredClone(docs.boat.doc().traits.weather), ...HARBOUR_WEATHER } }, view: { grid: false, axes: false, start: { body: "edit", home: { position: [0, 30, 60], target: [0, 0, 0] } } } });
+      delete H.traits.weather.source;
+      const base = { sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false };
+      H.objects = {
+        sea: { ...base, name: "Sea", locked: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {}, "sailing.sea": { seed: 7 } } },
+        LB: { ...base, name: "Sloop", sourceUrl: docs.boat.url, providerId: "scene.link", locked: true, transform: AT, hint: { bounds: { min: [-4, -2, -7], max: [4, 16, 7] } } },
+      };
+      H.order = ["sea", "LB"];
+      docs.harbour = repo.add(H);
+      mount(docs.harbour);
+      const ok = await loaded(() => inst(stageOf("LB"), "sailing")?.debug.sea?.wind && inst(stageOf(), "water") && inst(stageOf(), "weather") && ocean(), 60_000);
+      return { ok, stages: dbg.view.stages().map((s) => ({ path: [...s.path], running: s.debug.host.running().map((r) => r.id) })), weather: docs.harbour.doc().traits.weather };
+    }),
+    /** the toolbar's weather controls as shown: [{ command, text, title, rect }] */
+    toolbar() {
+      return [...host.querySelectorAll('.toolbar [data-ext="weather"][data-command]')].filter((e) => !e.closest("[hidden]")).map((e) => {
+        const r = e.getBoundingClientRect();
+        return { command: e.dataset.command, text: e.textContent, title: e.title, disabled: !!e.disabled, rect: { x: r.x + r.width / 2, y: r.y + r.height / 2 } };
+      });
+    },
+    notices: () => (dbg?.view.atom.get().notices ?? []).map((n) => [n.kind, n.text]),
+    running: () => stageOf()?.debug.host.running().map((r) => r.id) ?? [],
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>

@@ -42,7 +42,7 @@ const EXAMPLE = q.get("example") ?? "cuvature-kink-with-unmodified-pchip.json";
 const SEED = Number(q.get("seed") ?? 20251105);
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "/camber/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "/camber/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -56,7 +56,7 @@ try {
   // water object with a sea on it, the water package floating her on its waves), under the weather: a calm-ish
   // breeze from the north-east
   const sea = { name: "Sea", sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {}, "sailing.sea": { seed: SEED, scale: 1 } } };
-  const scene = repo.add({ ...emptyScene({ title: "Camber at sea", traits: { "sailing.weather": { wind: { speed: 7, from: 45 }, seed: SEED } }, view: { grid: false } }), objects: { sea }, order: ["sea"] });
+  const scene = repo.add({ ...emptyScene({ title: "Camber at sea", traits: { weather: { wind: 7, from: 45, seed: SEED } }, view: { grid: false } }), objects: { sea }, order: ["sea"] });
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");

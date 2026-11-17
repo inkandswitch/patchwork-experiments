@@ -22,7 +22,7 @@
 import { vi } from "vitest";
 import { createSurface } from "./surface.js";
 import { seaWavesFor } from "../sea.js";
-import { weatherOffer, weatherParams } from "../weather.js";
+import { windOffer } from "./weather.js";
 
 /**
  * An empty scene doc, as the scene datatype's init writes one: every map a
@@ -395,8 +395,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
   function waterReader() {
     const w = openWater();
     if (!w) return null;
-    const weather = doc.traits?.["sailing.weather"];
-    const wind = weather ? weatherParams(weather).wind : null;
+    const wind = windOffer(doc.traits?.weather);
     const sea = w.o.traits["sailing.sea"];
     const waves = sea ? seaWavesFor(sea, wind) : { components: [], look: { seed: 1, stats: {} } };
     return memoOf(`water:${JSON.stringify(waves)}`, () => Object.freeze({ ...createSurface(waves.components), body: null, level: 0, seed: waves.look.seed, stats: waves.look.stats }));
@@ -405,7 +404,8 @@ export function fakeWorld(doc, { content = {} } = {}) {
   let offered = null; // { version, value }: the ambients as of a version of the doc (a stage's are flushed, not made at each ask)
   function ambients() {
     if (offered?.version === version) return offered.value;
-    const out = { ...(weatherOffer(doc.traits?.["sailing.weather"]) ?? {}) };
+    // the weather's: its wind (a stand-in for the weather package's offer, ./weather.js); no atmosphere, which nothing here reads
+    const out = doc.traits?.weather ? { wind: windOffer(doc.traits.weather) } : {};
     if (openWater()) out.water = { v: 2, level: 0, components: waterReader().components };
     for (const k of Object.keys(out)) out[k] = memoOf(`ambient:${k}:${JSON.stringify(out[k])}`, () => structuredClone(out[k]));
     offered = { version, value: out };

@@ -44,7 +44,7 @@ const EXAMPLE = arg("--example", "cuvature-kink-with-unmodified-pchip.json");
 // (its stays run to a 12 m sloop's stem, chainplates and transom; a smaller hull scales the mast down)
 const SCALE = Number(arg("--scale", 12));
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "camber-shots"));
-for (const p of [join(ROOT, "sailing/dist/index.js"), join(ROOT, "scene/dist/index.js"), join(CAMBER, "patchwork/dist/index.js"), join(CAMBER, "examples", EXAMPLE)]) if (!existsSync(p)) throw new Error(`no ${p}: build it first`);
+for (const p of [join(ROOT, "sailing/dist/index.js"), join(ROOT, "weather/dist/index.js"), join(ROOT, "scene/dist/index.js"), join(CAMBER, "patchwork/dist/index.js"), join(CAMBER, "examples", EXAMPLE)]) if (!existsSync(p)) throw new Error(`no ${p}: build it first`);
 
 const b = await browser({
   root: ROOT, port: 4780, cdp: 9780, page: `/sailing/probes/camber-probe.html?example=${encodeURIComponent(EXAMPLE)}`, width: 1280, height: 760,

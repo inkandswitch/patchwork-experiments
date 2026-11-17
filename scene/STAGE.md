@@ -1979,10 +1979,11 @@ values, its reader and who draws what are the package's to document:
 [water/WATER.md](../water/WATER.md), "Water bodies" and "Clipped open
 water".
 
-**Wind** (the ambient `wind`; offered by sailing's weather). How the world's
-air moves, read by sailing's physics and the water package's surface. Its
-value and compass convention are sailing's to document:
-[sailing/DESIGN.md](../sailing/DESIGN.md), "Conventions".
+**Wind** (the ambient `wind`; offered by the `weather` package from the
+scene trait `weather`). How the world's air moves, read by sailing's physics
+and seas and the water package's surface. Its value and compass convention
+are the weather's to document: [weather/WEATHER.md](../weather/WEATHER.md),
+"What it offers".
 
 ---
 

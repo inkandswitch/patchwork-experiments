@@ -8,8 +8,6 @@ import { eulerFromQuat, mulQ, quatFromEuler } from "./frames.js";
 
 /** A sea: waves on the water body it's put on (an object trait, `{ seed, scale }`). */
 export const SEA = "sailing.sea";
-/** The weather: a world's wind and sky (a scene trait, `{ wind: { speed, from }, seed? }`). */
-export const WEATHER = "sailing.weather";
 export const SHIP = "sailing.ship";
 export const HELM = "sailing.helm";
 export const SAIL = "sailing.sail";
@@ -36,6 +34,16 @@ export const WINCH = "sailing.winch";
 export const WATER_TRAIT = "water";
 /** Is this object open water (the water package's trait with no size)? */
 export const isOpenWater = (o) => !!o?.traits?.[WATER_TRAIT] && o.traits[WATER_TRAIT].size == null;
+/**
+ * the weather package's: the world's weather, a scene trait, flat
+ * (`{ wind, from, seed, ... }`: wind m/s at 10 m, from degrees true, seed
+ * the gusts'; every field it leaves out is the weather's default:
+ * weather/WEATHER.md). Sailing's parts and templates write the air of it
+ * where a scene has none; the weather package offers it as the ambient below.
+ */
+export const WEATHER = "weather";
+/** The ambient name of the world's wind (weather/WEATHER.md, "What it offers"; STAGE.md, "Conventions"): `{ speed (m/s), from (degrees), seed, gustiness (0..1) }`. Sailing reads it and offers none. */
+export const WIND_AMBIENT = "wind";
 /** joints' slide: a part that moves along a line between two stops (the companionway's hatch). */
 export const SLIDE = "joints.slide";
 /** traversal's exit: an object that leads to another document; the companionway is one, leading nowhere until a scene says where. */
