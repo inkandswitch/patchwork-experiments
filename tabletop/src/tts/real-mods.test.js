@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Real mods, from this machine's Tabletop Simulator cache (when there is one:
-// ~/Library/Tabletop Simulator/Mods, as the README's probe reads it). Each is
+// ~/Library/Tabletop Simulator/Mods, as probes/import-run.mjs reads it). Each is
 // imported whole, its assets dropped as a folder, and the game it makes is
 // checked against the format: valid, every image and model a piece names is a
 // file doc the import stored, every card in a deck a card, every
@@ -10,8 +10,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { runImport, source } from "./importer.js";
-import { FakeRepo } from "./test/fake-repo.js";
-import { validate, errorText } from "./test/contract/validate.js";
+import { FakeRepo } from "../test/fake-repo.js";
+import { validate, errorText } from "../../contract/v1/validate.js";
 
 const MODS = join(homedir(), "Library", "Tabletop Simulator", "Mods");
 /**

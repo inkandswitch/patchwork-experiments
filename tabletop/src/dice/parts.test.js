@@ -7,8 +7,8 @@ import * as parts from "./parts.js";
 import { DIE, PROVIDER } from "./ids.js";
 import { PRESETS, dieOf, presetDoc } from "./die.js";
 import { dieGLB } from "./die-glb.js";
-import { fakeDrop } from "./test/fakes.js";
-import { emptyScene } from "./test/empty-scene.js";
+import { fakeDrop } from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 
 const T = (position, rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const SINGLE = { d6: "d6", d4: "d4", d8: "d8", d10: "d10", d12: "d12", d20: "d20", coin: "coin", doubling: "doubling" };
@@ -23,9 +23,9 @@ describe("a die part", () => {
       const id = await parts[name].create(ctx, at);
       expect(calls.created).toEqual([{ "@patchwork": { type: "die" }, ...presetDoc(preset) }]);
       expect(calls.added).toHaveLength(1);
-      expect(calls.added[0].url).toBe("automerge:made1");
+      expect(calls.added[0].url).toBe("automerge:file1");
       expect(calls.added[0].opts).toMatchObject({ providerId: PROVIDER, name: presetDoc(preset).title, parent: null, transform: at.transform, fields: { traits: { [DIE]: {} } } });
-      expect(doc.objects[id]).toMatchObject({ sourceUrl: "automerge:made1", providerId: PROVIDER, parent: null, traits: { [DIE]: {} } });
+      expect(doc.objects[id]).toMatchObject({ sourceUrl: "automerge:file1", providerId: PROVIDER, parent: null, traits: { [DIE]: {} } });
       expect(doc.order).toEqual([id]);
       // the box is the solid's own, standing on y = 0: the built GLB's, but for the marks' hair's breadth
       const b = dieGLB(presetDoc(preset)).bounds;

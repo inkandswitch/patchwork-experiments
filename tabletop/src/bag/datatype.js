@@ -1,4 +1,4 @@
-// The bag datatype: a token bag as a document. README.md has the shape; the
+// The bag datatype: a token bag as a document. README.md, "Bags", has the shape; the
 // contents are read and written only through contents.js.
 
 import { BAG } from "./contents.js";

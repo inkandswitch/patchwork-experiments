@@ -31,7 +31,7 @@
 // "You" and to the others by name (`messages`; scene/STAGE.md "Telling").
 //
 // Component physics, not rules: nothing here knows a game, a turn or a
-// legal move. (Dice are their own package, dice/.)
+// legal move. (Dice are dice/'s.)
 
 import { audienceOf, facing, isCard, parentOf, seatAt, seatOf, seatsFrom, zones } from "./visibility.js";
 import { CARD_TAGS, worldSlots } from "./slots.js";
@@ -57,9 +57,6 @@ export function keptBy(api, id) {
 }
 
 export default {
-  // the `tables` convention (this plugin's metadata, `tables: "tabletop-game"`): lay a game out in the
-  // scene of a drop context, by its id, from any package's template or part (template.js setUp)
-  setUp: async (...args) => (await import("./template.js")).setUp(...args),
   create(api) {
     const { viewer } = api;
     let scene = null;

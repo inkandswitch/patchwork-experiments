@@ -5,11 +5,10 @@
      on a fresh tts-import doc in an in-memory repo, drops the mod's files on it
      (a real DataTransfer of Files, as a drop from the desktop would be), waits
      for the import, presses "Open the game", mounts the BUILT tabletop-game
-     tool (../tabletop/dist) on the game it made, lets it draw every piece,
-     presses "Set up a table", and mounts the BUILT scene tool on the table that
-     opens, with the seats, keep, bag and dice packages installed (each from
-     its own dist, loaded at runtime by URL: verification only, not a
-     dependency). Nothing here is importer-specific past the drop: the table
+     tool on the game it made, lets it draw every piece, presses "Set up a
+     table", and mounts the BUILT scene tool on the table that opens, with the
+     seats package installed (from its own dist, loaded at runtime by URL:
+     verification only, not a dependency). Nothing here is importer-specific past the drop: the table
      is set up as any game's is. window.__probe collects what the runner checks. -->
 <script type="importmap">
 { "imports": {
@@ -35,7 +34,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const params = new URLSearchParams(location.search);
 
 try {
-  for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js", "/tabletop/dist/index.js", "/keep/dist/index.js", "/bag/dist/index.js", "/dice/dist/index.js"]) {
+  for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

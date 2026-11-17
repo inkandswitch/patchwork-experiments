@@ -9,7 +9,7 @@
 //   from any angle above the table.
 // - The pool is a shallow felt dish standing on y = 0.
 
-import { computeBounds, encodeGLB } from "./glb.js";
+import { computeBounds, encodeGLB } from "../kit/glb.js";
 import { CUP_HEIGHT, CUP_MOUTH, CUP_TOP, CUP_WALL } from "./cup.js";
 
 /** The pool's radius (m). */

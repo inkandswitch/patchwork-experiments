@@ -25,8 +25,8 @@ export async function install(urls) {
 
 /**
  * The game page's table: the game (games/lost-cities.json) in a game doc, its
- * GLBs, each container from a keeper found in the registry (`secure: false`
- * asks for a plain one), the seats from their owner, then the scene.
+ * GLBs, each container from its keeper (`secure: false`: the plain one), the
+ * seats from their owner, then the scene.
  * @returns {Promise<{ game, scene, deckUrl: string, kinds: object }>}
  */
 export async function lostCitiesTable(repo, { title = "Probe table", secure = true, edit = null } = {}) {

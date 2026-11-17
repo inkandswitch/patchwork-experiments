@@ -11,8 +11,8 @@ import { KEPT } from "./lots.js";
 import { PRESETS, dieOf } from "./die.js";
 import { builtDie } from "./die-glb.js";
 import { faceOfSeed, faceUp, seedFor, seedFromLots } from "./roll.js";
-import * as fakes from "./test/fakes.js";
-import { emptyScene } from "./test/empty-scene.js";
+import * as fakes from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 
 const T = (position, rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const BUILT = builtDie(dieOf(PRESETS.d6.make()));
@@ -67,7 +67,7 @@ function table({ present = ["A", "B", "S"] } = {}) {
   });
   const doc = emptyScene({ objects, order: Object.keys(objects) });
   const content = Object.fromEntries(dice.map((d) => [d, { loaded: true, extras: { dice: BUILT } }]));
-  const w = fakes.fakeWorld(doc, { content });
+  const w = fakes.fakeWorld(doc, { content, ext: "dice" });
   const lots = scriptedLots();
   const views = {};
   for (const [session, viewer] of [["A", "alice"], ["B", "bob"], ["S", "spec"]]) {

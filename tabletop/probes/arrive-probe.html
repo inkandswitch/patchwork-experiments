@@ -3,7 +3,7 @@
 <title>tabletop arrive probe</title>
 <!-- Driven by probes/arrive.mjs. Two viewers with different packages
      installed, so two iframes (arrive-frame.html), each with its own plugin
-     registry: A has the scene, seats, tabletop and card-table packages; B
+     registry: A has the scene, seats and tabletop packages; B
      has the scene and seats packages only. The documents are this page's (one FakeRepo; each
      frame reads its own copies: frame-repo.js), and each package is a folder
      doc here with a package.json, as pushwork lays one out, served to a
@@ -18,7 +18,7 @@
 </style>
 <iframe id="a"></iframe><iframe id="b"></iframe>
 <script type="module">
-import { FakeRepo, fakeUrl } from "./fake-repo.js";
+import { FakeRepo, fakeUrl } from "../src/test/fake-repo.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -31,7 +31,7 @@ try {
     const pj = repo.add({ "@patchwork": { type: "file" }, name: "package.json", content: JSON.stringify({ name }) });
     return repo.add({ title: name, docs: [{ name: "package.json", type: "file", url: pj.url }] }, fakeUrl()).url;
   };
-  const urls = { scene: folder("@tiny-patchwork/scene"), seats: folder("@tiny-patchwork/seats"), tabletop: folder("@tiny-patchwork/tabletop"), "card-table": folder("@tiny-patchwork/card-table") };
+  const urls = { scene: folder("@tiny-patchwork/scene"), seats: folder("@tiny-patchwork/seats"), tabletop: folder("@tiny-patchwork/tabletop") };
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
   const time = (window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime());

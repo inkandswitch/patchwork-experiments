@@ -3,9 +3,10 @@ import { describe, it, expect } from "vitest";
 import { plugins } from "../index.js";
 import { DIE, PROVIDER } from "./ids.js";
 
-const of = (type) => plugins.filter((p) => p.type === type);
+const dice = plugins.filter((p) => /^(die|dice(\..*)?|liars-dice)$/.test(p.id));
+const of = (type) => dice.filter((p) => p.type === type);
 
-describe("the dice package's plugins", () => {
+describe("the dice plugins", () => {
   it("every one survives structuredClone but for load(), as the worker needs", () => {
     for (const p of plugins) {
       const { load, ...meta } = p;
@@ -19,8 +20,8 @@ describe("the dice package's plugins", () => {
     expect(of("patchwork:tool")).toMatchObject([{ id: "die", supportedDatatypes: ["die"] }]);
     expect(of("scene:source")).toMatchObject([{ id: PROVIDER, supportedDatatypes: ["die"], content: "built" }]);
     expect(of("scene:extension").map((p) => p.id)).toEqual(["dice", "dice.cup", "dice.lots"]);
-    // nothing here is anyone else's: no plugin, trait or metadata of another package's
-    expect(JSON.stringify(plugins.map(({ load, ...m }) => m))).not.toMatch(/keep\.|"lots":/);
+    // no keeper's trait or metadata among them
+    expect(JSON.stringify(dice.map(({ load, ...m }) => m))).not.toMatch(/keep\.|"lots":/);
     expect(of("scene:template").map((p) => p.id)).toEqual(["dice.liars-dice"]);
     expect(of("tabletop:game").map((p) => p.id)).toEqual(["liars-dice"]);
     expect(new Set(plugins.map((p) => `${p.type}/${p.id}`)).size).toBe(plugins.length);

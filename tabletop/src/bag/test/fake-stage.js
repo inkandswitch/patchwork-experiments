@@ -2,8 +2,8 @@
 // that the bag's extension uses, over FakeHandles. Each thing the stage would
 // do is recorded so a test can read it back: notices, sends, labels, held tools (arms),
 // loops, docked panels, addObject calls.
-import { FakeHandle, FakeRepo } from "./fake-repo.js";
-import { createTelling, declared } from "./telling.js";
+import { FakeHandle, FakeRepo } from "../../test/fake-repo.js";
+import { createTelling, declared } from "../../test/telling.js";
 
 export const SCENE_URL = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 

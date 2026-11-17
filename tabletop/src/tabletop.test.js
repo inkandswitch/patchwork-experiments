@@ -13,12 +13,12 @@ import { emptyScene } from "./empty-scene.js";
 import { parseGLB } from "./glb.js";
 import { encodePNG } from "./test/png.js";
 import { nodeImages } from "./test/node-images.js";
-import { BAG, SEATS, bagPlugin, keeperPlugin, keptIn, registries, seatsPlugin, sourcePlugin } from "./test/stand-ins.js";
+import { BAG, SEATS, inBag, keptIn, registries, seatsPlugin, sourcePlugin } from "./test/stand-ins.js";
 import { fakeRepo, game as builtIn, seeded } from "./test/games.js";
 
 // the seats owner's lay, and a keeper's bind, as the registry would give them (test/stand-ins.js)
 const lay = (await seatsPlugin().load()).lay;
-const bindTo = (url) => (slot) => ({ "t.plain": { by: url, slot } });
+const bindTo = (url) => (slot) => ({ "keep.plain": { by: url, slot } });
 
 async function newGame(repo, id = "santorini") {
   const init = {};
@@ -495,7 +495,7 @@ describe("Lost Cities", () => {
     expect(cards).toHaveLength(60);
     for (const o of cards) {
       expect(o.traits["tabletop.card"]).toEqual({});
-      expect(Object.keys(o.traits).sort()).toEqual(["scene.carry", "t.plain", "tabletop.card"]);
+      expect(Object.keys(o.traits).sort()).toEqual(["keep.plain", "scene.carry", "tabletop.card"]);
     }
     expect(cards.map((o) => keptIn(o).slot).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, k) => k));
     expect((await table(3, { secure: false })).secrets.secure).toBe(false);
@@ -635,29 +635,21 @@ describe("cards anywhere, and bags", () => {
     const g = small();
     const layout = tableLayout(g, { fileOf: fakeFiles(g) });
     const repo = fakeRepo();
-    const made = await prepareTable({ repo, registry: async (t) => registries(keeperPlugin("plain"), bagPlugin(), seatsPlugin())[t] ?? null }, layout);
+    const made = await prepareTable({ repo, registry: async (t) => registries(seatsPlugin())[t] ?? null }, layout);
     expect(made.notes).toEqual([]);
-    const bagDocs = [...repo.docs.values()].filter((d) => d["@patchwork"].type === "t-bag");
+    const bagDocs = [...repo.docs.values()].filter((d) => d["@patchwork"].type === "bag").map(inBag);
     // the inner bag was made first, so the outer one holds it already given its document
-    expect(bagDocs.map((d) => d.items.length)).toEqual([1, 7]);
-    const innerInOuter = bagDocs[1].items.find((i) => i.object.name === "Bag");
-    expect(innerInOuter.object.traits[BAG]).toEqual(made.bags[Object.keys(layout.bags)[1]][BAG]);
+    expect(bagDocs.map((d) => d.length)).toEqual([1, 7]);
+    const innerInOuter = bagDocs[1].find((o) => o.name === "Bag");
+    expect(innerInOuter.traits[BAG]).toEqual(made.bags[Object.keys(layout.bags)[1]][BAG]);
     // the cards in the bag are bound to their containers
-    const cardsInBag = bagDocs[1].items.filter((i) => i.object.name === "Card");
-    expect(cardsInBag.every((i) => keptIn(i.object) && Object.keys(i.object.traits["tabletop.card"]).length === 0)).toBe(true);
+    const cardsInBag = bagDocs[1].filter((o) => o.name === "Card");
+    expect(cardsInBag.every((o) => keptIn(o) && Object.keys(o.traits["tabletop.card"]).length === 0)).toBe(true);
     const scene = skeleton();
     writeTable(scene, layout, made);
     const bagObject = Object.values(scene.objects).find((o) => o.name === "Bag");
     expect(bagObject.traits[BAG].doc).toMatch(/^automerge:/);
     expect(scene.objects[Object.keys(layout.bags)[0]].traits).toEqual({ "scene.carry": {}, [BAG]: { doc: bagObject.traits[BAG].doc } });
-  });
-
-  it("without a bag maker, the bags are written empty and a note says so", async () => {
-    const g = small();
-    const layout = tableLayout(g, { fileOf: fakeFiles(g) });
-    const made = await prepareTable({ repo: fakeRepo(), registry: async (t) => registries(keeperPlugin("plain"), seatsPlugin())[t] ?? null }, layout);
-    expect(made.notes).toEqual(["8 things in bags weren't laid out: nothing installed here holds a bag's contents."]);
-    expect(made.bags).toEqual({});
   });
 
   it("a hand is a seat's only where it's placed for one", () => {

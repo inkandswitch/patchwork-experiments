@@ -6,7 +6,7 @@
 //     with images on them (slab.js: cards, tiles, tokens, boards) and models
 //     (an OBJ file doc, obj.js), each placed at `at`, turned by `rotation`;
 //   - as a document (`doc`): whatever `scene:source` draws that document's
-//     type draws it (a die, by the dice package), found by the caller.
+//     type draws it (a die, by dice/source.js), found by the caller.
 // Snap points become the scene's connectors (`extras.connectors`), whole
 // frames and all (the scene keeps each one's rotation; table/slots.js reads
 // it back from content(id).extras), and a snap radius `extras.snapRadius`.

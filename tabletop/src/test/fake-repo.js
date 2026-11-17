@@ -1,4 +1,4 @@
-// A copy of scene/src/test/fake-repo.js (FakeHandle, FakeRepo), for the probe page: an
+// A copy of scene/src/test/fake-repo.js (FakeHandle, FakeRepo), for the tests and the probe pages: an
 // in-memory stand-in for an automerge Repo + DocHandle.
 let counter = 0;
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";

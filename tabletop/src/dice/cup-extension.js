@@ -9,7 +9,7 @@
 //   the doc, and running wherever there's a cup, so it holds whatever
 //   anyone is doing.
 // - `looks()`: for a die of a shake not yet turned up, the one rule keepers
-//   share (rule.js): its own look when it isn't turned toward you, the veil
+//   share (keep/rule.js): its own look when it isn't turned toward you, the veil
 //   when it is and you may not (or can't yet) know it, and when you may and
 //   your client knows it, the die itself, shown lying as it really does.
 // - Dressing (STAGE.md, `content`): each view, for itself, shows a die it
@@ -55,7 +55,7 @@
 import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, redrawFor, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
 import { builtOf, faceOfSeed, faceUp, scaleOf, seedFor, seedFromLots, settled } from "./roll.js";
 import { mayAskAgain } from "./lots.js";
-import { lookFor } from "./rule.js";
+import { lookFor } from "../keep/rule.js";
 
 /** How long a shake rattles before the cup comes down (s). */
 export const SHAKE_SECONDS = 0.6;

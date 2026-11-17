@@ -616,3 +616,21 @@ change(fn) → patches }` and a store. The stage api's `view` gained
 module's. Tests: the kernel's template, part, `ctx.file` and drop tests
 call the editor's functions on an extension's api; the `own()` test and the
 host's drop test went; undo's exhaustive tests are unchanged.
+
+### 2026-11-17 — The board-game packages merge into tabletop
+
+PLANS.md step 3b, the lead's call. `tabletop` absorbs `dice`, `bag`,
+`tts-import`, `card-table` and `keep` (under `src/dice`, `src/bag`,
+`src/tts`, `src/keep`), so step 4 migrates one games package, not six;
+`seats` stays separate (machine uses it). Every plugin keeps its id, trait
+and datatype. Gone with the package boundaries: the registry conventions
+only these used between themselves (`keeper: <kind>` lookups for `contain`,
+`container: "bag"` and `fill`, `tables: "tabletop-game"` and `setUp`: setup
+code imports the keepers, the bag and the table writer now), the warnings
+for a keeper or bag maker not installed, and the copied `rule.js`, GLB kit,
+test fakes, empty scene, package-URL helpers, contract copies and probe
+stubs. Kept: the `keeper` metadata and contribution (the editor's undo
+reads the one, a table's Shuffle the other, per object at run time), and
+everything seats, machine and sailing read. STAGE.md, "Keepers", still says
+a keeper's module exports `contain` for setup code; nothing outside tabletop
+calls it now.

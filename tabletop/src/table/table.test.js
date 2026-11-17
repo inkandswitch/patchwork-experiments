@@ -407,7 +407,7 @@ describe("telling the others", () => {
       ["sat", { seat: "p1" }], // sitting down is the seats' owner's to tell
       ["drew", { n: 1.5 }],
       ["drew", "1"],
-      ["rolled", { die: "board", value: 4 }], // dice are the dice package's: nothing the table hears
+      ["rolled", { die: "board", value: 4 }], // dice are dice/'s: nothing the table hears
       ["drew", null],
     ]) t.w.hear("B", type, data, from("alice"));
     t.w.flush();

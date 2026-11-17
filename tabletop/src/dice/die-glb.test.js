@@ -8,7 +8,7 @@ import { builtDie, dieGLB, strokeOutlines } from "./die-glb.js";
 import { CUP_HEIGHT, CUP_MOUTH } from "./cup.js";
 import { POOL_RADIUS, cupGLB, poolGLB, shade } from "./cup-glb.js";
 import { PRESETS, dieOf } from "./die.js";
-import { parseGLB } from "./glb.js";
+import { parseGLB } from "../kit/glb.js";
 import { builtOf, faceUp, showing } from "./roll.js";
 import { solid } from "./solids.js";
 import Source from "./source.js";

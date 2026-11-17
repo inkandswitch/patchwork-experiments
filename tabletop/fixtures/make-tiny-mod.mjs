@@ -9,7 +9,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodePNG } from "../src/tts/test/png.js";
+import { encodePNG } from "../src/test/png.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "tiny-mod");
 const cacheName = (url) => url.replace(/[^A-Za-z0-9]/g, "");

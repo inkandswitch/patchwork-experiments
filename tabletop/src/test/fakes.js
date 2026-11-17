@@ -1,11 +1,13 @@
-// Just enough of the stage for the table extension, with no stage: one shared
-// doc and presence, and an api per view (session) that reads and writes them
-// as scene/STAGE.md says. Copied and trimmed from sailing/src/test/fakes.js
-// (packages stand alone: never import another package's tests), with what a
-// table needs added: a repo, the registry, an overlay, sends between views,
-// labels and notices per view, claims with the 6 s grace, and ops.setTransform.
+// Just enough of the stage for the table's, the dice's and the cup's
+// extensions, with no stage: one shared doc and presence, and an api per view
+// (session) that reads and writes them as scene/STAGE.md says. Copied and
+// trimmed from sailing/src/test/fakes.js (never import another package's
+// tests), with what they need added: a repo, the registry, an overlay, sends
+// between views, labels and notices per view, claims with the 6 s grace,
+// scene().members (who is filed in each group), ops.setTransform for one or
+// several objects, a drawer to dock in, and a drop context.
 //
-//   const w = fakeWorld(doc, { content, repo, registries });
+//   const w = fakeWorld(doc, { content, repo, registries, ext });  // ext: the api's id ("tabletop")
 //   const a = w.join("A", { viewer: "alice" });   // a's api
 //   w.attach("A", Extension.create(a));           // so sends and flush reach it
 //   w.flush();                                    // update() every attached view
@@ -20,8 +22,8 @@
 // Time is Date.now (vitest's fake timers), and each view's loops run when the
 // test ticks the world. A peer's held pose shows at once (worldOf is what's
 // drawn: holds included). camera.ride is recorded in view.rides. scene() is a
-// snapshot like the stage's: { d, objects, ids, parents, traits, world(id),
-// toLocal(id, p) }, its matrices column-major, Euler XYZ.
+// snapshot like the stage's: { d, objects, ids, parents, members, traits,
+// world(id), toLocal(id, p) }, its matrices column-major, Euler XYZ.
 
 import { vi } from "vitest";
 import { createTelling, declared } from "./telling.js";
@@ -65,22 +67,27 @@ function sameTransform(a, b) {
 }
 
 /**
- * The one planner a table uses, as scene/src/ops.js has it: a whole local
- * transform, written number by number (so a peer's unrelated field lands);
- * null when the object isn't there.
+ * The one planner the extensions use, as scene/src/ops.js has it: whole local
+ * transforms, one (id, transform) or several as a Map of id → transform,
+ * written number by number (so a peer's unrelated field lands); null when
+ * none of them is there.
  */
 export const ops = {
-  setTransform(snapshot, id, t) {
-    if (!snapshot?.objects?.[id]) return null;
+  setTransform(snapshot, idOrMoved, transform) {
+    const entries = typeof idOrMoved === "string" ? [[idOrMoved, transform]] : [...idOrMoved];
+    const moved = entries.filter(([id]) => snapshot?.objects?.[id] && snapshot.objects[id].kind !== "group");
+    if (!moved.length) return null;
     return (d) => {
-      const o = d.objects?.[id];
-      if (!o) return;
-      if (!o.transform) o.transform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
-      for (const k of ["position", "rotation"]) {
-        if (!Array.isArray(o.transform[k])) o.transform[k] = [0, 0, 0];
-        for (let i = 0; i < 3; i++) if (o.transform[k][i] !== t[k][i]) o.transform[k][i] = t[k][i];
+      for (const [id, t] of moved) {
+        const o = d.objects?.[id];
+        if (!o) continue;
+        if (!o.transform) o.transform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
+        for (const k of ["position", "rotation"]) {
+          if (!Array.isArray(o.transform[k])) o.transform[k] = [0, 0, 0];
+          for (let i = 0; i < 3; i++) if (o.transform[k][i] !== t[k][i]) o.transform[k][i] = t[k][i];
+        }
+        if (o.transform.scale !== (t.scale ?? 1)) o.transform.scale = t.scale ?? 1;
       }
-      if (o.transform.scale !== (t.scale ?? 1)) o.transform.scale = t.scale ?? 1;
     };
   },
 };
@@ -126,7 +133,7 @@ export function fakeRepo() {
  * @param {{ content?: { [id]: object }, repo?: object, registries?: { [type]: object } }} [o]
  *   content: what api.content(id) answers; registries: what api.registry(type) answers
  */
-export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {} } = {}) {
+export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {}, ext = "tabletop" } = {}) {
   // a scene as its datatype makes it: `assets` comes with the doc (scene/STAGE.md, "Shared maps")
   if (!doc.assets) doc.assets = {};
   vi.useFakeTimers();
@@ -174,7 +181,21 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       const inv = invertRigid(worldM(id));
       return [0, 1, 2].map((r) => inv[r] * p[0] + inv[4 + r] * p[1] + inv[8 + r] * p[2] + inv[12 + r]);
     };
-    const value = Object.freeze({ d: doc, objects, ids: doc.order ?? Object.keys(objects), parents, traits: doc.traits ?? {}, world: worldM, toLocal });
+    // who is filed in each group, at any depth
+    const members = new Map();
+    for (const [id, o] of Object.entries(objects)) {
+      if (o.kind === "group") {
+        if (!members.has(id)) members.set(id, []);
+        continue;
+      }
+      const seen = new Set();
+      for (let g = o.group; typeof g === "string" && objects[g]?.kind === "group" && !seen.has(g); g = objects[g].group) {
+        seen.add(g);
+        if (!members.has(g)) members.set(g, []);
+        members.get(g).push(id);
+      }
+    }
+    const value = Object.freeze({ d: doc, objects, ids: doc.order ?? Object.keys(objects), parents, members, traits: doc.traits ?? {}, world: worldM, toLocal });
     snapshot = { version, value };
     return value;
   }
@@ -224,6 +245,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       watchers: [],
       notices: [], // { text, kind }
       labels: [], // the last labels().set(items)
+      docked: [], // the drawer: { el, title, x() } per api.dock() still open, in docking order (x() is its ×)
       instance: null,
       seen: null, // the snapshot last flushed to its instance
       seenLocal: null,
@@ -234,7 +256,6 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
     };
     views.set(session, view);
     gone.delete(session);
-    const ext = "tabletop";
     /** A send reaching every other view here: a declared message is told as the stage tells it, anything else is receive's. */
     function deliver(type, data) {
       const from = { session, viewer };
@@ -338,9 +359,19 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       notify: (text, kind) => view.notices.push({ text, kind }),
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
+      // the stage's drawer, as STAGE.md says: close() and the × close it, and only the × calls onClose
+      dock(el, { title, onClose } = {}) {
+        const had = view.docked.find((d) => d.el === el);
+        if (had) return had.close;
+        const d = { el, title, close: () => void (view.docked = view.docked.filter((x) => x !== d)), x: () => (d.close(), onClose?.()) };
+        view.docked.push(d);
+        return d.close;
+      },
       style() {},
       cursor() {},
       box: () => null,
+      // the body's eye is the camera's here (the stage's Look: the orbit camera)
+      body: { eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null), current: () => ({ id: "look", depth: 0 }) },
       camera: {
         set: (c) => (view.camera = c),
         get: () => view.camera,
@@ -474,19 +505,21 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
 }
 
 /**
- * A drop context (STAGE.md, "Drops" and "Parts"), as a template or a part
- * gets one: the doc, its snapshot (parents resolved), change, newId, a repo
- * that makes docs, ctx.file (the scene's one doc per key, remembered at
- * doc.assets[key]), the registry and notify. What it made is in `calls`;
- * `calls.log` is every create2 and change, in order. Copied from
- * sailing/src/test/fakes.js, with the registry and the log added.
- *   const { ctx, calls } = fakeDrop(doc, { registries: { "scene:extension": reg } });
+ * A drop context (STAGE.md, "Drops" and "Parts"), as a template, a part or a
+ * drop gets one: the doc, its snapshot (parents resolved), change, newId, a
+ * repo that makes docs, ctx.file (the scene's one doc per key, remembered at
+ * doc.assets[key]), the registry, worldOf, local, notify, and addObject, which
+ * makes the object as the stage does (source, provider: a scene link unless
+ * given, parent, group, transform, hint, fields). What it made is in `calls`;
+ * `calls.log` is every create2 and change, in order.
+ *   const { ctx, calls, local } = fakeDrop(doc, { registries: { "scene:extension": reg } });
  * @param {object} doc
- * @param {{ content?: { [id]: object }, registries?: { [type]: object } }} [o]
+ * @param {{ content?: { [id]: object }, registries?: { [type]: object }, world?: { [id]: number[] } }} [o]
  */
-export function fakeDrop(doc, { content, registries = {} } = {}) {
+export function fakeDrop(doc, { content, registries = {}, world = {} } = {}) {
   const calls = { created: [], notices: [], made: [], changes: 0, log: [], added: [] };
   let n = 0;
+  let local = { selected: null };
   const docs = new Map(); // url → a doc made here (a game part's game doc), which its handle reads and writes
   const repo = {
     async create2(d) {
@@ -516,12 +549,26 @@ export function fakeDrop(doc, { content, registries = {} } = {}) {
       fn(doc);
     },
     newId: (prefix) => `${prefix}${++n}`,
-    /** the stage's addObject: a link to a scene doc (scene.link), as an object of this doc */
+    worldOf: (id) => world[id] ?? null,
+    local: { get: () => local, swap: (fn) => (local = fn(local)) },
+    select: (id) => (local = { ...local, selected: id ?? null }),
     async addObject(url, opts = {}) {
-      const id = `o${++n}`;
-      calls.added.push({ url, opts });
-      const t = opts.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
-      doc.objects[id] = { name: docs.get(url)?.title ?? "Linked", sourceUrl: url, providerId: "scene.link", renderUrl: null, parent: opts.parent ?? null, transform: t, ...(opts.hint ? { hint: opts.hint } : {}), ...(opts.fields ?? {}) };
+      calls.added.push({ url, opts: structuredClone(opts) });
+      const id = ctx.newId("o");
+      const parent = opts.parent && doc.objects[opts.parent] && doc.objects[opts.parent].kind !== "group" ? opts.parent : null;
+      const group = opts.group !== undefined ? opts.group : parent ? (doc.objects[parent].group ?? null) : null;
+      doc.objects[id] = {
+        name: opts.name ?? docs.get(url)?.title ?? "Untitled",
+        sourceUrl: url,
+        providerId: opts.providerId ?? "scene.link",
+        renderUrl: null,
+        parent,
+        group,
+        visible: true,
+        transform: structuredClone(opts.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }),
+        ...structuredClone(opts.fields ?? {}),
+        ...(opts.hint ? { hint: structuredClone(opts.hint) } : {}),
+      };
       doc.order.push(id);
       return id;
     },
@@ -541,7 +588,7 @@ export function fakeDrop(doc, { content, registries = {} } = {}) {
       return { url: made.url, hint: f.hint ?? null };
     },
   };
-  return { ctx, calls };
+  return { ctx, calls, local: () => local };
 }
 
 /** A registry (as getRegistry(type) gives) holding these plugins, each with its module. */

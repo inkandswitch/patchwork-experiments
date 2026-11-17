@@ -12,7 +12,7 @@ import { GONE_MS, HERE } from "./panel-lots.js";
 import { faceOfSeed, seedFromLots } from "./roll.js";
 import { SYMBOLS, dieMarks } from "./marks.js";
 import { solid } from "./solids.js";
-import { fakeRepo } from "./test/fakes.js";
+import { fakeRepo } from "../test/fakes.js";
 
 /** One die doc, and a handle on it per panel: each panel's ephemeral messages reach every other panel's, at once. */
 function sharedDie(preset = "d6", more = {}) {

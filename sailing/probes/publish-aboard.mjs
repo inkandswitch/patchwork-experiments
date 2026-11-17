@@ -1,7 +1,7 @@
 // Publish "Lost Cities aboard" to a real sync server, and print its Patchwork
 // URL: a Lost Cities table in the cockpit of the sloop, lying at anchor.
 //
-//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/ and traversal/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, joints/ and traversal/) pnpm build
 //   node probes/publish-aboard.mjs [--sync wss://…] [--settle 8000] [--dry-run] [--show] [--shots <dir>] [--title "…"] [--below <url>]
 //   node probes/publish-aboard.mjs --set-below <scene url> <url> [--sync wss://…] [--settle 8000] [--dry-run]
 //
@@ -14,13 +14,13 @@
 //
 // The scene is made the way a person makes it, by the tools themselves, so
 // the doc is exactly what they write: in headless Chrome, the BUILT scene
-// tool with the BUILT sailing, tabletop and card-table plugins is mounted on
+// tool with the BUILT sailing and tabletop plugins is mounted on
 // an EMPTY scene (aboard-probe.html: an in-memory repo, two views A and B),
 // and A picks "Ship at anchor" on the start screen, then puts the parts
 // bin's Card table in her cockpit and Lost Cities on the table (api.part),
 // and a home view over the cockpit is set. It checks:
 // - every piece is under the table and the table under the hull; the deck
-//   is a secure-deck (card-table is installed); it starts people through the game's link (as the game does: the seat body), with the
+//   is a secure-deck (the joint keeper's); it starts people through the game's link (as the game does: the seat body), with the
 //   sail down and the anchor down; each seat's view is in the table's frame;
 // - every object shows one of the scene's own files;
 // - with A and B seated, the secure deck reaches "playing" and each hand's
@@ -55,7 +55,7 @@ const PACKAGES = ["scene", "sailing", "walk", "water", "weather", "joints", "tra
 // The game is a doc of its own (scene/STAGE.md, worked example 1), and lists what its contents come
 // from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
 // together, so a viewer arriving at the boat is asked for what her linked game runs too.
-const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];
+const GAME_PACKAGES = ["scene", "seats", "tabletop"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
@@ -106,12 +106,12 @@ if (args["set-below"]) {
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js", "joints/dist/index.js", "traversal/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "joints/dist/index.js", "traversal/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-aboard"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
 // each package's URL, as its pushwork config (or PACKAGE_URL_<NAME>) gives it: the page registers its plugins from it
-const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES, "keep"])].map((p) => [p, pushworkUrl(p)]));
+const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES])].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 const { browser, checklist, sleep } = await import("./cdp.mjs");
 const b = await browser({ root: ROOT, port: 4796, cdp: 9796, page: `/sailing/probes/aboard-probe.html?urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 600_000 });
@@ -147,7 +147,7 @@ try {
     check(`the ${who} calls for plugins of exactly its stated packages, and lists only those`, !!pk && answering.length === stated.length && answering.every((p) => stated.includes(p)) && listed.every((p) => stated.includes(p)), { answering, listed, stated });
   }
   const boatPk = await P("packages('a')");
-  check("the boat calls for nothing of seats' or the keeper's, nor lists them", !["seats", "card-table"].some((p) => boatPk.answering.some((x) => folderOf(x.importUrl) === p) || boatPk.listed.includes(urls[p])), boatPk);
+  check("the boat calls for nothing of seats', nor lists them", !["seats"].some((p) => boatPk.answering.some((x) => folderOf(x.importUrl) === p) || boatPk.listed.includes(urls[p])), boatPk);
   const snap = await P("snapshot()");
   const strays = [snap.scene, snap.game].flatMap((u) => {
     const assets = new Set(Object.values(snap.docs[u].assets ?? {}).map((a) => a.url));

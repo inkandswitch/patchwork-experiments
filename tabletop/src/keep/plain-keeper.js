@@ -16,8 +16,7 @@
 // order, the files fetched before a look applies) gives away is nothing.
 // The HUD says so at every table that uses one.
 //
-// For whatever sets a scene up, the module's `contain` (found through this
-// plugin's `keeper: "plain"` in the scene:extension registry):
+// For whatever sets a scene up (table/made-with.js), `contain`:
 //
 //   const { key, bind } = await contain({ repo }, { title, items });
 //   object.traits = { ...bind(slot) };     // slot k holds items[k] to begin with
@@ -158,4 +157,4 @@ function create(api) {
   };
 }
 
-export default { create, contain };
+export default { create };

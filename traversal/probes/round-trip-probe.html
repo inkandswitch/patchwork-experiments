@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>round trip probe</title>
 <!-- Driven by probes/round-trip.mjs. The BUILT scene tool with the BUILT
-     sailing, tabletop, card-table, keep, joints, traversal, arena and doom
+     sailing, tabletop, joints, traversal, arena and doom
      plugins in a stub registry, on REAL Automerge documents (one peer of
      probes/real-repo.js). Nothing here imports another package's source: each
      package's built dist is loaded as its plugins.
@@ -83,7 +83,7 @@ const TABLE_TOP = [0, 0.7006, 0];
 const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../walk/dist/index.js", "../../doom/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../walk/dist/index.js", "../../doom/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

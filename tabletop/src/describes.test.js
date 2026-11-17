@@ -4,6 +4,8 @@ import { CARD, ZONE, isCard, zones } from "./table/visibility.js";
 
 // The table's traits, as the scene's inspector offers them ("Add behaviour…").
 const table = plugins.find((p) => p.id === "tabletop");
+// the table's own plugins (dice, bags, keepers and the importer have their own tests)
+const own = plugins.filter((p) => /^tabletop\b/.test(p.id) || p.type === "tabletop:game");
 const d = table.describes;
 
 /** What the inspector writes for a new trait or entry: its init, then its fields' defaults. */
@@ -15,13 +17,13 @@ const fresh = (desc) => {
 
 describe("tabletop: what runs", () => {
   it("one extension, by its traits alone: the verbs and the policy run wherever there's a hand or a card, whatever anyone is doing", () => {
-    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop"]);
+    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop", "dice", "dice.cup", "dice.lots", "bag", "keep.plain", "card-table"]);
     expect(table.traits).toEqual([ZONE, CARD]);
     for (const k of ["activities", "requires", "always", "general"]) expect(k in table).toBe(false);
   });
 
   it("names nobody else's traits: seats and keepers are met through the stage", () => {
-    const said = JSON.stringify(plugins.map(({ load, ...p }) => p));
+    const said = JSON.stringify(own.map(({ load, ...p }) => p));
     // (the seats' trait is `seats`: as a key or a value, it would be quoted)
     for (const other of ['"seats"', "keep.", "card-table", "secure-deck", "plain-deck"]) expect(said.includes(other)).toBe(false);
   });
@@ -54,7 +56,7 @@ describe("tabletop: describes its traits", () => {
 });
 
 describe("tabletop: templates", () => {
-  const templates = plugins.filter((p) => p.type === "scene:template");
+  const templates = own.filter((p) => p.type === "scene:template");
 
   it("offers Lost Cities, Santorini and Draw Dominoes, as metadata the start screen can list without loading anything", () => {
     expect(templates.map((t) => t.id)).toEqual(["tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes"]);
@@ -75,7 +77,7 @@ describe("tabletop: templates", () => {
 });
 
 describe("tabletop: parts", () => {
-  const parts = plugins.filter((p) => p.type === "scene:part");
+  const parts = plugins.filter((p) => p.category === "Tabletop");
 
   it("offers a pawn, a token, a card spot, a card table, Lost Cities, Santorini and Draw Dominoes for 2, 3 and 4 under Tabletop, as metadata the bin reads without loading anything", () => {
     expect(parts.map((p) => p.id)).toEqual(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]);
@@ -92,9 +94,7 @@ describe("tabletop: parts", () => {
 
   it("says what each brings by a trait the table describes", () => {
     for (const p of parts) for (const t of p.traits ?? []) expect(d[t]).toBeDefined();
-    // dice are the dice package's: no die trait, no die part here
     expect(table.traits).toEqual(["tabletop.zone", "tabletop.card"]);
     expect(Object.keys(d)).toEqual(table.traits);
-    expect(parts.some((p) => /die|dice/.test(p.id))).toBe(false);
   });
 });

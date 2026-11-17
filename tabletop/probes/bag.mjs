@@ -1,6 +1,6 @@
 // A token bag at a table, by two people at once, in headless Chrome.
 //
-//   (in scene/ and bag/) pnpm build
+//   (in scene/ and tabletop/) pnpm build
 //   node probes/bag.mjs [--rule top|random] [--shots <dir>] [--show]
 //
 // Mounts the BUILT scene tool with the BUILT bag plugins, twice, on REAL
@@ -37,12 +37,12 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["bag/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "bag-probe"));
 const RULE = arg("--rule") ?? "top";
 
-const b = await browser({ root: ROOT, port: 4863, cdp: 9863, page: "/bag/probes/bag-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 180_000 });
+const b = await browser({ root: ROOT, port: 4863, cdp: 9863, page: "/tabletop/probes/bag-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 180_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
@@ -207,7 +207,7 @@ try {
     await b.click(over.x, over.y, { button: "right" });
     const verbs = await until("menu('a').length && __p.menu('a')", 3000);
     const texts = (verbs || []).map((m) => m.text);
-    // (Empty out is everyone's since step 8: tipping a bag out is a deliberate act, whatever body you're in; bag/src/extension.js)
+    // (Empty out is everyone's since step 8: tipping a bag out is a deliberate act, whatever body you're in; src/bag/extension.js)
     check("right-click the bag: Draw from Token bag (2), Draw 2, Empty out, Look inside", texts.includes("Draw from Token bag (2)") && texts.includes("Draw 2") && texts.includes("Empty out") && texts.includes("Look inside"), texts);
     // ── looking inside: the bag's own panel, docked in the stage's drawer ──
     const look = (verbs || []).find((m) => m.text === "Look inside");

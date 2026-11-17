@@ -1,14 +1,13 @@
 // Liar's dice as data (games/liars-dice.json: what's there, where, and what
-// a cup can do there before anyone touches it), its template (which asks
-// whoever lays tabletop games out), and the cup part, through a stand-in of
+// a cup can do there before anyone touches it; its template is the table
+// writer's, table/template.test.js), and the cup part, through a stand-in of
 // the stage's drop context.
 
 import { cupsOf, policy } from "./cup.js";
-import { DICE_EACH, SETS, cupPart, template } from "./table.js";
-import { emptyScene } from "./test/empty-scene.js";
+import { DICE_EACH, SETS, cupPart } from "./table.js";
+import { emptyScene } from "../empty-scene.js";
 import { plugins } from "../index.js";
-import source from "./source.js";
-import { validate } from "./test/contract/validate.js";
+import { validate } from "../../contract/v1/validate.js";
 import game from "../../games/liars-dice.json" with { type: "json" };
 
 /** The game's things as a scene would hold them: each where its setup says, with its piece's traits (every thing here is one copy). */
@@ -21,17 +20,11 @@ function table() {
   return { objects };
 }
 
-function fakeCtx({ seats = true, more = [] } = {}) {
+function fakeCtx() {
   const doc = emptyScene();
   const files = new Map();
   const notices = [];
   let n = 0;
-  const plugins = [
-    // a stand-in for whoever owns seats, found as the table finds it: `roster: true`, its module's `lay`
-    ...(seats ? [{ id: "t.seats", roster: true, module: { lay: (d, s) => (d.traits["t.seats"] = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, { ...v, player: null }]))) } }] : []),
-    ...more,
-  ];
-  const reg = { filter: (fn) => plugins.filter(fn), load: async (id) => ({ module: plugins.find((p) => p.id === id).module }) };
   return {
     doc: () => doc,
     files,
@@ -44,7 +37,6 @@ function fakeCtx({ seats = true, more = [] } = {}) {
       }
       return { url: files.get(key).url, hint: structuredClone(files.get(key).hint) };
     },
-    registry: async (type) => (type === "scene:extension" ? reg : null),
     change: (fn) => fn(doc),
     notify: (text, kind) => notices.push({ text, kind }),
     worldOf: () => null,
@@ -54,7 +46,7 @@ function fakeCtx({ seats = true, more = [] } = {}) {
 describe("Liar's dice, as data", () => {
   it("is a valid tabletop-game, registered by its id", async () => {
     expect(validate(game)).toEqual({ ok: true, stage: null, errors: [] });
-    const p = plugins.find((x) => x.type === "tabletop:game");
+    const p = plugins.find((x) => x.type === "tabletop:game" && x.id === "liars-dice");
     expect(p.id).toBe("liars-dice");
     expect(await p.load()).toEqual(game);
   });
@@ -94,24 +86,6 @@ describe("Liar's dice, as data", () => {
       expect(Math.hypot(c.t.position[0], c.t.position[2])).toBeLessThan(0.55);
     }
     for (const [id, o] of Object.entries(snap.objects)) if (o.traits?.["dice.die"]) expect(p(id)).toBe(null);
-  });
-});
-
-describe("the Liar's dice template", () => {
-  it("asks whoever lays tabletop games out to lay it out, by its id", async () => {
-    const calls = [];
-    const layer = { id: "t.tables", tables: "tabletop-game", module: { setUp: async (ctx, id) => (calls.push(id), { laid: id }) } };
-    const ctx = fakeCtx({ more: [layer] });
-    const tpl = await plugins.find((p) => p.type === "scene:template").load();
-    expect(await tpl.create(ctx)).toEqual({ laid: "liars-dice" });
-    expect(calls).toEqual(["liars-dice"]);
-  });
-
-  it("with nothing installed that lays tabletop games out, lays nothing and says what's missing", async () => {
-    const ctx = fakeCtx();
-    expect(await template("liars-dice").create(ctx)).toBe(null);
-    expect(ctx.notices).toEqual([{ text: "This table is laid out by the tabletop package, which isn't installed here.", kind: "error" }]);
-    expect(ctx.doc().objects).toEqual({});
   });
 });
 

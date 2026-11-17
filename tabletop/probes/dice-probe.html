@@ -26,10 +26,10 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
-import { emptyScene } from "../src/test/empty-scene.js";
-import { encodeGLB } from "../src/glb.js";
-import { newDieDoc } from "../src/parts.js";
-import { builtOf, faceOfSeed, faceUp, seedFor } from "../src/roll.js";
+import { emptyScene } from "../src/empty-scene.js";
+import { encodeGLB } from "../src/kit/glb.js";
+import { newDieDoc } from "../src/dice/parts.js";
+import { builtOf, faceOfSeed, faceUp, seedFor } from "../src/dice/roll.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
 

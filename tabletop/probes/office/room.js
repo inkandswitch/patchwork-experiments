@@ -17,7 +17,7 @@
 // bonsai), shoji screens along the east wall, sliding doors on the south
 // wall with a mat inside them where people come in.
 
-import { encodeGLB, hexToLinear } from "./glb.js";
+import { encodeGLB, hexToLinear } from "../../src/kit/glb.js";
 
 // ─── the plan ───────────────────────────────────────────────────────────────
 

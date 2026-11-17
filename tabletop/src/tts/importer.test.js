@@ -2,17 +2,17 @@
 // A whole import of the tiny fixture: the assets it stores (each saying where
 // it came from), the tabletop-game it makes (valid by the format, its pieces
 // naming those assets, everything where TTS had it), and its report. It
-// makes no scene: a game's tables are the tabletop package's to set up.
+// makes no scene: a game's tables are set up from it as any game's are.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { zipSync } from "fflate";
 import { runImport, source } from "./importer.js";
 import { sourcesFromZip } from "./inputs.js";
-import { FakeRepo } from "./test/fake-repo.js";
+import { FakeRepo } from "../test/fake-repo.js";
 import { FIXTURE, fixtureSources } from "./test/fixture.js";
-import { validate, errorText } from "./test/contract/validate.js";
-import tinyGame from "./test/contract/tts-tiny-mod.json" with { type: "json" };
+import { validate, errorText } from "../../contract/v1/validate.js";
+import tinyGame from "../../contract/v1/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
 
 const U = 0.0254;
 const notFound = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
@@ -91,7 +91,7 @@ describe("runImport on the tiny fixture", () => {
     expect(types.filter((t) => t !== "file")).toEqual(["tabletop-game"]);
   });
 
-  it("is, whole, the format's own fixture of it (tabletop's valid/tts-tiny-mod.json, copied here), up to the names the repo gave it", async () => {
+  it("is, whole, the format's own fixture of it (contract/v1's valid/tts-tiny-mod.json), up to the names the repo gave it", async () => {
     // file docs' URLs are whatever the repo made, and a kind's id is a hash of its look, URLs and all:
     // name both by the order they're first met
     const named = (g) => {

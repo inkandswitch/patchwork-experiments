@@ -6,7 +6,7 @@
 // body, at the helm, the pointer locked (scene/HISTORY.md, COMPOSITION Decisions,
 // Edit's click is Edit's).
 //
-//   (in scene/, seats/, sailing/, water/, tabletop/, card-table/, keep/, joints/, traversal/) pnpm build
+//   (in scene/, seats/, sailing/, water/, tabletop/, joints/, traversal/) pnpm build
 //   node probes/editclick-run.mjs [--shots <dir>] [--seed 1] [--misses 12] [--port 4795] [--cdp 9795]
 //
 // On aboard-probe.html (one view, A; the page's manual clock, stepped here
@@ -42,7 +42,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "seats", "sailing", "walk", "water", "tabletop", "card-table", "keep", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "seats", "sailing", "walk", "water", "tabletop", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-editclick"));
 const MISSES = Number(arg("--misses") ?? 12);

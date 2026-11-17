@@ -4,30 +4,34 @@
 // What a table's pieces do is one `scene:extension`, "tabletop"
 // (src/table/): hands, cards, Shuffle, Draw, and who may see what, as the
 // stage's `audience`. It runs wherever a doc has a hand or a card, whatever
-// anyone is doing, so its policy never stops under a viewer. Seats, and what
-// a hidden card really is, are other packages' (the seats' owner; a keeper),
-// met only through the stage.
+// anyone is doing, so its policy never stops under a viewer. Seats are the
+// seats package's (its `roster`), and what a hidden card really is, is a
+// keeper's (src/keep/): both met only through the stage.
 //
-// Games are data: a tabletop-game (GAME-FORMAT.md) is one JSON file. This
-// package's are in games/, each a `tabletop:game` plugin: { id, name, icon,
-// players, blurb } and a load() that resolves to the game itself. The game
-// page offers every one that is registered, so another package can add games
-// without touching this one (the dice package's Liar's dice).
-//
-// The built-in games are also `scene:template`s and `scene:part`s, which
-// load their game by id (src/table/template.js setUp): no code here knows
-// any one game. Another package's template or part lays a game out the same
-// way, through this package's `tabletop` extension: its metadata says
-// `tables: "tabletop-game"`, and its module's `setUp(ctx, gameId, options)`
-// lays the game out in the drop context's scene.
+// Games are data: a tabletop-game (GAME-FORMAT.md) is one JSON file in
+// games/, each a `tabletop:game` plugin: { id, name, icon, players, blurb }
+// and a load() that resolves to the game itself. The game page offers every
+// one that is registered, so another package can add games without touching
+// this one. Each is also a `scene:template` and most a `scene:part`, which
+// load their game by id (src/table/template.js setUp): no code knows any one
+// game.
 //
 // Pieces for any table are `scene:part`s, in the editor's parts bin under
-// "Tabletop": a pawn, a token and a card spot (a mat with one card slot)
-// (src/table/parts.js). None of them makes seats. (Dice come from the dice
-// package: its own parts, under "Dice".) So are a Card table to
-// play at and the games with hands (Lost Cities, Draw Dominoes), each set
-// down on whatever it's put on (a Card table aboard a ship); a game brings
-// its own seats, so a room can hold several tables.
+// "Tabletop": a pawn, a token and a card spot (src/table/parts.js), a Card
+// table to play at, and the games, each set down on whatever it's put on (a
+// Card table aboard a ship); a game brings its own seats, so a room can hold
+// several tables. The rest, each under src/<area>/:
+//
+// - dice/   a die is a document ("die"): its own panel, built into a scene
+//           at real size (scene:source "die"), rolled, read and turned there
+//           ("dice"); cups ("dice.cup"); every roll drawn by lots between
+//           the clients of those present ("dice.lots"); parts under "Dice".
+// - bag/    a token bag: a container doc holding scene objects out of the
+//           scene ("bag"), its panel, a sack (scene:source "bag-sack").
+// - keep/   keepers: the plain one ("keep.plain", a "keep-plain" doc) and the
+//           joint one ("card-table", a "secure-deck" the players shuffle
+//           between them). `keeper: <kind>` is how the scene finds them.
+// - tts/    a Tabletop Simulator mod translated into a tabletop-game.
 
 const TRAITS = {
   "tabletop.zone": {
@@ -58,8 +62,6 @@ export const plugins = [
     id: "tabletop",
     name: "Tabletop",
     traits: ["tabletop.zone", "tabletop.card"],
-    // how another package's template or part lays a game out: this module's setUp(ctx, gameId, options)
-    tables: "tabletop-game",
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
     // shapes). A hand's box is plain JSON for now.
@@ -178,7 +180,7 @@ export const plugins = [
       return game ? parts.gamePart(game) : parts[id];
     },
   })),
-  // ── dice ──
+  // ── dice (src/dice/) ──
   {
     type: "patchwork:datatype",
     id: "die",
@@ -271,7 +273,7 @@ export const plugins = [
     },
   },
   {
-    // the game, as data: a tabletop-game, which the tabletop package's game page lists and lays out
+    // the game, as data: a tabletop-game, which the game page lists and lays out
     type: "tabletop:game",
     id: "liars-dice",
     name: "Liar's dice",
@@ -289,7 +291,7 @@ export const plugins = [
     icon: "Dices",
     description: "The traditional cup-dice game (dudo, cacho): six seats, a cup and five dice each, a pool for lost dice. Shake, peek, bid, call, lift",
     async load() {
-      return (await import("./dice/table.js")).template("liars-dice");
+      return (await import("./table/template.js")).template("liars-dice");
     },
   },
   // the usual dice, in the editor's parts bin (src/parts.js)
@@ -338,7 +340,7 @@ export const plugins = [
       return (await import("./dice/table.js")).poolPart;
     },
   },
-  // ── bag ──
+  // ── bag (src/bag/) ──
   {
     type: "patchwork:datatype",
     id: "bag",
@@ -391,8 +393,6 @@ export const plugins = [
     id: "bag",
     name: "Bag",
     traits: ["bag.container"],
-    // how something setting a scene up makes a bag already holding things: this module's fill (fill.js)
-    container: "bag",
     describes: {
       "bag.container": {
         name: "Container",
@@ -410,7 +410,7 @@ export const plugins = [
       return (await import("./bag/extension.js")).default;
     },
   },
-  // ── tts-import ──
+  // ── the TTS importer (src/tts/) ──
   {
     type: "patchwork:datatype",
     id: "tts-import",
@@ -430,7 +430,7 @@ export const plugins = [
       return (await import("./tts/tool.js")).default;
     },
   },
-  // ── keep ──
+  // ── keepers (src/keep/) ──
   {
     type: "scene:extension",
     id: "keep.plain",
@@ -460,18 +460,17 @@ export const plugins = [
     id: "keep-plain",
     name: "Kept things",
     icon: "Archive",
-    unlisted: true, // made by whatever sets a scene up (contain), not from a menu
+    unlisted: true, // made by whatever sets a scene up (plain-keeper.js contain), not from a menu
     async load() {
       return (await import("./keep/plain.js")).PlainDatatype;
     },
   },
-  // ── card-table ──
   {
     type: "patchwork:datatype",
     id: "secure-deck",
     name: "Secure deck",
     icon: "Layers",
-    unlisted: true, // made by whatever sets a scene up (keeper.js contain), not from a menu
+    unlisted: true, // made by whatever sets a scene up (joint-keeper.js contain), not from a menu
     async load() {
       return (await import("./keep/datatype.js")).SecureDeckDatatype;
     },
@@ -489,9 +488,8 @@ export const plugins = [
   {
     // The joint keeper: what an object really is, kept in a secure deck the
     // seated players shuffle between them, shown to whoever the scene says
-    // may see it (src/keeper.js). An ordinary scene extension, attached to
-    // objects by its own trait; `keeper: "joint"` is how setup code finds it
-    // (and its module's `contain`) in the scene:extension registry.
+    // may see it (src/keep/joint-keeper.js). An ordinary scene extension,
+    // attached to objects by its own trait.
     type: "scene:extension",
     id: "card-table",
     name: "Joint keeper",

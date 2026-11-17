@@ -158,9 +158,9 @@ export default function TabletopGameTool(handle, element) {
         return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
       };
       const layout = tableLayout(gameOf(d), { fileOf, gameUrl: handle.url });
-      // the decks' containers, the bags and the seats' owner first (a keeper, a bag maker, whoever owns
-      // seats, found in the registry by what they are: table/made-with.js), so the scene never names one
-      // that isn't there; with them, what the maker is warned of
+      // the decks' containers, the bags and the seats' owner first (whoever owns seats is found in the
+      // registry by what it is: table/made-with.js), so the scene never names one that isn't there; with
+      // them, what the maker is warned of
       const made = await prepareTable({ repo, registry: hostRegistry }, layout);
       // an empty scene as the scene makes one (every map and list it has;
       // the stage fills `packages` in), and where the scene package comes
@@ -241,7 +241,7 @@ export default function TabletopGameTool(handle, element) {
         el("summary", {}, `${deck.name || `Deck ${i + 1}`}: ${deck.cards?.length ?? 0} cards of ${inDeck.length} kinds${!deck.secure && deck.shuffle ? ", shuffled" : ""}${deck.faceDown ? " face down" : ""}${deck.secure ? ", to be shuffled by the players" : ""}${deals ? `; deals ${deals}` : ""}`),
         el(
           "label",
-          { class: "toggle", title: "With a keeper whose players shuffle installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without one, the cards are hidden from the table but listed in an ordinary document." },
+          { class: "toggle", title: "The seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Unticked, the cards are hidden from the table but listed in an ordinary document." },
           el("input", { type: "checkbox", checked: !!deck.secure, onchange: (e) => handle.change((g) => {
             const dk = path.reduce((x, k) => x[k], g.setup).deck;
             if (e.target.checked) dk.secure = true;

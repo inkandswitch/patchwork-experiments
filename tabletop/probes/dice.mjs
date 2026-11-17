@@ -1,6 +1,6 @@
 // Dice in a scene, by two people in headless Chrome.
 //
-//   (in scene/ and dice/) pnpm build
+//   (in scene/ and tabletop/) pnpm build
 //   node probes/dice.mjs [--shots <dir>] [--show]
 //
 // Mounts the BUILT scene tool with the BUILT dice plugins, twice, on REAL
@@ -54,11 +54,11 @@ const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** lots.js STALE_MS: how long a client watches a round under way, its asker gone, before it gives it up */
 const STALE_MS = 10_000;
 const ROOT = resolve(PKG, "..");
-for (const p of ["dice/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "dice-probe"));
 
-const b = await browser({ root: ROOT, port: 4791, cdp: 9791, page: "/dice/probes/dice-probe.html", width: 1816, height: 630, show: process.argv.includes("--show"), timeout: 240_000 });
+const b = await browser({ root: ROOT, port: 4791, cdp: 9791, page: "/tabletop/probes/dice-probe.html", width: 1816, height: 630, show: process.argv.includes("--show"), timeout: 240_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);

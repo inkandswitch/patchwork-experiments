@@ -10,7 +10,7 @@
 // very thing it is showing, never from a second copy of the shapes, so what
 // is rolled and read is always the die that was built.
 
-import { computeBounds, encodeGLB } from "./glb.js";
+import { computeBounds, encodeGLB } from "../kit/glb.js";
 import { dieOf } from "./die.js";
 import { dieMarks, lift } from "./marks.js";
 import { add, scale } from "./m3.js";

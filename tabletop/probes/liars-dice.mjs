@@ -1,9 +1,9 @@
 // Liar's dice at one table, by two people at once, in headless Chrome.
 //
-//   (in scene/, seats/ and dice/) pnpm build
+//   (in scene/, seats/ and tabletop/) pnpm build
 //   node probes/liars-dice.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool with the BUILT seats and dice plugins (lots and all), twice,
+// Mounts the BUILT scene tool with the BUILT seats and tabletop plugins (dice, lots and all), twice,
 // on REAL Automerge documents (liars-dice-probe.html, real-repo.js): A (Ana)
 // and B (Ben) each have their own replica of every doc, and a change
 // reaches the other 25 ms later by a real merge. Real mouse and keys over
@@ -73,14 +73,14 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["dice/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "tabletop/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : null;
 };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "liars-dice-probe"));
 
-const b = await browser({ root: ROOT, port: 4893, cdp: 9893, page: "/dice/probes/liars-dice-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 300_000 });
+const b = await browser({ root: ROOT, port: 4893, cdp: 9893, page: "/tabletop/probes/liars-dice-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 300_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);

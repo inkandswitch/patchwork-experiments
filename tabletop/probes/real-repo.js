@@ -1,4 +1,3 @@
-// A copy of bag/probes/real-repo.js (packages don't import each other).
 // Two peers, for the probe page: each has its OWN replica of every document
 // (real Automerge docs), and a change made in one reaches the other only when
 // the link delivers it, a little later, by a real Automerge merge. The link

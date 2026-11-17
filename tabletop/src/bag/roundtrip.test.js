@@ -5,7 +5,7 @@ import { newBag } from "./datatype.js";
 import { RULES } from "./draw.js";
 import { drawOne, objectOf, pour, putObjects, settleDraw } from "./moves.js";
 import { LEFT_BEHIND, kindOf, objectFrom, recordOf, scaleOf } from "./object.js";
-import { FakeHandle } from "./test/fake-repo.js";
+import { FakeHandle } from "../test/fake-repo.js";
 
 const SCENE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const OTHER = "automerge:3yt6LbnDAzvNj9WDNDA4ew21R85G";

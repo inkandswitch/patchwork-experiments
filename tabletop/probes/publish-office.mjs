@@ -3,7 +3,7 @@
 // with three game tables set, Lost Cities, Santorini and Draw Dominoes for
 // two, and three empty tatami squares for more.
 //
-//   (in scene/, seats/, tabletop/, card-table/, keep/ and walk/) pnpm build
+//   (in scene/, seats/, tabletop/ and walk/) pnpm build
 //   node probes/publish-office.mjs [--sync wss://…] [--settle 8000] [--dry-run] [--show] [--shots <dir>] [--title "…"] [--art]
 //
 // Makes NEW docs on every run (no dedupe).
@@ -86,13 +86,13 @@ const TITLE = typeof args.title === "string" ? args.title : "Quiet games room";
 const GAME = typeof args.game === "string" ? args.game : null;
 // each game is a doc of its own, listing what its contents come from, in the
 // room's order: Lost Cities and Dominoes have hands and a kept deck
-// (tabletop's, card-table's); Santorini has seats and pieces only
-const DECKED = ["scene", "seats", "tabletop", "card-table"];
+// (tabletop's); Santorini has seats and pieces only
+const DECKED = ["scene", "seats", "tabletop"];
 const GAME_PACKAGES = [DECKED, ["scene", "seats"], DECKED];
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "seats", "tabletop", "card-table", "keep", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "seats", "tabletop", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-office"));
 const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES.flat()])].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
@@ -143,7 +143,7 @@ try {
     // (the room's own stage calls for the scene's and the spawn point's; seats and the keeper are its games', which
     // each game lists: the view asks for every open doc's together, so the room doesn't list them for its games)
     check("the stage lists the package of every plugin the room calls for, exactly those stated", PACKAGES.every((p) => answering.has(p) && pk.listed.includes(urls[p])) && answering.size === PACKAGES.length && (pk.suggested == null || pk.suggested === urls.scene), { answering: [...answering], listed: pk.listed.map(folderOf), suggested: pk.suggested });
-    check("the room lists none of its games' packages for them (seats, the keeper)", !["seats", "card-table"].some((p) => pk.listed.includes(urls[p])), { listed: pk.listed.map(folderOf) });
+    check("the room lists none of its games' packages for them (seats, the table's)", !["seats", "tabletop"].some((p) => pk.listed.includes(urls[p])), { listed: pk.listed.map(folderOf) });
     snapshot = await P("snapshot()");
     report.shots.push(await b.shot(join(SHOTS, "office-built.png")));
     await P("openB()");

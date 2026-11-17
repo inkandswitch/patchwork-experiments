@@ -1,4 +1,4 @@
-// The secure-deck datatype. See README.md and deck.js for the doc shape.
+// The secure-deck datatype. deck.js has the doc shape.
 
 import { newDeckDoc } from "./deck.js";
 

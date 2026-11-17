@@ -3,7 +3,7 @@
 // mod's URLs it came from), a tabletop-game doc (translate.js: the game as
 // data, tabletop/GAME-FORMAT.md, its pieces naming those file docs), and a
 // report written into the tts-import doc. It writes no scene: the game's
-// tables are set up from the game, by the tabletop package, as any game's are.
+// tables are set up from the game (setup.js), as any game's are.
 //
 // Everything the browser provides is passed in, so it runs in vitest too:
 //   repo            create2(doc) → handle

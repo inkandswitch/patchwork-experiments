@@ -2,7 +2,7 @@
 // in the BUILT tabletop-game tool, set up a table, show it with the BUILT
 // scene tool, and screenshot it.
 //
-//   pnpm build && for p in scene seats tabletop keep bag dice; do (cd ../$p && pnpm install && pnpm build); done
+//   pnpm build && for p in scene seats; do (cd ../$p && pnpm install && pnpm build); done
 //   node probes/import-run.mjs                                   # the tiny fixture
 //   node probes/import-run.mjs --mod "<…>/Mods/Workshop/3477136430.json" --cache "<…>/Mods" [--out dir] [--show]
 //
@@ -16,11 +16,11 @@ import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, read
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { readSave, collectAssets } from "../src/tts.js";
-import { AssetIndex } from "../src/cache.js";
+import { readSave, collectAssets } from "../src/tts/tts.js";
+import { AssetIndex } from "../src/tts/cache.js";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ROOT = resolve(PKG, ".."); // the repo: serves tts-import/, scene/dist and seats/dist
+const ROOT = resolve(PKG, ".."); // the repo: serves tabletop/, scene/dist and seats/dist
 const arg = (name, d = null) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -28,7 +28,7 @@ const arg = (name, d = null) => {
 const SHOW = process.argv.includes("--show");
 const OUT = resolve(arg("out", join(process.env.TMPDIR || tmpdir(), "tts-import-probe")));
 mkdirSync(OUT, { recursive: true });
-for (const need of [join(PKG, "dist/index.js"), ...["scene", "seats", "tabletop", "keep", "bag", "dice"].map((p) => join(ROOT, `${p}/dist/index.js`))]) if (!existsSync(need)) throw new Error(`missing ${need}: build it first`);
+for (const need of [join(PKG, "dist/index.js"), ...["scene", "seats"].map((p) => join(ROOT, `${p}/dist/index.js`))]) if (!existsSync(need)) throw new Error(`missing ${need}: build it first`);
 
 // ─── what to drop ────────────────────────────────────────────────────────────
 const fixture = join(PKG, "fixtures/tiny-mod");
@@ -98,7 +98,7 @@ const shoot = async (name) => {
 await send("Runtime.enable");
 await send("Page.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: 1500, height: 900, deviceScaleFactor: 1, mobile: false });
-await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/tts-import/probes/import-probe.html${arg("query") ? `?${arg("query")}` : ""}` });
+await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/tabletop/probes/import-probe.html${arg("query") ? `?${arg("query")}` : ""}` });
 for (let i = 0; i < 6000 && !(await js("!!window.__ready").catch(() => false)); i++) await sleep(100);
 
 const report = { mod: modPath, dropped: drop.length, checks: {}, shots: [] };

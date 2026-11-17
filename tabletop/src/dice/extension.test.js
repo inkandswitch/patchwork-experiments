@@ -7,16 +7,16 @@
 // this extension in the probes.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Extension, { LAND_GRACE_MS, MAX_THROWN, THROW_MS, TOLD_MS } from "./extension.js";
-import { TELL_MS } from "./test/telling.js";
+import { TELL_MS } from "../test/telling.js";
 import { DIE, PROVIDER } from "./ids.js";
 import { PRESETS, dieOf } from "./die.js";
 import { builtDie } from "./die-glb.js";
 import { eulerMatrix, matrixEuler } from "./m3.js";
 import { AIR_SECONDS, LAND_SECONDS, ROLL_LIFT, ROLL_SKID, faceOfSeed, faceUp, middleAt, rollPlan, seedFor, seedFromLots, seedOfThrow, showing, turnTo } from "./roll.js";
-import * as fakes from "./test/fakes.js";
+import * as fakes from "../test/fakes.js";
 // (loaded here so the dock's own import of it is a cached module, not a first load racing the test's wait)
 import "./tool.js";
-import { emptyScene } from "./test/empty-scene.js";
+import { emptyScene } from "../empty-scene.js";
 
 const T = (position, rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const built = (preset) => builtDie(dieOf(PRESETS[preset].make()));
@@ -72,7 +72,7 @@ function world({ dice = { d1: "d6" }, objects = {}, local = {}, lots = true } = 
   const doc = emptyScene({ objects: { ...made, pawn: { name: "Pawn", transform: T([0, 0, 0]) }, ...objects }, order: [...Object.keys(made), "pawn", ...Object.keys(objects)] });
   doc.order = Object.keys(doc.objects);
   const stuff = Object.fromEntries(Object.entries(dice).map(([id, preset]) => [id, content(preset)]));
-  const w = fakes.fakeWorld(doc, { content: stuff });
+  const w = fakes.fakeWorld(doc, { content: stuff, ext: "dice" });
   const script = scriptedLots((fn) => w.change(fn));
   const a = w.join("A", { viewer: "alice", local });
   const b = w.join("B", { viewer: "bob" });
