@@ -282,6 +282,36 @@ describe("source_read", () => {
   })
 })
 
+describe("source_read on a web snapshot", () => {
+  // As the Web snapshot package's web_capture writes one: the frozen page's
+  // bytes in `html`, its readable text and headings beside them. Restated
+  // here, since the agent cannot import that package; what source_read
+  // relies on is the source contract, which a snapshot keeps.
+  it("reads and searches its text, by its headings, and never its HTML", async () => {
+    const repo = new Repo({ network: [] })
+    const text = "# Rendered page\n\nAfter scripts."
+    const snapshot = repo.create({
+      "@patchwork": { type: "web-snapshot" },
+      title: "Rendered",
+      source: "https://site.test/page",
+      capture: { at: 1, via: "reader", engine: "reader-dom" },
+      html: new TextEncoder().encode("<html><body><h1>Rendered page</h1><p>After scripts.</p></body></html>"),
+      text: new ImmutableString(text),
+      textVia: "html-to-text",
+      marks: [{ at: 0, label: "# Rendered page" }],
+    })
+    const ctx = { repo, session: { doc: () => ({ made: [{ url: snapshot.url, name: "Rendered", kind: "source", source: "https://site.test/page", engine: "reader-dom", chars: text.length, what: "web-snapshot" }] }) } }
+    const found = await sourceRead.execute({ source: snapshot.url, find: "scripts" }, ctx)
+    expect(found.split("\n")).toEqual([
+      `'Rendered' (${snapshot.url}) — 1 match for "scripts". Read around one with source_read {source:"${snapshot.url}", offset:23}.`,
+      `23 · # Rendered page · # Rendered page After scripts.`,
+    ])
+    const read = await sourceRead.execute({ source: snapshot.url }, ctx)
+    expect(read).toBe(`'Rendered' (${snapshot.url}) — characters 0–${text.length} of ${text.length} · under "# Rendered page"\nThat is the end.\n\n${text}`)
+    expect(read).not.toContain("<h1>")
+  })
+})
+
 describe("source_list", () => {
   it("lists the kept sources newest first, and nothing else the session made", async () => {
     const { ctx, page, pdf, body } = world()
@@ -321,6 +351,14 @@ describe("source_file", () => {
     // Filing again is a no-op, not a duplicate.
     expect(await sourceFile.execute({ source: page, folder }, ctx)).toBe("'Paper.md' is already filed in Research.")
     expect(docs.get(folder).docs).toHaveLength(1)
+  })
+
+  it("files a web snapshot under its title, as a web-snapshot, so the folder opens it in its own view", async () => {
+    const { ctx, docs, folder } = world()
+    const url = generateAutomergeUrl()
+    docs.set(url, { "@patchwork": { type: "web-snapshot" }, title: "Pack cells", source: "https://x.test/cells", html: new Uint8Array([60]), text: new ImmutableString("Cells") })
+    expect(await sourceFile.execute({ source: url, folder }, ctx)).toBe("Filed 'Pack cells' in Research.")
+    expect(docs.get(folder).docs).toEqual([{ name: "Pack cells", type: "web-snapshot", url: `${url}#h1` }])
   })
 
   it("takes the name the package imports", async () => {

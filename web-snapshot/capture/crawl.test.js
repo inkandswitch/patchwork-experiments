@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 import { crawl, resolve, resourceFetcher, blobsOf, tally, notKeptLine, policyLine, DEFAULT_BUDGET } from "./crawl.js"
 import { scanHtml } from "./scan.js"
 import { pageLinks } from "./links.js"
-import { guardedFetch } from "../tools/guard.js"
+import { guardedFetch } from "../guard.js"
 
 const PAGE = "https://site.test/"
 const hex = (bytes) => createHash("sha256").update(bytes).digest("hex")

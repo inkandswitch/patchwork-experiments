@@ -1,7 +1,7 @@
 /**
  * Probes P5 and P6: is a snapshot inert in a real browser?
  *
- * The snapshot view shows `freeze(doc)` as the srcdoc of an iframe sandboxed
+ * The snapshot view shows `render(doc)` as the srcdoc of an iframe sandboxed
  * with only allow-popups and allow-popups-to-escape-sandbox (snapshot/view.js).
  * happy-dom honours neither the sandbox nor the CSP, so the claim that this
  * runs nothing and reaches nothing can only be checked in Chrome. This serves
@@ -21,7 +21,7 @@
  *
  * Run inside Patchwork's own policy container, data: resources might be
  * refused by the page's CSP; this probe uses a plain local page, so that
- * part of P5 is for a run with Patchwork open (see README, "Keeping web pages").
+ * part of P5 is for a run with Patchwork open (see README, "Nothing runs, nothing is fetched").
  *
  * Usage: node probes/snapshot-frame.mjs [--chrome PATH]
  */
@@ -31,7 +31,8 @@ import { createServer } from "node:http"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { freeze } from "../capture/freeze.js"
+import { freezePage, render } from "../capture/freeze.js"
+import { sha256Hex } from "../capture/bytes.js"
 
 const args = process.argv.slice(2)
 const option = (name, fallback) => {
@@ -74,21 +75,27 @@ const original = [
   `<div style="background:url(${origin}/leak-bg.png);width:10px;height:10px"></div>`,
   `<a href="${origin}/link">a link</a></body></html>`,
 ].join("")
+// Frozen as a capture freezes it, and stored as a snapshot stores it.
+const red = await sha256Hex(RED)
+const frozenPage = await freezePage({
+  text: original,
+  base: "https://kept.test/",
+  resources: { "https://kept.test/red.png": { kind: "image", outcome: "ok", order: "2.0", sha256: red, mimeType: "image/png" } },
+  blobs: { [red]: RED },
+})
 const doc = {
-  html: new TextEncoder().encode(original),
-  charset: "utf-8",
+  html: frozenPage.html,
   source: "https://kept.test/",
   base: "https://kept.test/",
   capture: { at: 0, sha256: "x" },
-  resources: { "https://kept.test/red.png": { kind: "image", outcome: "ok", sha256: "red", mimeType: "image/png" } },
-  blobs: { red: RED },
+  blobs: frozenPage.blobs,
 }
 const SANDBOX = "allow-popups allow-popups-to-escape-sandbox"
 // A string inside the parent's inline script: "</" would end the script early.
 const js = (value) => JSON.stringify(value).replaceAll("</", "<\\/")
 const PARENT = `<!doctype html><body><script>
   const frame = (id, attrs) => { const f = document.createElement("iframe"); f.id = id; for (const [k, v] of Object.entries(attrs)) f.setAttribute(k, v); document.body.append(f); return f }
-  frame("frozen", { sandbox: ${js(SANDBOX)}, referrerpolicy: "no-referrer", srcdoc: ${js(freeze(doc))} })
+  frame("frozen", { sandbox: ${js(SANDBOX)}, referrerpolicy: "no-referrer", srcdoc: ${js(render(doc))} })
   frame("raw", { sandbox: ${js(SANDBOX)}, srcdoc: ${js(original.replaceAll(origin + "/", origin + "/raw-"))} })
   frame("pdf", { sandbox: ${js(SANDBOX)}, src: "/doc.pdf" })
 </script></body>`

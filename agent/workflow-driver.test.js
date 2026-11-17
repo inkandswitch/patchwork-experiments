@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest"
 import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo"
 import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, WORKFLOW_TOOL_IDS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "./workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "./workflow/driver.js"
-import { scopedRepo } from "./scope.js"
+import { scopedRepo, KERNEL_TYPES } from "./scope.js"
 import { initSession, makeTurn, textBlock, STATUS, CALL } from "./session.js"
 import { buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
 
@@ -287,6 +287,33 @@ describe("filing what research steps kept", () => {
     await driver.fileSources()
     expect(asSet(folder.doc().docs)).toEqual(asSet([...links, ...late]))
     expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual(Object.keys(plan.doc().sources).sort())
+  })
+
+  // A document of a package's own datatype — a web-snapshot a research step
+  // captured — is described by that type and filed as it, so the folder opens
+  // it in its own view; a file is filed as a file.
+  it.each([
+    ["web-snapshot", { "@patchwork": { type: "web-snapshot" }, title: "Cells", source: "https://site.test/cells", text: "Cells" }, "web-snapshot", "Cells"],
+    ["file", { "@patchwork": { type: "file" }, name: "cells.md", role: "extract", source: "https://site.test/cells", content: "Cells" }, "extract", "cells.md"],
+    ["untyped", { name: "cells.md", role: "extract", content: "Cells" }, "extract", "cells.md"],
+  ])("files a %s as its own datatype", async (type, value, what, name) => {
+    const { plan, folder, driver } = await ledgerOf([])
+    const made = await scopedRepo(driver.repo, plan, { stepId: "r" }).create2()
+    made.change((d) => Object.assign(d, value))
+    expect(plan.doc().sources[made.documentId]).toMatchObject({ kind: "source", what, type: type === "untyped" ? "file" : type, name })
+    await driver.fileSources()
+    expect(folder.doc().docs).toEqual([{ name, type: type === "untyped" ? "file" : type, url: stringifyAutomergeUrl({ documentId: made.documentId, heads: made.heads() }) }])
+  })
+
+  // A ledger is a shared document, and its entries say what each is; none
+  // is ever filed as a session or a plan, whatever its entry says.
+  it.each(KERNEL_TYPES)("never files an entry as an %s", async (type) => {
+    const { plan, folder, driver } = await ledgerOf([])
+    const made = await scopedRepo(driver.repo, plan, { stepId: "r" }).create2()
+    made.change((d) => Object.assign(d, { name: "x.md", role: "extract", content: "x" }))
+    plan.change((d) => { d.sources[made.documentId].type = type })
+    await driver.fileSources()
+    expect(folder.doc().docs.map((entry) => entry.type)).toEqual(["file"])
   })
 })
 

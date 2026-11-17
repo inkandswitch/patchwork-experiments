@@ -35,14 +35,13 @@
  *   pages        null until page offsets exist
  *   missing      null | { what: "pdf" | "primary", outcome, detail } — what we could not keep
  *
- * A web snapshot (tools/capture.js) carries the same contract, with `html`
- * as its primary instead of `content` and engine "reader-dom" or "raw".
+ * A web snapshot — made by the Web snapshot package's web_capture, a plugin
+ * the agent runs when that package is installed — carries the same contract,
+ * with `html` (the frozen page) as its primary instead of `content` and
+ * engine "reader-dom" or "raw", so source_read reads one like any kept source.
  */
 
 import { ImmutableString, isImmutableString } from "@automerge/automerge"
-import { MAGIC, formatOf } from "../capture/sniff.js"
-import { sha256Hex } from "../capture/bytes.js"
-import { MAX_MARKS, fewest } from "../capture/text.js"
 
 const MIME_EXTENSIONS = {
   "text/markdown": "md",
@@ -96,11 +95,36 @@ export function isTextResponse(contentType, bytes) {
 }
 
 /**
- * The magic-byte table and the format it names live with the capture code
- * (capture/sniff.js), which must load without automerge; this module is
- * where everything else has always found them.
+ * Formats a person would recognise, by their magic number:
+ * `[bytes, name, offset?]`. A model that asked for a wasm module needs some
+ * way to tell that it got one, and `00 61 73 6d` is `\0asm` and nothing else
+ * is. A WebP is a RIFF file whose form type at byte 8 is "WEBP", and an AVIF
+ * an ISO media file whose first box at byte 4 is "ftypavif". (The Web snapshot
+ * package keeps its own copy of this table for its capture pipeline.)
  */
-export { MAGIC, formatOf }
+export const MAGIC = [
+  [[0x00, 0x61, 0x73, 0x6d], "WebAssembly module"],
+  [[0x1f, 0x8b], "gzip"],
+  [[0x50, 0x4b, 0x03, 0x04], "zip"],
+  [[0x25, 0x50, 0x44, 0x46], "PDF"],
+  [[0x89, 0x50, 0x4e, 0x47], "PNG"],
+  [[0xff, 0xd8, 0xff], "JPEG"],
+  [[0x47, 0x49, 0x46, 0x38], "GIF"],
+  [[0x57, 0x45, 0x42, 0x50], "WebP", 8],
+  [[0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], "AVIF", 4],
+  [[0x00, 0x00, 0x01, 0x00], "ICO"],
+  [[0x77, 0x4f, 0x46, 0x46], "WOFF"],
+  [[0x77, 0x4f, 0x46, 0x32], "WOFF2"],
+  [[0x00, 0x01, 0x00, 0x00], "TrueType font"],
+  [[0x4f, 0x54, 0x54, 0x4f], "OpenType font"],
+  [[0x74, 0x74, 0x63, 0x66], "font collection"],
+]
+
+/** The format's name, from its magic number, or null. */
+export function formatOf(bytes) {
+  const head = [...(bytes?.subarray?.(0, 16) ?? [])]
+  return MAGIC.find(([magic, , at = 0]) => magic.every((byte, i) => head[at + i] === byte))?.[1] ?? null
+}
 
 /** The first few bytes, as hex, with the format named when we recognise it. */
 export function describeBytes(bytes) {
@@ -183,8 +207,14 @@ export function readable(doc) {
   return asText(doc.content)
 }
 
-/** Hex SHA-256 of some bytes (capture/bytes.js, so capture code shares it without automerge). */
-export { sha256Hex }
+/** Hex SHA-256 of some bytes, for telling one kept response from another. */
+export async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+/** The most headings a kept source records. */
+export const MAX_MARKS = 200
 
 /**
  * Headings as marks: where each one starts, as a character offset, and the
@@ -227,8 +257,21 @@ export function marksFromMarkdown(text) {
   return fewest(marks, MAX_MARKS)
 }
 
-/** The marks cap and how marks are thinned (capture/text.js, which loads without automerge). */
-export { MAX_MARKS, fewest }
+const level = (mark) => mark.label.match(/^#*/)[0].length || 1
+
+/**
+ * At most `max` marks, keeping the outline's top: every heading down to the
+ * deepest level that still fits, in document order. When even the top level
+ * does not fit, its first `max`.
+ */
+export function fewest(marks, max) {
+  if (marks.length <= max) return marks
+  for (let depth = 5; depth >= 1; depth--) {
+    const kept = marks.filter((m) => level(m) <= depth)
+    if (kept.length <= max) return kept
+  }
+  return marks.filter((m) => level(m) === 1).slice(0, max)
+}
 
 /** The heading a character offset sits under: the last mark at or before it. */
 export function headingAt(marks, offset) {
@@ -261,7 +304,9 @@ export function sessionDoc(ctx) {
  * What this session can see it has kept, newest first: in a research step the
  * workflow's ledger (every step's sources, scope.js), and otherwise what the
  * session recorded in `made`, which is why recordArtifact keeps `source`,
- * `engine` and `chars`.
+ * `engine`, `chars` and `what`. The Web snapshot package's web_capture reads
+ * `made` the same way, from the session its context carries — and in a
+ * research step, the ledger, through its scoped repo's `sources()`.
  */
 export function keptSources(ctx) {
   if (ctx?.scope) return ctx.repo.sources().filter((entry) => entry.kind === "source")

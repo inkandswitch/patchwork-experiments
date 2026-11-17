@@ -31,7 +31,6 @@ import docTools from "./docs.js"
 import folderTools from "./folders.js"
 import environmentTools from "./environment.js"
 import webTools from "./web.js"
-import captureTools from "./capture.js"
 import checkingTools from "./checking.js"
 import discoveryTools from "./discovery.js"
 import httpTools, { scopedHttpRequest } from "./http.js"
@@ -49,7 +48,7 @@ import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...captureTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
 
 /**
  * Tools for one kind of session only. finding_write writes into a research
@@ -104,6 +103,11 @@ export async function loadPluginTools({ onError, registry: given } = {}) {
       const impl = loaded?.module
       if (!impl?.execute) continue
       const id = description.id
+      const current = async () => {
+        const now = await registry.load(id)
+        if (!now?.module?.execute) throw new Error(`The ${id} package no longer provides an execute function.`)
+        return now
+      }
       found.push({
         id: description.id,
         name: description.name ?? description.id,
@@ -112,6 +116,11 @@ export async function loadPluginTools({ onError, registry: given } = {}) {
         where: description.where ?? "worker",
         risk: description.risk ?? "write",
         alwaysAsk: description.alwaysAsk ?? false,
+        // The package's word that this tool works only through the context
+        // it is handed, which is what lets a research step have it (scope.js
+        // admitScoped). Read from the metadata, as plain JSON, and only as
+        // exactly true.
+        scoped: description.scoped === true,
         // What a call is about, for approval scoping — see session.callScope.
         target: description.target,
         // Looked up again at call time, not kept from when the toolset was
@@ -122,10 +131,12 @@ export async function loadPluginTools({ onError, registry: given } = {}) {
         // called it got the old one back for the rest of the run.
         // If the new version fails to load, that is the answer: quietly running
         // the old one is exactly what made the stale code so hard to see.
+        // `current` is the plugin as registered now, metadata and module
+        // together, so a caller that admitted this tool by what it declared
+        // can check the declaration of the code that is about to run.
+        current,
         async execute(input, ctx) {
-          const current = (await registry.load(id))?.module
-          if (!current?.execute) throw new Error(`The ${id} package no longer provides an execute function.`)
-          return current.execute(input, ctx)
+          return (await current()).module.execute(input, ctx)
         },
         summarize: impl.summarize ?? null,
         source: description.importUrl ?? null,

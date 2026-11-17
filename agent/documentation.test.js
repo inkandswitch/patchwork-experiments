@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { BUILTIN_TOOLS, toSchema } from "./tools/index.js"
 import { BUILTIN_SKILLS } from "./skills/builtin.js"
 import { DEFAULT_SYSTEM } from "./loop.js"
-import { PRESENTATION } from "./ui/calls.js"
+import { PRESENTATION, PRESENTED_PLUGINS } from "./ui/calls.js"
 
 /**
  * The tool descriptions ARE the documentation.
@@ -92,7 +92,9 @@ describe("the skills", () => {
       })
 
       it("refers only to tools that exist", () => {
-        const ids = new Set(BUILTIN_TOOLS.map((t) => t.id))
+        // A built-in, or a plugin this agent knows by name and presents
+        // (ui/calls.js), which a skill names as there only when its package is.
+        const ids = new Set([...BUILTIN_TOOLS.map((t) => t.id), ...PRESENTED_PLUGINS])
         // Backticked identifiers that look like tool names — the way a skill
         // names one. A skill naming a tool that was removed is worse than
         // silence: the agent will try to call it.

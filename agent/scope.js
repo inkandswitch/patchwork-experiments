@@ -41,11 +41,12 @@ import { readable } from "./tools/sources.js"
 export const KERNEL_TYPES = ["agent-session", "agent-workflow"]
 
 /**
- * The tools a research step gets, and only these. Built-ins, never plugins:
- * a plugin is someone else's code, and handing it a step that fetches anything
- * without asking would hand it that permission too.
+ * The built-in tools a research step gets, and only these. A plugin joins
+ * them only by declaring `scoped: true` (`admitScoped`, below): a plugin is
+ * someone else's code, and a step fetches anything without asking, so a
+ * plugin is never there by default.
  */
-export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "web_capture", "http_request", "source_read", "source_list", "finding_write", "session_recall"]
+export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "finding_write", "session_recall"]
 
 export const NOT_A_SOURCE = "Not one of this workflow's sources."
 export const EDITED_OUTSIDE = "This finding changed outside the research steps; write a new one."
@@ -167,10 +168,15 @@ function sameHeads(a, b) {
   return left.size === right.size && [...left].every((h) => right.has(h))
 }
 
-/** What a kept document is, for the ledger and the Sources folder. */
+/**
+ * What a kept document is, for the ledger and the Sources folder: a finding,
+ * a document of some package's own datatype by that type (a web-snapshot,
+ * say), or a kind of file.
+ */
 function whatOf(doc) {
   if (doc?.role === "finding") return "finding"
-  if (doc?.["@patchwork"]?.type === "web-snapshot") return "snapshot"
+  const type = doc?.["@patchwork"]?.type
+  if (type && type !== "file") return type
   if (doc?.role === "extract") return "extract"
   if (doc?.mimeType === "application/pdf") return "pdf"
   return "file"
@@ -215,6 +221,8 @@ export function scopedRepo(repo, ledger, { stepId }) {
     const text = readable(doc)
     const facts = {
       what: whatOf(doc),
+      // Its datatype, which is what it is filed in the Sources folder as.
+      type: doc?.["@patchwork"]?.type ?? "file",
       source: typeof doc?.source === "string" ? doc.source : null,
       name: doc?.name ?? doc?.title ?? null,
       engine: doc?.capture?.engine ?? null,
@@ -241,7 +249,13 @@ export function scopedRepo(repo, ledger, { stepId }) {
         // A person may edit a finding; the step must not then build on text
         // it cannot see, nor have their edit silently merged under its own.
         if (!sameHeads(handle.heads(), required(id).heads)) throw new Error(EDITED_OUTSIDE)
-        handle.change(fn)
+        // Nor make a session or a plan, which the driver would file into
+        // the person's Sources folder as one: a throw inside the change
+        // abandons it, as kernelRepo's do.
+        handle.change((d) => {
+          fn(d)
+          if (isKernel(d)) refuse()
+        })
         describe(id, handle)
       },
     })
@@ -269,6 +283,7 @@ export function scopedRepo(repo, ledger, { stepId }) {
           url: handle.url,
           kind: "source",
           what: null,
+          type: null,
           source: null,
           name: null,
           engine: null,
@@ -289,6 +304,7 @@ export function scopedRepo(repo, ledger, { stepId }) {
           url: e.url,
           kind: e.kind,
           what: e.what,
+          type: e.type ?? null,
           source: e.source ?? null,
           name: e.name ?? null,
           engine: e.engine ?? null,
@@ -301,20 +317,66 @@ export function scopedRepo(repo, ledger, { stepId }) {
   })
 }
 
+/** Does this plugin metadata declare a tool a research step may have? Scoped as exactly true, and a worker tool. */
+const declaresScoped = (meta) => meta?.scoped === true && (meta.where ?? "worker") === "worker"
+
+export const UNDECLARED_MID_RUN = "This plugin was registered again during the run without declaring `scoped: true`; a research step cannot run it."
+
+/**
+ * The plugin tools a research step may have, out of `plugins` — what this
+ * runner's own registry loaded (tools/index.js loadPluginTools). Only a
+ * plugin that declares `scoped: true` at the top level of its metadata, a
+ * worker-tier tool, whose id is no built-in's: the declaration is the
+ * package's word that its tool works only through the context it is handed,
+ * and that context is the step's confined one (`confine`) and nothing more.
+ * The first of two plugins with one id wins, as nothing else would be
+ * certain to.
+ *
+ * The declaration is checked again at every call, on the plugin about to
+ * run: the registry holds one plugin per id, and any package may register
+ * an id again during a run, which replaces what was admitted. What runs is
+ * then the new plugin, and only if it too declares.
+ *
+ * Installing a package that makes the declaration extends what research
+ * steps can do: that is the trust it asks for, and the README says so.
+ */
+export async function admitScoped(plugins = []) {
+  const { BUILTIN_TOOLS } = await import("./tools/index.js")
+  const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
+  const admitted = []
+  for (const tool of plugins ?? []) {
+    if (!declaresScoped(tool) || tool.where !== "worker" || typeof tool.current !== "function") continue
+    if (typeof tool.id !== "string" || taken.has(tool.id)) continue
+    taken.add(tool.id)
+    admitted.push(
+      Object.freeze({
+        ...tool,
+        async execute(input, ctx) {
+          const now = await tool.current()
+          if (!declaresScoped(now)) throw new ScopeRefusal(UNDECLARED_MID_RUN)
+          return now.module.execute(input, ctx)
+        },
+      })
+    )
+  }
+  return admitted
+}
+
 /**
  * The toolset of a research step: exactly SCOPED_TOOL_IDS, each the built-in
- * itself or its scoped variant, frozen. Whatever the session says about its
- * tools is not consulted — it is not the session's to say.
+ * itself or its scoped variant, then the plugins `admitScoped` admits out of
+ * `plugins`; frozen. Whatever the session says about its tools is not
+ * consulted — it is not the session's to say.
  *
  * Loaded late: the tool registry imports the workflow driver, which imports
  * the runner, which imports this.
  */
-export async function scopedToolset() {
+export async function scopedToolset({ plugins = [] } = {}) {
   const { BUILTIN_TOOLS, SCOPED_VARIANTS, UNSCOPED_ONLY_IDS, toSchema } = await import("./tools/index.js")
   const byId = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
-  const tools = SCOPED_TOOL_IDS.filter((id) => !UNSCOPED_ONLY_IDS.includes(id)).map((id) => SCOPED_VARIANTS[id] ?? byId.get(id))
-  if (tools.some((t) => !t)) throw new Error("A research step's tool is missing from the registry.")
-  const frozen = Object.freeze(tools)
+  const builtins = SCOPED_TOOL_IDS.filter((id) => !UNSCOPED_ONLY_IDS.includes(id)).map((id) => SCOPED_VARIANTS[id] ?? byId.get(id))
+  if (builtins.some((t) => !t)) throw new Error("A research step's tool is missing from the registry.")
+  const frozen = Object.freeze([...builtins, ...(await admitScoped(plugins))])
   const index = new Map(frozen.map((t) => [t.id, t]))
   return Object.freeze({ tools: frozen, schemas: frozen.map(toSchema), get: (id) => index.get(id) ?? null })
 }

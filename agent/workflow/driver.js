@@ -18,7 +18,7 @@ import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STA
 import { heldElsewhere, needsWork, HEARTBEAT_MS } from "../runner.js"
 import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS } from "./plan.js"
-import { scopeOf, webScope, sameScope } from "../scope.js"
+import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
 import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
 import { handleStore } from "../store.js"
@@ -401,7 +401,10 @@ export class WorkflowDriver {
       .filter(([id]) => !present.has(id))
       .map(([id, e]) => ({
         name: e.name ?? (e.kind === "finding" ? "finding" : "source"),
-        type: e.what === "snapshot" ? "web-snapshot" : "file",
+        // Filed as what it is, so the folder opens a web-snapshot in its own
+        // view, and a file in the File tool — but never as a session or a
+        // plan, which only the agent runtime makes.
+        type: KERNEL_TYPES.includes(e.type) ? "file" : e.type ?? "file",
         url: e.kind === "finding" ? stringifyAutomergeUrl({ documentId: id }) : stringifyAutomergeUrl({ documentId: id, heads: [...e.heads] }),
       }))
     if (fresh.length) {

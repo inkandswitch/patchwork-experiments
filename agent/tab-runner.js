@@ -12,7 +12,7 @@ import { handleStore } from "./store.js"
 import { SessionRunner } from "./runner.js"
 import { ensureRunner as ensureSharedRunner } from "./runners.js"
 import { createEvents } from "./events.js"
-import { buildToolset } from "./tools/index.js"
+import { buildToolset, loadPluginTools } from "./tools/index.js"
 import { getProvider, readKey, modelInfo } from "./providers/index.js"
 import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
@@ -86,6 +86,9 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
       ctx,
       buildToolset: (doc) => buildToolset(doc),
+      // This tab's plugin registry, for research steps: the plugins that
+      // declare `scoped: true` are admitted to them (scope.js admitScoped).
+      pluginTools: () => loadPluginTools(),
       onToolset,
       getProvider: async () => getProvider(providerId()),
       getKey: () => readKey(providerId()),

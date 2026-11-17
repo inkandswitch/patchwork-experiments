@@ -679,6 +679,9 @@ export const GRANT_GROUPS = {
   web_fetch: "web",
   web_search: "web",
   // Keeping a page is reading it, with its pictures: the same decision.
+  // web_capture is a plugin (the Web snapshot package's), and a grouping is by
+  // id, so its calls are asked about and granted with the web's all the same
+  // — and a research step's standing web grant covers it.
   web_capture: "web",
   http_request: "web",
   // "May you write files" is likewise one decision; before fs_edit existed it

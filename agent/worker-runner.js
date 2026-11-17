@@ -114,6 +114,8 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       fetchImpl: guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [self.location.origin, ...SYNC_SERVERS] }),
     },
     buildToolset: (doc) => buildToolset(doc),
+    // No pluginTools: a worker has no plugin registry, so its research steps
+    // get the built-ins alone, never a package's tool (scope.js admitScoped).
     getProvider: async () => getProvider(providerId ?? "openrouter"),
     // The key is passed in per session rather than read from storage: a worker
     // has no access to the page's localStorage.

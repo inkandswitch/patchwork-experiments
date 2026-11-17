@@ -87,6 +87,11 @@ export class SessionRunner {
     this.fullCtx = fullContext(this.ctx, this.store)
     this.privileged = null
     this.buildToolset = opts.buildToolset
+    // This runner's plugin tools, for a research step to admit the ones that
+    // declare `scoped: true` (scope.js admitScoped). Only a runner with a
+    // plugin registry — a tab — passes it; a worker or node runner has none,
+    // and its research steps get the built-ins alone.
+    this.pluginTools = opts.pluginTools ?? null
     // Told every toolset a run gets, scoped or not, so a view can ask it about calls.
     this.onToolset = opts.onToolset ?? null
     this.getProvider = opts.getProvider
@@ -233,15 +238,29 @@ export class SessionRunner {
    * beyond it (`privileged`, which a research step's tools never have). A
    * malformed scope, or one that disagrees with the plan, throws, and the
    * session does not run.
+   *
+   * A research step's plugins are this runner's, looked up afresh for every
+   * run like the rest of this, and they get the same confined context as
+   * the step's built-ins: the one `confine` builds.
    */
   async prepare(doc) {
     const scope = scopeOf(doc)
     await assertScopeAgrees(doc, scope, this.ctx.repo)
     const prepared = scope
-      ? { toolset: await scopedToolset(), ctx: await confine(this.ctx, scope), privileged: () => null }
+      ? { toolset: await scopedToolset({ plugins: await this.scopedPlugins() }), ctx: await confine(this.ctx, scope), privileged: () => null }
       : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= await privileges(this.ctx, this.store)) }
     this.onToolset?.(prepared.toolset)
     return prepared
+  }
+
+  /** This runner's plugin tools, or none; a registry that fails to load is no plugins, not no run. */
+  async scopedPlugins() {
+    if (typeof this.pluginTools !== "function") return []
+    try {
+      return (await this.pluginTools()) ?? []
+    } catch {
+      return []
+    }
   }
 
   /**

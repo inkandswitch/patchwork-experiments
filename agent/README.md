@@ -116,7 +116,7 @@ any participant can approve and every approval is auditable.
 | See | `view_screenshot` | host |
 | Build | `package_build` | worker |
 | Test | `package_test` | host |
-| Web | `web_search` `web_fetch` `web_capture` | worker |
+| Web | `web_search` `web_fetch` | worker |
 | APIs | `http_request` | worker |
 | Kept sources | `source_read` `source_list` `source_file` | worker |
 | Findings (research steps only) | `finding_write` | worker |
@@ -126,6 +126,12 @@ any participant can approve and every approval is auditable.
 
 Outside content does not stay in the conversation; see *Everything fetched is
 kept*, below.
+
+Packages add tools of their own (see *A package can hand the agent a
+capability*). The Web snapshot package (`../web-snapshot`) adds `web_capture`,
+which keeps a page as it looks; it is there only when that package is
+installed — and, because it declares itself scoped, research steps have it
+too (*Research steps keep things*).
 
 `fs_delete` unlinks a file or folder from its parent. It does not destroy the
 document — automerge keeps it, and its history — so a package that has been
@@ -193,7 +199,8 @@ already fetched 147 times: the saved page's footer said to page through it with
 `doc_read`, which a web-only step did not have, so it fetched again.
 
 Now every successful `web_fetch` and `http_request` leaves exactly one new
-document (and `web_capture` one snapshot, below), an ordinary `file` the File tool shows, and nothing overwrites one:
+document, an ordinary `file` the File tool shows (and the Web snapshot
+package's `web_capture` one `web-snapshot`, below), and nothing overwrites one:
 
 | what was fetched | `content` | `role` | readable text |
 |---|---|---|---|
@@ -228,85 +235,35 @@ these jobs before, each its own way, and are gone.
 
 ## Keeping web pages
 
-`web_fetch` keeps what a page *says*. `web_capture` keeps the page *itself*,
-as it looked: its HTML and every stylesheet, font and image it loads that can
-be fetched from here, in one `web-snapshot` document that opens later, offline,
-exactly as captured, with nothing run. The skill tells the agent when that is
-worth its cost: when the page is the evidence (a datasheet, a price, a
-statement that may change), when the person asks to keep it, or when how it
-looks matters. A PDF or other file handed to it is kept as the file it is.
+`web_fetch` keeps what a page *says*. Keeping the page *itself*, as it looked,
+is the Web snapshot package's job (`../web-snapshot`, its own package and
+README): a `web-snapshot` document holding the page's rendered DOM frozen at
+capture — no script, handler, refresh or live frame left in what is stored —
+with every stylesheet, font and image it loads stored once by hash, which
+opens later offline with nothing run. It registers the `web-snapshot`
+datatype and view (an empty snapshot is where a person captures a page by
+hand) and one `agent:tool` plugin:
 
-**Getting the page.** It asks for the page directly first, as anyone would get
-it — no cookies, no referrer. In a browser that usually fails CORS for HTML;
-it is one quick, recorded request. A page is then the reader's rendering of
-it — r.jina.ai's DOM after the page's scripts ran, a third party's rendering,
-and the snapshot and the result both say so — or, in node with
-`render: false`, the raw response. When the reader will not render it but the
-direct request got the HTML, that is kept, and the result says it is the page
-before its scripts ran. When neither has the page, the reader's text is kept as
-an extract whose `missing` says the page could not be had.
+- `web_capture` — the capture. It works only through the context it is
+  handed: it fetches only through `ctx.fetchImpl`, the guarded fetch below,
+  and refuses to run without one, and writes only through
+  `ctx.repo.create2()`. Its metadata declares that (`scoped: true`), which is
+  what lets a research step have it. `GRANT_GROUPS` puts it with the web, so
+  it is asked about and granted like `web_fetch`, and a research step's
+  standing web grant covers it; `ui/calls.js` presents it. A snapshot it
+  returns is recorded in the session's `made` (or a research step's ledger)
+  with `what: "web-snapshot"`, so capturing the same page again answers from
+  it.
 
-**Getting what it loads** is a pure pipeline in `capture/`, with no DOM,
-network or automerge, so the same code runs in a tab, a worker and node:
-
-| module | does |
-|---|---|
-| `scan.js` | an HTML tokenizer that keeps positions: raw text, RCDATA, foreign content, CDATA, duplicate attributes, a tag cut off at the end |
-| `links.js` | the one table of load positions (stylesheets, icons, images, lazy and responsive images, posters, backgrounds, SVG images; scripts, frames, media and objects by policy), read by both the crawl and the freeze |
-| `css.js` | the URLs in a stylesheet: `url()`, `@import`, `@font-face`, `image-set()`, never inside a comment or an ordinary string |
-| `sniff.js` | whether a response is what it was wanted for; an HTML body never is (the 404 page served as an image) |
-| `charset.js` | BOM > header > `<meta>` / `@charset` > the parent's > utf-8 |
-| `crawl.js` | what to fetch and keep, and why not |
-| `text.js` | the readable text and its headings, for `source_read` |
-| `freeze.js` | the page as one inert string |
-
-Every resource fetch goes through the guard (`ctx.fetchImpl`), with no cookies
-and no referrer. Every resource found is recorded with exactly one outcome —
-`ok`, `http-error`, `unreachable`, `refused`, `type-mismatch`, `over-budget`,
-`timeout`, `aborted`, `bad-url`, or `policy` for what is never fetched — and
-kept bytes are stored once each by SHA-256. The result and the view count what
-was not kept, by reason. From a browser a site's own CSS and images are often
-`unreachable` (CORS): that is recorded and left, and the snapshot shows the
-page without them.
-
-**The budget is deterministic.** Each resource has an order key — its class
-(stylesheets, then fonts, then images), then where it was found — and
-`resolve` walks the keys in order: the first resource that would pass 20 MB
-(page included) or 150 resources is `over-budget`, and so is everything
-fetchable after it. That is a function of the responses alone, so the crawl
-can fetch six at a time in any order and keep the same set; the tests feed one
-page's responses in all 24 completion orders under every budget. Nothing past
-the cut is fetched beyond the requests already in flight.
-
-**Viewing it runs nothing and reaches nothing.** The view shows `freeze(doc)`
-as the `srcdoc` of an iframe sandboxed with `allow-popups` and
-`allow-popups-to-escape-sandbox` only — never scripts, same-origin, forms,
-modals or top navigation. The frozen page starts with our CSP, which allows
-only `data:`; scripts, event handlers, `<base>`, preloads, `integrity` and the
-like are removed; every load position becomes a `data:` URL of the kept bytes,
-or the absolute URL of what was not kept, which the CSP blocks; and every
-`http-equiv` in the output is renamed `data-x-http-equiv`, as text, so no
-scanning mistake can leave a working refresh. Links open in a new tab. Above
-the page: the source, the time, who rendered it, the hash, what was kept and
-what was not and why, the text with its headings, and Export.
-
-**Export** saves the same string with Memento tags (`Memento-Datetime`,
-`<link rel="original">`) and a `patchwork-snapshot` marker, as one
-self-contained `.html` file. It is a pure function of the document: exporting
-twice gives the same bytes. Capturing an export again finds nothing to fetch
-but what the first capture could not keep.
-
-A research step has `web_capture` too, and its snapshots go into the
-workflow's ledger like everything else it keeps.
-
-Not done, on purpose or not yet: frames are recorded and not captured; a
-PDF's page offsets wait for pdf.js; nothing fills the gaps a browser could not
-fetch (there is no capture daemon — the gaps are recorded honestly and left).
-Probes for what only a real browser or the real services can say — the
-reader's JSON (`probes/reader-dom.mjs`, P1/P2), byte-equal PDFs in node
-(`probes/capture-node.mjs`, P3), the sandboxed frame in Chrome
-(`probes/snapshot-frame.mjs`, P5/P6) and the size caps through the sync
-server (`probes/sync-size.mjs`, P7) — are written and not yet run.
+A snapshot is an ordinary document, filed where the work is: `source_file`
+puts one in a folder as a `web-snapshot` (so it opens in its own view), and a
+research step's snapshots are filed in its workflow's Sources folder like
+everything else it keeps. A snapshot's text is read with
+`source_read` like any kept source: it keeps the source contract above, with
+`html`, the frozen page, as its primary. Whether a 20 MB snapshot and a 30 MB
+PDF, each one document written in one change, fit through the sync server is
+`probes/sync-size.mjs` (P7); it stays here because the PDF cap is this
+package's. It is written and not yet run.
 
 ## Where a tool may fetch
 
@@ -344,11 +301,13 @@ ledgerUrl: <the plan>, stepId }` in the same change that creates the step's
 session. Every runner — tab, worker, node — reads it in one place
 (`runner.js` `prepare`) and nowhere else:
 
-- **The toolset** is exactly `web_search`, `web_fetch`, `web_capture`,
+- **The toolset** is exactly `web_search`, `web_fetch`,
   `http_request` (GET and HEAD, no body), `source_read`, `source_list`, `finding_write` and
-  `session_recall`: built-ins, frozen, plugins never consulted, and whatever
-  the session says about its tools ignored. `finding_write` exists nowhere
-  else; `source_file`, which writes into a folder, is never here.
+  `session_recall` — the built-ins themselves — then the plugins of this
+  runner's registry that declare `scoped: true` (below); frozen, decided per
+  run, and whatever the session says about its tools ignored. `finding_write`
+  exists nowhere else; `source_file`, which writes into a folder, is never
+  here.
 - **The context** is built field by field from an allowlist (`confine`): the
   signal, events, the guarded fetch, the reader, and a repo. There is no
   subject, no root, notes or skills folder, no account, no session URL, no
@@ -387,8 +346,30 @@ no tool can forge a plan whose ledger lists the person's documents. The runner r
 its plan calls web-only whose session is not scoped exactly so, and the
 driver cancels it ("its research scope was removed").
 
+**A package's tool joins only by saying so.** A plugin is someone else's code,
+and a research step fetches without asking, so none is there by default. A
+plugin whose metadata says `scoped: true` at its top level — the Web snapshot
+package's `web_capture` is one — is admitted (`scope.js` `admitScoped`) when
+it is a worker tool whose id is no built-in's, the first plugin with that id,
+from the registry of the runner running the step. It is handed what the
+step's built-ins are handed, the confined context, and nothing more. So
+everything the agent controls still holds for it: it gets no field of the
+person's, its repo opens only the ledger and its new documents go into it,
+and its every request goes through the guard. A worker or node runner has no
+plugin registry, so a step running there gets the built-ins alone; only a
+step running in a tab gets a package's tools.
+
+**The trust this asks for, plainly:** a package declaring `scoped: true`
+vouches that its tool works only through the context it is given — no
+global, no platform `fetch`, no host module, nothing it brought along to
+reach past that context. The agent cannot check that; it can only hand the
+tool nothing more. Installing such a package extends what research steps can
+do. An undeclared plugin, or one claiming a built-in's name, is never
+admitted.
+
 **For the person**, the driver files the ledger into the plan's Sources folder
-as it grows — sources pinned to the version fetched, findings live — and the
+as it grows — sources pinned to the version fetched, as their own datatype (a
+web snapshot opens as one), findings live — and the
 news and the workflow view say what each research step kept. The folder is a
 view, not an authority: linking a document into it grants research steps
 nothing. Research steps take no part in sharing grants, either way.
@@ -404,7 +385,10 @@ plan, the step's own and a sibling's session, a page full of document ids, an
 address on this machine, a site that redirects to Patchwork's origin — and
 after each call it checks that only ledger documents were opened, only what
 the call made or a finding changed, every request passed the guard, and no
-sentinel got out.
+sentinel got out. `toolset.test.js` holds the admission rule over every kind
+of plugin a registry can hold, and runs an admitted one to see it handed the
+confined context exactly; the Web snapshot package runs the same matrix over
+the real `web_capture`, with a confined context built as `confine` builds it.
 
 ## A package can hand the agent a capability
 
@@ -428,6 +412,14 @@ the interface, both built on one shared module so they cannot disagree about
 what cloning means. `registry_list { type: "agent:tool" }` is where an agent
 finds what has been exposed, and `writing-patchwork-tools` tells an author how
 to expose it.
+
+A tool that works only through the context it is handed — `ctx.fetchImpl`
+for the network, `ctx.repo` for documents, nothing global — can say so with
+`scoped: true` beside its `where` and `risk`. Research steps then get it too,
+with their confined context (*Research steps keep things*); without the
+declaration a plugin is for full sessions only. It is a promise the package
+makes and the agent cannot check, so installing a package that makes it is a
+decision about what research steps may do.
 
 The wiring had existed since the first commit and had never been run against a
 real Patchwork. `probes/agent-tool-plugin.mjs` now writes such a package,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { describeCall, PRESENTATION, describeOps, shortDoc, pathLabel, hostOf, baseName } from "./ui/calls.js"
+import { describeCall, PRESENTATION, PRESENTED_PLUGINS, describeOps, shortDoc, pathLabel, hostOf, baseName } from "./ui/calls.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 
 const call = (tool, input = {}, status = "done") => ({ tool, input, status })
@@ -15,26 +15,32 @@ describe("every tool has a presentation", () => {
     expect(missing).toEqual([])
   })
 
-  it("has no entries for tools that no longer exist", () => {
+  it("has no entries for tools that no longer exist, but the plugins it names", () => {
     const ids = new Set(BUILTIN_TOOLS.map((t) => t.id))
-    expect(Object.keys(PRESENTATION).filter((id) => !ids.has(id))).toEqual([])
+    expect(Object.keys(PRESENTATION).filter((id) => !ids.has(id))).toEqual(PRESENTED_PLUGINS)
   })
 
+  const PRESENTED_IDS = [...BUILTIN_TOOLS.map((t) => t.id), ...PRESENTED_PLUGINS]
+
   it("gives every tool a verb that is not just its id", () => {
-    for (const tool of BUILTIN_TOOLS) {
-      const { verb } = show(tool.id, {})
-      expect(verb, tool.id).toBeTruthy()
+    for (const id of PRESENTED_IDS) {
+      const { verb } = show(id, {})
+      expect(verb, id).toBeTruthy()
       // http_request's verb is the HTTP method, which is right, so allow it.
-      if (tool.id !== "http_request") expect(verb, tool.id).not.toBe(tool.id)
+      if (id !== "http_request") expect(verb, id).not.toBe(id)
     }
   })
 
   it("never renders a bare automerge url, for any tool", () => {
     const url = "automerge:2qMVfMqBCLg7JkLaaxr6oPmr2umh"
-    for (const tool of BUILTIN_TOOLS) {
-      const { detail } = show(tool.id, { url, root: url, docUrl: url })
-      expect(detail, tool.id).not.toContain("PDTNBQcoJiMQPEnKFRW8hyW787z")
+    for (const id of PRESENTED_IDS) {
+      const { detail } = show(id, { url, root: url, docUrl: url })
+      expect(detail, id).not.toContain("PDTNBQcoJiMQPEnKFRW8hyW787z")
     }
+  })
+
+  it("presents the Web snapshot package's web_capture by the page it captures", () => {
+    expect(show("web_capture", { url: "https://site.test/cells" })).toMatchObject({ verb: "capture", detail: "site.test" })
   })
 
   it("survives an input that makes no sense", () => {

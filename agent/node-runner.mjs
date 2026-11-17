@@ -101,6 +101,8 @@ async function claim(sessionUrl) {
     // a repo that opens only its workflow's ledger.
     ctx: { ...baseCtx, sessionUrl, subject: doc.subject ?? null, events: createEvents(store) },
     buildToolset: (sessionDoc) => buildToolset(sessionDoc),
+    // No pluginTools: node has no plugin registry, so research steps here get
+    // the built-ins alone.
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),
     getKey: () => KEY,
     getModelInfo: (model, providerId) => modelInfo(providerId ?? MODEL_PROVIDER, model, { key: KEY }),

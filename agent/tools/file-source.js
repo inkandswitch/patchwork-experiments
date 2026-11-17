@@ -20,7 +20,7 @@ export const sourceFile = {
   name: "File a kept source",
   target: { fields: ["folder"] },
   description: [
-    "Put a kept source — a page, PDF or file that web_fetch or http_request kept — into a folder, so the person finds it there or a package can use it. The link is pinned to the version that was fetched.",
+    "Put a kept source — a page, PDF or file that web_fetch or http_request kept, or a web snapshot web_capture kept — into a folder, so the person finds it there or a package can use it. The link is pinned to the version that was fetched.",
     "",
     "For a file a package needs (a wasm module, an image, a font): fetch it with http_request, then file it into the package folder under the name its code imports.",
   ].join("\n"),
@@ -45,15 +45,17 @@ export const sourceFile = {
     const folderDoc = folder.doc()
     if (!isFolder(folderDoc)) throw new Error(`${input.folder} is not a folder document.`)
 
-    const name = String(input.name ?? "").trim() || kept.name || "source"
+    const name = String(input.name ?? "").trim() || kept.name || kept.title || "source"
     const url = sourceHandle.view(sourceHandle.heads()).url
     const title = folderDoc.title ?? input.folder
     const existing = folderDoc.docs.find((entry) => entry?.name === name)
     if (existing?.url === url) return `'${name}' is already filed in ${title}.`
     if (existing) throw new Error(`${title} already has something called '${name}'. Pass a different name.`)
 
+    // Filed as what it is: a web snapshot opens in its own view, a file in the File tool.
+    const type = typeof kept["@patchwork"]?.type === "string" ? kept["@patchwork"].type : "file"
     folder.change((doc) => {
-      doc.docs.push({ name, type: "file", url })
+      doc.docs.push({ name, type, url })
     })
     return `Filed '${name}' in ${title}.`
   },

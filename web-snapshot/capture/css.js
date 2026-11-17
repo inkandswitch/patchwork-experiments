@@ -15,16 +15,27 @@
  * whole token to replace — `url(…)` or the quoted string — `raw` the URL as
  * written, unescaped, and `url` that made absolute against `base`, or null
  * with `bad: true` when it does not parse. Values that are never links
- * (data:, blob:, about:, javascript:, a bare fragment, nothing) are left out.
+ * (data:, blob:, about:, javascript:, vbscript:, a bare fragment, nothing)
+ * are left out.
  *
  * Input that ends mid-token returns what was found so far. It never throws.
  */
 
+/**
+ * `raw` as the URL parser reads it before anything else: without the C0
+ * controls and spaces at either end, and without tabs and newlines anywhere.
+ * "&#1;java&#9;script:" is javascript: to a browser, so it must be to us.
+ */
+export const parsedForm = (raw) => String(raw ?? "").replace(/[\t\n\r]/g, "").replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "")
+
+/** The scheme the URL parser finds in `raw`, lowercased, or "" when it finds none. */
+export const schemeOf = (raw) => /^([a-z][a-z0-9+.-]*):/i.exec(parsedForm(raw))?.[1].toLowerCase() ?? ""
+
 /** Values that are never fetched: they name no resource, or one this page cannot share. */
 export function notALink(raw) {
-  const value = String(raw ?? "").trim()
+  const value = parsedForm(raw).trim()
   if (!value || value.startsWith("#")) return true
-  return /^(data|blob|about|javascript):/i.test(value.replace(/[\t\n\r]/g, ""))
+  return ["data", "blob", "about", "javascript", "vbscript"].includes(schemeOf(value))
 }
 
 /** `raw` made absolute against `base`: `{url}`, `{bad: true}`, or null when it is never a link. */
@@ -155,8 +166,12 @@ function readUrl(css, open) {
   return { raw: null, end: Math.min(j + 1, css.length) }
 }
 
-/** Every URL a stylesheet loads, in order. */
-export function cssLinks(css, base) {
+/**
+ * Every URL a stylesheet loads, in order. With `inline`, its data: URLs too,
+ * as `{ kind, inline: true, raw, start, end }`: nothing fetches them, but the
+ * freeze reads an SVG image written as one.
+ */
+export function cssLinks(css, base, { inline = false } = {}) {
   css = String(css ?? "")
   const links = []
   let depth = 0
@@ -167,6 +182,7 @@ export function cssLinks(css, base) {
   let parens = 0
 
   const add = (kind, raw, start, end) => {
+    if (inline && schemeOf(raw) === "data") return void links.push({ kind, inline: true, url: null, raw, start, end })
     const resolved = resolveLink(raw, base)
     if (!resolved) return
     links.push(resolved.bad ? { kind, url: null, bad: true, raw, start, end } : { kind, url: resolved.url, raw, start, end })

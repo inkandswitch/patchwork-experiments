@@ -46,7 +46,7 @@ const STEP_SCHEMA = {
     access: {
       type: "string",
       enum: ["full", "web"],
-      description: "'web' for a research step that only needs the web: it gets web_search, web_fetch, web_capture, http_request (GET and HEAD), source_read, source_list, finding_write and session_recall, and none of the person's documents, so it fetches without asking. Everything it fetches and every finding it writes is kept, shared with the workflow's other research steps and filed in its Sources folder. It is never handed the result of a step that had the person's documents: write what it needs into its prompt, and no document URLs. Default 'full'.",
+      description: "'web' for a research step that only needs the web: it gets web_search, web_fetch, http_request (GET and HEAD), source_read, source_list, finding_write and session_recall — and web_capture when the Web snapshot package is installed and the step runs in a tab — and none of the person's documents, so it fetches without asking. Everything it fetches and every finding it writes is kept, shared with the workflow's other research steps and filed in its Sources folder. It is never handed the result of a step that had the person's documents: write what it needs into its prompt, and no document URLs. Default 'full'.",
     },
   },
 }

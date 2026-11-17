@@ -30,7 +30,7 @@ import { findingWrite } from "./tools/findings.js"
 import { sourceRead } from "./tools/read-source.js"
 import {
   confine, scopedRepo, scopeOf, assertScopeAgrees, scopedToolset, webScope, sameScope,
-  SCOPED_TOOL_IDS, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal,
+  SCOPED_TOOL_IDS, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal, KERNEL_TYPES, KERNEL_REFUSAL,
 } from "./scope.js"
 
 await initSubduction()
@@ -255,7 +255,7 @@ describe("whatever a research step is handed, it reaches only the web and its wo
   // refuse outright.
   const REFUSED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "169.254.169.254", new URL(ORIGIN).host]
   const REFUSED_VALUES = ["origin handoff", "localhost", "loopback", "v6 loopback", "metadata", "redirect to the origin"]
-  const FETCHING = ["web_fetch.url", "web_capture.url", "http_request.url"]
+  const FETCHING = ["web_fetch.url", "http_request.url"]
   const OTHER_TOOLS = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !SCOPED_TOOL_IDS.includes(id))
 
   /** Every value a URL-ish field might be handed, by name. */
@@ -287,7 +287,6 @@ describe("whatever a research step is handed, it reaches only the web and its wo
   const FIELDS = {
     web_search: [["query", (v) => ({ query: v ?? "q" })]],
     web_fetch: [["url", (v) => ({ url: v, fresh: true })]],
-    web_capture: [["url", (v) => ({ url: v, again: true })]],
     http_request: [["url", (v) => ({ url: v })]],
     source_read: [["source", (v) => ({ source: v, limit: 40 })], ["find", (v) => ({ source: w.ledger.source, find: v ?? "x" })]],
     source_list: [["find", (v) => (v === undefined ? {} : { find: v })]],
@@ -518,6 +517,19 @@ describe("scopedRepo", () => {
     await expect(scopedRepo(raw, ledger, { stepId: "research" }).create2()).rejects.toThrow("crashed")
     expect(made).not.toBeNull()
     await expect(w.ctx.repo.find(made.url)).rejects.toThrow(NOT_A_SOURCE)
+  })
+
+  // Every kernel type, made by every write a step's repo allows: a new
+  // document, and a finding it holds. Each is refused, and changes nothing.
+  it.each(KERNEL_TYPES.flatMap((type) => [["a new document", type], ["a finding", type]]))("will not make %s an %s", async (what, type) => {
+    const w = await world()
+    const handle = what === "a finding" ? await w.ctx.repo.find(w.ledger.finding) : await w.ctx.repo.create2()
+    const raw = await w.repo.find(handle.url)
+    const [before, entry] = [raw.heads(), { ...w.user.plan.doc().sources[handle.documentId] }]
+    expect(() => handle.change((d) => { d["@patchwork"] = { type } })).toThrow(KERNEL_REFUSAL)
+    expect(raw.heads()).toEqual(before)
+    expect(raw.doc()["@patchwork"]?.type).not.toBe(type)
+    expect({ ...w.user.plan.doc().sources[handle.documentId] }).toEqual(entry)
   })
 
   it("decides kind by the first description, so a source cannot later turn into a writable finding", async () => {

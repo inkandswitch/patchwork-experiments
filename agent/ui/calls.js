@@ -131,6 +131,7 @@ export const PRESENTATION = {
   // ---- the world outside
   web_search: { verb: "search", detail: (i) => (i.query ? `“${i.query}”` : null) },
   web_fetch: { verb: "fetch", detail: (i) => hostOf(i.url) },
+  // A plugin, the Web snapshot package's, presented like the tools beside it.
   web_capture: { verb: "capture", detail: (i) => hostOf(i.url) },
   http_request: {
     verb: (i) => (i.method ?? "GET").toUpperCase(),
@@ -178,6 +179,14 @@ export const PRESENTATION = {
 
 /** Tool ids we have written a presentation for. Used by the tests. */
 export const PRESENTED = Object.keys(PRESENTATION)
+
+/**
+ * The plugins presented here, though no part of this package defines them:
+ * the Web snapshot package's web_capture. Its calls land in this log like
+ * any other, and a plugin cannot reach this table, so its entry lives here;
+ * a test holds this list to exactly the entries that are not built-ins.
+ */
+export const PRESENTED_PLUGINS = ["web_capture"]
 
 const MAX_DETAIL = 64
 

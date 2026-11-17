@@ -22,8 +22,9 @@ const level = (mark) => mark.label.match(/^#*/)[0].length || 1
 /**
  * At most `max` marks, keeping the outline's top: every heading down to the
  * deepest level that still fits, in document order. When even the top level
- * does not fit, its first `max`. (tools/sources.js re-exports this; it lives
- * here so capture code loads without automerge.)
+ * does not fit, its first `max`. The agent keeps its own copy of this,
+ * copied rather than shared; it lives here so capture code loads without
+ * automerge.
  */
 export function fewest(marks, max) {
   if (marks.length <= max) return marks

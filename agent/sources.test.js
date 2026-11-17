@@ -3,7 +3,7 @@ import { ImmutableString, isImmutableString } from "@automerge/automerge"
 import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import {
   keepSource, readable, sha256Hex, marksFromMarkdown, findKept, sourceName, sourceFooter, titleFrom,
-  isTextResponse, describeBytes, decodeText, outline, fewest,
+  isTextResponse, describeBytes, decodeText, outline, fewest, formatOf, MAGIC,
 } from "./tools/sources.js"
 import { httpRequest } from "./tools/http.js"
 import { webFetch } from "./tools/web.js"
@@ -402,6 +402,35 @@ describe("telling text from bytes", () => {
     expect(isTextResponse(null, new TextEncoder().encode("hello, world"))).toBe(true)
     expect(isTextResponse(null, new Uint8Array([0x00, 0x61, 0x73, 0x6d]))).toBe(false)
     expect(isTextResponse("", new Uint8Array([1, 2, 0, 3]))).toBe(false)
+  })
+
+  it("names every format in the magic table, at the offset each is found at", () => {
+    const bytes = (...b) => new Uint8Array(b)
+    const text = (t) => new TextEncoder().encode(t)
+    const cases = [
+      [bytes(0x00, 0x61, 0x73, 0x6d, 1), "WebAssembly module"],
+      [bytes(0x1f, 0x8b, 8), "gzip"],
+      [text("PK\x03\x04"), "zip"],
+      [text("%PDF-1.7"), "PDF"],
+      [bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a), "PNG"],
+      [bytes(0xff, 0xd8, 0xff, 0xe0), "JPEG"],
+      [text("GIF89a"), "GIF"],
+      [text("RIFF\0\0\0\0WEBPVP8 "), "WebP"],
+      [text("\0\0\0\x1cftypavif"), "AVIF"],
+      [bytes(0, 0, 1, 0, 1, 0), "ICO"],
+      [text("wOFF\0\x01\0\0"), "WOFF"],
+      [text("wOF2\0\x01\0\0"), "WOFF2"],
+      [bytes(0, 1, 0, 0, 0, 0x10), "TrueType font"],
+      [text("OTTO\0\x0a"), "OpenType font"],
+      [text("ttcf\0\x01"), "font collection"],
+      // The right bytes at the wrong offset are not the format.
+      [text("WEBPRIFF\0\0\0\0"), null],
+      [text("ftypavif"), null],
+      [text("<html>"), null],
+      [bytes(), null],
+    ]
+    expect(cases.map(([b]) => formatOf(b))).toEqual(cases.map(([, name]) => name))
+    expect(MAGIC.map(([, name]) => name).sort()).toEqual(cases.map(([, name]) => name).filter(Boolean).sort())
   })
 
   it("names the format from its magic number", () => {

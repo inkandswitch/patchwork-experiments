@@ -4,14 +4,14 @@
  * web_capture asks the reader for its rendering of a page as JSON, with
  * `X-Return-Format: html`, `x-no-cache` and `x-respond-timing: network-idle`,
  * and reads `data.html` (or `data.content`), `data.url` as the final URL and
- * `data.title` (tools/capture.js `readerDom`). None of that is documented
+ * `data.title` (web-capture.js `readerDom`). None of that is documented
  * where we can pin it, so this asks, for a page and for a PDF, and prints
  * what came back:
  *
  *   P1  does the JSON carry the rendered HTML, and the final URL after
  *       redirects? Does the timing header change anything (it is sent both
  *       ways and the timings compared)?
- *   P2  what does html mode make of a PDF? capture.js keeps a PDF as a file
+ *   P2  what does html mode make of a PDF? web-capture.js keeps a PDF as a file
  *       before the reader is asked, but a browser's direct request is often
  *       refused by CORS, so this is what a capture of a PDF behind CORS gets.
  *
@@ -68,5 +68,5 @@ console.log(await ask(PAGE, false))
 console.log("\nP2: a PDF in html mode")
 console.log(await ask(PDF, true))
 console.log(
-  "\nRead: P1 holds if `finalUrl` is the redirected URL and `html` is a whole document; P2 says what capture.js should do with a PDF the browser could not fetch directly (today: the reader's rendering is kept as a snapshot unless the URL ends .pdf)."
+  "\nRead: P1 holds if `finalUrl` is the redirected URL and `html` is a whole document; P2 says what web-capture.js should do with a PDF the browser could not fetch directly (today: the reader's rendering is kept as a snapshot unless the URL ends .pdf)."
 )

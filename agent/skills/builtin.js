@@ -436,6 +436,16 @@ letting an agent reimplement you.
   anything that carries credentials somewhere.
 - **summarize** is the one line shown in the transcript for every call. Say what
   happened, not what was asked — the row already shows the arguments.
+- **scoped: true** — only for a \`worker\` tool that works solely through the
+  context it is handed: it fetches only with \`ctx.fetchImpl\` (and refuses to
+  run without it), writes only through \`ctx.repo\`, and touches no global, no
+  platform \`fetch\` and no host module. Research steps then get it too, with
+  their confined context: a repo that opens only the workflow's kept sources
+  and files what it makes there, and the guarded fetch. It is the package's
+  promise, which the agent cannot check, so installing a package that makes
+  it extends what research steps can do. Leave it out otherwise; a tool
+  without it is for full sessions only. (The Web snapshot package's
+  \`web_capture\` is one that makes it.)
 
 ### Watch the mime type
 
@@ -756,13 +766,15 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
   steps run side by side; host steps take turns on the page.
 - **access: web** for research — finding sources, reading datasheets and
-  standards. The step gets \`web_search\`, \`web_fetch\`, \`web_capture\`,
+  standards. The step gets \`web_search\`, \`web_fetch\`,
   \`http_request\` (GET and HEAD), \`source_read\`, \`source_list\`, \`finding_write\` and
-  \`session_recall\` and nothing else, so it can fetch without asking anyone
-  (it can reach none of the person's documents to leak). Everything it
-  fetches and every finding it writes is kept, shared with the other research
-  steps of the workflow, and filed in the workflow's Sources folder, which the
-  news gives you; later steps can read it there. Ask for what it found, with
+  \`session_recall\` — and \`web_capture\` when the Web snapshot package is
+  installed and the step runs in a tab (a worker has no plugins) — and nothing
+  else, so it can fetch without asking anyone (it can reach none of the
+  person's documents to leak). Everything it fetches, every page it captures
+  and every finding it writes is kept, shared with the other research steps
+  of the workflow, and filed in the workflow's Sources folder, which the news
+  gives you; later steps can read it there. Ask for what it found, with
   sources, in its result.
 
 **A research step is never handed what a full step found.** A step with the
@@ -875,20 +887,23 @@ it merges with other people's concurrent edits.
       "When to search, fetch, capture a page or call an API; how everything fetched is kept and read back cheaply; how approval works and why you should not pre-negotiate it.",
     body: `# Working with the web
 
-Four tools reach out, and picking the wrong one wastes a turn.
+These tools reach out, and picking the wrong one wastes a turn.
 
 - **\`web_search\`** — titles and URLs. It returns links, not answers.
 - **\`web_fetch\`** — read a page or a paper. The default choice.
-- **\`web_capture\`** — keep a page as it looks, for good.
+- **\`web_capture\`** — keep a page as it looks, for good. It comes from the
+  Web snapshot package, so it is there only when that package is installed
+  (and, in a research step, only when the step runs in a tab).
 - **\`http_request\`** — methods, headers, bodies. For APIs and for files, and
   for a page's own source (its script tags, the shell before scripts ran).
 
 ## Capturing a page, or fetching it
 
 \`web_fetch\` keeps what a page *says*: the reader's text of it, which is what
-you need to read it. \`web_capture\` keeps the page *itself*: its HTML with the
-stylesheets, fonts and images it loads, in a snapshot the person can open
-later and see exactly as it was, offline, with nothing run. It costs more —
+you need to read it. \`web_capture\` keeps the page *itself*: its rendered
+page, frozen so that nothing in it runs, with the stylesheets, fonts and
+images it loads, in a web-snapshot the person can open later and see exactly
+as it was, offline. It costs more —
 dozens of requests and megabytes — so capture when the page is the evidence:
 
 - a datasheet, a price, a specification, a policy or a statement that may
@@ -908,9 +923,21 @@ fetch the missing pieces another way. The page's HTML is usually the
 reader's rendering of it after its scripts ran — a third party's — and the
 snapshot says that too.
 
+A snapshot is an ordinary document, kept with everything else this
+conversation fetched. Put it where the work is: file it in the folder of the
+task at hand with \`source_file { source: "automerge:...", folder:
+"automerge:..." }\` when the person wants the page kept there. A research
+step's snapshots are filed in its workflow's Sources folder for you. A
+person can capture a page too, without you: a new, empty Web Snapshot in a
+folder offers an address and Capture.
+
+Without the Web snapshot package there is no \`web_capture\`: \`web_fetch\`
+still keeps a PDF as the PDF itself and a page as the reader's text, and
+that is what to cite.
+
 ## Everything fetched is kept
 
-Every successful \`web_fetch\`, \`web_capture\` and \`http_request\` keeps what
+Every successful \`web_fetch\`, \`http_request\` and \`web_capture\` keeps what
 it fetched as a document, and the result says where. Nothing is overwritten: fetching again
 makes a new one. A PDF is kept as the PDF itself, with its text beside it,
 whenever it can be fetched from here; when it cannot, the result says so and

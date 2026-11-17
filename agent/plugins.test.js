@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { loadPluginTools, runTool, buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
+import { SCOPED_TOOL_IDS, scopedToolset } from "./scope.js"
+import { needsApproval, grantGroup, initSession, recordArtifact } from "./session.js"
+import { keptSources } from "./tools/sources.js"
 
 /** A registry that hands out whatever module is current, as Patchwork's does after a re-register. */
 function fakeRegistry(id) {
@@ -76,5 +79,71 @@ describe("what a session's tool list means", () => {
 
   it("never gives a session what only a research step may have, even when its list names it", async () => {
     expect(await ids({ enabled: ["finding_write"] })).toEqual([])
+  })
+})
+
+/**
+ * The Web snapshot package hands the agent web_capture as a plugin. Its
+ * metadata is restated here from that package's index.js (the agent cannot
+ * import another package): what matters on this side is that it loads like
+ * any plugin, carries its `scoped` declaration, is asked about like the web,
+ * and runs with the context it is handed.
+ */
+describe("the Web snapshot package's web_capture", () => {
+  const WEB_CAPTURE = { id: "web_capture", name: "Keep a web page", description: "Keep a web page as it looks…", where: "worker", risk: "external", scoped: true, input_schema: { type: "object", required: ["url"], properties: { url: { type: "string" } } } }
+  const seen = []
+  const modules = {
+    web_capture: {
+      execute: (input, ctx) => {
+        seen.push(ctx)
+        return { text: "Captured 'Cells'…", doc: { url: "automerge:snap", name: "Cells", kind: "source", source: input.url, engine: "reader-dom", chars: 5, at: 1, what: "web-snapshot" } }
+      },
+      summarize: () => "captured site.test",
+    },
+  }
+  const registry = { all: () => [WEB_CAPTURE], load: async (id) => ({ id, module: modules[id] }) }
+
+  it("is not a built-in, and loads as a plugin with its own tier, risk and declaration", async () => {
+    expect(BUILTIN_TOOLS.map((t) => t.id)).not.toContain("web_capture")
+    expect(SCOPED_TOOL_IDS).not.toContain("web_capture")
+    const tools = await loadPluginTools({ registry })
+    expect(tools.map((t) => [t.id, t.where, t.risk, t.scoped])).toEqual([["web_capture", "worker", "external", true]])
+  })
+
+  it("is asked about and granted with the rest of the web", async () => {
+    const [capture] = await loadPluginTools({ registry })
+    expect(grantGroup("web_capture")).toBe("web")
+    const call = { input: { url: "https://site.test/page" } }
+    expect(needsApproval({ grants: {} }, capture, call)).toBe(true)
+    expect(needsApproval({ grants: { "web@*": "session" } }, capture, call)).toBe(false)
+    expect(needsApproval({ grants: { "web@https://site.test/": "session" } }, capture, call)).toBe(false)
+    expect(needsApproval({ grants: { "web@https://other.test/": "session" } }, capture, call)).toBe(true)
+  })
+
+  it("runs with the context it is handed, guarded fetch and session included", async () => {
+    const [capture] = await loadPluginTools({ registry })
+    const fetchImpl = Object.assign(async () => null, { policy: { deny: [], direct: false, dns: false } })
+    const ctx = { fetchImpl, session: { doc: () => ({ made: [] }) } }
+    seen.length = 0
+    const result = await runTool(capture, { url: "https://site.test/page" }, ctx)
+    expect(seen[0]).toBe(ctx)
+    expect(seen[0].fetchImpl).toBe(fetchImpl)
+    expect([result.summary, result.doc.what]).toEqual(["captured site.test", "web-snapshot"])
+  })
+
+  it("a snapshot it returns is recorded with what it is, so the next capture of the page finds it", () => {
+    const doc = {}
+    initSession(doc, {})
+    recordArtifact(doc, { url: "automerge:snap", name: "Cells", kind: "source", source: "https://site.test/page", engine: "reader-dom", chars: 5, at: 1, what: "web-snapshot" })
+    expect(keptSources({ session: { doc: () => doc } })).toEqual([
+      { url: "automerge:snap", name: "Cells", kind: "source", bytes: null, at: 1, source: "https://site.test/page", engine: "reader-dom", chars: 5, what: "web-snapshot" },
+    ])
+  })
+
+  it("reaches a research step because it says it is scoped, and only then", async () => {
+    const declared = await loadPluginTools({ registry })
+    expect((await scopedToolset({ plugins: declared })).tools.map((t) => t.id)).toEqual([...SCOPED_TOOL_IDS, "web_capture"])
+    const undeclared = await loadPluginTools({ registry: { ...registry, all: () => [{ ...WEB_CAPTURE, scoped: undefined }] } })
+    expect((await scopedToolset({ plugins: undeclared })).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
   })
 })

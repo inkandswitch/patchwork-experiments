@@ -8,10 +8,11 @@
  * as a broken picture with a clean bill of health. So an HTML-looking body is
  * never anything but a page.
  *
- * The magic-byte table here is the only one in the package (tools/sources.js
- * re-exports it): one table, so a format recognised in one place is
- * recognised in all of them. It lives here because capture code must load
- * without automerge, in a tab, a worker or node.
+ * The magic-byte table is this package's own. The agent keeps a copy of it,
+ * copied rather than shared, as packages do here. Within this package it is
+ * the one table, so a format recognised in one place is recognised in all of
+ * them. It lives here because capture code must load without automerge, in a
+ * tab, a worker or node.
  */
 
 /**
@@ -101,7 +102,8 @@ export function htmlLooking(bytes) {
   return HTML_OPENERS.some((tag) => lower.startsWith(`<${tag}`) && /^[ >]/.test(lower.slice(tag.length + 1) || ">"))
 }
 
-const looksSvg = (bytes) => /<svg[\s>]/i.test(head(bytes))
+/** Does an `<svg` tag appear in the first kilobyte? */
+export const looksSvg = (bytes) => /<svg[\s>]/i.test(head(bytes))
 
 /**
  * Is this response what a page wanted for `kind`? `{ok, mimeType}`, where the

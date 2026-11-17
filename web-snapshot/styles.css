@@ -1,0 +1,201 @@
+/*
+ * Web snapshot styling.
+ *
+ * Every host variable is mapped once, here, inside `@layer package`, and the
+ * rules below reference only `--ws-*` tokens, so a theme change re-evaluates
+ * correctly. Fill, line and typography derive from `--editor-*` (this is a
+ * tool painting on the document surface); accents come from `--studio-*`.
+ */
+
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --ws-bg: var(--editor-fill, white);
+    --ws-fg: var(--editor-line, black);
+    --ws-muted: var(--editor-line-offset-50, #767676);
+    --ws-border: var(--editor-fill-offset-20, #e0e0e0);
+    --ws-surface: var(--editor-fill-offset-10, #f6f6f6);
+    --ws-accent-text: var(--editor-primary-text, var(--studio-primary, #0a7));
+    --ws-danger: var(--editor-danger-text, var(--studio-danger, #d64545));
+    --ws-warning: var(--studio-warning, #d68c45);
+    --ws-family: var(--editor-family-sans, system-ui, sans-serif);
+    --ws-family-code: var(--editor-family-code, ui-monospace, monospace);
+    --ws-font-size: var(--editor-font-size, 15px);
+  }
+}
+
+.web-snapshot {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: var(--ws-bg);
+  color: var(--ws-fg);
+  font-family: var(--ws-family);
+  font-size: var(--ws-font-size);
+}
+
+.web-snapshot button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.web-snapshot input {
+  font: inherit;
+  min-width: 0;
+}
+
+/* ---- An empty snapshot: capture a page into it ----------------------------- */
+
+.ws-capture {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0 var(--studio-space-md, 0.75rem);
+}
+
+.ws-capture input {
+  flex: 1;
+}
+
+.ws-status {
+  margin: 0;
+  padding: 0.4rem var(--studio-space-md, 0.75rem);
+  color: var(--ws-muted);
+  font-size: 0.9em;
+}
+
+.ws-status[data-state="failed"] {
+  color: var(--ws-danger);
+}
+
+/* ---- A captured snapshot --------------------------------------------------- */
+
+.ws-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-header h2 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.ws-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.85em;
+  color: var(--ws-muted);
+}
+
+.ws-source {
+  color: var(--ws-accent-text);
+  overflow-wrap: anywhere;
+}
+
+.ws-hash {
+  font-family: var(--ws-family-code);
+}
+
+.ws-resources summary {
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.ws-missing {
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.8em;
+}
+
+.ws-missing h4 {
+  margin: 0.4rem 0 0.1rem;
+}
+
+.ws-missing ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.ws-missing code {
+  font-family: var(--ws-family-code);
+  overflow-wrap: anywhere;
+}
+
+.ws-why,
+.ws-partial {
+  color: var(--ws-muted);
+  margin: 0;
+}
+
+.ws-partial {
+  color: var(--ws-warning);
+}
+
+.ws-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.ws-text {
+  display: flex;
+  gap: 0.5rem;
+  max-height: 40%;
+  min-height: 8rem;
+  border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-text[hidden] {
+  display: none;
+}
+
+.ws-jumps {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  flex: 0 0 14rem;
+  font-size: 0.8em;
+}
+
+.ws-jumps button {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.1rem 0.3rem;
+  color: var(--ws-fg);
+  cursor: pointer;
+}
+
+.ws-jumps button:hover {
+  background: var(--ws-surface);
+}
+
+.ws-text pre {
+  flex: 1;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--ws-family-code);
+  font-size: 0.85em;
+}
+
+.ws-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 20rem;
+  border: none;
+  /* The page's own background, not ours: a snapshot is shown as it looked. */
+  background: white;
+}
+
+.ws-empty {
+  margin: 0;
+  padding: var(--studio-space-md, 0.75rem);
+  color: var(--ws-muted);
+}
