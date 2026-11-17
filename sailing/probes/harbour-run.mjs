@@ -115,9 +115,10 @@ try {
   {
     const world = await P("worldWind('h')");
     const want = { speed: 5, from: 250, gustiness: 0.3 };
+    const offer = { speed: 5, from: 250, seed: 7, gustiness: 0.3 }; // the convention's order, as the weather offers it
     const winds = { LA: await P("meanWind('h', 'LA')"), LB: await P("meanWind('h', 'LB')") };
     report.numbers.winds = { world, ...winds };
-    check("the harbour's wind is its weather's offer, and each boat's wind turned back into the world is it (not her own 7 or 6.5 from 45)", J(world) === J({ ...want, seed: 7 }) && nearWind(winds.LA, want) && nearWind(winds.LB, want), report.numbers.winds);
+    check("the harbour's wind is its weather's offer, and each boat's wind turned back into the world is it (not her own 7 or 6.5 from 45)", J(world) === J(offer) && nearWind(winds.LA, want) && nearWind(winds.LB, want), report.numbers.winds);
   }
   check("nobody aboard: neither boat shows her HUD in the harbour", (await P("huds('h')")).length === 2 && (await P("huds('h')")).every((v) => !v), await P("huds('h')"));
 
