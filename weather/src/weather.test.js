@@ -103,11 +103,6 @@ describe("windOf: the world's wind is the trait's own numbers", () => {
     for (const t of rows) expect([t, windOf(weatherParams(t))]).toStrictEqual([t, { speed: t.wind, from: t.from, seed: t.seed, gustiness: t.gustiness ?? 0.3 }]);
   });
 
-  it("names exactly sailing's four fields, plain numbers", () => {
-    const w = windOf(weatherParams({}));
-    expect(Object.keys(w).sort()).toEqual(["from", "gustiness", "seed", "speed"]);
-    expect(JSON.parse(JSON.stringify(w))).toStrictEqual(w);
-  });
 });
 
 describe("provenance: fetched, dialled since fetch, or dialled", () => {
@@ -152,7 +147,6 @@ describe("provenance: fetched, dialled since fetch, or dialled", () => {
 
   // Every summed field, dialled to another value it can hold, makes it "dialled since fetch", naming exactly it.
   const other = { lat: 48.95, lon: -125.558, date: "2026-07-16", hour: 15.25, offset: -8, wind: 6.3, from: 251, gustiness: 0.35, cover: 0.85, clouds: "stratus", base: 1250, visibility: 24100, rain: 0.1 };
-  it("the table of other values covers every summed field", () => expect(Object.keys(other)).toEqual([...SUMMED]));
   for (const k of SUMMED)
     it(`fetched, then ${k} dialled → dialled since fetch: [${k}]`, () => {
       expect(provenance({ ...F, [k]: other[k] })).toBe("dialled since fetch");

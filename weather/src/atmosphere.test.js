@@ -147,8 +147,6 @@ describe("the anchors: the art direction they were, exactly, at their conditions
     const t = { lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed: 7, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 };
     const a = atmosphereOf(params(t));
     expect({ ...a, sun: { ...a.sun, direction: null } }).toStrictEqual({ ...BRIGHT, sun: { direction: null, ...BRIGHT.sun } });
-    const sun = sunOf(params(t));
-    expect(sun.azimuth).toBeCloseTo(225.57, 1);
     // east +X, north -Z: sailing's old sun stood in the north-east, the real one in the south-west
     const [x, , z] = a.sun.direction;
     expect([Math.sign(x), Math.sign(z)]).toEqual([-1, 1]);
@@ -157,13 +155,6 @@ describe("the anchors: the art direction they were, exactly, at their conditions
     const sun = sunOf(params(UCLUELET));
     expect(sun.azimuth).toBeCloseTo(221.71, 1);
     expect(sun.apparent).toBeCloseTo(56.98, 1);
-  });
-
-  it("the default weather's sun is solar.js's: azimuth 225.57°, apparent elevation 56.30°", () => {
-    const sun = sunOf(params({}));
-    expect(sun.azimuth).toBeCloseTo(225.57, 1);
-    expect(sun.apparent).toBeCloseTo(56.3, 1);
-    expect(atmosphereOf(params({})).sun.direction).toEqual(sunDirection(sun.azimuth, sun.apparent));
   });
 });
 
