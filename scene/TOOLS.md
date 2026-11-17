@@ -279,12 +279,10 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   else the spawn; it stands on supports (walk/DESIGN.md, "Standing on
   supports"): a navmesh per support, the ground (the stage's frame) and each
   object with `walk.support`, the person always on a kept cell of one, in
-  its frame, so a level and a moving deck are one rule. (Built in `walk/`,
-  replacing arena's; since N10 step 4 on the navmesh walker, the ray walker
-  gone; since step 5 sailing's too: her Come aboard is
-  `api.body.enter("walk", hull)`. walk is a part of every doc, so a body
-  entered from a stage walks in that stage, a boat linked into a harbour in
-  her own.)
+  its frame, so a level and a moving deck are one rule. Sailing's Come
+  aboard is `api.body.enter("walk", hull)`. walk is a part of every doc, so
+  a body entered from a stage walks in that stage, a boat linked into a
+  harbour in her own.
 - **seat**, `seats/`'s (COMPOSITION decision 5), rides the seat: no
   movement keys, so D draws. **station**, sailing's, pushed over walk, its
   eye at the station's stand spot (`walk.stand`): A/D steer.
@@ -954,12 +952,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   rides what it stands on. (Then E1M1 listed `walk` only because its
   publisher said so: the walk extension declared no traits, so nothing in
   a doc called for its package. Step 8 gave `walk.spawn` a trait part of
-  its own in `walk/`.) **Sailing keeps its
-  navmesh walker as its own body, `aboard`**, with `station` pushed over
-  it: the walk body stands on what rays hit and knows nothing of her
-  ladder, the water or a vault over her rail, which the navmesh walker
-  proves invariants for; folding them into one walker waits until the walk
-  body can stand on a moving deck as well as the navmesh does. (2) A body
+  its own in `walk/`.) Sailing kept its navmesh walker as a body of its
+  own until N10 folded the two into walk's one walker (§4, walk). (2) A body
   says `here: false` when it needs a place (a seat, a station), so the chip
   doesn't offer it, and a sitting may carry its own `keys` and `label` (a
   station's keys differ by kind; its label is "Helm", "Winch": read since

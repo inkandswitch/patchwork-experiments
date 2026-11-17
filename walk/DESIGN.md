@@ -2,12 +2,13 @@
 
 *Design, written 2026-11-17 in lane/n10 (step 2 of 6). Steps 3–5 build it:
 step 3 moves the walker into walk (pure; built, see "As built, step 3"),
-step 4 gives walk's body supports, step 5 makes sailing walk in walk. Every decision here was made
+step 4 gives walk's body supports, step 5 makes sailing walk in walk, step 6
+republishes her examples and moves sailing's walking text here ("Foundations"). Every decision here was made
 without the lead and is marked so in "Decisions"; what is the lead's taste is
 asked in "Questions for the lead".*
 
 walk has one walker: the navmesh walker sailing built for her deck
-(sailing/DESIGN.md, "Walking: a navmesh in the ship's frame"), generalised
+("Foundations", at the end: moved here from sailing's DESIGN), generalised
 from one ship to any **support**, a frame you stand in. The stage's own frame
 is a support too, the **ground**, so a level, a deck and a lift are walked by
 the same code under the same invariant. Two walkers go:
@@ -19,8 +20,8 @@ the same code under the same invariant. Two walkers go:
 What sailing's walker proved stays proved. The bake's properties B1–B7, the
 invariant I, the transitions W/A/V/P/R/SW and the enumerated cases carry
 over with renames (ship → support, sea → water, OVERBOARD → OFF). This note
-says only what is new or changed. The text it builds on moves here from
-sailing's DESIGN in step 6, renamed.
+says only what is new or changed. The text it builds on is "Foundations",
+at the end, moved here from sailing's DESIGN in step 6, renamed.
 
 Nothing in walk or scene names a sailing concept. Sailing reaches walk only
 at run time: the traits it writes on its parts, `api.body.enter("walk",
@@ -49,7 +50,7 @@ hull)`, and walk's presence record.
   - `{ blocks: true }`: a **blocker**, an obstacle drawn where it is each
     frame (the boom, a sliding door; "Blockers" below);
   - `{}`: ignored, it passes through people (a sail, an anchor on its rode).
-- **Kept cell, side, rise, D_r, link**: as in sailing's DESIGN, per
+- **Kept cell, side, rise, D_r, link**: as in "Foundations", per
   support. A side's record is STEP, WALL or OPEN; a WALL's or OPEN's `to` is
   a cell, **OFF** (off the support's outline: sailing's OVERBOARD) or NONE.
 - **Stand spot**: an object with `walk.stand`. It is a seed of its owner's
@@ -1010,6 +1011,18 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     the point, so every hull its wheel is fitted to is entered there. A
     spawn point without a stand spot is at its origin, facing its way, as
     before.
+42. **Sailing's walking text is walk's "Foundations", split by owner**
+    (decided unattended (2026-11-17, lane/n10, step 6), for the lead): what
+    holds for any support (the mesh's words, the bake's steps, NavMesh,
+    B1–B7, the move, the transitions that survive, P1, the unit and
+    enumerated cases, C1–C7 and C9, the grid and open-square decisions) is
+    here, renamed; what is the stock sloop's (the cockpit's STEP table, her
+    mesh's numbers, C8, the bow, the mainsheet beside a card table, her
+    refitted fittings, the camber hull's numbers) stays in sailing's DESIGN,
+    "Walking", which points here. States, transitions and checks walk
+    dropped (station, ladder, boarding; S1, S2, L1, L2, B1, B2, G1; unit
+    cases 20, 23b, 25) are not carried over: "States" and "Transitions"
+    above say what replaced them.
 
 ## Questions for the lead
 
@@ -1074,3 +1087,504 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
   anchor, Harbour and Fitting out. Step 4 checks each (Verification)
   before the ray walker goes. Is the regression acceptable, or should the
   stage offer a host's triangles near a point (a scene change)?
+
+## Foundations: the navmesh and the walker
+
+*Moved here from sailing's DESIGN in step 6 (lane/n10), renamed: ship →
+support, her body frame → the support's frame, sea → water, OVERBOARD →
+OFF, `__SAILING_ASSERT__` → `__WALK_ASSERT__`. It is the text the sections
+above build on; where they say otherwise (the one body, the bake's input
+and pruning, the states, W3, falling, blockers, bodies over walk), they
+win. What is the stock sloop's alone stays in sailing's DESIGN ("Walking":
+the cockpit STEP, her mesh, her rails, her fittings).*
+
+The ray walker this replaced asked the scene, each frame and in the world,
+where the floor and the walls are, and it could be wrong in any frame
+where a ray missed:
+- the band between the step height and the lowest wall ray;
+- a single centre ray across a heeled well wall;
+- a lifeline taken for a floor.
+
+Checking it took hundreds of walked routes. This design moves the geometry
+questions to a **bake**, done once per support in its frame and checked
+statically. **Motion** is a small state machine over the baked mesh, and
+its state cannot name a place off the mesh. Correctness rests on three
+things, each finite:
+- the bake's properties (B1–B7 below), checked on every bake;
+- the transitions, each shown to preserve the invariant;
+- a list of unit cases, one per kind of situation.
+
+### Words (the mesh's)
+
+- **Column**: a `c × c` square of the support's plan (x, z), indexed
+  `(i, k)` from the grid's origin. Rasterising triangles into a column gives
+  its **intervals**: the closed y-ranges where any triangle's part inside the
+  square lies, merged where they overlap.
+- **Cell**: a floor in a column (the top of one interval) that passes the
+  bake. It is the navmesh's face. A position on it is `(cell, u, v)` with
+  `u, v ∈ [0, 1]`, so the plan point is `origin + ((i + u)c, (k + v)c)` and
+  the surface height is the cell's plane there.
+- **Side**: one of a cell's four edges, directed out of it (−X, +X, −Z, +Z).
+  Every side of every cell carries exactly one record: STEP, WALL or OPEN.
+  Two cells that share an edge each see it as their own STEP side.
+- **Rise**: how far above this cell's surface the body's feet must be to go
+  across a side. It is signed for a STEP (negative is a step down).
+- **Silhouette**: the columns holding any of the support's baked geometry.
+  `D_r` is the silhouette dilated by the radius. A point outside `D_r` is
+  off the support: in the water, on another support, or falling.
+
+### The bake
+
+`bake(input, BODY) → NavMesh` (`navmesh.js`). It is pure, deterministic
+and independent of triangle order. Its input (triangles in the support's
+frame, and the seeds) is the adapter's ("Input", above); the parameters
+are the one body's.
+
+**Steps**:
+1. **Rasterise.** For each triangle and each column its plan bounds touch:
+   - clip the triangle to the column's closed square (Sutherland–Hodgman);
+   - record the clipped polygon's `[ymin, ymax]`, and the same of its part
+     in the column's *open* square: the square shrunk by the clip's own
+     1e-9, so a piece lying on a column line (a wall, or a box's top) is on
+     the boundary of both columns and has no part inside either. Call such
+     a piece EDGE.
+
+   Then merge overlapping intervals per column on the closed ranges, every
+   piece alike. A wall on a column line lands in both columns,
+   conservatively: an EDGE piece is an obstacle like any other.
+2. **Floors**, judged on the pieces' open parts alone. Let `own` be the
+   highest open part's top in the interval (none: no floor). `own` is a
+   floor if either:
+   - (a) a walkable triangle's open part reaches `own`; the floor's plane
+     is that triangle's (the highest at the centre), clamped to its open
+     part's range;
+   - (b) a walkable triangle's open part tops out within `step` below
+     `own`: steep stuff standing on a floor (a curb, a toe rail, a leaning
+     wall straddling a column). The floor is flat at `own`.
+
+   Either way some open part reaches the floor at its height, so every
+   floor is held up by a triangle that meets its open square there, by
+   construction: the invariant B1 checks (navcheck's `supported` asks of
+   the open square). It holds however thin the part is: a wall on a line
+   whose foot leans 1e-8 into the column outside makes its floor (rule b)
+   at the sliver's top, 10% under the top only the line reaches. An EDGE
+   piece's top is never a floor, which is what keeps a box whose side lies
+   on a column line from making a cell at its height in the column outside
+   it. When an EDGE piece rises above `own` (the column beside a lip, a
+   crate or a wall on the line), the floor stays at `own` and its `top`
+   stays the interval's top: erosion (step 5) measures a step against
+   that, so the floor goes if the EDGE stuff rises more than a step over
+   it and stays if not. Beside a box that is the box's own columns' doing
+   too; beside a zero-thickness fence on the line, with no columns of its
+   own, it is the floor's `top` alone that keeps the body a radius off it.
+
+   Rule (b) is Recast's merge rule. It is what joins a side deck to a
+   cabin top across a few centimetres of leaning wall. A stanchion or a
+   post taller than `step` never becomes a floor.
+3. **Headroom.** A floor's `ceil` is the bottom of the next interval up
+   (+∞ if none). A floor with `ceil − s < H` is dropped. This removes a
+   floor under a wire, a rim, a leaning stay, a floor under a floor (a
+   bilge, an interior under a roof too low to stand in). Obstacles need no
+   separate footprints: anything solid within H of a floor removes it.
+4. **Connect.** Floor `f` and the floor `g` in the next column are
+   connected if both hold:
+   - `|s_g − s_f| ≤ step`;
+   - `max(s_f, s_g) + H ≤ min(ceil_f, ceil_g)`.
+
+   At most one `g` qualifies, because two floors in one column are at least
+   H apart and H > 2·step. So connection is symmetric and unique.
+5. **Erode.** Keep floor `f` only if every column whose square meets the
+   disc of radius `r + c/√2` about f's centre has a floor `g` such that:
+   - g is connected to f through columns in that disc;
+   - `s_g ≤ s_f + step`;
+   - `ceil_g ≥ s_f + H`.
+
+   The `c/√2` covers every `(u, v)` in the cell. This one rule erodes from
+   walls, wires, posts, ledges and unrailed edges alike. It doesn't erode
+   at the steps themselves (a stair, a bench's edge), so you walk right up
+   to them and onto them.
+6. **Prune** ("Pruning", above: by passable sides to roots, else every
+   component ≥ πr²; built as `prune: false` until that lands). Sailing kept
+   the components holding a seed and dropped the rest, reported (C3).
+7. **Classify every side of every kept cell, once:**
+   - **STEP `to g`**: the next column holds a kept `g` connected to it.
+     `rise = s_g − s_f` at the edge's midpoint.
+   - Otherwise, **march** column by column along the side's axis, in the
+     cell's row, up to `march`. For each marched column, `fit` is the
+     lowest height above `s_f` at which the body (the disc of `r + c/√2`,
+     from feet to `+H`) is clear of every interval there. `rise` is the
+     running max of `fit`. The march stops at the first column that either:
+     - holds a kept `g` with `s_g ≤ s_f + rise ≤ s_g + headroom(g)` (you
+       can come down onto it, and the whole body fits there):
+       **WALL `to g`**, `gap` = the distance to it;
+     - lies outside `D_r` (the first column whose disc meets no silhouette
+       column): **OPEN** if `rise ≤ step`, else **WALL `to OFF`**.
+       `exit` = that column's centre at the cell's row: where you leave the
+       support (W3).
+     - Hitting `march` or an unbounded `fit` gives **WALL `to NONE`**.
+
+   So a WALL says three things: walking stops here; a jump at least `rise`
+   high gets across (to `g` or off the support); or nothing gets across.
+   A ledge (a drop deeper than `step` inside one support) is a WALL `to`
+   the floor below, with a rise of about 0, so it can be jumped off but not
+   walked off (Q2).
+8. **Silhouette and links.**
+   - `D_r` as a bit per column, and for each `D_r` column its nearest column
+     centre outside `D_r` (where a swimmer is put out).
+   - **Links**, each `{ kind, id, at: (cell, u, v), yaw }` or a water
+     point: `spawn`, one `stand` per stand spot, and per ladder a `top`
+     cell and a `foot` water point outside `D_r` beside it.
+
+     A spot is placed by **projection**: the kept cell nearest in plan
+     whose surface is within `step` of the spot's height.
+
+**NavMesh** (typed arrays, one object per bake key):
+
+```js
+{
+  key,                          // the bake key: what it was baked from ("Input", above)
+  params,                       // the one body's: { cell, slope, step, height, radius, jump, march }
+  origin: [x0, z0], nx, nz,     // the grid, the support's frame
+  cells: { i, k, y, gx, gz, ceil, headroom, region },   // Int32/Float32Array, one entry per kept cell
+                                //   y(u,v) = y + gx·(u−½)c + gz·(v−½)c; headroom = min over the erode disc of ceil − y − H
+  column: Int32Array(nx·nz + 1),// cells by column (prefix offsets), for projection
+  side: {                       // 4 per cell: −X, +X, −Z, +Z
+    kind: Uint8Array,           //   STEP | WALL | OPEN
+    to: Int32Array,             //   a cell, OFF (−1) or NONE (−2)
+    rise: Float32Array, gap: Float32Array, top: Float32Array,
+    exit: Float32Array,         //   [x, z] for OFF and OPEN
+    normal: Float32Array,       //   [x, z], the source wall's plan normal: only for how a slide feels
+  },
+  outside: Uint8Array(nx·nz), putOut: Float32Array,  // D_r and where to put a swimmer
+  links: [{ kind: "spawn" | "stand" | "ladder", id, at: { cell, u, v }, yaw, foot? }],
+  dropped: [{ region, area, centroid, why }],         // what step 6 pruned
+}
+```
+
+### The invariant's foundation: B1–B7
+
+`assertWalker(state, meshes)` checks I ("Invariant I", above) after every
+step while `walker.asserting()`: under vitest (`import.meta.env.DEV`), in
+every probe page that sets `globalThis.__WALK_ASSERT__`, and in any page
+that sets the flag. A breach then throws in the body's tick. A production
+build (`DEV` compiled to false) logs a failure, which the transitions say
+can't happen, once and resolves it by projection.
+
+**What I buys**, given the bake properties B1–B7 (each a static check):
+- **B1**: every cell is a floor with headroom ≥ H, held up by a triangle
+  meeting its column's open square.
+- **B2**: every column within `r + c/√2` of a cell has a floor connected to
+  it no more than `step` above it, and headroom up to its `+H`.
+- **B3**: a STEP's `to` is a kept cell; a WALL's `to` is a kept cell, OFF
+  or NONE; an OPEN's `to` is OFF.
+- **B4**: STEP is symmetric.
+- **B5**: every `exit`, every `putOut` and each ladder's `foot` lie outside
+  `D_r`.
+- **B6**: no cell lies inside a closed hull.
+- **B7**: every vault's marched band is clear of the body at `s_f + rise`.
+
+Together they give the guarantee: walking or airborne,
+- the feet are on a floor;
+- the body from `step` above the feet to its top (radius r) meets no baked
+  surface;
+- an airborne body's whole height is clear.
+
+Below `step`, the legs are allowed to overlap what they step over: a curb,
+a bench's edge.
+- A vaulting body is clear by B7.
+- A swimmer is clear of every support's plan outline.
+- A support's frame is rigid and its geometry rides with it, so all of
+  this holds in the world too: the world pose is derived each frame
+  (feet = `M · local`, the eye along the support's up), and the support's
+  motion is never an input to the state.
+
+Not covered: what moves and isn't baked (blockers, "Blockers" above, only
+cut a move short); other people.
+
+### Motion
+
+**One move** (walking, airborne): the plan displacement this frame is
+`(dx, dz) = vel · dt`. It is capped at 1 m, so any `dt` works. It is walked
+side by side, as a DDA walks a grid. For each next crossing:
+- **within the cell**: move; `u, v` stay in `[0, 1]` (clamped after the
+  arithmetic, which only moves within the cell);
+- **at a side**, by its record. STEP sets `u` or `v` to the opposite edge
+  (0 ↔ 1) of `to`.
+- **corner rule**: a crossing exactly through a corner takes X before Z.
+  The diagonal cell is only ever reached through one of the two orthogonal
+  neighbours, and only if that neighbour's side is crossable too. So two
+  WALL sides meeting at a corner let nothing through it.
+
+Each pass either ends the move, crosses one side (at most `|dx|/c + |dz|/c +
+2` of these), or zeroes one axis (at most twice), so it terminates.
+
+**Sliding.** A blocked axis has its remaining displacement and its velocity
+along that axis set to 0, and the other axis carries on. That alone is a
+correct slide along a wall, and a stop in a concave corner. For feel, the
+velocity is first projected along the wall's smoothed `normal`, so a 45°
+wall doesn't stair-step. The projection changes only the velocity; the
+side test still decides.
+
+The transitions as sailing built them; walk's table ("Transitions", above)
+generalises W3 and A5 (off an OPEN side onto another support, the water,
+or falling), adds falling (F1–F5) and waiting (WT1, WT2), and drops the
+station, ladder and boarding states:
+
+| # | From → to | When | Why I still holds |
+|---|---|---|---|
+| W1 | walking → walking | a move within a cell or across a STEP | `to ∈ cells` (B3); `u, v` set to an edge, in `[0, 1]` |
+| W2 | walking → walking | a move into a WALL side | That axis is zeroed; you stay in the cell |
+| W4 | walking → airborne | jump | Same cell, `h = 0 ≤ headroom` (B1) |
+| W5 | walking/airborne → swimming | awash: feet `SUNK` under the water (the support is going down) | You're put at `putOut` of the column you're in (B5) |
+| A1 | airborne → airborne | `h += vy·dt` under gravity (the support's −Y), clamped to `[0, headroom]`; touching the top zeroes `vy` (a head bump) | Clamped into the invariant's range |
+| A2 | airborne → walking | `h` reaches 0 | Same cell |
+| A3 | airborne → airborne / walking | across a STEP: `h' = h − rise`. If `h' ≥ 0` and `h' ≤ headroom(to)`, airborne on `to`. If `h' < 0`, walking on `to` (a step up in the air). If `h' > headroom(to)`, blocked like W2 | `to ∈ cells`; `h'` checked against `to`'s range |
+| A4 | airborne → vaulting | into a WALL with `h ≥ rise` and `to ≠ NONE`; otherwise blocked like W2 | `d = 0`; `h ≥ rise` |
+| V1 | vaulting → vaulting | `d += |vel along the axis|·dt` (at least 1.5 m/s), `h` ballistic but within `[rise, top]` | `d` capped at `gap`; the band is clear (B7) |
+| V2 | vaulting → airborne / walking / off | `d = gap`: onto `to` with `h = min(s_f + h − s_g, headroom(to))`. That is ≥ 0 because the march only stops where `s_g ≤ s_f + rise`; the march also checked that `s_f + rise − s_g ≤ headroom(to)`, so the min only trims a jump that is still rising. 0 means walking. For OFF: as W3 | `to ∈ cells` (B3) and `h ∈ [0, headroom]`, or as W3 |
+| R1 | any on a support → by projection | its mesh is rebaked (parts changed) | The old local point is projected onto the new mesh (P1). Projected into the water, `yaw` gains the support's heading, so the look doesn't turn |
+| SW1 | swimming → swimming | Move in the world at the surface, then `pushOut`: (1) up to four passes, each moving `p` to `M · putOut` of the support whose `D_r` holds it; (2) if it's still in any support's `D_r` (two so close their `D_r` overlap, each one's `putOut` in the other's), rings about the original `p`, a cell apart and sampled a cell apart round, to the first sample outside every support's `D_r` | Each answer is tested by checkWalker's own test over every support with a mesh, so it is outside the union. The search is total: at horizontal distance `D` from a support's origin a surface point is at least `√((D(1−sinθ) − Y)(D(1+sinθ) + Y))` from it in its plan (θ its tilt, Y the surface's height off its own, ≤ 10 m + the difference at `p`), which exceeds its grid's reach `E` once `D(1−sinθ) − Y > E`; the last ring is there. Only a support on its beam ends (sinθ ≥ 0.999) has no such ring; then the search stops at 200 m and, asserting, throws. This also covers a support moving into a swimmer |
+
+**P1, projection**, is total and returns only valid states. It asks "over
+the water?" first: a point outside every `D_r` with water under it swims
+(in the order first written, any point at deck height anywhere projected
+onto the deck). Else it goes to a cell whose surface is at most a step
+above it and at most 2 m below it, the score plan distance with a drop
+deeper than a step counting metre for metre, so a point in the air lands
+on what's under it; else to the nearest cell in 3D (walk's P1 asks this
+over every support, the ground last, and lifts to the lowest clear point:
+"Transitions", above). The bake's seeds are projected the same way. Two
+plainer rules each failed on camber's hull: with a symmetric ±step window,
+a point just over a step above her aft deck snapped to her foredeck 7 m
+away, which her sheer had brought within a step of it; with "nearest in
+plan within the window", a seed over her deck took the bilge under it
+whenever the nearest deck cell was a cell away. A seed with no kept floor
+within a step of it keeps the nearest component instead (a 0.59 m post
+standing on the spawn point: the enumerated cases' "box over the spawn
+point" arena keeps it covered).
+
+### Verification (the foundations')
+
+No random routes. Each case's every step runs `assertWalker`.
+
+**Unit cases** (`walker.test.js`, `navmesh.test.js`). Each is a fixture of a
+few boxes as triangles, baked, then driven:
+
+1. A flat floor: walk within a cell, and across cells. `u, v` stay in range.
+2. A STEP up (0.3) and down: the cell changes, the feet follow the new
+   plane, and the side back is a STEP (B4).
+3. The threshold: a rise of exactly `step` is a STEP; `step + 1 mm` is a
+   WALL. A drop of `step + 1 mm` is a WALL (ledge) with a rise of about 0.
+4. A WALL (1.0): you stop with your centre `r` ± `c` from its face.
+5. Sliding: walking at 30° into the wall keeps the along-wall component.
+   Head on, you stop.
+6. A concave corner (two walls at 90°): a diagonal move into it stops at
+   the corner, and both axes are zeroed.
+7. A convex corner (an L-shaped floor): walking along one wall carries on
+   past the corner. A diagonal across the corner's cell goes through an
+   orthogonal neighbour, never cutting the corner.
+8. Exact diagonal through a vertex, both orthogonal sides WALL and the
+   diagonal cell open: blocked. Then the same with one side STEP: through
+   that side (the X-first tie order is checked both ways round).
+9. A corner between a STEP (+X) and a WALL (+Z): a diagonal move crosses
+   the STEP and slides along the WALL.
+10. Head clearance: a floor under a ceiling lower than H isn't a cell. A
+    jump under a ceiling at `H + 0.3` caps `h` at 0.3 and zeroes `vy`.
+11. A wire pair over a floor (0.34 and 0.62, 6 mm): no cell under it or on
+    it; the floor beside it is eroded by r; jumping over it works.
+12. Jump over a low wall (rise 0.62 < apex 0.845): walking is blocked, a
+    jump vaults it and lands beyond. A rise of 0.9: the jump is blocked.
+13. Jump off a ledge (a cabin top 1 m over a sole): walking is blocked; the
+    jump vaults down and lands.
+14. OPEN: walking off an unrailed edge, you swim at `exit`, outside `D_r`.
+15. A rail (WALL to OFF at 0.62): walking is held; a jump puts you in the
+    water.
+16. Ramps: 20° is walkable with STEP sides all the way up; 50° isn't.
+17. Rule (b): a riser leaning 4.7 cm between a deck and a roof 0.45 above,
+    in both alignments to the grid (inside one column, straddling two):
+    STEP all the way. A 0.62 stanchion isn't a floor.
+18. Swimming: pushed out of `D_r`. A support moved onto a swimmer puts them
+    out.
+18b. Two supports rafted 0.1, 0.3 and 0.6 m apart (their `D_r` overlap):
+    walking off one's OPEN edge, jumping its rail, and the other closing on
+    a swimmer between them each leave the swimmer outside both `D_r`, and
+    at least r clear of both.
+19. The ladder: from its foot, Climb has you walking at its top.
+21. **A support's motion under a standing walker:** under any sequence of
+    `M` (translation, heave, 30° heel, 20° pitch, yaw), the local state is
+    bit-identical and the world feet equal `M · local`.
+22. A support's motion under a walking walker: the same input sequence
+    gives the same local trajectory under two different `M` sequences.
+23. Rebake under a walker: the floor under you is removed, so you're
+    projected to the nearest cell. An empty mesh means you swim, and on a
+    support heading 90° the look direction is unchanged across it (R1's
+    yaw). (23b, boarding, is walk's WT1/WT2; 20, a station, and 25, a seat,
+    are bodies over walk: "Bodies over walk", body.test.js.)
+24. `place`: a point over the water means swimming; a point by the deck is
+    projected to a cell.
+26. Stepping across: an OPEN side over another support's kept cell puts you
+    on it, in its frame (W3 (1); airborne, then walking).
+27. A huge `dt` or speed: the move is capped, and I holds.
+28. A blocker: walking into it stops you; a jump under it is capped.
+29. A 0.52 STEP up, then down: the state is exact (the feet jump in one
+    frame), `step` reports the jump as `lift`, and the drawn eye (`easeEye`,
+    only the camera) moves under 0.1 m a frame and catches up within
+    0.15 s.
+30. The assertion is on under vitest without the flag (`asserting()`).
+
+**The enumerated cases** (`walker.cases.test.js`, finite and named; no
+random input, so a failure names its arena, leg and step and runs the same
+every time). Each case is:
+- a 4 × 4 m arena: a floor alone; each kind of box alone, on the floor (a
+  1 cm lip, a stair, a knee-high crate, a wall) and floating (a wire at shin
+  height, a low ceiling, a table-high overhang, a box over the spawn point,
+  which the bake's seed must step out of); a ramp at 0, 30 or 60° facing
+  each of four ways; a thin post or rail along x or z, 1 or 3 cm; and all
+  at once (8 boxes, 2 ramps, 3 rods). Every arena twice: its edges on the
+  10 cm columns' lines, and 3 mm off them;
+- 36 legs from the start, one per combination of forward, strafe, run and
+  jump, 16 steps each, heading each of the eight ways, `dt` alternating
+  1/240 and 1/20 s, under every extreme pose of the support (±3 m, ±0.5 m
+  heave, ±30° heel, ±20° pitch, ±180° turn) in turn.
+
+Each step checks I, and also an **oracle on the raw triangles, not the
+mesh**:
+- the feet are within `h + 2 mm` above a triangle in their column's open
+  square;
+- no triangle meets the cylinder of radius r over `[s + step, s + H]`
+  (over `[s + h, s + h + H]` while airborne).
+
+Every case's bake also passes B1, B3–B5. A case that starts on a support
+must spend three quarters of its checks on it (so it walks among the
+features, not off them). A second baked support (a 4 × 4 m deck, with or
+without a rail) lies on each side of the first, touching or 1 m off,
+riding with it, the walker on it or in the water between them: a swimmer
+must be clear of both (I, and no triangle of either within r), and a
+walker who steps across is checked against the other's triangles. 89
+cases, baked at 10 cm (everything reads the cell size from the mesh's own
+params), in about a second. They replaced a seeded `fast-check` property
+test (the project's tests are finite and exhaustive, never random), and on
+their first run found what it never had: a box's or ramp's side exactly on
+a line between columns also made a cell at its height in the column
+outside it, so the walker could stand up to a column's width past the
+edge. The fix is the bake's (step 2), and with the oracle's support check
+asked of the open square too, the old bake fails seven of them (the lip,
+stair, crate and the 30° ramp each way). `navmesh.test.js` pins the rule on
+its own, from both sides of the line: a box side on a 10 cm line or 3 mm
+out over it × {1 cm lip, 15 cm stair, 45 cm crate, 120 cm wall} × each side
+(32), and a 30° ramp's high end on the line or 3 mm out × each facing (8),
+each against its twin 3 mm in; then a zero-thickness fence on a line or
+3 mm off it × {lip, crate, wall} (6), a cage of 1.2 m fences on every line
+(nothing kept inside: erosion's fast path must not take a fenced column as
+plain), and a wall on a line leaning 1e-8 or 1e-6 into the column outside
+(its floor at the sliver's top, B1). `walker.supports.test.js` walks off
+supports onto supports, the ground and the water ("Verification", above).
+
+**Static checks** (`navcheck.js`) on each bake: on the stock sloop's
+fixture in `deck-12m.test.js`, and on the camber hull in sailing's
+`probes/camber-run.mjs`.
+- **C1**: spawn, each stand spot and each ladder's top project onto a kept
+  cell, within 0.35 m in plan and `step` in height of where they were
+  asked for.
+- **C2**: every kept cell is reachable on foot (STEP sides only) from
+  spawn. So is every C1 spot.
+- **C3**: every dropped component is one of: inside a closed hull (C6's
+  test); smaller than 0.25 m²; reached by no WALL side of a kept cell with
+  a rise ≤ the jump apex. So nothing you could walk or jump to was
+  dropped. (As built, it re-marches every non-STEP side over the bake's
+  intervals, as the bake marches, offering the dropped floors as places to
+  come down.)
+- **C4**: every side of every kept cell has exactly one record. B3 and B4
+  hold, and B5 too.
+- **C5**: B1, B2 and B7, recomputed by brute force from the triangles, and
+  the headroom with them. Per cell, exactly what the erosion promises: the
+  cylinder of radius `r + c/√2` about the cell's centre (so radius r about
+  every `(u, v)` in it) meets no triangle from `smin + step` to
+  `smax + H + headroom`, and to the sky where the headroom is infinite: the
+  standing band and the whole airborne envelope at once. Where it's
+  finite, a triangle stands within 5 mm above that top in the disc's
+  columns, so an understated or stale headroom fails too. Then B7 along
+  every vault band. A bake that set every headroom to infinity, or halved
+  them, fails C5.
+- **C6**: no kept cell lies inside a closed hull. A point 5 cm above its
+  surface is outside by ray parity, and three directions must agree.
+- **C7**: stability. Rebaking at `step` ± 0.02 and r ± 0.02 keeps C1 and C2
+  true.
+- **C9**: two bakes of the same input are byte-identical; a shuffled
+  triangle order too.
+
+C8 and the bow check are the sloop's (sailing's DESIGN, "Walking").
+
+### Decisions (the foundations')
+
+- **The faces are grid cells, not welded source triangles.** A triangle
+  navmesh needs polygon offsetting and booleans on a curved deck to erode
+  and to cut out obstacles. Those are where bakes go wrong, and they can
+  only be checked by sampling. On a 5 cm grid, each bake step is exact and
+  finite: clip a triangle to a square; merge intervals; the disc test; one
+  march per side. So the checks can cover every cell. The cost is a
+  boundary quantised to 5 cm, and the erosion disc is padded by `c/√2` to
+  keep it conservative. The input is still triangles, so every support
+  bakes alike.
+- **Baked from what's drawn** (the models), not from an analytic surface:
+  the same code for every support, right for docs whose models predate
+  the code that made them.
+- **A symmetric step.** A drop deeper than `step` inside one support is a
+  WALL (ledge) you can jump off.
+- **Obstacles come in by headroom.** No footprint input; what moves is a
+  blocker.
+- **The body rides the support's up.** The eye is along its up, not the
+  world's, so the camera stays in the checked volume; the horizon stays
+  level.
+- **Ladders and stepping across** are links and checks at the mesh's
+  edges, not rays.
+- **A floor needs a triangle that meets its column's open square**
+  (decided unattended (2026-11-17, lane/n10), for the lead). A piece that
+  only touches the square's boundary stays in the interval as an obstacle
+  but is no floor and holds none up; the floor is the open pieces' top
+  `own`, even under an EDGE piece above it, and erosion measures a step
+  against the interval's whole top. The plainer reading, no floor at all
+  in a column whose interval's top is an EDGE piece, would have cut the
+  ground beside every lip or crate on a line and eroded a moat a radius
+  wide round it, unlike the same box 3 mm off the line. Question for the
+  lead: is "the open square shrunk by 1e-9" the definition you want, or
+  should "on the line" carry a coarser tolerance (say 1 µm) for meshes
+  authored in single precision? B1 holds either way (the floor is at the
+  open part's top, however thin), so this is about intent only: GLB
+  vertices sit ~1e-8 off a line at sloop scale, and at 1e-9 a sliver that
+  thin of a 30 cm wall or a crate's side holds up a floor in the column
+  outside, at its height there (a wall whose foot leans 1e-8 over the line:
+  0.27 m, under its 0.30 top).
+
+### As built (the foundations')
+
+- **Intervals merge across gaps no body can use.** Two ranges in a column
+  merge when they overlap *or* the gap between them is less than
+  `H − step` (1.17 m). B2 needs that much clear over a neighbour's floor
+  and a fit needs H, so no later rule can tell such a gap from solid:
+  treating it as solid is exact. (The sloop's portlights sit 1 cm off her
+  cabin's leaning side; without it, a column straddling the side made the
+  cabin's edge a floor without headroom.)
+- **A floor's surface is its triangle's plane clamped to that triangle's
+  open part's range in the column** (`cells.lo`, `cells.hi`). So there is
+  always a point of the triangle, inside the feet's column's open square,
+  at the feet's height: what the oracle's support check tests. Coplanar
+  triangles that tie for a column's floor share the plane and join their
+  ranges, so triangle order can't matter (C9). Gradients are stored without
+  −0.
+- **Sides carry `top`**: the highest a vault's feet may rise and keep its
+  band clear. The march checks the band at the final rise in every column
+  before the stop (else `to` is NONE), and the vault clamps `h` to
+  `[rise, top]`. C5 checks every band at both heights.
+- **Erosion has two exact shortcuts before its BFS.** A disc column with no
+  alive floor fails f; per-row prefix sums answer that in 2K + 1 looks. In
+  a square window of "plain" columns, f passes outright. Plain means: one
+  alive floor with no EDGE piece above it (`edged` false: its `top` its
+  own), open sky, all four neighbours connected to it within
+  δ = (step − slope·c√2)/(4K + 2) of its height. D_r uses the same row
+  sums. The march's disc gathers are cached per column.
+- **The eye eases across a STEP.** The walker's state is exact, so a
+  0.52 m STEP moves the feet in one frame. `step` returns that jump as
+  `lift`, and the body draws the eye with a lag along the support's up that
+  closes at 5 m/s going up and 3.5 m/s going down (`easeEye`). Only the
+  camera lags: I and the feet are untouched.

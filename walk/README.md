@@ -6,19 +6,21 @@ Built only from the scene's extension contract (scene/STAGE.md).
 
 | | | |
 |---|---|---|
-| `scene:extension` | `walk` | general: the walk body, which says where its walker stands (`avatar`) on the channel of the doc it walks in |
+| `scene:extension` | `walk` | general: the walk body, which says where its walker stands (`avatar`) on the channel of the doc it walks in, and stands it at a stand spot for a body going over it (`stand(id)`: a station's eye is that walker's) |
 | `scene:extension` | `walk.people` | a part of every doc (`traits: ["*"]`): everyone else who walks, drawn where `walk`'s `avatar` says, in every stage whatever the focus |
 | `scene:extension` | `walk.spawn` | the part of walk's traits (below): a doc that carries one calls for this package by it (and lists it, as a `view.start` of `{ body: "walk", place: <a spawn point> }` needs); its verbs are Walk from here (menu, on a spawn point) and Climb (F, on a ladder, while you swim within 2 m of its foot) |
-| trait | `walk.spawn` | on an object: where people start walking, facing the way it faces (`{}`). Written by whatever lays a level out: arena's spawn pad part, doom's layout through it |
+| trait | `walk.spawn` | on an object: where people start walking, facing the way it faces (`{}`); on an object with a `walk.stand`, at that stand spot. Written by whatever lays a level out: arena's spawn pad part, doom's layout through it, sailing's wheel |
 | trait | `walk.support` | on an object: something you stand on that moves (a deck, a lift), walked in its own drawn frame, everything under it baked with it (`{}`) |
 | trait | `walk.moves` | on an object: a moving part, never baked as drawn: `{ swept: "x"\|"y"\|"z" }` (the solid its turn sweeps), `{ blocks: true }` (an obstacle where it's drawn each frame: doom's doors) or `{}` (people pass through it) |
-| trait | `walk.stand` | on an object: `{ at, facing? }` in its own frame, where someone stands to use it |
+| trait | `walk.stand` | on an object: `{ at, facing?, claim? }` in its own frame, where someone stands to use it; whoever holds the object's `claim` is drawn standing there |
 | trait | `walk.ladder` | on an object: `{ top }` in its own frame, the climb out of the water onto its owner |
 
-How it stands: [DESIGN.md](DESIGN.md), "Standing on supports". One walker,
-the navmesh walker, on any support, the ground included (steps 3 and 4 are
-built; step 5, sailing walking in walk, is next). `pnpm test` runs everything,
-the walker's enumerated cases included.
+How it stands: [DESIGN.md](DESIGN.md), "Standing on supports", and under it
+"Foundations" (the mesh, B1–B7, the transitions and the cases, moved from
+sailing's DESIGN). One walker, the navmesh walker, on any support, the
+ground included; sailing walks her deck in it (N10). `pnpm test` runs
+everything, the walker's enumerated cases and the stock sloop's static
+checks (`deck-12m.test.js`, over a copy of her bake input) included.
 
 ## The body
 

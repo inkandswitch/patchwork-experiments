@@ -12,7 +12,7 @@
 // every cell of it, the rest unreachable from every seed.
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { bake, pointOf } from "./navmesh.js";
+import { bake, boxTriangles, pointOf } from "./navmesh.js";
 import { checkAgainst, indexTriangles, rebaker, shuffleTriangles, staticChecks } from "./navcheck.js";
 import { BODY } from "./walk.js";
 import { bakeInput, bakedObjects, seedsOf } from "./supports.js";
@@ -95,6 +95,45 @@ describe("the stock sloop, through walk's adapter", () => {
       return z;
     };
     expect(fwd(mesh)).toBeLessThanOrEqual(fwd(bare) + 0.1);
+  });
+  // the two mainsheet rows sloop-navmesh.test.js held before step 5 (sailing DESIGN, "Her checks")
+  const named = (name) => Object.keys(objects).find((id) => objects[id].name === name);
+  const standOf = (m, id) => {
+    const l = m.links.find((k) => k.kind === "stand" && k.id === id);
+    return l ? pointOf(m, l.at.cell, l.at.u, l.at.v) : null;
+  };
+  it("the mainsheet: its stand spot is on the sole aft of the traveller and forward of the wheel", () => {
+    const [sheet, wheel] = [objects[named("Mainsheet")], objects[named("Wheel")]];
+    const p = standOf(mesh, named("Mainsheet"));
+    expect(p).toBeTruthy();
+    expect(p[1]).toBeCloseTo(0.72, 3);
+    expect(p[2]).toBeGreaterThan(sheet.transform.position[2] + 0.15);
+    expect(p[2]).toBeLessThan(wheel.transform.position[2]);
+  });
+  it("the mainsheet with a card table between the benches (as the aboard setup puts it): its stand spot stays put, and the look from its eye to the block clears the table, in reach", () => {
+    const [x0, x1, z0, z1, top] = [-0.6, 0.6, 2.47, 3.23, 0.72 + 0.7];
+    const legs = [[x0 + 0.08, z0 + 0.08], [x1 - 0.08, z0 + 0.08], [x0 + 0.08, z1 - 0.08], [x1 - 0.08, z1 - 0.08]];
+    const table = [...boxTriangles([x0, top - 0.06, z0], [x1, top, z1]), ...legs.flatMap(([x, z]) => boxTriangles([x - 0.03, 0.72, z - 0.03], [x + 0.03, top - 0.06, z + 0.03]))];
+    const id = named("Mainsheet");
+    const p = standOf(bake({ triangles: [...input.triangles, ...table], seeds: input.seeds }, BODY), id);
+    const q = standOf(mesh, id);
+    expect(Math.hypot(p[0] - q[0], p[2] - q[2])).toBeLessThan(0.051);
+    const eye = [p[0], p[1] + BODY.eye, p[2]];
+    const at = objects[id].transform.position;
+    const block = [at[0], at[1] + 0.21, at[2]];
+    // the segment eye → block against the table's box (slabs): it misses
+    let [t0, t1] = [0, 1];
+    for (const [k, lo, hi] of [[0, x0, x1], [1, 0.72, top], [2, z0, z1]]) {
+      const d = block[k] - eye[k];
+      if (Math.abs(d) < 1e-12) {
+        if (eye[k] < lo || eye[k] > hi) t1 = -1;
+        continue;
+      }
+      const [a, b] = [(lo - eye[k]) / d, (hi - eye[k]) / d].sort((u, v) => u - v);
+      [t0, t1] = [Math.max(t0, a), Math.min(t1, b)];
+    }
+    expect(t0 > t1, "the look to the block passes through the table").toBe(true);
+    expect(Math.hypot(...eye.map((v, k) => v - block[k]))).toBeLessThan(2.5); // in a station's reach (sailing's REACH)
   });
   it("each stand spot's link stands within 1 mm of the height its spot was written at (they're written on what's drawn there)", () => {
     for (const s of input.seeds.filter((sd) => sd.kind === "stand")) {

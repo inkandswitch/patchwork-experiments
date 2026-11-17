@@ -550,7 +550,7 @@ describe("the commands", () => {
   it("the mainsheet: F locks you in at it; Q / E trim and hold R hoists, each under the sail's claim; F leaves", () => {
     const s = stage();
     s.cmd("mainsheet").run("sheet");
-    expect(s.taken.id).toBe("sheet"); // its stand spot, in her navmesh
+    expect(s.taken.id).toBe("sheet"); // its stand spot (walk.stand)
     expect(s.claims.sheet?.mine).toBe(true);
     const h = s.taken.handlers;
     expect(h.hint()).toBe("Q / E sheet 50% · hold R lower sail · F leave · sail 100%");
