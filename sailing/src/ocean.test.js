@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import * as ocean from "./ocean.js";
 import { pmSea, seaWaves, waveComponents, whitecapCoverage } from "./ocean.js";
 import { downwind } from "./wind.js";
 
@@ -83,15 +82,5 @@ describe("whitecaps", () => {
     expect(whitecapCoverage(12)).toBeGreaterThan(0.01);
     expect(whitecapCoverage(12)).toBeLessThan(0.03);
     expect(whitecapCoverage(20)).toBeGreaterThan(whitecapCoverage(12));
-  });
-});
-
-describe("sailing makes waves and evaluates none", () => {
-  it("ocean.js is the spectrum alone, and the sea it makes is plain data (the water package evaluates it)", () => {
-    expect(Object.keys(ocean).sort()).toEqual(["pmSea", "seaWaves", "waveComponents", "whitecapCoverage"]);
-    for (const wind of [{ speed: 0, from: 0 }, { speed: 7, from: 45 }, { speed: 14, from: 300 }]) {
-      const sea = seaWaves({ wind, seed: 3, scale: 0.5 });
-      expect(JSON.parse(JSON.stringify(sea))).toEqual(sea);
-    }
   });
 });

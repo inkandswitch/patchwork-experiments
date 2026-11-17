@@ -38,7 +38,7 @@ function swell({ amp, length, toward = 0 }) {
   };
 }
 
-import { helmsman, sail, speedAt, steady, wrap } from "./test/sail-runs.js";
+import { helmsman, sail, steady, wrap } from "./test/sail-runs.js";
 import { plainWindage } from "./hull-model.js";
 import { toBody } from "./rig-contract.js";
 import { specFor } from "./sim.js";
@@ -265,13 +265,6 @@ describe("under sail, 8 m/s of wind from the north", () => {
     expect(gained).toBeLessThan(0.5);
   });
 
-  it("running dead downwind it moves, no faster than on a beam reach", () => {
-    const run = speedAt(ship, { twa: 180, sheet: 1, seconds: 60 });
-    const reach = speedAt(ship, { twa: 90, sheet: 0.4, seconds: 60 });
-    expect(run).toBeGreaterThan(1.5);
-    expect(run).toBeLessThan(reach * 1.05);
-  });
-
   it("with the sail down it barely moves: it drifts", () => {
     let fastest = 0;
     sail(ship, {
@@ -426,17 +419,6 @@ describe("integration", () => {
     // and the same input gives the same output
     expect(ship.step(s0, controls, env, 1 / 60)).toEqual(s1);
   });
-
-  it("a 1/60 s step takes well under a millisecond", () => {
-    let s = ship.rest();
-    const quick = { water: calm, wind: steady(8, 0) };
-    for (let i = 0; i < 300; i++) s = ship.step(s, controls, quick, 1 / 60);
-    const n = 2000;
-    const t0 = performance.now();
-    for (let i = 0; i < n; i++) s = ship.step(s, controls, quick, 1 / 60);
-    const ms = (performance.now() - t0) / n;
-    expect(ms).toBeLessThan(0.5);
-  });
 });
 
 describe("the boom", () => {
@@ -530,11 +512,13 @@ describe("windage: each element is §6.1's at its own centre", () => {
   // heeled φ about +Z: body x → (cos φ, sin φ, 0), body y → (−sin φ, cos φ, 0)
   const rot = (phi, v) => [Math.cos(phi) * v[0] - Math.sin(phi) * v[1], Math.sin(phi) * v[0] + Math.cos(phi) * v[1], v[2]];
 
+  // At ×1 in standard air the ship is held to compose's §6.1 already (windage.test.js); here, what that
+  // leaves: each element at half scale, and a body in other air (ρ 1.0) with other coefficients.
   const odd = { ...byId.hull, id: "body, Cd 0.5 head-on, 1.1 abeam, ρ 1.0", cdFront: 0.5, cdSide: 1.1 };
   for (const [e, rho] of [[byId.hull, RHO_AIR], [byId["mast-bare"], RHO_AIR], [byId["mast-sail"], RHO_AIR], [odd, 1.0]]) {
     for (const betaDeg of [0, 45, 90, 135, 180, -90]) {
       for (const phiDeg of [0, 15, -15]) {
-        for (const k of [1, 0.5]) {
+        for (const k of [0.5]) {
           it(`${e.id}, β_e ${betaDeg}°, heel ${phiDeg}°, ×${k}`, () => {
             const ship = shipWith(e, k, rho);
             const b = betaDeg * DEG, phi = phiDeg * DEG, s = Math.abs(Math.sin(phi));

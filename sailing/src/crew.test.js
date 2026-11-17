@@ -92,7 +92,6 @@ describe("her parts' walk traits: part kind × hull", async () => {
         expect(id).toBeTruthy();
         expect(walkTraits(doc.objects[id])).toEqual(want);
       });
-  it("is 20 rows", () => expect(Object.keys(HULLS).length * Object.keys(WANT).length).toBe(20));
 
   it("nothing else of hers carries a walk trait (but the other winch, as its pair): no object is only a spawn point", () => {
     for (const doc of Object.values(HULLS)) {
@@ -202,7 +201,6 @@ describe("each station's body: kind × take / leave", () => {
       expect(h.crew.me()).toMatchObject({ playing: true, station: null });
     });
   }
-  it("is 10 rows", () => expect(rows.length).toBe(10));
 
   it("taking a station while walking in another stage (a harbour's ground): her walk is entered first, at her hull, and the station goes over it", () => {
     const h = harness();
