@@ -346,6 +346,13 @@ the lead confirms or reverses it):
   over it takes the finger), and sailing's panel paints over its arrows
   (they still work, the panel letting the pointer through); move the pad,
   or have the HUD keep clear. Layout is the lead's taste.
+- **Multi-select** (TOOLS §3 and Decisions 20; lane/n11): not built, so
+  a handful is still a group. Options A1, A2, B, C and D are checked
+  against H3, H4 and H10, and A2 is recommended: the selection is a list
+  at the focus, `several: true` commands take it, and nothing runs on
+  part of it. The questions are there: whether to build it at all,
+  whether Shift-click is Edit's alone, and what the halo does with
+  several selected.
 
 Questions for the lead (not decided; each names what stands meanwhile):
 - **A place handed across docs to a body** (Decisions, N7, 1): when a body
