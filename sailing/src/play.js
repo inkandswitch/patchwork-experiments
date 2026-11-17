@@ -4,9 +4,9 @@
 //
 //   sea-view.js  the sea: the world's water and wind (no clock)      (createSeaView)
 //   sim.js       the ships: who simulates, physics, poses, controls  (createSim)
-//   crew.js      people: walking the deck, swimming, avatars, camera (createCrew)
+//   crew.js      coming aboard (walk's), the station body, the camera (createCrew)
 //   looks.js     what each view dresses for itself: floats, the sail (createLooks)
-//   stations.js  the helm, the sail, the anchor, the ladder: verbs   (stationCommands)
+//   stations.js  the helm, the sail, the anchor: verbs              (stationCommands)
 //   hud.js       crosshair, wind, speed, heading, hints              (createHud)
 //
 // The sea itself (its waves, wind and sky) is another extension, sea.js,
@@ -67,7 +67,7 @@ export default {
       },
       commands: stationCommands(api, ctx),
       input: ctx.crew.input,
-      // the crew's bodies (scene/TOOLS.md §4): walking her deck, and standing at a station
+      // the crew's body (scene/TOOLS.md §4): standing at a station, over walk (walking her deck is walk's)
       bodies: ctx.crew.bodies,
       receive(type, data, from) {
         for (const p of parts) p.receive?.(type, data, from);

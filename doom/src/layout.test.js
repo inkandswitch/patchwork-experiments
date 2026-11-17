@@ -139,6 +139,15 @@ describe("dropping a WAD", () => {
     expect(made[0].content).toMatch(/No spawn point/);
   });
 
+  it("every door, one row each, is a moving part that blocks walkers where it's drawn (walk.moves { blocks }), never floor", async () => {
+    const { ctx, d } = dropContext();
+    await ext.drop(ctx, { url: "automerge:wad", doc: wadDoc(), handle: null });
+    const doors = Object.values(d.objects).filter((o) => o.traits?.["joints.slide"]);
+    expect(doors).toHaveLength(11);
+    expect(doors.map((o) => [o.name, o.traits["walk.moves"]])).toEqual(doors.map((o) => [o.name, { blocks: true }]));
+    expect(Object.values(d.objects).filter((o) => o.traits?.["walk.moves"])).toHaveLength(11);
+  });
+
   it("each door's slide: up its parent's +Y by its travel in metres, at its speed, closing after Doom's wait", async () => {
     const { ctx, d } = dropContext();
     await ext.drop(ctx, { url: "automerge:wad", doc: wadDoc(), handle: null });

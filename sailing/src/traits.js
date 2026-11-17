@@ -25,7 +25,7 @@ export const FLOAT = "sailing.float";
  * does about the mast.
  */
 export const JIB = "sailing.jib";
-/** A winch the jib's sheet is led to: `{ sail: "jib", side: "port" | "starboard", stand: [x, y, z] }`, stand in its own frame. */
+/** A winch the jib's sheet is led to: `{ sail: "jib", side: "port" | "starboard" }`. Where you stand to work it is its walk.stand. */
 export const WINCH = "sailing.winch";
 
 // Other packages' traits that sailing's parts carry, written in the shapes
@@ -34,6 +34,17 @@ export const WINCH = "sailing.winch";
 export const WATER_TRAIT = "water";
 /** Is this object open water (the water package's trait with no size)? */
 export const isOpenWater = (o) => !!o?.traits?.[WATER_TRAIT] && o.traits[WATER_TRAIT].size == null;
+/**
+ * The walk package's traits (walk/DESIGN.md, "The traits"): how people
+ * stand on her. Her hull is a support (walked in her own frame); the boom
+ * blocks where it's drawn, the jib and the anchor are passed through, the
+ * wheel is the solid its turn about its axle sweeps; each station is a
+ * stand spot `{ at, facing?, claim }` (its own frame), whose `claim` is the
+ * one whoever works it from there holds (STATION; the sail's HALYARD), so
+ * walk.people draws them standing at it; her ladder `{ top }`; the wheel is
+ * her spawn too (people come aboard at its stand spot).
+ */
+export const WALK = Object.freeze({ support: "walk.support", moves: "walk.moves", stand: "walk.stand", ladder: "walk.ladder", spawn: "walk.spawn" });
 /**
  * the weather package's: the world's weather, a scene trait, flat
  * (`{ wind, from, seed, ... }`: wind m/s at 10 m, from degrees true, seed

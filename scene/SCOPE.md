@@ -103,8 +103,8 @@ directly or not**, or being in a doc linked onto something attached.
 - **The camera rides.** A base ride (`camera.ride`: a ship keeping herself
   in view) or the top body's own ride, which wins; a ride may `tilt`, so a
   seat at a table aboard rolls with the table.
-- **People stand on things.** The walk body rides what it stands on;
-  sailing's aboard body walks her deck on a navmesh in her frame.
+- **People stand on things.** The walk body stands on supports, each
+  walked on a navmesh in its own frame, a boat's deck as a level's floor.
 - **Landing doesn't attach.** A carried thing keeps its doc parent, and a
   piece set down outside its doc stays in its doc.
 
@@ -121,7 +121,7 @@ surface shows is resolved by the same function that runs it.
   section per doc on its path, innermost first.
 - **Hover** is one path, each stage seeing its element.
 - **Where a person is**, as opposed to where the pointer is, is the body.
-  Standing at the tiller pushes sailing's station body over aboard; getting
+  Standing at the tiller pushes sailing's station body over walk; getting
   up pops it. The top body is offered presses after the chain, so a
   station's holder gets a press before a walker would.
 

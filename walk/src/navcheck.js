@@ -3,12 +3,12 @@
 // - the oracle: questions asked of the raw triangles, never of the mesh (is
 //   anything inside this body's cylinder? is there a triangle under these
 //   feet?), so a fault in the bake's rasteriser shows up as a disagreement;
-// - the static checks C1–C9 over a whole baked hull: every cell, every side,
+// - the static checks C1–C9 over a whole baked support: every cell, every side,
 //   every link.
-// Used by the unit tests, the enumerated cases (walker.cases.slow.test.js), the
-// sloop's static checks (sloop-navmesh.test.js) and the camber probe.
+// Used by the unit tests, the enumerated cases (walker.cases.test.js), the
+// static checks of a whole support (a fixture, a probe).
 
-import { DIRS, NONE, OPEN, OVERBOARD, STEP, WALL, apexOf, bake, cellRange, columnAt, pointOf, sideBase, surfaceAt } from "./navmesh.js";
+import { DIRS, NONE, OPEN, OFF, STEP, WALL, apexOf, bake, cellRange, columnAt, pointOf, sideBase, surfaceAt } from "./navmesh.js";
 import { localFeet } from "./walker.js";
 
 const SUPPORT = 0.002; // feet within 2 mm of a triangle under them
@@ -111,7 +111,11 @@ export function meets(index, q, y0, y1, r) {
   return null;
 }
 
-/** Is there a triangle with a point over the closed square [x0, x1] × [z0, z1] at a height in [ya, yb]? */
+/**
+ * Is there a triangle with a point over the open square (x0, x1) × (z0, z1) at a height in [ya, yb]?
+ * (Open by the bake's 1e-9, as its `openPart`: a triangle lying along the square's boundary, a
+ * wall or a top on a column line, holds nothing up inside it.)
+ */
 export function supported(index, [x0, z0, x1, z1], ya, yb) {
   const { T } = index;
   for (const t of index.near(x0, z0, x1, z1)) {
@@ -120,7 +124,7 @@ export function supported(index, [x0, z0, x1, z1], ya, yb) {
     if (!poly) continue;
     // clip the slab's polygon to the square, in plan
     let p = poly.map((v) => [v[0], v[2]]);
-    for (const [axis, lim, lower] of [[0, x0 - 1e-9, true], [0, x1 + 1e-9, false], [1, z0 - 1e-9, true], [1, z1 + 1e-9, false]]) {
+    for (const [axis, lim, lower] of [[0, x0 + 1e-9, true], [0, x1 - 1e-9, false], [1, z0 + 1e-9, true], [1, z1 - 1e-9, false]]) {
       const out = [];
       for (let a = 0; a < p.length; a++) {
         const S = p[(a + p.length - 1) % p.length];
@@ -141,7 +145,7 @@ export function supported(index, [x0, z0, x1, z1], ya, yb) {
   return false;
 }
 
-/** The closed square of a cell's column. */
+/** The square of a cell's column: [x0, z0, x1, z1]. */
 export const squareOf = (mesh, a) => {
   const x0 = mesh.origin[0] + mesh.cells.i[a] * mesh.cell;
   const z0 = mesh.origin[1] + mesh.cells.k[a] * mesh.cell;
@@ -149,7 +153,7 @@ export const squareOf = (mesh, a) => {
 };
 
 /**
- * The oracle for one walker state aboard, against the raw triangles in her
+ * The oracle for one walker state on a support, against the raw triangles in its
  * frame (DESIGN.md, "The walker's enumerated cases"):
  * - the feet are within h + 2 mm above a triangle in their column;
  * - no triangle meets the body's cylinder (radius r) over [s + step, s + H]
@@ -159,26 +163,39 @@ export const squareOf = (mesh, a) => {
  * @returns {string[]} problems
  */
 export function oracle(index, mesh, st) {
-  const P = mesh.params;
   const bad = [];
   const local = localFeet(st);
   if (!local) return bad;
-  const q = [local[0], local[2]];
-  if (st.mode === "vaulting") {
-    const base = sideBase(mesh, st.cell, st.side);
-    const t = meets(index, q, base + st.h, base + st.h + P.height, P.radius);
-    if (t != null) bad.push(`vaulting body meets triangle ${t} at ${q.map((v) => v.toFixed(3))} h ${st.h.toFixed(3)}`);
-    return bad;
+  if (st.mode !== "vaulting") {
+    const h = st.mode === "airborne" ? st.h : 0;
+    const s = local[1] - h;
+    if (!supported(index, squareOf(mesh, st.cell), s - SUPPORT, s + h + SUPPORT)) bad.push(`no triangle under the feet at ${local.map((v) => v.toFixed(3))}`);
   }
-  const h = st.mode === "airborne" ? st.h : 0;
-  const s = local[1] - h;
-  if (!supported(index, squareOf(mesh, st.cell), s - SUPPORT, s + h + SUPPORT)) bad.push(`no triangle under the feet at ${local.map((v) => v.toFixed(3))}`);
-  const t = meets(index, q, s + Math.max(h, P.step), s + h + P.height, P.radius);
-  if (t != null) bad.push(`body meets triangle ${t} at ${local.map((v) => v.toFixed(3))} (${st.mode}, h ${h.toFixed(3)})`);
+  const t = bodyMeets(index, mesh, st);
+  if (t != null) bad.push(`${st.mode === "vaulting" ? "vaulting body" : "body"} meets triangle ${t} at ${local.map((v) => v.toFixed(3))} (${st.mode}, h ${st.h?.toFixed?.(3) ?? 0})`);
   return bad;
 }
 
-/** A swimmer's oracle in one ship's frame: no triangle within r of the plan point, at any height. */
+/**
+ * The oracle's body: the first triangle (of `index`, in the support's frame)
+ * that meets the body's cylinder above the step, as `oracle` asks it; null
+ * if none.
+ */
+export function bodyMeets(index, mesh, st) {
+  const P = mesh.params;
+  const local = localFeet(st);
+  if (!local) return null;
+  const q = [local[0], local[2]];
+  if (st.mode === "vaulting") {
+    const base = sideBase(mesh, st.cell, st.side);
+    return meets(index, q, base + st.h, base + st.h + P.height, P.radius);
+  }
+  const h = st.mode === "airborne" ? st.h : 0;
+  const s = local[1] - h;
+  return meets(index, q, s + Math.max(h, P.step), s + h + P.height, P.radius);
+}
+
+/** A swimmer's oracle in one support's frame: no triangle within r of the plan point, at any height. */
 export function swimmerClear(index, q, r) {
   return meets(index, q, -1e6, 1e6, r) == null;
 }
@@ -210,12 +227,12 @@ export function checkMesh(mesh) {
         else if (side.kind[to * 4 + (s ^ 1)] !== STEP || side.to[to * 4 + (s ^ 1)] !== a) bad.push(`B4: STEP ${a}→${to} not mirrored`);
         else if (cells.i[to] !== cells.i[a] + DIRS[s][0] || cells.k[to] !== cells.k[a] + DIRS[s][1]) bad.push(`B3: STEP ${a}→${to} isn't to the column beside it`);
       } else if (kind === WALL) {
-        if (!(to >= 0 ? to < count : to === OVERBOARD || to === NONE)) bad.push(`B3: WALL side ${e} to ${to}`);
+        if (!(to >= 0 ? to < count : to === OFF || to === NONE)) bad.push(`B3: WALL side ${e} to ${to}`);
         if (!(side.rise[e] >= 0)) bad.push(`WALL side ${e} rise ${side.rise[e]}`);
       } else if (kind === OPEN) {
-        if (to !== OVERBOARD) bad.push(`B3: OPEN side ${e} to ${to}`);
+        if (to !== OFF) bad.push(`B3: OPEN side ${e} to ${to}`);
       } else bad.push(`side ${e} has no record (${kind})`);
-      if (to === OVERBOARD && !isOutside(side.exit[e * 2], side.exit[e * 2 + 1])) bad.push(`B5: exit of side ${e} inside D_r`);
+      if (to === OFF && !isOutside(side.exit[e * 2], side.exit[e * 2 + 1])) bad.push(`B5: exit of side ${e} inside D_r`);
     }
   }
   for (let col = 0; col < mesh.nx * mesh.nz; col++) {
@@ -288,7 +305,7 @@ export function checkAgainst(mesh, index, { limit = 20 } = {}) {
   return bad;
 }
 
-// ─── the static checks over a whole hull ────────────────────────────────────
+// ─── the static checks over a whole support ────────────────────────────────────
 
 /** Ray parity: is a point inside the closed surfaces of `index`, along direction d? */
 function parity(index, p, d) {
@@ -322,8 +339,8 @@ const RAYS = [
   [0.0731, 0.9811, -0.1792],
 ];
 
-/** Inside her closed hull: odd along all three rays (and when they disagree, `null`: not sure). */
-export function insideHull(index, p) {
+/** Inside closed geometry: odd along all three rays (and when they disagree, `null`: not sure). */
+export function insideShell(index, p) {
   const votes = RAYS.map((d) => parity(index, p, d));
   if (votes.every((v) => v)) return true;
   if (votes.every((v) => !v)) return false;
@@ -352,18 +369,18 @@ export function reachable(mesh, from) {
 }
 
 /**
- * The static checks over one baked hull (DESIGN.md C1–C9). `rebake(params)`
+ * The static checks over one baked support (DESIGN.md C1–C9). `rebake(params)`
  * bakes the same input again (C7, C9); `triangles` are what it was baked from.
  * @returns {{ ok: boolean, checks: { [name]: { ok: boolean, detail } } }}
  */
-export function staticChecks(mesh, triangles, { seeds = [], rebake = null, shuffled = null, ship = "sloop" } = {}) {
+export function staticChecks(mesh, triangles, { seeds = [], rebake = null, shuffled = null, railed = false } = {}) {
   const checks = {};
   const index = indexTriangles(triangles);
   const P = mesh.params;
   const apex = apexOf(P);
   const put = (name, ok, detail) => (checks[name] = { ok: !!ok, detail });
 
-  // C1: spawn, each station's stand spot and the ladder's top on a kept cell, near where asked
+  // C1: each spawn, stand spot and ladder top on a kept cell, near where asked
   const c1 = (m) =>
     m.links.map((l) => {
       const p = l.at ? pointOf(m, l.at.cell, l.at.u, l.at.v) : null;
@@ -386,12 +403,12 @@ export function staticChecks(mesh, triangles, { seeds = [], rebake = null, shuff
   const reach = c2(mesh);
   put("C2 all reachable from spawn", !!spawn && reach.missing === 0 && reach.links.length === 0, reach);
 
-  // C3: nothing dropped that you could walk or jump to. Every dropped component is inside her
-  // hull, or small, or no jump (a march across a WALL side, over the bake's intervals, at a rise
+  // C3: nothing dropped that you could walk or jump to. Every dropped component is inside
+  // closed geometry, or small, or no jump (a march across a WALL side, over the bake's intervals, at a rise
   // no more than the apex) could come down on it before the march's own stop
   const landable = droppedLandings(mesh, apex);
   const c3 = mesh.dropped.map((d) => {
-    const inside = insideHull(index, [d.centroid[0], d.centroid[1] + 0.05, d.centroid[2]]);
+    const inside = insideShell(index, [d.centroid[0], d.centroid[1] + 0.05, d.centroid[2]]);
     const small = d.area < 0.25;
     const jump = landable.get(d.region) ?? null;
     return { area: +d.area.toFixed(3), centroid: d.centroid.map((v) => +v.toFixed(2)), inside, small, jump, ok: inside === true || small || !jump };
@@ -406,19 +423,19 @@ export function staticChecks(mesh, triangles, { seeds = [], rebake = null, shuff
   const c5 = checkAgainst(mesh, index);
   put("C5 B2 and B7 from the triangles", c5.length === 0, c5);
 
-  // C6: no kept cell inside her closed hull
+  // C6: no kept cell inside closed geometry
   let inside = 0;
   let unsure = 0;
   const examples = [];
   for (let a = 0; a < mesh.count; a++) {
     const p = pointOf(mesh, a, 0.5, 0.5);
-    const v = insideHull(index, [p[0], p[1] + 0.05, p[2]]);
+    const v = insideShell(index, [p[0], p[1] + 0.05, p[2]]);
     if (v === true) {
       inside++;
       if (examples.length < 5) examples.push(p.map((x) => +x.toFixed(2)));
     } else if (v === null) unsure++;
   }
-  put("C6 no cell inside the hull", inside === 0, { inside, unsure, examples });
+  put("C6 no cell inside closed geometry", inside === 0, { inside, unsure, examples });
 
   // C7: stable under small changes of step and radius
   if (rebake) {
@@ -431,21 +448,21 @@ export function staticChecks(mesh, triangles, { seeds = [], rebake = null, shuff
     put("C7 stable under step ±0.02 and radius ±0.02", runs.every((r) => r.links && r.missing === 0 && r.unreached.length === 0), runs);
   }
 
-  // C8 (a ship with rails): no OPEN anywhere; every way overboard a WALL above the step
-  if (ship === "sloop") {
+  // C8 (a support railed all round): no OPEN anywhere; every way off it a WALL above the step, jumpable on both sides (−X, +X)
+  if (railed) {
     let open = 0;
     let lowRail = 0;
-    let jumpable = { port: 0, starboard: 0 };
+    let jumpable = { minusX: 0, plusX: 0 };
     let unjumpable = 0;
     for (let e = 0; e < mesh.count * 4; e++) {
       if (mesh.side.kind[e] === OPEN) open++;
-      if (mesh.side.to[e] !== OVERBOARD || mesh.side.kind[e] !== WALL) continue;
+      if (mesh.side.to[e] !== OFF || mesh.side.kind[e] !== WALL) continue;
       const r = mesh.side.rise[e];
       if (r <= P.step) lowRail++;
-      if (r <= apex) jumpable[mesh.side.exit[e * 2] < 0 ? "port" : "starboard"]++;
+      if (r <= apex) jumpable[mesh.side.exit[e * 2] < 0 ? "minusX" : "plusX"]++;
       else unjumpable++;
     }
-    put("C8 never walk off her; jump over either side", open === 0 && lowRail === 0 && jumpable.port > 0 && jumpable.starboard > 0, { open, lowRail, jumpable, unjumpable });
+    put("C8 never walk off it; jump over either side", open === 0 && lowRail === 0 && jumpable.minusX > 0 && jumpable.plusX > 0, { open, lowRail, jumpable, unjumpable });
   }
 
   // C9: deterministic, and independent of triangle order

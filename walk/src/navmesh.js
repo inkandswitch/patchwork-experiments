@@ -1,5 +1,5 @@
-// The navmesh: where a body can stand on a hull, baked once in her body
-// frame (DESIGN.md, "Walking: a navmesh in the ship's frame"). Pure: no
+// The navmesh: where a body can stand on a support, baked once in its
+// frame (DESIGN.md, "Standing on supports"; the bake as sailing built it). Pure: no
 // THREE, no rays, no scene. Triangles in, typed arrays out.
 //
 // The plan (x, z) is cut into columns c × c. Rasterising the triangles into
@@ -8,36 +8,27 @@
 // of every cell carries exactly one record:
 // - STEP to the cell beside it (walk across);
 // - WALL with a rise, a gap and where a jump that high comes down (a cell,
-//   OVERBOARD or NONE);
-// - OPEN: walking on goes into the water at `exit`.
+//   OFF or NONE);
+// - OPEN: off the support's outline (OFF), at `exit`, where W3 asks what is
+//   there: another support, the water, or the air.
 // The walker (walker.js) moves over this; nothing it does asks the geometry
 // again. navcheck.js checks a baked mesh against the triangles it came from.
+
+import { BODY } from "./walk.js";
 
 export const STEP = 0;
 export const WALL = 1;
 export const OPEN = 2;
-/** A side's `to` when it leads into the water. */
-export const OVERBOARD = -1;
+/** A side's `to` when it leads off the support's outline. */
+export const OFF = -1;
 /** A side's `to` when nothing gets across. */
 export const NONE = -2;
 
 /** The four sides of a cell, directed out of it: −X, +X, −Z, +Z. The opposite of side s is s ^ 1. */
 export const DIRS = Object.freeze([Object.freeze([-1, 0]), Object.freeze([1, 0]), Object.freeze([0, -1]), Object.freeze([0, 1])]);
 
-/** The sloop's bake parameters (DESIGN.md's table). walk.js's DECK carries the same. */
-export const NAV = Object.freeze({
-  cell: 0.05,
-  slope: 35, // degrees
-  step: 0.58,
-  height: 1.75,
-  radius: 0.25,
-  march: 1.5,
-  jump: 4.6,
-  gravity: 16,
-});
-
 const EPS = 1e-9;
-/** A fit higher than this over the deck beside it is no fit at all. */
+/** A fit higher than this over the floor beside it is no fit at all. */
 const FIT_CAP = 3;
 /** Where the floor and its intervals are compared, a hair of slack for rounding. */
 const TOL = 1e-7;
@@ -45,12 +36,17 @@ const TOL = 1e-7;
 /** How high a jump goes. */
 export const apexOf = (p) => (p.jump * p.jump) / (2 * p.gravity);
 
-/** The bake's own parameters out of anything shaped like NAV or DECK. */
+const NAV_KEYS = ["cell", "slope", "step", "height", "radius", "march", "jump", "gravity"];
+
+/** The bake's own parameters out of anything shaped like BODY (a missing one is BODY's). */
 export function navParams(p = {}) {
   const out = {};
-  for (const k of Object.keys(NAV)) out[k] = Number.isFinite(p[k]) ? p[k] : NAV[k];
+  for (const k of NAV_KEYS) out[k] = Number.isFinite(p[k]) ? p[k] : BODY[k];
   return Object.freeze(out);
 }
+
+/** The bake's own numbers, out of the body (walk.js BODY): one set for every support. */
+export const NAV = navParams(BODY);
 
 // ─── small geometry ─────────────────────────────────────────────────────────
 
@@ -95,6 +91,19 @@ function clipAxis(src, n, dst, axis, lo, hi) {
   return m;
 }
 const CLIP_TMP = new Float64Array(30);
+const OPEN_X = new Float64Array(30);
+const OPEN_XZ = new Float64Array(30);
+
+/**
+ * The part of a polygon inside the closed square [x0, x1] × [z0, z1] that is in its open square
+ * (the square shrunk by EPS, closed: the same EPS that widens the closed square, so a piece lying
+ * on a column line is on the boundary of both columns and in neither open square), into OPEN_XZ.
+ * navcheck's `supported` asks the same of the raw triangles. @returns its point count, 0 if none
+ */
+const openPart = (poly, n, x0, x1, z0, z1) => {
+  const m = clipAxis(poly, n, OPEN_X, 0, x0 + 2 * EPS, x1 - 2 * EPS);
+  return m > 0 ? clipAxis(OPEN_X, m, OPEN_XZ, 2, z0 + 2 * EPS, z1 - 2 * EPS) : 0;
+};
 const TRI = new Float64Array(9);
 const STRIP = new Float64Array(30);
 const PIECE = new Float64Array(30);
@@ -116,11 +125,44 @@ export function discOffsets(R, c) {
 // ─── the bake ───────────────────────────────────────────────────────────────
 
 /**
+ * A bake's grid (pure, cheap: one pass over the triangles): aligned to
+ * multiples of the cell, padded so what is round the triangles is on it.
+ * Its columns (nx · nz) are what a bake's time and memory grow with, so
+ * this is what a caller asks before baking (supports.js, MAX_COLUMNS).
+ * @returns {{ I0: number, K0: number, nx: number, nz: number }}
+ */
+export function gridOf(triangles, params = NAV) {
+  const P = navParams(params);
+  const c = P.cell;
+  const T = triangles ?? [];
+  const nt = Math.floor(T.length / 9);
+  let minx = Infinity;
+  let maxx = -Infinity;
+  let minz = Infinity;
+  let maxz = -Infinity;
+  for (let k = 0; k < nt * 9; k += 3) {
+    const x = Number(T[k]);
+    const y = Number(T[k + 1]);
+    const z = Number(T[k + 2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    minx = Math.min(minx, x);
+    maxx = Math.max(maxx, x);
+    minz = Math.min(minz, z);
+    maxz = Math.max(maxz, z);
+  }
+  if (!(minx <= maxx)) minx = maxx = minz = maxz = 0;
+  const pad = Math.ceil((P.radius + c * Math.SQRT1_2) / c) + 3;
+  const I0 = Math.floor(minx / c) - pad;
+  const K0 = Math.floor(minz / c) - pad;
+  return { I0, K0, nx: Math.floor(maxx / c) + pad - I0 + 1, nz: Math.floor(maxz / c) + pad - K0 + 1 };
+}
+
+/**
  * Bake a navmesh.
- * @param {{ triangles: ArrayLike<number>, seeds?: Array<{ kind: string, id?: string, at: number[], yaw?: number, hook?: number[] }>, key?: string }} input
- *   triangles: 9 numbers each, in her body frame (metres, +Y up). seeds: where people must be able to stand
- *   (spawn, each station's stand spot, the ladder's top with its `hook`, where it hangs). With no seeds, every
- *   component is kept (a fixture).
+ * @param {{ triangles: ArrayLike<number>, seeds?: Array<{ kind: string, id?: string, at: number[], yaw?: number, hook?: number[] }>, key?: string, prune?: boolean }} input
+ *   triangles: 9 numbers each, in the support's frame (metres, +Y up). seeds: where people must be able to stand
+ *   (each spawn, each stand spot, a ladder's top with its `hook`, where it hangs), each a link. With no seeds,
+ *   or `prune: false` (walk's body, until pruning by passable sides lands: DESIGN.md), every component is kept.
  * @param {object} [params]  NAV or anything shaped like it
  */
 export function bake(input, params = NAV) {
@@ -143,29 +185,15 @@ export function bake(input, params = NAV) {
   const T = new Float64Array(nt * 9);
   for (let k = 0; k < nt * 9; k++) T[k] = Number(src[k]);
 
-  // the grid: aligned to multiples of c, padded so the water round her is on it
-  let minx = Infinity;
-  let maxx = -Infinity;
-  let minz = Infinity;
-  let maxz = -Infinity;
-  for (let k = 0; k < nt * 9; k += 3) {
-    if (!Number.isFinite(T[k]) || !Number.isFinite(T[k + 1]) || !Number.isFinite(T[k + 2])) continue;
-    minx = Math.min(minx, T[k]);
-    maxx = Math.max(maxx, T[k]);
-    minz = Math.min(minz, T[k + 2]);
-    maxz = Math.max(maxz, T[k + 2]);
-  }
-  if (!(minx <= maxx)) minx = maxx = minz = maxz = 0;
-  const pad = Math.ceil(R / c) + 3;
-  const I0 = Math.floor(minx / c) - pad;
-  const K0 = Math.floor(minz / c) - pad;
-  const nx = Math.floor(maxx / c) + pad - I0 + 1;
-  const nz = Math.floor(maxz / c) + pad - K0 + 1;
+  const { I0, K0, nx, nz } = gridOf(T, P);
   const ncol = nx * nz;
   const X = (i) => (I0 + i) * c;
   const Z = (k) => (K0 + k) * c;
 
-  // 1. rasterise: per column, [ymin, ymax, triangle, walkable] for each triangle in its closed square
+  // 1. rasterise: per column, [ymin, ymax, triangle, oymin, oymax] for each triangle in its closed
+  // square: its y-range there (an obstacle), and its y-range where it meets the open square (what
+  // can hold a floor up), [∞, −∞] where it only touches the square's boundary (a wall or a top on
+  // a column line: an obstacle there, never a floor)
   const raw = new Array(ncol);
   const planes = new Float64Array(nt * 4); // walkable: [y0 at origin, gx, gz, 1]
   for (let t = 0; t < nt; t++) {
@@ -204,8 +232,8 @@ export function bake(input, params = NAV) {
     const ty0 = Math.min(T[o + 1], T[o + 4], T[o + 7]);
     const ty1 = Math.max(T[o + 1], T[o + 4], T[o + 7]);
     if (ia === ib && ka === kb) {
-      // inside one column: its own y-range
-      (raw[ka * nx + ia] ??= []).push(ty0, ty1, t, walk ? 1 : 0);
+      // inside one column: its own y-range, both (its bounds are EPS inside the square: in the open square)
+      (raw[ka * nx + ia] ??= []).push(ty0, ty1, t, ty0, ty1);
       continue;
     }
     // clipped to each row's strip once, then the strip to each column in it
@@ -231,7 +259,15 @@ export function bake(input, params = NAV) {
           if (y < lo) lo = y;
           if (y > hi) hi = y;
         }
-        (raw[k * nx + i] ??= []).push(lo, hi, t, walk ? 1 : 0);
+        let olo = Infinity;
+        let ohi = -Infinity;
+        const no = openPart(PIECE, np, X(i), X(i + 1), Z(k), Z(k + 1));
+        for (let p = 0; p < no; p++) {
+          const y = OPEN_XZ[p * 3 + 1];
+          if (y < olo) olo = y;
+          if (y > ohi) ohi = y;
+        }
+        (raw[k * nx + i] ??= []).push(lo, hi, t, olo, ohi);
       }
     }
   }
@@ -244,20 +280,20 @@ export function bake(input, params = NAV) {
   const ivHi = [];
   const ivFloor = []; // floor index or -1
   // floors (pre-headroom)
-  const F = { col: [], iv: [], top: [], ceil: [], yc: [], gx: [], gz: [], lo: [], hi: [] };
+  const F = { col: [], iv: [], top: [], edged: [], ceil: [], yc: [], gx: [], gz: [], lo: [], hi: [] };
   const order = [];
   for (let col = 0; col < ncol; col++) {
     ivStart[col] = ivLo.length;
     const r = raw[col];
     if (!r) continue;
-    const n = r.length / 4;
+    const n = r.length / 5;
     // insertion sort by (ymin, ymax): columns hold a handful
     order.length = n;
     for (let a = 0; a < n; a++) {
       let b = a;
-      const lo = r[a * 4];
-      const hi = r[a * 4 + 1];
-      while (b > 0 && (r[order[b - 1] * 4] > lo || (r[order[b - 1] * 4] === lo && r[order[b - 1] * 4 + 1] > hi))) {
+      const lo = r[a * 5];
+      const hi = r[a * 5 + 1];
+      while (b > 0 && (r[order[b - 1] * 5] > lo || (r[order[b - 1] * 5] === lo && r[order[b - 1] * 5 + 1] > hi))) {
         order[b] = order[b - 1];
         b--;
       }
@@ -270,17 +306,23 @@ export function bake(input, params = NAV) {
     let a = 0;
     while (a < n) {
       const first = a;
-      let lo = r[order[a] * 4];
-      let hi = r[order[a] * 4 + 1];
+      let lo = r[order[a] * 5];
+      let hi = r[order[a] * 5 + 1];
       a++;
       // overlapping, or a gap no body's band could use (B2 needs H − step clear, a fit H): one interval
-      while (a < n && r[order[a] * 4] - hi < H - step - TOL) {
-        hi = Math.max(hi, r[order[a] * 4 + 1]);
+      while (a < n && r[order[a] * 5] - hi < H - step - TOL) {
+        hi = Math.max(hi, r[order[a] * 5 + 1]);
         a++;
       }
-      // the floor at this interval's top
-      // (a): the walkable triangle reaching the top that's highest at the centre; coplanar ties
-      // (a quad's two halves) share one plane, their ranges joined, so triangle order can't matter
+      // the floor, judged on the pieces' parts in the column's open square alone: a piece touching
+      // it only along its boundary (a wall or a top on a column line) is in the interval, an
+      // obstacle, but holds nothing up here. `own` is the top of those parts; the floor is there
+      // or nowhere, and whatever rule makes it, a triangle meets the open square at its height (B1).
+      let own = -Infinity;
+      for (let b = first; b < a; b++) own = Math.max(own, r[order[b] * 5 + 4]);
+      // (a): the walkable triangle reaching `own` that's highest at the centre; coplanar ties
+      // (a quad's two halves) share one plane, their ranges joined, so triangle order can't matter.
+      // Its surface is clamped to its range in the open square: there it meets a triangle.
       let best = -1;
       let bestY = -Infinity;
       let bestGx = 0;
@@ -289,47 +331,47 @@ export function bake(input, params = NAV) {
       let bestHi = -Infinity;
       let below = false;
       for (let b = first; b < a; b++) {
-        const e = order[b] * 4;
-        if (!r[e + 3]) continue;
+        const e = order[b] * 5;
         const t = r[e + 2];
-        if (r[e + 1] >= hi - TOL) {
+        const olo = r[e + 3];
+        const ohi = r[e + 4];
+        if (!planes[t * 4 + 3] || ohi === -Infinity) continue;
+        if (ohi >= own - TOL) {
           const gx = planes[t * 4 + 1];
           const gz = planes[t * 4 + 2];
           const y = planes[t * 4] + gx * cx + gz * cz;
           if (y === bestY && gx === bestGx && gz === bestGz) {
-            bestLo = Math.min(bestLo, r[e]);
-            bestHi = Math.max(bestHi, r[e + 1]);
+            bestLo = Math.min(bestLo, olo);
+            bestHi = Math.max(bestHi, ohi);
           } else if (y > bestY || (y === bestY && (gx < bestGx || (gx === bestGx && gz < bestGz)))) {
             best = e;
             bestY = y;
             bestGx = gx;
             bestGz = gz;
-            bestLo = r[e];
-            bestHi = r[e + 1];
+            bestLo = olo;
+            bestHi = ohi;
           }
-        } else if (r[e + 1] >= hi - step - TOL) below = true;
+        } else if (ohi >= own - step - TOL) below = true;
+      }
+      // (b): steep stuff reaching `own`, a walkable top within a step under it: flat at `own`
+      if (best < 0 && below) {
+        bestY = bestLo = bestHi = own;
+        bestGx = bestGz = 0;
       }
       let floor = -1;
-      if (best >= 0) {
+      if (best >= 0 || below) {
         floor = F.col.length;
         F.col.push(col);
         F.iv.push(ivLo.length);
+        // the interval's top, everything in it, what's on the boundary too: what erosion measures a
+        // step against (a fence on a line stands in both columns), and whether that's above `own`
         F.top.push(hi);
+        F.edged.push(hi > own ? 1 : 0);
         F.yc.push(bestY);
         F.gx.push(bestGx);
         F.gz.push(bestGz);
         F.lo.push(bestLo);
         F.hi.push(bestHi);
-      } else if (below) {
-        floor = F.col.length;
-        F.col.push(col);
-        F.iv.push(ivLo.length);
-        F.top.push(hi);
-        F.yc.push(hi);
-        F.gx.push(0);
-        F.gz.push(0);
-        F.lo.push(hi);
-        F.hi.push(hi);
       }
       ivLo.push(lo);
       ivHi.push(hi);
@@ -342,6 +384,7 @@ export function bake(input, params = NAV) {
   // typed from here on: the rest reads them in tight loops
   F.col = Int32Array.from(F.col);
   F.iv = Int32Array.from(F.iv);
+  F.edged = Uint8Array.from(F.edged);
   for (const k of ["top", "yc", "gx", "gz", "lo", "hi"]) F[k] = Float64Array.from(F[k]);
   // each floor's ceiling, and its surface's range over its cell
   const smin = new Float64Array(nf);
@@ -417,12 +460,13 @@ export function bake(input, params = NAV) {
   const colSeen = new Int32Array(ncol);
   const queue = new Int32Array(nf);
   let stamp = 0;
-  // The fast path, exact where it applies. A column is "plain" when it has one alive floor, open
-  // sky over it, and each of its four neighbours is one alive floor connected to it, no more than
-  // δ above or below. In a square window of plain columns round f, every disc column's floor is
-  // reached (the disc is 4-connected), none is more than 4K·δ + (f's own slope) above f, and all
-  // have open sky: so the BFS below would keep f, with unbounded headroom. A 2D prefix sum of
-  // the columns that aren't plain answers "is the window all plain?" at once.
+  // The fast path, exact where it applies. A column is "plain" when it has one alive floor, nothing
+  // on its boundary above it (so its interval's top is its own: not `edged`), open sky over it, and
+  // each of its four neighbours is one alive floor connected to it, no more than δ above or below.
+  // In a square window of plain columns round f, every disc column's floor is reached (the disc is
+  // 4-connected), none is more than 4K·δ + (f's own slope) above f, and all have open sky: so the
+  // BFS below would keep f, with unbounded headroom. A 2D prefix sum of the columns that aren't
+  // plain answers "is the window all plain?" at once.
   const delta = (step - Math.tan((P.slope * Math.PI) / 180) * c * Math.SQRT2 - TOL) / (4 * disc.K + 2);
   const notPlain = new Int32Array((nx + 1) * (nz + 1));
   for (let k = 0; k < nz; k++) {
@@ -431,7 +475,7 @@ export function bake(input, params = NAV) {
       let one = -1;
       let n = 0;
       for (let g = fStart[col]; g < fStart[col + 1]; g++) if (alive[g]) (one = g), n++;
-      let plain = n === 1 && F.ceil[one] === Infinity;
+      let plain = n === 1 && F.ceil[one] === Infinity && !F.edged[one];
       for (let s2 = 0; s2 < 4 && plain; s2++) {
         const h = nb[one * 4 + s2];
         if (h < 0 || Math.abs(F.top[h] - F.top[one]) > delta) plain = false;
@@ -564,7 +608,7 @@ export function bake(input, params = NAV) {
   const geo = { c, nx, nz, X, Z, F, fStart, smin, smax, surf, ivStart, ivLo: Float64Array.from(ivLo), ivHi: Float64Array.from(ivHi) };
   const seeds = Array.isArray(input?.seeds) ? input.seeds : [];
   const keepComp = new Uint8Array(ncomp);
-  if (!seeds.length) keepComp.fill(1);
+  if (!seeds.length || input?.prune === false) keepComp.fill(1);
   for (const sd of seeds) {
     // the component the seed's link will project onto (P1): within a step of it, else the nearest
     const at = dropOnto(geo, sd.at, step);
@@ -727,7 +771,7 @@ export function bake(input, params = NAV) {
         if (ci < 0 || ck < 0 || ci >= nx || ck >= nz || outside[ck * nx + ci]) {
           const ex = Math.min(nx - 1, Math.max(0, ci));
           const ez = Math.min(nz - 1, Math.max(0, ck));
-          result = { kind: rise <= step + TOL ? OPEN : WALL, to: OVERBOARD, j, exit: [X(ex) + c / 2, Z(ez) + c / 2] };
+          result = { kind: rise <= step + TOL ? OPEN : WALL, to: OFF, j, exit: [X(ex) + c / 2, Z(ez) + c / 2] };
           break;
         }
         const ccol = ck * nx + ci;
@@ -957,12 +1001,12 @@ export function surfaceAt(mesh, a, u, v) {
   return Math.min(cells.hi[a], Math.max(cells.lo[a], cells.y[a] + cells.gx[a] * (u - 0.5) * c + cells.gz[a] * (v - 0.5) * c));
 }
 
-/** The plan point of (cell, u, v), her frame. */
+/** The plan point of (cell, u, v), the support's frame. */
 export function planOf(mesh, a, u, v) {
   return [mesh.origin[0] + (mesh.cells.i[a] + u) * mesh.cell, mesh.origin[1] + (mesh.cells.k[a] + v) * mesh.cell];
 }
 
-/** The local feet of (cell, u, v), her frame. */
+/** The local feet of (cell, u, v), the support's frame. */
 export function pointOf(mesh, a, u, v) {
   const [x, z] = planOf(mesh, a, u, v);
   return [x, surfaceAt(mesh, a, u, v), z];
@@ -976,14 +1020,14 @@ export function columnAt(mesh, x, z) {
   return k * mesh.nx + i;
 }
 
-/** Is a plan point (her frame) in her D_r: too near her to be in the water there? */
+/** Is a plan point (the support's frame) in its D_r: too near it to be off it there? */
 export function inShadow(mesh, x, z) {
   if (!mesh) return false;
   const col = columnAt(mesh, x, z);
   return col >= 0 && !mesh.outside[col];
 }
 
-/** Where a swimmer at a plan point in her D_r is put out: [x, z], her frame. */
+/** Where a swimmer at a plan point in its D_r is put out: [x, z], the support's frame. */
 export function putOutAt(mesh, x, z) {
   const col = columnAt(mesh, x, z);
   if (col < 0 || mesh.outside[col]) return [x, z];
@@ -1003,7 +1047,7 @@ export const DROP = 2;
  * Projection (P1): of the kept cells whose surface is no more than `within`
  * above `p` and no more than DROP below it, the one nearest in plan, a drop
  * deeper than `within` counting metre for metre as distance (so a point in
- * the air lands on what's under it, not on a deck a cell away below that, nor
+ * the air lands on what's under it, not on a floor a cell away below that, nor
  * on one far off that's within a step of it); the nearest in height on a
  * tie. Else (`fallback`) the nearest by distance in 3D.
  * @returns {{ cell, u, v } | null}  null on an empty mesh, or with no cell within reach and no fallback
@@ -1091,7 +1135,7 @@ function nearestFloor(geo, ok, p, within, in3d = false) {
   return best;
 }
 
-// ─── triangles from boxes (fixtures, the enumerated cases, the swept wheel) ───
+// ─── triangles from boxes (fixtures, the enumerated cases, swept parts) ───
 
 /** An axis-aligned box as 12 triangles (9 numbers each). */
 export function boxTriangles([x0, y0, z0], [x1, y1, z1]) {
@@ -1107,7 +1151,7 @@ export function boxTriangles([x0, y0, z0], [x1, y1, z1]) {
 
 /**
  * A part that turns about one of its own axes (0 X, 1 Y, 2 Z) through the
- * origin in play (the wheel about its axle) as the solid its turn sweeps:
+ * origin in play (a wheel about its axle) as the solid its turn sweeps:
  * the cylinder about that axis that bounds its triangles (own frame).
  */
 export function sweptAbout(tris, axis = 2) {

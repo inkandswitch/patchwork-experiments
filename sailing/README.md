@@ -245,15 +245,15 @@ raise it, which is slow. Drop the anchor only where you mean to stay.
 
 ```sh
 pnpm install
-pnpm test          # the fast tier (~6 s): the physics, the sea, her navmesh (C1–C9), the walker's cases, the stations, the parts on a fake stage
+pnpm test          # the fast tier (~6 s): the physics, the sea, the stations, the crew over walk (the walk traits her parts write, each station's take and leave), the parts on a fake stage
 pnpm test:slow     # the slow tier (~5 s alone, longer beside other work): *.slow.test.js
 pnpm test:all      # both
 pnpm build
-node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too); --sea N picks the sea, --trace <file> keeps every step the computer took
+node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/, walk/ too); --sea N picks the sea, --trace <file> keeps every step the computer took
 node probes/trace-diff.mjs a.jsonl b.jsonl --until left   # two traces compared: the first step where they differ (same-seed runs are the same world through the leave step: DESIGN.md, "Determinism")
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
-node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad, the anchor dropped and raised by the prompt's buttons (build scene/, water/ too)
-node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, tabletop/, card-table/ too)
+node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad, the anchor dropped and raised by the prompt's buttons (build scene/, walk/, water/ too)
+node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, walk/, tabletop/, card-table/ too)
 node probes/publish-aboard.mjs --dry-run   # make that scene with the tools and check it; without --dry-run, publish it
 node probes/ship-shots.mjs <dir> "quarter?trim=luff"   # her parts rendered; ?trim= dresses the sails with looks.js (beat, luff, stall, backed, reef, run)
 ```
@@ -264,8 +264,10 @@ files you touched (`npx vitest run src/stations.test.js`), while you work.
 `pnpm test:slow` (vitest.slow.config.ts) runs only the `*.slow.test.js`
 files: the long physics settles (the polar, 45 s on a seeded sea), the full
 agreement sweep over the rig contract fixtures, the stage cases that sail her
-for many simulated seconds, the two-crew aboard case and the walker's enumerated
-cases. Run it once before you finish a change to the physics, the
-simulator or the walker. A new test that sails her for more than a second or
+for many simulated seconds and the two-crew aboard case. Run it once before
+you finish a change to the physics or the simulator. (Walking her deck is
+walk's: its navmesh, walker and their cases are walk's tests, the stock
+sloop among them as an exported fixture: `node probes/export-deck.mjs`,
+and `scripts/check-fixtures.mjs` at the repo root.) A new test that sails her for more than a second or
 so of wall time belongs in a `.slow.test.js` file; its shared setup goes in
 `src/test/` (sim-stage.js, sail-runs.js, frame-hulls.js).

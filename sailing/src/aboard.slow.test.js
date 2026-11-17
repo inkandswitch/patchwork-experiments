@@ -1,16 +1,24 @@
 // Two people aboard one sloop, through play.js's whole join (sea, sim, crew,
 // stations, HUD) on the package's fake stage (test/fakes.js), with the
-// hull's deck as a box: what the rays see where it's drawn, and what her
-// navmesh is baked from.
+// hull's deck as a box (what the rays see where it's drawn), and a stand-in
+// for walk (another package's body: its avatar here, its `stand`, and where
+// it is resumed from), over which the station body is pushed.
 import { describe, it, expect, afterEach } from "vitest";
 import play from "./play.js";
 import { layOutShip, headTo } from "./layout.js";
 import { apply, invert, unrotateM as unrotate, rotateM as rotate } from "./frames.js";
 import { emptyScene, fakeDrop, fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
-import { boxTriangles } from "./navmesh.js";
 
 const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
 const DECK = { min: [-1.8, -1.9, -6], max: [1.8, 1.25, 6] };
+
+/** A box's triangles (12, 9 numbers each), for the hull's stand-in model. */
+function boxTriangles(min, max) {
+  const [x0, y0, z0] = min, [x1, y1, z1] = max;
+  const v = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
+  const f = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 6, 2], [3, 7, 6], [0, 4, 7], [0, 7, 3], [1, 2, 6], [1, 6, 5]];
+  return f.flatMap((t) => t.flatMap((i) => v[i]));
+}
 
 /** The deck box in the hull's displayed frame, answered as the stage's raycast would be. */
 function rays(worldOf, hull) {
@@ -70,7 +78,10 @@ async function sloop() {
 /** A view in play: play.js's instance on the fake stage, with what the crew and HUD ask of it. */
 function join(w, session, hull) {
   const base = w.join(session);
-  const s = { bodies: [{ id: "look" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [] };
+  const collect = base.collect;
+  // walk's eye at a stand spot is walk's to work out: the stand-in's is a point on her helm's spot, 1.7 m up her up
+  const standEye = (W) => [0, 1, 2].map((i) => W[12 + i] + W[4 + i] * (0.72 + 1.7) + W[8 + i] * 4.85);
+  const s = { bodies: [{ id: "look" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [], standEye, stood: null };
   // what the crew's avatars are made of, beside what the sea asks for
   const T = base.THREE;
   class Group {
@@ -108,13 +119,22 @@ function join(w, session, hull) {
     // the stage's body stack, as far as the crew meets it (scene/TOOLS.md §4)
     local: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     view: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
+    // walk's avatar here, while its stand-in is on the stack (on her deck, at her helm's stand spot)
+    collect: (name) =>
+      name === "avatar"
+        ? [{ id: "walk", value: () => (s.bodies.some((b) => b.id === "walk") ? { on: hull, feet: [0, 0.72, 4.85], yaw: 0, pitch: 0, swimming: false } : null) }]
+        : name === "stand"
+          ? [{ id: "walk", value: (id) => (s.bodies.some((b) => b.id === "walk") ? ((s.stood = id), { eye: () => s.standEye(base.worldOf(hull)), yaw: 0 }) : null) }]
+          : collect(name),
     body: {
-      current: () => ({ id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }),
+      current: () => ({ id: s.bodies.at(-1).id, ext: s.bodies.at(-1).ext ?? "sailing", depth: s.bodies.length - 1 }),
       enter(id, place = null) {
-        const sitting = s.instance.bodies.find((b) => b.id === id)?.enter(place);
+        // walk (another package's): resumed from where the eye was left
+        const walk = { id: "walk", enter: () => ({ input: { resumed: () => (s.resumed = [...s.cam.position]) }, leave() {} }) };
+        const sitting = (id === "walk" ? walk : s.instance.bodies.find((b) => b.id === id))?.enter(place);
         if (!sitting) return false;
         const prev = s.bodies.at(-1);
-        s.bodies.push({ id, sitting });
+        s.bodies.push({ id, sitting, ext: id === "walk" ? "walk" : "sailing" });
         prev.sitting?.input?.suspended?.();
         return true;
       },
@@ -147,7 +167,7 @@ describe("aboard, together", () => {
   let w;
   afterEach(() => w?.done());
 
-  it("one sails, one steers: the deck carries both, each sees the other, and the helm's input steers her", async () => {
+  it("one sails, one steers: Come aboard is walk at her hull, the helm a station over it, and the helm's input steers her", async () => {
     const { doc, ids, content } = await sloop();
     w = fakeWorld(doc, { content });
     const a = join(w, "A", ids.hull);
@@ -155,32 +175,30 @@ describe("aboard, together", () => {
     for (const v of [a, b]) v.instance.update(w.scene(), {}, { scene: null, local: null });
     w.tick(1 / 60, 30);
 
-    // Enter comes aboard (the key map runs "aboard" on the scene)
+    // Enter comes aboard (the key map runs "aboard" on the scene): walk, at her hull
     expect(a.command("aboard").state(null, {})).toBeTruthy();
     a.command("aboard").run(null);
     b.instance.input.click({});
-    expect(a.bodies.map((x) => x.id)).toEqual(["look", "aboard"]);
+    expect(a.bodies.map((x) => x.id)).toEqual(["look", "walk"]);
+    expect(a.command("aboard").state(null, {})).toBe(null);
     w.tick(1 / 60, 30);
-    // one owner of the presence rate: the simulator streams, the crew sends where they stand
+    // one owner of the presence rate: the simulator streams, someone aboard 20 Hz
     expect(w.view("A").rate).toBe(30);
     expect(w.view("B").rate).toBe(20);
+    expect(b.instance.debug.crew.me()).toMatchObject({ playing: true, on: ids.hull, station: null, swimming: false });
 
-    // both on deck by the wheel, in the hull's frame
-    const crewOf = (s) => w.view(s).keys.sailing?.crew;
-    expect(crewOf("A")).toMatchObject({ on: ids.hull });
-    expect(crewOf("B")).toMatchObject({ on: ids.hull });
-    const before = crewOf("B").position;
-
-    // B takes the helm from where it stands: in reach of the wheel
-    const eyeB = b.cam.position;
-    const look = { scene: w.scene(), local: {}, from: eyeB, hit: null, reach: 2.5 };
-    expect(b.command("helm").state(ids.wheel, look)).toEqual({});
+    // B takes the helm: the station body over walk, the eye at the helm's stand spot, its claim held
+    const look = { scene: w.scene(), local: {}, from: [0, 0, 0], hit: null, reach: 2.5 };
+    const near = (from) => ({ ...look, from: w.view("A").api.worldOf(ids.wheel).slice(12, 15) });
+    expect(b.command("helm").state(ids.wheel, near())).toEqual({});
     b.command("helm").run(ids.wheel);
+    expect(b.bodies.map((x) => x.id)).toEqual(["look", "walk", "station"]);
     expect(doc.objects[ids.wheel].claims.station.session).toBe("B");
-    expect(a.command("helm").state(ids.wheel, { ...look, from: a.cam.position })).toEqual({ disabled: true, label: "Someone's at the helm" });
-    expect(crewOf("B").station).toBe(ids.wheel);
+    expect(b.stood).toBe(ids.wheel);
+    expect(a.command("helm").state(ids.wheel, near())).toEqual({ disabled: true, label: "Someone's at the helm" });
+    expect(b.instance.debug.crew.me().station).toBe(ids.wheel);
 
-    // hard to starboard for a few seconds: B's input reaches A's physics
+    // hard to starboard for a few seconds: B's input reaches A's physics, and B's eye rides her helm
     b.top().key({ code: "KeyD", key: "d" });
     const heading0 = (() => {
       const m = w.view("A").api.worldOf(ids.hull);
@@ -191,22 +209,16 @@ describe("aboard, together", () => {
     const m = w.view("A").api.worldOf(ids.hull);
     const turned = Math.atan2(Math.sin(Math.atan2(m[8], m[10]) - heading0), Math.cos(Math.atan2(m[8], m[10]) - heading0));
     expect(turned).toBeLessThan(-0.05); // yaw down: her bow swings to starboard
+    // the eye is walk's at the spot, wherever she has gone: the stand-in's
+    expect(b.cam.position).toEqual(b.standEye(b.api.worldOf(ids.hull)));
 
-    // the deck carried them: A never moved on it, and stands on its top
-    expect(crewOf("A").position[1]).toBeCloseTo(DECK.max[1], 2);
-    expect(Math.hypot(crewOf("B").position[0] - before[0], crewOf("B").position[2] - before[2])).toBeLessThan(0.05);
-
-    // F leaves the helm and writes where the wheel was left
+    // F leaves the helm and writes where the wheel was left; walk is asked to stand B at the stand spot
     b.top().key({ code: "KeyF", key: "f" });
     expect(doc.objects[ids.wheel].traits["sailing.helm"].angle).toBe(1);
     expect(doc.objects[ids.wheel].claims?.station).toBe(undefined);
-    expect(crewOf("B").station).toBe(null);
-
-    // each draws the other where they stand (and never themselves)
-    w.tick(1 / 60, 2);
-    const avatars = (v) => v.groups.flatMap((g) => g.children.filter((c) => c.userData?.noPick && c.children?.length === 2));
-    expect(avatars(a).length).toBe(1);
-    expect(avatars(b).length).toBe(1);
+    expect(b.bodies.map((x) => x.id)).toEqual(["look", "walk"]);
+    expect(b.resumed).toEqual(b.standEye(b.api.worldOf(ids.hull)));
+    expect(b.instance.debug.crew.me()).toMatchObject({ playing: true, station: null });
   });
 
   // The probe page's clock (scene/src/stage/time.js manualTime: now() is start + frames × frameMs, start

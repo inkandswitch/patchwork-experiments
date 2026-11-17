@@ -10,8 +10,6 @@ const L = (pairs) => pairs.map(([code, label]) => ({ code, label }));
 
 /** walk/src/body.js WALK_KEYS */
 const WALK_KEYS = L([["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"], ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"], ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"]]);
-/** sailing/src/crew.js WALK_KEYS ("aboard": a copy of walk's, until N10 folds it into walk) */
-const ABOARD_KEYS = L([["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"], ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"], ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"]]);
 /**
  * sailing/src/stations.js, as crew.js's station body declares them: every
  * set a station can take (sailing's stations.test.js asserts each). A post
@@ -49,7 +47,7 @@ const SNES_KEYS = L([
 
 // Look, Edit and a seat all declare [] (stage/bodies.js, seats/src/body.js): one row.
 const BODIES = {
-  none: [], walk: WALK_KEYS, aboard: ABOARD_KEYS,
+  none: [], walk: WALK_KEYS,
   post: POST_KEYS, mast: MAST_KEYS, bare: BARE_KEYS, winch: WINCH_KEYS,
   helm: HELM_KEYS, helmSail: HELM_SAIL_KEYS, helmJib: HELM_JIB_KEYS, helmBare: HELM_BARE_KEYS,
 };
@@ -98,7 +96,6 @@ const BELOW = {
   // D (Right, a button: the pad's right place is snes's), ShiftLeft and Space. Labels are one per
   // reserver, not across them: snes's "Right" and walk's "Right" are both shown (the pad shows `from`)
   walk: [WALK, WALK, WALK, WALK, WALK, WALK, "", "", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump"],
-  aboard: [WALK, WALK, WALK, WALK, WALK, WALK, "", "", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump", "b.KeyD=Right, b.ShiftLeft=Run, b.Space=Jump"], // labelled as walk's: the same
   // the carry's Q, E, F over a station's; the gun's R over the post's
   post: ["b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyQ=Haul in, b.KeyE=Ease out, b.KeyF=Leave", "", "b.KeyR=Halyard", "b.KeyR=Halyard", "b.KeyQ=Haul in, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyE=Ease out, b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard"],
   mast: ["b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyF=Leave", "", "b.KeyR=Halyard", "b.KeyR=Halyard", "b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard", "b.KeyR=Halyard, b.KeyF=Leave", "b.KeyR=Halyard"],
@@ -125,9 +122,9 @@ const parse = (s) =>
 const viewOf = (b, t, g) => ({ body: { keys: BODIES[b] }, held: TOOLS[t] && { keys: TOOLS[t] }, gesture: GESTURES[g] && { keys: GESTURES[g] } });
 const CASES = Object.keys(BODIES).flatMap((b) => Object.keys(TOOLS).flatMap((t) => Object.keys(GESTURES).map((g) => [b, t, g])));
 
-describe("touchControls: every keys declaration in the repo, in every combination (11 bodies × 5 tools × 2 gestures)", () => {
+describe("touchControls: every keys declaration in the repo, in every combination (10 bodies × 5 tools × 2 gestures)", () => {
   it("the table covers every case and only those", () => {
-    expect(CASES.length).toBe(110);
+    expect(CASES.length).toBe(100);
     expect(Object.keys(EXPECTED).sort()).toEqual(CASES.map((c) => c.join("|")).sort());
   });
 

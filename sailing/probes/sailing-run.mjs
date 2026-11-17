@@ -52,7 +52,7 @@ import { staticChecks, walkReport, watchWalk } from "./navprobe.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "scene/dist/index.js", "walk/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-shots"));
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
@@ -413,9 +413,11 @@ try {
   // B raises the sail: looking at the mast offers the sail's verbs
   const mastAt = await local(ids.mast);
   const rigAt = await local(rig);
-  await P(`place('b', '${hull}', [0.4, ${mastAt[1] + 0.3}, ${rigAt[2] + 1.3}], 0, -0.8)`); // looking down at its foot
+  await P(`place('b', '${hull}', [0.4, ${mastAt[1] + 0.3}, ${rigAt[2] + 1.0}], 0, -0.1)`); // looking at it, within walk's 2 m reach (its foot is 2 m under the eye from the cabin top)
   await b.rest(500);
-  const aimM = await pointAt(ids.mast, "b");
+  // at about eye height (its foot is beyond walk's 2 m reach from here: walk/DESIGN.md Q9)
+  const mastEye = async () => pointNear(ids.mast, "b", apply(await P(`worldOf('${hull}', 'b')`), [0, mastAt[1] + 0.3 + 1.4, mastAt[2]]));
+  const aimM = await mastEye();
   const verbsM = await P("verbs('b')");
   check("looking at the mast, B's prompt offers to work the halyard (F) and to raise the sail (hold R); no sheet at the mast", !!aimM && verbsM.some((v) => v.command === "halyard" && !v.disabled) && verbsM.some((v) => v.command === "sail" && /Raise/.test(v.name)) && !verbsM.some((v) => v.command === "haul"), { aimM, verbsM });
   // F locks in at the mast: hold R raises it a little, F leaves (re-aimed if the roll took the
@@ -424,7 +426,7 @@ try {
   await press("f");
   await b.rest(300);
   for (let i = 0; i < 3 && (await P("me('b')")).station !== rig; i++) {
-    const again = await pointAt(ids.mast, "b");
+    const again = await mastEye();
     if (again) await focus("b", again);
     await press("f");
     await b.rest(400);
@@ -691,7 +693,7 @@ try {
   await focus("a", await P("canvasCentre('a')"));
   await press("Escape");
   await b.rest(300);
-  const stillAboard = (await P("me('a')")).playing === true && (await P("body('a')")) === "aboard";
+  const stillAboard = (await P("me('a')")).playing === true && (await P("body('a')")) === "walk";
   const bodyChipA = await P("chip('a')");
   if (bodyChipA) await b.click(Math.round(bodyChipA.x), Math.round(bodyChipA.y));
   await until("!!window.__p.chipItem('a', 'Leave')", 3000);
@@ -739,7 +741,7 @@ try {
   const nav = await staticChecks(js, "b", hull, "sloop");
   report.measured.navmesh = { cells: nav.cells, triangles: nav.triangles, links: nav.links, bakeMs: nav.bakeMs };
   for (const [name, c] of Object.entries(nav.checks ?? {})) check(`her navmesh, baked in B's view from her GLBs: ${name}`, c.ok, c.detail);
-  check("and it bakes the same twice", nav.cells > 1000 && nav.again === nav.cells, { cells: nav.cells, again: nav.again });
+  check("and walk's own bake of her holds every cell of her seed-pruned one", nav.cells > 1000 && nav.own >= nav.cells, { cells: nav.cells, own: nav.own });
   // from the helm, under way (heeled, pitching): a fixed sequence of keys, about 6 s
   await P(`place('b', '${hull}', [0, 0.72, 4.85], 0, -0.1)`);
   await b.rest(300);
@@ -890,7 +892,9 @@ try {
   await b.rest(500);
   const aimL = (await pointAt(ladder, "b")) ?? (await pointAt(hull, "b"));
   const verbsL = await P("verbs('b')");
-  check("in the water by the ladder, B's prompt offers to climb aboard", !!aimL && verbsL.some((v) => v.command === "climb"), { aimL, verbsL, me: await P("me('b')") });
+  // what walk's Climb (walk.spawn's verb, on the ladder or on her hull past it) asks: B swimming within walk's reach of the ladder's foot, as her mesh links it
+  const climbWhy = await js(`(() => { const live = window.__p.live('b'); const st = live?.state(); const M = live?.env.frame('${hull}'); const link = live?.env.mesh('${hull}')?.links?.find((l) => l.kind === 'ladder'); const f = M && link?.foot ? [M[0] * link.foot[0] + M[8] * link.foot[1] + M[12], M[2] * link.foot[0] + M[10] * link.foot[1] + M[14]] : null; return { mode: st?.mode, p: st?.p, foot: link?.foot ?? null, footW: f, d: f && st?.p ? Math.hypot(f[0] - st.p[0], f[1] - st.p[1]) : null, spawnPart: !!window.__p.ext?.('b', 'walk.spawn') }; })()`);
+  check("in the water by the ladder, B's prompt offers to climb aboard", !!aimL && verbsL.some((v) => v.command === "climb"), { aimL, verbsL, climbWhy, me: await P("me('b')") });
   await focus("b", aimL);
   // she still carries her way (a couple of m/s): beside the ladder again where she is now, so it's in reach when F lands
   const mL3 = await P(`worldOf('${hull}', 'b')`);

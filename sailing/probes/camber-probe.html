@@ -29,7 +29,16 @@ import { emptyScene } from "./empty-scene.js";
 let time = null; // the page's manual clock (scene's manualTime): window.__time
 
 // invariant I asserted on every walker step (walker.asserting): a breach throws in the crew's tick, so it shows as an error
-globalThis.__SAILING_ASSERT__ = true;
+globalThis.__WALK_ASSERT__ = true;
+// walk's live sessions (walk/src/body.js): a view's walker, to read and to place
+globalThis.__WALK_LIVE__ = new Map();
+const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.session ?? ""} ${api.url ?? ""}`) ?? null : null);
+const mapply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
+/** Put view api's walker at a point local to `on` (her hull's frame), else the stage's, facing yaw (to her heading): walk's P1 there. */
+const placeWalker = (api, on, position, yaw = 0, pitch = 0) => {
+  const m = on != null ? api?.worldOf(on) : null;
+  return liveOf(api)?.place(m ? mapply(m, position) : position, m ? yaw + Math.atan2(m[8], m[10]) : yaw, pitch) ?? false;
+};
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -42,7 +51,7 @@ const EXAMPLE = q.get("example") ?? "cuvature-kink-with-unmodified-pchip.json";
 const SEED = Number(q.get("seed") ?? 20251105);
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "/camber/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../walk/dist/index.js", "../../weather/dist/index.js", "/camber/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -138,7 +147,8 @@ try {
     seaAt: (x, z) => { const s = P.ctx()?.sea; const r = s?.oceanAt([x, null, z]); return r ? r.heightAt(x, z, P.api("sailing").clock.t()) : null; },
     simulating: () => !!P.ctx()?.sim.simulating(),
     stations: (ship) => P.ctx()?.sim.stationsOf(ship) ?? null,
-    place: (on, position, yaw, pitch) => P.ctx().crew.place(on, position, yaw, pitch),
+    place: (on, position, yaw, pitch) => placeWalker(dbg.host.record("sailing")?.api, on, position, yaw, pitch),
+    live: () => liveOf(dbg.host.record("sailing")?.api),
     verbs: () => [...host.querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => ({ command: e.dataset.command, name: e.querySelector(".use-name")?.textContent ?? "", disabled: e.hasAttribute("data-disabled") })),
     hovered: () => dbg.local.get().hovered ?? null,
     canvasCentre() { const r = v.canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },

@@ -56,13 +56,9 @@ modules share.
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
-| `navmesh.js` | yes | The bake: a ship's triangles (her body frame) to a navmesh of 5 cm cells, every cell side one record (STEP, WALL, OPEN), her D_r and where a swimmer is put out of it, and links (spawn, stand spots, the ladder). See "Walking" |
-| `walker.js` | yes | The walker: a state machine over the navmesh (walking, airborne, vaulting, at a station, on the ladder, swimming), invariant I (`checkWalker`), projection (P1), the seeds a bake starts from |
-| `navcheck.js` | yes | Checking a bake: the oracle on the raw triangles, the bake properties B1–B7, the static checks C1–C9 |
-| `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
-| `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
-| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
-| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the HUD is the dial alone and says nothing: what a click on her does is the base's (Look's comes aboard, Edit's selects, a seat's is the game's), which a package may not ask; its sheet's one `pointer-events` is the root's `none`, so no node of it takes a press in any state (`hud.test.js`; Decisions (N11) 1) |
+| `crew.js` | stage side thin | ctx.crew: coming aboard (`api.body.enter("walk", hull)`: walking her deck is walk's) and the `station` body, pushed over walk, its eye walk's walker's at the station's stand spot (walk's `stand` contribution); what the viewer is doing (`viewerOf`: the top body, its declared keys, walk's `avatar`); the orbit following her before anyone is aboard |
+| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
+| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the HUD is the dial alone and says nothing: what a click on her does is the base's (Look's comes aboard, Edit's selects, a seat's is the game's), which a package may not ask; its sheet's one `pointer-events` is the root's `none`, so no node of it takes a press in any state (`hud.test.js`; Decisions (N11) 1); aboard, the walking hint is the keys the top body declares (`keysHint`: walk's own) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
@@ -1031,7 +1027,7 @@ untouched: it reads the fixtures.
     it (the first try, 0.3 m out on the far side of the sole, failed so in
     the browser). From the windward deck the eye's ray to the luff, ¼ and
     ½ up, misses the main's cloth and the mast close-hauled and on a beam
-    reach (`sloop-navmesh.test.js`). The old spot, 0.22 m out on its own
+    reach (`stand-spots.test.js`, over her drawing). The old spot, 0.22 m out on its own
     side, hid it even close-hauled.
     Locked in, the eye turns to the jib's luff halfway up (crew.js
     `take(…, { look })`, stations.js `jibLuffAt`: the Jib piece's cloth
@@ -1631,14 +1627,15 @@ Irons, re-measured with P1 and P2:
   contract hull without a winch connector (put by hand, they go where
   they're put, mirrored across her).
 
-**Walking.** Each winch seeds a stand spot from its trait (`walker.facing`:
-at `stand`, facing the winch; crew.js `navInput`); the jib is moving, so
-not baked (`bakedObjects`). On her static bake (`sloop-navmesh.test.js`,
-`test/sloop.js` gains the winches): C1–C9 hold with them; each stand lands
-on the side deck across the well from its winch, at (∓1.30, 1.22, 2.25)
-for the winch at (±0.95, 1.23, 2.25), facing it across the well (yaw
-±π/2), its drum's top within 3 m of the eye; the "plain deck within 2 cm"
-case skips the winches' bases.
+**Walking.** Each winch carries a `walk.stand` (ship.js `standSpot`),
+a seed of walk's bake; the jib is a moving part, so not baked. On her
+bake (walk's `deck-12m.test.js` over her fixture) C1–C9 hold with them
+and each spot's link stands where it was written. Each spot is on the
+side deck across the well from its winch, at (∓1.30, 1.22, 2.25) for the
+winch at (±0.95, 1.23, 2.25), its drum's top within 3 m of the eye
+(`stand-spots.test.js`, over her drawing); her floors claim (below, "Her
+checks") skips the winches' bases. A stand spot has no `facing` now: the
+station's look is the station's (stations.js), not the spot's.
 
 **Station** (`stations.js`): as the table in §2, plus quick hold Q / E at
 the working winch (the lazy one shows "Lazy sheet: the jib's to port",
@@ -1999,9 +1996,17 @@ both pass: those runs' first step had read the template's sea and wind
   of it on other points of sail. It isn't the heave thrust above (flat water
   fails too). Whether the check's bound should depend on her point of
   sail is a question for the lead.
-- *Sea 5: "F climbs the ladder: B is back on deck"* fails (B not on deck
-  after the climb). That is the walker's (N10's to replace), not diagnosed
-  here; it is in the follow-up log.
+- *Sea 5: "F climbs the ladder: B is back on deck"* failed (B not on deck
+  after the climb). That was the walker's (N10's to replace). Since N10
+  step 5 it passes on sea 5 (and sea 1): Climb is walk's, and lands you
+  at the ladder's top in one step (the old walker's timed climb, its
+  ladder state and its board() are gone). Moving it to walk first failed
+  on every sea, for a reason the old verb had already met: swimming by the
+  hull, the look lands on her side past the thin ladder, so a Climb
+  offered only on the ladder isn't offered. walk's Climb now answers a
+  look at the ladder or at the support it hangs on (walk spawn.js
+  `ladderFor`). What made the old walker's climb fail on sea 5 alone was
+  not established before its code went.
 
 So the claim is not met, and the remaining choices are the lead's
 (questions for the lead, 2026-11-16, lane/n6): whether a laid ship's anchor
@@ -2237,12 +2242,25 @@ a scene:part in index.js under "Sailing":
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
 | `sailing.sail` | a station under the ship | `{ raised, sheet }` 0..1 |
 | `sailing.jib` | a station under the ship (the jib, on the mast) | `{ sheet, held, furl }`: `sheet` 0 hard in .. 1 eased; `held` null (it tends itself) or the side its clew is made fast on, `"port"` \| `"starboard"`; `furl` 0..1 of it rolled away. Worked from its winches or the helm |
-| `sailing.winch` | a winch under the ship, one each side | `{ sail: "jib", side: "port" \| "starboard", stand: [x, y, z] }`: the sheet led to it, and where you stand to work it, in the winch's own frame; who stands at it is its `"station"` claim |
+| `sailing.winch` | a winch under the ship, one each side | `{ sail: "jib", side: "port" \| "starboard" }`: the sheet led to it; who stands at it is its `"station"` claim, and where is its `walk.stand` |
 | `sailing.anchor` | a station under the ship (the windlass) | `{ down, rode, at? }` (`rode`: metres of chain out; `at`: where the anchor lies, world, while it's down). The windlass writes `down` and `rode`; only the simulator writes `at`: it drops the anchor on the bottom under the bow, clears `at` when it's up, and drops it again where she is when `at` is further from her bow than her rode allows (she was moved, or copied, while nobody sailed) |
 | `sailing.mainsheet` | a station under the ship (the cockpit's traveller) | `{}`: where the ship's sail is trimmed and hoisted from (its values are the sail station's); who stands at it is its `"station"` claim |
 | `sailing.hook` | the anchor itself, under the ship | `{}`: drawn lying on the bottom at `at` while its windlass has it down, at the bow (its doc place) when it's up |
 | `sailing.ladder` | the ladder under the ship | `{}`: the way aboard from the water |
 | `sailing.float` | any object | `{}`: bobs and tilts with the waves where it's moored (each view, from the shared clock; no hold) |
+
+walk's traits (walk/DESIGN.md, "The traits"), which her parts write so
+people walk her in walk (since N10 step 5; parts.js PIECES, sloopObjects):
+
+| Trait | On | Value |
+|---|---|---|
+| `walk.support` | the hull | `{}`: walked in her own frame. The stock sloop is written one; a hull made a ship by hand becomes one when the first sailing part is put on her (parts.js `part`) |
+| `walk.moves` | the boom and sail (the rig) | `{ blocks: true }`: an obstacle where it's drawn |
+| `walk.moves` | the jib; the anchor | `{}`: passed through |
+| `walk.moves` | the wheel | `{ swept: "z" }`: the solid its turn about its axle sweeps |
+| `walk.stand` | the wheel, the mainsheet, the windlass, the rig (the sail's: placed by the doc, which never swings it), each winch | `{ at, claim }`, `at` in the piece's frame: STAND_OFF aft of the station's origin (0.6 m; the mainsheet 0.35), on what's drawn there (ship.js `standSpot`, `deckSurfaceAt`); a winch's across the well on the far side deck, facing it. `claim` is the one the station's verb holds while you stand there: `"station"`, the rig's `"halyard"` (the sail's `"station"` claim is whoever trims it, from anywhere) |
+| `walk.ladder` | the ladder | `{ top }`: INBOARD (0.5 m) in from its hook, on the deck (ship.js `ladderTop`) |
+| `walk.spawn` | the wheel | `{}`: on an object with a stand spot, walk's spawn is at that spot: people come aboard where the helmsman stands, facing forward, on any hull the wheel is fitted to |
 
 The weather package's `weather` (a scene trait) is written by her Sea and
 Sloop parts and her templates where a scene has none (`newWeather`: the air
@@ -2257,9 +2275,10 @@ and imports neither. Its hatch's `joints.slide` opens it (joints moves it,
 in her hull's frame as she heels, and writes where it comes to rest); the
 companionway's `traversal.exit` leads nowhere until a scene gives it a `to`.
 Both pieces carry a sailing tag, so they are hers: the hand never carries
-them in play, a click on them comes aboard, and her navmesh bakes them (the
-hatch where it rests: a hatch that comes to rest open changes her bake key,
-and she is baked again off the frame loop, as for any part moved).
+them in play, a click on them comes aboard, and walk bakes them into her
+mesh (the hatch where it rests: a hatch that comes to rest open changes her
+bake key, and walk bakes her again off the frame loop, as for any part
+moved).
 
 Who is at a station is a **claim** in the doc (`claims: { station | halyard:
 { viewer, session } }` on the object), lapsing when the holder's session
@@ -2310,7 +2329,7 @@ another traitless thing aboard (a card table): stations.js `sailOf`.
 api.loop((dt) => {
   ctx.sea.tick();     // the surface drawn at the doc's world time
   ctx.sim.tick();     // inputs; computing: the poses the steps reached; following: what the computer publishes, the poses it holds
-  ctx.crew.tick(dt);  // walk on the deck as it now is; draw everyone else; not aboard, follow: the orbit rides
+  ctx.crew.tick(dt);  // at a station, its eye (walk's walker's) and its verbs' tick; not aboard, follow: the orbit rides
                       //   the first ship sideways (api.camera.ride, a base ride, so a seat at a table
                       //   aboard, whose body rides it, wins), or is moved each frame on a stage without rides
   looks.tick(dt);     // floats and sails, dressed
@@ -2325,7 +2344,7 @@ ctx.sea.oceanAt(p, not)  // the water p (this stage's frame; p[1] null: from abo
 ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, the ambient's as it is when read ("Determinism"), or null
 ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard
 ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads; answers api.clock.t()
-// ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the crew's swimmer, the HUD's wind, the looks) asks api.clock.t()
+// ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the HUD's wind, the looks) asks api.clock.t()
 
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
@@ -2340,23 +2359,23 @@ ctx.sim.simulator()      // the computing session (the doc's "clock" claim), whe
 ctx.sim.tick()           // every view, every frame: stale inputs; computing, the poses held where the steps left them; following, what the computer publishes and holds
 
 // crew.js — createCrew(api, ctx) → ctx.crew
-ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). A click reaches
+ctx.crew.input           // the extension's input handlers (a click on her comes aboard: walk, at her hull). A click reaches
                          //   her only through something of hers (the ships' part holds no scene trait, so the world's sea, sky and shore
                          //   aren't hers); what nearer takes it (a card's carry) has it first. Seated (seatedView: a body over the stage's
-                         //   Look or Edit, not the crew's, a seat), no click does (Enter or the bar's Come aboard does)
-ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
-                         //   (the navmesh walker), the walking keys (labelled as walk's), the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
-                         //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves
-                         //   the walker waiting; when it goes you stand at the projection (P1) of where its view was
-ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to Look off the quarter
-ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
-                         //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line) }
-ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
-                         //   pushes the station body over walking; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(),
-                         //   hint?(), look?() }: keys as every body declares them (scene/TOOLS.md §4), each saying what it does
+                         //   Look or Edit, not the crew's or walk's, a seat), no click does (Enter or the bar's Come aboard does)
+ctx.crew.bodies          // [station]: pushed over walk (in her stage) by take, its keys the station's (declared), reach 2.5 m
+                         //   (crew.js REACH), `here: false`. Its eye is walk's: take asks walk's `stand(id)` contribution to stand
+                         //   its walker at the station's stand spot (walk.stand, on the station itself) and looks from that
+                         //   walker's eye each frame; leaving, walk resumes from that eye, which is the spot
+ctx.crew.start(ship?), .stop() // come aboard (Enter: stations.js's "aboard"; walk at her hull, in her stage), and leave her (the body chip's Leave)
+ctx.crew.me()            // viewerOf: { on: shipId | null, position, yaw, pitch (walk's avatar's), eye: world [x,y,z], station: id | null, swimming,
+                         //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line),
+                         //   keys (the top body's declared keys: the HUD's walking hint is walk's own) }
+ctx.crew.take(stationId, handlers) → leave   // stand at a station (coming aboard first if you walk anywhere else): pushes the station
+                         //   body over walk; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(), hint?(), look?() }: keys
+                         //   as every body declares them (scene/TOOLS.md §4). Who stands there is the claim the station's verb holds
+                         //   (stations.js), the one its stand spot names
 ctx.crew.leave()         // step away from the station you're at
-ctx.crew.board(shipId)   // climb aboard (from the water, by the ladder)
-ctx.crew.place(on, position, yaw?, pitch?)   // put the body somewhere (local to ship `on`, else in the water): a respawn
 ctx.crew.tick(dt)
 
 // looks.js — createLooks(api, ctx) → { tick, update, dispose }: floats bobbed, sails dressed, each view for itself
@@ -2372,8 +2391,8 @@ the stage's touch pad (scene.touch) shows one control per label: Steer to
 port (A, ←) and Steer to starboard (D, →) in the pad's left and right
 places, Haul in (Q), Ease out (E), Halyard (R at a post or the helm),
 Furler (R at a winch), Back jib / let fly (B), Leave (F). The labels live
-beside the handlers in stations.js (`HAUL`, `STEER`, …); "aboard" declares
-walk's labelled keys (a copy, until N10 folds it into walk). An action can
+beside the handlers in stations.js (`HAUL`, `STEER`, …); walking her deck,
+the keys are walk's own. An action can
 be unavailable in some states: a winch declares the jib sheet's Q and E on
 either side, because which winch is the working one changes while you
 stand there (a tack, backing the jib), and at the lazy one they do
@@ -2383,8 +2402,7 @@ and checks from one state, the station just taken in the stage's starting
 trim, holding each code half a second: exactly the variant's listed idle
 codes do nothing (only the lazy winch's Q and E), and among the rest two
 codes do the same thing (the same inputs, writes and place) exactly when
-they share a label. `crew.test.js` checks aboard's the same way, every
-code alone against what it asks of the walker (`walkWanted`). Open for the lead: the
+they share a label. Open for the lead: the
 words, B's above all (it backs the jib, makes it fast at a winch, or lets
 it fly, by state), and whether the HUD's hint should drop key names on
 touch.
@@ -2453,8 +2471,8 @@ it only while nobody's at the helm.
 measures from the body's eye to the point looked at (on the target or
 anything under it), else the target's box, against the body's reach (the
 crew's 2.5 m, `crew.js` `REACH`; Look's and Edit's everything): the boom over the cockpit is in reach however far its
-gooseneck is. Where you lock in (crew.take: at the station's stand spot, a
-link of her navmesh; F leaves):
+gooseneck is. Where you lock in (crew.take: at the station's stand spot,
+its `walk.stand`; F leaves):
 
 | Station | Locked in | Quick verbs (looking at it, held) |
 |---|---|---|
@@ -2481,74 +2499,49 @@ aboard that the rig hangs under, or that carries the `sailing.mast` tag; a
 card table in the cockpit is neither. The HUD names her stations while you
 walk (`stationGuide`) and, sail down with the anchor up, where to raise it.
 
-**People.** A person is presence: `{ on, position, yaw, pitch, station }`,
-with position local to the ship they stand on (her body frame), or world when in the water,
-so a peer whose view of the hull lags still sees them on the deck. Walking
-is over her navmesh, in her frame ("Walking", below): the walker's state is
-a cell and a place in it, and the world pose is derived from her drawn
-matrix each frame and never fed back, so her motion can't move anyone
-through her. Over the side (a jump over the rail, or awash) you swim at the
-ocean's height and can climb the ladder. Each view draws everyone else as a
-simple figure in their frame.
+**People** are walk's: each view's walker publishes walk's presence record
+(`{ on, feet, yaw, pitch, swimming }`, its feet local to the support it
+stands on, her hull while aboard) and walk.people draws everyone else in
+that support's frame, so a peer whose view of the hull lags still sees
+them on her deck; whoever holds a station's claim is drawn standing at its
+stand spot. Sailing keeps no record of her own ("Walking", below).
 
-## Walking: a navmesh in the ship's frame
+## Walking: walk's, on her deck
 
-*Built: `navmesh.js` (the bake), `walker.js` (the walker), `navcheck.js`
-(the checks), crew.js's input adapter. It replaced the ray walker
-(`walk.js` `step` and `swim`, the ledge, the knee and brow rays, `crew.js`
-`deckStep`, `overboard`, `groundAt`, `stepAcross`'s ray and swimming's hull
-ray). Where the build refined the spec, "As built" at the end says so.*
+Walking her deck is walk's (since N10, lane/n10): its one walker stands on
+any support, a frame that moves under you, and her hull is one. The bake,
+the walker, the invariant, the transitions and their checks are in
+walk/DESIGN.md: "Standing on supports" (supports, the traits, the one
+body, the bake per support, falling, bodies over walk, presence) and
+"Foundations" (the mesh, B1–B7, the move, the unit and enumerated cases,
+C1–C7 and C9), moved there from here in step 6 and renamed. Sailing has
+no walker, navmesh, aboard body, avatars or presence record of her own.
 
-The ray walker asked the scene, each frame and in the world, where the floor
-and the walls are, and it could be wrong in any frame where a ray missed:
-- the band between the step height and the lowest wall ray;
-- a single centre ray across a heeled well wall;
-- a lifeline taken for a floor.
+What is still hers:
+- **The traits her parts write** ("Traits (in the doc)"): the hull a
+  `walk.support`, the rig a blocker, the jib and anchor passed through, the
+  wheel swept about its axle, a stand spot on each station, the ladder's
+  top, the wheel her spawn.
+- **Come aboard**: `api.body.enter("walk", hull)`, the hull's one verb for
+  entering at it (a click on her, Enter, the bar's Come aboard).
+- **The station body**, pushed over walk ("Play", crew.js): its eye walk's
+  walker's at the station's stand spot, through walk's `stand(id)`.
+- **Who is aboard**, read for the HUD and the verbs from the top body and
+  walk's `avatar` (crew.js `viewerOf`), never kept.
+- **The stock sloop's numbers, and the checks only she has**, below.
 
-Checking it took hundreds of walked routes. This design moves the
-geometry questions to a **bake**, done once per hull in her body frame and
-checked statically. **Motion** is a small state machine over the baked
-mesh, and its state cannot name a place off the mesh. Correctness rests on
-three things, each finite:
-- the bake's properties (B1–B7 below), checked on every baked hull;
-- the transitions, each shown to preserve the invariant;
-- a list of unit cases, one per kind of situation.
+### The sloop's deck in walk's numbers
 
-### Words
+walk's one body (walk DESIGN, "One body") is this deck's: c 5 cm, slope
+35°, step 0.58 m, H 1.75 m, r 0.25 m, with walk's jump (5.2 m/s, apex
+0.845 m: the lifelines clear more easily than at sailing's old 4.6) and
+speeds (4.5, 7.5 m/s). r 0.25, not walk's old 0.35, because 0.35 closes
+the side deck at the aft lower shroud (1.33 m out at head height, the
+cabin side at 0.675: nothing free); at 0.25 the walkway there is 1.06 m
+inboard of the shroud's foot, and you still pass beside the wheel.
 
-- **Column**: a `c × c` square of her body frame's plan (x, z), indexed
-  `(i, k)` from the grid's origin. Rasterising triangles into a column gives
-  its **intervals**: the closed y-ranges where any triangle's part inside the
-  square lies, merged where they overlap.
-- **Cell**: a floor in a column (the top of one interval) that passes the
-  bake. It is the navmesh's face. A position on it is `(cell, u, v)` with
-  `u, v ∈ [0, 1]`, so the plan point is `origin + ((i + u)c, (k + v)c)` and
-  the surface height is the cell's plane there.
-- **Side**: one of a cell's four edges, directed out of it (−X, +X, −Z, +Z).
-  Every side of every cell carries exactly one record: STEP, WALL or OPEN.
-  Two cells that share an edge each see it as their own STEP side.
-- **Rise**: how far above this cell's surface the body's feet must be to go
-  across a side. It is signed for a STEP (negative is a step down).
-- **Silhouette**: the columns holding any of her baked geometry. `D_r` is the
-  silhouette dilated by the radius. A point outside `D_r` is in the water,
-  clear of her.
-
-### Parameters (the sloop's: `DECK`)
-
-| Name | Value | Why |
-|---|---|---|
-| `cell` c | 0.05 m | Fine enough for the 0.04 m coaming top and a 6 mm lifeline (rasterising is conservative: any overlap counts). 12 × 3.8 m is about 18k columns |
-| `slope` | 35° | Her deck slopes at most about 10° (forward sheer, crown); hull sides, well walls and cabin sides are 80–90° |
-| `step` | **0.58 m** | Walkable up *and* down without jumping (symmetric). See the cockpit decision below |
-| `height` H | 1.75 m | Headroom a cell needs, and the body's top. The eye is 1.6 |
-| `radius` r | **0.25 m** | Was 0.35, which closes the side deck at the aft lower shroud (1.33 m out at head height, cabin side at 0.675: free 1.025…0.98, i.e. nothing). At 0.25 the walkway there is 1.06 m inboard of the shroud's foot, and you can still pass beside the wheel |
-| `jump` | 4.6 m/s at gravity 16 | Apex 0.661 m: over the lifelines (0.61–0.625 above the deck beside them), never onto the windlass (0.68) |
-| `walk`, `run` | 3.2, 5.5 m/s | As now |
-| `march` | 1.5 m | The furthest a vault looks across a WALL side for somewhere to come down |
-| `SUNK` | 1.5 m | Feet this far under the sea surface: awash, so you swim |
-
-**The cockpit is a STEP.** These are the rises measured from `ship.js`'s
-own surfaces (`deckAt`, the sole at 0.72, the benches at 1.08, the cabin top
+**The cockpit is a STEP.** The rises measured from `ship.js`'s own
+surfaces (`deckAt`, the sole at 0.72, the benches at 1.08, the cabin top
 at 1.72, the coaming's `0.2·smoothstep(4.1, 3.5, z)`):
 
 | From → to | Rise | Class at step 0.58 |
@@ -2572,615 +2565,151 @@ Why a STEP and not a WALL:
    or the deck.
 3. **0.58 sits in a gap.** The highest rise that must be a STEP is 0.546;
    the lowest that must be a WALL is 0.61 (the lifeline). That leaves
-   3.4 cm and 3 cm of margin, and static check C7 rebakes at 0.56 and 0.60
-   to prove nothing hinges on it.
+   3.4 cm and 3 cm of margin, and C7 rebakes at 0.56 and 0.60 to prove
+   nothing hinges on it.
 
-The old `DECK.step` of 0.5 sat 1.6–4.6 cm *below* the well's rise. That
-was the blind band's own number.
+### Her checks
 
-### The bake
+walk's `deck-12m.test.js` runs C1–C7 and C9 on her bake input (her
+triangles from `ship.js` and her seeds), a copy in walk's fixtures
+(`walk/src/test/fixtures/deck-12m.json`), refreshed by
+`probes/export-deck.mjs` and compared by the repo root's
+`scripts/check-fixtures.mjs`. Only she has:
+- **C8**: no OPEN side anywhere, so you never walk off her; every WALL to
+  OFF rises above `step`; on each side there are WALLs to OFF a jump clears
+  (173 a side, rise 0.60–0.65). 14 rise above the apex, beside the
+  shrouds' and the backstay's feet, where the wires come down low: you
+  can't jump over the side there, which is right.
+- **The bow**: the full bake reaches as far forward as a bake of her bare
+  hull (within 0.1 m), and nothing forward of the windlass was dropped (C2
+  only covers kept cells, so it can't see a region pruned whole).
+- **Her claims of a right bake** (`claims` in her export, checked by
+  walk's `deck-12m.test.js` in walk's words, so walk names nothing of
+  hers): her floors (the sole and benches within 2 mm, her plain deck
+  within 2 cm where a cell stands, most of it walkable); her rises (the
+  sole aft of the wheel steps up to her deck to port, to starboard and
+  aft, 0.5–0.58: "The cockpit is a STEP"; the traveller is a STEP you
+  cross from forward and from aft, not a WALL); and the mainsheet's stand
+  spot stays within a cell with the Card table where the aboard setup puts
+  it (probes/cockpit-table.js, shared with aboard-probe.html).
+- **Her stand spots, over her drawing** (`stand-spots.test.js`, no
+  bake): each jib winch's across the well, inside her rail, its drum in
+  reach; from the working winch's, the jib's luff seen past the main and
+  the mast; the helm's (her spawn) on the sole aft of the wheel; the
+  mainsheet's aft of the traveller, forward of the wheel, its block within
+  2 m of the eye (walk's reach, Q9, under her station's 2.5), and the
+  table wholly forward of the block, so no look from the spot to it
+  crosses the table.
 
-`bake(input, params) → NavMesh`. It is pure, deterministic and
-independent of triangle order.
+In the browser, `probes/sailing-run.mjs` runs C1–C9 on the bake B's view
+made from her loaded GLBs and walks the cockpit's edges with real keys
+(both sides of the well and its aft end, out onto the side deck and back,
+a jump at the aft end) with walk's assertion on; `probes/camber-run.mjs`
+rigs a camber hull from the bin and runs C1–C7 and C9 on hers (C8 is the
+sloop's rails).
 
-**Input**: triangles in her body frame, and the seeds (spawn, the stations'
-stand spots, the ladder top). The input adapter (stage side) gathers
-triangles from:
-- her hull's GLB through her frame (`frameOf`);
-- every object under her except:
-  - the moving parts: the sail station's subtree (boom and sail), and the
-    anchor (`sailing.hook`);
-  - unlocked loose pieces (cards, dice).
+### As built (her mesh and fittings)
 
-  Locked furniture aboard (a card table) is baked.
-- Geometry comes from `api.content(id).root`'s meshes at the GLB's rest
-  pose, placed by the objects' doc transforms down the tree. Neither the
-  drawn pose nor any dressing is used.
-- A part that turns about an axle in play (the wheel) is baked as the solid
-  swept by the turn: the cylinder about the axle that bounds it.
-- For the stock sloop, the tests take the same triangles straight from
-  `ship.js` (`partMeshes` + `FIT`), with no stage. A camber hull's
-  come from its GLB, exactly the same way. Nothing reads `deckAt` at
-  runtime: what you walk on is what is drawn.
+- **Her mesh** has 8,086 cells (12,786 triangles), all one region; 2,402
+  of them have a finite headroom. Sailing's seed pruning dropped two
+  components, both inside her: the bilge under the cabin, and a 0.24 m²
+  patch under the sole (walk keeps every component until its pruning
+  lands: its bake is a superset). Every link lands where asked (C1:
+  0–3 mm). Before the bake judged floors on the open square she had 8,098
+  (a row of twelve cells 1.08 up at z 3.75–3.8 held up only along a column
+  line). She bakes in 80–120 ms in Node at quiet moments, under the 500 ms
+  limit.
+- **Her fittings, refitted for the mesh.** The windlass was 0.92 m across
+  its handles, at z −4.35 where her deck is 2.1 m wide inside the toe
+  rails, which cut the foredeck off from the rest (pruned: you couldn't
+  walk to the bow). It is now 0.43 m across and stands at z −3.8; the bake
+  keeps the foredeck to z −5.18, as on her bare hull, and still does at
+  r 0.27 (C7). Its top is eroded away (under the 0.57 m erosion disc), so
+  walk's higher jump reaches nothing new. The mainsheet's traveller moved
+  from z 2.85, where a card table between the benches buried it, to z 3.3,
+  just forward of the boom's end; you stand 0.35 m aft of it, between it
+  and the wheel.
+- **The camber hull** (rigged from the bin, drawn a metre long with her bow
+  +X, scaled to 12) bakes 14,370 cells from 5,366 triangles, with links for
+  spawn, the stations and the ladder. Its compact windlass is what let C3
+  hold there.
 
-**Steps**:
-1. **Rasterise.** For each triangle and each column its plan bounds touch:
-   - clip the triangle to the column's closed square (Sutherland–Hodgman);
-   - record the clipped polygon's `[ymin, ymax]`, and whether the triangle
-     is walkable (`|n_y| ≥ cos slope`, either winding).
+### Decisions
 
-   Then merge overlapping intervals per column. A vertical wall on a
-   column boundary lands in both columns, conservatively.
-2. **Floors.** An interval's top is a floor if either:
-   - (a) the triangle that reaches the top is walkable; the floor's plane is
-     that triangle's;
-   - (b) the interval also holds a walkable triangle's top within `step`
-     below its top: steep stuff standing on a floor (a curb, a toe rail, a
-     leaning cabin side straddling a column). The floor is flat at the
-     interval's top.
+- **Step 5 (N10): sailing walks in walk** (each decided unattended
+  (2026-11-17, lane/n10), for the lead):
+  - *The sail's stand spot is the mast's.* The rig swings (a drawn pose);
+    a stand spot is placed by the doc, but walk.people and the station
+    body draw it in the support's frame through its object's placement, and
+    the mast carries it, aft of the gooseneck on the cabin top, where the
+    halyard is worked.
+  - *Stand spots are written on what's drawn there* (ship.js `standSpot`:
+    `deckSurfaceAt` at the spot), so the eye a station puts EYE over the
+    spot is EYE over the deck, and walk's link for it lies within 1 mm of
+    it (walk's deck-12m.test.js). On a hull of another shape the same
+    offsets in the piece's frame land near its deck; walk's P1 puts you on
+    it when you leave.
+  - *The station's eye is EYE up her up from the spot*, not up the world's
+    Y, and walk lowers it the same way (walk Decision 34), so taking and
+    leaving a station on a heeled deck stands you where you were.
+    (Superseded by the step 5 fixes below: the eye is walk's.)
+  - *Her spawn is an object of its own*, "Spawn", no model, under the stock
+    hull at the helm's stand spot. (Superseded by the step 5 fixes below:
+    the wheel is her spawn.)
+  - *A hull made a ship by hand becomes a support when the first sailing
+    part is put on her* (parts.js `part`): sailing writes `walk.support`
+    then. Before that she is part of the ground's bake (Q11 in walk's
+    DESIGN asks whether the Ship trait's adding should write it).
+  - *`sailing.winch` loses `stand`*: where you stand at a winch is its
+    `walk.stand`, one fact in one place. *The ladder's Climb is walk's*
+    (F, on `walk.ladder`, swimming within walk's reach of its foot):
+    sailing's "Climb aboard" verb and `crew.board` are gone; `sailing.ladder`
+    stays, as what makes it her ladder (her stations' list, the bin).
+  - *The mast is the object the rig hangs under with no station trait of
+    its own*. (Undone by the step 5 fixes: the rig carries the sail's stand
+    spot and the mast is traitless again, the rule as it was.)
+  - *What is the viewer doing* is read, never kept: crew.js `viewerOf`
+    over the top body, walk's `avatar` here and the station body's own
+    station. The presence rate stays play.js's (20 Hz while playing).
+- **Step 5 fixes (N10)** (each decided unattended (2026-11-17, lane/n10),
+  for the lead):
+  - *The station's eye is walk's.* Taking a station asks walk's `stand(id)`
+    contribution to stand its walker at the station's stand spot (P1 of
+    it: on the deck under it); the station body looks from that walker's
+    eye as walk draws it each frame, and leaving, walk resumes from that
+    eye. Sailing keeps no copy of walk's eye height or of its stand-spot
+    placement; the round trip is walk's alone and tested there (walk
+    body.test, stand spot × deck pose, to 1e-9). On a hull whose deck isn't
+    where a stock offset puts the spot, the eye is still over her deck.
+  - *One claim says who stands at a station*: the one its verb holds (the
+    helm's, the mainsheet's and each winch's `"station"`, the sail's
+    `"halyard"` at the mast), which its `walk.stand` names. The station body
+    holds none of its own (a refused claim already stops the verb).
+  - *The rig carries the sail's stand spot*: its doc placement never swings
+    (only its drawn pose does), so no search up the tree for a spot and the
+    mast's rule is "no traits" again.
+  - *The wheel is her spawn* (`walk.spawn` on an object with a stand spot is
+    at that spot: walk Decision 41): no object of its own, and a hull
+    fitted from the bin is come aboard at the helm too.
+  - *Taking a station while walking in another stage* (a harbour's ground)
+    comes aboard her first: the station goes over her own walk, never
+    another stage's.
+  - *The HUD's walking hint is the top body's declared keys* (hud.js
+    `keysHint`), so it is walk's own list, never a copy.
 
-   Rule (b) is Recast's merge rule. It is what joins the side deck to the
-   cabin top across her 4.7 cm of leaning wall. A stanchion (0.62 tall) or
-   the windlass (0.68) is above `step`, so neither becomes a floor.
-3. **Headroom.** A floor's `ceil` is the bottom of the next interval up
-   (+∞ if none). A floor with `ceil − s < H` is dropped. This removes the
-   deck under the lifelines, the sole under the wheel's rim, the deck under
-   a leaning shroud, the bilge under the sole and the interior under the
-   cabin top. Obstacles need no separate footprints: anything solid within H
-   of a floor removes it.
-4. **Connect.** Floor `f` and the floor `g` in the next column are
-   connected if both hold:
-   - `|s_g − s_f| ≤ step`;
-   - `max(s_f, s_g) + H ≤ min(ceil_f, ceil_g)`.
-
-   At most one `g` qualifies, because two floors in one column are at least
-   H apart and H > 2·step. So connection is symmetric and unique.
-5. **Erode.** Keep floor `f` only if every column whose square meets the
-   disc of radius `r + c/√2` about f's centre has a floor `g` such that:
-   - g is connected to f through columns in that disc;
-   - `s_g ≤ s_f + step`;
-   - `ceil_g ≥ s_f + H`.
-
-   The `c/√2` covers every `(u, v)` in the cell. This one rule erodes from
-   walls, wires, the mast, the wheel, ledges and unrailed edges alike. It
-   doesn't erode at the steps themselves (the well's edge, a bench), so
-   you walk right up to them and onto them.
-6. **Prune.** Keep the connected components that hold a seed, and drop the
-   rest. These are:
-   - the bilge inside her (headroom there reaches 1.8 m);
-   - wire tops, the wheel's rim;
-   - a tiny curb top.
-
-   They are reported, not silent (check C3).
-7. **Classify every side of every kept cell, once:**
-   - **STEP `to g`**: the next column holds a kept `g` connected to it.
-     `rise = s_g − s_f` at the edge's midpoint.
-   - Otherwise, **march** column by column along the side's axis, in the
-     cell's row, up to `march`. For each marched column, `fit` is the
-     lowest height above `s_f` at which the body (the disc of `r + c/√2`,
-     from feet to `+H`) is clear of every interval there. `rise` is the
-     running max of `fit`. The march stops at the first column that either:
-     - holds a kept `g` with `s_g ≤ s_f + rise ≤ s_g + headroom(g)` (you
-       can come down onto it, and the whole body fits there):
-       **WALL `to g`**, `gap` = the distance to it;
-     - lies outside `D_r` (the first column whose disc meets no silhouette
-       column): **OPEN** if `rise ≤ step`, else **WALL `to OVERBOARD`**.
-       `exit` = that column's centre at the cell's row: where you go into
-       the water.
-     - Hitting `march` or an unbounded `fit` gives **WALL `to NONE`**.
-
-   So a WALL says three things: walking stops here; a jump at least `rise`
-   high gets across (to `g` or into the sea); or nothing gets across.
-   A ledge (a drop deeper than `step`, such as the cabin top's aft end over
-   the companionway) is a WALL `to` the floor below, with a rise of about
-   0, so it can be jumped off but not walked off.
-8. **Silhouette and links.**
-   - `D_r` as a bit per column, and for each `D_r` column its nearest column
-     centre outside `D_r` (where a swimmer is put out).
-   - **Links**, each `{ kind, id, at: (cell, u, v), yaw }` or a water
-     point:
-     - `spawn`;
-     - one per station (helm, mainsheet, mast, windlass);
-     - the ladder: a `top` cell and a `foot` water point outside `D_r`
-       beside it;
-     - seats come in at run time (below).
-
-     A spot is placed by **projection**: the kept cell nearest in plan
-     whose surface is within `step` of the spot's height.
-
-**NavMesh** (typed arrays, one object per hull):
-
-```js
-{
-  key,                          // the bake key: what it was baked from (below)
-  params,                       // { cell, slope, step, height, radius, jump, march }
-  origin: [x0, z0], nx, nz,     // the grid, body frame
-  cells: { i, k, y, gx, gz, ceil, headroom, region },   // Int32/Float32Array, one entry per kept cell
-                                //   y(u,v) = y + gx·(u−½)c + gz·(v−½)c; headroom = min over the erode disc of ceil − y − H
-  column: Int32Array(nx·nz + 1),// cells by column (prefix offsets), for projection
-  side: {                       // 4 per cell: −X, +X, −Z, +Z
-    kind: Uint8Array,           //   STEP | WALL | OPEN
-    to: Int32Array,             //   a cell, OVERBOARD (−1) or NONE (−2)
-    rise: Float32Array, gap: Float32Array,
-    exit: Float32Array,         //   [x, z] for OVERBOARD and OPEN
-    normal: Float32Array,       //   [x, z], the source wall's plan normal: only for how a slide feels
-  },
-  outside: Uint8Array(nx·nz), putOut: Float32Array,  // D_r and where to put a swimmer
-  links: [{ kind: "spawn" | "station" | "ladder", id, at: { cell, u, v }, yaw, foot? }],
-  dropped: [{ region, area, centroid, why }],         // what step 6 pruned
-}
-```
-
-**When to bake.** The key is a hash of her frame plus, for each baked
-object: id, file key, transform relative to her, and whether it has
-loaded.
-- A doc change that changes the key (a part added, moved or removed, a
-  model loaded) rebakes off the frame loop. Until the new mesh lands, the
-  old mesh is used.
-- Meshes are cached by key, so two identical sloops bake once.
-- Budget: about 13.6k triangles for the sloop and her fittings, under
-  50 ms (measured in a test, which fails at 500 ms).
-
-### The walker: state and invariant
-
-The walker is `walker.js`: pure, no THREE, no rays. Its state is one of:
-
-| State | Fields |
-|---|---|
-| `boarding` | `ship`, `t` (how long it has waited), and where it was asked for: `at`, `offset`, `from` (a world point to swim at if she never comes). Her mesh isn't baked yet: no position |
-| `walking` | `ship, cell, u, v, vel[2]` (plan, her frame) |
-| `airborne` | `ship, cell, u, v, h, vy, vel[2]` (h: feet above the cell's surface, her up) |
-| `vaulting` | `ship, cell, side, d, h, vy, vel[2]` (d: how far across the side's gap) |
-| `station` | `ship, cell, u, v, station` |
-| `ladder` | `ship, link, t` |
-| `swimming` | `p[2]` (world x, z: at the surface), `vel[2]` |
-
-Plus `yaw` (to her bow) and `pitch`, which belong to the person, not the
-state. The **world pose is derived** each frame:
-- feet = `M · local(state)`, where `M = bodyOf(api, ship)`;
-- eye = `M · (local feet + [0, 1.6, 0])`, along *her* up, so the eye stays
-  inside the cylinder the bake checked;
-- the look direction stays level with the world's horizon, as now.
-
-Her motion is never an input to the state. A wave, a heel or her speed
-cannot move a walker through anything, because nothing that moves the
-ship touches `(cell, u, v, h)`.
-
-**Invariant I**, per state, for the mesh `N` of `ship`:
-- `walking`, `station`: `cell ∈ N.cells`, `u, v ∈ [0, 1]`.
-- `airborne`: the same, and `0 ≤ h ≤ headroom(cell)`.
-- `vaulting`: `side(cell)` is a WALL with `to ≠ NONE`, `0 ≤ d ≤ gap`, and
-  `h ≥ rise`.
-- `ladder`: `link` is her ladder link, `t ∈ [0, 1]`.
-- `swimming`: for every ship with a mesh, `p` in her frame lies outside her
-  `D_r`: outside the *union* of all their `D_r`, ships rafted close
-  together included.
-- `boarding`: no position.
-
-`assertWalker(state, meshes)` checks I after every step while
-`walker.asserting()`: under vitest (`import.meta.env.DEV`), in every probe
-page (sailing-, aboard- and camber-probe.html set
-`globalThis.__SAILING_ASSERT__`), and in any page that sets the flag. A
-breach then throws in the crew's tick. A production build (`DEV` compiled to
-false) logs a failure, which the transitions below say can't happen, once and
-resolves it by projection.
-
-**What I buys**, given the bake properties B1–B7 (each a static check):
-- **B1**: every cell is a floor with headroom ≥ H.
-- **B2**: every column within `r + c/√2` of a cell has a floor connected to
-  it no more than `step` above it, and headroom up to its `+H`.
-- **B3**: a STEP's `to` is a kept cell; a WALL's `to` is a kept cell,
-  OVERBOARD or NONE; an OPEN's `to` is OVERBOARD.
-- **B4**: STEP is symmetric.
-- **B5**: every `exit`, every `putOut` and the ladder's `foot` lie outside
-  `D_r`.
-- **B6**: no cell lies inside her closed hull.
-- **B7**: every vault's marched band is clear of the body at `s_f + rise`.
-
-Together they give the guarantee: in `walking`, `station` or `airborne`,
-- the feet are on a floor;
-- the body from `step` above the feet to its top (radius r) meets no baked
-  surface;
-- an airborne body's whole height is clear.
-
-Below `step`, the legs are allowed to overlap what they step over: a curb,
-the bench's edge.
-- A vaulting body is clear by B7.
-- A swimmer is clear of her plan outline.
-- `M` is rigid and her geometry rides with her, so all of this holds in the
-  world too.
-
-Not covered:
-- the boom and sail, which move and aren't baked (they only block: see
-  "Dynamic blockers");
-- other people;
-- other ships, except a swimmer being put out of them.
-
-### Motion: the transitions
-
-**One move** (`walking`, `airborne`): the plan displacement this frame is
-`(dx, dz) = vel · dt`. It is capped at 1 m, so any `dt` works. It is walked
-side by side, as a DDA walks a grid. For each next crossing:
-- **within the cell**: move; `u, v` stay in `[0, 1]` (clamped after the
-  arithmetic, which only moves within the cell);
-- **at a side**, by its record (below). STEP sets `u` or `v` to the
-  opposite edge (0 ↔ 1) of `to`.
-- **corner rule**: a crossing exactly through a corner takes X before Z.
-  The diagonal cell is only ever reached through one of the two orthogonal
-  neighbours, and only if that neighbour's side is crossable too. So two
-  WALL sides meeting at a corner let nothing through it.
-
-Each pass either ends the move, crosses one side (at most `|dx|/c + |dz|/c +
-2` of these), or zeroes one axis (at most twice), so it terminates.
-
-**Sliding.** A blocked axis has its remaining displacement and its velocity
-along that axis set to 0, and the other axis carries on. That alone is a
-correct slide along a wall, and a stop in a concave corner. For feel, the
-velocity is first projected along the wall's smoothed `normal`, so a
-45° wall doesn't stair-step. The projection changes only the velocity;
-the side test still decides.
-
-| # | From → to | When | Why I still holds |
-|---|---|---|---|
-| W1 | walking → walking | a move within a cell or across a STEP | `to ∈ cells` (B3); `u, v` set to an edge, in `[0, 1]` |
-| W2 | walking → walking | a move into a WALL side | That axis is zeroed; you stay in the cell |
-| W3 | walking → swimming | a move across an OPEN side (no rail; none on the sloop) | You swim at `M · exit`, outside `D_r` (B5). First, if another ship has a kept cell under that world point within `step` of your feet, you go to `walking` on her (stepping across, walker.js `intoWater`) |
-| W4 | walking → airborne | jump | Same cell, `h = 0 ≤ headroom` (B1) |
-| W5 | walking/airborne/station → swimming | awash: feet `SUNK` under the sea (she's going down) | You're put at `putOut` of the column you're in (B5) |
-| A1 | airborne → airborne | `h += vy·dt` under gravity (her −Y), clamped to `[0, headroom]`; touching the top zeroes `vy` (a head bump) | Clamped into the invariant's range |
-| A2 | airborne → walking | `h` reaches 0 | Same cell |
-| A3 | airborne → airborne / walking | across a STEP: `h' = h − rise`. If `h' ≥ 0` and `h' ≤ headroom(to)`, airborne on `to`. If `h' < 0`, walking on `to` (a step up in the air). If `h' > headroom(to)`, blocked like W2 | `to ∈ cells`; `h'` checked against `to`'s range |
-| A4 | airborne → vaulting | into a WALL with `h ≥ rise` and `to ≠ NONE`; otherwise blocked like W2 | `d = 0`; `h ≥ rise` |
-| A5 | airborne → swimming | across an OPEN | As W3 |
-| V1 | vaulting → vaulting | `d += |vel along the axis|·dt` (at least 1.5 m/s), `h` ballistic but at least `rise` | `d` capped at `gap`; the band is clear at `rise` (B7) |
-| V2 | vaulting → airborne / walking / swimming | `d = gap`: onto `to` with `h = min(s_f + h − s_g, headroom(to))`. That is ≥ 0 because the march only stops where `s_g ≤ s_f + rise`; the march also checked that `s_f + rise − s_g ≤ headroom(to)`, so the min only trims a jump that is still rising. 0 means walking. For OVERBOARD: as W3 | `to ∈ cells` (B3) and `h ∈ [0, headroom]`, or outside `D_r` (B5) |
-| S1 | walking/airborne → station | take a station: you go to its link's `at` | Links are projected onto kept cells (C1) |
-| S2 | station → walking | leave | Same cell |
-| L1 | swimming → ladder | F within reach of the ladder's `foot` | `t = 0` |
-| L2 | ladder → walking | `t` reaches 1 (for now `t` jumps 0 → 1, as boarding does today; a climb animation is a later choice) | At the link's `top`, a kept cell (C1) |
-| P1 | any → walking / swimming | `place(on, p)`, spawn, entering the `aboard` body (`crew.js` `aboardBody.enter`) | **Projection** is total and returns only valid states: the kept cell nearest `p` in plan within `step` of `p`'s height; else, if `p` is outside `D_r` (over the water), swimming there; else the nearest kept cell. An empty mesh means swimming at `putOut` |
-| R1 | any aboard → by projection | her mesh is rebaked (parts changed) | The old local point is projected onto the new mesh (P1). Projected into the water, `yaw` gains her heading, so the look doesn't turn |
-| G1 | any aboard → swimming | she's gone | At the last world point, by SW1's push (clear of any other ship) |
-| B1 | boarding → walking (or swimming) | her first mesh lands | Spawn projected (P1). Into the water (an empty mesh), `yaw` gains her heading, as everywhere else into the water |
-| B2 | boarding → swimming | she's gone (no frame), or her mesh hasn't come in `boardWait` (15 s: her model never loaded) | At `from` (the camera, given by the crew) or where you were to board, by SW1's push; `yaw` gains her heading |
-| SW1 | swimming → swimming | Move in the world at the surface, then `pushOut`: (1) up to four passes, each moving `p` to `M · putOut` of the ship whose `D_r` holds it; (2) if it's still in any ship's `D_r` (two ships so close their `D_r` overlap, each one's `putOut` in the other's), rings about the original `p`, a cell apart and sampled a cell apart round, to the first sample outside every ship's `D_r` | Each answer is tested by checkWalker's own test over every ship with a mesh, so it is outside the union. The search is total: at horizontal distance `D` from a ship's origin a surface point is at least `√((D(1−sinθ) − Y)(D(1+sinθ) + Y))` from it in her plan (θ her tilt, Y the surface's height off hers, ≤ 10 m + the difference at `p`), which exceeds her grid's reach `E` once `D(1−sinθ) − Y > E`; the last ring is there. Only a ship on her beam ends (sinθ ≥ 0.999) has no such ring; then the search stops at 200 m and, asserting, throws. This also covers a ship sailing into a swimmer |
-
-**Dynamic blockers.** The boom swings, so it isn't baked. In her frame it
-is a capsule (from the gooseneck, along the boom's current angle, radius
-0.07). A move that would bring the body's cylinder into it is cut short
-(W2), and an airborne `h` is capped under it (A1). A rule that only shortens
-a move or lowers `h` can't break I. A boom swinging into someone standing
-passes through them; it never pushes.
-
-**Seats** (the seats package's seat body, pushed over `aboard`). While it's
-on top the walker waits where it was; when it goes, you are put `walking`
-at the projection (P1) of the view's eye (the seat's), dropped by a seated
-eye's height, on the first ship; your `yaw` faces what the view looked at.
-
-**What crew.js keeps.** Its API to the package is unchanged:
-`input, bodies, start, stop, me, take, leave, board, place, tick, update, dispose`.
-`me().position` is the derived local feet, and the presence record keeps
-its format. `walk.js` keeps the pure helpers (`wishVelocity`, `look`,
-`lookDir`) and the parameter objects. The bake is `navmesh.js` (pure); the
-state machine is `walker.js` (pure). The stage-side input adapter, which
-gathers triangles from `api.content`, lives in crew.js.
-
-### Verification
-
-No random routes through the real ship.
-
-**Unit cases** (`walker.test.js`, `navmesh.test.js`). Each is a fixture of a
-few boxes as triangles, baked, then driven. This is the full list:
-
-1. A flat floor: walk within a cell, and across cells. `u, v` stay in range.
-2. A STEP up (0.3) and down: the cell changes, the feet follow the new
-   plane, and the side back is a STEP (B4).
-3. The threshold: a rise of exactly `step` is a STEP; `step + 1 mm` is a
-   WALL. A drop of `step + 1 mm` is a WALL (ledge) with a rise of about 0.
-4. A WALL (1.0): you stop with your centre `r` ± `c` from its face.
-5. Sliding: walking at 30° into the wall keeps the along-wall component.
-   Head on, you stop.
-6. A concave corner (two walls at 90°): a diagonal move into it stops at
-   the corner, and both axes are zeroed.
-7. A convex corner (an L-shaped floor): walking along one wall carries on
-   past the corner. A diagonal across the corner's cell goes through an
-   orthogonal neighbour, never cutting the corner.
-8. Exact diagonal through a vertex, both orthogonal sides WALL and the
-   diagonal cell open: blocked. Then the same with one side STEP: through
-   that side (the X-first tie order is checked both ways round).
-9. A corner between a STEP (+X) and a WALL (+Z): a diagonal move crosses
-   the STEP and slides along the WALL.
-10. Head clearance: a floor under a ceiling lower than H isn't a cell. A
-    jump under a ceiling at `H + 0.3` caps `h` at 0.3 and zeroes `vy`.
-11. A wire pair over a floor (0.34 and 0.62, 6 mm): no cell under it or on
-    it; the floor beside it is eroded by r; jumping over it works.
-12. Jump over a low wall (rise 0.62 < apex 0.661): walking is blocked,
-    a jump vaults it and lands beyond. A rise of 0.7: the jump is blocked.
-13. Jump off a ledge (the cabin top to the sole): walking is blocked; the
-    jump vaults down and lands.
-14. OPEN: walking off an unrailed edge, you swim at `exit`, outside `D_r`.
-15. A rail (WALL to OVERBOARD at 0.62): walking is held; a jump puts you
-    in the water.
-16. Ramps: 20° is walkable with STEP sides all the way up; 50° isn't.
-17. Rule (b): a riser leaning 4.7 cm between a deck and a roof 0.45 above,
-    in both alignments to the grid (inside one column, straddling two):
-    STEP all the way. A 0.62 stanchion isn't a floor.
-18. Swimming: pushed out of `D_r`. A ship moved onto a swimmer puts them
-    out.
-18b. Two ships rafted 0.1, 0.3 and 0.6 m apart (their `D_r` overlap):
-    walking off one's OPEN edge, jumping her rail, and the other closing on
-    a swimmer between them each leave the swimmer outside both `D_r`, and
-    at least r clear of both hulls.
-19. The ladder: from `foot` with F you're walking at `top`.
-20. A station: take puts you at its link; WASD don't move you; leave puts
-    you walking in the same cell.
-21. **Her motion under a standing walker:** under any sequence of `M`
-    (translation, heave, 30° heel, 20° pitch, yaw), the local state is
-    bit-identical and the world feet equal `M · local`.
-22. Her motion under a walking walker: the same input sequence gives the
-    same local trajectory under two different `M` sequences.
-23. Rebake under a walker: the floor under you is removed, so you're
-    projected to the nearest cell. An empty mesh means you swim, and on a
-    ship heading 90° the look direction is unchanged across it (R1's yaw).
-23b. Boarding (B1, B2): her first mesh lands, you walk; an empty first
-    mesh, you swim facing the same way; she's removed while you wait, you
-    swim at `from`; her mesh never comes, after `boardWait` you swim.
-24. `place`: a point over the water means swimming; a point by the deck is
-    projected to a cell (the probes' `place` calls keep working).
-25. Standing up from a seat over `aboard`: you stand at the projection of
-    the seat's eye, facing its target.
-26. Stepping across: an OPEN side over another ship's kept cell puts you
-    on her deck, in her frame (walker.js `intoWater`).
-27. A huge `dt` or speed: the move is capped, and I holds.
-28. The boom blocker: walking into the capsule stops you; a jump under it
-    is capped.
-29. The cockpit's STEP (0.52 up, then down): the state is exact (the feet
-    jump in one frame), `step` reports the jump as `lift`, and the drawn eye
-    (`easeEye`, only the camera) moves under 0.1 m a frame and catches up
-    within 0.15 s.
-30. The assertion is on under vitest without the flag (`asserting()`).
-
-Each step of every case runs `assertWalker`.
-
-**The walker's enumerated cases** (`walker.cases.slow.test.js`, finite and
-named; no random input, so a failure names its arena, leg and step and runs
-the same every time). Each case is:
-- a 4 × 4 m arena: a floor alone; each kind of box alone, on the floor (a
-  1 cm lip, a stair, a knee-high crate, a wall) and floating (a wire at shin
-  height, a low ceiling, a table-high overhang, a box over the spawn point,
-  which the bake's seed must step out of); a ramp at 0, 30 or 60° facing
-  each of four ways; a thin post or rail along x or z, 1 or 3 cm; and all
-  at once (8 boxes, 2 ramps, 3 rods). Every arena twice: its edges on the
-  10 cm columns' lines, and 3 mm off them;
-- 36 legs from the start, one per combination of forward, strafe, run and
-  jump, 16 steps each, heading each of the eight ways, `dt` alternating
-  1/240 and 1/20 s, under every extreme pose of the ship (±3 m, ±0.5 m
-  heave, ±30° heel, ±20° pitch, ±180° turn) in turn.
-
-Each step checks I, and also an **oracle on the raw triangles, not the
-mesh**:
-- the feet are within `h + 2 mm` above a triangle;
-- no triangle meets the cylinder of radius r over `[s + step, s + H]`
-  (over `[s + h, s + h + H]` while airborne).
-
-Every case's bake also passes B1, B3–B5. A case that starts on deck must
-spend three quarters of its checks aboard (so it walks among the features,
-not overboard). A second baked ship (a 4 × 4 m deck, with or without a
-rail) lies on each side of the first, touching or 1 m off, riding with her,
-the walker on deck or in the water between them: a swimmer must be clear of
-both ships (I, and no triangle of either within r), and a walker who steps
-across is checked against the other ship's triangles. 95 cases, under a
-second. They replaced a seeded `fast-check` property test (the project's
-tests are finite and exhaustive, never random), and on their first run
-found what it never had: a box's or ramp's side exactly on a line between
-columns also makes a cell at its height in the column outside it, so the
-walker can stand up to a column's width past the edge. The three on-grid
-cases that show it are listed as `KNOWN_GAPS` (the test asks that exactly
-those fail); the fix is the bake's (a triangle must cover part of a
-column's open square).
-
-**Static checks** on each baked hull. They run on the stock sloop in vitest
-(`sloop-navmesh.test.js`, triangles from `ship.js`), and on the camber hull
-with its parts in `probes/camber-run.mjs`.
-- **C1**: spawn, each station's stand spot (helm, mainsheet, mast,
-  windlass) and the ladder's top project onto a kept cell, within 0.35 m in
-  plan and `step` in height of where they were asked for.
-- **C2**: every kept cell is reachable on foot (STEP sides only) from
-  spawn. So is every C1 spot.
-- **C3**: every dropped component is one of:
-  - inside her closed hull (C6's test);
-  - smaller than 0.25 m²;
-  - reached by no WALL side of a kept cell with a rise ≤ the jump apex.
-
-  So nothing you could walk or jump to was dropped.
-- **C4**: every side of every kept cell has exactly one record. B3 and B4
-  hold, and B5 too: every `exit`, every `putOut` and the ladder's `foot`
-  are outside `D_r`.
-- **C5**: B1, B2 and B7, recomputed by brute force from the triangles, and
-  the headroom with them. Per cell, exactly what the erosion promises: the
-  cylinder of radius `r + c/√2` about the cell's centre (so radius r about
-  every `(u, v)` in it) meets no triangle from `smin + step` to
-  `smax + H + headroom`, and to the sky where the headroom is infinite: the
-  standing band and the whole airborne envelope at once. Where it's
-  finite, a triangle stands within 5 mm above that top in the disc's
-  columns, so an understated or stale headroom fails too. Then B7 along
-  every vault band. A bake that set every headroom to infinity, or halved
-  them, fails C5 (`sloop-navmesh.test.js`).
-- **C6**: no kept cell lies inside her closed hull. A point 5 cm above its
-  surface is outside by ray parity, and three directions must agree.
-- **C7**: stability. Rebaking at `step` 0.56 and 0.60, and at r 0.23 and
-  0.27, keeps C1 and C2 true.
-- **C8** (sloop): no OPEN side anywhere, so you never walk off her. Every
-  way to OVERBOARD is a WALL with `step < rise ≤ apex`, so you can jump
-  over the side.
-- **C9**: two bakes of the same input are byte-identical; a shuffled
-  triangle order too.
-- **The bow** (sloop): the full bake reaches as far forward as a bake of
-  her bare hull (within 0.1 m), and nothing forward of the windlass was
-  dropped. C2 only covers kept cells, so it can't see a region pruned
-  whole.
-- **The mainsheet beside a card table** (sloop): baked with tabletop's
-  table where the aboard setup puts it, the mainsheet's stand spot doesn't
-  move, and the look from its eye to the block misses the table.
-
-**One browser check** goes into `probes/sailing-run.mjs`. It uses real input
-and the pointer-lock shim from the diagnosis' scratch probes. From the
-helm spawn, a fixed sequence of about 10 s of real keys:
-- along both sides of the well and its aft end;
-- out over the side onto the side deck and back;
-- a jump at the aft end.
-
-Every frame, the page's assertion count stays 0. The feet lie within 2 cm
-of `ship.js`'s analytic surfaces, or above them mid-jump. No route
-marathons.
-
-### Decisions in brief
-
-- **The faces are grid cells, not welded source triangles.** A triangle
-  navmesh needs polygon offsetting and booleans on a curved deck to erode
-  and to cut out obstacles. Those are where bakes go wrong, and they can
-  only be checked by sampling. On a 5 cm grid, each bake step is exact and
-  finite:
-  - clip a triangle to a square;
-  - merge intervals;
-  - the disc test;
-  - one march per side.
-
-  So the checks can cover every cell. The cost is a boundary quantised to
-  5 cm, and the erosion disc is padded by `c/√2` to keep it conservative.
-  The input is still triangles, so the sloop and a camber hull bake alike.
-- **Baked from what's drawn** (the GLBs), not from `deckAt`. It is
-  equally exact for the sloop, it is the same code for every hull, and it
-  is right for docs whose GLB predates today's `ship.js`.
-- **Step 0.58, radius 0.25, symmetric step.** A drop deeper than `step` is
-  a WALL (ledge) you can jump off, which replaces `DECK.ledge`.
-- **Obstacles come in by headroom.** No footprint input; the boom is a
-  dynamic blocker.
-- **The body rides her up.** The eye is along her up, not the world's,
-  so the camera stays in the checked volume; the horizon stays level.
-- **The ladder and stepping across** are links and checks at the mesh's
-  edges. They are no longer rays.
-
-### As built
-
-Where the implementation departs from or sharpens the text above, and what
-it measured.
-
-- **Intervals merge across gaps no body can use.** Two ranges in a column
-  merge when they overlap *or* the gap between them is less than
-  `H − step` (1.17 m). B2 needs that much clear over a neighbour's floor and
-  a fit needs H, so no later rule can tell such a gap from solid: treating
-  it as solid is exact. It matters on the sloop: her portlights sit 1 cm
-  off the cabin's leaning side, and a column straddling the side held the
-  wall below and the port above with an 8 cm gap between. That made the
-  cabin's edge a floor without headroom, and the cabin top lost its STEP to
-  the side deck. Rule (b) then sees the walkable top under the port.
-- **A floor's surface is its triangle's plane clamped to that triangle's
-  range in the column** (`cells.lo`, `cells.hi`). So there is always a
-  point of the triangle, in the feet's column, at the feet's height. That
-  is what the oracle's support check tests: the feet within h + 2 mm above
-  a triangle *in their 5 cm column*. Coplanar triangles that tie for a
-  column's floor share the plane and join their ranges, so triangle order
-  can't matter (C9). Gradients are stored without −0.
-- **Sides carry `top`**: the highest a vault's feet may rise and keep its
-  band clear. The march checks the band at the final rise in every column
-  before the stop (else `to` is NONE), and the vault clamps `h` to
-  `[rise, top]`. C5 checks every band at both heights.
-- **P1 asks "over the water?" first.** A point outside her D_r swims. In
-  the order first written, any point at deck height anywhere projects onto
-  her (case 24).
-  - Else it goes to a cell whose surface is at most a step above it and at
-    most 2 m below it. The score is plan distance, with a drop deeper than
-    a step counting metre for metre, so a point in the air lands on what's
-    under it.
-  - Else it goes to the nearest cell in 3D.
-
-  The bake's seeds are projected the same way. Two plainer rules each
-  failed on camber's hull:
-  - With a symmetric ±step window, a point just over a step above her aft
-    deck snapped to her foredeck 7 m away, which her sheer had brought
-    within a step of it.
-  - With "nearest in plan within the window", a seed over her deck took
-    the bilge under it whenever the nearest deck cell was a cell away. A seed with no kept floor
-  within a step of it keeps the nearest component instead (the property
-  test found this: a 0.59 m post standing on the spawn point).
-- **Erosion has two exact shortcuts before its BFS.**
-  - A disc column with no alive floor fails f; per-row prefix sums answer
-    that in 2K + 1 looks.
-  - In a square window of "plain" columns, f passes outright. Plain means:
-    one alive floor, open sky, all four neighbours connected to it within
-    δ = (step − slope·c√2)/(4K + 2) of its height.
-
-  D_r uses the same row sums. The march's disc gathers are cached per
-  column.
-- **C3** re-marches every non-STEP side over the bake's intervals, as the
-  bake marches, offering the dropped floors as places to come down. A
-  dropped component passes if it is inside her hull, smaller than 0.25 m²,
-  or no such jump reaches it.
-- **C8 as checked:**
-  - no OPEN side;
-  - every WALL to OVERBOARD rises above `step`;
-  - on each side there are WALLs to OVERBOARD a jump clears (173 a side,
-    rise 0.60–0.65).
-
-  14 overboard sides rise above the apex: beside the shrouds' and the
-  backstay's feet, where the wires come down low. You can't jump over the
-  side there, which is right.
-- **The sloop's mesh** has 8,088 cells (12,026 triangles), all one region;
-  2,456 of them have a finite headroom. It drops two components, both
-  inside her: the bilge under the cabin, and a 0.2 m² patch under the
-  sole. (Before the windlass was refitted it had 7,890 cells and dropped
-  four more: the windlass's top, a sliver at the bow, and the whole
-  foredeck beyond the windlass, which nothing checked.)
-
-  Every link lands where asked (C1: 0–3 mm). Every static check holds both
-  on ship.js's triangles (sloop-navmesh.test.js) and on the triangles the
-  page's crew gathered from her loaded GLBs (sailing-run.mjs).
-- **Speed.** The sloop (11,570 triangles) bakes in 80–120 ms in Node at
-  quiet moments, down from 530 ms as first written. That is over the 50 ms
-  aim and under the test's 500 ms limit. In a loaded browser it measured
-  219 ms.
-- **The walker's enumerated cases bake their arenas at 10 cm, not 5.**
-  95 cases then run in under a second. Everything reads the cell size from
-  the mesh's own params; the unit cases and the hull checks run at 5 cm.
-  (The random test they replaced found the seed fallback above on its
-  first run: the "box over the spawn point" arena keeps it covered.)
-- **The browser check uses real keys without pointer lock.** Walking reads
-  only the keys, and each leg's yaw is set by `place`. `lock-shim.js`
-  (the diagnosis' shim) is in the probe page behind `?lock=1`, for the
-  stations work, whose use prompt needs the centre ray.
-- **The bake runs off the frame loop** once she has a mesh, as a
-  `setTimeout`. Her first mesh is baked when first asked for (coming
-  aboard). A walker waiting for it is `boarding`. Meshes are cached by key
-  for the whole page. The key holds object ids, so two identical sloops
-  still bake twice.
-- **The camber hull** (probes/camber-run.mjs: rigged from the bin, drawn a
-  metre long with her bow +X, scaled to 12) bakes 14,370 cells from 5,366
-  triangles, with links for spawn, the three stations and the ladder.
-  C1–C7 and C9 hold; C8 is the sloop's rails.
-
-  C3 failed there until the windlass was refitted (below). Its top
-  (0.68 m²) stood 0.658 m above her curved foredeck, 3 mm under the apex,
-  and was pruned, so C3 ("nothing you could jump to was dropped") caught
-  it. With the compact windlass (0.43 m across) C3 holds there.
-- **The sloop's fittings, refitted for the mesh.** The windlass was 0.92 m
-  across its handles, at z −4.35 where her deck is 2.1 m wide inside the
-  toe rails. A body passing it needed more than the lifelines left, so the
-  foredeck forward of it was a component of its own, pruned (no seed): you
-  couldn't walk to the bow. It is now 0.43 m across and stands at z −3.8.
-  The bake then keeps the foredeck to z −5.18, as on her bare hull, and
-  still does at r 0.27 (C7). The mainsheet's traveller moved from z 2.85,
-  where a card table between the benches buried it, to z 3.3, just forward
-  of the boom's end. You stand 0.35 m aft of it (`walker.standOff`), between
-  it and the wheel.
-- **The eye eases across a STEP.** The walker's state is exact, so stepping
-  into or out of the cockpit moves the feet 0.52 m in one frame. `step`
-  returns that jump as `lift`, and crew.js draws the eye with a lag along
-  her up that closes at 5 m/s going up and 3.5 m/s going down
-  (`walk.js easeEye`). Only the camera lags: I and the feet are untouched.
-- **A seat over the crew** (the seats package's body, pushed over
-  `aboard`): standing up drops the seat's eye by a seated eye's height
-  (1.15 m) and projects it (P1); sitting down leaves the walker waiting,
-  without setting her quarter
-  view, so the seat's view takes the camera.
-
+- **Step 6 (N10): the walking text is walk's** (decided unattended
+  (2026-11-17, lane/n10), for the lead): what held for any deck (the mesh,
+  B1–B7, the move, the unit and enumerated cases, C1–C7 and C9) moved to
+  walk's DESIGN, "Foundations", renamed; what is the stock sloop's (the
+  cockpit's STEP, her mesh, C8, the bow, the mainsheet's two rows, her
+  fittings) stays here. The rows `sloop-navmesh.test.js` held for her
+  alone, dropped with it in step 5, are back (step 6's fixes, after
+  review): those that need a bake as her export's `claims`, which walk's
+  `deck-12m.test.js` checks without naming her parts; those that don't
+  in `stand-spots.test.js`, over her drawing. Only the winch stands'
+  facing is gone (a stand spot has none). And in Cadboro Bay and
+  Ucluelet, whose ground walk's column cap refuses, Come aboard waited
+  forever (walk waited for every support's mesh); walk's Decision 43 now
+  walks her deck there, the ground absent until walk bakes in tiles. No back-compat: her parts' traits
+  changed shape, so every example with her in it is republished and its
+  link swapped in the examples folder (the integrator's).

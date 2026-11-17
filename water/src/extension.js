@@ -15,7 +15,8 @@
 //     and is never offered: no other doc reads it, not even when its doc is
 //     the outermost.
 //   - It gives its own stage's parts the contribution `water`: { at(p, {
-//     not }) → reader | null }, which water a point in this stage's frame is
+//     not }) → reader | null }, `not` an id or a list of ids (walk leaves out
+//     every support's water), which water a point in this stage's frame is
 //     in (choose.js), as sailing's ocean shape (convert.js for the world's
 //     open water, bounded.js for a body of this doc), or null.
 //   - Open water may carry a clip (WATER.md, "Clipped open water"): where the
@@ -314,12 +315,13 @@ export default {
       scene = refreshBodies(a === null);
     }
 
-    /** Which water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries: a reader, or null. */
+    /** Which water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries (an object id, or a list of them): a reader, or null. */
     function at(p, { not = null } = {}) {
       refresh();
+      const roots = Array.isArray(not) ? not : [not];
       const list = order.map((id) => {
         const b = bodies.get(id);
-        return { id, box: b.cell.box, A: b.A, carried: isUnder(scene, id, not) };
+        return { id, box: b.cell.box, A: b.A, carried: roots.some((r) => isUnder(scene, id, r)) };
       });
       const c = choose(p, world ? worldHere : null, list);
       if (!c) return null;

@@ -29,6 +29,9 @@ import { twoPeers } from "./real-repo.js";
 import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
+// the walk package's bakes, each with its cost (walk/src/supports.js meshFor), and its invariant asserted
+window.__WALK_BAKES__ = [];
+window.__WALK_ASSERT__ = true;
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -235,7 +238,7 @@ try {
     /** the avatars a view draws (the walk package's world layer) */
     avatars(w) {
       const out = [];
-      for (const g of dbg[w].viewport.layers.get("walk") ?? []) for (const c of g.children) if (c.isGroup) out.push(c.position.toArray().map((v) => +v.toFixed(2)));
+      for (const g of dbg[w].viewport.layers.get("walk.people") ?? []) for (const c of g.children) if (c.isGroup) out.push(c.position.toArray().map((v) => +v.toFixed(2)));
       return out;
     },
     /** the body on top of view w's stack, and the stack (TOOLS.md §4) */

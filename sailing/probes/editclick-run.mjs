@@ -53,7 +53,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "seats", "sailing", "water", "tabletop", "card-table", "keep", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "seats", "sailing", "walk", "water", "tabletop", "card-table", "keep", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-editclick"));
 const MISSES = Number(arg("--misses") ?? 12);
@@ -259,7 +259,7 @@ try {
     const after6 = await state();
     const cr6b = await canvasRect();
     report.numbers.barAboard = { way, after: after6, canvas: [cr6, cr6b] };
-    check("6: a click on it comes aboard: the crew's body, Edit left", after6.body === "aboard" && after6.stack.includes("aboard") && !after6.stack.includes("edit"), after6);
+    check("6: a click on it comes aboard: the crew's body, Edit left", after6.body === "walk" && after6.stack.includes("walk") && !after6.stack.includes("edit"), after6);
     // (its width grows: Edit's side drawer goes with Edit)
     check("6: …and the canvas's top and height stay (the bar stays: Come aboard is declared)", cr6b.top === cr6.top && cr6b.height === cr6.height, { before: cr6, after: cr6b });
   }

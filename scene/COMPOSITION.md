@@ -954,7 +954,7 @@ art and packages.
   steps the sea and the hull, and holds the hull's pose on B's channel.
   G's stage opens with the link and runs tabletop, its rule, the keeper,
   seats and carry. Cards ride the ship; face up is the table's up.
-- Ana walks the deck (the walk body; as built, sailing's `aboard`), looks at p1, and the prompt folds in
+- Ana walks the deck (the walk body, standing on her hull), looks at p1, and the prompt folds in
   G's "Sit as Player 1". F claims `seat:p1` in G and enters G's seat
   body, which rides G's root, over the walk body.
 - The deck waits on G's roster alone. A press on a card goes to G's
@@ -1055,8 +1055,8 @@ ships alone and proves something.
    body's as section 4 says (a seat's ride is the only one while seated,
    Look and Edit ride sailing's base follow), and sitting from walking pushes the
    seat body over the walk body, so `firstPerson` went. Sailing walks her
-   deck in a body of its own (`aboard`), not the walk body (TOOLS.md says
-   why).
+   deck in the walk body too (N10: her hull is a `walk.support`; walk/DESIGN.md,
+   "Standing on supports").
 7. [T] **The clock**: one `"clock"` claim per doc, processes, ordered holds.
    *Built:* see TOOLS.md step 7 and §7's *Built* notes. One clock, one
    stage, until step 12 gives each linked doc its own.

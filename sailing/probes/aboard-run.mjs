@@ -74,7 +74,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "walk/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-aboard"));
 const QUICK = process.argv.includes("--quick");
@@ -415,7 +415,7 @@ try {
     await P("focus('b')");
     // the main hoisted while she's anchored (DESIGN.md, "Leaving the anchor"), so she lies head to wind as it breaks out
     // (0.6 m up the mast, the middle of that look: its foot is 2.47 m from the eye, at the edge of the 2.5 m reach as she heaves)
-    const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.3], -0.8, /Raise sail/, [0, 0.6, 0]);
+    const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.0], -0.5, /Raise sail/, [0, 1.2, 0]); // within walk's 2 m reach (walk/DESIGN.md Q9)
     let raised = false;
     if (atMast) { await b.keyDown("r"); raised = await until("live(__p.ids.rig, 'raised') >= 0.98", 60_000); await b.keyUp("r"); }
     check("8: B raises the sail at anchor, holding R at the mast", atMast && raised, await P("shape().sail"));
@@ -539,7 +539,7 @@ try {
     await b.key("Escape");
     await b.rest(200);
     const stillWalking = await P("walking('a')");
-    await leaveBody("a", "Aboard");
+    await leaveBody("a", "Walk");
     check("9: Escape never leaves the body; the body chip's Leave stops walking", stillWalking && (await until("me('a').playing === false && !__p.walking('a')", 4000)), { me: await P("me('a')"), body: await P("body('a')") });
     await b.rest(600);
     const seat = await P("seatView('p1', 'a')");
@@ -564,7 +564,7 @@ try {
     if (back) await b.key("f");
     await b.rest(600);
     const sat = await P("body('a')");
-    check("10: F sits A down: the seat body over the crew's, the walker waiting", JSON.stringify(sat.stack) === '["look","aboard","seat"]' && !(await P("me('a')")).playing, sat);
+    check("10: F sits A down: the seat body over the crew's, the walker waiting", JSON.stringify(sat.stack) === '["look","walk","seat"]' && !(await P("me('a')")).playing, sat);
     const offered = await hover(ids.hand1, /Stand up/);
     check("10: seated, a look at A's own tray offers Stand up (F)", offered, { prompt: await P("prompt('a')"), hovered: await P("hovered('a')") });
     const told0 = (await P("notices('a')")).length;
@@ -575,7 +575,7 @@ try {
     const wk = await P("walker('a')");
     const tbl = await P(`hullLocal(${J(ids.table)})`);
     const plan = me?.position ? Math.hypot(me.position[0] - tbl[0], me.position[2] - tbl[2]) : null;
-    check("10: Stand up pops the seat: walking on her deck from the seat's eye (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5 && JSON.stringify((await P("body('a')")).stack) === '["look","aboard"]', { me, wk, tbl, plan, body: await P("body('a')") });
+    check("10: Stand up pops the seat: walking on her deck from the seat's eye (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5 && JSON.stringify((await P("body('a')")).stack) === '["look","walk"]', { me, wk, tbl, plan, body: await P("body('a')") });
     // facing the table: the camera looks toward it, across the deck
     const cam = await P("cam('a')");
     const tw = (await P(`worldOf(${J(ids.table)}, 'a')`)).slice(12, 15);

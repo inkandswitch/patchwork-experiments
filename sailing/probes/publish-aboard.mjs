@@ -44,14 +44,14 @@ import { clipProblems } from "./clip-check.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the ship's, and the two her companionway's traits are for (its
-// hatch's slide, its exit); the table's, the seats and the secure deck's are
+// the scene, the ship's, walk's (how people stand on her), and the two her
+// companionway's traits are for (its hatch's slide, its exit); the table's, the seats and the secure deck's are
 // the game's. In a real shell the stage works these out from the registry;
 // the probe page registers each package's plugins from its URL (?urls=), so
 // the stages work them out here too, and the probe checks that what each doc
 // calls for is exactly what is stated here (the stage takes off a listed
 // package nothing in the doc calls for).
-const PACKAGES = ["scene", "sailing", "water", "weather", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "walk", "water", "weather", "joints", "traversal"];
 // The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
 // from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
 // together, so a viewer arriving at the boat is asked for what her linked game runs too.

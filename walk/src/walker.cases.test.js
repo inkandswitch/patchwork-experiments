@@ -10,32 +10,32 @@
 // (a wire at shin height, a low ceiling, a table-high overhang, a box over
 // the spawn point, which the bake's seed must step out of); ramps at 0, 30
 // and 60° facing each of the four ways; thin rods (a post, a rail along x,
-// one along z, at 1 and 3 cm). Then a second ship rafted alongside on each
-// side, touching and 1 m off, with and without her rail, the walker on deck
+// one along z, at 1 and 3 cm). Then a second support rafted alongside on each
+// side, touching and 1 m off, with and without its rail, the walker on it
 // or in the water between them: a swimmer must be clear of both, and a
-// walker who steps across is checked against her triangles.
+// walker who steps across is checked against its triangles.
 //
 // The script: a leg for every combination of forward, strafe, run and jump
 // (3 × 3 × 2 × 2 = 36), each from the start (so the walker stays among the
-// features rather than overboard), 16 steps heading one of the eight ways,
+// features rather than off the edge), 16 steps heading one of the eight ways,
 // dt alternating between the shortest (1/240 s) and the longest (1/20 s)
-// step, under every extreme pose of the ship (moved ±3 m, heaved ±0.5 m,
+// step, under every extreme pose of the support (moved ±3 m, heaved ±0.5 m,
 // heeled ±30°, pitched ±20°, turned ±180°) in turn. Each
 // step checks invariant I and the oracle: the feet within h + 2 mm above a
 // triangle, and no triangle in the body's cylinder above the step (a
-// swimmer: none within r of them in her plan). Every bake also passes
+// swimmer: none within r of them in its plan). Every bake also passes
 // B1, B3, B4 and B5.
 import { describe, it, expect } from "vitest";
 import { checkWalker, spawnOn, step, swimmingAt } from "./walker.js";
 import { checkMesh, indexTriangles, oracle, swimmerClear } from "./navcheck.js";
 import { apply, invert, matrixOf, multiply } from "./frames.js";
-import { DECK } from "./walk.js";
+import { BODY } from "./walk.js";
 import { baked, box, floor, world } from "./test/arena.js";
 
-// The arenas bake at 10 cm, not the deck's 5 cm: a quarter of the columns, so every case fits the
+// The arenas bake at 10 cm, not the body's 5 cm: a quarter of the columns, so every case fits the
 // budget. Nothing in the bake, the walker or the oracle depends on the cell size but through the
 // mesh's own params; the unit cases and the sloop's static checks run at 5 cm.
-const PARAMS = { ...DECK, cell: 0.1 };
+const PARAMS = { ...BODY, cell: 0.1 };
 const cm = (v) => v / 100;
 
 // ─── the arenas (centimetres; the walker spawns at the middle) ──────────────
@@ -66,7 +66,7 @@ const ARENAS = [
   { name: "everything", boxes: Object.values(BOXES).filter((b) => b !== BOXES.overSpawn).concat([{ x: 120, z: -180, w: 60, d: 60, base: 0, h: 30 }]), ramps: [RAMPS[5].ramp, { ...RAMPS[10].ramp, x: 60, z: -190 }], rods: RODS.slice(3).map((r) => r.rod) },
 ];
 
-// a second ship rafted alongside: each side × touching or 1 m off × her rail or none × on deck or in the water
+// a second support rafted alongside: each side × touching or 1 m off × its rail or none × on it or in the water
 const OTHERS = [0, 1, 2, 3].flatMap((side) => [0, 100].flatMap((gap) => [false, true].flatMap((rail) => [false, true].map((wet) => ({ side, gap, slide: 0, dy: 0, turn: 0, rail, wet, along: 0 })))));
 
 // ─── the script ─────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ const POSES = [
 const YAWS = [0, 45, 90, 135, 180, -135, -90, -45];
 const LEG = 16;
 // one leg per combination of keys, each from the start, heading its own way (the yaw turns a
-// quarter of an eighth each step), dt alternating, the ship's pose going through every extreme
+// quarter of an eighth each step), dt alternating, the support's pose going through every extreme
 const LEGS = (() => {
   const out = [];
   for (const f of [1, 0, -1])
@@ -119,7 +119,7 @@ function arena({ boxes, ramps, rods }) {
   return out;
 }
 
-/** The second ship: a 4 × 4 m deck (a rail along her near side, or none), and where she lies in the first one's frame. */
+/** The second support: a 4 × 4 m floor (a rail along its near side, or none), and where it lies in the first one's frame. */
 const OTHER = {};
 function otherOf(o) {
   const key = o.rail ? "rail" : "bare";
@@ -129,7 +129,7 @@ function otherOf(o) {
   }
   const off = 4 + cm(o.gap);
   const [dx, dz] = [[off, cm(o.slide)], [-off, cm(o.slide)], [cm(o.slide), off], [cm(o.slide), -off]][o.side];
-  const turnTo = [0, Math.PI, -Math.PI / 2, Math.PI / 2][o.side]; // her railed side (−X) faces the first ship
+  const turnTo = [0, Math.PI, -Math.PI / 2, Math.PI / 2][o.side]; // its railed side (−X) faces the first one
   const rel = matrixOf({ position: [dx, cm(o.dy), dz], rotation: [0, turnTo + (o.turn * Math.PI) / 180, 0], scale: 1 });
   const mid = 2 + cm(o.gap) / 2;
   const start = [[mid, cm(o.along)], [-mid, cm(o.along)], [cm(o.along), mid], [cm(o.along), -mid]][o.side];
@@ -138,46 +138,47 @@ function otherOf(o) {
 
 const poseOf = (p) => matrixOf({ position: [cm(p.x), cm(p.y), cm(p.z)], rotation: [(p.pitch * Math.PI) / 180, (p.turn * Math.PI) / 180, (p.heel * Math.PI) / 180], scale: 1 });
 
-/** One case: the problems found ([] if none), and how many checks found the walker aboard. */
+/** One case: the problems found ([] if none), and how many checks found the walker on a support. */
 function play(c) {
   const triangles = arena(c);
   const mesh = baked(triangles, [{ kind: "spawn", at: [0, 3, 0] }], PARAMS);
   const bad = checkMesh(mesh).map((m) => `bake: ${m}`);
-  if (bad.length) return { problems: bad, aboard: 0 };
+  if (bad.length) return { problems: bad, onIt: 0 };
   const index = indexTriangles(triangles);
-  const ships = { s: { mesh, M: matrixOf(null), triangles, index } };
+  const supports = { s: { mesh, M: matrixOf(null), triangles, index } };
   const other = c.other ? otherOf(c.other) : null;
-  if (other) ships.t = { mesh: other.mesh, M: other.rel, triangles: other.triangles, index: other.index };
-  let aboard = 0;
+  if (other) supports.t = { mesh: other.mesh, M: other.rel, triangles: other.triangles, index: other.index };
+  let onIt = 0;
   for (const [n, leg] of LEGS.entries()) {
-    ships.s.M = matrixOf(null);
-    if (other) ships.t.M = other.rel;
-    const env = world(ships);
+    supports.s.M = matrixOf(null);
+    if (other) supports.t.M = other.rel;
+    const env = world(supports);
     let st = other?.start ? swimmingAt(env, other.start) : spawnOn(env, "s");
     for (let i = 0; i <= leg.length; i++) {
       const problems = checkWalker(st, env);
       if (st.mode === "swimming") {
-        for (const id of Object.keys(ships)) {
-          const L = apply(invert(env.frame(id)), [st.p[0], env.surface(st.p[0], st.p[1]), st.p[1]]);
-          if (!swimmerClear(ships[id].index, [L[0], L[2]], DECK.radius)) problems.push(`a swimmer within r of ${id} at ${L.map((v) => v.toFixed(3))}`);
+        for (const id of Object.keys(supports)) {
+          const L = apply(invert(env.frame(id)), [st.p[0], env.water(st.p[0], st.p[1]), st.p[1]]);
+          if (!swimmerClear(supports[id].index, [L[0], L[2]], BODY.radius)) problems.push(`a swimmer within r of ${id} at ${L.map((v) => v.toFixed(3))}`);
         }
       } else if (st.mesh) {
-        aboard++;
-        problems.push(...oracle(ships[st.ship].index, st.mesh, st));
+        onIt++;
+        problems.push(...oracle(supports[st.on].index, st.mesh, st));
       }
-      if (problems.length) return { problems: problems.map((m) => `leg ${n} step ${i} (${st.mode}): ${m}`), aboard };
+      if (problems.length) return { problems: problems.map((m) => `leg ${n} step ${i} (${st.mode}): ${m}`), onIt };
       if (i === leg.length) break;
       const k = leg[i];
-      env.ships_.s.M = poseOf(k.pose);
-      if (other) env.ships_.t.M = multiply(env.ships_.s.M, other.rel);
+      env.supports_.s.M = poseOf(k.pose);
+      if (other) env.supports_.t.M = multiply(env.supports_.s.M, other.rel);
       st = step(st, { forward: k.f, strafe: k.s, run: k.run, jump: k.jump }, (k.yaw * Math.PI) / 180, k.dt / 240, env).state;
     }
   }
-  return { problems: [], aboard };
+  return { problems: [], onIt };
 }
 
-// Every arena twice: its edges where they're written, on the 10 cm cells' lines (which is where the
-// bake's gap shows, below), and moved 3 mm off them, where a feature usually is.
+// Every arena twice: its edges where they're written, on the 10 cm cells' lines (where a side lies
+// on the boundary of two columns, and makes a floor in neither but its own: the bake's step 2), and
+// moved 3 mm off them, where a feature usually is.
 const OFF = 0.3;
 const offGrid = (a) => ({
   ...a,
@@ -190,26 +191,16 @@ const offGrid = (a) => ({
 const CASES = [
   ...ARENAS.map((a) => ({ ...a, other: null })),
   ...ARENAS.map((a) => ({ ...offGrid(a), other: null })),
-  ...OTHERS.map((o) => ({ name: `rafted: side ${o.side}, ${o.gap} cm off, ${o.rail ? "her rail" : "no rail"}, ${o.wet ? "in the water" : "on deck"}`, boxes: [], ramps: [], rods: [], other: o })),
-  // the most crowded deck with a ship alongside, the walker starting in the water between them
+  ...OTHERS.map((o) => ({ name: `rafted: side ${o.side}, ${o.gap} cm off, ${o.rail ? "its rail" : "no rail"}, ${o.wet ? "in the water" : "on deck"}`, boxes: [], ramps: [], rods: [], other: o })),
+  // the most crowded floor with a support alongside, the walker starting in the water between them
   { ...ARENAS.at(-1), name: "everything, rafted touching, in the water", other: OTHERS.find((o) => o.side === 0 && o.gap === 0 && o.rail && o.wet) },
 ];
 
-// What these cases found and nobody has fixed yet, by case name: the test
-// asks that exactly these fail, so a fix (or a new failure) shows here.
-// All three are one gap in the bake: a box's or ramp's side lying exactly on
-// a line between 10 cm columns also makes a cell at its height in the
-// column outside it (the column's square is closed, and the triangle
-// touches it along that line), so the walker can stand on that cell up to
-// a column's width beyond the edge: the lip's 1 cm, the crate's 45 cm and
-// the ramp's height, over the floor. Moved 3 mm off the lines, every
-// arena passes. Found by these cases on 2026-11-14; the seeded random test
-// they replaced never walked onto such a cell. Fix in the bake (a triangle
-// must cover part of a column's open square to make a cell there), then
-// empty this set (FOLLOWUPS "Final fixer").
-const KNOWN_GAPS = new Set(["lip", "crate", "ramp 30° facing 0"]);
-
 describe("the walker, over every arena feature and every kind of step", () => {
+  it("every case has a name of its own, so a failure names its row", () => {
+    expect(new Set(CASES.map((c) => c.name)).size).toBe(CASES.length);
+  });
+
   it("the legs cover every key combination, every heading, both ends of dt and every pose", () => {
     const steps = LEGS.flat();
     expect([LEGS.length, steps.length]).toEqual([36, 36 * LEG]);
@@ -225,18 +216,15 @@ describe("the walker, over every arena feature and every kind of step", () => {
     () => {
       const t0 = performance.now();
       const failed = [];
-      const gaps = [];
       const ashore = [];
       for (const c of CASES) {
-        const { problems: bad, aboard } = play(c);
-        if (KNOWN_GAPS.has(c.name)) gaps.push([c.name, bad.length > 0]);
-        else if (bad.length) failed.push(`${c.name}: ${bad.slice(0, 3).join("; ")}`);
-        // a case that starts on deck spends most of its checks aboard, among the features
-        else if (!c.other?.wet && aboard < 0.75 * LEGS.length * (LEG + 1)) ashore.push(`${c.name}: aboard ${aboard}`);
+        const { problems: bad, onIt } = play(c);
+        if (bad.length) failed.push(`${c.name}: ${bad.slice(0, 3).join("; ")}`);
+        // a case that starts on a support spends most of its checks on it, among the features
+        else if (!c.other?.wet && onIt < 0.75 * LEGS.length * (LEG + 1)) ashore.push(`${c.name}: onIt ${onIt}`);
       }
       expect(ashore).toEqual([]);
       expect(failed).toEqual([]);
-      expect(gaps).toEqual([...KNOWN_GAPS].map((name) => [name, true]));
       // a quiet machine runs these in a few seconds; this only catches something pathological
       expect(performance.now() - t0).toBeLessThan(60_000);
     },

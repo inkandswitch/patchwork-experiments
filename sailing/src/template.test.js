@@ -13,6 +13,12 @@ const fakeScene = (doc, o) => fakeDrop(doc, o);
 /** The islet's mesh as it is drawn (every primitive: the rock and the lighthouse). */
 const ISLET_MESH = partMeshes("islet").flatMap((m) => m.primitives);
 
+/** An object's own traits but walk's (crew.test.js pins those). */
+const own = (traits) => {
+  const out = Object.fromEntries(Object.entries(traits ?? {}).filter(([k]) => !k.startsWith("walk.")));
+  return Object.keys(out).length ? out : undefined;
+};
+
 describe("the islet's reach is the mesh's", () => {
   it("ISLET_REACH (24 m × 1.3, 31.2) is at least the farthest vertex of the drawn islet from its middle", () => {
     expect(ISLET_REACH).toBeCloseTo(31.2, 9);
@@ -64,8 +70,8 @@ describe("the Ship at sea template", () => {
       ["anchor", "companionway", "greenBuoy", "hatch", "hull", "islet", "jib", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "winch", "windlass"].map((k) => `sailing/${k}@${{ hull: 5, rig: 4, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 }[k] ?? 1}`),
     );
     expect(calls.created).toHaveLength(15);
-    // every object but the Sea (its shape is its trait's data: no source)
-    const objects = Object.values(doc.objects).filter((o) => o.kind !== "group" && !o.traits?.water);
+    // every object but the Sea (its shape is its trait's data: no source) and her spawn point (walk's: a place, no model)
+    const objects = Object.values(doc.objects).filter((o) => o.kind !== "group" && !o.traits?.water && !o.traits?.["walk.spawn"]);
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) {
       expect(urls.has(o.sourceUrl)).toBe(true);
@@ -97,11 +103,11 @@ describe("the Ship at sea template", () => {
     expect(byName["Boom and sail"].parent).toBe(ids.Mast);
     expect(byName.Anchor.parent).toBe(ids.Windlass);
     // she's under way: the sail up and drawing, the anchor up
-    expect(byName["Boom and sail"].traits).toEqual({ "sailing.sail": { raised: 1, sheet: 0.5 } });
-    expect(byName.Wheel.traits).toEqual({ "sailing.helm": { angle: 0 } });
-    expect(byName.Windlass.traits).toEqual({ "sailing.anchor": { down: false, rode: 0 } });
-    expect(byName.Anchor.traits).toEqual({ "sailing.hook": {} });
-    expect(byName.Mast.traits).toBeUndefined();
+    expect(own(byName["Boom and sail"].traits)).toEqual({ "sailing.sail": { raised: 1, sheet: 0.5 } });
+    expect(own(byName.Wheel.traits)).toEqual({ "sailing.helm": { angle: 0 } });
+    expect(own(byName.Windlass.traits)).toEqual({ "sailing.anchor": { down: false, rode: 0 } });
+    expect(own(byName.Anchor.traits)).toEqual({ "sailing.hook": {} });
+    expect(own(byName.Mast.traits)).toBeUndefined();
     // transforms in the frame each hangs in, adding up to where FIT puts them on the hull
     const near = (a, b) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 9));
     near(byName.Wheel.transform.position, FIT.wheel.position);

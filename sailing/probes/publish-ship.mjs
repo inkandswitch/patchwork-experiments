@@ -46,7 +46,7 @@ if (!DRY) console.log(`connected to ${SYNC}`);
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
 // stage works these out from the registry; here they're stated (joints and
 // traversal for the sloop's companionway: its hatch's slide, its exit)
-const PACKAGES = ["scene", "sailing", "water", "weather", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "walk", "water", "weather", "joints", "traversal"];
 const scene = await repo.create2(emptyScene({ title: TITLE, patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
 
 // ─── ctx.file, as the stage's sceneFile (scene/src/stage/stage.js) ──────────

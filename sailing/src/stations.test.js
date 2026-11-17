@@ -8,6 +8,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { FAR, FURL_RATE, RAISE_RATE, RODE, STEP_S, WINCH_RATE, approach, gridIndex, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within, worldSteps } from "./stations.js";
 import { REACH } from "./crew.js";
+import { sloopObjects } from "./parts.js";
 
 describe("reach", () => {
   it("is within the body's reach of the eye (the crew's: 2.5 m)", () => {
@@ -267,8 +268,8 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
       board: {},
       // the jib under the mast, and its winches by the cockpit (the starboard one under the port, as the part puts them)
       jib: { traits: { "sailing.jib": { sheet: 0.5, held: null, furl: 0 } } },
-      winchP: { traits: { "sailing.winch": { sail: "jib", side: "port", stand: [0.73, -0.51, 0] } } },
-      winchS: { traits: { "sailing.winch": { sail: "jib", side: "starboard", stand: [-0.73, -0.51, 0] } } },
+      winchP: { traits: { "sailing.winch": { sail: "jib", side: "port" } } },
+      winchS: { traits: { "sailing.winch": { sail: "jib", side: "starboard" } } },
     },
     // the boom and sail hang from the mast, as the sloop's parts put them
     parents: new Map([["wheel", "hull"], ["rig", rehung ? "hull" : "mast"], ["sheet", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"], ["jib", "mast"], ["winchP", "hull"], ["winchS", "winchP"]]),
@@ -338,7 +339,6 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
         s.leave = leave;
         return leave;
       },
-      board: vi.fn(),
       start: vi.fn(),
     },
   };
@@ -550,7 +550,7 @@ describe("the commands", () => {
   it("the mainsheet: F locks you in at it; Q / E trim and hold R hoists, each under the sail's claim; F leaves", () => {
     const s = stage();
     s.cmd("mainsheet").run("sheet");
-    expect(s.taken.id).toBe("sheet"); // its stand spot, in her navmesh
+    expect(s.taken.id).toBe("sheet"); // its stand spot (walk.stand)
     expect(s.claims.sheet?.mine).toBe(true);
     const h = s.taken.handlers;
     expect(h.hint()).toBe("Q / E sheet 50% · hold R lower sail · F leave · sail 100%");
@@ -684,6 +684,30 @@ describe("the commands", () => {
     }
     expect(s.cmd("haul").state("board", near)).toBe(null);
   });
+
+  // one claim says who stands at a station: the one its take verb holds while you're there, which its
+  // stand spot (parts.js walk.stand) names for walk.people to draw you by
+  const STAND_CLAIM = (() => {
+    const by = {};
+    let n = 0;
+    for (const [, o] of sloopObjects({ position: [0, 0, 0], yaw: 0 }, new Proxy({}, { get: () => ({ url: "automerge:f", hint: null }) }), (p) => `${p}${++n}`)) {
+      const t = o.traits ?? {};
+      const kind = t["sailing.helm"] ? "helm" : t["sailing.mainsheet"] ? "mainsheet" : t["sailing.sail"] ? "halyard" : t["sailing.winch"]?.side === "port" ? "winch" : null;
+      if (kind) by[kind] = t["walk.stand"]?.claim;
+    }
+    return by;
+  })();
+  for (const [verb, target, holder] of [["helm", "wheel", "wheel"], ["mainsheet", "sheet", "sheet"], ["halyard", "mast", "rig"], ["winch", "winchP", "winchP"]])
+    it(`${verb}: taking it holds the claim its stand spot names, on the object that carries it, for as long as you stand there`, () => {
+      const s = stage();
+      s.cmd(verb).run(target);
+      expect(s.taken?.id).toBe(holder);
+      const kind = STAND_CLAIM[verb];
+      expect(typeof kind).toBe("string");
+      expect(s.api.claimedBy(holder, kind)?.mine).toBe(true);
+      s.leave();
+      expect(s.api.claimedBy(holder, kind)).toBe(null);
+    });
 
   it("the rig rehung under the hull beside the mast: only the mast's tag (the bin's) makes it the mast; a table never is", () => {
     const s = stage({ rehung: true });
@@ -1010,19 +1034,6 @@ describe("the commands", () => {
     expect(id).toBe("windlass");
     // where it lies is the simulator's to work out and write
     expect(f).toEqual({ down: true, rode: RODE });
-  });
-
-  it("the ladder: Climb aboard only when you're swimming within reach, looking at it or the hull", () => {
-    const s = stage();
-    const near = s.look([2.4, 0.3, 0.4]);
-    expect(s.cmd("climb").state("ladder", near)).toBe(null);
-    s.me.swimming = true;
-    expect(s.cmd("climb").state("ladder", near)).toEqual({});
-    expect(s.cmd("climb").state("hull", near)).toEqual({});
-    expect(s.cmd("climb").state("ladder", s.look([8, 0.3, 0.4]))).toBe(null);
-    expect(s.cmd("climb").state("wheel", near)).toBe(null);
-    s.cmd("climb").run("ladder");
-    expect(s.ctx.crew.board).toHaveBeenCalledWith("hull");
   });
 
   it("Come aboard: Enter, and a button on the stage's bar of tools in every body (show world); for the scene, until you have (S2)", () => {

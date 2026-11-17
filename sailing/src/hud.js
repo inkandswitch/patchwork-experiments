@@ -12,7 +12,8 @@
 // weather comes from); beside it her speed over the ground along her bow,
 // steadied over a second or two (the waves' own surge isn't hers), her
 // heading, the true wind's speed and direction, the sail and the anchor.
-// It only reads: ctx.crew.me(), ctx.sim.read(), the stations' values and the
+// The walking keys it shows are the ones the top body declares (walk's own).
+// It only reads: ctx.crew.me() (the top body and walk's avatar here), ctx.sim.read(), the stations' values and the
 // wind. The model is pure (hudModel); the DOM is touched only when a value
 // changes.
 
@@ -22,7 +23,26 @@ import { trimOf } from "./trim.js";
 
 const KNOTS = 1.943844; // per m/s
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-const WALK_KEYS = "WASD walk · Shift run · Space jump · F use";
+/** Short names for the key codes bodies declare that aren't a letter or a digit. */
+const CAPS = Object.freeze({ ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", ShiftLeft: "Shift", ShiftRight: "Shift", Space: "Space" });
+const capOf = (code) => CAPS[code] ?? (/^Key[A-Z]$/.test(code) ? code.slice(3) : /^Digit[0-9]$/.test(code) ? code.slice(5) : code);
+
+/**
+ * A body's declared keys ({ code, label }, scene/TOOLS.md §4) as one hint:
+ * each label once, in the order declared, after its keys ("W/↑ Forward ·
+ * … · Shift Run"). Pure.
+ */
+export function keysHint(keys) {
+  const by = new Map();
+  for (const k of Array.isArray(keys) ? keys : []) {
+    if (typeof k?.code !== "string") continue;
+    const label = String(k.label ?? "");
+    const caps = by.get(label) ?? [];
+    if (!caps.includes(capOf(k.code))) caps.push(capOf(k.code));
+    by.set(label, caps);
+  }
+  return [...by].map(([label, caps]) => `${caps.join("/")} ${label}`.trim()).join(" · ");
+}
 
 /** m/s in knots, to a tenth. */
 export const knots = (ms) => Math.round((Number(ms) || 0) * KNOTS * 10) / 10;
@@ -180,7 +200,10 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
   else if (state === "paused") hint = "Click to carry on";
   else if (me.hint) hint = me.hint;
   else if (me.swimming) hint = "WASD swim · F at the ladder to climb aboard";
-  else hint = me.free ? `Drag to look · ${WALK_KEYS}` : WALK_KEYS;
+  else {
+    const walking = [keysHint(me.keys), "F use"].filter(Boolean).join(" · ");
+    hint = me.free ? `Drag to look · ${walking}` : walking;
+  }
   const kn = read ? knots(speed ?? speedOver(read)) : 0;
   const from = wind ? windFrom(wind) : null;
   // a row per sail where her physics flies them apart

@@ -367,7 +367,7 @@ const MAINSHEET_Z = 3.3;
 // the working winch (to leeward) the main hides the jib's luff from anywhere
 // on its own side on a reach, even at the rail, and from the sole the mast
 // stands in front of it; from the windward deck the eye sees the luff past
-// both, close-hauled to a beam reach (sloop-navmesh.test.js: the eye's ray).
+// both, close-hauled to a beam reach.
 const WINCH_Z = COCKPIT.z0 + 0.3;
 const WINCH_X = COCKPIT.half + 0.15;
 const WINCH_STAND_X = 1.3;
@@ -424,13 +424,8 @@ export const LIFT = Object.freeze({ wheel: WHEEL_AXLE - COCKPIT.floor });
 /** The connector tag each part's stand takes (parts.js gives the parts the same). */
 export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder", mainsheet: "sailing.mainsheet", winch: "sailing.winch", winches: "sailing.winch", companionway: "sailing.companionway", hatch: "sailing.hatch" });
 
-/**
- * A jib winch's sailing.winch trait on one side (−1 port, +1 starboard):
- * where you stand to work it, in its own frame (squared to her body): across
- * the well, WINCH_STAND_X out on the other side, on the side deck (tailing
- * from the high side when it's the working winch).
- */
-export const winchTrait = (side) => ({ sail: "jib", side: side < 0 ? "port" : "starboard", stand: [-side * (WINCH_X + WINCH_STAND_X), Math.round((deckAt(WINCH_STAND_X, WINCH_Z) - FIT.winch.position[1]) * 1e6) / 1e6, 0] });
+/** A jib winch's sailing.winch trait on one side (−1 port, +1 starboard). Where you stand to work it is its walk.stand (standSpot). */
+export const winchTrait = (side) => ({ sail: "jib", side: side < 0 ? "port" : "starboard" });
 
 /**
  * How near (in plan, metres) a part must be put to a stand to go to it, the
@@ -1390,4 +1385,40 @@ export function partGLB(kind) {
   }
   const bytes = encodeGLB({ generator: "patchwork sailing", meshes, ...(part.extras ? { extras: part.extras() } : {}) });
   return { name: part.name, bytes, bounds: computeBounds(flat), triangles };
+}
+
+// ─── Where you stand to work each station (walk's stand spots) ─────────────
+
+/** How far aft of a station's origin you stand to work it (m): the mainsheet's block is at your feet, with the wheel close aft of it. */
+export const STAND_OFF = Object.freeze({ wheel: 0.6, rig: 0.6, windlass: 0.6, mainsheet: 0.35 });
+/** From a ladder's hook inboard to where you come aboard (m). */
+export const INBOARD = 0.5;
+const r9 = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
+
+/**
+ * Where you stand to work a station of the stock sloop, in the frame of the
+ * piece that carries its `walk.stand` (each squared to her body, as the bin
+ * puts it): STAND_OFF aft of the station's origin, on what's drawn there
+ * (deckSurfaceAt: the cockpit's sole, the cabin top, the deck), so the eye a
+ * station puts there is BODY.eye over the deck. The sail's (the rig's: its
+ * doc placement never swings, only its drawn pose does) is aft of the
+ * gooseneck, on the cabin top. A jib winch's (side −1 port, +1 starboard):
+ * across the well, WINCH_STAND_X out on the other side, on the side deck,
+ * tailing from the high side.
+ * @param {"wheel" | "rig" | "windlass" | "mainsheet" | "winch"} kind
+ */
+export function standSpot(kind, side = -1) {
+  if (kind === "winch") {
+    const at = [-side * WINCH_STAND_X, 0, WINCH_Z];
+    return r9([at[0] - side * WINCH_X, deckAt(at[0], at[2]) - FIT.winch.position[1], 0]);
+  }
+  const piece = FIT[kind].position;
+  const x = piece[0], z = piece[2] + STAND_OFF[kind];
+  return r9([x - piece[0], deckSurfaceAt(x, z) - piece[1], z - piece[2]]);
+}
+
+/** Where you come aboard by the stock ladder, in its own frame (hanging outboard, its −X inboard): INBOARD in from its hook, on the deck. */
+export function ladderTop() {
+  const [x, y, z] = FIT.ladder.position;
+  return r9([-INBOARD, deckSurfaceAt(x - INBOARD, z) - y, 0]);
 }

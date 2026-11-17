@@ -59,7 +59,7 @@ import { lockDir } from "./chrome-lock.mjs";
 // and exit). In a real shell the stage works
 // these out from the registry; the probe page has none that says where its
 // plugins come from, so they're stated here.
-const PACKAGES = ["scene", "terrain", "weather", "sailing", "water", "joints", "traversal"];
+const PACKAGES = ["scene", "terrain", "weather", "sailing", "walk", "water", "joints", "traversal"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
