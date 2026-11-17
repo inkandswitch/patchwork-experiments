@@ -6,7 +6,8 @@
 //   node probes/touch-run.mjs [--port 4693] [--cdp 9693] [--show] [--shots <dir>]
 //
 // Enters the body by tapping the chip's menu (no pointer lock is asked for),
-// reads the pad (the arrows' places and the buttons under each layer), holds
+// reads the pad (the arrows' places and the buttons under each layer), opens
+// the chip's menu again over the pad's buttons (each item on top), holds
 // Forward (the body hears W down and up), holds it while another finger
 // drags on the world to look (both at once), holds Run with Forward, presses
 // the wrench's Reload (the tool's, not the body's), carries the block with
@@ -126,6 +127,16 @@ try {
   check("2. the pad shows the body's keys: the arrows' places, then Run, Jump and Q under its name", JSON.stringify(pad) === JSON.stringify({ pad: ["up=Forward", "left=Left", "down=Back", "right=Right"], buttons: [["Walkish", "Run", "Jump", "Q"]] }), pad);
   await shot("1-pad");
   await heard();
+
+  // 2b. the chip's menu opens over the pad's buttons: every item takes the finger where it's drawn, no pad key beneath
+  await touch.tap(await P("chip()"));
+  await b.until(`window.__probe.menuItem("Walkish")`, { frames: 60, what: "the chip's menu" });
+  const items = await b.js(`[...document.querySelectorAll(".body-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { text: e.textContent, top: top === e || e.contains(top) ? "item" : (top?.className ?? null) }; })`);
+  const under = await b.js(`(() => { const m = document.querySelector(".body-menu").getBoundingClientRect(), k = document.querySelector(".touch-buttons").getBoundingClientRect(); return m.bottom > k.top && k.bottom > m.top && m.right > k.left && k.right > m.left; })()`);
+  await touch.tap(await P('menuItem("Walkish")'));
+  await b.rest(100);
+  const afterItem = { menu: await b.js(`!!document.querySelector(".body-menu")`), body: (await P("view()")).body, heard: await heard() };
+  check("2b. the chip's menu over the pad's buttons: every item is on top where it's drawn, and a tap on one is the item's, not a pad key's", under && items.length >= 3 && items.every((i) => i.top === "item") && !afterItem.menu && afterItem.body === "walkish" && afterItem.heard.length === 0, { under, items, afterItem });
 
   // 3. hold Forward
   const fwd = await P('control("Forward")');

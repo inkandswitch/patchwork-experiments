@@ -1601,6 +1601,16 @@ The project lead decided the five open questions on 2026-11-12.
    should declare a `label` of its own (as a body has a label and a tool
    a name) to name its group, or the group take its extension's name
    (which `local.running` would then have to carry).
+   The pad lies under every other part's overlay (its own at z-index 1,
+   theirs at 2; decided unattended (2026-11-16, lane/n9 integration), for
+   the lead): before, it came above whichever overlays had installed
+   before it, so the chip's menu opened under the pad's buttons and a tap
+   on Edit or on the current body pressed Jump or Run (found at
+   integration; `probes/touch-run.mjs` 2b fails on the lane's dist). A
+   menu or prompt drawn over the pad now takes the finger where it is
+   drawn. The cost: anything another part draws over the pad hides it
+   (sailing's HUD panel at bottom left, which lets the pointer through, so
+   the arrows still work unseen; COMPOSITION "Waiting on the lead").
 14. **A lock body under touch looks from its eye** (decided unattended
    (2026-11-16, lane/n9), for the lead). A finger never locks the pointer
    (Decisions 11) and never hovers (it only presses and drags, and the
@@ -1683,3 +1693,21 @@ The project lead decided the five open questions on 2026-11-12.
    until that viewer presses again, where before every lift cleared it;
    and it outlives a body change (Look, walk, Look again brings the old
    tapped prompt back).
+   Proves, for Decisions 11 to 15 together: merged into scene-stage
+   (f66a7d0a; the lane's Decisions 9 to 13 renumbered after the drawer
+   grip's 9 and the world bar's 10) and checked in the real Patchwork on
+   2026-11-16 under Chrome's touch emulation (recovered/publish/
+   touch-check.mjs, 14/14 on scratch copies of the Quiet games room and
+   Lost Cities aboard): the room arrives with `pointer.touch`; a tap on the
+   chip, then Walk, walks with the lock never asked for; the pad shows
+   Forward, Left, Back, Right in its places and Run, Jump; Forward held
+   moves the eye, and with a second finger dragging on the world it both
+   moves and turns. Aboard, the bar's Come aboard by a tap; the pad is
+   aboard's; at the wheel the prompt sits in the middle and a tap on Take
+   the helm stands there; Steer to starboard held turns the wheel 0.48 and
+   Steer to port back; Leave leaves; at the windlass a finger on Raise
+   anchor brings the rode from 25 to 18.4 m and it stops when the finger
+   lifts. The published room, boat and game were never written. Locally on
+   the merged tree: scene `probes/touch-run.mjs` 19/19 (2b new: the chip's
+   menu over the pad's buttons), sailing's 11/11, and the mouse probes
+   toolbar-run 28/28 and aboard-run --quick 54/54.
