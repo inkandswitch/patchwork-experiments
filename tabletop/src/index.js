@@ -178,4 +178,341 @@ export const plugins = [
       return game ? parts.gamePart(game) : parts[id];
     },
   })),
+  // ── dice ──
+  {
+    type: "patchwork:datatype",
+    id: "die",
+    name: "Die",
+    icon: "Dice5",
+    async load() {
+      return (await import("./dice/datatype.js")).DieDatatype;
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "die",
+    name: "Die",
+    icon: "Dice5",
+    supportedDatatypes: ["die"],
+    async load() {
+      return (await import("./dice/tool.js")).default;
+    },
+  },
+  {
+    // a die doc → a GLB at real size, its faces drawn, saying what it is in extras.dice (src/die-glb.js)
+    type: "scene:source",
+    id: "die",
+    content: "built",
+    name: "Die",
+    icon: "Dice5",
+    supportedDatatypes: ["die"],
+    params: [],
+    cost: "cheap",
+    // bump when the same die would build to a different GLB
+    version: 1,
+    async load() {
+      return (await import("./dice/source.js")).default;
+    },
+  },
+  {
+    // what makes a scene object a die: Roll, Turn, Roll all, and its panel docked beside the scene (src/extension.js)
+    type: "scene:extension",
+    id: "dice",
+    name: "Dice",
+    traits: ["dice.die"],
+    describes: {
+      "dice.die": {
+        name: "Die",
+        on: "object",
+        blurb: "Press R over it to roll it, T to turn it to its next face; everyone is told what it shows. What it is comes from its own document",
+        // the draw of a throw it leads is about now: a copy starts with none
+        runtime: ["round"],
+      },
+    },
+    drops: ["die"],
+    async load() {
+      return (await import("./dice/extension.js")).default;
+    },
+  },
+  {
+    // dice cups: who may see under each (an audience policy), the dice under them shown as only their
+    // holder's client can know them, and the cup verbs
+    type: "scene:extension",
+    id: "dice.cup",
+    name: "Dice cups",
+    traits: ["dice.cup"],
+    describes: {
+      "dice.cup": {
+        name: "Dice cup",
+        on: "object",
+        blurb: "Covers the dice under it. S shakes it over the dice in front of it (a roll nobody chooses), hold P to peek under your own, L lifts it",
+        fields: [
+          { key: "up", label: "Lifted", kind: "boolean", default: true },
+          { key: "blind", label: "Blind (kept from whoever shook it)", kind: "boolean", default: false },
+        ],
+        // who shook it, what's under it and its draw are about now: a copy starts as nobody's, with nothing shaken
+        runtime: ["holder", "roll", "round"],
+      },
+    },
+    async load() {
+      return (await import("./dice/cup-extension.js")).default;
+    },
+  },
+  {
+    // every roll's draw, by lots between the clients of those present (src/lots-ext.js): it runs wherever there is
+    // a die or a cup, and keeps its rounds in their traits (it describes none of its own), so a member's client
+    // commits and opens whatever its viewer is doing
+    type: "scene:extension",
+    id: "dice.lots",
+    name: "Dice lots",
+    traits: ["dice.die", "dice.cup"],
+    async load() {
+      return (await import("./dice/lots-ext.js")).default;
+    },
+  },
+  {
+    // the game, as data: a tabletop-game, which the tabletop package's game page lists and lays out
+    type: "tabletop:game",
+    id: "liars-dice",
+    name: "Liar's dice",
+    icon: "Dices",
+    players: "2–6",
+    blurb: "The traditional cup-dice game: shake under your cup, peek, bid on all the dice, call a lie, lift.",
+    async load() {
+      return (await import("../games/liars-dice.json", { with: { type: "json" } })).default;
+    },
+  },
+  {
+    type: "scene:template",
+    id: "dice.liars-dice",
+    name: "Liar's dice",
+    icon: "Dices",
+    description: "The traditional cup-dice game (dudo, cacho): six seats, a cup and five dice each, a pool for lost dice. Shake, peek, bid, call, lift",
+    async load() {
+      return (await import("./dice/table.js")).template("liars-dice");
+    },
+  },
+  // the usual dice, in the editor's parts bin (src/parts.js)
+  ...[
+    { id: "die", part: "d6", name: "Die", icon: "Dice5", description: "A six-sided die with spots, 16 mm. Its faces, shape and colours are its own document: open it to change them" },
+    { id: "d4", name: "d4", icon: "Triangle", description: "A four-sided die, read at its top corner" },
+    { id: "d8", name: "d8", icon: "Diamond", description: "An eight-sided die" },
+    { id: "d10", name: "d10", icon: "Diamond", description: "A ten-sided die, 0 to 9" },
+    { id: "percentile", name: "Percentile dice", icon: "Percent", description: "A d10 and its tens (00 to 90), in one group to roll together" },
+    { id: "d12", name: "d12", icon: "Pentagon", description: "A twelve-sided die" },
+    { id: "d20", name: "d20", icon: "Hexagon", description: "A twenty-sided die" },
+    { id: "coin", name: "Coin", icon: "Circle", description: "A coin: heads or tails" },
+    { id: "plus-minus", part: "plusMinus", name: "Plus/minus dice", icon: "Diff", description: "Four dice with two plus, two minus and two blank faces each, in one group to roll together" },
+    { id: "doubling", name: "Doubling cube", icon: "Box", description: "2 to 64, turned by hand to the next face; never rolled" },
+  ].map(({ id, part, ...p }) => ({
+    type: "scene:part",
+    id: `dice.${id}`,
+    category: "Dice",
+    traits: ["dice.die"],
+    ...p,
+    async load() {
+      return (await import("./dice/parts.js"))[part ?? id];
+    },
+  })),
+  // cups, after the dice: a cup with its dice, and a pool (src/table.js)
+  {
+    type: "scene:part",
+    id: "dice.cup",
+    name: "Dice cup",
+    icon: "CupSoda",
+    category: "Dice",
+    description: "A dice cup, 9 cm tall, with five dice in front of it: shake it over them, peek under it, lift it",
+    traits: ["dice.cup", "dice.die"],
+    async load() {
+      return (await import("./dice/table.js")).cupPart;
+    },
+  },
+  {
+    type: "scene:part",
+    id: "dice.pool",
+    name: "Dice pool",
+    icon: "Circle",
+    category: "Dice",
+    description: "A shallow dish for dice out of play",
+    async load() {
+      return (await import("./dice/table.js")).poolPart;
+    },
+  },
+  // ── bag ──
+  {
+    type: "patchwork:datatype",
+    id: "bag",
+    name: "Token bag",
+    icon: "ShoppingBag",
+    async load() {
+      return (await import("./bag/datatype.js")).BagDatatype;
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "bag",
+    name: "Token bag",
+    icon: "ShoppingBag",
+    supportedDatatypes: ["bag"],
+    async load() {
+      return (await import("./bag/tool.js")).default;
+    },
+  },
+  {
+    type: "scene:source",
+    id: "bag-sack",
+    content: "built",
+    name: "Token bag",
+    icon: "ShoppingBag",
+    supportedDatatypes: ["bag"],
+    cost: "cheap",
+    version: 1,
+    async load() {
+      return (await import("./bag/source.js")).default;
+    },
+  },
+  {
+    type: "scene:part",
+    id: "bag.token-bag",
+    name: "Token bag",
+    icon: "ShoppingBag",
+    category: "Containers",
+    description: "A drawstring bag that holds things out of sight: drop them on it to put them in, press D over it to draw one",
+    traits: ["bag.container"],
+    async load() {
+      return (await import("./bag/part.js")).tokenBag;
+    },
+  },
+  {
+    // what makes an object a container: things dropped on it go in, Draw
+    // takes one out into your hand, and it shows how many it holds
+    // (extension.js; the scene's STAGE.md is the contract it is built from)
+    type: "scene:extension",
+    id: "bag",
+    name: "Bag",
+    traits: ["bag.container"],
+    // how something setting a scene up makes a bag already holding things: this module's fill (fill.js)
+    container: "bag",
+    describes: {
+      "bag.container": {
+        name: "Container",
+        on: "object",
+        blurb: "Holds other objects out of the scene, in a bag document: drop things on it to put them in, Draw (D) to take one out. Anyone who opens that document can read what is inside",
+        // any object may be a container (a box lid, a cup): the document that keeps its contents
+        fields: [{ key: "doc", label: "Contents (a bag document)", kind: "url" }],
+      },
+    },
+    // a bag document dropped into a scene becomes a bag in it
+    // carrying is the scene's, by the `scene.carry` trait; the use prompt
+    // shows Draw over a bag; the menu has the verbs without a key
+    drops: ["bag"],
+    async load() {
+      return (await import("./bag/extension.js")).default;
+    },
+  },
+  // ── tts-import ──
+  {
+    type: "patchwork:datatype",
+    id: "tts-import",
+    name: "Tabletop Simulator import",
+    icon: "PackageOpen",
+    async load() {
+      return (await import("./tts/datatype.js")).TtsImportDatatype;
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "tts-import",
+    name: "Tabletop Simulator import",
+    icon: "PackageOpen",
+    supportedDatatypes: ["tts-import"],
+    async load() {
+      return (await import("./tts/tool.js")).default;
+    },
+  },
+  // ── keep ──
+  {
+    type: "scene:extension",
+    id: "keep.plain",
+    name: "Plain keeper",
+    traits: ["keep.plain"],
+    keeper: "plain",
+    // by its trait alone: what is kept stays kept whatever the viewer is doing
+    describes: {
+      "keep.plain": {
+        name: "Kept (in the open)",
+        on: "object",
+        blurb: "What this really is lives in a container document and is shown only to whoever may see it here. Anyone who opens that document can read it: a table, not a vault",
+        // which slot of which container it is, is about this object in this scene: a copy has neither
+        runtime: true,
+        fields: [
+          { key: "by", label: "Container", kind: "url", copy: "drop" },
+          { key: "slot", label: "Slot", kind: "integer", default: 0, min: 0 },
+        ],
+      },
+    },
+    async load() {
+      return (await import("./keep/plain-keeper.js")).default;
+    },
+  },
+  {
+    type: "patchwork:datatype",
+    id: "keep-plain",
+    name: "Kept things",
+    icon: "Archive",
+    unlisted: true, // made by whatever sets a scene up (contain), not from a menu
+    async load() {
+      return (await import("./keep/plain.js")).PlainDatatype;
+    },
+  },
+  // ── card-table ──
+  {
+    type: "patchwork:datatype",
+    id: "secure-deck",
+    name: "Secure deck",
+    icon: "Layers",
+    unlisted: true, // made by whatever sets a scene up (keeper.js contain), not from a menu
+    async load() {
+      return (await import("./keep/datatype.js")).SecureDeckDatatype;
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "secure-deck",
+    name: "Secure deck",
+    icon: "Layers",
+    supportedDatatypes: ["secure-deck"],
+    async load() {
+      return (await import("./keep/tool.js")).default;
+    },
+  },
+  {
+    // The joint keeper: what an object really is, kept in a secure deck the
+    // seated players shuffle between them, shown to whoever the scene says
+    // may see it (src/keeper.js). An ordinary scene extension, attached to
+    // objects by its own trait; `keeper: "joint"` is how setup code finds it
+    // (and its module's `contain`) in the scene:extension registry.
+    type: "scene:extension",
+    id: "card-table",
+    name: "Joint keeper",
+    traits: ["card-table.kept"],
+    keeper: "joint",
+    // by its trait alone: what is kept stays kept, and keys go on being handed over, whatever the viewer is doing
+    describes: {
+      "card-table.kept": {
+        name: "Kept (jointly)",
+        on: "object",
+        blurb: "What this really is lives in a secure deck that the seated players shuffle between them: nobody knows which is where, and it is shown only to whoever may see it here",
+        // which position of which deck it is, is about this object in this scene: a copy has neither
+        runtime: true,
+        fields: [
+          { key: "by", label: "Deck", kind: "url", copy: "drop" },
+          { key: "slot", label: "Position", kind: "integer", default: 0, min: 0 },
+        ],
+      },
+    },
+    async load() {
+      return (await import("./keep/joint-keeper.js")).default;
+    },
+  },
 ];
