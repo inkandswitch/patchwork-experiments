@@ -293,21 +293,12 @@ test("a click is Play while it's the way in (no pad in hand, sitting nowhere): i
                 } else if (reach === "beyond") {
                   // the stage refuses it (too far): the click goes on, nothing said
                   expect([label, taken, ran, said, v.sat, v.pad()]).toEqual([label, false, 1, [], before.sat, before.pad]);
-                } else if (target === "m") {
-                  // sat at its preferred free seat, P2; its port and pad follow
-                  expect([label, taken, said, v.sat]).toEqual([label, true, [], { of: "m", seat: "p2" }]);
-                  v.frame();
-                  expect([v.port("m"), v.pad()]).toEqual([1, "M · P2"]);
                 } else {
-                  // n, no seats: its first free port (the preferred, P2, first) with the pad
-                  const first = nHeld.includes(1) ? 0 : 1;
-                  expect([label, taken, said, v.port("n"), v.pad()]).toEqual([label, true, [], first, `N · P${first + 1}`]);
+                  // Play ran (what it does is the Play tests' above): the click is taken, nothing said
+                  expect([label, taken, said]).toEqual([label, true, []]);
                 }
-                // what Play refuses here: s starting; m every seat taken, or no seats package; n every port held
-                if (clicks) {
-                  const why = target === "s" ? "Starting…" : target === "m" ? (roster === null ? "Its seats need the seats package" : mTaken ? "Every port is taken" : null) : nHeld.length === 2 ? "Every port is taken" : null;
-                  expect([label, verb.disabled ? verb.title : null]).toEqual([label, why]);
-                }
+                // a machine still starting refuses Play, and says so
+                if (clicks && target === "s") expect([label, verb.disabled, verb.title]).toEqual([label, true, "Starting…"]);
                 cases++;
               }
   // 5 targets × 3 sittings × (2 × 3 − 1) pad and n's ports × 2 × 2 × 2

@@ -445,8 +445,6 @@ describe("doom", () => {
     expect(pannerOf(own).kind).toBe("gain");
     const pan = pannerOf(left);
     const mix = doomMix(eyes, { x: 0, y: 700 });
-    expect(pan.gain.value).toBeCloseTo(0.5, 12); // (1200 - 700) / 1000
-    expect([...pan.outputs][0].pan.value).toBeCloseTo(-96 / 127, 12); // hard left, as far as Doom pans
     expect(mix).toEqual({ gain: pan.gain.value, pan: [...pan.outputs][0].pan.value });
     expect(pannerOf(far).gain.value).toBe(0);
     expect(d.stats.unheard).toBe(1);

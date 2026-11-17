@@ -122,6 +122,29 @@ describe("snes engine on Unarmed", () => {
     expect(cases).toBe(5 * CHECKPOINTS.length);
   }, SLOW);
 
+  test.skipIf(!FULL)("a snapshot taken mid-rollback is the reference's, and goes on as the reference does in a separately compiled engine", async () => {
+    // A peer that played the two-player script (a different game from frame
+    // 780) rolls back to 750 and re-steps 150 frames of the truth: M is its
+    // state mid-rollback.
+    const peer = machine.boot(rom);
+    run(peer, TWO_PLAYERS, 0, 1000);
+    expect(peer.hash()).not.toBe(hashes[1000]);
+    peer.restore(snapshots.get(750));
+    run(peer, FOUR_PLAYERS, 750, 900);
+    const M = peer.snapshot();
+    expect(same(M, snapshots.get(900))).toBe(true);
+    const truth = machine.boot(rom);
+    run(truth, FOUR_PLAYERS, 0, 900);
+    const e = (await compile(wasm)).boot(rom);
+    run(e, TWO_PLAYERS, 0, 50);
+    e.restore(M);
+    const [f, g] = [e.frame(), truth.frame()];
+    expect([f.width, f.height]).toEqual([g.width, g.height]);
+    expect(same(new Uint8Array(f.rgba.buffer, f.rgba.byteOffset, f.rgba.byteLength), new Uint8Array(g.rgba.buffer, g.rgba.byteOffset, g.rgba.byteLength))).toBe(true);
+    run(e, FOUR_PLAYERS, 900, FRAMES);
+    expect(e.hash()).toBe(hashes[FRAMES]);
+  }, SLOW);
+
   // The HUD's top row has a head per gladiator (yellow, green, pink, blue).
   const HEADS = [
     [30, 0xdea508],

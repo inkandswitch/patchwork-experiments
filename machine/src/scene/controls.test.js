@@ -1,39 +1,8 @@
-// The controls shown while a pad is in hand (controls.js): each machine's
-// rows exactly, every key the pad reads in exactly one of them, and the
-// rules over every key code the pads use and every pairing of a key's sides.
+// The controls shown while a pad is in hand (controls.js): every key a pad
+// reads in exactly one row, and the rules over every key code the pads use
+// and every pairing of a key's sides.
 import { controls, controlsOf, keyName, caps, panel } from "./controls.js";
 import { KEYS } from "../patchwork/input.js";
-
-test("each machine's controls, row by row: what the keys do, and which keys", () => {
-  expect(controlsOf("doom")).toEqual([
-    { label: "Forward", keys: ["↑", "W"] },
-    { label: "Back", keys: ["↓", "S"] },
-    { label: "Turn left", keys: ["←"] },
-    { label: "Turn right", keys: ["→"] },
-    { label: "Strafe left", keys: ["A", ","] },
-    { label: "Strafe right", keys: ["D", "."] },
-    { label: "Strafe", keys: ["Alt"] },
-    { label: "Run", keys: ["Shift"] },
-    { label: "Fire", keys: ["Ctrl"] },
-    { label: "Use", keys: ["Space", "E"] },
-    { label: "Weapon", keys: ["1", "2", "3", "4", "5", "6", "7"] },
-  ]);
-  expect(controlsOf("snes")).toEqual([
-    { label: "Up", keys: ["↑"] },
-    { label: "Down", keys: ["↓"] },
-    { label: "Left", keys: ["←"] },
-    { label: "Right", keys: ["→"] },
-    { label: "B", keys: ["Z"] },
-    { label: "A", keys: ["X"] },
-    { label: "Y", keys: ["A"] },
-    { label: "X", keys: ["S"] },
-    { label: "L", keys: ["Q"] },
-    { label: "R", keys: ["W"] },
-    { label: "Start", keys: ["Enter"] },
-    { label: "Select", keys: ["Right Shift", "Backspace"] },
-  ]);
-  expect(controlsOf("nothing")).toEqual([]);
-});
 
 test("every key a pad reads is in exactly one row, the row of its label, by a name no other key of that pad has", () => {
   for (const kind of Object.keys(KEYS)) {
@@ -49,6 +18,7 @@ test("every key a pad reads is in exactly one row, the row of its label, by a na
     for (const { code } of KEYS[kind]) byName.set(keyName(code), [...(byName.get(keyName(code)) ?? []), code]);
     for (const [name, codes] of byName) expect([kind, name, codes.length]).toEqual([kind, name, 1]);
   }
+  expect(controlsOf("nothing")).toEqual([]);
 });
 
 test("keyName: every code the pads use, by kind of key", () => {

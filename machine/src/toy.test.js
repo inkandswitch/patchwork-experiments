@@ -3,7 +3,8 @@
 // engine is on before it restores, grows it twice and earlier. For every
 // prior state (each tick of each timeline) and every snapshot of A, restoring
 // and re-stepping must reproduce A exactly from there on: every hash, every
-// output, and the final state byte for byte.
+// output, and the final state byte for byte; into an engine of a separately
+// compiled module as well.
 import { readFileSync } from "node:fs";
 import { compile } from "./engine.js";
 import { pages, hashSnapshot } from "./wasm-state.js";
@@ -30,6 +31,7 @@ const B = script((t, p) => [
 ]);
 
 const machine = await compile(wasm);
+const apart = await compile(wasm); // a separately compiled module
 
 // Byte equality; expect().toEqual walks a large typed array element by element.
 const bytes = (x) => new Uint8Array(x.buffer, x.byteOffset, x.byteLength);
@@ -88,6 +90,16 @@ test("every restore, from every prior state, re-steps into the reference", () =>
         expect(same(e.snapshot(), ref.states[N])).toBe(true);
       }
     }
+  }
+  // and into an engine of a separately compiled module
+  for (let s = 0; s <= N; s++) {
+    const e = apart.boot(content);
+    const here = machine.boot(content);
+    e.restore(ref.states[s]);
+    here.restore(ref.states[s]);
+    expect(sameFrame(e.frame(1), here.frame(1))).toBe(true);
+    for (let t = s; t < N; t++) e.step(A[t]);
+    expect(same(e.snapshot(), ref.states[N])).toBe(true);
   }
   expect(grew).toBeGreaterThan(0);
   expect(shrank).toBeGreaterThan(0);

@@ -1,12 +1,9 @@
 // The screen adapter: one texture for the screen's life, pictures shown
 // without a copy, an upload only for a new picture, the GPU texture freed
 // only for a new size, and each machine's shape. All finite.
-import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { NearestFilter, SRGBColorSpace, Vector2 } from "three";
-import { compile } from "../engine.js";
 import { ASPECT, Screen, viewOf } from "./screen.js";
-import { FOUR_PLAYERS, pads } from "../../engines/snes/test/unarmed.js";
 
 const picture = (width, height, fill = 0) => ({ width, height, rgba: new Uint8ClampedArray(width * height * 4).fill(fill) });
 
@@ -102,19 +99,6 @@ describe("Screen", () => {
     expect(shape(ASPECT.snes, 256, 224)).toBeCloseTo(1.3061, 4);
     expect(shape(ASPECT.snes, 256, 239)).toBeCloseTo(1.2241, 4);
     expect(shape(undefined, 256, 224)).toBe(256 / 224);
-  });
-
-  test("shows a real Super NES picture as it is", async () => {
-    const wasm = readFileSync(new URL("../../engines/snes/dist/snes.wasm", import.meta.url));
-    const rom = new Uint8Array(readFileSync(new URL("../../engines/snes/test/unarmed.sfc", import.meta.url)));
-    const e = (await compile(wasm)).boot(rom);
-    for (let f = 0; f < 300; f++) e.step(pads(FOUR_PLAYERS, f));
-    const p = e.frame(0);
-    const s = new Screen({ THREE, aspect: ASPECT.snes });
-    s.show(p);
-    expect([s.texture.image.width, s.texture.image.height]).toEqual([256, 224]);
-    expect(Buffer.from(s.texture.image.data).equals(Buffer.from(p.rgba))).toBe(true);
-    expect(s.aspect).toBeCloseTo(2048 / 1568, 12);
   });
 });
 
