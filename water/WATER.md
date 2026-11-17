@@ -103,7 +103,7 @@ scale) and the doc's world time: `ocean.js` turns the trait into at most 32
 Gerstner components, and both the shader and the physics use them, so what
 floats is what is drawn. Every read of the sea goes through one seam,
 `ctx.sea` (`ocean.heightAt/sampleAt/normalAt/velocityAt/displaced`,
-`wind.at`, `clock`), read by `physics.js`, `crew.js`, `looks.js` and
+`wind.at`; no clock since sailing's N6: each reader asks `api.clock.t()`), read by `physics.js`, `crew.js`, `looks.js` and
 `hud.js`.
 
 Link two boats into a harbour and each boat's sailing draws her own sea, in
@@ -348,7 +348,9 @@ one frame of wave motion.
   `water` reader, `ctx.sea.wind` is sailing's own wind built from
   `ambient("wind")` converted by the same frame and timing (a few lines;
   sailing cannot import water's; its at(), speed and from all in the
-  stage's frame, Decisions 34), `ctx.sea.clock` is `api.clock.t`. Its
+  stage's frame, Decisions 34), `ctx.sea.clock` is `api.clock.t` (later gone: since
+  sailing's N6, `ctx.sea` has no clock and each reader asks
+  `api.clock.t()`). Its
   drawing goes to water/. `physics.js`, `looks.js` and `stations.js` don't
   change.
 - **Ride and HUD only where her doc is the world, or while someone is
