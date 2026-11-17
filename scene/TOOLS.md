@@ -449,6 +449,19 @@ right-click Select still selects it (no handles, no inspector).*
   unfolding one File leaves every Source and Linked scene as it was), and
   nothing is written to the doc. A section stays mounted while it's shown,
   whatever comes and goes beside it.
+- **Documents in the drawer** (Decisions 13): a section comes out of the
+  inspector into a drawer pane of its own, by its **Dock** or by dragging
+  its head onto the drawer's tab strip. The strip takes any Patchwork
+  document dropped on it (from Patchwork's sidebar, an outline row, a
+  section's head) and docks each, highlighting while one is over it;
+  nothing dropped there reaches the scene. A docked document is the
+  view's (`api.view.dock`), not Edit's nor any extension's: it stays across
+  selections, bodies, focus moves and the inspector restarting, until its
+  × (or the scene closes). There is one pane per document and tool, so
+  docking one again shows its tab. While it's docked, its section in the
+  inspector shows "In the drawer · Show" instead of a second live view of
+  it. So a document has three places, all the same value `{ url, toolId }`:
+  inline, a drawer pane, and the main view (Open).
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -1141,6 +1154,41 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   api's prefs (it had written the stage atom, whose empty `prefs` shadowed
   the view's), measures the views' heights, and checks the fold is per
   section; it still waits for the synced build.
+- **Sidebar 3 (lane/sidebar, 2026-11-16): documents in the drawer**
+  (§6 "Documents in the drawer", Decisions 13). `api.view.dock({ url,
+  toolId?, title })` → close docks the host's view of a document
+  (`embed.js` `documentView`, the one the sections use) in an editor-kind,
+  embedded drawer pane, one per `docKey(url, toolId)`; the panes are the
+  view's (`dock.js` `dockDocument`, owned by no extension), so only their
+  ×, `close()` or the view's dispose takes them. `view.drawer` gains
+  `docs`. The tab strip docks any Patchwork document dropped on it
+  (highlighted while one is over it; its drags never reach the stage);
+  `dnd.js` carries an item's string `toolId` through. A section's head
+  drags as a Patchwork document (the three types) and has **Dock**; while
+  its key is docked it shows "In the drawer · Show". *Proves* (finite,
+  each failing on the code before: 29 tests): a dock sequence {A, A again,
+  A in X, A in Y, × on A, close() twice} → tabs, shown, docs and one
+  embedded pane per key (6 rows); a non-document url docks nothing, heads
+  dropped; no owner's close reaches a doc pane, dispose takes all; drops
+  on the strip {one item with a tool, two items, url list, text url,
+  text garbage, an outline row, nothing} → docked keys, nothing past the
+  strip (7 rows); lifetime {another selection, Edit → Look, Enter, Leave,
+  the inspector stopped, the view disposed} → still docked and never
+  remounted, but on dispose (6 rows); ×; a drop in the view never docks,
+  one on the strip adds nothing to the doc; Escape inside a doc pane is
+  its own; fold while docked {docked, docked then ×, docked under another
+  tool} (3 rows) with never two live views of one key; Show; the head's
+  payload is exactly the three types. Mutations: inline while docked (2
+  fail), the strip's drop bubbling (7), no dispose with the view (1), no
+  one-pane-per-key (1), toolId dropped by dnd (2). Full scene suite
+  1672/1672 (115 files; one vitest "onTaskUpdate" RPC timeout under
+  load). Local probes (built tool): xdnd-run 68/68 (its new
+  section-to-strip drag: the head's payload, docked on the strip,
+  folded while docked, the strip's drop adds nothing, a selection keeps
+  the pane, × closes it and unfolds the section) and editor-run 90/90. `sections-check.mjs`
+  gains the drag to the strip (CDP), Dock, a selection and Look keeping
+  the pane, × unfolding the section, and a doc from Patchwork's sidebar
+  docking; it waits for the synced build.
 
 ## What it costs
 
@@ -1613,3 +1661,50 @@ The project lead decided the five open questions on 2026-11-12.
     take only its own height? And should a tool named explicitly as the
     type's default count as the same section as one shown in the default
     (the scene can't know a type's default tool, so today they are two)?
+13. **Documents in the drawer are the view's** (the lead, 2026-11-16: "it
+    should be a kind of inspector and render inline but be draggable out
+    into its own panel / openable as the main view"; the shape of it
+    decided unattended, 2026-11-16, lane/sidebar, for the lead). The rule
+    is §6's ("Documents in the drawer"); what was decided, and why:
+    - **The drawer docks a document as well as an element**: `api.view.dock({
+      url, toolId?, title })` → close, the same `{ url, toolId }` a section
+      is, shown by the one `documentView` (`src/embed.js`) the sections use,
+      in a pane of the editor kind (embedded: its keys its own; the
+      editor's width). One pane per `docKey(url, toolId)`, so a second dock
+      shows the first: there's never two panes of one doc and tool.
+    - **The pane is the view's, not Edit's or the inspector's**: you
+      dragged it out on purpose, so a new selection, leaving Edit, Enter or
+      Leave, or the inspector stopping keeps it; only its × (or closing the
+      scene) takes it away. `api.view.dock` is on every extension's api, in
+      any body, since docking a document is something a viewer does, not an
+      edit.
+    - **One way in, the standard payload**: a section's head drags as a
+      Patchwork document (the three types Patchwork's sidebar uses, the
+      item carrying its `toolId`), and the tab strip docks any Patchwork
+      document dropped on it. So a doc from Patchwork's sidebar, an outline
+      row's own document and a section all dock the same way, and a frame
+      that takes Patchwork drops takes a section's head too. `dnd.js` now
+      carries an item's string `toolId` through, and one entry is one url,
+      version and tool.
+    - **The strip's drags are its own**: a drag over it never reaches the
+      stage (the scene's add, a row's copy), whatever it carries; one that
+      carries a document may drop there. A section's head let go back in
+      the inspector's pane is nothing (no doc added to the scene); dropped
+      on the view, it is any document dropped there, which Edit adds to
+      the scene (a question, below).
+    - **Docked, a section shows where it is**: an open section whose doc
+      and tool are in `view.drawer.docs` shows "In the drawer · Show"
+      instead of its view (a pure function of the drawer, so there's never
+      a second live editor of it in the stage); its fold is still the
+      viewer's pref; Show docks it again, which shows its tab. Docked under
+      another tool, it's another document: the section stays inline.
+    - **A pane follows the latest**: a dropped link at a version docks the
+      doc itself (heads dropped), as a section shows the doc you'd edit.
+    Questions for the lead: is the drawer the right "own panel", or should
+    Dock ask Patchwork for a panel beside the scene (it has no such event
+    today: Open is the main view)? Should a section's head dropped on the
+    scene's view add that document to the scene (as now, as any doc
+    dropped there does), or should a section's own drag never add? Should
+    a docked document leave with Edit, as the inspector does? And should
+    a docked doc's pane say which object it came from (now its title is
+    the section's label: Source, Build, About X)?
