@@ -161,7 +161,8 @@ Still open:
 - the real Patchwork ran package versions days apart in one page, and a
   viewer with an older terrain provider rebuilt Cadboro Bay's published
   render without its buildings and trees (whole again since 20:54 UTC
-  2026-11-16; Decisions, N7, 6; Questions for the lead);
+  2026-11-16; Decisions, N7, 6: the lead answered on 2026-11-17, fresh
+  render docs are fine, and W8 republished Cadboro Bay and Ucluelet);
 - machine's "Lay out its world" never refuses a second world for a
   cabinet, and the published Arcade had come to hold two (republished;
   machine/HOST.md, phase 2b, Not done yet; Decisions, N7, 7; Questions for
@@ -377,13 +378,11 @@ Questions for the lead (not decided; each names what stands meanwhile):
   overwrite** (Decisions, N7, 6): Cadboro Bay's terrain render drew
   without its buildings and trees from 18:35 to 20:54 UTC on 2026-11-16,
   until a build that reads every layer made it whole again. Is a viewer
-  whose provider is older than a render's allowed to rebuild it? Stands
-  meanwhile: Cadboro Bay as it is now (whole; the weather merge may
-  change its doc: Decisions, N7, 16), and
-  no real-Patchwork checks from N7 of published docs with older renders
-  until the lead says (checks of docs N7 made itself, and of docs with
-  no render docs, go ahead, guarded, naming the versions they ran on:
-  Decisions, N7, 6, 7 and 10).
+  whose provider is older than a render's allowed to rebuild it?
+  **Answered by the lead (2026-11-17): fresh render docs for Cadboro Bay
+  and Ucluelet are fine, no back-compat, the old URLs drop out of the
+  folder.** Weather's W8 republished both with new render docs and the
+  checks of them go ahead (Decisions, N7, 6).
 - **A second world for a cabinet** (Decisions, N7, 7): should machine's
   "Lay out its world" be disabled on a cabinet that has one, or replace
   it? Stands meanwhile: the Arcade republished with one world; the
@@ -3107,6 +3106,21 @@ the finding; row 6 failed to a stale package, 6 below).
    question is moot; whether an older provider may rebuild a newer
    render still stands, and shore-check still waits, since opening
    Cadboro Bay is what risked it.
+
+   **The lead's answer (2026-11-17): fresh render docs for Cadboro Bay
+   and Ucluelet are fine. No back-compat: the old URLs drop out of the
+   folder.** Weather's W8 (weather/WEATHER.md, Decision 54) republished
+   both with new terrain and render docs, made by today's terrain
+   provider and synced with it (Cadboro Bay
+   `automerge:3iBtGAbfnAu2vt4sKKL15AeFkjaV`, render
+   `automerge:8TCu5E9Cbrr14BPCN4KNTK63asr`; Ucluelet
+   `automerge:PfgcCbKYvs6ppP8UWzaUL1Qvtcd`, render
+   `automerge:2QqYcdEvY8NfD3wrspQZGwm42xmx`), and the folder links them
+   in place of the old ones. Real-Patchwork checks of them go ahead; W8
+   read each render doc's heads before and after its checks. Whether an
+   older provider may rebuild a newer render is not a question for these
+   docs any more; shore-check waits only on 1 and 2 (E1M1 at Cadboro Bay
+   is unpublished).
 7. **The Arcade republished with one Doom world.** The published Arcade
    (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) had come to hold two objects
    carrying `machine.world` for the Doom cabinet, `world` and `okg5pjo09`,
