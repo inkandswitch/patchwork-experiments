@@ -146,9 +146,10 @@ const at = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
 /**
  * A sloop on a stand-in stage. `mainsheet`: she has one (in the cockpit).
  * `rehung`: the rig hangs from the hull beside the mast (moved there by
- * hand in the editor), not from the mast as the part puts it.
+ * hand in the editor), not from the mast as the part puts it. `sail`,
+ * `jib`: her stations name them (without, a station works neither).
  */
-function stage({ mainsheet = true, helm = true, rehung = false } = {}) {
+function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib = true } = {}) {
   const scene = {
     objects: {
       hull: { traits: { "sailing.ship": {} } },
@@ -211,7 +212,7 @@ function stage({ mainsheet = true, helm = true, rehung = false } = {}) {
       value: (id) => s.values[id],
       input: (id, f) => s.inputs.push([id, f]),
       commit: (id, f) => s.commits.push([id, f]),
-      stationsOf: () => ({ helm: helm ? "wheel" : null, sail: "rig", anchor: "windlass", mainsheet: mainsheet ? "sheet" : null, jib: "jib", ladder: "ladder", winches: ["winchP", "winchS"] }),
+      stationsOf: () => ({ helm: helm ? "wheel" : null, sail: sail ? "rig" : null, anchor: "windlass", mainsheet: mainsheet ? "sheet" : null, jib: jib ? "jib" : null, ladder: "ladder", winches: ["winchP", "winchS"] }),
       read: () => s.read,
       sailModels: () => ({ jib: { alpha0: -5, stall: 20, width: 30, wingFrom: 140 } }),
     },
@@ -915,5 +916,78 @@ describe("the commands", () => {
     s.me.playing = false;
     c.run(null);
     expect(s.ctx.crew.start).toHaveBeenCalled();
+  });
+});
+
+// ─── the keys a station declares ────────────────────────────────────────────
+
+describe("the keys each station declares", () => {
+  // every station a verb can take, in every variant stations.js can make: a post is the sail's keys
+  // (Q E with the sheet, R with the halyard) + F; a winch the jib's (Q E R B, with a jib) + F; the
+  // helm A D ← → + the sail's (sheet and halyard) + the jib's (B) + F. takePost always works the
+  // halyard, so there is no post with the sheet alone. A winch declares the sheet's Q E on either
+  // side, since which is the working one changes while you stand there (a tack, backing the jib):
+  // at the lazy one they are declared and do nothing, a labelled action unavailable in this state
+  // (a label names the action, not its state: scene/TOOLS.md §4). The last column is the codes
+  // that do nothing from the station just taken.
+  const Q = ["KeyQ", "Haul in"], E = ["KeyE", "Ease out"], R = ["KeyR", "Halyard"], F = ["KeyF", "Leave"];
+  const FURL = ["KeyR", "Furler"], B = ["KeyB", "Back jib / let fly"];
+  const STEER = [["KeyA", "Steer to port"], ["KeyD", "Steer to starboard"], ["ArrowLeft", "Steer to port"], ["ArrowRight", "Steer to starboard"]];
+  const VARIANTS = {
+    "the mainsheet": [{}, "mainsheet", "sheet", [Q, E, R, F]],
+    "the mainsheet, no sail": [{ sail: false }, "mainsheet", "sheet", [F]],
+    "the mast": [{}, "halyard", "mast", [R, F]],
+    "the mast, the sheet led there (no helm, no mainsheet)": [{ helm: false, mainsheet: false }, "halyard", "mast", [Q, E, R, F]],
+    "the working winch": [{}, "winch", "winchP", [Q, E, FURL, B, F]],
+    "the lazy winch": [{}, "winch", "winchS", [Q, E, FURL, B, F], ["KeyQ", "KeyE"]],
+    "a winch, no jib": [{ jib: false }, "winch", "winchP", [F]],
+    "the helm, a sail and a jib": [{}, "helm", "wheel", [...STEER, Q, E, R, B, F]],
+    "the helm, a sail only": [{ jib: false }, "helm", "wheel", [...STEER, Q, E, R, F]],
+    "the helm, a jib only": [{ sail: false }, "helm", "wheel", [...STEER, B, F]],
+    "the helm, neither": [{ sail: false, jib: false }, "helm", "wheel", [...STEER, F]],
+  };
+  const take = ([o, verb, target]) => {
+    const s = stage(o);
+    s.cmd(verb).run(target);
+    return s;
+  };
+  // the key a keyboard sends with each code (the handlers read ev.key; the wheel ev.code)
+  const keyOf = (code) => (code.startsWith("Key") ? code.slice(3).toLowerCase() : code);
+
+  it.each(Object.keys(VARIANTS))("%s", (name) => {
+    const v = VARIANTS[name];
+    const s = take(v);
+    expect(s.taken.handlers.keys).toEqual(v[3].map(([code, label]) => ({ code, label })));
+  });
+
+  it.each(Object.keys(VARIANTS))("%s: every code declared once, labelled", (name) => {
+    const keys = take(VARIANTS[name]).taken.handlers.keys;
+    expect(new Set(keys.map((k) => k.code)).size).toBe(keys.length);
+    for (const k of keys) expect(typeof k.label === "string" && k.label.length > 0, k.code).toBe(true);
+  });
+
+  /** What holding `code` for half a second does, from a station just taken: the inputs, the writes, whether you're still there. */
+  const effect = (v, code) => {
+    const s = take(v);
+    const h = s.taken.handlers;
+    const [n, m] = [s.inputs.length, s.commits.length];
+    h.key({ code, key: keyOf(code) });
+    for (let i = 0; i < 30 && s.taken; i++) h.tick(1 / 60);
+    h.keyup({ code, key: keyOf(code) });
+    return JSON.stringify({ inputs: s.inputs.slice(n), commits: s.commits.slice(m), at: s.taken?.id ?? null });
+  };
+
+  // codes labelled alike do the same thing, and codes labelled apart don't (scene/TOOLS.md §4): a
+  // touch pad shows one control per label, which presses the first of its codes. Checked from one
+  // state, the station just taken in the stage's starting trim: exactly the variant's idle codes do
+  // nothing there, and among the rest two codes do the same thing iff they share a label.
+  it.each(Object.keys(VARIANTS))("%s: two codes do the same thing iff they share a label", (name) => {
+    const v = VARIANTS[name];
+    const keys = take(v).taken.handlers.keys;
+    const did = Object.fromEntries(keys.map((k) => [k.code, effect(v, k.code)]));
+    const nothing = JSON.stringify({ inputs: [], commits: [], at: take(v).taken.id });
+    expect(keys.filter((k) => did[k.code] === nothing).map((k) => k.code)).toEqual(v[4] ?? []);
+    const acting = keys.filter((k) => did[k.code] !== nothing);
+    for (const a of acting) for (const b of acting) expect(did[a.code] === did[b.code], `${a.code} ${b.code}`).toBe(a.label === b.label);
   });
 });
