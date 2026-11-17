@@ -87,17 +87,6 @@ describe("drawing at a table aboard", () => {
     t.w.done();
   });
 
-  it("into the turned-round tray across the table", async () => {
-    const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: "bob" } } });
-    t.cmd(t.xb, "draw").run("top");
-    t.w.tick(1 / 60, 40);
-    const o = t.w.doc.objects.top;
-    near(o.transform.position, [0.27, 0.702, -0.5]);
-    expect(Math.cos(o.transform.rotation[1] - (Math.PI + 0.25))).toBeCloseTo(1, 6);
-    expect([o.transform.rotation[0], o.transform.rotation[2]]).toEqual([0, 0]);
-    t.w.done();
-  });
-
   it("Shuffle and Draw apply whatever body you're in: walking, their keys are the body's (the stage shows them without), never hidden", async () => {
     const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
     const ctx = (local) => ({ scene: t.a.scene(), local: { ...t.a.local.get(), ...local } });

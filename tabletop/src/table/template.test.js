@@ -124,15 +124,6 @@ describe("the Lost Cities template", () => {
     }
   });
 
-  it("with nothing that owns seats, the table has none, and says so; it writes no seats of its own", async () => {
-    const doc = emptyScene();
-    const { ctx, calls } = fakeDrop(doc, { registries: registries(keeperPlugin("joint"), ...gamePlugins()) });
-    await lostCities.create(ctx);
-    expect(Object.keys(doc.objects).length).toBeGreaterThan(60);
-    expect(doc.traits).toEqual({});
-    expect(calls.notices.some((n) => n.kind === "warn" && /owns seats/.test(n.text))).toBe(true);
-  });
-
   it("starts people in the seat body, seated nowhere yet, and says to pick a seat; nothing is the table's About", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });

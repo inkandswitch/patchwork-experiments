@@ -204,7 +204,10 @@ describe("the tabletop-game tool", () => {
 });
 
 describe("what the game page's status line tells the maker (test/table-notes.js: the template says the same)", () => {
-  for (const c of CASES)
+  // the rule is template.test.js's, over every case; here, that the page says it: an error, a line of
+  // several warnings, and a clean status
+  const PICKS = [CASES.find((c) => c.error), CASES.find((c) => !c.error && c.expected.length > 1), CASES.find((c) => !c.error && !c.expected.length)];
+  for (const c of PICKS)
     it(c.name, async () => {
       // the stand-ins' ids (test/stand-ins.js): t.keep-<kind>, t.seats, t.bag
       installed.absent = new Set([

@@ -23,7 +23,6 @@ describe("cluster", () => {
   const LINK = 0.03;
   const patterns = [];
   for (let mask = 0; mask < 16; mask++) patterns.push([0, 1, 2, 3].map((i) => ((mask >> i) & 1 ? 0.025 : 0.04)));
-  it(`covers ${patterns.length} patterns of gaps`, () => expect(patterns).toHaveLength(16));
 
   for (const gaps of patterns) {
     const boxes = {};

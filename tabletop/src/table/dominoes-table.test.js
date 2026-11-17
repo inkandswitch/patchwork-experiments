@@ -322,7 +322,6 @@ describe("what the table answers a carry (landing)", () => {
   };
   const CASES = [];
   for (const piece of ["domino", "card"]) for (const from of Object.keys(FROM)) for (const where of Object.keys(WHERE)) for (const you of ["seated", "not seated"]) CASES.push([piece, from, where, you]);
-  it("is 36 cases", () => expect(CASES).toHaveLength(36));
   it.each(CASES)("%s, taken from %s, carried to %s, %s", (piece, from, where, you) => {
     const t = table({ seated: you === "seated" ? seats() : seats("carol", "dave") });
     const id = piece === "domino" ? "b0" : "card";

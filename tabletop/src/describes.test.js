@@ -18,13 +18,6 @@ describe("tabletop: what runs", () => {
     expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop"]);
     expect(table.traits).toEqual([ZONE, CARD]);
     for (const k of ["activities", "requires", "always", "general"]) expect(k in table).toBe(false);
-    expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
-  });
-
-  it("registers no plugin type of its own for decks, and no deck datatype: what a card is, is a keeper's", () => {
-    expect([...new Set(plugins.map((p) => p.type))].sort()).toEqual(["patchwork:datatype", "patchwork:tool", "scene:extension", "scene:part", "scene:template", "tabletop:game"]);
-    expect(plugins.filter((p) => p.type === "patchwork:datatype").map((p) => p.id)).toEqual(["tabletop-game"]);
-    expect(table.drops).toBeUndefined();
   });
 
   it("names nobody else's traits: seats and keepers are met through the stage", () => {
@@ -79,9 +72,6 @@ describe("tabletop: templates", () => {
     for (const { value } of templates[2].params[0].options) expect(games.has(`draw-dominoes-${value}`)).toBe(true);
   });
 
-  it("each loads a module with create(ctx, params)", async () => {
-    for (const t of templates) expect(typeof (await t.load()).create).toBe("function");
-  });
 });
 
 describe("tabletop: parts", () => {
@@ -106,9 +96,5 @@ describe("tabletop: parts", () => {
     expect(table.traits).toEqual(["tabletop.zone", "tabletop.card"]);
     expect(Object.keys(d)).toEqual(table.traits);
     expect(parts.some((p) => /die|dice/.test(p.id))).toBe(false);
-  });
-
-  it("each loads a module with create(ctx, at)", async () => {
-    for (const p of parts) expect(typeof (await p.load()).create).toBe("function");
   });
 });

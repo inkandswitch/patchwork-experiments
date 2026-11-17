@@ -79,8 +79,6 @@ describe("who may see what: the table's policy", () => {
   const CASES = [];
   for (const [place, position] of Object.entries(PLACES)) for (const [way, rotation] of Object.entries(WAYS)) for (const [kind, traits] of Object.entries(KINDS)) for (const [seating, seated] of Object.entries(SEATINGS)) CASES.push({ place, way, kind, seating, position, rotation, traits, seated });
 
-  it(`covers ${5 * 2 * 2 * 3} cases`, () => expect(CASES).toHaveLength(60));
-
   for (const c of CASES) {
     const owner = { "p1's hand": c.seated.p1.player, "p2's hand": c.seated.p2.player, "an empty seat's hand": null, "a hand of no seat": null }[c.place];
     const want =
@@ -121,8 +119,6 @@ describe("who may see what: the table's policy", () => {
     const wrap = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
     const CASES2 = [];
     for (const [where, position] of Object.entries(STANDS)) for (const theta of DIRS) for (const phi of TILTS) for (const [kind, traits] of Object.entries(KINDS)) for (const [seating, seated] of Object.entries(SEATINGS)) CASES2.push({ where, position, theta, phi, kind, traits, seating, seated });
-
-    it(`covers ${2 * 24 * 7 * 2 * 3} cases`, () => expect(CASES2).toHaveLength(2016));
 
     it("the Euler angles used here turn the face where they say", () => {
       for (const theta of DIRS) for (const phi of TILTS) {
