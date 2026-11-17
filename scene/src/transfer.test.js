@@ -19,6 +19,7 @@ import {
   readRowPayload,
   refsOf,
   referenceOf,
+  restOnConnector,
   renderSeed,
   rowPayload,
   runtimeOf,
@@ -29,6 +30,7 @@ import {
 import { seededRenderDoc } from "./datatype.js";
 import { composeMatrix, decomposeMatrix, invertMatrix as invert, multiplyMatrices } from "./transform.js";
 import { worldMatrix } from "./hierarchy.js";
+import { intoSnap } from "./carry-rules.js";
 
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const obj = (name, extra = {}) => ({ name, sourceUrl: `automerge:${name}`, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: T(), ...extra });
@@ -150,6 +152,72 @@ describe("where it goes", () => {
     const keep = decomposeMatrix(multiplyMatrices(moveBy({ point: [1, 0, 0], yaw: 0.25 }, [3, 0, 0], null), composeMatrix(T([1, 0, 0], [0, 0.25, 0]))));
     close(keep.rotation, [0, 0.25, 0]);
     close(keep.position, [3, 0, 0]);
+  });
+
+  // a rack's place: X up, Y (face) toward +Z, length along +X; a flat tray's: turned a quarter
+  const STAND = [Math.PI / 2, Math.PI / 2, 0];
+  const cols = (m) => [0, 1, 2].map((k) => [m[4 * k], m[4 * k + 1], m[4 * k + 2]].map((v) => +v.toFixed(9) + 0));
+  it("moveBy into a connector's frame: one object goes into it, face up or down as it was; several take only its yaw", () => {
+    const up = composeMatrix(T([1, 0, 0], [0, 0.3, 0], 2));
+    const down = composeMatrix(T([1, 0, 0], [0, 0.3, Math.PI], 2));
+    const into = (w, rotation) => multiplyMatrices(moveBy(referenceOf([w]), [5, 1, 5], null, rotation), w);
+    // standing: the frame alone says which way it faces
+    for (const w of [up, down]) {
+      const m = into(w, STAND);
+      expect(cols(m)).toEqual([[0, 2, 0], [0, 0, 2], [2, 0, 0]]);
+      close([m[12], m[13], m[14]], [5, 1, 5]);
+    }
+    // flat, turned a quarter: face up stays up, face down stays down (turned over about its length)
+    expect(cols(into(up, [0, Math.PI / 2, 0]))).toEqual([[0, 0, -2], [0, 2, 0], [2, 0, 0]]);
+    expect(cols(into(down, [0, Math.PI / 2, 0]))).toEqual([[0, 0, 2], [0, -2, 0], [2, 0, 0]]);
+    // several: the yaw only, as before
+    const two = [composeMatrix(T([0, 0, 0])), composeMatrix(T([2, 0, 0]))];
+    const m = moveBy(referenceOf(two), [5, 0, 5], Math.PI / 2, STAND);
+    close([m[4], m[5], m[6]], [0, 1, 0]);
+    expect(Math.atan2(m[8], m[10])).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it("restOnConnector: a carried piece copied alone with a load hint rests on the connector the carry's way, frame or yaw; anything else by its origin", () => {
+    const carry = { traits: { "scene.carry": {} } };
+    // a domino lying flat (origin at the middle of its back), stood up in a rack's place at (0.3, 0.003, 0.016)
+    const tile = obj("tile", { ...carry, transform: T([1, 0, 1], [0, 0, 0]), hint: { bounds: { min: [-0.0125, 0, -0.025], max: [0.0125, 0.0095, 0.025] } } });
+    const land = { point: [0.3, 0.003, 0.016], yaw: Math.PI / 2, rotation: STAND, snapped: true };
+    const rest = (objects, roots, l = land) => restOnConnector(objects, roots, [], l);
+    const worldAt = (objects, roots, l) => planCopy({ objects, roots, target: { land: rest(objects, roots, l) } }).items[0].world;
+    let W = worldAt({ tile }, ["tile"], land);
+    // standing: across (X) is up, so its underside is at −0.0125 below its origin; its face's middle, 4.75 mm in
+    close([W[12], W[13], W[14]], [0.3, 0.003 + 0.0125, 0.016 - 0.00475]);
+    // a yaw-only connector rests it the same way: a piece whose origin is its corner, turned a quarter,
+    // has the middle of its footprint over the connector (its X now along −Z, its Z along +X)
+    const corner = obj("corner", { ...carry, transform: T([1, 0, 1]), hint: { bounds: { min: [0, 0, 0], max: [0.025, 0.0095, 0.05] } } });
+    W = worldAt({ corner }, ["corner"], { ...land, rotation: null });
+    close([W[12], W[13], W[14]], [0.3 - 0.025, 0.003, 0.016 + 0.0125]);
+    expect(Math.atan2(W[8], W[10])).toBeCloseTo(Math.PI / 2, 9);
+    // one top with something attached under it (moveBy turns the top): the top is rested
+    const under = obj("under", { parent: "tile", transform: T([0, 0.01, 0]) });
+    W = worldAt({ tile, under }, ["tile", "under"], land);
+    close([W[12], W[13], W[14]], [0.3, 0.003 + 0.0125, 0.016 - 0.00475]);
+    // not a carried piece (a part, made for its origin), even into a frame: untouched
+    const part = { ...tile, traits: {} };
+    expect(rest({ part }, ["part"])).toBe(land);
+    expect(rest({ part }, ["part"], { ...land, rotation: null })).toEqual({ ...land, rotation: null });
+    // not snapped, two top-level objects, no hint: untouched
+    expect(rest({ tile }, ["tile"], { ...land, snapped: false })).toEqual({ ...land, snapped: false });
+    expect(rest({ tile, b: tile }, ["tile", "b"])).toBe(land);
+    const bare = obj("bare", { ...carry, transform: T([1, 0, 1]) });
+    expect(rest({ bare }, ["bare"])).toBe(land);
+  });
+
+  it("moveBy turns one object the carry's way (carry-rules intoSnap), exactly as a carry would put it there", () => {
+    const w = composeMatrix(T([1, 0.2, 1], [0.4, 0.3, -0.2], 1.5));
+    for (const [rotation, yaw] of [[STAND, Math.PI / 2], [null, 1], [[0, Math.PI / 2, 0], Math.PI / 2], [null, null]]) {
+      const m = multiplyMatrices(moveBy(referenceOf([w]), [5, 1, 5], yaw, rotation), w);
+      const want = intoSnap(w, { rotation, yaw });
+      for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) expect(m[i]).toBeCloseTo(want[i], 12);
+      close([m[12], m[13], m[14]], [5, 1, 5]);
+    }
+    // nothing to turn: exactly a move
+    expect(moveBy(referenceOf([w]), [5, 1, 5]).slice(0, 12)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
   });
 
   // a mast (tilted, scaled) with a boom under it, on a hull in the source

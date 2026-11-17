@@ -66,8 +66,9 @@ people lists this package in its `packages`, like any other.
   (`here: false`: the body chip doesn't offer it). Sitting pushes it over
   whatever body you're in (walking her deck, or Look); standing up, the
   chip's Leave or watching pops it, and that body carries on.
-- **"Sat down"**, told to the others (`api.send`: the seat id, and the
-  owner's object id for an object's seat).
+- **"Sat down"**, told to everyone (`api.tell`: the seat id, and the
+  owner's object id for an object's seat; scene STAGE.md "Telling"): said
+  once the seat is one of the scene's, by the sitter's contact name.
 
 ## Conventions
 
@@ -92,6 +93,30 @@ a deck waits for players; the stage offers the package from the scene's
 | `src/body.js` | the seat body: `seatPose` (pure) and `seatBody(api)` |
 | `src/transform.js` | the two matrix operations it needs (a copy of the scene's) |
 | `src/test/fake-world.js` | a stand-in stage with several views, claims that lapse, sessions never heard from, crashes without a bye and merges written by hand |
+
+## Still open
+
+- **Two docs' seat bodies, stacked, look the same to the lower one.** Every
+  stage's seat body has the id `"seat"`, and `seated()` in `src/seats.js`
+  compares the top body's id alone, not its `ext` (which the stage gives as
+  this extension's own id only when the body is its own; `pickerOwner`
+  already checks it). Seats' own UI can't stack two seat bodies directly:
+  with another doc's seat on top, this doc's picker hides and F offers only
+  Stand up. Two ways do reach it, in a mashup of two docs with seats: a
+  body in between (sit at G, walk off from the seat, then F at the dice
+  doc's seat: look, seat(G), walk, seat(dice)), and another package's
+  `roster.sit` (machine's Play asks its own stage's `sitting()`, null there,
+  and pushes its seat over G's). Then G's `sitting()` still reports G's
+  seat, against the roster's contract above ("the seat body on top"), and
+  G's `getUp` leaves the body on top, the other doc's: from G's F Stand up,
+  from `dispose` when G's stage stops, and from the lost-race and perch
+  paths. `src/stacked-bodies.test.js` pins it: the picker hiding, and the
+  `sitting()` gap as an expected failure (`it.fails`). The fix is one line,
+  `seated()` checking `ext` as `pickerOwner` does, and then that test flips;
+  it leaves a decision: `getUp`'s `downToSeat` would pop the other doc's
+  body to get down to this one's. Found in N7 (scene's COMPOSITION.md,
+  Decisions, N7, 14). Players and claims are per doc, so a person may hold
+  lasting seats in two docs at once; only the body on top is one per view.
 
 ## Tests
 

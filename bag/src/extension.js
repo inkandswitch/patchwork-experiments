@@ -8,7 +8,7 @@
 // Carrying is the scene's (`carry`, collected): what can be picked up says so
 // with the `scene.carry` trait, and only that goes into a bag, so whatever
 // comes out of one can be carried again; a passing state is any running
-// extension's to veto (`carryable`); who drew is told with api.send.
+// extension's to veto (`carryable`); who drew is told with api.tell.
 // The contents live in the bag's own document (contents.js), never in the
 // scene doc: that is what "inside" means. The moves and why they merge
 // safely are moves.js and contents.js; this file is the stage side.
@@ -18,11 +18,12 @@
 // drawn from. So any object can be a container (a box lid, a cup), and the
 // sack is only what a bag document looks like by default.
 //
+// A piece this view's hand puts down on a bag goes in: the carry tells every
+// running extension what it put down and on what (`landed(id, on)`, after
+// its write), and the drawn piece's carry says how it ended (`ended`).
+//
 // What the stage doesn't give, and how this works round it (README.md,
 // "What the stage lacks"):
-// - no "put down" event: `landing` is a question the hand asks while it
-//   carries, so this remembers which object this view's hand has, and when
-//   the doc then shows it moved, looks at where it lies;
 // - `carry` wants a press to follow, and a draw starts from a key, with an
 //   object that doesn't exist until then: the drawn piece is carried under
 //   an arm of this extension's, which feeds the pointer to the hand's
@@ -49,8 +50,6 @@ const CARRY_KEYS = Object.freeze([
 ]);
 /** The drawn piece in hand, held as a tool (scene/TOOLS.md §4): never picked up through a command, so held directly. */
 const DRAWN_PIECE = Object.freeze({ name: "Drawn piece", keys: CARRY_KEYS, pointer: true });
-/** How long a notice waits for its sender's name (ms). */
-const NAME_MS = 400;
 /** The most a single Draw several takes. */
 export const MAX_DRAW = 10;
 
@@ -66,7 +65,6 @@ const el = (tag, props = {}, ...children) => {
   return e;
 };
 
-const apply = (m, p) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
 const poseKey = (t) => JSON.stringify([t?.position ?? null, t?.rotation ?? null]);
 
 export default {
@@ -151,52 +149,19 @@ export default {
       api.schedule(() => {});
     }
 
-    // ── telling the others: that something was done, never what it was ──
-    const names = new Map(); // viewer → a promise of their contact's name (null: none)
-    /** A viewer's contact name, once: asked the first time they're heard from, and not waited on for long. */
-    function contactName(who) {
-      if (typeof who !== "string" || !who) return Promise.resolve(null);
-      if (!names.has(who)) {
-        const asked = who.startsWith("automerge:")
-          ? Promise.resolve()
-              .then(() => repo?.find?.(who))
-              .then((h) => {
-                const n = h?.doc?.()?.name;
-                return typeof n === "string" && n.trim() ? n.trim() : null;
-              })
-              .catch(() => null)
-          : Promise.resolve(null);
-        // (a contact doc from the network: the wall's timeout, not the stage's time)
-        names.set(who, Promise.race([asked, new Promise((r) => setTimeout(() => r(null), NAME_MS))]));
-      }
-      return names.get(who);
-    }
+    // ── telling everyone: that something was done, never what it was (STAGE.md "Telling") ──
     const things = (n) => (n === 1 ? "something" : `${n} things`);
-    /** What a message says, from `who`; null if it's malformed, or about a bag that isn't in this scene. */
-    function told(type, data, who) {
-      if (!data || typeof data !== "object" || !Object.hasOwn(MESSAGES, type) || !MESSAGES[type](data)) return null;
-      const here = new Set(bagsIn().map((b) => b.url));
-      for (const k of ["bag", "from", "to"]) if (k in data && !here.has(data[k])) return null;
-      switch (type) {
-        case "drew":
-          return `${who} drew ${data.n === 1 ? "" : `${data.n} `}from ${titleOf(data.bag)}`;
-        case "put":
-          return `${who} put ${things(data.n)} in ${titleOf(data.bag)}`;
-        case "emptied":
-          return `${who} emptied ${titleOf(data.bag)} (${data.n})`;
-        case "poured":
-          return `${who} poured ${titleOf(data.from)} into ${titleOf(data.to)} (${data.n})`;
-        case "looked":
-          return `${who} looked inside ${titleOf(data.bag)}`;
-      }
-      return null;
-    }
-    /** Say it here (sends are never echoed back), then to every other peer. */
-    function announce(type, data) {
-      const text = told(type, data, "You");
-      if (text) api.notify(text);
-      api.send?.(type, data);
-    }
+    const here = (u) => bagsIn().some((b) => b.url === u);
+    /** Borne out at once by a bag of this scene (each one named); worded by this view, by the speaker's name the stage gives. */
+    const says = (urls, text) => (d, who) => (urls(d).every(here) ? text(d, who.name) : null);
+    const ofBag = (d) => [d.bag];
+    const messages = {
+      drew: { valid: VALID.drew, says: says(ofBag, (d, who) => `${who} drew ${d.n === 1 ? "" : `${d.n} `}from ${titleOf(d.bag)}`) },
+      put: { valid: VALID.put, says: says(ofBag, (d, who) => `${who} put ${things(d.n)} in ${titleOf(d.bag)}`) },
+      emptied: { valid: VALID.emptied, says: says(ofBag, (d, who) => `${who} emptied ${titleOf(d.bag)} (${d.n})`) },
+      poured: { valid: VALID.poured, says: says((d) => [d.from, d.to], (d, who) => `${who} poured ${titleOf(d.from)} into ${titleOf(d.to)} (${d.n})`) },
+      looked: { valid: VALID.looked, says: says(ofBag, (d, who) => `${who} looked inside ${titleOf(d.bag)}`) },
+    };
 
     // ── putting things in ──
     function vetoed(id) {
@@ -252,42 +217,17 @@ export default {
       const emptied = groups.filter((g) => (scene?.members?.get?.(g) ?? []).every((m) => isGroup(objects[m]) || went.has(m)));
       for (const p of [...pendings]) if (went.has(p.id)) retire(p, { quietly: true });
       putObjects({ objects, ids: ok, sceneUrl: api.url, remove: (gone) => api.remove([...gone, ...emptied]), bag: handle });
-      announce("put", { bag: bag.url, n: ok.length });
+      api.tell("put", { bag: bag.url, n: ok.length });
       return ok.length;
     }
 
-    // A piece this view's hand let go of over a bag goes in. The stage has no
-    // "put down" event, so: `landing` (asked by the hand while it carries)
-    // says which object this view's hand has; when the doc then shows that
-    // object somewhere new, the hand has put it down, and where it lies says
-    // whether that was on a bag.
-    let carried = null; // { id, was: its pose when the hand first asked, on: what it last hovered over }
-    function landing(id, _point, hitId) {
-      if (carried?.id !== id) carried = { id, was: poseKey(objectsNow()[id]?.transform), on: null };
-      carried.on = hitId ?? null;
-      return null;
-    }
-    /** The bag an object lies on: the middle of its base is within a bag's footprint. */
-    function bagUnder(id) {
-      const m = scene.world(id);
-      const box = api.content?.(id)?.box ?? null;
-      const base = box ? apply(m, [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2]) : [m[12], m[13], m[14]];
-      for (const b of bagsIn()) {
-        if (b.id === id) continue;
-        const bb = api.box?.(b.id);
-        if (bb && base[0] >= bb.min[0] && base[0] <= bb.max[0] && base[2] >= bb.min[2] && base[2] <= bb.max[2] && base[1] >= bb.min[1] - 0.005) return b.id;
-      }
-      return null;
-    }
-    function putDown() {
-      if (!carried) return;
-      const o = scene?.objects?.[carried.id];
-      if (!o) return void (carried = null);
-      if (poseKey(o.transform) === carried.was) return; // still in the hand (or put back)
-      const { id, on } = carried;
-      carried = null;
-      const bagId = bagUnder(id) ?? (bagAt(on) && on !== id ? on : null);
-      if (bagId) putInto(bagId, [id]);
+    // A piece this view's hand put down on a bag goes in (the carry's
+    // `landed`, after it wrote where it went down: `on` is what it rests on),
+    // and so does one put down on what is attached under a bag (its label,
+    // a strap): the nearest bag up `on`'s chain, never the piece itself.
+    // Only this view's hand: a peer's put is theirs to put in.
+    function landed(id, on) {
+      for (let x = on; x != null && x !== id; x = scene?.parents?.get(x) ?? null) if (bagAt(x)) return void putInto(x, [id]);
     }
 
     // ── drawing ──
@@ -390,7 +330,7 @@ export default {
         else track({ ...drawn, url: bag.url, bagId, carry: wantCarry });
       }
       if (!got) api.notify(`${titleOf(bag.url)} is empty.`);
-      else if (!again) announce(verb, { bag: bag.url, n: got });
+      else if (!again) api.tell(verb, { bag: bag.url, n: got });
       return got;
     }
 
@@ -447,6 +387,18 @@ export default {
       if (!s) return false;
       p.session = s;
       const mine = () => p.session === s;
+      // How it ended, when that wasn't this extension letting go (letGo and
+      // retire drop the session first). A peer's hold ranked ahead: what they
+      // do with it says whose piece it was (step). Anything else (refused,
+      // put back by a newer carry): it stays where it is.
+      s.ended?.then(({ how }) => {
+        if (dead || !mine()) return;
+        p.session = null;
+        p.putDown?.();
+        p.putDown = null;
+        if (how === "yielded") p.contested = poseKey(objectsNow()[p.id]?.transform);
+        else retire(p);
+      });
       // the drawn piece in hand is a held tool (scene/TOOLS.md §4): it takes
       // every press until it's put down; Escape (the stage's ladder) or
       // another tool picked up puts it back where it came out
@@ -479,27 +431,18 @@ export default {
       for (const p of [...pendings]) {
         if (!p.carry) continue;
         if (!has(p.id)) continue; // settle() will say what became of it
+        if (p.session) continue; // in the hand: how its carry ends says the rest (startCarry)
         // A peer holds this piece too (both drew it at once: one object, two
         // hands). The stage's hold order says whose hand keeps it, and ours
-        // gives way; what the peer then does says whose piece it was. If
-        // they let go where it lies (the bag told them it's ours), we pick
-        // it up; if they put it somewhere, it was theirs, and we draw
-        // another. (The bag's own verdict settles two draws from one bag
-        // before this matters; this is for the cases it can't see: a pour
-        // racing a draw, a piece put away under a drawer's hand.)
+        // gave way (its carry ended "yielded"), or never got it; what the
+        // peer then does says whose piece it was. If they let go where it
+        // lies (the bag told them it's ours), we pick it up; if they put it
+        // somewhere, it was theirs, and we draw another. (The bag's own
+        // verdict settles two draws from one bag before this matters; this
+        // is for the cases it can't see: a pour racing a draw, a piece put
+        // away under a drawer's hand.)
         if (api.heldBy?.(p.id) != null) {
           p.contested ??= poseKey(objectsNow()[p.id]?.transform);
-          if (p.session) {
-            const s = p.session;
-            p.session = null;
-            p.putDown?.();
-            p.putDown = null;
-            try {
-              s.cancel();
-            } catch {
-              // the hand already put it back
-            }
-          }
           continue;
         }
         if (p.contested != null) {
@@ -509,7 +452,6 @@ export default {
           }
           p.contested = null;
         }
-        if (p.session) continue;
         if (!carryFn()) {
           retire(p); // nothing carries here: it stays where it was set down, beside the bag
           continue;
@@ -575,7 +517,7 @@ export default {
         return void api.notify("A bag can't go inside itself.", "error");
       }
       const n = pour({ from: a, to: b, by: api.session, shadow: sh.get(from.url) });
-      if (n) announce("poured", { from: from.url, to: to.url, n });
+      if (n) api.tell("poured", { from: from.url, to: to.url, n });
       else api.notify(`${titleOf(from.url)} is empty.`);
     }
 
@@ -639,7 +581,7 @@ export default {
           d.unmount = Tool(handle, body, host);
         })
         .catch((err) => api.notify(`Couldn't open the bag: ${err?.message ?? err}`, "error"));
-      announce("looked", { bag: bag.url });
+      api.tell("looked", { bag: bag.url });
       api.schedule(() => {});
     }
 
@@ -657,22 +599,14 @@ export default {
       update(snapshot) {
         scene = snapshot;
         watch(wanted());
-        putDown();
         settle();
         step();
         drawLabels();
         if (dock && !bagAt(dock.bagId)) closeDock();
         else dock?.refresh?.();
       },
-      landing,
-      receive(type, data, from) {
-        // checked as it arrives; said once the sender's name is known (or isn't to be had)
-        if (!told(type, data, "Someone")) return;
-        contactName(from?.viewer).then((name) => {
-          const text = dead ? null : told(type, data, name || "Someone");
-          if (text) api.notify(text);
-        });
-      },
+      landed,
+      messages,
       commands: [
         {
           id: "draw",
@@ -772,10 +706,10 @@ export default {
   drop: (ctx, info) => dropBag(ctx, info),
 };
 
-/** What a peer may tell us, and the shape each must have: which bag and how many, never what. */
+/** The shape of each thing a bag tells: which bag and how many, never what. */
 const url = (u) => typeof u === "string" && u.length < 512 && u.startsWith("automerge:");
 const howMany = (n) => Number.isInteger(n) && n > 0 && n <= 100_000;
-const MESSAGES = {
+const VALID = {
   drew: (d) => url(d.bag) && howMany(d.n),
   put: (d) => url(d.bag) && howMany(d.n),
   emptied: (d) => url(d.bag) && howMany(d.n),
@@ -783,7 +717,7 @@ const MESSAGES = {
   looked: (d) => url(d.bag),
 };
 
-export { CONTAINER, MESSAGES };
+export { CONTAINER };
 
 const STAGE_CSS = `
 .scene-stage .label.bag-count:where(:not(.about-embed *), .about-embed .scene-tool *) {

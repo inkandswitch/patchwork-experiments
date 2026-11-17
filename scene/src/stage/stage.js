@@ -76,7 +76,7 @@ import { layersKey } from "../layers.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc, seededRenderDoc } from "../datatype.js";
-import { atKey, defaultParams } from "../staleness.js";
+import { atKey, defaultParams, paramsBySpec } from "../staleness.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "../providers.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
@@ -84,6 +84,7 @@ import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } 
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
+import { createTelling, declared } from "./telling.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins, withNotice } from "./view.js";
@@ -387,7 +388,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // The doc lists the packages its contents come from, and the ones this
   // viewer doesn't have are offered (STAGE.md, "Packages"). The render
   // manager reports the provider each render doc names (objState), so one a
-  // render doc asks for is listed even when the object's own field differs.
+  // render doc asks for is listed even when the object's own field differs,
+  // and no source package is taken off the list while a render doc built
+  // here hasn't said yet (one shown, not veiled, may name any provider).
   // (through the view's repo, not the stage's: a package is the viewer's to load, at its live heads,
   // never a doc this one reaches, so fixing a link never records one)
   const packages = createPackages({
@@ -396,6 +399,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     plugins: patchworkPlugins,
     local,
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
+    // (an object with a source is built through a render doc, which says its provider once it has loaded: hidden or veiled, never)
+    rendersKnown: () => {
+      const objects = doc()?.objects ?? {};
+      for (const [id, route] of routes) if (route === "built" && objects[id]?.sourceUrl && !said(objState.get(id))) return false;
+      return true;
+    },
     // ("Not now" is the view's: a doc opened after it isn't asked again either)
     declined: view.declinedPackages,
     // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
@@ -484,6 +493,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   const routes = new Map(); // id → where its content was routed at the last sync: "built", "file" or null (providers.js routeOf)
   const objState = new Map(); // id → what the manager or the queue last said (its `content` says which)
+  // has the manager said which provider this object's render doc names? (its first word, before the doc has loaded, hasn't)
+  const said = (st) => st?.content === "built" && "providerId" in st;
   const displayKeys = new Map(); // id → displayKey last applied
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
   // render docs this scene made itself, this session: nothing to wait to sync before building
@@ -518,9 +529,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     announce: role === "pinned" ? null : view.announcer,
     loadProvider,
     onState: (id, s) => {
-      const before = objState.get(id)?.bounds;
+      const was = objState.get(id);
+      const before = was?.bounds;
       // the provider its render doc names is one the scene calls for (packages)
-      if (objState.get(id)?.providerId !== s.providerId) packages.check();
+      if (said(was) !== said({ ...s, content: "built" }) || was?.providerId !== s.providerId) packages.check();
       objState.set(id, { ...s, content: "built" });
       // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
       if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
@@ -1044,9 +1056,21 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       ids.forEach(applyRemoteHold);
     }),
   );
+  // What extensions tell (telling.js): a declared message is the stage's to hold to the doc and
+  // say, by the speaker's name; anything else a peer sends is the extension's own `receive`.
+  const telling = createTelling({
+    now: time.now,
+    after: (ms, fn) => time.after(ms, fn),
+    scene: () => scene(),
+    notify: (text, ext) => notify(text, "info", ext),
+    find: (url) => view.repo?.find?.(url),
+    alive: (ext, instance) => !dead && host.instanceOf(ext) === instance,
+  });
+  cleanups.push(() => telling.dispose());
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
       const x = host.instanceOf(ext);
+      if (declared(x, kind)) return telling.hear(ext, x, kind, data, from);
       if (typeof x?.receive !== "function") return;
       try {
         x.receive(kind, data, from);
@@ -1404,6 +1428,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         console.warn(`[scene] extension “${r.id}”: update failed`, err);
       }
     }
+    // what was told and waits for the doc to bear it out: asked again now everyone has seen this flush
+    telling.ask();
     view.tryArrive();
     const work = scheduled;
     scheduled = [];
@@ -2055,7 +2081,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       return null;
     }
     if (dead) return null;
-    packages.used("scene:part", partId);
     const id = typeof made === "string" && doc().objects?.[made] ? made : null;
     if (id) view.select([...path, id]);
     return id;
@@ -2066,18 +2091,23 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * scene:template and run its create() with a drop context, which writes
    * whatever it needs into the doc. Then this viewer starts where the doc now
    * says, as arriving does (an arena's template starts people walking at a
-   * spawn point, so its maker lands in the game). True when it ran.
+   * spawn point, so its maker lands in the game). create gets exactly the
+   * params its metadata declares (`params`: ParamSpecs), coerced, defaults
+   * filled and every other key dropped: `{}` for a template that declares
+   * none. True when it ran.
    * @param {string} templateId
+   * @param {object} [params]
    * @returns {Promise<boolean>}
    */
-  async function applyTemplate(templateId) {
+  async function applyTemplate(templateId, params) {
     if (!writable()) return false;
     const reg = await getRegistry("scene:template");
     if (dead || !reg) return false;
-    let mod;
+    let mod, specs;
     try {
       const loaded = await reg.load(templateId);
       mod = loaded?.module?.default ?? loaded?.module;
+      specs = Array.isArray(loaded?.params) ? loaded.params : [];
     } catch (err) {
       notify(`Couldn't load that template: ${err?.message ?? err}`, "error");
       return false;
@@ -2085,13 +2115,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (dead) return false;
     if (typeof mod?.create !== "function") return false;
     try {
-      await mod.create(makeDropContext(templateId));
+      await mod.create(makeDropContext(templateId), paramsBySpec(specs, params));
     } catch (err) {
       notify(`That template failed: ${err?.message ?? err}`, "error");
       return false;
     }
     if (dead) return false;
-    packages.used("scene:template", templateId);
     if (n === 0) view.arrive();
     return true;
   }
@@ -2253,6 +2282,20 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       send: (type, data) => {
         if (live()) presence.send(id, type, data);
       },
+      // say it here as "You" and send it; each peer's stage tells it once its doc bears it out (instance.messages)
+      // (a view that can't write the doc has done nothing it could bear out: it tells nothing)
+      tell: (type, data) => {
+        if (!live() || !writable()) return;
+        const x = host.instanceOf(id);
+        if (!declared(x, type)) return void console.warn(`[scene] extension “${id}”: tell(“${type}”) isn't among its messages`);
+        let copy;
+        try {
+          copy = structuredClone(data ?? null);
+        } catch {
+          return void console.warn(`[scene] extension “${id}”: tell(“${type}”) data isn't plain`);
+        }
+        if (telling.say(id, x, type, copy, viewer)) presence.send(id, type, copy);
+      },
       notify: (text, kind) => notify(text, kind, id),
       /**
        * the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask
@@ -2281,7 +2324,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       rebuild,
       fixPoint,
       drop: (info, opts) => (writable() ? host.drop(info, opts) : Promise.resolve(false)),
-      template: (templateId) => applyTemplate(templateId),
+      template: (templateId, params) => applyTemplate(templateId, params),
       part: (partId, at, opts) => applyPart(partId, at, opts),
       /**
        * The stage's own editing (TOOLS.md, Decisions 2), on the stage's own
@@ -2324,7 +2367,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? To a general part, the view's own, also: carried across a focus move */
         touched: () => viewport.touched() || view.cameraPlaced || (general && view.cameraCarried),
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
-        /** someone finished moving the camera (an orbit, a zoom); never while it's held */
+        /** someone finished moving the camera (an orbit, a zoom, a Frame); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
       }),
 
@@ -2689,6 +2732,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     host,
     router,
     presence,
+    telling,
     perf,
     queue,
     manager,

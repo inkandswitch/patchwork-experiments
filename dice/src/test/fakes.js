@@ -19,6 +19,7 @@
 // matrices column-major, Euler XYZ.
 
 import { vi } from "vitest";
+import { createTelling, declared } from "./telling.js";
 
 /** T · R(XYZ) · S as a column-major 4×4 (scene/src/transform.js). */
 export function composeMatrix(t) {
@@ -249,6 +250,15 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
     views.set(session, view);
     gone.delete(session);
     const ext = "dice";
+    /** A send reaching every other view here: a declared message is told as the stage tells it, anything else is receive's. */
+    function deliver(type, data) {
+      const from = { session, viewer };
+      for (const [s, v] of views) {
+        if (s === session || !v.here || !v.instance) continue;
+        if (declared(v.instance, type)) v.telling.hear(ext, v.instance, type, structuredClone(data), from);
+        else v.instance.receive?.(type, structuredClone(data), from);
+      }
+    }
     const api = {
       id: ext,
       session,
@@ -332,7 +342,14 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       },
       send(type, data) {
         sent.push({ session, viewer, type, data: structuredClone(data) });
-        for (const [s, v] of views) if (s !== session && v.here) v.instance?.receive?.(type, structuredClone(data), { session, viewer });
+        deliver(type, data);
+      },
+      // said here as "You" and sent; told on each peer as the stage tells it (telling.js)
+      tell(type, data) {
+        if (!view.here || !declared(view.instance, type)) return;
+        if (!view.telling.say(ext, view.instance, type, structuredClone(data), viewer)) return;
+        sent.push({ session, viewer, type, data: structuredClone(data) });
+        deliver(type, data);
       },
       notify: (text, kind) => view.notices.push({ text, kind }),
       labels: () => ({ set: (items) => (view.labels = items) }),
@@ -403,6 +420,14 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       schedule: (fn) => fn?.(),
     };
     view.api = api;
+    view.telling = createTelling({
+      now: api.clock.now,
+      after: api.clock.after,
+      scene,
+      notify: (text) => view.notices.push({ text, kind: undefined }),
+      find: (url) => repo?.find?.(url),
+      alive: (_ext, instance) => view.here && view.instance === instance,
+    });
     presenceChanged(session);
     return api;
   }
@@ -413,6 +438,12 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
     scene,
     change,
     view: (s) => views.get(s),
+    /** A send from someone not in this world reaching view `session`, as the stage routes it: told if declared, else receive's. */
+    hear(session, type, data, from) {
+      const v = views.get(session);
+      if (declared(v.instance, type)) v.telling.hear(v.api.id, v.instance, type, structuredClone(data), from);
+      else v.instance.receive?.(type, structuredClone(data), from);
+    },
     /** Give a view its extension instance: sends reach it, flush updates it. */
     attach(session, instance) {
       views.get(session).instance = instance;
@@ -430,6 +461,8 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         v.seenLocal = l;
         v.instance.update?.(s, l, prev && { ...prev, view: prev.local }, l);
       }
+      // what was told and waits for the doc: asked on every flush, as the stage's are
+      for (const v of views.values()) if (v.here) v.telling.ask();
     },
     /** Run every view's loops, `n` frames of `dt` seconds. */
     tick(dt = 1 / 60, n = 1) {

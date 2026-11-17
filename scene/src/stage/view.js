@@ -346,7 +346,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   let cameraCarried = false;
   let cameraTimer = null;
   cleanups.push(
-    viewport.onCameraEnd(() => {
+    // (only what the viewer's hand did: a Frame, the autoframe's too, isn't kept, so a scene opened again still frames what it has then)
+    viewport.onCameraEnd((_, how) => {
+      if (how !== "orbit") return;
       cameraTimer?.();
       cameraTimer = later(() => {
         cameraTimer = null;

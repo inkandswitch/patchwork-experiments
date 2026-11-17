@@ -94,8 +94,7 @@ export function listedPackages(doc) {
  *     its own: a start body's place carries the trait its package reads (a
  *     spawn point's `walk.spawn`, a table's `seats`).
  * Parts and templates leave no mark of their own: what they make is objects
- * and traits, found above (the stage notes the part or template itself when
- * one is run: src/stage/packages.js).
+ * and traits, found above.
  * @param {object} doc
  * @param {{ providerIds?: Iterable<string> }} [extra]
  * @returns {({ type: "scene:source", id: string } | { type: "scene:extension", trait: string })[]}
@@ -118,8 +117,12 @@ export function neededPlugins(doc, extra = {}) {
 
 /**
  * The registered plugins that answer the doc's needs: `[{ type, id,
- * importUrl }]`, each once. A source by its id; an extension when the doc
- * has one of its traits (what activation's docReason asks). What isn't
+ * importUrl }]`, each once. A source by its id: every plugin registered
+ * with that id, whichever the registry would hand out (two packages may
+ * register the same id, in an order that differs between viewers); an
+ * extension when the doc has one of its traits. An extension of every doc
+ * (`traits: ["*"]`) runs wherever it is installed and answers no need: no
+ * doc calls for it by having it (STAGE.md, "Packages"). What isn't
  * registered answers nothing: only a viewer who has a plugin can say where
  * it comes from.
  * @param {object} doc
@@ -128,22 +131,31 @@ export function neededPlugins(doc, extra = {}) {
  * @returns {{ type: string, id: string, importUrl: string | null }[]}
  */
 export function answeringPlugins(doc, registries, extra = {}) {
-  const metasOf = (type) => (Array.isArray(registries?.[type]) ? registries[type].filter((p) => p && typeof p.id === "string") : []);
-  const sources = new Map(metasOf("scene:source").map((p) => [p.id, p]));
-  const extensions = metasOf("scene:extension");
   const out = new Map();
-  const add = (type, p) => {
-    const key = `${type}\u0000${p.id}`;
-    if (!out.has(key)) out.set(key, { type, id: p.id, importUrl: typeof p.importUrl === "string" ? p.importUrl : null });
-  };
-  for (const need of neededPlugins(doc, extra)) {
-    if (need.type === "scene:source") {
-      if (sources.has(need.id)) add(need.type, sources.get(need.id));
-    } else {
-      for (const p of extensions) if (strings(p.traits).includes(need.trait)) add(need.type, p);
-    }
+  for (const need of neededPlugins(doc, extra)) for (const p of answersTo(need, registries)) {
+    const importUrl = typeof p.importUrl === "string" ? p.importUrl : null;
+    const key = `${need.type}\u0000${p.id}\u0000${importUrl}`;
+    if (!out.has(key)) out.set(key, { type: need.type, id: p.id, importUrl });
   }
   return [...out.values()];
+}
+
+/** The registered plugins answering one need (answeringPlugins). */
+function answersTo(need, registries) {
+  const metas = Array.isArray(registries?.[need.type]) ? registries[need.type].filter((p) => p && typeof p.id === "string") : [];
+  return need.type === "scene:source" ? metas.filter((p) => p.id === need.id) : metas.filter((p) => strings(p.traits).includes(need.trait));
+}
+
+/**
+ * The doc's needs no plugin registered here answers (neededPlugins, each
+ * with no answer in answeringPlugins' sense). While there is one, this
+ * viewer can't tell what answers it elsewhere, so it prunes nothing.
+ * @param {object} doc
+ * @param {{ [type: string]: object[] }} registries
+ * @param {{ providerIds?: Iterable<string> }} [extra]
+ */
+export function unansweredNeeds(doc, registries, extra = {}) {
+  return neededPlugins(doc, extra).filter((need) => answersTo(need, registries).length === 0);
 }
 
 /** The packages these plugins come from: each plugin's package URL (packageUrl of its importUrl), once. */
@@ -157,21 +169,88 @@ export function packagesOf(plugins) {
 }
 
 /**
- * The reconcile rule: the package URLs to add to the doc's list now. Every
- * package a registered plugin answering the doc's needs comes from (and
- * every one in `used`: the parts and templates run in this view), that can
- * be shared and isn't listed. Empty when the doc has no list: the list is
- * made with the doc, never here (STAGE.md, "Shared maps").
- * @param {{ doc: object, registries: object, used?: Iterable<string>, providerIds?: Iterable<string> }} o
+ * The reconcile rule's first half: the package URLs to add to the doc's
+ * list now (packagesToPrune, below, is the other). Every package a
+ * registered plugin answering the doc's needs comes from, that can be
+ * shared and isn't listed. Parts and templates count by what they make:
+ * objects and traits, which are needs like any other. Empty when the doc
+ * has no list: the list is made with the doc, never here (STAGE.md,
+ * "Shared maps").
+ * @param {{ doc: object, registries: object, providerIds?: Iterable<string> }} o
  * @returns {string[]}
  */
-export function packagesToList({ doc, registries, used = [], providerIds = [] }) {
+export function packagesToList({ doc, registries, providerIds = [] }) {
   if (!Array.isArray(doc?.packages)) return [];
   const listed = new Set(listedPackages(doc));
-  const out = [];
-  const want = [...packagesOf(answeringPlugins(doc, registries, { providerIds })), ...packagesOf([...used].map((importUrl) => ({ importUrl })))];
-  for (const url of want) if (!listed.has(url) && !out.includes(url)) out.push(url);
-  return out;
+  return packagesOf(answeringPlugins(doc, registries, { providerIds })).filter((url) => !listed.has(url));
+}
+
+/**
+ * The prune rule, reconcile's other half: the listed packages to take off
+ * the doc's list now, in list order. Nothing, while any need of the doc's
+ * is answered by nothing here (unansweredNeeds): a package listed for it
+ * may be what answers it elsewhere (another version of a package, or one
+ * this viewer lacks under the URL listed). Otherwise a listed package goes
+ * when:
+ *   1. it is registered here (registeredPackages). A package missing on this
+ *      machine, still loading, failed or declined answers nothing here, and
+ *      that says nothing about the doc: it stays;
+ *   2. none of its registered plugins answers a need of the doc's
+ *      (answeringPlugins, with the providers render docs asked for);
+ *   3. it isn't the scene package (scenePackage): the stage itself, and the
+ *      doc's suggested import;
+ *   4. while some render doc built here hasn't said which provider it names
+ *      (`rendersKnown` false), it registers no source: a render doc may
+ *      name any provider, its object's field notwithstanding.
+ * So it never drops a package missing here, never one that answers a need,
+ * and it is a function of the doc and this viewer's registry alone. Each
+ * doc lists only its own packages, so its own needs are the whole
+ * question. Empty when the doc has no list.
+ * @param {{ doc: object, registries: object, providerIds?: Iterable<string>, rendersKnown?: boolean }} o
+ * @returns {string[]}
+ */
+export function packagesToPrune({ doc, registries, providerIds = [], rendersKnown = true }) {
+  if (!Array.isArray(doc?.packages)) return [];
+  const ids = [...providerIds];
+  if (unansweredNeeds(doc, registries, { providerIds: ids }).length) return [];
+  const registered = registeredPackages(registries);
+  const keep = new Set([...packagesOf(answeringPlugins(doc, registries, { providerIds: ids })), ...[scenePackage(registries)].filter(Boolean)]);
+  if (!rendersKnown) for (const url of packagesOf(Array.isArray(registries?.["scene:source"]) ? registries["scene:source"] : [])) keep.add(url);
+  return listedPackages(doc).filter((url) => registered.has(url) && !keep.has(url));
+}
+
+/**
+ * One reconcile pass: what to write to the doc's list now. `prune: false`
+ * (before the registry has gone quiet) only adds. A function of the doc and
+ * this viewer's registry: at its fixed point the list is
+ *   answering ∪ (listed ∩ (unregistered ∪ {scene package} ∪ kept)),
+ * where kept is every listed package while a need goes unanswered here, and
+ * the source packages while a render doc hasn't reported (packagesToPrune).
+ * @param {{ doc: object, registries: object, providerIds?: Iterable<string>, rendersKnown?: boolean, prune?: boolean }} o
+ * @returns {{ add: string[], prune: string[] }}
+ */
+export function reconcileList({ doc, registries, providerIds = [], rendersKnown = true, prune = true }) {
+  const ids = [...providerIds];
+  return {
+    add: packagesToList({ doc, registries, providerIds: ids }),
+    prune: prune ? packagesToPrune({ doc, registries, providerIds: ids, rendersKnown }) : [],
+  };
+}
+
+/**
+ * Reconcile's write, inside a change of the doc (`d`, the draft): every
+ * entry naming a package in `prune` removed, however it names it (twice, at
+ * heads), then `{ url }` appended for each in `add` that no entry names as
+ * it is. Only a list the doc was made with is touched (STAGE.md, "Shared
+ * maps"). The two never meet: `add` is what isn't listed, `prune` what is.
+ * @param {object} d
+ * @param {{ add?: string[], prune?: string[] }} o
+ */
+export function changeList(d, { add = [], prune = [] }) {
+  if (!Array.isArray(d?.packages)) return;
+  const gone = new Set(prune);
+  for (let i = d.packages.length - 1; i >= 0; i--) if (gone.has(packageUrl(d.packages[i]?.url))) d.packages.splice(i, 1);
+  for (const url of add) if (!d.packages.some((e) => e?.url === url)) d.packages.push({ url });
 }
 
 // ─── the scene package itself ───────────────────────────────────────────────

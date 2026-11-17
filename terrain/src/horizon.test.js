@@ -116,7 +116,7 @@ describe("the canopy in extras.terrain (a skyline)", () => {
   });
 });
 
-import { shoreProfile } from "./sky.js";
+import { shoreProfile } from "./place.js";
 describe("the shore's profile for a terrain placed in the stage", () => {
   it("is the land's own, its azimuths turned with it and its eye moved with it (a quarter turn and a shift, every bin of 8 azimuths)", () => {
     // a ridge east of the land's origin, 50 m high from 600 to 900 m

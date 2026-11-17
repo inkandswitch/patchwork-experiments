@@ -6,7 +6,8 @@
 // lots are tested on their own (lots.test.js, lots-ext.test.js) and with
 // this extension in the probes.
 import { afterEach, describe, it, expect, vi } from "vitest";
-import Extension, { LAND_GRACE_MS, MAX_THROWN, MESSAGES, THROW_MS, TOLD_MS, TRUST_MS } from "./extension.js";
+import Extension, { LAND_GRACE_MS, MAX_THROWN, THROW_MS, TOLD_MS } from "./extension.js";
+import { TELL_MS } from "./test/telling.js";
 import { DIE, PROVIDER } from "./ids.js";
 import { PRESETS, dieOf } from "./die.js";
 import { builtDie } from "./die-glb.js";
@@ -896,17 +897,18 @@ describe("a peer's word", () => {
   const from = { session: "A", viewer: "alice" };
   const settle = (t, face, id = "d1") => t.a.change((d) => (d.objects[id].transform.rotation = matrixEuler(showing(built("d6"), face, 0.2)).map((v) => +v.toFixed(6))));
 
-  it("only messages of the shapes it knows are heard at all: a turn; a roll is never anyone's word", () => {
+  it("only messages of the shapes it declares are told at all: a turn; a roll is never anyone's word", () => {
     const ok = { die: "d1", face: 3 };
-    expect(Object.keys(MESSAGES)).toEqual(["turned"]);
-    expect(MESSAGES.turned(ok)).toBe(true);
-    for (const d of [{}, { die: "d1" }, { face: 1 }, { die: "d1", face: "1" }, { die: "", face: 1 }, { die: "d1", face: -1 }, { die: "d1", face: 1.5 }, { die: "d1", face: 100 }, { die: "x".repeat(128), face: 1 }]) expect([d, MESSAGES.turned(d)]).toEqual([d, false]);
-    expect(MAX_THROWN).toBe(64);
     const t = world();
+    const { messages } = t.xb;
+    expect(Object.keys(messages)).toEqual(["turned"]);
+    expect(messages.turned.valid(ok)).toBe(true);
+    for (const d of [{}, { die: "d1" }, { face: 1 }, { die: "d1", face: "1" }, { die: "", face: 1 }, { die: "d1", face: -1 }, { die: "d1", face: 1.5 }, { die: "d1", face: 100 }, { die: "x".repeat(128), face: 1 }]) expect([d, messages.turned.valid(d)]).toEqual([d, false]);
+    expect(MAX_THROWN).toBe(64);
     settle(t, 3);
-    for (const [type, data] of [["rolled", { dice: [ok] }], ["rolled", null], ["shuffled", { n: 3 }], ["constructor", ok], ["turned", { die: "pawn", face: 3 }], ["turned", null], ["turned", 7]]) t.xb.receive(type, data, from);
+    for (const [type, data] of [["rolled", { dice: [ok] }], ["rolled", null], ["shuffled", { n: 3 }], ["constructor", ok], ["turned", { die: "pawn", face: 3 }], ["turned", null], ["turned", 7]]) t.w.hear("B", type, data, from);
     t.w.flush();
-    vi.advanceTimersByTime(TRUST_MS + 1000);
+    vi.advanceTimersByTime(TELL_MS + 1000);
     expect(t.notices("B")).toEqual([]);
     t.w.done();
   });
@@ -915,30 +917,30 @@ describe("a peer's word", () => {
     const t = world();
     t.w.flush();
     // the die hasn't moved: a "turn" of it is nobody's word to take
-    t.xb.receive("turned", { die: "d1", face: t.shows("d1") }, from);
-    vi.advanceTimersByTime(TRUST_MS + 1000);
+    t.w.hear("B", "turned", { die: "d1", face: t.shows("d1") }, from);
+    vi.advanceTimersByTime(TELL_MS + 1000);
     t.w.flush();
     expect(t.notices("B")).toEqual([]);
     // put down by hand on a face, then "announced" after the moment has passed: still nothing
     settle(t, 2);
     t.w.flush();
-    vi.advanceTimersByTime(TRUST_MS + 1000);
-    t.xb.receive("turned", { die: "d1", face: 2 }, from);
+    vi.advanceTimersByTime(TELL_MS + 1000);
+    t.w.hear("B", "turned", { die: "d1", face: 2 }, from);
     expect(t.notices("B")).toEqual([]);
     // the doc moved it just now, but to another face than they say
     settle(t, 4);
-    t.xb.receive("turned", { die: "d1", face: 5 }, from);
+    t.w.hear("B", "turned", { die: "d1", face: 5 }, from);
     t.w.flush();
     expect(t.notices("B")).toEqual([]);
-    vi.advanceTimersByTime(TRUST_MS + 1000);
+    vi.advanceTimersByTime(TELL_MS + 1000);
     // the message first, the doc after (they travel apart): told when the doc lands it
-    t.xb.receive("turned", { die: "d1", face: 1 }, from);
+    t.w.hear("B", "turned", { die: "d1", face: 1 }, from);
     expect(t.notices("B")).toEqual([]);
     settle(t, 1);
     t.w.flush();
     expect(t.notices("B")).toEqual([`Someone turned d1 to ${t.label("d1")}`]);
     // and that move is spent: saying it again tells nothing more
-    t.xb.receive("turned", { die: "d1", face: 1 }, from);
+    t.w.hear("B", "turned", { die: "d1", face: 1 }, from);
     t.w.flush();
     expect(t.notices("B")).toHaveLength(1);
     t.w.done();
@@ -947,9 +949,9 @@ describe("a peer's word", () => {
   it("is told by the peer's contact name once it's known, and by this view's own labels", async () => {
     const t = world();
     const ana = t.w.repo.add({ name: "Ana" });
-    t.xb.receive("turned", { die: "d1", face: 1 }, { session: "A", viewer: ana.url });
-    vi.useRealTimers();
-    await new Promise((r) => setTimeout(r, 0));
+    t.w.hear("B", "turned", { die: "d1", face: 1 }, { session: "A", viewer: ana.url });
+    // (the stage looks her contact up: a few turns of promises, no time)
+    for (let i = 0; i < 20; i++) await Promise.resolve();
     settle(t, 1);
     t.w.flush();
     expect(t.notices("B")).toEqual([`Ana turned d1 to ${t.label("d1")}`]);
@@ -960,12 +962,13 @@ describe("a peer's word", () => {
     const made = t.w.content.d1;
     t.w.content.d1 = null;
     settle(t, 2);
-    t.xb.receive("turned", { die: "d1", face: 2 }, from);
+    t.w.hear("B", "turned", { die: "d1", face: 2 }, from);
     t.w.flush();
     expect(t.notices("B")).toEqual([]);
-    // the GLB arrives: an update with the same scene
+    // the GLB arrives: the stage's flush, an update with the same scene, then what waits is asked
     t.w.content.d1 = made;
     t.xb.update(t.b.scene(), t.b.local.get(), { scene: t.b.scene(), local: t.b.local.get() });
+    t.w.view("B").telling.ask();
     expect(t.notices("B")).toEqual([`Someone turned d1 to ${t.label("d1")}`]);
     t.w.done();
   });

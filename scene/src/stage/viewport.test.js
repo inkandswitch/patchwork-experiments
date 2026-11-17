@@ -514,8 +514,25 @@ describe("the camera rig", () => {
     expect(vp.touched()).toBe(true);
     expect(end).toHaveBeenCalledOnce();
     expect(end.mock.calls[0][0]).toHaveProperty("position");
+    expect(end.mock.calls[0][1]).toBe("orbit");
     const release = vp.hold();
     vp.controls.dispatchEvent({ type: "end" });
+    expect(end).toHaveBeenCalledOnce();
+    release();
+  });
+
+  it("a Frame ends a move of the camera too (never while held), told as one", () => {
+    const vp = headless();
+    const end = vi.fn();
+    vp.onCameraEnd(end);
+    const box = { min: [-1, 0, -1], max: [1, 1, 1] };
+    vp.frame(box);
+    expect(end).toHaveBeenCalledOnce();
+    expect(end.mock.calls[0][1]).toBe("frame");
+    // told where it ended: at the box
+    expect(r6(end.mock.calls[0][0].target)).toEqual([0, 0.5, 0]);
+    const release = vp.hold();
+    vp.frame(box);
     expect(end).toHaveBeenCalledOnce();
     release();
   });

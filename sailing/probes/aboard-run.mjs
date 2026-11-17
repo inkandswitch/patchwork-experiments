@@ -23,7 +23,7 @@
 //  7. a plain click on a card doesn't board; a drag on the wheel orbits
 //     (the hand doesn't carry her fittings); seated, a plain click on the
 //     hull doesn't board, the bar offers Come aboard (Enter) and the HUD
-//     has no button and not the walking keys, its dial top left clear of
+//     has no button and no hint (no walking keys), its dial top left clear of
 //     the hand;
 //  8. B gets her under way with the keys in the template's own breeze: Enter,
 //     R held at the mast (the main up at anchor), F held at the windlass, F
@@ -74,7 +74,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "walk/dist/index.js", "water/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "walk/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-aboard"));
 const QUICK = process.argv.includes("--quick");
@@ -392,8 +392,8 @@ try {
       check("7: seated, a plain click on the hull round the table doesn't board", !(await P("me('a')")).playing && !(await P("walking('a')")), { me: await P("me('a')") });
     } else check("7: the hull round the table is on A's screen", false);
     // seated: the bar of tools offers Come aboard (Enter); the HUD holds no button, no walking keys, and keeps clear of the hand at the bottom
-    const hud = await P("hud('a')");
-    check("7: seated, the bar offers Come aboard (Enter); the HUD has no button and no walking keys, its dial top left", hud?.seated && hud.bar?.text === "Come aboard" && hud.bar.enabled && hud.bar.title === "Walk the deck in first person (Enter)" && hud.buttons === 0 && hud.hint === "" && !/WASD/.test(hud.keys) && hud.panel && hud.panel.bottom < hud.panel.hostHeight * 0.4, hud);
+    const hud = { ...(await P("hud('a')")), body: await P("bodyLabel('a')") };
+    check("7: seated, the bar offers Come aboard (Enter); the HUD has no button and no hint (so no walking keys), its dial top left", hud.body === "Seated" && hud.bar?.text === "Come aboard" && hud.bar.enabled && hud.bar.title === "Walk the deck in first person (Enter)" && hud.buttons === 0 && hud.hint === "" && hud.panel && hud.panel.bottom < hud.panel.hostHeight * 0.4, hud);
     // back in the seat for what follows
     await P("pick('a', '')");
     await P("pick('a', 'p1')");
@@ -629,11 +629,20 @@ try {
     if (!at) check("13: a card of G's is in plain sight on A's screen", false, { where: w0, cam: await P("cam('a')") });
     else {
       const bBody = await P("bodyLabel('b')");
-      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens, narrowing
-      // the canvas: let it settle and aim again, so the double-click lands on the card
+      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens a beat
+      // later (500 ms of the stage's time: TOOLS.md Decisions 6), narrowing the canvas: let it open and settle
+      // and aim again, so the double-click lands on the card. The beat is the stage's time, which under way in
+      // a headless Chrome runs behind the wall's (each frame's step is capped), so it waits for the canvas to
+      // narrow, not for a time of its own
+      const beat = () => js(`(() => { const api = __p.A.host.record("sailing")?.api; return { frame: window.__time?.frames?.(), t: api ? api.clock.t() : null }; })()`);
+      const wide = await js(`__p.A.view.canvas.getBoundingClientRect().width`);
       await b.click(at.x, at.y);
+      const clicked = await beat();
       await until(`selectionPath('a')?.length === 1`, 3000);
-      await b.rest(800);
+      // (drawn frames: the stage's timers run on the frames it draws)
+      await b.soon(`window.__p.A.view.canvas.getBoundingClientRect().width < ${wide}`, { frames: 300, draw: true });
+      report.numbers.inspectorBeat = { wide, clicked, narrowed: await beat() };
+      await b.rest(300);
       // (the canvas is narrower now: a card in plain sight on it again, maybe another)
       let atD = (await until(`aimAt(${J(target)}, 'a')`, 3000)) || (await until(`aimBest(${J(played)}, 'a')`, 3000));
       if (atD) target = atD.id;
@@ -648,7 +657,7 @@ try {
       const at2 = await until(`aimAt(${J(target)}, 'a')`, 5000);
       if (at2) await b.click(at2.x, at2.y);
       await until(`halo('a')?.id === ${J(target)}`, 5000);
-      await b.rest(800); // (the inspector's tab opens with it, so the canvas narrows: let it settle before aiming)
+      await b.rest(800); // (the inspector's tab, open or opening a beat after it, narrows the canvas: let it settle before aiming)
       const seen = await P("seen('a')");
       check("13: a click selects the card itself: the boat sees the link, G the card", J(await P("selectionPath('a')")) === J([ids.link, target]) && seen.some(([p, x]) => p.length === 0 && x === ids.link) && seen.some(([p, x]) => J(p) === J([ids.link]) && x === target), { path: await P("selectionPath('a')"), seen });
       const halo = await P("halo('a')");

@@ -8,6 +8,10 @@
 // own copy of this file (packages don't import each other); keep the copies
 // the same. Plain node, no dependencies.
 //
+// A publisher states exactly what the doc calls for: the stage takes off a
+// listed package nothing in the doc calls for (STAGE.md, "Packages", Prune),
+// so a list stating more would be rewritten by the first writable visit.
+//
 //   const table = { "@patchwork": scenePatchwork(), …, packages: scenePackages(["scene", "tabletop"]) };
 //   problems.push(...packageProblems(doc, ["scene", "tabletop"]));
 //   const stamped = withPackages(snapshotOfASceneMadeInAProbePage, ["scene", "tabletop"]);
@@ -54,15 +58,14 @@ export function scenePackages(pkgs) {
 /**
  * A scene doc made where there was no registry to say (a probe page's
  * snapshot), as it's published: the same doc with the scene package as its
- * suggested import and these packages listed (after any it lists already).
+ * suggested import and exactly these packages listed (whatever the page's
+ * list held: a probe page's stage lists by its own registry).
  */
 export function withPackages(doc, pkgs) {
-  const have = (Array.isArray(doc.packages) ? doc.packages : []).filter((e) => e && typeof e.url === "string" && BARE.test(e.url));
-  const more = scenePackages(pkgs).filter((e) => !have.some((h) => h.url === e.url));
-  return { ...doc, "@patchwork": { ...doc["@patchwork"], ...scenePatchwork() }, packages: [...have.map((e) => ({ url: e.url })), ...more] };
+  return { ...doc, "@patchwork": { ...doc["@patchwork"], ...scenePatchwork() }, packages: scenePackages(pkgs) };
 }
 
-/** What's wrong with a scene doc's suggested import and packages, as sentences; none when it names the scene package and lists each of these. */
+/** What's wrong with a scene doc's suggested import and packages, as sentences; none when it names the scene package and lists exactly these, each once. */
 export function packageProblems(doc, pkgs) {
   const problems = [];
   const scene = pushworkUrl("scene");
@@ -71,6 +74,9 @@ export function packageProblems(doc, pkgs) {
   if (!Array.isArray(doc?.packages)) return [...problems, "no packages list (every scene is made with one)"];
   for (const e of doc.packages) if (!e || typeof e.url !== "string" || !BARE.test(e.url)) problems.push(`packages has an entry that isn't { url: a bare automerge URL }: ${JSON.stringify(e)}`);
   const listed = doc.packages.map((e) => e?.url);
+  const stated = scenePackages(pkgs).map((e) => e.url);
   for (const pkg of pkgs) if (!listed.includes(pushworkUrl(pkg))) problems.push(`packages doesn't list ${pkg} (${pushworkUrl(pkg)})`);
+  for (const url of new Set(listed)) if (typeof url === "string" && !stated.includes(url)) problems.push(`packages lists ${url}, which isn't stated (${pkgs.join(", ")})`);
+  for (const url of new Set(listed)) if (listed.filter((u) => u === url).length > 1) problems.push(`packages lists ${url} more than once`);
   return problems;
 }

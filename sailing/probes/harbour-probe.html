@@ -72,13 +72,13 @@ async function pumping(fn) {
 // The harbour (WATER.md, "Which doc holds what"). A's link turns her so the harbour's wind
 // meets her as her template's did (from 45° there, from 250° here: −205°), so she is on her reach.
 // the harbour's weather and its Sea (WATER.md, "Water bodies": a water object with a sea on it)
-const HARBOUR_WEATHER = { wind: { speed: 5, from: 250 }, seed: 7 };
+const HARBOUR_WEATHER = { wind: 5, from: 250, seed: 7 };
 const HARBOUR_SEA = { seed: 7, scale: 0.5 };
 const AT_A = { position: [-40, 0, 0], rotation: [0, deg(45 - 250), 0], scale: 1 };
 const AT_B = { position: [40, 0, 0], rotation: [0, deg(30), 0], scale: 1 };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -160,7 +160,7 @@ try {
       // (emptyScene makes the maps; the harbour's things go in after)
       const H = emptyScene({
         title: "Harbour",
-        traits: { "sailing.weather": structuredClone(HARBOUR_WEATHER) },
+        traits: { weather: structuredClone(HARBOUR_WEATHER) },
         view: { grid: false, axes: false, start: { home: { position: [0, 45, 95], target: [0, 0, 0] } } },
       });
       const sea = { name: "Sea", sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {}, "sailing.sea": structuredClone(HARBOUR_SEA) } };
@@ -218,6 +218,22 @@ try {
       const [vx, vz] = inst(st, "sailing").debug.sea.wind.at(lx, lz, st.worldTime().t);
       return [F[0] * vx + F[8] * vz, F[2] * vx + F[10] * vz];
     },
+    /**
+     * The mean wind stage `link` of view w sails in (its sailing extension's ctx.sea.wind; null: the outermost),
+     * turned back into the world: { speed, from, gustiness }. And the world's own: the outermost's `wind` ambient.
+     */
+    meanWind: (w, link = null) => {
+      const st = stageOf(w, link);
+      const x = inst(st, "sailing")?.debug.sea.wind;
+      if (!x) return null;
+      const F = frameOf(st);
+      const r = (x.from * Math.PI) / 180, dx = -Math.sin(r), dz = Math.cos(r);
+      const wx = F[0] * dx + F[8] * dz, wz = F[2] * dx + F[10] * dz;
+      return { speed: x.speed, from: (((Math.atan2(-wx, wz) * 180) / Math.PI) + 360) % 360, gustiness: x.gustiness };
+    },
+    worldWind: (w) => stageOf(w).ambients().wind ?? null,
+    /** a boat's own weather, as her doc has it */
+    weatherOf: (which) => docs[which].doc().traits.weather ?? null,
     camera: (w) => dbg[w].viewport.getCamera?.() ?? null,
     /** each HUD in view w: is it shown? */
     huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),

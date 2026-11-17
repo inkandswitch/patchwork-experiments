@@ -108,7 +108,7 @@ for passing states (a die under a cup). Flip is carry's verb.
 
 **Chrome follows attention, never the doc.** Twenty edit-only parts are
 what keep the outline, grid and axes out of a game today. Instead the
-inspector is a drawer tab a selection opens and that stays open (on the
+inspector is a drawer tab a selection opens (a beat later) and that stays open (on the
 scene when nothing is selected) until its ×, the toolbar or leaving Edit,
 the outline a tab the viewer opens, and grid, axes and bounds are the Edit body's (§4). A
 doc may still suggest display prefs (grid, units, snap), as it suggests
@@ -224,6 +224,121 @@ tree's link rows say what each link is here and enter; drawer tabs
 open as the focus moved open again inside. Select's menu entry is the
 focus stage's alone, so it's offered only on what can be selected.
 
+**Multi-select: not built; options for the lead** (Decisions 20). *Today:*
+the selection is one path at the focus (`src/selection.js`, H10),
+attention is one target, and every command is `state(target)` /
+`run(target)`. A handful is a group: Group (inspector and menu, on one
+object, no key) puts it in a new group, the tree files more rows in, and
+packages already treat a group as one thing: dice's Roll tosses every die
+filed in it, bag's Put in a bag puts all of it, the halo moves it, Remove
+takes it after a confirm. The ops under the commands already take sets
+(`ops.removeObjects(snapshot, ids)`, `subtreeOf` under Copy, Extract's
+plans: COMPOSITION Decisions, step 15, 2: "when one does, nothing below
+the command changes"). Only the selection and the command layer hold one.
+
+- **(A) The selection is a set at the focus, kept to its tops.**
+  Shift-click in Edit (and on a tree row) adds or removes. A plain click,
+  Select, Esc, Enter and Leave act on the whole set as they act on the one
+  today. *Tops:* no member is inside another, by group (filed in it, at
+  any depth) or by parent (attached under it, at any depth); every
+  selection step ends by dropping a member that has an ancestor in the
+  set. Adding something inside a member is then a no-op, adding its
+  ancestor drops it, and the halo, Remove, Group's `around` and Copy never
+  see a thing twice (as `subtreeOf` and `topsOf` already reduce Copy's
+  roots). The view value has one field for it: `selection`, a set of
+  paths (empty for none) that replaces `selected`; water's outline and
+  seats' picker, its only package readers, read it. The inspector lists
+  the members in the doc's order (`doc.order`), not the order they were
+  picked. A menu opened on a member is the set's; on anything else it is
+  that thing's, as today. Three ways for commands to meet a set:
+  - **(A1) attention is the last one picked; `several: true` commands get
+    the set.** The prompt, keys, halo and inspector act on the last one;
+    the rest are only outlined. This is how most editors behave, but it
+    puts a trap in "what is shown is what keys do": with three dice
+    outlined, R rolls one. It also makes pick order part of the value.
+  - **(A2) nothing acts on part of the selection; `several: true` commands
+    get the set.** Attention is the set. A command applies to it only if
+    it is `several: true` (it always gets a non-empty array: the set, or
+    the one look) or the set has one member (it gets that member). With
+    several selected, the prompt shows only `several` verbs (usually
+    none), keys reach only those, the inspector lists the members over
+    the `several` commands, and the halo is not drawn (Group first, then
+    the halo moves the group). Remove, Group (`ops.newGroup` taking
+    `around` as a list), Copy and Extract become `several: true`. Every
+    command then has one of two contracts, a target or a non-empty array.
+  - **(A3) every command takes a non-empty array.** No flag: `state(list)`
+    and `run(list)` everywhere, and `state` returns null when the command
+    can't act on that many. With one selected, or the look, the list has
+    one member. This is A2 with the adapter moved out of the stage: A2's
+    stage wraps a plain command as `list.length === 1 ? state(list[0]) :
+    null`, and A3 asks each package to write that line where it means it.
+    One contract, and a package can roll three dice as one throw without
+    a flag; the cost is a change to every package's commands (no
+    back-compat, so all of them at once).
+- **(B) A transient selection group:** the stage wraps the handful in a
+  group that packages see as a group, so every group-aware verb works
+  unchanged. Rejected: a stage-made object would sit in the snapshot that
+  packages, presence and undo read. That leaks the editor into the doc,
+  and it is a second kind of group to tell from the real one.
+- **(C) The stage fans `run` out per member.** Rejected: "throw a handful
+  together" is one act, not N. Roll run three times is three throws and
+  three tells; Remove run three times is three undo steps.
+- **(D) No multi-select.** Group makes a handful and packages act on
+  groups. The cost is a Group and a filing per handful, and a group left
+  in the doc that nobody wanted (Ungroup takes it out). Nothing changes.
+
+*H3 under A2 or A3.* The table is H3's own (command × body × held tool ×
+gesture × attention × reach), with command gaining {plain, several} (A2;
+A3 has one kind, whose `state` decides) and attention becoming
+{selection: none, one, two; look; null}. Look and selection don't
+combine: `attention()` sets `hit` to null while anything is selected
+(`src/stage/stage.js`), so look appears only with selection none, as
+today. "Two, one inside the other" (by group; by parent) is not a further
+row: the tops step makes it one, which its own selection-step cases
+check. Three things carry the claim:
+1. *Per stage.* The resolver asks each stage on the input path at its own
+   element of attention (`src/parts/resolver.js`). At the focus that
+   element is the set; in an outer stage every member's element is the
+   same focus link, so the set collapses to that one element and the
+   outer stage's plain verbs apply exactly as today. `targetFor(command,
+   element)` (A2: the list if `several`, its one member if it has one,
+   else not applicable; A3: the list, and `state` answers) is asked per
+   stage, at that stage's element, never on the raw set.
+2. *One function.* The hint (prompt, menu, inspector) and the dispatch
+   both reach a command through `targetFor`, so what is shown is what the
+   key reaches.
+3. *Held verbs.* A held verb pins attention (`attentionNow` in
+   `src/parts/keys.js`, `keyAttention` in the resolver). The pin becomes
+   the set of paths the verb started on, each stage taking its element of
+   each as above, so a held `several` verb keeps its whole set however
+   the selection moves, and is let go (as a target is today) when any
+   member is gone: the set it started on is no longer there.
+
+*Checked against the invariants:*
+
+| | H3 a shown key works | H4 Escape | H10 selection at the focus | Packages see |
+|---|---|---|---|---|
+| A1 | holds (one target per command), but a key acts on one of several outlined | the selection rung clears the whole set | every member at the focus, kept to its tops: `selectionStep` gains `toggle { path }`, model-checked as today over ≤3 of press, toggle, Select, Enter, Leave, Esc, on a scene with a group, a member filed in it, a child attached under another, and a loose object | one target, unless `several`; `selection` for `selected` |
+| A2 | holds, by the three points above; finite: H3's table with command {plain, several} and attention {selection none, one, two; look; null} | as A1 | as A1 | as A1 |
+| A3 | as A2, command one kind | as A1 | as A1 | a non-empty array, always; `selection` for `selected` |
+| B | holds | as today | breaks: the group is written, and isn't what the viewer picked | a group nobody made |
+| C | breaks "one act": one key shown, N runs | as today | as A | N calls |
+| D | as today | as today | as today | as today |
+
+*Recommendation: nothing runs on part of the selection (A2 or A3)*, if
+the lead wants multi-select at all: Shift-click in Edit and in the tree;
+Remove, Group, Copy and Extract take the set. A2 or A3 is the lead's
+call: A2 keeps every package's commands as they are and puts one adapter
+in the stage; A3 has one contract and no flag, and changes every package.
+The selection outline draws every member, and presence shares the set
+(`src/peers.js`). It is not small: `selection.js` and its H10 model,
+`view.js` (the value and presence), water and seats, the key resolver,
+the held-verb pin and `commandState`, the halo, the outline, the
+inspector's header, the menu, transfer, `ops.newGroup`, and STAGE.md's
+command and view rows (A3: every package's commands too). It also touches
+Decisions 3 (no modifier key), so it is not built here. D stands
+meanwhile.
+
 ## 4. The body and the held tool
 
 **One stack, one slot.** The router's stack (once the arm stack; now
@@ -323,11 +438,17 @@ what offers verbs; presses have one, so the body comes last there.
 **A shown key works, by construction**: the prompt, halo and bar compute
 each hint with the resolver that dispatches keys. A verb whose key is
 reserved shows without one and is in the menu (walking, Draw is a button,
-not D). The prompt shows three verbs, the menu all; verbs are buttons, for
+not D). The prompt shows three verbs and, past three, a "⋯ N more" that
+opens it to all of them (Decisions 19); the menu shows all that show on
+"menu"; verbs are buttons, for
 touch and for a mouse: the prompt keeps the look (`data-keeps-look`, the
 router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
-Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
+Decision 48), but only until the viewer moves the eye: an orbit or a Frame
+ending, a body entered or left, a pointer lock taken or lost puts it back
+under the pointer, so a press reaches a button only if the viewer hasn't moved
+the eye since the pointer reached it; a ride carrying the eye doesn't
+(COMPOSITION.md, Decisions, the use prompt and the eye). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
 
 **A prompt button with a key is that key** (Decisions 15). A press on a
@@ -902,7 +1023,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   ahead of the game's verbs: on a boneyard domino the prompt's three are
   Flip, Draw and Wash, and Stand on edge is U's and the menu's. That is
   the queued three-verb cap; ordering generic holders after the others at
-  a tie is left to it.
+  a tie is left to it. (Decisions 7 settled the order; Decisions 19 put
+  the fourth on the prompt, behind its "⋯ 1 more".)
   The inspector and outline stayed sidebar panels of the editor's activity
   until step 8 made them drawer tabs that follow attention.
 - **6. Bodies and the held tool.** Stack and slot, four bodies, `from` and
@@ -1311,6 +1433,26 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   gains the removed classes (a dead `.controls-embed` rule in styles.css
   went). Full suite 2048/2048; editor-run 90/90. The real-Patchwork checks
   are still owed (integrator's build and sync).
+- **Sidebar, integrated (2026-11-17, merge 50a6b379 into scene-stage).**
+  A clean merge (scene-stage's N6 docs since the lane's own merge touch
+  no file of the lane's). Scene suite 2048/2048 (119 files; one vitest
+  `onTaskUpdate` RPC timeout under load, no failure); arena 56, doom 86,
+  tabletop 569 (their probes only changed). Built and pushwork-synced
+  (clean on the first sync). Local probes on the built tool: editor-run
+  90/90, xdnd-run 70/70, dice.mjs 60/60 (55/60 on a first run under load:
+  the d20 dropped on the table landed on the ground; 60/60 on the rerun,
+  nothing in the merge touches a part's drop). Real Patchwork (shots
+  recovered/publish/shots/sidebar/): sections-check 22/22 on the Geometry
+  showcase, after two fixes to the check itself, never run before (the
+  section head is now scrolled into view before it's pressed, as
+  xdnd-probe's `sectionHead` does: the sections sit below the fields; and
+  the drag from Patchwork's sidebar picks a titled item, not the sidebar's
+  untitled new-doc button, which is draggable but carries only
+  `application/x-patchwork-new-doc`); realcheck-editbody 8/8; grip-check
+  8/8; enter-check 13/13 on the third run (scratch clones 2xwN3KcU…,
+  B2dDw4BB…, 4Ur934X2…; the first two 12/13, see FOLLOWUPS "Sidebar
+  integrated"). No doc shape changed: nothing republished, the folder
+  untouched. The lead's questions in Decisions 16 to 18 stand.
 
 ## What it costs
 
@@ -1426,7 +1568,43 @@ The project lead decided the five open questions on 2026-11-12.
      selected thing often is, moves the view's visible centre off the
      camera's, and the drawer also holds docked editors (Camber's Shape)
      that need their own width. Tested over every sequence of up to two of
-     nine events and three of five (`parts/inspector.test.js`).
+     thirteen events, three of eight and four of four
+     (`parts/inspector.test.js`; the beat, part of one, a press and Enter
+     joined them with the next bullet).
+   - **The inspector waits a beat** (decided unattended (2026-11-16,
+     lane/n11), for the lead). A selection made while the tab is shut
+     opens it a beat later, DOUBLE_MS (500 ms, `stage/router.js`) on the
+     stage's time (`api.clock.after`), and only if the rule above still
+     wants it then. A newer selection starts the beat again, and so does
+     a press anywhere in the view while it runs; a press with no beat
+     running starts none. The beat is the router's double-click gate
+     (`firstOfDouble`: the second press within DOUBLE_MS of the first, the
+     dblclick within DOUBLE_MS of the second), and each gate begins at
+     something that holds the tab: the first click's selection (Edit
+     selects on its release) holds it to the second press, and the second
+     press holds it to the dblclick. Without the press, a slow double
+     (press 0, release 120, press 480, release 650) had the tab open at
+     620, under its dblclick, which `onDblClick` takes only on the canvas;
+     and a double-click whose first click re-selected what was selected
+     (changing nothing) met a beat begun by an earlier selection
+     (editclick-run seed 1, a second try 1070 ms after the first one's
+     dblclick selected the link). An open tab shows
+     each new selection at once, and the toolbar's Inspector opens it at
+     once. Before, the first click of a double-click opened the tab and
+     narrowed the canvas, so the second press and the dblclick landed on
+     the inspector, or on whatever the narrower canvas now put under the
+     pointer, and the double-click never entered (COMPOSITION.md, "Fixed
+     since"). The invariant: with the tab shut, the canvas keeps its width
+     for DOUBLE_MS after the latest selection change and after every press
+     in the view, so for the whole of any double-click the router takes.
+     The model the test holds the
+     tab to: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was open ∨ (an object
+     selected ∧ a beat since it or a press)))); Enter carries the tab as
+     it was.
+     It applies to every selection change, the outline's and the menu's
+     Select too, since the inspector can't tell a click from a Select: a
+     question for the lead whether only Edit's click selections should
+     wait.
    - **Leaving Edit puts the selection down** (decided unattended,
      2026-11-14, final fixer; it was kept, "yours in every body", until
      then). Attention is the selection if any (§3), so after rigging in Edit
@@ -1467,8 +1645,10 @@ The project lead decided the five open questions on 2026-11-12.
    generic is a priority list by another name, and SCOPE.md rejects
    declared priority because every new package would have to fit into
    it. Presses and verbs keep one order, so the prompt never offers first
-   what a press wouldn't reach first. What the cap costs stays: a fourth
-   verb is on its key and in the menu.
+   what a press wouldn't reach first. What the cap costs: a fourth verb
+   is on its key, in the menu when it shows on "menu" (Stand on edge
+   does), and one press away on the prompt, its "⋯ 1 more" (Decisions 19;
+   decided unattended, 2026-11-17, lane/n11).
 8. **Presence is drawn where it is; the clock chips are the focus path's**
    (decided unattended, 2026-11-14, presence lane). Other people (walk's
    avatars, others' selection boxes) are drawn in every stage that hears
@@ -1622,6 +1802,9 @@ The project lead decided the five open questions on 2026-11-12.
       the HUD's own button, a private copy of the command that sat over the
       canvas's top edge in Edit (triage (f)), is gone, and the HUD only
       reads (`sailing/src/hud.js`, `probes/editclick-run.mjs` steps 5-6).
+      Its lobby hint, "Click her to come aboard", false in Edit, went
+      after (lane/n11 step 10): the HUD says nothing before you're aboard
+      (sailing DESIGN.md, Decisions (N11) 1).
       Arena's Play and Stand targets up (`show: ["world", "menu"]`): its
       HUD's lobby drew its own "▶ Play" / "▶ Pick up the gun" and "Stand
       them up" buttons, private copies of the two commands, so N8's "Play
@@ -2094,3 +2277,56 @@ The project lead decided the five open questions on 2026-11-12.
     Should a docked document leave with Edit, as the inspector does? And
     what should a docked doc's pane be called (now `<object> · <label>`;
     the doc's own title would need a load)?
+19. **Past three verbs, the prompt opens to all of them** (decided
+    unattended, 2026-11-17, lane/n11, for the lead). The prompt shows the
+    first three verbs that apply to attention's target, in running order
+    (Decisions 7), and past three a last button, "⋯ N more"; a press on it
+    opens the prompt to every one, until attention is on another target
+    or on none, or the prompt goes (a carry's gesture takes it down).
+    *Invariant:* every verb that applies on "use" to the prompt's target
+    is on the prompt, shown or counted in its more, in running order; a
+    held verb always shows, in its place, or after the rest when it no
+    longer applies, and the more counts the rest (`src/parts/use.test.js`:
+    0 to 5 verbs × none held, the first, the last, one that no longer
+    applies, or the first and the last × closed or opened, 52 cases). The
+    prompt between and beside its buttons is the prompt's, not the
+    world's, so a mouse going down it from button to button keeps it
+    still (`tabletop/probes/dominoes.mjs`, a pixel at a time to the
+    fourth); before, a gap's pointer was the world's, and the prompt ran
+    off from under it. The plan was for the more to open
+    the target's menu at the prompt; it opens the prompt instead, because
+    the menu lists what shows on "menu", not on "use" (a verb shown only on
+    "use" would not be there), and its rows are clicks, so a held verb
+    past three could not be held by a finger, which has no keys (N9's
+    touch). Opened, each verb is the same button the first three are: its
+    key, held as long as the finger. The more is a click of a press it
+    had, as a verb's is, so a lift landing on it after a verb ran on the
+    press opens nothing. *Questions for the lead:* raise the cap instead
+    (or none: the prompt grows with the target)? Should the opened prompt
+    close on an eye move too, not only on another target? *Known gap:*
+    the prompt is put under the pointer and not kept inside the view, so
+    near the bottom edge its last buttons (opened, more of them) can be
+    off it; a tap or a pointer higher up brings them back.
+20. **Multi-select is not built; the options are in §3** (decided
+    unattended, 2026-11-17, lane/n11, for the lead). The selection stays
+    one target, and a handful stays a group (option D). §3 lays out A (a
+    list at the focus, with `several: true` commands), B (a transient
+    group, rejected because it leaks into the doc), C (the stage fans
+    `run` out, rejected because a handful is one act) and D, each checked
+    against H3, H4 and H10. A's selection is one set-valued `selection`
+    in the view value (replacing `selected`), kept to its tops so no
+    member is inside another. It recommends that nothing runs on part of
+    the selection (A2 or A3). The plan's draft was A1, where attention
+    stays on the last one picked; it is not recommended because A1 lets a
+    key act on one of several outlined things. *Questions for the lead:*
+    multi-select at all, or is D (Group, then file) enough? If A: A1, or
+    nothing on part of it, and then A2 (a `several: true` flag, plain
+    commands kept, one adapter in the stage) or A3 (every command takes a
+    non-empty list, one contract, every package changed)? Shift-click
+    is a modifier key, which Decisions 3 ruled out for games: is it
+    Edit's alone (Edit's click already is), or should every body's menu
+    offer "Also select", since Select is everyone's there? With several
+    selected, should the halo move them all (one edit step, the same
+    world move for each member in its own parent's frame; the tops keep
+    any from moving twice), or stay off
+    until they are grouped?

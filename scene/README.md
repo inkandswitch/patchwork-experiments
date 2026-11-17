@@ -255,7 +255,9 @@ STAGE.md, "Extract and bundle".
   has **connectors** (snap points, from its GLB, below) near that spot that
   take it, it goes to the nearest one (accent ring) — hold **Alt** to put it down exactly where you
   are, or untick **Snap** to turn snapping off for this scene. A snap point
-  with a yaw turns the piece to face that way. **Q** / **E** turn it 45°
+  with a whole frame takes the piece into it (a rack's place stands a tile
+  on edge), one with a yaw turns it to face that way; either turn lasts only
+  while it's over that point. **Q** / **E** turn it 45°
   while carried, **F** turns it over (about its own length, as a card goes
   face down, turning in the air rather than snapping); **Esc** puts it back.
   **F** over a piece that's lying there (or *Flip* in its right-click menu)
@@ -265,8 +267,12 @@ STAGE.md, "Extract and bundle".
   something without the trait or on a **locked** object orbits. There is no physics: nothing tips or slides, and only the
   final pose is written. While it's carried, other people see it move (over
   `handle.broadcast`, below). An extension can ask for the piece to go
-  down another way where it's put (tabletop turns a card face up in your
-  hand), or say it can't be picked up just now (dice: a die under a cup).
+  down another way where it's put (`landing`: face up, as tabletop turns a
+  card face up in your hand; flat, on its broadest face, as tabletop lays a
+  domino taken out of a hand), or say it can't be
+  picked up just now (dice: a die under a cup). How it lands is a pure
+  function of how you hold it, the snap point and those answers
+  (`landedPose`, STAGE.md "Landing").
   A piece attached to something is carried in that thing's
   frame: a card on a table aboard a moving ship goes with the table, snaps
   to its slots and goes down square to it, however she heels and swings.
@@ -549,14 +555,28 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
 - Optional **connectors**: `extras.connectors = [{ position: [x, y, z],
   rotation?: [x, y, z], tags?: string[] }, …]` on any node (or on the glTF
   scene), in that node's frame: places where something goes. `rotation`
-  (Euler XYZ, radians) is the connector's frame; a carry turns whatever it
-  puts there to face where that frame turns +Z, seen from above (so a card in
-  the far player's column reads right for them), and keeps the rest for
-  whatever comes to use a whole frame (a CAD mate, say). A connector with
+  (Euler XYZ, radians) is the connector's frame, and the scene keeps it
+  whole: `content(id).extras.connectors` gives each one in the object's body
+  frame, its node's rotation composed in (a connector on a tilted node stays
+  tilted; a node's scale, even an uneven one, never shears it, and a
+  mirrored node mirrors where it faces without turning it inside out), with its yaw
+  (where the frame turns +Z, seen from above; none pointing straight up)
+  derived from it. A carry puts whatever it brings there into that frame:
+  its body axes become the connector's (so a card in the far player's column
+  reads right for them, and a rack's place stands a tile on edge, facing its
+  player), face up or face down as it was or as a `landing` rule asks, unless
+  the frame stands it on an edge or an end, which then says alone which way
+  it faces (which it does is by the frame's most upright axis, so a leaning
+  rack still stands a tile). A connector with only a yaw turns it about the
+  vertical to face that way, tilt kept. The parts bin and Paste use the same
+  rule (a part, or one copied top-level object, goes into the frame, and a
+  carried piece copied alone with a load hint rests on the connector as it
+  would carried). A connector with
   `tags` takes only objects whose `tags` share one (none: anything), as
   Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
   [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as
-  untagged connectors. Optionally `extras.snapRadius` (metres, in the GLB's
+  untagged connectors that give only a yaw (`rotation` null; on a node, the
+  yaw that node turns their facing to). Optionally `extras.snapRadius` (metres, in the GLB's
   frame). When a carry puts something down near one — the centre of its
   footprint within the radius, in plan — it goes there; height is still
   decided by what is underneath, so pieces stack on a board's spaces. Without
@@ -1073,13 +1093,17 @@ lists two packages nothing on the page has registered: one served
 provider one object is built by, a part) through a stand-in for the host's
 `importPackage` (`filesystem-stub.js`), and one that isn't. A third package
 is registered on the page, at heads, for a trait the scene has, and isn't
-listed. `packages-run.mjs` checks, with real clicks: one prompt naming both,
-nothing imported before a yes, and the registered package listed (bare);
+listed; a fourth is registered and listed, and nothing calls for it.
+`packages-run.mjs` checks, with real clicks: one prompt naming both,
+nothing imported before a yes, the registered package listed (bare) and the
+fourth kept while the scene calls for what nothing on the page answers;
 Not now loads and remembers nothing, and the next open asks again; Load
 imports the served package at its heads, registers it under its bare URL,
 its extension starts and its provider builds the object, while the other's
-failure is on the card; opened again, the remembered one loads unasked and
-only the other is asked about.
+failure is on the card, and with every need answered the fourth is taken
+off; opened again, the remembered one loads unasked and
+only the other is asked about; the third's trait taken off the scene takes
+its entry off, and the failed one (not here) stays listed.
 
 ### Drag probe
 

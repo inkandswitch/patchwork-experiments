@@ -35,7 +35,7 @@ pnpm install && pnpm build && pnpm test
 | `scene:source` | `terrain-mesh` | the GLB (`src/source.js` → `src/build.js`) |
 | `scene:template` | `terrain.cadboro-bay` | "Cadboro Bay (RVYC)" (`src/template.js`) |
 | `scene:template` | `terrain.ucluelet` | "Ucluelet (Rising Tide Boat Works)" (`src/template-ucluelet.js`) |
-| `scene:extension` | `terrain.sky` | a place's own sky as the world's `atmosphere`, for an object with the `terrain.sky` trait (`src/sky.js`) |
+| `scene:extension` | `terrain.place` | for the object with the `terrain.place` trait (the place): the shore in the water, the water's shelter, the ground's grain; no sky, which is the world's weather (`src/place.js`) |
 | `scene:extension` | `terrain.credit` | the data's credit at the foot of the view, for objects with the `terrain.credit` trait (`src/credit.js`) |
 
 ## Cadboro Bay (RVYC)
@@ -51,9 +51,13 @@ On an empty scene's start screen, **Cadboro Bay (RVYC)**:
 2. puts the terrain in at the scene's origin, locked, its About the Terrain
    doc (sources and licences), with the `terrain.credit` trait, so the view
    shows "© OpenStreetMap contributors (ODbL) · NOAA NCEI · CHS · ECCC · not
-   for navigation" at its foot;
-3. gives the scene its weather (`sailing.weather`, a typical summer
-   afternoon: 4 m/s from 235°, WSW) and the bay's Sea at y = 0 (open water
+   for navigation" at its foot, and the `terrain.place` trait (the place:
+   the shore in the water, the water's shelter, the ground's grain);
+3. gives the world its weather (the weather package's `weather` trait:
+   Cadboro Bay at 15:00 on 15 July on its clock, UTC−7 (`OFFSET`); a typical summer afternoon's
+   4 m/s from 235°, WSW; a fair afternoon's sky, `SKY` in `cadboro.js`:
+   cumulus over a third of it at 1200 m, 10 km visibility, which the
+   weather draws as sailing's bright day exactly) and the bay's Sea at y = 0 (open water
    with `sailing.sea`, wave scale 0.5: a south-westerly reaches the bay over
    Uplands and Oak Bay, so the bay is a lee). The Sea's `clip` is the
    terrain's footprint from its known grid, 150 m deep, so the bay placed in
@@ -108,9 +112,11 @@ On an empty scene's start screen, **Ucluelet (Rising Tide Boat Works)**:
    (`EXPECTED`: the SHA-256 of the heights, the source-and-canopy layers,
    the features and the look) it says so;
 2. puts the terrain in at the origin, locked, its About the Terrain doc,
-   with `terrain.credit` and `terrain.sky` (Ucluelet's sky: below);
-3. gives the world a summer afternoon's breeze (`sailing.weather`): 5 m/s
-   from 300° (WNW), which blows along the harbour; and the harbour and
+   with `terrain.credit` and `terrain.place`;
+3. gives the world a summer afternoon's weather (the weather package's
+   `weather` trait: Ucluelet at 15:00 on 15 July on UTC−7, under Ukee grey:
+   Ucluelet's sky, below) with its breeze, 5 m/s from 300° (WNW), which
+   blows along the harbour; and the harbour and
    coast one open water (`water`) with `sailing.sea` at scale 0.6, whose
    `clip` is the terrain's footprint from its grid (20.48 km a side,
    centred at (6800, 3340)), 130 m deep, as Cadboro's Sea has (`bayClip`
@@ -275,25 +281,35 @@ bins east of building J, a log pile by the gravel west of the hangar), and the p
 (`look.shoreRock`: the bare rock band above the lichen under any cover but
 a beach, a dark bank 3–5 m up, not lawn to the waterline).
 
-### Ucluelet's sky (`terrain.sky`, `src/sky.js`)
+### Ucluelet's sky (`SKIES` in `src/ucluelet.js`; the weather package)
 
 "Ukee grey": overcast but bright, as most summer afternoons are at
 Amphitrite Point (ECCC, Jul–Aug 1991–96, 732 hours: cloudy or mostly cloudy
-42%, fog 20%, clear 35%; visibility median 19 km): sky `#c4cacc` (top) /
-`#959ea1` (horizon) / `#7a8487`, fog `#959ea1` from 900 to 17,000 m (Mount
-Ozzard, 5 km off, about a quarter veiled, so it reads as forest; the Broken
-Group's islands and the Mackenzie Range, 13–20 km off, soft grey-blue shapes), the sun where
-it is on 15 July at 15:00 PDT, soft, no shadows. The gradient is an
-overcast's, the CIE standard overcast sky's way round (brightest overhead,
-darker to the horizon), not a clear sky's: the water reflects the horizon at
-a grazing angle, so with a bright horizon the far water was a white band; now
-it is pewter, and the far hills fade into the same grey. `SKIES` also has "marine layer" (fog from 30
-to 900 m) and "clear afternoon"; put either in the trait.
+42%, fog 20%, clear 35%; visibility median 19 km). The place says what the
+sky is, as the weather package's fields: a stratocumulus deck, cover 1,
+600 m up, 19 km visibility. The weather says how that looks: sky `#c4cacc`
+(top) / `#959ea1` (horizon) / `#7a8487`, fog `#959ea1` from 900 to 17,100 m
+(Mount Ozzard, 5 km off, about a quarter veiled, so it reads as forest; the
+Broken Group's islands and the Mackenzie Range, 13–20 km off, soft
+grey-blue shapes), soft light, no shadows, the deck's cells ±12%. Those are
+the colours this place was given (the fog's far was 17,000 m), now one of
+the weather's anchors: its sky model meets them exactly at these
+conditions. The gradient is an overcast's, the CIE standard overcast sky's
+way round (brightest overhead, darker to the horizon), not a clear sky's:
+the water reflects the horizon at a grazing angle, so with a bright horizon
+the far water was a white band; now it is pewter, and the far hills fade
+into the same grey.
 
-The trait is on the terrain object. The stage stacks ambients in running
-order, a later offer winning, and runs a doc's scene-trait extensions before
-its object-trait ones (scene `activation.js`), so the place's sky wins over
-`sailing.weather`'s bright day. No scene change.
+The sun is the weather's too, computed for the place and the moment
+(15:00 on 15 July, UTC−7): azimuth 221.7°, 57.0° up, within 0.41° of the
+direction once set by hand for that moment. `SKIES` also has "marine layer"
+(stratus, 1 km visibility: fog from 30 to 900 m) and "clear afternoon" (no
+cloud, 20 km); the template's `sky` option picks one (`layOut(ctx, url,
+{ sky })`), or set the weather's fields in the inspector.
+
+The place's object carries `terrain.place`, which gives no sky: the world's
+sky is its weather's, a scene trait, so a place linked into another world
+takes that world's weather (the outermost doc's ambients are the world's).
 
 ## The look (`src/look-osm.js`, `cover.js`, `palette.js`, `forest.js`, `buildings.js`)
 
@@ -508,7 +524,7 @@ rest).
   so close up the yard and the intertidal were flat planes. Each ground
   vertex carries its grain (`_GRAIN`, `build.js groundGrain`: the shore's
   cobble and rock, bare rock 1, beach 0.8, other land 0.6, the site's apron
-  0.5, under the water 0), and the place's extension (`sky.js`) dresses
+  0.5, under the water 0), and the place's extension (`place.js`) dresses
   the ground's materials: two octaves of world-space luminance noise, ±12%
   at 1.5 m and ±18% at 8 m (at ±8% and ±12% it didn't show), by the grain, fading out from 150 to 300 m,
   and a fine one underfoot, ±12% at 0.35 m, fading out from 25 to 60 m.
@@ -524,7 +540,7 @@ rest).
 - **The shore in the water** (`horizon.js`; water/WATER.md, "The shore in
   the water"): extras.terrain carries the canopy too (`canopy`: the most
   in each cell of 32 m or more, whole metres; the sampler's `surfaceAt`),
-  and the place's extension (`sky.js`) gives the water the shore's shape
+  and the place's extension (`place.js`) gives the water the shore's shape
   round the eye (the contribution `water.shore`): for 256 azimuths and 16
   distance bins (15 m to 9 km), the highest the land and its trees stand
   above the horizontal of the mirror eye (as far under the water as the eye
@@ -546,7 +562,7 @@ rest).
   hash a sector, 0.6–1 of its half-size), its alpha falling to nothing at
   the rim and wherever the ground is close under it, so it thins into a
   hillside rather than cutting it. The sky's "marine layer" doesn't thicken them (they are in
-  the GLB, the sky in a trait): a follow-up. Where a place asks
+  the GLB, the sky in the world's weather): a follow-up. Where a place asks
   (`clouds.bake`, Ucluelet's), the stratus is baked into colours instead
   (`bakeStratus`): above 250 m the ground's, the roof's and the scrub's
   vertices lerp toward the fog's colour by (h − 250) / 300 (at most 0.85),
@@ -631,6 +647,8 @@ rest).
   - *A textured overcast* (scene STAGE.md's atmosphere `clouds`): Ukee
     grey a stratocumulus deck 600 m up (cover 1, ±12%); sailing's bright
     day fair-weather cumulus over a third of its sky, which Cadboro shows.
+    (Both are the weather package's now: the places' weathers name the
+    deck, cover and base, and the weather draws them.)
 
   The fourth look critic's round:
 
@@ -644,15 +662,15 @@ rest).
     skylines are toothed. The stratus over them thinner (at most 0.6, 0.15
     above the band). Tested on a made-up mountain at every node.
   - *Shelter* (`exposure.js`, water's WATER.md "Shelter"): the place's part
-    (`sky.js`) gives the water `exposure(from)`: a 256² grid over the place,
+    (`place.js`) gives the water `exposure(from)`: a 256² grid over the place,
     each water cell's fetch upwind (five rays, ±30°, cos² weighted, a cell a
     step, off the grid open sea) over 6 km; the water's shader scales its
     shading normal's tilt by it (a quarter in the most sheltered water) and
     calms the reflection under 0.5. The harbour reads glassier, the open
     coast keeps its chop; the waves and what floats on them are untouched.
-    Cadboro Bay gets it too: its terrain carries `terrain.sky` with no sky
-    of its own (the weather's day stays), which also gives it the shore in
-    the water and the ground's grain.
+    Cadboro Bay gets it too: its terrain carries the place's trait (then
+    `terrain.sky` with no sky of its own, now `terrain.place`), which also
+    gives it the shore in the water and the ground's grain.
   - *Boats that read from above* (`boats.js DECKS`): working decks
     green-grey or tan (30%) inside a 0.7 m bulwark, freeboard 1.3 m
     (trollers) and 1.6 m (seiners), every gunwale capped white; sailboats a
@@ -927,8 +945,12 @@ land in the mesh is stretched; the heightfield stays true.
 - the deterministic sine, cosine and length the geometry uses (the engines'
   Math.sin and Math.hypot have been seen to differ by an ulp between node
   and Chrome, which made the two GLBs differ);
-- the Ucluelet template on a fake scene (terrain, sky, weather, water, home
-  view, the sloop at anchor; without sailing), the sky extension;
+- the Ucluelet template on a fake scene (terrain, the place, the weather
+  under each of its skies, water, home view, the sloop at anchor; without
+  sailing; a sky it hasn't refused before anything is written); the place
+  (`place.test.js`: which object, no fields, and no terrain extension
+  offering an ambient on either template's scene); a place's weather
+  (`placeWeather`, the weather package's field names);
 - the boats: only along floats, beside them at the middle of their slips,
   each slip by its own hash (the same with or without other floats);
 
@@ -969,7 +991,7 @@ node probes/fetch-ucluelet.mjs [--cache <dir>] [--seed <dir>] [--offline] [--out
 #   the heights, layers, features and look); the anchorage deep enough all round a swing;
 #   the yard's ten lidar points (YARD) the fetched lidar's, the hangar's slab within 0.3 m
 #   of the drawn ground; the haul-out's head depths the fetched heights'
-node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu]   # build scene/, sailing/, water/, terrain/
+node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu]   # build scene/, sailing/, water/, weather/, terrain/
 #   the template in headless Chrome (one Chrome at a time while it holds the lock: --lock
 #   or $CHROME_LOCK, refused with neither; released however it ends), 50-odd
 #   checks (see the file), node's GLB byte for byte, the Terrain doc's fingerprint the
@@ -981,7 +1003,7 @@ node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu] 
 #   Ozzard, low on the water off the yard, off the town and under the lighthouse; the top
 #   of every screen not black (the sky drawn at every eye). With --gpu (the machine's GPU,
 #   Metal on a Mac) every view's frame time (40 frames, the stage's render and a 1-pixel
-#   readPixels; median and p90, draw calls, triangles), and the home view within 22.7 ms;
+#   readPixels; median and p90, draw calls, triangles), and the home view against 22.7 ms (reported, not a check: the lead, 2026-11-17);
 #   and the look's own checks: no height legend, the ground's grain dressed, the water
 #   off the yard glassy, no horizontal stripes in the harbour's mirror (low-town's ratio
 #   sits at 1.23–1.32 against 1.3 from run to run, as the water moves: rerun before
@@ -991,14 +1013,14 @@ node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu] 
 #   low-town's strip took in the shore itself, 1.44; carried, 1.30; integrator of lane/n6, 2026-11-17)
 #   Published 2026-11-16 (merge 07053407, lane/ukee): Ucluelet automerge:3uqC18J1FtGJPAAvucN2HP7thFm6
 #   (home 16.9 ms, the worst views lighthouse-sea 22.7 and overview 27.0, GLB 45.7 MB),
-#   Cadboro Bay automerge:JjZVTNDWJnvw9Gp5nZ936e7KRZ4 (its terrain carries terrain.sky now)
+#   Cadboro Bay automerge:JjZVTNDWJnvw9Gp5nZ936e7KRZ4 (its terrain carried terrain.sky then; both predate the weather)
 node probes/fetch-cadboro.mjs [--cache <dir>] [--offline] [--out <dir>]
 #   fetches (or replays its recording of) NCEI and Overpass, and checks: the grid; every node
 #   classified with no conflicts; no open coastline end near the grid; the data is what was checked
 #   (SHA-256); the DEM lines up with OSM (and flipped, mirrored or shifted it would be refused);
 #   every islet clears the land floor; 13 places known to be land or water; the mooring field
 #   deep enough for a 2 m keel at the lowest normal tide
-node probes/publish-rvyc.mjs --dry-run --lock <dir>     # build scene/, sailing/ and terrain/ first
+node probes/publish-rvyc.mjs --dry-run --lock <dir>     # build scene/, sailing/, water/, weather/ and terrain/ first
 #   in headless Chrome, the BUILT scene, sailing and terrain plugins on an empty scene: the
 #   template from the start screen (its fetches answered from the recording), and checks the
 #   scene (see the file); node rebuilds the GLB from the same docs and compares bytes; a viewer

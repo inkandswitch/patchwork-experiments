@@ -171,8 +171,8 @@ top edge toward −Z, its left toward −X, seen from above. A bottom image read
 the same once the slab is turned over about its length (Z), as a card is.
 
 A card's look and its back's are the same size. A piece's GLB carries its
-snap points as the scene's connectors (`extras.connectors`, and whole frames
-under `extras["tabletop.slots"]`) and `extras.snapRadius`.
+snap points as the scene's connectors (`extras.connectors`, each with its
+whole frame, which the scene keeps) and `extras.snapRadius`.
 
 ## 5. The setup
 

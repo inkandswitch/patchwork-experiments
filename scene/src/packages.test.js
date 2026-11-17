@@ -1,11 +1,12 @@
 // The packages rules (src/packages.js), case by case: every branch of the
 // URL rule, every kind of mark a doc can carry, every way a plugin can be
-// registered, and the list's invariants under concurrent adds (real
-// automerge merges, every pair of adds).
+// registered, the prune rule's every case and its fixed point, viewers who
+// disagree, and the list's invariants under concurrent adds and prunes
+// (real automerge merges).
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { SceneDatatype } from "./datatype.js";
-import { answeringPlugins, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, promptText, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage, unionPackages } from "./packages.js";
+import { answeringPlugins, changeList, unansweredNeeds, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, packagesToPrune, promptText, reconcileList, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage, unionPackages } from "./packages.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
@@ -167,6 +168,21 @@ describe("who answers (answeringPlugins)", () => {
     expect(ids(answeringPlugins(d, r))).toEqual(["scene:extension/game"]);
   });
 
+  it("a source id two packages register: each answers, in registry order, whichever the registry hands out", () => {
+    const d = newScene({ objects: { a: { providerId: "p" } } });
+    for (const order of [
+      [A, B],
+      [B, A],
+    ])
+      expect(answeringPlugins(d, reg([], order.map((importUrl) => ({ id: "p", importUrl }))))).toEqual(order.map((importUrl) => ({ type: "scene:source", id: "p", importUrl })));
+    // the same plugin registered twice from one place answers once
+    expect(answeringPlugins(d, reg([], [{ id: "p", importUrl: A }, { id: "p", importUrl: A }]))).toEqual([{ type: "scene:source", id: "p", importUrl: A }]);
+  });
+
+  it("an extension of every doc (traits: [\"*\"]) answers no need: no doc calls for it by having it", () => {
+    for (const d of [newScene(), newScene({ traits: { t: {} } }), newScene({ objects: { a: { traits: { u: {} } } } })]) expect(answeringPlugins(d, reg([{ id: "people", traits: ["*"], importUrl: A }]))).toEqual([]);
+  });
+
   it("what isn't registered answers nothing; a plugin without an importUrl answers with none", () => {
     const d = newScene({ traits: { "t.scene": {} }, objects: { a: { providerId: "p.src" } } });
     for (const r of [null, undefined, {}, reg(), { "scene:extension": "x", "scene:source": null }, reg([null, { traits: ["t.scene"] }], [{ name: "no id" }])]) expect(answeringPlugins(d, r)).toEqual([]);
@@ -237,7 +253,7 @@ describe("the reconcile rule (packagesToList)", () => {
     expect(packagesToList({ doc: { objects: { a: { providerId: "p" } }, packages: [] }, registries })).toEqual([A]);
   });
 
-  it("the parts and templates used here are named too, by the same URL rule; several packages come out once each, in need order", () => {
+  it("several packages come out once each, in need order, by the same URL rule", () => {
     const doc = newScene({ traits: { t: {} }, objects: { a: { providerId: "p" }, b: { providerId: "q" } } });
     const registries = {
       "scene:source": [
@@ -247,8 +263,8 @@ describe("the reconcile rule (packagesToList)", () => {
       "scene:extension": [{ id: "x", traits: ["t"], importUrl: A }],
     };
     expect(packagesToList({ doc, registries })).toEqual([A, B]);
-    expect(packagesToList({ doc, registries, used: [HTTPS, `${B}#${HEAD}`, "http://localhost:1/", HTTPS] })).toEqual([A, B, HTTPS]);
-    expect(packagesToList({ doc: newScene(), registries, used: new Set([HTTPS]) })).toEqual([HTTPS]);
+    // nothing but the doc's needs: a doc calling for nothing lists nothing
+    expect(packagesToList({ doc: newScene(), registries })).toEqual([]);
   });
 });
 
@@ -285,6 +301,266 @@ describe("concurrent adds (real automerge merges)", () => {
         expect(packagesToList({ doc: { ...merged, objects }, registries })).toEqual([]);
       }
     }
+  });
+});
+
+describe("what nothing here answers (unansweredNeeds)", () => {
+  it("each need of each kind is unanswered exactly when no registered plugin answers it", () => {
+    const doc = newScene({ traits: { ts: {} }, objects: { a: { providerId: "p", traits: { to: {} } } } });
+    const ALL = ["scene:source/p", "scene:source/r", "scene:extension/to", "scene:extension/ts"];
+    const name = (n) => `${n.type}/${n.id ?? n.trait}`;
+    // every subset of the four answered: the rest are unanswered
+    for (let mask = 0; mask < 16; mask++) {
+      const on = (k) => !!(mask & (1 << k));
+      const registries = {
+        "scene:source": [on(0) && { id: "p", importUrl: A }, on(1) && { id: "r", importUrl: B }].filter(Boolean),
+        "scene:extension": [on(2) && { id: "x", traits: ["to"], importUrl: A }, on(3) && { id: "y", traits: ["ts"], importUrl: B }, { id: "every", traits: ["*"], importUrl: A }].filter(Boolean),
+      };
+      expect([mask, unansweredNeeds(doc, registries, { providerIds: ["r"] }).map(name)]).toEqual([mask, ALL.filter((_, k) => !on(k))]);
+    }
+  });
+});
+
+describe("the prune rule (packagesToPrune)", () => {
+  const P = A;
+  const C = "automerge:4cC6LbnDAzvNj9WDNDA4ew21R85H";
+  const DEV = "http://localhost:5173/";
+  // each kind of need P's plugin can answer: the doc with it or without it, the providers render docs asked for, P's plugin
+  const NEEDS = {
+    source: { doc: (on) => newScene(on ? { objects: { a: { providerId: "p" } } } : {}), providerIds: () => [], plugin: ["scene:source", { id: "p" }] },
+    // (the object's own field names q, which C answers: the render doc names p)
+    renderDoc: { doc: () => newScene({ objects: { a: { providerId: "q" } } }), providerIds: (on) => (on ? ["p"] : []), plugin: ["scene:source", { id: "p" }] },
+    sceneTrait: { doc: (on) => newScene(on ? { traits: { t: {} } } : {}), providerIds: () => [], plugin: ["scene:extension", { id: "x", traits: ["t"] }] },
+    objectTrait: { doc: (on) => newScene({ objects: { a: on ? { traits: { t: {} } } : {} } }), providerIds: () => [], plugin: ["scene:extension", { id: "x", traits: ["t"] }] },
+  };
+  /**
+   * The registries for a case: P's plugin when P is registered here; the
+   * scene datatype from P when P is the scene package and here, from a dev
+   * server when P is the scene package and isn't here (a viewer on a dev
+   * copy), else from B. B is always here and listed, and never answers; C
+   * answers the render doc case's object, and isn't listed.
+   */
+  const registriesFor = ([type, meta], registered, isScene) => {
+    const out = { "scene:source": [{ id: "q", importUrl: C }], "scene:extension": [], "patchwork:datatype": [{ id: "scene", importUrl: isScene ? (registered ? P : DEV) : B }] };
+    if (registered) out[type] = [...out[type], { ...meta, importUrl: `${P}#${HEAD}` }];
+    return out;
+  };
+
+  it("takes a listed package off exactly when every need is answered here, it is here, answers none, isn't the scene package, and isn't a source while a render doc is unheard: all 32 cases, for each kind of need", () => {
+    let cases = 0;
+    for (const [kind, need] of Object.entries(NEEDS)) {
+      const source = need.plugin[0] === "scene:source";
+      for (const registered of [false, true])
+        for (const answers of [false, true])
+          for (const isScene of [false, true])
+            for (const allAnswered of [false, true])
+              for (const rendersKnown of [false, true]) {
+                const base = need.doc(answers);
+                // a need nothing here answers: an object trait no extension has
+                const doc = { ...base, objects: { ...base.objects, ...(allAnswered ? {} : { u: { traits: { "nobody.has": {} } } }) }, packages: [{ url: P }, { url: B }] };
+                const registries = registriesFor(need.plugin, registered, isScene);
+                const providerIds = need.providerIds(answers);
+                const got = packagesToPrune({ doc, registries, providerIds, rendersKnown });
+                const want = registered && !answers && !isScene && allAnswered && (rendersKnown || !source) ? [P] : [];
+                const c = { kind, registered, answers, isScene, allAnswered, rendersKnown };
+                expect([c, got]).toEqual([c, want]);
+                // the invariants, said directly: never one missing here, never one that answers a need, never with a need unanswered
+                for (const url of got) expect(registeredPackages(registries).has(url) && !packagesOf(answeringPlugins(doc, registries, { providerIds })).includes(url) && unansweredNeeds(doc, registries, { providerIds }).length === 0).toBe(true);
+                cases++;
+              }
+    }
+    expect(cases).toBe(4 * 32);
+  });
+
+  it("every entry naming it goes, however it names it; the rest stay as they are, and a doc without the list is never touched", () => {
+    const registries = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }] };
+    const packages = [{ url: P }, { url: B }, { url: `${P}#${HEAD}` }, { url: DEV }, { url: P }, { other: 1 }, null];
+    const doc = newScene({ packages });
+    const prune = packagesToPrune({ doc, registries });
+    expect(prune).toEqual([P]);
+    const want = [{ url: B }, { url: DEV }, { other: 1 }, null];
+    const plain = structuredClone(doc);
+    changeList(plain, { prune });
+    expect(plain.packages).toEqual(want);
+    // in a real automerge change too
+    const am = Automerge.change(Automerge.from(newScene()), (d) => {
+      d.packages = packages;
+    });
+    expect(Automerge.change(am, (d) => changeList(d, { prune })).packages).toEqual(want);
+    for (const p of [undefined, null, {}, "x"]) {
+      expect(packagesToPrune({ doc: { packages: p }, registries })).toEqual([]);
+      const d = { packages: p };
+      changeList(d, { add: [B], prune: [P] });
+      expect(d).toEqual({ packages: p });
+    }
+  });
+
+  it("one pass (reconcileList) adds and takes off together, by the providers render docs asked for and whether they all have; before the registry has gone quiet it only adds", () => {
+    const registries = { "scene:source": [{ id: "p", importUrl: P }, { id: "q", importUrl: C }], "scene:extension": [{ id: "x", traits: ["t"], importUrl: B }] };
+    // the object names q, its render doc p: P is called for, C isn't
+    const doc = newScene({ objects: { a: { providerId: "q" } }, packages: [{ url: B }, { url: C }] });
+    expect(reconcileList({ doc, registries, providerIds: ["p"] })).toEqual({ add: [P], prune: [B] });
+    // without the render doc's provider, P isn't called for: nothing added
+    expect(reconcileList({ doc, registries })).toEqual({ add: [], prune: [B] });
+    const heard = newScene({ objects: {}, packages: [{ url: B }, { url: C }, { url: P }] });
+    expect(reconcileList({ doc: heard, registries, providerIds: ["p"] })).toEqual({ add: [], prune: [B, C] });
+    // a render doc not heard from yet: the source packages stay
+    expect(reconcileList({ doc: heard, registries, providerIds: ["p"], rendersKnown: false })).toEqual({ add: [], prune: [B] });
+    // the providers are read once, whatever iterable they come in
+    expect(reconcileList({ doc: heard, registries, providerIds: new Set(["p"]).values() })).toEqual({ add: [], prune: [B, C] });
+    expect(reconcileList({ doc, registries, providerIds: ["p"], prune: false })).toEqual({ add: [P], prune: [] });
+  });
+});
+
+describe("reconcile's fixed point (packagesToList and packagesToPrune together)", () => {
+  // two packages, each in every state: listed {not, once, twice} × registered × its plugin a source or an
+  // extension × the doc calls for it (a source by a render doc's provider, an extension by a trait); and
+  // over the pair, the scene package {elsewhere, the first} × every render doc heard × a need nothing answers
+  const PKGS = [
+    [A, "a", "ta"],
+    [B, "b", "tb"],
+  ];
+  const STATES = [];
+  for (const listed of [0, 1, 2]) for (const registered of [false, true]) for (const source of [false, true]) for (const needed of [false, true]) STATES.push({ listed, registered, source, needed });
+
+  it("one pass reaches listed = answering ∪ (listed ∩ (unregistered ∪ {scene} ∪ kept)), and the next writes nothing: all 4608 cases", () => {
+    let cases = 0;
+    for (const sa of STATES)
+      for (const sb of STATES)
+        for (const sceneIsA of [false, true])
+          for (const rendersKnown of [false, true])
+            for (const stray of [false, true]) {
+              const states = [sa, sb];
+              const traits = stray ? { "nobody.has": {} } : {};
+              const packages = [];
+              const registries = { "scene:source": [], "scene:extension": [], "patchwork:datatype": [{ id: "scene", importUrl: sceneIsA ? A : "http://localhost:5173/" }] };
+              const providerIds = [];
+              PKGS.forEach(([url, id, trait], i) => {
+                const s = states[i];
+                if (s.needed) {
+                  if (s.source) providerIds.push(id);
+                  else traits[trait] = {};
+                }
+                for (let k = 0; k < s.listed; k++) packages.push({ url: k ? `${url}#${HEAD}` : url });
+                if (s.registered) registries[s.source ? "scene:source" : "scene:extension"].push(s.source ? { id, importUrl: url } : { id, traits: [trait], importUrl: url });
+              });
+              const doc = newScene({ traits, packages });
+              const o = { doc, registries, providerIds, rendersKnown };
+              const { add, prune } = reconcileList(o);
+              const after = structuredClone(doc);
+              changeList(after, { add, prune });
+              // said from the states alone, not from the rule
+              const unanswered = stray || states.some((s) => s.needed && !s.registered);
+              const want = PKGS.filter((_, i) => {
+                const s = states[i];
+                const isScene = sceneIsA && i === 0;
+                const here = s.registered || isScene;
+                return (s.registered && s.needed) || (s.listed > 0 && (unanswered || !here || isScene || (!rendersKnown && s.registered && s.source)));
+              }).map(([url]) => url);
+              const c = { states, sceneIsA, rendersKnown, stray };
+              expect([c, [...listedPackages(after)].sort()]).toEqual([c, want.sort()]);
+              const again = reconcileList({ ...o, doc: after });
+              expect([c, again.add, again.prune]).toEqual([c, [], []]);
+              cases++;
+            }
+    expect(cases).toBe(24 * 24 * 8);
+  });
+
+  /** Views passing in turn over one doc until none writes (or 10 rounds): who wrote what, and the list. */
+  const settleViews = (doc0, views) => {
+    const doc = structuredClone(doc0);
+    const writes = [];
+    for (let round = 0; round < 10; round++) {
+      let wrote = false;
+      for (const [i, registries] of views.entries()) {
+        const plan = reconcileList({ doc, registries });
+        if (!plan.add.length && !plan.prune.length) continue;
+        changeList(doc, plan);
+        writes.push([i, plan.add, plan.prune]);
+        wrote = true;
+      }
+      if (!wrote) return { settled: true, writes, listed: listedPackages(doc) };
+    }
+    return { settled: false, writes: writes.length, listed: listedPackages(doc) };
+  };
+
+  it("two viewers with two versions of a package, the older without the plugin the doc calls for, settle with it listed: the older takes nothing off while a need goes unanswered", () => {
+    const P = A;
+    const doc = newScene({ traits: { t2: {} }, packages: [{ url: P }] });
+    const older = { "scene:extension": [{ id: "x", traits: ["t1"], importUrl: P }] };
+    const newer = { "scene:extension": [{ id: "x", traits: ["t1", "t2"], importUrl: P }] };
+    for (const views of [
+      [older, newer],
+      [newer, older],
+    ])
+      expect(settleViews(doc, views)).toEqual({ settled: true, writes: [], listed: [P] });
+    // from an empty list: the newer lists it, and the older leaves it
+    expect(settleViews({ ...doc, packages: [] }, [older, newer])).toEqual({ settled: true, writes: [[1, [P], []]], listed: [P] });
+  });
+
+  it("two viewers whose registries hand out a shared source id from different packages settle with both listed", () => {
+    const doc = newScene({ objects: { a: { providerId: "p" } }, packages: [] });
+    const ab = { "scene:source": [{ id: "p", importUrl: A }, { id: "p", importUrl: B }] };
+    const ba = { "scene:source": [{ id: "p", importUrl: B }, { id: "p", importUrl: A }] };
+    expect(settleViews(doc, [ab, ba])).toEqual({ settled: true, writes: [[0, [A, B], []]], listed: [A, B] });
+  });
+
+  it("the one disagreement that takes turns: P's versions differ on a trait another package answers too; it ends when the versions agree", () => {
+    // Q answers t for both; only the newer P has an extension for t too. Each
+    // is right by its own registry, so while both are open on different
+    // versions they write in turn. A package is listed by its bare URL and
+    // loaded at its live heads, so the versions meet (STAGE.md, "Packages").
+    const P = A;
+    const Q = B;
+    const doc = newScene({ traits: { t: {} }, packages: [{ url: P }, { url: Q }] });
+    const older = { "scene:extension": [{ id: "x", traits: [], importUrl: P }, { id: "y", traits: ["t"], importUrl: Q }] };
+    const newer = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }, { id: "y", traits: ["t"], importUrl: Q }] };
+    expect(settleViews(doc, [older, newer])).toEqual({ settled: false, writes: 20, listed: [Q, P] });
+    expect(settleViews(doc, [newer, newer])).toEqual({ settled: true, writes: [], listed: [P, Q] });
+  });
+});
+
+describe("concurrent prunes and adds (real automerge merges)", () => {
+  const P = A;
+  const registries = { "scene:source": [{ id: "p", importUrl: P }] };
+  const object = () => ({ providerId: "p" });
+  /** a view's pass, written: what it changed */
+  const pass = (doc) => {
+    const plan = reconcileList({ doc, registries });
+    if (!plan.add.length && !plan.prune.length) return doc;
+    return Automerge.change(doc, (d) => changeList(d, plan));
+  };
+
+  it("A removes the last thing needing P (and takes P off) while B adds one needing it: after the merge and both passes P is listed, once, for both (all 4 orders)", () => {
+    const start = Automerge.change(Automerge.from(newScene()), (d) => {
+      d.objects.o = object();
+      d.packages.push({ url: P });
+    });
+    for (const aFirst of [false, true])
+      for (const bFirst of [false, true]) {
+        let a = Automerge.change(Automerge.clone(start), (d) => delete d.objects.o);
+        let b = Automerge.change(Automerge.clone(start), (d) => (d.objects.o2 = object()));
+        // each may pass before it hears of the other's change
+        if (aFirst) a = pass(a);
+        if (bFirst) b = pass(b);
+        if (aFirst) expect(listedPackages(a)).toEqual([]); // A took P off: nothing there needs it
+        // they meet, and each passes until neither writes (bounded)
+        for (let i = 0; i < 4; i++) {
+          a = Automerge.merge(a, Automerge.clone(b));
+          b = Automerge.merge(b, Automerge.clone(a));
+          a = pass(a);
+          b = pass(b);
+        }
+        a = Automerge.merge(a, Automerge.clone(b));
+        b = Automerge.merge(b, Automerge.clone(a));
+        expect([aFirst, bFirst, listedPackages(a), listedPackages(b)]).toEqual([aFirst, bFirst, [P], [P]]);
+        expect(Object.keys(a.objects)).toEqual(["o2"]);
+        // a fixed point for both
+        for (const doc of [a, b]) {
+          const plan = reconcileList({ doc, registries });
+          expect([plan.add, plan.prune]).toEqual([[], []]);
+        }
+      }
   });
 });
 

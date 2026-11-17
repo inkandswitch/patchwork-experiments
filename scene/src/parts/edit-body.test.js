@@ -3,7 +3,7 @@
 // seat over Look; a station over a walk) × what's selected (nothing, an
 // object, a ref) × whether the scene may be written: the real parts, mounted
 // together, say whether the halo's handles, the build-param knobs, the
-// inspector (opening on the selection), the grid, axes and bounds, and the
+// inspector (opening a beat after the selection), the grid, axes and bounds, and the
 // toolbar show. Finite and exhaustive: 5 × 3 × 2 = 30 cases.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -11,6 +11,8 @@ import { Box3, Vector3 } from "three";
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
+import { FRAME_MS, manualTime } from "../stage/time.js";
+import { DOUBLE_MS } from "../stage/router.js";
 import halo from "./halo.js";
 import handles from "./handles.js";
 import inspector from "./inspector.js";
@@ -65,6 +67,17 @@ function stubViewport(s) {
 }
 
 let s = null;
+// the stage's time, stepped: a selection opens a shut inspector a beat later (TOOLS.md Decisions 6)
+let time = null;
+async function beat() {
+  await time.advance(DOUBLE_MS + FRAME_MS);
+  await settle();
+}
+/** A frame that takes no time: the stage's flushes and frame callbacks run. */
+async function still() {
+  await time.step(1, { still: true });
+  await settle();
+}
 afterEach(() => {
   s?.unmount();
   s = null;
@@ -73,8 +86,10 @@ afterEach(() => {
 async function mount({ writable }) {
   const repo = new FakeRepo();
   const render = repo.add({ params: { height: 0.2 } });
+  time = manualTime();
   s = await mountStage({
     repo,
+    time,
     extensions: [...PARTS, BODIES],
     doc: {
       objects: { a: object({ name: "Slice", providerId: "slice-test", renderUrl: render.url }) },
@@ -129,8 +144,7 @@ describe("the editor is the Edit body", () => {
           await settle();
           for (const id of path) expect(api.body.enter(id)).toBe(true);
           s.local.swap((m) => ({ ...m, selected }));
-          await settle();
-          await settle();
+          await beat();
           expect(s.local.get().body.id).toBe(body);
           expect({ body, selected, writable, ...chrome() }).toEqual({ body, selected, writable, ...expected(body, selected, writable) });
           cases++;
@@ -150,12 +164,12 @@ describe("the editor is the Edit body", () => {
       const api = s.api("t.bodies");
       expect(s.local.get().body.id).toBe("edit"); // a scene made new
       s.local.swap((m) => ({ ...m, selected: "a" }));
-      await settle();
+      await beat();
       expect(chrome().inspector).toBe(true);
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
       expect(s.local.get().held?.command).toBe("measure");
       api.body.enter("walk");
-      await settle();
+      await still();
       expect(s.local.get().body.id).toBe("walk");
       expect(s.local.get().held).toBe(null);
       expect(chrome().inspector).toBe(false);
@@ -164,10 +178,10 @@ describe("the editor is the Edit body", () => {
       // the selection went with Edit (attention is the selection: F would act on what was last edited)
       expect(s.local.get().selected).toBe(null);
       api.body.enter("edit");
-      await settle();
+      await still();
       expect(chrome()).toMatchObject({ inspector: false, handles: false, toolbar: true });
       s.local.swap((m) => ({ ...m, selected: "a" }));
-      await settle();
+      await beat();
       expect(chrome()).toMatchObject({ inspector: true, handles: true, toolbar: true });
     } finally {
       PARTS.pop();

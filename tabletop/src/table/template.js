@@ -153,9 +153,14 @@ export function docContext(ctx, handle) {
   };
 }
 
-/** A template that lays a registered game's table out in an empty scene. */
-export const template = (gameId) => ({
-  async create(ctx) {
-    await setUp(ctx, gameId);
+/**
+ * A template that lays a registered game's table out in an empty scene: the
+ * game's id, or a function of the template's params to it (the stage hands
+ * create exactly the params its metadata declares, coerced: STAGE.md "Templates").
+ * @param {string | ((params: object) => string)} game
+ */
+export const template = (game) => ({
+  async create(ctx, params = {}) {
+    await setUp(ctx, typeof game === "function" ? game(params) : game);
   },
 });

@@ -5,10 +5,14 @@
 //
 //   - reconcile: after every doc change and every registry change, add
 //     `{ url }` for each package that a registered plugin the doc calls for
-//     comes from and the list doesn't name (packagesToList). Appends only:
-//     never removes, never rewrites, never makes the list. The same pass
-//     writes the scene package's own URL as `@patchwork.suggestedImportUrl`
-//     on a doc that names nothing loadable there.
+//     comes from and the list doesn't name (packagesToList), and, once the
+//     registry has gone quiet, take off each listed package this viewer has
+//     and nothing in the doc calls for (packagesToPrune: never while a need
+//     goes unanswered here, nor a source package while a render doc hasn't
+//     said which provider it names), in one change.
+//     Never rewrites an entry, never makes the list. The same pass writes
+//     the scene package's own URL as `@patchwork.suggestedImportUrl` on a
+//     doc that names nothing loadable there.
 //   - loading: once the registry has been quiet for a moment (the shell is
 //     still registering this viewer's own packages as the scene opens), the
 //     listed packages that aren't registered are published as
@@ -23,7 +27,7 @@
 // Nothing is written to the viewer's module settings: what a scene brings
 // lasts until the page is reloaded.
 
-import { answeringPlugins, listedPackages, missingPackages, packageTitle, packageUrl, packagesToList, registeredPackages, suggestedImportToSet, triage } from "../packages.js";
+import { answeringPlugins, changeList, listedPackages, missingPackages, packageTitle, packageUrl, reconcileList, registeredPackages, suggestedImportToSet, triage } from "../packages.js";
 
 /** How long the registry must be quiet, after the scene opens, before anything is offered or loaded. */
 export const PACKAGE_SETTLE_MS = 1_000;
@@ -181,11 +185,12 @@ export function resetPackages() {
  *   plugins: object | Promise<object | null>,    // the host's @inkandswitch/patchwork-plugins (or a promise of it)
  *   local: { get(): object, swap(fn): object },  // the stage's local atom (local.packages out)
  *   providerIds?: () => Iterable<string>,        // the providers render docs have asked the stage for
+ *   rendersKnown?: () => boolean,                // has every render doc built here said which provider it names?
  *   declined?: Set<string>,                      // "Not now": the view's, shared by every stage it opens
  *   settleMs?: number,
  * }} o
  */
-export function createPackages({ repo, handle, plugins, local, providerIds = () => [], declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
+export function createPackages({ repo, handle, plugins, local, providerIds = () => [], rendersKnown = () => true, declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
   let dead = false;
   let mod = null; // the plugins module, once it's here
   let settled = !(settleMs > 0);
@@ -194,7 +199,6 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
   let noRegistry = false; // the host has no plugin registry: nothing is listed against it, so nothing is missing
   let completeFor = null; // { doc, stamp, value }: complete()'s last answer
   let stamp = 0; // bumped whenever what's registered or loaded here may have changed
-  const used = new Set(); // importUrls of the parts and templates run in this view
   const failed = new Map(); // url → what went wrong
   const accepted = readAccepted();
   const offs = [];
@@ -233,16 +237,19 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     const doc = handle.doc() ?? {};
     const regs = registries();
 
-    // reconcile: name what the doc calls for and this viewer has, and the
+    // reconcile: name what the doc calls for and this viewer has, take off
+    // what this viewer has and the doc doesn't call for (not before the
+    // registry has gone quiet: the viewer's own packages may still be on
+    // their way, and one half-registered could look unneeded), and name the
     // scene package itself as the doc's suggested import, if it names none
     const readOnly = !!handle.isReadOnly?.();
-    const add = readOnly ? [] : packagesToList({ doc, registries: regs, used, providerIds: providerIds() });
+    const { add, prune } = readOnly ? { add: [], prune: [] } : reconcileList({ doc, registries: regs, providerIds: providerIds(), rendersKnown: !!rendersKnown(), prune: settled });
     const suggest = readOnly ? null : suggestedImportToSet(doc, regs);
-    if (add.length || suggest) {
+    if (add.length || prune.length || suggest) {
       try {
         handle.change((d) => {
           // (only the list init made: STAGE.md, "Shared maps")
-          if (Array.isArray(d.packages)) for (const url of add) if (!d.packages.some((e) => e?.url === url)) d.packages.push({ url });
+          changeList(d, { add, prune });
           // a scalar in the map the doc was made with: nothing two peers could each create
           if (suggest && d["@patchwork"] && typeof d["@patchwork"] === "object" && !packageUrl(d["@patchwork"].suggestedImportUrl)) d["@patchwork"].suggestedImportUrl = suggest;
         });
@@ -371,19 +378,6 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     check,
     complete,
     coming,
-    /** A part or template was run here: its package belongs on the list too. */
-    used(type, id) {
-      if (dead || !mod) return;
-      let importUrl = null;
-      try {
-        importUrl = mod.getRegistry?.(type)?.get?.(id)?.importUrl ?? listOf(mod.getRegistry?.(type)).find((p) => p?.id === id)?.importUrl ?? null;
-      } catch {
-        // unknown: nothing to note
-      }
-      if (typeof importUrl !== "string" || used.has(importUrl)) return;
-      used.add(importUrl);
-      check();
-    },
     /**
      * The viewer said yes: load these (default: all that are asked about or
      * failed), and remember each that loads. Only packages the doc lists.

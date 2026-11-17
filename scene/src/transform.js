@@ -107,30 +107,46 @@ const tidy = (v) => {
 /**
  * The transform whose composeMatrix is `m`: position, Euler XYZ rotation and a
  * uniform scale (the mean of the three axis lengths). Exact for any product of
- * transforms; matches three's Matrix4.decompose + Euler.setFromRotationMatrix.
+ * transforms; matches three's Matrix4.decompose + Euler.setFromRotationMatrix
+ * except near gimbal lock (y within about 4.5e-4 of ±π/2), where three gives
+ * up part of the turn and this doesn't.
+ *
+ * The rotation as a matrix is what it promises, not the triple: x from the
+ * third column, y from the first row's length, and z from the first two
+ * columns turned back by that x (M. Day, "Extracting Euler angles from a
+ * rotation matrix"), so whatever x comes out near the lock, z makes up for it
+ * and the frame is kept. A frame standing exactly on edge (cos y below
+ * GIMBAL) has no x of its own: z is 0 and x takes the whole turn, as three's.
  */
 export function decomposeMatrix(m) {
   const sx = Math.hypot(m[0], m[1], m[2]);
   const sy = Math.hypot(m[4], m[5], m[6]);
   const sz = Math.hypot(m[8], m[9], m[10]);
   const s = (sx + sy + sz) / 3 || 1;
-  const m11 = m[0] / sx, m12 = m[4] / sy, m13 = m[8] / sz;
-  const m22 = m[5] / sy, m23 = m[9] / sz;
-  const m32 = m[6] / sy, m33 = m[10] / sz;
-  const y = Math.asin(Math.max(-1, Math.min(1, m13)));
-  let x, z;
-  if (Math.abs(m13) < 0.9999999) {
-    x = Math.atan2(-m23, m33);
-    z = Math.atan2(-m12, m11);
-  } else {
-    x = Math.atan2(m32, m22);
-    z = 0;
-  }
+  const [x, y, z] = eulerOfRotation([m[0] / sx, m[1] / sx, m[2] / sx, m[4] / sy, m[5] / sy, m[6] / sy, m[8] / sz, m[9] / sz, m[10] / sz]);
   return {
     position: [tidy(m[12]), tidy(m[13]), tidy(m[14])],
     rotation: [tidy(x), tidy(y), tidy(z)],
     scale: tidy(s),
   };
+}
+
+/** Below this cos y a rotation is on edge exactly (gimbal lock): its x and z are one turn. */
+const GIMBAL = 1e-12;
+
+/**
+ * A rotation's Euler XYZ angles (R = Rx·Ry·Rz), from its 3×3 column-major
+ * [m11, m21, m31, m12, m22, m32, m13, m23, m33], exact as a matrix to the
+ * lock and through it (decomposeMatrix says how). Everything here that turns
+ * a matrix or a quaternion back into angles goes through this.
+ */
+export function eulerOfRotation([m11, m21, m31, m12, m22, m32, m13, m23, m33]) {
+  const cosY = Math.hypot(m11, m12);
+  const y = Math.atan2(m13, cosY);
+  if (!(cosY > GIMBAL)) return [Math.atan2(m32, m22), y, 0];
+  const x = Math.atan2(-m23, m33);
+  const cx = Math.cos(x), sx = Math.sin(x);
+  return [x, y, Math.atan2(cx * m21 + sx * m31, cx * m22 + sx * m32)];
 }
 
 // ─── a frame: a parent's, as drawn now (null: the world) ────────────────────

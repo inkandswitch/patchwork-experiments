@@ -15,12 +15,15 @@
 //   - on(id): onto an object named in the tree: the nearest of its connectors
 //     that takes it, whatever the distance; else on the object, at its origin.
 //
-// A landing is { point, yaw, parent, parentWorld, snapped, spot }: `yaw` null
-// keeps the heading the copy had (on the ground it was facing somewhere
-// already).
+// A landing is { point, yaw, rotation, parent, parentWorld, snapped, spot }:
+// `yaw` null keeps the heading the copy had (on the ground it was facing
+// somewhere already); `rotation` is the whole frame (world, Euler XYZ) of a
+// connector it snapped to that has one (a rack's place, standing a tile on
+// edge), else null: the copy goes into that frame, face up or down as it
+// was (carry-rules intoSnap, the carry's rule, through src/transfer.js moveBy).
 
 import { isGroup } from "../groups.js";
-import { connectorFor, partLanding } from "./parts-place.js";
+import { partLanding } from "./parts-place.js";
 import { yawOfMatrix } from "./carry-math.js";
 
 export function landings(api) {
@@ -42,7 +45,7 @@ export function landings(api) {
     const parent = parentInfo(objectFor(hit.id));
     const land = partLanding({ point: hit.point, parent, tags, eye: null, free: snapOff(free) });
     const on = parent && (attach === "hit" || land.snapped) ? parent : null;
-    return { point: land.spot, yaw: on ? land.yaw : null, parent: on?.id ?? null, parentWorld: on?.matrix ?? null, snapped: land.snapped, spot: land.spot };
+    return { point: land.spot, yaw: on ? land.yaw : null, rotation: on ? land.rotation : null, parent: on?.id ?? null, parentWorld: on?.matrix ?? null, snapped: land.snapped, spot: land.spot };
   }
 
   function pick(x, y) {
@@ -71,7 +74,7 @@ export function landings(api) {
       const z = first[2];
       const h = down(x, z);
       const point = [x, h?.point ? h.point[1] : 0, z];
-      return { point, yaw: null, parent: null, parentWorld: null, snapped: false, spot: point };
+      return { point, yaw: null, rotation: null, parent: null, parentWorld: null, snapped: false, spot: point };
     }
     const port = api.port;
     let hit = pick((port?.clientWidth || 0) / 2, (port?.clientHeight || 0) / 2);
@@ -95,12 +98,13 @@ export function landings(api) {
     if (!parent) return null;
     const m = parent.matrix;
     const origin = [m[12], m[13], m[14]];
-    const snap = snapOff(free) ? null : connectorFor({ ...parent, snapRadius: Infinity }, origin, tags);
-    if (snap) return { point: snap.world, yaw: snap.yaw ?? yawOfMatrix(m), parent: id, parentWorld: m, snapped: true, spot: snap.world };
+    // the nearest of its connectors that takes it, whatever the distance: placed as from() places it
+    const land = partLanding({ point: origin, parent: { ...parent, snapRadius: Infinity }, tags, free: snapOff(free) });
+    if (land.snapped) return { point: land.spot, yaw: land.yaw, rotation: land.rotation, parent: id, parentWorld: m, snapped: true, spot: land.spot };
     // on top of it at its origin, if a look straight down finds it there
     const h = down(origin[0], origin[2]);
     const point = h?.point && h.id === id ? h.point : origin;
-    return { point, yaw: yawOfMatrix(m), parent: id, parentWorld: m, snapped: false, spot: point };
+    return { point, yaw: yawOfMatrix(m), rotation: null, parent: id, parentWorld: m, snapped: false, spot: point };
   }
 
   return { at, ahead, on, from };

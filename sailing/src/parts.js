@@ -30,8 +30,13 @@ export const WIND = Object.freeze({ speed: 7, from: 45 });
 
 /** A new sea: the behaviour on a water body, `{ seed, scale }`. */
 export const newSea = ({ seed = Math.floor(Math.random() * 1e9), scale = 1 } = {}) => ({ seed, scale });
-/** New weather: the world's wind and the seed of its gusts. */
-export const newWeather = ({ wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) => ({ wind: { speed: wind.speed, from: wind.from }, seed });
+/**
+ * New weather, the weather package's `weather` trait (weather/WEATHER.md):
+ * the air of it only, `{ wind, from, seed }` (m/s, degrees, the gusts'
+ * seed). Every field it leaves out (where and when, gustiness, the sky) is
+ * the weather's default.
+ */
+export const newWeather = ({ wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) => ({ wind: wind.speed, from: wind.from, seed });
 
 /**
  * A Sea: open water (the water package's object trait, no size) with a sea

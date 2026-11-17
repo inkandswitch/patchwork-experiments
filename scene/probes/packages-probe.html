@@ -7,7 +7,9 @@
      an extension for the scene's trait "probe.sea", the scene:source
      "probe-box" one object is built by, and a part) and one that isn't (its
      load fails). A third package IS registered here, at heads, for a trait
-     the scene has, and isn't listed: the stage lists it. `?fresh` clears
+     the scene has, and isn't listed: the stage lists it. A fourth IS
+     registered here and listed, and nothing in the scene calls for it: the
+     stage takes it off once the registry has gone quiet. `?fresh` clears
      localStorage first; without it, what was accepted is remembered. -->
 <script type="importmap">
 { "imports": {
@@ -37,6 +39,7 @@ console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(
 const PKG = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const BROKEN = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
 const LOCAL = "automerge:4cD6LbnDAzvNj9WDNDA4ew21R85H";
+const STALE = "automerge:5dE6LbnDAzvNj9WDNDA4ew21R85J";
 
 try {
   if (new URLSearchParams(location.search).has("fresh")) { try { localStorage.clear(); } catch {} }
@@ -44,6 +47,8 @@ try {
   for (const p of plugins) getRegistry(p.type).register(p);
   // a package this viewer has, registered as the module watcher does: at the heads it loaded
   getRegistry("scene:extension").register({ type: "scene:extension", id: "probe.local", name: "Local", traits: ["probe.local"], load: async () => ({ create: () => ({}) }) }, `${LOCAL}#${"H".repeat(48)}`);
+  // and one it has that nothing in the scene calls for (what a part once put there, say)
+  getRegistry("scene:extension").register({ type: "scene:extension", id: "probe.stale", name: "Stale", traits: ["probe.stale"], load: async () => ({ create: () => ({}) }) }, `${STALE}#${"H".repeat(48)}`);
 
   const repo = new FakeRepo();
   // the package folders, as pushwork lays them out (the prompt reads each one's package.json for its name)
@@ -61,7 +66,7 @@ try {
     title: "Packages probe",
     objects: { box: { name: "Box", sourceUrl: source.url, providerId: "probe-box", renderUrl: render.url, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } },
     order: ["box"], traits: { "probe.sea": {}, "probe.local": {} },
-    packages: [{ url: PKG }, { url: BROKEN }],
+    packages: [{ url: PKG }, { url: STALE }, { url: BROKEN }],
     view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [3, 2.5, 3.5], target: [0, 0.5, 0] } } },
   }));
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -71,7 +76,7 @@ try {
   const dbg = host.querySelector(".scene-stage").__sceneDebug;
   const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
   window.__p = {
-    dbg, errors, PKG, BROKEN, LOCAL,
+    dbg, errors, PKG, BROKEN, LOCAL, STALE,
     packages: () => dbg.local.get().packages,
     card: () => {
       const c = host.querySelector(".packages-card");
@@ -87,6 +92,8 @@ try {
     loaded: (id) => !!dbg.viewport.contentOf(id)?.loaded,
     sea: () => ({ started: window.__seaStarted ?? 0, shown: !!host.querySelector(".probe-sea"), built: window.__boxBuilt ?? 0 }),
     listed: () => (scene.doc().packages ?? []).map((e) => e.url),
+    /** take a trait off the scene, as a person removing what it was for would */
+    untrait: (k) => scene.change((d) => { delete d.traits[k]; }),
     accepted: () => { try { return JSON.parse(localStorage.getItem("scene-packages:accepted") ?? "[]"); } catch { return null; } },
     inspect: () => dbg.packages.inspect(),
   };

@@ -156,6 +156,8 @@ function join(w, session, hull) {
   });
   s.api = api;
   s.instance = play.create(api);
+  // the ships offer no ambient: the world's wind and sky are the weather package's (W5)
+  expect("ambient" in s.instance).toBe(false);
   s.top = () => s.bodies.at(-1).sitting?.input;
   s.command = (id) => s.instance.commands.find((c) => c.id === id);
   return s;

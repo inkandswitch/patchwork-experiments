@@ -14,8 +14,9 @@
 //   with Rising Tide Boat Works' boatyard (template-ucluelet.js)
 // - scene:extension "terrain.credit": the open data's credit at the foot
 //   of the view, for objects with the "terrain.credit" trait (credit.js)
-// - scene:extension "terrain.sky": a place's own sky, the world's
-//   atmosphere, for an object with the "terrain.sky" trait (sky.js)
+// - scene:extension "terrain.place": for the object with the
+//   "terrain.place" trait, the shore in the water, the water's shelter and
+//   the ground's grain (place.js); no sky: that is the world's weather
 
 export const plugins = [
   {
@@ -85,25 +86,14 @@ export const plugins = [
   },
   {
     type: "scene:extension",
-    id: "terrain.sky",
-    name: "Place's sky",
-    traits: ["terrain.sky"],
+    id: "terrain.place",
+    name: "Place",
+    traits: ["terrain.place"],
     describes: {
-      "terrain.sky": {
-        name: "Place's sky",
-        on: "object",
-        blurb: "This place's own sky, fog and sun (overcast, misty or clear) as the world's atmosphere, over the weather's",
-        fields: [
-          { key: "sky", label: "Sky (top, horizon, bottom)", kind: "json", default: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" } },
-          { key: "fog", label: "Fog (colour, near, far m)", kind: "json", default: { color: "#959ea1", near: 400, far: 9000 } },
-          { key: "sun", label: "Sun (direction, colour, intensity, shadows)", kind: "json", default: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false } },
-          { key: "exposure", label: "Exposure", kind: "number", default: 1.05 },
-        ],
-        init: { sky: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" }, fog: { color: "#959ea1", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05 },
-      },
+      "terrain.place": { name: "Place", on: "object", blurb: "This is the place: the water mirrors its shore and is calmer in its lee, and its ground shows its grain close up. Its sky is the world's weather" },
     },
     async load() {
-      return (await import("./sky.js")).default;
+      return (await import("./place.js")).default;
     },
   },
   {

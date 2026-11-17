@@ -3,10 +3,13 @@
 //
 // A part is put at a world point: where the pointer hit, or where the view is
 // looking. On an object it goes under that object (the parent) and is placed
-// in that object's frame; on the ground it goes under nothing. It stands
-// upright (+Y up in the world, whatever the surface's slope: a mast on a
-// cambered deck stands straight), and it faces
-//   - a connector's way, when it snapped to one that says (the hand's rule);
+// in that object's frame; on the ground it goes under nothing. Unless a
+// connector's frame says otherwise, it stands upright (+Y up in the world,
+// whatever the surface's slope: a mast on a cambered deck stands straight),
+// and it faces
+//   - a connector's way, when it snapped to one that says (the hand's rule):
+//     its whole frame when it has one (a rack's place stands a tile on edge,
+//     face up as a part from the bin always is), else its yaw;
 //   - else the way its parent does (the parent's +Z, seen from above), so
 //     what's put on a hull lines up with the hull;
 //   - else the viewer (its +Z toward the eye), as the arena's "Add target"
@@ -33,14 +36,15 @@ export function facingEye(eye, point) {
 /**
  * The connector a part with these tags would go to on one object, from a
  * world point, or null: the hand's rule (snapCandidates, nearestSnap).
- * `connectors` are the content's (body space: { position, yaw?, tags? }),
- * `matrix` the object's world, `snapRadius` the content's (body units).
- * @returns {{ world: number[], yaw: number | null } | null}
+ * `connectors` are the content's (body space: { position, rotation?, yaw?,
+ * tags? }), `matrix` the object's world, `snapRadius` the content's (body
+ * units). `rotation` is the connector's whole frame in world, or null.
+ * @returns {{ world: number[], rotation: number[] | null, yaw: number | null } | null}
  */
 export function connectorFor({ matrix, connectors, snapRadius = null }, point, tags = []) {
   if (!Array.isArray(point)) return null;
   const best = nearestSnap(snapCandidates([{ id: null, matrix, connectors, snapRadius }], Array.isArray(tags) ? tags : []), point[0], point[2]);
-  return best ? { world: best.world, yaw: best.yaw } : null;
+  return best ? { world: best.world, rotation: best.rotation ?? null, yaw: best.yaw } : null;
 }
 
 /**
@@ -52,17 +56,20 @@ export function connectorFor({ matrix, connectors, snapRadius = null }, point, t
  *   eye?: number[] | null,                             // the camera's position (world)
  *   free?: boolean,                                    // no snapping (Alt, or the Snap pref off)
  * }} o
- * @returns {{ at: { parent: string | null, transform: object }, spot: number[], yaw: number, snapped: boolean }}
+ * @returns {{ at: { parent: string | null, transform: object }, spot: number[], yaw: number | null, rotation: number[] | null, snapped: boolean }}
+ *   `rotation`: the connector's frame it went into (world), or null when it stands upright turned to `yaw`
  */
 export function partLanding({ point, parent = null, tags = [], eye = null, free = false }) {
   const snap = parent && !free ? connectorFor(parent, point, tags) : null;
   const spot = snap ? snap.world : point.slice(0, 3);
-  const yaw = snap?.yaw ?? (parent ? yawOfMatrix(parent.matrix) : facingEye(eye, spot));
-  const world = composeMatrix({ position: spot, rotation: [0, yaw, 0], scale: 1 });
+  const rotation = snap?.rotation ?? null;
+  const yaw = snap?.yaw ?? (rotation ? null : parent ? yawOfMatrix(parent.matrix) : facingEye(eye, spot));
+  const world = composeMatrix({ position: spot, rotation: rotation ?? [0, yaw, 0], scale: 1 });
   return {
     at: { parent: parent?.id ?? null, transform: localTransform(parent?.matrix ?? null, world) },
     spot,
     yaw,
+    rotation,
     snapped: !!snap,
   };
 }

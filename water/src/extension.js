@@ -60,7 +60,7 @@ export const WAVES = "water.waves";
  * Terrain gives it for its places.
  */
 export const SHORE = "water.shore";
-/** The world's wind, an ambient whoever makes the weather offers (sailing's weather): { speed (m/s), from (degrees) }. */
+/** The world's wind, an ambient whoever makes the weather offers (the weather package's, weather/WEATHER.md): { speed (m/s), from (degrees), seed, gustiness }; the water reads speed and from. */
 export const WIND = "wind";
 const CALM = Object.freeze({ speed: 0, from: 0 });
 const STILL = Object.freeze({ v: Object.freeze([0, 0, 0]), w: Object.freeze([0, 0, 0]) });

@@ -15,7 +15,7 @@
 // square to the room, and laid left to right with --gap metres between the
 // blocks; its height is her clip's depth (less her Sea's level) at the scale,
 // so her block's floor rests on the room's floor (y = 0). --weather gives the
-// room the world's wind (sailing.weather) and no water: the Breezy pavilion,
+// room the world's wind (the weather package's `weather`) and no water: the Breezy pavilion,
 // where both blocks get waves. People start in Look from --home if given,
 // else from the nearest place looking down --pitch degrees (27) from the
 // front from which every block, up to the top of what her doc draws, and
@@ -66,8 +66,8 @@ const BARE = /^automerge:[1-9A-HJ-NP-Za-km-z]{20,60}$/;
 const S = 1 / Number(args.scale ?? 25);
 const GAP = Number(args.gap ?? 0.6);
 const PITCH = Number(args.pitch ?? 27);
-const weather = args.weather ? (([speed, from]) => ({ wind: { speed, from }, seed: 7 }))(args.weather.split(",").map(Number)) : null;
-if (!(S > 0) || !(GAP >= 0) || !(PITCH > 0 && PITCH < 90) || (weather && ![weather.wind.speed, weather.wind.from].every(Number.isFinite))) throw new Error(`--scale, --gap, --pitch (0 to 90), --weather: numbers, please`);
+const weather = args.weather ? (([wind, from]) => ({ wind, from, seed: 7 }))(args.weather.split(",").map(Number)) : null;
+if (!(S > 0) || !(GAP >= 0) || !(PITCH > 0 && PITCH < 90) || (weather && ![weather.wind, weather.from].every(Number.isFinite))) throw new Error(`--scale, --gap, --pitch (0 to 90), --weather: numbers, please`);
 const isBox = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Number.isFinite(v) && v > 0);
 const tidy = (v) => Math.round(v * 1e6) / 1e6 + 0;
 
@@ -162,7 +162,8 @@ const home = args.home
 if (![...home.position, ...home.target].every(Number.isFinite) || home.position.length !== 3 || home.target.length !== 3) throw new Error(`--home ${J(args.home)}: want px,py,pz:tx,ty,tz`);
 const framed = panesReport(home, points);
 for (const f of framed) if (!f.inside) problems.push(`from ${J(home)} the room's blocks and boats aren't all inside the ${f.pane} pane (x ${f.x.map((v) => v.toFixed(2))}, y ${f.y.map((v) => v.toFixed(2))})`);
-const PACKAGES = weather ? ["scene", "sailing"] : ["scene"];
+// the pavilion's own doc calls for the weather alone (its boats list sailing and water themselves)
+const PACKAGES = weather ? ["scene", "weather"] : ["scene"];
 const doc = {
   "@patchwork": { type: "scene", suggestedImportUrl: urlOf("scene") },
   title: args.title ?? (weather ? "Breezy pavilion" : "Model room"),
@@ -170,7 +171,7 @@ const doc = {
   order: boats.map((b) => b.id),
   dimensions: {},
   // no water, ever; the world's wind only for the pavilion
-  traits: weather ? { "sailing.weather": weather } : {},
+  traits: weather ? { weather } : {},
   assets: {},
   packages: PACKAGES.map((p) => ({ url: urlOf(p) })),
   clock: { running: true, t: 0 },

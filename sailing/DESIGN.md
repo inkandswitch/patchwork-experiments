@@ -2,8 +2,8 @@
 
 A water body (the water package's `water` object trait) becomes a sea when
 it carries the `sailing.sea` trait, a scene has wind and sky when it carries
-`sailing.weather`, and an object becomes a ship when it carries
-`sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
+the weather package's `weather` (weather/WEATHER.md), and an object becomes
+a ship when it carries `sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
 attached under the ship (stations, the mast, the sail) and contributions from
 this package and the scene's shared parts. The requirements are use case 4
 in [../scene/DESIGN.md](../scene/DESIGN.md) and section 9 of
@@ -25,22 +25,19 @@ modules share.
   *from*, in degrees, measured from −Z (north) toward +X (east), as sailors
   say it. A wind "from 0" blows toward +Z. Velocities in code are vectors.
 - **Densities:** water 1025 kg/m³, air 1.225 kg/m³.
-- **The `wind` ambient** (scene/STAGE.md, "Conventions", names it; this
-  package's sea offers it). How the world's air moves:
-  `{ speed, from, seed, gustiness }`, speed in m/s at 10 m, `from` the
-  compass bearing it blows from in degrees (as above: 0 from −Z, 90 from
-  +X), in the outermost doc's root frame on its world time; `seed` and
-  `gustiness` (0..1) make its gusts (`wind.js`). Two readers: this
-  package's physics, which makes it a wind in each stage's frame
-  (`sea-view.js`), and the water package's surface, whose fine waves,
-  roughness and foam follow it. One copy: nothing else carries it.
+- **The `wind` ambient** is the weather package's: it offers it from the
+  outermost doc's `weather` trait, and documents its value
+  (weather/WEATHER.md, "What it offers"; scene/STAGE.md, "Conventions",
+  points there). Sailing offers no ambient. It reads the wind twice: its
+  physics makes it a wind in each stage's frame (`sea-view.js`, by
+  `wind.js`: `seed` and `gustiness` make its gusts), and every sea builds
+  its waves from it (`sea.js`). Its `from` is the compass convention above.
 
 ## Modules (sailing/src)
 
 | Module | Pure? | What it is |
 |---|---|---|
 | `ocean.js` | yes | The sea's spectrum: a wind-driven directional wave spectrum sampled into Gerstner components (`seaWaves`), plain data. The water package evaluates them, for the shader and for physics and walking (`heightAt`, `normalAt`, `velocityAt`), so what floats is what you see. Sailing keeps no evaluator: its tests' fakes use a copy of water's (`test/surface.js`), pinned by the golden file |
-| `weather.js` | yes but for create() | The weather, its own scene:extension on the scene trait `sailing.weather`: it offers the ambients `wind` (read by every boat's physics, by every sea for its waves and by the water package's surface) and `atmosphere` |
 | `sea.js` | yes but for create() | The sea, its own scene:extension on the object trait `sailing.sea`, a behaviour on a water body: for each object with both the sea and the water package's `water`, it builds the spectrum's components from the world's `wind` ambient in its stage's frame and gives them, with what only it knows of them (seed, stats), away as `water.waves` keyed by body (the water package's convention); on a new wind (by value) it asks for one more flush; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surfaces (the open grid round the camera, a bounded body's patch, the Gerstner shader) are the water package's `material.js` |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds, and the wind on her hull, mast and rigging, each a windage element of her contract's (§3.13) or of `plainWindage`'s, in its own air (§6.1, windage.js `elementForce`). `step(state, controls, env, dt)` |
@@ -61,7 +58,7 @@ modules share.
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
 | `crew.js` | stage side thin | ctx.crew: coming aboard (`api.body.enter("walk", hull)`: walking her deck is walk's) and the `station` body, pushed over walk, its eye walk's walker's at the station's stand spot (walk's `stand` contribution); what the viewer is doing (`viewerOf`: the top body, its declared keys, walk's `avatar`); the orbit following her before anyone is aboard |
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
-| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the hint is only "Click her to come aboard", beside the dial, while a click does (near, not seated) |
+| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the HUD is the dial alone and says nothing: what a click on her does is the base's (Look's comes aboard, Edit's selects, a seat's is the game's), which a package may not ask; its sheet's one `pointer-events` is the root's `none`, so no node of it takes a press in any state (`hud.test.js`; Decisions (N11) 1); aboard, the walking hint is the keys the top body declares (`keysHint`: walk's own) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
@@ -560,6 +557,36 @@ rewrite that table.
   (item 11: the coefficients, the sets' trimmed tables through the wrench,
   each sail at its own CE and in its own air, the jib's swing, sheet and
   lead, backing and goose-winging, furling, reefing's CE, and irons).
+
+### Decisions (N11)
+
+1. *Before you're aboard the HUD says nothing* (decided unattended
+   (2026-11-17, lane/n11), for the lead). N8 took the HUD's Come aboard
+   button out to the bar of tools (scene TOOLS.md Decisions 10) but kept
+   the lobby's hint, "Click her to come aboard" while she was near
+   (`NEAR` 60 m) and the view wasn't seated. In Edit that was false (Edit's
+   click selects her, TOOLS Decisions 6), and a package may not ask
+   whether the viewer is editing (scene STAGE.md, "Conventions for
+   bodies"), so no condition sailing can see makes it true. The plan had
+   "Come aboard (Enter)" in its place; that names a key the HUD can't
+   check (a key is shown only where the resolver says it reaches the
+   command, scene TOOLS.md H3, and the bar already shows Come aboard's
+   key that way). So the lobby hint is empty in every base, and with it
+   `NEAR`, `nearEye`, hudModel's `seated` and `near`, the `data-seated`
+   attribute and the import of crew.js's `seatedView` are gone: the HUD
+   read them only for that line, and the HUD's second line, `keys`, never
+   set by anything, went too (one line says what the keys do). Table:
+   state {lobby, paused, aboard} × what the crew says (`me.hint`,
+   `swimming`, `free`), 24 cases (`hud.test.js`). The sheet's only
+   `pointer-events`, comments aside, is the root's `none`, and hud.js sets
+   none inline: read from the files, so a test sees only sailing's own
+   sheet. Of scene's, stage.css gives each child of the overlay `auto` at
+   no specificity (`:where`), which the root's own rule outranks, and none
+   names a `.sail-hud` node (checked by reading them, 2026-11-17). Lost: in Look, near her, nothing
+   on the view says a click on her boards (the bar's Come aboard and the
+   templates' notice still do). *Question for the lead:* should the base
+   say what a click does (Look's own "Click to …" under the pointer)? It is
+   the only one that knows.
 
 ### Decisions (N6)
 
@@ -2166,8 +2193,8 @@ a scene:part in index.js under "Sailing":
 
 | Part | Pieces (the first is selected) | Tags | Traits |
 |---|---|---|---|
-| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `sailing.weather` if the scene has none |
-| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `sailing.weather` if the scene has no open water |
+| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `weather` (the weather package's: `{ wind, from, seed }`) if the scene has none |
+| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `weather` if the scene has no open water |
 | Mast and sail | the mast; the boom and sail, and the jib on its forestay, under it | `sailing.mast` | `sailing.sail`, `sailing.jib` |
 | Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
 | Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |
@@ -2210,7 +2237,6 @@ a scene:part in index.js under "Sailing":
 
 | Trait | On | Fields |
 |---|---|---|
-| `sailing.weather` | scene | `{ wind: { speed, from }, seed? }` — speed m/s, from degrees; `seed` the gusts' |
 | `sailing.sea` | a water object (the water package's `water`) | `{ seed, scale }`: its waves are the spectrum of the world's wind, `scale` their height. On an object without water it does nothing, and says so |
 | `sailing.ship` | the hull object | `{ frame?, spec?, motion? }`: `frame: { position?, rotation? }`, where her body frame sits in her hull's, each part over what her GLB says ("The ship's frame"); spec overrides; `motion: { velocity, spin }` (world, her body's) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
@@ -2235,6 +2261,13 @@ people walk her in walk (since N10 step 5; parts.js PIECES, sloopObjects):
 | `walk.stand` | the wheel, the mainsheet, the windlass, the rig (the sail's: placed by the doc, which never swings it), each winch | `{ at, claim }`, `at` in the piece's frame: STAND_OFF aft of the station's origin (0.6 m; the mainsheet 0.35), on what's drawn there (ship.js `standSpot`, `deckSurfaceAt`); a winch's across the well on the far side deck, facing it. `claim` is the one the station's verb holds while you stand there: `"station"`, the rig's `"halyard"` (the sail's `"station"` claim is whoever trims it, from anywhere) |
 | `walk.ladder` | the ladder | `{ top }`: INBOARD (0.5 m) in from its hook, on the deck (ship.js `ladderTop`) |
 | `walk.spawn` | the wheel | `{}`: on an object with a stand spot, walk's spawn is at that spot: people come aboard where the helmsman stands, facing forward, on any hull the wheel is fitted to |
+
+The weather package's `weather` (a scene trait) is written by her Sea and
+Sloop parts and her templates where a scene has none (`newWeather`: the air
+of it only, `{ wind, from, seed }`, m/s, degrees and the gusts' seed; every
+other field is the weather's default), in the shape weather/WEATHER.md
+documents; sailing never reads it, only the `wind` ambient it becomes, and
+imports nothing of the weather's.
 
 Two other packages' traits ride on her companionway, written in the shapes
 those packages document (traits.js `SLIDE`, `EXIT`); sailing reads neither
@@ -2282,9 +2315,8 @@ traits mark, put back when it stops).
 `create…(api, ctx) → part`, where a part may have `tick(…)`, `update(scene,
 local, prev)`, `receive(type, data, from)` and `dispose()`, and fills in
 what the others read. No part calls `api.loop`: play.js runs one loop and
-ticks them in the order a frame needs, and no part imports another, but
-for hud.js taking crew.js's `seatedView` (what they share of the doc is
-traits.js, of the maths frames.js). Nothing of the ship's can be carried:
+ticks them in the order a frame needs, and no part imports another
+(what they share of the doc is traits.js, of the maths frames.js). Nothing of the ship's can be carried:
 what can says so with the scene's `scene.carry` trait (a game's cards and
 pieces), which the ship and her fittings never have, so a game played aboard
 can't carry off her mast and sailing needs no veto. And the sail's
@@ -2330,7 +2362,7 @@ ctx.sim.tick()           // every view, every frame: stale inputs; computing, th
 ctx.crew.input           // the extension's input handlers (a click on her comes aboard: walk, at her hull). A click reaches
                          //   her only through something of hers (the ships' part holds no scene trait, so the world's sea, sky and shore
                          //   aren't hers); what nearer takes it (a card's carry) has it first. Seated (seatedView: a body over the stage's
-                         //   Look or Edit, not the crew's or walk's, a seat), no click does (Enter or the bar's Come aboard does); the HUD (hudModel's `seated`) shows no walking keys
+                         //   Look or Edit, not the crew's or walk's, a seat), no click does (Enter or the bar's Come aboard does)
 ctx.crew.bodies          // [station]: pushed over walk (in her stage) by take, its keys the station's (declared), reach 2.5 m
                          //   (crew.js REACH), `here: false`. Its eye is walk's: take asks walk's `stand(id)` contribution to stand
                          //   its walker at the station's stand spot (walk.stand, on the station itself) and looks from that

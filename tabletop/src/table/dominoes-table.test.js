@@ -4,16 +4,15 @@
 // up, and who may see what at each step (visibility.js). Seats and the keeper
 // are stand-ins (test/stand-ins.js), met only through the conventions.
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { CARD, ZONE, audienceOf } from "./visibility.js";
+import { CARD, ZONE, audienceOf, seatAt, zones } from "./visibility.js";
 import Extension from "./extension.js";
 import * as fakes from "../test/fakes.js";
-import { SEATS, keeperOf, keptTrait, roster } from "../test/stand-ins.js";
+import { SEATS, keeperOf, keptTrait, roster, stageExtras } from "../test/stand-ins.js";
 import { emptyScene } from "../empty-scene.js";
-import { connectorsOf } from "../look/look.js";
+import { extrasOf } from "../look/look.js";
 import { boxUnder } from "./stand.js";
 import { composeMatrix } from "./frame.js";
 import { game as builtIn } from "../test/games.js";
-import { yawOfEuler } from "./slots.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
 // the game, as data (games/draw-dominoes-2.json), and what these tests need of it
@@ -39,11 +38,8 @@ const tile = (position, rotation = FACE_DOWN()) => ({
 });
 const OUT = 0.42;
 const rack = (seat, z, yaw) => ({ name: "Rack", locked: true, transform: T([0, 0, z], [0, yaw, 0]), traits: { [ZONE]: { ...structuredClone(game.pieces.rack.zone), seat } } });
-/** What the scene says a rack's GLB holds: its connectors as the stage reads them (yaw only), and its places whole (this package's extras). */
-const rackContent = () => {
-  const whole = connectorsOf(game.pieces.rack.snapPoints);
-  return { loaded: true, extras: { connectors: whole.map((c) => ({ position: c.position, yaw: yawOfEuler(c.rotation), tags: c.tags })), snapRadius: game.pieces.rack.snapRadius, "tabletop.slots": whole } };
-};
+/** What the scene says a rack's GLB holds: its connectors as the stage reads them, whole frames and all. */
+const rackContent = () => ({ loaded: true, extras: stageExtras(extrasOf(game.pieces.rack)) });
 const seats = (p1 = "alice", p2 = "bob") => ({ p1: { name: "Player 1", player: p1 }, p2: { name: "Player 2", player: p2 } });
 const col = (m, k) => [m[4 * k], m[4 * k + 1], m[4 * k + 2]].map((v) => +v.toFixed(7) + 0);
 
@@ -207,7 +203,7 @@ describe("washing the boneyard", () => {
     }
     // the others' pieces are where they were
     expect(t.w.doc.objects.far.transform.position).toEqual([0.3, TILE_TOP, 0.3]);
-    expect(t.notices("A")).toEqual(["Washing 6 dominoes…"]);
+    expect(t.notices("A")).toEqual(["You washed “Deck” (6)"]);
     expect(t.notices("B")).toEqual(["<alice> washed “Deck” (6)"]);
     expect(JSON.stringify(t.w.sent)).not.toMatch(/b[0-5]|slot|sourceUrl/);
     t.w.done();
@@ -302,6 +298,54 @@ describe("standing a tile on edge, and laying it flat", () => {
     t.w.change(fakes.ops.setTransform(t.A.api.scene(), "b0", T([0, 0.0125, 0], [-Math.PI / 2, 0, 0])));
     expect(col(worldOf(t, "b0"), 1).map((v) => +v.toFixed(6) + 0)).toEqual([0, 0, -1]);
     expect(t.policy()("b0")).toEqual({ show: ["bob"], only: ["bob"] });
+    t.w.done();
+  });
+});
+
+// What the table answers the scene's carry (`landing`): a domino taken out
+// of a hand (a rack) is being played, and goes down lying flat (a rack's
+// place, a connector with a standing frame, stands it: the stage's rule,
+// scene landedPose); one taken from anywhere else goes down as it is carried,
+// so a tile standing in front of its player (no rack) is never laid face up
+// for everyone by moving it. A card or a domino carried into your own hand
+// turns face up for you. Every case: piece {domino, card} × taken from {a
+// hand, the table lying, the table standing toward your rack} × where {your
+// rack, the other rack, the table} × you {seated, not}.
+describe("what the table answers a carry (landing)", () => {
+  afterEach(() => vi.useRealTimers());
+  const WHERE = { "your rack": [0, 0.01, OUT], "the other rack": [0, 0.01, -OUT], "the table": [0, 0.004, 0] };
+  // where the piece is in the doc as it's carried (a carry writes only where it ends)
+  const FROM = {
+    "a hand": T([0.1, RACK.base, OUT + 0.016], [Math.PI / 2, 0, 0]), // standing in Alice's rack, facing her
+    "the table, lying": T([0.05, 0, 0.05], FACE_DOWN()),
+    "the table, standing toward your rack": T([0, 0.0125, 0.15], [Math.PI / 2, 0, 0]), // no rack: Alice's alone
+  };
+  const CASES = [];
+  for (const piece of ["domino", "card"]) for (const from of Object.keys(FROM)) for (const where of Object.keys(WHERE)) for (const you of ["seated", "not seated"]) CASES.push([piece, from, where, you]);
+  it("is 36 cases", () => expect(CASES).toHaveLength(36));
+  it.each(CASES)("%s, taken from %s, carried to %s, %s", (piece, from, where, you) => {
+    const t = table({ seated: you === "seated" ? seats() : seats("carol", "dave") });
+    const id = piece === "domino" ? "b0" : "card";
+    // a card never stands: it lies where the domino would
+    const at = FROM[from];
+    t.w.change(fakes.ops.setTransform(t.A.api.scene(), id, piece === "card" ? T(at.position, FACE_DOWN()) : at));
+    const s = t.A.api.scene();
+    const w = s.world(id);
+    expect(seatAt(s, zones(s), [w[12], w[13], w[14]])).toBe(from === "a hand" ? "p1" : null);
+    const flat = piece === "domino" && from === "a hand";
+    const faceUp = you === "seated" && where === "your rack";
+    const want = flat || faceUp ? { ...(flat ? { flat: true } : {}), ...(faceUp ? { faceUp: true } : {}) } : null;
+    expect(t.A.x.landing(id, WHERE[where])).toEqual(want);
+    t.w.done();
+  });
+  it("a domino drawn into your rack is asked the same: flat, face up in your hand (it stands again only in a place that stands it)", async () => {
+    const t = table();
+    await vi.advanceTimersByTimeAsync(10);
+    t.cmd(t.A, "draw").run("b0");
+    t.w.tick(1 / 60, 40);
+    expect(col(worldOf(t, "b0"), 1)).toEqual([0, 0, 1]); // standing, facing Alice
+    expect(t.A.x.landing("b0", [0.3, 0.004, 0.2])).toEqual({ flat: true });
+    expect(t.A.x.landing("b0", [0, 0.01, OUT])).toEqual({ flat: true, faceUp: true });
     t.w.done();
   });
 });
