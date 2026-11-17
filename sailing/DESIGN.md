@@ -59,12 +59,8 @@ modules share.
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
-| `navmesh.js` | yes | The bake: a ship's triangles (her body frame) to a navmesh of 5 cm cells, every cell side one record (STEP, WALL, OPEN), her D_r and where a swimmer is put out of it, and links (spawn, stand spots, the ladder). See "Walking" |
-| `walker.js` | yes | The walker: a state machine over the navmesh (walking, airborne, vaulting, at a station, on the ladder, swimming), invariant I (`checkWalker`), projection (P1), the seeds a bake starts from |
-| `navcheck.js` | yes | Checking a bake: the oracle on the raw triangles, the bake properties B1–B7, the static checks C1–C9 |
-| `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
-| `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
-| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
+| `crew.js` | stage side thin | ctx.crew: coming aboard (`api.body.enter("walk", hull)`: walking her deck is walk's) and the `station` body, pushed over walk, its eye walk's walker's at the station's stand spot (walk's `stand` contribution); what the viewer is doing (`viewerOf`: the top body, its declared keys, walk's `avatar`); the orbit following her before anyone is aboard |
+| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
 | `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the hint is only "Click her to come aboard", beside the dial, while a click does (near, not seated) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
@@ -2235,9 +2231,9 @@ people walk her in walk (since N10 step 5; parts.js PIECES, sloopObjects):
 | `walk.moves` | the boom and sail (the rig) | `{ blocks: true }`: an obstacle where it's drawn |
 | `walk.moves` | the jib; the anchor | `{}`: passed through |
 | `walk.moves` | the wheel | `{ swept: "z" }`: the solid its turn about its axle sweeps |
-| `walk.stand` | the wheel, the mainsheet, the windlass, the mast (the sail's: the rig swings), each winch | `{ at, claim: "stand" }`, `at` in the piece's frame: STAND_OFF aft of the station's origin (0.6 m; the mainsheet 0.35), on what's drawn there (ship.js `standSpot`, `deckSurfaceAt`); a winch's across the well on the far side deck, facing it. The station body holds the piece's `"stand"` claim while you're there |
+| `walk.stand` | the wheel, the mainsheet, the windlass, the rig (the sail's: placed by the doc, which never swings it), each winch | `{ at, claim }`, `at` in the piece's frame: STAND_OFF aft of the station's origin (0.6 m; the mainsheet 0.35), on what's drawn there (ship.js `standSpot`, `deckSurfaceAt`); a winch's across the well on the far side deck, facing it. `claim` is the one the station's verb holds while you stand there: `"station"`, the rig's `"halyard"` (the sail's `"station"` claim is whoever trims it, from anywhere) |
 | `walk.ladder` | the ladder | `{ top }`: INBOARD (0.5 m) in from its hook, on the deck (ship.js `ladderTop`) |
-| `walk.spawn` | "Spawn", an object of no model under the stock hull | `{}`: at the helm's stand spot, facing forward |
+| `walk.spawn` | the wheel | `{}`: on an object with a stand spot, walk's spawn is at that spot: people come aboard where the helmsman stands, facing forward, on any hull the wheel is fitted to |
 
 Two other packages' traits ride on her companionway, written in the shapes
 those packages document (traits.js `SLIDE`, `EXIT`); sailing reads neither
@@ -2329,23 +2325,23 @@ ctx.sim.simulator()      // the computing session (the doc's "clock" claim), whe
 ctx.sim.tick()           // every view, every frame: stale inputs; computing, the poses held where the steps left them; following, what the computer publishes and holds
 
 // crew.js — createCrew(api, ctx) → ctx.crew
-ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). A click reaches
+ctx.crew.input           // the extension's input handlers (a click on her comes aboard: walk, at her hull). A click reaches
                          //   her only through something of hers (the ships' part holds no scene trait, so the world's sea, sky and shore
                          //   aren't hers); what nearer takes it (a card's carry) has it first. Seated (seatedView: a body over the stage's
-                         //   Look or Edit, not the crew's, a seat), no click does (Enter or the bar's Come aboard does); the HUD (hudModel's `seated`) shows no walking keys
-ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
-                         //   (the navmesh walker), the walking keys (labelled as walk's), the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
-                         //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves
-                         //   the walker waiting; when it goes you stand at the projection (P1) of where its view was
-ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to Look off the quarter
-ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
-                         //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line) }
-ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
-                         //   pushes the station body over walking; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(),
-                         //   hint?(), look?() }: keys as every body declares them (scene/TOOLS.md §4), each saying what it does
+                         //   Look or Edit, not the crew's or walk's, a seat), no click does (Enter or the bar's Come aboard does); the HUD (hudModel's `seated`) shows no walking keys
+ctx.crew.bodies          // [station]: pushed over walk (in her stage) by take, its keys the station's (declared), reach 2.5 m
+                         //   (crew.js REACH), `here: false`. Its eye is walk's: take asks walk's `stand(id)` contribution to stand
+                         //   its walker at the station's stand spot (walk.stand, on the station itself) and looks from that
+                         //   walker's eye each frame; leaving, walk resumes from that eye, which is the spot
+ctx.crew.start(ship?), .stop() // come aboard (Enter: stations.js's "aboard"; walk at her hull, in her stage), and leave her (the body chip's Leave)
+ctx.crew.me()            // viewerOf: { on: shipId | null, position, yaw, pitch (walk's avatar's), eye: world [x,y,z], station: id | null, swimming,
+                         //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line),
+                         //   keys (the top body's declared keys: the HUD's walking hint is walk's own) }
+ctx.crew.take(stationId, handlers) → leave   // stand at a station (coming aboard first if you walk anywhere else): pushes the station
+                         //   body over walk; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(), hint?(), look?() }: keys
+                         //   as every body declares them (scene/TOOLS.md §4). Who stands there is the claim the station's verb holds
+                         //   (stations.js), the one its stand spot names
 ctx.crew.leave()         // step away from the station you're at
-ctx.crew.board(shipId)   // climb aboard (from the water, by the ladder)
-ctx.crew.place(on, position, yaw?, pitch?)   // put the body somewhere (local to ship `on`, else in the water): a respawn
 ctx.crew.tick(dt)
 
 // looks.js — createLooks(api, ctx) → { tick, update, dispose }: floats bobbed, sails dressed, each view for itself
@@ -2488,11 +2484,13 @@ from a ship to any support, and sailing's copy, her `aboard` body, her
 avatars and her `crew` presence record are gone. What stays hers: the walk
 traits her parts write ("Traits (in the doc)"), Come aboard
 (`api.body.enter("walk", hull)`), and the `station` body, pushed over walk,
-its eye at the station's stand spot (her drawn frame · the spot placed in
-her by the doc · `at`, EYE = walk's BODY.eye up her up), holding the
-spot's `"stand"` claim; leaving it, walk stands you at P1 of that eye less
-EYE along her up, which is the stand spot. The HUD and the verbs read who
-is aboard from the top body and walk's `avatar` contribution (crew.js
+its eye walk's walker's eye at the station's stand spot (walk's `stand`
+contribution: walk stands its walker there, at P1 of the spot); leaving
+it, walk resumes from that eye, which is the spot. Where the spot is and
+how high the eye is are walk's alone; who stands there is the claim the
+station's own verb holds, which its stand spot names (fixes, Decision
+"Step 5 fixes"). The HUD and the verbs read who is aboard from the top
+body (its declared keys too) and walk's `avatar` contribution (crew.js
 `viewerOf`). The text below is the design as it was built here, kept until
 step 6 moves it into walk's DESIGN, renamed; its decisions for step 5 are
 at the end of "Decisions in brief".*
@@ -3133,10 +3131,10 @@ marathons.
   - *The station's eye is EYE up her up from the spot*, not up the world's
     Y, and walk lowers it the same way (walk Decision 34), so taking and
     leaving a station on a heeled deck stands you where you were.
+    (Superseded by the step 5 fixes below: the eye is walk's.)
   - *Her spawn is an object of its own*, "Spawn", no model, under the stock
-    hull at the helm's stand spot: walk enters a support at its spawn. A
-    hull fitted from the bin has none, and walk enters her at her first
-    stand spot.
+    hull at the helm's stand spot. (Superseded by the step 5 fixes below:
+    the wheel is her spawn.)
   - *A hull made a ship by hand becomes a support when the first sailing
     part is put on her* (parts.js `part`): sailing writes `walk.support`
     then. Before that she is part of the ground's bake (Q11 in walk's
@@ -3147,12 +3145,36 @@ marathons.
     sailing's "Climb aboard" verb and `crew.board` are gone; `sailing.ladder`
     stays, as what makes it her ladder (her stations' list, the bin).
   - *The mast is the object the rig hangs under with no station trait of
-    its own* (stations.js `sailOf`), not "no traits at all": the mast now
-    carries walk's stand spot. A row in stations.test.js fails on the old
-    rule.
+    its own*. (Undone by the step 5 fixes: the rig carries the sail's stand
+    spot and the mast is traitless again, the rule as it was.)
   - *What is the viewer doing* is read, never kept: crew.js `viewerOf`
     over the top body, walk's `avatar` here and the station body's own
     station. The presence rate stays play.js's (20 Hz while playing).
+- **Step 5 fixes (N10)** (each decided unattended (2026-11-17, lane/n10),
+  for the lead):
+  - *The station's eye is walk's.* Taking a station asks walk's `stand(id)`
+    contribution to stand its walker at the station's stand spot (P1 of
+    it: on the deck under it); the station body looks from that walker's
+    eye as walk draws it each frame, and leaving, walk resumes from that
+    eye. Sailing keeps no copy of walk's eye height or of its stand-spot
+    placement; the round trip is walk's alone and tested there (walk
+    body.test, stand spot × deck pose, to 1e-9). On a hull whose deck isn't
+    where a stock offset puts the spot, the eye is still over her deck.
+  - *One claim says who stands at a station*: the one its verb holds (the
+    helm's, the mainsheet's and each winch's `"station"`, the sail's
+    `"halyard"` at the mast), which its `walk.stand` names. The station body
+    holds none of its own (a refused claim already stops the verb).
+  - *The rig carries the sail's stand spot*: its doc placement never swings
+    (only its drawn pose does), so no search up the tree for a spot and the
+    mast's rule is "no traits" again.
+  - *The wheel is her spawn* (`walk.spawn` on an object with a stand spot is
+    at that spot: walk Decision 41): no object of its own, and a hull
+    fitted from the bin is come aboard at the helm too.
+  - *Taking a station while walking in another stage* (a harbour's ground)
+    comes aboard her first: the station goes over her own walk, never
+    another stage's.
+  - *The HUD's walking hint is the top body's declared keys* (hud.js
+    `keysHint`), so it is walk's own list, never a copy.
 
 ### As built
 

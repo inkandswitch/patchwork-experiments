@@ -8,6 +8,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { FAR, FURL_RATE, RAISE_RATE, RODE, STEP_S, WINCH_RATE, approach, gridIndex, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within, worldSteps } from "./stations.js";
 import { REACH } from "./crew.js";
+import { sloopObjects } from "./parts.js";
 
 describe("reach", () => {
   it("is within the body's reach of the eye (the crew's: 2.5 m)", () => {
@@ -684,13 +685,29 @@ describe("the commands", () => {
     expect(s.cmd("haul").state("board", near)).toBe(null);
   });
 
-  it("the mast carrying walk's stand spot (the sail's: parts.js) is still the mast: another package's trait is no station", () => {
-    const s = stage();
-    const plain = s.offered("mast", s.at("mast", 0.8));
-    s.scene.objects.mast = { ...s.scene.objects.mast, traits: { "walk.stand": { at: [0, 0.38, 0.7], claim: "stand" } } };
-    expect(plain.map((v) => v[0])).toContain("halyard");
-    expect(s.offered("mast", s.at("mast", 0.8))).toEqual(plain);
-  });
+  // one claim says who stands at a station: the one its take verb holds while you're there, which its
+  // stand spot (parts.js walk.stand) names for walk.people to draw you by
+  const STAND_CLAIM = (() => {
+    const by = {};
+    let n = 0;
+    for (const [, o] of sloopObjects({ position: [0, 0, 0], yaw: 0 }, new Proxy({}, { get: () => ({ url: "automerge:f", hint: null }) }), (p) => `${p}${++n}`)) {
+      const t = o.traits ?? {};
+      const kind = t["sailing.helm"] ? "helm" : t["sailing.mainsheet"] ? "mainsheet" : t["sailing.sail"] ? "halyard" : t["sailing.winch"]?.side === "port" ? "winch" : null;
+      if (kind) by[kind] = t["walk.stand"]?.claim;
+    }
+    return by;
+  })();
+  for (const [verb, target, holder] of [["helm", "wheel", "wheel"], ["mainsheet", "sheet", "sheet"], ["halyard", "mast", "rig"], ["winch", "winchP", "winchP"]])
+    it(`${verb}: taking it holds the claim its stand spot names, on the object that carries it, for as long as you stand there`, () => {
+      const s = stage();
+      s.cmd(verb).run(target);
+      expect(s.taken?.id).toBe(holder);
+      const kind = STAND_CLAIM[verb];
+      expect(typeof kind).toBe("string");
+      expect(s.api.claimedBy(holder, kind)?.mine).toBe(true);
+      s.leave();
+      expect(s.api.claimedBy(holder, kind)).toBe(null);
+    });
 
   it("the rig rehung under the hull beside the mast: only the mast's tag (the bin's) makes it the mast; a table never is", () => {
     const s = stage({ rehung: true });

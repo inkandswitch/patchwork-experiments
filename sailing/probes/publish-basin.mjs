@@ -143,7 +143,7 @@ const repo = DRY ? new Repo({ network: [] }) : new Repo({ network: [], subductio
 if (!DRY) console.log(`connected to ${SYNC}`);
 
 // the sloop's companionway needs joints and traversal; the basin is water's; the sloop sailing's
-const PACKAGES = ["scene", "water", "sailing", "joints", "traversal"];
+const PACKAGES = ["scene", "water", "sailing", "walk", "joints", "traversal"];
 /** The basin: 30 m across, 3 m deep. */
 const BASIN = [30, 3, 30];
 const scene = await repo.create2(emptyScene({ title: "Model basin", patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));

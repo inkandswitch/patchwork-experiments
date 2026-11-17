@@ -21,7 +21,7 @@
 
 import { FIT, HATCH_SPEED, HATCH_TRAVEL, LIFT, STAND, TAGS, jibFit, ladderTop, partGLB, standSpot, winchTrait } from "./ship.js";
 import { DEPTH } from "./sim.js";
-import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, STAND as STAND_CLAIM, WALK, WATER_TRAIT, WEATHER, WINCH, isOpenWater } from "./traits.js";
+import { ANCHOR, EXIT, FLOAT, HALYARD, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, STATION, WALK, WATER_TRAIT, WEATHER, WINCH, isOpenWater } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
@@ -127,20 +127,25 @@ const tidy = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
  * centreline (`across`, objectsFor). A piece's `tags` are the stand it
  * fits on the piece above it (the hatch's on the companionway).
  */
-/** A station's walk.stand: where you stand to work it (ship.js standSpot), in its piece's frame; the station body's claim says who's there. */
-function standOf(kind, side) {
-  return { at: standSpot(kind, side), claim: STAND_CLAIM };
+/**
+ * A station's walk.stand: where you stand to work it (ship.js standSpot), in
+ * its piece's frame, and the claim whoever works it from there holds (the
+ * station's own: stations.js), so walk.people draws them standing there.
+ */
+function standOf(kind, side, claim = STATION) {
+  return { at: standSpot(kind, side), claim };
 }
 
 export const PIECES = Object.freeze({
   mast: [
-    // the sail's stand spot is the mast's: the rig swings, the spot stays aft of the gooseneck
-    { kind: "mast", name: "Mast", traits: { [WALK.stand]: standOf("mast") } },
-    { kind: "rig", name: "Boom and sail", traits: { [SAIL]: { raised: 1, sheet: 0.5 }, [WALK.moves]: { blocks: true } }, at: sub(FIT.rig.position, FIT.mast.position) },
+    { kind: "mast", name: "Mast" },
+    // stood at by whoever works the halyard at the mast (the sail's "station" claim is whoever trims it, from anywhere)
+    { kind: "rig", name: "Boom and sail", traits: { [SAIL]: { raised: 1, sheet: 0.5 }, [WALK.moves]: { blocks: true }, [WALK.stand]: standOf("rig", undefined, HALYARD) }, at: sub(FIT.rig.position, FIT.mast.position) },
     // the jib on her forestay, its origin the tack, its Y the luff (ship.js jibDrawing)
     { kind: "jib", name: "Jib", traits: { [JIB]: { sheet: 0.5, held: null, furl: 0 }, [WALK.moves]: {} }, at: sub(jibFit().position, FIT.mast.position), rotation: jibFit().rotation },
   ],
-  wheel: [{ kind: "wheel", name: "Wheel", traits: { [HELM]: { angle: 0 }, [WALK.moves]: { swept: "z" }, [WALK.stand]: standOf("wheel") } }],
+  // people come aboard where the helmsman stands (walk.spawn on a stand spot: at it)
+  wheel: [{ kind: "wheel", name: "Wheel", traits: { [HELM]: { angle: 0 }, [WALK.moves]: { swept: "z" }, [WALK.stand]: standOf("wheel"), [WALK.spawn]: {} } }],
   windlass: [
     { kind: "windlass", name: "Windlass", traits: { [ANCHOR]: { down: false, rode: 0 }, [WALK.stand]: standOf("windlass") } },
     { kind: "anchor", name: "Anchor", traits: { [HOOK]: {}, [WALK.moves]: {} }, at: sub(FIT.anchor.position, FIT.windlass.position) },
@@ -364,17 +369,7 @@ export function sloopObjects({ position, yaw }, files, newId, ship = {}, { setti
   const out = [[hull, partObject({ name: "Sloop", ...files.hull, transform: { position: [position[0], 0, position[2]], rotation: [0, yaw, 0] }, traits: { [SHIP]: ship, [WALK.support]: {} } })]];
   const square = [0, 0, 0, 1];
   for (const p of ABOARD) out.push(...objectsFor(p, { parent: hull, transform: standing(PIECES[p][0].kind, STAND[p], square) }, files, newId, { settings, across: STAND[p][0] }));
-  out.push([newId("o"), spawnObject(hull)]);
   return out;
-}
-
-/** Where people come aboard her: walk's spawn point at the helm's stand spot (aft of the wheel, on the sole), facing forward. No model of its own. */
-export function spawnObject(hull) {
-  const at = matrixOf({ ...FIT.wheel, scale: 1 });
-  return {
-    ...partObject({ name: "Spawn", url: null, transform: { position: apply(at, standSpot("wheel")).map((v) => Math.round(v * 1e9) / 1e9 + 0), rotation: [0, 0, 0] }, parent: hull, traits: { [WALK.spawn]: {} } }),
-    providerId: null,
-  };
 }
 
 /** Every kind the sloop is made of, filed: the hull and what goes aboard. */

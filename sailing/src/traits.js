@@ -41,13 +41,12 @@ export const isOpenWater = (o) => !!o?.traits?.[WATER_TRAIT] && o.traits[WATER_T
  * stand on her. Her hull is a support (walked in her own frame); the boom
  * blocks where it's drawn, the jib and the anchor are passed through, the
  * wheel is the solid its turn about its axle sweeps; each station is a
- * stand spot `{ at, facing?, claim }` (its own frame), whose STAND claim
- * the station body holds while you're there, so walk.people draws you
- * standing at it; her ladder `{ top }`; her spawn, aft of the helm.
+ * stand spot `{ at, facing?, claim }` (its own frame), whose `claim` is the
+ * one whoever works it from there holds (STATION; the sail's HALYARD), so
+ * walk.people draws them standing at it; her ladder `{ top }`; the wheel is
+ * her spawn too (people come aboard at its stand spot).
  */
 export const WALK = Object.freeze({ support: "walk.support", moves: "walk.moves", stand: "walk.stand", ladder: "walk.ladder", spawn: "walk.spawn" });
-/** The claim a station body holds on the object carrying its stand spot while it's on top (walk.stand's `claim`). */
-export const STAND = "stand";
 /** joints' slide: a part that moves along a line between two stops (the companionway's hatch). */
 export const SLIDE = "joints.slide";
 /** traversal's exit: an object that leads to another document; the companionway is one, leading nowhere until a scene says where. */

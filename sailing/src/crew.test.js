@@ -1,17 +1,19 @@
 // The crew over walk (DESIGN.md, "Play"; walk/DESIGN.md, "Bodies over
 // walk"): the walk traits her parts write, part kind × hull; each station's
-// body, take × leave, against a stand-in for the stage's body stack whose
-// walk resumes as walk does (P1 of the eye less BODY.eye along her up); and
-// what the viewer is doing, read from the top body and walk's avatar.
+// body, take × leave, against a stand-in for the stage's body stack and for
+// walk (its avatar here and its `stand`: where a walker stood at a spot has
+// its eye is walk's, so the stand-in's eye is any point, and the crew must
+// use exactly it); and what the viewer is doing, read from the top body and
+// walk's avatar.
 
 import { describe, it, expect } from "vitest";
-import { EYE, REACH, createCrew, seatedView, standEye, standOf, viewerOf } from "./crew.js";
+import { REACH, createCrew, seatedView, viewerOf } from "./crew.js";
 import * as parts from "./parts.js";
 import { sloopObjects } from "./parts.js";
-import { FIT, deckSurfaceAt } from "./ship.js";
-import { ANCHOR, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SHIP, WINCH, partsOf } from "./traits.js";
+import { FIT, deckAt, deckSurfaceAt } from "./ship.js";
+import { HALYARD, SHIP, STATION, WINCH, partsOf } from "./traits.js";
 import { placeIn } from "./body.js";
-import { apply, matrixOf, multiply, rotateM } from "./frames.js";
+import { apply, matrixOf, multiply } from "./frames.js";
 import { emptyScene, fakeDrop } from "./test/fakes.js";
 
 const files = new Proxy({}, { get: () => ({ url: "automerge:f", hint: null }) });
@@ -65,16 +67,17 @@ function kinds(doc) {
   };
 }
 
-const stand = (at) => ({ "walk.stand": { at, claim: "stand" } });
+/** A stand spot whose claim is the one its station's verb holds (stations.js): the station's own, the sail's halyard at the mast. */
+const stand = (at, claim = STATION) => ({ "walk.stand": { at, claim } });
 /** Exactly the walk traits each kind carries (in its own frame), on any hull. */
 const WANT = {
   hull: { "walk.support": {} },
-  rig: { "walk.moves": { blocks: true } },
+  rig: { "walk.moves": { blocks: true }, ...stand([0, -1.072511454, 0.6], HALYARD) },
   jib: { "walk.moves": {} },
   hook: { "walk.moves": {} },
-  helm: { "walk.moves": { swept: "z" }, ...stand([0, -0.9, 0.6]) },
+  helm: { "walk.moves": { swept: "z" }, ...stand([0, -0.9, 0.6]), "walk.spawn": {} },
   mainsheet: stand([0, 0, 0.35]),
-  mast: stand([0, 0.377488546, 0.7]),
+  mast: {},
   windlass: stand([0, -0.038740851, 0.6]),
   winch: stand([2.25, -0.014028873, 0]),
   ladder: { "walk.ladder": { top: [-0.5, 0.028107697, 0] } },
@@ -91,141 +94,147 @@ describe("her parts' walk traits: part kind × hull", async () => {
       });
   it("is 20 rows", () => expect(Object.keys(HULLS).length * Object.keys(WANT).length).toBe(20));
 
-  it("nothing else of hers carries a walk trait (but the other winch) save the stock sloop's spawn, at the helm's stand spot facing forward, with no model", () => {
+  it("nothing else of hers carries a walk trait (but the other winch, as its pair): no object is only a spawn point", () => {
     for (const doc of Object.values(HULLS)) {
       const k = new Set([...Object.values(kinds(doc)), ...Object.keys(doc.objects).filter((id) => doc.objects[id].traits?.[WINCH]?.side === "starboard")]);
-      const others = Object.keys(doc.objects).filter((id) => !k.has(id) && Object.keys(walkTraits(doc.objects[id])).length);
-      const spawn = others.map((id) => doc.objects[id]);
-      if (doc === HULLS["the stock sloop"]) {
-        expect(spawn.map(walkTraits)).toEqual([{ "walk.spawn": {} }]);
-        expect(spawn[0].sourceUrl).toBe(null);
-        expect(spawn[0].transform).toEqual({ position: [0, COCKPIT_FLOOR, FIT.wheel.position[2] + 0.6], rotation: [0, 0, 0], scale: 1 });
-      } else expect(spawn).toEqual([]);
+      expect(Object.keys(doc.objects).filter((id) => !k.has(id) && Object.keys(walkTraits(doc.objects[id])).length)).toEqual([]);
     }
   });
 
-  it("each stock stand spot is on what's drawn there, STAND_OFF aft of its station (ship.js deckSurfaceAt), in her frame", () => {
+  it("each stock stand spot is on what's drawn there, in her frame: STAND_OFF aft of its station (ship.js deckSurfaceAt); a winch's across the well on the side deck (deckAt)", () => {
     const doc = HULLS["the stock sloop"];
     const k = kinds(doc);
     const sc = snapshot(doc);
-    for (const [kind, station, off] of [["helm", "wheel", 0.6], ["mainsheet", "mainsheet", 0.35], ["windlass", "windlass", 0.6], ["mast", "rig", 0.6]]) {
+    const spot = (kind) => apply(placeIn(sc, k[kind], k.hull), doc.objects[k[kind]].traits["walk.stand"].at);
+    for (const [kind, station, off] of [["helm", "wheel", 0.6], ["mainsheet", "mainsheet", 0.35], ["windlass", "windlass", 0.6], ["rig", "rig", 0.6]]) {
       const [x, , z] = FIT[station].position;
-      const at = apply(placeIn(sc, k[kind], k.hull), doc.objects[k[kind]].traits["walk.stand"].at);
-      expect(close(at, [x, deckSurfaceAt(x, z + off), z + off])).toBe(true);
+      expect(close(spot(kind), [x, deckSurfaceAt(x, z + off), z + off])).toBe(true);
     }
+    const [wx, , wz] = FIT.winch.position; // the port winch's: tailed from the starboard side deck, as far out as it is in
+    expect(close(spot("winch"), [wx + 2.25, deckAt(wx + 2.25, wz), wz])).toBe(true);
   });
 });
-const COCKPIT_FLOOR = 0.72;
 
 // ─── the station body over walk ─────────────────────────────────────────────
 
 /** Her drawn pose: turned, heeled 20° and pitched a little, somewhere on the water. */
-const POSE = multiply(matrixOf({ position: [40, 0.3, -25], rotation: [0.05, 2.1, 0.35], scale: 1 }), matrixOf(null));
-const upOf = (W) => rotateM(W, [0, 1, 0]);
+const POSE = matrixOf({ position: [40, 0.3, -25], rotation: [0.05, 2.1, 0.35], scale: 1 });
+const STATIONS = ["helm", "mainsheet", "mast", "windlass", "winch"];
+/** The object each station kind is taken at (the mast's: the sail's station, the rig, which carries its stand spot). */
+const takenAt = (k, kind) => ({ helm: k.helm, mainsheet: k.mainsheet, mast: k.rig, windlass: k.windlass, winch: k.winch })[kind];
 
 /**
- * A stand-in for the stage around the crew: her doc and drawn frames (the
- * wheel drawn turned, the rig swung: play's, not where the doc puts them),
- * a camera, claims, and a body stack whose "walk" says its avatar here and,
- * resumed, asks P1 of the eye less EYE along her up (walk's rule).
+ * A stand-in for the stage around the crew: her doc and drawn frame (`pose`,
+ * which moves), a camera, and a body stack whose "walk" says its avatar here
+ * and stands its walker at a spot (`stand`): its eye there is a point the
+ * stand-in makes up from the spot and her pose now (walk's own geometry is
+ * walk's, tested there), and resumed, it records where the eye was left.
  */
 function harness(doc = stockSloop()) {
   const sc = snapshot(doc);
   const k = kinds(doc);
-  const turned = { [k.helm]: matrixOf({ position: [0, 0, 0], rotation: [0, 0, 1.3], scale: 1 }), [k.rig]: matrixOf({ position: [0, 0, 0], rotation: [0, 0.8, 0], scale: 1 }) };
-  const worldOf = (id) => (id === k.hull ? POSE : doc.objects[id] ? multiply(multiply(POSE, placeIn(sc, id, k.hull)), turned[id] ?? matrixOf(null)) : null);
+  let pose = POSE;
+  const worldOf = (id) => (id === k.hull ? pose : doc.objects[id] ? multiply(pose, placeIn(sc, id, k.hull)) : null);
   const cam = { position: [0, 5, 10], target: [0, 0, 0] };
-  const claims = new Map();
   const stack = [];
-  const walk = { asked: null, resumed: 0 };
+  const walk = { stood: [], resumedAt: null, eyeOf: (id) => apply(worldOf(id), [0.123, 1.7, -0.456]) };
   let crew = null;
+  const walkHere = () => stack.some((s) => s.id === "walk");
   const api = {
     id: "sailing",
     scene: () => sc,
     worldOf,
     camera: { get: () => ({ ...cam }), set: (c) => Object.assign(cam, c), hold: () => () => {}, ride: () => () => {}, touched: () => true },
     view: { get: () => ({ pointer: { locked: true } }) },
-    collect: (name) => (name === "avatar" ? [{ id: "walk", value: () => (stack.some((s) => s.id === "walk") ? { on: k.hull, feet: [0, 0.72, 4.85], yaw: 0, pitch: 0, swimming: false } : null) }] : []),
-    claim: (id, kind) => (claims.has(`${id}/${kind}`) ? null : (claims.set(`${id}/${kind}`, true), () => claims.delete(`${id}/${kind}`))),
+    collect: (name) =>
+      name === "avatar"
+        ? [{ id: "walk", value: () => (walkHere() ? { on: k.hull, feet: [0, 0.72, 4.85], yaw: 0, pitch: 0, swimming: false } : null) }]
+        : name === "stand"
+          ? [{ id: "walk", value: (id) => (walkHere() && sc.objects[id]?.traits?.["walk.stand"] ? (walk.stood.push(id), { eye: () => walk.eyeOf(id), yaw: 0.3 }) : null) }]
+          : [],
     body: {
-      current: () => (stack.length ? { id: stack.at(-1).id, ext: stack.at(-1).ext, depth: stack.length } : { id: "look", depth: 0 }),
+      current: () => (stack.length ? { id: stack.at(-1).id, ext: stack.at(-1).ext, depth: stack.length, keys: stack.at(-1).keys } : { id: "look", depth: 0 }),
       enter(id, place) {
-        if (id === "walk") return stack.push({ id, ext: "walk", sitting: {} }), true;
+        if (id === "walk") return stack.push({ id, ext: "walk", sitting: {}, place, keys: [{ code: "KeyW", label: "Forward" }] }), true;
         if (id !== "station") return false;
         const sitting = crew.bodies[0].enter(place);
-        return !!sitting && (stack.push({ id, ext: "sailing", sitting }), true);
+        return !!sitting && (stack.push({ id, ext: "sailing", sitting, keys: sitting.keys }), true);
       },
       leave() {
         const top = stack.pop();
         top?.sitting.leave?.();
-        if (stack.at(-1)?.id === "walk") {
-          const up = upOf(POSE);
-          walk.asked = cam.position.map((v, i) => v - up[i] * EYE);
-          walk.resumed++;
-        }
+        if (stack.at(-1)?.id === "walk") walk.resumedAt = [...cam.position];
         return !!top;
       },
       eye: () => null,
     },
   };
   crew = createCrew(api, { sim: { ships: () => [k.hull] }, sea: { world: () => true } });
-  return { crew, api, k, cam, claims, stack, walk, sc };
-}
-
-/** Where a station's stand spot is in the world, from ship.js's geometry (not from the traits): her pose · the spot in her frame. */
-const STATIONS = { helm: ["wheel", 0.6], mainsheet: ["mainsheet", 0.35], mast: ["rig", 0.6], windlass: ["windlass", 0.6] };
-function spotOf(kind) {
-  if (kind === "winch") {
-    const [x, , z] = [1.3, 0, FIT.winch.position[2]]; // the port winch's: across the well, on the starboard side deck
-    return apply(POSE, [x, FIT.winch.position[1] + -0.014028873, z]);
-  }
-  const [station, off] = STATIONS[kind];
-  const [x, , z] = FIT[station].position;
-  return apply(POSE, [x, deckSurfaceAt(x, z + off), z + off]);
+  return { crew, api, k, cam, stack, walk, sc, move: (m) => (pose = m) };
 }
 
 describe("each station's body: kind × take / leave", () => {
-  for (const kind of ["helm", "mainsheet", "mast", "windlass", "winch"]) {
-    it(`${kind} × take: walk under it, the eye at its stand spot, EYE up her up, to 1e-9; the spot's stand claim held`, () => {
+  const rows = [];
+  for (const kind of STATIONS) {
+    rows.push(`${kind} × take`);
+    it(`${kind} × take: walk under it, stood at the station's own stand spot; the eye exactly walk's eye there`, () => {
       const h = harness();
-      const id = { helm: h.k.helm, mainsheet: h.k.mainsheet, mast: h.k.rig, windlass: h.k.windlass, winch: h.k.winch }[kind];
+      const id = takenAt(h.k, kind);
+      expect(h.sc.objects[id].traits["walk.stand"]).toBeTruthy();
       h.crew.take(id, { keys: [] });
       expect(h.stack.map((s) => s.id)).toEqual(["walk", "station"]);
-      const spot = spotOf(kind);
-      const up = upOf(POSE);
-      expect(close(h.cam.position, spot.map((v, i) => v + up[i] * EYE), kind === "winch" ? 1e-6 : 1e-9)).toBe(true);
-      const at = standOf(h.sc, id);
-      expect(at).toBe(kind === "mast" ? h.k.mast : id);
-      expect([...h.claims.keys()]).toEqual([`${at}/stand`]);
+      expect(h.walk.stood).toEqual([id]);
+      expect(h.cam.position).toEqual(h.walk.eyeOf(id));
       expect(h.crew.me()).toMatchObject({ playing: true, station: id, on: h.k.hull });
     });
-    it(`${kind} × leave: the body pops, the claim goes, and walk is asked P1 of the stand spot, to 1e-9`, () => {
+    rows.push(`${kind} × leave`);
+    it(`${kind} × leave: the body pops, and walk resumes from walk's eye at the spot as she is drawn now (she moved)`, () => {
       const h = harness();
-      const id = { helm: h.k.helm, mainsheet: h.k.mainsheet, mast: h.k.rig, windlass: h.k.windlass, winch: h.k.winch }[kind];
+      const id = takenAt(h.k, kind);
       let left = 0;
       h.crew.take(id, { keys: [], left: () => left++ });
-      const want = standEye(h.sc, h.api.worldOf, id).feet;
+      h.move(matrixOf({ position: [41, 0.5, -26], rotation: [-0.1, 2.2, -0.3], scale: 1 }));
+      h.crew.tick(1 / 60);
       h.crew.leave();
       expect(h.stack.map((s) => s.id)).toEqual(["walk"]);
-      expect(h.walk.resumed).toBe(1);
-      expect(close(h.walk.asked, want)).toBe(true);
-      expect(close(h.walk.asked, spotOf(kind), kind === "winch" ? 1e-6 : 1e-9)).toBe(true);
-      expect([h.claims.size, left]).toEqual([0, 1]);
+      expect(h.walk.resumedAt).toEqual(h.walk.eyeOf(id));
+      expect(left).toBe(1);
       expect(h.crew.me()).toMatchObject({ playing: true, station: null });
     });
   }
-  it("is 10 rows", () => expect(5 * 2).toBe(10));
+  it("is 10 rows", () => expect(rows.length).toBe(10));
 
-  it("the wheel drawn turned and the boom swung don't move a stand spot: it is placed by the doc", () => {
+  it("taking a station while walking in another stage (a harbour's ground): her walk is entered first, at her hull, and the station goes over it", () => {
     const h = harness();
-    const v = standEye(h.sc, h.api.worldOf, h.k.helm);
-    expect(close(v.feet, apply(multiply(POSE, placeIn(h.sc, h.k.helm, h.k.hull)), [0, -0.9, 0.6]))).toBe(true);
+    h.stack.push({ id: "walk", ext: "walk", sitting: {}, other: true }); // another stage's walk: its avatar isn't here
+    const collect = h.api.collect;
+    h.api.collect = (name) => (h.stack.some((s) => s.id === "walk" && !s.other) ? collect(name) : name === "avatar" ? [{ id: "walk", value: () => null }] : []);
+    h.crew.take(h.k.windlass, { keys: [] });
+    expect(h.stack.map((s) => [s.id, s.place ?? null])).toEqual([["walk", null], ["walk", h.k.hull], ["station", null]]);
+    expect(h.walk.stood).toEqual([h.k.windlass]);
+  });
+
+  it("a station with no stand spot of its own, or walk not standing anyone there: no body", () => {
+    const h = harness();
+    expect(h.crew.take(h.k.mast, { keys: [] })).toBeTypeOf("function");
+    expect(h.stack.map((s) => s.id)).toEqual(["walk"]);
+    h.walk.eyeOf = () => null;
+    h.crew.take(h.k.helm, { keys: [] });
+    expect(h.stack.map((s) => s.id)).toEqual(["walk"]);
   });
 
   it("a station's body needs its verb: entering it bare does nothing, and the chip doesn't offer it", () => {
     const h = harness();
     expect(h.crew.bodies.map((b) => [b.id, b.here, b.reach])).toEqual([["station", false, REACH]]);
     expect(h.crew.bodies[0].enter(h.k.helm)).toBe(null);
+  });
+
+  it("the viewer's keys are the top body's: walk's walking, the station's at a station", () => {
+    const h = harness();
+    h.crew.start();
+    expect(h.crew.me().keys).toEqual([{ code: "KeyW", label: "Forward" }]);
+    h.crew.take(h.k.helm, { keys: [{ code: "KeyA", label: "Port" }] });
+    expect(h.crew.me().keys).toEqual([{ code: "KeyA", label: "Port" }]);
   });
 });
 

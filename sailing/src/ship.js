@@ -367,7 +367,7 @@ const MAINSHEET_Z = 3.3;
 // the working winch (to leeward) the main hides the jib's luff from anywhere
 // on its own side on a reach, even at the rail, and from the sole the mast
 // stands in front of it; from the windward deck the eye sees the luff past
-// both, close-hauled to a beam reach (sloop-navmesh.test.js: the eye's ray).
+// both, close-hauled to a beam reach.
 const WINCH_Z = COCKPIT.z0 + 0.3;
 const WINCH_X = COCKPIT.half + 0.15;
 const WINCH_STAND_X = 1.3;
@@ -1390,7 +1390,7 @@ export function partGLB(kind) {
 // ─── Where you stand to work each station (walk's stand spots) ─────────────
 
 /** How far aft of a station's origin you stand to work it (m): the mainsheet's block is at your feet, with the wheel close aft of it. */
-export const STAND_OFF = Object.freeze({ wheel: 0.6, mast: 0.6, windlass: 0.6, mainsheet: 0.35 });
+export const STAND_OFF = Object.freeze({ wheel: 0.6, rig: 0.6, windlass: 0.6, mainsheet: 0.35 });
 /** From a ladder's hook inboard to where you come aboard (m). */
 export const INBOARD = 0.5;
 const r9 = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
@@ -1400,20 +1400,20 @@ const r9 = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
  * piece that carries its `walk.stand` (each squared to her body, as the bin
  * puts it): STAND_OFF aft of the station's origin, on what's drawn there
  * (deckSurfaceAt: the cockpit's sole, the cabin top, the deck), so the eye a
- * station puts there is BODY.eye over the deck. The mast carries the sail's
- * (the rig swings; the spot stays aft of the gooseneck, on the cabin top). A
- * jib winch's (side −1 port, +1 starboard): across the well, WINCH_STAND_X
- * out on the other side, on the side deck, tailing from the high side.
- * @param {"wheel" | "mast" | "windlass" | "mainsheet" | "winch"} kind
+ * station puts there is BODY.eye over the deck. The sail's (the rig's: its
+ * doc placement never swings, only its drawn pose does) is aft of the
+ * gooseneck, on the cabin top. A jib winch's (side −1 port, +1 starboard):
+ * across the well, WINCH_STAND_X out on the other side, on the side deck,
+ * tailing from the high side.
+ * @param {"wheel" | "rig" | "windlass" | "mainsheet" | "winch"} kind
  */
 export function standSpot(kind, side = -1) {
   if (kind === "winch") {
     const at = [-side * WINCH_STAND_X, 0, WINCH_Z];
     return r9([at[0] - side * WINCH_X, deckAt(at[0], at[2]) - FIT.winch.position[1], 0]);
   }
-  const origin = kind === "mast" ? FIT.rig.position : FIT[kind].position;
-  const x = origin[0], z = origin[2] + STAND_OFF[kind];
   const piece = FIT[kind].position;
+  const x = piece[0], z = piece[2] + STAND_OFF[kind];
   return r9([x - piece[0], deckSurfaceAt(x, z) - piece[1], z - piece[2]]);
 }
 

@@ -13,8 +13,9 @@
 // - "sailing" runs in a scene with a ship (the ship and its stations on
 //   objects), whoever is looking and whatever they hold: it steps each ship
 //   on whatever water she is in, as a process of the doc's clock (editing
-//   never stops her; a pause does), walks her deck (the "aboard" body) and
-//   works her stations (the "station" body);
+//   never stops her; a pause does), comes aboard (walk's body, at her hull:
+//   her parts write walk's traits) and works her stations (the "station"
+//   body, over walk);
 // - the "ship-at-sea" template lays out a sloop under way on a Sea (a water
 //   object with a sea on it) under the weather, seen from her quarter
 //   (view.start's home), so a click on her comes aboard; "ship-at-anchor"

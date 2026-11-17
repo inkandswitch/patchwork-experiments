@@ -223,7 +223,7 @@ describe("the sloop", () => {
     expect(hull).toMatchObject({ name: "Sloop", parent: null, transform: { position: [10, 0, -4], rotation: [0, 0.8, 0], scale: 1 } });
     expect(own(hull.traits)).toEqual({ [SHIP]: {} });
     const aboard = Object.values(doc.objects).filter((o) => o.parent === id).map((o) => o.name).sort();
-    expect(aboard).toEqual(["Companionway", "Ladder", "Mainsheet", "Mast", "Port jib winch", "Spawn", "Wheel", "Windlass"]);
+    expect(aboard).toEqual(["Companionway", "Ladder", "Mainsheet", "Mast", "Port jib winch", "Wheel", "Windlass"]);
     const p = partsOf(fakeWorld(doc).scene(), id);
     for (const k of ["helm", "sail", "anchor", "mainsheet", "jib", "ladder", "hook"]) expect(p[k]).not.toBeNull();
     expect(p.winches.map((w) => doc.objects[w].traits[WINCH].side)).toEqual(["port", "starboard"]);
