@@ -5,6 +5,11 @@ import { describe, it, expect, vi } from "vitest";
 import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, kindOf, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./dock.js";
 import { EMBED_ATTR } from "../embed.js";
 
+// Does a stage-scoped style rule reach `el`? Every one is `.scene-tool <x>:where(:not(.about-embed *),
+// .about-embed .scene-tool *)` (embed-css.test.js); spelled out, since happy-dom can't match a complex
+// selector inside :not
+const sceneStyled = (el) => el.matches(".scene-tool *") && (!el.parentElement.closest(".about-embed") || el.matches(".about-embed .scene-tool *"));
+
 const KEYS = ["a", "b", "c"];
 const ACTS = { docked, dockedBehind, shown, undocked };
 const STEPS = Object.keys(ACTS).flatMap((act) => KEYS.map((key) => [act, key]));
@@ -530,7 +535,7 @@ describe("the drawer's grip", () => {
 });
 
 describe("the drawer tells what's docked and shown", () => {
-  it("onChange({ tabs, shown }) on every dock, show and close", () => {
+  it("onChange({ tabs, shown, docs }) on every dock, show and close", () => {
     const seen = [];
     const drawer = createDrawer({ parent: document.createElement("div"), onChange: (d) => seen.push(JSON.stringify(d)) });
     const a = document.createElement("div");
@@ -538,6 +543,141 @@ describe("the drawer tells what's docked and shown", () => {
     const closeA = drawer.dock("x", a, { title: "A" });
     drawer.dock("y", b, { title: "B", show: false });
     closeA();
-    expect(seen).toEqual([JSON.stringify({ tabs: ["A"], shown: "A" }), JSON.stringify({ tabs: ["A", "B"], shown: "A" }), JSON.stringify({ tabs: ["B"], shown: "B" })]);
+    expect(seen).toEqual([JSON.stringify({ tabs: ["A"], shown: "A", docs: [] }), JSON.stringify({ tabs: ["A", "B"], shown: "A", docs: [] }), JSON.stringify({ tabs: ["B"], shown: "B", docs: [] })]);
+  });
+});
+
+// ─── documents in the drawer (TOOLS.md §6, "Documents in the drawer") ──────
+
+const A = "automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh";
+const B = "automerge:3k9vHjM4kfgV7xYGVhQjNzr2Ucqh";
+
+/** A drag event carrying `data` ({ mime: value }), as the browser hands it to a listener. */
+function dragEvent(type, data = {}) {
+  const e = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(e, "dataTransfer", { value: { types: Object.keys(data), files: [], dropEffect: "none", getData: (t) => data[t] ?? "" } });
+  return e;
+}
+
+describe("documents docked in the drawer", () => {
+  // a stand-in for the host's embed element: dockDocument shows a document in one, as the inspector does
+  if (!customElements.get("patchwork-view")) customElements.define("patchwork-view", class extends HTMLElement {});
+
+  function mount() {
+    const seen = [];
+    // inside the view's root, as the stage mounts it (view.js), so the scene's style rules could reach in
+    const parent = document.createElement("div");
+    parent.className = "scene-tool scene-stage";
+    document.body.append(parent);
+    const drawer = createDrawer({ parent, onChange: (d) => seen.push(d) });
+    // the stage's own chrome, already there (the inspector): the scene's styles are its own
+    const chrome = document.createElement("div");
+    drawer.dock("t.inspector", chrome, { title: "Inspector", embed: false });
+    expect(sceneStyled(chrome)).toBe(true);
+    return { drawer, seen, parent };
+  }
+  const tabNames = (d) => [...d.el.querySelectorAll(".stage-drawer-tab-name")].map((b) => b.textContent);
+  /** each docked document's pane: [its view's doc-url|tool-id, is it embedded (its keys its own) and unstyled by the scene (its look its own)?] */
+  const docPanes = (d) =>
+    [...d.el.querySelectorAll(".stage-drawer-pane")]
+      .filter((p) => p.querySelector(".stage-drawer-doc"))
+      .map((p) => {
+        const v = p.querySelector(".stage-drawer-doc > patchwork-view");
+        return [`${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`, p.hasAttribute(EMBED_ATTR) && !sceneStyled(v)];
+      });
+  const shownTab = (d) => d.el.querySelector('[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null;
+
+  // a sequence, each act on the drawer as the last left it: [act, then the tabs, the tab shown, view.drawer.docs]
+  const closes = {};
+  const SEQUENCE = [
+    ["dock A", (d) => (closes.A = d.dockDocument({ url: A, title: "A" })), ["Inspector", "A"], "A", [`${A}|`]],
+    ["dock A again as \"A2\" (the Inspector shown meanwhile): its tab shows, under its first title, no second pane", (d) => (d.el.querySelector(".stage-drawer-tab-name").click(), d.dockDocument({ url: A, title: "A2" })), ["Inspector", "A"], "A", [`${A}|`]],
+    ["dock A with tool X: another pane", (d) => (closes.AX = d.dockDocument({ url: A, toolId: "x", title: "A in X" })), ["Inspector", "A", "A in X"], "A in X", [`${A}|`, `${A}|x`]],
+    ["dock A with tool Y: another pane", (d) => d.dockDocument({ url: A, toolId: "y", title: "A in Y" }), ["Inspector", "A", "A in X", "A in Y"], "A in Y", [`${A}|`, `${A}|x`, `${A}|y`]],
+    ["× on A", (d) => d.el.querySelectorAll(".stage-drawer-tab-close")[1].click(), ["Inspector", "A in X", "A in Y"], "A in Y", [`${A}|x`, `${A}|y`]],
+    ["close() of A in X, twice", () => (closes.AX(), closes.AX()), ["Inspector", "A in Y"], "A in Y", [`${A}|y`]],
+    ["dock A again after its ×: a new pane, under the title given now", (d) => d.dockDocument({ url: A, title: "A again" }), ["Inspector", "A in Y", "A again"], "A again", [`${A}|y`, `${A}|`]],
+  ];
+  it("one pane per document and tool: every act of the sequence (7 rows) → the tabs, the one shown, and docs", () => {
+    const { drawer, seen } = mount();
+    for (const [name, act, tabs, on, docs] of SEQUENCE) {
+      act(drawer);
+      expect([name, tabNames(drawer)]).toEqual([name, tabs]);
+      expect([name, shownTab(drawer)]).toEqual([name, on]);
+      // what the view publishes (view.drawer.docs) is what's docked, in docking order
+      expect([name, seen.at(-1).docs]).toEqual([name, docs]);
+      // a pane each, each the host's view of its doc and tool, embedded: its keys and its look its own, as inline
+      expect([name, docPanes(drawer)]).toEqual([name, docs.map((k) => [k, true])]);
+    }
+    // its pane is an editor's (the width it docks at)
+    expect(drawer.el.dataset.kind).toBe("editor");
+  });
+
+  it("a url that isn't a document's docks nothing; a version's heads are dropped (a pane follows the latest)", () => {
+    const { drawer, seen } = mount();
+    const n = seen.length;
+    drawer.dockDocument({ url: "https://example.com", title: "web" });
+    drawer.dockDocument({ title: "nothing" });
+    expect(seen.length).toBe(n);
+    expect(tabNames(drawer)).toEqual(["Inspector"]);
+    drawer.dockDocument({ url: `${A}#2j9vHjM4kfgV7xYGVhQjNzr2Ucqh2j9vHjM4kfgV7xYGVhQjNzr2Ucqh` });
+    expect(seen.at(-1).docs).toEqual([`${A}|`]);
+    expect(tabNames(drawer)).toEqual(["Inspector", "Document"]);
+  });
+
+  it("no owner closing reaches them (they're the view's); dispose takes everything, docs [] last", () => {
+    const { drawer, seen } = mount();
+    drawer.dockDocument({ url: A, title: "A" });
+    drawer.closeOwner("t.inspector");
+    expect(tabNames(drawer)).toEqual(["A"]);
+    const view = drawer.el.querySelector("patchwork-view");
+    drawer.dispose();
+    expect(seen.at(-1)).toEqual({ tabs: [], shown: null, docs: [] });
+    expect(view.isConnected).toBe(false);
+    expect(drawer.el.isConnected).toBe(false);
+  });
+
+  // a drop on the tab strip: [payload, then the docs docked by it (each `${url}|${toolId}`)]
+  const ROW = JSON.stringify({ scene: A, ids: ["x"] });
+  const DROPS = [
+    ["one item with a tool", { "text/x-patchwork-dnd": JSON.stringify({ source: "scene", items: [{ url: A, name: "Source", toolId: "notes" }] }), "text/x-patchwork-urls": JSON.stringify([A]), "text/plain": A }, [`${A}|notes`]],
+    ["two items", { "text/x-patchwork-dnd": JSON.stringify({ items: [{ url: A, name: "One" }, { url: B, name: "Two" }] }) }, [`${A}|`, `${B}|`]],
+    ["the url list", { "text/x-patchwork-urls": JSON.stringify([B]) }, [`${B}|`]],
+    ["a url as text", { "text/plain": B }, [`${B}|`]],
+    ["text that isn't a url", { "text/plain": "just words" }, []],
+    ["an outline row (its row payload and its document)", { "application/x-scene-object": ROW, "text/x-patchwork-dnd": JSON.stringify({ source: "scene", items: [{ url: B, name: "Hull" }] }), "text/x-patchwork-urls": JSON.stringify([B]), "text/plain": B }, [`${B}|`]],
+    ["nothing", {}, []],
+  ];
+  it.each(DROPS)("a drop of %s on the tab strip docks exactly those, and goes no further", (_name, data, want) => {
+    const { drawer, seen, parent } = mount();
+    const strip = drawer.el.querySelector(".stage-drawer-tabs");
+    const beyond = vi.fn();
+    for (const type of ["dragenter", "dragover", "drop"]) parent.addEventListener(type, beyond);
+    const over = dragEvent("dragover", data);
+    strip.dispatchEvent(over);
+    // it may drop here exactly when it carries something a document could be (only the types are readable yet)
+    const carries = ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain"].some((t) => t in data);
+    expect(over.defaultPrevented).toBe(carries);
+    expect(strip.classList.contains("drop-over")).toBe(carries);
+    const drop = dragEvent("drop", data);
+    strip.dispatchEvent(drop);
+    expect(strip.classList.contains("drop-over")).toBe(false);
+    expect(seen.at(-1).docs).toEqual(want);
+    // none of it reaches the stage (the scene's add, a row's copy): the strip's drags are its own
+    expect(beyond).not.toHaveBeenCalled();
+    parent.remove();
+  });
+
+  it("a drag leaving the strip unmarks it; one moving between its tabs doesn't", () => {
+    const { drawer } = mount();
+    const strip = drawer.el.querySelector(".stage-drawer-tabs");
+    strip.dispatchEvent(dragEvent("dragenter", { "text/plain": A }));
+    expect(strip.classList.contains("drop-over")).toBe(true);
+    const inside = dragEvent("dragleave");
+    Object.defineProperty(inside, "relatedTarget", { value: strip.querySelector(".stage-drawer-tab-name") });
+    strip.dispatchEvent(inside);
+    expect(strip.classList.contains("drop-over")).toBe(true);
+    strip.dispatchEvent(dragEvent("dragleave"));
+    expect(strip.classList.contains("drop-over")).toBe(false);
   });
 });

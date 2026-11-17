@@ -1,6 +1,6 @@
 // Peers' selections out of presence, and the colour each peer is drawn in:
-// shared by scene.select (boxes in the view) and scene.outline (rows), so a
-// peer's box and their row are always the same colour. Pure.
+// shared by scene.select (boxes in the view) and the inspector's tree
+// (rows), so a peer's box and their row are always the same colour. Pure.
 
 const DEFAULT_REMOTE = [0.6, 0.4, 0.9];
 /** How far (degrees) a peer's hue may sit from the theme's remote hue, either way. */

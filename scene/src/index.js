@@ -115,9 +115,10 @@ export const plugins = [
   // every doc (traits ["*"]), wherever the focus is. Chrome
   // follows attention, never the doc (TOOLS.md §1), and the editor's chrome
   // is the Edit body's (src/stage/bodies.js): the toolbar's editor commands
-  // (its world commands show in every body: TOOLS.md Decisions 10), the halo and its
-  // knobs, the inspector (a drawer tab while something is selected), the
-  // outline, dimensions and parts (tabs the viewer opens), the grid, axes
+  // (its world commands show in every body: TOOLS.md Decisions 10), the halo
+  // and its knobs, the inspector (one drawer tab: the object tree and the
+  // selection's fields, open once something is selected), dimensions and
+  // parts (tabs the viewer opens), the grid, axes
   // and bounds, and every command marked `edit: true` show only there.
   {
     type: "scene:extension",
@@ -214,14 +215,6 @@ export const plugins = [
     name: "Frame on open",
     async load() {
       return (await import("./parts/autoframe.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
-    id: "scene.outline",
-    name: "Objects",
-    async load() {
-      return (await import("./parts/outline.js")).default;
     },
   },
   {

@@ -1,34 +1,49 @@
-// scene.inspector: the "inspector" for local.selected, a drawer tab
-// (TOOLS.md §6). Chrome follows attention: in Edit the tab opens on the
-// first selection and then stays open, showing whatever is selected and the
-// scene when nothing is (TOOLS.md Decisions 6, "The inspector stays open"),
-// so the canvas doesn't change width at every select and deselect. Its ×
-// shuts it until the selection changes; leaving Edit shuts it; the
-// toolbar's Inspector opens it with nothing selected, on the scene.
+// scene.inspector: the editor's one pane for what's in the scene, a drawer
+// tab (TOOLS.md §6). It holds the object tree on top (./outline.js) and the
+// selection's fields below; the selection is one value (view.selected), so a
+// row click selects and the fields follow in the same flush, and a canvas,
+// menu or Escape selection marks and reveals its row. Chrome follows
+// attention: in Edit the pane opens on the first selection and then stays
+// open, showing whatever is selected and the scene when nothing is
+// (TOOLS.md Decisions 6, "The inspector stays open"), so the canvas doesn't
+// change width at every select and deselect. Its × shuts it until the
+// selection changes; leaving Edit shuts it; the toolbar's Inspector opens it
+// with nothing selected, on the scene.
 //
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
 // to (objects), Position (display units, the pref "units"), Rotation (°),
-// Scale; "Open file" for a GLB file object. For a group: name, Visible,
-// Opacity, In group. Then its Behaviours (below). Then the commands that
-// apply to it (every running extension's, shown on "inspector" or on every
-// surface) as buttons: this extension's Frame, Group and Ungroup first. Then
-// About (the object's infoUrl, else its nearest group's, in a
-// <patchwork-view> inside .about-embed), the embedded build controls
-// (scene-render-controls on the render doc), the Version row (what version of
-// its source a render-doc object shows: Latest, or Fixed at… with Fix at this
-// version / Follow latest, which are also this extension's commands for the
-// menu) and the status line. For a link (an object whose content is another
-// scene: COMPOSITION.md §1), a Linked scene row: what it is here (live,
-// shown again, fixed at a version, closed and why), Open, and what this
-// scene sets of it: its place, name, display, lock and its own traits on
-// it, never what's inside (Enter, scene.focus's command, goes in for that).
+// Scale. For a group: name, Visible, Opacity, In group. Then its Behaviours
+// (below). Then the commands that apply to it (every running extension's,
+// shown on "inspector" or on every surface) as buttons: this extension's
+// Frame, Group and Ungroup first. For a link (an object whose content is
+// another scene: COMPOSITION.md §1), a Link row: what it is here
+// (live, shown again, fixed at a version, closed and why) and what this
+// scene sets of it: its place, name, display, lock and its own traits on it,
+// never what's inside (Enter, scene.focus's command, goes in for that). The
+// Version row (what version of its source it shows: Latest, or Fixed at…
+// with Fix at this version / Follow latest, which are also this extension's
+// commands for the menu), and the status line.
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
 // Starts in: the body everyone who opens the scene arrives in
 // (doc.view.start.body, read once on arrival: TOOLS.md §2), Look (no body
 // named), Edit or one of the bodies on offer here; each viewer can still
 // change body for themselves.
+//
+// Last, for either, its documents (STAGE.md "A document"): every running
+// extension's `documents` that go with it, this extension's own first (the
+// object's Source, File or Linked scene, its Build controls, About:
+// inspector-model.js inspectorDocuments). Each is a section: a head with its label, a fold
+// (the viewer's pref), Dock and Open (patchwork:open-document, the main view),
+// and the doc in a <patchwork-view> inside a documentBox (embed.js), so its
+// keys and its look are its own; where the host has no <patchwork-view> (a local
+// probe, a test), a placeholder names the doc (embed.js documentView). A
+// section stays mounted while it's shown, however the sections around it
+// come and go. Dock, or the head dragged (a Patchwork document) onto the
+// drawer's tab strip, puts the doc in a drawer pane of its own, the view's
+// (api.view.dock); while it's there the section says "In the drawer · Show"
+// rather than show it twice. Nothing else here opens a document.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
@@ -45,27 +60,29 @@
 // again. Fields being typed in are never overwritten.
 //
 // A selection that isn't a scene object (a ref such as a dimension: its owner
-// shows it, in its own tab), or one that's gone: the tab isn't open.
+// shows it, in its own tab), or one that's gone: no fields (the tree stays,
+// with no row marked), and a selection of one opens nothing.
 
 import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
-import { EMBED_ATTR } from "../embed.js";
+import { documentBox, documentView } from "../embed.js";
+import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
 import { EDIT, LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
-import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
+import { DEG, attachOptions, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
+import { createOutline } from "./outline.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
 // each inspector's own radio group: two views of one scene on a page mustn't share one
 let startsGroups = 0;
 const OPEN_EVENT = "patchwork:open-document";
-const CONTROLS_TOOL = "scene-render-controls";
 // local keys whose change can't change what the inspector shows
 const IGNORED_LOCAL = new Set(["hovered", "notices", "pointer", "escape", "gesture"]);
 
@@ -83,16 +100,32 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-const canEmbed = () => !!globalThis.customElements?.get?.("patchwork-view");
+/**
+ * Make `parent`'s children exactly `roots`, in order, without taking out a
+ * root that stays: one leaving is removed and one arriving is inserted at its
+ * place, so an embedded view beside them is never disconnected (which, for
+ * a <patchwork-view>, unmounts its tool). Only roots that swap places move:
+ * by moveBefore where the browser has it (Patchwork's view keeps its tool
+ * through that), else by a plain insert.
+ */
+function place(parent, roots) {
+  const want = new Set(roots);
+  for (const c of [...parent.children]) if (!want.has(c)) c.remove();
+  roots.forEach((r, i) => {
+    const at = parent.children[i] ?? null;
+    if (at === r) return;
+    if (r.parentNode === parent && typeof parent.moveBefore === "function") parent.moveBefore(r, at);
+    else parent.insertBefore(r, at);
+  });
+}
 
 /** Heads, shortened for display: the first 8 characters of each. */
 function shortHeads(heads) {
   return (heads ?? []).map((h) => String(h).slice(0, 8)).join(" + ");
 }
 
-function openDocument(from, url, toolId = null) {
-  from.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url, ...(toolId ? { toolId } : {}) }, bubbles: true, composed: true }));
-}
+/** The viewer's pref for whether a section is open; absent, the entry's own `folded` decides. */
+export const sectionPref = (ext, id) => `inspector.open.${ext}/${id}`;
 
 /**
  * The bodies Starts in offers: the stage's Look and Edit, then each body on
@@ -117,7 +150,7 @@ export function startBodies(collected, want = LOOK.id) {
   return out;
 }
 
-/** What the inspector's Linked scene row says of a link as the view has it ({ role, open, reason? }). Pure. */
+/** What the inspector's Link row says of a link as the view has it ({ role, open, reason? }). Pure. */
 export function linkText(link) {
   if (!link) return "";
   const state = link.open ? "" : " · not open here yet";
@@ -394,7 +427,7 @@ function create(api) {
 
   // ─── the panel ────────────────────────────────────────────────────────────
 
-  let body = null; // the panel body, while mounted
+  let body = null; // the fields' element (below the tree), while mounted
   let view = null; // the DOM for the current selection: { id, group, renderUrl, …fields }
   let last = null; // { scene, local, name, content } at the last full update
   let namesQueued = false;
@@ -411,8 +444,7 @@ function create(api) {
 
   function teardown() {
     view?.behaviours?.dispose();
-    view?.unmountControls?.();
-    view?.unmountAbout?.();
+    view?.sections?.dispose();
     view = null;
   }
 
@@ -425,32 +457,115 @@ function create(api) {
     if (!body.hidden) body.hidden = true;
   }
 
-  function mountControls(container, renderUrl) {
-    // Prefer the real embed, so the controls tool resolves through the registry.
-    if (canEmbed()) {
-      const v = document.createElement("patchwork-view");
-      v.setAttribute("doc-url", renderUrl);
-      v.setAttribute("tool-id", CONTROLS_TOOL);
-      container.append(v);
-      return () => v.remove();
-    }
-    let cleanup = null;
-    let gone = false;
-    Promise.all([api.repo.find(renderUrl), import("../controls-tool.js")])
-      .then(([h, m]) => {
-        if (!gone) cleanup = m.default(h, container);
-      })
-      .catch((err) => {
-        if (!gone) container.append(el("p", { class: "error" }, `Controls unavailable: ${err?.message ?? err}`));
-      });
-    return () => {
-      gone = true;
-      try {
-        cleanup?.();
-      } catch (err) {
-        console.warn("[scene] build controls failed to unmount", err);
-      }
-      container.replaceChildren();
+  // ─── documents: a section each ────────────────────────────────────────────
+
+  /**
+   * One section: a head (its label, which folds it, Dock and Open) and, while
+   * it's open, the document (embed.js documentView, in a documentBox). Open
+   * asks the host to show the document as the main view, in the section's
+   * tool; Dock, or dragging the head onto the drawer's tab strip, puts it in a
+   * drawer pane of its own (api.view.dock), and while it's docked there the
+   * section shows "In the drawer · Show" instead, so one doc never has two
+   * live views in the stage. The head is dragged as a Patchwork document
+   * (dnd.js), so anything that takes one (the tab strip, Patchwork's frame)
+   * takes it, and as the scene's own (SECTION_MIME), so nothing in a scene
+   * adds it: let go anywhere else in the stage, it's nothing. A pane is
+   * titled after what the section is of (`title`: "Built · Source"), and
+   * keeps its first title: one pane per docKey, not per object (TOOLS.md
+   * Decision 18 says where that falls short).
+   */
+  function sectionView(doc) {
+    const fold = el("button", { type: "button", class: "section-fold", "aria-expanded": "false" });
+    const title = el("span", { class: "section-label" });
+    fold.append(title);
+    const dock = el("button", { type: "button", class: "button link section-dock", title: "Put this document in a pane of its own, in the drawer" }, "Dock");
+    const open = el("button", { type: "button", class: "button link section-open", title: "Open this document on its own" }, "Open");
+    const head = el("div", { class: "panel-head section-head", draggable: "true", title: "Drag to the drawer's tabs to dock it" }, fold, el("span", { class: "section-acts" }, dock, open));
+    const show = el("button", { type: "button", class: "button link section-show", title: "Show its pane in the drawer" }, "Show");
+    const away = el("p", { class: "hint section-docked", hidden: true }, "In the drawer · ", show);
+    const embed = documentBox("section-embed");
+    embed.hidden = true;
+    const root = el("section", { class: "doc-section", dataset: { ext: doc.ext, section: doc.id } }, head, away, embed);
+    let view = null;
+    let shown = null;
+    fold.addEventListener("click", () => api.setPref(sectionPref(doc.ext, doc.id), !shown.open));
+    open.addEventListener("click", () => root.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url: doc.url, ...(doc.toolId ? { toolId: doc.toolId } : {}) }, bubbles: true, composed: true })));
+    const toDrawer = () => api.view.dock({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.title ?? doc.label });
+    dock.addEventListener("click", toDrawer);
+    show.addEventListener("click", toDrawer);
+    head.addEventListener("dragstart", (e) => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const item = { url: doc.url, name: shown?.title ?? doc.label, ...(doc.toolId ? { toolId: doc.toolId } : {}) };
+      dt.setData(DND_MIME, JSON.stringify({ source: "scene", items: [item] }));
+      dt.setData(URLS_MIME, JSON.stringify([doc.url]));
+      dt.setData("text/plain", doc.url);
+      dt.setData(SECTION_MIME, docKey(doc.url, doc.toolId));
+      dt.effectAllowed = "copy";
+    });
+    const close = () => {
+      view?.remove();
+      view = null;
+    };
+    return {
+      root,
+      update(next) {
+        shown = next;
+        // shown inline exactly while it's open (the viewer's fold) and not in the drawer
+        const live = next.open && !next.docked;
+        if (title.textContent !== next.label) title.textContent = next.label;
+        fold.title = next.open ? `Fold ${next.label}` : `Show ${next.label}`;
+        fold.setAttribute("aria-expanded", String(next.open));
+        root.toggleAttribute("data-folded", !next.open);
+        root.toggleAttribute("data-docked", next.docked);
+        away.hidden = !(next.open && next.docked);
+        embed.hidden = !live;
+        if (live && !view) embed.append((view = documentView(next)));
+        else if (!live) close();
+      },
+      dispose: close,
+    };
+  }
+
+  /**
+   * The sections for one selection: exactly documentsFor's, in its order.
+   * A section is kept while its extension, id, url and tool stay; anything
+   * else about it (its label, whether it's open) is updated in place.
+   */
+  function sectionsView() {
+    const section = el("div", { class: "doc-sections" });
+    let live = new Map(); // `${ext}/${id}` → { identity, view }
+    return {
+      section,
+      update(target) {
+        const list = documentsFor(api.collect("documents"), target, api.context(null), ID);
+        const docked = new Set(api.view.get().drawer?.docs ?? []);
+        // a drawer pane is titled after the object as well as the section (the scene's: the label alone)
+        const of = target == null ? null : api.nameOf(target) || "Untitled";
+        const paneTitle = (label) => (of ? `${of} · ${label}` : label);
+        const next = new Map();
+        for (const d of list) {
+          const k = `${d.ext}/${d.id}`;
+          const identity = docKey(d.url, d.toolId);
+          let rec = live.get(k);
+          if (rec && rec.identity !== identity) {
+            rec.view.dispose();
+            rec = null;
+          }
+          rec ??= { identity, view: sectionView(d) };
+          const pref = api.pref(sectionPref(d.ext, d.id), null);
+          rec.view.update({ ...d, title: paneTitle(d.label), open: typeof pref === "boolean" ? pref : !d.folded, docked: docked.has(identity) });
+          next.set(k, rec);
+        }
+        for (const [k, rec] of live) if (!next.has(k)) rec.view.dispose();
+        live = next;
+        place(section, [...next.values()].map((r) => r.view.root));
+        section.hidden = !next.size;
+      },
+      dispose() {
+        for (const rec of live.values()) rec.view.dispose();
+        live = new Map();
+      },
     };
   }
 
@@ -532,9 +647,7 @@ function create(api) {
     const layers = group ? null : layersView(id);
     const commands = el("div", { class: "cluster commands" });
     const content = contentKind(api.loadState?.(id));
-    const openFile = content === "file" ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
-    const about = el("section", { class: "about", hidden: true });
-    const controls = o.renderUrl ? el("div", { class: "controls-embed" }) : null;
+    const sections = sectionsView();
     // Which version of the source it shows (`at`): a render doc's, or a link's doc's.
     const version = versioned(id, o)
       ? {
@@ -549,7 +662,6 @@ function create(api) {
     const linkRow = api.link(id) && !group
       ? {
           text: el("span", { class: "link-text" }),
-          open: el("button", { type: "button", class: "button link open-linked", title: "Open the linked scene on its own", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open"),
           note: el("p", { class: "hint link-note" }, "Its place, name, display, lock and behaviours here are this scene's. What's in it is its own: Enter to change that."),
         }
       : null;
@@ -576,15 +688,12 @@ function create(api) {
       layers?.section,
       behaviours.section,
       commands,
-      openFile ? el("div", { class: "cluster" }, openFile) : null,
-      about,
-      controls ? el("div", { class: "panel-head build-head" }, el("h3", { class: "panel-title" }, "Build")) : null,
-      linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Linked scene"), linkRow.text, linkRow.open) : null,
+      linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Link"), linkRow.text) : null,
       linkRow ? linkRow.note : null,
       version ? el("div", { class: "field version-row" }, el("span", {}, "Version"), version.text) : null,
       version ? el("div", { class: "cluster version-actions" }, version.fix, version.follow) : null,
-      controls,
       status,
+      sections.section,
     );
     body.replaceChildren(root);
     view = {
@@ -611,14 +720,11 @@ function create(api) {
       layers,
       commands,
       commandsKey: null,
-      about,
-      aboutKey: null,
-      unmountAbout: null,
+      sections,
       status,
       statusKey: null,
       version,
       linkRow,
-      unmountControls: controls ? mountControls(controls, o.renderUrl) : null,
     };
   }
 
@@ -626,6 +732,7 @@ function create(api) {
   function buildScene() {
     teardown();
     const behaviours = behavioursView(null, "scene");
+    const sections = sectionsView();
     const starts = el("div", { class: "starts-in", role: "radiogroup", "aria-label": "Starts in" });
     const note = el("p", { class: "hint starts-in-note" });
     const root = el(
@@ -634,9 +741,10 @@ function create(api) {
       el("div", { class: "inspector-kind" }, "Scene"),
       behaviours.section,
       el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "Where everyone who opens this scene starts out: looking at it, editing it, or in a body (walking, seated)" }, "Starts in"), starts, note),
+      sections.section,
     );
     body.replaceChildren(root);
-    view = { id: null, scene: true, root, behaviours, starts, note, startsKey: null };
+    view = { id: null, scene: true, root, behaviours, sections, starts, note, startsKey: null };
   }
 
   function fillScene(scene, local) {
@@ -661,6 +769,7 @@ function create(api) {
           : "Everyone who opens this scene starts here, once: Look shows it, Edit is the editor. A package that brings a body (walking, seats) adds a choice.";
     }
     for (const radio of view.starts.querySelectorAll("input[data-body]")) radio.checked = radio.dataset.body === want;
+    view.sections.update(null);
   }
 
   // the field shows `v`, unless someone is typing in it (or `force`)
@@ -711,13 +820,13 @@ function create(api) {
     view.layers?.update(o);
     view.behaviours.update(scene);
     fillCommands(scene, local);
-    fillAbout(scene);
     fillStatus(scene, local, o);
     fillVersion(o);
     fillLink();
+    view.sections.update(id);
   }
 
-  /** The Linked scene row: what the link is here, as the view has it. */
+  /** The Link row: what the link is here, as the view has it. */
   function fillLink() {
     const r = view.linkRow;
     if (!r) return;
@@ -812,31 +921,6 @@ function create(api) {
     }).filter(Boolean);
     view.commands.replaceChildren(...buttons);
     view.commands.hidden = !buttons.length;
-  }
-
-  function fillAbout(scene) {
-    const about = aboutFor(scene, view.id);
-    const key = about && canEmbed() ? `${about.url}|${about.toolId ?? ""}|${about.label}` : "";
-    if (key === view.aboutKey) return;
-    view.aboutKey = key;
-    view.unmountAbout?.();
-    view.unmountAbout = null;
-    const section = view.about;
-    if (!key) {
-      section.hidden = true;
-      section.replaceChildren();
-      return;
-    }
-    // the stage's embed marker: keys, pastes and drops in there are that tool's
-    const embed = el("div", { class: "about-embed", [EMBED_ATTR]: "" });
-    const v = document.createElement("patchwork-view");
-    v.setAttribute("doc-url", about.url);
-    if (about.toolId) v.setAttribute("tool-id", about.toolId);
-    embed.append(v);
-    const open = el("button", { type: "button", class: "button link open-about", title: "Open this document", onclick: () => openDocument(section, about.url, about.toolId) }, "Open");
-    section.replaceChildren(el("div", { class: "panel-head" }, el("h3", { class: "panel-title about-title" }, about.label), open), embed);
-    section.hidden = false;
-    view.unmountAbout = () => v.remove();
   }
 
   function fillStatus(scene, local, o) {
@@ -974,23 +1058,34 @@ function create(api) {
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
   let lastSel = null;
+  // the object tree, at the top of the pane (./outline.js): mounted with the
+  // pane and drawn with its fields, only while it's docked; what to reveal is
+  // noted on every flush, and revealed as it opens
+  const tree = createOutline(api, { shown: () => tab.isOpen() });
   const tab = drawerTab(api, {
     id: "inspector",
     title: "Inspector",
     mount(host) {
-      body = host;
-      body.classList.add("inspector-body");
+      host.classList.add("inspector-pane");
+      const treeHost = el("div", { class: "inspector-tree" });
+      const fields = el("div", { class: "inspector-body" });
+      host.replaceChildren(treeHost, fields);
+      const treeView = tree.mount(treeHost);
+      body = fields;
       view = null;
       last = null;
       showEmpty();
       return {
-        update: (scene, local) => refresh(scene, local), // (the value follow() passed: seen())
+        opened: () => tree.opened(),
+        update(scene, local) {
+          refresh(scene, local); // (the value follow() passed: seen())
+          tree.draw();
+        },
         dispose() {
           teardown();
-          if (body === host) {
-            body.replaceChildren();
-            body = null;
-          }
+          treeView.dispose();
+          if (body === fields) body = null;
+          host.replaceChildren();
           last = null;
         },
       };
@@ -1024,7 +1119,7 @@ function create(api) {
     name: "Inspector",
     edit: true,
     show: ["toolbar"],
-    state: (target) => (target == null ? { checked: tab.isOpen(), title: "The selection's fields and behaviours; with nothing selected, the scene's" } : null),
+    state: (target) => (target == null ? { checked: tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),
     run(_target, value) {
       const open = value === undefined ? !tab.isOpen() : !!value;
       asked = open;
@@ -1035,11 +1130,16 @@ function create(api) {
 
   return {
     commands,
-    update: (scene, local, prev, view) => follow(scene, seen(local, view)),
+    documents: inspectorDocuments((id) => contentKind(api.loadState?.(id))),
+    update(scene, local, prev, view) {
+      tree.note(prev, view);
+      follow(scene, seen(local, view));
+    },
     /** for tests and probes: the tab's element, and whether it's docked */
     tab,
     dispose() {
       tab.dispose();
+      tree.dispose();
       teardown();
       body = null;
     },

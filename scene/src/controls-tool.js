@@ -1,7 +1,8 @@
 // patchwork:tool "scene-render-controls" — the generic control surface for a
 // scene-render doc. It finds the provider by id, draws a form from its
 // ParamSpecs, and writes params / pinned back to the render doc. It also shows
-// build status and can rebuild on demand.
+// build status and can rebuild on demand. It opens nothing: the source is
+// the inspector's Source section beside it (TOOLS.md §6).
 //
 // "Rebuild now" first asks an enclosing scene (a cancelable, bubbling
 // `scene:rebuild` DOM event) so the scene's own build loop does it; standalone,
@@ -43,7 +44,6 @@ export default function SceneRenderControls(handle, element) {
   root.innerHTML = `
     <div class="head">
       <span class="provider"></span>
-      <button type="button" class="link open-source">Open source</button>
     </div>
     <div class="status-row">
       <span class="pill status"></span>
@@ -126,7 +126,6 @@ export default function SceneRenderControls(handle, element) {
     root.toggleAttribute("data-standalone", !root.closest(".scene-tool"));
 
     $(".provider").textContent = providerMeta?.name ?? doc.providerId ?? "No provider";
-    $(".open-source").hidden = !doc.parent;
 
     askContext();
     // a fixed object is judged at its fixed heads (null until they're here)
@@ -196,13 +195,6 @@ export default function SceneRenderControls(handle, element) {
       d.pinned = !!e.target.checked;
     }),
   );
-
-  $(".open-source").addEventListener("click", () => {
-    const url = handle.doc()?.parent;
-    if (url) {
-      root.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url }, bubbles: true, composed: true }));
-    }
-  });
 
   $(".rebuild").addEventListener("click", async () => {
     const ev = new CustomEvent(REBUILD_EVENT, {

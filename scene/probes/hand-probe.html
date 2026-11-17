@@ -200,10 +200,10 @@ try {
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
     carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().gesture != null,
     camera: () => vp.getCamera(),
-    /** open a drawer tab of the stage's own, as its toolbar toggle does (ext "scene.outline", command "objects") */
     /** enter a body in a view, as the body chip does (api.body.enter): "look", "edit" */
     enter: (who, id) => (who === "a" ? dbgA : dbgB).host.record("scene.body")?.api.body.enter(id, null) ?? false,
     bodyOf: (who) => (who === "a" ? dbgA : dbgB).local.get().body?.id ?? null,
+    /** open a drawer tab of the stage's own, as its toolbar toggle does (ext "scene.inspector", command "inspector") */
     openTab: (who, ext, command) => (who === "a" ? dbgA : dbgB).host.record(ext)?.api.run({ ext, command, value: true }) ?? false,
     running: (who) => ((who === "a" ? dbgA : dbgB).local.get().running ?? []).map((r) => r.id),
     /** "face" or "back": which look a viewer is showing for a hidden object */
@@ -236,7 +236,8 @@ try {
       });
       return [p0, p1];
     },
-    row: (id) => { const e = hostA.querySelector(`.object-row[data-id="${id}"] .row-main`) ?? hostA.querySelector(`.object-row[data-id="${id}"]`); const r = e?.getBoundingClientRect(); return r && [r.x + Math.min(40, r.width / 2), r.y + r.height / 2]; },
+    /** a row's name (scrolled into view: the tree scrolls inside the inspector's pane) */
+    row: (id) => { const e = hostA.querySelector(`.object-row[data-id="${id}"] .row-main`) ?? hostA.querySelector(`.object-row[data-id="${id}"]`); e?.scrollIntoView({ block: "nearest" }); const r = e?.getBoundingClientRect(); return r && [r.x + Math.min(40, r.width / 2), r.y + r.height / 2]; },
     /** what A's halo is on, or null */
     halo: () => dbgA.host.instanceOf("scene.halo")?.debug?.target ?? null,
     /** page coords of one of A's halo handles: a third of the way along an arrow, the point of a corner; and of `along` frame units further along an arrow's axis */

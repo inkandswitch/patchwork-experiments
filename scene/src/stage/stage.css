@@ -309,7 +309,7 @@
   color: var(--scene-fg);
 }
 
-/* the stage's own chrome shown (the inspector, the outline): a side panel's width */
+/* the stage's own chrome shown (the inspector, the parts bin): a side panel's width */
 .scene-stage .stage-drawer[data-kind="chrome"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   --stage-drawer-default: clamp(220px, 30cqi, 290px);
 }
@@ -346,6 +346,29 @@
   overflow-x: auto;
   border-bottom: 1px solid var(--scene-border);
   background: var(--scene-surface);
+}
+
+/* a document dragged over the tabs docks there (dock.js) */
+.scene-stage .stage-drawer-tabs.drop-over:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  outline: 2px dashed var(--studio-link, steelblue);
+  outline-offset: -2px;
+}
+
+/* a document docked in the drawer fills its pane */
+.scene-stage .stage-drawer-doc:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scene-stage .stage-drawer-doc > .doc-placeholder {
+  margin: 8px;
+}
+
+.scene-stage .stage-drawer-doc > patchwork-view {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .scene-stage .stage-drawer-tab:where(:not(.about-embed *), .about-embed .scene-tool *) {

@@ -2227,6 +2227,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         },
         /** move the focus into this stage's link `target` (where its doc acts: a mirror's, where it's live): false if it can't be entered */
         enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
+        /**
+         * dock a document in the drawer ({ url, toolId?, title }): the view's, not this extension's, so it
+         * stays until its × or close(); docking one url and tool again shows its tab (dock.js). → close
+         */
+        dock: (doc) => (live() ? view.dockDocument(doc) : noop),
         // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
         // a general part, the view's own, is told what moving the focus closed of its: was a tab
         // titled `title` open as the focus last moved here? Once per title per move ({ show } | null)

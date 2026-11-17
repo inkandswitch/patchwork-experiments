@@ -155,8 +155,8 @@ at a card table it draws. A holder's `cursor(ev)` may name its click
 
 **Select** is also the first entry of every target's menu (right-click,
 long-press, the context-menu key; under lock, at the crosshair): the
-deliberate select in a game, in every body. The outline is the keyboard's,
-in Edit. Alt keeps its one meaning: place freely during a carry.
+deliberate select in a game, in every body. The inspector's tree is the
+keyboard's, in Edit. Alt keeps its one meaning: place freely during a carry.
 
 **The halo.** A selection shows its verbs and, in Edit where its doc is
 writable, handles: move arrows, rotate rings and scale corners around its box,
@@ -177,8 +177,8 @@ table or walking a level sees no editor.
 |---|---|
 | a plain click selecting (Edit's click, ahead of the chain) | Select in every target's menu, Esc to deselect; the selection's box |
 | the halo's handles and build-param knobs | carrying (press-drag, Q / E, F to flip), and every package's verbs |
-| the inspector (opening on the selection; Starts in) and the outline, Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
-| the bar of tools' editor commands (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint; the bar of tools' world commands (a game's Play, Lift all cups, Come aboard) |
+| the inspector, the object tree and the fields in one tab (opening on the selection; Starts in), and the Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
+| the bar of tools' editor commands (Snap, Frame all, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint; the bar of tools' world commands (a game's Play, Lift all cups, Come aboard) |
 | grid, axes and bounds | the seat picker, the clock chip (Pause is anyone's: Decisions 5) |
 | Measure; selecting and deleting a dimension (saved ones are drawn everywhere: the doc's annotation) | notices and HUD pills, legends, the packages prompt |
 | Remove (Delete), Group, Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste | Frame (`.`) and a double-click to frame |
@@ -210,8 +210,8 @@ selection is; it goes where the link's doc acts (a mirror's: where it's
 live), and a pin or a closed link says why it can't be entered. The
 breadcrumb is the view's trail along the top while the focus is inside a
 link, with Leave; Escape's last rung leaves. The general parts (the
-editor's chrome among them) move into the focus stage, so the halo, the
-inspector and the outline act on the entered doc's objects in its frame;
+editor's chrome among them) move into the focus stage, so the halo and the
+inspector (its tree too) act on the entered doc's objects in its frame;
 one holding something (a walk's body, a held Measure) finishes it where it
 was, so Enter and Leave never change the body or drop the tool (the tool
 goes down only when its stage leaves the focus path);
@@ -220,7 +220,7 @@ menu, keys and prompt still reach outside. In Edit, a click outside the
 focus is still Edit's: it selects nothing and goes no further, so no
 package's click verb acts for it (COMPOSITION.md, Decisions, Edit's click
 is Edit's, reversing step 14's "isn't Edit's"). The
-outline's link rows say what each link is here and enter; drawer tabs
+tree's link rows say what each link is here and enter; drawer tabs
 open as the focus moved open again inside. Select's menu entry is the
 focus stage's alone, so it's offered only on what can be selected.
 
@@ -501,11 +501,52 @@ right-click Select still selects it (no handles, no inspector).*
   with its reason ("too far", "view only").
 - **Try a copy**, on the world bar: the scene copied at its heads, opened,
   then discarded: play-testing without spending the real doors.
-- **One drawer** with tabs: inspector, outline, and an object's own editor
+- **One drawer** with tabs: the inspector, and an object's own editor
   (Camber, a dice table, a bag), docked by its verb with `api.dock` and
   closed by its × or its caller; the pane with the keys shows a focus ring.
   A grip on its left edge sets its width, the viewer's for the kind of pane
   shown (Decisions 9).
+- **The inspector is one pane**: the object tree on top and the
+  selection's fields below, one tab, one selection (Decisions 16). A row
+  click selects and the fields follow in the same flush; a click in the
+  view, the menu's Select or Escape marks and reveals the row, and a
+  selection made while the pane was shut is revealed as it opens. Both
+  halves are drawn only while it's docked. The tree takes at most about
+  40% of the pane's height, its rows scrolling below its bar; the fields
+  scroll under it. It opens by the inspector's rule (a selection in Edit, or the
+  toolbar's Inspector), so the tree comes with it; there is no Objects tab
+  or toggle.
+- **An object's documents are sections of the inspector** (Decisions 17):
+  every document that goes with the selection (or, with nothing selected,
+  the scene) is one kind of thing, a section: its label, a fold, **Open**
+  and the document itself inline, in its own tool. The inspector's own are
+  the object's **Source** (the doc it shows, in that doc's own tool, open
+  beside its Build), or that doc as its **File** (a GLB shown as it is) or
+  its **Linked scene**, each a section of its own and starting folded, its
+  **Build** (the render doc in the build controls)
+  and **About** (its `infoUrl`, else its nearest group's); any package adds
+  its own by declaring `documents` (STAGE.md "A document"), with no
+  inspector code. Open asks Patchwork to show the document as the main view
+  (`patchwork:open-document`, its url and tool); nothing else in the
+  inspector or the build controls opens a document, so "Open source",
+  "Open file" and the link's Open are gone. Whether a section is open is
+  the viewer's (a pref per section, `inspector.open.<ext>/<id>`, so
+  unfolding one File leaves every Source and Linked scene as it was), and
+  nothing is written to the doc. A section stays mounted while it's shown,
+  whatever comes and goes beside it.
+- **Documents in the drawer** (Decisions 18): a section comes out of the
+  inspector into a drawer pane of its own, by its **Dock** or by dragging
+  its head onto the drawer's tab strip. The strip takes any Patchwork
+  document dropped on it (from Patchwork's sidebar, an outline row, a
+  section's head) and docks each, highlighting while one is over it;
+  nothing dropped there reaches the scene. A docked document is the
+  view's (`api.view.dock`), not Edit's nor any extension's: it stays across
+  selections, bodies, focus moves and the inspector restarting, until its
+  × (or the scene closes). There is one pane per document and tool, so
+  docking one again shows its tab. While it's docked, its section in the
+  inspector shows "In the drawer · Show" instead of a second live view of
+  it. So a document has three places, all the same value `{ url, toolId }`:
+  inline, a drawer pane, and the main view (Open).
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -1100,6 +1141,175 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   on the stage itself (3,110), the bottom always Look or Edit, nothing
   standing on Edit, Leave never landing in it, and the fall-back after
   Leave from every body (`stage/bodies.test.js`).
+- **Sidebar 1 (lane/sidebar, 2026-11-16): one pane for the tree and the
+  inspector** (Decisions 16). `scene.outline` and its Objects toggle went;
+  `parts/outline.js` is `createOutline(api)`, mounted by `scene.inspector`
+  at the top of its one tab, over the fields. *Proves* (finite): six
+  sources of a selection (a row click, `api.view.select`, the menu's
+  Select, Escape, a group's row, a dimension's ref) × the pane, the row
+  marked and what the fields show, read together after the flush (they
+  agree in every row); the inspector's open-rule table (216 sequences)
+  unchanged, with the tree shown exactly while the pane is; the tree mounted
+  with the pane and the same tree after × and a reopen; arrow keys in the
+  tree reach no scene key; the package registers no `scene.outline` and
+  Edit's toolbar has Inspector and no Objects (`parts/inspector.test.js`,
+  "one pane"); a focus move with the pane open reopens it inside, its tree
+  on the link's objects (`stage/focus.test.js`). Local probes (built
+  tool, headless Chrome): editor-run 81/81 with arena built (new
+  `treeAboveTheFields`: the tree on top, at most 40% of the pane;
+  `inspectorShowsIt`: one Inspector tab, its tree's row and its fields on
+  the same object), parts-run 20/20, xdnd-run (main) 60/60, hand-run 33/33.
+  drag-run times out on scene-stage too (not this change). The real
+  Patchwork checks (realcheck-editbody, grip-check, enter-check) wait for
+  the integrator's build and sync.
+  *Review fixes:* the tree is drawn by the tab's update, only while the
+  pane is docked, and reveals the selection as the pane opens (drawerTab's
+  new `opened()`); the rows scroll below a fixed bar. *Proves*
+  (`parts/inspector.test.js`, "one pane"): the six-source table reads the
+  row and the fields in every flush from the one the selection lands in
+  (an extension running after the inspector) and the doc unchanged; three
+  ways a selection comes before the pane opens (Look then Edit, × then the
+  toolbar, a later select) × the row drawn and scrolled into view in the
+  drawer, never in a detached pane; shut by × or by Look, a doc change
+  isn't drawn, and is on opening. Each fails on the code before (and the
+  first table with the tree's update a tick late). Local probes after
+  merging scene-stage (N8): editor-run 86/86 with arena built (new
+  `tallTree*`: 76 rows, the tree 245 of the pane's 613 px, the fields 368;
+  the last row revealed below the bar, the first again on the way up, and
+  again after × and the toolbar's Inspector), xdnd-run 60/60 (it failed
+  `outlineDropCopies` with a sticky bar, which covered the row it dropped
+  on), parts-run 20/20, hand-run 33/33.
+- **Sidebar 2 (lane/sidebar, 2026-11-16): an object's documents are
+  inspector sections** (Decisions 17). One contribution, `documents`
+  (STAGE.md "A document"), and one pure rule, `documentsFor`; the
+  inspector's own are Source, Build and About; "Open source" (the build
+  controls), "Open file" and the link's Open went. *Proves* (finite):
+  eight kinds of selection (built, a GLB file, a link, a plain group, a
+  group with an infoUrl, an object in one, an object with its own,
+  nothing) × the sections, their labels, folds, urls and tools, and five
+  contributions (null, a non-automerge url, a throw, a repeat of the
+  Source's url and tool, a doc on the scene) × kept or dropped
+  (`parts/inspector-model.test.js`); in the stage, the sections shown are
+  documentsFor's in its order, each view inside the embed marker; one live
+  view per open section, the same elements kept while nothing changes and
+  every one unmounted on a new selection; fold {no pref, true, false} ×
+  {folded entry, open entry} (6); the fold writes only the pref; Open on
+  Source, Build and About dispatches its own url and tool (3); no other
+  button in the pane (any selection) or the build controls dispatches an
+  open; a lens's sourceUrl is never shown (`parts/inspector.test.js`,
+  "documents"; `controls-tool.test.js`). On the code before, all 15 stage
+  tests, the controls test and the model file fail; dropping the dedupe,
+  the url check or the own-first order each fails two model rows. Full
+  scene suite 1629/1629 (113 files). Local probes (built tool):
+  editor-run 89/89 (`sectionsSourceThenBuild`, `noOpenSource`, the inline
+  Build controls still rebuild at 200 mm in cm); solander-run shows the
+  hull's group About as a section ("About BODY", its stand-in view
+  rendered). The real-Patchwork check, `recovered/publish/sections-check.mjs
+  <showcase url> <shots>` (Source inline in its own tool, Build's
+  controls, the fold is the pref, Open sets doc= to the source, the doc
+  unchanged), waits for the build to be synced after the merge.
+- **Sidebar 2, review fixes (lane/sidebar, 2026-11-16).** A section stays
+  mounted while it's shown (sections coming and going are inserted and
+  removed around it; before, every open one was taken out and put back,
+  which unmounts a `<patchwork-view>`'s tool). The source is three
+  sections, `source`, `file` and `link`, each its own fold pref (one pref
+  had covered all three). `documentsFor` drops a second entry with one id
+  from one extension (warned); it and `commandsFor` share one walk of
+  what's collected, and a command whose state throws is warned of too. A
+  section's box has a definite height (min(40vh, 22rem), resizable) its
+  view fills. Without a host `<patchwork-view>` a section names its doc:
+  the build controls are no longer mounted by hand; the tests and the
+  editor probe use a stand-in host (`src/test/patchwork-view.js`) that
+  mounts the package's own tools by their registrations. `docKey` lives
+  in `dnd.js`; the link's text row is "Link" (the section is "Linked
+  scene"). *Proves* (finite, each failing on the code before): sections
+  around an open one coming and going {About goes, About comes, another
+  extension's comes, goes} → exactly that mount or unmount (4 steps); a
+  section's doc changing under one selection shows and opens the new
+  one; fold {no pref, true, false} × {File, Source} (6) and one kind's
+  pref × the three kinds (3); routing {built, file, scene, none} → the
+  one section (4); a repeated id (warned); a throwing command warned;
+  Open on File and Linked scene (folded) (2 more rows); the placeholder
+  without a host (`inspector-nohost.test.js`); the CSS height; the
+  controls' tool id is index.js's. Full scene suite 1645/1645 (114 files;
+  one vitest "onTaskUpdate" RPC timeout under load). Local probes (built
+  tool): editor-run 90/90 (new `sectionsHaveAHeight`: Source and Build
+  boxes 286 px, their views 284), solander-run "About BODY" shown, no
+  errors. `sections-check.mjs` now resets and reads the fold through the
+  api's prefs (it had written the stage atom, whose empty `prefs` shadowed
+  the view's), measures the views' heights, and checks the fold is per
+  section; it still waits for the synced build.
+- **Sidebar 3 (lane/sidebar, 2026-11-16): documents in the drawer**
+  (§6 "Documents in the drawer", Decisions 18). `api.view.dock({ url,
+  toolId?, title })` → close docks the host's view of a document
+  (`embed.js` `documentView`, the one the sections use) in an editor-kind,
+  embedded drawer pane, one per `docKey(url, toolId)`; the panes are the
+  view's (`dock.js` `dockDocument`, owned by no extension), so only their
+  ×, `close()` or the view's dispose takes them. `view.drawer` gains
+  `docs`. The tab strip docks any Patchwork document dropped on it
+  (highlighted while one is over it; its drags never reach the stage);
+  `dnd.js` carries an item's string `toolId` through. A section's head
+  drags as a Patchwork document (the three types) and has **Dock**; while
+  its key is docked it shows "In the drawer · Show". *Proves* (finite,
+  each failing on the code before: 29 tests): a dock sequence {A, A again,
+  A in X, A in Y, × on A, close() twice} → tabs, shown, docs and one
+  embedded pane per key (6 rows); a non-document url docks nothing, heads
+  dropped; no owner's close reaches a doc pane, dispose takes all; drops
+  on the strip {one item with a tool, two items, url list, text url,
+  text garbage, an outline row, nothing} → docked keys, nothing past the
+  strip (7 rows); lifetime {another selection, Edit → Look, Enter, Leave,
+  the inspector stopped, the view disposed} → still docked and never
+  remounted, but on dispose (6 rows); ×; a drop in the view never docks,
+  one on the strip adds nothing to the doc; Escape inside a doc pane is
+  its own; fold while docked {docked, docked then ×, docked under another
+  tool} (3 rows) with never two live views of one key; Show; the head's
+  payload is exactly the three types (four since the review fixes below). Mutations: inline while docked (2
+  fail), the strip's drop bubbling (7), no dispose with the view (1), no
+  one-pane-per-key (1), toolId dropped by dnd (2). Full scene suite
+  1672/1672 (115 files; one vitest "onTaskUpdate" RPC timeout under
+  load). Local probes (built tool): xdnd-run 68/68 (its new
+  section-to-strip drag: the head's payload, docked on the strip,
+  folded while docked, the strip's drop adds nothing, a selection keeps
+  the pane, × closes it and unfolds the section) and editor-run 90/90. `sections-check.mjs`
+  gains the drag to the strip (CDP), Dock, a selection and Look keeping
+  the pane, × unfolding the section, and a doc from Patchwork's sidebar
+  docking; it waits for the synced build. Review fixes (2026-11-17): a
+  section's head also carries `application/x-scene-section` (`dnd.js`
+  `ownDrag`, refused by the add and the tree as a row's drag is), so let
+  go anywhere in the stage but the strip it is nothing, the tree in its
+  own pane included; a pane is titled `<object> · <label>` and keeps the
+  title it was first docked with; a dock with nothing selected tells the
+  pointer router.
+- **Sidebar 4 (lane/sidebar, 2026-11-17): the sweep.** scene-stage (N6,
+  N8, N9) merged into the lane; its Decisions 11 to 15 keep their numbers
+  and the sidebar's become 16 to 18. A repo grep (outside agent/,
+  model-viewer/, patchwork-frame-tiling/) finds `scene.outline`, the
+  Objects toggle and `open-source`/`open-file`/`open-linked`/`open-about`
+  only in the docs saying they went and in tests and probes checking they
+  are gone; the dice, bag, tabletop, arena and doom probes already name
+  the inspector. DESIGN.md's general parts say inspector, not outline;
+  COMPOSITION.md's traversal names a section's Open. *Proves*:
+  `src/removed.test.js`, a static check over src/'s non-test sources for
+  the eight removed things (the extension, the toggle, the tab title, the
+  four buttons, the hand-made About, controls and Open file), each row
+  failing on the sources before step 1 (8 of 8). `pnpm build` passes.
+  Full scene suite 2047/2047 (119 files) on the merged tree. Local probes
+  (built tool): editor-run 90/90, xdnd-run 69/69, parts-run 20/20, and
+  dice's dice.mjs 60/60 (the inspector's tab and Edit die's panel side by
+  side). Not run: the real-Patchwork checks (realcheck-editbody,
+  grip-check, enter-check, sections-check, dice.mjs under publish/), which
+  need the integrator's build and pushwork sync of scene. No doc shape
+  changed: nothing republished, the folder untouched. Review fixes
+  (2026-11-17): a docked doc's box was outside the style guard, so the
+  scene's `.label`, `.button` and the like restyled the docked tool; both
+  boxes are now `documentBox` (Decision 17). *Proves*: dock.test.js's
+  7-row sequence checks each docked view is unstyled by the scene (fails
+  without the fix); xdnd-run's `dockedDocLooksAsInline` compares a probe
+  `.label button`'s computed look docked and inline (without the fix,
+  docked is `position: absolute`, 69/70; with it 70/70). removed.test.js
+  gains the removed classes (a dead `.controls-embed` rule in styles.css
+  went). Full suite 2048/2048; editor-run 90/90. The real-Patchwork checks
+  are still owed (integrator's build and sync).
 
 ## What it costs
 
@@ -1713,3 +1923,173 @@ The project lead decided the five open questions on 2026-11-12.
    the merged tree: scene `probes/touch-run.mjs` 19/19 (2b new: the chip's
    menu over the pad's buttons), sailing's 11/11, and the mouse probes
    toolbar-run 28/28 and aboard-run --quick 54/54.
+16. **The object tree and the inspector are one pane** (the lead,
+    2026-11-16: "the sidebar's objects / inspector should be integrated
+    together"; the shape of it decided unattended, 2026-11-16,
+    lane/sidebar, for the lead). The rule is §6's ("The inspector is one
+    pane"); what was decided, and why:
+    - **One extension, the tree a module.** `scene.outline` and its
+      `objects` toggle went; the tree is `createOutline(api, { shown })`
+      (`parts/outline.js`), which `scene.inspector` mounts at the top of
+      its one tab. Two tabs over one selection could disagree for a flush
+      and opened by two rules; one tab can't, and needs no second toggle.
+    - **Both halves are drawn by one rule:** the tab's update, only while
+      it's docked. A shut pane is drawn into by nothing (the tree used to
+      redraw a detached list on every flush, every frame of a sailing sim),
+      and what to reveal is noted on every flush and revealed as the pane
+      opens, whichever way it opens (a selection in Look then Edit, the
+      toolbar after ×, a later open), since a scroller put back comes back
+      at the top.
+    - **The name stays Inspector** (the tab, its `data-panel`, the toolbar
+      button), so every probe hook and the open rule are unchanged.
+    - **A fixed split:** the tree takes at most about 40% of the pane's
+      height; its bar (filter, New group) stays put and only its rows
+      scroll, so a row scrolled into view is never under the bar (a sticky
+      bar over a scrolling tree hid the row a drop aimed at); the fields
+      fill the rest. With a ref selected (a dimension: no fields here) the
+      tree has the whole pane.
+    - **The tree arrives with a selection**, by the inspector's open rule,
+      where Objects opened only when asked.
+    Questions for the lead: is "Inspector" the right name for the pane
+    (or "Objects", or "Scene")? Should the split be draggable (a view
+    pref, like the drawer's grip) or the tree foldable, rather than a fixed
+    40%? Should the tree arrive with a selection (as now), or stay folded
+    until asked?
+17. **An object's documents are inspector sections, one kind of thing**
+    (the lead, 2026-11-16: "the 'open source' is unnecessary! it should be
+    a kind of inspector and render inline"; the shape of it decided
+    unattended, 2026-11-16, lane/sidebar, for the lead). The rule is §6's
+    ("An object's documents are sections of the inspector"); what was
+    decided, and why:
+    - **A section is a document, `{ url, toolId }`, nothing else**: a
+      `<patchwork-view>` of it inline, and Open for the main view (the
+      drawer, next, is a third place for the same value). About, the build
+      controls, "Open file", the link's Open and the controls' "Open
+      source" were five shapes of one idea; now there is one. A section
+      that was a mount function couldn't be opened as the main view, so a
+      die's or a bag's panel, which needs this scene's context (it rolls as
+      this viewer), stays a command docking its own element.
+    - **A contribution, `documents`, beside `commands`**: read with
+      `api.collect`, worked out by one pure rule (`inspector-model.js`
+      `documentsFor`: the inspector's own first, then running order; a null,
+      a non-automerge url, a throw (warned), a second entry with one id
+      from one extension (warned) or a repeated url and tool is dropped,
+      the first kept). Commands and documents share that walk of what's
+      collected, so a command whose state throws is warned of too. Unlike
+      a command, a document may go with the scene.
+    - **The Source is the doc's own `sourceUrl`**, in the source doc
+      type's default tool, never a lens's: a veiled card's face is never
+      offered. It is three sections, one per kind of content (`source`,
+      `file`, `link`), so each keeps its own fold: a file and a link start
+      folded (what they show is already in the scene, and a linked scene
+      inline is a whole second stage); a built object's source starts
+      open, beside its Build. A source routed nowhere (its provider isn't
+      here) is a folded Source.
+    - **Folding is the viewer's**, a pref per section (extension and id),
+      not per object, and no fold is written to the doc. (A question, below.)
+    - **The build controls open nothing.** (A question, below.)
+    - **A section's box has a definite height** (min(40vh, 22rem), and the
+      viewer can drag it taller or shorter), which its view fills: a tool
+      that fills its host (an editor, a scene) needs one, and the build
+      controls, which size to their content, leave room below.
+    - **No tool of this package is mounted in a section by hand**: without
+      a host `<patchwork-view>`, a section names its doc. The tests and the
+      editor probe use a stand-in `<patchwork-view>` (`src/test/
+      patchwork-view.js`) that mounts the package's own tools by their
+      registrations, as Patchwork does, so they check the one path.
+    - **A section stays mounted while it's shown**: sections coming and
+      going beside it are inserted and removed around it. The inspector's
+      whole field list is rebuilt when the selected object becomes another
+      kind of thing (its render doc, routing or link-ness changes), and
+      its sections are remounted then.
+    - A document's box, inline or docked, is `embed.js` `documentBox`:
+      it carries both the `data-stage-embed` marker (its keys are its own)
+      and the stage-wide CSS guard's class, `.about-embed` (every
+      stage-scoped rule, in some thirty stylesheets in eight packages,
+      stops at it), so a document looks the same inline and docked. The
+      two aren't one marker: a docked extension panel (a die's, a bag's)
+      is `data-stage-embed` for its keys but keeps the scene's styles.
+      Renaming the class waits for the parallel lanes to land.
+    Questions for the lead: which tool shows a Source (now its type's
+    default; should a provider name one, a `sourceTool` in its
+    `scene:source` metadata)? For an object fixed at a version, the Source
+    shows the latest (the doc you'd edit) while the Version row says Fixed
+    at…: should it show the source at those heads, read-only? Should a
+    die's or a bag's panel become a section (its tool working as a plain
+    doc tool), or stay a docked panel? Should a fold be per section for
+    every object (as now: folding Source folds every object's Source), or
+    per object? The build controls lost "Open source", so opened on their
+    own they have no way back to the source: accept that (the inspector is
+    where you meet them, their Source beside them), or should they show
+    their source too? Is a fixed section height (the viewer dragging it)
+    right, or should a tool that sizes to its content (the build controls)
+    take only its own height? And should a tool named explicitly as the
+    type's default count as the same section as one shown in the default
+    (the scene can't know a type's default tool, so today they are two)?
+18. **Documents in the drawer are the view's** (the lead, 2026-11-16: "it
+    should be a kind of inspector and render inline but be draggable out
+    into its own panel / openable as the main view"; the shape of it
+    decided unattended, 2026-11-16, lane/sidebar, for the lead). The rule
+    is §6's ("Documents in the drawer"); what was decided, and why:
+    - **The drawer docks a document as well as an element**: `api.view.dock({
+      url, toolId?, title })` → close, the same `{ url, toolId }` a section
+      is, shown by the one `documentView` (`src/embed.js`) the sections use,
+      in a pane of the editor kind (embedded: its keys its own; the
+      editor's width). One pane per `docKey(url, toolId)`, so a second dock
+      shows the first: there's never two panes of one doc and tool.
+    - **The pane is the view's, not Edit's or the inspector's**: you
+      dragged it out on purpose, so a new selection, leaving Edit, Enter or
+      Leave, or the inspector stopping keeps it; only its × (or closing the
+      scene) takes it away. `api.view.dock` is on every extension's api, in
+      any body, since docking a document is something a viewer does, not an
+      edit.
+    - **One way in, the standard payload**: a section's head drags as a
+      Patchwork document (the three types Patchwork's sidebar uses, the
+      item carrying its `toolId`), plus the scene's own type
+      (`application/x-scene-section`), and the tab strip docks any Patchwork
+      document dropped on it. So a doc from Patchwork's sidebar, an outline
+      row's own document and a section all dock the same way, and a frame
+      that takes Patchwork drops takes a section's head too. `dnd.js` now
+      carries an item's string `toolId` through, and one entry is one url,
+      version and tool.
+    - **The strip's drags are its own**: a drag over it never reaches the
+      stage (the scene's add, a row's copy), whatever it carries; one that
+      carries a document may drop there. A section's head let go anywhere
+      else in the stage (its pane, the tree, the view) is nothing: nothing
+      in a scene adds it. That is told by its type, as a tree row's is
+      (`dnd.js` `ownDrag`, which the add and the tree both refuse), so it
+      holds at dragover and needs no flag (review fix, 2026-11-17: the
+      tree, in the same pane, used to add it). Adding a section's doc to
+      the scene by dragging is the lead's to opt into (a question, below).
+    - **A pane is titled after its object**: `<object> · <label>` ("Hull ·
+      Source"; the label alone for the scene's), so two objects' Sources,
+      when they are different documents, are two tabs with two titles.
+      Docking a doc that's docked shows it under the title it was first
+      docked with (a doc dropped as "My notes" stays that). Its limits, as
+      built: a pane is one per `docKey(url, toolId)`, not per object, so
+      two objects sharing a source (two instances of one built object)
+      share one pane, titled after whichever docked it first; two objects
+      of one name give two tabs of one title, which `view.drawer.tabs` (by
+      title) can't tell apart (`view.drawer.docs`, by key, can); a renamed
+      object's pane keeps its old name. Decided unattended (2026-11-17,
+      lane/sidebar), for the lead.
+    - **The drawer changing tells the pointer router**: any change of
+      `view.drawer` (not only a selection) has the router look again, so a
+      pane docked by a command in a pointer-locked body frees the pointer,
+      and its last × gives it back.
+    - **Docked, a section shows where it is**: an open section whose doc
+      and tool are in `view.drawer.docs` shows "In the drawer · Show"
+      instead of its view (a pure function of the drawer, so there's never
+      a second live editor of it in the stage); its fold is still the
+      viewer's pref; Show docks it again, which shows its tab. Docked under
+      another tool, it's another document: the section stays inline.
+    - **A pane follows the latest**: a dropped link at a version docks the
+      doc itself (heads dropped), as a section shows the doc you'd edit.
+    Questions for the lead: is the drawer the right "own panel", or should
+    Dock ask Patchwork for a panel beside the scene (it has no such event
+    today: Open is the main view)? Should a section's head dropped on the
+    scene's view add that document to the scene, as any doc dropped there
+    does (now it never adds: a missed drag at the strip writes nothing)?
+    Should a docked document leave with Edit, as the inspector does? And
+    what should a docked doc's pane be called (now `<object> · <label>`;
+    the doc's own title would need a load)?

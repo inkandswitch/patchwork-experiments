@@ -741,7 +741,7 @@ on its root. A GLB connector with a `name` is the same thing. Two consumers:
 - **Traversal.** A Doom exit, a teleporter, an OMI link or crossing a
   Croquet portal is a package's field holding `url#name`. Going there is
   the view's: `api.go(url)` opens that doc as the outermost (with the
-  `patchwork:open-document` event the inspector already sends) and puts the
+  `patchwork:open-document` event an inspector section's Open already sends) and puts the
   eye at the named frame, as standing up puts the walker at the eye. The
   arriving doc reads its own frame, so nothing crosses.
 
@@ -882,7 +882,7 @@ ships alone and proves something.
    probe (135 GLBs open, 378 in all) fetches, subscribes, draws and times
    the same as before. Routes are recomputed when the registry changes,
    and `api.loadState(id).content` says which
-   (the inspector's "Open file" and status line read it). `"scene"` is
+   (the inspector's status line and its Source section read it). `"scene"` is
    not a kind yet: it arrives with the `scene.link` source at step 11,
    so no branch exists for a source nothing registers.
 5. **Seats to `seats/`**, with the seat body's home ready for step 6.
@@ -1122,8 +1122,9 @@ ships alone and proves something.
     offers Enter on a link (menu, inspector; everyone's, every body) and
     takes a double-click on one; the outline's link rows say what the link
     is here (linked, shown again, fixed, closed) and enter (→, or a
-    double-click); the inspector's Linked scene row says the same, with
-    Open and what the host sets of it. The trail, the view's own chrome
+    double-click); the inspector's Link row says the same, with
+    what the host sets of it (the linked doc is its folded Linked scene
+    section, whose Open shows it on its own). The trail, the view's own chrome
     along the top while the focus is inside a link, names the outermost doc
     and each link entered (each crumb a way out) and has Leave; Escape's
     last rung leaves. Drawer tabs open as the focus moved open again inside.

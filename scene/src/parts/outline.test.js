@@ -3,7 +3,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { emptyScene } from "../test/empty-scene.js";
-import outline, { peerColor, peerMarks, readRowDrag, ROW_MIME } from "./outline.js";
+import { peerColor, peerMarks, readRowDrag, ROW_MIME } from "./outline.js";
+import inspector from "./inspector.js";
 import { openTabs } from "../test/tabs.js";
 
 // A stand-in for scene.select's Remove command.
@@ -39,7 +40,8 @@ function vessel() {
 
 let s = null;
 async function mount(doc, { extra = [], repo } = {}) {
-  const exts = [{ meta: { id: "scene.outline" }, module: outline }, openTabs(["scene.outline:objects"]), ...extra];
+  // the tree is the top of the inspector's pane: these tests have it open, as the toolbar's Inspector does
+  const exts = [{ meta: { id: "scene.inspector" }, module: inspector }, openTabs(["scene.inspector:inspector"]), ...extra];
   s = await mountStage({
     repo,
     extensions: exts,
@@ -66,17 +68,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("scene.outline", () => {
-  it("is the drawer's Objects tab, opened by the toolbar's Objects and shut by it or its ×", async () => {
+describe("the inspector's tree", () => {
+  it("is the top of the inspector's one pane: mounted with it, shut with it (no tab or toggle of its own)", async () => {
     await mount(vessel(), { extra: [] });
-    expect($('[data-panel="objects"] .object-list')).toBeTruthy();
-    const tab = s.instance("scene.outline").tab;
+    const tab = s.instance("scene.inspector").tab;
     expect(tab.isOpen()).toBe(true);
     expect(s.debug.drawer().order).toEqual([tab.body]);
-    const toggle = s.instance("scene.outline").commands.find((c) => c.id === "objects");
-    expect(toggle.show).toEqual(["toolbar"]);
-    expect(toggle.state(null, {})).toMatchObject({ checked: true });
-    s.api("scene.outline").run({ ext: "scene.outline", command: "objects", value: false });
+    expect(tab.body.dataset.panel).toBe("inspector");
+    // the tree, then the fields, in the one tab
+    expect([...tab.body.children].map((c) => c.className)).toEqual(["inspector-tree", "inspector-body"]);
+    expect(tab.body.querySelectorAll(".inspector-tree .object-list").length).toBe(1);
+    const toggles = s.api("scene.inspector").collect("commands").flatMap((c) => (Array.isArray(c.value) ? c.value.filter((k) => k?.show?.includes?.("toolbar")).map((k) => `${c.id}:${k.id}`) : []));
+    expect(toggles).toEqual(["scene.inspector:inspector"]);
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
     expect(tab.isOpen()).toBe(false);
     expect(s.debug.drawer().order).toEqual([]);
   });
@@ -122,7 +126,7 @@ describe("scene.outline", () => {
     await pass();
     expect(row("bhd").hasAttribute("data-selected")).toBe(true);
     const framed = [];
-    const api = s.api("scene.outline");
+    const api = s.api("scene.inspector");
     api.camera = { ...api.camera, frame: (box) => framed.push(box) };
     api.groupBox = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     row("battery").querySelector(".row-main").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -227,7 +231,7 @@ describe("scene.outline", () => {
     expect(row("hull").hasAttribute("data-context")).toBe(false);
     expect($(".match-count").textContent).toBe("1 of 13");
     const framed = [];
-    const api = s.api("scene.outline");
+    const api = s.api("scene.inspector");
     api.camera = { ...api.camera, frame: (box) => framed.push(box) };
     api.box = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -301,7 +305,7 @@ describe("scene.outline", () => {
   });
 });
 
-describe("scene.outline: dragging rows", () => {
+describe("the inspector's tree: dragging rows", () => {
   // happy-dom has no layout: a row measures zero, so (clientY - top) / (height || 1)
   // is just clientY, which is how these choose a band.
   function atRow(id, fraction, e) {
@@ -404,7 +408,7 @@ describe("scene.outline: dragging rows", () => {
   it("copies a row from another scene into the place it's dropped in the tree, put down where the view is looking (not where it was in its own scene)", async () => {
     await mount({ objects: { g1: grp("G") }, order: ["g1"] });
     const other = s.repo.add(emptyScene({ objects: { m: leafAt("Mast", { x: 3 }), b: leafAt("Boom", { parent: "m", x: 1 }) }, order: ["m", "b"] }));
-    const api = s.api("scene.outline");
+    const api = s.api("scene.inspector");
     api.pick = () => ({ id: null, point: [7, 0, -2] });
     atRow("g1", 0.5, rowDrag("m", other.url));
     await pass();
@@ -423,7 +427,7 @@ describe("scene.outline: dragging rows", () => {
   it("another scene's row dropped among an object's attachments: under it, at the nearest of its connectors that takes it, however far", async () => {
     await mount({ objects: { deck: leafAt("Deck", { x: 10 }), cleat: leafAt("Cleat", { parent: "deck" }) }, order: ["deck", "cleat"] });
     const other = s.repo.add(emptyScene({ objects: { m: { ...leafAt("Mast", { x: -40 }), tags: ["mast"] } }, order: ["m"] }));
-    const api = s.api("scene.outline");
+    const api = s.api("scene.inspector");
     api.content = (id) => (id === "deck" ? { extras: { connectors: [{ position: [0, 1, 5], yaw: null, tags: ["mast"] }, { position: [0, 1, -1], tags: ["cleat"] }], snapRadius: 0.1 } } : null);
     atRow("cleat", 0.2, rowDrag("m", other.url));
     await pass();
@@ -481,7 +485,7 @@ describe("scene.outline: dragging rows", () => {
   });
 });
 
-describe("scene.outline: dropping documents on rows", () => {
+describe("the inspector's tree: dropping documents on rows", () => {
   const docDrop = (url) => {
     const e = new Event("drop", { bubbles: true, cancelable: true });
     e.dataTransfer = { types: ["text/plain"], files: [], getData: (t) => (t === "text/plain" ? url : "") };

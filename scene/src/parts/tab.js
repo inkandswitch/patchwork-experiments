@@ -1,12 +1,13 @@
 // A part's tab in the drawer (TOOLS.md §6): its panel, docked with api.dock
 // while it's open. Chrome follows attention, never the doc: whoever owns the
 // tab says when it opens (the inspector on a selection, staying open after;
-// the outline, dimensions and parts when the viewer asks), and the tab's × is
+// dimensions and parts when the viewer asks), and the tab's × is
 // the viewer closing it (onClosed).
 //
-// mount(body) runs once, on the first open, and answers { update(scene,
-// local), dispose() }; update runs while the tab is open (and once as it
-// opens), dispose when the part stops.
+// mount(body) runs once, on the first open, and answers { opened(),
+// update(scene, local), dispose() }, each optional: opened runs each time the
+// tab docks, just before the update it gets as it opens; update runs while
+// the tab is open; dispose when the part stops.
 //
 // The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
 // while the body is Edit, and shuts when the body stops being Edit (not
@@ -19,8 +20,8 @@ import { editing } from "../stage/bodies.js";
 
 /**
  * @param {object} api
- * @param {{ id: string, title: string, mount: (body: HTMLElement) => ({ update?, dispose? } | null), onClosed?: () => void }} o
- *   `id` names the panel (its element's data-panel: "inspector", "objects")
+ * @param {{ id: string, title: string, mount: (body: HTMLElement) => ({ opened?, update?, dispose? } | null), onClosed?: () => void }} o
+ *   `id` names the panel (its element's data-panel: "inspector", "parts")
  */
 export function drawerTab(api, { id, title, mount, onClosed }) {
   const body = document.createElement("div");
@@ -42,7 +43,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     close = api.dock(body, {
       title,
       show,
-      // the stage's own chrome: its keys are the stage's (the ladder's Escape, the outline's arrows)
+      // the stage's own chrome: its keys are the stage's (the ladder's Escape, the tree's arrows)
       embed: false,
       onClose: () => {
         close = null;
@@ -50,6 +51,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
       },
     });
     try {
+      view?.opened?.();
       view?.update?.(api.scene(), api.local.get(), api.view.get());
     } catch (err) {
       console.warn(`[scene] the ${title} tab failed to update`, err);
