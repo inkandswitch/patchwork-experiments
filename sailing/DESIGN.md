@@ -65,7 +65,7 @@ modules share.
 | `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
 | `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
-| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`) |
+| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the hint is only "Click her to come aboard", beside the dial, while a click does (near, not seated) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
@@ -2243,16 +2243,17 @@ ctx.sim.tick()           // every view, every frame: stale inputs; computing, th
 ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). A click reaches
                          //   her only through something of hers (the ships' part holds no scene trait, so the world's sea, sky and shore
                          //   aren't hers); what nearer takes it (a card's carry) has it first. Seated (seatedView: a body over the stage's
-                         //   Look or Edit, not the crew's, a seat), no click does; the HUD (hudModel's `seated`) then offers Enter, no walking keys
+                         //   Look or Edit, not the crew's, a seat), no click does (Enter or the bar's Come aboard does); the HUD (hudModel's `seated`) shows no walking keys
 ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
-                         //   (the navmesh walker), the walking keys, the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
+                         //   (the navmesh walker), the walking keys (labelled as walk's), the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
                          //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves
                          //   the walker waiting; when it goes you stand at the projection (P1) of where its view was
 ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to Look off the quarter
 ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
                          //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line) }
 ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
-                         //   pushes the station body over walking; handlers: { keys: codes, key, keyup, tick(dt), left(), hint?() }
+                         //   pushes the station body over walking; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(),
+                         //   hint?(), look?() }: keys as every body declares them (scene/TOOLS.md §4), each saying what it does
 ctx.crew.leave()         // step away from the station you're at
 ctx.crew.board(shipId)   // climb aboard (from the water, by the ladder)
 ctx.crew.place(on, position, yaw?, pitch?)   // put the body somewhere (local to ship `on`, else in the water): a respawn
@@ -2262,6 +2263,31 @@ ctx.crew.tick(dt)
 // stations.js — stationCommands(api, ctx) → commands for the use prompt (and keys)
 // hud.js — createHud(api, ctx) → crosshair, wind, speed, heading, what the keys do here; tick(dt)
 ```
+
+**A station's keys say what they do** (decided unattended (2026-11-16,
+lane/n9), for the lead). A station declares its keys as every body, tool
+and gesture does, `[{ code, label }]` (scene/TOOLS.md §4: a label names
+the action, not its state, and codes labelled alike do the same thing), so
+the stage's touch pad (scene.touch) shows one control per label: Steer to
+port (A, ←) and Steer to starboard (D, →) in the pad's left and right
+places, Haul in (Q), Ease out (E), Halyard (R at a post or the helm),
+Furler (R at a winch), Back jib / let fly (B), Leave (F). The labels live
+beside the handlers in stations.js (`HAUL`, `STEER`, …); "aboard" declares
+walk's labelled keys (a copy, until N10 folds it into walk). An action can
+be unavailable in some states: a winch declares the jib sheet's Q and E on
+either side, because which winch is the working one changes while you
+stand there (a tack, backing the jib), and at the lazy one they do
+nothing. The HUD's hint line is unchanged. `stations.test.js` asserts
+every variant's declaration as a literal (the lazy winch among them),
+and checks from one state, the station just taken in the stage's starting
+trim, holding each code half a second: exactly the variant's listed idle
+codes do nothing (only the lazy winch's Q and E), and among the rest two
+codes do the same thing (the same inputs, writes and place) exactly when
+they share a label. `crew.test.js` checks aboard's the same way, every
+code alone against what it asks of the walker (`walkWanted`). Open for the lead: the
+words, B's above all (it backs the jib, makes it fast at a winch, or lets
+it fly, by state), and whether the HUD's hint should drop key names on
+touch.
 
 The play instance also carries `debug: ctx`, which nothing in the stage
 reads: the browser probe (`probes/sailing-run.mjs`) reads and nudges the
