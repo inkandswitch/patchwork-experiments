@@ -180,11 +180,12 @@ Still open:
   paused, so Play on a cabinet in a link whose world is paused sits you at
   a machine that never moves (found by N7, 2026-11-16: the published
   Arcade's world is paused; Decisions, N7, 9; Questions for the lead);
-- two docs' seat bodies, one stacked on the other, can't be told apart by
-  either doc's seats: every stage's seat body is `"seat"` and seats'
-  `seated()` reads the top body's id alone, so Watching in the lower
-  doc's picker stands you up from the upper doc's seat (by reading, not
-  run; seats/README.md, Still open; Decisions, N7, 14).
+- two docs' seat bodies, one stacked on the other, look the same to the
+  lower doc's seats: every stage's seat body is `"seat"` and seats'
+  `seated()` reads the top body's id alone, so the lower doc's `sitting()`
+  still reports its seat and its `getUp` (its Stand up, or its stage
+  stopping) leaves the upper doc's body (seats/README.md, Still open,
+  pinned by `seats/src/stacked-bodies.test.js`; Decisions, N7, 14).
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -313,9 +314,9 @@ Questions for the lead (not decided; each names what stands meanwhile):
   two games' seats in two linked docs can both be one person's, and the
   card table's and the cups' keepers each count their own doc's players,
   so no seat across docs looks needed. Try it (a doc of cups and seats to
-  link onto the table, and a seats test for two stacked seat bodies
-  first), or is "a game that wants both is one doc" the answer? Stands
-  meanwhile: not built.
+  link onto the table, and seats' fix for two stacked seat bodies first),
+  or is "a game that wants both is one doc" the answer? Stands meanwhile:
+  not built.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2648,10 +2649,9 @@ the finding; row 6 failed to a stale package, 6 below).
    - A mashup places each link in its own frame: `publish-links` writes
      every link on the doc's root (`parent: null`). Writing a parent
      instead changes nothing, because a parent is doc-local: `rawParent`
-     (`src/hierarchy.js`) keeps one only if it names an object in the same
-     doc. Read node-side: a mashup with Fitting out as link 1 and a
-     table's link written with `parent` her Sloop's id (`oga3461ux`)
-     resolves to no parent.
+     (`src/hierarchy.js`) keeps one only if it names an object (not a
+     group) in the same doc, and her Sloop (`oga3461ux`) is in her doc,
+     not the mashup's.
    - She moves in her own doc. Her Sloop carries `sailing.ship`, lies to
      her own Windlass and Anchor, and pitches and swings on her own Sea in
      her world time. What rides her is what her doc parents to her: her two
@@ -2660,9 +2660,11 @@ the finding; row 6 failed to a stale package, 6 below).
      Card table, and the Card table on the Sloop
      (`omkjnt9w5 → onocu6k6f → oz3e3gr5o`), all in one doc.
    - §9 leaves only a landing: a carry may snap to a linked doc's named
-     frame, but it stays where it landed ("no reference crosses docs"). A
-     table snapped to her cockpit stays put while she pitches and swings
-     out from under it.
+     frame, but it stays where it landed ("no reference crosses docs"); §9
+     says so of an edit to the linked doc ("It doesn't follow the winch if
+     the fit-out changes"). Motion is the same case: the landed pose is
+     written in the host's frame, so a table snapped to her cockpit also
+     stays put while she pitches and swings out from under it.
 
    So the candidate needs an attachment across docs, which §9 rules out.
    By design, the answer is the boat's own doc holding the link (Lost
@@ -2693,22 +2695,36 @@ the finding; row 6 failed to a stale package, 6 below).
      (automerge:BEkpNoJVsGN4FXHUkC9yjJ9C1kT) is a round table of its own
      (`dice/probes/publish-liars.mjs`), so this mashup needs a new doc of
      cups and seats, which is more than publishing.
-   - A latent seats bug, met by the first person to sit in both (by
-     reading, not run). Every stage's seat body has the id `"seat"`, and
-     seats' `seated()` compares the top body's id alone
-     (`seats/src/seats.js`, `const seated`), not its `ext`; the stage
-     projects `ext` as its own extension's id only for its own body
-     (`src/stage/view.js` `projectView`). With the dice doc's seat body
-     pushed over G's, G's part also takes itself to be seated: its
-     `sitting()` reports G's seat, and Watching in G's picker (`getUp`)
-     leaves the top body, standing you up from the dice doc's seat while
-     G's seat body stays under. Play at a cabinet pressed while seated at a
-     game in the same mashup would stack the same way (the Arcade's seat
-     body over the game's). Recorded in seats/README.md, Still open; no
-     package code changed in N7, so no test pins it yet.
+   - A latent seats bug, met by the first person to sit in both. Every
+     stage's seat body has the id `"seat"`, and seats' `seated()` compares
+     the top body's id alone (`seats/src/seats.js`, `const seated`), not
+     its `ext`; the stage projects `ext` as its own extension's id only for
+     its own body (`src/stage/view.js` `projectView`). Seats' own UI can't
+     put one seat body straight over another: with another doc's seat on
+     top, the lower doc's picker hides (`pickerOwner` checks `ext`) and F
+     offers only Stand up (`seats/src/model.js` `seatVerb`). Two ways do
+     reach it: a body in between (sit at G, walk off from the seat, then F
+     at the dice doc's seat: look, seat(G), walk, seat(dice)), and another
+     package's `roster.sit` (machine's Play asks its own stage's
+     `sitting()`, `machine/src/scene/hands.js` `clicks`, which is null
+     there, and pushes the Arcade's seat over a game's). Then G's
+     `sitting()` still reports G's seat, against seats' roster contract
+     ("the seat body on top"), and G's `getUp` leaves the body on top, the
+     dice doc's, wherever G calls it: its F Stand up, `dispose` when G's
+     stage stops, the lost-race and perch paths. Pinned in
+     `seats/src/stacked-bodies.test.js` (decided unattended, a test only,
+     no seats code): G's picker hides under the other body, and `sitting()`
+     being null there is an expected failure (`it.fails`). With `seated()`
+     also checking `ext` (one line, as `pickerOwner` does) the expected
+     failure flips and the other 86 seats tests pass; with `pickerOwner`
+     not checking `ext` the picker test fails. The fix leaves a decision
+     for seats: `getUp`'s `downToSeat` would then pop the dice doc's body
+     to get down to G's. In the review a scratch run of the second way
+     showed G's `dispose` calling the dice body's `leave` and leaving
+     look, seat(G). Recorded in seats/README.md, Still open.
 
    *For the lead:* try it (a doc of cups and seats to link onto the table,
-   and a seats test for two stacked seat bodies first), or is "a game that
+   and seats' fix for two stacked seat bodies first), or is "a game that
    wants both is one doc" the answer?
 15. **N7's findings, by owner** (the evidence is in the entries named):
    - **scene:** a place handed across docs to a body (1); a linked
@@ -2718,7 +2734,8 @@ the finding; row 6 failed to a stale package, 6 below).
    - **machine:** "Lay out its world" never refuses a second world
      (7; `machine/src/scene/worlds.js` `worldCommand`; machine/HOST.md,
      phase 2b, Not done yet).
-   - **seats:** two stacked seat bodies told apart by id alone (14).
+   - **seats:** two stacked seat bodies told apart by id alone (14;
+     pinned by `seats/src/stacked-bodies.test.js`).
    - **terrain:** `terrain/src/terrain-sample.js`'s header says the canopy
      layer holds "the trees' (and roofs') height", but the build leaves
      built ground out of it ("no forest where something is built",
