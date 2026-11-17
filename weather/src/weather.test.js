@@ -93,6 +93,15 @@ describe("windOf: the world's wind is the trait's own numbers", () => {
     [{ wind: 45, from: 400, gustiness: 2 }, { speed: 40, from: 360, seed: 1, gustiness: 1 }],
   ])("%j → %j", (t, want) => expect(windOf(weatherParams(t))).toStrictEqual(want));
 
+  // W5's table: the air as sailing's parts and templates write it ({ wind, from, seed }) and as it is dialled (gustiness).
+  // sailing's sea-view.test.js runs the same 48 rows from the wind ambient into createWind, through its stand-in for this
+  // offer (sailing/src/test/weather.js, a copy of this rule): together, the wind a boat's physics reads is this offer.
+  it("W5's table: every row's offer is the trait's own numbers, the gustiness its default where the trait has none", () => {
+    const rows = [0, 7, 12].flatMap((wind) => [0, 90, 235, 300].flatMap((from) => [undefined, 0.5].flatMap((gustiness) => [1, 7].map((seed) => ({ wind, from, seed, ...(gustiness === undefined ? {} : { gustiness }) })))));
+    expect(rows).toHaveLength(48);
+    for (const t of rows) expect([t, windOf(weatherParams(t))]).toStrictEqual([t, { speed: t.wind, from: t.from, seed: t.seed, gustiness: t.gustiness ?? 0.3 }]);
+  });
+
   it("names exactly sailing's four fields, plain numbers", () => {
     const w = windOf(weatherParams({}));
     expect(Object.keys(w).sort()).toEqual(["from", "gustiness", "seed", "speed"]);

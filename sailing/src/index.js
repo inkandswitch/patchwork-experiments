@@ -2,9 +2,10 @@
 // every field except load() must survive structuredClone.
 //
 // Sailing is not a datatype or a tool. It is scene extensions, parts and two
-// templates (see the scene package's STAGE.md):
-// - "sailing.weather" runs in a scene with the weather trait: it offers the
-//   world's wind and sky as ambients (water/WATER.md, "Water bodies");
+// templates (see the scene package's STAGE.md). The wind it sails in is the
+// world's `wind` ambient, which the weather package offers from the scene
+// trait `weather` (weather/WEATHER.md); sailing offers no ambient, and its
+// Sea and Sloop write a `weather` where a scene has none, as data:
 // - "sailing.sea" runs in a scene with an object carrying the sea trait: a
 //   behaviour put on a water body (the water package's `water` object
 //   trait), it makes that body's waves from the world's wind and gives them
@@ -123,30 +124,7 @@ const SEA_DESCRIBES = {
   },
 };
 
-const WEATHER_DESCRIBES = {
-  "sailing.weather": {
-    name: "Weather",
-    on: "scene",
-    blurb: "This world's wind and sky: ships sail in the wind, and seas raise their waves from it",
-    fields: [
-      { key: "wind", label: "Wind (speed m/s, from degrees)", kind: "json", default: { speed: 7, from: 45 } },
-      { key: "seed", label: "Gust seed", kind: "integer", default: 1 },
-    ],
-    init: { wind: { speed: 7, from: 45 }, seed: 1 },
-  },
-};
-
 export const plugins = [
-  {
-    type: "scene:extension",
-    id: "sailing.weather",
-    name: "Weather",
-    traits: ["sailing.weather"],
-    describes: WEATHER_DESCRIBES,
-    async load() {
-      return (await import("./weather.js")).default;
-    },
-  },
   {
     type: "scene:extension",
     id: "sailing.sea",
@@ -169,8 +147,8 @@ export const plugins = [
   },
   // the parts bin's (scene:part): what each is made of is parts.js
   ...[
-    { id: "sea", name: "Sea", icon: "Waves", description: "Open water with waves on it, raised by the world's wind; brings the weather (a working breeze) if the scene has none", traits: ["water", "sailing.sea", "sailing.weather"] },
-    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder, companionway. Brings a Sea and the weather if the scene has no open water", traits: ["sailing.ship", "water", "sailing.sea", "sailing.weather"] },
+    { id: "sea", name: "Sea", icon: "Waves", description: "Open water with waves on it, raised by the world's wind; brings the weather (a working breeze) if the scene has none", traits: ["water", "sailing.sea", "weather"] },
+    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder, companionway. Brings a Sea and the weather if the scene has no open water", traits: ["sailing.ship", "water", "sailing.sea", "weather"] },
     { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail, and a jib on its forestay. On a ship it drives her: where you put it is where the sails pull", tags: ["sailing.mast"], traits: ["sailing.sail", "sailing.jib"] },
     { id: "wheel", name: "Wheel", icon: "LifeBuoy", description: "The helm: take it to steer, and trim the sheet from it", tags: ["sailing.helm"], traits: ["sailing.helm"] },
     { id: "windlass", name: "Windlass and anchor", icon: "Anchor", description: "Lets go and weighs the ship's anchor; the anchor hangs at the bow", tags: ["sailing.windlass"], traits: ["sailing.anchor", "sailing.hook"] },

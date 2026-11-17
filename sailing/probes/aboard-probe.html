@@ -116,7 +116,7 @@ try {
   // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
   // the stages can say which package each plugin comes from (publish-aboard checks what each doc lists)
   const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["water", "../../water/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
+  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["water", "../../water/dist/index.js"], ["weather", "../../weather/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
     registerPlugins((await import(url)).plugins, urls[dir]);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
@@ -463,11 +463,12 @@ try {
     commit: (w, id, fields) => ctx(w).sim.commit(id, fields),
     /** an editor's move of the hull: her doc transform turned to `yaw` (the sim starts again from there, at rest) */
     turnHull(yaw) { scene.change((d) => { d.objects[ids.hull].transform.rotation = [0, yaw, 0]; }); return true; },
-    wind: () => scene.doc().traits?.["sailing.weather"]?.wind ?? null,
-    /** the sea's wind freshened (as the inspector's Sea field writes it) */
-    setWind(speed) { scene.change((d) => { d.traits["sailing.weather"].wind.speed = speed; }); return true; },
+    /** the world's wind as its weather has it (the weather package's trait: wind m/s, from degrees) */
+    wind: () => { const t = scene.doc().traits?.weather; return t ? { speed: t.wind, from: t.from } : null; },
+    /** the wind freshened (as the inspector's Weather field writes it) */
+    setWind(speed) { scene.change((d) => { d.traits.weather.wind = speed; }); return true; },
     /** the sea's own seed: its waves (the Sea object's) and its gusts (the weather's), one seed as the template draws them */
-    setSea(seed) { scene.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = seed; d.traits["sailing.weather"].seed = seed; }); return true; },
+    setSea(seed) { scene.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = seed; d.traits.weather.seed = seed; }); return true; },
     /**
      * Sample, every frame for `ms` of the page's clock, where a point on the
      * table is on each view's page, and where the table is in the world.
