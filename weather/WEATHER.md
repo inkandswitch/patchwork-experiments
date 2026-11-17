@@ -1182,7 +1182,17 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     question was unanswered, so only this package was synced (it is new,
     and no doc lists it yet); sailing and terrain were built but not
     synced, and nothing was republished. *Decided unattended (2026-11-17,
-    lane/weather integrator), for the lead.*
+    lane/weather integrator), for the lead.* N11 merged into scene-stage
+    on 2026-11-17 (6339f82c). Its publishers state each doc's packages
+    exactly, and a writable visit now prunes a list (COMPOSITION.md,
+    Decisions, packages pruned, 10). That makes four of this table's
+    examples republish anyway: Lost Cities aboard, the Quiet games room
+    (both its Lost Cities and Santorini tables), and Fitting out's boat and
+    hatch W. Republishing them before W8 would make every boat and the
+    games-room cascade twice, so they wait for W8, and W8 republishes them
+    from the N11 publishers. Santorini table is no boat, so it was
+    republished and swapped at the N11 merge. *Decided unattended
+    (2026-11-17, n11 integrator), for the lead.*
 55. **The real-Patchwork check comes before the examples it checks, and
     it expects only what the doc implies.** W9's real runs need the
     weather package synced and the examples republished (W8). Only the

@@ -190,8 +190,11 @@ Fixed since (each item names its Decisions section below):
   Decisions, the use prompt and the eye, below; lane/n11). editor-run's
   new step leaves the prompt's button over a spot on Block 1's halo (framed
   that close, its rotate ring), presses `.`, and the press at the pointer
-  goes to the halo's widget and drag, and Flip doesn't run. Not yet checked
-  in the real Patchwork.
+  goes to the halo's widget and drag, and Flip doesn't run. In the real
+  Patchwork (N11 integration, 2026-11-17, merge 6339f82c) arcade-check's
+  rows for the use prompt pass: hovering the Doom cabinet in Look, it
+  offers P Play, enabled, and Play seats you (29/30; the red row is the
+  check's own, as at N7).
 - a doc's packages list grew as parts were added and wasn't pruned when
   they went (Fitting out's boat, as the tools made her, still listed her
   companionway's joints and traversal). Reconcile now goes both ways: a
@@ -201,7 +204,11 @@ Fixed since (each item names its Decisions section below):
   Decisions, packages pruned, below; lane/n11). publish-fitout's page now lists exactly the
   boat's own (scene, sailing, water: its new check, 15/15 dry run), and
   packages-run takes off a listed package nothing calls for and, later,
-  one whose trait goes (21/21). Not yet checked in the real Patchwork.
+  one whose trait goes (21/21). In the real Patchwork (N11 integration,
+  2026-11-17): fitout-check 11/11, and the new Santorini table (publish-table,
+  exactly scene and seats) arrives Watching with no errors (verify.mjs). The
+  other published lists that shrink wait for W8 (Decisions, packages
+  pruned, 10).
 - the first click of a double-click could open the inspector under the
   second: with the inspector shut, a first press that selected anything
   (the link, or the Card table it missed onto) narrowed the canvas, and
@@ -223,8 +230,9 @@ Fixed since (each item names its Decisions section below):
   it: the dblclick at 480 px, and no Enter). Seeds 2 and 3's first
   tries enter; seed 1's first press still misses the card for the Card
   table, which is the single-click item under "Still open", not this one.
-  Not yet checked in the real Patchwork (enter-check, presence-check.nopause
-  on scratch copies, once the integrator has synced the scene package).
+  In the real Patchwork (N11 integration, 2026-11-17, scene synced, on
+  scratch copies of Lost Cities aboard): enter-check 13/13,
+  presence-check.nopause 12/12.
 - keyboard bodies (walk, aboard, a station) had no touch input: on a
   phone nobody could walk, sail or take a station, and under a touch
   laptop's granted pointer lock a drag stopped looking. A finger now never
@@ -2520,6 +2528,15 @@ the viewer's registry; the view remembers nothing.
     published with the old appending `withPackages`). By the no-back-compat
     rule they are republished from the fixed publishers and swapped in the
     folder by the integrator, before any check visits them writable.
+    At the merge (2026-11-17, 6339f82c) the integrator republished only
+    the Santorini table (`publish-table --template santorini`,
+    automerge:4TCaas6EEfGQR6C6KwZE6fGKPedR, swapped). The rest are boats or
+    the games-room cascade, and W8 republishes them anyway (WEATHER.md
+    Decision 54). Doing it now would make each of them twice, so they wait
+    for W8: Lost Cities aboard, the Quiet games room with its own
+    Santorini, and Fitting out's boat and W. Until then a writable visit
+    prunes their lists, which is the list their publisher now writes.
+    *Decided unattended (2026-11-17, n11 integrator), for the lead.*
 
 Questions for the lead:
 - The one disagreement left takes turns: P's versions differ on a trait
