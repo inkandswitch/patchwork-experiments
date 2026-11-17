@@ -12,7 +12,7 @@
 // weather comes from); beside it her speed over the ground along her bow,
 // steadied over a second or two (the waves' own surge isn't hers), her
 // heading, the true wind's speed and direction, the sail and the anchor.
-// It only reads: ctx.crew.me(), ctx.sim.read(), the stations' values and the
+// It only reads: ctx.crew.me() (the top body and walk's avatar here), ctx.sim.read(), the stations' values and the
 // wind. The model is pure (hudModel); the DOM is touched only when a value
 // changes.
 

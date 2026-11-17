@@ -79,7 +79,7 @@ const AT_A = { position: [40, 0, 0], rotation: [0, 0, 0], scale: 1 };
 const BASIN = [30, 3, 30];
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

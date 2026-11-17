@@ -1,37 +1,50 @@
 // Navmesh checks for the browser probes (sailing-run.mjs, camber-run.mjs):
-// what the crew baked from the stage, checked in the page.
+// what walk baked of her from the stage, checked in the page.
 //
-// - staticChecks: C1–C9 (navcheck.js) over a ship's mesh as the page's crew
-//   baked it, from the triangles it gathered from her GLBs as loaded (not
-//   ship.js's): the same checks sloop-navmesh.test.js runs on ship.js's.
+// - staticChecks: C1–C9 (walk's navcheck.js) over a ship's bake input as
+//   walk's adapter reads it from the stage (her GLBs as loaded, her walk.*
+//   traits), seed-pruned (walk bakes prune: false until its pruning by
+//   passable sides lands: walk/DESIGN.md, Decision 29), and walk's own mesh
+//   of her holding every cell of it: as walk's deck-12m.test.js does on the
+//   exported sloop.
 // - watchWalk / walkReport: every frame of a walk, the walker's invariant
-//   asserted (__SAILING_ASSERT__ on: a breach throws in the crew's tick and is
-//   counted), the mode, and the feet against ship.js's analytic surfaces.
-// The page imports sailing's own src modules for this (served from the repo
-// root), beside the built dist the views run: a dev tool, nothing is shared
-// but data.
+//   asserted (__WALK_ASSERT__ on: a breach throws in walk's loop and is
+//   logged, counted here), the mode, and the feet against ship.js's
+//   analytic surfaces.
+// The page imports walk's and sailing's src modules for this (served from
+// the repo root), beside the built dist the views run: a dev tool, nothing
+// is shared but data.
 
 /** C1–C9 over `ship`'s mesh in view `w` (`kind` "sloop" adds C8). */
 export const staticChecks = (js, w, ship, kind = "sloop") =>
   js(
     `(async () => {
-      const nc = await import('/sailing/src/navcheck.js');
-      const nm = await import('/sailing/src/navmesh.js');
-      const { DECK } = await import('/sailing/src/walk.js');
-      const n = window.__p.ctx('${w}').crew.nav('${ship}');
-      if (!n?.mesh || !n.input) return { ok: false, why: 'no mesh' };
-      const input = n.input;
+      const nc = await import('/walk/src/navcheck.js');
+      const nm = await import('/walk/src/navmesh.js');
+      const { bakeInput } = await import('/walk/src/supports.js');
+      const { BODY } = await import('/walk/src/walk.js');
+      const api = window.__p.api('${w}') ?? window.__p.api('sailing'); // (camber-probe's api takes an extension id)
+      const own = window.__p.live('${w}')?.env.mesh('${ship}');
+      const full = api ? bakeInput(api, '${ship}') : null;
+      if (!own || !full) return { ok: false, why: 'no mesh' };
+      const input = { triangles: full.triangles, seeds: full.seeds };
       const t0 = performance.now();
-      const again = nm.bake(input, DECK);
+      const mesh = nm.bake(input, BODY);
       const bakeMs = performance.now() - t0;
-      const r = nc.staticChecks(n.mesh, input.triangles, {
+      const r = nc.staticChecks(mesh, input.triangles, {
+        seeds: input.seeds,
+        railed: '${kind}' === 'sloop',
         rebake: (p) => nm.bake(input, p),
-        shuffled: () => nm.bake({ ...input, triangles: nc.shuffleTriangles(input.triangles, 7) }, DECK),
-        ship: '${kind}',
+        shuffled: () => nm.bake({ ...input, triangles: nc.shuffleTriangles(input.triangles, 7) }, BODY),
       });
       const checks = {};
       for (const [k, v] of Object.entries(r.checks)) checks[k] = { ok: v.ok, detail: JSON.stringify(v.detail).slice(0, 500) };
-      return { ok: r.ok, cells: n.mesh.count, again: again.count, triangles: input.triangles.length / 9, links: n.mesh.links.map((l) => l.kind + (l.id ? ' ' + l.id : '')), at: n.mesh.links.map((l) => [l.kind, l.asked.map((v) => +v.toFixed(2)), nm.pointOf(n.mesh, l.at.cell, l.at.u, l.at.v).map((v) => +v.toFixed(2))]), bakeMs: Math.round(bakeMs), checks };
+      const key = (m, a) => nm.pointOf(m, a, 0.5, 0.5).map((v) => Math.round(v * 1e4)).join();
+      const all = new Set(Array.from({ length: own.count }, (_, a) => key(own, a)));
+      let lost = 0;
+      for (let a = 0; a < mesh.count; a++) if (!all.has(key(mesh, a))) lost++;
+      checks["walk's own mesh holds every cell"] = { ok: lost === 0, detail: JSON.stringify({ lost, own: own.count, pruned: mesh.count }) };
+      return { ok: r.ok && lost === 0, cells: mesh.count, own: own.count, triangles: input.triangles.length / 9, links: mesh.links.map((l) => l.kind + (l.id ? ' ' + l.id : '')), at: mesh.links.map((l) => [l.kind, l.asked.map((v) => +v.toFixed(2)), nm.pointOf(mesh, l.at.cell, l.at.u, l.at.v).map((v) => +v.toFixed(2))]), bakeMs: Math.round(bakeMs), checks };
     })()`,
     240_000,
   );
@@ -46,13 +59,18 @@ export const watchWalk = (js, w, ship) =>
   js(`(async () => {
     const S = await import('/sailing/src/ship.js');
     const crew = window.__p.ctx('${w}').crew;
-    const M = (window.__walkMon = { frames: 0, asserts: [], off: [], modes: {}, visited: {}, worst: 0, orig: crew.tick });
-    globalThis.__SAILING_ASSERT__ = true;
+    const live = window.__p.live('${w}');
+    const M = (window.__walkMon = { frames: 0, asserts: [], off: [], modes: {}, visited: {}, worst: 0, orig: crew.tick, warn: console.warn, error: console.error });
+    globalThis.__WALK_ASSERT__ = true;
+    // a breach throws in walk's loop, which the stage logs
+    const caught = (f) => (...a) => { const t = a.map(String).join(' '); if (/walker invariant|\[walk\]/.test(t)) M.asserts.push(t.slice(0, 240)); return f.apply(console, a); };
+    console.warn = caught(M.warn);
+    console.error = caught(M.error);
     const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     crew.tick = (dt) => {
       try { M.orig(dt); } catch (e) { M.asserts.push(String(e?.message ?? e).slice(0, 240)); }
       const me = crew.me();
-      const st = crew.walker();
+      const st = live?.state();
       if (!me.playing || !st) return;
       M.frames++;
       M.modes[st.mode] = (M.modes[st.mode] ?? 0) + 1;
@@ -87,5 +105,7 @@ export const walkReport = (js, w) =>
     const M = window.__walkMon;
     const crew = window.__p.ctx('${w}').crew;
     crew.tick = M.orig; // the page keeps asserting (it sets the flag for every walker step)
+    console.warn = M.warn;
+    console.error = M.error;
     return { frames: M.frames, asserts: M.asserts, off: M.off, modes: M.modes, visited: M.visited, worst: +M.worst.toFixed(4) };
   })()`);

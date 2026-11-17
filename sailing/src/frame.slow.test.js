@@ -43,7 +43,9 @@ async function sloop({ turned: isTurned = false, yaw = headTo(45 - 90) } = {}) {
     const part = { Mast: "mast", Wheel: "wheel", Windlass: "windlass", Ladder: "ladder", Mainsheet: "mainsheet", "Port jib winch": "winches", Companionway: "companionway" };
     for (const o of Object.values(doc.objects)) {
       if (o.parent !== hull) continue;
-      o.transform = placement(doc, { parent: hull, transform: { position: quarter(STAND[part[o.name]]) } }, part[o.name], turned).transform;
+      // her spawn point (walk's: where people come aboard) turned with her, facing her bow
+      if (!part[o.name]) o.transform = { position: quarter(o.transform.position), rotation: [0, -Math.PI / 2, 0], scale: 1 };
+      else o.transform = placement(doc, { parent: hull, transform: { position: quarter(STAND[part[o.name]]) } }, part[o.name], turned).transform;
     }
   }
   return { doc, ids, content };

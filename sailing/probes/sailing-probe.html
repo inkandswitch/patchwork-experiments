@@ -42,7 +42,16 @@ let time = null; // the page's manual clock (scene's manualTime): window.__time
 if (new URLSearchParams(location.search).has("lock")) await import("./lock-shim.js");
 
 // invariant I asserted on every walker step (walker.asserting): a breach throws in the crew's tick, so it shows as an error
-globalThis.__SAILING_ASSERT__ = true;
+globalThis.__WALK_ASSERT__ = true;
+// walk's live sessions (walk/src/body.js): a view's walker, to read and to place
+globalThis.__WALK_LIVE__ = new Map();
+const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.session ?? ""} ${api.url ?? ""}`) ?? null : null);
+const mapply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
+/** Put view api's walker at a point local to `on` (her hull's frame), else the stage's, facing yaw (to her heading): walk's P1 there. */
+const placeWalker = (api, on, position, yaw = 0, pitch = 0) => {
+  const m = on != null ? api?.worldOf(on) : null;
+  return liveOf(api)?.place(m ? mapply(m, position) : position, m ? yaw + Math.atan2(m[8], m[10]) : yaw, pitch) ?? false;
+};
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -67,7 +76,7 @@ function peer(handle) {
 }
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../walk/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -140,7 +149,12 @@ try {
     value: (id, w) => P.ctx(w)?.sim.value(id) ?? null,
     stations: (ship, w) => P.ctx(w)?.sim.stationsOf(ship) ?? null,
     /** put a view's body somewhere: local to ship `on`, else world */
-    place: (w, on, position, yaw, pitch) => P.ctx(w).crew.place(on, position, yaw, pitch),
+    place: (w, on, position, yaw, pitch) => placeWalker(P.api(w), on, position, yaw, pitch),
+    /** view w's walker (walk's live session): its state */
+    walker: (w) => { const s = liveOf(P.api(w))?.state(); return s ? { mode: s.mode, ship: s.on ?? null } : null; },
+    live: (w) => liveOf(P.api(w)),
+    /** is extension id running in view w's stage */
+    ext: (w, id) => !!dbg[w].host.record(id)?.instance,
     /** the use prompt's verbs, as shown */
     verbs: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => ({ command: e.dataset.command, name: e.querySelector(".use-name")?.textContent ?? "", disabled: e.hasAttribute("data-disabled"), held: e.hasAttribute("data-held") })),
     text: (sel, w) => [...hosts[w].querySelectorAll(sel)].map((e) => e.textContent.trim()),
@@ -162,10 +176,10 @@ try {
       const l = Math.hypot(...d);
       return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
     },
-    /** the avatars sailing draws in a view: their world positions */
+    /** the avatars walk.people draws in a view: their world positions */
     avatars(w) {
       const out = [];
-      for (const g of dbg[w].viewport.layers.get("sailing") ?? []) for (const c of g.children) if (c.isGroup && c.visible && c.children.some((k) => k.isMesh)) out.push(c.position.toArray()); // an avatar has a body; the trim lines' group (looks.js) has only lines
+      for (const g of dbg[w].viewport.layers.get("walk.people") ?? []) for (const c of g.children) if (c.isGroup && c.visible && c.children.some((k) => k.isMesh)) out.push(c.position.toArray()); // an avatar has a body; the trim lines' group (looks.js) has only lines
       return out;
     },
     labels: (w) => [...hosts[w].querySelectorAll(".label")].map((e) => e.textContent.trim()).filter(Boolean),

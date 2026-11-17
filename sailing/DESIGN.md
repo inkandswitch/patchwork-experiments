@@ -1972,9 +1972,17 @@ both pass: those runs' first step had read the template's sea and wind
   of it on other points of sail. It isn't the heave thrust above (flat water
   fails too). Whether the check's bound should depend on her point of
   sail is a question for the lead.
-- *Sea 5: "F climbs the ladder: B is back on deck"* fails (B not on deck
-  after the climb). That is the walker's (N10's to replace), not diagnosed
-  here; it is in the follow-up log.
+- *Sea 5: "F climbs the ladder: B is back on deck"* failed (B not on deck
+  after the climb). That was the walker's (N10's to replace). Since N10
+  step 5 it passes on sea 5 (and sea 1): Climb is walk's, and lands you
+  at the ladder's top in one step (the old walker's timed climb, its
+  ladder state and its board() are gone). Moving it to walk first failed
+  on every sea, for a reason the old verb had already met: swimming by the
+  hull, the look lands on her side past the thin ladder, so a Climb
+  offered only on the ladder isn't offered. walk's Climb now answers a
+  look at the ladder or at the support it hangs on (walk spawn.js
+  `ladderFor`). What made the old walker's climb fail on sea 5 alone was
+  not established before its code went.
 
 So the claim is not met, and the remaining choices are the lead's
 (questions for the lead, 2026-11-16, lane/n6): whether a laid ship's anchor
@@ -2211,12 +2219,25 @@ a scene:part in index.js under "Sailing":
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
 | `sailing.sail` | a station under the ship | `{ raised, sheet }` 0..1 |
 | `sailing.jib` | a station under the ship (the jib, on the mast) | `{ sheet, held, furl }`: `sheet` 0 hard in .. 1 eased; `held` null (it tends itself) or the side its clew is made fast on, `"port"` \| `"starboard"`; `furl` 0..1 of it rolled away. Worked from its winches or the helm |
-| `sailing.winch` | a winch under the ship, one each side | `{ sail: "jib", side: "port" \| "starboard", stand: [x, y, z] }`: the sheet led to it, and where you stand to work it, in the winch's own frame; who stands at it is its `"station"` claim |
+| `sailing.winch` | a winch under the ship, one each side | `{ sail: "jib", side: "port" \| "starboard" }`: the sheet led to it; who stands at it is its `"station"` claim, and where is its `walk.stand` |
 | `sailing.anchor` | a station under the ship (the windlass) | `{ down, rode, at? }` (`rode`: metres of chain out; `at`: where the anchor lies, world, while it's down). The windlass writes `down` and `rode`; only the simulator writes `at`: it drops the anchor on the bottom under the bow, clears `at` when it's up, and drops it again where she is when `at` is further from her bow than her rode allows (she was moved, or copied, while nobody sailed) |
 | `sailing.mainsheet` | a station under the ship (the cockpit's traveller) | `{}`: where the ship's sail is trimmed and hoisted from (its values are the sail station's); who stands at it is its `"station"` claim |
 | `sailing.hook` | the anchor itself, under the ship | `{}`: drawn lying on the bottom at `at` while its windlass has it down, at the bow (its doc place) when it's up |
 | `sailing.ladder` | the ladder under the ship | `{}`: the way aboard from the water |
 | `sailing.float` | any object | `{}`: bobs and tilts with the waves where it's moored (each view, from the shared clock; no hold) |
+
+walk's traits (walk/DESIGN.md, "The traits"), which her parts write so
+people walk her in walk (since N10 step 5; parts.js PIECES, sloopObjects):
+
+| Trait | On | Value |
+|---|---|---|
+| `walk.support` | the hull | `{}`: walked in her own frame. The stock sloop is written one; a hull made a ship by hand becomes one when the first sailing part is put on her (parts.js `part`) |
+| `walk.moves` | the boom and sail (the rig) | `{ blocks: true }`: an obstacle where it's drawn |
+| `walk.moves` | the jib; the anchor | `{}`: passed through |
+| `walk.moves` | the wheel | `{ swept: "z" }`: the solid its turn about its axle sweeps |
+| `walk.stand` | the wheel, the mainsheet, the windlass, the mast (the sail's: the rig swings), each winch | `{ at, claim: "stand" }`, `at` in the piece's frame: STAND_OFF aft of the station's origin (0.6 m; the mainsheet 0.35), on what's drawn there (ship.js `standSpot`, `deckSurfaceAt`); a winch's across the well on the far side deck, facing it. The station body holds the piece's `"stand"` claim while you're there |
+| `walk.ladder` | the ladder | `{ top }`: INBOARD (0.5 m) in from its hook, on the deck (ship.js `ladderTop`) |
+| `walk.spawn` | "Spawn", an object of no model under the stock hull | `{}`: at the helm's stand spot, facing forward |
 
 Two other packages' traits ride on her companionway, written in the shapes
 those packages document (traits.js `SLIDE`, `EXIT`); sailing reads neither
@@ -2460,6 +2481,21 @@ ocean's height and can climb the ladder. Each view draws everyone else as a
 simple figure in their frame.
 
 ## Walking: a navmesh in the ship's frame
+
+*Since N10 step 5 (lane/n10) this is walk's: the bake, the walker and the
+checks moved to walk (walk/DESIGN.md, "Standing on supports"), generalised
+from a ship to any support, and sailing's copy, her `aboard` body, her
+avatars and her `crew` presence record are gone. What stays hers: the walk
+traits her parts write ("Traits (in the doc)"), Come aboard
+(`api.body.enter("walk", hull)`), and the `station` body, pushed over walk,
+its eye at the station's stand spot (her drawn frame · the spot placed in
+her by the doc · `at`, EYE = walk's BODY.eye up her up), holding the
+spot's `"stand"` claim; leaving it, walk stands you at P1 of that eye less
+EYE along her up, which is the stand spot. The HUD and the verbs read who
+is aboard from the top body and walk's `avatar` contribution (crew.js
+`viewerOf`). The text below is the design as it was built here, kept until
+step 6 moves it into walk's DESIGN, renamed; its decisions for step 5 are
+at the end of "Decisions in brief".*
 
 *Built: `navmesh.js` (the bake), `walker.js` (the walker), `navcheck.js`
 (the checks), crew.js's input adapter. It replaced the ray walker
@@ -3080,6 +3116,43 @@ marathons.
   thin of a 30 cm wall or a crate's side holds up a floor in the column
   outside, at its height there (a wall whose foot leans 1e-8 over the line:
   0.27 m, under its 0.30 top).
+
+- **Step 5 (N10): sailing walks in walk** (each decided unattended
+  (2026-11-17, lane/n10), for the lead):
+  - *The sail's stand spot is the mast's.* The rig swings (a drawn pose);
+    a stand spot is placed by the doc, but walk.people and the station
+    body draw it in the support's frame through its object's placement, and
+    the mast carries it, aft of the gooseneck on the cabin top, where the
+    halyard is worked.
+  - *Stand spots are written on what's drawn there* (ship.js `standSpot`:
+    `deckSurfaceAt` at the spot), so the eye a station puts EYE over the
+    spot is EYE over the deck, and walk's link for it lies within 1 mm of
+    it (walk's deck-12m.test.js). On a hull of another shape the same
+    offsets in the piece's frame land near its deck; walk's P1 puts you on
+    it when you leave.
+  - *The station's eye is EYE up her up from the spot*, not up the world's
+    Y, and walk lowers it the same way (walk Decision 34), so taking and
+    leaving a station on a heeled deck stands you where you were.
+  - *Her spawn is an object of its own*, "Spawn", no model, under the stock
+    hull at the helm's stand spot: walk enters a support at its spawn. A
+    hull fitted from the bin has none, and walk enters her at her first
+    stand spot.
+  - *A hull made a ship by hand becomes a support when the first sailing
+    part is put on her* (parts.js `part`): sailing writes `walk.support`
+    then. Before that she is part of the ground's bake (Q11 in walk's
+    DESIGN asks whether the Ship trait's adding should write it).
+  - *`sailing.winch` loses `stand`*: where you stand at a winch is its
+    `walk.stand`, one fact in one place. *The ladder's Climb is walk's*
+    (F, on `walk.ladder`, swimming within walk's reach of its foot):
+    sailing's "Climb aboard" verb and `crew.board` are gone; `sailing.ladder`
+    stays, as what makes it her ladder (her stations' list, the bin).
+  - *The mast is the object the rig hangs under with no station trait of
+    its own* (stations.js `sailOf`), not "no traits at all": the mast now
+    carries walk's stand spot. A row in stations.test.js fails on the old
+    rule.
+  - *What is the viewer doing* is read, never kept: crew.js `viewerOf`
+    over the top body, walk's `avatar` here and the station body's own
+    station. The presence rate stays play.js's (20 Hz while playing).
 
 ### As built
 

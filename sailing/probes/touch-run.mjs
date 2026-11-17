@@ -11,7 +11,7 @@
 //     asked for (scene/TOOLS.md Decisions 11);
 //  2. the stage's touch pad shows aboard's declared keys by what they do:
 //     Forward, Left, Back, Right in the pad's places, Run and Jump under
-//     "Aboard" (sailing labels its keys; the pad is scene's);
+//     "Walk" (walk's own declared keys; the pad is scene's);
 //  3. Forward held 0.6 s walks her (the walker's place on her moves);
 //  4. at the wheel, looking at it (no pointer under touch: the look is the
 //     eye's, scene/TOOLS.md Decisions 14), the use prompt offers the helm in
@@ -39,7 +39,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["sailing/dist/index.js", "water/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["sailing/dist/index.js", "water/dist/index.js", "scene/dist/index.js", "walk/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-touch-shots"));
 const SEED = Number(arg("--seed") ?? 1);
@@ -107,11 +107,11 @@ try {
   await until("window.__p.me('a')?.playing === true", 3000);
   await b.rest(300);
   let v = await js(VIEW);
-  check("1. a tap on the bar's Come aboard: walking her deck, and the pointer lock is never asked for", v.body === "aboard" && v.pointer.touch === true && v.pointer.locked === false && !(await js("document.pointerLockElement != null")) && (await js("window.__asks")) === 0, { v, asks: await js("window.__asks") });
+  check("1. a tap on the bar's Come aboard: walking her deck, and the pointer lock is never asked for", v.body === "walk" && v.pointer.touch === true && v.pointer.locked === false && !(await js("document.pointerLockElement != null")) && (await js("window.__asks")) === 0, { v, asks: await js("window.__asks") });
 
   // ─── 2. the pad ──────────────────────────────────────────────────────────
   const padAboard = await js(PAD);
-  check("2. the pad shows aboard's keys by what they do: Forward, Left, Back, Right in their places; Run and Jump under Aboard", JSON.stringify(padAboard) === JSON.stringify({ pad: ["up=Forward", "left=Left", "down=Back", "right=Right"], buttons: [["Aboard", "Run", "Jump"]] }), padAboard);
+  check("2. the pad shows walk's own declared keys by what they do: Forward, Left, Back, Right in their places; Run and Jump under Walk", JSON.stringify(padAboard) === JSON.stringify({ pad: ["up=Forward", "left=Left", "down=Back", "right=Right"], buttons: [["Walk", "Run", "Jump"]] }), padAboard);
   await shot("1-aboard");
 
   // ─── 3. Forward walks her ────────────────────────────────────────────────
@@ -156,7 +156,7 @@ try {
   await b.rest(300);
   v = await js(VIEW);
   const claim = (await P("doc()")).objects[ids.wheel].claims?.station ?? null;
-  check("6. Leave leaves the helm: walking again, the helm's claim gone, the pad aboard's again", (await P("me('a')")).station == null && v.body === "aboard" && !claim && JSON.stringify(await js(PAD)) === JSON.stringify(padAboard), { v, claim, pad: await js(PAD) });
+  check("6. Leave leaves the helm: walking again, the helm's claim gone, the pad aboard's again", (await P("me('a')")).station == null && v.body === "walk" && !claim && JSON.stringify(await js(PAD)) === JSON.stringify(padAboard), { v, claim, pad: await js(PAD) });
 
   // ─── 7. the windlass, by the prompt's buttons ────────────────────────────
   // (standing aft of it, facing forward: the eye's look tipped down until it rests on the windlass)

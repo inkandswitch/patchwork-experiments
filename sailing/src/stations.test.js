@@ -267,8 +267,8 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
       board: {},
       // the jib under the mast, and its winches by the cockpit (the starboard one under the port, as the part puts them)
       jib: { traits: { "sailing.jib": { sheet: 0.5, held: null, furl: 0 } } },
-      winchP: { traits: { "sailing.winch": { sail: "jib", side: "port", stand: [0.73, -0.51, 0] } } },
-      winchS: { traits: { "sailing.winch": { sail: "jib", side: "starboard", stand: [-0.73, -0.51, 0] } } },
+      winchP: { traits: { "sailing.winch": { sail: "jib", side: "port" } } },
+      winchS: { traits: { "sailing.winch": { sail: "jib", side: "starboard" } } },
     },
     // the boom and sail hang from the mast, as the sloop's parts put them
     parents: new Map([["wheel", "hull"], ["rig", rehung ? "hull" : "mast"], ["sheet", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"], ["jib", "mast"], ["winchP", "hull"], ["winchS", "winchP"]]),
@@ -338,7 +338,6 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
         s.leave = leave;
         return leave;
       },
-      board: vi.fn(),
       start: vi.fn(),
     },
   };
@@ -685,6 +684,14 @@ describe("the commands", () => {
     expect(s.cmd("haul").state("board", near)).toBe(null);
   });
 
+  it("the mast carrying walk's stand spot (the sail's: parts.js) is still the mast: another package's trait is no station", () => {
+    const s = stage();
+    const plain = s.offered("mast", s.at("mast", 0.8));
+    s.scene.objects.mast = { ...s.scene.objects.mast, traits: { "walk.stand": { at: [0, 0.38, 0.7], claim: "stand" } } };
+    expect(plain.map((v) => v[0])).toContain("halyard");
+    expect(s.offered("mast", s.at("mast", 0.8))).toEqual(plain);
+  });
+
   it("the rig rehung under the hull beside the mast: only the mast's tag (the bin's) makes it the mast; a table never is", () => {
     const s = stage({ rehung: true });
     // untagged, with nothing of the sail's under it: just a thing aboard
@@ -1010,19 +1017,6 @@ describe("the commands", () => {
     expect(id).toBe("windlass");
     // where it lies is the simulator's to work out and write
     expect(f).toEqual({ down: true, rode: RODE });
-  });
-
-  it("the ladder: Climb aboard only when you're swimming within reach, looking at it or the hull", () => {
-    const s = stage();
-    const near = s.look([2.4, 0.3, 0.4]);
-    expect(s.cmd("climb").state("ladder", near)).toBe(null);
-    s.me.swimming = true;
-    expect(s.cmd("climb").state("ladder", near)).toEqual({});
-    expect(s.cmd("climb").state("hull", near)).toEqual({});
-    expect(s.cmd("climb").state("ladder", s.look([8, 0.3, 0.4]))).toBe(null);
-    expect(s.cmd("climb").state("wheel", near)).toBe(null);
-    s.cmd("climb").run("ladder");
-    expect(s.ctx.crew.board).toHaveBeenCalledWith("hull");
   });
 
   it("Come aboard: Enter, and a button on the stage's bar of tools in every body (show world); for the scene, until you have (S2)", () => {
