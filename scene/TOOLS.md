@@ -1310,6 +1310,26 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   gains the removed classes (a dead `.controls-embed` rule in styles.css
   went). Full suite 2048/2048; editor-run 90/90. The real-Patchwork checks
   are still owed (integrator's build and sync).
+- **Sidebar, integrated (2026-11-17, merge 50a6b379 into scene-stage).**
+  A clean merge (scene-stage's N6 docs since the lane's own merge touch
+  no file of the lane's). Scene suite 2048/2048 (119 files; one vitest
+  `onTaskUpdate` RPC timeout under load, no failure); arena 56, doom 86,
+  tabletop 569 (their probes only changed). Built and pushwork-synced
+  (clean on the first sync). Local probes on the built tool: editor-run
+  90/90, xdnd-run 70/70, dice.mjs 60/60 (55/60 on a first run under load:
+  the d20 dropped on the table landed on the ground; 60/60 on the rerun,
+  nothing in the merge touches a part's drop). Real Patchwork (shots
+  recovered/publish/shots/sidebar/): sections-check 22/22 on the Geometry
+  showcase, after two fixes to the check itself, never run before (the
+  section head is now scrolled into view before it's pressed, as
+  xdnd-probe's `sectionHead` does: the sections sit below the fields; and
+  the drag from Patchwork's sidebar picks a titled item, not the sidebar's
+  untitled new-doc button, which is draggable but carries only
+  `application/x-patchwork-new-doc`); realcheck-editbody 8/8; grip-check
+  8/8; enter-check 13/13 on the third run (scratch clones 2xwN3KcU…,
+  B2dDw4BB…, 4Ur934X2…; the first two 12/13, see FOLLOWUPS "Sidebar
+  integrated"). No doc shape changed: nothing republished, the folder
+  untouched. The lead's questions in Decisions 16 to 18 stand.
 
 ## What it costs
 
