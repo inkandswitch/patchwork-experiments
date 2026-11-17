@@ -315,7 +315,7 @@ describe("the bar of tools in every body", () => {
           s.local.swap((m) => ({ ...m, playing }));
           await s.settle();
           for (const id of path) expect(api.body.enter(id)).toBe(true);
-          api.view.edit(edit);
+          s.edit(edit);
           await s.settle();
           expect(s.local.get().body.id).toBe(body);
           const want = { tools: edit ? ["snap"] : [], world: playing ? [] : ["play"], hidden: false };
@@ -328,7 +328,7 @@ describe("the bar of tools in every body", () => {
   });
 
   it("clicking the world's button runs it, not editing; it goes when it no longer applies and the bar stays", async () => {
-    s.api("t.game").view.edit(false);
+    s.edit(false);
     await s.settle();
     s.root.querySelector('.toolbar .world [data-command="play"]').click();
     expect(log).toEqual(["play"]);
@@ -339,7 +339,7 @@ describe("the bar of tools in every body", () => {
 
   it("a plain scene, looking, has no bar: nothing declares a world command", async () => {
     await s.uninstall("t.game");
-    s.api("scene.toolbar").view.edit(false);
+    s.edit(false);
     await s.settle();
     expect(edge().hidden).toBe(true);
   });

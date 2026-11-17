@@ -12,7 +12,7 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
  */
 async function mount(doc = {}) {
   const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }], doc });
-  const api = s.api("scene.frame");
+  const api = s.facet("scene.frame");
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();
   api.camera = camera.rig;
@@ -53,12 +53,12 @@ describe("scene.frame: commands", () => {
     expect(c.state(null, {}).disabled).toBe(true);
     expect(run(s, "set-home")).toBe(false);
     const camera = fakeCamera();
-    s.api("scene.frame").camera = camera.rig;
+    s.facet("scene.frame").camera = camera.rig;
     expect(c.state(null, {}).disabled).toBe(false);
     expect(run(s, "set-home")).toBe(true);
     expect(s.doc().view.start.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
     expect(s.local.get().edits.undo).toBe("Set home view");
-    expect(s.api("scene.frame").undo()).toBe(true);
+    expect(s.facet("scene.frame").undo()).toBe(true);
     // (a scene made new starts people holding the editor: that was there before)
     expect(s.doc().view.start).toEqual({ edit: true });
     s.unmount();

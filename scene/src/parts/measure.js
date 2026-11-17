@@ -10,12 +10,16 @@
 //   - a click places the first point, then the second, which hands the two
 //     anchors to scene.dimensions (its "add" command), which saves the
 //     dimension and selects it;
-// It draws only the preview; the dimensions extension draws what's saved.
+// It draws only the preview; the dimensions part draws what's saved. It
+// measures in the focus stage (api.focus()), made again there wherever the
+// focus goes; one held as the focus moves goes on where it was picked up
+// until it's put down.
 
 import css from "./measure.css?inline";
 import { distance, makeAnchor } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
+import { perFocus } from "./per-focus.js";
 
 /** The extension that owns doc.dimensions (and saves what's measured). */
 export const DIMENSIONS = "scene.dimensions";
@@ -54,17 +58,12 @@ export function anchorFor(hit, objects, worldOf) {
   return makeAnchor(hit.point, id && frame ? id : null, id && frame ? frame : null);
 }
 
-export function create(api) {
+/** Measuring in one focus stage: `api` is its facet, `view` the view plugin's api, `hint` the view's hint. */
+function measureAt(api, view, hint) {
   const { THREE } = api;
-  api.style(css);
   const layer = api.world({ onTop: true });
   layer.userData.noPick = true;
   const labels = api.labels();
-  const overlay = api.overlay();
-  const hint = document.createElement("div");
-  hint.className = "measure-hint";
-  hint.hidden = true;
-  overlay.append(hint);
 
   let holding = false; // set while it's the held tool
   let a = null; // the first point's anchor
@@ -72,7 +71,7 @@ export function create(api) {
   let pending = null; // the latest pointer position waiting for a frame
   let frame = null; // the cancel of the frame it waits for
 
-  const units = () => api.pref("units", "m");
+  const units = () => view.pref("units", "m");
   const worldOf = (id) => api.worldOf(id);
   const color = (rgb, fallback) =>
     Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback);
@@ -185,12 +184,12 @@ export function create(api) {
     }
     const first = a;
     const dimId = api.newId("d");
-    const saved = api.run({ ext: DIMENSIONS, command: "add", value: { id: dimId, a: first, b: anchor } });
+    const saved = view.run({ ext: DIMENSIONS, command: "add", value: { id: dimId, a: first, b: anchor } });
     a = null;
     hover = null;
     draw();
     if (!saved) {
-      api.notify("Dimensions aren't on here, so the measurement wasn't saved.", "error");
+      view.notify("Dimensions aren't on here, so the measurement wasn't saved.", "error");
       return null;
     }
     return dimId;
@@ -221,7 +220,7 @@ export function create(api) {
       holding = false;
       cancelFrame();
       reset();
-      api.cursor(null);
+      view.cursor(null);
       draw();
     },
   };
@@ -230,17 +229,17 @@ export function create(api) {
   function start() {
     reset();
     holding = true;
-    api.cursor("crosshair");
+    view.cursor("crosshair");
     draw();
     return handlers;
   }
 
-  // the pointer left the view: no hover point
-  api.listen(overlay.parentElement ?? overlay, "pointerleave", () => {
+  /** the pointer left the view: no hover point */
+  function left() {
     if (!holding) return;
     cancelFrame();
     setHover(null);
-  });
+  }
 
   const commands = [
     {
@@ -257,20 +256,41 @@ export function create(api) {
 
   return {
     commands,
-    update(scene, local, prev, view) {
+    left,
+    update(scene, local, prev, v) {
       if (!holding) return;
       const was = prev?.view;
       // the first point follows its object; the units or theme may have changed
       const moved = a?.objectId && scene !== prev?.scene;
-      if (!was || moved || view.prefs !== was.prefs || view.theme !== was.theme) draw();
+      if (!was || moved || v.prefs !== was.prefs || v.theme !== was.theme) draw();
     },
     dispose() {
       cancelFrame();
-      clearLayer();
     },
     // for tests
     get state() {
       return { held: holding, a, hover };
+    },
+  };
+}
+
+export function create(api) {
+  api.style(css);
+  const overlay = api.overlay();
+  const hint = document.createElement("div");
+  hint.className = "measure-hint";
+  hint.hidden = true;
+  overlay.append(hint);
+  const at = perFocus(api, (f) => measureAt(f, api, hint));
+  api.listen(overlay.parentElement ?? overlay, "pointerleave", () => at()?.left());
+  return {
+    get commands() {
+      return at()?.commands ?? [];
+    },
+    update: (...args) => at()?.update(...args),
+    // for tests
+    get state() {
+      return at()?.state ?? { held: false, a: null, hover: null };
     },
   };
 }

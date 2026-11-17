@@ -53,7 +53,7 @@ describe("scene.axes", () => {
 
   it("draws the triad after the main pass, in a scissored corner, with its labels on screen", async () => {
     const s = await mount();
-    const api = s.api("scene.axes");
+    const api = s.facet("scene.axes");
     // the camera as the stage hands it out, in its frame (no extension holds the three.js camera)
     api.camera = { ...api.camera, get: () => ({ position: [3, 2, 4], target: [0, 0, 0], fov: 50, up: [0, 1, 0] }) };
     const hooks = [...s.debug.viewport.afterHooks];

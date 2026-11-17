@@ -30,9 +30,9 @@ const EXTENSIONS = [
   holder("t.table", ["t.table"]),
   holder("t.box", ["t.box"]),
   holder("t.card", ["t.card"]),
-  // general parts: the view's, run in the focus stage
-  { meta: { id: "t.general-1" }, module: { create: () => ({ input: { press: () => null } }) } },
-  { meta: { id: "t.general-2" }, module: { create: () => ({ input: { press: () => null } }) } },
+  // view plugins: the view's, seated at the focus stage
+  { meta: { id: "t.view-1", type: "scene:view" }, module: { create: () => ({ input: { press: () => null } }) } },
+  { meta: { id: "t.view-2", type: "scene:view" }, module: { create: () => ({ input: { press: () => null } }) } },
 ];
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const thing = (trait, extra = {}) => object({ name: trait, ...(trait ? { traits: { [trait]: {} } } : {}), ...extra });
@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe("the chain across links (I8)", () => {
-  it("every hit × every focus × a widget or not: inner segments first, out to the outermost, each once, none from a pin, then the focus's general parts", async () => {
+  it("every hit × every focus × a widget or not: inner segments first, out to the outermost, each once, none from a pin, then the view plugins, seated at the focus", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
     const G = repo.add(emptyScene({ title: "G", traits: { "t.g": {} }, objects: { box: thing("t.box"), card: thing("t.card", { parent: "box" }) }, order: ["box", "card"] }));
@@ -69,11 +69,11 @@ describe("the chain across links (I8)", () => {
     let checked = 0;
     for (const focus of foci) {
       expect(view.focusOn(focus)).toBe(true);
-      // (the general parts start again where the focus went)
-      await until(() => view.focusStage().generals().length === 2 && view.stages().every((st) => st === view.focusStage() || !st.generals().length));
+      // (the view plugins sit where the focus went, and nowhere else; the editor's hand, scene.edit, is one)
+      expect(view.stages().every((st) => st === view.focusStage() || !st.seated().length)).toBe(true);
       const f = view.focusStage();
-      const generals = f.generals().map((ext) => keyOf(f.n, ext));
-      expect(generals).toEqual(["t.general-1", "t.general-2"].map((ext) => keyOf(f.n, ext)));
+      const generals = f.seated().map((ext) => keyOf(f.n, ext));
+      expect(generals).toEqual(["t.view-1", "t.view-2", "scene.edit"].map((ext) => keyOf(f.n, ext)));
       for (const hitKey of hits)
         for (const widget of [null, WIDGET]) {
           const { order } = view.chainFor({ hit: hitKey == null ? null : { id: hitKey, point: [0, 0, 0], distance: 1 }, widget });
@@ -82,7 +82,7 @@ describe("the chain across links (I8)", () => {
           expect(new Set(order).size, where).toBe(order.length);
           const rest = widget ? order.slice(1) : order;
           if (widget) expect(order[0], where).toBe(WIDGET.owner);
-          // the focus's general parts close it, every one
+          // the view plugins close it, every one
           expect(rest.slice(-generals.length), where).toEqual(generals);
           // (the widget's owner, first, comes again nowhere)
           const segs = rest.slice(0, -generals.length);

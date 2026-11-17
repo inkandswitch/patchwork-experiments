@@ -66,7 +66,7 @@ describe("who's here, across links", () => {
   it("seated at the game linked into a host: someone viewing the game alone sees them seated, not looking", async () => {
     const { s, repo, game, time, session } = await setup();
     const alone = await second(repo, game, time);
-    await time.until(() => alone.debug()?.host.instanceOf("scene.body") && rowOf(alone.el, session) != null, { what: "the game's chip listing ana" });
+    await time.until(() => alone.debug()?.view.plugins.instanceOf("scene.body") && rowOf(alone.el, session) != null, { what: "the game's chip listing ana" });
     expect(rowOf(alone.el, session)).not.toContain("player 1"); // (the harness's start: Edit)
     expect(s.debug.view.enterBody("t.sit", null)).toBeTruthy();
     await time.until(() => rowOf(alone.el, session)?.includes("player 1"), { what: "ana seated, on the game's chip" });
@@ -76,7 +76,7 @@ describe("who's here, across links", () => {
   it("entering the game moves the focus, and someone viewing the host still sees what they're doing", async () => {
     const { s, repo, time, session } = await setup();
     const host = await second(repo, s.handle, time);
-    await time.until(() => host.debug()?.host.instanceOf("scene.body"), { what: "the host's chip" });
+    await time.until(() => host.debug()?.view.plugins.instanceOf("scene.body"), { what: "the host's chip" });
     expect(s.debug.view.enterBody("t.sit", null)).toBeTruthy();
     await time.until(() => rowOf(host.el, session)?.includes("player 1"), { what: "ana seated, on the host's chip" });
     expect(s.debug.view.enter(["L"])).toBeTruthy();

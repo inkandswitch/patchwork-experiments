@@ -129,9 +129,9 @@ function create(api) {
 
   function show(ev) {
     close();
+    // (the event is the focus stage's, the view's plugins being seated there: its hit is that stage's element)
     const target = ev.hit?.id ?? null;
     const hit = ev.hit ? { id: ev.hit.id, point: ev.hit.point ?? null, distance: ev.hit.distance ?? null } : null;
-    const ctx = api.context(hit);
     keys = resolverState(api);
     menuHit = hit;
     // The pointer's path (STAGE.md, "The input chain"): a section per stage on it,
@@ -139,23 +139,16 @@ function create(api) {
     // with its name; then the scene's, each stage's in its own
     // context. The focus is always on the path, so its scene (Frame all, Set
     // home view) is offered wherever the pointer is.
-    const path = typeof api.path === "function" ? api.path({ pointer: true }) : null;
+    const path = api.path({ pointer: true });
     const sections = [];
-    let forScene;
-    if (path?.length) {
-      for (const seg of path) {
-        const l = seg.pointed();
-        const t = l?.id ?? null;
-        if (t == null || !seg.scene().objects?.[t]) continue;
-        const own = menuEntries(seg.collect("commands"), t, seg.context(l)).forObject;
-        if (own.length) sections.push({ target: t, name: seg.nameOf(t), hit: l, entries: own });
-      }
-      forScene = path.flatMap((seg) => menuEntries(seg.collect("commands"), null, seg.context(null)).forScene);
-    } else {
-      const m = menuEntries(api.collect("commands"), target != null && ctx.scene.objects?.[target] ? target : null, ctx);
-      if (m.forObject.length) sections.push({ target, name: api.nameOf(target), hit, entries: m.forObject });
-      forScene = m.forScene;
+    for (const seg of path) {
+      const l = seg.pointed();
+      const t = l?.id ?? null;
+      if (t == null || !seg.scene().objects?.[t]) continue;
+      const own = menuEntries(seg.collect("commands"), t, seg.context(l)).forObject;
+      if (own.length) sections.push({ target: t, name: seg.nameOf(t), hit: l, entries: own });
     }
+    const forScene = path.flatMap((seg) => menuEntries(seg.collect("commands"), null, seg.context(null)).forScene);
     const forObject = sections.flatMap((x) => x.entries);
     if (!forObject.length && !forScene.length) return false;
     const el = document.createElement("div");

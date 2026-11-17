@@ -60,7 +60,8 @@ export default {
     let key = "";
 
     function render(scene) {
-      const cards = legendCards(scene, (id) => api.content(id)?.extras?.legend ?? null, (id) => api.nameOf(id));
+      const f = api.focus();
+      const cards = f ? legendCards(scene, (id) => f.content(id)?.extras?.legend ?? null, (id) => f.nameOf(id)) : [];
       const next = cards.map(({ id, model: m }) => `${id}|${m.label}|${m.gradient}|${m.tinted}|${m.ticks.map((t) => t.text).join(",")}`).join("\n");
       if (next === key) return;
       key = next;

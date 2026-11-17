@@ -30,7 +30,13 @@ export function keyOf(n, id) {
   return n === 0 && !s.startsWith(SEP) ? s : `${SEP}${n}${SEP}${s}`;
 }
 
-/** The (stage, id) a key names: { n, id }, or null for a malformed key. */
+/**
+ * The key of view plugin `id` at the router, the drawer and the cursor: no
+ * stage's (parseKey answers null), so nothing a stage owns is ever its.
+ */
+export const viewKey = (id) => `${SEP}view${SEP}${String(id)}`;
+
+/** The (stage, id) a key names: { n, id }, or null for a malformed key (or a view plugin's). */
 export function parseKey(key) {
   if (typeof key !== "string") return null;
   if (!key.startsWith(SEP)) return { n: 0, id: key };

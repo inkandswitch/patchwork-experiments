@@ -5,7 +5,7 @@
 //
 // The harness is exhaustive over the view's state, not over sequences: the
 // view's focus and selection are its whole state as far as selection goes
-// (the general parts' placement is a function of the focus, checked), so
+// (where the view plugins are seated is a function of the focus, checked), so
 // every reachable state × every event covers every sequence of any length.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,28 +25,28 @@ import toolbar from "../parts/toolbar.js";
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const J = JSON.stringify;
 
-/** Trait parts that record what reaches them, a general one (it runs at the focus), and Enter (scene.focus). */
+/** Trait parts that record what reaches them, a view plugin (seated at the focus), and Enter (scene.focus). */
 function extensions(log) {
   const input = (who) => ({ press: (ev) => (log.push(`${who} ${ev.hit?.id ?? "-"}`), null), click: (ev) => (log.push(`click ${who} ${ev.hit?.id ?? "-"}`), null) });
   return [
     { meta: { id: "t.card", traits: ["t.card"] }, module: { create: () => ({ input: input("t.card") }) } },
     { meta: { id: "t.host", traits: ["t.host"] }, module: { create: () => ({ input: input("t.host") }) } },
-    { meta: { id: "t.general" }, module: { create: () => ({ input: input("t.general") }) } },
+    { meta: { id: "t.general", type: "scene:view" }, module: { create: () => ({ input: input("t.general") }) } },
     { meta: { id: "scene.focus" }, module: focusPart },
   ];
 }
 
 /**
- * Parts that hold something (STAGE.md, "Bodies"): a general one offering a body
- * (as walk does), a general one offering a tool (as Measure does), and the
+ * Parts that hold something (STAGE.md, "Bodies"): a view plugin offering a body
+ * (as walk does), a view plugin offering a tool (as Measure does), and the
  * host's trait part offering a seat. Each counts its starts.
  */
 function holders(started) {
   const count = (id) => (started[id] = (started[id] ?? 0) + 1);
   const body = (id) => ({ id, label: id, enter: () => ({ input: {} }) });
   return [
-    { meta: { id: "t.walk" }, module: { create: () => (count("t.walk"), { bodies: [body("t.walk")] }) } },
-    { meta: { id: "t.measure" }, module: { create: () => (count("t.measure"), { commands: [{ id: "measure", name: "Measure", tool: {}, run: () => ({ press: () => null }) }] }) } },
+    { meta: { id: "t.walk", type: "scene:view" }, module: { create: () => (count("t.walk"), { bodies: [body("t.walk")] }) } },
+    { meta: { id: "t.measure", type: "scene:view" }, module: { create: () => (count("t.measure"), { commands: [{ id: "measure", name: "Measure", tool: {}, run: () => ({ press: () => null }) }] }) } },
     { meta: { id: "t.seat", traits: ["t.host"] }, module: { create: () => (count("t.seat"), { bodies: [body("t.seat")] }) } },
   ];
 }
@@ -148,12 +148,12 @@ function check(m, label) {
   // the focus is a stage that acts, and so is every stage on the way to it
   for (let i = 0; i <= st.focus.length; i++) expect(view.stageAt(st.focus.slice(0, i)), why(`a stage acts at ${J(st.focus.slice(0, i))}`)).not.toBe(null);
   // each stage sees its own element of the selection, and never where the focus is: not in the view's
-  // value, nor in a way to leave (the view's), nor what moving the focus closed (a general part's alone)
+  // value, nor in a way to leave (the view's)
   for (const x of view.stages()) {
     const api = x.debug.host.record(x.path.length ? "t.card" : "t.host")?.api;
     expect(api.view.get().selected ?? null, why(`stage ${J(x.path)} sees its element`)).toBe(elementOf(st.selected, x.path));
     expect("focus" in api.view.get(), why("no stage sees the focus")).toBe(false);
-    expect(["leave", "reopened"].filter((k) => k in api.view), why("a stage's view has no way out and no reopen")).toEqual([]);
+    expect("leave" in api.view, why("a stage's view has no way out")).toBe(false);
   }
   return st;
 }
@@ -167,11 +167,11 @@ const projections = (view) =>
     }),
   );
 
-/** The general parts run in the focus stage, and nowhere else. */
-const generalsAt = (view) => view.stages().filter((x) => x.generals().length).map((x) => x.path.join("/"));
+/** The view plugins are seated at the focus stage, and nowhere else. */
+const seatedAt = (view) => view.stages().filter((x) => x.seated().length).map((x) => x.path.join("/"));
 async function placed(view) {
   const want = view.atom.get().focus.join("/");
-  await until(() => J(generalsAt(view)) === J([want]) && view.focusStage().debug.host.instanceOf("scene.focus") && view.focusStage().debug.host.instanceOf("t.general"), 2000);
+  await until(() => J(seatedAt(view)) === J([want]) && ["scene.focus", "t.general"].every((id) => view.focusStage().seated().includes(id)), 2000);
 }
 
 let s = null;
@@ -187,7 +187,7 @@ describe("H10 across docs: the selection is always an element of the focus stage
     const m = await mountNested();
     s = m.s;
     const { view } = m;
-    view.setEditing(true);
+    s.edit(true);
     const writes = [spy(s.handle), spy(m.b), spy(m.c)].map((log) => () => log.filter((x) => x === "change"));
     const evs = events(m);
     const key = (st) => J([st.focus, st.selected]);
@@ -200,7 +200,7 @@ describe("H10 across docs: the selection is always an element of the focus stage
         // reach `from` by the view's own moves, then the event; the focus moving shows no stage anything but
         // its element of the selection
         // (an Escape with nothing to clear or leave puts the editor down: picked up again for every event)
-        view.setEditing(true);
+        s.edit(true);
         const seenBefore = projections(view);
         view.focusOn(from.focus);
         await placed(view);
@@ -231,15 +231,16 @@ describe("H10 across docs: the selection is always an element of the focus stage
 });
 
 describe("Enter and Leave", () => {
-  it("Enter moves the general parts into the linked doc's stage; Leave moves them back; a repeat, a pin and a closed link don't", async () => {
+  it("Enter seats the view plugins at the linked doc's stage, Leave seats them back, and they never start again; a repeat, a pin and a closed link don't", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
     const { view } = m;
     const host = s.api("t.host");
-    expect(generalsAt(view)).toEqual([""]);
+    expect(seatedAt(view)).toEqual([""]);
     // Enter's verb says what each link does
-    const enterOf = (id) => view.stage(0).debug.host.instanceOf("scene.focus").commands[0].state(id);
+    const plugins = ["scene.focus", "t.general"].map((id) => s.instance(id));
+    const enterOf = (id) => s.instance("scene.focus").commands[0].state(id);
     expect(enterOf("table")).toBe(null);
     expect(enterOf("L").disabled).toBeFalsy();
     expect(enterOf("R")).toMatchObject({ disabled: true, title: expect.stringMatching(/repeat/) });
@@ -254,20 +255,19 @@ describe("Enter and Leave", () => {
     expect(host.view.enter("L")).toBe(true);
     expect(view.atom.get().focus).toEqual(["L"]);
     await placed(view);
-    expect(generalsAt(view)).toEqual(["L"]);
-    // the camera came along: the general parts started in B (autoframe among them) find it placed and leave
-    // it be; a stage's part learns nothing of the move (B's, or the host's: sailing's quarter view still waits
-    // for a camera nobody placed)
-    const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), stageOf(view, "L").debug.host.record("scene.focus").api.camera.touched()];
-    expect(touched()).toEqual([false, false, true]);
-    // what the doc runs is untouched (H1): only the general parts moved
-    const traitRun = (p) => stageOf(view, p).debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id);
+    expect(seatedAt(view)).toEqual(["L"]);
+    // the camera came along, and nobody learns it was placed: not a stage's part (B's, or the host's: sailing's
+    // quarter view still waits for a camera nobody placed), nor a view plugin (scene.autoframe knows the focus moved)
+    const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), s.facet("scene.focus").camera.touched()];
+    expect(touched()).toEqual([false, false, false]);
+    // what the doc runs is untouched (H1): only where the view plugins sit moved
+    const traitRun = (p) => stageOf(view, p).debug.host.running().map((r) => r.id);
     expect(traitRun("")).toEqual(["t.host"]);
     expect(traitRun("L")).toEqual(["t.card"]);
     // deeper, then the trail's way out, then Leave
     expect(apiIn(m, "L").view.enter("M")).toBe(true);
     await placed(view);
-    expect(generalsAt(view)).toEqual(["L/M"]);
+    expect(seatedAt(view)).toEqual(["L/M"]);
     const trail = view.root.querySelector(".stage-trail");
     expect([...trail.querySelectorAll(".trail-crumb, .trail-here")].map((e) => e.textContent)).toEqual(["A", "B", "C"]);
     trail.querySelector(".trail-crumb").click(); // "A": out to the scene itself
@@ -278,10 +278,9 @@ describe("Enter and Leave", () => {
     expect(view.leave()).toBe(true);
     expect(view.leave()).toBe(false);
     await placed(view);
-    expect(generalsAt(view)).toEqual([""]);
-    // a general part, the view's own, is told what the move closed of its; a stage's part isn't
-    expect("reopened" in s.api("scene.focus").view).toBe(true);
-    expect("reopened" in host.view).toBe(false);
+    expect(seatedAt(view)).toEqual([""]);
+    // the same instances all along
+    expect(["scene.focus", "t.general"].map((id) => s.instance(id))).toEqual(plugins);
   });
 
   it("the focus leaves a link that goes, is pinned, or stops acting there; the selection goes with it", async () => {
@@ -330,15 +329,15 @@ describe("Enter and Leave", () => {
     try {
       const ov = other.debug.view;
       await until(() => stageOf(ov, "L/M")?.debug.host.instanceOf("t.card"), 3000);
-      const runs = (v) => J(v.stages().map((x) => [x.path, x.role, x.debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id)]));
-      const before = { mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, generals: generalsAt(ov) };
+      const runs = (v) => J(v.stages().map((x) => [x.path, x.role, x.debug.host.running().map((r) => r.id)]));
+      const before = { mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, seated: seatedAt(ov) };
       const writes = [spy(s.handle), spy(m.b), spy(m.c)];
       s.api("t.host").view.enter("L");
       apiIn(m, "L").view.enter("M");
       apiIn(m, "L/M").view.select("piece");
       await placed(m.view);
       expect(m.view.atom.get().selected).toEqual(["L", "M", "piece"]);
-      expect({ mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, generals: generalsAt(ov) }).toEqual(before);
+      expect({ mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, seated: seatedAt(ov) }).toEqual(before);
       expect(ov.atom.get().selected).toBe(null);
       expect(writes.map((w) => w.filter((x) => x === "change"))).toEqual([[], [], []]);
     } finally {
@@ -358,9 +357,9 @@ describe("surfaces across docs", () => {
     s = await mountStage({ repo, extensions: [HOST, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug, 3000);
-    view.setEditing(true);
+    s.edit(true);
     expect(s.api("t.host").view.enter("L")).toBe(true);
-    await until(() => stageOf(view, "L").debug.host.instanceOf("scene.toolbar"), 2000);
+    await until(() => stageOf(view, "L").seated().includes("scene.toolbar"), 2000);
     const labels = () => [...view.root.querySelectorAll(".toolbar button")].map((x) => x.textContent);
     await until(() => labels().includes("Ring"), 2000);
     const before = labels();
@@ -389,7 +388,7 @@ describe("the bar of tools across docs, not editing", () => {
     s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug.host.instanceOf("t.game"), 3000);
-    view.setEditing(false);
+    s.edit(false);
     const buttons = (cluster) => [...view.root.querySelectorAll(`.toolbar .${cluster} button`)];
     const labels = (cluster) => buttons(cluster).map((x) => x.textContent);
     await until(() => J(labels("world")) === J(["Ring"]), 2000);
@@ -408,7 +407,7 @@ describe("the bar of tools across docs, not editing", () => {
 });
 
 describe("the drawer follows the focus", () => {
-  it("the inspector's pane open as the focus moves opens again inside, its tree on the linked doc's objects; link rows say what they are and enter", async () => {
+  it("the inspector's pane open as the focus moves stays open, its tree on the linked doc's objects; link rows say what they are and enter", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
     const c = repo.add(emptyScene({ title: "C", objects: { piece: object({ name: "Piece" }) }, order: ["piece"] }));
@@ -417,13 +416,13 @@ describe("the drawer follows the focus", () => {
     s = await mountStage({ repo, extensions: [{ meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.inspector" }, module: inspector }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug && s.instance("scene.focus") && view.linkState(["P"])?.open, 3000);
-    view.setEditing(true);
+    s.edit(true);
     s.instance("scene.inspector").tab.open();
     await settle();
     const rows = () => [...view.root.querySelectorAll(".scene-outline .object-row")].map((li) => [li.dataset.id, li.querySelector(".link-mark")?.textContent ?? null, !!li.querySelector(".enter-link")]);
     await until(() => J(rows()) === J([["table", null, false], ["L", "linked", true], ["P", "fixed", false]]), 2000).catch(() => {});
     expect(rows()).toEqual([["table", null, false], ["L", "linked", true], ["P", "fixed", false]]);
-    // its Enter goes in; the tab opens again there, on B's objects
+    // its Enter goes in; the tab stays, now on B's objects
     view.root.querySelector('.object-row[data-id="L"] .enter-link').click();
     expect(view.atom.get().focus).toEqual(["L"]);
     await until(() => J(rows()) === J([["card", null, false], ["M", "linked", true]]), 2000).catch(() => {});
@@ -440,8 +439,9 @@ describe("the drawer follows the focus", () => {
 });
 
 describe("what the viewer holds goes on across a focus move", () => {
-  // A general part holding something (a body, the held tool) finishes it where it was: the view's move
-  // takes H2's busy half (host.setGeneral). Its successor at the focus offers the same; it offers nothing.
+  // A view plugin never starts again; what it holds through a facet (a body, the held tool) it finishes
+  // where it was: that seat lingers, offering nothing, until it lets go (stage.js unseat), and the new
+  // focus's seat offers the same.
   // ("edit": Look holding the editor, which is a hand, not a body)
   const BODIES = ["look", "edit", "t.walk", "t.seat"];
   const MOVES = [
@@ -453,7 +453,7 @@ describe("what the viewer holds goes on across a focus move", () => {
   const bodyId = (view) => (editing(view.atom.get()) ? "edit" : (view.atom.get().body?.id ?? null));
   const offered = (view, name, id) => view.collect(name).flatMap((x) => x.value).filter((v) => v?.id === id).length;
 
-  it("every body × every move: the body stays, the walk part holding it isn't started again, and nothing is offered twice", async () => {
+  it("every body × every move: the body stays, the walk plugin is never started again, its seat holding the body lingers, and nothing is offered twice", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const body of BODIES) {
       for (const [label, from, to] of MOVES) {
@@ -464,34 +464,29 @@ describe("what the viewer holds goes on across a focus move", () => {
         const name = `${body} × ${label}`;
         expect(view.focusOn(from), name).toBe(true);
         await placed(view);
-        await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 2000);
-        view.setEditing(body === "edit");
+        await until(() => s.instance("t.walk"), 2000);
+        s.edit(body === "edit");
         expect(view.enterBody(body === "edit" ? "look" : body), name).toBe(true);
         expect(bodyId(view), name).toBe(body);
-        const walks = started["t.walk"];
         const holder = body === "t.walk" ? view.focusStage() : null;
         expect(view.focusOn(to), name).toBe(true);
         await placed(view);
-        await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 2000);
         await settle();
         // the body is the one entered, held by the same instance as before
         expect([name, bodyId(view)]).toEqual([name, body]);
-        if (holder) {
-          expect(holder.debug.host.instanceOf("t.walk"), `${name}: the walk holding the body runs on`).not.toBe(null);
-          expect(holder.debug.host.lingering("t.walk"), `${name}: lingering, out of offer`).toBe(true);
-          // the one at the focus started, the one holding didn't again
-          expect(started["t.walk"], name).toBe(walks + 1);
-        }
+        // the view plugin started once, whatever moved
+        expect([name, started["t.walk"]]).toEqual([name, 1]);
+        if (holder) expect([name, holder.debug.seat("t.walk")], `${name}: the seat holding the body lingers, out of offer`).toEqual([name, { lingering: true }]);
         // whatever's held, the view offers each body and command once: the focus stage's
         expect([name, offered(view, "bodies", "t.walk"), offered(view, "commands", "measure")]).toEqual([name, 1, 1]);
         expect([name, view.bodyDefs().get("t.walk")?.stage]).toEqual([name, view.focusStage()]);
-        // the general parts are offered from the focus stage alone
-        expect(generalsAt(view), name).toEqual([to.join("/")]);
+        // the view plugins are offered from the focus stage alone
+        expect(seatedAt(view), name).toEqual([to.join("/")]);
         if (holder) {
-          // leaving the body, the walk that held it goes (a busy recheck later); back at Look
+          // leaving the body, the seat that held it goes (a busy recheck later); back at Look
           view.enterBody("look");
-          await until(() => !holder.debug.host.record("t.walk"), 2000);
-          expect(holder.debug.host.record("t.walk"), name).toBe(null);
+          await until(() => !holder.debug.seat("t.walk"), 2000);
+          expect(holder.debug.seat("t.walk"), name).toBe(null);
           expect(bodyId(view), name).toBe("look");
         }
         s.unmount();
@@ -500,7 +495,7 @@ describe("what the viewer holds goes on across a focus move", () => {
     }
   }, 60_000);
 
-  it("back where a busy part still runs, it is kept, not started again", async () => {
+  it("back where a busy seat lingers, it is kept, and the plugin never starts again", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const started = {};
     const m = await mountNested({ extra: holders(started) });
@@ -508,22 +503,22 @@ describe("what the viewer holds goes on across a focus move", () => {
     const { view } = m;
     await until(() => s.instance("t.walk"), 2000);
     const first = s.instance("t.walk");
-    view.setEditing(false);
+    s.edit(false);
     expect(view.enterBody("t.walk")).toBe(true);
     view.focusOn(["L"]);
     await placed(view);
     view.focusOn([]);
     await placed(view);
     expect(s.instance("t.walk")).toBe(first);
-    expect(view.stage(0).debug.host.lingering("t.walk")).toBe(false);
+    expect(view.stage(0).debug.seat("t.walk")).toEqual({ lingering: false });
     expect(bodyId(view)).toBe("t.walk");
-    // started once here, once in B (stopped again as the focus left it, holding nothing)
-    expect(started["t.walk"]).toBe(2);
-    expect(stageOf(view, "L").debug.host.record("t.walk")).toBe(null);
+    // started once; its seat in B went as the focus left it, holding nothing
+    expect(started["t.walk"]).toBe(1);
+    expect(stageOf(view, "L").debug.seat("t.walk")).toBe(null);
   });
 
   // the held tool × every move: kept while its stage is on the focus path (STAGE.md, "The input chain"), put down
-  // when it leaves it, and the part holding it finishes there
+  // when it leaves it, and the seat holding it lingers there until then
   const TOOL_MOVES = [
     // [label, held from, from, to, still held]
     ["held at the scene, Enter", [], [], ["L"], true],
@@ -542,24 +537,22 @@ describe("what the viewer holds goes on across a focus move", () => {
       const { view } = m;
       expect(view.focusOn(from), label).toBe(true);
       await placed(view);
-      await until(() => view.focusStage().debug.host.instanceOf("t.measure"), 2000);
+      await until(() => view.focusStage().seated().includes("t.measure"), 2000);
       const at = view.stageAt(heldAt);
       expect(at.reader.run({ ext: "t.measure", command: "measure" }), label).toBe(true);
       expect(view.router.held()?.owner, label).toBe(keyOf(at.n, "t.measure"));
       view.focusOn(to);
       await placed(view);
-      await until(() => view.focusStage().debug.host.instanceOf("t.measure"), 2000);
       await settle();
       expect([label, view.router.held()?.owner ?? null]).toEqual([label, still ? keyOf(at.n, "t.measure") : null]);
-      // the part that held it: running on (lingering) while it holds; gone at once once the tool's put down
-      const rec = at.debug.host.record("t.measure");
-      if (still) expect([label, !!rec, at.debug.host.lingering("t.measure")]).toEqual([label, true, true]);
-      else expect([label, rec]).toEqual([label, null]);
-      expect([label, offered(view, "commands", "measure")]).toEqual([label, 1]);
+      // the seat that held it: lingering while it holds; gone at once once the tool's put down
+      if (still) expect([label, at.debug.seat("t.measure")]).toEqual([label, { lingering: true }]);
+      else expect([label, at.debug.seat("t.measure")]).toEqual([label, null]);
+      expect([label, offered(view, "commands", "measure"), started["t.measure"]]).toEqual([label, 1, 1]);
       if (still) {
         view.router.putDown();
-        await until(() => !at.debug.host.record("t.measure"), 2000);
-        expect([label, at.debug.host.record("t.measure")]).toEqual([label, null]);
+        await until(() => !at.debug.seat("t.measure"), 2000);
+        expect([label, at.debug.seat("t.measure")]).toEqual([label, null]);
       }
       s.unmount();
       s = null;
@@ -623,19 +616,19 @@ describe("putting the editor down puts the selection down; a body doesn't (HISTO
     for (const focus of FOCI) {
       expect(view.focusOn(focus)).toBe(true);
       await placed(view);
-      await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 2000);
+      await until(() => view.focusStage().seated().includes("t.walk"), 2000);
       for (const from of STATES)
         for (const to of STATES)
           for (const withSel of [false, true]) {
             const name = `${J(focus)} ${from} → ${to}${withSel ? " selected" : ""}`;
             view.enterBody("look");
-            view.setEditing(from[1]);
+            s.edit(from[1]);
             expect(view.enterBody(from[0]), name).toBe(true);
             const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
             view.select(sel);
             expect(J(view.atom.get().selected), name).toBe(J(sel));
             if (from[0] !== to[0]) expect(view.enterBody(to[0]), name).toBe(true);
-            view.setEditing(to[1]);
+            s.edit(to[1]);
             const want = from[1] && !to[1] ? null : sel;
             expect([name, J(view.atom.get().selected), J(view.atom.get().focus)]).toEqual([name, J(want), J(focus)]);
             cases++;
@@ -681,7 +674,7 @@ describe("holding the editor, a click is its wherever it lands (HISTORY.md, COMP
           for (const hit of HITS) {
             const name = `${base} ${J(focus)}${withSel ? " selected" : ""} click on ${hit.name}`;
             view.enterBody("look");
-            view.setEditing(base === "edit");
+            s.edit(base === "edit");
             const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
             view.select(sel);
             expect(J(view.atom.get().selected), name).toBe(J(sel));

@@ -12,7 +12,7 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
  */
 async function mount(doc = {}) {
   const s = await mountStage({ extensions: [{ meta: { id: "scene.autoframe" }, module: autoframe }], doc });
-  const api = s.api("scene.autoframe");
+  const api = s.facet("scene.autoframe");
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();
   api.camera = camera.rig;
@@ -75,9 +75,9 @@ describe("scene.autoframe", () => {
     expect(camera.frames).toEqual([B1]);
     // nor is a pose held mid-drag, though it moves the box
     world.box = B3;
-    s.api("scene.autoframe").pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
+    s.facet("scene.autoframe").pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
     await s.settle();
-    s.api("scene.autoframe").pose.release("a");
+    s.facet("scene.autoframe").pose.release("a");
     await s.settle();
     expect(camera.frames).toEqual([B1]);
     world.box = B2;
@@ -139,8 +139,9 @@ describe("scene.autoframe", () => {
 
   it("never frames a camera this viewer had already placed", () => {
     const camera = fakeCamera({ touched: true });
-    const api = { camera: camera.rig, sceneBox: () => B1, content: () => ({ loaded: true }), local: { get: () => ({}) } };
-    const x = autoframe.create(api);
+    // (a view plugin's api, its focus facet the one stage's)
+    const facet = { camera: camera.rig, sceneBox: () => B1, content: () => ({ loaded: true }), local: { get: () => ({}) } };
+    const x = autoframe.create({ focus: () => facet });
     const scene = { objects: { a: object() }, ids: ["a"], parents: new Map(), groups: new Map() };
     x.update(scene, {}, { scene: null, local: null });
     expect(camera.frames).toEqual([]);

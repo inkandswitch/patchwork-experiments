@@ -29,14 +29,14 @@ async function mount({ objects = { a: object({ name: "A" }), b: object({ name: "
 
 const sel = () => s.local.get().selected ?? null;
 const run = (command, target = null, value) => s.api("scene.select").run({ ext: "scene.select", command, target, value });
-const state = (command, target = null) => s.instance("scene.select").commands.find((c) => c.id === command).state(target, { scene: s.api("scene.select").scene(), view: s.api("scene.select").view.get() });
+const state = (command, target = null) => s.instance("scene.select").commands.find((c) => c.id === command).state(target, { scene: s.facet("scene.select").scene(), view: s.facet("scene.select").view.get() });
 /** Make the viewport's pick say this object is under the pointer (there is no WebGL here). */
 const hitOn = (id) => {
   s.debug.viewport.pick = () => (id ? { id, point: [0, 0, 0], normal: [0, 1, 0], distance: 1 } : null);
 };
 /** Boxes: the stage's (null without WebGL) replaced by a fixed one per id. */
 const boxes = (map) => {
-  s.api("scene.select").box = (id) => map[id] ?? null;
+  s.facet("scene.select").box = (id) => map[id] ?? null;
   if (s.api("scene.others")) s.api("scene.others").box = (id) => map[id] ?? null;
 };
 const helpers = () => ["scene.select", "scene.others"].flatMap((k) => [...(s.debug.viewport.layers.get(k) ?? [])].flatMap((g) => g.children));
@@ -144,8 +144,7 @@ describe("scene.select: keeping the selection honest", () => {
 
   it("asks the stage to load the selection first", async () => {
     await mount();
-    const api = s.api("scene.select");
-    const focus = vi.spyOn(api, "focus");
+    const focus = vi.spyOn(s.facet("scene.select"), "focus");
     s.local.swap((m) => ({ ...m, selected: "b" }));
     await settle();
     expect(focus).toHaveBeenLastCalledWith(["b"]);
@@ -347,7 +346,7 @@ describe("scene.select: by body", () => {
         for (const before of [null, "a", "dimension:d1"]) {
           for (const on of ["b", null]) {
             for (const id of path) expect(api.body.enter(id)).toBe(true);
-            api.view.edit(edit);
+            s.edit(edit);
             await settle();
             expect(s.local.get().body.id).toBe(name);
             s.local.swap((m) => ({ ...m, selected: before }));
@@ -362,7 +361,7 @@ describe("scene.select: by body", () => {
             expect(run("select", pick)).toBe(true);
             expect(sel()).toBe(pick);
             const remove = s.instance("scene.select").commands.find((c) => c.id === "remove");
-            expect(commandState(remove, "a", s.api("scene.select").context()) != null).toBe(edit);
+            expect(commandState(remove, "a", s.facet("scene.select").context()) != null).toBe(edit);
             // back to Look, nothing standing (the next case starts clean)
             expect(api.body.enter("look")).toBe(true);
             s.local.swap((m) => ({ ...m, selected: null }));
@@ -437,7 +436,7 @@ describe("scene.others: wherever its doc is", () => {
     for (const focus of [[], ["L"]]) {
       for (const mine of [null, "die"]) {
         expect(view.focusOn(focus)).toBe(true);
-        await until(() => view.focusStage().debug.host.instanceOf("scene.select"), 2000);
+        await until(() => view.focusStage().seated().includes("scene.select"), 2000);
         if (mine) view.select([...focus, focus.length ? mine : "table"]);
         else view.select(null);
         const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), P: [] };

@@ -276,7 +276,7 @@ describe("scene.touch", () => {
     await settle();
     // the editor under it is the next rung
     expect([hint().textContent, hint().dataset.key]).toEqual(["Put down Edit", "Escape"]);
-    api().view.edit(false);
+    s.edit(false);
     await settle();
     expect([hint().hidden, hint().hasAttribute("data-key")]).toEqual([true, false]);
   });

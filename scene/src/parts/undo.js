@@ -26,8 +26,12 @@ export function undoKey(e) {
 
 function create(api) {
   const root = api.root;
-  const edits = () => api.local.get().edits ?? { undo: null, redo: null };
-  const take = (which) => (which === "undo" ? api.undo() : api.redo());
+  // (the focus doc's: its stage keeps this viewer's steps there)
+  const edits = () => api.focus()?.local.get().edits ?? { undo: null, redo: null };
+  const take = (which) => {
+    const f = api.focus();
+    return f ? (which === "undo" ? f.undo() : f.redo()) : false;
+  };
 
   api.listen(root, "keydown", (e) => {
     const which = undoKey(e);
@@ -46,7 +50,7 @@ function create(api) {
     state: (target) => {
       if (target != null) return null;
       const label = edits()[which];
-      if (!api.writable()) return { disabled: true, title: "view only" };
+      if (!api.focus()?.writable()) return { disabled: true, title: "view only" };
       return label ? { title: `${name} “${label}”` } : { disabled: true, title: `Nothing to ${which}` };
     },
     run: () => void take(which),

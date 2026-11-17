@@ -3,8 +3,10 @@
 //
 // The `scene` tool is the stage (src/stage/stage.js): a scene with no UI of
 // its own. Everything you see or do in it comes from `scene:extension`
-// plugins, and the ones this package ships are below: the parts that together
-// make the scene editor and the surfaces every scene has. See STAGE.md.
+// plugins: `scene:extension`s, which run in a stage for a doc's traits, and
+// `scene:view`s, which run once per view whatever the focus. The ones this
+// package ships are below: the parts that together make the scene editor and
+// the surfaces every scene has. See STAGE.md.
 
 /**
  * The stage's time source (src/stage/time.js), loaded on asking: for a host
@@ -106,22 +108,23 @@ export const plugins = [
       return (await import("./sources/file-stl.js")).default;
     },
   },
-  // ─── extensions: the parts the scene editor is made of ───
-  // All but carry and others declare no traits ("general" scope): the view runs them
-  // once, in the focus stage (the outermost doc until Enter moves the focus
-  // into a link: STAGE.md, "Views, stages and links"), in this order, which is the order
-  // input is offered to them, after every stage's own parts.
+  // ─── the parts the scene editor is made of ───
+  // All but carry and others are view plugins (STAGE.md, "View plugins"):
+  // each runs once per view, for its whole life, and works on the focus
+  // stage through api.focus() (the outermost doc until Enter moves the focus
+  // into a link); in this order, which is the order input is offered to
+  // them, after every stage's own extensions.
   // Carry runs by trait, where the doc has something carryable; others in
   // every doc (traits ["*"]), wherever the focus is. Chrome
   // follows attention, never the doc (STAGE.md, "Activation"), and the editor's chrome
-  // is the Edit hand's (src/stage/bodies.js): the toolbar's editor commands
+  // is the Edit hand's (scene.edit, src/stage/bodies.js): the toolbar's editor commands
   // (its world commands show in every body: HISTORY.md, TOOLS Decisions 10), the halo
   // and its knobs, the inspector (one drawer tab: the object tree and the
   // selection's fields, open once something is selected), dimensions and
   // parts (tabs the viewer opens), the grid, axes
   // and bounds, and every command marked `edit: true` show only there.
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.toolbar",
     name: "Toolbar",
     async load() {
@@ -129,7 +132,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.notices",
     name: "Notices",
     async load() {
@@ -139,7 +142,7 @@ export const plugins = [
   // the packages this scene lists and this viewer doesn't have: one prompt to
   // load them (STAGE.md, "Packages")
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.packages",
     name: "Packages",
     async load() {
@@ -149,7 +152,7 @@ export const plugins = [
   {
     // the use prompt ("[F] Raise the anchor"): attention's verbs, shown
     // (scene.keys does them)
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.use",
     name: "Use prompt",
     async load() {
@@ -158,7 +161,7 @@ export const plugins = [
   },
   {
     // the body chip, who's here and the Esc hint (STAGE.md, "Bodies")
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.body",
     name: "Body",
     async load() {
@@ -167,7 +170,7 @@ export const plugins = [
   },
   {
     // the touch controls: the declared keys as controls a finger holds, while the input is touch (STAGE.md, "Keys")
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.touch",
     name: "Touch controls",
     async load() {
@@ -175,7 +178,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.keys",
     name: "Keyboard shortcuts",
     async load() {
@@ -184,7 +187,7 @@ export const plugins = [
   },
   {
     // every target's verbs, Select first (STAGE.md, "The input chain")
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.menu",
     name: "Context menu",
     async load() {
@@ -193,7 +196,7 @@ export const plugins = [
   },
   {
     // Enter a link: the focus, which scopes the selection, moves into it (STAGE.md, "The input chain")
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.focus",
     name: "Enter",
     async load() {
@@ -201,7 +204,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.frame",
     name: "Frame",
     async load() {
@@ -210,7 +213,7 @@ export const plugins = [
   },
   {
     // an untouched camera follows the content in as it loads
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.autoframe",
     name: "Frame on open",
     async load() {
@@ -218,7 +221,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.inspector",
     name: "Inspector",
     async load() {
@@ -226,7 +229,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.measure",
     name: "Measure",
     async load() {
@@ -234,7 +237,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.handles",
     name: "Handles",
     async load() {
@@ -245,7 +248,7 @@ export const plugins = [
     // the selection's handles: move arrows, rotate rings and scale corners
     // outside its box, in its parent's frame (STAGE.md, "The input chain"). It follows the
     // selection
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.halo",
     name: "Halo",
     async load() {
@@ -254,8 +257,8 @@ export const plugins = [
   },
   {
     // carrying: whatever has the trait can be picked up and put down, in
-    // any stage whose doc has something carryable (STAGE.md, "Activation"). Not
-    // general: the trait is its only reason to run.
+    // any stage whose doc has something carryable (STAGE.md, "Activation"):
+    // the trait is its only reason to run.
     type: "scene:extension",
     id: "scene.carry",
     name: "Carry",
@@ -272,7 +275,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.dimensions",
     name: "Dimensions",
     async load() {
@@ -280,13 +283,22 @@ export const plugins = [
     },
   },
   {
-    // the selection: Select is every menu's first entry, and the Edit
-    // body's click (STAGE.md, "The input chain")
-    type: "scene:extension",
+    // the selection: Select is every menu's first entry (STAGE.md, "The input chain")
+    type: "scene:view",
     id: "scene.select",
     name: "Selection",
     async load() {
       return (await import("./parts/select.js")).default;
+    },
+  },
+  {
+    // the Edit hand: picked up and put down by the viewer (the body chip's Edit), its click selects
+    // (STAGE.md, "Hands")
+    type: "scene:view",
+    id: "scene.edit",
+    name: "Edit",
+    async load() {
+      return (await import("./parts/edit.js")).default;
     },
   },
   {
@@ -302,7 +314,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.grid",
     name: "Grid",
     async load() {
@@ -310,7 +322,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.axes",
     name: "Axes",
     async load() {
@@ -318,7 +330,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.bounds",
     name: "Bounds",
     async load() {
@@ -326,7 +338,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.units",
     name: "Units",
     async load() {
@@ -334,7 +346,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.legends",
     name: "Legends",
     async load() {
@@ -342,7 +354,7 @@ export const plugins = [
     },
   },
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.add",
     name: "Add documents",
     async load() {
@@ -352,7 +364,7 @@ export const plugins = [
   // objects from another scene, or from this one: an outline row dragged
   // into this view, Copy and Paste (STAGE.md, "Copying objects")
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.transfer",
     name: "Copy and paste",
     async load() {
@@ -363,7 +375,7 @@ export const plugins = [
   // where you're looking: a drawer tab the viewer opens (Parts), offered
   // only when some package offers a part.
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.parts",
     name: "Parts",
     async load() {
@@ -373,7 +385,7 @@ export const plugins = [
   // the stage's own edits, undone and redone (HISTORY.md, TOOLS Decisions 2): this
   // viewer's, in the focus doc
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.undo",
     name: "Undo",
     async load() {
@@ -382,7 +394,7 @@ export const plugins = [
   },
   // the doc's world time: ▶ or ⏸, who paused it, a stall (only for a doc with a process)
   {
-    type: "scene:extension",
+    type: "scene:view",
     id: "scene.clock",
     name: "Clock",
     async load() {

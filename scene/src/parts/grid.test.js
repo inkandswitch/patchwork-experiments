@@ -6,7 +6,7 @@ import { gridFor } from "../units.js";
 
 const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.grid" }, module: grid }], doc });
 const run = (s, command, value) => s.api("scene.grid").run({ ext: "scene.grid", command, target: null, value });
-const state = (s, target = null) => s.instance("scene.grid").commands.find((c) => c.id === "grid").state(target, { scene: s.api("scene.grid").scene(), local: s.local.get() });
+const state = (s, target = null) => s.instance("scene.grid").commands.find((c) => c.id === "grid").state(target, { scene: s.facet("scene.grid").scene(), local: s.local.get() });
 const caption = (s) => s.root.querySelector(".grid-caption");
 const labels = (s) => [...s.root.querySelectorAll(".labels .grid-label")];
 
@@ -69,7 +69,7 @@ describe("scene.grid", () => {
     expect(caption(s).textContent).toBe("grid 10 cm");
     expect(labels(s).some((l) => l.textContent.endsWith(" cm"))).toBe(true);
     // content arriving makes the scene bigger (no WebGL here, so the box is stubbed)
-    s.api("scene.grid").sceneBox = () => ({ min: [-3, 0, -1], max: [2, 1, 1] });
+    s.facet("scene.grid").sceneBox = () => ({ min: [-3, 0, -1], max: [2, 1, 1] });
     s.api("scene.grid").setPref("units", "m");
     s.change((d) => (d.objects.a = object()));
     await s.settle();

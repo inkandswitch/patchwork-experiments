@@ -111,7 +111,7 @@ describe("the drawer's grip, mounted", () => {
       const seen = [];
       await mount(seen);
       // ("edit": Look holding the editor)
-      expect(s.api("scene.select").view.edit(body === "edit")).toBe(body === "edit");
+      expect(s.edit(body === "edit")).toBe(body === "edit");
       s.local.swap((m) => ({ ...m, selected: "a" }));
       await settle();
       // a panel of its own, so there is a drawer in Look too (the inspector is Edit's)

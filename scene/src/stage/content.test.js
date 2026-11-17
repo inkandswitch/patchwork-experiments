@@ -140,7 +140,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }), b: object({ name: "b", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url, hint: { bounds: { min: [5, 5, 5], max: [6, 6, 6] } } }) }, order: ["a", "b"] });
     await wait(20);
     await settle();
-    expect(s.api("scene.add").loadState("a").bounds).toEqual(bounds);
+    expect(s.facet("scene.add").loadState("a").bounds).toEqual(bounds);
     expect(hints.mock.calls.filter(([id]) => id === "a").at(-1)[1]).toEqual(bounds);
     // the scene's own hint wins
     expect(hints.mock.calls.filter(([id]) => id === "b").map(([, b]) => b)).toEqual([{ min: [5, 5, 5], max: [6, 6, 6] }]);
@@ -221,9 +221,10 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await settle();
     const [id] = Object.keys(s.doc().objects);
     const api = s.api("scene.inspector");
-    const point = api.fixPoint(id);
+    const f = s.facet("scene.inspector");
+    const point = f.fixPoint(id);
     expect(point).toEqual({ heads: (await repo.find(s.doc().objects[id].renderUrl)).doc().builtFrom.heads });
-    const ids = () => api.collect("commands").flatMap(({ id: ext, value }) => (value ?? []).filter((c) => c.state?.(id, { scene: api.scene(), local: api.local.get() })).map((c) => `${ext}:${c.id}`));
+    const ids = () => api.collect("commands").flatMap(({ id: ext, value }) => (value ?? []).filter((c) => c.state?.(id, { scene: f.scene(), local: f.local.get() })).map((c) => `${ext}:${c.id}`));
     expect(ids()).toContain("scene.inspector:fix-version");
     expect(ids()).not.toContain("scene.inspector:follow-latest");
     api.run({ ext: "scene.inspector", command: "fix-version", target: id });
@@ -235,7 +236,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await settle();
     expect("at" in s.doc().objects[id]).toBe(false);
     // never for what isn't built content
-    expect(api.fixPoint("nope")).toBeNull();
+    expect(f.fixPoint("nope")).toBeNull();
   });
 
   it("a dragged row carries its render doc for other tools, and the stage itself ignores that", async () => {
@@ -341,7 +342,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(p.calls.length).toBe(n + 2); // the aborted one, then again at once
     expect(render.doc()).toMatchObject({ status: "idle", error: null });
     expect(render.doc().builtAt).toBeGreaterThan(built);
-    expect(s.api("scene.add").loadState(id)).toMatchObject({ status: "idle", error: null });
+    expect(s.facet("scene.add").loadState(id)).toMatchObject({ status: "idle", error: null });
     expect($(`.object-row[data-id="${id}"]`).textContent).not.toMatch(/error/);
   });
 
@@ -361,7 +362,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await settle();
     expect(render.doc().builtAt).toBe(built);
     expect(render.doc().builtFrom.heads).toEqual(["a-change-we-have-not-synced"]);
-    expect(s.api("scene.add").loadState(id)).toMatchObject({ behind: true, stale: false });
+    expect(s.facet("scene.add").loadState(id)).toMatchObject({ behind: true, stale: false });
   });
 });
 
@@ -386,7 +387,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
   const gltfSource = (extra = {}) => ({ type: "scene:source", id: "t-gltf", content: "file", name: "glTF", supportedDatatypes: ["file"], extensions: ["gltf"], params: [], ...extra });
   const queued = () => s.debug.queue.ids();
   const tracked = () => s.debug.manager.ids();
-  const api = () => s.api("scene.add");
+  const api = () => s.facet("scene.add");
 
   it("routes at the first sync: a GLB file object is queued as the stage mounts, before anything awaits", async () => {
     const glb = glbFile();

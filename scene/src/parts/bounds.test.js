@@ -9,7 +9,7 @@ const doc = () => ({ objects: { a: object({ name: "A" }), b: object({ name: "B",
 
 async function mount(d = doc()) {
   const s = await mountStage({ extensions: [{ meta: { id: "scene.bounds" }, module: bounds }], doc: d });
-  const api = s.api("scene.bounds");
+  const api = s.facet("scene.bounds");
   // no WebGL here: the boxes the stage would measure
   api.box = (id) => (id === "g" ? BOXES.b : (BOXES[id] ?? null));
   return s;

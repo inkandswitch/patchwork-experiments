@@ -5,8 +5,8 @@
 //
 // The people are drawn by a part of every doc (traits ["*"]): it runs in
 // every stage, as that doc's own part, and never restarts when the focus
-// moves; the body is a general part's, at the focus (or lingering where it
-// is held until it lets go). The harness is exhaustive over what decides
+// moves; the body is a view plugin's, seated at the focus (its seat
+// lingering where the body is held until it lets go). The harness is exhaustive over what decides
 // it: every focus (each acting stage, depth ≤3) × where the viewer's body is
 // held (nowhere, or in each acting stage) × before and after the body is let
 // go, on one view of a tree with every stage role: acting at depths 0–3, a
@@ -32,18 +32,26 @@ const at = (x, y, z) => ({ position: [x, y, z], rotation: [0, 0, 0], scale: 1 })
 const link = (url, name, extra = {}) => object({ name, sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 
 /**
- * The body: a general part shaped as walk's. At the focus it offers a body
- * and says where its viewer is (`here`: a point in its doc's frame, one per
- * doc, from its title).
+ * The body: a view plugin. Seated at the focus it offers a body, and says
+ * on the focus doc's channel where its viewer is (`here`: a point in its
+ * doc's frame, one per doc, from its title).
  */
 const POINT = { A: [1, 0, 0], B: [0, 2, 0], C: [0, 0, 3], D: [4, 4, 0], E: [0, 5, 5] };
 const WALK = {
-  meta: { id: "t.walk" },
+  meta: { id: "t.walk", type: "scene:view" },
   module: {
     create(api) {
-      const title = api.doc().title;
-      if (POINT[title]) api.presence.set("here", POINT[title]);
-      return { bodies: [{ id: "t.walk", label: "Walk", enter: () => ({ input: {} }) }] };
+      const said = new WeakSet(); // the focus facets it has said where it is through
+      return {
+        bodies: [{ id: "t.walk", label: "Walk", enter: () => ({ input: {} }) }],
+        update() {
+          const f = api.focus();
+          if (!f || said.has(f)) return;
+          said.add(f);
+          const title = f.doc().title;
+          if (POINT[title]) f.presence.set("here", POINT[title]);
+        },
+      };
     },
   },
 };
@@ -151,11 +159,11 @@ function picture(view) {
   // (in the model's order, so equal pictures are equal strings)
   for (const p of Object.keys(ROLE)) {
     const x = stageOf(view, p);
-    const walk = x.debug.host.record("t.walk");
+    const walk = x.debug.seat("t.walk");
     const people = x.debug.host.record("t.people");
     out[p] = {
-      walk: walk?.state === "running",
-      lingering: x.debug.host.lingering("t.walk"),
+      walk: !!walk,
+      lingering: !!walk?.lingering,
       people: people?.state === "running" ? people.scope : null,
       drawn: people?.state === "running" ? people.instance.drawn().sort((a, b) => (a.viewer < b.viewer ? -1 : 1)) : [],
     };
@@ -234,7 +242,7 @@ describe("presence where it is", () => {
         // hold the body where it's held: enter it at the focus there
         if (held != null) {
           expect(view.focusOn(pathOf(held)), label).toBe(true);
-          await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 4000);
+          await until(() => view.focusStage().seated().includes("t.walk"), 4000);
           expect(view.enterBody("t.walk"), label).toBe(true);
         }
         expect(view.focusOn(pathOf(f)), label).toBe(true);
@@ -252,7 +260,7 @@ describe("presence where it is", () => {
         expect([label, names]).toEqual([label, want.map((p) => (f === "" ? "" : NAME[p]))]);
         expect([label, s.root.querySelector(".clock-bar").hidden]).toEqual([label, want.length === 0]);
         cases++;
-        // let the body go: a lingering body part stops, and nothing else changes
+        // let the body go: a lingering seat goes, and nothing else changes
         if (held != null) {
           view.enterBody("look");
           await settled(f, null)();
@@ -285,7 +293,7 @@ describe("presence where it is", () => {
     }
   });
 
-  it("a chip names its doc as the trail does, at once when a link is renamed; and only general parts see the clocks", async () => {
+  it("a chip names its doc as the trail does, at once when a link is renamed; and only view plugins see the clocks", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { s, view, docs } = await mountTree();
     cleanups.push(() => s.unmount());
@@ -302,9 +310,9 @@ describe("presence where it is", () => {
       await until(() => J(names()) === J(want), 4000).catch(() => expect([name, names()]).toEqual([name, want]));
       expect(trail()).toEqual(host === "A" ? ["A", "Boat", "C", "D"] : ["A", "Boat", "C", "Table"]);
     }
-    // the clocks are the view's, for its general parts: a part of a doc never sees them
+    // the clocks are the view's, for its plugins: a part of a doc never sees them
     expect("clocks" in stageOf(view, "").debug.host.record("t.proc").api.view.get()).toBe(false);
     expect("clocks" in stageOf(view, "L").debug.host.record("t.people").api.view.get()).toBe(false);
-    expect(view.focusStage().debug.host.record("scene.clock").api.view.get().clocks.length).toBe(3);
+    expect(s.api("scene.clock").view.get().clocks.length).toBe(3);
   });
 });

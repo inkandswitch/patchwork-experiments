@@ -6,7 +6,7 @@
 // chip's Look leaves every one of them.
 //
 // Editing is not a body: it is the Edit hand, which the viewer picks up and
-// puts down (the body chip's Edit toggle, `api.view.edit`) and can hold in
+// puts down (the body chip's Edit toggle, scene.edit's command) and can hold in
 // any body (walking while editing works). While it is held a plain click
 // selects at the focus (ahead of any package's click, after a widget), and
 // the editor's chrome shows: the halo's handles and knobs, the inspector, the

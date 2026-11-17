@@ -27,15 +27,6 @@ export function docReason(meta, d) {
   return null;
 }
 
-/**
- * Its scope here: the doc's reason (above), else "general" when it declares
- * no traits (it belongs to the view: the key map, the menu, the inspector),
- * else null (traits the doc doesn't have: it doesn't run).
- */
-export function ownReason(meta, d) {
-  return docReason(meta, d) ?? (list(meta?.traits).length ? null : "general");
-}
-
 /** May this extension lay out a dropped doc of this datatype? */
 export function takesDrop(meta, type) {
   const drops = list(meta?.drops);
@@ -45,17 +36,18 @@ export function takesDrop(meta, type) {
 /**
  * The extensions that run, in chain order, each with its scope (STAGE.md,
  * "Activation"): the scene's first (registry order), then those only some
- * objects call for (registry order), then the general ones (registry
- * order). Each appears once; metadata without an id is left out.
+ * objects call for (registry order). Each appears once; metadata without an
+ * id is left out, and so is one with no traits: an extension runs for a
+ * trait (`"*"`: every doc), and what is the view's is a view plugin.
  *
  * @param {{ metas: object[], doc: object }} o
- * @returns {{ id: string, meta: object, scope: "scene" | "objects" | "general" }[]}
+ * @returns {{ id: string, meta: object, scope: "scene" | "objects" }[]}
  */
 export function activeSet({ metas, doc }) {
   const byId = new Map((metas ?? []).filter((m) => m?.id).map((m) => [m.id, m]));
   const out = [];
-  for (const scope of ["scene", "objects", "general"]) {
-    for (const m of byId.values()) if (ownReason(m, doc) === scope) out.push({ id: m.id, meta: m, scope });
+  for (const scope of ["scene", "objects"]) {
+    for (const m of byId.values()) if (docReason(m, doc) === scope) out.push({ id: m.id, meta: m, scope });
   }
   return out;
 }

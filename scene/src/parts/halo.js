@@ -19,11 +19,17 @@
 // A drag holds the pose as it goes (peers see it move) and writes the local
 // transform once, on release. A group moves its movable members together
 // (halo-math.js groupRoots) about its box's centre.
+//
+// It is the focus stage's (what's selected is there): made in the focus's
+// facet, and made again there wherever the focus goes; a drag under way
+// when the focus moves finishes where it started (the facet lingers while it
+// holds the pose).
 
 import { HANDLE_SIZE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, groupRoots, usable } from "./halo-math.js";
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
 import { own } from "../stage/own.js";
+import { focusInput, perFocus } from "./per-focus.js";
 
 const AXIS_FALLBACK = [
   [0.9, 0.25, 0.25],
@@ -33,7 +39,8 @@ const AXIS_FALLBACK = [
 /** How many frames the halo keeps drawing every frame after what it's on last moved. */
 const STILL_FRAMES = 30;
 
-function create(api) {
+/** The halo in one focus stage: `api` is its facet, `view` the view plugin's api. */
+function haloAt(api, view) {
   const THREE = api.THREE;
   // drawn in the main pass (so the thing hides the parts of its halo behind
   // it), and never picked as meshes: widgetAt finds handles on screen
@@ -260,7 +267,7 @@ function create(api) {
       // a peer took hold of something here before we did: theirs, so ours goes back
       if ([...poses.keys()].some((id) => api.heldBy(id) != null)) {
         session.cancel();
-        api.notify("Someone else is moving that.", "info");
+        view.notify("Someone else is moving that.", "info");
         return;
       }
       drag.poses = poses;
@@ -269,7 +276,7 @@ function create(api) {
       for (const [id, t] of poses) if (!api.pose.hold(id, t)) refused = true;
       if (refused) {
         session.cancel();
-        api.notify("Something else is moving that.", "info");
+        view.notify("Something else is moving that.", "info");
         return;
       }
       api.invalidate();
@@ -322,7 +329,7 @@ function create(api) {
       // under it is pressed), but it doesn't move
       const ids = roots();
       if (ids.some((id) => api.heldBy(id) != null)) {
-        api.notify("Someone else is moving that.", "info");
+        view.notify("Someone else is moving that.", "info");
         return { tap: () => true, move() {}, end() {}, cancel() {} };
       }
       const ray0 = frame.rayIn(rayOf(ev));
@@ -341,15 +348,21 @@ function create(api) {
       if (p && scene === prev.scene && view.selected === p.selected && view.held === p.held && view.hands === p.hands && view.theme === p.theme && local.status === prev.local?.status) return;
       reconcile();
     },
-    dispose() {
-      stopLoop?.();
-      stopLoop = null;
-      drag = null;
-      target = null;
-    },
     /** for tests and probes: what it's on, its handles in the frame, and the frame's conversions */
     get debug() {
       return { target, handles: shown?.handles ?? [], center: shown?.center ?? null, frame, dragging: !!drag };
+    },
+  };
+}
+
+function create(api) {
+  const at = perFocus(api, (f) => haloAt(f, api));
+  return {
+    input: focusInput(at),
+    update: (...args) => at()?.update(...args),
+    /** for tests and probes: the focus's halo's (see haloAt) */
+    get debug() {
+      return at()?.debug ?? { target: null, handles: [], center: null, frame: null, dragging: false };
     },
   };
 }

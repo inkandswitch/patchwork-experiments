@@ -54,8 +54,8 @@
 // trait's key, a field in it, an entry in a map trait (a seat); never the
 // whole traits map.
 //
-// Every write goes through api.ops (or, for traits and Starts in, a field-level
-// write), each as an edit (api.edit), so undo takes it back; a refusal
+// Every write goes through the focus doc's ops (or, for traits and Starts in, a field-level
+// write), each as an edit (its edit()), so undo takes it back; a refusal
 // (plan.ok === false) is said with api.notify and the field shows the doc
 // again. Fields being typed in are never overwritten.
 //
@@ -77,6 +77,7 @@ import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layou
 import { DEG, attachOptions, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
 import { createOutline } from "./outline.js";
+import { atFocus } from "./per-focus.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
@@ -167,6 +168,8 @@ function localChanged(a, b) {
 
 function create(api) {
   api.style(css);
+  // the focus doc's: what the inspector shows and edits is the focus stage's, whichever it is now
+  const here = atFocus(api);
 
   const selectedOf = (local) => local?.selected ?? null;
   // What the inspector reads, as one value: the view's (the selection, the
@@ -176,10 +179,10 @@ function create(api) {
   let seenV = null;
   let seenS = null;
   const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status, edits: local?.edits, running: local?.running }))));
-  const now = () => seen(api.local.get(), api.view.get());
+  const now = () => seen(here.local.get(), here.view.get());
   const units = () => api.pref("units", "m");
   // the sections that go with a selection (or the scene): its Source, File or Linked scene, Build, About
-  const documents = inspectorDocuments((id) => contentKind(api.loadState?.(id)));
+  const documents = inspectorDocuments((id) => contentKind(here.loadState?.(id)));
 
   // ─── doc writes, through the planners ──────────────────────────────────────
 
@@ -194,34 +197,34 @@ function create(api) {
       refreshNow(true);
       return null;
     }
-    api.edit(plan, { label });
+    here.edit(plan, { label });
     return plan;
   }
   const FIELD_LABELS = { name: "Rename", visible: "Visible", wireframe: "Wireframe", locked: "Locked", color: "Colour", opacity: "Opacity", group: "In group", parent: "Attach", at: "Version" };
-  const setField = (id, key, value) => apply(api.ops.setField(api.scene(), id, key, value), FIELD_LABELS[key] ?? key);
-  const setPart = (id, kind, i, v) => apply(api.ops.setTransformPart(api.scene(), id, kind, i, v), kind === "rotation" ? "Rotate" : kind === "scale" ? "Scale" : "Move");
+  const setField = (id, key, value) => apply(here.ops.setField(here.scene(), id, key, value), FIELD_LABELS[key] ?? key);
+  const setPart = (id, kind, i, v) => apply(here.ops.setTransformPart(here.scene(), id, kind, i, v), kind === "rotation" ? "Rotate" : kind === "scale" ? "Scale" : "Move");
   // ─── fixed versions (`at`) ───────────────────────────────────────────────
 
-  /** Where api.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
-  const fixPointOf = (id) => (typeof api.fixPoint === "function" ? api.fixPoint(id) : null);
+  /** Where here.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
+  const fixPointOf = (id) => here.fixPoint?.(id) ?? null;
 
   /**
    * Can it be fixed at a version: content that follows a doc as it changes
    * (a render doc's build, or a link's scene doc), not a file.
    */
-  const versioned = (id, o) => !!o && !isGroup(o) && (!!o.renderUrl || api.loadState?.(id)?.content === "scene");
-  const notYet = (id) => (api.loadState?.(id)?.content === "scene" ? "Not open here yet: nothing to fix" : "Not built here yet: nothing to fix");
+  const versioned = (id, o) => !!o && !isGroup(o) && (!!o.renderUrl || here.loadState?.(id)?.content === "scene");
+  const notYet = (id) => (here.loadState?.(id)?.content === "scene" ? "Not open here yet: nothing to fix" : "Not built here yet: nothing to fix");
 
   /** Fix an object at exactly what it shows now: its render's build, or a link's doc and every doc reached through it. */
   function fixVersion(id) {
     const point = fixPointOf(id);
     if (!point) return void api.notify("There's no version of it here to fix yet.", "error");
-    apply(api.ops.setField(api.scene(), id, "at", point), "Fix at this version");
+    apply(here.ops.setField(here.scene(), id, "at", point), "Fix at this version");
   }
 
-  const followLatest = (id) => apply(api.ops.setField(api.scene(), id, "at", undefined), "Follow latest");
+  const followLatest = (id) => apply(here.ops.setField(here.scene(), id, "at", undefined), "Follow latest");
 
-  const select = (id) => api.view.select(id ?? null);
+  const select = (id) => here.view.select(id ?? null);
 
   const startsName = `starts-in-${++startsGroups}`;
 
@@ -266,7 +269,7 @@ function create(api) {
   const holderIn = (d, id) => (id == null ? d : d.objects?.[id] ?? null);
 
   function addTrait(id, desc) {
-    api.edit((d) => {
+    here.edit((d) => {
       const h = holderIn(d, id);
       if (!h) return;
       // the scene's map is pre-created (STAGE.md, "Shared maps"); an object's
@@ -277,7 +280,7 @@ function create(api) {
   }
 
   function removeTrait(id, key) {
-    api.edit((d) => {
+    here.edit((d) => {
       const t = holderIn(d, id)?.traits;
       if (isMap(t) && key in t) delete t[key];
     }, { label: `Remove ${described.get(key)?.name ?? key}` });
@@ -292,7 +295,7 @@ function create(api) {
       refreshNow(true);
       return;
     }
-    api.edit((d) => {
+    here.edit((d) => {
       let at = holderIn(d, id)?.traits?.[key];
       if (entry != null) at = isMap(at) ? at[entry] : null;
       if (!isMap(at)) return; // gone meanwhile, or not a map of fields
@@ -303,15 +306,15 @@ function create(api) {
   }
 
   function addEntry(id, key, entries) {
-    const eid = api.newId(entries.prefix);
-    api.edit((d) => {
+    const eid = here.newId(entries.prefix);
+    here.edit((d) => {
       const t = holderIn(d, id)?.traits?.[key];
       if (isMap(t) && !(eid in t)) t[eid] = newValue(entries);
     }, { label: "Add" });
   }
 
   function removeEntry(id, key, eid) {
-    api.edit((d) => {
+    here.edit((d) => {
       const t = holderIn(d, id)?.traits?.[key];
       if (isMap(t) && eid in t) delete t[eid];
     }, { label: "Remove" });
@@ -323,7 +326,7 @@ function create(api) {
    * the home camera and the editor stay.
    */
   function startIn(body) {
-    api.edit((d) => {
+    here.edit((d) => {
       if (!isMap(d.view)) d.view = {};
       const was = isMap(d.view.start) ? d.view.start : null;
       if ((was?.body ?? LOOK.id) === body) return;
@@ -337,7 +340,7 @@ function create(api) {
   }
   /** Start everyone who opens the scene holding the editor, or not: doc.view.start.edit (not, the default, is no key). */
   function startEditing(on) {
-    api.edit((d) => {
+    here.edit((d) => {
       if (!isMap(d.view)) d.view = {};
       const was = isMap(d.view.start) ? d.view.start : null;
       if ((was?.edit === true) === on) return;
@@ -413,7 +416,7 @@ function create(api) {
 
     function update(scene) {
       const traits = holder == null ? scene.d?.traits : scene.objects?.[holder]?.traits;
-      const ctx = { scene, self: holder, nameOf: api.nameOf };
+      const ctx = { scene, self: holder, nameOf: here.nameOf };
       const rows = traitRows(traits, described).map((r) => {
         const fields = r.desc?.fields ?? [];
         // fields need a map to write into; a trait set to `true` just shows
@@ -547,10 +550,10 @@ function create(api) {
     return {
       section,
       update(target) {
-        const list = documentsFor(documents, target, api.context(null), ID);
-        const docked = new Set(api.view.get().drawer?.docs ?? []);
+        const list = documentsFor(documents, target, here.context(null), ID);
+        const docked = new Set(here.view.get().drawer?.docs ?? []);
         // a drawer pane is titled after the object as well as the section (the scene's: the label alone)
-        const of = target == null ? null : api.nameOf(target) || "Untitled";
+        const of = target == null ? null : here.nameOf(target) || "Untitled";
         const paneTitle = (label) => (of ? `${of} · ${label}` : label);
         const next = new Map();
         for (const d of list) {
@@ -587,17 +590,17 @@ function create(api) {
    */
   function layersView(id) {
     const list = el("div", { class: "layer-list" });
-    const reset = el("button", { type: "button", class: "button link layers-reset", title: "Show each layer as the file does", onclick: () => apply(api.ops.clearLayers(api.scene(), id), "Reset layers") }, "Reset");
+    const reset = el("button", { type: "button", class: "button link layers-reset", title: "Show each layer as the file does", onclick: () => apply(here.ops.clearLayers(here.scene(), id), "Reset layers") }, "Reset");
     const section = el("div", { class: "field-group layers", hidden: true }, el("div", { class: "layers-head" }, el("span", { class: "group-label" }, "Layers"), reset), list);
     let key = null;
     const toggle = (layer, on) => {
       const v = on === layer.visible ? undefined : on;
-      apply(api.ops.setLayerShown(api.scene(), id, layer.id, v), `${on ? "Show" : "Hide"} ${layer.name}`);
+      apply(here.ops.setLayerShown(here.scene(), id, layer.id, v), `${on ? "Show" : "Hide"} ${layer.name}`);
     };
     return {
       section,
       update(o) {
-        const table = api.content(id)?.extras?.layers ?? [];
+        const table = here.content(id)?.extras?.layers ?? [];
         const states = layerStates(table, o?.layers);
         const choices = Object.keys(layerChoices(o?.layers)).length;
         const k = JSON.stringify([choices, table.map((e) => [e.id, e.name, e.depth, states.get(e.id)])]);
@@ -643,9 +646,9 @@ function create(api) {
     const opacity = el("input", { type: "range", min: "0", max: "1", step: "0.01", class: "opacity", "aria-label": "Opacity" });
     opacity.addEventListener("input", () => setField(id, "opacity", Number(opacity.value)));
     const groupSel = el("select", { class: "in-group", "aria-label": "In group" });
-    groupSel.addEventListener("change", () => apply(api.ops.fileIn(api.scene(), id, groupSel.value || null)));
+    groupSel.addEventListener("change", () => apply(here.ops.fileIn(here.scene(), id, groupSel.value || null)));
     const attach = group ? null : el("select", { class: "attach", "aria-label": "Attached to" });
-    attach?.addEventListener("change", () => apply(api.ops.attachTo(api.scene(), id, attach.value || null)));
+    attach?.addEventListener("change", () => apply(here.ops.attachTo(here.scene(), id, attach.value || null)));
 
     const pos = group ? null : ["X", "Y", "Z"].map((a, i) => numberField(a, (v) => setPart(id, "position", i, fromUnits(v, units()))));
     const rot = group ? null : ["X", "Y", "Z"].map((a, i) => numberField(a, (v) => setPart(id, "rotation", i, v / DEG)));
@@ -655,7 +658,7 @@ function create(api) {
     const behaviours = behavioursView(id, "object");
     const layers = group ? null : layersView(id);
     const commands = el("div", { class: "cluster commands" });
-    const content = contentKind(api.loadState?.(id));
+    const content = contentKind(here.loadState?.(id));
     const sections = sectionsView();
     // Which version of the source it shows (`at`): a render doc's, or a link's doc's.
     const version = versioned(id, o)
@@ -668,7 +671,7 @@ function create(api) {
       : null;
     const status = el("div", { class: "status-line", hidden: true });
     // a link's: what it is here, and what this scene sets of it
-    const linkRow = api.link(id) && !group
+    const linkRow = here.link(id) && !group
       ? {
           text: el("span", { class: "link-text" }),
           note: el("p", { class: "hint link-note" }, "Its place, name, display, lock and behaviours here are this scene's. What's in it is its own: Enter to change that."),
@@ -793,7 +796,7 @@ function create(api) {
     const id = view.id;
     const objects = scene.objects;
     const o = objects[id];
-    const seen = api.nameOf(id);
+    const seen = here.nameOf(id);
     setVal(view.name, seen ?? o.name ?? "", force);
     view.name.readOnly = lensNamed(seen, o);
     view.visible.checked = o.visible !== false;
@@ -812,7 +815,7 @@ function create(api) {
     setVal(view.groupSel, scene.groups.get(id) ?? "", force);
 
     if (!view.group) {
-      const aOpts = attachOptions(scene, id, api.nameOf);
+      const aOpts = attachOptions(scene, id, here.nameOf);
       const aKey = JSON.stringify(aOpts);
       if (view.attachKey !== aKey && (force || document.activeElement !== view.attach)) {
         view.attachKey = aKey;
@@ -821,7 +824,7 @@ function create(api) {
       const parent = scene.parents.get(id) ?? null;
       setVal(view.attach, parent ?? "", force);
       const u = units();
-      const unitText = parent ? `(${u}, relative to ${api.nameOf(parent) || "parent"})` : `(${u})`;
+      const unitText = parent ? `(${u}, relative to ${here.nameOf(parent) || "parent"})` : `(${u})`;
       if (view.posUnit.textContent !== unitText) view.posUnit.textContent = unitText;
       const t = normalizeTransform(o.transform);
       view.pos.forEach((f, i) => setVal(f.input, String(roundForDisplay(toUnits(t.position[i], u), 6)), force));
@@ -842,7 +845,7 @@ function create(api) {
   function fillLink() {
     const r = view.linkRow;
     if (!r) return;
-    const text = linkText(api.link(view.id));
+    const text = linkText(here.link(view.id));
     if (r.text.textContent !== text) r.text.textContent = text;
   }
 
@@ -850,7 +853,7 @@ function create(api) {
   function fillVersion(o) {
     const v = view.version;
     if (!v) return;
-    const s = api.loadState(view.id) ?? {};
+    const s = here.loadState(view.id) ?? {};
     const at = normalizeAt(o.at);
     const key = atKey(at);
     let text = "Latest";
@@ -875,7 +878,7 @@ function create(api) {
   let ticks = new Map();
   let ticksFor = null;
   function fillCommands(scene, local) {
-    const list = commandsFor(api.collect("commands"), view.id, api.context(null), ID);
+    const list = commandsFor(api.collect("commands"), view.id, here.context(null), ID);
     const key = commandsKey(list);
     if (key === view.commandsKey) return;
     view.commandsKey = key;
@@ -938,8 +941,8 @@ function create(api) {
   function fillStatus(scene, local, o) {
     const id = view.id;
     const status = local.status?.[id] ?? null;
-    const load = typeof api.loadState === "function" ? api.loadState(id) : null;
-    const content = api.content(id);
+    const load = here.loadState?.(id) ?? null;
+    const content = here.content(id);
     const parts = statusParts(o, { status, load, content, shown: contentKind(load) === "file" ? shownIn(scene, id) : true });
     const key = JSON.stringify(parts);
     if (key === view.statusKey) return;
@@ -949,7 +952,7 @@ function create(api) {
   }
 
   const contentKey = (id) => {
-    const c = id ? api.content(id) : null;
+    const c = id ? here.content(id) : null;
     return c ? `${c.loaded}|${c.stats?.triangles ?? ""}|${c.stats?.drawCalls ?? ""}` : "";
   };
 
@@ -974,9 +977,9 @@ function create(api) {
     }
     if (body.hidden) body.hidden = false;
     // (what a link is here is the view's, and changes with no change to the doc)
-    const lk = api.link(id);
-    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(api.loadState?.(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
-    const name = api.nameOf(id);
+    const lk = here.link(id);
+    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(here.loadState?.(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
+    const name = here.nameOf(id);
     const ck = `${contentKey(id)}|${JSON.stringify(lk)}`;
     if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local) && last.name === name && last.content === ck) return;
     if (fresh) build(id, o);
@@ -985,7 +988,7 @@ function create(api) {
     queueNames();
   }
 
-  const refreshNow = (force = false) => refresh(api.scene(), now(), force);
+  const refreshNow = (force = false) => refresh(here.scene(), now(), force);
 
   // A lens is applied after the extensions' updates in the same flush, and
   // doesn't flush again: look at the names once it has.
@@ -995,7 +998,7 @@ function create(api) {
     queueMicrotask(() => {
       namesQueued = false;
       if (api.signal.aborted || !view || view.scene || !last) return;
-      if (api.nameOf(view.id) !== last.name) refreshNow();
+      if (here.nameOf(view.id) !== last.name) refreshNow();
     });
   }
 
@@ -1034,9 +1037,9 @@ function create(api) {
       show: ["inspector", "menu"],
       state: (target, { scene }) => (objectOf(target, scene) ? { title: "Fit the view to this" } : null),
       run: (target) => {
-        const o = objectOf(target, api.scene());
-        const box = !o ? null : isGroup(o) ? api.groupBox(target) : api.box(target);
-        if (box) api.camera.frame(box);
+        const o = objectOf(target, here.scene());
+        const box = !o ? null : isGroup(o) ? here.groupBox(target) : here.box(target);
+        if (box) here.camera.frame(box);
       },
     },
     {
@@ -1049,7 +1052,7 @@ function create(api) {
         return o && !isGroup(o) ? { title: "Put this object in a new group" } : null;
       },
       run: (target) => {
-        const plan = apply(api.ops.newGroup(api.scene(), { around: target, id: api.newId("g") }), "Group");
+        const plan = apply(here.ops.newGroup(here.scene(), { around: target, id: here.newId("g") }), "Group");
         if (plan?.id) select(plan.id);
       },
     },
@@ -1060,8 +1063,8 @@ function create(api) {
       show: ["inspector", "menu"],
       state: (target, { scene }) => (isGroup(objectOf(target, scene)) ? { title: "Move what's in this group up a level, where it is, and remove the group" } : null),
       run: (target) => {
-        const plan = apply(api.ops.ungroup(api.scene(), target), "Ungroup");
-        if (plan && selectedOf(api.view.get()) === target) select(null);
+        const plan = apply(here.ops.ungroup(here.scene(), target), "Ungroup");
+        if (plan && selectedOf(here.view.get()) === target) select(null);
       },
     },
   ];
@@ -1136,7 +1139,7 @@ function create(api) {
       const open = value === undefined ? !tab.isOpen() : !!value;
       asked = open;
       dismissed = !open;
-      follow(api.scene(), now());
+      follow(here.scene(), now());
     },
   });
 

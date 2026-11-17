@@ -9,7 +9,8 @@
 //   Leave pops the top body (never Look): standing up returns to walking,
 //   and from walking or a seat to Look.
 // - Edit, beside the chip, picks up the editor's hand or puts it down
-//   (api.view.edit). It is not a body: you can walk or sit holding it.
+//   (scene.edit's `edit` command). It is not a body: you can walk or sit
+//   holding it.
 // - Who's here: each person present in the focus doc, with their body and
 //   what they hold (the top hand: "Edit", "Measure"), from presence (the view
 //   says every viewer's on every channel it acts on: a person at another
@@ -24,6 +25,7 @@
 import css from "./body.css?inline";
 import { EDIT_HAND, LOOK, editing } from "../stage/bodies.js";
 import { holdKey } from "../hold-key.js";
+import { perFocus } from "./per-focus.js";
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -80,7 +82,7 @@ function create(api) {
   edit.type = "button";
   edit.title = "Pick up the editor: select, move and change things";
   edit.addEventListener("click", () => {
-    api.view.edit(!editing(api.view.get()));
+    api.run({ ext: "scene.edit", command: "edit", target: null, value: !editing(api.view.get()) });
     api.root.focus?.({ preventScroll: true });
   });
   const hint = el("div", "body-escape");
@@ -155,10 +157,15 @@ function create(api) {
   }
   chip.addEventListener("click", () => (menu ? closeMenu() : openMenu()));
 
+  // who's here is the focus doc's presence: heard again wherever the focus goes
+  const presence = perFocus(api, (f) => {
+    f.presence.watch(() => api.schedule(render));
+    return f.presence;
+  });
   let shown = "";
   function render() {
     const local = api.view.get();
-    const list = whoIsHere(api.presence.get(), api.session ?? null, local);
+    const list = whoIsHere(presence()?.get() ?? {}, api.session ?? null, local);
     const touch = !!local.pointer?.touch;
     const rung = local.escape?.hint ?? "";
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : !rung ? "" : touch ? rung[0].toUpperCase() + rung.slice(1) : `Esc: ${rung}`;
@@ -191,8 +198,6 @@ function create(api) {
       hint.removeAttribute("role");
     }
   }
-
-  api.presence.watch(() => api.schedule(render));
 
   return {
     update() {

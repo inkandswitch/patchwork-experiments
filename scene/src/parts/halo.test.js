@@ -196,7 +196,7 @@ async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   vp.ray = (x, y) => ({ origin: [(x - 100) / 10, (100 - y) / 10, 10], dir: [0, 0, -1] });
   vp.getCamera = () => ({ position: [0, 0, 10], target: [0, 0, 0], fov: 45 });
   vp.contentOf = (id) => (s.doc().objects[id] && s.doc().objects[id].kind !== "group" ? { loaded: true, box: CUBE, extras: null, stats: null, root: null } : null);
-  const api = s.api("scene.halo");
+  const api = s.facet("scene.halo");
   s.worlds = new Map();
   api.worldOf = (id) => s.worlds.get(id) ?? s.debug.scene().world(id);
   api.groupBox = (gid) => {
@@ -307,7 +307,7 @@ describe("scene.halo on the stage", () => {
   it("something a peer holds: the press is still the halo's, but nothing moves", async () => {
     await mount({ objects: { a: object() } });
     await s.select("a");
-    s.api("scene.halo").heldBy = () => "peer";
+    s.facet("scene.halo").heldBy = () => "peer";
     const { session, p } = pressOn(handle("move", 0));
     session.move(ev("move", p.x + 20, p.y));
     session.end(ev("move", p.x + 20, p.y));
@@ -394,7 +394,7 @@ describe("scene.halo under a moving parent: drawn and dragged in the parent's fr
     await mount({ objects: { hull: object(), winch: object({ parent: "hull", transform: T([0.5, 1, 0.25]) }) } });
     s.worlds.set("hull", sailing(0));
     s.worlds.set("winch", multiplyMatrices(sailing(0), composeMatrix(T([0.5, 1, 0.25]))));
-    const api = s.api("scene.halo");
+    const api = s.facet("scene.halo");
     const loops = new Set();
     api.loop = (fn) => (loops.add(fn), () => loops.delete(fn));
     // (the halo registered its afterRender at create: drive the viewport's hooks by hand)

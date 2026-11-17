@@ -6,9 +6,8 @@
 //   - loading: the same rows, greyed, with nothing to press;
 //   - failed: the row says why, with Try again and Dismiss.
 // Each stage decides what's in its doc's list and does the loading; the view
-// puts them together (view.packages, which a general part sees, and
-// api.packages, which to a general part is the view's); this only shows it
-// and passes on the click.
+// puts them together (view.packages and api.packages, a view plugin's);
+// this only shows it and passes on the click.
 
 import css from "./packages.css?inline";
 import { promptText, shortUrl } from "../packages.js";
@@ -109,9 +108,10 @@ function create(api) {
     else if (action === "dismiss") api.packages.dismiss();
   });
 
+  // (every open doc's: the view's, which the focus stage's flush tells it has changed)
   return {
-    update(scene, local, prev, view) {
-      if (view?.packages !== prev?.view?.packages) render(view?.packages);
+    update() {
+      render(api.view.get().packages);
     },
   };
 }

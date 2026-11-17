@@ -11,7 +11,7 @@ import { own } from "../stage/own.js";
 export default own({
   create(api) {
     /** What Frame frames: the selection's box, if it has one, else the whole scene's. */
-    const selectedBox = (local) => (local?.selected != null ? api.box(local.selected) : null);
+    const selectedBox = (view) => (view?.selected != null ? (api.focus()?.box(view.selected) ?? null) : null);
 
     return {
       commands: [
@@ -23,21 +23,25 @@ export default own({
             if (target != null) return null;
             return selectedBox(view) ? { label: "Frame selection", title: "Frame the selection (.)" } : { title: "Frame everything (.)" };
           },
-          run: () => api.camera.frame(selectedBox(api.view.get()) ?? api.sceneBox()),
+          run: () => {
+            const f = api.focus();
+            if (f) f.camera.frame(selectedBox(f.view.get()) ?? f.sceneBox());
+          },
         },
         {
           id: "set-home",
           edit: true,
           name: "Set home view",
           show: ["menu"],
-          state: (target) => (target == null ? { title: "Open this scene here for anyone without a saved view", disabled: !api.camera.get() } : null),
+          state: (target) => (target == null ? { title: "Open this scene here for anyone without a saved view", disabled: !api.focus()?.camera.get() } : null),
           run: () => {
-            const cam = api.camera.get();
+            const f = api.focus();
+            const cam = f?.camera.get();
             if (!cam?.position) return;
             const home = { position: [...cam.position].map(Number) };
             if (Array.isArray(cam.target)) home.target = [...cam.target].map(Number);
             if (Number.isFinite(cam.fov)) home.fov = cam.fov;
-            api.edit(
+            f.edit(
               (d) => {
                 if (!d.view || typeof d.view !== "object") d.view = {};
                 if (!d.view.start || typeof d.view.start !== "object") d.view.start = {};

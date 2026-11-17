@@ -354,13 +354,12 @@ describe("loading: the listed packages this viewer doesn't have", () => {
         [TERRAIN, "@tiny/terrain"],
       ]);
       expect(card(s).querySelector(".packages-title").textContent).toBe("This scene uses 2 packages you don't have.");
-      // a part that isn't general sees no union, and its api.packages is its own doc's
+      // a doc's part sees no union, and its api.packages is its own doc's; a view plugin's is every open doc's
       expect("packages" in s.api("t.own").view.get()).toBe(false);
       expect("packages" in s.api("scene.packages").view.get()).toBe(true);
-      // nor the other stages' readers (their packages, scenes, runs): api.path is a general part's only
-      expect(s.api("t.own").path).toBeUndefined();
+      // nor the other stages' readers (their packages, scenes, runs): api.path is the view plugins'
       expect(typeof s.api("scene.packages").path).toBe("function");
-      for (const st of s.debug.view.stages()) for (const r of st.debug.host.running()) if (r.scope !== "general") expect(st.debug.host.record(r.id).api.path).toBeUndefined();
+      for (const st of s.debug.view.stages()) for (const r of st.debug.host.running()) expect(st.debug.host.record(r.id).api.path).toBeUndefined();
       await s.api("t.own").packages.load();
       await settle();
       expect(imported.map((u) => u.split("#")[0])).toEqual([SAILING]);

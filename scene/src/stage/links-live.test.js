@@ -31,8 +31,8 @@ function gameExtensions(log) {
     { meta: { id: "t.card", traits: ["t.card"] }, module: { create: (api) => ({ input: input("t.card"), commands: [{ id: "draw", name: "Draw", key: "d", state: (t, ctx) => (t != null && ctx.scene.objects?.[t]?.traits?.["t.card"] ? { title: "Draw it" } : null), run: (t) => api.change((d) => (d.objects[t].name = "drawn")) }], go: () => api.change((d) => (d.objects.card.name = "touched")) }) } },
     { meta: { id: "t.game", traits: ["t.game"] }, module: { create: () => ({ input: input("t.game") }) } },
     { meta: { id: "t.host", traits: ["t.host"] }, module: { create: (api) => ({ input: input("t.host"), go: () => api.change((d) => (d.title = "host touched")) }) } },
-    // a general one: it runs once, at the focus
-    { meta: { id: "t.general" }, module: { create: () => ({ input: input("t.general") }) } },
+    // a view plugin: it runs once, seated at the focus
+    { meta: { id: "t.view", type: "scene:view" }, module: { create: () => ({ input: input("t.view") }) } },
     { meta: { id: "scene.keys" }, module: keys },
   ];
 }
@@ -123,13 +123,15 @@ describe("a live link opens a stage for its doc", () => {
     expect(s.doc().objects[self].providerId).toBe(LINK);
   });
 
-  it("the linked doc's extensions run in its stage, the host's in the host's, the general ones once, at the focus", async () => {
+  it("the linked doc's extensions run in its stage, the host's in the host's, the view plugins once, seated at the focus", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();
     s = m.s;
     const ids = (st) => st.debug.host.running().map((r) => r.id).sort();
     expect(ids(m.g)).toEqual(["t.card", "t.game"]);
-    expect(ids(s.debug.view.stage(0))).toEqual(["scene.keys", "t.general", "t.host"]);
+    expect(ids(s.debug.view.stage(0))).toEqual(["t.host"]);
+    expect(s.debug.view.stage(0).seated()).toEqual(["t.view", "scene.keys", "scene.edit"]);
+    expect(m.g.seated()).toEqual([]);
     expect(m.g.path).toEqual(["L"]);
     expect(m.g.url).toBe(m.game.url);
     expect(s.api("t.host").link("L")).toEqual({ role: "acting", open: true });
@@ -164,7 +166,7 @@ describe("a live link opens a stage for its doc", () => {
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
     await settle();
-    expect(m.log.map((e) => e.who)).toEqual(["t.card", "t.game", "t.host", "t.general"]);
+    expect(m.log.map((e) => e.who)).toEqual(["t.card", "t.game", "t.host", "t.view"]);
     expect(m.log[0]).toMatchObject({ id: "card", point: [0, 1, 0], holder: "card" });
     expect(m.log[1]).toMatchObject({ id: "card", holder: null });
     // the host sees the link it's in, at the world point (its frame is the world)
@@ -190,7 +192,7 @@ describe("a live link opens a stage for its doc", () => {
     expect(gapi.view.get().selected).toBe(null);
     gapi.view.select(null);
     // editing, a click on the card from outside selects the link (the focus is the host's)
-    hapi.view.edit(true);
+    s.edit(true);
     s.click(20, 20);
     await settle();
     expect(s.debug.view.atom.get().selected).toEqual(["L"]);

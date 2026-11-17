@@ -13,10 +13,6 @@
 // open session, a pose hold), so nobody's game is torn down under them by a
 // peer's edit. One still loading stops at once, having acquired nothing, and
 // so does one whose plugin left the registry (there is no code to keep).
-// The general parts the view moves away (setGeneral(false): the focus moved)
-// keep the busy half of the rule: one holding nothing stops at once, one that
-// holds something lingers until it lets go, offering nothing meanwhile (its
-// successor at the focus offers the same).
 //
 // Running order (activeSet's order) is the only order anything here reports
 // in: local.running, instances(), collect(). The order extensions finished
@@ -88,12 +84,9 @@ export function createHost({
   lingerMs = LINGER_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
-  // does this stage run the general extensions (no traits)? The focus does, and no other stage (STAGE.md, "Views, stages and links");
-  // the view moves them with setGeneral
-  general = true,
 }) {
   let dead = false;
-  const wanted = (metas, d) => activeSet({ metas, doc: d }).filter((w) => general || w.scope !== "general");
+  const wanted = (metas, d) => activeSet({ metas, doc: d });
   let isReady = false;
   let reg = null;
   // rec: { id, meta, scope, state: "loading" | "running" | "failed" | "stopped",
@@ -186,7 +179,6 @@ export function createHost({
     if (was === "running") teardown(rec);
   }
 
-  // (`ms`: the first look; the view's move looks only at busy, so its first is a busy recheck)
   function linger(rec, ms = lingerMs) {
     if (rec.linger != null) return;
     const check = () => {
@@ -288,13 +280,6 @@ export function createHost({
     }
     return out;
   }
-  /**
-   * The started extensions that offer what they have (commands, bodies,
-   * widgets, a place in the chain), in running order: all of them, but a
-   * general part the view moved away, which only finishes what it holds.
-   */
-  const offering = () => running().filter((r) => general || r.scope !== "general");
-
   // ─── reading what's running ───────────────────────────────────────────────
 
   /** @returns {{ id, meta, scope, instance, api, signal }[]} started, in running order */
@@ -312,7 +297,7 @@ export function createHost({
    */
   function collect(name) {
     const out = [];
-    for (const r of offering()) {
+    for (const r of running()) {
       let value;
       try {
         value = r.instance[name];
@@ -362,37 +347,6 @@ export function createHost({
       if (dead) return false;
     }
     return false;
-  }
-
-  /**
-   * Run the general extensions here, or stop running them (the focus moved:
-   * STAGE.md, "Views, stages and links"). What the doc runs is untouched (H1): only the
-   * view's parts come or go. One holding nothing goes at once (the doc's
-   * LINGER_MS grace is for a peer's edit undone, and a focus move isn't
-   * one); one that's busy (a body entered, the held tool, an open session, a
-   * pose hold) lingers, offering nothing, until it lets go, so a walk, a held
-   * Measure or a drag goes on across Enter and Leave. Back here before then,
-   * it's simply kept. Starting is as for any extension.
-   */
-  function setGeneral(on) {
-    if (dead || general === !!on) return;
-    general = !!on;
-    settledFor = null;
-    if (!general) {
-      let stopped = false;
-      for (const rec of [...recs.values()]) {
-        if (rec.scope !== "general" || rec.linger != null) continue;
-        if (isBusy(rec)) linger(rec, BUSY_RECHECK_MS);
-        else {
-          stop(rec);
-          stopped = true;
-        }
-      }
-      publish();
-      if (stopped) onChange();
-      return;
-    }
-    if (isReady && lastDoc) sync(lastDoc);
   }
 
   /** Stop everything (last first) and stop listening. */
@@ -447,15 +401,11 @@ export function createHost({
     settled,
     starting,
     running,
-    offering,
     instances,
     instanceOf,
     collect,
     inputOf,
     drop,
-    setGeneral,
-    /** does it run the general extensions (it is the focus)? */
-    general: () => general,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,
     /** is this extension lingering after the doc stopped calling for it? */

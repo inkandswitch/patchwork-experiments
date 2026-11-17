@@ -145,10 +145,10 @@ describe("the editor is the Edit hand", () => {
           for (const selected of SELECTIONS) {
             // start each case from Look, not editing, with nothing selected
             api.body.enter("look");
-            api.view.edit(false);
+            s.edit(false);
             await settle();
             for (const id of path) expect(api.body.enter(id)).toBe(true);
-            api.view.edit(edit);
+            s.edit(edit);
             s.local.swap((m) => ({ ...m, selected }));
             await still();
             expect([s.local.get().body.id, editing(s.local.get())]).toEqual([body, edit]);
@@ -188,7 +188,7 @@ describe("the editor is the Edit hand", () => {
       await still();
       expect([s.local.get().hands.map((h) => h.kind), await told()]).toEqual([["edit", "popover"], { body: "Look", held: "Edit" }]);
       close();
-      api.view.edit(false);
+      s.edit(false);
       await still();
       expect(await told()).toEqual({ body: "Look", held: null });
     } finally {
@@ -208,7 +208,7 @@ describe("the editor is the Edit hand", () => {
       expect(chrome().inspector).toBe(true);
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
       expect(s.local.get().held?.command).toBe("measure");
-      api.view.edit(false);
+      s.edit(false);
       await still();
       expect(editing(s.local.get())).toBe(false);
       expect(s.local.get().held).toBe(null);
@@ -217,7 +217,7 @@ describe("the editor is the Edit hand", () => {
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(false);
       // the selection went with the editor (attention is the selection: F would act on what was last edited)
       expect(s.local.get().selected).toBe(null);
-      api.view.edit(true);
+      s.edit(true);
       await still();
       expect(chrome()).toMatchObject({ inspector: false, handles: false, toolbar: true });
       s.local.swap((m) => ({ ...m, selected: "a" }));

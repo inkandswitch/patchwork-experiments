@@ -10,8 +10,8 @@
 // holding Delete doesn't remove one thing after another. Escape is never a
 // command's: it is the stage's ladder.
 //
-// Every command runs in the context every surface passes (api.context: the
-// eye, the body's reach, the look's hit), so a `reach: true` verb runs only
+// Every command runs in the context every surface passes (its stage's
+// reader's context: the eye, the body's reach, the look's hit), so a `reach: true` verb runs only
 // within reach, from any surface. A tool command (it declares `tool`) goes
 // through api.run, which holds it.
 //
@@ -96,12 +96,6 @@ function create(api) {
     for (const fn of watchers) fn();
   };
 
-  /** Attention, pinned to the held verbs' target's path while any is held. */
-  function attentionNow() {
-    const pinned = held.path;
-    return pinned !== undefined ? Object.freeze({ selected: pinned.at(-1), hit: null, pinned }) : api.attention();
-  }
-
   /**
    * Is a held verb's target gone: its stage no longer on the view (its link
    * went), the target gone from that stage's doc, or its extension stopped
@@ -109,7 +103,6 @@ function create(api) {
    */
   function gone(path, ext) {
     const id = path.at(-1);
-    if (typeof api.path !== "function") return id != null && !api.scene().objects?.[id];
     const at = api.path({ at: path }).find((r) => samePath(r.path, path.slice(0, -1)));
     return !at || (id != null && !at.scene().objects?.[id]) || (ext != null && !at.runs(ext));
   }
@@ -146,7 +139,7 @@ function create(api) {
     // attention's path, a stage at a time, innermost first (STAGE.md, "The input chain")
     let inv = null;
     let seg = null;
-    for (const s of segmentsOf(resolverState(api, attentionNow()))) {
+    for (const s of segmentsOf(resolverState(api, held.path ?? null))) {
       inv = mapInvocation(s.collected, ev.key, s.ctx, s.attention);
       if (inv) {
         seg = s;

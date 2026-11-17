@@ -1,5 +1,5 @@
 // The stage, mounted (no WebGL): extensions registered as plugins, started by
-// trait or by declaring none (general), in running order, as the doc calls
+// trait (`"*"`: every doc), in running order, as the doc calls
 // for them; the api they get; presence between two mounted stages; prefs
 // kept per scene; where the doc starts people; templates; undo.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -50,7 +50,8 @@ const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
 const { plugins } = await import("../index.js");
 const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
-for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
+// (and the editor's hand, a view plugin: view.start.edit picks it up)
+for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || p.id === "scene.edit") getRegistry(p.type).register(p);
 
 // ─── test extensions ────────────────────────────────────────────────────────
 //
@@ -92,8 +93,8 @@ const EXT_PLUGINS = [
   // registered far before near, so nearness (not running order) has to put near first
   { id: "t.far", traits: ["t.far"] },
   { id: "t.near", traits: ["t.near"] },
-  { id: "t.edit" },
-  { id: "t.always" },
+  { id: "t.edit", traits: ["*"] },
+  { id: "t.always", traits: ["*"] },
   { id: "t.dropped", traits: ["t.dropped"], drops: ["t-deck"] },
 ];
 const registerExt = (p) =>
@@ -265,7 +266,7 @@ describe("the stage, mounted", () => {
     expect(m.element.querySelector("style")).toBeTruthy(); // stage.css (vitest inlines CSS as "")
   });
 
-  it("runs what the doc's traits and the general extensions call for, in running order", async () => {
+  it("runs what the doc's traits call for (every doc's among them), in running order", async () => {
     // the scene extension loads last
     let release;
     const slow = new Promise((r) => (release = r));
@@ -279,11 +280,11 @@ describe("the stage, mounted", () => {
       const h = newScene({ traits: { "t.scene": {} }, objects: { a: card({ traits: { "t.obj": {} } }) }, order: ["a"] });
       const m = mount(h);
       await settle();
-      expect(running(m)).toEqual(["t.obj:objects", "t.edit:general", "t.always:general"]);
+      expect(running(m)).toEqual(["t.edit:scene", "t.always:scene", "t.obj:objects"]);
       release();
       await settle();
-      expect(running(m)).toEqual(["t.scene:scene", "t.obj:objects", "t.edit:general", "t.always:general"]);
-      expect(m.debug.host.collect("update").map((x) => x.id)).toEqual(["t.scene", "t.obj", "t.edit", "t.always"]);
+      expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene", "t.obj:objects"]);
+      expect(m.debug.host.collect("update").map((x) => x.id)).toEqual(["t.scene", "t.edit", "t.always", "t.obj"]);
     } finally {
       getRegistry("scene:extension").get("t.scene").load = async () => ext("t.scene").module;
     }
@@ -351,7 +352,7 @@ describe("the stage, mounted", () => {
     expect(m.root.querySelector(".stage-overlay")).toBeNull();
     expect(m.root.querySelector('[data-edge="left"]').children).toHaveLength(0);
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(0);
-    expect(running(m)).toEqual(["t.always:general"]);
+    expect(running(m)).toEqual(["t.always:scene"]);
     // after the abort, acquiring is a no-op
     expect(r.api.overlay().isConnected).toBe(false);
   });
@@ -492,9 +493,11 @@ describe("the stage, mounted", () => {
     mount(newScene({ traits: { "t.scene": {} }, objects: { a: card() }, order: ["a"] }));
     await settle();
     const api = exts["t.always"].api;
+    // (this stage's, and at the focus the view's plugins': the editor's Edit)
     expect(api.collect("commands").map((c) => [c.id, c.value.map((k) => k.id)])).toEqual([
       ["t.scene", ["poke", "reset", "off"]],
       ["t.always", ["x"]],
+      ["scene.edit", ["edit"]],
     ]);
     expect(api.run({ ext: "t.scene", command: "poke", target: "a", value: 3 })).toBe(true);
     expect(api.run({ ext: "t.scene", command: "poke", target: null })).toBe(false); // doesn't apply to the scene
@@ -579,7 +582,7 @@ describe("the stage, mounted", () => {
       expect(m.local.get().body.id).toBe("stroll");
       // the template's start says nothing of the editor: put down
       expect(m.local.get().hands).toEqual([]);
-      expect(running(m)).toEqual(["t.scene:scene", "t.edit:general", "t.always:general"]);
+      expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene"]);
       expect(await api.template("nope")).toBe(false);
       template = () => {
         throw new Error("no room");
@@ -760,7 +763,7 @@ describe("the stage, mounted", () => {
     expect(api.view.get().notices.at(-1)).toMatchObject({ text: "Hello", kind: "error", from: "t.always" });
   });
 
-  it("offers the holders nearest first, the scene last of them, then the general ones (STAGE.md, “The input chain”)", async () => {
+  it("offers the holders nearest first, the scene last of them, every doc's part among the scene's (STAGE.md, “The input chain”)", async () => {
     const offered = [];
     const pass = (id) => () => ({ input: { click: (ev) => (offered.push([id, ev.holder, ev.hit?.id ?? null]), null) } });
     for (const id of ["t.scene", "t.far", "t.near", "t.always"]) exts[id] = recorder(id, pass(id));
@@ -773,7 +776,7 @@ describe("the stage, mounted", () => {
     const m = mount(h);
     await settle();
     // running order puts the scene's first and far before near: the chain mustn't
-    expect(running(m).filter((r) => r !== "t.edit:general")).toEqual(["t.scene:scene", "t.far:objects", "t.near:objects", "t.always:general"]);
+    expect(running(m).filter((r) => r !== "t.edit:scene")).toEqual(["t.scene:scene", "t.always:scene", "t.far:objects", "t.near:objects"]);
     const canvas = m.root.querySelector(".canvas");
     const vp = m.debug.viewport;
     const click = (id) => {
@@ -893,7 +896,7 @@ describe("the stage, mounted", () => {
     await settle();
     const api = m.debug.host.record("t.always").api;
     // (not editing: the Edit hand wants the pointer too)
-    api.view.edit(false);
+    api.run({ ext: "scene.edit", command: "edit", value: false });
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
     expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) });
     const serials = [m.local.get().held.serial];

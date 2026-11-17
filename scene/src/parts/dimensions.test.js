@@ -30,7 +30,7 @@ async function mount({ objects = { a: object({ name: "A", transform: T([1, 0, 0]
 const api = () => s.api("scene.dimensions");
 const inst = () => s.instance("scene.dimensions");
 const run = (command, target = null) => api().run({ ext: "scene.dimensions", command, target });
-const state = (command, target = null) => inst().commands.find((c) => c.id === command).state(target, { scene: api().scene(), local: s.local.get() });
+const state = (command, target = null) => inst().commands.find((c) => c.id === command).state(target, { scene: s.facet("scene.dimensions").scene(), local: s.local.get() });
 const labels = () => [...s.port.querySelectorAll(".labels .dimension-label")];
 const label = (id) => s.port.querySelector(`.labels .dimension-label[data-id="${id}"]`);
 const layer = () => [...(s.debug.viewport.layers.get("scene.dimensions") ?? [])].flatMap((g) => g.children);
@@ -140,7 +140,7 @@ describe("scene.dimensions", () => {
     await mount({ dims: { d1: { a: on("a", [0.5, 0, 0]), b: on("a", [3, 0, 0]), label: null } } });
     const root = new THREE.Group();
     root.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
-    api().content = (id) => (id === "a" ? { loaded: true, root } : null);
+    s.facet("scene.dimensions").content = (id) => (id === "a" ? { loaded: true, root } : null);
     const p = panel();
     // content loading flushes with the same scene and local
     s.debug.viewport.contentChanged?.();
@@ -230,7 +230,7 @@ describe("scene.dimensions", () => {
     s.change((d) => {
       d.dimensions.d2 = { a: free([0, 0, 0]), b: free([0, 0, 2]), label: null };
     });
-    p.handle.update(api().scene(), s.local.get());
+    p.handle.update(s.facet("scene.dimensions").scene(), s.local.get());
     expect(p.rows().map((r) => r.dataset.id)).toEqual(["d1", "d2"]);
   });
 
@@ -278,7 +278,7 @@ describe("scene.dimensions", () => {
       dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } },
       before: [SELECT],
     });
-    expect(s.local.get().running.map((r) => r.id)).toEqual(["scene.select", "scene.dimensions"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.select", "scene.dimensions", "scene.edit"]);
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     const l = label("d1");
@@ -305,7 +305,7 @@ describe("scene.dimensions", () => {
     await mount({ dims: { d1: { a: on("a", [0, 0, 0], [0, 0, 0]), b: free([1, 1, 0]), label: null } } });
     const p = panel();
     expect(p.rows().length).toBe(1);
-    api().remove(["a"]);
+    s.facet("scene.dimensions").remove(["a"]);
     await settle();
     expect(s.doc().objects.a).toBeUndefined();
     expect(s.doc().dimensions.d1.a).toEqual({ objectId: null, local: null, world: [1, 0, 0] });
@@ -320,7 +320,7 @@ describe("scene.dimensions", () => {
       cell: object({ name: "Cell" }),
     };
     await mount({ objects, dims: { d1: { a: on("hull", [0, 0, 0], [0, -0.7, 0]), b: free([1, 0, 0]), label: null } } });
-    api().remove(["vessel"]);
+    s.facet("scene.dimensions").remove(["vessel"]);
     await settle();
     expect(Object.keys(s.doc().objects)).toEqual(["cell"]);
     expect(s.doc().dimensions.d1.a).toEqual({ objectId: null, local: null, world: [0, -0.7, 0] });

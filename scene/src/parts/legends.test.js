@@ -10,7 +10,7 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
 async function mount(doc, legendsById = {}) {
   const s = await mountStage({ extensions: [{ meta: { id: "scene.legends" }, module: legends }], doc });
   // no WebGL here: what the stage would say each object's GLB carries
-  s.api("scene.legends").content = (id) => (legendsById[id] ? { loaded: true, box: null, extras: { legend: legendsById[id] }, stats: null } : null);
+  s.facet("scene.legends").content = (id) => (legendsById[id] ? { loaded: true, box: null, extras: { legend: legendsById[id] }, stats: null } : null);
   s.change((d) => (d.title = "content arrived"));
   await s.settle();
   return s;

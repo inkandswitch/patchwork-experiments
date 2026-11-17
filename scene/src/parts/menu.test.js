@@ -261,8 +261,8 @@ describe("scene.menu", () => {
         document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
         await s.settle();
         expect(s.root.querySelector(".context-menu")).toBeNull();
-        const look = s.api("scene.menu").look();
-        expect([s.api("scene.menu").nameOf(look?.id), menuTitle]).toEqual([lookAt, menuOf]);
+        const look = s.facet("scene.menu").look();
+        expect([s.facet("scene.menu").nameOf(look?.id), menuTitle]).toEqual([lookAt, menuOf]);
       }, 30_000);
   });
 });

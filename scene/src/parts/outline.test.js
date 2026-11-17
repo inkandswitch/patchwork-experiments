@@ -126,7 +126,7 @@ describe("the inspector's tree", () => {
     await pass();
     expect(row("bhd").hasAttribute("data-selected")).toBe(true);
     const framed = [];
-    const api = s.api("scene.inspector");
+    const api = s.facet("scene.inspector");
     api.camera = { ...api.camera, frame: (box) => framed.push(box) };
     api.groupBox = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     row("battery").querySelector(".row-main").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -231,7 +231,7 @@ describe("the inspector's tree", () => {
     expect(row("hull").hasAttribute("data-context")).toBe(false);
     expect($(".match-count").textContent).toBe("1 of 13");
     const framed = [];
-    const api = s.api("scene.inspector");
+    const api = s.facet("scene.inspector");
     api.camera = { ...api.camera, frame: (box) => framed.push(box) };
     api.box = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -402,7 +402,7 @@ describe("the inspector's tree: dragging rows", () => {
   it("copies a row from another scene into the place it's dropped in the tree, put down where the view is looking (not where it was in its own scene)", async () => {
     await mount({ objects: { g1: grp("G") }, order: ["g1"] });
     const other = s.repo.add(emptyScene({ objects: { m: leafAt("Mast", { x: 3 }), b: leafAt("Boom", { parent: "m", x: 1 }) }, order: ["m", "b"] }));
-    const api = s.api("scene.inspector");
+    const api = s.facet("scene.inspector");
     api.pick = () => ({ id: null, point: [7, 0, -2] });
     atRow("g1", 0.5, rowDrag("m", other.url));
     await pass();
@@ -421,7 +421,7 @@ describe("the inspector's tree: dragging rows", () => {
   it("another scene's row dropped among an object's attachments: under it, at the nearest of its connectors that takes it, however far", async () => {
     await mount({ objects: { deck: leafAt("Deck", { x: 10 }), cleat: leafAt("Cleat", { parent: "deck" }) }, order: ["deck", "cleat"] });
     const other = s.repo.add(emptyScene({ objects: { m: { ...leafAt("Mast", { x: -40 }), tags: ["mast"] } }, order: ["m"] }));
-    const api = s.api("scene.inspector");
+    const api = s.facet("scene.inspector");
     api.content = (id) => (id === "deck" ? { extras: { connectors: [{ position: [0, 1, 5], yaw: null, tags: ["mast"] }, { position: [0, 1, -1], tags: ["cleat"] }], snapRadius: 0.1 } } : null);
     atRow("cleat", 0.2, rowDrag("m", other.url));
     await pass();

@@ -7,6 +7,7 @@
 // loaded geometry only (no hints), from api.box.
 
 import { editing } from "../stage/bodies.js";
+import { perFocus } from "./per-focus.js";
 import css from "./bounds.css?inline";
 import { formatLength } from "../units.js";
 import { isGroup } from "../groups.js";
@@ -33,15 +34,19 @@ export default {
   create(api) {
     const { THREE } = api;
     api.style(css);
-    const layer = api.world();
-    layer.userData.noPick = true;
-    const labels = api.labels();
+    let key = null;
+    // its layer and labels are the focus stage's, in its frame: made again where the focus goes
+    const at = perFocus(api, (f) => {
+      const layer = f.world();
+      layer.userData.noPick = true;
+      key = null;
+      return { f, layer, labels: f.labels() };
+    });
     const shown = () => api.pref("bounds", false) === true;
     // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
-    let key = null;
 
-    function clear() {
+    function clear(layer) {
       for (const c of [...layer.children]) {
         c.removeFromParent();
         c.geometry?.dispose?.();
@@ -50,6 +55,9 @@ export default {
     }
 
     function redraw(scene, view) {
+      const here = at();
+      if (!here) return;
+      const { f, layer, labels } = here;
       const on = drawn();
       const unit = api.pref("units", "m");
       const selected = view.selected ?? null;
@@ -57,7 +65,7 @@ export default {
       const boxes = [];
       if (on) {
         for (const id of boundsTargets(scene, selected)) {
-          const b = api.box(id, { hints: false });
+          const b = f.box(id, { hints: false });
           if (!b) continue;
           items.push(...sizeLabels(id, b, unit));
           if (id !== selected) boxes.push(b);
@@ -66,7 +74,7 @@ export default {
       const next = JSON.stringify([unit, items.map((i) => [i.key, i.position]), boxes, view.theme?.muted]);
       if (next === key) return;
       key = next;
-      clear();
+      clear(layer);
       const m = view.theme?.muted;
       const col = Array.isArray(m) ? new THREE.Color().setRGB(m[0], m[1], m[2], THREE.SRGBColorSpace) : new THREE.Color(0x808080);
       for (const b of boxes) {
@@ -97,9 +105,6 @@ export default {
         const content = scene === prev.scene && local === prev.local && view === was;
         if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.selected === was.selected && view.hands === was.hands) return;
         redraw(scene, view);
-      },
-      dispose() {
-        clear();
       },
     };
   },

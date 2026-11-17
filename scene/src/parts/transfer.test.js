@@ -89,7 +89,7 @@ async function setup({ sea = false } = {}) {
     traits: { "t.sea": {} },
     assets: { "t/mast@1": { url: glb.url }, "t/other@1": { url: "automerge:3k9knn3DsFnFYDFvXkyMu4UHyp7u" } },
   }));
-  const api = s.api("scene.transfer");
+  const api = s.facet("scene.transfer");
   // what's under the pointer: the hull at x < 100, else the ground
   api.pick = (x) => (x < 100 ? { id: "hull", point: [5.5, 1, 1.5] } : { id: null, point: [9, 0, 9] });
   api.content = (id) => (id === "hull" ? { extras: { connectors: [{ position: [0, 1, 2], yaw: null, tags: ["mast"] }], snapRadius: 2 } } : null);
@@ -246,7 +246,7 @@ describe("copy and paste", () => {
     s.root.dispatchEvent(none);
     expect(none.defaultPrevented).toBe(false);
     // a paste from the other scene: in the middle of the view (the ground at 9, 0, 9 here, as the port has no size)
-    s.api("scene.transfer").pick = () => ({ id: null, point: [9, 0, 9] });
+    s.facet("scene.transfer").pick = () => ({ id: null, point: [9, 0, 9] });
     const p = clipEvent("paste", { [ROW_MIME]: rowPayload(other.url, ["crate"]), "text/plain": glb.url });
     s.root.dispatchEvent(p);
     expect(p.defaultPrevented).toBe(true);
@@ -344,7 +344,7 @@ describe("references", () => {
   };
   async function mountWith(doc) {
     s = await mountStage({ extensions: [...EXTS, LEVERS], doc });
-    const api = s.api("scene.transfer");
+    const api = s.facet("scene.transfer");
     api.pick = () => ({ id: null, point: [9, 0, 9] });
     return api;
   }
@@ -491,7 +491,7 @@ describe("Extract and Bundle", () => {
         traits: { "t.sea": { level: 0 } },
       },
     });
-    s.api("scene.transfer").view.edit(true);
+    s.edit(true);
     await settle();
   }
   const run = (command, target, value) => s.api("scene.transfer").run({ ext: "scene.transfer", command, target, value });
@@ -518,10 +518,10 @@ describe("Extract and Bundle", () => {
     // the link is selected, and the view opened its doc
     expect(s.local.get().selected).toBe(id);
     await until(() => s.debug.view.stages().some((x) => x.url === link.sourceUrl));
-    expect(s.api("scene.transfer").link(id)).toMatchObject({ role: "acting", open: true });
+    expect(s.facet("scene.transfer").link(id)).toMatchObject({ role: "acting", open: true });
     // one step
     expect(s.local.get().edits.undo).toBe("Extract");
-    expect(s.api("scene.transfer").undo()).toBe(true);
+    expect(s.facet("scene.transfer").undo()).toBe(true);
     expect(JSON.parse(JSON.stringify(s.doc()))).toEqual(before);
   });
 
@@ -531,7 +531,7 @@ describe("Extract and Bundle", () => {
     await until(() => linkId());
     const id = linkId();
     const url = s.doc().objects[id].sourceUrl;
-    await until(() => s.api("scene.transfer").link(id)?.open);
+    await until(() => s.facet("scene.transfer").link(id)?.open);
     const linked = JSON.stringify(s.repo.handles.get(url).doc());
     const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
     expect(cmd.state(id, { scene: { objects: s.doc().objects } })).toMatchObject({ title: expect.stringContaining("no longer follows") });
@@ -555,7 +555,7 @@ describe("Extract and Bundle", () => {
     await until(() => linkId());
     const id = linkId();
     const url = s.doc().objects[id].sourceUrl;
-    await until(() => s.api("scene.transfer").link(id)?.open);
+    await until(() => s.facet("scene.transfer").link(id)?.open);
     const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
     const values = () => cmd.state(id, { scene: { objects: s.doc().objects } }).options.map((o) => o.value);
     await until(() => values().length === 1);
@@ -570,11 +570,11 @@ describe("Extract and Bundle", () => {
 
   it("neither is offered without the editor, nor where the scene can't be written; Bundle only on a link, and not on one that isn't open", async () => {
     await mount();
-    const api = s.api("scene.transfer");
-    api.view.edit(false);
+    const api = s.facet("scene.transfer");
+    s.edit(false);
     await settle();
     expect(run("extract", "winch", [])).toBe(false);
-    api.view.edit(true);
+    s.edit(true);
     const cmds = s.instance("scene.transfer").commands;
     const ctx = { scene: { objects: s.doc().objects } };
     expect(cmds.find((c) => c.id === "bundle").state("winch", ctx)).toBe(null);

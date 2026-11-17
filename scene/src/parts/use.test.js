@@ -258,9 +258,10 @@ describe("scene.use", () => {
   const down = (key, extra = {}) => s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}`, ...extra }));
   const up = (key) => s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}` }));
 
-  it("runs in every scene: general, as the key map is", async () => {
+  it("runs in every view: a view plugin, as the key map is", async () => {
     await mount();
-    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys"]);
+    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.use", "scene.keys", "scene.edit"]);
   });
 
   it("hovering something with verbs shows them; its key (the key map's) runs the verb on it", async () => {
@@ -335,7 +336,7 @@ describe("scene.use", () => {
   // halo handle), never a button left there. An eye carried every frame (a ride) doesn't: it would never let the
   // pointer catch the prompt. However the pointer came onto it, it holds where it is.
   describe("the pointer on the prompt, and the eye", () => {
-    const EDIT = (on) => s.api("t.game").view.edit(on);
+    const EDIT = (on) => s.edit(on);
     const origin = () => s.port.getBoundingClientRect();
     const px = (x, y) => [`${x - origin().left}px`, `${y - origin().top}px`];
     const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];

@@ -84,11 +84,11 @@ describe("bodies: the stage keeps the model", () => {
       for (const seq of all(4)) {
         // back to the start, nothing standing
         api.body.enter("look");
-        api.view.edit(start);
+        s.edit(start);
         let m = [["look"], start];
         for (const ev of seq) {
           if (ev === "leave") expect(api.body.leave()).toBe(m[0].length > 1);
-          else if (ev === "edit" || ev === "unedit") expect(api.view.edit(ev === "edit")).toBe(ev === "edit");
+          else if (ev === "edit" || ev === "unedit") expect(s.edit(ev === "edit")).toBe(ev === "edit");
           else expect(api.body.enter(ev)).toBe(true);
           m = apply(m, ev);
           const b = s.local.get().body;

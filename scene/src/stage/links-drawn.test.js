@@ -270,8 +270,8 @@ describe("fixing a link at a version, and following latest again", () => {
     s = await mountStage({ repo, extensions: [...extensions(log), { meta: { id: "scene.inspector" }, module: inspector }], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => running(stageAt(s, "L")));
     const api = s.api("scene.inspector");
-    api.view.edit(true);
-    const ids = () => api.collect("commands").flatMap(({ id: ext, value }) => (value ?? []).filter((c) => c.state?.("L", { scene: api.scene(), local: api.local.get(), view: api.view.get() })).map((c) => `${ext}:${c.id}`));
+    s.edit(true);
+    const ids = () => api.collect("commands").flatMap(({ id: ext, value }) => (value ?? []).filter((c) => c.state?.("L", { scene: s.facet("scene.inspector").scene(), local: s.facet("scene.inspector").local.get(), view: s.facet("scene.inspector").view.get() })).map((c) => `${ext}:${c.id}`));
     expect(ids()).toContain("scene.inspector:fix-version");
     expect(ids()).not.toContain("scene.inspector:follow-latest");
     // (G's heads as fixed: closing its acting stage then checkpoints its clock, which moves G on)

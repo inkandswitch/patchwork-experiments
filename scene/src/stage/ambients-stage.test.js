@@ -82,7 +82,7 @@ describe("one world's ambients (W2): the outermost's, everywhere in the view", (
       let checked = 0;
       // (holding the editor is no body: it is tried in Look and walking)
       for (const [body, edit] of [["look", false], ["look", true], ["t.walk", true]]) {
-        v.setEditing(edit);
+        v.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: edit });
         expect(v.enterBody(body, null)).toBeTruthy();
         await settle();
         for (const st of v.stages()) {

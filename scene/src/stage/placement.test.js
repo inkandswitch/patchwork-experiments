@@ -116,7 +116,7 @@ function seen(st) {
   return JSON.stringify({
     objects: snap.objects,
     traits: snap.traits,
-    running: st.debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id).sort(),
+    running: st.debug.host.running().map((r) => r.id).sort(),
     // the doc's clock, and the stage's own reading of it (its t moves with each view's frames, so only whether it runs)
     clock: { doc: readClock(st.doc()).running, api: api.clock.running() },
     cards: ["h1", "h2", "t"].map((id) => [id, api.audience(id), api.shown(id), st.debug.looks().get(id) ?? null]),
@@ -194,7 +194,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
             // ("edit": Look holding the editor, which is no body)
             for (const body of pinned ? ["look", "edit", "t.walk"] : ["look", "edit", "t.walk", "t.sit"])
               for (const held of pinned ? [false] : [false, true]) {
-                v.setEditing(body === "edit");
+                v.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: body === "edit" });
                 expect(v.enterBody(body === "edit" ? "look" : body, null)).toBeTruthy();
                 const acting = gStages(v).find((st) => st.acts);
                 const release = held ? v.holdTool(keyOf(acting.n, "t.table"), { name: "Measure" }, {}) : null;

@@ -84,7 +84,7 @@ describe("scene.undo", () => {
   it("a field being typed in keeps ⌘Z (its own text undo)", async () => {
     s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
     await settle();
-    s.api("scene.undo").edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
+    s.facet("scene.undo").edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
     const input = document.createElement("input");
     s.root.append(input);
     const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "z", metaKey: true });
@@ -134,7 +134,7 @@ describe("undo over reveals, the keeper rule, and who may edit", () => {
       s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: { ...cardDoc(), ...(missing ? { packages: [{ url: fakeUrl() }] } : {}) } });
       await settle();
       const table = s.instance("t.table");
-      const edit = s.api("scene.undo");
+      const edit = s.facet("scene.undo");
       for (const from of STATES) {
         for (const to of STATES) {
           if (from === to) continue;
@@ -165,13 +165,13 @@ describe("undo over reveals, the keeper rule, and who may edit", () => {
     const run = (command, target) => s.api("scene.undo").run({ ext: "scene.select", command, target });
     run("remove", "c1");
     expect(s.doc().objects.c1).toBeUndefined();
-    expect(s.api("scene.undo").undo()).toBe(true);
+    expect(s.facet("scene.undo").undo()).toBe(true);
     expect(s.doc().objects.c1.traits["t.kept"]).toEqual({ by: "automerge:box", slot: 3 });
     expect(s.local.get().notices.at(-1).text).toBe("Undid “Delete”: what is kept for “Card” comes back as its keeper has it now, not as it was.");
     // something no keeper holds: undone without a word
     const before = s.local.get().notices.length;
     run("remove", "d");
-    expect(s.api("scene.undo").undo()).toBe(true);
+    expect(s.facet("scene.undo").undo()).toBe(true);
     expect(s.local.get().notices.length).toBe(before);
   });
 
@@ -179,7 +179,7 @@ describe("undo over reveals, the keeper rule, and who may edit", () => {
     s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE, DICE], doc: cardDoc() });
     await settle();
     for (const k of ["edit", "edits", "undo", "redo"]) {
-      expect(typeof s.api("scene.undo")[k], k).toBe("function");
+      expect(typeof s.facet("scene.undo")[k], k).toBe("function");
       expect(s.api("t.table")[k], k).toBeUndefined();
       expect(s.api("t.dice")[k], k).toBeUndefined();
     }
@@ -187,7 +187,7 @@ describe("undo over reveals, the keeper rule, and who may edit", () => {
     s.unmount();
     s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: { create: (api) => undo.create(api) } }], doc: cardDoc() });
     await settle();
-    expect(s.api("scene.undo").edit).toBeUndefined();
+    expect(s.facet("scene.undo").edit).toBeUndefined();
     // nor can it swap a part's create for its own: the marked module is frozen
     const mine = (api) => ({ api });
     expect(() => {

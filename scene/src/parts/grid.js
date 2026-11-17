@@ -5,6 +5,7 @@
 // the stage as an extent so the near plane never cuts it.
 
 import { editing } from "../stage/bodies.js";
+import { perFocus } from "./per-focus.js";
 import css from "./grid.css?inline";
 import { gridFor, roundForDisplay, toUnits } from "../units.js";
 
@@ -40,9 +41,14 @@ export default {
   create(api) {
     const { THREE } = api;
     api.style(css);
-    const layer = api.world();
-    layer.userData.noPick = true;
-    const labels = api.labels();
+    let key = null;
+    // its layer and rulers are the focus stage's, in its frame: made again where the focus goes
+    const at = perFocus(api, (f) => {
+      const layer = f.world();
+      layer.userData.noPick = true;
+      key = null;
+      return { f, layer, labels: f.labels() };
+    });
     const caption = document.createElement("div");
     caption.className = "grid-caption";
     caption.hidden = true;
@@ -52,9 +58,8 @@ export default {
     // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
-    let key = null;
 
-    function clear() {
+    function clear(layer) {
       for (const c of [...layer.children]) {
         c.removeFromParent();
         c.geometry?.dispose?.();
@@ -63,17 +68,20 @@ export default {
     }
 
     function redraw(theme) {
+      const here = at();
+      if (!here) return;
+      const { f, layer, labels } = here;
       const on = drawn();
       const unit = api.pref("units", "m");
-      const grid = gridFor(sceneExtent(api.sceneBox()), unit);
+      const grid = gridFor(sceneExtent(f.sceneBox()), unit);
       const next = on ? JSON.stringify([unit, grid.size, grid.divisions]) : "off";
       if (next === key) return;
       key = next;
-      clear();
+      clear(layer);
       if (!on) {
         labels.set([]);
         caption.hidden = true;
-        api.extent(null);
+        f.extent(null);
         api.invalidate();
         return;
       }
@@ -85,7 +93,7 @@ export default {
       helper.raycast = () => {};
       layer.add(helper);
       const half = grid.size / 2;
-      api.extent({ min: [-half, 0, -half], max: [half, 0, half] });
+      f.extent({ min: [-half, 0, -half], max: [half, 0, half] });
       labels.set(rulerLabels(grid, unit));
       caption.hidden = false;
       caption.textContent = `grid ${roundForDisplay(grid.stepInUnits)} ${unit}`;
@@ -110,9 +118,6 @@ export default {
         if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.hands === was.hands) return;
         if (was && view.theme !== was.theme) key = null;
         redraw(view.theme);
-      },
-      dispose() {
-        clear();
       },
     };
   },

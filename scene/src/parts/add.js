@@ -8,7 +8,7 @@
 //     the outline's, and an inspector section's head adds nothing anywhere.
 //   - Paste an automerge URL anywhere in the stage outside a text field
 //     (scene.transfer hears pastes first, and takes a copied object's).
-//   - Each URL goes first to api.drop (an extension that lays out that
+//   - Each URL goes first to here.drop (an extension that lays out that
 //     datatype its own way, e.g. a deck as its cards); otherwise to the scene
 //     providers that can show it: none says so, one is used, several ask
 //     (the chooser). The new object is selected (local.selected).
@@ -17,7 +17,7 @@
 //     nothing is loaded to offer one) and Blank, then how to add something.
 //     A template that declares `params` has their form under its button
 //     (param-form.js, from the same metadata), its values this view's until
-//     it runs. A template runs through api.template(id, params) (it writes
+//     it runs. A template runs through here.template(id, params) (it writes
 //     the doc, view.start included, and the stage starts this viewer where
 //     it says: an arena's maker lands in the game). Blank only puts the
 //     choice away, for this view; the drop hint stays.
@@ -32,6 +32,7 @@ import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomerge
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
 import { own } from "../stage/own.js";
+import { atFocus } from "./per-focus.js";
 import { editing } from "../stage/bodies.js";
 import { createParamForm } from "../param-form.js";
 import { paramsBySpec } from "../staleness.js";
@@ -82,6 +83,8 @@ function el(tag, cls, text) {
 }
 
 function create(api) {
+  // the focus doc's: what is dropped, pasted or added goes into the focus stage, whichever it is now
+  const here = atFocus(api);
   api.style(css);
   const live = () => !api.signal.aborted;
 
@@ -162,7 +165,7 @@ function create(api) {
     const inputs = () => start.querySelectorAll("button, input, select");
     for (const b of inputs()) b.disabled = true;
     try {
-      await api.template(id, chosen.get(id) ?? {});
+      await here.template(id, chosen.get(id) ?? {});
     } finally {
       starting = false;
       if (live()) for (const b of inputs()) b.disabled = false;
@@ -251,35 +254,35 @@ function create(api) {
     const url = link.url;
     const version = heads?.length ? heads : link.heads;
     // (a live link to itself would only be closed, a cycle: stage/links.js; a version of itself is fine)
-    if (url === api.url && !version?.length) return fail("A scene can't contain itself.");
+    if (url === here.url && !version?.length) return fail("A scene can't contain itself.");
     let source;
     try {
-      source = await api.repo.find(url);
+      source = await here.repo.find(url);
     } catch (err) {
       return fail(`Couldn't open that document: ${err?.message ?? err}`);
     }
     if (!live()) return null;
     const doc = source?.doc?.();
     // what a drop lays out is one edit, as an added object is: undo takes it out again
-    const dropped = api.edits("Add");
+    const dropped = here.edits("Add");
     let laid = false;
     try {
-      laid = await api.drop({ url, doc, handle: source, group: null, at }, { edit: dropped });
+      laid = await here.drop({ url, doc, handle: source, group: null, at }, { edit: dropped });
     } finally {
       dropped.end();
     }
     if (laid) return null;
     if (!live()) return null;
-    const providers = (await api.providersFor(url, doc)) ?? [];
+    const providers = (await here.providersFor(url, doc)) ?? [];
     if (!providers.length) return fail(`Nothing can show ${describeForHumans(describeSource(doc))} in a scene.`);
     const what = name || doc?.title || doc?.name || "this document";
     const provider = providers.length === 1 ? providers[0] : await choose(providers, what);
     if (!provider || !live()) return null;
     let id;
     try {
-      const edit = api.edits("Add");
+      const edit = here.edits("Add");
       try {
-        id = await api.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}), edit });
+        id = await here.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}), edit });
       } finally {
         edit.end();
       }
@@ -287,7 +290,7 @@ function create(api) {
       return fail(err?.message ?? String(err));
     }
     if (!live()) return id;
-    if ((api.view.get().selected ?? null) !== id) api.view.select(id);
+    if ((here.view.get().selected ?? null) !== id) here.view.select(id);
     return id;
   }
 
@@ -298,7 +301,7 @@ function create(api) {
       let h;
       try {
         const content = new Uint8Array(await file.arrayBuffer());
-        h = await api.repo.create2({
+        h = await here.repo.create2({
           "@patchwork": { type: "file" },
           name: file.name,
           extension: extensionOf(file.name),
@@ -328,13 +331,13 @@ function create(api) {
     dropHint.hidden = !on;
   };
 
-  /** Where a drop landed: what's under it (or the ground), for api.drop's `at`; null off the port. */
+  /** Where a drop landed: what's under it (or the ground), for here.drop's `at`; null off the port. */
   function dropAt(e) {
     if (!(e.target instanceof Node) || !port.contains(e.target)) return null;
     const r = port.getBoundingClientRect();
     let hit = null;
     try {
-      hit = api.pick(e.clientX - r.left, e.clientY - r.top, { ground: true });
+      hit = here.pick(e.clientX - r.left, e.clientY - r.top, { ground: true });
     } catch {
       hit = null;
     }
@@ -344,7 +347,7 @@ function create(api) {
   // Anywhere in the stage takes a drop (the side panels too), unless something under it already did (an outline row, which stops
   // it). The hint shows only while the drag is over the port.
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
-  const adding = () => editing(api.view.get());
+  const adding = () => editing(here.view.get());
   api.listen(root, "dragenter", (e) => {
     if (!adding() || !inPort(e) || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
     depth++;

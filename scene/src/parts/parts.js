@@ -31,6 +31,7 @@ import { fromEmbed } from "../embed.js";
 import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { own } from "../stage/own.js";
+import { atFocus, perFocus } from "./per-focus.js";
 
 /** What a part's drag carries: JSON { part: id }. Only `types` is readable during dragover. */
 export const PART_MIME = "application/x-scene-part";
@@ -114,6 +115,8 @@ function el(tag, cls, content) {
 }
 
 function create(api) {
+  // the focus doc's: what is dropped, pasted or added goes into the focus stage, whichever it is now
+  const here = atFocus(api);
   api.style(css);
   const live = () => !api.signal.aborted;
   const port = api.port;
@@ -165,17 +168,17 @@ function create(api) {
   // ── where it lands ───────────────────────────────────────────────────────
   /** What a part put on this object goes under: the object (a group is only a folder). */
   function parentFor(id) {
-    const o = id ? api.scene().objects[id] : null;
+    const o = id ? here.scene().objects[id] : null;
     return o && !isGroup(o) ? id : null;
   }
 
   /** The landing from a hit ({ id, point }), for a part with these tags. */
   function landFrom(hit, tags, free) {
     const pid = parentFor(hit.id);
-    const matrix = pid ? (api.worldOf(pid) ?? api.scene().world(pid)) : null;
-    const extras = pid ? api.content(pid)?.extras : null;
+    const matrix = pid ? (here.worldOf(pid) ?? here.scene().world(pid)) : null;
+    const extras = pid ? here.content(pid)?.extras : null;
     const parent = matrix ? { id: pid, matrix, connectors: extras?.connectors ?? [], snapRadius: extras?.snapRadius ?? null } : null;
-    return partLanding({ point: hit.point, parent, tags, eye: api.camera.get()?.position ?? null, free: free || api.pref("snap", true) === false });
+    return partLanding({ point: hit.point, parent, tags, eye: here.camera.get()?.position ?? null, free: free || api.pref("snap", true) === false });
   }
 
   const local = (e) => {
@@ -188,7 +191,7 @@ function create(api) {
   function landAt(x, y, tags, free) {
     let hit = null;
     try {
-      hit = api.pick(x, y, { ground: true });
+      hit = here.pick(x, y, { ground: true });
     } catch {
       hit = null;
     }
@@ -199,10 +202,10 @@ function create(api) {
   function landAhead(tags) {
     const land = landAt(port.clientWidth / 2, port.clientHeight / 2, tags, false);
     if (land) return land;
-    const t = api.camera.get()?.target ?? [0, 0, 0];
+    const t = here.camera.get()?.target ?? [0, 0, 0];
     let hit = null;
     try {
-      hit = api.raycast([t[0], t[1] + 1e3, t[2]], [0, -1, 0], { far: 2e3 });
+      hit = here.raycast([t[0], t[1] + 1e3, t[2]], [0, -1, 0], { far: 2e3 });
     } catch {
       hit = null;
     }
@@ -211,21 +214,21 @@ function create(api) {
 
   async function place(id, land) {
     if (!land || !live()) return null;
-    const edit = api.edits("Add part");
-    return Promise.resolve(api.part(id, land.at, { edit })).finally(() => edit.end());
+    const edit = here.edits("Add part");
+    return Promise.resolve(here.part(id, land.at, { edit })).finally(() => edit.end());
   }
 
   // ── the ring ─────────────────────────────────────────────────────────────
   const THREE = api.THREE;
-  let layer = null;
-  let ring = null;
-  let shownLanding = null; // what the ring shows (for probes)
-  const labels = api.labels();
+  let shownLanding = null; // what the p.ring shows (for probes)
+  // the preview is drawn in the focus stage (its layer and labels, made again where the focus goes)
+  const preview = perFocus(api, (f) => ({ f, labels: f.labels(), layer: null, ring: null }));
 
   function showRing(land, id) {
-    if (!THREE) return;
-    if (!layer) layer = api.world({ onTop: true });
-    if (!ring) {
+    const p = preview();
+    if (!THREE || !p) return;
+    if (!p.layer) p.layer = p.f.world({ onTop: true });
+    if (!p.ring) {
       const pts = [];
       for (let i = 0; i <= RING_SEGMENTS; i++) {
         const a = (i / RING_SEGMENTS) * Math.PI * 2;
@@ -233,32 +236,33 @@ function create(api) {
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-      ring = new THREE.Line(g, new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
-      ring.renderOrder = 12;
-      ring.userData.noPick = true;
-      ring.raycast = () => {};
-      layer.add(ring);
+      p.ring = new THREE.Line(g, new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
+      p.ring.renderOrder = 12;
+      p.ring.userData.noPick = true;
+      p.ring.raycast = () => {};
+      p.layer.add(p.ring);
     }
-    const theme = api.view.get().theme ?? {};
+    const theme = here.view.get().theme ?? {};
     const rgb = (land.snapped ? theme.accent : theme.muted) ?? (land.snapped ? [0.2, 0.9, 0.75] : [0.5, 0.5, 0.5]);
-    ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
-    const eye = api.camera.get()?.position;
+    p.ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
+    const eye = here.camera.get()?.position;
     const d = eye ? Math.hypot(eye[0] - land.spot[0], eye[1] - land.spot[1], eye[2] - land.spot[2]) : 1;
-    ring.position.set(land.spot[0], land.spot[1] + 0.0005, land.spot[2]);
-    ring.scale.setScalar(Math.max(d * RING_SIZE, 1e-4));
-    ring.visible = true;
+    p.ring.position.set(land.spot[0], land.spot[1] + 0.0005, land.spot[2]);
+    p.ring.scale.setScalar(Math.max(d * RING_SIZE, 1e-4));
+    p.ring.visible = true;
     shownLanding = land;
     const name = parts.find((p) => p.id === id)?.name ?? "";
-    const on = land.at.parent ? api.nameOf(land.at.parent) : null;
-    labels.set(name ? [{ key: "landing", text: on ? `${name} → ${on}` : name, position: land.spot, rank: 3 }] : []);
+    const on = land.at.parent ? here.nameOf(land.at.parent) : null;
+    p.labels.set(name ? [{ key: "landing", text: on ? `${name} → ${on}` : name, position: land.spot, rank: 3 }] : []);
     api.invalidate();
   }
 
   function hideRing() {
+    const p = preview();
     shownLanding = null;
-    labels.set([]);
-    if (ring?.visible) {
-      ring.visible = false;
+    p?.labels.set([]);
+    if (p?.ring?.visible) {
+      p.ring.visible = false;
       api.invalidate();
     }
   }

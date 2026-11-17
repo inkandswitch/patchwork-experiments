@@ -18,7 +18,11 @@
 // lets go of it with nothing to reconcile. Delete is a command on that ref;
 // Escape (the stage's ladder) and a click elsewhere in the view (the Edit hand's
 // click) clear it, as they clear any selection. This
-// extension lets go of a ref whose dimension went.
+// part lets go of a ref whose dimension went.
+//
+// They are the focus doc's (api.focus()): drawn in its stage, in its frame,
+// and drawn again where the focus goes; the panel is the view's, and lists
+// the focus doc's.
 
 import css from "./dimensions.css?inline";
 import { detachAnchor, distance } from "../anchors.js";
@@ -29,6 +33,7 @@ import { drawerTab, tabToggle } from "./tab.js";
 import { own } from "../stage/own.js";
 import { contentMatrix } from "../stage/scope.js";
 import { editing } from "../stage/bodies.js";
+import { perFocus } from "./per-focus.js";
 
 /** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
 export const KIND = "dimension";
@@ -198,9 +203,25 @@ const el = (tag, props = {}, ...children) => {
 export function create(api) {
   const { THREE } = api;
   api.style(css);
-  const layer = api.world({ onTop: true });
-  layer.userData.noPick = true;
-  const labels = api.labels();
+  // the focus stage's facet, where all of this is
+  const F = () => api.focus();
+  // its drawing: the focus stage's layer and labels, made again where the focus goes
+  const at = perFocus(api, (f) => {
+    const layer = f.world({ onTop: true });
+    layer.userData.noPick = true;
+    drawnKey = null;
+    drawnList = null;
+    memo = null;
+    // Held poses (a halo drag, a carry, a peer's carry) move objects without a
+    // doc change: after each frame, a moved anchor object redraws (next frame).
+    f.afterRender(() => {
+      if (!list.length) return;
+      if (currentPoseKey() === poseKey) return;
+      gen++;
+      refresh(f.scene(), now());
+    });
+    return { layer, labels: f.labels() };
+  });
   const surfaceGap = surfaceGapper(THREE);
   const color = (rgb, fallback) =>
     Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback);
@@ -221,15 +242,18 @@ export function create(api) {
   let seenV = null;
   let seenS = null;
   const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status }))));
-  const now = () => seen(api.local.get(), api.view.get());
+  const now = () => {
+    const f = F();
+    return f ? seen(f.local.get(), f.view.get()) : null;
+  };
   let lastSeen = null; // what update() was last given
   const selectedOf = (scene, local) => dimensionOf(local?.selected ?? null, scene);
   const unitsOf = (scene, local) => local?.prefs?.units ?? scene?.d?.view?.units ?? "m";
-  const gap = (oid, local) => surfaceGap(api.content(oid)?.root ?? null, local);
+  const gap = (oid, local) => surfaceGap(F()?.content(oid)?.root ?? null, local);
 
   function compute(scene, local) {
     return dimensionList(scene?.d?.dimensions, scene?.objects ?? {}, {
-      worldOf: (oid) => api.worldOf(oid),
+      worldOf: (oid) => F()?.worldOf(oid) ?? null,
       units: unitsOf(scene, local),
       selected: selectedOf(scene, local),
       gap,
@@ -238,33 +262,37 @@ export function create(api) {
 
   /** The objects anchors sit on, and where they're displayed (held poses move them without a doc change). */
   function currentPoseKey() {
-    const dims = api.doc().dimensions;
+    const f = F();
+    const dims = f?.doc().dimensions;
     if (!dims) return "";
     const ids = new Set();
     for (const dim of Object.values(dims)) for (const end of ["a", "b"]) if (dim?.[end]?.objectId) ids.add(dim[end].objectId);
     let k = "";
-    for (const id of ids) k += `${id}:${api.worldOf(id)?.join(",") ?? ""};`;
+    for (const id of ids) k += `${id}:${f.worldOf(id)?.join(",") ?? ""};`;
     return k;
   }
 
   /** Select a dimension (its ref is the selection); null lets go of the selected one, if a dimension is selected. */
   function select(id) {
-    const cur = api.view.get().selected ?? null;
+    const f = F();
+    if (!f) return;
+    const cur = f.view.get().selected ?? null;
     if (id == null) {
-      if (dimensionIdOf(cur, api.scene().objects) != null) api.view.select(null);
+      if (dimensionIdOf(cur, f.scene().objects) != null) f.view.select(null);
       return;
     }
-    if (cur !== dimensionRef(id)) api.view.select(dimensionRef(id));
+    if (cur !== dimensionRef(id)) f.view.select(dimensionRef(id));
   }
 
   /** Save a measured dimension (two anchors) and select it. @returns {string | null} its id */
   function addDimension(value) {
     const isAnchor = (x) => !!x && typeof x === "object" && Array.isArray(x.world);
-    if (!isAnchor(value?.a) || !isAnchor(value?.b)) return null;
-    const id = typeof value.id === "string" && value.id ? value.id : api.newId("d");
+    const f = F();
+    if (!f || !isAnchor(value?.a) || !isAnchor(value?.b)) return null;
+    const id = typeof value.id === "string" && value.id ? value.id : f.newId("d");
     // fresh plain data: automerge won't take a value that's already in a doc
     const dim = JSON.parse(JSON.stringify({ a: value.a, b: value.b, label: value.label ?? null }));
-    api.edit(
+    f.edit(
       (d) => {
         d.dimensions[id] = dim;
       },
@@ -275,17 +303,18 @@ export function create(api) {
   }
 
   function remove(id) {
-    if (id == null) return;
-    api.edit(
+    const f = F();
+    if (id == null || !f) return;
+    f.edit(
       (d) => {
         if (d.dimensions?.[id]) delete d.dimensions[id];
       },
       { label: "Delete dimension" },
     );
-    if (api.view.get().selected === dimensionRef(id)) select(null);
+    if (f.view.get().selected === dimensionRef(id)) select(null);
   }
 
-  function clearLayer() {
+  function clearLayer(layer) {
     for (const c of [...layer.children]) {
       c.removeFromParent();
       c.geometry?.dispose?.();
@@ -298,19 +327,21 @@ export function create(api) {
     g.setAttribute("position", new THREE.Float32BufferAttribute(pts.flat(), 3));
     return g;
   };
-  const add = (obj, order) => {
-    obj.renderOrder = order;
-    obj.raycast = () => {};
-    obj.userData.noPick = true;
-    layer.add(obj);
-  };
-
   /** Draw the lines, markers and labels, if they changed. */
   function draw(theme) {
+    const here = at();
+    if (!here) return;
+    const { layer, labels } = here;
+    const add = (obj, order) => {
+      obj.renderOrder = order;
+      obj.raycast = () => {};
+      obj.userData.noPick = true;
+      layer.add(obj);
+    };
     const key = JSON.stringify([list, theme?.dim, theme?.accent]);
     if (key === drawnKey) return;
     drawnKey = key;
-    clearLayer();
+    clearLayer(layer);
     const dimCol = color(theme?.dim, 0xe68019);
     const accent = color(theme?.accent, 0x33e6bf);
     const segs = [];
@@ -367,22 +398,14 @@ export function create(api) {
     for (const p of panels) p.render();
   }
 
-  // Held poses (a halo drag, a carry, a peer's carry) move objects without a
-  // doc change: after each frame, a moved anchor object redraws (next frame).
-  api.afterRender(() => {
-    if (!list.length) return;
-    if (currentPoseKey() === poseKey) return;
-    gen++;
-    refresh(api.scene(), now());
-  });
-
   function update(scene, local, prev) {
     const was = prev?.local ?? null;
     const target = local.selected ?? null;
     // the selected dimension went (deleted here or by a peer)
     const id = dimensionIdOf(target, scene.objects);
     if (id != null && !scene.d?.dimensions?.[id]) {
-      if (api.view.get().selected === target) api.view.select(null);
+      const f = F();
+      if (f?.view.get().selected === target) f.view.select(null);
       return;
     }
     // same scene and local: content loaded, so "off surface" may have changed
@@ -447,7 +470,7 @@ export function create(api) {
   // Delete applies to a dimension's ref (the key map offers it the
   // selection first), never to the scene or an object. Escape deselects it
   // as the stage's ladder deselects anything.
-  const applies = (target, { scene } = {}) => dimensionOf(target, scene ?? api.scene()) != null;
+  const applies = (target, { scene } = {}) => dimensionOf(target, scene ?? F()?.scene()) != null;
 
   const commands = [
     {
@@ -466,7 +489,7 @@ export function create(api) {
       key: ["Delete", "Backspace"],
       show: [],
       state: (target, ctx) => (applies(target, ctx) ? { title: "Delete this dimension" } : null),
-      run: (target) => remove(dimensionOf(target, api.scene())),
+      run: (target) => remove(dimensionOf(target, F()?.scene())),
     },
   ];
 
@@ -483,12 +506,12 @@ export function create(api) {
     },
     commands,
     tab,
+    // (the focus stage's removal: the view's plugins are offered only there)
     beforeRemove(draft, ids) {
-      detachEnds(draft, ids, api.scene().objects);
+      detachEnds(draft, ids, F()?.scene().objects ?? {});
     },
     dispose() {
       tab.dispose();
-      clearLayer();
       panels.clear();
     },
   };

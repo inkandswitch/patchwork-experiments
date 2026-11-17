@@ -45,6 +45,7 @@ import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
 import { own } from "../stage/own.js";
+import { atFocus, perFocus } from "./per-focus.js";
 import { isLink, atOf } from "../stage/links.js";
 import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
 
@@ -118,16 +119,18 @@ function writeClipboard(data, doc = globalThis.document) {
 }
 
 function create(api) {
+  // the focus doc's: what is dropped, pasted or added goes into the focus stage, whichever it is now
+  const here = atFocus(api);
   const live = () => !api.signal.aborted;
   const port = api.port;
   const root = api.root ?? port;
   const selectedTarget = () => {
-    const sel = api.view.get().selected ?? null;
-    return sel != null && api.scene().objects[sel] ? sel : null;
+    const sel = here.view.get().selected ?? null;
+    return sel != null && here.scene().objects[sel] ? sel : null;
   };
 
   // ── where it lands (the parts bin's rule: ./landing.js) ───────────────
-  const land = landings(api);
+  const land = landings(here, api);
   const landAt = (x, y, tags, free) => land.at(x, y, tags, free);
 
   const local = (e) => {
@@ -137,16 +140,16 @@ function create(api) {
 
   // ── the ring ─────────────────────────────────────────────────────────────
   const THREE = api.THREE;
-  let layer = null;
-  let ring = null;
   let shown = null; // { land, radius } (for probes)
-  const labels = api.labels();
+  // the preview is drawn in the focus stage (its layer and labels, made again where the focus goes)
+  const preview = perFocus(api, (f) => ({ f, labels: f.labels(), layer: null, ring: null }));
 
   function showRing(land, radius, name) {
     shown = { land, radius };
-    if (!THREE) return;
-    if (!layer) layer = api.world({ onTop: true });
-    if (!ring) {
+    const p = preview();
+    if (!THREE || !p) return;
+    if (!p.layer) p.layer = p.f.world({ onTop: true });
+    if (!p.ring) {
       const pts = [];
       for (let i = 0; i <= RING_SEGMENTS; i++) {
         const a = (i / RING_SEGMENTS) * Math.PI * 2;
@@ -154,31 +157,32 @@ function create(api) {
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-      ring = new THREE.Line(g, new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
-      ring.renderOrder = 12;
-      ring.userData.noPick = true;
-      ring.raycast = () => {};
-      layer.add(ring);
+      p.ring = new THREE.Line(g, new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
+      p.ring.renderOrder = 12;
+      p.ring.userData.noPick = true;
+      p.ring.raycast = () => {};
+      p.layer.add(p.ring);
     }
-    const theme = api.view.get().theme ?? {};
+    const theme = here.view.get().theme ?? {};
     const rgb = (land.snapped ? theme.accent : theme.muted) ?? (land.snapped ? [0.2, 0.9, 0.75] : [0.5, 0.5, 0.5]);
-    ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
-    const eye = api.camera.get()?.position;
+    p.ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
+    const eye = here.camera.get()?.position;
     const d = eye ? Math.hypot(eye[0] - land.spot[0], eye[1] - land.spot[1], eye[2] - land.spot[2]) : 1;
-    ring.position.set(land.spot[0], land.spot[1] + 0.0005, land.spot[2]);
-    ring.scale.setScalar(Math.max(radius ?? d * RING_SIZE, 1e-4));
-    ring.visible = true;
-    const on = land.parent ? api.nameOf(land.parent) : null;
+    p.ring.position.set(land.spot[0], land.spot[1] + 0.0005, land.spot[2]);
+    p.ring.scale.setScalar(Math.max(radius ?? d * RING_SIZE, 1e-4));
+    p.ring.visible = true;
+    const on = land.parent ? here.nameOf(land.parent) : null;
     const text = name ? (on ? `${name} → ${on}` : name) : on ? `→ ${on}` : "";
-    labels.set(text ? [{ key: "landing", text, position: land.spot, rank: 3 }] : []);
+    p.labels.set(text ? [{ key: "landing", text, position: land.spot, rank: 3 }] : []);
     api.invalidate();
   }
 
   function hideRing() {
+    const p = preview();
     shown = null;
-    labels.set([]);
-    if (ring?.visible) {
-      ring.visible = false;
+    p?.labels.set([]);
+    if (p?.ring?.visible) {
+      p.ring.visible = false;
       api.invalidate();
     }
   }
@@ -188,11 +192,11 @@ function create(api) {
   /** Is this drag one of our own rows? true / false / null (can't tell until the drop). */
   function ownRow(dt) {
     const known = currentDrag();
-    if (known) return parseAutomergeUrl(known.scene) === api.url;
-    return fromScene(dt, api.url);
+    if (known) return parseAutomergeUrl(known.scene) === here.url;
+    return fromScene(dt, here.url);
   }
 
-  const on = () => editing(api.view.get());
+  const on = () => editing(here.view.get());
   api.listen(root, "dragover", (e) => {
     if (!on() || e.defaultPrevented || fromEmbed(e, root) || !isRowDrag(e.dataTransfer)) return;
     if (!inPort(e) || ownRow(e.dataTransfer) === true) return hideRing();
@@ -218,34 +222,34 @@ function create(api) {
       raw = "";
     }
     const payload = readRowPayload(raw);
-    if (!payload || parseAutomergeUrl(payload.scene) === api.url) return; // our own rows: the outline's
+    if (!payload || parseAutomergeUrl(payload.scene) === here.url) return; // our own rows: the outline's
     e.preventDefault();
     const [x, y] = local(e);
     const free = e.altKey;
-    void copyObjects(api, payload, { land: (tags) => landAt(x, y, tags, free) });
+    void copyObjects(here, payload, { land: (tags) => landAt(x, y, tags, free) });
   });
 
   // ── copy and paste ───────────────────────────────────────────────────────
   /** Put these on this page's clipboard; what goes on the system's: { [type]: string }. */
   function copy(ids) {
-    const snap = api.scene();
+    const snap = here.scene();
     const objects = snap.objects;
-    const order = api.doc().order ?? [];
+    const order = here.doc().order ?? [];
     const text = clipText(objects, ids);
     const solid = subtreeOf(objects, ids, order).ids.filter((id) => !isGroup(objects[id]));
-    const box = (id) => api.box?.(id) ?? null;
-    const worldOf = (id) => api.worldOf?.(id) ?? snap.world?.(id) ?? null;
+    const box = (id) => here.box?.(id) ?? null;
+    const worldOf = (id) => here.worldOf?.(id) ?? snap.world?.(id) ?? null;
     const lift = solid.length ? liftOf(objects, ids, order, { box, worldOf }) : null;
     const radius = solid.length ? reachOf(solid, { box, worldOf }) : null;
     const tag = `${Date.now().toString(36)}-${++copies}`;
     const extra = { ...(Number.isFinite(lift) ? { lift } : {}), copy: tag };
-    hold({ scene: api.url, ids, text, name: api.nameOf(ids[0]) || objects[ids[0]]?.name || "", radius, ...extra });
-    return { [ROW_MIME]: rowPayload(api.url, ids, extra), "text/plain": text };
+    hold({ scene: here.url, ids, text, name: here.nameOf(ids[0]) || objects[ids[0]]?.name || "", radius, ...extra });
+    return { [ROW_MIME]: rowPayload(here.url, ids, extra), "text/plain": text };
   }
 
   /** This Copy's pastes here: { n } before this one (counted), and `at`, where the first landed. */
   function repeat(payload) {
-    const key = `${payload.copy ?? `${payload.scene}|${payload.ids.join(",")}`}|${api.url}`;
+    const key = `${payload.copy ?? `${payload.scene}|${payload.ids.join(",")}`}|${here.url}`;
     const rec = pasted.get(key) ?? { n: 0, at: null };
     pasted.set(key, { ...rec, n: rec.n + 1 });
     return { n: rec.n, at: rec.at, key };
@@ -254,14 +258,14 @@ function create(api) {
   /** Copy a payload in: beside the original in its own scene, else where the view is looking. */
   function paste(payload) {
     const { n, at, key } = repeat(payload);
-    if (parseAutomergeUrl(payload.scene) === api.url) {
-      return copyObjects(api, payload, {
+    if (parseAutomergeUrl(payload.scene) === here.url) {
+      return copyObjects(here, payload, {
         beside: (roots) => {
-          const objects = api.scene().objects;
-          const ids = subtreeOf(objects, roots, api.doc().order ?? []).ids.filter((id) => !isGroup(objects[id]));
+          const objects = here.scene().objects;
+          const ids = subtreeOf(objects, roots, here.doc().order ?? []).ids.filter((id) => !isGroup(objects[id]));
           let box = null;
           for (const id of ids) {
-            const b = api.box(id);
+            const b = here.box(id);
             if (!b) continue;
             box = box ? { min: box.min.map((v, i) => Math.min(v, b.min[i])), max: box.max.map((v, i) => Math.max(v, b.max[i])) } : b;
           }
@@ -271,7 +275,7 @@ function create(api) {
     }
     const h = heldCopy();
     const radius = h && h.copy && h.copy === payload.copy ? h.radius : null;
-    return copyObjects(api, payload, {
+    return copyObjects(here, payload, {
       land: (tags) => {
         const l = land.ahead(tags, { step: pasteStep(radius, n), from: at });
         const rec = pasted.get(key);
@@ -314,7 +318,7 @@ function create(api) {
   // ── extract and bundle ──────────────────────────────────────────────────
   // trait names for the options, as the extensions describe them
   let describes = new Map();
-  void traitRules(api).then((r) => {
+  void traitRules(here).then((r) => {
     if (live()) describes = r.describes;
   });
   const traitOptions = (keys) => keys.map((k) => ({ value: k, label: String(describes.get(k)?.name ?? k) }));
@@ -326,18 +330,18 @@ function create(api) {
   function rootTraitsOf(o) {
     const at = atOf(o);
     const key = at ? `${o.sourceUrl}#${at.heads.join(",")}` : o.sourceUrl;
-    const known = api.local.get()[LINKED]?.[key];
+    const known = here.local.get()[LINKED]?.[key];
     if (watched.has(key)) return known ?? [];
     watched.set(key, null);
-    Promise.resolve(api.repo.find(o.sourceUrl))
+    Promise.resolve(here.repo.find(o.sourceUrl))
       .then((h) => {
         if (!live()) return;
         const read = () => {
           const d = at ? h.view?.(at.heads)?.doc?.() : h.doc();
           const keys = Object.keys(d?.traits ?? {});
-          const was = api.local.get()[LINKED]?.[key];
+          const was = here.local.get()[LINKED]?.[key];
           if (was && was.length === keys.length && was.every((k, i) => k === keys[i])) return;
-          api.local.swap((m) => ({ ...m, [LINKED]: { ...m[LINKED], [key]: Object.freeze(keys) } }));
+          here.local.swap((m) => ({ ...m, [LINKED]: { ...m[LINKED], [key]: Object.freeze(keys) } }));
         };
         read();
         if (at || typeof h.on !== "function") return;
@@ -358,13 +362,13 @@ function create(api) {
       show: ["menu", "inspector"],
       state: (target, { scene }) => {
         if (target == null || !scene?.objects?.[target]) return null;
-        if (!api.writable()) return { disabled: true, title: "view only" };
-        const doc = api.doc();
+        if (!here.writable()) return { disabled: true, title: "view only" };
+        const doc = here.doc();
         const can = extractable(doc, [target]);
         if (!can.ok) return { disabled: true, title: can.reason };
         return { title: "Make this a scene of its own, linked here in its place (tick what of this scene goes with it)", options: traitOptions(Object.keys(doc.traits ?? {})) };
       },
-      run: (target, value) => void extractObjects(api, [target], traitsOf(value)),
+      run: (target, value) => void extractObjects(here, [target], traitsOf(value)),
     },
     {
       id: "bundle",
@@ -374,12 +378,12 @@ function create(api) {
       state: (target, { scene }) => {
         const o = target != null ? scene?.objects?.[target] : null;
         if (!isLink(o)) return null;
-        if (!api.writable()) return { disabled: true, title: "view only" };
-        const l = api.link?.(target);
+        if (!here.writable()) return { disabled: true, title: "view only" };
+        const l = here.link?.(target);
         if (!l?.open) return { disabled: true, title: l?.role === "closed" ? `Not open here (${l.reason ?? "closed"})` : "Not open here yet" };
         return { title: "Copy the scene it shows into this one, in its place; the copy no longer follows it (tick what of that scene comes with it)", options: traitOptions(rootTraitsOf(o)) };
       },
-      run: (target, value) => void bundleLink(api, target, traitsOf(value)),
+      run: (target, value) => void bundleLink(here, target, traitsOf(value)),
     },
     {
       id: "copy",
@@ -408,8 +412,8 @@ function create(api) {
       state: (target) => {
         const h = heldCopy();
         if (target != null || !h) return null;
-        const here = parseAutomergeUrl(h.scene) === api.url;
-        return { label: h.name ? `Paste “${h.name}”` : "Paste", title: here ? "A copy beside the original" : "Copy it into this scene, where the view is looking" };
+        const same = parseAutomergeUrl(h.scene) === here.url;
+        return { label: h.name ? `Paste “${h.name}”` : "Paste", title: same ? "A copy beside the original" : "Copy it into this scene, where the view is looking" };
       },
       run: () => {
         const h = heldCopy();
@@ -421,8 +425,6 @@ function create(api) {
   return {
     commands,
     dispose() {
-      ring = null;
-      layer = null;
       for (const stop of watched.values()) stop?.();
       watched.clear();
     },

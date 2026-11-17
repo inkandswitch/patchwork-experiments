@@ -36,7 +36,7 @@
 
 import css from "./toolbar.css?inline";
 import { barEntries, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
-import { hintFor, segmentsOf } from "../keymap.js";
+import { hintFor } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 
 function create(api) {
@@ -127,8 +127,7 @@ function create(api) {
   function render(scene, view) {
     const keys = resolverState(api);
     // the focus path's stages, each its own commands in its own context (each key is the resolver's: shown only where pressing it does this)
-    const path = typeof api.path === "function" ? api.path({ focus: true }) : [];
-    const segs = path.length ? path.map((seg) => ({ stage: seg.stage, collected: seg.collect("commands"), ctx: seg.context(null) })) : segmentsOf(keys);
+    const segs = api.path({ focus: true }).map((seg) => ({ stage: seg.stage, collected: seg.collect("commands"), ctx: seg.context(null) }));
     const entries = barEntries(segs, view);
     const seen = new Set();
     const place = (el, items) => {

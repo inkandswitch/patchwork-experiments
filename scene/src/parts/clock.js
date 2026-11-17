@@ -2,7 +2,7 @@
 // each doc on the focus path that has a clock to show, outermost first: its
 // world time as its stage publishes it (the clock's status:
 // src/stage/clock.js), put together by the view as view.clocks, which a
-// general part sees. A doc shows a chip only with a process: ▶ while it
+// view plugin sees. A doc shows a chip only with a process: ▶ while it
 // runs, ⏸ "Paused by Ana" while it doesn't, and its one button pauses or
 // resumes that doc (anyone who may write it: the lead's decision 5), through
 // its stage's reader. Who computes is shown only when it's news: on a stall
@@ -91,7 +91,7 @@ function create(api) {
   }
 
   // the focus path's stages, as the view's readers (the outermost last)
-  const path = () => (typeof api.path === "function" ? api.path({ focus: true }) : []);
+  const path = () => api.path({ focus: true });
   const readerOf = (stage) => path().find((r) => r.stage === stage) ?? null;
 
   function render(clocks) {
@@ -127,8 +127,8 @@ function create(api) {
   render(api.view.get().clocks);
 
   return {
-    update(scene, local, prev, view) {
-      if (view.clocks !== prev?.view?.clocks) render(view.clocks);
+    update() {
+      render(api.view.get().clocks);
     },
     dispose() {
       dead = true;

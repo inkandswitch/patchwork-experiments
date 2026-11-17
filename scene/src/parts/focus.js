@@ -25,14 +25,15 @@ export function enterState(link) {
 
 export default {
   create(api) {
-    const enter = (target) => api.view.enter(target);
+    // (a target is the focus stage's: its commands are offered there)
+    const enter = (target) => api.focus()?.view.enter(target) ?? false;
     return {
       commands: [
         {
           id: "enter",
           name: "Enter",
           show: ["menu", "inspector"],
-          state: (target) => (target == null ? null : enterState(api.link(target))),
+          state: (target) => (target == null ? null : enterState(api.focus()?.link(target) ?? null)),
           run: (target) => enter(target),
         },
       ],

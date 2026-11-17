@@ -58,13 +58,15 @@ const BOX = [1, 10]; // how far every target's box is
 const ALL_KEYS = [...new Set(flatCommands(COLLECTED).flatMap(({ command }) => keysOf(command)).concat(["q", "e", "a", " ", "x"]))];
 
 /**
- * A view's api as resolver.js reads it. Its context measures distance as the
- * stage's does (stage.js distanceFrom): to the hit when it is on the target
- * or something attached to it, else to the target's box.
+ * A view plugin's api as resolver.js reads it, with one stage on the input
+ * path (its reader). The reader's context measures distance as the stage's
+ * does (stage.js distanceFrom): to the hit when it is on the target or
+ * something attached to it, else to the target's box.
  */
 function apiFor({ body, tool, gesture, attention, look, box }) {
-  return {
-    view: { get: () => ({ gesture, held: tool, body }) },
+  const reader = {
+    stage: 0,
+    path: [],
     collect: () => COLLECTED,
     attention: () => attention,
     look: () => (attention.selected == null ? attention.hit : look),
@@ -78,7 +80,18 @@ function apiFor({ body, tool, gesture, attention, look, box }) {
       distance: (t) => (hit?.id != null && lookChain(hit.id, parents).includes(t) && Number.isFinite(hit.distance) ? hit.distance : box),
     }),
   };
+  return {
+    view: { get: () => ({ gesture, held: tool, body }) },
+    collect: () => COLLECTED,
+    path: () => [reader],
+    reader,
+  };
 }
+/** The resolver's state, with its one segment's context and attention (one stage). */
+const resolved = (api) => {
+  const st = resolverState(api);
+  return { ...st, ctx: st.segments[0].ctx, attention: st.segments[0].attention };
+};
 
 // Every surface's hints and the key map's dispatch use one state, built from
 // attention by resolverState (keyContext): so the cases build it that way.
@@ -89,7 +102,7 @@ function* cases() {
         for (const { name, attention, look = null } of ATTENTIONS)
           for (const d of BOX) {
             const api = apiFor({ body, tool, gesture, attention, look, box: d });
-            yield { body, tool, gesture, name, d, api, state: resolverState(api) };
+            yield { body, tool, gesture, name, d, api, state: resolved(api) };
           }
 }
 
@@ -122,7 +135,8 @@ describe("the key resolver (H3), exhaustively", () => {
         const k = keysOf(e.command).find((x) => labelOf(x) === h);
         const r = resolveKey({ key: k, code: codeOfKey(k) }, c.state);
         expect(r?.layer).toBe("map");
-        expect(r.invocation).toEqual({ ext: e.ext, command: e.command.id, target: e.target });
+        // (in the one stage on the path: 0)
+        expect(r.invocation).toEqual({ ext: e.ext, command: e.command.id, target: e.target, stage: 0 });
         // a disabled entry never shows a key: it doesn't run
         expect(!!e.state.disabled).toBe(false);
       }
@@ -145,14 +159,14 @@ describe("the key resolver (H3), exhaustively", () => {
   it("the context is attention's: its hit, else the look, for hints and keys alike", () => {
     for (const c of cases()) {
       const { attention } = c.state;
-      const look = c.api.look();
+      const look = c.api.reader.look();
       // the one place it's built
       expect(c.state.ctx.hit).toBe(attention.hit ?? look);
-      expect(keyContext(c.api, attention).hit).toBe(c.state.ctx.hit);
+      expect(keyContext(c.api.reader, attention).hit).toBe(c.state.ctx.hit);
     }
     // seated (reach 2), a selected card whose box is 1 m off while the look is on it 2.1 m off: too far, for the hint and the key
     const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
-    const seated = (look) => resolverState(apiFor({ body: BODIES[2], tool: null, gesture: null, attention: { selected: "card", hit: null }, look, box: 1 }));
+    const seated = (look) => resolved(apiFor({ body: BODIES[2], tool: null, gesture: null, attention: { selected: "card", hit: null }, look, box: 1 }));
     const far = seated({ id: "card", distance: 2.1 });
     expect(far.ctx.distance("card")).toBe(2.1);
     expect(hintFor(draw, far)).toBe("");
@@ -161,7 +175,7 @@ describe("the key resolver (H3), exhaustively", () => {
     // the look elsewhere: the box decides, and D draws
     const near = seated({ id: "crate", distance: 5 });
     expect(hintFor(draw, near)).toBe("D");
-    expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "tabletop", command: "draw", target: "card" } });
+    expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "tabletop", command: "draw", target: "card", stage: 0 } });
   });
 
   it("what reserves keys comes first: the gesture's, the tool's, then the body's", () => {

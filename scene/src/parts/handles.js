@@ -15,7 +15,8 @@
 // tool (measuring, say).
 //
 // Reads local.selected, local.held and local.theme. Writes only the render
-// doc's params.
+// doc's params. It is the focus stage's (what's selected is there): made in
+// the focus's facet, and made again there wherever the focus goes.
 
 import css from "./handles.css?inline";
 import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.js";
@@ -23,6 +24,7 @@ import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { own } from "../stage/own.js";
 import { editing } from "../stage/bodies.js";
+import { focusInput, perFocus } from "./per-focus.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
@@ -95,293 +97,304 @@ const rgbKey = (c) => (Array.isArray(c) ? c.join(",") : "");
 
 // ─── the part ───────────────────────────────────────────────────────────────
 
-export default own({
-  create(api) {
-    const THREE = api.THREE;
-    api.style(css);
-    const layer = api.world({ onTop: true });
-    layer.name = "handles";
-    const labels = api.labels();
+/** The knobs in one focus stage: `api` is its facet, `view` the view plugin's api. */
+function handlesAt(api, view) {
+  const THREE = api.THREE;
+  const layer = api.world({ onTop: true });
+  layer.name = "handles";
+  const labels = api.labels();
 
-    let sources = null; // the scene:source registry
-    let offSources = null;
-    let sub = null; // { id, url, handle, off }: the selected object's render doc
-    let wanted = null; // "id|renderUrl|providerId" being subscribed to
-    let token = 0;
-    let specs = []; // handleSpecs at the render doc's params
-    // A value let go of, shown until the render doc says something new about it
-    // (our own write echoing back, or a peer's): key → { value, was }.
-    const pending = new Map();
-    let drag = null; // { key, value } while dragging
-    let drawn = null; // the key of what's drawn, so a redraw happens only when it changes
-    let placed = []; // [{ spec, line, at }] as drawn, for widgetAt and the drag
+  let sources = null; // the scene:source registry
+  let offSources = null;
+  let sub = null; // { id, url, handle, off }: the selected object's render doc
+  let wanted = null; // "id|renderUrl|providerId" being subscribed to
+  let token = 0;
+  let specs = []; // handleSpecs at the render doc's params
+  // A value let go of, shown until the render doc says something new about it
+  // (our own write echoing back, or a peer's): key → { value, was }.
+  const pending = new Map();
+  let drag = null; // { key, value } while dragging
+  let drawn = null; // the key of what's drawn, so a redraw happens only when it changes
+  let placed = []; // [{ spec, line, at }] as drawn, for widgetAt and the drag
 
-    const dead = () => api.signal.aborted;
+  const dead = () => api.signal.aborted;
 
-    api
-      .registry("scene:source")
-      .then((reg) => {
-        if (dead() || !reg) return;
-        sources = reg;
-        const off = reg.on?.("changed", () => {
-          wanted = null; // the provider (and its handles) may have changed
-          refresh();
-        });
-        if (typeof off === "function") offSources = off;
+  view
+    .registry("scene:source")
+    .then((reg) => {
+      if (dead() || !reg) return;
+      sources = reg;
+      const off = reg.on?.("changed", () => {
+        wanted = null; // the provider (and its handles) may have changed
         refresh();
-      })
-      .catch(() => {});
+      });
+      if (typeof off === "function") offSources = off;
+      refresh();
+    })
+    .catch(() => {});
 
-    const valueOf = (spec) => (drag?.key === spec.key ? drag.value : pending.has(spec.key) ? pending.get(spec.key).value : spec.value);
+  const valueOf = (spec) => (drag?.key === spec.key ? drag.value : pending.has(spec.key) ? pending.get(spec.key).value : spec.value);
 
-    // ─── which object, which render doc ───────────────────────────────────
+  // ─── which object, which render doc ───────────────────────────────────
 
-    /** The selected object, if it's one with a provider that declares handles: { id, o, provider }. */
-    function target() {
-      const local = api.view.get();
-      if (!editing(local) || !api.writable()) return null;
-      const id = local.selected ?? null;
-      const o = id ? api.doc()?.objects?.[id] : null;
-      if (!o || o.kind === "group" || !o.renderUrl || !o.providerId) return null;
-      const provider = providerOf(sources, o.providerId);
-      if (!provider?.handles?.length) return null;
-      return { id, o, provider };
-    }
+  /** The selected object, if it's one with a provider that declares handles: { id, o, provider }. */
+  function target() {
+    const local = api.view.get();
+    if (!editing(local) || !api.writable()) return null;
+    const id = local.selected ?? null;
+    const o = id ? api.doc()?.objects?.[id] : null;
+    if (!o || o.kind === "group" || !o.renderUrl || !o.providerId) return null;
+    const provider = providerOf(sources, o.providerId);
+    if (!provider?.handles?.length) return null;
+    return { id, o, provider };
+  }
 
-    function unsubscribe() {
-      sub?.off();
-      sub = null;
-      specs = [];
-      pending.clear();
-      drag = null;
-    }
+  function unsubscribe() {
+    sub?.off();
+    sub = null;
+    specs = [];
+    pending.clear();
+    drag = null;
+  }
 
-    /** Follow the selected object's render doc (async: repo.find). */
-    function resubscribe(t) {
-      const want = t ? `${t.id}|${t.o.renderUrl}|${t.o.providerId}` : null;
-      if (want === wanted) return;
-      wanted = want;
-      const mine = ++token;
-      if (sub && (!t || sub.id !== t.id || sub.url !== t.o.renderUrl)) unsubscribe();
-      if (!t) return;
-      if (sub) return void push(); // same doc, new provider metadata
-      Promise.resolve()
-        .then(() => api.repo.find(t.o.renderUrl))
-        .then((handle) => {
-          if (dead() || mine !== token || !handle) return;
-          const on = () => {
-            push();
-            draw();
-          };
-          handle.on("change", on);
-          sub = { id: t.id, url: t.o.renderUrl, handle, off: () => handle.off("change", on) };
+  /** Follow the selected object's render doc (async: repo.find). */
+  function resubscribe(t) {
+    const want = t ? `${t.id}|${t.o.renderUrl}|${t.o.providerId}` : null;
+    if (want === wanted) return;
+    wanted = want;
+    const mine = ++token;
+    if (sub && (!t || sub.id !== t.id || sub.url !== t.o.renderUrl)) unsubscribe();
+    if (!t) return;
+    if (sub) return void push(); // same doc, new provider metadata
+    Promise.resolve()
+      .then(() => api.repo.find(t.o.renderUrl))
+      .then((handle) => {
+        if (dead() || mine !== token || !handle) return;
+        const on = () => {
           push();
           draw();
-        })
-        .catch(() => {
-          if (mine === token) wanted = null; // try again on the next update
-        });
+        };
+        handle.on("change", on);
+        sub = { id: t.id, url: t.o.renderUrl, handle, off: () => handle.off("change", on) };
+        push();
+        draw();
+      })
+      .catch(() => {
+        if (mine === token) wanted = null; // try again on the next update
+      });
+  }
+
+  /** Specs from the provider and the render doc's params; pending values the doc has moved on from go. */
+  function push() {
+    const t = target();
+    if (!sub || !t || t.id !== sub.id) {
+      specs = [];
+      return;
     }
-
-    /** Specs from the provider and the render doc's params; pending values the doc has moved on from go. */
-    function push() {
-      const t = target();
-      if (!sub || !t || t.id !== sub.id) {
-        specs = [];
-        return;
-      }
-      const params = sub.handle.doc?.()?.params ?? {};
-      specs = handleSpecs(t.provider, params);
-      for (const [key, p] of [...pending]) {
-        const spec = specs.find((s) => s.key === key);
-        if (!spec || spec.value !== p.was) pending.delete(key);
-      }
+    const params = sub.handle.doc?.()?.params ?? {};
+    specs = handleSpecs(t.provider, params);
+    for (const [key, p] of [...pending]) {
+      const spec = specs.find((s) => s.key === key);
+      if (!spec || spec.value !== p.was) pending.delete(key);
     }
+  }
 
-    // ─── drawing ──────────────────────────────────────────────────────────
+  // ─── drawing ──────────────────────────────────────────────────────────
 
-    /** Is another extension in charge of the pointer (a held tool)? */
-    function standingDown() {
-      const held = api.view.get().held;
-      return held != null && held.ext !== api.id;
+  /** Is another extension in charge of the pointer (a held tool)? */
+  function standingDown() {
+    const held = api.view.get().held;
+    return held != null && held.ext !== api.id;
+  }
+
+  /** Each spec's world line, while the object is shown and has its content. */
+  function lines() {
+    if (!sub || !specs.length || !knobsShown(api.view.get(), api.writable(), api.id)) return [];
+    const c = api.content(sub.id);
+    if (!c?.loaded || !c.box || !api.box(sub.id)) return [];
+    const m = api.worldOf(sub.id);
+    const out = [];
+    for (const spec of specs) {
+      const line = handleLine(spec, m, c.box);
+      if (line) out.push({ spec, line });
     }
+    return out;
+  }
 
-    /** Each spec's world line, while the object is shown and has its content. */
-    function lines() {
-      if (!sub || !specs.length || !knobsShown(api.view.get(), api.writable(), api.id)) return [];
-      const c = api.content(sub.id);
-      if (!c?.loaded || !c.box || !api.box(sub.id)) return [];
-      const m = api.worldOf(sub.id);
-      const out = [];
-      for (const spec of specs) {
-        const line = handleLine(spec, m, c.box);
-        if (line) out.push({ spec, line });
-      }
-      return out;
+  function clearDrawing() {
+    for (const c of [...layer.children]) {
+      c.removeFromParent();
+      c.traverse?.((o) => {
+        o.geometry?.dispose?.();
+        o.material?.dispose?.();
+      });
     }
+  }
 
-    function clearDrawing() {
-      for (const c of [...layer.children]) {
-        c.removeFromParent();
-        c.traverse?.((o) => {
-          o.geometry?.dispose?.();
-          o.material?.dispose?.();
-        });
-      }
-    }
-
-    /** Redraw when what would be drawn changed (cheap otherwise). */
-    function draw() {
-      if (dead()) return;
-      const ls = lines();
-      const accent = api.view.get().theme?.accent ?? [0.2, 0.97, 0.79];
-      const key = ls.length ? JSON.stringify([rgbKey(accent), ls.map(({ spec, line }) => [spec.key, spec.label, valueOf(spec), line])]) : "";
-      if (key === drawn) return;
-      drawn = key;
-      clearDrawing();
-      placed = [];
-      const items = [];
-      if (ls.length) {
-        const color = new THREE.Color().setRGB(accent[0], accent[1], accent[2], THREE.SRGBColorSpace);
-        for (const { spec, line } of ls) {
-          const value = valueOf(spec);
-          const { at, track, radius } = handlePlacement(spec, line, value);
-          const g = new THREE.Group();
-          g.name = `handle:${spec.key}`;
-          g.userData.key = spec.key;
-          const trackLine = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints(track.map((p) => new THREE.Vector3(...p))),
-            new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.5 }),
-          );
-          trackLine.userData.noPick = true;
-          const knob = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
-          knob.position.set(...at);
-          for (const o of [trackLine, knob]) {
-            o.renderOrder = 13;
-            g.add(o);
-          }
-          layer.add(g);
-          placed.push({ spec, line, at });
-          items.push({ key: spec.key, position: at, text: `${spec.label}: ${roundForDisplay(value, 4)}`, className: "handle-label" });
+  /** Redraw when what would be drawn changed (cheap otherwise). */
+  function draw() {
+    if (dead()) return;
+    const ls = lines();
+    const accent = api.view.get().theme?.accent ?? [0.2, 0.97, 0.79];
+    const key = ls.length ? JSON.stringify([rgbKey(accent), ls.map(({ spec, line }) => [spec.key, spec.label, valueOf(spec), line])]) : "";
+    if (key === drawn) return;
+    drawn = key;
+    clearDrawing();
+    placed = [];
+    const items = [];
+    if (ls.length) {
+      const color = new THREE.Color().setRGB(accent[0], accent[1], accent[2], THREE.SRGBColorSpace);
+      for (const { spec, line } of ls) {
+        const value = valueOf(spec);
+        const { at, track, radius } = handlePlacement(spec, line, value);
+        const g = new THREE.Group();
+        g.name = `handle:${spec.key}`;
+        g.userData.key = spec.key;
+        const trackLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(track.map((p) => new THREE.Vector3(...p))),
+          new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.5 }),
+        );
+        trackLine.userData.noPick = true;
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
+        knob.position.set(...at);
+        for (const o of [trackLine, knob]) {
+          o.renderOrder = 13;
+          g.add(o);
         }
+        layer.add(g);
+        placed.push({ spec, line, at });
+        items.push({ key: spec.key, position: at, text: `${spec.label}: ${roundForDisplay(value, 4)}`, className: "handle-label" });
       }
-      labels.set(items);
-      api.invalidate();
     }
+    labels.set(items);
+    api.invalidate();
+  }
 
-    // an object moved by a held pose (a halo drag or a carry) moves its handles
-    // too: nothing else tells us, so look after each frame (cheap when nothing moved)
-    api.afterRender(() => {
-      if (sub && specs.length) draw();
-    });
+  // an object moved by a held pose (a halo drag or a carry) moves its handles
+  // too: nothing else tells us, so look after each frame (cheap when nothing moved)
+  api.afterRender(() => {
+    if (sub && specs.length) draw();
+  });
 
-    function refresh() {
-      if (dead()) return;
-      resubscribe(target());
-      push();
-      draw();
+  function refresh() {
+    if (dead()) return;
+    resubscribe(target());
+    push();
+    draw();
+  }
+
+  // ─── input ────────────────────────────────────────────────────────────
+
+  /** The knob within GRAB_PX of the pointer (the nearest), or null. */
+  function knobAt(ev) {
+    if (ev?.x == null || ev?.y == null || !placed.length || standingDown()) return null;
+    let best = null;
+    for (const p of placed) {
+      const s = api.project(p.at);
+      if (!s || s.visible === false) continue;
+      const d = Math.hypot(s.x - ev.x, s.y - ev.y);
+      if (d <= GRAB_PX && (!best || d < best.d)) best = { p, d };
     }
+    return best?.p ?? null;
+  }
 
-    // ─── input ────────────────────────────────────────────────────────────
+  /** The spec of the knob this event is on, if the widget under it is ours. */
+  function grabbed(ev) {
+    const w = ev.widget;
+    if (!w || w.owner !== api.id) return null;
+    const key = w.key ?? w.userData?.key;
+    return placed.find((p) => p.spec.key === key)?.spec ?? null;
+  }
 
-    /** The knob within GRAB_PX of the pointer (the nearest), or null. */
-    function knobAt(ev) {
-      if (ev?.x == null || ev?.y == null || !placed.length || standingDown()) return null;
-      let best = null;
-      for (const p of placed) {
-        const s = api.project(p.at);
-        if (!s || s.visible === false) continue;
-        const d = Math.hypot(s.x - ev.x, s.y - ev.y);
-        if (d <= GRAB_PX && (!best || d < best.d)) best = { p, d };
-      }
-      return best?.p ?? null;
-    }
-
-    /** The spec of the knob this event is on, if the widget under it is ours. */
-    function grabbed(ev) {
-      const w = ev.widget;
-      if (!w || w.owner !== api.id) return null;
-      const key = w.key ?? w.userData?.key;
-      return placed.find((p) => p.spec.key === key)?.spec ?? null;
-    }
-
-    function commit(spec, value) {
-      const s = sub;
-      if (!s || value == null) return;
-      pending.set(spec.key, { value, was: spec.value });
-      // the object's render doc's param: an edit, undone in the scene's stack
-      api.edit(
-        (d) => {
-          if (!d.params) d.params = {};
-          d.params[spec.key] = value;
-        },
-        { handle: s.handle, label: String(spec.label ?? spec.key) },
-      );
-    }
-
-    const input = {
-      // a knob within reach of the pointer: ours, on top of everything (the
-      // meshes are widgets too, but a 12 px reach is kinder than a tiny sphere)
-      widgetAt(ev) {
-        const p = knobAt(ev);
-        return p ? { onTop: true, key: p.spec.key } : null;
+  function commit(spec, value) {
+    const s = sub;
+    if (!s || value == null) return;
+    pending.set(spec.key, { value, was: spec.value });
+    // the object's render doc's param: an edit, undone in the scene's stack
+    api.edit(
+      (d) => {
+        if (!d.params) d.params = {};
+        d.params[spec.key] = value;
       },
-      cursor(ev) {
-        return grabbed(ev) ? "grab" : null;
-      },
-      press(ev) {
-        if (ev.button !== 0) return null;
-        const spec = grabbed(ev);
-        if (!spec) return null;
-        drag = { key: spec.key, value: valueOf(spec) };
-        const end = () => {
-          drag = null;
+      { handle: s.handle, label: String(spec.label ?? spec.key) },
+    );
+  }
+
+  const input = {
+    // a knob within reach of the pointer: ours, on top of everything (the
+    // meshes are widgets too, but a 12 px reach is kinder than a tiny sphere)
+    widgetAt(ev) {
+      const p = knobAt(ev);
+      return p ? { onTop: true, key: p.spec.key } : null;
+    },
+    cursor(ev) {
+      return grabbed(ev) ? "grab" : null;
+    },
+    press(ev) {
+      if (ev.button !== 0) return null;
+      const spec = grabbed(ev);
+      if (!spec) return null;
+      drag = { key: spec.key, value: valueOf(spec) };
+      const end = () => {
+        drag = null;
+        draw();
+      };
+      return {
+        cursor: "grabbing",
+        move(e) {
+          const line = lines().find((l) => l.spec.key === spec.key)?.line;
+          const v = line ? dragValue(spec, line, e.ray) : null;
+          if (v == null || !drag) return;
+          drag = { key: spec.key, value: v };
           draw();
-        };
-        return {
-          cursor: "grabbing",
-          move(e) {
-            const line = lines().find((l) => l.spec.key === spec.key)?.line;
-            const v = line ? dragValue(spec, line, e.ray) : null;
-            if (v == null || !drag) return;
-            drag = { key: spec.key, value: v };
-            draw();
-          },
-          end() {
-            const value = drag?.value;
-            const cur = specs.find((s) => s.key === spec.key) ?? spec;
-            const shown = pending.get(cur.key)?.value ?? cur.value;
-            if (value != null && value !== shown) commit(cur, value);
-            end();
-          },
-          tap() {
-            end();
-            return true; // a knob tapped is ours: nothing else hears it
-          },
-          cancel: end,
-        };
-      },
-    };
+        },
+        end() {
+          const value = drag?.value;
+          const cur = specs.find((s) => s.key === spec.key) ?? spec;
+          const shown = pending.get(cur.key)?.value ?? cur.value;
+          if (value != null && value !== shown) commit(cur, value);
+          end();
+        },
+        tap() {
+          end();
+          return true; // a knob tapped is ours: nothing else hears it
+        },
+        cancel: end,
+      };
+    },
+  };
 
+  return {
+    input,
+    update(scene, local, prev, view) {
+      const pl = prev?.view;
+      // only the hover (or something else we don't read) changed: nothing to do.
+      // (status: an object's content arriving moves where its handles go)
+      if (pl && (pl !== view || prev.local !== local) && prev.scene === scene && local.status === prev.local?.status && ["selected", "held", "hands", "theme"].every((k) => pl[k] === view[k])) return;
+      // the selection, its object, the provider, the held tool, theme, a move or content arriving
+      refresh();
+    },
+    /** The selected object's handles, at the values shown (for probes and tests). */
+    handles: () => specs.map((s) => ({ ...s, value: valueOf(s) })),
+    dispose() {
+      token++;
+      sub?.off();
+      sub = null;
+      offSources?.();
+      offSources = null;
+    },
+  };
+}
+
+export default own({
+  create(api) {
+    api.style(css);
+    const at = perFocus(api, (f) => handlesAt(f, api));
     return {
-      input,
-      update(scene, local, prev, view) {
-        const pl = prev?.view;
-        // only the hover (or something else we don't read) changed: nothing to do.
-        // (status: an object's content arriving moves where its handles go)
-        if (pl && (pl !== view || prev.local !== local) && prev.scene === scene && local.status === prev.local?.status && ["selected", "held", "hands", "theme"].every((k) => pl[k] === view[k])) return;
-        // the selection, its object, the provider, the held tool, theme, a move or content arriving
-        refresh();
-      },
+      input: focusInput(at),
+      update: (...args) => at()?.update(...args),
       /** The selected object's handles, at the values shown (for probes and tests). */
-      handles: () => specs.map((s) => ({ ...s, value: valueOf(s) })),
-      dispose() {
-        token++;
-        sub?.off();
-        sub = null;
-        offSources?.();
-        offSources = null;
-      },
+      handles: () => at()?.handles() ?? [],
     };
   },
 });

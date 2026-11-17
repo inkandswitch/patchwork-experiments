@@ -314,7 +314,7 @@ describe("scene.inspector: the panel", () => {
   it("Frame fits the camera to the object's box", async () => {
     await mount({ objects: { a: object({ name: "A" }) } });
     await select("a");
-    const api = s.api("scene.inspector");
+    const api = s.facet("scene.inspector");
     const framed = [];
     api.box = () => ({ min: [0, 0, 0], max: [1, 1, 1] });
     vi.spyOn(s.debug.viewport, "frame").mockImplementation((b) => framed.push(b));
@@ -853,11 +853,11 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
   const ROWS = [
     // [source, selected before, act, row, fields]
     ["row click", null, () => rowClick("a"), ["a"], "object a"],
-    ["api.view.select(id)", null, () => s.api("scene.inspector").view.select("a"), ["a"], "object a"],
+    ["api.view.select(id)", null, () => s.facet("scene.inspector").view.select("a"), ["a"], "object a"],
     ["menu Select", "a", () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), ["b"], "object b"],
     ["Escape → null", "a", () => s.key("Escape", { code: "Escape" }), [], "scene"],
     ["group row", "b", () => rowClick("g"), ["g"], "group g"],
-    ["ref dimension:x", "a", () => s.api("scene.inspector").view.select("dimension:x"), [], "hidden"],
+    ["ref dimension:x", "a", () => s.facet("scene.inspector").view.select("dimension:x"), [], "hidden"],
   ];
   /** What the pane shows for each selection: the fields, and the row marked (one value). */
   const FIELDS = { a: "object a", b: "object b", g: "group g", "dimension:x": "hidden" };
@@ -867,12 +867,12 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
     const flushes = []; // [selected, row marked, fields shown], read after the inspector's update in each flush
     const check = { create: () => ({ update: (_scene, _local, _prev, view) => void (s && tab().isOpen() && flushes.push([view.selected ?? null, marked(), shown()])) }) };
     s = await mountStage({
-      extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }, { meta: { id: "t.check" }, module: check }],
+      extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }, { meta: { id: "t.check", type: "scene:view" }, module: check }],
       doc: { objects: { g: group("G"), a: object({ name: "A", group: "g" }), b: object({ name: "B" }) }, order: ["g", "a", "b"] },
     });
     await settle();
     toolbarOn();
-    if (before) s.api("scene.inspector").view.select(before);
+    if (before) s.facet("scene.inspector").view.select(before);
     await settle();
     expect(tab().isOpen()).toBe(true);
     const doc = JSON.stringify(s.doc());
@@ -925,13 +925,13 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
   const REVEALS = [
     // [name, before the pane opens (shut, x selected), how it opens]
     ["selected not editing, opened by picking up the editor", async () => {
-      s.api("scene.inspector").view.edit(false);
+      s.edit(false);
       await settle();
-      s.api("scene.inspector").view.select("x");
+      s.facet("scene.inspector").view.select("x");
       await settle();
-    }, () => s.api("scene.inspector").view.edit(true)],
+    }, () => s.edit(true)],
     ["selected, ×, the toolbar's Inspector", async () => {
-      s.api("scene.inspector").view.select("x");
+      s.facet("scene.inspector").view.select("x");
       await settle();
       s.root.querySelector(".stage-drawer-tab-close").click();
       await settle();
@@ -939,7 +939,7 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
     ["×, selected from the menu (the pane opens on it)", async () => {
       s.root.querySelector(".stage-drawer-tab-close").click();
       await settle();
-    }, () => s.api("scene.inspector").view.select("x")],
+    }, () => s.facet("scene.inspector").view.select("x")],
   ];
   it.each(REVEALS)("revealed as it opens: %s", async (_name, before, open) => {
     const calls = [];
@@ -978,7 +978,7 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
   // isn't redrawn into a tree nobody sees); it catches up as it opens.
   it.each([
     ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn],
-    ["putting the editor down", () => s.api("scene.inspector").view.edit(false), () => (s.api("scene.inspector").view.edit(true), toolbarOn())],
+    ["putting the editor down", () => s.edit(false), () => (s.edit(true), toolbarOn())],
   ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen) => {
     s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     await settle();
@@ -1017,7 +1017,7 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
 
   it("the package registers one pane: scene.inspector and no scene.outline; in Edit the toolbar has Inspector and no Objects", async () => {
     const { plugins } = await import("../index.js");
-    const ids = plugins.filter((p) => p.type === "scene:extension").map((p) => p.id);
+    const ids = plugins.filter((p) => p.type === "scene:view").map((p) => p.id);
     expect(ids).toContain("scene.inspector");
     expect(ids).not.toContain("scene.outline");
     const { flatCommands, shownOn } = await import("./toolbar-commands.js");
@@ -1106,9 +1106,9 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     // selection down (HISTORY.md, Kernel step 1); open, it stays open across
     // selections; not editing, shut; editing again, open on an object
     // selected (not editing, by the menu) that wasn't shut by hand. Enter (the
-    // focus moves into the link L and the selection clears) carries the tab
-    // as it was (an open one reopens there, parts/tab.js); inside, Enter on
-    // L again changes nothing. So: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was
+    // focus moves into the link L and the selection clears) leaves the tab
+    // as it was (a view plugin's, parts/tab.js); inside, Enter on L again
+    // changes nothing. So: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was
     // open ∨ an object selected))).
     const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit", "enter"];
     const SEL = { obj: "a", obj2: "b", ref: "dimension:d1", none: null };
@@ -1127,7 +1127,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
         return m.sel === null ? { ...m, edit: false, open: false } : { ...m, edit: false, open: false, sel: null, dismissed: false };
       }
       if (e === "edit") return m.edit ? m : { ...m, edit: true, open: !m.dismissed && shows(m.sel) };
-      // Enter: the general parts start again inside, the tab as it was
+      // Enter: the selection clears; the inspector, a view plugin, goes on, its tab as it was
       if (e === "enter") return m.inside ? m : { ...m, inside: true, sel: null, dismissed: false };
       return m;
     };
@@ -1140,7 +1140,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     await time.until(() => view.enterable(["L"]), { what: "L to open" });
     // open: the inspector's pane is docked in the view's drawer, whichever stage the focus (and so the inspector) is in
     const open = () => view.drawer.state().order.some((el) => el.dataset.panel === "inspector");
-    const inspectorApi = () => view.focusStage().debug.host.record("scene.inspector").api;
+    const inspectorApi = () => s.api("scene.inspector");
     const apply = async (e) => {
       const sel = SEL[e];
       if (sel !== undefined) view.select(sel == null ? null : [...view.atom.get().focus, sel]);
@@ -1148,7 +1148,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
         if (open()) s.root.querySelector(".stage-drawer-tab-close").click();
       } else if (e === "on" || e === "off") {
         if (editing(view.atom.get())) inspectorApi().run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
-      } else if (e === "look" || e === "edit") view.setEditing(e === "edit");
+      } else if (e === "look" || e === "edit") s.edit(e === "edit");
       else if (e === "enter") view.enter(["L"]);
       await still();
     };
@@ -1160,10 +1160,10 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     for (const q of seqs) {
       // editing at the outermost scene, nothing selected, the tab shut
       view.focusOn([]);
-      view.setEditing(false);
+      s.edit(false);
       view.select(null);
       await still();
-      view.setEditing(true);
+      s.edit(true);
       await still();
       expect(open()).toBe(false);
       let m = { edit: true, sel: null, open: false, dismissed: false, inside: false };

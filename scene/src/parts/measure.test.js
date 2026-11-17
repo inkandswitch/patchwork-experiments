@@ -21,7 +21,7 @@ async function mount({ objects = { a: object({ name: "A", transform: { position:
 
 const inst = () => s.instance("scene.measure");
 const run = (command = "measure", target = null) => s.api("scene.measure").run({ ext: "scene.measure", command, target });
-const state = (command = "measure", target = null) => inst().commands.find((c) => c.id === command).state(target, { scene: s.api("scene.measure").scene(), local: s.local.get() });
+const state = (command = "measure", target = null) => inst().commands.find((c) => c.id === command).state(target, { scene: s.facet("scene.measure").scene(), local: s.local.get() });
 const hint = () => s.port.querySelector('.stage-overlay[data-owner="scene.measure"] .measure-hint');
 const preview = () => s.port.querySelector(".labels .measure-label");
 const layer = () => [...(s.debug.viewport.layers.get("scene.measure") ?? [])].flatMap((g) => g.children);

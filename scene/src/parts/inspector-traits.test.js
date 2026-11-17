@@ -284,9 +284,9 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     await fire(radio("look"), true);
     expect(s.doc().view.start).toEqual({ home });
     expect(s.local.get().edits.undo).toBe("Starts in");
-    s.api("scene.inspector").undo();
+    s.facet("scene.inspector").undo();
     expect(s.doc().view.start).toEqual({ body: "t.stroll", home });
-    s.api("scene.inspector").undo();
+    s.facet("scene.inspector").undo();
     expect(s.doc().view.start).toEqual({ body: "seat", place: "p1", home });
   });
 });

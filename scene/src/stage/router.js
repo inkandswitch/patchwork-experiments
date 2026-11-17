@@ -9,7 +9,7 @@
 // functions.
 //
 // An event goes: the hands, top first, then the chain (the widget's owner,
-// the holders nearest first, the general extensions), then the top body's
+// the holders nearest first, the view plugins), then the top body's
 // default (Look has none). A hand that doesn't want an event answers
 // false or null and it goes on: the Edit hand takes a click it has
 // something to select or clear with (a widget's owner under it first). A

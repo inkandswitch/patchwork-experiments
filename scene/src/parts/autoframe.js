@@ -2,7 +2,9 @@
 // arrives: once from hint bounds when there are
 // any (before anything has loaded), else each time the scene's box grows,
 // until everything shown has loaded or the person moves the camera. It starts
-// again when objects arrive in an empty scene.
+// again when objects arrive in an empty scene. It frames the focus doc; a
+// camera carried in or out of a link (Enter, Leave) is where the viewer
+// left it, so it follows nothing there until objects arrive in an empty one.
 //
 // It has no verbs and claims no input, so anything that only wants to open
 // pointed at its things (a game table, an arena) can require it without
@@ -32,63 +34,73 @@ const boxKey = (b) => (b ? [...b.min, ...b.max].map((v) => v.toPrecision(6)).joi
 
 export default {
   create(api) {
-    // auto-framing: on while the camera is untouched; `left` is where it last put the camera
-    let auto = !api.camera.touched();
+    // auto-framing: on while the camera is untouched (worked out at the first focus); `left` is where it last put the camera
+    let auto = false;
     let left = null;
     let lastBox = "";
     let lastLoad = null;
     let count = null;
+    let at = null; // the focus facet it last framed for
 
     // What has loaded (or failed) of what's shown: content arriving changes it, a pose doesn't.
-    const loadKey = (scene, local) =>
+    const loadKey = (f, scene, local) =>
       shownObjects(scene)
-        .map((id) => (api.content(id)?.loaded ? "1" : (local.status?.[id]?.state ?? "0")))
+        .map((id) => (f.content(id)?.loaded ? "1" : (local.status?.[id]?.state ?? "0")))
         .join(",");
 
     // Has the person taken the camera since we last put it somewhere?
-    const taken = () => (left ? !sameCamera(api.camera.get(), left) : api.camera.touched());
+    const taken = (f) => (left ? !sameCamera(f.camera.get(), left) : f.camera.touched());
 
-    function autoFrame(scene, local) {
+    function autoFrame(f, scene, local) {
       const shown = shownObjects(scene);
-      const box = api.sceneBox();
+      const box = f.sceneBox();
       if (!box) return;
       const k = boxKey(box);
       if (k === lastBox) return;
       lastBox = k;
-      api.camera.frame(box);
-      left = api.camera.get();
+      f.camera.frame(box);
+      left = f.camera.get();
       // From hints (the doc's, or a render doc's own bounds) the view is
       // already where things will be; otherwise keep following the content
       // until all of it has loaded (or failed).
-      const hinted = shown.some((id) => scene.objects[id]?.hint?.bounds || api.loadState?.(id)?.bounds);
-      const settled = shown.every((id) => api.content(id)?.loaded || ["error", "warn"].includes(local.status?.[id]?.state));
+      const hinted = shown.some((id) => scene.objects[id]?.hint?.bounds || f.loadState?.(id)?.bounds);
+      const settled = shown.every((id) => f.content(id)?.loaded || ["error", "warn"].includes(local.status?.[id]?.state));
       if (hinted || settled) auto = false;
     }
 
     return {
       update(scene, local, prev) {
+        const f = api.focus();
+        if (!f) return;
+        if (f !== at) {
+          // the first focus: framing while nobody has placed the camera; a move: the camera came along, where the viewer had it
+          auto = !at && !f.camera.touched();
+          left = null;
+          count = null;
+          at = f;
+        }
         if (scene !== prev.scene || count == null) {
           const n = scene.ids.reduce((k, id) => k + (scene.objects[id] && !isGroup(scene.objects[id]) ? 1 : 0), 0);
           // objects arriving in an empty scene: frame them, wherever the camera was
           if (count === 0 && n > 0) {
             auto = true;
-            left = api.camera.get();
+            left = f.camera.get();
             lastBox = "";
           }
           count = n;
         }
         if (!auto) return;
-        if (taken()) {
+        if (taken(f)) {
           auto = false;
           return;
         }
         // Only the doc, or content arriving, moves the box we follow: not hover,
         // and not a pose held mid-drag (the stage updates for those too, with
         // the same scene and local), or the camera would jump under the drag.
-        const load = loadKey(scene, local);
+        const load = loadKey(f, scene, local);
         if (prev.local && scene === prev.scene && load === lastLoad) return;
         lastLoad = load;
-        autoFrame(scene, local);
+        autoFrame(f, scene, local);
       },
     };
   },

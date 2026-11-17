@@ -5,6 +5,7 @@
 // turned with the camera; its X/Y/Z labels go on screen through api.labels.
 
 import { editing } from "../stage/bodies.js";
+import { perFocus } from "./per-focus.js";
 import css from "./axes.css?inline";
 import { gridFor } from "../units.js";
 
@@ -56,22 +57,28 @@ export default {
   create(api) {
     const { THREE } = api;
     api.style(css);
-    const layer = api.world();
-    layer.userData.noPick = true;
-    const labels = api.labels();
+    let key = null;
+    let triadKey = "";
+    // its layer and labels are the focus stage's, in its frame: made again where the focus goes
+    const at = perFocus(api, (f) => {
+      const layer = f.world();
+      layer.userData.noPick = true;
+      key = null;
+      triadKey = "";
+      return { f, layer, labels: f.labels() };
+    });
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
     const FALLBACK = [0xd03030, 0x30b040, 0x3060e0];
     const axisColors = (theme) => [theme?.axisX, theme?.axisY, theme?.axisZ].map((c, i) => color(c, FALLBACK[i]));
 
-    // One label set per extension (api.labels), so the axes' and the triad's are set together.
+    // One label set (the focus facet's labels()), so the axes' and the triad's are set together.
     let axisItems = [];
     let triadItems = [];
-    const pushLabels = () => labels.set([...axisItems, ...triadItems]);
+    const pushLabels = () => at()?.labels.set([...axisItems, ...triadItems]);
 
     const shown = () => api.pref("axes", true) !== false;
     // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
-    let key = null;
     let theme = null;
 
     const dispose3 = (root) =>
@@ -94,8 +101,11 @@ export default {
     // ─── the world axes ──────────────────────────────────────────────────────
 
     function redraw() {
+      const here = at();
+      if (!here) return;
+      const { f, layer } = here;
       const on = drawn();
-      const len = on ? axisLength(api.sceneBox(), { grid: api.pref("grid", true) !== false, unit: api.pref("units", "m") }) : 0;
+      const len = on ? axisLength(f.sceneBox(), { grid: api.pref("grid", true) !== false, unit: api.pref("units", "m") }) : 0;
       const next = `${on}|${len}`;
       if (next === key) return;
       key = next;
@@ -126,7 +136,6 @@ export default {
     const dir = new THREE.Vector3();
     const tip = new THREE.Vector3();
     let offTriad = null;
-    let triadKey = "";
 
     function buildTriad() {
       clearGroup(triad);
@@ -144,7 +153,7 @@ export default {
 
     function drawTriad(renderer, size) {
       // the camera in this stage's frame (the focus doc's: the axes of what's being edited), turned and rolled as it is
-      const cam = api.camera.get();
+      const cam = at()?.f.camera.get();
       if (!cam?.position || !cam.target) return;
       dir.fromArray(cam.position).sub(tip.fromArray(cam.target));
       if (dir.lengthSq() < 1e-18) return;
@@ -213,7 +222,6 @@ export default {
       dispose() {
         offTriad?.();
         offTriad = null;
-        clearGroup(layer);
         clearGroup(triad);
       },
     };

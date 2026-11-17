@@ -10,13 +10,14 @@
 
 /**
  * @param {{
- *   running: { id: string, meta: object, scope: "scene" | "objects" | "general" }[],  // running order
+ *   running: { id: string, meta: object, scope: "scene" | "objects" }[],  // running order
  *   widgetOwner?: string | null,    // the extension whose widget is under the pointer
  *   holders?: Map<string, { id: string | null, depth: number }>,  // holdersFor(…)
  * }} o
  * @returns {string[]} extension ids, each once, at its earliest step: the
- *   widget's owner, the holders nearest first, then the general ones (the
- *   router offers the held tool before these and the top body after them)
+ *   widget's owner, then the holders nearest first (the view adds its view
+ *   plugins after every stage's, the router offers the hands before these
+ *   and the top body after them)
  */
 export function chainOrder({ running, widgetOwner = null, holders = new Map() }) {
   const ids = new Set(running.map((r) => r.id));
@@ -29,7 +30,6 @@ export function chainOrder({ running, widgetOwner = null, holders = new Map() })
   const held = running.filter((r) => holders.has(r.id));
   held.sort((a, b) => holders.get(a.id).depth - holders.get(b.id).depth);
   for (const r of held) push(r.id);
-  for (const r of running) if (r.scope === "general") push(r.id);
   return out;
 }
 

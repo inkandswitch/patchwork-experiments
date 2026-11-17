@@ -158,7 +158,7 @@ describe("the bin", () => {
       ],
       { objects: { hull: object({ name: "Hull", transform: { position: [5, 0, 0], rotation: [0, 0, 0], scale: 1 } }), floor: object({ name: "Floor", locked: true }) }, order: ["hull", "floor"] },
     );
-    const api = s.api("scene.parts");
+    const api = s.facet("scene.parts");
     // what's under the pointer, by x: the hull at x < 100, the floor at x < 200, else the ground
     api.pick = (x) => (x < 100 ? { id: "hull", point: [5.5, 1, 0.25] } : x < 200 ? { id: "floor", point: [1, 0.1, 1] } : { id: null, point: [9, 0, 9] });
     api.content = (id) => (id === "hull" ? { extras: { connectors: [{ position: [0, 1, 2], yaw: null, tags: ["mast"] }], snapRadius: 2 } } : null);

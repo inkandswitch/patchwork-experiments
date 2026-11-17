@@ -2,16 +2,17 @@
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
-// - A plain click selecting is the Edit hand's (the view's: view.js,
-//   ../stage/bodies.js), which takes a click before the chain unless a
-//   widget is under it: while editing a click selects before any package's
-//   click verb (HISTORY.md, Kernel step 1). Without the editor a plain click
+// - A plain click selecting is the Edit hand's (scene.edit, ./edit.js),
+//   which takes a click before the chain unless a widget is under it: while
+//   editing a click selects before any package's click verb (HISTORY.md,
+//   Kernel steps 1 and 2). Without the editor a plain click
 //   selects nothing (STAGE.md, "Hands"). Select is everyone's, whatever the
 //   viewer holds; what a selection shows beyond its box (the halo's handles,
 //   the inspector) is the editor's. Remove (Delete) is an edit, so the
 //   editor's too.
 // - Where a selection may be is ../selection.js (H10): an element of the
-//   focus stage. With one stage that's any object.
+//   focus stage, which is where all this works (api.focus()). With one stage
+//   that's any object.
 // - local.selected is this view's selection: a target (STAGE.md, "Targets
 //   and refs"), an object or group id, or a ref such as "dimension:<id>" that
 //   another extension made selectable, or null. A click on nothing clears
@@ -22,13 +23,14 @@
 //   every doc (./others.js), drawn wherever their doc is, whatever the focus
 //   (STAGE.md, "Views, stages and links", "Presence where it is").
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
-// - Asks the stage to load the selection first (api.focus), if it's an object.
+// - Asks the stage to load the selection first (its facet's focus(ids)), if it's an object.
 // - Commands: Remove (Delete, Backspace; objects only), Select. Escape
 //   deselects (stage/ladder.js: the Edit hand's escape, or the view's own
 //   with no hand held), not a key.
 
 import { own } from "../stage/own.js";
 import { boxes } from "./boxes.js";
+import { perFocus } from "./per-focus.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 
@@ -45,18 +47,22 @@ function confirmRemove(message) {
 }
 
 export function create(api) {
-  const selected = () => api.view.get().selected ?? null;
-  // (drawn over anyone else's box on the same object: scene.others')
-  const drawn = boxes(api, (objects, theme) => {
-    const id = selected();
-    return id && objects[id] ? [{ key: "self", id, rgb: theme.accent ?? ACCENT }] : [];
-  }, { renderOrder: 1 });
-  const refresh = drawn.refresh;
+  // the focus stage's element of the selection
+  const selected = () => api.focus()?.view.get().selected ?? null;
+  // (drawn over anyone else's box on the same object: scene.others'), in the focus stage
+  const drawn = perFocus(api, (f) =>
+    boxes(f, (objects, theme) => {
+      const id = f.view.get().selected ?? null;
+      return id && objects[id] ? [{ key: "self", id, rgb: theme.accent ?? ACCENT }] : [];
+    }, { renderOrder: 1 }),
+  );
 
-  /** Select a target of this stage's (null: nothing); the view keeps it as a path (stage/view.js). */
-  const select = (id) => api.view.select(id ?? null);
+  /** Select a target of the focus stage's (null: nothing); the view keeps it as a path (stage/view.js). */
+  const select = (id) => api.focus()?.view.select(id ?? null);
 
   function update(scene, local, prev, view) {
+    const f = api.focus();
+    if (!f) return;
     const sel = view.selected ?? null;
     // the selection's object went (removed here or by a peer); a ref that
     // names no object is left to the extension that made it
@@ -67,14 +73,14 @@ export function create(api) {
     const was = prev?.view;
     if (!was || sel !== (was.selected ?? null)) {
       // peers are told any target; their surfaces mark only what they know
-      api.presence.set("selected", sel ?? undefined);
-      api.focus(sel != null && scene.objects?.[sel] ? [sel] : []);
+      f.presence.set("selected", sel ?? undefined);
+      f.focus(sel != null && scene.objects?.[sel] ? [sel] : []);
     }
-    if (!was || view.hovered !== was.hovered) api.presence.set("hovered", view.hovered ?? undefined);
+    if (!was || view.hovered !== was.hovered) f.presence.set("hovered", view.hovered ?? undefined);
     // only the hover (or something else of no concern here) changed
     if (was && scene === prev.scene && (local !== prev.local || view !== was) && sel === (was.selected ?? null) && view.theme === was.theme) return;
     // the doc, the selection or the theme changed, or content loaded (same scene and local)
-    refresh();
+    drawn()?.refresh();
   }
 
   const commands = [
@@ -105,15 +111,16 @@ export function create(api) {
 
   /** Remove an object; a group goes with everything in it (after a confirm). */
   function removeObject(id) {
-    const snap = api.scene();
-    const o = snap.objects?.[id];
+    const f = api.focus();
+    const snap = f?.scene();
+    const o = snap?.objects?.[id];
     if (!o) return false;
-    const plan = api.ops.removeObjects(snap, [id]);
+    const plan = f.ops.removeObjects(snap, [id]);
     if (!plan || plan.ok === false) return false;
     const n = plan.within?.length ?? 0;
     if (n > 0 && !confirmRemove(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return false;
-    const edit = api.edits("Delete");
-    const done = api.remove([id], { edit });
+    const edit = f.edits("Delete");
+    const done = f.remove([id], { edit });
     edit.end();
     const gone = new Set(done?.ids ?? plan.ids ?? [id]);
     if (gone.has(selected())) select(null);
@@ -123,7 +130,6 @@ export function create(api) {
   return {
     update,
     commands,
-    dispose: drawn.dispose,
   };
 }
 

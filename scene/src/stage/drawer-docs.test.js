@@ -54,7 +54,7 @@ async function mountWithLink() {
   });
   const view = s.debug.view;
   await until(() => view.enterable(["L"]), 3000);
-  view.setEditing(true);
+  s.edit(true);
   view.select(["table"]);
   // the selection opens the shut inspector
   await until(() => view.drawer.state().order.some((el) => el.dataset.panel === "inspector"), 3000);
@@ -66,7 +66,7 @@ const docsOf = (view) => view.atom.get().drawer.docs;
 // [what happens, does the pane stay?, the act]
 const EVENTS = [
   ["another object selected", true, async ({ view }) => view.select(["chair"])],
-  ["the editor put down", true, async ({ view }) => view.setEditing(false)],
+  ["the editor put down", true, async ({ view }) => s.edit(false)],
   ["Enter a link", true, async ({ view }) => expect(view.enter(["L"])).toBe(true)],
   ["Leave", true, async ({ view }) => (expect(view.enter(["L"])).toBe(true), await settle(), view.leave())],
   ["the inspector stopped", true, async () => s.uninstall("scene.inspector")],
@@ -100,7 +100,7 @@ describe("a document docked in the drawer is the view's", () => {
   it("a pane docked with nothing selected: the router is told the pointer is wanted, and not once it's closed", async () => {
     const { view, notes } = await mountWithLink();
     // nothing selected, nothing docked, not editing (the Edit hand wants the pointer too)
-    view.setEditing(false);
+    s.edit(false);
     view.select(null);
     await settle();
     const wanted = () => view.atom.get().pointer.wanted;

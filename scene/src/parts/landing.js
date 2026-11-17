@@ -26,7 +26,11 @@ import { isGroup } from "../groups.js";
 import { partLanding } from "./parts-place.js";
 import { yawOfMatrix } from "./carry-math.js";
 
-export function landings(api) {
+/**
+ * @param {object} api  the stage's (a focus facet: scene, worldOf, content, pick, raycast, camera)
+ * @param {{ pref?, port? }} [view]  where the snap pref and the port are (a view plugin's api; else `api`'s own)
+ */
+export function landings(api, view = api) {
   const objectFor = (id) => {
     const o = id ? api.scene().objects[id] : null;
     return o && !isGroup(o) ? id : null;
@@ -38,7 +42,7 @@ export function landings(api) {
     const extras = api.content?.(id)?.extras;
     return { id, matrix, connectors: extras?.connectors ?? [], snapRadius: extras?.snapRadius ?? null };
   }
-  const snapOff = (free) => !!free || api.pref?.("snap", true) === false;
+  const snapOff = (free) => !!free || view.pref?.("snap", true) === false;
 
   /** From a hit: `attach` "hit" (under the object hit) or "snapped" (only when it snaps to it). */
   function from(hit, tags, free, attach = "hit") {
@@ -76,7 +80,7 @@ export function landings(api) {
       const point = [x, h?.point ? h.point[1] : 0, z];
       return { point, yaw: null, rotation: null, parent: null, parentWorld: null, snapped: false, spot: point };
     }
-    const port = api.port;
+    const port = view.port;
     let hit = pick((port?.clientWidth || 0) / 2, (port?.clientHeight || 0) / 2);
     if (!hit?.point) {
       const t = api.camera?.get?.()?.target ?? [0, 0, 0];

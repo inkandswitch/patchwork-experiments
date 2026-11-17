@@ -5,11 +5,16 @@
 //   const s = await mountStage({ extensions: [{ meta: { id: "scene.select" }, module }], doc: { objects: {…} } });
 //   s.local.get().selected; s.api("scene.select"); s.press(...); s.unmount();
 //
-// `extensions` are [{ meta, module }]: meta is the scene:extension plugin's
-// metadata (without load), module what its load() resolves to. They are
-// registered in that order, which is the order the general ones run in. An
-// extension that declares no traits runs in every scene. The scene's own
-// datatypes and sources are registered too, `templates` are
+// `extensions` are [{ meta, module }]: meta is the plugin's metadata
+// (without load), module what its load() resolves to. One of the scene's own
+// parts registers as src/index.js says (a scene:view, or carry's and others'
+// scene:extension); a test's own is a scene:extension, and one that declares
+// no traits is a part of every doc (traits ["*"]), unless its meta says
+// `type: "scene:view"`. They are registered in that order, which is the
+// order the view plugins run in.
+// The editor's hand (scene.edit) is registered after them unless one of
+// them is it or `editor: false` (s.edit(on) picks it up or puts it down). The
+// scene's own datatypes and sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
 // scene:part plugins.
 
@@ -17,6 +22,7 @@ import { FakeRepo, flush } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
 import { realTime } from "../stage/time.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
+import { editing } from "../stage/bodies.js";
 
 export { flush };
 
@@ -57,17 +63,30 @@ export function wallAt(get) {
   return Object.freeze({ manual: false, now: get, frame: real.frame, after: real.after });
 }
 
+/** How a test's extension registers: [type, meta] (see the header). */
+async function asRegistered(meta) {
+  const { plugins } = await import("../index.js");
+  const own = plugins.find((p) => p.id === meta.id && (p.type === "scene:view" || p.type === "scene:extension"));
+  const type = meta.type ?? own?.type ?? "scene:extension";
+  const traits = type === "scene:extension" && !(Array.isArray(meta.traits) && meta.traits.length) ? ["*"] : meta.traits;
+  return [type, { ...meta, ...(traits ? { traits } : {}) }];
+}
+
 // the view's keys (stage/view.js), and those of them that are paths
 const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
-export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null } = {}) {
+export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
     resetRegistries();
     const { plugins } = await import("../index.js");
     for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
-    for (const { meta, module } of extensions) getRegistry("scene:extension").register({ type: "scene:extension", name: meta.id, ...meta, load: async () => module });
+    const all = editor && !extensions.some((x) => x.meta.id === "scene.edit") ? [...extensions, { meta: { id: "scene.edit" }, module: (await import("../parts/edit.js")).default }] : extensions;
+    for (const { meta: m, module } of all) {
+      const [type, meta] = await asRegistered(m);
+      getRegistry(type).register({ type, name: meta.id, ...meta, load: async () => module });
+    }
     for (const { meta, module } of templates) getRegistry("scene:template").register({ type: "scene:template", name: meta.id, ...meta, load: async () => module });
     for (const { meta, module } of parts) getRegistry("scene:part").register({ type: "scene:part", name: meta.id, ...meta, load: async () => module });
     handle = repo.add(emptyScene(doc));
@@ -117,9 +136,16 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
       watch: (fn) => debug.stageLocal.watch(fn),
     }),
     host: debug.host,
-    /** the api an extension got */
-    api: (id) => debug.host.record(id)?.api ?? null,
-    instance: (id) => debug.host.instanceOf(id),
+    /** the api an extension of the outermost stage, or a view plugin, got */
+    api: (id) => debug.host.record(id)?.api ?? debug.view.plugins.record(id)?.api ?? null,
+    instance: (id) => debug.host.instanceOf(id) ?? debug.view.plugins.instanceOf(id),
+    /** a view plugin's facet of the focus stage (its api.focus()) */
+    facet: (id) => debug.view.plugins.record(id)?.api?.focus() ?? null,
+    /** pick up the editor (scene.edit's Edit hand) or put it down; → whether the viewer is editing now */
+    edit: (on = true) => {
+      debug.view.focusStage()?.reader.run({ ext: "scene.edit", command: "edit", target: null, value: !!on });
+      return editing(debug.view.atom.get());
+    },
     doc: () => handle.doc(),
     change: (fn) => handle.change(fn),
     settle,
@@ -137,7 +163,7 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     },
     /** uninstall an extension (it stops at once, in every stage of this test), and let that settle */
     async uninstall(id) {
-      getRegistry("scene:extension").unregister(id);
+      for (const type of ["scene:extension", "scene:view"]) if (getRegistry(type).has?.(id)) getRegistry(type).unregister(id);
       await settle();
     },
     key(key, extra = {}) {

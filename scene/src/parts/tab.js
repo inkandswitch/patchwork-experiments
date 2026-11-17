@@ -11,15 +11,14 @@
 //
 // The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
 // while the Edit hand is held, and shuts when it is put down (not the viewer
-// closing it: onClosed isn't told). The parts that own tabs are
-// general, so they move with the focus (Enter, Leave): a tab open as the
-// focus moved opens again where it went (api.view.reopened, which only a
-// general part has).
+// closing it: onClosed isn't told). The parts that own tabs are view
+// plugins, which don't move with the focus: a tab open stays open across
+// Enter and Leave, showing the focus doc wherever it is now.
 
 import { editing } from "../stage/bodies.js";
 
 /**
- * @param {object} api
+ * @param {object} api  a view plugin's
  * @param {{ id: string, title: string, mount: (body: HTMLElement) => ({ opened?, update?, dispose? } | null), onClosed?: () => void }} o
  *   `id` names the panel (its element's data-panel: "inspector", "parts")
  */
@@ -52,7 +51,8 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     });
     try {
       view?.opened?.();
-      view?.update?.(api.scene(), api.local.get(), api.view.get());
+      const f = api.focus();
+      if (f) view?.update?.(f.scene(), f.local.get(), f.view.get());
     } catch (err) {
       console.warn(`[scene] the ${title} tab failed to update`, err);
     }
@@ -63,13 +63,6 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     close = null;
     c?.();
   }
-  // the focus moved here with this tab open (api.view.reopened, a general part's): it opens again, in the scene the
-  // focus is in now (once the part's create has returned, so what mount reads of it is there)
-  queueMicrotask(() => {
-    if (api.signal?.aborted || close) return;
-    const again = api.view.reopened?.(title) ?? null;
-    if (again) open({ show: again.show });
-  });
   // the editor put down, the tab goes
   api.view.watch?.(
     () => api.schedule(() => {

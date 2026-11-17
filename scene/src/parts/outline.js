@@ -1,8 +1,9 @@
 // The object tree: the top of the inspector's one pane (./inspector.js,
 // STAGE.md, "The interface"), mounted with it and following the same selection
 // (view.selected): a row click selects, and the inspector's fields below
-// follow in the same flush. Not an extension of its own: createOutline(api,
-// { shown }) is called by the inspector with its api, and answers
+// follow in the same flush. Not a plugin of its own: createOutline(api,
+// { shown }) is called by the inspector with its api (a view plugin's: the
+// tree is the focus doc's, read and written through api.focus()), and answers
 //   mount(host) → view   its one view, drawn while shown() (the pane is docked)
 //   note(prev, view)     every flush: a selection that changed is to be revealed
 //   opened()             the pane docked: the selection is revealed again (its
@@ -11,21 +12,21 @@
 //                        reveal, then names
 //   dispose()
 // So nothing is drawn into a pane nobody sees, and a selection made while it
-// was shut is revealed when it opens. Its writes are edits (api.edit), so
-// undo takes them back.
+// was shut is revealed when it opens. Its writes are edits (the focus
+// facet's edit), so undo takes them back. Expand state is per doc.
 //
 // Expand state, rows, the filter, keyboard navigation, row drag and drop,
 // New group. A double-click on a row, or Enter in the filter, frames it. A link's row (an object whose
 // content is another scene) says what the link is here (linked, shown again,
 // fixed, closed) and, where it can be entered, has Enter (→): the outline
 // shows the focus doc, so going inside a link is entering it (a double-click
-// on its row does too), and the pane opens again inside (./focus.js). It
-// reads the doc through api.scene(), writes it through api.ops planners, and selects by
-// writing local.selected. Everything else is someone else's:
+// on its row does too), and the pane stays open, showing the doc inside
+// (./focus.js). It reads the doc through scene(), writes it through ops
+// planners, and selects by writing local.selected. Everything else is someone else's:
 //   - Remove runs scene.select's "remove" command when it's running (it owns
-//     the confirm), else api.remove;
+//     the confirm), else remove();
 //   - load and build state comes from local.status (the stage's);
-//   - names come from api.nameOf (lenses applied);
+//   - names come from nameOf (lenses applied);
 //   - peers' selections and hovers come from presence, under "scene.select".
 //
 // Collapsed / expanded is this viewer's alone: localStorage
@@ -35,6 +36,7 @@
 // doc change would destroy the colour input mid-drag (its picker closes).
 
 import css from "./outline.css?inline";
+import { atFocus, perFocus } from "./per-focus.js";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
@@ -149,31 +151,38 @@ function el(tag, attrs = {}, ...children) {
  */
 export function createOutline(api, { shown = () => true } = {}) {
   api.style(css);
+  // the focus doc's tree: read and written through the focus stage, whichever it is now
+  const here = atFocus(api);
 
-  // ── expand state: this viewer's, in localStorage ──────────────────────
-  const storeKey = `scene-outline:${api.url ?? "scene"}`;
-  const overrides = new Map();
-  try {
-    const saved = JSON.parse(globalThis.localStorage?.getItem(storeKey) ?? "null");
-    if (saved && typeof saved === "object") for (const [k, v] of Object.entries(saved)) if (typeof v === "boolean") overrides.set(k, v);
-  } catch {
-    // no storage (private window, sandbox): defaults only
+  // ── expand state: this viewer's, per doc, in localStorage ──────────────
+  // (`firstDefaults`: a row's default is taken the first time it's drawn, so
+  // hiding a root group later doesn't fold it away under the pointer)
+  let expand = { key: null, overrides: new Map(), firstDefaults: new Map() };
+  /** The focus doc's expand state, read again when the focus is another doc. */
+  function expandState() {
+    const key = `scene-outline:${here.url ?? "scene"}`;
+    if (expand.key === key) return expand;
+    expand = { key, overrides: new Map(), firstDefaults: new Map() };
+    try {
+      const saved = JSON.parse(globalThis.localStorage?.getItem(key) ?? "null");
+      if (saved && typeof saved === "object") for (const [k, v] of Object.entries(saved)) if (typeof v === "boolean") expand.overrides.set(k, v);
+    } catch {
+      // no storage (private window, sandbox): defaults only
+    }
+    return expand;
   }
   const save = () => {
     try {
-      globalThis.localStorage?.setItem(storeKey, JSON.stringify(Object.fromEntries(overrides)));
+      globalThis.localStorage?.setItem(expand.key, JSON.stringify(Object.fromEntries(expand.overrides)));
     } catch {
       // best effort
     }
   };
-  // A row's default is taken the first time it's drawn, so hiding a root
-  // group later doesn't fold it away under the pointer.
-  const firstDefaults = new Map();
   let expandSeq = 0; // bumped on every expand change, so the view redraws
 
   // ── what the tree is, once per scene snapshot ──────────────────────────
   let model = null;
-  function derive(snap = api.scene()) {
+  function derive(snap = here.scene()) {
     if (model && model.snap === snap) return model;
     const { objects, ids, parents, groups } = snap;
     const outline = outlineParents(objects, parents, groups);
@@ -200,12 +209,14 @@ export function createOutline(api, { shown = () => true } = {}) {
   };
 
   const isExpanded = (m, id, depth) => {
+    const { overrides, firstDefaults } = expandState();
     if (overrides.has(id)) return overrides.get(id);
     let v = firstDefaults.get(id);
     if (v === undefined) firstDefaults.set(id, (v = defaultExpanded(m.objects, id, depth)));
     return v;
   };
   function setExpanded(id, value) {
+    const { overrides } = expandState();
     if (overrides.get(id) === value) return;
     overrides.set(id, value);
     expandSeq++;
@@ -239,34 +250,34 @@ export function createOutline(api, { shown = () => true } = {}) {
   let view = null; // the one mounted view
   const isShown = () => !!view && shown();
 
-  const selectedId = () => api.view.get().selected ?? null;
+  const selectedId = () => here.view.get().selected ?? null;
   /** Can this row be entered (an open link whose doc acts, here or where it's live)? */
   const enterable = (id) => {
-    const can = enterState(api.link(id));
+    const can = enterState(here.link(id));
     return !!can && !can.disabled;
   };
   /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
-  const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => api.link(id)).filter(Boolean));
+  const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => here.link(id)).filter(Boolean));
   function select(id) {
-    if ((api.view.get().selected ?? null) !== id) api.view.select(id);
+    if ((here.view.get().selected ?? null) !== id) here.view.select(id);
   }
 
   /** Point the camera at a row's object (or the group's members). */
   function frameRow(id) {
-    const o = api.scene().objects[id];
-    const box = !o ? null : isGroup(o) ? api.groupBox(id) : api.box(id);
-    if (box) api.camera.frame(box);
+    const o = here.scene().objects[id];
+    const box = !o ? null : isGroup(o) ? here.groupBox(id) : here.box(id);
+    if (box) here.camera.frame(box);
   }
 
-  // every write here is an edit (api.edit), so undo takes it back
+  // every write here is an edit (here.edit), so undo takes it back
   function write(plan, label = "Edit") {
     if (plan && plan.ok === false) api.notify(plan.reason, "error");
-    else if (plan) api.edit(plan, { label });
+    else if (plan) here.edit(plan, { label });
     return plan;
   }
 
   function setField(id, key, value) {
-    write(api.ops.setField(api.scene(), id, key, value), key === "name" ? "Rename" : key === "visible" ? "Visible" : key);
+    write(here.ops.setField(here.scene(), id, key, value), key === "name" ? "Rename" : key === "visible" ? "Visible" : key);
   }
 
   /** Remove: scene.select's command when it's running (it confirms), else straight through the stage. */
@@ -276,27 +287,27 @@ export function createOutline(api, { shown = () => true } = {}) {
       api.run({ ext: SELECT_EXT, command: "remove", target: id });
       return;
     }
-    const snap = api.scene();
+    const snap = here.scene();
     const o = snap.objects[id];
     if (!o) return;
-    const plan = api.ops.removeObjects(snap, [id]);
+    const plan = here.ops.removeObjects(snap, [id]);
     if (!plan || plan.ok === false) return;
     const n = plan.within?.length ?? 0;
     if (n > 0 && typeof globalThis.confirm === "function") {
       if (!globalThis.confirm(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return;
     }
-    const edit = api.edits("Delete");
-    const done = api.remove([id], { edit });
+    const edit = here.edits("Delete");
+    const done = here.remove([id], { edit });
     edit.end();
     if (new Set(done?.ids ?? plan.ids).has(selectedId())) select(null);
   }
 
   /** New group: inside the selected group, if one is; opened and selected. */
   function newGroup() {
-    const snap = api.scene();
+    const snap = here.scene();
     const sel = selectedId();
-    const id = api.newId("g");
-    const plan = write(api.ops.newGroup(snap, { into: isGroup(snap.objects[sel]) ? sel : null, id }), "New group");
+    const id = here.newId("g");
+    const plan = write(here.ops.newGroup(snap, { into: isGroup(snap.objects[sel]) ? sel : null, id }), "New group");
     if (!plan || plan.ok === false) return null;
     setExpanded(plan.id, true);
     select(plan.id);
@@ -308,10 +319,10 @@ export function createOutline(api, { shown = () => true } = {}) {
    * A row released on itself, or where it already sits, is a click.
    */
   function moveRow(id, place) {
-    const plan = api.ops.moveRow(api.scene(), id, place);
+    const plan = here.ops.moveRow(here.scene(), id, place);
     if (!plan) return select(id);
     if (plan.ok === false) return api.notify(plan.reason, "error");
-    api.edit(plan, { label: "Move in the tree" });
+    here.edit(plan, { label: "Move in the tree" });
     if (plan.parent) setExpanded(plan.parent, true);
     select(id);
     renderAll();
@@ -319,15 +330,15 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   /**
    * A document dropped at a place in the tree: an extension that lays out
-   * its datatype first (api.drop), else added as an object there.
+   * its datatype first (here.drop), else added as an object there.
    */
   async function addAt(item, place) {
-    const snap = api.scene();
+    const snap = here.scene();
     const into = place.parent && snap.objects[place.parent] ? place.parent : null;
     const intoGroup = !!into && isGroup(snap.objects[into]);
     const group = intoGroup ? into : into ? (snap.groups.get(into) ?? null) : null;
     // one edit, whichever way it's added: undo takes it out again
-    const edit = api.edits("Add");
+    const edit = here.edits("Add");
     try {
       await addInto(item, place, { into, intoGroup, group, edit });
     } finally {
@@ -335,10 +346,10 @@ export function createOutline(api, { shown = () => true } = {}) {
     }
   }
   async function addInto(item, place, { into, intoGroup, group, edit }) {
-    if (item.url !== api.url) {
+    if (item.url !== here.url) {
       try {
-        const handle = await api.repo.find(item.url);
-        if (await api.drop({ url: item.url, doc: handle.doc(), handle, group, at: null }, { edit })) return;
+        const handle = await here.repo.find(item.url);
+        if (await here.drop({ url: item.url, doc: handle.doc(), handle, group, at: null }, { edit })) return;
       } catch {
         // can't open it here: addObject says why below
       }
@@ -346,7 +357,7 @@ export function createOutline(api, { shown = () => true } = {}) {
     if (api.signal.aborted) return;
     try {
       const where = intoGroup ? { group: into } : into ? { parent: into } : { group: null };
-      const id = await api.addObject(item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}), edit });
+      const id = await here.addObject(item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}), edit });
       if (api.signal.aborted) return;
       pendingReveal = id;
       select(id);
@@ -366,17 +377,17 @@ export function createOutline(api, { shown = () => true } = {}) {
    * means nothing here.)
    */
   async function copyRows(drag, place, free = false) {
-    const snap = api.scene();
+    const snap = here.scene();
     const into = place.parent && snap.objects[place.parent] ? place.parent : null;
     const intoGroup = !!into && isGroup(snap.objects[into]);
-    const land = landings(api);
+    const land = landings(here, api);
     const where = (tags) => {
       if (into && !intoGroup) return land.on(into, tags, free);
       const l = land.ahead(tags);
       // the tree said at the top, or in that group: under nothing, whatever's in front
       return { ...l, parent: null, parentWorld: null, yaw: l.snapped ? l.yaw : null, snapped: false, group: intoGroup ? into : null };
     };
-    const made = await copyObjects(api, drag, { land: where, before: place.before ?? null });
+    const made = await copyObjects(here, drag, { land: where, before: place.before ?? null });
     if (!made || api.signal.aborted) return;
     pendingReveal = made[0];
     flushReveal();
@@ -474,7 +485,7 @@ export function createOutline(api, { shown = () => true } = {}) {
     const targetUnder = (e) => {
       const li = e.target instanceof Element ? e.target.closest(".object-row") : null;
       if (!li || !list.contains(li)) return null;
-      const objects = api.scene().objects;
+      const objects = here.scene().objects;
       const id = li.dataset.id;
       if (!objects[id]) return null;
       const box = li.getBoundingClientRect();
@@ -506,7 +517,7 @@ export function createOutline(api, { shown = () => true } = {}) {
       showMark(null);
       if (!target) return;
       const dt = e.dataTransfer;
-      const snap = api.scene();
+      const snap = here.scene();
       const m = derive(snap);
       const place = placementFor(m.objects, m.ids, target.id, target.intent, m.outline, { expanded: target.expanded });
       if (isRowDrag(dt)) {
@@ -515,7 +526,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         const drag = readRowDrag(dt);
         if (!drag) return;
         // another scene's row: a copy of it (and what's under it) goes here in the tree, put down as the view would
-        if (drag.scene !== api.url) return void copyRows(drag, place, e.altKey);
+        if (drag.scene !== here.url) return void copyRows(drag, place, e.altKey);
         if (!m.objects[drag.id]) return api.notify("That object is no longer in this scene.", "error");
         // Released on its own row: a click that wobbled, whichever band it hit.
         if (drag.id === target.id) return select(drag.id);
@@ -548,9 +559,9 @@ export function createOutline(api, { shown = () => true } = {}) {
       const fixedMark = group ? null : el("span", { class: "tag fixed-mark" }, "◷ fixed");
       // a link's: what it is here, and Enter where it can be entered
       const linkTag = group ? null : el("span", { class: "tag link-mark" });
-      const enterBtn = group ? null : el("button", { type: "button", class: "icon-button enter-link", title: "Enter: select and edit what's inside", "aria-label": "Enter", onclick: () => api.view.enter(id) }, "→");
+      const enterBtn = group ? null : el("button", { type: "button", class: "icon-button enter-link", title: "Enter: select and edit what's inside", "aria-label": "Enter", onclick: () => here.view.enter(id) }, "→");
       const remove = el("button", { type: "button", class: "icon-button remove", title: group ? "Remove group and everything in it" : "Remove from scene", "aria-label": "Remove from scene", onclick: () => removeRow(id) }, "×");
-      const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (enterable(id) ? api.view.enter(id) : (select(id), frameRow(id))) }, name, count);
+      const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (enterable(id) ? here.view.enter(id) : (select(id), frameRow(id))) }, name, count);
       // The name is the grab handle. Making the whole row draggable would
       // fight the colour input and the visibility checkbox inside it.
       main.draggable = true;
@@ -561,16 +572,16 @@ export function createOutline(api, { shown = () => true } = {}) {
         // In its type list, which scene it's from and how big it is: another
         // scene's view shows a ring that size while it's dragged over
         // (only types are readable then). STAGE.md, "Copying objects".
-        const snap = api.scene();
-        const order = api.doc()?.order ?? [];
+        const snap = here.scene();
+        const order = here.doc()?.order ?? [];
         const solid = subtreeOf(snap.objects, ids, order).ids.filter((x) => !isGroup(snap.objects[x]));
-        const measure = { box: (x) => api.box?.(x) ?? null, worldOf: (x) => api.worldOf?.(x) ?? snap.world?.(x) ?? null };
+        const measure = { box: (x) => here.box?.(x) ?? null, worldOf: (x) => here.worldOf?.(x) ?? snap.world?.(x) ?? null };
         const reach = solid.length ? reachOf(solid, measure) : null;
         // how far its origin is above its base, so it lands on its base (in the payload: read at the drop)
         const lift = solid.length ? liftOf(snap.objects, ids, order, measure) : null;
-        dt.setData(ROW_MIME, rowPayload(api.url, ids, Number.isFinite(lift) ? { lift } : {}));
-        for (const [t, v] of Object.entries(summaryTypes(api.url, reach))) dt.setData(t, v);
-        startDrag({ scene: api.url, ids, radius: reach, lift, tags: Array.isArray(snap.objects[id]?.tags) ? [...snap.objects[id].tags] : [], name: api.nameOf(id) || "" });
+        dt.setData(ROW_MIME, rowPayload(here.url, ids, Number.isFinite(lift) ? { lift } : {}));
+        for (const [t, v] of Object.entries(summaryTypes(here.url, reach))) dt.setData(t, v);
+        startDrag({ scene: here.url, ids, radius: reach, lift, tags: Array.isArray(snap.objects[id]?.tags) ? [...snap.objects[id].tags] : [], name: here.nameOf(id) || "" });
         // Outside a scene the row is its geometry (rowDocument): a slicer
         // or a flow field's body slot can take it. Scenes ignore these
         // types on a row drag (scene.add refuses ROW_MIME; scene.transfer
@@ -584,7 +595,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         // move inside this tree; copy into another scene
         dt.effectAllowed = "copyMove";
       });
-      main.addEventListener("dragend", () => endDrag({ scene: api.url }));
+      main.addEventListener("dragend", () => endDrag({ scene: here.url }));
       const li = el("li", { class: "object-row", role: "treeitem", dataset: { id, ...(group ? { kind: "group" } : {}) } }, twisty, vis, sw, main, remove);
       row = { li, twisty, vis, sw, name, count, pill, fixedMark, linkTag, enterBtn, remove, main, group, label: null };
       rows.set(id, row);
@@ -599,10 +610,10 @@ export function createOutline(api, { shown = () => true } = {}) {
     }
 
     function draw() {
-      const snap = api.scene();
-      const loc = api.view.get();
+      const snap = here.scene();
+      const loc = here.view.get();
       const selected = loc.selected ?? null;
-      const status = api.local.get().status ?? null;
+      const status = here.local.get().status ?? null;
       const theme = loc.theme ?? null;
       // Nothing it shows changed (only the hover, or something else's local key)?
       // (what each link is here comes from the view, not the doc)
@@ -626,7 +637,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         hasChildren: (id) => (kids.get(id)?.length ?? 0) > 0,
         shown: found?.shown ?? null,
       });
-      const peers = peerMarks(api.presence.get(), theme?.remote, objects);
+      const peers = peerMarks(presence()?.get() ?? {}, theme?.remote, objects);
       for (const id of [...rows.keys()]) if (!objects[id]) rows.delete(id);
       const mixed = mixedOf(m);
       hoverShown = loc.hovered ?? null;
@@ -690,7 +701,7 @@ export function createOutline(api, { shown = () => true } = {}) {
           } else fixedMark.remove();
         }
         if (linkTag) {
-          const mark = linkMark(api.link(id));
+          const mark = linkMark(here.link(id));
           if (mark) {
             if (linkTag.textContent !== mark.text) linkTag.textContent = mark.text;
             linkTag.title = mark.title;
@@ -712,7 +723,7 @@ export function createOutline(api, { shown = () => true } = {}) {
     }
 
     function setName(row, id, group) {
-      const label = api.nameOf(id) || (group ? "Group" : "Object");
+      const label = here.nameOf(id) || (group ? "Group" : "Object");
       if (row.label !== label) {
         row.label = label;
         row.name.textContent = label;
@@ -722,7 +733,7 @@ export function createOutline(api, { shown = () => true } = {}) {
     // A lens is applied after the extensions' updates in the same pass, so
     // a name it changes is looked at again just after.
     function refreshNames() {
-      const objects = api.scene().objects;
+      const objects = here.scene().objects;
       for (const [id, row] of rows) if (row.li.isConnected && objects[id]) setName(row, id, isGroup(objects[id]));
     }
 
@@ -754,9 +765,13 @@ export function createOutline(api, { shown = () => true } = {}) {
     });
   }
 
-  api.presence.watch(() => {
-    presenceSeq++;
-    api.schedule(renderAll);
+  // peers' selections and hovers: the focus doc's presence, heard again wherever the focus goes
+  const presence = perFocus(api, (f) => {
+    f.presence.watch(() => {
+      presenceSeq++;
+      api.schedule(renderAll);
+    });
+    return f.presence;
   });
 
   return {

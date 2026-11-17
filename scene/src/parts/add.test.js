@@ -118,7 +118,8 @@ describe("scene.add", () => {
     expect(s.doc().view.start).toEqual({ body: "t.sit" });
     // its maker lands in the game, in the body it starts people in; nothing stops
     expect(s.local.get().body.id).toBe("t.sit");
-    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game", "scene.add"]);
+    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.add", "scene.edit"]);
   });
 
   // templates {no params, with params} × {click it as offered, choose in its form then click} → what create gets
