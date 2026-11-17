@@ -126,6 +126,39 @@ describe("the anchors: the art direction they were, exactly, at their conditions
     }
   });
 
+  // The places' own weathers, as terrain's templates write them (terrain/src/template.test.js and
+  // template-ucluelet.test.js pin the same literals; its publishers check the page's atmosphere against them):
+  // each place shows the look it had, exactly. Ucluelet's old sun was hand-set for this very moment, 15:00 PDT on
+  // 15 July: the computed one is within a degree of it (0.41°). Cadboro's was sailing's, set for no moment (from the
+  // north-east, [0.55, 0.7, -0.45]): it moves to the south-west, where the sun is.
+  const UCLUELET = { lat: 48.95, lon: -125.558, date: "2026-07-15", hour: 15, offset: -7, wind: 5, from: 300, seed: 7 };
+  const UKEE_SUN = [-0.36, 0.84, 0.4];
+  const degreesBetween = (a, b) => (Math.acos(Math.min(1, a.reduce((s, v, i) => s + v * b[i], 0) / Math.hypot(...a) / Math.hypot(...b))) * 180) / Math.PI;
+  it.each([
+    ["Ucluelet under Ukee grey (its template's default sky)", { ...UCLUELET, cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 }, GREY],
+    ["Ucluelet under its marine layer", { ...UCLUELET, cover: 1, clouds: "stratus", base: 100, visibility: 1000 }, MARINE],
+    ["Ucluelet on a clear afternoon", { ...UCLUELET, cover: 0, clouds: "cumulus", base: 1200, visibility: 20000 }, CLEAR],
+  ])("%s: its old look exactly, the sun within 1° of the one hand-set for the moment", (_, t, want) => {
+    const a = atmosphereOf(params(t));
+    expect({ ...a, sun: { ...a.sun, direction: null } }).toStrictEqual({ ...want, sun: { direction: null, ...want.sun } });
+    expect(degreesBetween(a.sun.direction, UKEE_SUN)).toBeLessThan(1);
+  });
+  it("Cadboro Bay on its fair afternoon (its template's): the bright day exactly, the sun in the south-west", () => {
+    const t = { lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed: 7, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 };
+    const a = atmosphereOf(params(t));
+    expect({ ...a, sun: { ...a.sun, direction: null } }).toStrictEqual({ ...BRIGHT, sun: { direction: null, ...BRIGHT.sun } });
+    const sun = sunOf(params(t));
+    expect(sun.azimuth).toBeCloseTo(225.57, 1);
+    // east +X, north -Z: sailing's old sun stood in the north-east, the real one in the south-west
+    const [x, , z] = a.sun.direction;
+    expect([Math.sign(x), Math.sign(z)]).toEqual([-1, 1]);
+  });
+  it("Ucluelet's computed sun at its template's moment: azimuth 221.71°, apparent elevation 56.98° (the old comment's 222° and 57°)", () => {
+    const sun = sunOf(params(UCLUELET));
+    expect(sun.azimuth).toBeCloseTo(221.71, 1);
+    expect(sun.apparent).toBeCloseTo(56.98, 1);
+  });
+
   it("the default weather's sun is solar.js's: azimuth 225.57°, apparent elevation 56.30°", () => {
     const sun = sunOf(params({}));
     expect(sun.azimuth).toBeCloseTo(225.57, 1);

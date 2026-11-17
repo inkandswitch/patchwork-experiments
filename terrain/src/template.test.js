@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { layOut, headTo, differences, AT_ANCHOR, MOORING, RODE, CREDIT, BAY_WATER } from "./template.js";
-import { WIND, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
+import { layOut, headTo, differences, placeWeather, AT_ANCHOR, AFTERNOON, MOORING, RODE, CREDIT, PLACE, WEATHER, BAY_WATER } from "./template.js";
+import { WIND, SKY, ORIGIN, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
 import { credits } from "./credit.js";
 import { sceneCtx } from "./test/scene-ctx.js";
@@ -12,8 +12,11 @@ describe("the Cadboro Bay template's layout", () => {
     const d = scene.doc();
     expect(d.objects[terrain]).toMatchObject({ sourceUrl: "automerge:terrain", providerId: "terrain-mesh", locked: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     // its About is the Terrain doc (sources, licences), and its data's credit shows in the view
-    expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {}, "terrain.sky": {} } });
-    expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7 });
+    // the place (terrain.place) with no sky of its own: exactly its credit and the place
+    expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain" });
+    expect(d.objects[terrain].traits).toStrictEqual({ [CREDIT]: {}, [PLACE]: {} });
+    // the world's weather: Cadboro Bay (the weather's Place), 15:00 on 15 July on BC's clock, its breeze, a fair afternoon
+    expect(d.traits).toStrictEqual({ weather: { lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed: 7, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 } });
     expect(d.traits["sailing.sea"]).toBeUndefined();
     expect(d.traits.water).toBeUndefined();
     // the Sea keeps the terrain's footprint, from its known grid, down to the hint's deepest seabed, where its world has no open water
@@ -45,8 +48,9 @@ describe("the Cadboro Bay template's layout", () => {
     expect(station("sailing.anchor")).toEqual({ down: true, rode: RODE });
     // every station the layout sets, and nothing else of the sloop's
     expect(Object.keys(AT_ANCHOR).sort()).toEqual(["sailing.anchor", "sailing.jib", "sailing.sail"]);
-    // its own weather, not the part's default
-    expect(d.traits["sailing.weather"].wind.from).toBe(WIND.from);
+    // its own weather, not the part's default (the sloop writes the air only where there is no weather)
+    expect(d.traits).toStrictEqual({ weather: placeWeather({ origin: ORIGIN, wind: WIND, sky: SKY }, d.traits.weather.seed) });
+    expect(d.traits.weather.from).toBe(WIND.from);
   });
 
   it("without sailing, is the place alone", async () => {
@@ -66,6 +70,22 @@ describe("the Cadboro Bay template's layout", () => {
       expect(bearing).toBeCloseTo(from % 360, 9);
     }
   });
+});
+
+describe("a place's weather (placeWeather): the weather package's trait, its fields by name", () => {
+  // the weather's own field names (weather/src/index.js): every one this writes is one of them, and only gustiness and rain are left to its defaults
+  const FIELDS = ["lat", "lon", "date", "hour", "offset", "wind", "from", "gustiness", "seed", "cover", "clouds", "base", "visibility", "rain"];
+  it.each([
+    ["Cadboro Bay's", { origin: ORIGIN, wind: WIND, sky: SKY }, 3, { lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed: 3, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 }],
+    ["any place's: where, its wind, its sky; when is the afternoon", { origin: { lat: -33.5, lon: 151.25 }, wind: { speed: 0, from: 0, scale: 9, source: "x" }, sky: { name: "y", cover: 1, clouds: "stratus", base: 50, visibility: 100 } }, 0, { lat: -33.5, lon: 151.25, date: "2026-07-15", hour: 15, offset: -7, wind: 0, from: 0, seed: 0, cover: 1, clouds: "stratus", base: 50, visibility: 100 }],
+  ])("%s", (_, place, seed, want) => {
+    const w = placeWeather(place, seed);
+    expect(w).toStrictEqual(want);
+    for (const k of Object.keys(w)) expect(FIELDS).toContain(k);
+    expect(FIELDS.filter((k) => !(k in w))).toEqual(["gustiness", "rain"]);
+  });
+  it("the afternoon is 15:00 on 15 July 2026, on UTC−7", () => expect(AFTERNOON).toStrictEqual({ date: "2026-07-15", hour: 15, offset: -7 }));
+  it("the trait is the weather package's, unprefixed", () => expect(WEATHER).toBe("weather"));
 });
 
 describe("the Cadboro Bay data, pinned", () => {

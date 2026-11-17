@@ -4,20 +4,18 @@
 // SITE). It fetches the place's data once into a new Terrain doc (layered
 // heights from CHS, NRCan and NOAA; OpenStreetMap's shore, docks, marks,
 // buildings and land cover), puts the terrain in at the scene's origin
-// (locked), gives it Ucluelet's sky (terrain.sky: overcast but bright, as
-// most summer afternoons are), the world a summer afternoon's north-westerly
-// (sailing.weather), the harbour its open water with sailing's sea on it,
-// and lays sailing's sloop at anchor off the new dock, if sailing is
-// installed (found by its part's id in the registry, never imported).
+// (locked, the place: terrain.place), gives the world a summer afternoon's
+// weather (the weather package's trait, as data: a north-westerly down the
+// harbour under Ukee grey, overcast but bright, as most summer afternoons
+// are), the harbour its open water with sailing's sea on it, and lays
+// sailing's sloop at anchor off the new dock, if sailing is installed (found
+// by its part's id in the registry, never imported).
 
 import { uclueletDoc, WIND, HOME, GRID, OSM_DATE, EXPECTED, SKIES, ANCHORAGE, ORIGIN, WATER_COLOUR } from "./ucluelet.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
 import { localFrame } from "./tmerc.js";
-import { bayWater, aboard, headTo, AT_ANCHOR, CREDIT, WEATHER } from "./template.js";
-
-/** This package's: the place's sky (sky.js). */
-export const SKY = "terrain.sky";
+import { bayWater, aboard, headTo, placeWeather, AT_ANCHOR, CREDIT, PLACE, WEATHER } from "./template.js";
 
 /** The full credit and the short one a scene shows (fetched data's attribution, extras.terrain). */
 export const ATTRIBUTION =
@@ -92,11 +90,13 @@ export async function newUclueletTerrain(repo) {
  * @returns {Promise<{ terrain: string, sea: string, hull: string | null }>}
  */
 export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() * 1e9), sky = "ukee-grey" } = {}) {
-  const atmosphere = JSON.parse(JSON.stringify(SKIES[sky]));
-  const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Ucluelet", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {}, [SKY]: atmosphere } } });
+  // the sky is one of the place's (ucluelet.js SKIES), refused before anything is written
+  if (!Object.hasOwn(SKIES, sky)) throw new RangeError(`Ucluelet has no sky ${JSON.stringify(sky)} (it has ${Object.keys(SKIES).join(", ")})`);
+  const weather = placeWeather({ origin: ORIGIN, wind: WIND, sky: SKIES[sky] }, seed);
+  const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Ucluelet", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {}, [PLACE]: {} } } });
   const sea = ctx.newId("o");
   ctx.change((d) => {
-    d.traits[WEATHER] = { wind: { speed: WIND.speed, from: WIND.from }, seed };
+    d.traits[WEATHER] = weather;
     const water = bayWater(seed, HINT, WATER_COLOUR); // the Sea keeps Ucluelet's grid, 130 m deep, where its world has no open water
     water.name = "Ucluelet Harbour and the open coast";
     water.traits["sailing.sea"].scale = WIND.scale;

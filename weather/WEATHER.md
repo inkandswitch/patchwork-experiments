@@ -17,8 +17,11 @@ place field, Decision 32; the commands the world's only, Decision 31). W4
 (Fetch for this time: `open-meteo.js`) is in, with its review fixes (the
 visibility field is the visibility in force, Decision 41; no Fetch now,
 since Now then Fetch is it, Decision 42). W5 is in: sailing offers no
-ambient, and every boat sails in this package's `wind` (Decisions 43–47). A
-doc with the trait has its weather's wind, sun and sky, dialled or fetched. The plan's
+ambient, and every boat sails in this package's `wind` (Decisions 43–47).
+W6 is in: terrain's place offers no sky (`terrain.sky` is `terrain.place`),
+and Cadboro Bay's and Ucluelet's templates write this trait, each place
+showing exactly the look it had (Decisions 48–52). A doc with the trait has
+its weather's wind, sun and sky, dialled or fetched. The plan's
 steps are listed under "Plan" below.
 
 ## The data
@@ -258,11 +261,19 @@ weather: no wind, and the stage's own look.
   package's build and check that the boat's wind is the weather's
   (Decision 47). Without this package loaded a sailing scene is becalmed,
   and nothing says why (Decision 45, Question 15).
-- **terrain**'s place trait stops offering an atmosphere. It keeps the shore,
-  exposure and grain, and is renamed `terrain.place`, because a trait called
-  sky that gives no sky is a rough edge. `SKIES` leave terrain and become this
-  package's anchors. The Ucluelet and Cadboro templates write a `weather` with
-  their place preset.
+- **terrain** (done, W6): its place trait offers no atmosphere. It keeps the
+  shore in the water, the water's shelter and the ground's grain, and is
+  renamed `terrain.place` (`place.js`, no fields), because a trait called
+  sky that gives no sky is a rough edge. The colours of its `SKIES` are this
+  package's anchors; what stays in terrain is what each sky *is*, as this
+  trait's sky fields (Ucluelet's `SKIES`: Ukee grey, the marine layer, the
+  clear afternoon; Cadboro's `SKY`: the fair afternoon). The Cadboro Bay and
+  Ucluelet templates write a whole `weather`: the place's coordinates (the
+  Place picker's own), 15:00 on 15 July on UTC−7, the place's wind
+  climatology and its sky (terrain template.js `placeWeather`; Decisions
+  48–52). Under it each place shows exactly the look it had; only the sun
+  moves, to where it is (at Ucluelet within 0.41° of the direction once
+  hand-set for that moment).
 
 ## Setting it
 
@@ -419,7 +430,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 | W3 | `extension.js`: `ambient()` offers `{ wind, atmosphere }` of the trait, the same object while the params in force are unchanged, null without the trait; Place and Now on the toolbar and the menu, Edit's only (Decision 28); `provenance` (Decision 29); `placeOf`. Local probe `probes/weather-run.mjs` in the built scene tool: the ambients exactly the page's own `atmosphereOf`/`windOf`, the sun and the key light to 1e-9 at 9, 15, 21, Ucluelet and Now; the toolbar's picker and button; the inspector's fields. Its first run found the zone-data disagreement. Review fixes: the clock is an `offset`, not a zone, so `instantOf` is arithmetic and no peer's zone data enters the ambient (Decision 15; time.js loses `offsetAt`, `validZone` and Decision 13's gap and overlap rules); `place` dropped, the coordinates are the place (Decision 32); `source.fields`, a map, for the order-dependent `sum` (Decision 29); Now to the slider's quarter hour (Decision 30); the commands only in the world's stage, not a linked one's (Decision 31). The probe now also checks node's sun against the page's (a winter date among them) and a linked world entered: 61 of 61 checks pass in Chrome 157 | done |
 | W4 | `open-meteo.js`: `routeOf` and `requestFor` (the routing at every boundary, the URL's keys the whitelist, no other field reaching it), `fetchWeather` (one GET, no credentials, no referrer), `snapshotFrom` (six recorded replies to their fields, the derivations' tables: LCL, layers, kinds, WMO codes, visibility, rain rate, `gustinessOf` with its rows from 07a3a291 and the plan's gust factors, clamping wind 45 and rain 80), Fetch for this time (gated by `isWorlds`; the provenance on Fetch for this time's label; disabled for a time with no weather; a failure a notice that writes nothing; Fetch does not set `offset`, Decision 35); the one `fetch` call shown to be the only one. Live: `probes/live-fetch.mjs`, both places now and on 2025-07-15 15:00 PDT, every field finite and on its slider. Local probe: Now then Fetch for this time on the real network in the built tool, and a refused Fetch for this time. Review fixes: the visibility field is the visibility in force, so a fetch writes the observed one (Decision 41); Fetch now dropped, Now then Fetch is it (Decision 42); the present conditions checked against the press, the point routing measures from, with `source.for` their own time (Decision 34); every variable's unit checked by one loop; the stage's signal shown to reach the fetch; a notice only when a fetch wrote, and no fetch or notice when the trait is gone at the press; snow showers are cumulus, as the doc's rule says. 79 of 79 probe checks pass | done |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes: sailing's `weather.js`, its extension and describes, and `ATMOSPHERE` deleted; `traits.js` names the weather's trait `weather` and the ambient `wind` (`WIND_AMBIENT`); parts and templates write `{ wind, from, seed }` (Decision 43); the Sea and Sloop parts bring `weather`; the `wind` convention documented here. Tables: the 48 weathers {wind 0/7/12 × from 0/90/235/300 × gust none/0.5 × seed 1/7} → the offer's fields (here, `weather.test.js`) and → `createWind` sampled exactly (sailing `sea-view.test.js`, through its stand-in, Decision 44), each field shown to reach her; no sailing extension, created on a stage, has an `ambient` (`index.test.js` for the sea's, `aboard.slow.test.js` for the ships'). Probes (`sailing-run`, `harbour-run`) with this package's build loaded: her wind is her weather's, alone, and the harbour's, linked (Decision 47). Publishers write `weather` and list this package (Decision 46) | done |
-| W6 | `terrain.sky` → `terrain.place`; the place templates write weather | |
+| W6 | terrain: `terrain.sky` → `terrain.place` (`place.js`: the shore, shelter and grain, no ambient, no fields); `SKIES` (Ucluelet) and `SKY` (Cadboro) are this trait's sky fields; `placeWeather` writes each template's whole weather (place, 15:00 on 15 July on UTC−7, wind, sky); the template's `sky` option picks a preset, a sky it hasn't refused before anything is written. Tables: each template's trait literal, each Ucluelet sky, no terrain extension offering an ambient on either template's scene, the place object table; here, each template weather gives its old look exactly and Ucluelet's sun is within 1° of the old hand-set one (0.41°). Probes: publish-rvyc and publish-ucluelet `--dry-run` check the world's atmosphere and wind are the weather's, exactly the old looks, and the same for a viewer without terrain | done |
 | W7 | end-to-end local probe: weather reaches sky, water and boat | |
 | W8 | republish every boating example with weather; swap links | |
 | W9 | real-Patchwork checks (sun, sky, wind at the boat, a fetch) | |
@@ -1031,6 +1042,66 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     harbour's).
     *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
+48. **A place's template writes the whole weather, not only the air.**
+    Cadboro Bay's and Ucluelet's templates write every field the place
+    knows: `lat` and `lon` (the place's frame origin, which are this
+    package's `PLACES` exactly, so the Place picker reads the place's
+    name), `date`, `hour` and `offset` (15:00 on 15 July 2026 on UTC−7,
+    inside the 13:00–18:00 PDT hours both wind climatologies are of),
+    `wind`, `from` and `seed`, and `cover`, `clouds`, `base` and
+    `visibility`. `gustiness` and `rain` are left to their defaults (0.3,
+    the stock; 0): the places' climatologies say nothing of either. A
+    place doesn't lean on this package's defaults for what it does know
+    (Cadboro's sky equals the defaults today, and is written anyway).
+    Sailing's parts write only the air (Decision 43) because a boat has
+    no place; a place does. *Decided unattended (2026-11-16,
+    lane/weather), for the lead.*
+49. **What a sky *is* stays with the place; how it looks is this
+    package's.** The plan said `SKIES` leave terrain. Their colours did
+    (they are the anchors, Decision 9); their conditions stayed, as this
+    trait's sky fields: Ucluelet's `SKIES` (Ukee grey: stratocumulus,
+    cover 1, 600 m, 19 km; marine layer: stratus, cover 1, 100 m, 1 km;
+    clear afternoon: cover 0, 20 km, cumulus at 1200 m, the default base,
+    meaning nothing without cloud) and Cadboro's `SKY` (the fair
+    afternoon: cumulus, 0.35, 1200 m, 10 km). They are the place's
+    climatology (ECCC's Amphitrite Point record for Ucluelet; art
+    direction for Cadboro, whose Discovery Island record has wind and no
+    sky), so they belong to the place, and the name `SKIES` is kept
+    because the template's option is still `sky`. The marine layer's base
+    (100 m) is new: the old look had no deck, and the fog hides any deck
+    at 1 km (haze 1). *Decided unattended (2026-11-16, lane/weather), for
+    the lead.*
+50. **No per-place look override (Question 2's default, taken).** A place
+    gives no sky at all, not even an art-directed one over the generic
+    model: under its template's weather each place's old look comes back
+    exactly (the anchors), and every other weather there is the model's.
+    Only the sun moves. At Ucluelet the computed sun (azimuth 221.71°,
+    apparent elevation 56.98°) is 0.41° from the old hand-set
+    `[-0.36, 0.84, 0.4]`, which was set for this moment; at Cadboro
+    sailing's old sun stood in the north-east (`[0.55, 0.7, -0.45]`, set
+    for no moment) and the real one is in the south-west, so Cadboro's
+    light now comes from the other side of the sky. Ukee grey's fog far
+    is 17 100 m, not 17 000 (Decision 9); terrain's far-forest tests now
+    check against the weather's numbers through a test copy
+    (`terrain/src/test/ukee-grey.js`), which the Ucluelet publisher checks
+    against the page's own atmosphere. *Decided unattended (2026-11-16,
+    lane/weather), for the lead.*
+51. **`terrain.place` has no fields and no ambient.** It says only "this
+    object is the place": the shore in the water, the water's shelter and
+    the ground's grain, for the lowest-id shown object that has it, as
+    before. Its `ambient()` went with the sky; it had also called the
+    grain's `dress()` at every flush, and the stage already calls
+    `update()` whenever content changes (a GLB arriving), so the grain is
+    still dressed (the Ucluelet probe's grain check). No back-compat: a
+    doc with `terrain.sky` gives no shore and no grain until republished
+    (W8). *Decided unattended (2026-11-16, lane/weather), for the lead.*
+52. **A sky the template hasn't is refused before anything is written.**
+    `layOut(ctx, url, { sky })` throws a `RangeError` naming the three
+    skies for any other name, inherited ones (`toString`) included,
+    before the terrain is added. The template itself always passes Ukee
+    grey; the option is for publishers and tests. *Decided unattended
+    (2026-11-16, lane/weather), for the lead.*
+
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
 - `curl -I https://patchwork.inkandswitch.com/`: no
@@ -1100,6 +1171,18 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
   trait's number (m/s), so `newWeather` reads `wind.speed` into `wind`.
   Renaming the option `air` is left until lane/n6, which edits parts.js
   and template.test.js, has merged (W5 review nit).
+- **W6 (terrain)**: a place's scene runs one extension fewer offering an
+  ambient (the place's), and this one instead: at Ucluelet the atmosphere
+  was a copy of a trait, now `atmosphereOf` once per change of the
+  weather's fields (tens of microseconds). The doc gains a `weather` of
+  12 fields (about 200 bytes) and its terrain object loses the sky's JSON
+  (about 400 bytes at Ucluelet). The place's grain is dressed on
+  `update()` alone, not also at every flush. A viewer without this
+  package sees a place under the stage's own sky with no wind (Question
+  15's gap, now for the places too). Terrain's tests carry two copies of
+  this package's numbers: Ukee grey's horizon and fog for its far forest
+  (`test/ukee-grey.js`) and this trait's field names (template.test.js);
+  the publishers check both against the page.
 
 ## Questions for the lead
 
@@ -1108,7 +1191,9 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
    time (date and hour plus `clock.t`), reflushing every minute.
 2. Ucluelet's Ukee grey and Cadboro's bright day become fixed points of one
    generic sky model, and terrain gives no sky of its own. Is that enough, or
-   should a place keep an art-direction override?
+   should a place keep an art-direction override? (W6 took the default,
+   Decision 50: no override. Cadboro's sun now shines from the south-west,
+   where it is at 15:00, not from sailing's old north-east.)
 3. The UI is the scene inspector's Weather behaviour (the sliders) and the
    toolbar's Place picker and the Now and Fetch for this time buttons, in
    Edit, the world's weather's only (Decision 31). The present conditions
