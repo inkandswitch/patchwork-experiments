@@ -428,6 +428,7 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
       if (!state.land) return null;
       const r = ray ?? state.last?.ray;
       const land = (r ? settle(r, alt ?? state.last?.alt ?? false) : null) ?? state.land;
+      state.land = land; // where it went down (its `on`: what it rests on)
       state.W = translate(state.W, land.delta);
       return state.W;
     },

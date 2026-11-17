@@ -687,3 +687,156 @@ describe("H11: carry only with scene.carry, no veto, nobody holding it, in its o
     expect(cases).toBe(4 * 2 * 2 + 16 * 3 * 3 + 64 * 4 * 4);
   }, 60_000);
 });
+
+describe("How a carry ends: `ended` and `landed`", () => {
+  // An ear: every running extension's `landed(id, on)`, with the doc's
+  // transform as it is when it's told (so "after the write" is checked).
+  const ear = (calls) => ({
+    meta: { id: "t.ear" },
+    module: { create: (api) => ({ landed: (id, on) => calls.push({ id, on, at: JSON.parse(JSON.stringify(api.doc().objects[id]?.transform ?? null)) }) }) },
+  });
+  /** Has the promise settled, and with what (a microtask turn later)? */
+  const now = async (p) => {
+    let v = "pending";
+    p.then((x) => (v = x));
+    await settle();
+    return v;
+  };
+
+  // lifted {no, yes} × end path → (how, landed calls, writes). The block "b"
+  // is the surface at (2, 2): a put there rests on it, so `on` is "b".
+  const PATHS = {
+    "end with a landing": (session) => session.end(move(2, 2)),
+    // no ray from the pointer, ever: lifted, but it never had a landing
+    "end with none": (session) => session.end({ type: "up" }),
+    "cancel (Escape)": (session) => session.cancel(),
+    "a peer took it first": (session, { api }) => {
+      api.heldBy = () => "peer";
+      session.end(move(2, 2));
+    },
+    // (something here holds it ahead: refused at the next hold, which is a move's; never lifted, there is none)
+    "hold refused": (session, { stub }, lifted) => {
+      stub.refuse = true;
+      if (lifted) session.move(move(2.1, 2));
+      session.end(move(2, 2));
+    },
+    "removed meanwhile": (session) => {
+      s.change((d) => delete d.objects.a);
+      session.end(move(2, 2));
+    },
+  };
+  const WANT = {
+    "end with a landing": [{ how: "back" }, { how: "put", on: "b" }],
+    "end with none": [{ how: "back" }, { how: "back" }],
+    "cancel (Escape)": [{ how: "back" }, { how: "back" }],
+    "a peer took it first": [{ how: "back" }, { how: "yielded" }],
+    "hold refused": [{ how: "back" }, { how: "refused" }],
+    "removed meanwhile": [{ how: "back" }, { how: "back" }],
+  };
+
+  it("every session ends exactly once with one outcome, and landed fires iff it was put, after its write, with what it rests on (12 cases)", async () => {
+    let cases = 0;
+    for (const [path, run] of Object.entries(PATHS)) {
+      for (const lifted of [false, true]) {
+        const calls = [];
+        const m = await mount({ doc: { objects: { b: piece({ name: "Block" }) } }, extensions: [ear(calls)] });
+        m.stub.surfaces.push({ id: "b", top: 0.4, min: [1.5, 1.5], max: [2.5, 2.5] });
+        const writes = [];
+        const change = m.api.change;
+        m.api.change = (fn) => (writes.push(fn), change(fn));
+        const session = m.x().input.press(press("a"));
+        if (lifted) session.move(path === "end with none" ? { type: "move" } : move(1, 1));
+        run(session, m, lifted);
+        await settle();
+        const want = { on: null, ...WANT[path][lifted ? 1 : 0] };
+        const label = `${path}, ${lifted ? "lifted" : "not lifted"}`;
+        expect(await now(session.ended), label).toEqual(want);
+        expect(Object.isFrozen(await session.ended), label).toBe(true);
+        const put = want.how === "put";
+        expect(writes.length, label).toBe(put ? 1 : 0);
+        expect(
+          calls.map((c) => [c.id, c.on]),
+          label,
+        ).toEqual(put ? [["a", "b"]] : []);
+        // told after the write: the doc already has it where it went down
+        if (put) expect(calls[0].at.position[1], label).toBeCloseTo(0.4);
+        // and only once: anything after the end changes nothing
+        session.cancel();
+        session.end(move(2, 2));
+        await settle();
+        expect(await session.ended, label).toEqual(want);
+        expect(calls.length, label).toBe(put ? 1 : 0);
+        expect(writes.length, label).toBe(put ? 1 : 0);
+        // a lifted carry let go of its hold exactly once (landed only when put); one never lifted held nothing
+        expect(m.stub.releases, label).toEqual(lifted ? [["a", put ? { landed: true } : {}]] : []);
+        s.unmount();
+        s = null;
+        cases++;
+      }
+    }
+    expect(cases).toBe(12);
+  });
+
+  it("on {nothing, the block} × turned over with F first or not: always told, with what it rests on (F never stops a put being heard)", async () => {
+    for (const on of [null, "b"]) {
+      for (const flip of [false, true]) {
+        const label = `on ${on}, ${flip ? "flipped" : "not flipped"}`;
+        const calls = [];
+        const m = await mount({ doc: { objects: { b: piece({ name: "Block" }) } }, extensions: [ear(calls)] });
+        m.stub.surfaces.push({ id: "b", top: 0.4, min: [1.5, 1.5], max: [2.5, 2.5] });
+        const at = on ? 2 : 0.5;
+        const session = m.x().input.press(press("a"));
+        session.move(move(at, at));
+        if (flip) session.key({ key: "f" });
+        session.end(move(at, at));
+        expect(await now(session.ended), label).toEqual({ how: "put", on });
+        expect(
+          calls.map((c) => [c.id, c.on]),
+          label,
+        ).toEqual([["a", on]]);
+        expect(composeMatrix(transformOf("a"))[5], label).toBeCloseTo(flip ? -1 : 1);
+        s.unmount();
+        s = null;
+      }
+    }
+  });
+
+  it("a peer's hold appearing gives the carry way at once (the stage's update), not at the pointer's next move", async () => {
+    const { api, x, stub } = await mount();
+    const session = x().input.press(press("a"));
+    session.move(move(1, 1));
+    expect(await now(session.ended)).toBe("pending");
+    x().update(); // nothing new: it carries on
+    expect(await now(session.ended)).toBe("pending");
+    api.heldBy = () => "peer";
+    x().update();
+    expect(await now(session.ended)).toEqual({ how: "yielded", on: null });
+    expect(stub.releases).toEqual([["a", {}]]);
+  });
+
+  it("a newer carry, or the part stopping, puts an open one back", async () => {
+    const { x } = await mount({ doc: { objects: { b: piece() } } });
+    const first = x().input.press(press("a"));
+    first.move(move(1, 1));
+    const second = x().input.press(press("b", { hit: { id: "b", point: [0, 0.1, 0], distance: 1 } }));
+    expect(await now(first.ended)).toEqual({ how: "back", on: null });
+    second.move(move(2, 2));
+    s.unmount();
+    s = null;
+    expect(await now(second.ended)).toEqual({ how: "back", on: null });
+  });
+
+  it("a landed rule that throws doesn't stop the others hearing, or the put", async () => {
+    const calls = [];
+    const bad = { meta: { id: "t.bad" }, module: { create: () => ({ landed: () => { throw new Error("no"); } }) } };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { x } = await mount({ extensions: [bad, ear(calls)] });
+    const session = x().input.press(press("a"));
+    session.move(move(1, 1));
+    session.end(move(1, 1));
+    expect(await now(session.ended)).toEqual({ how: "put", on: null });
+    expect(calls.length).toBe(1);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

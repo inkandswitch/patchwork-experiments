@@ -30,6 +30,15 @@
 // "carry") returns the session to give back from their press. It carries
 // only what has the trait, like a press.
 //
+// Every session ends once, and says how (`session.ended`, a promise of
+// { how, on }): "put" (written where it went down, `on` what it rests on),
+// "back" (put back: Escape, a newer carry, never lifted, nowhere to land, or
+// gone meanwhile), "yielded" (a peer's hold ranks ahead: theirs) or
+// "refused" (something here holds it ahead). After a put's write, every
+// running extension's `landed(id, on)` hears it once, on this client only:
+// an event, not a claim, so nothing is ordered and nothing can refuse it
+// (STAGE.md "Landing", "How a carry ends").
+//
 // The maths is ./carry-math.js (plain arrays): this file is the stage side —
 // rays and raycasts, the pose hold peers see, the ring, the doc write.
 //
@@ -66,7 +75,7 @@ const RING_SEGMENTS = 48;
 export default {
   create(api) {
     const THREE = api.THREE;
-    let open = null; // the open carry's session (one at a time)
+    let open = null; // the open carry (one at a time): { session, check }
     const flipping = new Map(); // id → stop: pieces turning over where they lie
     let layer = null;
     let ring = null;
@@ -161,6 +170,18 @@ export default {
       return out;
     }
 
+    /** Tell every running extension where a put went down: `landed(id, on)`, once each, after the write. */
+    function tellLanded(id, on) {
+      for (const { value } of api.collect("landed")) {
+        if (typeof value !== "function") continue;
+        try {
+          value(id, on);
+        } catch (err) {
+          console.warn("[scene.carry] a landed rule failed", err);
+        }
+      }
+    }
+
     /** Is `oid` the carried object, or attached under it? (It can't land on itself.) */
     function carriedBy(id) {
       const parents = api.scene().parents;
@@ -220,12 +241,15 @@ export default {
           : [0, 0];
 
       // one carry at a time: a newer one puts an unfinished one back
-      open?.cancel();
+      open?.session.cancel();
       let c = null; // the carry, once lifted
       let skip = null;
       let done = false;
       let land = null; // the last landing shown
       let stopRing = null;
+      // how it ended, once: { how: "put" | "back" | "yielded" | "refused", on }
+      let endedAs = null;
+      const ended = new Promise((resolve) => (endedAs = resolve));
       const raycast = frame.raycastIn((origin, dir) => api.raycast(origin, dir, { skip }));
 
       function lift() {
@@ -280,17 +304,26 @@ export default {
       // refused, so it was never in our hands. It goes back, nothing written.
       function refused() {
         if (done) return;
-        session.cancel();
+        giveBack("refused");
         api.notify("Something else is moving that.", "info");
       }
 
       // A peer picked it up before we did (both grabbed it at once): theirs
       // it is, so ours goes back.
       function yieldIfTaken() {
-        if (!c || api.heldBy(id) == null) return false;
-        session.cancel();
+        if (done || !c || api.heldBy(id) == null) return false;
+        giveBack("yielded");
         api.notify("Someone else picked that up first.", "info");
         return true;
+      }
+
+      // ended without a write: let go of the hold (if it was lifted), and say how
+      function giveBack(how) {
+        if (done) return;
+        const lifted = !!c;
+        finish();
+        if (lifted) api.pose.release(id);
+        endedAs(Object.freeze({ how, on: null }));
       }
 
       function finish() {
@@ -299,12 +332,13 @@ export default {
         stopSpin = null;
         stopRing?.();
         stopRing = null;
-        if (open === session) open = null;
+        if (open?.session === session) open = null;
         hideRing();
       }
 
       const session = {
         cursor: "grabbing",
+        ended,
         move(ev) {
           if (done) return;
           if (!doc().objects?.[id]) return; // removed meanwhile: nothing to carry
@@ -317,22 +351,17 @@ export default {
           if (done) return;
           if (yieldIfTaken()) return;
           const W = c && doc().objects?.[id] ? c.put(frame.rayIn(rayOf(ev)), ev ? !!ev.alt : null) : null;
+          if (!W) return giveBack("back");
+          const on = c.state.land?.on ?? null;
           finish();
-          if (!W) {
-            if (c) api.pose.release(id);
-            return;
-          }
           api.change(api.ops.setTransform(api.scene(), id, frame.pose(W)));
           api.pose.release(id, { landed: true });
+          tellLanded(id, on);
+          endedAs(Object.freeze({ how: "put", on }));
         },
         // a press that didn't move: not a carry, so the click goes on (to selection)
         tap: () => false,
-        cancel() {
-          if (done) return;
-          const lifted = !!c;
-          finish();
-          if (lifted) api.pose.release(id);
-        },
+        cancel: () => giveBack("back"),
         // the gesture's keys, declared, so the key order knows them before they're pressed (keymap.js)
         keys: CARRY_KEYS,
         key(ev) {
@@ -353,7 +382,8 @@ export default {
           return true;
         },
       };
-      open = session;
+      // a peer's hold appearing (the stage's update) gives it way at once, not at the next move
+      open = { session, check: yieldIfTaken };
       if (opts.now && ev) session.move(ev);
       return session;
     }
@@ -430,6 +460,11 @@ export default {
     return {
       commands,
       carry,
+      // a peer's hold that ranks ahead drops ours and shows theirs (a display
+      // change): the open carry gives way then, not at the pointer's next move
+      update() {
+        open?.check();
+      },
       // ev.holder: the nearest link of the hit's chain with the trait (the
       // stage's holdersFor), so a press on what's attached to a piece carries
       // the piece
@@ -447,6 +482,11 @@ export default {
       dispose() {
         for (const stop of flipping.values()) stop();
         flipping.clear();
+        try {
+          open?.session.cancel();
+        } catch {
+          // the stage is going: its holds go with it
+        }
         open = null;
         ring = null;
         layer = null;

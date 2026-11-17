@@ -18,11 +18,12 @@
 // drawn from. So any object can be a container (a box lid, a cup), and the
 // sack is only what a bag document looks like by default.
 //
+// A piece this view's hand puts down on a bag goes in: the carry tells every
+// running extension what it put down and on what (`landed(id, on)`, after
+// its write), and the drawn piece's carry says how it ended (`ended`).
+//
 // What the stage doesn't give, and how this works round it (README.md,
 // "What the stage lacks"):
-// - no "put down" event: `landing` is a question the hand asks while it
-//   carries, so this remembers which object this view's hand has, and when
-//   the doc then shows it moved, looks at where it lies;
 // - `carry` wants a press to follow, and a draw starts from a key, with an
 //   object that doesn't exist until then: the drawn piece is carried under
 //   an arm of this extension's, which feeds the pointer to the hand's
@@ -66,7 +67,6 @@ const el = (tag, props = {}, ...children) => {
   return e;
 };
 
-const apply = (m, p) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
 const poseKey = (t) => JSON.stringify([t?.position ?? null, t?.rotation ?? null]);
 
 export default {
@@ -256,38 +256,11 @@ export default {
       return ok.length;
     }
 
-    // A piece this view's hand let go of over a bag goes in. The stage has no
-    // "put down" event, so: `landing` (asked by the hand while it carries)
-    // says which object this view's hand has; when the doc then shows that
-    // object somewhere new, the hand has put it down, and where it lies says
-    // whether that was on a bag.
-    let carried = null; // { id, was: its pose when the hand first asked, on: what it last hovered over }
-    function landing(id, _point, hitId) {
-      if (carried?.id !== id) carried = { id, was: poseKey(objectsNow()[id]?.transform), on: null };
-      carried.on = hitId ?? null;
-      return null;
-    }
-    /** The bag an object lies on: the middle of its base is within a bag's footprint. */
-    function bagUnder(id) {
-      const m = scene.world(id);
-      const box = api.content?.(id)?.box ?? null;
-      const base = box ? apply(m, [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2]) : [m[12], m[13], m[14]];
-      for (const b of bagsIn()) {
-        if (b.id === id) continue;
-        const bb = api.box?.(b.id);
-        if (bb && base[0] >= bb.min[0] && base[0] <= bb.max[0] && base[2] >= bb.min[2] && base[2] <= bb.max[2] && base[1] >= bb.min[1] - 0.005) return b.id;
-      }
-      return null;
-    }
-    function putDown() {
-      if (!carried) return;
-      const o = scene?.objects?.[carried.id];
-      if (!o) return void (carried = null);
-      if (poseKey(o.transform) === carried.was) return; // still in the hand (or put back)
-      const { id, on } = carried;
-      carried = null;
-      const bagId = bagUnder(id) ?? (bagAt(on) && on !== id ? on : null);
-      if (bagId) putInto(bagId, [id]);
+    // A piece this view's hand put down on a bag goes in (the carry's
+    // `landed`, after it wrote where it went down: `on` is what it rests on).
+    // Only this view's hand: a peer's put is theirs to put in.
+    function landed(id, on) {
+      if (on != null && on !== id && bagAt(on)) putInto(on, [id]);
     }
 
     // ── drawing ──
@@ -447,6 +420,18 @@ export default {
       if (!s) return false;
       p.session = s;
       const mine = () => p.session === s;
+      // How it ended, when that wasn't this extension letting go (letGo and
+      // retire drop the session first). A peer's hold ranked ahead: what they
+      // do with it says whose piece it was (step). Anything else (refused,
+      // put back by a newer carry): it stays where it is.
+      s.ended?.then(({ how }) => {
+        if (dead || !mine()) return;
+        p.session = null;
+        p.putDown?.();
+        p.putDown = null;
+        if (how === "yielded") p.contested = poseKey(objectsNow()[p.id]?.transform);
+        else retire(p);
+      });
       // the drawn piece in hand is a held tool (scene/TOOLS.md §4): it takes
       // every press until it's put down; Escape (the stage's ladder) or
       // another tool picked up puts it back where it came out
@@ -479,27 +464,18 @@ export default {
       for (const p of [...pendings]) {
         if (!p.carry) continue;
         if (!has(p.id)) continue; // settle() will say what became of it
+        if (p.session) continue; // in the hand: how its carry ends says the rest (startCarry)
         // A peer holds this piece too (both drew it at once: one object, two
         // hands). The stage's hold order says whose hand keeps it, and ours
-        // gives way; what the peer then does says whose piece it was. If
-        // they let go where it lies (the bag told them it's ours), we pick
-        // it up; if they put it somewhere, it was theirs, and we draw
-        // another. (The bag's own verdict settles two draws from one bag
-        // before this matters; this is for the cases it can't see: a pour
-        // racing a draw, a piece put away under a drawer's hand.)
+        // gave way (its carry ended "yielded"), or never got it; what the
+        // peer then does says whose piece it was. If they let go where it
+        // lies (the bag told them it's ours), we pick it up; if they put it
+        // somewhere, it was theirs, and we draw another. (The bag's own
+        // verdict settles two draws from one bag before this matters; this
+        // is for the cases it can't see: a pour racing a draw, a piece put
+        // away under a drawer's hand.)
         if (api.heldBy?.(p.id) != null) {
           p.contested ??= poseKey(objectsNow()[p.id]?.transform);
-          if (p.session) {
-            const s = p.session;
-            p.session = null;
-            p.putDown?.();
-            p.putDown = null;
-            try {
-              s.cancel();
-            } catch {
-              // the hand already put it back
-            }
-          }
           continue;
         }
         if (p.contested != null) {
@@ -509,7 +485,6 @@ export default {
           }
           p.contested = null;
         }
-        if (p.session) continue;
         if (!carryFn()) {
           retire(p); // nothing carries here: it stays where it was set down, beside the bag
           continue;
@@ -657,14 +632,13 @@ export default {
       update(snapshot) {
         scene = snapshot;
         watch(wanted());
-        putDown();
         settle();
         step();
         drawLabels();
         if (dock && !bagAt(dock.bagId)) closeDock();
         else dock?.refresh?.();
       },
-      landing,
+      landed,
       receive(type, data, from) {
         // checked as it arrives; said once the sender's name is known (or isn't to be had)
         if (!told(type, data, "Someone")) return;

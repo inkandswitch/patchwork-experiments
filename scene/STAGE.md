@@ -1587,7 +1587,8 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `hud()` → `[{ text, state }]` | status surfaces |
 | `landing(id, worldPoint, hitId)` → `{ faceUp?, flat? }` | the carry (`scene.carry`), on every move while it carries, after F too (see "Landing"). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
 | `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
-| `carry(id, ev, opts)` → session | anything that wants to carry (`scene.carry` provides it; it carries only what has the trait) |
+| `landed(id, on)` | the carry, once, right after a put's write, on the carrier's client only (`on`: what it rests on, or null). An event, not a claim: nothing is ordered and nothing can refuse it (see "How a carry ends") |
+| `carry(id, ev, opts)` → session | anything that wants to carry (`scene.carry` provides it; it carries only what has the trait). The session's `ended` says how it ended (see "How a carry ends") |
 | `bodies` → `[{ id, label, keys, lock, reach, here?, enter(place) }]` | the stage's body stack ("Bodies"): the seat body from `seats`, the walk body from `walk`, sailing's aboard and station. Sitting down from walking pushes the seat body over the walk body; standing up pops it |
 | `dispose()` | the stage |
 
@@ -1749,6 +1750,28 @@ copied alone with a load hint, which rests on the connector as the carry
 rests it: the middle of its footprint over it, its underside at the
 connector's height (the carry's rays find the surface there; a copy has
 none). So a piece lands where it would carried, whichever way it arrives.
+
+### How a carry ends
+
+Every carry session ends exactly once, and its `ended` (a promise, frozen
+when it settles) says how: `{ how, on }`.
+
+| `how` | when | written | `landed` |
+|---|---|---|---|
+| `"put"` | `end(ev)` found somewhere to go down | where it went down, once | `landed(id, on)` on every running extension, once each, after the write |
+| `"back"` | `cancel()` (Escape, another tool picked up), a newer carry, the carry's part stopping, never lifted, nowhere to land, or the object gone meanwhile | nothing | no |
+| `"yielded"` | a peer's hold ranks ahead of ours (both grabbed it at once): it gives way at the stage's next `update`, not at the pointer's next move | nothing | no |
+| `"refused"` | something here holds it ahead (a roll, a glide: holds.js) | nothing | no |
+
+`on` is what it rests on when put (a connector's object, or what the
+downward ray met), else null. It is told only on the carrier's client: a
+peer sees the write, not the event, so a rule that acts on a put (the bag
+taking what's put on it) acts once, where the hand was. `landed` hears only
+puts by a carry; a gizmo, a peer or Paste moving the piece is not a put.
+
+So one's own hold is answered without a query of its own: `pose.hold`'s
+boolean says whether it stands now, and the session's `ended` says how it
+ended. `heldBy` stays what it is, the peer ahead of this view.
 
 ### Audience
 

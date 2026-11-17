@@ -2548,3 +2548,32 @@ into a rack's place stands there.
    changes the GLB contract (README "connectors") for every package that
    writes one, which is the lead's call.
 
+
+## Decisions, how a carry ends (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+A carry session says how it ended, and the carry tells what it put down
+and on what (STAGE.md "How a carry ends"; `src/parts/carry.js`). This
+retires bag README's "What the stage lacks" rows "this was put down on me"
+and "is my own carry still holding this?".
+
+1. **`ended` is a promise of `{ how, on }`**, one of four outcomes: put,
+   back, yielded, refused. Every session settles it exactly once, whatever
+   ends it (end, cancel, a newer carry, the part stopping, a peer's hold,
+   a refused hold, the object gone). A promise rather than a callback in
+   `opts`, so whoever holds the session can ask, and a session already over
+   answers at once.
+2. **`landed(id, on)` is an event, not a claim**: after the put's write,
+   once per running extension, on the carrier's client only. Nothing is
+   ordered and nothing can refuse it; who may refuse a drop is drop claims,
+   N15's, the lead's. A rule that throws is warned of and the rest hear.
+3. **A peer's hold gives the carry way at the stage's `update`**, the flush
+   that shows the hold, not the pointer's next move, so `ended` says
+   "yielded" while the pointer is still. The bag stopped watching for that
+   hold itself.
+4. **No new query for one's own hold.** `pose.hold`'s boolean says whether
+   it stands, `ended` how it ended; `heldBy` stays "the peer ahead of this
+   view".
+5. **A drop into a bag is still two changes** (the put, then the bag's
+   removal), so undo takes two steps. One change would need the put to be
+   offered to rules before its write, which is a drop claim: a question
+   for the lead, tied to N15.
