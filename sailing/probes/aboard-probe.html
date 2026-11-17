@@ -3,8 +3,8 @@
 <title>aboard probe</title>
 <!-- Driven by probes/aboard-run.mjs (checks) and probes/publish-aboard.mjs
      (publishing what it builds). The BUILT scene tool (scene/dist) with the
-     BUILT seats, sailing, tabletop and keeper plugins (seats/dist, sailing/dist,
-     tabletop/dist, card-table/dist: the joint keeper; keep/dist), and the
+     BUILT seats, sailing and tabletop plugins (seats/dist, sailing/dist,
+     tabletop/dist: the table and its keepers), and the
      joints and traversal plugins her companionway's traits are for
      (joints/dist, traversal/dist), in a stub registry, on an
      in-memory repo, on an EMPTY scene. Two views of one doc, A (Ana) and B
@@ -122,7 +122,7 @@ try {
   // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
   // the stages can say which package each plugin comes from (publish-aboard checks what each doc lists)
   const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["weather", "../../weather/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
+  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["weather", "../../weather/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
     registerPlugins((await import(url)).plugins, urls[dir]);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();

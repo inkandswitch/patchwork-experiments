@@ -1,11 +1,11 @@
 // A Lost Cities table aboard the sloop, played by two people in headless
 // Chrome, at anchor and under way.
 //
-//   (in scene/, seats/, sailing/, tabletop/, card-table/ and keep/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/) pnpm build
 //   node probes/aboard-run.mjs [--shots <dir>] [--show] [--gpu] [--quick] [--seed 1] [--sea N] [--port 4781] [--cdp 9781]
 //
-// Mounts the BUILT scene tool with the BUILT seats, sailing, tabletop and
-// card-table plugins twice on one empty scene (aboard-probe.html): A is Ana,
+// Mounts the BUILT scene tool with the BUILT seats, sailing and tabletop
+// plugins twice on one empty scene (aboard-probe.html): A is Ana,
 // B is Ben. A builds the scene through the stage's public calls (the start
 // screen's Ship at anchor, then api.part: the Card table in her cockpit and
 // Lost Cities on it), B opens it, and they play. It checks:
@@ -74,7 +74,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "walk/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "walk/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "tabletop/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-aboard"));
 const QUICK = process.argv.includes("--quick");

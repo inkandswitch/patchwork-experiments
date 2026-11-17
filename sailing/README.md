@@ -253,7 +253,7 @@ node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build 
 node probes/trace-diff.mjs a.jsonl b.jsonl --until left   # two traces compared: the first step where they differ (same-seed runs are the same world through the leave step: DESIGN.md, "Determinism")
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
 node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad, the anchor dropped and raised by the prompt's buttons (build scene/, walk/, water/ too)
-node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, walk/, tabletop/, card-table/ too)
+node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, walk/, tabletop/ too)
 node probes/publish-aboard.mjs --dry-run   # make that scene with the tools and check it; without --dry-run, publish it
 node probes/ship-shots.mjs <dir> "quarter?trim=luff"   # her parts rendered; ?trim= dresses the sails with looks.js (beat, luff, stall, backed, reef, run)
 ```

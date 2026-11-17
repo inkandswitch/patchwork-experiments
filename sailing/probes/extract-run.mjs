@@ -2,7 +2,7 @@
 // 15): Lost Cities aboard, the boat's card table and the game linked on it
 // made a scene of their own, then bundled back.
 //
-//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/ and traversal/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, joints/ and traversal/) pnpm build
 //   node probes/extract-run.mjs [--shots <dir>] [--show] [--port 4783] [--cdp 9783]
 //
 // Mounts the BUILT scene tool with the BUILT packages on aboard-probe.html
@@ -37,7 +37,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "seats", "sailing", "walk", "water", "tabletop", "card-table", "keep", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "seats", "sailing", "walk", "water", "tabletop", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-extract"));
 const PORT = Number(arg("--port") ?? 4783);

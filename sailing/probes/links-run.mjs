@@ -3,7 +3,7 @@
 // (scene/STAGE.md, worked example 3). All in one headless Chrome, one
 // page, one repo (links-probe.html).
 //
-//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, traversal/, walk/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, joints/, traversal/, walk/) pnpm build
 //   node probes/links-run.mjs [--shots <dir>] [--show] [--seed 1] [--port 4791] [--cdp 9791]
 //
 // It checks:
@@ -55,7 +55,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "seats", "sailing", "water", "weather", "tabletop", "card-table", "keep", "joints", "traversal", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
+for (const p of ["scene", "seats", "sailing", "water", "weather", "tabletop", "joints", "traversal", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "links-probe"));
 const PORT = Number(arg("--port") ?? 4791);
