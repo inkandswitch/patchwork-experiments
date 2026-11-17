@@ -33,9 +33,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// a stand-in for the host's embed element, which the sections use when it's there. Patchwork's mounts its tool
+// when it's put in the page and unmounts it when it's taken out (a move by moveBefore keeps it): this one logs both
+const embedLog = [];
 beforeAll(() => {
-  // a stand-in for the host's embed element (About and the build controls use it when it's there)
-  if (!customElements.get("patchwork-view")) customElements.define("patchwork-view", class extends HTMLElement {});
+  customElements.define(
+    "patchwork-view",
+    class extends HTMLElement {
+      connectedCallback() {
+        embedLog.push(["mount", this.getAttribute("doc-url")]);
+      }
+      disconnectedCallback() {
+        embedLog.push(["unmount", this.getAttribute("doc-url")]);
+      }
+    },
+  );
 });
 
 async function mount({ objects, extensions = [], doc = {}, repo } = {}) {
@@ -452,11 +464,11 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     // each view sits inside the stage's embed marker: its keys are its own
     for (const v of body().querySelectorAll(".doc-section patchwork-view")) expect(v.closest(`[${EMBED_ATTR}]`)).not.toBeNull();
     await select("file");
-    expect(sections()).toEqual([[`${ME}/source`, "File", false, null]]);
+    expect(sections()).toEqual([[`${ME}/file`, "File", false, null]]);
     await select("link");
-    expect(sections()).toEqual([[`${ME}/source`, "Linked scene", false, null]]);
-    // the link's text row stays, with no Open of its own
-    expect($(".link-row").textContent).toMatch(/^Linked scene/);
+    expect(sections()).toEqual([[`${ME}/link`, "Linked scene", false, null]]);
+    // the link's text row stays (what the link is here), with no Open of its own; the section is the document
+    expect($(".link-row").textContent).toMatch(/^Link(Live|Closed|Fixed)/);
     expect($(".link-row button")).toBeNull();
     await select("boat");
     expect(sections()).toEqual([[`${ME}/about`, "About", true, [m.info.url, null]]]);
@@ -495,26 +507,90 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     expect(body().querySelector(".doc-section patchwork-view").getAttribute("doc-url")).toBe(m.info.url);
   });
 
-  // fold: the viewer's pref, else the entry's own `folded`: {no pref, true, false} × {entry folded, not}
-  const FOLD = [
-    ["no pref", undefined, "file", false],
-    ["no pref", undefined, "built", true],
-    ["pref true", true, "file", true],
-    ["pref true", true, "built", true],
-    ["pref false", false, "file", false],
-    ["pref false", false, "built", false],
+  // the sections around an open one come and go: [what changes, then the mounts and unmounts it causes]
+  const AROUND = [
+    ["About goes (built leaves its group)", (d) => (d.objects.built.group = null), (m) => [["unmount", m.info.url]]],
+    ["About comes (built back in Boat)", (d) => (d.objects.built.group = "boat"), (m) => [["mount", m.info.url]]],
+    ["another extension's comes (after About)", (d, flag) => ((flag.on = true), (d.objects.built.opacity = 0.5)), (m) => [["mount", m.glb.url]]],
+    ["another extension's goes", (d, flag) => ((flag.on = false), (d.objects.built.opacity = 0.6)), (m) => [["unmount", m.glb.url]]],
   ];
-  it.each(FOLD)("fold: %s (%s), %s's Source → open %s", async (_name, pref, target, open) => {
+  it("a section coming or going leaves every other open section mounted (no tool remounted)", async () => {
+    const flag = { on: false };
+    let glb = null;
+    const m = await mountKinds([OTHER((t) => (t === "built" && flag.on ? { url: glb } : null))]);
+    glb = m.glb.url;
+    await select("built");
+    expect(views()).toBe(3);
+    for (const [name, change, want] of AROUND) {
+      embedLog.length = 0;
+      s.change((d) => change(d, flag));
+      await settle();
+      expect(embedLog, name).toEqual(want(m));
+    }
+    // and the live ones are exactly the open sections
+    expect(views()).toBe(3);
+    embedLog.length = 0;
+    await select("boat");
+    expect(embedLog.filter(([k]) => k === "unmount").map(([, u]) => u).sort()).toEqual([m.src.url, m.render.url, m.info.url].sort());
+    expect(embedLog.filter(([k]) => k === "mount").map(([, u]) => u)).toEqual([m.info.url]);
+  });
+
+  it("a section whose document changes under the same selection shows, and opens, the new one", async () => {
+    const repo = new FakeRepo();
+    const one = repo.add({ title: "one" });
+    const two = repo.add({ title: "two" });
+    await mount({ repo, objects: { g1: group("G1", null, { infoUrl: one.url }), g2: group("G2", null, { infoUrl: two.url }), x: object({ name: "X", group: "g1" }) } });
+    await select("x");
+    const about = () => section(`${ME}/about`);
+    expect(about().querySelector("patchwork-view").getAttribute("doc-url")).toBe(one.url);
+    s.change((d) => (d.objects.x.group = "g2"));
+    await settle();
+    expect(about().querySelector(".section-label").textContent).toBe("About G2");
+    expect([...body().querySelectorAll("patchwork-view")].map((v) => v.getAttribute("doc-url"))).toEqual([two.url]);
+    const opened = [];
+    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+    about().querySelector(".section-open").click();
+    expect(opened).toEqual([{ url: two.url }]);
+  });
+
+  // fold: the viewer's pref, else the entry's own `folded`: {no pref, true, false} × {entry folded, not}
+  // (a File starts folded, a built Source open; each section is its own pref)
+  const FOLD = [
+    ["no pref", undefined, "file", "file", false],
+    ["no pref", undefined, "built", "source", true],
+    ["pref true", true, "file", "file", true],
+    ["pref true", true, "built", "source", true],
+    ["pref false", false, "file", "file", false],
+    ["pref false", false, "built", "source", false],
+  ];
+  it.each(FOLD)("fold: %s (%s), %s's section → open %s", async (_name, pref, target, id, open) => {
     await mountKinds();
-    if (pref !== undefined) s.api(ME).setPref(sectionPref(ME, "source"), pref);
+    if (pref !== undefined) s.api(ME).setPref(sectionPref(ME, id), pref);
     await select(target);
     await settle();
-    const sec = section(`${ME}/source`);
+    const sec = section(`${ME}/${id}`);
     expect(!sec.hasAttribute("data-folded")).toBe(open);
     expect(sec.querySelector(".section-fold").getAttribute("aria-expanded")).toBe(String(open));
     // a view exactly while it's open
     expect(sec.querySelectorAll("patchwork-view").length).toBe(open ? 1 : 0);
     expect(sec.querySelector(".section-embed").hidden).toBe(!open);
+  });
+
+  // one kind's fold leaves the others' as they start: [the pref set, then each kind's section → open?]
+  const OWN_FOLD = [
+    ["File unfolded", "file", true, { built: true, file: true, link: false }],
+    ["Linked scene unfolded", "link", true, { built: true, file: false, link: true }],
+    ["Source folded", "source", false, { built: false, file: false, link: false }],
+  ];
+  it.each(OWN_FOLD)("%s: only that section follows it", async (_name, id, pref, want) => {
+    await mountKinds();
+    s.api(ME).setPref(sectionPref(ME, id), pref);
+    const got = {};
+    for (const [target, sid] of [["built", "source"], ["file", "file"], ["link", "link"]]) {
+      await select(target);
+      got[target] = !section(`${ME}/${sid}`).hasAttribute("data-folded");
+    }
+    expect(got).toEqual(want);
   });
 
   it("the fold toggles the viewer's pref, nothing in the doc, and mounts or unmounts the view", async () => {
@@ -538,6 +614,9 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     ["Source", "built", `${"scene.inspector"}/source`, (m) => ({ url: m.src.url })],
     ["Build", "built", `${"scene.inspector"}/build`, (m) => ({ url: m.render.url, toolId: "scene-render-controls" })],
     ["About", "boat", `${"scene.inspector"}/about`, (m) => ({ url: m.info.url })],
+    // from a folded head: what Open file and the link's Open were
+    ["File (folded)", "file", `${"scene.inspector"}/file`, (m) => ({ url: m.glb.url })],
+    ["Linked scene (folded)", "link", `${"scene.inspector"}/link`, (m) => ({ url: m.linked.url })],
   ];
   it.each(OPEN)("Open on %s dispatches its own url and tool", async (_name, target, key, detail) => {
     const m = await mountKinds();
@@ -560,10 +639,13 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
       await settle();
     }
     expect(opened).toEqual([]);
-    // and in the source: the inspector dispatches it from one place, the controls tool from none
-    const src = (f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8");
-    expect(src("./inspector.js").match(/new CustomEvent\(OPEN_EVENT/g)).toHaveLength(1);
-    expect(src("../controls-tool.js")).not.toMatch(/open-document|open-source/);
+  });
+
+  it("a section's box has a height of its own, which its view fills (a tool that fills its host gets one)", () => {
+    const css = readFileSync(fileURLToPath(import.meta.url).replace(/inspector\.test\.js$/, "inspector.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = (sel) => css.match(new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+    expect(rule(".scene-stage .inspector .section-embed")).toMatch(/(^|[\s;])height:\s*[^;]*\d/);
+    expect(rule(".scene-stage .inspector .section-embed > patchwork-view")).toMatch(/(^|[\s;])height:\s*100%/);
   });
 
   it("the source shown is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {

@@ -251,10 +251,14 @@
   outline-offset: 2px;
 }
 
-/* the embed box itself is ours; what's inside it is the embedded tool's */
+/* the embed box itself is ours; what's inside it is the embedded tool's. It
+   has a definite height, so a tool that fills its host (an editor, a scene)
+   gets one, and the viewer can drag it taller or shorter; a tool shorter than
+   it leaves room, one taller scrolls */
 .scene-stage .inspector .section-embed {
-  max-height: min(50vh, 28rem);
-  min-height: 2rem;
+  height: min(40vh, 22rem);
+  min-height: 3rem;
+  resize: vertical;
   overflow: auto;
   border: 1px solid var(--scene-border);
   border-radius: var(--studio-radius-sm, 4px);
@@ -262,7 +266,7 @@
 
 .scene-stage .inspector .section-embed > patchwork-view {
   display: block;
-  min-height: 6rem;
+  height: 100%;
 }
 
 /* which version of its source a render-doc object shows (scene object `at`) */

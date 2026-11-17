@@ -450,6 +450,10 @@ try {
       // long fields (two sections) never squeeze the tree: it keeps its rows' height, up to its 40%
       const sq = await A(`(() => { const t = p.hostA.querySelector('.inspector-tree'), pane = p.hostA.querySelector('.inspector-pane'), want = t.querySelector('.scene-outline').scrollHeight; return { tree: t.getBoundingClientRect().height, pane: pane.getBoundingClientRect().height, want, fieldsScroll: p.hostA.querySelector('.inspector-body').scrollHeight }; })()`);
       check("treeNotSqueezedByLongFields", sq.tree >= Math.min(sq.want, 0.38 * sq.pane) && sq.fieldsScroll > sq.pane - sq.tree, sq);
+      // an open section's box has a height of its own, which its (stand-in) view fills, so a tool that fills its host
+      // gets one; a tool taller than it scrolls inside it (the build controls are the stand-in's mount here)
+      const hs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section:not([data-folded])')].map((s) => { const e = s.querySelector('.section-embed'), v = e.querySelector('patchwork-view'); return [s.dataset.section, Math.round(e.getBoundingClientRect().height), Math.round(v?.getBoundingClientRect().height ?? 0)]; })`);
+      check("sectionsHaveAHeight", hs.length === 2 && hs.every(([, box, view]) => box >= 120 && Math.abs(view - (box - 2)) <= 2), hs);
       check("noOpenSource", (await A(`p.hostA.querySelectorAll('.open-source, .open-file, .open-linked, .open-about').length`)) === 0);
       if (hasControls) {
         await A(`(() => { const s = p.hostA.querySelector('.scene-render-controls select'); s.value = "cm"; s.dispatchEvent(new Event("change")); return true; })()`);

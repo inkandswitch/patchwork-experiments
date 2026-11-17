@@ -8,6 +8,13 @@
 export const DND_MIME = "text/x-patchwork-dnd";
 export const URLS_MIME = "text/x-patchwork-urls";
 
+/**
+ * One key for a document as something shows it: its URL and the tool it's
+ * shown in (none: its type's default). Two inspector sections, or two drawer
+ * panes, with one key show the same thing.
+ */
+export const docKey = (url, toolId = null) => `${url}|${toolId ?? ""}`;
+
 export function hasPatchworkDrop(dt) {
   const types = dt?.types ? [...dt.types] : [];
   return types.includes(DND_MIME) || types.includes(URLS_MIME) || types.includes("text/plain");

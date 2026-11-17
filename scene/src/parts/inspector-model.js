@@ -3,8 +3,7 @@
 
 import { groupChain, groupTargets, inheritedDisplay, isGroup, outlineParents } from "../groups.js";
 import { attachTargets, treeOrder } from "../hierarchy.js";
-import { parseAutomergeUrl } from "../dnd.js";
-import { docKey } from "../embed.js";
+import { docKey, parseAutomergeUrl } from "../dnd.js";
 
 export const DEG = 180 / Math.PI;
 const NBSP = " ";
@@ -145,20 +144,17 @@ export function statusParts(o, { status = null, load = null, content = null, sho
   return out;
 }
 
-// ─── commands ────────────────────────────────────────────────────────────────
-
-const shownOnInspector = (c) => (Array.isArray(c?.show) ? c.show.includes("inspector") : typeof c?.show === "string" ? c.show === "inspector" : true);
+// ─── what extensions contribute: commands and documents ─────────────────────
 
 /**
- * The commands that apply to `target` and are meant for the inspector, as
- * [{ ext, command, state }]: `first`'s own first, then the rest in running
- * order. A command without state() applies only to the scene, so never here.
- * @param {{ id: string, value: any }[]} collected  api.collect("commands")
+ * Walk what api.collect gathered, `first`'s own first, then the rest in
+ * running order: pick(ext, entry) → what to keep, or null. One extension's
+ * value that isn't a list (or whose iterator throws) contributes nothing.
+ * @param {{ id: string, value: any }[]} collected
  */
-export function commandsFor(collected, target, ctx, first = null) {
+function contributed(collected, first, pick) {
   const mine = [];
   const rest = [];
-  if (target == null) return [];
   for (const { id: ext, value } of collected ?? []) {
     let list;
     try {
@@ -166,20 +162,44 @@ export function commandsFor(collected, target, ctx, first = null) {
     } catch {
       continue;
     }
-    for (const command of list) {
-      if (!command || command.id == null || typeof command.run !== "function" || typeof command.state !== "function") continue;
-      if (!shownOnInspector(command)) continue;
-      let state = null;
-      try {
-        state = command.state(target, ctx);
-      } catch {
-        state = null;
-      }
-      if (state == null || state === false) continue;
-      (ext === first ? mine : rest).push({ ext, command, state: typeof state === "object" ? state : {} });
+    for (const entry of list) {
+      const kept = entry ? pick(ext, entry) : null;
+      if (kept) (ext === first ? mine : rest).push(kept);
     }
   }
   return [...mine, ...rest];
+}
+
+/** An entry's state(target, ctx); one that throws doesn't apply, and says so. */
+function stateOf(ext, kind, entry, target, ctx) {
+  try {
+    return entry.state(target, ctx);
+  } catch (err) {
+    console.warn(`[scene] “${ext}” ${kind} “${entry.id}” failed`, err);
+    return null;
+  }
+}
+
+// ─── commands ────────────────────────────────────────────────────────────────
+
+const shownOnInspector = (c) => (Array.isArray(c?.show) ? c.show.includes("inspector") : typeof c?.show === "string" ? c.show === "inspector" : true);
+
+/**
+ * The commands that apply to `target` and are meant for the inspector, as
+ * [{ ext, command, state }]: `first`'s own first, then the rest in running
+ * order. A command without state() applies only to the scene, so never here;
+ * one whose state throws doesn't apply (with a warning).
+ * @param {{ id: string, value: any }[]} collected  api.collect("commands")
+ */
+export function commandsFor(collected, target, ctx, first = null) {
+  if (target == null) return [];
+  return contributed(collected, first, (ext, command) => {
+    if (command.id == null || typeof command.run !== "function" || typeof command.state !== "function") return null;
+    if (!shownOnInspector(command)) return null;
+    const state = stateOf(ext, "command", command, target, ctx);
+    if (state == null || state === false) return null;
+    return { ext, command, state: typeof state === "object" ? state : {} };
+  });
 }
 
 /** A key that changes when the command buttons would. */
@@ -210,73 +230,68 @@ export const CONTROLS_TOOL = "scene-render-controls";
  * (STAGE.md "A document"), as [{ ext, id, label, url, toolId, folded }]:
  * `first`'s own first, then the rest in running order. Dropped: an entry
  * that doesn't apply (state null or false), one whose url isn't an
- * automerge URL, one whose state throws (with a warning), and a repeat of a
- * url and tool already listed (the first one stays). Unlike a command, a
- * document may go with the scene (target null).
+ * automerge URL, one whose state throws (with a warning), a second entry
+ * with an extension's id already listed (with a warning: a section is its
+ * extension and id), and a repeat of a url and tool already listed (the
+ * first one stays). Unlike a command, a document may go with the scene
+ * (target null).
  * @param {{ id: string, value: any }[]} collected  api.collect("documents")
  */
 export function documentsFor(collected, target, ctx, first = null) {
-  const mine = [];
-  const rest = [];
-  for (const { id: ext, value } of collected ?? []) {
-    let list;
-    try {
-      list = Array.isArray(value) ? value : value && typeof value[Symbol.iterator] === "function" ? [...value] : [];
-    } catch {
-      continue;
+  const sections = new Set();
+  const shown = new Set();
+  return contributed(collected, first, (ext, entry) => {
+    if (entry.id == null || typeof entry.state !== "function") return null;
+    const state = stateOf(ext, "document", entry, target, ctx);
+    if (state == null || state === false || typeof state !== "object") return null;
+    const url = docUrl(state.url);
+    if (!url) return null;
+    const toolId = typeof state.toolId === "string" && state.toolId ? state.toolId : null;
+    const id = String(entry.id);
+    return { ext, id, label: String(state.label ?? entry.name ?? entry.id), url, toolId, folded: !!state.folded };
+  }).filter((d) => {
+    const section = `${d.ext}/${d.id}`;
+    if (sections.has(section)) {
+      console.warn(`[scene] “${d.ext}” has two documents “${d.id}” for one selection; the first is shown`);
+      return false;
     }
-    for (const entry of list) {
-      if (!entry || entry.id == null || typeof entry.state !== "function") continue;
-      let state;
-      try {
-        state = entry.state(target, ctx);
-      } catch (err) {
-        console.warn(`[scene] “${ext}” document “${entry.id}” failed`, err);
-        continue;
-      }
-      if (state == null || state === false || typeof state !== "object") continue;
-      const url = docUrl(state.url);
-      if (!url) continue;
-      const toolId = typeof state.toolId === "string" && state.toolId ? state.toolId : null;
-      const label = String(state.label ?? entry.name ?? entry.id);
-      (ext === first ? mine : rest).push({ ext, id: String(entry.id), label, url, toolId, folded: !!state.folded });
-    }
-  }
-  const seen = new Set();
-  return [...mine, ...rest].filter((d) => {
+    sections.add(section);
     const k = docKey(d.url, d.toolId);
-    if (seen.has(k)) return false;
-    seen.add(k);
+    if (shown.has(k)) return false;
+    shown.add(k);
     return true;
   });
 }
 
 /**
  * The inspector's own documents, which every related document of an object
- * is shown as: its Source (the doc it shows, in that doc's own tool; a file
- * or a linked scene folded, since what it shows is already in the scene),
- * its Build (the render doc, in the build controls) and About (its infoUrl,
+ * is shown as: the doc it shows, in that doc's own tool, as its Source (built
+ * from it), its File (a GLB shown as it is) or its Linked scene, the last two
+ * folded, since what they show is already in the scene, and each a section
+ * of its own, so each keeps its own fold; its Build (the render doc, in the build controls) and About (its infoUrl,
  * else its nearest group's). The source is the doc's own `sourceUrl`, never
  * what a lens shows instead, so nothing veiled is offered.
  * @param {(id: string) => "file" | "built" | "scene" | null} contentOf  what the stage routed an object's content to
  */
 export function inspectorDocuments(contentOf) {
   const objectOf = (target, scene) => (target != null ? scene?.objects?.[target] ?? null : null);
-  return [
-    {
-      id: "source",
-      name: "Source",
-      state(target, { scene }) {
-        const o = objectOf(target, scene);
-        const url = !o || isGroup(o) ? null : docUrl(o.sourceUrl);
-        if (!url) return null;
-        const kind = contentOf(target);
-        if (kind === "file") return { url, label: "File", folded: true };
-        if (kind === "scene") return { url, label: "Linked scene", folded: true };
-        // built from it; or not routed here (its provider isn't installed): there, folded
-        return { url, label: "Source", folded: kind !== "built" };
-      },
+  /** A section of the object's source, for the kinds of content `is` says, folded as `folded(kind)` says. */
+  const sourceEntry = (id, name, is, folded) => ({
+    id,
+    name,
+    state(target, { scene }) {
+      const o = objectOf(target, scene);
+      const url = !o || isGroup(o) ? null : docUrl(o.sourceUrl);
+      const kind = url ? contentOf(target) : null;
+      return url && is(kind) ? { url, label: name, folded: folded(kind) } : null;
     },
+  });
+  return [
+    // one doc, three sections (each its own fold): what it was built from;
+    // or, routed nowhere (its provider isn't installed), folded
+    sourceEntry("source", "Source", (kind) => kind !== "file" && kind !== "scene", (kind) => kind !== "built"),
+    sourceEntry("file", "File", (kind) => kind === "file", () => true),
+    sourceEntry("link", "Linked scene", (kind) => kind === "scene", () => true),
     {
       id: "build",
       name: "Build",

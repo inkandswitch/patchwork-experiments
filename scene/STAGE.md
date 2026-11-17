@@ -154,8 +154,8 @@ or identity closes, with what was opened under it, and opens again.
   channel, so it draws them again, as it draws their carried cards again.
   `scene.focus` offers Enter on a link (the menu,
   the inspector) and takes a double-click on one; the tree's link rows
-  say what the link is here and enter; the inspector has a Linked scene
-  row.
+  say what the link is here and enter; the inspector has a Link row
+  (and the linked doc as a folded Linked scene section).
 - **Frames.** Everything spatial in an api is in its stage's root frame,
   through one choke point (`stage/scope.js`): `worldOf`, `box`, `sceneBox`,
   `pick`, `ray`, `raycast`, `project`, `camera.*`, labels, world layers,
@@ -1632,20 +1632,32 @@ target, which the inspector shows as sections):
 
 - `state` null (or false) means it doesn't go with that target. Unlike a
   command, a document may go with the scene (target null).
+- A section is its extension and `id`: one id names one section (its fold
+  is the viewer's pref for that id), so a doc that is shown three ways is
+  three entries, each answering for its own kind of target, as the
+  inspector's Source, File and Linked scene are.
 - `url` is an automerge URL (any heads are dropped: a section is the doc
   you'd edit); `toolId` names the tool it's shown in, absent its type's
   default; `label` is the section's title, over `name`; `folded` is how it
   starts when the viewer hasn't chosen.
 - The inspector (`scene.inspector`) shows `documentsFor(api.collect("documents"),
   target, ctx, "scene.inspector")` (`src/parts/inspector-model.js`): its own
-  first (Source, Build, About), then the rest in running order. An entry
-  whose url isn't an automerge URL, whose `state` throws (warned), or whose
-  url and tool repeat one already listed (the first stays) is dropped.
+  first (Source, File or Linked scene, Build, About), then the rest in
+  running order. An entry whose url isn't an automerge URL, whose `state`
+  throws (warned, as a command's is: the two share one walk of what's
+  collected), whose id its extension has already listed for the target
+  (warned), or whose url and tool repeat one already listed (the first
+  stays) is dropped.
 - Each is a section: its label (which folds it: the viewer's pref
   `inspector.open.<ext>/<id>`, else `folded`), **Open**
   (`patchwork:open-document` with its `url` and `toolId`, the main view),
   and, while open, a `<patchwork-view>` of it inside the embed marker, so
-  its keys are its own. It's a document, not a mount: something that needs
+  its keys are its own, in a box of a definite height (the viewer can drag
+  it taller) that a tool filling its host fills. A section stays mounted
+  while it's shown: others coming and going beside it don't take it out.
+  Without a host `<patchwork-view>` (a local probe, a test), the section
+  names its doc instead (`src/test/patchwork-view.js` is a stand-in host
+  that mounts a package's own tools). It's a document, not a mount: something that needs
   this scene's context (a die's panel) is a command that docks its own
   element (`api.dock`).
 

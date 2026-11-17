@@ -17,7 +17,7 @@
 // (below). Then the commands that apply to it (every running extension's,
 // shown on "inspector" or on every surface) as buttons: this extension's
 // Frame, Group and Ungroup first. For a link (an object whose content is
-// another scene: COMPOSITION.md §1), a Linked scene row: what it is here
+// another scene: COMPOSITION.md §1), a Link row: what it is here
 // (live, shown again, fixed at a version, closed and why) and what this
 // scene sets of it: its place, name, display, lock and its own traits on it,
 // never what's inside (Enter, scene.focus's command, goes in for that). The
@@ -33,11 +33,14 @@
 //
 // Last, for either, its documents (STAGE.md "A document"): every running
 // extension's `documents` that go with it, this extension's own first (the
-// object's Source, its Build controls, About: inspector-model.js
-// inspectorDocuments). Each is a section: a head with its label, a fold
+// object's Source, File or Linked scene, its Build controls, About:
+// inspector-model.js inspectorDocuments). Each is a section: a head with its label, a fold
 // (the viewer's pref) and Open (patchwork:open-document, the main view),
 // and the doc in a <patchwork-view> inside the stage's embed marker, so its
-// keys are its own. Nothing else here opens a document.
+// keys are its own; where the host has no <patchwork-view> (a local
+// probe, a test), a placeholder names the doc. A section stays mounted while
+// it's shown, however the sections around it come and go. Nothing else here
+// opens a document.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
@@ -61,13 +64,14 @@ import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
-import { EMBED_ATTR, docKey } from "../embed.js";
+import { EMBED_ATTR } from "../embed.js";
+import { docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
 import { EDIT, LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
-import { CONTROLS_TOOL, DEG, attachOptions, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
+import { DEG, attachOptions, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
 import { createOutline } from "./outline.js";
 import { layerChoices, layerStates } from "../layers.js";
@@ -94,6 +98,25 @@ function el(tag, attrs = {}, ...children) {
 }
 
 const canEmbed = () => !!globalThis.customElements?.get?.("patchwork-view");
+
+/**
+ * Make `parent`'s children exactly `roots`, in order, without taking out a
+ * root that stays: one leaving is removed and one arriving is inserted at its
+ * place, so an embedded view beside them is never disconnected (which, for
+ * a <patchwork-view>, unmounts its tool). Only roots that swap places move:
+ * by moveBefore where the browser has it (Patchwork's view keeps its tool
+ * through that), else by a plain insert.
+ */
+function place(parent, roots) {
+  const want = new Set(roots);
+  for (const c of [...parent.children]) if (!want.has(c)) c.remove();
+  roots.forEach((r, i) => {
+    const at = parent.children[i] ?? null;
+    if (at === r) return;
+    if (r.parentNode === parent && typeof parent.moveBefore === "function") parent.moveBefore(r, at);
+    else parent.insertBefore(r, at);
+  });
+}
 
 /** Heads, shortened for display: the first 8 characters of each. */
 function shortHeads(heads) {
@@ -126,7 +149,7 @@ export function startBodies(collected, want = LOOK.id) {
   return out;
 }
 
-/** What the inspector's Linked scene row says of a link as the view has it ({ role, open, reason? }). Pure. */
+/** What the inspector's Link row says of a link as the view has it ({ role, open, reason? }). Pure. */
 export function linkText(link) {
   if (!link) return "";
   const state = link.open ? "" : " · not open here yet";
@@ -437,39 +460,13 @@ function create(api) {
 
   /**
    * Mount a document in `container`: a <patchwork-view> (the host's embed),
-   * or, where there's none (tests, local probes), a tool this package ships
-   * (the build controls), else a placeholder that names it. → unmount.
+   * or, where there's none (a local probe, a test), a placeholder that names
+   * it. → unmount.
    */
   function mountDocument(container, { url, toolId, label }) {
-    if (canEmbed()) {
-      const v = document.createElement("patchwork-view");
-      v.setAttribute("doc-url", url);
-      if (toolId) v.setAttribute("tool-id", toolId);
-      container.append(v);
-      return () => v.remove();
-    }
-    if (toolId !== CONTROLS_TOOL) {
-      container.append(el("p", { class: "hint section-placeholder" }, `${label}: ${url}`));
-      return () => container.replaceChildren();
-    }
-    let cleanup = null;
-    let gone = false;
-    Promise.all([api.repo.find(url), import("../controls-tool.js")])
-      .then(([h, m]) => {
-        if (!gone) cleanup = m.default(h, container);
-      })
-      .catch((err) => {
-        if (!gone) container.append(el("p", { class: "error" }, `Controls unavailable: ${err?.message ?? err}`));
-      });
-    return () => {
-      gone = true;
-      try {
-        cleanup?.();
-      } catch (err) {
-        console.warn("[scene] build controls failed to unmount", err);
-      }
-      container.replaceChildren();
-    };
+    const v = canEmbed() ? el("patchwork-view", { "doc-url": url, "tool-id": toolId }) : el("p", { class: "hint section-placeholder" }, `${label}: ${url}`);
+    container.append(v);
+    return () => v.remove();
   }
 
   /**
@@ -536,9 +533,8 @@ function create(api) {
         }
         for (const [k, rec] of live) if (!next.has(k)) rec.view.dispose();
         live = next;
-        const roots = [...next.values()].map((r) => r.view.root);
-        if (roots.length !== section.children.length || roots.some((r, i) => section.children[i] !== r)) section.replaceChildren(...roots);
-        section.hidden = !roots.length;
+        place(section, [...next.values()].map((r) => r.view.root));
+        section.hidden = !next.size;
       },
       dispose() {
         for (const rec of live.values()) rec.view.dispose();
@@ -666,7 +662,7 @@ function create(api) {
       layers?.section,
       behaviours.section,
       commands,
-      linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Linked scene"), linkRow.text) : null,
+      linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Link"), linkRow.text) : null,
       linkRow ? linkRow.note : null,
       version ? el("div", { class: "field version-row" }, el("span", {}, "Version"), version.text) : null,
       version ? el("div", { class: "cluster version-actions" }, version.fix, version.follow) : null,
@@ -804,7 +800,7 @@ function create(api) {
     view.sections.update(id);
   }
 
-  /** The Linked scene row: what the link is here, as the view has it. */
+  /** The Link row: what the link is here, as the view has it. */
   function fillLink() {
     const r = view.linkRow;
     if (!r) return;

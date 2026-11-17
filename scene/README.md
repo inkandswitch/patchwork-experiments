@@ -203,8 +203,8 @@ STAGE.md, "Extract and bundle".
   "Fixed at <short heads> · built <time>") with **Fix at this version** and
   **Follow latest**. Last, the selection's documents, each a section with its
   label, a fold and **Open** (the main view), shown inline in its own tool:
-  **Source** (the doc it shows; folded as **File** for a GLB and **Linked
-  scene** for a link), **Build** (the build controls on its render doc) and
+  **Source** (the doc it shows), or that doc as a folded **File** for a GLB
+  or **Linked scene** for a link, **Build** (the build controls on its render doc) and
   **About** (its `infoUrl` document, or its nearest group's, labelled
   "About <group>"). A package adds its own by declaring `documents`
   (STAGE.md "A document").
@@ -794,7 +794,7 @@ while the link is closed. The linked doc runs its own extensions on its own
 channel, and nothing of the host reads into it. A game part does this for
 you: Lost Cities dropped on a table makes a game doc and links it there.
 
-**Enter** a link (its menu, the inspector's Linked scene row, the outline's
+**Enter** a link (its menu, the inspector's Link row, the outline's
 →, or a double-click) to select and edit what's in it, in place: the
 selection, the halo, the inspector and the outline then act on the linked
 doc, while the host stays live around you and its verbs, carries and keys

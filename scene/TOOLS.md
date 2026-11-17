@@ -435,17 +435,20 @@ right-click Select still selects it (no handles, no inspector).*
   every document that goes with the selection (or, with nothing selected,
   the scene) is one kind of thing, a section: its label, a fold, **Open**
   and the document itself inline, in its own tool. The inspector's own are
-  the object's **Source** (the doc it shows, in that doc's own tool: open
-  for a built object, folded as **File** for a GLB file and as **Linked
-  scene** for a link), its **Build** (the render doc in the build controls)
+  the object's **Source** (the doc it shows, in that doc's own tool, open
+  beside its Build), or that doc as its **File** (a GLB shown as it is) or
+  its **Linked scene**, each a section of its own and starting folded, its
+  **Build** (the render doc in the build controls)
   and **About** (its `infoUrl`, else its nearest group's); any package adds
   its own by declaring `documents` (STAGE.md "A document"), with no
   inspector code. Open asks Patchwork to show the document as the main view
   (`patchwork:open-document`, its url and tool); nothing else in the
   inspector or the build controls opens a document, so "Open source",
   "Open file" and the link's Open are gone. Whether a section is open is
-  the viewer's (a pref per section, `inspector.open.<ext>/<id>`), and
-  nothing is written to the doc.
+  the viewer's (a pref per section, `inspector.open.<ext>/<id>`, so
+  unfolding one File leaves every Source and Linked scene as it was), and
+  nothing is written to the doc. A section stays mounted while it's shown,
+  whatever comes and goes beside it.
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -1107,6 +1110,37 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   <showcase url> <shots>` (Source inline in its own tool, Build's
   controls, the fold is the pref, Open sets doc= to the source, the doc
   unchanged), waits for the build to be synced after the merge.
+- **Sidebar 2, review fixes (lane/sidebar, 2026-11-16).** A section stays
+  mounted while it's shown (sections coming and going are inserted and
+  removed around it; before, every open one was taken out and put back,
+  which unmounts a `<patchwork-view>`'s tool). The source is three
+  sections, `source`, `file` and `link`, each its own fold pref (one pref
+  had covered all three). `documentsFor` drops a second entry with one id
+  from one extension (warned); it and `commandsFor` share one walk of
+  what's collected, and a command whose state throws is warned of too. A
+  section's box has a definite height (min(40vh, 22rem), resizable) its
+  view fills. Without a host `<patchwork-view>` a section names its doc:
+  the build controls are no longer mounted by hand; the tests and the
+  editor probe use a stand-in host (`src/test/patchwork-view.js`) that
+  mounts the package's own tools by their registrations. `docKey` lives
+  in `dnd.js`; the link's text row is "Link" (the section is "Linked
+  scene"). *Proves* (finite, each failing on the code before): sections
+  around an open one coming and going {About goes, About comes, another
+  extension's comes, goes} → exactly that mount or unmount (4 steps); a
+  section's doc changing under one selection shows and opens the new
+  one; fold {no pref, true, false} × {File, Source} (6) and one kind's
+  pref × the three kinds (3); routing {built, file, scene, none} → the
+  one section (4); a repeated id (warned); a throwing command warned;
+  Open on File and Linked scene (folded) (2 more rows); the placeholder
+  without a host (`inspector-nohost.test.js`); the CSS height; the
+  controls' tool id is index.js's. Full scene suite 1645/1645 (114 files;
+  one vitest "onTaskUpdate" RPC timeout under load). Local probes (built
+  tool): editor-run 90/90 (new `sectionsHaveAHeight`: Source and Build
+  boxes 286 px, their views 284), solander-run "About BODY" shown, no
+  errors. `sections-check.mjs` now resets and reads the fold through the
+  api's prefs (it had written the stage atom, whose empty `prefs` shadowed
+  the view's), measures the views' heights, and checks the fold is per
+  section; it still waits for the synced build.
 
 ## What it costs
 
@@ -1529,20 +1563,36 @@ The project lead decided the five open questions on 2026-11-12.
     - **A contribution, `documents`, beside `commands`**: read with
       `api.collect`, worked out by one pure rule (`inspector-model.js`
       `documentsFor`: the inspector's own first, then running order; a null,
-      a non-automerge url, a throw (warned) or a repeated url and tool is
-      dropped, the first kept). Unlike a command, a document may go with
-      the scene.
+      a non-automerge url, a throw (warned), a second entry with one id
+      from one extension (warned) or a repeated url and tool is dropped,
+      the first kept). Commands and documents share that walk of what's
+      collected, so a command whose state throws is warned of too. Unlike
+      a command, a document may go with the scene.
     - **The Source is the doc's own `sourceUrl`**, in the source doc
       type's default tool, never a lens's: a veiled card's face is never
-      offered. A file and a link start folded (what they show is already
-      in the scene); a built object's source starts open, beside its Build.
-      A source routed nowhere (its provider isn't here) is a folded Source.
-    - **Folding is the viewer's**: a pref per section (extension and id,
-      not per object), so folding Source folds it for every object, and
-      no fold is written to the doc.
-    - **The build controls open nothing**: opened on their own, they have
-      no way back to the source. Accepted: the inspector is where you meet
-      them, and their Source is the section beside them.
+      offered. It is three sections, one per kind of content (`source`,
+      `file`, `link`), so each keeps its own fold: a file and a link start
+      folded (what they show is already in the scene, and a linked scene
+      inline is a whole second stage); a built object's source starts
+      open, beside its Build. A source routed nowhere (its provider isn't
+      here) is a folded Source.
+    - **Folding is the viewer's**, a pref per section (extension and id),
+      not per object, and no fold is written to the doc. (A question, below.)
+    - **The build controls open nothing.** (A question, below.)
+    - **A section's box has a definite height** (min(40vh, 22rem), and the
+      viewer can drag it taller or shorter), which its view fills: a tool
+      that fills its host (an editor, a scene) needs one, and the build
+      controls, which size to their content, leave room below.
+    - **No tool of this package is mounted in a section by hand**: without
+      a host `<patchwork-view>`, a section names its doc. The tests and the
+      editor probe use a stand-in `<patchwork-view>` (`src/test/
+      patchwork-view.js`) that mounts the package's own tools by their
+      registrations, as Patchwork does, so they check the one path.
+    - **A section stays mounted while it's shown**: sections coming and
+      going beside it are inserted and removed around it. The inspector's
+      whole field list is rebuilt when the selected object becomes another
+      kind of thing (its render doc, routing or link-ness changes), and
+      its sections are remounted then.
     - The sections' embed boxes keep the stage-wide CSS guard's class,
       `.about-embed`, which some thirty stylesheets in eight packages name;
       renaming it (to the `data-stage-embed` marker it duplicates) waits
@@ -1553,4 +1603,13 @@ The project lead decided the five open questions on 2026-11-12.
     shows the latest (the doc you'd edit) while the Version row says Fixed
     at…: should it show the source at those heads, read-only? Should a
     die's or a bag's panel become a section (its tool working as a plain
-    doc tool), or stay a docked panel?
+    doc tool), or stay a docked panel? Should a fold be per section for
+    every object (as now: folding Source folds every object's Source), or
+    per object? The build controls lost "Open source", so opened on their
+    own they have no way back to the source: accept that (the inspector is
+    where you meet them, their Source beside them), or should they show
+    their source too? Is a fixed section height (the viewer dragging it)
+    right, or should a tool that sizes to its content (the build controls)
+    take only its own height? And should a tool named explicitly as the
+    type's default count as the same section as one shown in the default
+    (the scene can't know a type's default tool, so today they are two)?

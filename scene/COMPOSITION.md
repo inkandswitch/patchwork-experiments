@@ -1073,8 +1073,9 @@ ships alone and proves something.
     offers Enter on a link (menu, inspector; everyone's, every body) and
     takes a double-click on one; the outline's link rows say what the link
     is here (linked, shown again, fixed, closed) and enter (→, or a
-    double-click); the inspector's Linked scene row says the same, with
-    Open and what the host sets of it. The trail, the view's own chrome
+    double-click); the inspector's Link row says the same, with
+    what the host sets of it (the linked doc is its folded Linked scene
+    section, whose Open shows it on its own). The trail, the view's own chrome
     along the top while the focus is inside a link, names the outermost doc
     and each link entered (each crumb a way out) and has Leave; Escape's
     last rung leaves. Drawer tabs open as the focus moved open again inside.
