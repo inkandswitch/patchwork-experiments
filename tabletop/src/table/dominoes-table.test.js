@@ -353,7 +353,7 @@ describe("the verbs have no mode", () => {
   afterEach(() => vi.useRealTimers());
 
   // What a verb applies to is the table's state, never the viewer's: in
-  // Look or Edit, seated, holding a tool or with something selected, Wash, Stand,
+  // Look, editing or not, seated, holding a tool or with something selected, Wash, Stand,
   // Lay flat, Lay my hand face up and Draw say the same.
   it("Wash, Stand, Lay flat, Lay my hand face up and Draw say the same whatever the viewer is in, holds or has selected", async () => {
     const t = table();

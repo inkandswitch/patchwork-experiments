@@ -925,7 +925,7 @@ describe("the stage, mounted", () => {
     expect(m.local.get().held).toBe(null);
   });
 
-  it("a reach: true command runs only within the body's reach; Look and Edit reach everything", async () => {
+  it("a reach: true command runs only within the body's reach; Look reaches everything", async () => {
     const ran = [];
     exts["t.always"] = recorder("t.always", () => ({
       bodies: [{ id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, eye: () => ({ position: [0, 0, 0], direction: [0, 0, -1] }), leave() {} }) }],

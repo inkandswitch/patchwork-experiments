@@ -1117,7 +1117,7 @@ function create(api) {
     }
     // the inspector is the editor's (../stage/bodies.js): only while editing, where
     // a selection opens it and it stays open (on the scene when nothing is
-    // selected) until its × or the toolbar shuts it, or Edit is left
+    // selected) until its × or the toolbar shuts it, or the editor is put down
     if (!editing(local)) asked = false;
     const want = editing(local) && (asked || (!dismissed && (shows(scene, sel) || tab.isOpen())));
     // following the selection, it comes in behind a tab the viewer is using (the parts bin)

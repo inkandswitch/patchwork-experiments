@@ -11,11 +11,12 @@
 // An event goes: the hands, top first, then the chain (the widget's owner,
 // the holders nearest first, the general extensions), then the top body's
 // default (Look has none). A hand that doesn't want an event answers
-// false or null and it goes on: the Edit hand takes a click unless a widget
-// is under it. A key goes: the open gesture's declared keys, the held
-// tool's, the top body's, then the chain (where the key map is the only
-// taker). Presses have a position, so the body comes last there; keys have
-// none, so what reserves them comes first.
+// false or null and it goes on: the Edit hand takes a click it has
+// something to select or clear with (a widget's owner under it first). A
+// key goes: the open gesture's declared keys, the held tool's, the top
+// body's, then the chain (where the key map is the only taker). Presses
+// have a position, so the body comes last there; keys have none, so what
+// reserves them comes first.
 //
 // Pointer and wheel listeners sit on the port in the capture phase, so they
 // run before OrbitControls (which listens on the canvas itself): a claimed

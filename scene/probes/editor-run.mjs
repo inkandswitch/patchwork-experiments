@@ -18,9 +18,9 @@
 // connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
 // board; Measure (its Dimensions tab); Delete; . (Frame); the Inspector's ×
 // and the toolbar's Inspector; . on a selection; the context menu; no modes (the
-// Edit body the doc starts people in, no activity anywhere); a pasted automerge URL; a dimension
+// editor the doc starts people holding, no activity anywhere); a pasted automerge URL; a dimension
 // selected by its label and deleted; the inspector on the Scene (the
-// toolbar's Inspector: Starts in, Look or Edit) and "Add behaviour…" (an arena
+// toolbar's Inspector: Starts in, Look and editing) and "Add behaviour…" (an arena
 // Target on a block starts the arena in both views, beside the editor: its
 // Play in the toolbar, the editor still there in both; × stops it); the
 // drawer's grip (drag, keys, double-click, an editor's own width, a narrow

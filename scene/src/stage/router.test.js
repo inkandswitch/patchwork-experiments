@@ -380,10 +380,10 @@ describe("hands, top first", () => {
     const t = setup();
     const heard = [];
     t.inputs.x = { press: () => (heard.push("x"), null) };
-    t.router.pushHand(null, { kind: "edit", name: "Edit", input: { click: () => true } });
+    t.router.pushHand(null, { kind: "edit", name: "Edit", input: { press: () => (heard.push("hand"), null), click: () => true } });
     down(t);
     up(t);
-    expect(heard).toEqual(["x"]);
+    expect(heard).toEqual(["hand", "x"]);
   });
 });
 
@@ -940,6 +940,42 @@ describe("the pointer", () => {
     // look and seat: 16 cases each (lock false) × 3; walk: 16 × 3
     expect(cases).toBe(144);
     warn.mockRestore();
+  });
+
+  it("wanted ⇔ some hand wants the pointer: under a lock body, every sequence of ≤3 pick-ups and put-downs of a tool that does or doesn't, the Edit hand and a popover; the lock follows", async () => {
+    // a step picks a hand up (a tool replaces the tool held) or puts the oldest held down
+    const KINDS = [
+      ["tool", true],
+      ["tool", false],
+      ["edit", true],
+      ["popover", true],
+      ["drop", false],
+    ];
+    let cases = 0;
+    const seqs = (n) => (n === 0 ? [[]] : seqs(n - 1).flatMap((p) => KINDS.map((k) => [...p, k])));
+    for (const seq of seqs(3)) {
+      const t = setup({ touch: false });
+      const lock = fakeLock(t);
+      t.router.pushBody("w", { id: "walk", input: {}, lock: true });
+      await settleLock();
+      expect(lock.locked).toBe(true);
+      let model = []; // [{ kind, pointer, release }]
+      for (const [kind, pointer] of seq) {
+        if (kind === "drop") model.shift()?.release();
+        else if (kind === "popover") model.push({ kind, pointer, release: t.router.popover("p", () => {}) });
+        else {
+          if (kind === "tool") model = model.filter((h) => h.kind !== "tool");
+          model.push({ kind, pointer, release: t.router.pushHand("h", { kind, name: kind, pointer }) });
+        }
+        await settleLock();
+        const wanted = model.some((h) => h.pointer);
+        expect([seq, t.router.state().pointer.wanted, lock.locked]).toEqual([seq, wanted, !wanted]);
+      }
+      cleanups.pop()(); // (fakeLock's)
+      cleanups.pop()();
+      cases++;
+    }
+    expect(cases).toBe(5 ** 3);
   });
 
   it("a lock body pushed after a touch press never asks for the lock; a mouse press on the world then only takes it, asked in its own handler", async () => {

@@ -48,7 +48,7 @@ function peer(session, keys, { viewer = `viewer:${session}`, seq = 1 } = {}) {
 }
 
 describe("scene.select: clicking", () => {
-  it("is the Edit body's click, ahead of every extension down the chain: a package's click verb never sees it", async () => {
+  it("is the Edit hand's click, ahead of every extension down the chain: a package's click verb never sees it", async () => {
     const log = [];
     const verb = { meta: { id: "t.verb" }, module: { create: () => ({ input: { click: (ev) => (log.push(ev.hit?.id ?? null), true) } }) } };
     await mount({ extensions: [verb] });
@@ -64,6 +64,30 @@ describe("scene.select: clicking", () => {
     // on nothing with nothing selected Edit has nothing to do: the chain has it
     s.click(20, 20);
     expect(log).toEqual([null]);
+  });
+
+  it("a widget's owner is offered the click first; a click it passes is still Edit's, and no package's verb sees it", async () => {
+    const log = [];
+    let claims = false;
+    const widget = { meta: { id: "t.widget" }, module: { create: () => ({ input: { widgetAt: () => ({ onTop: true }), click: () => (log.push("widget"), claims) } }) } };
+    const verb = { meta: { id: "t.verb" }, module: { create: () => ({ input: { click: (ev) => (log.push(`verb ${ev.hit?.id ?? null}`), true) } }) } };
+    await mount({ extensions: [widget, verb] });
+    hitOn("a");
+    for (const c of [true, false]) {
+      claims = c;
+      log.length = 0;
+      s.local.swap((m) => ({ ...m, selected: null }));
+      await settle();
+      s.click(20, 20);
+      expect([c, log, sel()]).toEqual([c, ["widget"], c ? null : "a"]);
+    }
+    // on nothing, with nothing selected, Edit has nothing to do: the chain has it, the widget's owner offered once
+    hitOn(null);
+    s.local.swap((m) => ({ ...m, selected: null }));
+    await settle();
+    log.length = 0;
+    s.click(20, 20);
+    expect(log).toEqual(["widget", "verb null"]);
   });
 
   it("a hit on something the doc no longer has selects nothing", async () => {

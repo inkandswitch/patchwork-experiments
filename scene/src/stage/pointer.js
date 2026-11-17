@@ -1,9 +1,10 @@
-// The pointer (STAGE.md, "Bodies"). Pure: the router holds the state and asks the
+// The pointer (STAGE.md, "Hands"). Pure: the router holds the state and asks the
 // browser for what this says.
 //
 // The top body asks for pointer lock (`lock`); the view grants it while
-// nothing else wants the pointer (`wanted`: a held tool that says
-// `pointer: true`, a selection, an open menu, dialog or drawer). The
+// nothing else wants the pointer (`wanted`: a hand that says `pointer: true`
+// (a held tool that does, the Edit hand, an open menu or dialog), a
+// selection, the open drawer). The
 // browser's Escape releases it unseen by the page (`released`): the next
 // press on the world only relocks, and is nothing else. A lock the browser
 // refuses (`refused`) leaves the body looking by drag, until the body

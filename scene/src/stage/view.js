@@ -25,6 +25,7 @@ import css from "./stage.css?inline";
 import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
 import { createRouter } from "./router.js";
+import { offer } from "./chain.js";
 import { looksFromEye } from "./pointer.js";
 import { createDrawer } from "./dock.js";
 import { escapeHint, restLayer } from "./ladder.js";
@@ -901,16 +902,18 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
 
   // The Edit hand (./bodies.js, STAGE.md, "Hands"): the view's own. Its click selects at the focus, ahead
-  // of any package's click; a click with a widget under it is the widget's (the halo's handles and knobs).
+  // of any package's click, after only a widget's owner (the halo's handles and knobs): a widget under the
+  // click is offered it first, as the chain would, and a click its owner passes is still the editor's.
   // Presses are not its: carries and drags go down the chain. It wants the pointer free (walking while
   // editing looks by drag), and its Escape is the view's own (clear, then leave) before it is put down.
   const editInput = {
     click(ev) {
-      if (widgetWins(ev?.widget, ev?.hit)) return false;
       // a hit on something its doc no longer has is a hit on nothing
       const p = ev?.hit?.id != null ? parseKey(ev.hit.id) : null;
       const path = p && stages.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(ev.hit.id) : null;
+      // nothing to select or clear: the chain has it, the widget's owner first
       if (!path && atom.get().selected == null) return false;
+      if (widgetWins(ev?.widget, ev?.hit) && offer([ev.widget.owner], inputOf, "click", ev)) return true;
       // A click on something is Edit's wherever it lands: outside the focus it selects nothing (selectionStep's
       // "outside, nothing") and goes no further, so no package's click verb acts for an Edit click (STAGE.md,
       // "Hands"). Presses, keys, the menu and the prompt still reach outside the focus.

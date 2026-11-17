@@ -649,7 +649,7 @@ describe("holding the editor, a click is its wherever it lands (HISTORY.md, COMP
   // HISTORY.md, Kernel step 1: holding the editor a plain click selects, before any package's click verb. Inside an entered
   // link a click on the host (the boat round a game linked aboard her) can't select, and it used to go down
   // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
-  // her moving table (presence-check.nopause, 2026-11-16). Every base body × every focus × a selection or
+  // her moving table (presence-check.nopause, 2026-11-16). Editing or not × every focus × a selection or
   // none × every thing a click can land on (each stage's objects, a pin's and a closed link's, and
   // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly without the
   // editor, or holding it on nothing (or a stale hit) with nothing selected; the selection is selectionStep's

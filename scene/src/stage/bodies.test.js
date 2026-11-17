@@ -34,21 +34,21 @@ describe("bodies: the model", () => {
   });
 
   // Every sequence of up to 5 events (7^5 + … + 1 = 19,608).
-  it("over every sequence of ≤5 events: Look at the bottom and nowhere else; Leave pops the top and never Look; the editor is held exactly when last picked up, whatever the bodies do", () => {
+  // (whether the editor is held is the stage's to keep, below: here it would only restate `apply`)
+  it("over every sequence of ≤5 events: Look at the bottom and nowhere else; Leave pops the top and never Look; picking up or putting down the editor leaves the bodies be", () => {
     let n = 0;
     for (const seq of all(5)) {
       let m = [["look"], false];
       for (const ev of seq) {
-        const [before, wasEditing] = m;
+        const [before] = m;
         m = apply(m, ev);
-        const [stack, ed] = m;
+        const [stack] = m;
         expect(stack[0]).toBe("look");
         expect(stack.slice(1).includes("look")).toBe(false);
         if (ev === "leave") expect(stack).toEqual(before.length > 1 ? before.slice(0, -1) : before);
         else if (ev === "look") expect(stack).toEqual(["look"]);
         else if (ev === "edit" || ev === "unedit") expect(stack).toBe(before);
         else expect(stack.at(-1)).toBe(ev);
-        expect(ed).toBe(ev === "edit" ? true : ev === "unedit" ? false : wasEditing);
       }
       n++;
     }

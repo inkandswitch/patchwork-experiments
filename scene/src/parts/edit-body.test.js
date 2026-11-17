@@ -105,6 +105,14 @@ async function mount({ writable }) {
 const IN = { look: ["look"], walk: ["look", "walk"], seat: ["look", "seat"], station: ["look", "walk", "station"] };
 const SELECTIONS = [null, "a", "dimension:d1"];
 
+/** What this view last told peers it is in and holding (presence: STAGE.md, "Hands"), past presence's rate. */
+const told = async () => {
+  await time.step(30);
+  await settle();
+  const p = s.handle.broadcasts.filter((m) => m.type === "scene:presence" && !m.bye).at(-1);
+  return { body: p?.body?.label ?? null, held: p?.held?.name ?? null };
+};
+
 const drawnIn = (id) => [...(s.debug.viewport.layers.get(id) ?? [])].reduce((n, g) => n + g.children.length, 0) > 0;
 
 /** What shows now. */
@@ -155,7 +163,7 @@ describe("the editor is the Edit hand", () => {
     expect(cases).toBe(4 * 2 * 3 * 2);
   }, 60_000);
 
-  it("a body doesn't touch the editor: walking, a held Measure, the selection and the inspector stay; Leave never puts the editor down", async () => {
+  it("a body doesn't touch the editor: walking, a held Measure, the selection and the inspector stay; Leave never puts the editor down; peers are told the top hand, an open menu passed over", async () => {
     const { default: measure } = await import("./measure.js");
     PARTS.push({ meta: { id: "scene.measure" }, module: measure });
     try {
@@ -170,9 +178,19 @@ describe("the editor is the Edit hand", () => {
       expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command, s.local.get().selected, chrome().inspector]).toEqual(["walk", true, "measure", "a", true]);
       // Measure sits over Edit: the top hand is what peers see
       expect(s.local.get().hands.map((h) => h.name)).toEqual(["Edit", "Measure"]);
+      expect(await told()).toEqual({ body: "Walk", held: "Measure" });
       api.body.leave();
       await still();
       expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command]).toEqual(["look", true, "measure"]);
+      // Measure put down, Edit is what peers see; an open menu over it is nobody else's business
+      api.run({ ext: "scene.measure", command: "measure", value: false });
+      const close = api.popover(() => close());
+      await still();
+      expect([s.local.get().hands.map((h) => h.kind), await told()]).toEqual([["edit", "popover"], { body: "Look", held: "Edit" }]);
+      close();
+      api.view.edit(false);
+      await still();
+      expect(await told()).toEqual({ body: "Look", held: null });
     } finally {
       PARTS.pop();
     }

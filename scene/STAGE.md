@@ -354,8 +354,8 @@ that doesn't want an event answers false. **The held tool**: a command's `tool:
 }, input)` one without; it replaces the tool held, and only it declares keys.
 **A popover** (`api.popover(close)`) wants the pointer. **The Edit hand**, the
 view's (`api.view.edit(on)`, the chip's Edit), wants the pointer; its click
-selects at the focus (clears on nothing, nothing outside it) unless a widget is
-under it; presses aren't its; a tool can sit over it.
+selects at the focus (clears on nothing, nothing outside it), offered first to a
+widget's owner under it; presses aren't its; a tool can sit over it.
 
 **Escape** (`src/stage/ladder.js`; H4) pops one layer: the browser's lock, a
 focused field, the gesture (cancelled), then the top hand's `escape()` (a
