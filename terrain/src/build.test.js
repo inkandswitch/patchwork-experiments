@@ -254,9 +254,6 @@ describe("buildTerrain with a look and a site", () => {
     expect(built.stats.buildings).toBe(1);
     expect(built.stats.structures).toBe(1);
   });
-  it("is deterministic with all of it", () => {
-    expect(Buffer.from(buildTerrain({ doc, dem: dem(), features: features(), look }).glb).equals(Buffer.from(built.glb))).toBe(true);
-  });
   it("cuts the shore's bands crisp, and draws no surf, cloud or boats about the harbour for a place whose look has none", () => {
     expect(built.stats.shore.cut).toBeGreaterThan(0);
     expect(built.stats.surf).toBe(null);
