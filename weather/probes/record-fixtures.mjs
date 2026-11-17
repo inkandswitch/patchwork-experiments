@@ -31,7 +31,7 @@ async function record(name, request, note = null, url = request.url) {
 }
 
 const tomorrow = isoDate(now + DAY);
-// 1. the present conditions at Cadboro Bay (Fetch now)
+// 1. the present conditions at Cadboro Bay (Now, then Fetch for this time)
 await record("cadboro-current", requestFor(at(CADBORO, now), now));
 // 2. tomorrow 15:00 at Ucluelet: the forecast's hours
 await record("ucluelet-forecast", requestFor(clock(UCLUELET, tomorrow, 15), now));

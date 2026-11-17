@@ -16,19 +16,20 @@
 //   1e-9 (Decision 15: no time-zone data enters it, so two engines agree
 //   but for the last bit, Decision 25), at every hour checked, a winter
 //   date among them;
-// - the toolbar shows the Place picker (Cadboro Bay chosen) and the Now,
-//   Fetch now and Fetch for this time buttons; picking Ucluelet writes
+// - the toolbar shows the Place picker (Cadboro Bay chosen) and the Now
+//   and Fetch for this time buttons, and no Fetch now (Decision 42);
+//   picking Ucluelet writes
 //   Ucluelet's lat and lon and moves the sun to Ucluelet's; Now writes the
 //   present quarter hour on the weather's clock;
-// - Fetch now (W4), on the real network: one fetch, of a URL whose keys are
-//   the whitelist, with no credentials and no referrer; one write of the
+// - Now then Fetch for this time (W4), on the real network: one fetch, of
+//   the present conditions, at a URL whose keys are the whitelist, with no credentials and no referrer; one write of the
 //   snapshot and its source; the label then reads "Fetched for this time",
 //   a notice says it, and the ambients are those of the fetched weather;
 // - Fetch for this time, answered by an error reply: a notice, and the doc
 //   as it was;
 // - a second scene with a weather of its own, linked in and then entered:
 //   the world's wind stays the outermost's, and the toolbar still shows
-//   one each of the four commands, the outermost's (Decision 31);
+//   one each of the three commands, the outermost's (Decision 31);
 // - the scene inspector (the toolbar's Inspector, nothing selected) shows
 //   the Weather behaviour with its fields and none of weather's commands:
 //   the scene inspector shows no scene commands (Decision 28);
@@ -109,7 +110,7 @@ try {
   const nine = seen[1], three = seen[2], nightish = seen[3];
   c.check("the sun moves with the hour: east of south at 9, west at 15 and 21", nine.azimuth < 180 && three.azimuth > 180 && nightish.azimuth > three.azimuth, seen.map((s) => [s.hour, s.azimuth]));
 
-  // the toolbar: Place (a picker, Cadboro Bay chosen), Now, Fetch now and Fetch for this time
+  // the toolbar: Place (a picker, Cadboro Bay chosen), Now and Fetch for this time
   await b.waitFor(`window.__p.toolbar().some((t) => t.ext === "weather")`, 10_000).catch(() => {});
   const bar = (await P("toolbar()")).filter((t) => t.ext === "weather");
   const place = bar.find((t) => t.command === "place");
@@ -117,10 +118,9 @@ try {
   c.check("the toolbar shows Place as a picker: Cadboro Bay chosen, Cadboro Bay and Ucluelet offered", place?.tag === "select" && place.text === "Cadboro Bay" && JSON.stringify(place.options) === JSON.stringify(["Cadboro Bay", "Ucluelet"]), place);
   c.check("Place's tooltip says what picking does", place?.title === "Where the weather is: picking a place moves it there, at the same hour on its clock", place?.title);
   c.check("the toolbar shows Now as a button", now?.tag === "button" && now.text === "Now", now);
-  const fetchNowBtn = bar.find((t) => t.command === "fetch-now");
   const fetchBtn = bar.find((t) => t.command === "fetch");
-  c.check("the toolbar shows Fetch now and Fetch for this time as buttons, the latter's tooltip the provenance", fetchNowBtn?.tag === "button" && fetchNowBtn.text === "Fetch now" && fetchBtn?.tag === "button" && fetchBtn.text === "Fetch for this time" && fetchBtn.title.startsWith("Weather: dialled by hand. Fetch Open-Meteo's conditions at "), [fetchNowBtn, fetchBtn]);
-  c.check("in that order, after Place and Now", bar.map((t) => t.command).join() === "place,now,fetch-now,fetch", bar.map((t) => t.command));
+  c.check("the toolbar shows Fetch for this time as a button, its tooltip the provenance", fetchBtn?.tag === "button" && fetchBtn.text === "Fetch for this time" && fetchBtn.title.startsWith("Weather: dialled by hand. Fetch Open-Meteo's conditions at "), fetchBtn);
+  c.check("in that order, after Place and Now, and no Fetch now (Now then Fetch is it: Decision 42)", bar.map((t) => t.command).join() === "place,now,fetch", bar.map((t) => t.command));
 
   // a winter date: the sun the same in node and the page (the zone-data disagreement W3 found is gone by construction)
   await P(`set("date", "2026-12-15")`);
@@ -145,18 +145,20 @@ try {
   c.check("Now (clicked) writes the present quarter hour on the weather's clock (UTC-7)", [lo, hi].some((x) => x.date === after.date && x.hour === after.hour) && Number.isInteger(after.hour * 4), { after: { date: after.date, hour: after.hour }, lo, hi });
   seen.push(await agree("Now"));
 
-  // Fetch now, on the real network
+  // Now (above), then Fetch for this time, on the real network: the present conditions
   const before = await P("weather()");
-  const fn = (await P("toolbar()")).find((t) => t.command === "fetch-now");
+  await b.waitFor(`window.__p.toolbar().find((t) => t.command === "fetch")?.title?.includes(${JSON.stringify(before.date)})`, 5_000).catch(() => {});
+  const fn = (await P("toolbar()")).find((t) => t.command === "fetch");
   await b.click(fn.rect.x, fn.rect.y);
   await b.waitFor(`!!window.__p.weather().source || window.__p.notices().some(([k]) => k === "error")`, 20_000).catch(() => {});
   const fetched = await P("weather()");
   const calls = await P("fetches()");
-  c.check("Fetch now makes exactly one fetch", calls.length === 1, calls);
+  c.check("Fetch for this time, after Now, makes exactly one fetch", calls.length === 1, calls);
   const url = calls[0] && new URL(calls[0][0]);
   c.check("of Open-Meteo's present conditions, the URL's keys exactly the whitelist", url?.origin === "https://api.open-meteo.com" && JSON.stringify([...url.searchParams.keys()]) === JSON.stringify(QUERY.current) && url.searchParams.get("latitude") === "48.95" && url.searchParams.get("longitude") === "-125.558", calls[0]?.[0]);
   c.check("with no credentials and no referrer", JSON.stringify(calls[0]?.[1]) === JSON.stringify({ signal: "AbortSignal", credentials: "omit", referrerPolicy: "no-referrer" }), calls[0]?.[1]);
-  c.check("one write: the snapshot and its source (Open-Meteo, forecast), and it reads fetched", fetched.source?.name === "Open-Meteo" && fetched.source?.api === "forecast" && provenance(fetched) === "fetched" && fetched.lat === 48.95 && fetched.seed === before.seed, { before, fetched });
+  c.check("one write: the snapshot and its source (Open-Meteo, forecast), and it reads fetched", fetched.source?.name === "Open-Meteo" && fetched.source?.api === "forecast" && provenance(fetched) === "fetched" && fetched.lat === 48.95 && fetched.seed === before.seed && fetched.date === before.date && fetched.hour === before.hour, { before, fetched });
+  c.check("source.for is the present conditions' own time, within 30 minutes of the press", Math.abs(Date.parse(fetched.source?.for) - Date.parse(fetched.source?.fetched)) <= 30 * 60_000, fetched.source);
   c.check("a notice says it", (await P("notices()")).some(([k, t]) => k === "info" && t.startsWith("Weather fetched from Open-Meteo (forecast) for ")), await P("notices()"));
   await b.waitFor(`window.__p.toolbar().find((t) => t.command === "fetch")?.text === "Fetched for this time"`, 5_000).catch(() => {});
   const label = (await P("toolbar()")).find((t) => t.command === "fetch");
@@ -184,7 +186,7 @@ try {
   c.check("Enter moves the focus into the linked world", entered && (await P("focus()")).length === 1, await P("focus()"));
   await sleep(300);
   const inside = (await P("toolbar()")).filter((t) => t.ext === "weather");
-  c.check("inside the linked world the toolbar shows one of each command (the outermost's), not the linked weather's too", inside.map((t) => t.command).sort().join() === "fetch,fetch-now,now,place", inside.map((t) => [t.command, t.text]));
+  c.check("inside the linked world the toolbar shows one of each command (the outermost's), not the linked weather's too", inside.map((t) => t.command).sort().join() === "fetch,now,place", inside.map((t) => [t.command, t.text]));
   c.check("its Place shows the world's weather (Ucluelet), not the linked world's (Cadboro Bay)", inside.find((t) => t.command === "place")?.text === "Ucluelet", inside);
   c.check("the world's wind is still the outermost's, inside", JSON.stringify(await P(`ambient("wind")`)) === JSON.stringify(windBefore), await P(`ambient("wind")`));
   await b.shot(join(SHOTS, "weather-linked-entered.png"));

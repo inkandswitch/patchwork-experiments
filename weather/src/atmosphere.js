@@ -13,8 +13,9 @@
 //   3. the sun's elevation: that look holds while the sun's geometric
 //      elevation is 20° or more, and below it is filtered through a finite
 //      table of bands (low, horizon, set, civil twilight, night).
-// Rain cuts the visibility (its extinction adds to the air's) and darkens
-// the sky and the sun's light; at 0 mm/h it is the identity. Colours are
+// Rain darkens the sky and the sun's light; at 0 mm/h it is the identity.
+// It doesn't touch the visibility: that field is the visibility in force,
+// rain and all, as it is observed (Decision 41). Colours are
 // interpolated and filtered in linear RGB and written as sRGB hex; the four
 // looks are reproduced exactly at their conditions (the anchors' table in
 // WEATHER.md), so the art direction they were is a fixed point of the model.
@@ -144,23 +145,7 @@ export function deckOf(c) {
   return cover > 0 && contrast > 0 ? { cover, contrast, scale: k.scale, base: c.base } : null;
 }
 
-// ─── rain and haze ───────────────────────────────────────────────────────────
-
-/** Koschmieder's constant: visibility = 3.912 / extinction (2% contrast). */
-export const KOSCHMIEDER = 3.912;
-
-/**
- * Rain's extinction, per metre, at `rain` mm/h: 0.25 · R^0.73 per km, the
- * usual power-law form, set so moderate rain (2.5 mm/h) alone sees about
- * 8 km and heavy rain (25 mm/h) about 1.5 km (Decision 21).
- */
-export const rainExtinction = (rain) => (rain > 0 ? 0.25e-3 * rain ** 0.73 : 0);
-
-/** The visibility in force: the air's, with rain's extinction added to it. Exactly the air's in no rain. */
-export function visibilityOf(visibility, rain) {
-  const k = rainExtinction(rain);
-  return k > 0 ? KOSCHMIEDER / (KOSCHMIEDER / visibility + k) : visibility;
-}
+// ─── haze and rain ───────────────────────────────────────────────────────────
 
 /** The haze weight: 0 at a visibility of 10 km or more, 1 at 1 km or less, linear in log visibility between. */
 export const hazeOf = (visibility) => clamp01(Math.log10(10000 / visibility));
@@ -177,9 +162,8 @@ export const wetOf = (rain) => 1 - (0.3 * rain) / (rain + 4);
  */
 export function conditionsOf(p) {
   const ce = p.cover * KINDS[p.clouds].opacity;
-  const visibility = visibilityOf(p.visibility, p.rain);
-  const h = hazeOf(visibility);
-  return { cover: p.cover, kind: p.clouds, base: p.base, ce, visibility, h, wet: wetOf(p.rain), s: Math.max(ce, h) };
+  const h = hazeOf(p.visibility);
+  return { cover: p.cover, kind: p.clouds, base: p.base, ce, visibility: p.visibility, h, wet: wetOf(p.rain), s: Math.max(ce, h) };
 }
 
 // ─── the sun's elevation ─────────────────────────────────────────────────────

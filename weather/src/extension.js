@@ -1,6 +1,7 @@
 // The weather extension (WEATHER.md): the `weather` scene trait offered as
 // the world's `wind` and `atmosphere` ambients (scene STAGE.md, "Ambients"),
-// and the two editing commands that set where and when it is.
+// and the three editing commands that set where and when it is, and fetch
+// what it was there and then.
 //
 // ambient() is a pure function of the trait: the same trait gives the same
 // offer on every peer, and while the trait is unchanged the offer is the same
@@ -20,15 +21,13 @@
 //     tooltip is the weather's provenance.
 //   - Now: date and hour set to the present quarter hour on the weather's
 //     clock.
-//   - Fetch now: Open-Meteo's present conditions at the weather's place,
-//     and date and hour set to now, in one change.
 //   - Fetch for this time: Open-Meteo's conditions for the place, date and
-//     hour in force. Its label says the provenance, its tooltip says it in
-//     full.
+//     hour in force (after Now, the present conditions: Decision 42). Its
+//     label says the provenance, its tooltip says it in full.
 // A fetch runs in the pressing viewer's page and writes when the reply comes
 // (open-meteo.js); a failure is a notice and writes nothing. Nothing else
 // here fetches: ambient() and every state() only read the doc (Decision 33).
-// All four are package writes (api.change), so none is on the undo stack
+// All three are package writes (api.change), so none is on the undo stack
 // (STAGE.md: only the stage's own parts have api.edit; Question 6).
 
 import { atmosphereOf } from "./atmosphere.js";
@@ -144,13 +143,6 @@ export function nowWrites(trait, t) {
   return differing(trait, presentOf(trait, t));
 }
 
-/**
- * What Fetch now asks for at instant `t`: the present conditions at the
- * weather's place, for the present quarter hour on its clock (within
- * 15 minutes of t, so always the present conditions); null without a trait.
- */
-export const fetchNowRequest = (trait, t) => (isMap(trait) ? requestFor({ ...weatherParams(trait), ...presentOf(trait, t) }, t) : null);
-
 /** What Fetch for this time asks for at instant `t`: the conditions for the place, date and hour in force; null without a trait, or for a time Open-Meteo has none for. */
 export const fetchRequest = (trait, t) => (isMap(trait) ? requestFor(weatherParams(trait), t) : null);
 
@@ -187,33 +179,39 @@ export default {
     const trait = () => api.doc()?.traits?.[TRAIT];
 
     /**
-     * Fetch a request and write its snapshot, in one change, when the reply
-     * comes: only while this stage's weather is still the world's. A time
-     * with no weather, an error reply, a reply that isn't weather or a failed
-     * fetch is a notice and writes nothing; the stage stopping (its signal)
-     * drops the fetch silently.
+     * Fetch the weather for the trait's place and time as it is now, and
+     * write its snapshot, in one change, when the reply comes: only while
+     * this stage's weather is still the world's and has a trait to write
+     * into, and saying so only when it wrote. No trait writes and says
+     * nothing; a time with no weather, an error reply, a reply that isn't
+     * weather or a failed fetch is a notice and writes nothing; the stage
+     * stopping (its signal) drops the fetch silently.
      */
-    async function fetchInto(request) {
+    async function fetchInto(t) {
+      if (!isMap(trait())) return;
+      const request = fetchRequest(trait(), t);
       if (!request) return void api.notify?.(NO_DATA, "error");
       try {
         const snapshot = snapshotFrom(await fetchWeather(request, { signal: api.signal }), request);
         if (api.signal?.aborted || !isWorlds(api)) return;
-        write(fetchWrites(trait(), snapshot));
-        api.notify?.(`Weather fetched from ${NAME} (${snapshot.source.api}) for ${forText(snapshot.source.for, snapshot.offset)}`);
+        if (write(fetchWrites(trait(), snapshot))) api.notify?.(`Weather fetched from ${NAME} (${snapshot.source.api}) for ${forText(snapshot.source.for, snapshot.offset)}`);
       } catch (err) {
         if (err?.name === "AbortError" || api.signal?.aborted) return;
         api.notify?.(`Couldn't fetch the weather: ${err?.message ?? err}`, "error");
       }
     }
 
-    /** Write fields into the trait, one change, field by field; nothing to write, or no trait by then, writes nothing. */
+    /** Write fields into the trait, one change, field by field; nothing to write, or no trait by then, writes nothing. Whether it wrote. */
     function write(fields) {
-      if (!fields || !Object.keys(fields).length) return;
+      if (!fields || !Object.keys(fields).length) return false;
+      let wrote = false;
       api.change((d) => {
         const w = d.traits?.[TRAIT];
         if (!isMap(w)) return;
         for (const [k, v] of Object.entries(fields)) w[k] = v;
+        wrote = true;
       });
+      return wrote;
     }
 
     let key;
@@ -246,25 +244,10 @@ export default {
           show: SHOW,
           state: (target) => {
             const t = trait();
-            return target == null && isWorlds(api) && isMap(t) ? { title: `Set the weather's date and hour to the present quarter hour on its clock (${clockName(weatherParams(t).offset)})` } : null;
+            return target == null && isWorlds(api) && isMap(t) ? { title: `Set the weather's date and hour to the present quarter hour on its clock (${clockName(weatherParams(t).offset)}); Fetch for this time then fetches the present conditions` } : null;
           },
           run(target) {
             if (target == null && isWorlds(api)) write(nowWrites(trait(), Date.now()));
-          },
-        },
-        {
-          id: "fetch-now",
-          name: "Fetch now",
-          edit: true,
-          show: SHOW,
-          state: (target) => {
-            const t = trait();
-            if (target != null || !isWorlds(api) || !isMap(t)) return null;
-            const p = weatherParams(t);
-            return { title: `Fetch the present conditions at ${coordinates(p.lat, p.lon)} from ${NAME}, and set the weather's date and hour to now on its clock (${clockName(p.offset)})` };
-          },
-          run(target) {
-            if (target == null && isWorlds(api)) void fetchInto(fetchNowRequest(trait(), Date.now()));
           },
         },
         {
@@ -281,7 +264,7 @@ export default {
             return { label, title: `${provenanceTitle(t)}. Fetch ${NAME}'s conditions at ${coordinates(p.lat, p.lon)} for ${clockText(p, p.offset)}` };
           },
           run(target) {
-            if (target == null && isWorlds(api)) void fetchInto(fetchRequest(trait(), Date.now()));
+            if (target == null && isWorlds(api)) void fetchInto(Date.now());
           },
         },
       ],
