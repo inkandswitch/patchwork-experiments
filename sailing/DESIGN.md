@@ -677,7 +677,8 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   bring the seam back. The probe pages' `clock(w)` reads the sailing
   extension's own `api.clock.t()`. water/WATER.md's "`ctx.sea.clock` is
   `api.clock.t`" (line 351) and its list of ctx.sea's members with `clock`
-  (line 106) are now stale; they are water's, left for the integrator.
+  (line 106) were stale; the integrator corrected both (2026-11-17, merge
+  of lane/n6).
 - *Leaving the anchor: diagnosed, not fixed; stopped for the lead.* The
   physics doesn't give the step's claim, and every fix measured is a
   choice of the lead's ("Leaving the anchor", Open, with its questions), so
@@ -762,6 +763,11 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   "`ctx.sea.clock` is `api.clock.t`" (line 351). The lane works in sailing
   only, so each is listed in FOLLOWUPS for the integrator. Whether a lane
   may make a one-sentence edit to another package's docs is a question.
+  *Integrated (2026-11-17, decided unattended by the integrator of lane/n6,
+  for the lead):* the integrator corrected naval's §7 and WATER.md's two
+  sentences (docs only, both packages synced); naval's
+  `sailing-agreement.test.js` is a test of naval's and stays as it is,
+  still open in FOLLOWUPS ("N6 integrated").
 - *Every example holding the stock sloop is republished* (the lead's
   standing no-back-compat rule decides it; nothing here is the lead's
   taste). rig@4 is a new rig GLB, and a published doc keeps the GLB it was
