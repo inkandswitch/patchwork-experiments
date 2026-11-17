@@ -140,16 +140,6 @@ try {
   const A = peer(scene), B = peer(scene);
   A.other = B; B.other = A;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
-  // every double-click a host hears: what it landed on, and the view's focus just after (for step 13's report)
-  const dbls = { a: [], b: [] };
-  for (const w of ["a", "b"])
-    hosts[w].addEventListener("dblclick", (e) => {
-      const t = e.target;
-      const v = dbg[w]?.view;
-      const r = v?.canvas.getBoundingClientRect();
-      const hit = v && r ? v.viewport.pick(e.clientX - r.left, e.clientY - r.top) : null;
-      dbls[w].push({ on: `${t.tagName.toLowerCase()}.${String(t.className || "")}`, x: e.clientX, y: e.clientY, hit: hit?.id ? v.pathOfKey(hit.id) : null, focus: v?.atom.get().focus ?? null, top: r?.top, left: r?.left, w: r?.width, cam: v?.viewport.getCamera()?.position?.map((x) => +x.toFixed(3)), frame: window.__time?.frames?.() });
-    });
   hosts.a.repo = repo; hosts.b.repo = repo;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   hosts.a.time = time; hosts.b.time = time;
@@ -397,7 +387,6 @@ try {
     /** put view w's camera at `c` ({ position, target }, in the world): where a person would orbit it to */
     setCam(w, c) { dbg[w].viewport.setCamera(c); return true; },
     /** the double-clicks view w heard: [{ on, x, y, hit, focus, top, left, w, cam, frame }] (after the stage's own handling) */
-    dbls: (w) => dbls[w],
     /** view w's focus: the links entered ([]: the boat) */
     focusPath: (w) => dbg[w].view.atom.get().focus,
     /** the trail (breadcrumb) view w shows while its focus is inside a link: its crumbs' text, or null */

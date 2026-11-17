@@ -48,7 +48,7 @@
 //     is the boat's: scene/STAGE.md, "The input chain"), not the card;
 // 13. editing in context (STAGE.md build step 14), under way: A picks
 //     Edit on the body chip and clicks a card on the table (it selects the
-//     link: the focus is the boat's), then double-clicks it, which enters
+//     link: the focus is the boat's), then the inspector's Enter, which enters
 //     the game (the focus moves into G: the trail says where, the
 //     general parts run in G's stage); a click selects the card itself (the
 //     boat sees the link, G the card), and its halo's X arrow, in the card's
@@ -629,35 +629,28 @@ try {
     if (!at) check("13: a card of G's is in plain sight on A's screen", false, { where: w0, cam: await P("cam('a')") });
     else {
       const bBody = await P("bodyLabel('b')");
-      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens a beat
-      // later (500 ms of the stage's time: HISTORY.md, TOOLS Decisions 6), narrowing the canvas: let it open and settle
-      // and aim again, so the double-click lands on the card. The beat is the stage's time, which under way in
-      // a headless Chrome runs behind the wall's (each frame's step is capped), so it waits for the canvas to
-      // narrow, not for a time of its own
-      const beat = () => js(`(() => { const api = __p.A.host.record("sailing")?.api; return { frame: window.__time?.frames?.(), t: api ? api.clock.t() : null }; })()`);
+      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens on it,
+      // narrowing the canvas: let it open and settle, then press its Enter
       const wide = await js(`__p.A.view.canvas.getBoundingClientRect().width`);
       await b.click(at.x, at.y);
-      const clicked = await beat();
       await until(`selectionPath('a')?.length === 1`, 3000);
-      // (drawn frames: the stage's timers run on the frames it draws)
       await b.soon(`window.__p.A.view.canvas.getBoundingClientRect().width < ${wide}`, { frames: 300, draw: true });
-      report.numbers.inspectorBeat = { wide, clicked, narrowed: await beat() };
       await b.rest(300);
-      // (the canvas is narrower now: a card in plain sight on it again, maybe another)
-      let atD = (await until(`aimAt(${J(target)}, 'a')`, 3000)) || (await until(`aimBest(${J(played)}, 'a')`, 3000));
-      if (atD) target = atD.id;
-      else check("13: with the inspector open, a card of G's is still in plain sight on A's screen", false, { played });
-      atD ??= at;
-      await b.dblclick(atD.x, atD.y);
+      const enterAt = await js(`(() => { const e = document.querySelector('#a .inspector [data-ext="scene.focus"][data-command="enter"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; })()`);
+      check("13: with the link selected, the inspector offers Enter", !!enterAt && !enterAt.disabled, enterAt);
+      if (enterAt) await b.click(enterAt.x, enterAt.y);
       await b.rest(400);
+      // (the canvas as it is now: a card in plain sight on it again, maybe another)
+      const atD = (await until(`aimAt(${J(target)}, 'a')`, 3000)) || (await until(`aimBest(${J(played)}, 'a')`, 3000));
+      if (atD) target = atD.id;
       const entered = await until(`focusPath('a').length === 1`, 3000);
-      check("13: a double-click on a card of the game enters it: the focus is the link, the trail says where", entered && J(await P("focusPath('a')")) === J([ids.link]) && J(await P("trail('a')")) === J([await P("boatTitle()"), await P("linkName()")]), { focus: await P("focusPath('a')"), trail: await P("trail('a')"), aimed: atD, dbls: await P("dbls('a')") });
+      check("13: the inspector's Enter on the game's link enters it: the focus is the link, the trail says where", entered && J(await P("focusPath('a')")) === J([ids.link]) && J(await P("trail('a')")) === J([await P("boatTitle()"), await P("linkName()")]), { focus: await P("focusPath('a')"), trail: await P("trail('a')") });
       check("13: the general parts moved into G's stage (the halo runs there, and not in the boat's)", J(await P("runsIn('a', 'scene.halo')")) === J([[ids.link]]) && J(await P("runsIn('a', 'scene.menu')")) === J([[ids.link]]), { halo: await P("runsIn('a', 'scene.halo')"), menu: await P("runsIn('a', 'scene.menu')") });
       // a click on the card selects it, now that the focus is in its doc (Edit's click, ahead of carrying)
       const at2 = await until(`aimAt(${J(target)}, 'a')`, 5000);
       if (at2) await b.click(at2.x, at2.y);
       await until(`halo('a')?.id === ${J(target)}`, 5000);
-      await b.rest(800); // (the inspector's tab, open or opening a beat after it, narrows the canvas: let it settle before aiming)
+      await b.rest(800); // (the inspector's tab, opening on it, narrows the canvas: let it settle before aiming)
       const seen = await P("seen('a')");
       check("13: a click selects the card itself: the boat sees the link, G the card", J(await P("selectionPath('a')")) === J([ids.link, target]) && seen.some(([p, x]) => p.length === 0 && x === ids.link) && seen.some(([p, x]) => J(p) === J([ids.link]) && x === target), { path: await P("selectionPath('a')"), seen });
       const halo = await P("halo('a')");
