@@ -33,7 +33,7 @@
 //     within 15 s of sailing time (one bounded step: DESIGN.md, "Leaving
 //     the anchor"); A and D onto a reach, over 1 m/s within 90 s; then 3–6 again for A
 //     (still seated), and the name tags stay on their trays;
-//  9. Enter boards (the crew's "aboard" body, over the seat): over the deck
+//  9. Enter boards (the walk body at her hull, over the seat): over the deck
 //     the prompt shows Flip with F, Shuffle and Draw without their keys (S
 //     and D walk), and S and D walk; with the table in her cockpit the
 //     mainsheet is in reach from its stand spot and offers F; the body chip's

@@ -702,14 +702,18 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   `api.clock.t`" (line 351) and its list of ctx.sea's members with `clock`
   (line 106) were stale; the integrator corrected both (2026-11-17, merge
   of lane/n6).
-- *Leaving the anchor: diagnosed, not fixed; stopped for the lead.* The
-  physics doesn't give the step's claim, and every fix measured is a
-  choice of the lead's ("Leaving the anchor", Open, with its questions), so
-  the physics, stations, HUD and probe gate are as they were. What the
-  step adds: the probe records its anchoring timeline
-  (`measured.anchoring`), a node replay of it (`src/test/breakout.js`, with
-  `sim.stepped`'s spec, the spec her physics steps with), and the diagnosis pinned
-  as verdict-only OPEN ratchets (`src/breakout.slow.test.js`). The
+- *Leaving the anchor: diagnosed, not fixed; accepted as it is (the lead,
+  2026-11-17: a laid ship breaking out off the wind is OK, no fix in the
+  physics or the template).* The physics doesn't give the step's claim
+  on every sea, and every fix measured was a choice of the lead's
+  ("Leaving the anchor", with its questions), so the physics, stations
+  and HUD are as they were. What the step adds: the probe records its
+  anchoring timeline (`measured.anchoring`), a node replay of it
+  (`src/test/breakout.js`, with `sim.stepped`'s spec, the spec her physics
+  steps with), and the verdicts pinned (`src/breakout.slow.test.js`), now
+  as the accepted behaviour; sailing-run checks that she breaks out head
+  to wind or off it on exactly the seas the replay pins (its `BREAKOUT`),
+  and runs the leave step only where she is head to wind. The unused
   candidate fixes are scratch patches outside the tree:
   `/Users/pvh/.claude/projects/-Users-pvh-dev-patchwork-base/5cc6c087-e4f2-4927-93fb-4f98c0b7eab2/recovered/loose/n6-step4-candidate-set-anchor-windlass.patch` (a set anchor and a
   bounded windlass), `n6-step4-heave-hybrid.patch` and
@@ -735,18 +739,23 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   before it resumes the world, and its keys wait until the page has seen
   them (a key it never sees in 1 s is an error). The scene's flush budget,
   which made (3) a race, is the scene's and is left as it is; whether it
-  should be deterministic is a question for the lead (below, and
-  FOLLOWUPS).
-- *Question for the lead: held keys while the world is paused.* A held
+  should be deterministic was a question for the lead (below: answered).
+- *Held keys while the world is paused: the world is frozen (the lead,
+  2026-11-17: "fine, keep it").* A held
   key now moves only while world time passes, so with the world paused the
   halyard, the sheets, the windlass and the wheel don't move however long
   the key is held (and a key let go commits where it was). Before step 5
-  they moved on the page's frames, paused or not. Is a paused world one
-  where the crew can still work the ship (then the verbs need a clock of
-  their own, and determinism needs another answer), or a frozen one, as
-  now?
-- *Question for the lead (scene's): which frame a doc change reaches the
-  extensions in.* A change reaches a stage's extensions at once only while
+  they moved on the page's frames, paused or not. The question was whether a
+  paused world is one where the crew can still work the ship (then the verbs
+  need a clock of their own, and determinism needs another answer), or a
+  frozen one, as built; frozen it stays.
+- *Which frame a doc change reaches the extensions in (scene's): left as
+  it is (the lead, 2026-11-17), deferred to the queued
+  Croquet-without-a-reflector work,* where an input that affects the
+  simulation carries the world time it takes effect and the stage applies
+  it at that time on every peer, while UI-only changes keep the instant
+  path. Until then the probe keeps waiting out the jitter. What was asked:
+  a change reaches a stage's extensions at once only while
   fewer than `UI_PASSES` passes have run since its last frame (scene
   `stage.js` `requestFlush`), and how many have run is the wall's, so the
   frame an edit lands in differs from run to run. In play a frame late is
@@ -785,7 +794,8 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   whose list of `ctx.sea`'s members has `clock` (line 106) and which says
   "`ctx.sea.clock` is `api.clock.t`" (line 351). The lane works in sailing
   only, so each is listed in FOLLOWUPS for the integrator. Whether a lane
-  may make a one-sentence edit to another package's docs is a question.
+  may make a one-sentence edit to another package's docs was a question;
+  the lead (2026-11-17): yes, a lane may.
   *Integrated (2026-11-17, decided unattended by the integrator of lane/n6,
   for the lead):* the integrator corrected naval's §7 and WATER.md's two
   sentences (docs only, both packages synced); naval's
@@ -817,7 +827,9 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   there until a quiet machine republishes it. The same runs found its
   harbour-mirror check reading the shore itself, since N8's bar starts the
   canvas lower; its pixel strips are now carried to the canvas the page has
-  (terrain e2a45395).
+  (terrain e2a45395). *Since:* the lead made the frame budget report-only
+  (2026-11-17, terrain da0c8f50), and W8 republished Ucluelet on rig@4 with
+  the weather (`automerge:PfgcCbKYvs6ppP8UWzaUL1Qvtcd`, home 16.9 ms).
 
 ## Trim feedback
 
@@ -1767,8 +1779,8 @@ lighting, not the dressing).
 
 At anchor, lying back on her rode, she lies head to wind; that's what an
 anchor is for. Laid at anchor in a seaway she isn't lying to it yet, and
-where she points as it breaks out is chance ("Open", below: measured, not
-fixed, the fix the lead's). The moment
+where she points as it breaks out is chance ("Laid at anchor", below:
+measured, not fixed, and accepted as it is by the lead, 2026-11-17). The moment
 it breaks out, she is in irons unless the crew does something, and for
 days every probe's slowest, flakiest step was getting her off the wind.
 The cause was in the physics, not the helmsman.
@@ -1855,8 +1867,10 @@ windlass) run in world time, `api.clock.t()`, in whole steps of its grid
 (`worldSteps`, "Determinism"), so at a few frames a second the jib still
 unrolls in its 4 s of world time.
 
-**Open: laid at anchor, she isn't lying to it, so in waves where she points
-as it breaks out is chance.** This section's opening claim holds once her
+**Laid at anchor, she isn't lying to it, so in waves where she points
+as it breaks out is chance (accepted as it is: the lead, 2026-11-17, "a
+laid ship breaking out off the wind is OK as it is; no fix in the physics
+or the template").** This section's opening claim holds once her
 rode is taut (the flat-water case pinned above starts her 20 m from her
 anchor and gives her 90 s). It does not hold for a ship *laid* at anchor,
 by an editor's move (as the probes do) or as the template lays out Ship at
@@ -1886,7 +1900,9 @@ pinned: it moves with any change to her physics).
 (The reads are Chrome's: sailing-run on step 5's final build, 2026-11-17,
 one run per sea; the verdicts at breakout and the windlass's columns are
 the replay's.) `src/breakout.slow.test.js` pins every verdict here (never
-a magnitude) as an OPEN ratchet, row by row, as KNOWN_GAPS are. The
+a magnitude), row by row, as the accepted behaviour, and fails when any row
+changes; sailing-run's `BREAKOUT` copies the third column's verdict (head
+to wind or not as the probe reads B's HUD) and checks it. The
 replay's B and Chrome's now agree on every sea's verdict when the probe
 reads the HUD; on 62756a05's calibration they differed on sea 696349617
 (0.48 m/s ahead in node, 0.53 in Chrome, either side of luffing's 0.5),
@@ -2008,8 +2024,9 @@ both pass: those runs' first step had read the template's sea and wind
   `ladderFor`). What made the old walker's climb fail on sea 5 alone was
   not established before its code went.
 
-So the claim is not met, and the remaining choices are the lead's
-(questions for the lead, 2026-11-16, lane/n6): whether a laid ship's anchor
+So the claim is not met on every sea, and the remaining choices were the
+lead's (questions for the lead, 2026-11-16, lane/n6; answered 2026-11-17:
+none taken, she is accepted as she is): whether a laid ship's anchor
 is set; the windlass's line speed (real, 40–54 s to weigh, or the game's 6
 s) and whether it pulls her at all before the chain is up and down;
 whether her heave damping goes along the world's vertical (it was put
@@ -2019,10 +2036,15 @@ rode should be a catenary rather than a stiff spring that goes slack (in
 waves she snatches on it); and whether "head to wind" at breakout is read
 through the water, as the HUD does, or over the ground, or over some
 seconds rather than an instant (the second finding above: two of the three
-failing seas are within a few degrees or a few cm/s of the gate). Until
-then sailing-run's verdict on the leave step holds only for the sea it ran
-on, and `breakout.slow.test.js` holds the diagnosis: its OPEN rows fail as
-soon as any of this is changed, and are rewritten with this section then.
+failing seas are within a few degrees or a few cm/s of the gate). So
+sailing-run exercises the leave step only on the seas where she breaks out
+head to wind, and checks which seas those are; `breakout.slow.test.js`
+holds the verdicts, and they fail as soon as any of this is changed, to be
+rewritten with this section then. (They went red on scene-stage from the
+weather merge to 2026-11-17 for a reason of the harness's own: the replay
+read the old `sailing.weather` shape, `wind.from`, off the new `weather`
+trait, whose `from` is top-level, and laid her headed NaN. Fixed in
+`test/breakout.js`; every row as N6 pinned it.)
 
 ## Determinism
 

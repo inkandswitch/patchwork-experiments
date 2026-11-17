@@ -151,7 +151,7 @@ export async function replay({ sea, anchored = false, lay = 0, at = null, eased 
       delete doc.objects[ids.hull].traits[SHIP].motion;
       const o = doc.objects[ids.hull];
       if (at) o.transform.position = [at[0], o.transform.position[1], at[2]];
-      o.transform.rotation[1] = headTo(doc.traits[WEATHER].wind.from);
+      o.transform.rotation[1] = headTo(doc.traits[WEATHER].from);
       Object.assign(doc.objects[ids.rig].traits[SAIL], { raised: 0, sheet: 0 });
       Object.assign(doc.objects[ids.windlass].traits[ANCHOR], { down: true, rode: RODE });
     }

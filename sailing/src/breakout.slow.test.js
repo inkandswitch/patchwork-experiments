@@ -1,4 +1,4 @@
-// Leaving the anchor in waves (DESIGN.md, "Leaving the anchor": "Open"),
+// Leaving the anchor in waves (DESIGN.md, "Leaving the anchor"),
 // replayed in node: sailing-run.mjs's own sequence on the stock sloop, the
 // seven seas of the Open table, each on the timeline the probe recorded in
 // Chrome (its measured.anchoring, 2026-11-17, lane/n6, step 5's final build): laid at anchor at
@@ -9,13 +9,14 @@
 // and asks hud.js's own model for the advice, on B's read as the probe's
 // gate does.
 //
-// Everything here is OPEN, a ratchet as KNOWN_GAPS are: each table is what
-// the physics does today, row by row, and fails when a row changes (a fix,
-// or any change to her physics or the copied water evaluator). Then the
-// rows are re-measured and this file and DESIGN.md are rewritten together.
-// Only verdicts are pinned (the HUD's advice, slack or taut, which way she
-// drifts), never a magnitude. What a fix should make true is said with each
-// table. (That the replay follows Chrome, to 2.3° and 0.05 m/s of the
+// The first two tables are the accepted behaviour (the lead, 2026-11-17: a
+// laid ship breaking out off the wind is OK as it is, no fix in the physics
+// or the template); the third, her drift with no wind, is still OPEN. Each
+// is what the physics does, row by row, and fails when a row changes (any
+// change to her physics or the copied water evaluator). Then the rows are
+// re-measured and this file and DESIGN.md are rewritten together. Only
+// verdicts are pinned (the HUD's advice, slack or taut, which way she
+// drifts), never a magnitude. (That the replay follows Chrome, to 2.3° and 0.05 m/s of the
 // simulator's read at each mark, was measured once against the probe's
 // marks and is in DESIGN.md; replay()'s moments carry that read, `sim`,
 // to measure it again.)
@@ -57,10 +58,10 @@ const rodeWatch = (from) => {
   return seen;
 };
 
-describe("OPEN: leaving the anchor in waves on sailing-run's timeline, main up (DESIGN.md, \"Leaving the anchor\": Open)", () => {
-  // The plan's table: at breakout the HUD advises backing the jib on every sea. Today it does on six of seven at
-  // the frame the anchor comes up, and on four when the probe reads it 1.25 s later, as in Chrome.
-  // Before the windlass turns, laid at anchor she is never on her rode (the target: lying to it, taut).
+describe("accepted (the lead, 2026-11-17): leaving the anchor in waves on sailing-run's timeline, main up, she breaks out head to wind on some seas and off it on others (DESIGN.md, \"Leaving the anchor\")", () => {
+  // The HUD advises backing the jib on six seas of seven at the frame the anchor comes up, and on four when the
+  // probe reads it 1.25 s later, as in Chrome (sailing-run's BREAKOUT copies `leave`). The plan's "on every sea"
+  // was not taken up: off the wind she simply sails off.
   for (const [seaKey, want] of Object.entries(SEAS)) {
     const sea = Number(seaKey);
     it(`sea ${sea}: B's HUD says to back the jib ${want.up ? "as the anchor comes up" : "NOT as the anchor comes up"}, ${want.leave ? "and" : "NOT"} when the probe reads it; chain to spare at every frame until the windlass turns; the windlass ${want.pulled ? "pulls her" : "only takes in slack"}`, async () => {
@@ -71,9 +72,9 @@ describe("OPEN: leaving the anchor in waves on sailing-run's timeline, main up (
   }
 });
 
-describe("OPEN: before the windlass turns, she is never on her rode: laid by an editor's move or as Ship at anchor, main up or sails down", () => {
+describe("accepted (the lead, 2026-11-17): before the windlass turns, she is never on her rode: laid by an editor's move or as Ship at anchor, main up or sails down", () => {
   // The anchor goes down under her bow (sim.js dropPoint; layout.js for Ship at anchor) with 25 m of chain in 10 m
-  // of water. The target: she lies to it, the rode taut once she has fallen back on it.
+  // of water. A set anchor that she would lie to, taut, was a candidate fix the lead didn't take.
   const cases = [];
   for (const sea of Object.keys(SEAS).map(Number)) {
     for (const anchored of [false, true]) {
