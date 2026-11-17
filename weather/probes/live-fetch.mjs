@@ -1,4 +1,4 @@
-// Live check of the fetch (WEATHER.md, "Fetch"): both places, now (Fetch now)
+// Live check of the fetch (WEATHER.md, "Fetch"): both places, now (Now, then Fetch for this time)
 // and 15 July 2025 15:00 PDT (Fetch for this time, from the archive), through
 // the package's own requestFor, fetchWeather and snapshotFrom. Every summed
 // field must be finite, in its range and on its step, and the URL's keys the

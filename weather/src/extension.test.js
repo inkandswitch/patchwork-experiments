@@ -7,7 +7,7 @@ import { atmosphereOf } from "./atmosphere.js";
 import { instantOf } from "./time.js";
 import { DEFAULTS, PLACES, fetchedFields, provenance, weatherParams, windOf } from "./weather.js";
 import { NAME, NO_DATA, UNITS, VARIABLES, isoMinute, requestFor, snapshotFrom } from "./open-meteo.js";
-import ext, { HERE, PLACE_TITLE, SHOW, TRAIT, clockName, clockText, coordinates, fetchLabel, fetchNowRequest, fetchRequest, fetchWrites, forText, isWorlds, nowWrites, offerOf, placeState, placeWrites, provenanceTitle } from "./extension.js";
+import ext, { HERE, PLACE_TITLE, SHOW, TRAIT, clockName, clockText, coordinates, fetchLabel, fetchRequest, fetchWrites, forText, isWorlds, nowWrites, offerOf, placeState, placeWrites, provenanceTitle } from "./extension.js";
 
 const INIT = plugins[0].describes.weather.init;
 const [CADBORO, UCLUELET] = PLACES;
@@ -160,11 +160,12 @@ describe("the offer is === while the trait in force is unchanged", () => {
 describe("the commands", () => {
   const commands = ext.create(withTrait({})).commands;
 
-  it("are Place, Now, Fetch now and Fetch for this time, each the editor's, on the toolbar and the menu", () => {
+  // Three, not four: Now then Fetch for this time is the present
+  // conditions, so a "Fetch now" would be the same snapshot (Decision 42).
+  it("are Place, Now and Fetch for this time, each the editor's, on the toolbar and the menu", () => {
     expect(commands.map((c) => [c.id, c.name, c.edit, c.show])).toEqual([
       ["place", "Place", true, SHOW],
       ["now", "Now", true, SHOW],
-      ["fetch-now", "Fetch now", true, SHOW],
       ["fetch", "Fetch for this time", true, SHOW],
     ]);
     expect(SHOW).toEqual(["toolbar", "menu"]);
@@ -223,8 +224,8 @@ describe("the commands", () => {
   });
 
   it("Now's title names the clock in force", () => {
-    expect(ext.create(withTrait({ offset: 5.75 })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC+5:45)");
-    expect(ext.create(withTrait({ offset: "+05:30" })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC\u22127)");
+    expect(ext.create(withTrait({ offset: 5.75 })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC+5:45); Fetch for this time then fetches the present conditions");
+    expect(ext.create(withTrait({ offset: "+05:30" })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC\u22127); Fetch for this time then fetches the present conditions");
   });
 
   it.each([
@@ -462,10 +463,21 @@ function fakeFetch(answer) {
 
 describe("Fetch: the requests", () => {
   const NOW = Date.parse("2026-11-16T21:47:00Z");
-  it("Fetch now: the present conditions, for the present quarter hour on the weather's clock", () => {
-    const r = fetchNowRequest(INIT, NOW);
+  // Now floors to the quarter hour, so the time it writes is within 15
+  // minutes of now, inside the present conditions' 30: Now then Fetch for
+  // this time is always the present conditions (Decision 42).
+  it("after Now, Fetch for this time asks for the present conditions, for the present quarter hour on the weather's clock", () => {
+    const r = fetchRequest({ ...INIT, ...nowWrites(INIT, NOW) }, NOW);
     expect(r).toEqual(requestFor({ ...weatherParams(INIT), date: "2026-11-16", hour: 14.75 }, NOW));
     expect(r.route).toBe("current");
+  });
+  it("after Now, at every minute of an hour on four clocks: the present conditions", () => {
+    for (const offset of [-7, 0, 5.75, 14])
+      for (let m = 0; m < 60; m++) {
+        const t = NOW - 47 * 60_000 + m * 60_000;
+        const trait = { ...INIT, offset };
+        expect(fetchRequest({ ...trait, ...nowWrites(trait, t) }, t).route).toBe("current");
+      }
   });
   it("Fetch for this time: the place, date and hour in force", () => {
     expect(fetchRequest(INIT, NOW)).toEqual(requestFor(weatherParams(INIT), NOW));
@@ -473,10 +485,7 @@ describe("Fetch: the requests", () => {
     expect(fetchRequest({ ...INIT, date: "2026-12-25" }, NOW)).toBe(null);
   });
   for (const t of [undefined, null, true, []])
-    it(`no trait to write into (${JSON.stringify(t)}): no request`, () => {
-      expect(fetchNowRequest(t, NOW)).toBe(null);
-      expect(fetchRequest(t, NOW)).toBe(null);
-    });
+    it(`no trait to write into (${JSON.stringify(t)}): no request`, () => expect(fetchRequest(t, NOW)).toBe(null));
 });
 
 describe("Fetch: what a snapshot writes", () => {
@@ -546,17 +555,20 @@ describe("Fetch: run", () => {
     expect(cmd("fetch").state(null, {}).label).toBe("Fetched for this time");
   });
 
-  it("Fetch now: the present conditions and the present quarter hour, in one change", async () => {
+  it("Now, then Fetch for this time: the present quarter hour, then the present conditions", async () => {
     const { api, cmd } = setup();
-    cmd("fetch-now").run(null);
+    cmd("now").run(null);
+    expect(api.changes).toBe(1);
+    cmd("fetch").run(null);
     await settle();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(new URL(fetch.mock.calls[0][0]).searchParams.has("current")).toBe(true);
-    expect(api.changes).toBe(1);
+    expect(api.changes).toBe(2);
     const w = api.d.traits[TRAIT];
     expect(w).toMatchObject({ date: "2026-11-16", hour: 14.75, ...SNAPPED });
     expect(w.source.for).toBe("2026-11-16T21:45:00.000Z");
     expect(provenance(w)).toBe("fetched");
+    expect(cmd("fetch").state(null, {}).label).toBe("Fetched for this time");
   });
 
   // [name, answer] → the notice; nothing written
@@ -598,6 +610,28 @@ describe("Fetch: run", () => {
     expect(api.notices).toEqual([]);
   });
 
+  // The stage's signal is the fetch's: stopping the stage aborts the fetch
+  // itself, whatever reason it aborts with, and says nothing.
+  for (const [name, reason] of [
+    ["no reason (an AbortError)", undefined],
+    ["a plain Error", new Error("the stage stopped")],
+  ])
+    it(`the stage's signal reaches the fetch; stopping it with ${name}: the fetch rejects, nothing written, nothing said`, async () => {
+      const { api, cmd } = setup();
+      const stop = new AbortController();
+      api.signal = stop.signal;
+      const pending = vi.fn((url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason))));
+      vi.stubGlobal("fetch", pending);
+      cmd("fetch").run(null);
+      await settle();
+      expect(pending).toHaveBeenCalledTimes(1);
+      expect(pending.mock.calls[0][1].signal).toBe(api.signal);
+      stop.abort(reason);
+      await settle();
+      expect(api.changes).toBe(0);
+      expect(api.notices).toEqual([]);
+    });
+
   it("an aborted fetch (AbortError): nothing said", async () => {
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
     const { api, cmd } = setup(INIT, abort);
@@ -615,12 +649,26 @@ describe("Fetch: run", () => {
     expect(api.changes).toBe(0);
   });
 
-  it("the trait gone when the reply lands: not made again", async () => {
+  // Another extension may still offer the world's wind (sailing.weather,
+  // until W5), so the stage is still the world's: the write finds no trait,
+  // writes nothing, and nothing says it fetched.
+  it("the trait gone when the reply lands: not made again, and no notice", async () => {
     const { api, cmd } = setup();
     cmd("fetch").run(null);
     delete api.d.traits[TRAIT];
     await settle();
     expect(api.d.traits).toEqual({});
+    expect(api.notices).toEqual([]);
+  });
+
+  it("the trait gone when pressed (after the toolbar drew): no fetch, no notice", async () => {
+    const { api, cmd } = setup();
+    delete api.d.traits[TRAIT];
+    cmd("fetch").run(null);
+    await settle();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(api.changes).toBe(0);
+    expect(api.notices).toEqual([]);
   });
 
   it("a field dialled while the fetch is out, to the snapshot's value: left as it is; to another: the snapshot's", async () => {
@@ -636,7 +684,6 @@ describe("Fetch: run", () => {
   it("an object target: nothing fetched", async () => {
     const { cmd } = setup();
     cmd("fetch").run("obj1");
-    cmd("fetch-now").run("obj1");
     await settle();
     expect(fetch).not.toHaveBeenCalled();
   });

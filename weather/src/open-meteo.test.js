@@ -6,18 +6,18 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { visibilityOf } from "./atmosphere.js";
+import { conditionsOf } from "./atmosphere.js";
 import {
   ARCHIVE_FROM,
   BASES,
   CAPS,
   CODES,
   ENDPOINTS,
+  KOSCHMIEDER,
   NAME,
   QUERY,
   UNITS,
   VARIABLES,
-  airVisibility,
   baseOf,
   derivedVisibility,
   fetchWeather,
@@ -26,6 +26,7 @@ import {
   kindOf,
   layerOf,
   onStep,
+  rainExtinction,
   requestFor,
   routeOf,
   snapshotFrom,
@@ -129,6 +130,8 @@ describe("fetchWeather: one GET of the URL, nothing else", () => {
     ["200 weather", 200, { current: {} }, { current: {} }],
     ["400 an error reply", 400, { error: true, reason: "out of range" }, { error: true, reason: "out of range" }],
     ["500 not an error reply", 500, { message: "down" }, new Error(`${NAME} answered 500`)],
+    ["400 an error that isn't strictly true", 400, { error: "yes", reason: "out of range" }, new Error(`${NAME} answered 400`)],
+    ["400 error 1", 400, { error: 1 }, new Error(`${NAME} answered 400`)],
     ["200 not JSON", 200, "<html>", new Error(`${NAME} answered 200, not with weather`)],
     ["502 not JSON", 502, "Bad gateway", new Error(`${NAME} answered 502, not with weather`)],
   ];
@@ -226,6 +229,8 @@ describe("snapshotFrom: what isn't weather for that hour", () => {
     ["wind in km/h", (j) => (j.hourly_units.wind_speed_10m = "km/h"), `${NAME} sent wind_speed_10m in km/h, not m/s`],
     ["gusts in km/h", (j) => (j.hourly_units.wind_gusts_10m = "km/h"), `${NAME} sent wind_gusts_10m in km/h, not m/s`],
     ["visibility in ft", (j) => (j.hourly_units.visibility = "ft"), `${NAME} sent visibility in ft, not m`],
+    ["an error reply whose reason isn't a string", (j) => Object.assign(j, { error: true, reason: 42 }), `${NAME} refused the request`],
+    ["an error reply whose reason is empty", (j) => Object.assign(j, { error: true, reason: "" }), `${NAME} refused the request`],
   ];
   for (const [name, fn, reason] of rows) it(`${name} → "${reason}"`, () => expect(edit(fn)).toThrow(reason));
 
@@ -238,8 +243,83 @@ describe("snapshotFrom: what isn't weather for that hour", () => {
     const f = structuredClone(fixture("cadboro-current"));
     f.json.current.time = "2026-11-16T23:00";
     expect(() => snapshotFrom(f.json, f.request)).toThrow(`${NAME}'s present conditions are for 2026-11-16T23:00 GMT, not now`);
-    f.json.current.time = "21:45";
+  });
+
+  // Open-Meteo writes a GMT time as YYYY-MM-DDTHH:MM, and nothing else is one
+  it.each(["21:45", "2026-11-16T21:45:00Z", "x2026-11-16T21:45", "2026-11-16T21:45:00", "2026-11-16T21:45Z", "2026-11-16 21:45", "", null, 1794866100000])("a present conditions' time %j: not a time", (time) => {
+    const f = structuredClone(fixture("cadboro-current"));
+    f.json.current.time = time;
     expect(() => snapshotFrom(f.json, f.request)).toThrow(`${NAME} sent no time for the present conditions`);
+  });
+
+  // Every variable asked for is checked for its unit, by construction (one
+  // loop over UNITS): any of them in another unit, while the hour has a
+  // number for it, refuses the reply. Every variable has a number here, so
+  // the row doesn't depend on which ones the derivations happen to read.
+  const FULL = { temperature_2m: 12, dew_point_2m: 10, relative_humidity_2m: 88, precipitation: 0.2, weather_code: 3, cloud_cover: 90, cloud_cover_low: 90, cloud_cover_mid: 0, cloud_cover_high: 0, visibility: 9000, wind_speed_10m: 6, wind_direction_10m: 250, wind_gusts_10m: 8 };
+  it("FULL names every variable", () => expect(Object.keys(FULL).sort()).toEqual([...VARIABLES].sort()));
+  for (const route of ["current", "hourly"])
+    for (const k of VARIABLES)
+      it(`${route}: ${k} in another unit → refused`, () => {
+        const f = structuredClone(fixture(route === "current" ? "cadboro-current" : "ucluelet-forecast"));
+        const i = route === "hourly" ? hourIndex(f) : null;
+        for (const [v, x] of Object.entries(FULL)) {
+          if (route === "current") f.json.current[v] = x;
+          else f.json.hourly[v][i] = x;
+        }
+        f.json[`${route}_units`] = { ...f.json[`${route}_units`], ...UNITS };
+        expect(() => snapshotFrom(f.json, f.request)).not.toThrow();
+        f.json[`${route}_units`][k] = "furlongs";
+        expect(() => snapshotFrom(f.json, f.request)).toThrow(`${NAME} sent ${k} in furlongs, not ${UNITS[k]}`);
+      });
+  it("a variable with no number this hour may be in any unit (the archive's visibility: null in \"undefined\")", () => {
+    const { json, request } = fixture("ucluelet-archive");
+    expect(() => snapshotFrom(json, request)).not.toThrow();
+  });
+});
+
+// The present conditions stand for any instant within 30 minutes of now
+// (routeOf), and are checked against the same point: they must be within
+// 30 minutes of when they were asked for. `source.for` is their own time.
+describe("snapshotFrom: the present conditions, measured from now", () => {
+  const NOW_ = at("2026-11-16T21:47:00Z");
+  const reply = (time) => ({
+    utc_offset_seconds: 0,
+    current_units: { time: "iso8601", interval: "seconds", ...UNITS },
+    current: { time, interval: 900, wind_speed_10m: 5, wind_direction_10m: 200 },
+  });
+  const request = (hour, now = NOW_) => requestFor(weatherParams({ date: "2026-11-16", hour }), now);
+  // [stamped, now - stamped] → for, or refused
+  it.each([
+    ["2026-11-16T21:17", "-30 min", "2026-11-16T21:17:00.000Z"],
+    ["2026-11-16T21:16", "-31 min", null],
+    ["2026-11-16T22:17", "+30 min", "2026-11-16T22:17:00.000Z"],
+    ["2026-11-16T22:18", "+31 min", null],
+    ["2026-11-16T21:45", "-2 min", "2026-11-16T21:45:00.000Z"],
+  ])("stamped %s (%s from now) → %s", (time, _, want) => {
+    const r = request(14.75);
+    if (want) expect(snapshotFrom(reply(time), r).source.for).toBe(want);
+    else expect(() => snapshotFrom(reply(time), r)).toThrow("not now");
+  });
+
+  it("source.for is the conditions' time, not the time asked: stamped 21:30, asked for 21:45", () => {
+    const r = request(14.75);
+    expect(r.at).toBe(at("2026-11-16T21:45Z"));
+    const s = snapshotFrom(reply("2026-11-16T21:30"), r);
+    expect(s.source.for).toBe("2026-11-16T21:30:00.000Z");
+    expect([s.date, s.hour]).toEqual(["2026-11-16", 14.75]);
+  });
+
+  // An hour off the slider's step (weatherParams keeps it) 28 minutes after
+  // now routes to the present conditions; they are stamped 14 minutes
+  // before now, 42 before the time asked: within 30 of now, so taken.
+  it("now 21:29, asked for 21:57 (off the step): the present conditions, stamped 21:15, taken", () => {
+    const now = at("2026-11-16T21:29:00Z");
+    const r = request(14 + 57 / 60, now);
+    expect(r.route).toBe("current");
+    const s = snapshotFrom(reply("2026-11-16T21:15"), r);
+    expect(s.source.for).toBe("2026-11-16T21:15:00.000Z");
+    expect(s.hour).toBe(14 + 57 / 60);
   });
 });
 
@@ -265,10 +345,12 @@ describe("snapshotFrom: each field from the hour's numbers", () => {
     ["wind from 359.6 → 360", { wind_direction_10m: 359.6 }, 900, { from: 360 }],
     ["gust 6.5 on 5", { wind_gusts_10m: 6.5 }, 900, { gustiness: 0.3 }],
     ["gust 12.5 on 5 (to 1)", { wind_gusts_10m: 12.5 }, 900, { gustiness: 1 }],
-    ["0.5 mm in 15 min → 2 mm/h", { precipitation: 0.5 }, 900, { rain: 2 }],
-    ["2 mm in an hour → 2 mm/h", { precipitation: 2 }, 3600, { rain: 2 }],
-    ["20 mm in 15 min → 80 mm/h (clamped to 50)", { precipitation: 20 }, 900, { rain: 50 }],
-    ["no interval: an hour's", { precipitation: 2 }, null, { rain: 2 }],
+    ["0.5 mm in 15 min → 2 mm/h (no visibility sent: 20 km seen through it, 6410 → 6400)", { precipitation: 0.5 }, 900, { rain: 2, visibility: 6400 }],
+    ["2 mm in an hour → 2 mm/h", { precipitation: 2 }, 3600, { rain: 2, visibility: 6400 }],
+    ["20 mm in 15 min → 80 mm/h (clamped to 50; the air seen through the 80 that fell, 619 → 600)", { precipitation: 20 }, 900, { rain: 50, visibility: 600 }],
+    ["no interval: an hour's", { precipitation: 2 }, null, { rain: 2, visibility: 6400 }],
+    ["interval 0: an hour's", { precipitation: 2 }, 0, { rain: 2, visibility: 6400 }],
+    ["interval -900: an hour's", { precipitation: 2 }, -900, { rain: 2, visibility: 6400 }],
     ["cloud 87% → 0.85", { cloud_cover: 87 }, 900, { cover: 0.85 }],
     ["no total: the dominant layer's", { cloud_cover_mid: 70 }, 900, { cover: 0.7, clouds: "stratocumulus", base: BASES.mid }],
     ["high 90%: cirrus at 7000 m", { cloud_cover: 90, cloud_cover_high: 90 }, 900, { cover: 0.9, clouds: "cirrus", base: BASES.high }],
@@ -276,6 +358,9 @@ describe("snapshotFrom: each field from the hour's numbers", () => {
     ["visibility 90 km (clamped to 50)", { visibility: 90000 }, 900, { visibility: 50000 }],
     ["visibility 50 m (clamped to 100)", { visibility: 50 }, 900, { visibility: 100 }],
     ["visibility 0 (not a visibility: from humidity)", { visibility: 0 }, 900, {}],
+    ["visibility 10 km in 1 mm/h of rain: 10 km, as observed", { visibility: 10000, precipitation: 0.25 }, 900, { visibility: 10000, rain: 1 }],
+    ["visibility 24.14 km in 0.5 mm/h: 24.1 km, as observed", { visibility: 24140, precipitation: 0.125 }, 900, { visibility: 24100, rain: 0.5 }],
+    ["no visibility, 2.5 mm/h: the air's 20 km seen through the rain, 5722 → 5700", { precipitation: 0.625 }, 900, { visibility: 5700, rain: 2.5 }],
     ["a low sheet at an LCL of 293.75 m: on the slider 300, so stratocumulus (the kind follows the base written)", { cloud_cover: 80, cloud_cover_low: 80, temperature_2m: 12.35, dew_point_2m: 10 }, 900, { cover: 0.8, clouds: "stratocumulus", base: 300 }],
     ["a low sheet at an LCL of 268.75 m: 250, stratus", { cloud_cover: 80, cloud_cover_low: 80, temperature_2m: 12.15, dew_point_2m: 10 }, 900, { cover: 0.8, clouds: "stratus", base: 250 }],
     ["fog, code 45, no visibility", { weather_code: 45, cloud_cover: 100, cloud_cover_low: 100, temperature_2m: 8, dew_point_2m: 8 }, 900, { cover: 1, clouds: "stratus", base: 100, visibility: CAPS.fog }],
@@ -293,24 +378,16 @@ describe("snapshotFrom: each field from the hour's numbers", () => {
       }
   });
 
-  // Rain alone sees 9.4 km at 2 mm/h, 2.9 km at 10 and 26 km at 0.5
-  // (atmosphere.js rainExtinction): under those, the air's visibility is what
-  // is left; at or over, the air is as clear as the slider goes, and the
-  // visibility in force is the rain's with it.
-  it("rain observed through: the visibility in force is the observed one, where the rain alone sees further", () => {
-    // within half a step: d(in force)/d(air) = (in force / air)² < 1, and the air's is rounded to 100 m
-    for (const [vis, rain] of [
-      [6000, 2],
-      [2500, 10],
-      [12000, 0.5],
-    ]) {
-      const s = snap({ visibility: vis, precipitation: rain / 4 });
-      expect(s.rain).toBe(rain);
-      expect(Math.abs(visibilityOf(s.visibility, s.rain) - vis)).toBeLessThanOrEqual(50);
-    }
-    const s = snap({ visibility: 10000, precipitation: 0.5 });
-    expect(s.visibility).toBe(50000);
-    expect(Math.round(visibilityOf(50000, 2))).toBe(7937);
+  // The visibility written is the visibility observed, rain and all, and
+  // it is the visibility in force: rain doesn't take it in further
+  // (Decision 41), so the inspector shows what was reported.
+  it("an observed visibility is the visibility in force, in any rain", () => {
+    for (const vis of [500, 5000, 10000, 24140, 49000])
+      for (const precipitation of [0, 0.125, 0.25, 1.25, 12.5]) {
+        const s = snap({ visibility: vis, precipitation });
+        expect(s.visibility).toBe(onStep("visibility", vis));
+        expect(conditionsOf(weatherParams(s)).visibility).toBe(s.visibility);
+      }
   });
 });
 
@@ -351,13 +428,17 @@ describe("the derivations' tables", () => {
     [45, "stratus", CAPS.fog],
     [61, "stratus", 20000],
     [95, "cumulus", 20000],
+    [73, "stratus", CAPS.snow],
+    [85, "cumulus", CAPS.snow],
+    [86, "cumulus", CAPS.snow],
   ])("WMO %s → %s, visibility %s", (code, kind, vis) => {
     expect(kindOf(code, heaps, 800)).toBe(kind);
     expect(derivedVisibility(code, 70)).toBe(vis);
   });
 
   it("every code in a group says its kind, whatever the layers", () => {
-    const want = { fog: "stratus", drizzle: "stratus", rain: "stratus", snow: "stratus", showers: "cumulus", thunder: "cumulus" };
+    const want = { fog: "stratus", drizzle: "stratus", rain: "stratus", snow: "stratus", showers: "cumulus", snowShowers: "cumulus", thunder: "cumulus" };
+    expect(Object.keys(CODES).sort()).toEqual(Object.keys(want).sort());
     for (const [g, codes] of Object.entries(CODES))
       for (const code of codes) for (const layer of [null, heaps, { name: "high", cover: 1 }, { name: "low", cover: 1 }]) expect(kindOf(code, layer, 150)).toBe(want[g]);
     expect(Object.values(CODES).flat().length).toBe(new Set(Object.values(CODES).flat()).size);
@@ -388,17 +469,26 @@ describe("the derivations' tables", () => {
     ["110% (as 100)", 0, 110, 4000],
   ])("derivedVisibility: %s → %s m", (_, code, rh, vis) => expect(derivedVisibility(code, rh)).toBeCloseTo(vis, 6));
 
+  // [code, RH, rain mm/h] → the visibility in force: the air's, seen through the rain
   it.each([
-    [10000, 0],
-    [8000, 2],
-    [2500, 10],
-    [800, 25],
-  ])("airVisibility(%s, %s mm/h): rain added back gives the observed", (vis, rain) => expect(visibilityOf(airVisibility(vis, rain), rain)).toBeCloseTo(vis, 6));
+    ["clear air, 2.5 mm/h", 0, 70, 2.5, 5722],
+    ["clear air, 25 mm/h", 0, 70, 25, 1389],
+    ["fog, 2.5 mm/h", 45, 50, 2.5, 471],
+    ["drizzle in humid air, 1 mm/h", 53, 100, 1, 3186],
+    ["no humidity, 0.5 mm/h", 0, null, 0.5, 11296],
+  ])("derivedVisibility: %s → %s m", (_, code, rh, rain, vis) => expect(Math.round(derivedVisibility(code, rh, rain))).toBe(vis));
 
-  it("airVisibility: rain that accounts for it all leaves the air clear (Infinity, on the slider 50 km)", () => {
-    expect(airVisibility(8000, 20)).toBe(Infinity);
-    expect(onStep("visibility", Infinity)).toBe(50000);
+  it("derivedVisibility in no rain is exactly the air's", () => {
+    for (const code of [0, 45, 53, 73, 85]) for (const rh of [null, 50, 90, 100]) expect(derivedVisibility(code, rh, 0)).toBe(derivedVisibility(code, rh));
+    expect(derivedVisibility(45, 50, 0)).toBe(CAPS.fog);
   });
+
+  // [rain mm/h] → what rain alone lets you see, m (Decision 21's calibration)
+  it.each([
+    [0, Infinity],
+    [2.5, 8016],
+    [25, 1493],
+  ])("rain %s mm/h alone sees %s m", (rain, vis) => expect(Math.round(KOSCHMIEDER / rainExtinction(rain))).toBe(vis));
 });
 
 describe("gustinessOf: a fetched hour's mean and peak → gustiness (Decision 10)", () => {
@@ -411,7 +501,8 @@ describe("gustinessOf: a fetched hour's mean and peak → gustiness (Decision 10
     [0, 0, 0.3],
     [0, 3, 0.3],
     [0.49, 2, 0.3],
-    [0.5, 0.65, 0.3],
+    [0.5, 1, 1],
+    [0.49, 1, 0.3],
     [5, 5, 0],
     [5, 4, 0],
     [5, 20, 1],

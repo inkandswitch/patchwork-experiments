@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { plugins } from "./index.js";
-import { BANDS, KINDS, LOOKS, SCATTERED_MAX, atmosphereAt, atmosphereOf, bandAt, conditionsOf, dayLook, deckOf, hazeOf, skyAt, sunOf, toHex, toLinear, toSrgb, visibilityOf, wetOf } from "./atmosphere.js";
+import { BANDS, KINDS, LOOKS, SCATTERED_MAX, atmosphereAt, atmosphereOf, bandAt, conditionsOf, dayLook, deckOf, hazeOf, skyAt, sunOf, toHex, toLinear, toSrgb, wetOf } from "./atmosphere.js";
 import { sunDirection } from "./solar.js";
 import { weatherParams } from "./weather.js";
 
@@ -386,8 +386,9 @@ describe("shadows: effective cover under 0.75, haze under 0.5, the sun more than
     [{ cover: 1, clouds: "stratus" }, 45, false],
     [{ visibility: 3200 }, 45, true],
     [{ visibility: 3100 }, 45, false],
-    [{ visibility: 10000, rain: 2.5 }, 45, true],
-    [{ visibility: 10000, rain: 25 }, 45, false],
+    // rain only darkens: it leaves the visibility, so the haze and this gate, as they were (Decision 41)
+    [{ visibility: 10000, rain: 50 }, 45, true],
+    [{ visibility: 3100, rain: 50 }, 45, false],
   ])("%j at %s° → %s", (t, e, want) => expect(at(t, e).sun.shadows).toBe(want));
 });
 
@@ -400,14 +401,11 @@ describe("haze, rain and the fog", () => {
     [100, 1],
   ])("visibility %s m → haze %s", (v, h) => expect(hazeOf(v)).toBeCloseTo(h, 12));
 
-  it.each([
-    [10000, 0, 10000],
-    [50000, 0, 50000],
-    [1e9, 2.5, 8016],
-    [1e9, 25, 1493],
-    [10000, 2.5, 4449],
-    [1000, 50, 474],
-  ])("visibility %s m in %s mm/h of rain → %s m in force", (v, rain, want) => expect(Math.round(visibilityOf(v, rain))).toBe(want));
+  // The visibility field is the visibility in force, rain and all, as it is
+  // observed: rain leaves it as it is (Decision 41).
+  it("the visibility in force is the field's, in any rain", () => {
+    for (const visibility of [100, 1000, 3100, 10000, 50000]) for (const rain of [0, 0.1, 2.5, 25, 50]) expect(conditionsOf(params({ visibility, rain })).visibility).toBe(visibility);
+  });
 
   it.each([
     [0, 1],
@@ -415,14 +413,14 @@ describe("haze, rain and the fog", () => {
     [50, 1 - 15 / 54],
   ])("rain %s mm/h darkens by %s", (rain, w) => expect(wetOf(rain)).toBeCloseTo(w, 12));
 
-  // Rain does two things: its extinction draws the visibility in (so the haze, and the look, follow it), and at that
-  // haze it darkens the sky and the sun's light by wetOf. At 0 mm/h it does neither.
-  it("rain at 0 mm/h is the identity; any rain draws the fog in, and at the haze it makes darkens the sky and the sun's light by wetOf", () => {
+  // Rain does one thing: it darkens the sky and the sun's light by wetOf, at the haze the visibility makes, which it
+  // leaves as it is (the visibility field has the rain in it already). At 0 mm/h it does nothing.
+  it("rain at 0 mm/h is the identity; any rain leaves the visibility and the haze, and darkens the sky and the sun's light by wetOf", () => {
     for (const t of SKIES) {
       expect(atmosphereOf(params({ ...t, rain: 0 }))).toStrictEqual(atmosphereOf(params(t)));
       for (const rain of [0.1, 1, 10, 50]) {
         const c = conditionsOf(params({ ...t, rain }));
-        expect(c.visibility).toBeLessThan(conditionsOf(params(t)).visibility);
+        expect({ ...c, wet: 1 }).toEqual(conditionsOf(params(t)));
         const [wet, dry] = [skyAt(c, 45), skyAt({ ...c, wet: 1 }, 45)];
         for (const k of ["top", "horizon", "bottom"]) wet[k].forEach((v, i) => expect(v).toBeCloseTo(dry[k][i] * wetOf(rain), 12));
         expect(wet.intensity).toBeCloseTo(dry.intensity * wetOf(rain), 12);

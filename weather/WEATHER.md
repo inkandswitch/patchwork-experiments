@@ -14,7 +14,9 @@ Status: W0 (the scaffold), W1 (the sun from time and place: `time.js`,
 extension offers them, and the Place and Now commands: `extension.js`) are
 in, with W3's review fixes (the clock is a UTC offset, Decision 15; no
 place field, Decision 32; the commands the world's only, Decision 31). W4
-(Fetch now and Fetch for this time: `open-meteo.js`) is in. A doc with the
+(Fetch for this time: `open-meteo.js`) is in, with its review fixes (the
+visibility field is the visibility in force, Decision 41; no Fetch now,
+since Now then Fetch is it, Decision 42). A doc with the
 trait has its weather's wind, sun and sky, dialled or fetched. The plan's
 steps are listed under "Plan" below.
 
@@ -42,7 +44,7 @@ reads this table and checks every field against it, so the doc is the spec.
 | `cover` | number | 0.35 | 0 | 1 | 0.05 | | cloud cover, 0 clear to 1 overcast |
 | `clouds` | enum | `"cumulus"` | | | | | `cumulus`, `stratocumulus`, `stratus` or `cirrus` |
 | `base` | number | 1200 | 50 | 12000 | 50 | log | cloud base, m |
-| `visibility` | number | 10000 | 100 | 50000 | 100 | log | horizontal visibility, m |
+| `visibility` | number | 10000 | 100 | 50000 | 100 | log | horizontal visibility, m, rain and all (as observed) |
 | `rain` | number | 0 | 0 | 50 | 0.1 | | precipitation, mm/h |
 
 Every field has a default, so every slider shows the value in force and can
@@ -128,12 +130,12 @@ existing conventions and adds no new ambient:
        overcast or fogbound sunset dims but stays grey (Decision 20).
        Exposure never rises as the sun sinks.
 
-    Rain does two things, and at 0 mm/h neither: its extinction,
-    `0.25 · R^0.73` per km, adds to the air's (`3.912 / visibility`,
-    Koschmieder), which draws the visibility in force and so the haze in;
-    and at that haze it darkens the sky's colours and the sun's intensity
-    by `wet = 1 - 0.3 · R / (R + 4)` (Decision 21). Moderate rain alone
-    (2.5 mm/h) sees about 8 km, heavy rain (25 mm/h) about 1.5 km.
+    Rain does one thing, and at 0 mm/h nothing: it darkens the sky's
+    colours and the sun's intensity by `wet = 1 - 0.3 · R / (R + 4)`
+    (Decision 21). It leaves the visibility, and so the haze, as they are:
+    the `visibility` field is the visibility in force, with the rain in it,
+    as an observation is (Decision 41). Dialling rain up doesn't draw the
+    fog in; dialling visibility down does.
 
     | Band | Geometric | Top | Horizon | Bottom | Sun tint | `disc` | `light` | Exposure | Key light |
     |---|---|---|---|---|---|---|---|---|---|
@@ -250,8 +252,8 @@ Both ways are in Edit, in view, with no menu diving.
   right-click menu. Not on the inspector: the scene inspector shows no scene
   commands (Decision 28). They are the world's weather's only: in a linked
   world, whose weather the outermost rule leaves out of force, they don't
-  apply, so entering a linked boat shows one Place and one Now, the
-  world's (`isWorlds`: `api.ambient("wind").mine`; Decision 31).
+  apply, so entering a linked boat shows one of each, the world's
+  (`isWorlds`: `api.ambient("wind").mine`; Decision 31). There are three:
   - **Place** is a picker of Cadboro Bay (48.454, -123.2915) and Ucluelet
     (48.95, -125.558), terrain's origin there, both on British Columbia's
     clock, UTC−7 (`PLACES`). It shows the place the weather is at, by lat
@@ -264,12 +266,12 @@ Both ways are in Edit, in view, with no menu diving.
   - **Now** sets date and hour to the present quarter hour on the
     weather's clock (floored to the hour slider's step, so it writes only
     what the slider can show, and the hour never reaches 24), those that
-    differ, in one change (Decision 30).
-  - **Fetch now** fetches Open-Meteo's present conditions at the weather's
-    place, and writes them with date and hour set to the present quarter
-    hour (as Now does), in one change.
+    differ, in one change (Decision 30). Its tooltip says that Fetch for
+    this time then fetches the present conditions.
   - **Fetch for this time** fetches the conditions for the place, date and
-    hour in force. Its button says the provenance, so it shows without
+    hour in force; after Now, the present conditions, since Now's time is
+    within 15 minutes of now, inside the present conditions' 30 (Decision
+    42). Its button says the provenance, so it shows without
     hovering: "Fetch for this time" (dialled), "Fetched for this time" (as
     fetched; pressing it fetches again), or "Fetch again (hour, cover)"
     once fields are dialled since, naming up to two and counting more
@@ -296,7 +298,8 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 - **Routing**: `requestFor(params, now)` routes the instant the weather's
   date, hour and clock name (`routeOf`):
   - within 30 minutes of now (inclusive): the forecast API's `current`, the
-    present conditions (15-minutely);
+    present conditions (15-minutely), which stand for any instant that
+    near;
   - else the hour nearest the instant (half past rounds up), by its UTC day
     from today: from 90 days back to 15 ahead, the forecast API's hours;
     further back, to 1 January 1940, the archive's (ERA5);
@@ -304,8 +307,11 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     is disabled with the reason.
 
   Both hourly routes ask for that one UTC day (`start_date` = `end_date`),
-  and the snapshot takes exactly the hour asked for, not "the nearest one
-  sent" (Decision 34).
+  and the snapshot takes exactly the hour routed to, not "the nearest one
+  sent". On the present route the conditions are the present ones, which
+  must be stamped within 30 minutes of the press (`request.now`, the point
+  routing measures from too), and `source.for` is their own time
+  (Decision 34).
 - **What leaves the machine**: the URL, and nothing else. Its query keys
   are a fixed whitelist per route (`QUERY`): `latitude`, `longitude`,
   `current` or `hourly` (the variable names), `start_date` and `end_date`
@@ -320,8 +326,8 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 - **The snapshot** (`snapshotFrom(json, request)`): every summed field, on
   its slider (clamped into its range and rounded to its step, `onStep`),
   plus `source`. The place and clock are the request's, so the snapshot is
-  of exactly the place and moment asked; the conditions are the reply's
-  hour (Decision 35):
+  of exactly the place and moment asked; the conditions are the reply's:
+  the present ones, or the hour routed to (Decision 35):
   - `wind`, `from`: as sent. Both are required: a reply without them is no
     weather, and fails.
   - `gustiness`: `gustinessOf(mean, peak)`, the hour's peak gust
@@ -333,22 +339,22 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     layer, its étage's typical base, 3000 or 7000 m (`BASES`); without a
     temperature or dew point, 1000 m.
   - `clouds` (`kindOf`): what falls says it first (fog, drizzle, steady
-    rain and snow fall from a flat layer: stratus; showers and thunder from
-    heaps: cumulus), else the dominant layer: high is cirrus; a sheet
+    rain and snow fall from a flat layer: stratus; showers of rain or snow,
+    WMO 80–82 and 85–86, and thunder from heaps: cumulus), else the dominant layer: high is cirrus; a sheet
     (cover 0.6 or more) is stratus when low and under 300 m, else
     stratocumulus; heaps are cumulus. No cloud at all is cumulus, which
     doesn't show at cover 0. The kind is judged on the base as written, so
     the doc is consistent with itself.
-  - `visibility`: the air's. The weather adds rain's extinction to the
-    air's (atmosphere.js `visibilityOf`), and an observed visibility already
-    has the rain in it, so the air's is what is left once the rain's is
-    taken out (`airVisibility`), and the visibility in force is the
-    observed one. Where the rain alone sees less far than was observed, the
-    air is as clear as the slider goes (50 km). With no visibility sent, it
-    is derived (`derivedVisibility`): fog 500 m; else humid air's haze,
+  - `visibility`: as observed, rain and all: the field is the visibility
+    in force, so the slider shows what was reported (Decision 41). With no
+    visibility sent, it is derived (`derivedVisibility`), and is the
+    visibility in force too: the air's (fog 500 m; else humid air's haze,
     20 km at 80% relative humidity and under, falling log-linearly to 4 km
-    at 100%, capped at 2 km in snow and 5 km in drizzle (rain needs no cap:
-    its extinction is the rain field's).
+    at 100%, capped at 2 km in snow and snow showers and 5 km in drizzle),
+    seen through the rain that fell: rain's extinction, `0.25 · R^0.73` per
+    km, added to the air's (`3.912 / visibility`, Koschmieder). Moderate
+    rain alone (2.5 mm/h) sees about 8 km, heavy rain (25 mm/h) about
+    1.5 km.
   - `rain`: the precipitation as a rate, mm/h: the reply's amount over its
     interval (the present conditions are a 15-minute sum).
   - `source`: `{ name: "Open-Meteo", api: "forecast" | "archive", for: the
@@ -356,15 +362,18 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     `fields` exactly the fields written, so the weather reads "fetched".
 
   It fails, with a reason people can read, on an error reply
-  (`{ error: true, reason }`, its reason said), a reply not in GMT, a
-  variable in another unit than asked, a reply without the hour asked for,
+  (`{ error: true, reason }`, its reason said when it is a string), a
+  reply not in GMT, any variable with a number this hour in another unit
+  than asked (one loop over `UNITS`, so every variable is checked), a reply without the hour asked for,
   or present conditions more than 30 minutes from now.
 - **Writing it** (`fetchWrites`): those of the snapshot's fields that
   differ from the trait's, and `source`, whole, in one change; `seed`, not
   weather, stays the trait's.
 - **Never automatic**: nothing in `ambient()`, any command's `state`, an
-  update or the loop fetches; only a Fetch command's `run` does (Decision
-  33). The weather is a snapshot in the doc until someone presses Fetch
+  update or the loop fetches; only Fetch for this time's `run` does
+  (Decision 33). The stage's signal is the fetch's: stopping the stage
+  aborts it, and nothing is written or said, whatever reason it aborts
+  with. A notice says a fetch only when it wrote. The weather is a snapshot in the doc until someone presses Fetch
   again.
 - **The recorded replies** (`src/fixtures/*.json`, written by
   `probes/record-fixtures.mjs` with the package's own `requestFor`): the
@@ -384,7 +393,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 | W1 | `time.js` (`instantOf`, `localOf`, `offsetAt`, `validDate`, `validZone`) and `solar.js` (`sunAt`, `sunDirection`, `refraction`), against Meeus's, NREL's and USNO's published values, and the default's sun end to end; every quarter hour of three Vancouver days round-tripped, and of the days around every transition of a year in eight zones, where `instantOf` never goes backwards (Decision 13). `validDate` and `validZone` are the predicates W2's params use to fall back to the default (Decision 16). W3's review replaced the zone with a fixed clock (Decision 15): `instantOf` is now arithmetic, and `offsetAt`, `validZone` and the gap and overlap rules are gone | done |
 | W2 | `weather.js`: `weatherParams` (every field in force: a missing or malformed field is its default, an invalid zone or date too, a number clamped into its range), `windOf` (a pass-through); `atmosphere.js`: `atmosphereOf` (pure) as specified under "The look", the four anchors exact fixed points, every output over a grid of 6720 weathers passing the stage's own check unchanged; presence, the bands and the gates on the geometric elevation. Review fixes: rows between the anchors computed independently (cover and haze quarters and midpoints, cirrus as thin cumulus, the sun untinted at s = 1), the bands table parsed as the spec, sky continuity in sRGB, the deck drawn without a jump (Decision 27), `gustinessOf` moved to W4 (Decision 24) | done |
 | W3 | `extension.js`: `ambient()` offers `{ wind, atmosphere }` of the trait, the same object while the params in force are unchanged, null without the trait; Place and Now on the toolbar and the menu, Edit's only (Decision 28); `provenance` (Decision 29); `placeOf`. Local probe `probes/weather-run.mjs` in the built scene tool: the ambients exactly the page's own `atmosphereOf`/`windOf`, the sun and the key light to 1e-9 at 9, 15, 21, Ucluelet and Now; the toolbar's picker and button; the inspector's fields. Its first run found the zone-data disagreement. Review fixes: the clock is an `offset`, not a zone, so `instantOf` is arithmetic and no peer's zone data enters the ambient (Decision 15; time.js loses `offsetAt`, `validZone` and Decision 13's gap and overlap rules); `place` dropped, the coordinates are the place (Decision 32); `source.fields`, a map, for the order-dependent `sum` (Decision 29); Now to the slider's quarter hour (Decision 30); the commands only in the world's stage, not a linked one's (Decision 31). The probe now also checks node's sun against the page's (a winter date among them) and a linked world entered: 61 of 61 checks pass in Chrome 157 | done |
-| W4 | `open-meteo.js`: `routeOf` and `requestFor` (the routing at every boundary, the URL's keys the whitelist, no other field reaching it), `fetchWeather` (one GET, no credentials, no referrer), `snapshotFrom` (six recorded replies to their fields, the derivations' tables: LCL, layers, kinds, WMO codes, visibility, rain rate, `gustinessOf` with its rows from 07a3a291 and the plan's gust factors, clamping wind 45 and rain 80), Fetch now and Fetch for this time (gated by `isWorlds`; the provenance on Fetch for this time's label; disabled for a time with no weather; a failure a notice that writes nothing; Fetch does not set `offset`, Decision 35); the one `fetch` call shown to be the only one. Live: `probes/live-fetch.mjs`, both places now and on 2025-07-15 15:00 PDT, every field finite and on its slider. Local probe: Fetch now on the real network in the built tool, and a refused Fetch for this time | done |
+| W4 | `open-meteo.js`: `routeOf` and `requestFor` (the routing at every boundary, the URL's keys the whitelist, no other field reaching it), `fetchWeather` (one GET, no credentials, no referrer), `snapshotFrom` (six recorded replies to their fields, the derivations' tables: LCL, layers, kinds, WMO codes, visibility, rain rate, `gustinessOf` with its rows from 07a3a291 and the plan's gust factors, clamping wind 45 and rain 80), Fetch for this time (gated by `isWorlds`; the provenance on Fetch for this time's label; disabled for a time with no weather; a failure a notice that writes nothing; Fetch does not set `offset`, Decision 35); the one `fetch` call shown to be the only one. Live: `probes/live-fetch.mjs`, both places now and on 2025-07-15 15:00 PDT, every field finite and on its slider. Local probe: Now then Fetch for this time on the real network in the built tool, and a refused Fetch for this time. Review fixes: the visibility field is the visibility in force, so a fetch writes the observed one (Decision 41); Fetch now dropped, Now then Fetch is it (Decision 42); the present conditions checked against the press, the point routing measures from, with `source.for` their own time (Decision 34); every variable's unit checked by one loop; the stage's signal shown to reach the fetch; a notice only when a fetch wrote, and no fetch or notice when the trait is gone at the press; snow showers are cumulus, as the doc's rule says. 79 of 79 probe checks pass | done |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes | |
 | W6 | `terrain.sky` → `terrain.place`; the place templates write weather | |
 | W7 | end-to-end local probe: weather reaches sky, water and boat | |
@@ -544,8 +553,8 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     Decision 15), with a table, and W2's `weatherParams`
     uses them to fall back field by field. The ambient never throws.
     *Decided unattended (2026-11-16, lane/weather), for the lead.*
-17. **`localOf(t, offset)`, the inverse, is in W1.** The Now and Fetch now
-    commands (W3, W4) need the clock's reading at an instant, and the
+17. **`localOf(t, offset)`, the inverse, is in W1.** The Now command (W3)
+    needs the clock's reading at an instant, and the
     inverse makes `instantOf`'s exhaustive round-trip table possible. It
     returns the hour unrounded; Now floors it to the slider's step
     (Decision 30). *Decided unattended (2026-11-16, lane/weather), for the
@@ -589,16 +598,18 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     sun's side, and the sky has no stars and no moon. The values were set by
     reasoning, not seen; W7's screenshots (dawn, noon, dusk, night) are the
     first look, and the lead's eye should judge them. *Decided unattended (2026-11-16, lane/weather), for the lead.*
-21. **Rain is extinction plus darkening, calibrated rather than cited.**
-    Rain's extinction coefficient, `0.25 · R^0.73` per km, is the usual
-    power-law form. Its constants were set so that rain alone gives about
+21. **Rain darkens, calibrated rather than cited; its extinction only
+    derives a missing visibility.** The sky and the sun's light are
+    darkened by `wet = 1 - 0.3 · R / (R + 4)`: 0.85 at 4 mm/h, tending to
+    0.7, exactly the identity at 0 mm/h, so a dry world is untouched. W2
+    also added rain's extinction to the visibility; W4's review moved that
+    out (Decision 41), and it now lives in open-meteo.js, where it derives
+    the visibility when a reply sends none: `0.25 · R^0.73` per km, the
+    usual power-law form, its constants set so that rain alone gives about
     8 km of visibility at 2.5 mm/h (moderate rain) and about 1.5 km at
     25 mm/h (heavy rain), the visibilities usually described for those
-    rates. It adds to the air's own extinction, `3.912 / visibility`, as
-    extinctions do. The sky and the sun's light are darkened by
-    `wet = 1 - 0.3 · R / (R + 4)`: 0.85 at 4 mm/h, tending to 0.7. Both are
-    exactly the identity at 0 mm/h, so a dry world is untouched. There are
-    no particles and no wet decks. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+    rates, added to the air's `3.912 / visibility` as extinctions add.
+    There are no particles and no wet decks. *Decided unattended (2026-11-16, lane/weather), for the lead.*
 22. **Continuity is measured before the hex rounds it: the sky in sRGB,
     the sun in linear RGB.** The plan asked for no more than 1/255 of
     change a hundredth of a degree either side of each band's edge. The
@@ -784,14 +795,22 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     nearest the instant) is simpler, and 24 hours is a small reply. The
     forecast's reach was measured on 2026-11-16: its error reply names the
     allowed range, 2026-08-15 to 2026-12-01, so 93 days back and 15 ahead
-    of today (UTC). Routing uses 90 back, 3 days' margin for the archive
-    being the better source by then; 15 ahead is the edge itself, so on
+    of today (UTC). Routing uses 90 back: the 3 days' margin keeps a
+    request near that edge from being refused for a day boundary or clock
+    that isn't quite ours, and the archive has every day beyond it (ERA5
+    lags 5 days), so nothing is lost. 15 ahead is the edge itself, so on
     the 15th day, just after UTC midnight, a forecast whose "today" lags
     could refuse it: a notice, nothing written. Rather than "the hour
     nearest the request among those sent", the snapshot looks up the one
     hour `routeOf` named (half past rounds up) and fails without it, so it
     can't silently take another hour. "Within 30 minutes of now" is
-    inclusive. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+    inclusive. On the present route there is no hour to look up: the
+    present conditions stand for any instant within 30 minutes of now, and
+    the snapshot checks that they are stamped within 30 minutes of the
+    press (`request.now`), the same point routing measured from, so a
+    reply routing accepted can't then be refused for a time off the
+    hour slider's step; `source.for` is their own stamp, not the time
+    asked (W4 review). *Decided unattended (2026-11-16, lane/weather), for the lead.*
 35. **The snapshot is of the place and moment asked, and Fetch never
     sets the clock.** A snapshot writes every summed field: the conditions
     from the reply, and lat, lon, date, hour and offset from the request,
@@ -817,9 +836,10 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     and the LCL, which is where low cloud forms, would be wrong for it.
     The kind is read from the weather code first and then the dominant
     layer (sheet at 0.6 cover or more, stratus under 300 m), judged on the
-    base as written. Visibility as sent is the air's with the rain taken
-    out, because the weather adds rain's extinction itself; derived, it is
-    humidity's haze with caps for fog, snow and drizzle. Precipitation is
+    base as written; showers of snow (WMO 85, 86) are cumulus like showers
+    of rain, as the rule says (W4 review). Visibility is written as sent
+    (Decision 41); derived, it is humidity's haze with caps for fog, snow
+    and drizzle, seen through the rain that fell. Precipitation is
     turned into a rate by the reply's own interval (the present conditions
     are a 15-minute sum, measured: `interval: 900`). Every number is then
     clamped and rounded to its slider's step (`onStep`), so a fetched
@@ -843,12 +863,17 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     and a second press while one is out is a second fetch whose snapshot
     lands last: harmless, and a busy flag would be state to keep and
     clear. The reply is checked before anything is written: an error
-    reply's reason is said; a reply not in GMT, a variable in another unit
-    than asked, no reply for the hour asked, or present conditions more
+    reply's reason is said (when it is a string); a reply not in GMT, any
+    variable with a number in another unit than asked (one loop over
+    `UNITS`), no reply for the hour asked, or present conditions more
     than 30 minutes from now each fail with a reason. The stage stopping
-    while a fetch is out aborts it through `api.signal`, and nothing is
-    said or written; a reply landing after this stage stopped being the
-    world's writes nothing. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+    while a fetch is out aborts it through `api.signal`, passed to the
+    fetch, and nothing is said or written, whatever reason it aborts with;
+    a reply landing after this stage stopped being the world's writes
+    nothing. The success notice is said only when the change wrote, so a
+    trait removed while the fetch was out is neither made again nor
+    reported fetched; a press with no trait (removed after the toolbar
+    drew) neither fetches nor says anything. *Decided unattended (2026-11-16, lane/weather), for the lead.*
 39. **The fetch sends the URL and nothing else.** `credentials: "omit"`
     and `referrerPolicy: "no-referrer"`, so neither a cookie nor the
     page's address goes with it; the browser still sends its CORS `Origin`
@@ -864,6 +889,35 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     The clear-sky fixture is the first afternoon hour of July 2025 at
     Cadboro Bay with every cloud layer at 0, found by the recorder in the
     archive. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+41. **The `visibility` field is the visibility in force, rain and all, as
+    it is observed, and rain only darkens.** W2 made `visibility` the
+    air's and added rain's extinction on top, so W4 had to take the rain
+    back out of an observed visibility (`airVisibility`), which was lossy
+    at the slider's 50 km end: 24.14 km observed in 0.5 mm/h became 50 km
+    on the slider and 17.1 km in force, and the inspector showed a number
+    nobody reported. One field, one meaning: the slider shows the
+    visibility in force, which is what Open-Meteo reports and what a
+    person dials. So `atmosphere.js` reads `visibility` as it is
+    (`visibilityOf` is gone), and rain darkens the sky and sun (`wet`)
+    without drawing the fog in; `airVisibility` is gone. Where a reply
+    sends no visibility, the derived one is the visibility in force too:
+    the air's seen through the rain that fell (Decision 21). The cost: a
+    hand who dials rain up must dial visibility down to see the rain close
+    the horizon in. The plan's W2 row said rain lowers visibility; it
+    still does in a fetch, through the data, but not on the sliders.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+42. **No Fetch now: Now, then Fetch for this time, is it.** Now writes the
+    present quarter hour, within 15 minutes of now, inside the present
+    conditions' 30, so Fetch for this time then fetches the present
+    conditions (a table checks every minute of an hour on four clocks).
+    The plan's Fetch now was the same snapshot in one change instead of
+    two, at the cost of a fourth weather control on every boating scene's
+    toolbar in Edit (Question 11). Three commands, each doing one thing:
+    Place (where), Now (when), Fetch for this time (what it was then and
+    there). Now's tooltip says that Fetch for this time then fetches the
+    present conditions. If one press for the present matters more than a
+    shorter toolbar, Fetch now comes back as Now and Fetch in one change
+    (Question 3). *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -919,8 +973,10 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
   nothing refetches. In the doc, a fetch adds `source`, about 400 bytes,
   replaced whole by the next. Each toolbar render now also routes Fetch
   for this time's request (one `instantOf`, no fetch) to know whether to
-  disable it. The tests add about 390 rows, all under a second; the six
-  fixtures are 26 kB.
+  disable it. The tests add about 390 rows (after the review, open-meteo.test.js has 226 and extension.test.js 208), all under a second; the six
+  fixtures are 26 kB. The review fixes cost nothing at run time: the unit
+  loop is 13 lookups per reply, and dropping Fetch now and
+  `airVisibility` removed code.
 
 ## Questions for the lead
 
@@ -931,8 +987,10 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
    generic sky model, and terrain gives no sky of its own. Is that enough, or
    should a place keep an art-direction override?
 3. The UI is the scene inspector's Weather behaviour (the sliders) and the
-   toolbar's Place picker and the Now, Fetch now and Fetch for this time
-   buttons, in Edit, the world's weather's only (Decision 31). Do you want a dedicated
+   toolbar's Place picker and the Now and Fetch for this time buttons, in
+   Edit, the world's weather's only (Decision 31). The present conditions
+   are two presses, Now then Fetch (Decision 42): do you want a one-press
+   Fetch now back? Do you want a dedicated
    weather pane (a compass dial, a day scrubber with the sun's path), or a
    weather chip on N8's world bar that shows outside Edit?
 4. Dry rooms (the Model room, the Model basin, the basin mashup, the Quiet
@@ -950,8 +1008,9 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
    refetches hourly?
 7. Night has no moon and no stars. After sunset the sun stays in the
    atmosphere as a dark light pointing where it is (Decision 19), so the
-   night is lit only by the dim sky. Rain shows only as lower visibility
-   and a darker sky, with no particles. Is that OK for now?
+   night is lit only by the dim sky. Rain shows only as a darker sky
+   (and, in a fetch, the lower visibility reported with it), with no
+   particles; dialling rain doesn't draw the fog in (Decision 41). Is that OK for now?
 8. The twilight and night colours (Decision 20's bands) are new art
    direction, set by reasoning. Do you want to tune them from W7's
    screenshots, or hand them to someone with an eye for skies?
@@ -969,8 +1028,8 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     heaps. Would you rather the stage's `cloudAt` crossfade the two decks
     as cover nears 1? That is a scene change, and it would let every kind
     run from heaps to a sheet.
-11. The scene inspector shows no scene commands, so Place, Now and the two
-    Fetches are on the toolbar and the menu, not beside the weather's
+11. The scene inspector shows no scene commands, so Place, Now and Fetch
+    for this time are on the toolbar and the menu, not beside the weather's
     sliders (Decision 28), and the weather's controls sit on two surfaces:
     in Edit, every boating scene carries its weather commands on the
     toolbar next to the view toggles even when nobody is touching the
@@ -1002,3 +1061,16 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     (say at 0.5), or scale it down below some wind speed? (The derivation
     tables in Decision 36, the LCL, the sheet threshold and the humidity
     haze, are reasoned too, and are yours to tune.)
+14. The trait stores a cloud kind (`clouds`: cumulus, stratocumulus,
+    stratus, cirrus), which is the renderer's vocabulary; Open-Meteo sends
+    layer covers (low, mid, high) and a weather code. So a fetch has to
+    classify (`kindOf`, `SHEET`, `STRATUS_BELOW`, `BASES`, the code
+    groups) and writes its guess into the doc as if it were data. One
+    case the guess gets visibly wrong: code 3 (overcast) with no single
+    layer at 0.6 or more, e.g. low, mid and high at 50% each, total 100%,
+    gives cumulus at cover 1, drawn as scattered heaps at 0.95. The
+    alternative is to store what is measured (`low`, `mid`, `high`
+    covers) and let the sky derive the kind, with the kind slider
+    becoming three cover sliders. That is a data-shape change, so it
+    wants your call before W8 republishes the examples. Default: keep the
+    kind, keep the classifier.
