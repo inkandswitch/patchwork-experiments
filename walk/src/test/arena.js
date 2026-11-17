@@ -89,8 +89,11 @@ export function world(supports, { water = () => -100, ground = null, blockers = 
  * body clear above the step) and, in its frame, the body clear of every other
  * support's triangles above the step; swimming, clear of every moving
  * support within r at any height and of the ground over the body's height;
- * falling, the body's cylinder over its vertical sweep since `prev` clear of
- * every support. @returns {string[]} problems
+ * falling, the body's cylinder clear of every support over its sweep since a
+ * falling `prev` (x, then z, then y, as fall takes it; the plan legs as
+ * cylinders under r/2 apart, so a triangle across the centre's path is
+ * met). A support moving into a falling body lifts it: rows where that
+ * happens while it keeps falling can't use this sweep. @returns {string[]} problems
  */
 export function oracleAll(env, st, prev = null, P = BODY, S = SWIM) {
   const bad = [];
@@ -125,13 +128,33 @@ export function oracleAll(env, st, prev = null, P = BODY, S = SWIM) {
     return bad;
   }
   if (st.mode === "falling") {
-    const y0 = prev?.mode === "falling" ? Math.min(prev.p[1], st.p[1]) : st.p[1];
+    const from = prev?.mode === "falling" ? prev.p : st.p;
+    // [x, z, y0, y1]: the plan legs at from's height, then the drop at st's plan point
+    const cyl = [];
+    let [x, z] = [from[0], from[2]];
+    for (const axis of [0, 2]) {
+      const d = st.p[axis] - (axis === 0 ? x : z);
+      const n = Math.ceil(Math.abs(d) / (P.radius / 2));
+      for (let k = 0; k <= n; k++) {
+        const t = n ? (d * k) / n : 0;
+        cyl.push(axis === 0 ? [x + t, z] : [x, z + t]);
+      }
+      if (axis === 0) x = st.p[0];
+      else z = st.p[2];
+    }
+    const at = cyl.map(([a, b]) => [a, b, from[1], from[1] + P.height]);
+    at.push([st.p[0], st.p[2], Math.min(from[1], st.p[1]), Math.max(from[1], st.p[1]) + P.height]);
     for (const id of ids) {
       if (!env.mesh(id)) continue;
       const ix = env.indexThrough(id, env.frame(id));
       if (!ix) continue;
-      const t = meets(ix, [st.p[0], st.p[2]], y0, st.p[1] + P.height, P.radius);
-      if (t != null) bad.push(`falling body meets ${id ?? "the ground"}'s triangle ${t} at ${st.p.map((v) => v.toFixed(3))}`);
+      for (const [a, b, y0, y1] of at) {
+        const t = meets(ix, [a, b], y0, y1, P.radius);
+        if (t != null) {
+          bad.push(`falling body meets ${id ?? "the ground"}'s triangle ${t} at ${[a, y0, b].map((v) => v.toFixed(3))}`);
+          break;
+        }
+      }
     }
   }
   return bad;
@@ -150,7 +173,7 @@ export function drive(env, st, { input = STILL, yaw = 0, frames = 60, dt = 1 / 6
     const r = step(st, typeof input === "function" ? input(i, st) : input, yaw, dt, env);
     st = r.state;
     yaw = r.yaw;
-    assertWalker(st, env);
+    assertWalker(st, env, prev);
     if (all) {
       const bad = oracleAll(env, st, prev);
       if (bad.length) throw new Error(`oracle at frame ${i} (${st.mode}): ${bad.join("; ")}`);

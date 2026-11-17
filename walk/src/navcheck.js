@@ -5,7 +5,7 @@
 //   feet?), so a fault in the bake's rasteriser shows up as a disagreement;
 // - the static checks C1–C9 over a whole baked support: every cell, every side,
 //   every link.
-// Used by the unit tests, the enumerated cases (walker.cases.slow.test.js), the
+// Used by the unit tests, the enumerated cases (walker.cases.test.js), the
 // static checks of a whole support (a fixture, a probe).
 
 import { DIRS, NONE, OPEN, OFF, STEP, WALL, apexOf, bake, cellRange, columnAt, pointOf, sideBase, surfaceAt } from "./navmesh.js";

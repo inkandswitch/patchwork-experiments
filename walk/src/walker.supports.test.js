@@ -23,12 +23,16 @@
 //   nothing, none:                           (3) falling, then F4: back at the spawn, walking on the support
 // Then W3 (4): the same support beside a ground block standing from 1 m
 // under X to 1 m over it, {still, turned 180°} × 4 sides: the move is cut,
-// and the walker stays on its floor, at the side.
+// and the walker stays on its floor, at the side. Then a second support,
+// the dinghy, under the exit (W3 (1) and F2 onto a support that moves), W3
+// (1)'s pick between her and the ground, and stepping up onto the ground.
+// No row rests, falling: a flat kept cell is landed on (F2).
 import { describe, it, expect } from "vitest";
 import { spawnOn, step, assertWalker } from "./walker.js";
 import { checkMesh } from "./navcheck.js";
-import { matrixOf } from "./frames.js";
+import { matrixOf, multiply } from "./frames.js";
 import { baked, box, floor, oracleAll, world } from "./test/arena.js";
+import { BODY } from "./walk.js";
 
 const supportOf = (triangles) => ({ triangles, mesh: baked(triangles, [{ kind: "spawn", at: [0, 0, 0] }]) });
 const DECK = supportOf(floor()); // 4 × 4, top at 0, 0.1 deep
@@ -45,9 +49,9 @@ const yawTo = ([dx, dz]) => Math.atan2(-dx, -dz);
 const FWD = Object.freeze({ forward: 1, strafe: 0 });
 const STILL = Object.freeze({ forward: 0, strafe: 0 });
 
-/** Walk off `side` of the deck at `pose` in a world with `ground` and `water`; run until settled. */
-function walkOff(M, side, { ground = null, water = null, frames = 900, deck = DECK } = {}) {
-  const supports = { deck: { ...deck, M } };
+/** Walk off `side` of the deck at `pose` in a world with `ground`, `water` and `others` (supports; `tick(i, supports)` moves them before frame i); run until settled. */
+function walkOff(M, side, { ground = null, water = null, frames = 900, deck = DECK, others = {}, tick = null } = {}) {
+  const supports = { deck: { ...deck, M }, ...others };
   const env = world(supports, { water, ground });
   let st = spawnOn(env, "deck");
   assertWalker(st, env);
@@ -56,10 +60,12 @@ function walkOff(M, side, { ground = null, water = null, frames = 900, deck = DE
   let first = null; // the first state off the deck
   const seen = new Set();
   let calm = 0;
+  let rested = false; // held, falling, by something that is no cell (F5's wait)
   for (let i = 0; i < frames; i++) {
     const prev = st;
+    tick?.(i, supports);
     ({ state: st, yaw } = step(st, left ? STILL : FWD, yaw, 1 / 60, env));
-    assertWalker(st, env);
+    assertWalker(st, env, prev);
     const bad = oracleAll(env, st, prev);
     if (bad.length) throw new Error(`frame ${i} (${st.mode}): ${bad.join("; ")}`);
     if (!left && !(st.on === "deck" && st.mesh)) {
@@ -67,11 +73,12 @@ function walkOff(M, side, { ground = null, water = null, frames = 900, deck = DE
       first = st;
     }
     if (left) seen.add(st.mode);
+    rested ||= st.mode === "falling" && st.rest > 0;
     const still = (st.mode === "walking" || st.mode === "swimming") && Math.hypot(...st.vel) < 1e-9;
     calm = left && still ? calm + 1 : 0;
     if (calm >= 10) break;
   }
-  return { st, first, seen, env };
+  return { st, first, seen, env, rested };
 }
 
 /** Where walking off a side with nothing about leaves the deck: the first falling point X, and the side's way in the world plan. */
@@ -121,8 +128,22 @@ const exit = (pose, side, deck = DECK) => {
   return EXITS.get(k);
 };
 
-const caseOf = (first) => (first.mode === "falling" ? "(3)" : first.mode === "swimming" ? "(2)" : first.on === null ? "(1)" : `on ${first.on}`);
-const endOf = (st) => (st.mode === "swimming" ? "swimming" : st.mode === "walking" ? (st.on === null ? "walking on the ground" : "walking on the support") : st.mode);
+const caseOf = (first) => (first.mode === "falling" ? "(3)" : first.mode === "swimming" ? "(2)" : first.on === null ? "(1)" : `(1) on ${first.on}`);
+const endOf = (st) => (st.mode === "swimming" ? "swimming" : st.mode === "walking" ? (st.on === null ? "walking on the ground" : st.on === "deck" ? "walking on the support" : `walking on ${st.on}`) : st.mode);
+
+/**
+ * The dinghy, a second support: 3 × 2 m, 0.1 deep, its long axis local +X
+ * from −0.3 (0.3 back from X: about under the deck's edge, as the ground's
+ * slabs) to 2.7, ±1 across, its top at 0. Placed so local (0, 0, 0) lies
+ * `drop` under the exit X, its long axis along the side's way, then turned
+ * by `R` about that point.
+ */
+const DINGHY = box([-0.3, -0.1, -1], [2.7, 0, 1]);
+const dinghyAt = (X, way, drop, R = null) => {
+  const yaw = Math.atan2(-way[1], way[0]); // local +X onto the world way
+  const base = matrixOf({ position: [X[0], X[1] - drop, X[2]], rotation: [0, yaw, 0] });
+  return R ? multiply(base, R) : base;
+};
 
 describe("a support over the ground, walked off each side", { timeout: 120_000 }, () => {
   it("the table: 4 poses × 4 sides × (4 grounds × 3 waters + nothing × 2 waters); (1), (2) and (3) each 32 rows or more", () => {
@@ -139,15 +160,16 @@ describe("a support over the ground, walked off each side", { timeout: 120_000 }
         const top = X[1] - (r.under ?? 0);
         const ground = r.under == null ? null : groundOf(slabFrom(X, way, 0.3, 4, top - 0.1, top));
         const level = r.water === "none" ? null : r.water === "at the ground" ? top : X[1] - 1;
-        const { st, first, seen } = walkOff(POSES[r.pose], r.side, { ground, water: level == null ? null : () => level });
+        const { st, first, seen, rested } = walkOff(POSES[r.pose], r.side, { ground, water: level == null ? null : () => level });
         const got = { w3: caseOf(first), ends: endOf(st) };
+        if (rested) failed.push(`${name}: rested falling (a flat cell is landed on, F2, never rested on)`);
         if (got.w3 !== r.w3 || got.ends !== r.ends) failed.push(`${name}: expected ${r.w3} → ${r.ends}, got ${got.w3} → ${got.ends} (through ${[...seen].join(", ")})`);
         if (r.w3 === "(3)" && !seen.has("falling")) failed.push(`${name}: never fell`);
       } catch (e) {
         failed.push(`${name}: ${e.message}`);
       }
     }
-    expect(failed).toEqual([]);
+    expect(failed.join("\n")).toBe("");
   });
 
   it("a deep support heeled ±30°, walked off ±X onto ground 0.3 m and 1 m under the exit, and over nothing: (1), (1), (3) then F4, its side never in the body", () => {
@@ -169,10 +191,10 @@ describe("a support over the ground, walked off each side", { timeout: 120_000 }
             failed.push(`${name}: ${e.message}`);
           }
         }
-    expect(failed).toEqual([]);
+    expect(failed.join("\n")).toBe("");
   });
 
-  it("W3 (4): beside a ground block from 1 m under the exit to 1 m over it, the move is cut and the walker stays at the side", () => {
+  it("W3 (4): {still, turned 180°} × 4 sides, beside a ground block from 1 m under the exit to 1 m over it, the move is cut and the walker stays at the side", () => {
     const failed = [];
     for (const pose of ["still", "turned 180°"])
       for (const side of Object.keys(SIDES)) {
@@ -191,6 +213,75 @@ describe("a support over the ground, walked off each side", { timeout: 120_000 }
           failed.push(`${name}: ${e.message}`);
         }
       }
-    expect(failed).toEqual([]);
+    expect(failed.join("\n")).toBe("");
+  });
+
+  it("onto a moving support: the dinghy {0.3, 1.5, 2.5 m} under the exit × {still, heeled 20°, under way (0.4 m/s across, sinking 0.1 m/s)} × 4 sides: W3 (1) onto her at 0.3 and 1.5, falling then F2 onto her at 2.5 (her D_r holds the body; clear does not)", () => {
+    const failed = [];
+    const HEEL = matrixOf({ rotation: [(20 * Math.PI) / 180, 0, 0] });
+    for (const drop of [0.3, 1.5, 2.5])
+      for (const motion of ["still", "heeled 20°", "under way"])
+        for (const side of Object.keys(SIDES)) {
+          const name = `dinghy ${drop} m under, ${motion}, ${side}`;
+          try {
+            const { X, way } = exit("still", side);
+            const start = dinghyAt(X, way, drop, motion === "heeled 20°" ? HEEL : null);
+            const dinghy = { triangles: DINGHY, mesh: baked(DINGHY), M: start };
+            const across = [-way[1], way[0]];
+            const tick = motion !== "under way" ? null : (i, sup) => {
+              const t = i / 60 - 0.6; // centred on X about when the walker leaves
+              const T = matrixOf({ position: [across[0] * 0.4 * t, -0.1 * Math.max(0, i / 60), across[1] * 0.4 * t] });
+              sup.dinghy.M = multiply(T, start);
+            };
+            const { st, first, seen, rested } = walkOff(POSES.still, side, { others: { dinghy }, tick });
+            if (rested) failed.push(`${name}: rested falling (her cells are landed on, F2, never rested on)`);
+            const want = drop <= BODY.drop ? ["(1) on dinghy", "walking on dinghy"] : ["(3)", "walking on dinghy"];
+            const got = [caseOf(first), endOf(st)];
+            if (got.join() !== want.join()) failed.push(`${name}: expected ${want.join(" → ")}, got ${got.join(" → ")} (through ${[...seen].join(", ")})`);
+          } catch (e) {
+            failed.push(`${name}: ${e.message}`);
+          }
+        }
+    expect(failed.join("\n")).toBe("");
+  });
+
+  it("W3 (1) picks: the dinghy 0.3 under the exit over the ground 1.9 under it (the highest: the dinghy); the ground at the dinghy's own height (a tie: the dinghy, the ground last); × 4 sides", () => {
+    const failed = [];
+    for (const groundUnder of [1.9, 0.3])
+      for (const side of Object.keys(SIDES)) {
+        const name = `ground ${groundUnder} m under, ${side}`;
+        try {
+          const { X, way } = exit("still", side);
+          const dinghy = { triangles: DINGHY, mesh: baked(DINGHY), M: dinghyAt(X, way, 0.3) };
+          const top = X[1] - groundUnder;
+          const ground = groundOf(slabFrom(X, way, 0.3, 4, top - 0.1, top));
+          const { st, first } = walkOff(POSES.still, side, { ground, others: { dinghy } });
+          const got = [caseOf(first), endOf(st)];
+          if (got.join() !== ["(1) on dinghy", "walking on dinghy"].join()) failed.push(`${name}: got ${got.join(" → ")}`);
+        } catch (e) {
+          failed.push(`${name}: ${e.message}`);
+        }
+      }
+    expect(failed.join("\n")).toBe("");
+  });
+
+  it("W3 (1) up: the ground's top {0.3 m, step} over the exit, {still, turned 180°} × 4 sides: stepped up onto it, walking on the ground", () => {
+    const failed = [];
+    for (const up of [0.3, BODY.step])
+      for (const pose of ["still", "turned 180°"])
+        for (const side of Object.keys(SIDES)) {
+          const name = `${up} m up, ${pose}, ${side}`;
+          try {
+            const { X, way } = exit(pose, side);
+            const top = X[1] + up;
+            const ground = groundOf(slabFrom(X, way, 0.3, 4, top - 1.5, top));
+            const { st, first } = walkOff(POSES[pose], side, { ground });
+            const got = [caseOf(first), endOf(st)];
+            if (got.join() !== ["(1)", "walking on the ground"].join()) failed.push(`${name}: got ${got.join(" → ")}`);
+          } catch (e) {
+            failed.push(`${name}: ${e.message}`);
+          }
+        }
+    expect(failed.join("\n")).toBe("");
   });
 });

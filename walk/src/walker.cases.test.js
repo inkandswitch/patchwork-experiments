@@ -191,12 +191,16 @@ const offGrid = (a) => ({
 const CASES = [
   ...ARENAS.map((a) => ({ ...a, other: null })),
   ...ARENAS.map((a) => ({ ...offGrid(a), other: null })),
-  ...OTHERS.map((o) => ({ name: `rafted: side ${o.side}, ${o.gap} cm off, ${o.rail ? "its rail" : "no rail"}, `, boxes: [], ramps: [], rods: [], other: o })),
+  ...OTHERS.map((o) => ({ name: `rafted: side ${o.side}, ${o.gap} cm off, ${o.rail ? "its rail" : "no rail"}, ${o.wet ? "in the water" : "on deck"}`, boxes: [], ramps: [], rods: [], other: o })),
   // the most crowded floor with a support alongside, the walker starting in the water between them
   { ...ARENAS.at(-1), name: "everything, rafted touching, in the water", other: OTHERS.find((o) => o.side === 0 && o.gap === 0 && o.rail && o.wet) },
 ];
 
 describe("the walker, over every arena feature and every kind of step", () => {
+  it("every case has a name of its own, so a failure names its row", () => {
+    expect(new Set(CASES.map((c) => c.name)).size).toBe(CASES.length);
+  });
+
   it("the legs cover every key combination, every heading, both ends of dt and every pose", () => {
     const steps = LEGS.flat();
     expect([LEGS.length, steps.length]).toEqual([36, 36 * LEG]);

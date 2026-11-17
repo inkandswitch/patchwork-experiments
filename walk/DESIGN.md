@@ -311,9 +311,12 @@ Per state, with N the mesh of `on`:
   - (c) the **ground's gap**: the ground's raster columns within
     `r + c/√2` of p hold no interval meeting `[f, f + H]`, where f is the
     feet's height.
-- `falling`: the body is **clear** at p (Words). Not D_r: a body above a
-  moving deck is inside her D_r (her silhouette over all heights) and must
-  still be able to fall onto her (F2).
+- `falling`: the body is **clear** at p (Words), and, from a falling
+  state before it, clear over the whole **sweep** between them as F1 takes
+  it (lifted out of anything that moved into it, then x, then z, then y):
+  no wall passed through, whatever dt. Not D_r: a body above a moving deck
+  is inside her D_r (her silhouette over all heights) and must still be
+  able to fall onto her (F2).
 - `waiting`: no position.
 
 (c) is sailing's erosion test asked at run time of one column's disc, and
@@ -331,13 +334,13 @@ Sailing's table holds, with these changes. W3 replaces sailing's W3 and A5.
 
 | # | from → to | when | why I holds |
 |---|---|---|---|
-| **W3** | walking / airborne / vaulting → walking, airborne, swimming or falling | across an OPEN side of s (a vault whose `to` is OFF, at its end), at `X = M_s · exit` with the feet at height y | In order: **(1)** onto another support s′ (the ground included) with a kept cell in X's column whose surface is in `[y − DROP, y + step]`, the highest such, ties to the lowest id, the ground last; airborne with `h = min(y − surface, headroom(cell))` if that is > 0, else walking (the min, as in V2, only trims a drop under a roof). **(2)** Else, if `water(X)` is not null, swimming at SW1's push of X (sailing's ring search, now testing (b) and (c)). **(3)** Else (or if the push finds nothing within its reach), if the body is clear at (X, y): falling at (X, y) with the walker's velocity. **(4)** Else the move is cut at the side, as a WALL (W2). (1) lands on a kept cell with `h ∈ [0, headroom]` by the min; (2) is SW1's guarantee; (3) enters falling only where it is clear, which is I for falling; (4) only shortens a move. An OPEN side of s is OFF s's outline, so s's own raster is clear at X (B5); what (4) catches is another support's geometry standing at X above y + step |
+| **W3** | walking / airborne / vaulting → walking, airborne, swimming or falling | across an OPEN side of s (a vault whose `to` is OFF, at its end), at `X = M_s · exit` with the feet at height y | In order: **(1)** onto another support s′ (the ground included) with a kept cell in X's column whose surface is in `[y − DROP, y + step]`, the highest such (within 1e-6 a tie: heights are float32), ties to the lowest id, the ground last; airborne with `h = min(y − surface, headroom(cell))` if that is > 0, else walking (the min, as in V2, only trims a drop under a roof). **(2)** Else, if `water(X)` is not null, swimming at SW1's push of X (sailing's ring search, now testing (b) and (c)). **(3)** Else (or if the push finds nothing within its reach), if the body is clear at (X, y): falling at (X, y) with the walker's velocity. **(4)** Else the move is cut at the side, as a WALL (W2). (1) lands on a kept cell with `h ∈ [0, headroom]` by the min; (2) is SW1's guarantee; (3) enters falling only where it is clear, which is I for falling; (4) only shortens a move. An OPEN side of s is OFF s's outline, so s's own raster is clear at X (B5); what (4) catches is another support's geometry standing at X above y + step |
 | **W5** | walking / airborne / vaulting → swimming | awash: the feet SUNK under `water` at the feet's world point | Swimming at SW1's push of the feet's plan point. With nowhere to push to, the walker stays where it is (it can stand, and nothing better is near) |
 | **W6** | any on s′ → the same, cut | a move whose plan point would enter another moving support s″'s D_r | If s″ has a kept cell under the feet within `[y − DROP, y + step]`: W3 (1) onto it (stepping or jumping across). Else that axis is zeroed (W2). Only shortens a move. Another support moving into a still walker is not covered, as a blocker isn't |
 | **SW1** | swimming → swimming | a move | Sailing's push, then (c): the feet go to `surface − depth`, clamped into the free gap of the column's disc (the highest interval top below, the lowest interval bottom above). A move into a column whose gap is shorter than H, or that it can't enter at the feet's height, has that axis zeroed |
 | **SW2** | swimming → walking | (c)'s gap holds the feet at its bottom (the ground rises under you: a beach, a slipway) and the ground has a kept cell under p within step of the feet | Walking on that cell (wading out). Hysteresis against W5: the feet are 1.3 under the surface here and must be 1.5 under to swim again |
-| **F1** | falling → falling | ballistic under gravity, steered in plan as airborne is (A's acceleration toward the wish); F2 is asked first | The plan move is taken axis by axis and an axis that would leave the body not clear is zeroed. The vertical move is taken last: one that would leave it not clear stops at the surface met, the feet resting on it from above (`vy` = 0, `rest` grows by dt) or the head under it from below (`vy` = 0). Each part keeps clear, so I holds |
-| **F2** | falling → walking | the vertical move would take the feet down through a kept cell's surface of any support (the ground included), or the cell rose past them this step by no more than step | Lands on that cell, walking. Asked before F1's cut, so a kept cell is always landed on, never rested on |
+| **F1** | falling → falling | ballistic under gravity, steered in plan as airborne is (A's acceleration toward the wish). A support that moved into the body lifts it out first (P1's lift) | The plan move is taken axis by axis, in pieces no longer than r, each only if the body is clear at its end; an axis stopped is zeroed. Boxes under 2r apart cover the sweep between them, so the plan sweep is clear whatever dt. The vertical move (under maxMove < H, so its ends cover its sweep) is taken last: one that would leave the body not clear stops at the surface met, the feet resting on it from above (`vy` = 0, `rest` grows by dt) or the head under it from below (`vy` = 0). Each part keeps clear, so I holds, sweep included |
+| **F2** | falling → walking | after F1's vertical move: a kept cell of any support (the ground included) under the centre whose surface the feet passed (from where they were to where they stopped), or, if they stopped resting, one within step under them | Lands on that cell (the highest, ties as W3 (1)), walking. The resting case is the slope: the body's box rests on the raster up to (r + c)·tan θ over the cell under its centre, and a kept cell is within step of that, so a kept cell is always landed on, never rested on. A cell that rose past the feet needs no window of its own: F1's lift has already put the feet on it |
 | **F3** | falling → swimming | the feet go below `surface − depth` where `water` answers | As W5 |
 | **F4** | falling → walking by P1 | the feet go below fallLimit | Respawn: P1 at a spawn (any support's, by id) or the ground's box middle |
 | **F5** | falling → by P1, or F4 | `rest` ≥ 0.5 s: held by a surface that is no kept cell (a slope over 35°, a post top under π r², a sliver) | P1 of the feet, taking only a cell or water; with neither, F4. Either way a valid state, so there is no dead state: a steep slope you can't steer off within 0.5 s puts you on the nearest floor within P1's reach, or back at a spawn |
@@ -460,7 +463,7 @@ their labels.
 **walk gains** (moved from sailing in step 3, renamed):
 - `navmesh.js` (the bake), `walker.js` (the state machine), `navcheck.js`
   (B1–B7, C1–C7, C9; C10 is a probe check), and their tests with their arenas
-  (`walker.test.js`, `navmesh.test.js`, `walker.cases.slow.test.js`);
+  (`walker.test.js`, `navmesh.test.js`, `walker.cases.test.js`);
 - from sailing's `walk.js`: `BODY` as above, `SWIM` and `easeEye`;
 - from sailing's `crew.js` (step 4): `trianglesOf`, the generalised
   `bakedObjects` / `navKey` / `navInput` (as `bakeInput(api, support)`),
@@ -574,7 +577,8 @@ top). New: W3 (1)–(4), `falling` (F1–F5), P1 over every support
 falling (clear). The clear test is exact box against box: the body's world
 box against each raster box (a column's square × one interval, through the
 support's frame) by separating axes, open by 1e-6, so a heeled support is
-not judged by the box round it. Tests (walk 21 → 119 fast, 6 slow):
+not judged by the box round it. Tests (walk 21 → 119 fast, 6 slow; after
+the review fixes, one tier of 137):
 - `navmesh.test.js` (64) and `walker.test.js`'s 29 moved cases, assertions
   unchanged but where the design changed them: 12's high wall 0.7 → 0.9
   (the apex is 0.845 now), 7, 9 and 29 walk fewer frames (4.5 m/s, so they
@@ -583,24 +587,45 @@ not judged by the box round it. Tests (walk 21 → 119 fast, 6 slow):
   support, then walks (W3 (1));
 - five falling rows: F1 against a wall and under a ceiling, F3, F5 on a
   post top, P1's lift out of a closed block;
-- `walker.cases.slow.test.js`: the 89 arenas and the rafted table, unchanged,
-  all green (KNOWN_GAPS ∅ since step 1);
-- `walker.supports.slow.test.js`: the support over the ground, 224 rows
+- review fixes: F2 on a slope ({10°, 20°, 30°} × 4 facings × 4 points, 48
+  drops, never resting); F2 onto a support risen past the feet by {0,
+  step/2, step, 1 m} × {flat, heeled 20°}; F1 into a 2 cm wall at dt
+  {1/60, 0.05, 0.1, 0.2} × 4 ways (never through; I's sweep and the
+  oracle's every step) and I's sweep catching a jump through it; F5 on a
+  45° wedge (P1 to its foot); F4 with no spawn (the ground's middle); a
+  swimmer whose water drops or goes (P1 onto the seabed); P1's ties;
+- `walker.cases.test.js`: the 89 arenas and the rafted table, unchanged,
+  all green (KNOWN_GAPS ∅ since step 1), every row's name its own;
+- `walker.supports.test.js`: the support over the ground, 224 rows
   (pose 4 × side 4 × (ground {0, 0.3, 1, 2.5 m} × water {none, at the
   ground's top, 1 m under X} + nothing × water {none, 1 m under X})), each
   row's W3 case and end asserted, I and `oracleAll` (both supports' raw
   triangles) every step; a 0.6 m deep support heeled ±30° off ±X (12); W3
-  (4) beside a block, {still, turned 180°} × 4 sides, cut at the side (8).
+  (4) beside a block, {still, turned 180°} × 4 sides, cut at the side (8:
+  not the Verification's heeled 30°, which is W6's, below); onto the
+  dinghy {0.3, 1.5, 2.5 m} × {still, heeled 20°, under way} × 4 sides (36,
+  never resting); W3 (1)'s pick, the dinghy over the ground 1.9 m down
+  and level with it (8); stepping up onto the ground {0.3 m, step} over
+  the exit (16). Every row of the table asserts no falling state rests.
   Failing twins, run by reverting: sailing's W3 window (|dy| ≤ step) fails
   52 rows, no (c) 16, no W3 (3) all, no F2 2, (4) leaving the state as it
   was 8; no F5, no P1 lift and an unchecked F1 axis each fail their row.
+  After the review, each fails its rows too: no landing at the cut (slope,
+  risen), one plan piece (the 2 cm wall), F2 on the ground only (risen,
+  dinghy), no lift (risen), the ground first (P1 ties, W3's pick), no
+  upward window in W3 (1) (step up), the lowest cell (W3's pick), no
+  ground middle in F4, a swimmer kept where the push fails, no sweep in I.
 
 Not built in step 3, and owed by step 4 (they need the body's input, or
 were not in this step's brief): pruning without seeds (the graph and its
 roots; with no seeds the bake still keeps every component, which is what
 the ground slabs here are), W6, SW2 and SW1's clamp into the ground's gap
 (a swimmer's move whose push fails is not taken), blockers as boxes, tiles,
-and the sloop's fixture (step 5's export).
+and the sloop's fixture (step 5's export). Also W6's: the Verification's
+W3 (4) row heeled 30°. Upright in the deck's frame, the body leans its
+head 0.87 m out over the low side, into the ground block beside it,
+before the side is reached; another support's geometry inside the body
+is W6's to stop.
 
 **Step 4** (walk's body on supports):
 - enter {place, eye over floor, eye over nothing, support id} × {ground,
@@ -716,7 +741,7 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 18. **No carrying of W3's X out past a heeled side** (decided unattended
     (2026-11-17, lane/n10), for the lead). A heeled, deep support's side
     can stand within r of X (a 0.6 m hull at 30°: 0.025 m); a falling body
-    stops on it (F1) and F5 places it, so I holds, and the 12 deep-support
+    stops on it (F1) and F2 at the cut or F5 places it, so I holds, and the 12 deep-support
     rows pass without it. Carrying X out until the body cleared the support
     at every height was built and dropped as an appendage no row needed.
     What stays open is a body standing still on the ground under a heeled
@@ -726,6 +751,26 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     0.3, 1} × water {none, at the ground}) and this design's 160 (2.5 m and
     nothing, water 1 m under X) as one table (decided unattended
     (2026-11-17, lane/n10), for the lead).
+20. **F2 has no rising window; it lands at F1's cut instead** (decided
+    unattended (2026-11-17, lane/n10), for the lead). The window "the cell
+    rose past the feet by no more than step" never fired: F1's lift runs
+    first and leaves the feet on or over every surface in the body's
+    footprint. What was missing was the slope: the body rested on the
+    raster beside its centre for F5's 0.5 s on any slope (on 30°, 33 drops
+    in 40). F2 now also takes a kept cell within step under the feet where
+    the vertical move stopped resting.
+21. **Ties are within 1e-6, not 1e-12** (decided unattended (2026-11-17,
+    lane/n10), for the lead). A cell's height is float32, so two supports
+    built level read 1e-8 apart, and "ties to the lowest id, the ground
+    last" (W3 (1), F2, P1) never applied.
+22. **One test tier** (decided unattended (2026-11-17, lane/n10), for the
+    lead). The enumerated tables take seconds; `pnpm test`, which CI and
+    each.mjs run, now runs them (`walker.cases.test.js`,
+    `walker.supports.test.js`).
+23. **The ground's frame is the identity, with no hook** (decided
+    unattended (2026-11-17, lane/n10), for the lead). `env.frame` is asked
+    of moving supports only; a turned ground was honoured by half the
+    walker (yaw) and not the rest (poses, points).
 
 ## Questions for the lead
 

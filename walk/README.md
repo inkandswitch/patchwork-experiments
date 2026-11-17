@@ -15,8 +15,8 @@ Next: [DESIGN.md](DESIGN.md), "Standing on supports": walk's walker becomes the
 navmesh walker on any support, the ground included, and sailing walks in walk.
 Step 3 is built: the walker, its bake and checks are in walk, pure
 (`walker.js`, `navmesh.js`, `navcheck.js`), tested on their own; the body
-below still walks by rays until step 4. `pnpm test` runs the fast tier,
-`pnpm test:slow` the walker's enumerated cases.
+below still walks by rays until step 4. `pnpm test` runs everything, the
+walker's enumerated cases included.
 
 ## The body
 

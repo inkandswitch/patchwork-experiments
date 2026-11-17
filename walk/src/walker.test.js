@@ -6,10 +6,10 @@
 // navmesh.test.js.
 import { describe, it, expect } from "vitest";
 import { DIRS, OPEN, OFF, STEP, WALL, bake, inShadow, pointOf } from "./navmesh.js";
-import { asserting, assertWalker, climb, isClear, localFeet, meetsCapsule, place, placeAt, spawnOn, step, swimmingAt, travel, worldPose } from "./walker.js";
+import { asserting, assertWalker, checkWalker, climb, isClear, localFeet, meetsCapsule, place, placeAt, respawn, spawnOn, step, swimmingAt, travel, worldPose } from "./walker.js";
 import { BODY, easeEye } from "./walk.js";
 import { apply, invert, matrixOf } from "./frames.js";
-import { I4, STILL, baked, box, drive, floor, oracleAll, world } from "./test/arena.js";
+import { I4, STILL, baked, box, drive, floor, oracleAll, placed, ramp, world } from "./test/arena.js";
 
 const FWD = { forward: 1, strafe: 0 };
 const BACK = { forward: -1, strafe: 0 };
@@ -582,5 +582,124 @@ describe("falling, in the ground's frame (F1–F5) and P1's lift", { timeout: 60
     expect(isClear(deep, lifted.p)).toBe(true);
     expect(isClear(deep, [0, lifted.p[1] - 1e-3, 0])).toBe(false);
     expect(oracleAll(deep, lifted)).toEqual([]);
+  });
+
+  it("F2 on a slope: dropped onto a ramp {10°, 20°, 30°} × facing {+X, −X, +Z, −Z} × at {4 points along it}, the body lands on the cell under its centre the step its box first rests, never resting there (48 drops)", () => {
+    const failed = [];
+    for (const deg of [10, 20, 30])
+      for (const [facing, turn] of [["+X", 0], ["−X", Math.PI], ["+Z", -Math.PI / 2], ["−Z", Math.PI / 2]])
+        for (const x of [-1.1, -0.35, 0.4, 1.15]) {
+          const R = matrixOf({ rotation: [0, turn, 0] });
+          const tris = placed([...ramp(-2, 4, -2, 2, deg), ...box([-2, -0.2, -2], [2, -0.1, 2])], R);
+          const env = grounded(tris);
+          const p = apply(R, [x, (x + 2) * Math.tan((deg * Math.PI) / 180) + 3, 0.13]); // past DROP: falling, not placed
+          try {
+            const air = { mode: "falling", p, vel: [0, 0, 0], rest: 0 };
+            assertWalker(air, env);
+            const { st, trace } = drive(env, air, { frames: 120, all: true });
+            const rested = trace.filter((s) => s.mode === "falling" && s.rest > 0).length;
+            if (rested || st.mode !== "walking" || st.on !== null) failed.push(`${deg}° facing ${facing} at ${x}: ${rested} frames resting, ends ${st.mode} on ${st.on}`);
+          } catch (e) {
+            failed.push(`${deg}° facing ${facing} at ${x}: ${e.message}`);
+          }
+        }
+    expect(failed.join("\n")).toBe("");
+  });
+
+  it("F2 onto a support that rose past the feet this step by {0, step/2, step, 1 m}, flat and heeled 20°: lifted out of it (P1's lift) and walking on it, never resting (flat: that step; heeled: the lift clears the box round each raster box, so a few frames' fall)", () => {
+    const failed = [];
+    const lift = floor([-1, 1], [-1, 1]);
+    for (const heel of [0, 20])
+      for (const by of [0, BODY.step / 2, BODY.step, 1]) {
+        const name = `heeled ${heel}°, risen ${by} m past the feet`;
+        const supports = { lift: { mesh: baked(lift), triangles: lift, M: matrixOf({ position: [0, -2, 0], rotation: [0, 0, (heel * Math.PI) / 180] }) } };
+        const env = world(supports, { water: null });
+        try {
+          let st = placeAt(env, [0, 1, 0]);
+          expect(st.mode).toBe("falling");
+          // the lift comes up under the body: its surface under the feet ends `by` over them
+          supports.lift.M = matrixOf({ position: [0, 1 + by, 0], rotation: [0, 0, (heel * Math.PI) / 180] });
+          // the oracle without `prev`: its sweep would start inside the lift that came up into the body
+          const { trace } = drive(env, st, { frames: heel ? 5 : 1, oracleOn: false, each: (s) => expect(oracleAll(env, s)).toEqual([]) });
+          const landed = trace.findIndex((s) => s.mode === "walking");
+          if (landed < 0 || trace[landed].on !== "lift" || trace.some((s) => s.rest > 0)) failed.push(`${name}: ${trace.map((s) => `${s.mode}${s.rest ? " resting" : ""}`).join(", ")}`);
+        } catch (e) {
+          failed.push(`${name}: ${e.message}`);
+        }
+      }
+    expect(failed.join("\n")).toBe("");
+  });
+
+  it("F1 at any dt: falling at full speed into a 2 cm wall, dt {1/60, 0.05, 0.1, 0.2} × toward {+X, −X, +Z, −Z}: never through it; the sweep (I and the oracle) clear at every step", () => {
+    const failed = [];
+    for (const dt of [1 / 60, 0.05, 0.1, 0.2])
+      for (const [way, turn] of [["+X", 0], ["−X", Math.PI], ["+Z", -Math.PI / 2], ["−Z", Math.PI / 2]]) {
+        const R = matrixOf({ rotation: [0, turn, 0] });
+        const tris = placed([...floor([-3, 3], [-3, 3], -3), ...box([1, -3, -3], [1.02, 10, 3])], R);
+        const env = grounded(tris);
+        const toward = apply(R, [1, 0, 0]);
+        const yaw = Math.atan2(-toward[0], -toward[2]);
+        let st = fallFrom(env, apply(R, [0.6, 5, 0]));
+        st = { ...st, vel: [toward[0] * BODY.run, 0, toward[2] * BODY.run] };
+        try {
+          const { st: end } = drive(env, st, { input: { forward: 1, strafe: 0, run: true }, yaw, dt, frames: Math.ceil(2 / dt), all: true });
+          const x = apply(invert(R), worldPose(end, env).feet)[0];
+          if (end.mode !== "walking" || x > 1 - BODY.radius + 1e-6) failed.push(`dt ${dt}, ${way}: ends ${end.mode} at ${x.toFixed(3)}`);
+        } catch (e) {
+          failed.push(`dt ${dt}, ${way}: ${e.message}`);
+        }
+      }
+    expect(failed.join("\n")).toBe("");
+  });
+
+  it("I asks the sweep: a falling state that has passed through a wall since `prev` is a breach, though clear where it is", () => {
+    const env = grounded(box([1, -3, -3], [1.02, 10, 3]));
+    const prev = placeAt(env, [0.6, 5, 0]);
+    const through = { ...prev, p: [1.4, 5, 0] };
+    expect(checkWalker(through, env)).toEqual([]);
+    expect(checkWalker(through, env, prev).join()).toMatch(/swept through/);
+  });
+
+  it("F5 on a 45° slope beside a floor: resting on it (no cell under the body), then after `rest` P1 puts you on the nearest kept cell: the slope's foot, a step or less over the floor", () => {
+    // a solid 45° wedge from x = 0 (y 0) to x = 1.5 (y 1.5): its top, its back and its ends
+    const t = 1.5;
+    const wedge = [0, 0, -1, t, t, 1, t, t, -1, 0, 0, -1, 0, 0, 1, t, t, 1, t, 0, -1, t, t, -1, t, t, 1, t, 0, -1, t, t, 1, t, 0, 1, 0, 0, -1, t, t, -1, t, 0, -1, 0, 0, 1, t, 0, 1, t, t, 1];
+    const env = grounded([...floor([-3, 3], [-3, 3]), ...wedge]);
+    const { st, trace } = drive(env, fallFrom(env, [0.75, 3, 0]), { frames: 180, all: true });
+    expect(Math.max(...trace.map((s) => s.rest ?? 0))).toBeGreaterThan(BODY.rest - 0.02);
+    expect([st.mode, st.on]).toEqual(["walking", null]);
+    expect(worldPose(st, env).feet[1]).toBeLessThanOrEqual(BODY.step);
+  });
+
+  it("F4 with no spawn link anywhere: on the ground's kept cell nearest the middle of its top", () => {
+    const env = grounded(floor([-3, 3], [-3, 3]));
+    const { st, trace } = drive(env, fallFrom(env, [10, 0, 0]), { frames: 300, all: true });
+    expect(trace.some((s) => s.mode === "falling")).toBe(true);
+    expect([st.mode, st.on]).toEqual(["walking", null]);
+    const f = worldPose(st, env).feet;
+    expect(Math.hypot(f[0], f[2])).toBeLessThan(BODY.cell);
+    expect(f[1]).toBeCloseTo(0, 6);
+    expect(respawn(env)).toMatchObject({ mode: "walking", on: null });
+  });
+
+  it("SW1 where the water leaves a swimmer: the surface falls to 1 m over the seabed (the body in it) or goes: P1, onto the seabed", () => {
+    for (const to of [1, null]) {
+      let level = 3;
+      const env = grounded(floor([-3, 3], [-3, 3]), { water: () => level });
+      const sw = swimmingAt(env, [0, 0]);
+      assertWalker(sw, env);
+      level = to;
+      const { st, trace } = drive(env, sw, { frames: 30, all: true });
+      expect(trace[0].mode).not.toBe("swimming");
+      expect([st.mode, st.on]).toEqual(["walking", null]);
+    }
+  });
+
+  it("P1 ties: a support's cell and the ground's at the same place and height: the support's (ground last); two supports: the lowest id", () => {
+    const tris = floor([-2, 2], [-2, 2]);
+    const g = { mesh: baked(tris), triangles: tris };
+    const s = (id) => ({ [id]: { mesh: baked(tris), triangles: tris, M: I4 } });
+    expect(placeAt(world(s("b"), { ground: g, water: null }), [0.3, 0.2, 0.1])).toMatchObject({ mode: "walking", on: "b" });
+    expect(placeAt(world({ ...s("c"), ...s("b") }, { ground: g, water: null }), [0.3, 0.2, 0.1])).toMatchObject({ mode: "walking", on: "b" });
   });
 });

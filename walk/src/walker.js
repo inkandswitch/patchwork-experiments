@@ -22,7 +22,7 @@
 //   falling   { p: [x, y, z], vel: [vx, vy, vz], rest }  the ground's frame, the feet; rest: s held by a surface that is no cell
 //
 // The environment it's stepped in:
-//   env.supports() → ids, the ground (null) among them    env.frame(id) → 4×4 | null (frame(null): the ground's)
+//   env.supports() → ids, the ground (null) among them    env.frame(id) → 4×4 | null (asked of moving supports only)
 //   env.mesh(id) → NavMesh | null                          env.water(x, z) → the surface's height there | null (no water)
 //   env.blockers?(id) → [{ a, b, r }] capsules in that support's frame: moving obstacles that only block
 
@@ -60,8 +60,8 @@ function approach(v, target, max) {
 
 // ─── the supports ───────────────────────────────────────────────────────────
 
-/** A support's frame: the ground's is the identity unless env says otherwise. */
-const frameOf = (env, id) => (id == null ? (env.frame?.(null) ?? I4) : env.frame(id));
+/** A support's frame: the ground's is the stage's own, the identity. */
+const frameOf = (env, id) => (id == null ? I4 : env.frame(id));
 
 /** The water's height at a plan point of the ground, or null. */
 const waterAt = (env, x, z) => {
@@ -70,7 +70,7 @@ const waterAt = (env, x, z) => {
 };
 
 /** The frame a state's yaw is measured in: its support's, or the ground's. */
-const frameOfState = (env, st) => (st && (ON.has(st.mode) || st.mode === "waiting") ? frameOf(env, st.on) : frameOf(env, null)) ?? I4;
+const frameOfState = (env, st) => (st && (ON.has(st.mode) || st.mode === "waiting") ? frameOf(env, st.on) : I4) ?? I4;
 
 /** A yaw measured in frame M, measured in the frame of `next` instead. */
 const yawInto = (env, yaw, M, next) => yaw + headingOf(M) - headingOf(frameOfState(env, next));
@@ -294,7 +294,7 @@ export function placeAt(env, p, P = BODY, S = SWIM, { air = true } = {}) {
     if (!at) continue;
     const q = pointOf(s.mesh, at.cell, at.u, at.v);
     const d = Math.hypot(q[0] - L[0], q[2] - L[2]) + Math.max(0, L[1] - q[1] - P.step);
-    if (!best || d < best.d - 1e-12) best = { s, at, d };
+    if (!best || d < best.d - TOL) best = { s, at, d }; // within TOL a tie: heights are float32
   }
   if (best) return walkingAt(env, best.s.id, best.s.mesh, best.at);
   if (waterAt(env, p[0], p[2]) != null) {
@@ -464,6 +464,39 @@ export function pushOut(env, p, P = BODY, S = SWIM) {
   return null;
 }
 
+// ─── a kept cell under a point ──────────────────────────────────────────────
+
+/**
+ * The kept cell W3 (1) steps onto and F2 lands on: of every support but
+ * `except`, the cells in the column under world point X whose surface, in
+ * that support's frame, lies in [X − down, max(X, from) + up]; the highest
+ * in the world, within TOL a tie (heights are float32), ties to the lowest
+ * id, the ground last (supportList's order). `L` is X in that support's
+ * frame. null if none.
+ */
+function cellUnder(list, X, down, up, except, from = X) {
+  let best = null;
+  for (const s of list) {
+    if (s.id === except || isEmpty(s.mesh)) continue;
+    const m = s.mesh;
+    const L = apply(s.inv, X);
+    const col = columnAt(m, L[0], L[2]);
+    if (col < 0) continue;
+    const top = Math.max(L[1], apply(s.inv, from)[1]) + up;
+    const i = col % m.nx;
+    const k = (col - i) / m.nx;
+    const u = clamp01((L[0] - m.origin[0]) / m.cell - i);
+    const v = clamp01((L[2] - m.origin[1]) / m.cell - k);
+    for (let a = m.column[col]; a < m.column[col + 1]; a++) {
+      const sy = surfaceAt(m, a, u, v);
+      if (sy < L[1] - down - TOL || sy > top + TOL) continue;
+      const wy = apply(s.M, [L[0], sy, L[2]])[1];
+      if (!best || wy > best.wy + TOL) best = { s, a, u, v, wy, sy, L }; // within TOL a tie: heights are float32
+    }
+  }
+  return best;
+}
+
 // ─── W3: off an OPEN side ───────────────────────────────────────────────────
 
 /**
@@ -485,26 +518,10 @@ function offSide(env, on, M, mesh, cell, side, y, vel, vy, yaw, P, S) {
   const X = apply(M, [exit[0], y, exit[1]]);
   const v3 = rotateM(M, [vel[0], 0, vel[1]]);
   // (1)
-  let best = null;
-  for (const s of list) {
-    if (s.id === on || isEmpty(s.mesh)) continue;
-    const L = apply(s.inv, X);
-    const col = columnAt(s.mesh, L[0], L[2]);
-    if (col < 0) continue;
-    const m = s.mesh;
-    const i = col % m.nx;
-    const k = (col - i) / m.nx;
-    const u = clamp01((L[0] - m.origin[0]) / m.cell - i);
-    const v = clamp01((L[2] - m.origin[1]) / m.cell - k);
-    for (let a = m.column[col]; a < m.column[col + 1]; a++) {
-      const sy = surfaceAt(m, a, u, v);
-      if (sy < L[1] - P.drop - TOL || sy > L[1] + P.step + TOL) continue;
-      const wy = apply(s.M, [L[0], sy, L[2]])[1];
-      if (!best || wy > best.wy + 1e-12) best = { s, a, u, v, wy, h: Math.min(L[1] - sy, m.cells.headroom[a]) };
-    }
-  }
+  const best = cellUnder(list, X, P.drop, P.step, on);
   if (best) {
-    const { s, a, u, v, h } = best;
+    const { s, a, u, v, sy, L } = best;
+    const h = Math.min(L[1] - sy, s.mesh.cells.headroom[a]);
     const lv = unrotateM(s.M, v3);
     const next = h > TOL ? { mode: "airborne", on: s.id, mesh: s.mesh, cell: a, u, v, h, vy: vy ?? 0, vel: [lv[0], lv[2]] } : walkingAt(env, s.id, s.mesh, { cell: a, u, v }, [lv[0], lv[2]]);
     if (next.mode === "airborne") next.last = lastOf(env, s.id, localFeet(next));
@@ -870,41 +887,34 @@ function swim(st, input, yaw, dt, env, P, S) {
 // ─── falling ────────────────────────────────────────────────────────────────
 
 /**
- * F2's landing: the highest kept cell, of any support, in the column under
- * the feet's end point whose surface lies between where the feet end and a
- * step over where they began (both in that support's frame now, so a cell
- * that rose past them is caught too). null if none.
+ * The plan move along one axis (0: x, 2: z) from p, in pieces no longer than
+ * r, each taken only if the body is clear at its end. Pieces under 2r apart
+ * have boxes whose union is the box swept between them, so the sweep is
+ * clear, whatever dt: no wall is passed through. @returns {{ p, all }} where
+ * it got to, and whether that is the whole move.
  */
-function landing(list, from, to, P) {
-  let best = null;
-  for (const s of list) {
-    if (isEmpty(s.mesh)) continue;
-    const m = s.mesh;
-    const L0 = apply(s.inv, from);
-    const L1 = apply(s.inv, to);
-    const col = columnAt(m, L1[0], L1[2]);
-    if (col < 0) continue;
-    const i = col % m.nx;
-    const k = (col - i) / m.nx;
-    const u = clamp01((L1[0] - m.origin[0]) / m.cell - i);
-    const v = clamp01((L1[2] - m.origin[1]) / m.cell - k);
-    for (let a = m.column[col]; a < m.column[col + 1]; a++) {
-      const sy = surfaceAt(m, a, u, v);
-      if (sy < L1[1] - TOL || sy > Math.max(L0[1], L1[1]) + P.step + TOL) continue;
-      const wy = apply(s.M, [L1[0], sy, L1[2]])[1];
-      if (!best || wy > best.wy + 1e-12) best = { s, a, u, v, wy };
-    }
+function slide(env, p, axis, d, P, list) {
+  const n = Math.ceil(Math.abs(d) / P.radius);
+  for (let k = 0; k < n; k++) {
+    const q = [p[0], p[1], p[2]];
+    q[axis] += d / n;
+    if (!isClear(env, q, P, list)) return { p, all: false };
+    p = q;
   }
-  return best;
+  return { p, all: true };
 }
 
 /**
- * F1–F5: in the air, in the ground's frame. Steered in plan as airborne is;
- * the plan move taken axis by axis, an axis that would leave the body not
- * clear zeroed; then F2 (landing on a kept cell passed through), F3 (into
- * the water), and the vertical move, which stops where the body would stop
- * being clear (resting on a surface from above, or a head under one); F4
- * below fallLimit; F5 held by a surface that is no cell for `rest`.
+ * F1–F5: in the air, in the ground's frame. A support that moved into the
+ * body lifts it out first (P1's lift). Steered in plan as airborne is; the
+ * plan move taken axis by axis (slide), an axis that is stopped zeroed. Then
+ * the vertical move, cut where the body would stop being clear (resting on a
+ * surface from above, or a head under one). Then F2: landing on the highest
+ * kept cell under the feet that they passed, or, resting, one within a step
+ * under them (on a slope the body rests on the side of its box, over the
+ * cell under its centre: that cell is landed on, never rested on); F3 into
+ * the water; F4 below fallLimit; F5 held by a surface that is no cell for
+ * `rest`.
  */
 function fall(st, input, yaw, dt, env, P, S) {
   const list = supportList(env);
@@ -919,20 +929,31 @@ function fall(st, input, yaw, dt, env, P, S) {
     dx *= P.maxMove / l;
     dz *= P.maxMove / l;
   }
-  if (dx !== 0) {
-    if (isClear(env, [p[0] + dx, p[1], p[2]], P, list)) p[0] += dx;
-    else vx = 0;
-  }
-  if (dz !== 0) {
-    if (isClear(env, [p[0], p[1], p[2] + dz], P, list)) p[2] += dz;
-    else vz = 0;
-  }
+  let r = slide(env, p, 0, dx, P, list);
+  if (!r.all) vx = 0;
+  r = slide(env, r.p, 2, dz, P, list);
+  if (!r.all) vz = 0;
+  p = r.p;
+  // F1: the vertical move (under maxMove < height, so the boxes at its ends cover its sweep)
   let vy = st.vel[1] - P.gravity * dt;
   let dy = ((st.vel[1] + vy) / 2) * dt;
   if (Math.abs(dy) > P.maxMove) dy = Math.sign(dy) * P.maxMove;
-  const to = [p[0], p[1] + dy, p[2]];
+  let end = [p[0], p[1] + dy, p[2]];
+  let resting = false;
+  if (!isClear(env, end, P, list)) {
+    let lo = p[1];
+    let hi = end[1];
+    for (let k = 0; k < 30; k++) {
+      const mid = (lo + hi) / 2;
+      if (isClear(env, [p[0], mid, p[2]], P, list)) lo = mid;
+      else hi = mid;
+    }
+    end = [p[0], lo, p[2]];
+    vy = 0;
+    resting = dy < 0;
+  }
   // F2
-  const land = landing(list, p, to, P);
+  const land = cellUnder(list, end, resting ? P.step : 0, 0, undefined, p);
   if (land) {
     const { s, a, u, v } = land;
     const lv = unrotateM(s.M, [vx, 0, vz]);
@@ -940,45 +961,56 @@ function fall(st, input, yaw, dt, env, P, S) {
     return { state: next, yaw: yaw - headingOf(s.M) };
   }
   // F3
-  const wy = waterAt(env, to[0], to[2]);
-  if (wy != null && to[1] < wy - S.depth) {
-    const sw = swimmingAt(env, [to[0], to[2]], [vx * 0.3, vz * 0.3], P, S);
+  const wy = waterAt(env, end[0], end[2]);
+  if (wy != null && end[1] < wy - S.depth) {
+    const sw = swimmingAt(env, [end[0], end[2]], [vx * 0.3, vz * 0.3], P, S);
     if (sw) return { state: sw, yaw };
   }
-  let rest = 0;
-  if (isClear(env, to, P, list)) p = to;
-  else {
-    let lo = p[1];
-    let hi = to[1];
-    for (let k = 0; k < 30; k++) {
-      const mid = (lo + hi) / 2;
-      if (isClear(env, [p[0], mid, p[2]], P, list)) lo = mid;
-      else hi = mid;
-    }
-    p = [p[0], lo, p[2]];
-    vy = 0;
-    if (dy < 0) rest = st.rest + dt;
-  }
   // F4
-  if (p[1] < P.fallLimit) {
+  if (end[1] < P.fallLimit) {
     const next = respawn(env, P, S);
     return { state: next, yaw: yawInto(env, yaw, I4, next) };
   }
   // F5
+  const rest = resting ? st.rest + dt : 0;
   if (rest >= P.rest) {
-    const next = placeAt(env, p, P, S, { air: false }) ?? respawn(env, P, S);
+    const next = placeAt(env, end, P, S, { air: false }) ?? respawn(env, P, S);
     return { state: next, yaw: yawInto(env, yaw, I4, next) };
   }
-  return { state: fallingAt(p, [vx, vy, vz], rest), yaw };
+  return { state: fallingAt(end, [vx, vy, vz], rest), yaw };
+}
+
+/**
+ * The body's sweep from falling at `from` (already lifted out of anything
+ * that moved into it) to falling at `to`, as fall takes it: x, then z, then
+ * y. Boxes under 2r apart cover the sweep between them, so this asks
+ * exactly whether the whole sweep is clear. null if it is, else where it isn't.
+ */
+function sweepProblem(env, from, to, P, list) {
+  const p = [...from];
+  for (const axis of [0, 2, 1]) {
+    const d = to[axis] - p[axis];
+    const n = Math.ceil(Math.abs(d) / P.radius);
+    for (let k = 1; k <= n; k++) {
+      const q = [...p];
+      q[axis] += (d * k) / n;
+      if (!isClear(env, q, P, list)) return `falling swept through something at ${q.map((v) => v.toFixed(3))}`;
+    }
+    p[axis] = to[axis];
+  }
+  return null;
 }
 
 // ─── the invariant ──────────────────────────────────────────────────────────
 
 /**
  * Invariant I, per state (DESIGN.md): the problems with a state, [] if none.
- * The body checks it after every step, and throws while asserting() (tests, probes).
+ * Given `prev`, the state it was stepped from in this env, falling to falling
+ * also asks the whole sweep between them (sweepProblem); a move longer than
+ * maxMove on an axis is F4 starting again, not a sweep. The body checks it
+ * after every step, and throws while asserting() (tests, probes).
  */
-export function checkWalker(st, env, P = BODY, S = SWIM) {
+export function checkWalker(st, env, prev = null, P = BODY, S = SWIM) {
   const bad = [];
   if (!st || typeof st !== "object") return ["no state"];
   const inRange = (x) => Number.isFinite(x) && x >= 0 && x <= 1;
@@ -1024,7 +1056,16 @@ export function checkWalker(st, env, P = BODY, S = SWIM) {
         break;
       }
       if (!(st.rest >= 0)) bad.push(`rest ${st.rest}`);
-      if (!isClear(env, st.p, P)) bad.push(`falling, not clear at ${st.p.map((v) => v.toFixed(3))}`);
+      const list = supportList(env);
+      if (!isClear(env, st.p, P, list)) bad.push(`falling, not clear at ${st.p.map((v) => v.toFixed(3))}`);
+      else if (prev?.mode === "falling") {
+        const from = isClear(env, prev.p, P, list) ? prev.p : lift(env, prev.p, P, list);
+        const cap = { ...WALKER, ...P }.maxMove;
+        if (from.every((v, i) => Math.abs(st.p[i] - v) <= cap + TOL)) {
+          const why = sweepProblem(env, from, st.p, P, list);
+          if (why) bad.push(why);
+        }
+      }
       break;
     }
     default:
@@ -1034,8 +1075,8 @@ export function checkWalker(st, env, P = BODY, S = SWIM) {
 }
 
 /** checkWalker, thrown. */
-export function assertWalker(st, env, P = BODY, S = SWIM) {
-  const bad = checkWalker(st, env, P, S);
+export function assertWalker(st, env, prev = null, P = BODY, S = SWIM) {
+  const bad = checkWalker(st, env, prev, P, S);
   if (bad.length) throw new Error(`walker invariant: ${bad.join("; ")} (${st?.mode})`);
 }
 
