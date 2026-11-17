@@ -5,9 +5,11 @@ import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector, { sectionPref, startBodies } from "./inspector.js";
+import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, commandsKey, documentsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { EMBED_ATTR } from "../embed.js";
+import { SECTION_MIME } from "../dnd.js";
 import { LINK } from "../stage/links.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { readFileSync } from "node:fs";
@@ -651,23 +653,27 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
   // ─── detach: a section in the drawer (TOOLS.md §6, "Documents in the drawer") ───
   const drawerViews = () => [...s.root.querySelectorAll(".stage-drawer-doc > patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
   const docTab = (title) => [...s.root.querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title);
-  /** the Source section as shown: [docked?, its inline view's doc-url or null, "In the drawer" shown?] */
-  const sourceShown = () => {
-    const sec = section(`${ME}/source`);
+  /** a section as shown: [docked?, its inline view's doc-url or null, "In the drawer" shown?] */
+  const sectionShown = (id) => {
+    const sec = section(`${ME}/${id}`);
     return [sec.hasAttribute("data-docked"), sec.querySelector(".section-embed > patchwork-view")?.getAttribute("doc-url") ?? null, !sec.querySelector(".section-docked").hidden];
   };
-  // [what's done, then the Source section as shown, then the documents in the drawer]
+  const sourceShown = () => sectionShown("source");
+  // [what's done, the section looked at, then it as shown, then the documents in the drawer]: Source has no tool of
+  // its own, Build has one (scene-render-controls); each is docked by its own Dock, and its doc under another tool
   const FOLD_DOCKED = [
-    ["docked (its Dock)", async () => section(`${ME}/source`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.src.url}|`]],
-    ["docked, then its × closed", async () => (section(`${ME}/source`).querySelector(".section-dock").click(), await settle(), docTab("Source").querySelector(".stage-drawer-tab-close").click()), (m) => [false, m.src.url, false], () => []],
-    ["the same doc docked under another tool", async (m) => s.api(ME).view.dock({ url: m.src.url, toolId: "other", title: "Other" }), (m) => [false, m.src.url, false], (m) => [`${m.src.url}|other`]],
+    ["Source docked (its Dock)", "source", async () => section(`${ME}/source`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.src.url}|`]],
+    ["Source docked, then its × closed", "source", async () => (section(`${ME}/source`).querySelector(".section-dock").click(), await settle(), docTab("Built · Source").querySelector(".stage-drawer-tab-close").click()), (m) => [false, m.src.url, false], () => []],
+    ["Source's doc docked under another tool", "source", async (m) => s.api(ME).view.dock({ url: m.src.url, toolId: "other", title: "Other" }), (m) => [false, m.src.url, false], (m) => [`${m.src.url}|other`]],
+    ["Build docked (its Dock)", "build", async () => section(`${ME}/build`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.render.url}|scene-render-controls`]],
+    ["Build's doc docked with no tool", "build", async (m) => s.api(ME).view.dock({ url: m.render.url, title: "Render" }), (m) => [false, m.render.url, false], (m) => [`${m.render.url}|`]],
   ];
-  it.each(FOLD_DOCKED)("folded while docked: %s", async (_name, act, want, inDrawer) => {
+  it.each(FOLD_DOCKED)("folded while docked: %s", async (_name, id, act, want, inDrawer) => {
     const m = await mountKinds();
     await select("built");
     await act(m);
     await settle();
-    expect(sourceShown()).toEqual(want(m));
+    expect(sectionShown(id)).toEqual(want(m));
     expect(drawerViews()).toEqual(inDrawer(m));
     // never two live views of one doc and tool in the stage
     const all = [...s.root.querySelectorAll("patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
@@ -679,13 +685,13 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     await select("built");
     section(`${ME}/source`).querySelector(".section-dock").click();
     await settle();
-    // the drawer shows the Source; the Inspector's tab shows the pane again
-    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Source");
+    // the drawer shows the Source (titled after its object); the Inspector's tab shows the pane again
+    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Built · Source");
     docTab("Inspector").querySelector(".stage-drawer-tab-name").click();
     await settle();
     section(`${ME}/source`).querySelector(".section-show").click();
     await settle();
-    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Source");
+    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Built · Source");
     expect(drawerViews()).toEqual([`${m.src.url}|`]);
     // the doc pane outlives the selection; the section comes back folded to "In the drawer"
     await select("boat");
@@ -694,33 +700,88 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     expect(drawerViews()).toEqual([`${m.src.url}|`]);
   });
 
-  it("a section's head is dragged as a Patchwork document: exactly the three payload types, its url, label and tool", async () => {
-    const m = await mountKinds();
-    await select("built");
+  /** dragstart on a section's head → what it sets ({ mime: value }) and the event */
+  const dragHead = (id) => {
     const data = {};
     const e = new Event("dragstart", { bubbles: true, cancelable: true });
     Object.defineProperty(e, "dataTransfer", { value: { setData: (t, v) => (data[t] = v), effectAllowed: "all" } });
-    section(`${ME}/build`).querySelector(".section-head").dispatchEvent(e);
-    expect(Object.keys(data).sort()).toEqual(["text/plain", "text/x-patchwork-dnd", "text/x-patchwork-urls"]);
-    expect(JSON.parse(data["text/x-patchwork-dnd"]).items).toEqual([{ url: m.render.url, name: "Build", toolId: "scene-render-controls" }]);
+    section(`${ME}/${id}`).querySelector(".section-head").dispatchEvent(e);
+    return { data, e };
+  };
+  const carrying = (type, data) => {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(e, "dataTransfer", { value: { types: Object.keys(data), files: [], dropEffect: "none", getData: (t) => data[t] ?? "" } });
+    return e;
+  };
+
+  it("a section's head is dragged as a Patchwork document and as the scene's own: exactly four payload types, its url, title and tool", async () => {
+    const m = await mountKinds();
+    await select("built");
+    const { data, e } = dragHead("build");
+    expect(Object.keys(data).sort()).toEqual([SECTION_MIME, "text/plain", "text/x-patchwork-dnd", "text/x-patchwork-urls"].sort());
+    expect(JSON.parse(data["text/x-patchwork-dnd"]).items).toEqual([{ url: m.render.url, name: "Built · Build", toolId: "scene-render-controls" }]);
     expect(JSON.parse(data["text/x-patchwork-urls"])).toEqual([m.render.url]);
     expect(data["text/plain"]).toBe(m.render.url);
+    expect(data[SECTION_MIME]).toBe(`${m.render.url}|scene-render-controls`);
     expect(e.dataTransfer.effectAllowed).toBe("copy");
     expect(section(`${ME}/build`).querySelector(".section-head").getAttribute("draggable")).toBe("true");
-    // let go back in the pane, it's nothing: the drag goes no further than the pane (no document added to the scene)
-    const beyond = vi.fn();
-    s.root.addEventListener("dragover", beyond);
-    const over = new Event("dragover", { bubbles: true, cancelable: true });
-    Object.defineProperty(over, "dataTransfer", { value: { types: Object.keys(data), getData: (t) => data[t] ?? "" } });
-    body().dispatchEvent(over);
-    expect(beyond).not.toHaveBeenCalled();
-    expect(over.defaultPrevented).toBe(false);
-    // once it's over, a drag from elsewhere over the pane goes on as before
-    window.dispatchEvent(new Event("dragend"));
-    const later = new Event("dragover", { bubbles: true, cancelable: true });
-    Object.defineProperty(later, "dataTransfer", { value: { types: ["text/plain"], getData: () => m.src.url } });
-    body().dispatchEvent(later);
-    expect(beyond).toHaveBeenCalledTimes(1);
+  });
+
+  // a section's head let go [where, docked there?, the element under it]: only the tab strip takes it; anywhere else
+  // in the stage it's nothing (no object added, no notice, the drop not accepted), the tree and the canvas included
+  const HEAD_LET_GO = [
+    ["back on its section's fields", false, () => body()],
+    ["on a row of the tree, in the same pane", false, () => s.root.querySelector(".inspector-tree .object-row")],
+    ["on the canvas, in Edit", false, () => s.canvas],
+    ["on the drawer's tab strip", true, () => s.root.querySelector(".stage-drawer-tabs")],
+  ];
+  it.each(HEAD_LET_GO)("a section's head let go %s → docked: %s, and nothing added to the scene", async (_where, docks, under) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const m = await mountKinds([{ meta: { id: "scene.add" }, module: add }]);
+    await select("built");
+    const objects = JSON.stringify(s.doc().objects);
+    const { data } = dragHead("source");
+    const target = under();
+    expect(target).not.toBeNull();
+    const over = carrying("dragover", data);
+    const drop = carrying("drop", data);
+    target.dispatchEvent(over);
+    target.dispatchEvent(drop);
+    await settle();
+    await settle();
+    expect([over.defaultPrevented, drop.defaultPrevented]).toEqual([docks, docks]);
+    expect(s.debug.view.atom.get().drawer.docs).toEqual(docks ? [`${m.src.url}|`] : []);
+    expect(JSON.stringify(s.doc().objects)).toBe(objects);
+    expect(s.debug.view.atom.get().notices).toEqual([]);
+  });
+
+  it("two objects' Sources dock as two tabs, each titled after its object; Show keeps a pane's title", async () => {
+    const repo = new FakeRepo();
+    const thing = (title) => repo.add({ "@patchwork": { type: "thing" }, title });
+    const render = (parent) => repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    const [hull, mast, notes] = [thing("hull"), thing("mast"), thing("notes")];
+    const objects = {
+      hull: object({ name: "Hull", sourceUrl: hull.url, renderUrl: render(hull.url).url, visible: false }),
+      mast: object({ name: "Mast", sourceUrl: mast.url, renderUrl: render(mast.url).url, visible: false }),
+      deck: object({ name: "Deck", sourceUrl: notes.url, renderUrl: render(notes.url).url, visible: false }),
+    };
+    await mount({ repo, objects });
+    const tabs = () => s.debug.view.atom.get().drawer.tabs;
+    for (const id of ["hull", "mast"]) {
+      await select(id);
+      section(`${ME}/source`).querySelector(".section-dock").click();
+      await settle();
+    }
+    expect(tabs()).toEqual(["Inspector", "Hull · Source", "Mast · Source"]);
+    // a document docked under a name of its own keeps it when a section shows it
+    s.api(ME).view.dock({ url: notes.url, title: "My notes" });
+    await select("deck");
+    docTab("Inspector").querySelector(".stage-drawer-tab-name").click();
+    await settle();
+    section(`${ME}/source`).querySelector(".section-show").click();
+    await settle();
+    expect(tabs()).toEqual(["Inspector", "Hull · Source", "Mast · Source", "My notes"]);
+    expect(s.debug.view.atom.get().drawer.shown).toBe("My notes");
   });
 
   it("the source shown is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {

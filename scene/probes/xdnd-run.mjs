@@ -447,18 +447,28 @@ async function main() {
     await P(`select("a", "bracket")`);
     await b.rest(400);
     const before = await P(`doc("a")`);
-    const head = await P(`sectionHead("a", "source")`);
     const strip = await P(`strip("a")`);
     const s0 = await P(`section("a", "source")`);
-    check("sourceSectionInline", !!head && s0?.inline && !s0.docked, s0);
+    check("sourceSectionInline", !!(await P(`sectionHead("a", "source")`)) && s0?.inline && !s0.docked, s0);
+    // let go on a row of the tree, in the same pane: nothing (the head's drag is the scene's own, never added)
+    {
+      const row = await P(`row("a", "crate")`);
+      const h = await P(`sectionHead("a", "source")`);
+      // (where it's let go is really the row: what's under the last point)
+      const under = (x, y) => b.js(`document.elementFromPoint(${x}, ${y})?.closest("li.object-row")?.dataset.id ?? null`);
+      const { seen } = await b.htmlDrag([Math.round(h.x), Math.round(h.y)], [[Math.round(h.x - 8), Math.round(h.y)], ...towards([h.x, h.y], [row.li.x, row.li.y], 5)].map(([x, y]) => [Math.round(x), Math.round(y)]), { during: under });
+      await b.rest(600);
+      check("headOnTreeRowAddsNothing", seen.at(-1) === "crate" && sameJSON(await P(`doc("a")`), before) && sameJSON((await P(`drawer("a")`))?.docs ?? [], []), { under: seen.at(-1) });
+    }
+    const head = await P(`sectionHead("a", "source")`);
     const to = [Math.round(strip.left + strip.w - 24), Math.round(strip.y)];
     const { types } = await b.htmlDrag([Math.round(head.x), Math.round(head.y)], [[Math.round(head.x - 8), Math.round(head.y)], ...towards([head.x, head.y], to, 5)].map(([x, y]) => [Math.round(x), Math.round(y)]));
     await b.rest(400);
     const d1 = await P(`drawer("a")`);
     const s1 = await P(`section("a", "source")`);
     report.detach = { types, drawer: d1, section: s1 };
-    check("headDragCarriesADocument", ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain"].every((t) => (types ?? []).includes(t)), types);
-    check("droppedOnStripDocks", sameJSON(d1?.docs, [`${files.stl}|`]) && d1.panes === 1 && d1.tabs.includes("Source") && d1.shown === "Source" && d1.kind === "editor" && d1.embedded, d1);
+    check("headDragCarriesADocument", ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain", "application/x-scene-section"].every((t) => (types ?? []).includes(t)), types);
+    check("droppedOnStripDocks", sameJSON(d1?.docs, [`${files.stl}|`]) && d1.panes === 1 && d1.tabs.some((t) => t.endsWith(" · Source")) && d1.shown?.endsWith(" · Source") && d1.kind === "editor" && d1.embedded, d1);
     check("sectionFoldsWhileDocked", s1?.docked && !s1.inline && s1.away, s1);
     check("stripDropAddsNothing", sameJSON(await P(`doc("a")`), before));
     await shot("8-source-docked");
@@ -469,13 +479,13 @@ async function main() {
     await P(`select("a", "bracket")`);
     await b.rest(300);
     // its ×: the pane goes, the section unfolds
-    const x = await P(`tabClose("a", "Source")`);
+    const x = await P(`tabClose("a", " · Source")`);
     await b.click(x.x, x.y);
     await b.rest(400);
     const d2 = await P(`drawer("a")`);
     const s2 = await P(`section("a", "source")`);
     report.detach.closed = { drawer: d2, section: s2 };
-    check("closedPaneGoes", sameJSON(d2?.docs, []) && d2.panes === 0 && !d2.tabs.includes("Source"), d2);
+    check("closedPaneGoes", sameJSON(d2?.docs, []) && d2.panes === 0 && !d2.tabs.some((t) => t.endsWith(" · Source")), d2);
     check("sectionUnfoldsWhenClosed", s2?.inline && !s2.docked && !s2.away, s2);
     await shot("9-source-closed");
   }

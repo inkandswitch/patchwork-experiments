@@ -3,6 +3,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import add, { accepts, baseName, mimeOf, templatesOf, ROW_MIME } from "./add.js";
+import { SECTION_MIME } from "../dnd.js";
 
 const ADD = { meta: { id: "scene.add" }, module: add };
 
@@ -54,6 +55,8 @@ describe("scene.add", () => {
     expect(accepts({ types: ["text/x-patchwork-dnd"] })).toBe(true);
     expect(accepts({ types: ["Files"] })).toBe(true);
     expect(accepts({ types: [ROW_MIME, "text/plain"] })).toBe(false);
+    // an inspector section's head: a document, but never one to add
+    expect(accepts({ types: [SECTION_MIME, "text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain"] })).toBe(false);
     expect(accepts({ types: ["text/html"] })).toBe(false);
     expect(accepts(null)).toBe(false);
     expect(mimeOf("a.glb", "")).toBe("model/gltf-binary");

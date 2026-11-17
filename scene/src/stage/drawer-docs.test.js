@@ -97,6 +97,26 @@ describe("a document docked in the drawer is the view's", () => {
     }
   });
 
+  it("a pane docked with nothing selected: the router is told the pointer is wanted, and not once it's closed", async () => {
+    const { view, notes } = await mountWithLink();
+    // nothing selected, nothing docked (the inspector may stay open on the scene: its × shuts it)
+    view.select(null);
+    await settle();
+    const wanted = () => view.atom.get().pointer.wanted;
+    const close = () => [...view.root.querySelectorAll(".stage-drawer-tab")].forEach((t) => t.querySelector(".stage-drawer-tab-close").click());
+    close();
+    await settle();
+    expect([view.drawer.state().order.length, wanted()]).toEqual([0, false]);
+    // docked with nothing selected: nothing else changes, so only the drawer's change can tell the router
+    s.api("scene.inspector").view.dock({ url: notes.url, title: "Notes" });
+    await settle();
+    expect(view.atom.get().selected).toBeNull();
+    expect([view.drawer.state().order.length, wanted()]).toEqual([1, true]);
+    close();
+    await settle();
+    expect([view.drawer.state().order.length, wanted()]).toEqual([0, false]);
+  });
+
   it("its × closes it, and view.drawer.docs says so", async () => {
     const { view, notes } = await mountWithLink();
     s.api("scene.inspector").view.dock({ url: notes.url, title: "Notes" });

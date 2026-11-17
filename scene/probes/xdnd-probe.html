@@ -171,7 +171,7 @@ try {
     /** the drawer's tab strip (where a document docks), and the drawer as shown */
     strip: (w) => rect(hosts[w].querySelector(".stage-drawer-tabs")),
     drawer: (w) => { const d = hosts[w].querySelector(".stage-drawer"); return d && { tabs: [...d.querySelectorAll(".stage-drawer-tab-name")].map((e) => e.textContent), shown: d.querySelector('[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, kind: d.dataset.kind ?? null, docs: dbg[w].view.atom.get().drawer.docs, panes: d.querySelectorAll(".stage-drawer-doc").length, text: d.querySelector(".stage-drawer-doc")?.textContent ?? null, embedded: !!d.querySelector(".stage-drawer-doc")?.closest("[data-stage-embed]") }; },
-    tabClose: (w, title) => { const t = [...hosts[w].querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title); return t ? rect(t.querySelector(".stage-drawer-tab-close")) : null; },
+    tabClose: (w, title) => { const t = [...hosts[w].querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent.endsWith(title)); return t ? rect(t.querySelector(".stage-drawer-tab-close")) : null; },
   };
   window.__ready = true;
 } catch (err) {

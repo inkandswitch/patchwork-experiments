@@ -582,13 +582,14 @@ describe("documents docked in the drawer", () => {
   const closes = {};
   const SEQUENCE = [
     ["dock A", (d) => (closes.A = d.dockDocument({ url: A, title: "A" })), ["Inspector", "A"], "A", [`${A}|`]],
-    ["dock A again (the Inspector shown meanwhile): its tab shows, no second pane", (d) => (d.el.querySelector(".stage-drawer-tab-name").click(), d.dockDocument({ url: A, title: "A" })), ["Inspector", "A"], "A", [`${A}|`]],
+    ["dock A again as \"A2\" (the Inspector shown meanwhile): its tab shows, under its first title, no second pane", (d) => (d.el.querySelector(".stage-drawer-tab-name").click(), d.dockDocument({ url: A, title: "A2" })), ["Inspector", "A"], "A", [`${A}|`]],
     ["dock A with tool X: another pane", (d) => (closes.AX = d.dockDocument({ url: A, toolId: "x", title: "A in X" })), ["Inspector", "A", "A in X"], "A in X", [`${A}|`, `${A}|x`]],
     ["dock A with tool Y: another pane", (d) => d.dockDocument({ url: A, toolId: "y", title: "A in Y" }), ["Inspector", "A", "A in X", "A in Y"], "A in Y", [`${A}|`, `${A}|x`, `${A}|y`]],
     ["× on A", (d) => d.el.querySelectorAll(".stage-drawer-tab-close")[1].click(), ["Inspector", "A in X", "A in Y"], "A in Y", [`${A}|x`, `${A}|y`]],
     ["close() of A in X, twice", () => (closes.AX(), closes.AX()), ["Inspector", "A in Y"], "A in Y", [`${A}|y`]],
+    ["dock A again after its ×: a new pane, under the title given now", (d) => d.dockDocument({ url: A, title: "A again" }), ["Inspector", "A in Y", "A again"], "A again", [`${A}|y`, `${A}|`]],
   ];
-  it("one pane per document and tool: every act of the sequence (6 rows) → the tabs, the one shown, and docs", () => {
+  it("one pane per document and tool: every act of the sequence (7 rows) → the tabs, the one shown, and docs", () => {
     const { drawer, seen } = mount();
     for (const [name, act, tabs, on, docs] of SEQUENCE) {
       act(drawer);

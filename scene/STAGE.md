@@ -276,7 +276,7 @@ the calls named here, never swapped.
 | `escape` | the view | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`). Leaving the focus is a layer only a general part sees |
 | `theme` | the view | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | `api.notify` | `[{ id, text, kind, at }]` |
-| `drawer` | `api.dock`, `api.view.dock` | `{ tabs, shown, docs }`: the drawer's tabs by title, in docking order, the one shown (null with none docked), and the documents docked there, each `docKey(url, toolId)` (`src/dnd.js`), in docking order; so a surface showing whether a tab is open (the toolbar's Inspector, Dimensions, Parts) hears when it closes, and an inspector section knows its doc is in the drawer |
+| `drawer` | `api.dock`, `api.view.dock` | `{ tabs, shown, docs }`: the drawer's tabs by title, in docking order, the one shown (null with none docked), and the documents docked there, each `docKey(url, toolId)` (`src/dnd.js`), in docking order (tabs are told apart by title; a document's pane by its key in `docs`). Any change of it tells the pointer router to look again, since an open drawer wants the pointer; so a surface showing whether a tab is open (the toolbar's Inspector, Dimensions, Parts) hears when it closes, and an inspector section knows its doc is in the drawer |
 | `prefs` | `api.setPref` | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | the view (general parts only) | every open doc's packages this viewer doesn't have, one prompt's worth (see "Packages") |
 | `clocks` | the view (general parts only) | the focus path's clocks, outermost first: `[{ stage, name, status }]`, one per stage on the path whose `clock` is not null, `name` the trail's for that doc. The clock chip's: a chip per doc, Pause and Resume through each stage's reader (`clock`) |
@@ -1204,7 +1204,7 @@ that extension.
 
 | | |
 |---|---|
-| `view` | `{ get(), watch(fn, select?), select(target), enter(linkId) → boolean, dock({ url, toolId?, title }) → close }`, and a general part's `reopened(title)`: the viewer's local value as this stage sees it ("Three places for state"), selecting this stage's target (cut at the focus), entering one of its links, and docking a document in the drawer. `dock` puts the host's view of the doc (a `<patchwork-view doc-url tool-id>`, `src/embed.js` `documentView`) in a drawer pane of the editor kind, embedded (its keys its own), titled `title`; there is one pane per `docKey(url, toolId)`, so docking one again only shows (and retitles) its tab; a url that isn't an automerge URL docks nothing, and any heads are dropped (a pane follows the latest). The pane is the view's, not the extension's: it stays across selections, bodies, focus moves and its docker stopping, and goes by its ×, `close()` (idempotent) or the view going. `view.drawer.docs` lists what's docked. The drawer's tab strip docks any Patchwork document dropped on it the same way (`src/stage/dock.js`), and nothing dropped there reaches the scene |
+| `view` | `{ get(), watch(fn, select?), select(target), enter(linkId) → boolean, dock({ url, toolId?, title }) → close }`, and a general part's `reopened(title)`: the viewer's local value as this stage sees it ("Three places for state"), selecting this stage's target (cut at the focus), entering one of its links, and docking a document in the drawer. `dock` puts the host's view of the doc (a `<patchwork-view doc-url tool-id>`, `src/embed.js` `documentView`) in a drawer pane of the editor kind, embedded (its keys its own), titled `title`; there is one pane per `docKey(url, toolId)`, so docking one again only shows its tab, under the title it was first docked with; a url that isn't an automerge URL docks nothing, and any heads are dropped (a pane follows the latest). The pane is the view's, not the extension's: it stays across selections, bodies, focus moves and its docker stopping, and goes by its ×, `close()` (idempotent) or the view going. `view.drawer.docs` lists what's docked. The drawer's tab strip docks any Patchwork document dropped on it the same way (`src/stage/dock.js`), and nothing dropped there reaches the scene |
 | `link(id)` | `{ role: "acting" \| "mirror" \| "pinned" \| "closed", open, reason? }` for one of this doc's links: what the view made of it here, and whether its doc is drawn |
 | `collect(name)` | `[{ id, value }]`: running extensions' contributions of that name, in running order; a general part's from every acting stage, each item tagged with its `stage` |
 | `run({ stage?, ext, command, target, value?, hit? })` | run a command, in the context surfaces compute (`context` below); `stage` (a general part's) runs it in that stage |
@@ -1663,10 +1663,15 @@ target, which the inspector shows as sections):
   this scene's context (a die's panel) is a command that docks its own
   element (`api.dock`).
 - Its head drags as a Patchwork document (`text/x-patchwork-dnd`
-  `{ source: "scene", items: [{ url, name: label, toolId? }] }`,
-  `text/x-patchwork-urls` and `text/plain`, nothing else), so whatever takes
-  one takes it: the drawer's tab strip docks it, as Dock does. Let go back
-  in the inspector's pane, it's nothing. While its `docKey(url, toolId)` is
+  `{ source: "scene", items: [{ url, name: title, toolId? }] }`,
+  `text/x-patchwork-urls` and `text/plain`) and as the scene's own
+  (`application/x-scene-section`, its `docKey`; `src/dnd.js` `ownDrag`, as
+  a tree row's `application/x-scene-object` is), nothing else. So whatever
+  takes a Patchwork document takes it (the drawer's tab strip docks it, as
+  Dock does), and nothing in a scene adds it: let go anywhere else in the
+  stage (its pane, the tree, the view), it's nothing. Its pane is titled
+  after what the section is of, `<object> · <label>` ("Hull · Source"), so
+  two objects' sections are two tabs told apart. While its `docKey(url, toolId)` is
   in `view.drawer.docs`, an open section shows "In the drawer · Show"
   (Show docks it again, which shows its tab) instead of the doc: a doc and
   tool has one live view in the stage, never two.

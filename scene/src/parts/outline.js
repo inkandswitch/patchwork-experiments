@@ -38,7 +38,7 @@ import css from "./outline.css?inline";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
-import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, parsePatchworkDrop } from "../dnd.js";
+import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, ownDrag, parsePatchworkDrop } from "../dnd.js";
 import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
@@ -464,7 +464,8 @@ export function createOutline(api, { shown = () => true } = {}) {
     // Two drags end here, told apart by mime: a row being moved inside the
     // tree carries ROW_MIME, a document from the sidebar carries the
     // patchwork payloads. Both ask tree-drop.js the same question — which
-    // parent, and in front of which sibling.
+    // parent, and in front of which sibling. The scene's other own drag (a
+    // section's head, dnd.js ownDrag) is a document too, but never one to add.
     let mark = null;
     const showMark = (next) => {
       if (mark?.li && mark.li !== next?.li) delete mark.li.dataset.drop;
@@ -482,11 +483,12 @@ export function createOutline(api, { shown = () => true } = {}) {
       return { id, li, expanded: li.getAttribute("aria-expanded") === "true", intent: dropIntent(isGroup(objects[id]), fraction) };
     };
     const isRowDrag = (dt) => [...(dt?.types ?? [])].includes(ROW_MIME);
+    const adds = (dt) => !ownDrag(dt) && hasPatchworkDrop(dt);
 
     list.addEventListener("dragover", (e) => {
       const dt = e.dataTransfer;
       const moving = isRowDrag(dt);
-      if (!moving && !hasPatchworkDrop(dt)) return;
+      if (!moving && !adds(dt)) return;
       const target = targetUnder(e);
       if (!target) return showMark(null);
       e.preventDefault();
@@ -520,7 +522,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         if (drag.id === target.id) return select(drag.id);
         return moveRow(drag.id, place);
       }
-      if (!hasPatchworkDrop(dt)) return;
+      if (!adds(dt)) return;
       const items = parsePatchworkDrop(dt);
       if (!items.length) return;
       e.preventDefault();

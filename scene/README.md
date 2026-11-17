@@ -208,7 +208,8 @@ STAGE.md, "Extract and bundle".
   **About** (its `infoUrl` document, or its nearest group's, labelled
   "About <group>"). A package adds its own by declaring `documents`
   (STAGE.md "A document"). **Dock**, or dragging a section's head onto the
-  drawer's tabs, puts the document in a drawer pane of its own, which stays
+  drawer's tabs, puts the document in a drawer pane of its own (titled
+  after its object: "Hull · Source"), which stays
   until its × whatever you select or wherever you go; the section then says
   "In the drawer · Show". The drawer's tabs take any document dropped on
   them, from Patchwork's sidebar too.

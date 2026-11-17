@@ -68,7 +68,7 @@ import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
 import { EMBED_ATTR, documentView } from "../embed.js";
-import { DND_MIME, URLS_MIME, docKey } from "../dnd.js";
+import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
@@ -459,9 +459,6 @@ function create(api) {
 
   // ─── documents: a section each ────────────────────────────────────────────
 
-  // A section's head being dragged from this pane: a drop back in it is nothing (not a document added to the scene)
-  let headDrag = false;
-
   /**
    * One section: a head (its label, which folds it, Dock and Open) and, while
    * it's open, the document (embed.js documentView, in the embed marker). Open
@@ -471,7 +468,10 @@ function create(api) {
    * section shows "In the drawer · Show" instead, so one doc never has two
    * live views in the stage. The head is dragged as a Patchwork document
    * (dnd.js), so anything that takes one (the tab strip, Patchwork's frame)
-   * takes it.
+   * takes it, and as the scene's own (SECTION_MIME), so nothing in a scene
+   * adds it: let go anywhere else in the stage, it's nothing. A pane is
+   * titled after what the section is of (`title`: "Built · Source"), so two
+   * objects' Sources are two tabs told apart.
    */
   function sectionView(doc) {
     const fold = el("button", { type: "button", class: "section-fold", "aria-expanded": "false" });
@@ -488,20 +488,19 @@ function create(api) {
     let shown = null;
     fold.addEventListener("click", () => api.setPref(sectionPref(doc.ext, doc.id), !shown.open));
     open.addEventListener("click", () => root.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url: doc.url, ...(doc.toolId ? { toolId: doc.toolId } : {}) }, bubbles: true, composed: true })));
-    const toDrawer = () => api.view.dock({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.label ?? doc.label });
+    const toDrawer = () => api.view.dock({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.title ?? doc.label });
     dock.addEventListener("click", toDrawer);
     show.addEventListener("click", toDrawer);
     head.addEventListener("dragstart", (e) => {
       const dt = e.dataTransfer;
       if (!dt) return;
-      const item = { url: doc.url, name: shown?.label ?? doc.label, ...(doc.toolId ? { toolId: doc.toolId } : {}) };
+      const item = { url: doc.url, name: shown?.title ?? doc.label, ...(doc.toolId ? { toolId: doc.toolId } : {}) };
       dt.setData(DND_MIME, JSON.stringify({ source: "scene", items: [item] }));
       dt.setData(URLS_MIME, JSON.stringify([doc.url]));
       dt.setData("text/plain", doc.url);
+      dt.setData(SECTION_MIME, docKey(doc.url, doc.toolId));
       dt.effectAllowed = "copy";
-      headDrag = true;
     });
-    head.addEventListener("dragend", () => (headDrag = false));
     const close = () => {
       view?.remove();
       view = null;
@@ -517,7 +516,6 @@ function create(api) {
         fold.setAttribute("aria-expanded", String(next.open));
         root.toggleAttribute("data-folded", !next.open);
         root.toggleAttribute("data-docked", next.docked);
-        dock.textContent = next.docked ? "In the drawer" : "Dock";
         away.hidden = !(next.open && next.docked);
         embed.hidden = !live;
         if (live && !view) embed.append((view = documentView(next)));
@@ -540,6 +538,9 @@ function create(api) {
       update(target) {
         const list = documentsFor(api.collect("documents"), target, api.context(null), ID);
         const docked = new Set(api.view.get().drawer?.docs ?? []);
+        // a drawer pane is titled after the object (or the scene) as well as the section
+        const of = target == null ? null : api.nameOf(target) || "Untitled";
+        const paneTitle = (label) => (of ? `${of} · ${label}` : label);
         const next = new Map();
         for (const d of list) {
           const k = `${d.ext}/${d.id}`;
@@ -551,7 +552,7 @@ function create(api) {
           }
           rec ??= { identity, view: sectionView(d) };
           const pref = api.pref(sectionPref(d.ext, d.id), null);
-          rec.view.update({ ...d, open: typeof pref === "boolean" ? pref : !d.folded, docked: docked.has(identity) });
+          rec.view.update({ ...d, title: paneTitle(d.label), open: typeof pref === "boolean" ? pref : !d.folded, docked: docked.has(identity) });
           next.set(k, rec);
         }
         for (const [k, rec] of live) if (!next.has(k)) rec.view.dispose();
@@ -1051,10 +1052,6 @@ function create(api) {
     },
   ];
 
-  // a head's drag is over once anything is dropped or the drag ends, wherever (its section may have gone meanwhile)
-  api.listen(globalThis, "dragend", () => (headDrag = false), { capture: true });
-  api.listen(globalThis, "drop", () => (headDrag = false));
-
   // ─── the tab: opened by a selection (or when asked), then open until shut ──
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
@@ -1068,8 +1065,6 @@ function create(api) {
     title: "Inspector",
     mount(host) {
       host.classList.add("inspector-pane");
-      // a section's head let go back in this pane is nothing (no document added to the scene): its drags stop here
-      for (const type of ["dragenter", "dragover", "drop"]) host.addEventListener(type, (e) => headDrag && e.stopPropagation());
       const treeHost = el("div", { class: "inspector-tree" });
       const fields = el("div", { class: "inspector-body" });
       host.replaceChildren(treeHost, fields);

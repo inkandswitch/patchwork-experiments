@@ -29,7 +29,7 @@
 // A document can be docked as well as an element (TOOLS.md §6, "Documents
 // in the drawer"): dockDocument({ url, toolId, title }) docks the host's view
 // of it (embed.js documentView) in a pane of the editor kind, keyed by
-// docKey(url, toolId), so docking one key again only shows (and retitles)
+// docKey(url, toolId), so docking one key again only shows (keeping its title)
 // its tab, and there is at most one pane per key. These panes are the view's
 // (api.view.dock), not an extension's: no extension stopping closes them,
 // only their ×, their close(), or the view going. The tab strip takes a drop
@@ -166,8 +166,11 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   const mine = new Set();
   /** content element → { owner, pane, tab, name, embed, doc, onClose, close } (`doc`: a document's key, else null) */
   const entries = new Map();
-  /** a docked document's key → its content element */
-  const docs = new Map();
+  /** The content element docked for a document's key, or null */
+  const paneOf = (key) => {
+    for (const [content, e] of entries) if (e.doc === key) return content;
+    return null;
+  };
 
   function render() {
     const on = shownOf(model);
@@ -287,7 +290,6 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     const e = entries.get(key);
     if (!e) return null;
     entries.delete(key);
-    if (e.doc != null && docs.get(e.doc) === key) docs.delete(e.doc);
     model = undocked(model, key);
     e.tab.remove();
     e.pane.remove();
@@ -344,8 +346,8 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
 
   /**
    * Dock a document (the view's: TOOLS.md §6): its view in an editor pane,
-   * one per docKey(url, toolId); docking a key that's docked shows its tab
-   * (under `title`, if given). → close. A url that isn't a document's docks
+   * one per docKey(url, toolId); docking a key that's docked shows its tab,
+   * under the title it was first docked with. → close. A url that isn't a document's docks
    * nothing (a version's heads are dropped: a pane follows the latest).
    */
   function dockDocument({ url, toolId = null, title } = {}) {
@@ -353,12 +355,11 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     if (!u) return () => {};
     const tool = typeof toolId === "string" && toolId ? toolId : null;
     const key = docKey(u, tool);
-    let content = docs.get(key);
-    if (!content) {
-      content = make("div", "stage-drawer-doc");
-      content.append(documentView({ url: u, toolId: tool, label: title }));
-      docs.set(key, content);
-    }
+    // docked already: shown, under the title it was docked with
+    const had = paneOf(key);
+    if (had) return dock(DOCS, had, { doc: key });
+    const content = make("div", "stage-drawer-doc");
+    content.append(documentView({ url: u, toolId: tool, label: title }));
     return dock(DOCS, content, { title: title || "Document", embed: true, doc: key });
   }
 

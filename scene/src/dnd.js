@@ -146,3 +146,20 @@ export function parseAutomergeUrl(input) {
  * of drag has to be legible from the mime alone.
  */
 export const ROW_MIME = "application/x-scene-object";
+
+/**
+ * An inspector section's head being dragged (parts/inspector.js): a document
+ * to show somewhere else (the drawer's tab strip, Patchwork's frame), never
+ * one to add to a scene. Its value is the section's docKey.
+ */
+export const SECTION_MIME = "application/x-scene-section";
+
+/**
+ * Is this drag one of the scene's own: a row being moved or a section's head?
+ * Those add nothing to a scene, wherever they're let go. Pure; reads only
+ * `types`, so it holds during dragover.
+ */
+export function ownDrag(dt) {
+  const types = dt?.types ? [...dt.types] : [];
+  return types.includes(ROW_MIME) || types.includes(SECTION_MIME);
+}

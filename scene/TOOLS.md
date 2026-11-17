@@ -1680,7 +1680,8 @@ The project lead decided the five open questions on 2026-11-12.
       edit.
     - **One way in, the standard payload**: a section's head drags as a
       Patchwork document (the three types Patchwork's sidebar uses, the
-      item carrying its `toolId`), and the tab strip docks any Patchwork
+      item carrying its `toolId`), plus the scene's own type
+      (`application/x-scene-section`), and the tab strip docks any Patchwork
       document dropped on it. So a doc from Patchwork's sidebar, an outline
       row's own document and a section all dock the same way, and a frame
       that takes Patchwork drops takes a section's head too. `dnd.js` now
@@ -1688,10 +1689,23 @@ The project lead decided the five open questions on 2026-11-12.
       version and tool.
     - **The strip's drags are its own**: a drag over it never reaches the
       stage (the scene's add, a row's copy), whatever it carries; one that
-      carries a document may drop there. A section's head let go back in
-      the inspector's pane is nothing (no doc added to the scene); dropped
-      on the view, it is any document dropped there, which Edit adds to
-      the scene (a question, below).
+      carries a document may drop there. A section's head let go anywhere
+      else in the stage (its pane, the tree, the view) is nothing: nothing
+      in a scene adds it. That is told by its type, as a tree row's is
+      (`dnd.js` `ownDrag`, which the add and the tree both refuse), so it
+      holds at dragover and needs no flag (review fix, 2026-11-17: the
+      tree, in the same pane, used to add it). Adding a section's doc to
+      the scene by dragging is the lead's to opt into (a question, below).
+    - **A pane is titled after its object**: `<object> · <label>` ("Hull ·
+      Source"; the label alone for the scene's), so two objects' Sources
+      are two tabs, and the drawer's state (by title) tells them apart.
+      Docking a doc that's docked shows it under the title it was first
+      docked with (a doc dropped as "My notes" stays that). Decided
+      unattended (2026-11-17, lane/sidebar), for the lead.
+    - **The drawer changing tells the pointer router**: any change of
+      `view.drawer` (not only a selection) has the router look again, so a
+      pane docked by a command in a pointer-locked body frees the pointer,
+      and its last × gives it back.
     - **Docked, a section shows where it is**: an open section whose doc
       and tool are in `view.drawer.docs` shows "In the drawer · Show"
       instead of its view (a pure function of the drawer, so there's never
@@ -1703,8 +1717,8 @@ The project lead decided the five open questions on 2026-11-12.
     Questions for the lead: is the drawer the right "own panel", or should
     Dock ask Patchwork for a panel beside the scene (it has no such event
     today: Open is the main view)? Should a section's head dropped on the
-    scene's view add that document to the scene (as now, as any doc
-    dropped there does), or should a section's own drag never add? Should
-    a docked document leave with Edit, as the inspector does? And should
-    a docked doc's pane say which object it came from (now its title is
-    the section's label: Source, Build, About X)?
+    scene's view add that document to the scene, as any doc dropped there
+    does (now it never adds: a missed drag at the strip writes nothing)?
+    Should a docked document leave with Edit, as the inspector does? And
+    what should a docked doc's pane be called (now `<object> · <label>`;
+    the doc's own title would need a load)?
