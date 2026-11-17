@@ -52,7 +52,7 @@
 // original on every field but runtime state and render doc identity when S
 // has no edge outside it (I9: src/extract.test.js says exactly which edges).
 //
-// Both are edits (api.edits: undo takes them back as one step), and each
+// Both are edits (parts/editor.js: undo takes them back as one step), and each
 // writes the host once, in one change, computed from the host as it is at
 // that moment. Extract's compare-and-set is on everything T was made from
 // (its footprint: S worked out again, S's records and order, p, K's traits,
@@ -74,6 +74,7 @@ import { newObjectRecord, orderedIds } from "./ops.js";
 import { listedPackages, packageUrl, packagesToList } from "./packages.js";
 import { pinnedRepo } from "./build.js";
 import { LINK, atOf, isLink } from "./stage/links.js";
+import { editor } from "./parts/editor.js";
 import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
 
 const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
@@ -598,12 +599,7 @@ export async function extractObjects(api, roots, traits = []) {
     api.notify("It changed while it was being extracted: nothing was changed here. Try again.", "error");
     return null;
   }
-  const edit = api.edits("Extract");
-  try {
-    edit.change(host.change);
-  } finally {
-    edit.end();
-  }
+  editor(api).edit(host.change, { label: "Extract" });
   tell(api, describes, { lost: [...plan.lost, ...host.lost], entries: [...plan.entries, ...host.entries] });
   api.view.select(link);
   return { url: handle.url, link };
@@ -648,12 +644,7 @@ export async function bundleLink(api, linkId, traits = []) {
     api.notify(plan.reason, "error");
     return null;
   }
-  const edit = api.edits("Bundle");
-  try {
-    edit.change(plan.change);
-  } finally {
-    edit.end();
-  }
+  editor(api).edit(plan.change, { label: "Bundle" });
   tell(api, describes, plan);
   if (plan.tops.length) api.view.select(plan.tops[0]);
   return plan.tops.length ? plan.tops : null;

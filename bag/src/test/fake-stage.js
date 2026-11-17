@@ -73,25 +73,26 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     change: (fn) => handle.change(fn),
     scene: () => snapshot(handle.doc()),
     newId: (prefix) => `${prefix}new${++n}`,
+    // the stage's remove and addObject: a change function for the caller to make
     remove(ids) {
       rec.removed.push([...ids]);
-      handle.change((d) => {
+      return (d) => {
         for (const id of ids) {
           // a group goes with what is in it, as the stage's remove does
           if (d.objects[id]?.kind === "group") for (const [m, o] of Object.entries(d.objects)) if (o.group === id) delete d.objects[m];
           delete d.objects[id];
         }
         d.order = d.order.filter((x) => d.objects[x]);
-      });
+      };
     },
     async addObject(url, opts) {
       const id = `ocopy${++n}`;
       rec.added.push({ url, opts: JSON.parse(JSON.stringify(opts)) });
-      handle.change((d) => {
+      const add = (d) => {
         d.objects[id] = { name: opts.name, sourceUrl: url, providerId: opts.providerId ?? null, renderUrl: opts.render ? "automerge:newrender" : null, parent: opts.parent ?? null, group: opts.group ?? null, transform: opts.transform, ...(opts.fields ?? {}) };
         d.order.push(id);
-      });
-      return id;
+      };
+      return Object.assign(add, { id });
     },
     notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text),
     send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]),

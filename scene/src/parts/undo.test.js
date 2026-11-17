@@ -1,5 +1,5 @@
 // scene.undo, mounted: ⌘Z / Ctrl+Z and the toolbar's Undo and Redo take back
-// the stage's own edits (here Delete, scene.select's), this viewer's; a
+// the editor's own edits (here Delete, scene.select's; ./editor.js), this viewer's; a
 // package's verb (a roll) is never on it, and an edit since changed by one is
 // left as the verb left it.
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -8,6 +8,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { fakeUrl } from "../test/fake-repo.js";
 import undo, { undoKey } from "./undo.js";
 import select from "./select.js";
+import { editor } from "./editor.js";
 
 const DICE = {
   meta: { id: "t.dice" },
@@ -74,17 +75,17 @@ describe("scene.undo", () => {
     expect(state("redo")).toEqual({ title: "Redo “Delete”" });
     // the die is rolled: no step of its own, and redo can't delete what the roll has moved since
     run("t.dice", "roll", "die");
-    expect(s.local.get().edits).toEqual({ undo: null, redo: "Delete" });
+    expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: "Delete" });
     press("z", { metaKey: true, shiftKey: true });
     expect(s.doc().objects.die.transform.position).toEqual([4, 0, 4]);
     expect(s.local.get().notices.at(-1).text).toBe("Nothing to redo: “Delete” has been changed since.");
-    expect(s.local.get().edits).toEqual({ undo: null, redo: null });
+    expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: null });
   });
 
   it("a field being typed in keeps ⌘Z (its own text undo)", async () => {
     s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
     await settle();
-    s.facet("scene.undo").edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
+    editor(s.facet("scene.undo")).edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
     const input = document.createElement("input");
     s.root.append(input);
     const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "z", metaKey: true });
@@ -98,9 +99,8 @@ describe("scene.undo", () => {
 
 // Undo's plain rule over reveals: a step that changed who may see something
 // is taken back like any other, whoever has a stake; a step that removed
-// something a keeper holds says what it can't put back. And only the stage's
-// own parts can edit at all.
-describe("undo over reveals, the keeper rule, and who may edit", () => {
+// something a keeper holds says what it can't put back.
+describe("undo over reveals, and the keeper rule", () => {
   // A card with one physical state of four: in ann's hand, in bob's hand,
   // face up on the table, face down on it. Who may see what it is: the
   // hand's player; everyone; nobody.
@@ -134,7 +134,7 @@ describe("undo over reveals, the keeper rule, and who may edit", () => {
       s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: { ...cardDoc(), ...(missing ? { packages: [{ url: fakeUrl() }] } : {}) } });
       await settle();
       const table = s.instance("t.table");
-      const edit = s.facet("scene.undo");
+      const edit = editor(s.facet("scene.undo"));
       for (const from of STATES) {
         for (const to of STATES) {
           if (from === to) continue;
@@ -165,35 +165,13 @@ describe("undo over reveals, the keeper rule, and who may edit", () => {
     const run = (command, target) => s.api("scene.undo").run({ ext: "scene.select", command, target });
     run("remove", "c1");
     expect(s.doc().objects.c1).toBeUndefined();
-    expect(s.facet("scene.undo").undo()).toBe(true);
+    expect(editor(s.facet("scene.undo")).undo()).toBe(true);
     expect(s.doc().objects.c1.traits["t.kept"]).toEqual({ by: "automerge:box", slot: 3 });
     expect(s.local.get().notices.at(-1).text).toBe("Undid “Delete”: what is kept for “Card” comes back as its keeper has it now, not as it was.");
     // something no keeper holds: undone without a word
     const before = s.local.get().notices.length;
     run("remove", "d");
-    expect(s.facet("scene.undo").undo()).toBe(true);
+    expect(editor(s.facet("scene.undo")).undo()).toBe(true);
     expect(s.local.get().notices.length).toBe(before);
-  });
-
-  it("only the stage's own parts can edit: a package's api has no edit, edits, undo or redo", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE, DICE], doc: cardDoc() });
-    await settle();
-    for (const k of ["edit", "edits", "undo", "redo"]) {
-      expect(typeof s.facet("scene.undo")[k], k).toBe("function");
-      expect(s.api("t.table")[k], k).toBeUndefined();
-      expect(s.api("t.dice")[k], k).toBeUndefined();
-    }
-    // a package passing a part's module through as its own isn't it: the mark is the module, not the id
-    s.unmount();
-    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: { create: (api) => undo.create(api) } }], doc: cardDoc() });
-    await settle();
-    expect(s.facet("scene.undo").edit).toBeUndefined();
-    // nor can it swap a part's create for its own: the marked module is frozen
-    const mine = (api) => ({ api });
-    expect(() => {
-      "use strict";
-      undo.create = mine;
-    }).toThrow(TypeError);
-    expect(undo.create).not.toBe(mine);
   });
 });

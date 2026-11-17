@@ -30,7 +30,7 @@ import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 import { contentMatrix } from "../stage/scope.js";
 import { editing } from "../stage/bodies.js";
 import { perFocus } from "./per-focus.js";
@@ -292,7 +292,7 @@ export function create(api) {
     const id = typeof value.id === "string" && value.id ? value.id : f.newId("d");
     // fresh plain data: automerge won't take a value that's already in a doc
     const dim = JSON.parse(JSON.stringify({ a: value.a, b: value.b, label: value.label ?? null }));
-    f.edit(
+    editor(f).edit(
       (d) => {
         d.dimensions[id] = dim;
       },
@@ -305,7 +305,7 @@ export function create(api) {
   function remove(id) {
     const f = F();
     if (id == null || !f) return;
-    f.edit(
+    editor(f).edit(
       (d) => {
         if (d.dimensions?.[id]) delete d.dimensions[id];
       },
@@ -517,4 +517,4 @@ export function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

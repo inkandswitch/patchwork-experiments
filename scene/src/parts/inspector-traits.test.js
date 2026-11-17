@@ -7,6 +7,7 @@ import { openTabs } from "../test/tabs.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
+import { editor } from "./editor.js";
 
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };
 
@@ -283,10 +284,10 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect(s.doc().view.start).toEqual({ body: "t.stroll", home });
     await fire(radio("look"), true);
     expect(s.doc().view.start).toEqual({ home });
-    expect(s.local.get().edits.undo).toBe("Starts in");
-    s.facet("scene.inspector").undo();
+    expect(editor(s.facet("scene.inspector")).labels().undo).toBe("Starts in");
+    editor(s.facet("scene.inspector")).undo();
     expect(s.doc().view.start).toEqual({ body: "t.stroll", home });
-    s.facet("scene.inspector").undo();
+    editor(s.facet("scene.inspector")).undo();
     expect(s.doc().view.start).toEqual({ body: "seat", place: "p1", home });
   });
 });

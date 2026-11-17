@@ -2,8 +2,8 @@
 // (STAGE.md, Invariants), checked over every read-only stage there is
 // (a pin, and a live doc acting where its handle refuses writes)
 // × every way an extension can write or speak: the api's writes, sends,
-// holds, claims, processes, the stage's own edits, parts, templates and
-// drops, the handle and the repo it is handed, and, for the stages that are
+// holds, claims, processes, the editor's edits, parts, templates and
+// drops (parts/editor.js, on its api), the handle and the repo it is handed, and, for the stages that are
 // drawn, everything that would act (input, bodies, tools, commands, chrome,
 // the camera). The docs these stages read are handed out with `change` and
 // `broadcast` that throw and log: a read-only stage must never reach them,
@@ -40,7 +40,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, FakeHandle } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
-import { own } from "./own.js";
+import { drop, editor, part, template } from "../parts/editor.js";
 import { manualTime } from "./time.js";
 import { CLOCK_HZ, CHECKPOINT_MS } from "./clock.js";
 import { HEARTBEAT_MS } from "./presence.js";
@@ -69,8 +69,7 @@ function armed(h, log, armed) {
 
 // The extensions G runs: t.probe (a package's: it keeps its api, and offers a
 // body, a command, a widget and an input, so a drawn stage is seen to offer
-// none of them), t.own (one of the stage's own parts: api.edit), a part and a
-// template that write.
+// none of them), a part and a template that write.
 const PROBE = {
   meta: { id: "t.probe", traits: ["t.game"] },
   module: {
@@ -83,7 +82,6 @@ const PROBE = {
     },
   },
 };
-const OWN = { meta: { id: "t.own", traits: ["t.game"] }, module: own({ create: () => ({}) }) };
 /** A general part (no trait: it runs in the focus, the host here), as the command bar or the menu is. */
 const GENERAL = { meta: { id: "t.general" }, module: { create: () => ({}) } };
 const PART = { meta: { id: "t.part" }, module: { create: (ctx) => ctx.addObject(ctx.url) } };
@@ -129,11 +127,11 @@ async function mount(role) {
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
   const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
-  s = await mountStage({ repo, time, extensions: [PROBE, OWN, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ repo, time, extensions: [PROBE, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
   const want = role === "pinned" ? ["P"] : ["L1"];
   for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle(1);
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
-  return { repo, time, g, then, log, arm, stage, api: stage.debug.host.record("t.probe").api, ownApi: stage.debug.host.record("t.own").api };
+  return { repo, time, g, then, log, arm, stage, api: stage.debug.host.record("t.probe").api };
 }
 
 /** Everything the stage logged as a warning or an error, from now. */
@@ -153,7 +151,7 @@ describe("I6: a read-only stage writes nothing", () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
-      const { api, ownApi, g } = m;
+      const { api, g } = m;
       expect(m.stage.role).toBe(ROLE[role]);
       expect("role" in api).toBe(false); // where it's placed is the view's, never an extension's to branch on (I4)
       expect(api.writable()).toBe(false);
@@ -183,14 +181,14 @@ describe("I6: a read-only stage writes nothing", () => {
       const off = api.clock.process({ start: () => started++, step: () => stepped++, save: (d) => (d.title = "saved") });
       api.clock.pause();
       api.clock.resume();
-      ownApi.edit((d) => (d.title = "edited"), { label: "Edit" });
-      const step = ownApi.edits("Several");
+      editor(api).edit((d) => (d.title = "edited"), { label: "Edit" });
+      const step = editor(api).edits("Several");
       step.change((d) => (d.title = "edited twice"));
       step.end();
-      ok("undo refuses", ownApi.undo() === false);
-      ok("part refuses", (await api.part("t.part")) === null);
-      ok("template refuses", (await api.template("t.template")) === false);
-      ok("drop refuses", (await api.drop({ url: g.url, datatype: "scene" })) === false);
+      ok("undo refuses", editor(api).undo() === false);
+      ok("part refuses", (await part(api, "t.part")) === null);
+      ok("template refuses", (await template(api, "t.template")) === false);
+      ok("drop refuses", (await drop(api, { url: g.url, datatype: "scene" })) === false);
       ok("addObject refuses", await api.addObject(g.url).then(() => false, (e) => /read-only/.test(e.message)));
       // the handle and the repo it was handed refuse (the only refusals it reaches are these, asked for directly)
       for (const what of REFUSED) ok(`api.handle.${what} refuses`, (() => { try { api.handle[what]?.(() => {}); return typeof api.handle[what] !== "function"; } catch (e) { return /read-only/.test(e.message); } })());

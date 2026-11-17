@@ -588,3 +588,31 @@ Simplified the same day: no seating, no lingering. The view offers its
 plugins' input, commands, `beforeRemove` and `update` at the focus stage,
 and `focus()` is that stage's api, given back as the focus leaves; the
 extension host runs them.
+
+### 2026-11-17 — Kernel step 3: undo, drops, parts and templates leave the kernel
+The kernel carried the editor's business: `stage/own.js` marked the
+stage's own part modules so only they got `api.edit`, `edits`, `undo` and
+`redo` (a privilege by identity), an `{ edit }` option ran through
+`addObject`, `remove`, `drop`, `part` and the drop context, and drops, parts
+and templates (`api.drop`, `api.part`, `api.template`, the drop context,
+`ctx.file`, `doc.assets`) lived in the stage and its host. Now the kernel's
+`change(fn)` returns its patches, and that is all it offers undo;
+`remove(ids)` and `addObject(url, opts)` return change functions (every
+`beforeRemove` then the removal; the new object with its `id`, its render
+doc made beforehand) for the caller to make, so the editor records them in
+its own step and a package (bag, machine) writes them with `api.change`.
+The editor writes through `src/parts/editor.js`: `editor(focus)` records
+each step from those patches onto this viewer's stacks for the focus doc,
+kept in the focus stage's `local.edits` (the toolbar reads its labels
+there), with the keepers note read from registry metadata; `drop`, `part`,
+`template` and `add` make the drop context from the focus, each one step.
+`src/undo.js` keeps its pure logic; its recorder takes any `{ url, doc(),
+change(fn) → patches }` and a store. The stage api's `view` gained
+`arrive()` (the outermost only), which a template's maker needs. Gone:
+`own.js`, `isOwn`, the edit api, every `edit` option, `NO_EDIT`,
+`judgeEdit`, `makeDropContext`, `applyPart`, `applyTemplate`, `sceneFile`,
+`host.drop`, `takesDrop`. Behaviour: a template is now one undo step
+("Template"); a drop context's notices are the editor plugin's, not the
+module's. Tests: the kernel's template, part, `ctx.file` and drop tests
+call the editor's functions on an extension's api; the `own()` test and the
+host's drop test went; undo's exhaustive tests are unchanged.

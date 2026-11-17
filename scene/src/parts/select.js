@@ -28,7 +28,7 @@
 //   deselects (stage/ladder.js: the Edit hand's escape, or the view's own
 //   with no hand held), not a key.
 
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 import { boxes } from "./boxes.js";
 import { perFocus } from "./per-focus.js";
 
@@ -119,10 +119,8 @@ export function create(api) {
     if (!plan || plan.ok === false) return false;
     const n = plan.within?.length ?? 0;
     if (n > 0 && !confirmRemove(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return false;
-    const edit = f.edits("Delete");
-    const done = f.remove([id], { edit });
-    edit.end();
-    const gone = new Set(done?.ids ?? plan.ids ?? [id]);
+    editor(f).edit(f.remove([id]), { label: "Delete" });
+    const gone = new Set(plan.ids ?? [id]);
     if (gone.has(selected())) select(null);
     return true;
   }
@@ -133,4 +131,4 @@ export function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

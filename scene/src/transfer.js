@@ -38,6 +38,7 @@ import { isGroup, resolveGroups } from "./groups.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "./transform.js";
 import { CARRY, intoSnap } from "./carry-rules.js";
+import { editor } from "./parts/editor.js";
 
 export { ROW_MIME };
 
@@ -607,7 +608,7 @@ async function extensionMetas(api) {
 
 /**
  * Copy objects from a scene (another, or this one) into this one.
- * @param {object} api  an extension's api: repo, url, doc, scene, change, newId, addObject, notify, registry, local
+ * @param {object} api  the focus's (a view plugin's api.focus()): repo, url, doc, scene, change, newId, addObject, notify, registry, local
  * @param {{ scene: string, ids: string[] }} payload
  * @param {{ land?: object | ((tags: string[]) => object | null), beside?: object | ((roots: string[]) => object), before?: string | null }} target
  *   as planCopy's; `land` may be a function of the copied top's tags (a
@@ -620,16 +621,15 @@ async function extensionMetas(api) {
  */
 export async function copyObjects(api, payload, target) {
   // the whole copy is one edit (HISTORY.md, TOOLS Decisions 2): undo takes it out again
-  const edit = typeof api.edits === "function" ? api.edits("Paste") : null;
+  const edit = editor(api).edits("Paste");
   try {
-    return await copyInto(api, payload, target, edit);
+    return await copyInto(api, payload, target, edit.change);
   } finally {
-    edit?.end();
+    edit.end();
   }
 }
 
-async function copyInto(api, payload, target, edit) {
-  const change = (fn) => (edit ? edit.change(fn) : api.change(fn));
+async function copyInto(api, payload, target, change) {
   const live = () => !api.signal?.aborted;
   const sceneUrl = parseAutomergeUrl(payload?.scene);
   if (!sceneUrl || !payload?.ids?.length) return null;
@@ -745,7 +745,7 @@ async function copyInto(api, payload, target, edit) {
     }
     const seed = seeds.get(it.from);
     try {
-      await api.addObject(it.data.sourceUrl, {
+      const add = await api.addObject(it.data.sourceUrl, {
         id: map.get(it.from),
         providerId: it.data.providerId ?? undefined,
         name: it.data.name || undefined,
@@ -755,8 +755,8 @@ async function copyInto(api, payload, target, edit) {
         transform: transform ?? undefined,
         fields,
         ...(seed ? { render: seed } : {}),
-        ...(edit ? { edit } : {}),
       });
+      change(add);
       made.add(it.from);
     } catch (err) {
       failed.push(`${it.data.name || "Object"}: ${err?.message ?? err}`);

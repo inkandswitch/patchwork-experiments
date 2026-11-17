@@ -25,8 +25,8 @@
 // nothing whatever it calls (invariant I6).
 //
 // The parts, in the order they're wired:
-//   - local state (atom.js): the stage's own (running, status, edits, clock,
-//     packages, and extensions' keys); the view's is `api.view`.
+//   - local state (atom.js): the stage's own (running, status, clock, packages,
+//     and extensions' keys); the view's is `api.view`.
 //   - content, routed at sync by the kind its provider makes (providers.js
 //     routeOf): the render manager for "built", the GLB queue for "file";
 //     their state → local.status.
@@ -60,8 +60,6 @@ import { createPackages } from "./packages.js";
 import { mergeAudience, mergeShown } from "./audience.js";
 import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
-import { createEdits } from "../undo.js";
-import { isOwn } from "./own.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
 import { isLink } from "./links.js";
 import { LOOK } from "./bodies.js";
@@ -76,14 +74,14 @@ import { layersKey } from "../layers.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc, seededRenderDoc } from "../datatype.js";
-import { atKey, defaultParams, paramsBySpec } from "../staleness.js";
+import { atKey, defaultParams } from "../staleness.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "../providers.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
-import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
+import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 import { createTelling, declared } from "./telling.js";
 
 // the view's pure parts, where they have always been imported from
@@ -108,8 +106,6 @@ const UI_PASSES = 3;
 /** Is this one of the router's events (so a stage hands it on in its own frame)? */
 const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
 const noop = () => {};
-/** A step of edits in a stage that may not write: it records and writes nothing. */
-const NO_EDIT = Object.freeze({ change: noop, end: noop });
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 /** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
@@ -302,8 +298,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const local = createAtom({
     running: Object.freeze([]),
     status: Object.freeze({}),
-    // the labels of the steps undo and redo would take, in this doc (src/undo.js)
-    edits: Object.freeze({ undo: null, redo: null }),
     // the doc's clock as the chip shows it (clock.js status), once known
     clock: null,
     // the listed packages this viewer doesn't have (STAGE.md, "Packages")
@@ -786,41 +780,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const answers = audienceAnswers(id);
     return answers ? mergeShown(answers) : null;
   };
-
-  // ─── what an edit did, for undo (HISTORY.md, TOOLS Decisions 2; src/undo.js) ──────
-  // Judged when a step of the stage's own editing is recorded, from the doc
-  // before its first change and after its last: `kept`, the names of the
-  // objects it removed whose contents a keeper holds (bound by the trait of
-  // an extension whose plugin says `keeper`: STAGE.md, "Keepers").
-
-  /** The traits a keeper binds objects by: those of every registered extension whose plugin says `keeper`. */
-  function keeperTraits() {
-    const out = new Set();
-    let list = [];
-    try {
-      list = patchworkPlugins.getRegistry("scene:extension")?.filter?.((p) => !!p?.keeper) ?? [];
-    } catch {
-      list = [];
-    }
-    for (const p of list) for (const t of Array.isArray(p.traits) ? p.traits : []) if (typeof t === "string") out.add(t);
-    return out;
-  }
-  /** What a step did to one doc: the scene's, judged; another (a render doc) keeps nothing. */
-  function judgeEdit({ handle: h, before, after }) {
-    if (h !== handle || !before || !after) return null;
-    const was = before.objects ?? {};
-    const now = after.objects ?? {};
-    const kept = [];
-    const gone = Object.keys(was).filter((id) => !now[id]);
-    if (gone.length) {
-      const traits = keeperTraits();
-      for (const id of gone) {
-        const t = was[id]?.traits;
-        if (t && typeof t === "object" && [...traits].some((k) => t[k] != null)) kept.push(String(was[id].name ?? id));
-      }
-    }
-    return { kept };
-  }
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
@@ -1460,31 +1419,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0 || own.holds.size > 0);
   };
 
+  /** Write fn, and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
   function change(fn) {
-    // null: nothing to do; a refusal (ops.js) writes nothing; a read-only stage writes nothing
-    if (typeof fn !== "function" || fn.ok === false || !writable()) return;
-    handle.change(fn);
-  }
-
-  // ─── edits: the stage's own, undone and redone (src/undo.js) ──────────────
-  // This viewer's stacks, per focus doc (the one stage's, until links). A
-  // step's writes are recorded from their own patches as they're made, so
-  // nothing else written meanwhile (a process's save, a peer's merge) is
-  // ever in it.
-  const edits = createEdits({
-    handle,
-    judge: (part) => judgeEdit(part),
-    writable: () => !dead && writable(),
-    notify: (text) => notify(text),
-    changed: (next) => {
-      if (!dead) local.swap((m) => (m.edits && m.edits.undo === next.undo && m.edits.redo === next.redo ? m : { ...m, edits: Object.freeze(next) }));
-    },
-  });
-  cleanups.push(() => edits.dispose());
-  /** Write fn: as part of an edit when one is given, else plainly. */
-  function write(edit, fn) {
-    if (edit && typeof edit.change === "function") edit.change(fn);
-    else change(fn);
+    let patches = [];
+    if (typeof fn === "function" && fn.ok !== false && writable()) handle.change(fn, { patchCallback: (p) => void (patches = p) });
+    return patches;
   }
 
   const setPref = (key, value) => view.setPref(key, value);
@@ -1493,16 +1432,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const notify = (text, kind = "info", from = null) => (dead ? null : view.notify(text, kind, from));
 
   /**
-   * Remove in one change, after every running extension's beforeRemove
-   * tidy-up (at the focus, the view's plugins' too). With `{ edit }` (an
-   * api.edits group), the change is that edit's, and undo puts it all back.
+   * Removing `ids` as a change function (ops.removeObjects's plan) that
+   * first runs every running extension's beforeRemove tidy-up (at the focus,
+   * the view's plugins' too), for the caller to write: null when there's
+   * nothing to remove or this view may not write.
    */
-  function remove(ids, { edit = null } = {}) {
-    if (!writable()) return null;
-    const plan = ops.removeObjects(scene(), ids);
-    if (!plan || !plan.ok) return plan;
+  function remove(ids) {
+    const plan = writable() ? ops.removeObjects(scene(), ids) : null;
+    if (!plan?.ok) return plan;
     const running = [...host.running(), ...(view.pluginsAt?.(stage) ?? [])];
-    write(edit, (d) => {
+    return Object.assign((d) => {
       for (const r of running) {
         if (typeof r.instance.beforeRemove !== "function") continue;
         try {
@@ -1512,8 +1451,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         }
       }
       plan(d);
-    });
-    return plan;
+    }, plan);
   }
 
   /**
@@ -1712,7 +1650,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    *   tags, colour…; never the fields above, nor `claims` or `saved`); render: a render
    *   doc to start the new one from (a copy's: its params, and its build when
    *   it was of this source by this provider; transfer.js renderSeed)
-   * @returns {Promise<string>} the new object's id; rejects with a sentence to show
+   * @returns {Promise<Function>} the write, a change function with the new
+   *   object's `id`, for the caller to make (api.change); rejects with a
+   *   sentence to show
    */
   async function addObject(input, opts = {}) {
     if (!writable()) throw new Error("This scene is read-only here.");
@@ -1746,7 +1686,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
     // fresh copies: automerge won't take a value that is already in a document
     const fields = opts.fields && typeof opts.fields === "object" ? JSON.parse(JSON.stringify(opts.fields)) : null;
-    write(opts.edit, (d) => {
+    const add = (d) => {
       // only what is still there can be a place (someone may have removed it meanwhile)
       const parent = opts.parent && d.objects[opts.parent] && !isGroup(d.objects[opts.parent]) ? opts.parent : null;
       const groupWanted = opts.group !== undefined ? opts.group : parent ? resolveGroups(d.objects).get(parent) ?? null : null;
@@ -1763,8 +1703,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       const at = opts.before ? d.order.indexOf(opts.before) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
       else d.order.push(id);
-    });
-    return id;
+    };
+    return ops.planned(add, { id });
   }
 
   /** Build an object's render doc now (loading it first if it's hidden). @returns {boolean} whether there was one */
@@ -1826,173 +1766,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const deps = Object.entries(point.deps ?? {});
     if (deps.length) out.deps = Object.fromEntries(deps.map(([u, h]) => [u, [...h]]));
     return out;
-  }
-
-  // ctx.file: the files being made here now, by key, so two drops at once
-  // make one
-  const filesMaking = new Map();
-
-  /**
-   * The scene's own file doc for `key` (STAGE.md, "Parts"): the one
-   * doc.assets[key] names, else one made now from make() and remembered
-   * there. Ten buoys share one GLB. Two peers making the same key at once
-   * each write theirs if the key is still empty; the merge keeps one in
-   * `assets`, and what each made keeps the file it made (two docs for one
-   * key, both shown alike; later drops all use the one `assets` kept).
-   * @param {string} key  namespaced and versioned: "sailing/mast@1"
-   * @param {() => { name, bytes, extension, mimeType, hint? } | Promise<…>} make
-   * @returns {Promise<{ url: string, hint: object | null }>}
-   */
-  async function sceneFile(key, make) {
-    if (typeof key !== "string" || !key) throw new Error("A file needs a key.");
-    const known = () => {
-      const a = doc().assets?.[key];
-      // fresh copies: automerge won't take a value that is already in a document
-      return typeof a?.url === "string" ? { url: a.url, hint: a.hint ? JSON.parse(JSON.stringify(a.hint)) : null } : null;
-    };
-    const have = known();
-    if (have) return have;
-    if (!writable()) throw new Error("This scene is read-only here.");
-    if (filesMaking.has(key)) return filesMaking.get(key);
-    const making = (async () => {
-      const f = await make();
-      if (!f?.bytes) throw new Error(`Nothing to make “${key}” from.`);
-      const file = await repo.create2({
-        "@patchwork": { type: "file" },
-        name: String(f.name ?? key),
-        extension: String(f.extension ?? ""),
-        mimeType: String(f.mimeType ?? "application/octet-stream"),
-        content: f.bytes,
-      });
-      if (dead) throw new Error("The scene was closed.");
-      const hint = f.hint ? JSON.parse(JSON.stringify(f.hint)) : null;
-      handle.change((d) => {
-        if (!d.assets[key]?.url) d.assets[key] = hint ? { url: file.url, hint } : { url: file.url };
-      });
-      return known() ?? { url: file.url, hint };
-    })();
-    filesMaking.set(key, making);
-    try {
-      return await making;
-    } finally {
-      filesMaking.delete(key);
-    }
-  }
-
-  /**
-   * What a drop handler, a template or a part gets (STAGE.md, "Drops"):
-   * reads and writes, nothing to acquire. With `edit` (the stage's own add:
-   * the add part, the outline, the parts bin), its change and addObject are
-   * that edit's, so undo takes the whole layout out again.
-   */
-  function makeDropContext(id, { edit = null } = {}) {
-    return Object.freeze({
-      id,
-      repo,
-      handle,
-      url: handle.url,
-      viewer,
-      doc,
-      scene,
-      change: edit ? (fn) => write(edit, fn) : change,
-      newId,
-      addObject: edit ? (input, opts = {}) => addObject(input, { ...opts, edit }) : addObject,
-      file: sceneFile,
-      // read-only: a part squaring itself to what it's dropped on reads that
-      // object's GLB extras (a hull's stated bow)
-      content: (oid) => scope.contentOf(oid),
-      // read-only: an object's displayed world matrix (as api.worldOf), so a
-      // drop on something moving lands where it's seen
-      worldOf: displayedWorld,
-      registry: getRegistry,
-      local: Object.freeze({ get: local.get, swap: local.swap }),
-      /** select one of this doc's objects (the view keeps the selection) */
-      select: (oid) => view.select(oid == null ? null : [...path, oid]),
-      notify: (text, kind) => notify(text, kind, id),
-    });
-  }
-
-  /**
-   * Put a part into the scene (STAGE.md, "Parts"): load the scene:part and
-   * run its create(ctx, at) with a drop context. `at` is { parent, transform },
-   * the transform in the parent's frame (world when parent is null); a parent
-   * that isn't there (or is a group) means the scene root, transform as given.
-   * The part gets `world` beside them, the same place in the world, for a
-   * part that would rather not ride along with what it was put on.
-   * What create returns is selected. Its id, or null.
-   * @param {string} partId
-   * @param {{ parent?: string | null, transform?: object } | null} [at]
-   * @returns {Promise<string | null>}
-   */
-  async function applyPart(partId, at = null, { edit = null } = {}) {
-    if (!writable()) return null;
-    const reg = await getRegistry("scene:part");
-    if (dead || !reg) return null;
-    let mod;
-    try {
-      const loaded = await reg.load(partId);
-      mod = loaded?.module?.default ?? loaded?.module;
-    } catch (err) {
-      notify(`Couldn't load that part: ${err?.message ?? err}`, "error");
-      return null;
-    }
-    if (dead || typeof mod?.create !== "function") return null;
-    const objects = doc().objects ?? {};
-    const parent = typeof at?.parent === "string" && objects[at.parent] && !isGroup(objects[at.parent]) ? at.parent : null;
-    const transform = normalizeTransform(at?.transform);
-    const parentWorld = parent ? displayedWorld(parent) : null;
-    const world = parentWorld ? normalizeTransform(decomposeMatrix(multiplyMatrices(parentWorld, composeMatrix(transform)))) : transform;
-    const place = Object.freeze({ parent, transform, world });
-    let made;
-    try {
-      made = await mod.create(makeDropContext(partId, { edit }), place);
-    } catch (err) {
-      notify(`That part failed: ${err?.message ?? err}`, "error");
-      return null;
-    }
-    if (dead) return null;
-    const id = typeof made === "string" && doc().objects?.[made] ? made : null;
-    if (id) view.select([...path, id]);
-    return id;
-  }
-
-  /**
-   * Start the scene from a template (STAGE.md, "Templates"): load the
-   * scene:template and run its create() with a drop context, which writes
-   * whatever it needs into the doc. Then this viewer starts where the doc now
-   * says, as arriving does (an arena's template starts people walking at a
-   * spawn point, so its maker lands in the game). create gets exactly the
-   * params its metadata declares (`params`: ParamSpecs), coerced, defaults
-   * filled and every other key dropped: `{}` for a template that declares
-   * none. True when it ran.
-   * @param {string} templateId
-   * @param {object} [params]
-   * @returns {Promise<boolean>}
-   */
-  async function applyTemplate(templateId, params) {
-    if (!writable()) return false;
-    const reg = await getRegistry("scene:template");
-    if (dead || !reg) return false;
-    let mod, specs;
-    try {
-      const loaded = await reg.load(templateId);
-      mod = loaded?.module?.default ?? loaded?.module;
-      specs = Array.isArray(loaded?.params) ? loaded.params : [];
-    } catch (err) {
-      notify(`Couldn't load that template: ${err?.message ?? err}`, "error");
-      return false;
-    }
-    if (dead) return false;
-    if (typeof mod?.create !== "function") return false;
-    try {
-      await mod.create(makeDropContext(templateId), paramsBySpec(specs, params));
-    } catch (err) {
-      notify(`That template failed: ${err?.message ?? err}`, "error");
-      return false;
-    }
-    if (dead) return false;
-    if (n === 0) view.arrive();
-    return true;
   }
 
   /**
@@ -2100,6 +1873,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
          * stays until its × or close(); docking one url and tool again shows its tab (dock.js). → close
          */
         dock: (doc) => (live() ? view.dockDocument(doc) : noop),
+        /** arrive again where the outermost doc's view.start now says (a template's maker): only from the outermost */
+        arrive: () => {
+          if (live() && n === 0) view.arrive();
+        },
         // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
       }),
       pref,
@@ -2154,32 +1931,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       link: (oid) => view.linkState([...path, oid]),
       addObject,
       fixPoint,
-      drop: (info, opts) => (writable() ? host.drop(info, opts) : Promise.resolve(false)),
-      template: (templateId, params) => applyTemplate(templateId, params),
-      part: (partId, at, opts) => applyPart(partId, at, opts),
-      /**
-       * The stage's own editing (HISTORY.md, TOOLS Decisions 2), on the stage's own
-       * parts' api only (own.js): edit(fn, { label, handle? }) writes fn as
-       * one undoable step (on the scene, or on `handle`: an object's render
-       * doc); edits(label) opens a step of several writes, passed as
-       * `{ edit }` to addObject, remove, drop and part or made with its
-       * change(fn, handle?), closed by end(). A package's api has none of
-       * these, so verbs, clock acts and process saves can't be on a stack.
-       */
-      ...(isOwn(rec.module)
-        ? {
-            edit: (fn, { label, handle: h } = {}) => {
-              if (!writable()) return;
-              const g = edits.begin(label);
-              g.change(fn, h);
-              g.end();
-            },
-            edits: (label) => (writable() ? edits.begin(label) : NO_EDIT),
-            /** undo or redo this viewer's last edit in the focus doc: false when there's none or it has been changed since */
-            undo: () => edits.take("undo"),
-            redo: () => edits.take("redo"),
-          }
-        : {}),
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
@@ -2396,7 +2147,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     registry: () => getRegistry("scene:extension"),
     local,
     makeApi,
-    makeDropContext,
     busy,
     onChange: resync,
     setTimer: (fn, ms) => time.after(ms, fn),

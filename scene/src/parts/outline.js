@@ -44,6 +44,7 @@ import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, ownDrag, parsePatchwor
 import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
+import { add, drop, editor } from "./editor.js";
 import { enterState } from "./focus.js";
 
 /** What a link's row says it is, by its role here (api.link), and why. Pure. */
@@ -269,10 +270,10 @@ export function createOutline(api, { shown = () => true } = {}) {
     if (box) here.camera.frame(box);
   }
 
-  // every write here is an edit (here.edit), so undo takes it back
+  // every write here is an edit (./editor.js), so undo takes it back
   function write(plan, label = "Edit") {
     if (plan && plan.ok === false) api.notify(plan.reason, "error");
-    else if (plan) here.edit(plan, { label });
+    else if (plan) editor(here).edit(plan, { label });
     return plan;
   }
 
@@ -296,10 +297,8 @@ export function createOutline(api, { shown = () => true } = {}) {
     if (n > 0 && typeof globalThis.confirm === "function") {
       if (!globalThis.confirm(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return;
     }
-    const edit = here.edits("Delete");
-    const done = here.remove([id], { edit });
-    edit.end();
-    if (new Set(done?.ids ?? plan.ids).has(selectedId())) select(null);
+    editor(here).edit(here.remove([id]), { label: "Delete" });
+    if (new Set(plan.ids).has(selectedId())) select(null);
   }
 
   /** New group: inside the selected group, if one is; opened and selected. */
@@ -322,7 +321,7 @@ export function createOutline(api, { shown = () => true } = {}) {
     const plan = here.ops.moveRow(here.scene(), id, place);
     if (!plan) return select(id);
     if (plan.ok === false) return api.notify(plan.reason, "error");
-    here.edit(plan, { label: "Move in the tree" });
+    editor(here).edit(plan, { label: "Move in the tree" });
     if (plan.parent) setExpanded(plan.parent, true);
     select(id);
     renderAll();
@@ -330,7 +329,7 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   /**
    * A document dropped at a place in the tree: an extension that lays out
-   * its datatype first (here.drop), else added as an object there.
+   * its datatype first (./editor.js drop), else added as an object there.
    */
   async function addAt(item, place) {
     const snap = here.scene();
@@ -338,18 +337,12 @@ export function createOutline(api, { shown = () => true } = {}) {
     const intoGroup = !!into && isGroup(snap.objects[into]);
     const group = intoGroup ? into : into ? (snap.groups.get(into) ?? null) : null;
     // one edit, whichever way it's added: undo takes it out again
-    const edit = here.edits("Add");
-    try {
-      await addInto(item, place, { into, intoGroup, group, edit });
-    } finally {
-      edit.end();
-    }
-  }
-  async function addInto(item, place, { into, intoGroup, group, edit }) {
-    if (item.url !== here.url) {
+    const f = api.focus();
+    if (!f) return;
+    if (item.url !== f.url) {
       try {
-        const handle = await here.repo.find(item.url);
-        if (await here.drop({ url: item.url, doc: handle.doc(), handle, group, at: null }, { edit })) return;
+        const handle = await f.repo.find(item.url);
+        if (await drop(f, { url: item.url, doc: handle.doc(), handle, group, at: null })) return;
       } catch {
         // can't open it here: addObject says why below
       }
@@ -357,7 +350,7 @@ export function createOutline(api, { shown = () => true } = {}) {
     if (api.signal.aborted) return;
     try {
       const where = intoGroup ? { group: into } : into ? { parent: into } : { group: null };
-      const id = await here.addObject(item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}), edit });
+      const id = await add(f, item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}) });
       if (api.signal.aborted) return;
       pendingReveal = id;
       select(id);

@@ -1,8 +1,8 @@
-// Undo (HISTORY.md, TOOLS Decisions 2): the stage's own editing writes only (the
+// Undo (HISTORY.md, TOOLS Decisions 2): the editor's own writes only (the
 // halo's handles, the inspector, transfer, add, remove), per person and per
 // focus doc, as inverse changes. Package verbs, clock acts and process saves
 // are never on it, so undo can't un-roll a die, un-shuffle a deck or rewind
-// a process. Pure: the stage records and applies (stage.js, "edits").
+// a process. Pure: the editor records and applies (parts/editor.js).
 //
 // A step is what one edit changed, as leaves: { path, before, after }, one
 // per place it wrote, recorded from the change's own patches. A path stops
@@ -19,8 +19,8 @@
 // the order). The undo is recorded the same way, and is the redo step; redo
 // is undo of that.
 //
-// One more rule, from what the stage judges a step to have done when it is
-// recorded (`judge`, stage.js): kept contents don't come back. A step that
+// One more rule, from what the editor judges a step to have done when it is
+// recorded (`judge`, parts/editor.js): kept contents don't come back. A step that
 // removed something a keeper holds the contents of (outside the doc) is
 // undone as the doc held it, and the undo says what it couldn't put back:
 // what is kept comes back as the keeper has it now. Undo never invents state
@@ -197,108 +197,94 @@ export function moved(s, url, which, done) {
   return { ...s, [url]: next };
 }
 
-// ─── the recorder: what the stage runs (stage.js) ───────────────────────────
+// ─── the recorder: what the editor runs (parts/editor.js) ────────────────────
 
 /** The kept things a step removed, said: up to three by name, else how many. */
 export const keptNames = (names) => (names.length <= 3 ? names.map((n) => `“${n}”`).join(", ") : `${names.length} things`);
 
 /**
- * One viewer's edits: begin(label) opens a step, whose change(fn, handle?)
- * writes and records (from the change's own patches: handle.change(fn, {
- * patchCallback }), as Automerge's DocHandle takes it), and end() puts it on
- * the focus doc's undo stack; take("undo" | "redo") applies the top step's
- * inverse, recorded the same way onto the other stack. Nothing written
- * except through a step is ever on a stack.
+ * One viewer's edits in one doc. A doc here is { url, doc(), change(fn) →
+ * patches } (a stage's api is one); `handle` is the focus doc, whose url keys
+ * the stacks, kept in `store` ({ get, swap }). begin(label) opens a step,
+ * whose change(fn, doc?) writes and records from the patches it returns, and
+ * end() puts it on the undo stack; take("undo" | "redo") applies the top
+ * step's inverse, recorded the same way onto the other stack. Nothing
+ * written except through a step is ever on a stack.
  *
  * `judge({ handle, before, after })` says what a step did to one doc (the doc
  * before its first change and after its last): { kept?: name[] (kept things
  * it removed) }.
- * @param {{ handle: object, focus?: () => string, writable?: () => boolean, notify?: (text: string) => void, changed?: (labels: { undo, redo }) => void, judge?: (part: { handle, before, after }) => { kept?: string[] } | null }} o
+ * @param {{ handle: object, store?: { get(): object, swap(fn): void }, writable?: () => boolean, notify?: (text: string) => void, judge?: (part: { handle, before, after }) => { kept?: string[] } | null }} o
  */
-export function createEdits({ handle, focus = () => handle.url, writable = () => true, notify = () => {}, changed = () => {}, judge = () => null }) {
-  let stacks = EMPTY;
-  let dead = false;
-  const labels = () => {
-    const url = focus();
-    return { undo: topOf(stacks, url, "undo")?.label ?? null, redo: topOf(stacks, url, "redo")?.label ?? null };
-  };
-  /** A step being made: change(fn, handle?) records into it; step() is what it holds. */
+export function createEdits({ handle, store = boxed(EMPTY), writable = () => true, notify = () => {}, judge = () => null }) {
+  const url = handle.url;
+  const labels = () => ({ undo: topOf(store.get(), url, "undo")?.label ?? null, redo: topOf(store.get(), url, "redo")?.label ?? null });
+  /** A step being made: change(fn, doc?) records into it; step() is what it holds. */
   function recording(label) {
-    const parts = new Map(); // handle → { leaves, before, after }
+    const parts = new Map(); // doc url → { handle, leaves, before, after }
     return {
       change(fn, h = handle) {
         if (typeof fn !== "function" || fn.ok === false || !h) return;
-        h.change(fn, {
-          patchCallback: (patches, info) => {
-            const p = parts.get(h) ?? { leaves: [], before: info.before, after: null };
-            p.leaves = fold(p.leaves, patches, info.before, info.after);
-            p.after = info.after;
-            parts.set(h, p);
-          },
-        });
+        const before = h.doc();
+        const patches = h.change(fn);
+        if (!patches?.length) return;
+        const p = parts.get(h.url) ?? { handle: h, leaves: [], before };
+        p.after = h.doc();
+        p.leaves = fold(p.leaves, patches, before, p.after);
+        parts.set(h.url, p);
       },
       step() {
-        const list = [...parts].filter(([, p]) => p.leaves.length);
+        const list = [...parts.values()].filter((p) => p.leaves.length);
         if (!list.length) return null;
-        const kept = [];
-        for (const [h, p] of list) {
-          const j = judge({ handle: h, before: p.before, after: p.after });
-          for (const n of j?.kept ?? []) if (!kept.includes(n)) kept.push(n);
-        }
-        return {
-          label: String(label ?? "Edit"),
-          parts: list.map(([h, p]) => ({ handle: h, leaves: p.leaves })),
-          ...(kept.length ? { kept } : {}),
-        };
+        const kept = [...new Set(list.flatMap((p) => judge(p)?.kept ?? []))];
+        return { label: String(label ?? "Edit"), parts: list.map((p) => ({ handle: p.handle, leaves: p.leaves })), ...(kept.length ? { kept } : {}) };
       },
     };
   }
   return {
-    /** { change(fn, handle?), end() }: a step of several writes; after end, change writes unrecorded */
+    /** { change(fn, doc?), end() }: a step of several writes; after end, change writes unrecorded; where this view may not write, nothing */
     begin(label) {
       const rec = recording(label);
       let open = true;
       return Object.freeze({
-        change: (fn, h) => {
-          if (dead) return;
+        change: (fn, h = handle) => {
+          if (!writable()) return;
           if (open) rec.change(fn, h);
-          else if (typeof fn === "function" && fn.ok !== false) (h ?? handle).change(fn);
+          else if (typeof fn === "function" && fn.ok !== false) h.change(fn);
         },
         end: () => {
           if (!open) return;
           open = false;
           const step = rec.step();
-          if (!step || dead) return;
-          stacks = pushed(stacks, focus(), step);
-          changed(labels());
+          if (step) store.swap((s) => pushed(s, url, step));
         },
       });
     },
     /**
-     * Undo ("undo") or redo ("redo") the last step in the focus doc: false
-     * when there's none, the doc isn't writable, or something it wrote has
-     * been written since (then it's dropped, whole, and said).
+     * Undo ("undo") or redo ("redo") the last step: false when there's none,
+     * the doc isn't writable, or something it wrote has been written since
+     * (then it's dropped, whole, and said).
      */
     take(which) {
-      const url = focus();
-      const step = topOf(stacks, url, which);
-      if (!step || dead || !writable()) return false;
+      const step = topOf(store.get(), url, which);
+      if (!step || !writable()) return false;
       const plans = step.parts.map(({ handle: h, leaves }) => ({ h, inv: inverse(leaves, h.doc()) }));
       const ok = plans.every((p) => !p.inv.changed.length);
       const rec = recording(step.label);
       if (ok) for (const { h, inv } of plans) rec.change((d) => apply(d, inv.writes), h);
       const done = ok ? rec.step() : null;
-      stacks = moved(stacks, url, which, done);
-      changed(labels());
+      store.swap((s) => moved(s, url, which, done));
       if (!done) notify(`Nothing to ${which}: “${step.label}” has been changed since.`);
       else if (step.kept?.length) notify(`${which === "undo" ? "Undid" : "Redid"} “${step.label}”: what is kept for ${keptNames(step.kept)} comes back as its keeper has it now, not as it was.`);
       return !!done;
     },
     labels,
     /** the stacks, for tests */
-    stacks: () => stacks,
-    dispose() {
-      dead = true;
-    },
+    stacks: () => store.get(),
   };
+}
+
+/** A value in a box: { get, swap } (the store a recorder keeps its stacks in by default). */
+function boxed(v) {
+  return { get: () => v, swap: (fn) => void (v = fn(v)) };
 }

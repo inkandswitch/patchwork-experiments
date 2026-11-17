@@ -27,12 +27,6 @@ export function docReason(meta, d) {
   return null;
 }
 
-/** May this extension lay out a dropped doc of this datatype? */
-export function takesDrop(meta, type) {
-  const drops = list(meta?.drops);
-  return drops.includes("*") || (!!type && drops.includes(type));
-}
-
 /**
  * The extensions that run, in chain order, each with its scope (STAGE.md,
  * "Activation"): the scene's first (registry order), then those only some

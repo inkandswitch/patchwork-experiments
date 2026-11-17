@@ -8,7 +8,7 @@
 //     the outline's, and an inspector section's head adds nothing anywhere.
 //   - Paste an automerge URL anywhere in the stage outside a text field
 //     (scene.transfer hears pastes first, and takes a copied object's).
-//   - Each URL goes first to here.drop (an extension that lays out that
+//   - Each URL goes first to a drop (./editor.js: an extension that lays out that
 //     datatype its own way, e.g. a deck as its cards); otherwise to the scene
 //     providers that can show it: none says so, one is used, several ask
 //     (the chooser). The new object is selected (local.selected).
@@ -17,7 +17,7 @@
 //     nothing is loaded to offer one) and Blank, then how to add something.
 //     A template that declares `params` has their form under its button
 //     (param-form.js, from the same metadata), its values this view's until
-//     it runs. A template runs through here.template(id, params) (it writes
+//     it runs. A template runs through ./editor.js template (it writes
 //     the doc, view.start included, and the stage starts this viewer where
 //     it says: an arena's maker lands in the game). Blank only puts the
 //     choice away, for this view; the drop hint stays.
@@ -31,7 +31,7 @@ import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
-import { own } from "../stage/own.js";
+import { add as addObject, drop, template } from "./editor.js";
 import { atFocus } from "./per-focus.js";
 import { editing } from "../stage/bodies.js";
 import { createParamForm } from "../param-form.js";
@@ -165,7 +165,8 @@ function create(api) {
     const inputs = () => start.querySelectorAll("button, input, select");
     for (const b of inputs()) b.disabled = true;
     try {
-      await here.template(id, chosen.get(id) ?? {});
+      const f = api.focus();
+      if (f) await template(f, id, chosen.get(id) ?? {});
     } finally {
       starting = false;
       if (live()) for (const b of inputs()) b.disabled = false;
@@ -263,16 +264,9 @@ function create(api) {
     }
     if (!live()) return null;
     const doc = source?.doc?.();
+    const f = api.focus();
     // what a drop lays out is one edit, as an added object is: undo takes it out again
-    const dropped = here.edits("Add");
-    let laid = false;
-    try {
-      laid = await here.drop({ url, doc, handle: source, group: null, at }, { edit: dropped });
-    } finally {
-      dropped.end();
-    }
-    if (laid) return null;
-    if (!live()) return null;
+    if (!f || (await drop(f, { url, doc, handle: source, group: null, at })) || !live()) return null;
     const providers = (await here.providersFor(url, doc)) ?? [];
     if (!providers.length) return fail(`Nothing can show ${describeForHumans(describeSource(doc))} in a scene.`);
     const what = name || doc?.title || doc?.name || "this document";
@@ -280,12 +274,7 @@ function create(api) {
     if (!provider || !live()) return null;
     let id;
     try {
-      const edit = here.edits("Add");
-      try {
-        id = await here.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}), edit });
-      } finally {
-        edit.end();
-      }
+      id = await addObject(f, url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}) });
     } catch (err) {
       return fail(err?.message ?? String(err));
     }
@@ -331,7 +320,7 @@ function create(api) {
     dropHint.hidden = !on;
   };
 
-  /** Where a drop landed: what's under it (or the ground), for here.drop's `at`; null off the port. */
+  /** Where a drop landed: what's under it (or the ground), for a drop's `at`; null off the port. */
   function dropAt(e) {
     if (!(e.target instanceof Node) || !port.contains(e.target)) return null;
     const r = port.getBoundingClientRect();
@@ -411,4 +400,4 @@ function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

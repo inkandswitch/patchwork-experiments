@@ -12,6 +12,7 @@ import { imported, resetPackagesServed, servePackage } from "../test/filesystem-
 import { ACCEPTED_KEY, resetPackages } from "./packages.js";
 import { ARRIVE_WAIT_MS } from "./stage.js";
 import packagesPart from "../parts/packages.js";
+import * as editor from "../parts/editor.js";
 import { LINK } from "./links.js";
 
 const HEAD = "H".repeat(48);
@@ -115,7 +116,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     // taking off is never a way to stop asking: the one missing here is still asked about
     expect(state(s).ask).toEqual([MISSING]);
     // a part run here: what it made calls for nothing, so nothing of the part's is listed
-    await s.api("t.user").part("buoy", { parent: null });
+    await editor.part(s.api("t.user"), "buoy", { parent: null });
     await settle();
     s.change((d) => (d.title = "Fitted"));
     await settle();
@@ -231,11 +232,11 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     const s = await mount({ extensions: [user, light], parts: [part, lit], templates: [template] });
     await settle();
     expect(urls(s)).toEqual([]); // offered in the bin, not used: not listed
-    await s.api("t.user").part("buoy", { parent: null });
-    await s.api("t.user").template("level");
+    await editor.part(s.api("t.user"), "buoy", { parent: null });
+    await editor.template(s.api("t.user"), "level");
     await settle();
     expect(urls(s)).toEqual([]); // what they made calls for nothing
-    await s.api("t.user").part("lit-buoy", { parent: null });
+    await editor.part(s.api("t.user"), "lit-buoy", { parent: null });
     await settle();
     expect(urls(s)).toEqual([PARTS]); // the light the lit buoy carries is the package's
     s.change((d) => delete d.objects.c);

@@ -22,7 +22,7 @@ import css from "./handles.css?inline";
 import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.js";
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 import { editing } from "../stage/bodies.js";
 import { perFocus } from "./per-focus.js";
 
@@ -311,7 +311,7 @@ function handlesAt(api, view) {
     if (!s || value == null) return;
     pending.set(spec.key, { value, was: spec.value });
     // the object's render doc's param: an edit, undone in the scene's stack
-    api.edit(
+    editor(api).edit(
       (d) => {
         if (!d.params) d.params = {};
         d.params[spec.key] = value;
@@ -386,7 +386,7 @@ function handlesAt(api, view) {
   };
 }
 
-export default own({
+export default {
   create(api) {
     api.style(css);
     const at = perFocus(api, (f) => handlesAt(f, api));
@@ -400,4 +400,4 @@ export default own({
       handles: () => at()?.handles() ?? [],
     };
   },
-});
+};

@@ -30,7 +30,7 @@ import { isGroup } from "../groups.js";
 import { fromEmbed } from "../embed.js";
 import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
-import { own } from "../stage/own.js";
+import { part } from "./editor.js";
 import { atFocus, perFocus } from "./per-focus.js";
 
 /** What a part's drag carries: JSON { part: id }. Only `types` is readable during dragover. */
@@ -213,9 +213,8 @@ function create(api) {
   }
 
   async function place(id, land) {
-    if (!land || !live()) return null;
-    const edit = here.edits("Add part");
-    return Promise.resolve(here.part(id, land.at, { edit })).finally(() => edit.end());
+    const f = api.focus();
+    return land && live() && f ? part(f, id, land.at) : null;
   }
 
   // ── the ring ─────────────────────────────────────────────────────────────
@@ -404,4 +403,4 @@ function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

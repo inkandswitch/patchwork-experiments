@@ -44,7 +44,6 @@ import { fromEmbed } from "../embed.js";
 import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
-import { own } from "../stage/own.js";
 import { atFocus, perFocus } from "./per-focus.js";
 import { isLink, atOf } from "../stage/links.js";
 import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
@@ -437,4 +436,4 @@ function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

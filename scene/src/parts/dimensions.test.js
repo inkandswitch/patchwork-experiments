@@ -305,7 +305,8 @@ describe("scene.dimensions", () => {
     await mount({ dims: { d1: { a: on("a", [0, 0, 0], [0, 0, 0]), b: free([1, 1, 0]), label: null } } });
     const p = panel();
     expect(p.rows().length).toBe(1);
-    s.facet("scene.dimensions").remove(["a"]);
+    const f = s.facet("scene.dimensions");
+    f.change(f.remove(["a"]));
     await settle();
     expect(s.doc().objects.a).toBeUndefined();
     expect(s.doc().dimensions.d1.a).toEqual({ objectId: null, local: null, world: [1, 0, 0] });
@@ -320,7 +321,8 @@ describe("scene.dimensions", () => {
       cell: object({ name: "Cell" }),
     };
     await mount({ objects, dims: { d1: { a: on("hull", [0, 0, 0], [0, -0.7, 0]), b: free([1, 0, 0]), label: null } } });
-    s.facet("scene.dimensions").remove(["vessel"]);
+    const f = s.facet("scene.dimensions");
+    f.change(f.remove(["vessel"]));
     await settle();
     expect(Object.keys(s.doc().objects)).toEqual(["cell"]);
     expect(s.doc().dimensions.d1.a).toEqual({ objectId: null, local: null, world: [0, -0.7, 0] });

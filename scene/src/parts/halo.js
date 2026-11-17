@@ -28,7 +28,7 @@
 import { HANDLE_SIZE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, groupRoots, usable } from "./halo-math.js";
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 import { perFocus } from "./per-focus.js";
 
 const AXIS_FALLBACK = [
@@ -287,7 +287,7 @@ function haloAt(api, view) {
       if (d?.poses?.size) {
         // each moved object's put-down, as one change (a group's members
         // together): an edit, so undo puts it back (HISTORY.md, TOOLS Decisions 2)
-        api.edit(api.ops.setTransform(api.scene(), d.poses), { label: { rotate: "Rotate", scale: "Scale" }[d.grab?.handle?.kind] ?? "Move" });
+        editor(api).edit(api.ops.setTransform(api.scene(), d.poses), { label: { rotate: "Rotate", scale: "Scale" }[d.grab?.handle?.kind] ?? "Move" });
         release(d, true);
       }
       reconcile();
@@ -370,4 +370,4 @@ function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

@@ -1591,7 +1591,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
        * (pointer: true for the pointer's path, what a menu is of; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's)
        */
       path: (o) => inputPath(o),
-      /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, edits, content, world layers… or null */
+      /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
     };
 

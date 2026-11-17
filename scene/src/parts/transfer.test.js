@@ -10,6 +10,7 @@ import transfer, { besideOffset, clipText, pasteStep } from "./transfer.js";
 import menuPart from "./menu.js";
 import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
 import { composeMatrix, multiplyMatrices } from "../transform.js";
+import { editor } from "./editor.js";
 
 // what a ship's extension says about its traits: a ship's motion is runtime. (`needs` is
 // no key of the stage's any more, so a copy says nothing of it: STAGE.md "Copying objects")
@@ -520,8 +521,8 @@ describe("Extract and Bundle", () => {
     await until(() => s.debug.view.stages().some((x) => x.url === link.sourceUrl));
     expect(s.facet("scene.transfer").link(id)).toMatchObject({ role: "acting", open: true });
     // one step
-    expect(s.local.get().edits.undo).toBe("Extract");
-    expect(s.facet("scene.transfer").undo()).toBe(true);
+    expect(editor(s.facet("scene.transfer")).labels().undo).toBe("Extract");
+    expect(editor(s.facet("scene.transfer")).undo()).toBe(true);
     expect(JSON.parse(JSON.stringify(s.doc()))).toEqual(before);
   });
 
@@ -546,7 +547,7 @@ describe("Extract and Bundle", () => {
     expect(s.doc().order).toEqual(["deck", "winch", "handle", "sign"]);
     expect(JSON.stringify(s.repo.handles.get(url).doc())).toBe(linked);
     expect(s.local.get().selected).toBe("winch");
-    expect(s.local.get().edits.undo).toBe("Bundle");
+    expect(editor(s.facet("scene.transfer")).labels().undo).toBe("Bundle");
   });
 
   it("Bundle's options follow a live link's doc: a root trait added there appears, one removed goes", async () => {

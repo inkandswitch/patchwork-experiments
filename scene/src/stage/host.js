@@ -20,7 +20,7 @@
 // in: local.running, instances(), collect(). The order extensions finished
 // loading in never counts.
 
-import { activeSet, takesDrop } from "./activation.js";
+import { activeSet } from "./activation.js";
 
 /** How long an extension the doc no longer calls for keeps running. */
 export const LINGER_MS = 2_000;
@@ -112,7 +112,6 @@ const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.eve
  *   local?: { get(): object, swap(fn): object }, // the stage's local atom (local.running out)
  *   wanted?: (metas: object[], doc: object) => { id, meta, scope }[],  // the running set (activeSet)
  *   makeApi: (rec: object) => { api: object, release: () => void },
- *   makeDropContext?: (id: string, opts?: { edit? }) => object,
  *   busy?: (id: string) => boolean,             // a body entered, the held tool, an open session or a pose hold
  *   onChange?: () => void,                      // an extension started or stopped
  *   lingerMs?: number,
@@ -124,7 +123,6 @@ export function createHost({
   registry,
   local,
   makeApi,
-  makeDropContext = () => ({}),
   busy = () => false,
   onChange = () => {},
   lingerMs = LINGER_MS,
@@ -346,42 +344,6 @@ export function createHost({
   /** An extension's `input`, or undefined. */
   const inputOf = (id) => instanceOf(id)?.input ?? undefined;
 
-  /**
-   * Lay out a dropped doc: load each module (registry order) whose `drops`
-   * match its datatype and call its drop(ctx, info) until one says true.
-   * Nothing is added to the running set here: the traits the drop writes
-   * are what start the extension. `opts` go to the drop context (`edit`: the
-   * stage's own add, made one undoable step).
-   * @param {{ url, doc, handle, group, at }} info
-   * @param {{ edit? }} [opts]
-   * @returns {Promise<boolean>}
-   */
-  async function drop(info, opts = {}) {
-    await ready;
-    if (dead) return false;
-    const type = info?.doc?.["@patchwork"]?.type ?? null;
-    for (const meta of listOf(reg)) {
-      if (!meta?.id || !takesDrop(meta, type)) continue;
-      let mod;
-      try {
-        const loaded = await reg.load(meta.id);
-        mod = loaded?.module?.default ?? loaded?.module;
-      } catch (err) {
-        console.warn(`[scene] extension “${meta.id}” failed to load`, err);
-        continue;
-      }
-      if (dead) return false;
-      if (typeof mod?.drop !== "function") continue;
-      try {
-        if (await mod.drop(makeDropContext(meta.id, opts), info)) return true;
-      } catch (err) {
-        console.warn(`[scene] extension “${meta.id}”: drop failed`, err);
-      }
-      if (dead) return false;
-    }
-    return false;
-  }
-
   /** Stop everything (last first) and stop listening. */
   function dispose() {
     if (dead) return;
@@ -438,7 +400,6 @@ export function createHost({
     instanceOf,
     collect,
     inputOf,
-    drop,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,
     /** is this extension lingering after the doc stopped calling for it? */

@@ -6,9 +6,9 @@
 //     camera opens at. An edit: undo takes it back.
 // Following the content as it loads is scene.autoframe's.
 
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 
-export default own({
+export default {
   create(api) {
     /** What Frame frames: the selection's box, if it has one, else the whole scene's. */
     const selectedBox = (view) => (view?.selected != null ? (api.focus()?.box(view.selected) ?? null) : null);
@@ -41,7 +41,7 @@ export default own({
             const home = { position: [...cam.position].map(Number) };
             if (Array.isArray(cam.target)) home.target = [...cam.target].map(Number);
             if (Number.isFinite(cam.fov)) home.fov = cam.fov;
-            f.edit(
+            editor(f).edit(
               (d) => {
                 if (!d.view || typeof d.view !== "object") d.view = {};
                 if (!d.view.start || typeof d.view.start !== "object") d.view.start = {};
@@ -54,4 +54,4 @@ export default own({
       ],
     };
   },
-});
+};

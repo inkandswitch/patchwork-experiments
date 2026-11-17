@@ -1,19 +1,22 @@
-// Undo (HISTORY.md, TOOLS Decisions 2): the stage's own edits only, as inverse
+// Undo (HISTORY.md, TOOLS Decisions 2): the editor's own edits only, as inverse
 // changes, never anyone's later write. The pure parts, then the recorder the
-// stage runs (createEdits) on real Automerge, over every sequence of edits,
+// editor runs (createEdits) on real Automerge, over every sequence of edits,
 // package verbs, process saves, clock acts, undos and redos up to a depth.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { DEPTH, EMPTY, createEdits, fold, inverse, leafPaths, moved, plain, pushed, same, topOf, valueAt } from "./undo.js";
 
-/** A DocHandle stand-in over a real Automerge doc: change(fn, { patchCallback }) as automerge-repo passes it on. */
+/** A doc over a real Automerge doc, as the recorder writes one: change(fn) → its patches. */
 function amHandle(init, url = "automerge:scene") {
   let doc = Automerge.isAutomerge(init) ? init : Automerge.from(init);
   return {
     url,
     doc: () => doc,
-    change(fn, opts = {}) {
-      doc = Automerge.change(doc, opts, fn);
+    /** as a stage's api.change: what it wrote, as patches */
+    change(fn) {
+      let patches = [];
+      doc = Automerge.change(doc, { patchCallback: (p) => void (patches = p) }, fn);
+      return patches;
     },
     /** take in another replica's changes, as a sync does (never through change: no patches for an edit to record) */
     merge(other) {

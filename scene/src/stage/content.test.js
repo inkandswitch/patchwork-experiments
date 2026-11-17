@@ -10,6 +10,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import add from "../parts/add.js";
+import { add as addObject } from "../parts/editor.js";
 import inspector from "../parts/inspector.js";
 import { Viewport } from "./viewport.js";
 import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
@@ -466,7 +467,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     await settle();
     const file = glbFile("part.gltf", "gltf");
     expect((await api().providersFor(file.url, file.doc())).map((p) => p.id)).toEqual(["t-gltf"]);
-    const id = await api().addObject(file.url);
+    const id = await addObject(api(), file.url);
     await settle();
     expect(s.doc().objects[id]).toMatchObject({ sourceUrl: file.url, providerId: "t-gltf", renderUrl: null });
     expect(queued()).toEqual([id]);
@@ -483,8 +484,8 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     const old = repo.add({ "@patchwork": { type: "old" } });
     expect(await api().providersFor(bare.url, bare.doc())).toEqual([]);
     expect(await api().providersFor(old.url, old.doc())).toEqual([]);
-    await expect(api().addObject(bare.url)).rejects.toThrow(/No scene provider/);
-    await expect(api().addObject(old.url, { providerId: "t-old" })).rejects.toThrow(/can't show/);
+    await expect(addObject(api(), bare.url)).rejects.toThrow(/No scene provider/);
+    await expect(addObject(api(), old.url, { providerId: "t-old" })).rejects.toThrow(/can't show/);
     getRegistry("scene:source").register(gltfSource());
     await settle();
     const said = warn.mock.calls.map((c) => String(c[0])).filter((t) => /declares no content kind/.test(t));

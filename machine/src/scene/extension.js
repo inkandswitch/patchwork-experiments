@@ -447,15 +447,16 @@ function create(api) {
     const name = mapOf(wads, decodeLevel(lvl));
     const base = (e.title ?? "Doom").split(" · ")[0];
     const file = await wadFile(api, e, base);
-    const id = await api.addObject(file, {
+    const add = await api.addObject(file, {
       providerId: MAP_SOURCE,
       name: `${name} · ${base}`,
       render: { providerId: MAP_SOURCE, params: { map: name, door: null, line: null, whole: true } },
       transform: besideCabinet(THREE, api.scene().world(e.id), doomWorld(wads, name).extent),
       fields: { traits: { [WORLD]: { machine: e.id, source: e.url } } },
     });
-    api.view.select(id);
-    return id;
+    api.change(add);
+    api.view.select(add.id);
+    return add.id;
   }
 
   // This view's ears where its eye is (the top body's, else the camera's), in the stage's frame, as the screens are.

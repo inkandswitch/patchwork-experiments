@@ -28,7 +28,7 @@
 // (open-meteo.js); a failure is a notice and writes nothing. Nothing else
 // here fetches: ambient() and every state() only read the doc (Decision 33).
 // All three are package writes (api.change), so none is on the undo stack
-// (STAGE.md: only the stage's own parts have api.edit; Question 6).
+// (STAGE.md, "Undo": only the editor records its writes; Question 6).
 
 import { atmosphereOf } from "./atmosphere.js";
 import { NAME, NO_DATA, fetchWeather, requestFor, snapshotFrom } from "./open-meteo.js";

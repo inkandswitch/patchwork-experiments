@@ -333,7 +333,7 @@ Both ways are in Edit, in view, with no menu diving.
   fetch the weather: …") and writes nothing (Decision 38).
 
 The commands' writes are a package's (`api.change`), so they are not on the
-undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
+undo stack; only the editor records its writes (STAGE.md, "Undo"; Question
 6). A slider's write through the inspector is the stage's, and is.
 
 ## Fetch

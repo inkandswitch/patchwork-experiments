@@ -3,6 +3,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object } from "../test/stage-harness.js";
 import { fakeCamera } from "../test/fake-camera.js";
 import frame from "./frame.js";
+import { editor } from "./editor.js";
 
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
 
@@ -57,8 +58,8 @@ describe("scene.frame: commands", () => {
     expect(c.state(null, {}).disabled).toBe(false);
     expect(run(s, "set-home")).toBe(true);
     expect(s.doc().view.start.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
-    expect(s.local.get().edits.undo).toBe("Set home view");
-    expect(s.facet("scene.frame").undo()).toBe(true);
+    expect(editor(s.facet("scene.frame")).labels().undo).toBe("Set home view");
+    expect(editor(s.facet("scene.frame")).undo()).toBe(true);
     // (a scene made new starts people holding the editor: that was there before)
     expect(s.doc().view.start).toEqual({ edit: true });
     s.unmount();

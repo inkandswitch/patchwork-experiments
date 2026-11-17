@@ -382,7 +382,7 @@ export const plugins = [
       return (await import("./parts/parts.js")).default;
     },
   },
-  // the stage's own edits, undone and redone (HISTORY.md, TOOLS Decisions 2): this
+  // the editor's own edits, undone and redone (HISTORY.md, TOOLS Decisions 2): this
   // viewer's, in the focus doc
   {
     type: "scene:view",

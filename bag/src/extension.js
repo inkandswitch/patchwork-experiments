@@ -216,7 +216,7 @@ export default {
       const went = new Set(ok);
       const emptied = groups.filter((g) => (scene?.members?.get?.(g) ?? []).every((m) => isGroup(objects[m]) || went.has(m)));
       for (const p of [...pendings]) if (went.has(p.id)) retire(p, { quietly: true });
-      putObjects({ objects, ids: ok, sceneUrl: api.url, remove: (gone) => api.remove([...gone, ...emptied]), bag: handle });
+      putObjects({ objects, ids: ok, sceneUrl: api.url, remove: (gone) => api.change(api.remove([...gone, ...emptied])), bag: handle });
       api.tell("put", { bag: bag.url, n: ok.length });
       return ok.length;
     }
@@ -299,7 +299,9 @@ export default {
                   // no seed: the copy builds its own
                 }
               }
-              return api.addObject(sourceUrl, { providerId: providerId ?? undefined, name: name || undefined, ...(at.parent ? { parent: at.parent } : {}), group: at.group, transform, fields, ...(render ? { render } : {}) });
+              const add = await api.addObject(sourceUrl, { providerId: providerId ?? undefined, name: name || undefined, ...(at.parent ? { parent: at.parent } : {}), group: at.group, transform, fields, ...(render ? { render } : {}) });
+              api.change(add);
+              return add.id;
             })(),
           );
         },
@@ -469,7 +471,7 @@ export default {
     /** A draw turned out to be a peer's: let go, remove only what stood under an id of our own, draw another. */
     function lose(p) {
       retire(p, { quietly: true });
-      if (p.fresh && !p.copy && has(p.id)) api.remove([p.id]);
+      if (p.fresh && !p.copy && has(p.id)) api.change(api.remove([p.id]));
       api.notify("Someone else drew that one at the same moment: drawing another.");
       if (bagAt(p.bagId)) draw(p.bagId, 1, { carry: p.carry, again: true });
     }
@@ -494,7 +496,7 @@ export default {
           return false;
         });
         for (const r of lost) {
-          if (r.fresh && has(r.id)) api.remove([r.id]);
+          if (r.fresh && has(r.id)) api.change(api.remove([r.id]));
           api.notify(`Someone else drew the same piece from ${titleOf(r.url)} at the same moment, and it is theirs: drawing another.`);
           if (bagAt(r.bagId)) draw(r.bagId, 1, { carry: false, again: true });
         }

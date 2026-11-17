@@ -16,6 +16,7 @@ import { ARRIVE_WAIT_MS, startArrival } from "./view.js";
 import { keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
 import keys from "../parts/keys.js";
+import { add } from "../parts/editor.js";
 
 const LINKED_AT = { position: [10, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
@@ -52,7 +53,7 @@ const WRITER = {
           api.presence.set("here", true);
           api.pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
           api.pose.release("a");
-          api.remove(["b"]);
+          api.change(api.remove(["b"]));
         },
       };
     },
@@ -108,7 +109,7 @@ describe("a live link opens a stage for its doc", () => {
     const EXT = { meta: { id: "t.any" }, module: { create: () => ({}) } };
     s = await mountStage({ repo, extensions: [EXT], doc: { objects: {}, order: [] } });
     const api = s.api("t.any");
-    const id = await api.addObject(game.url, { hint: { bounds: { min: [-0.4, 0, -0.3], max: [0.4, 0.1, 0.3] } } });
+    const id = await add(api, game.url, { hint: { bounds: { min: [-0.4, 0, -0.3], max: [0.4, 0.1, 0.3] } } });
     await settle();
     const o = s.doc().objects[id];
     expect(o).toMatchObject({ name: "Lost Cities", sourceUrl: game.url, providerId: LINK, renderUrl: null });
@@ -116,10 +117,10 @@ describe("a live link opens a stage for its doc", () => {
     expect(api.loadState(id)).toMatchObject({ content: "scene" });
     expect(s.local.get().status[id]).toBeUndefined();
     const head = fakeHead();
-    const pinned = await api.addObject(`${game.url}#${head}`);
+    const pinned = await add(api, `${game.url}#${head}`);
     expect(s.doc().objects[pinned].at).toEqual({ heads: [head] });
     // a scene of itself, live: the expansion closes it (a cycle), so adding it is no error
-    const self = await api.addObject(s.handle.url);
+    const self = await add(api, s.handle.url);
     expect(s.doc().objects[self].providerId).toBe(LINK);
   });
 

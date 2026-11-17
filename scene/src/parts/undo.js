@@ -1,6 +1,6 @@
 // scene.undo: Undo and Redo (HISTORY.md, TOOLS Decisions 2). What they take back is
-// the stage's own editing only (the halo's handles, the inspector, transfer,
-// add, remove: whatever wrote through api.edit), this viewer's, in the focus
+// the editor's own writes only (the halo's handles, the inspector, transfer,
+// add, remove: whatever wrote through ./editor.js), this viewer's, in the focus
 // doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or
 // a process's save is never on it. ⌘Z / Ctrl+Z undoes, ⇧⌘Z / Ctrl+Y redoes,
 // unless a field has the keys (its own text undo) or they come from a docked
@@ -12,7 +12,7 @@
 
 import { fromEmbed } from "../embed.js";
 import { isTyping } from "../stage/router.js";
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 import { editing } from "../stage/bodies.js";
 
 /** Which of undo and redo a keydown asks for, or null. Pure. */
@@ -26,11 +26,9 @@ export function undoKey(e) {
 
 function create(api) {
   const root = api.root;
-  // (the focus doc's: its stage keeps this viewer's steps there)
-  const edits = () => api.focus()?.local.get().edits ?? { undo: null, redo: null };
   const take = (which) => {
     const f = api.focus();
-    return f ? (which === "undo" ? f.undo() : f.redo()) : false;
+    return f ? editor(f)[which]() : false;
   };
 
   api.listen(root, "keydown", (e) => {
@@ -49,8 +47,9 @@ function create(api) {
     show: ["toolbar"],
     state: (target) => {
       if (target != null) return null;
-      const label = edits()[which];
-      if (!api.focus()?.writable()) return { disabled: true, title: "view only" };
+      const f = api.focus();
+      if (!f?.writable()) return { disabled: true, title: "view only" };
+      const label = editor(f).labels()[which];
       return label ? { title: `${name} “${label}”` } : { disabled: true, title: `Nothing to ${which}` };
     },
     run: () => void take(which),
@@ -61,4 +60,4 @@ function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

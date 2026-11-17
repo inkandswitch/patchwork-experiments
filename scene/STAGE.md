@@ -22,7 +22,7 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | **Hand** | What a viewer holds: the held tool, a popover, the editor (`scene.edit`'s). One stack per view, offered every event first. |
 | **Selection**, **attention** | One target per view, a path. Attention is the selection, else the look. |
 | **Clock**, **process** | The doc's world time (`doc.clock`), and what an extension registers to be stepped in it. |
-| **Edit** (a write) | A write through `api.edit`: undoable, this viewer's, in the focus doc. |
+| **Edit** (a write) | The editor's write (`src/parts/editor.js`): undoable, this viewer's, in the focus doc. |
 
 ## Views, stages and links
 
@@ -105,8 +105,8 @@ and writers set fields, never whole objects.
 
 **`api.local`** (`get`, `swap(fn)`, `watch(fn, select?)`) is the stage's frozen
 value. The stage writes `running` (`[{ id, scope }]`), `status` (`{ [id]: {
-state, reason?, text, title } }`), `edits` (`{ undo, redo }`), `packages` (`{
-ask, loading, failed, missing }`) and `clock`. An extension's own keys are
+state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing
+}`) and `clock`; the editor, `edits` (its undo stacks). An extension's own keys are
 prefixed `<id>.`; others run its commands instead of writing them.
 
 **`api.view`** (`get`, `watch`) is the viewer's value as this stage sees it:
@@ -123,7 +123,7 @@ refused, touch }`); `escape` (`{ layer, hint }`); `theme`; `notices`; `drawer`
 ```js
 { type: "scene:extension", id, name,
   traits?:    string[],    // runs when the scene or an object has one ("*": every doc)
-  drops?:     string[],    // may lay out a dropped doc of this datatype ("*": any)
+  drops?:     string[],    // may lay out a dropped doc of this datatype ("*": any): "Drops"
   describes?: { [traitKey]: description },
   …                        // other plain data, for other extensions to read
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean> } } }
@@ -166,20 +166,19 @@ claim; a claim lost to that merge is written again by its holder.
 
 ### Drops
 
-The add extension calls `api.drop(info)`, which calls each matching module's
-`drop(ctx, info)` until one returns true. The traits a drop writes are what
-activate its extension. **The drop context** `ctx` is `{ id, repo, handle, url,
-viewer, doc, scene, change, newId, addObject, file, content, worldOf, registry,
-local, notify }`; templates and parts get the same. `info` is `{ url, doc,
-handle, group, at }`, `at` being `{ point, hitId }` or null.
+The editor's, as templates and parts are (`src/parts/editor.js`): a doc added by
+drop or paste goes to each module whose `drops` take its datatype, `drop(ctx,
+info)` until one says true; the traits it writes start its extension. **The drop
+context** `ctx` is `{ id, repo, handle, url, viewer, doc, scene, change, newId,
+addObject, file, content, worldOf, registry, local, select, notify }`, made from
+the focus, its writes one undo step. `info` is `{ url, doc, handle, group, at }`.
 
 ### Templates
 
-The empty scene's start screen lists every template, from metadata alone, with a
-form for its `params` (ParamSpecs, `src/param-form.js`). `api.template(id,
-params)` runs `create(ctx, params)` with exactly the declared params, coerced,
-defaulted, unknown keys dropped (`paramsBySpec`). The template writes objects,
-traits and `view.start`, and this viewer then arrives as the doc says.
+The empty scene's start screen lists every template from metadata, with a form
+for its `params` (`src/param-form.js`); `create(ctx, params)` gets exactly those
+(`paramsBySpec`). It writes objects, traits and `view.start`, and its maker then
+arrives as the doc says (`api.view.arrive()`).
 
 ### Arriving
 
@@ -193,13 +192,12 @@ people (`startArrival`); through a pin or a closed link nobody arrives.
 
 ### Parts
 
-The bin (`scene.parts`) lists parts from metadata alone. `api.part(id, at)` runs
-`create(ctx, at)`, `at` being `{ parent, transform, world }`, and selects what
-it returns. A part may adjust `at` or make several objects; one that awaits
-rechecks its parent. `ctx.file(key, make)` → `{ url, hint }` is the scene's file
-doc for a versioned key (`"sailing/mast@1"`), made once and kept in
-`doc.assets`. A dropped part goes under the object hit, snapped to a connector
-that takes its `tags` (Alt: free), upright (`src/parts/parts-place.js`).
+The bin (`scene.parts`) lists parts from metadata; `create(ctx, at)` gets `at` =
+`{ parent, transform, world }` and may adjust it or make several objects; what it
+returns is selected. `ctx.file(key, make)` → `{ url, hint }` is the scene's file
+doc for a versioned key (`"sailing/mast@1"`), made once and kept in `doc.assets`.
+A dropped part goes under the object hit, snapped to a connector that takes its
+`tags` (Alt: free), upright (`src/parts/parts-place.js`).
 
 ### Copying objects
 
@@ -387,13 +385,12 @@ extension's.
 | Member | |
 |---|---|
 | `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal` | `session`: what claims and holds name |
-| `doc()`, `change(fn)`, `newId(prefix)`, `registry(type)` | |
+| `doc()`, `change(fn)`, `newId(prefix)`, `registry(type)` | `change` → its patches (`[]`: nothing written) |
 | `writable()` | false in a pin or on a refusing handle |
 | `scene()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }` |
 | `ops` | pure planners (`src/ops.js`) → a change function or null |
-| `remove(ids, { edit? })` | one change, after every `beforeRemove` |
-| `edit`, `edits`, `undo`, `redo` | the stage's own parts only (`stage/own.js`); see "Undo" |
-| `claim`, `claimedBy`, `tell`, `notify(text, kind?)`, `audience`, `shown`, `drop`, `template`, `part`, `pose`, `heldBy`, `ambient`, `clock` | see "Claims", "Telling", "Audience", "Drops", "Templates", "Parts", "Holding a pose", "Ambients", "Time", "World time" |
+| `remove(ids)` | a change function: every `beforeRemove`, then the removal |
+| `claim`, `claimedBy`, `tell`, `notify(text, kind?)`, `audience`, `shown`, `pose`, `heldBy`, `ambient`, `clock` | see "Claims", "Telling", "Audience", "Holding a pose", "Ambients", "Time", "World time" |
 | `local`, `pref(key, fallback)`, `setPref` | see "Three places for state" |
 | `presence` | `{ set, get, watch, rate(hz) }`; `get()` → `{ [session]: { viewer, body, held, at, keys } }` |
 | `send(type, data)` | once to the same extension on every peer, to `receive` unless `type` is in `messages` |
@@ -404,9 +401,9 @@ extension's.
 | `box(id, { hints, in })`, `groupBox`, `sceneBox` | `{ min, max }` or null |
 | `worldOf(id)` | the drawn matrix, holds included; `scene().world(id)` is the doc's |
 | `focus(ids)` | load first |
-| `providersFor(url, doc)`, `addObject(url, opts)` | `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }` |
+| `providersFor(url, doc)`, `addObject(url, opts)` | → a change function with its `id`; `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }` |
 | `fixPoint(id)` | the `at` fixing an object at what it shows now |
-| `view` | `{ get, watch, select, enter, dock({ url, toolId?, title }) → close }` |
+| `view` | `{ get, watch, select, enter, arrive, dock({ url, toolId?, title }) → close }` |
 | `link(id)`, `collect(name)`, `run(invocation)` | `collect`: this stage's offers, tagged `stage`; `run` in the stage `invocation.stage` names |
 | `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | see "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `THREE`, `world({ onTop? })` | three.js; a `Group` whose meshes are the extension's widgets |
@@ -485,10 +482,11 @@ t`. Anyone who may write pauses and resumes. One clock per doc.
 
 ### Undo
 
-Undo covers the stage's own edits, per person and per focus doc (`src/undo.js`);
-a package verb, clock act or process save is never one. A step restores only if
-the doc still holds everything it wrote, else it is dropped and said. Kept
-objects come back as their keeper has them now.
+The editor's (`src/parts/editor.js`, `src/undo.js`): it records its own writes
+from what `change` returns, per person and per focus doc; a package's verb, a
+clock act or a process save is never one. A step restores only if the doc still
+holds all it wrote, else it is dropped and said; kept objects come back as their
+keeper has them now.
 
 ## `instance`
 
@@ -671,7 +669,7 @@ The rest:
 |---|---|
 | `stage/stage.js` | the mount, doc loop, `makeApi`, content, lenses, audience, arriving, claims, the clock's wiring |
 | `stage/view.js` | the view: viewport, router, bodies, selection, prefs, camera saving, session, link expansion, cross-stage input, the view plugins' api |
-| `stage/host.js` | starting and stopping extensions (`collect`, drops) and view plugins |
+| `stage/host.js` | starting and stopping extensions (`collect`) and view plugins |
 | `stage/router.js` | DOM to events, sessions, the body stack, the hands, lock, keys, Escape, menu, cursor |
 | `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s), sends, poses |
 | `stage/viewport.js`, `stage/dock.js` | rendering and picking, one per view; the drawer |

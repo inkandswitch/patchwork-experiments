@@ -2,7 +2,7 @@
 
 **Everything in this file is deferred until further notice, except section 1,
 which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
-deferred; steps 1 and 2 are done, HISTORY.md "Kernel step 1", "Kernel step 2").** Nothing else here is to be started without the lead asking.
+deferred; steps 1–3 are done, HISTORY.md "Kernel step 1", "Kernel step 2", "Kernel step 3").** Nothing else here is to be started without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
@@ -83,11 +83,11 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 | ~~held-tool slot, popover, Escape ladder~~; gesture | done (step 1): the hands stack; the open gesture is still its own Escape layer, not a hand |
 | Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
 | ~~"general" scope, `api.path`, `reopened`, general-only packages/clocks~~ | done (step 2): **view plugins** (`scene:view`), offered at the focus |
-| `own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading | **editor**, recording from `change → patches` |
+| ~~`own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading~~ | done (step 3): **editor**, recording from `change → patches` |
 | audience, shown, veil, keepers' looks | **hidden** (doc, `"*"`); the veil a `display` override |
 | claims; pose holds and playback; world clock and processes; telling | **claims**, **poses** (playback a `display` override), **clock** (on `use("claims")`, `channel`, `settled()`), **telling**: each a doc plugin of every doc (`"*"`) |
 | commands, attention, keymap, menu, use prompt, toolbar, touch | **verbs** (view); attention = the editor's selection, else the look |
-| selection, hover, focus, Enter/Leave, the trail, `scene.others`; templates, parts, drops, assets | **editor** |
+| selection, hover, focus, Enter/Leave, the trail, `scene.others`; ~~templates, parts, drops, assets~~ (done, step 3) | **editor** |
 | link roles, expansion, pins, `fixPoint`, ambients | **links** (view), calling `open(…)`; ambients become `collect(name, { world: true })` |
 | arriving (`view.start`); packages list and prompt | **arrive**, **packages** (view) |
 | drawer, notices, prefs | **drawer**, **notices**, **prefs** (view services) |
@@ -108,9 +108,8 @@ example republished at the end of the queue.
 
 Each step leaves everything green and deletes a section of STAGE.md:
 1 hands, Edit the editor's hand (done 2026-11-17); 2 view plugins (`scene:view`; done 2026-11-17), every
-`general` branch gone; 3 undo leaves (`change → patches`; the editor records its own writes; drops,
-parts and templates move to the editor; consent was removed, so no veto
-convention); 3b the board-game packages merge into `tabletop` (dice, bag,
+`general` branch gone; 3 undo leaves (done 2026-11-17: `change → patches`; the editor records its own writes; drops,
+parts and templates move to the editor); 3b the board-game packages merge into `tabletop` (dice, bag,
 tts-import, card-table, keep; seats stays separate, machine uses it), so
 step 4 migrates one games package, not six; 4 services and `channel` (claims, poses, clock, telling,
 notices, drawer, prefs out one at a time); 5 `display` (lenses, veil,

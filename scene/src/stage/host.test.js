@@ -99,7 +99,6 @@ describe("the host", () => {
           log.push(`release:${rec.id}:${rec.signal.aborted ? "aborted" : "live"}`);
         },
       }),
-      makeDropContext: (id) => ({ ctxFor: id }),
       busy: (id) => busy.has(id),
       setTimer: timers.setTimeout,
       clearTimer: timers.clearTimeout,
@@ -163,18 +162,6 @@ describe("the host", () => {
     } finally {
       metas.splice(i, 0, gone);
     }
-  });
-
-  it("drop: loads only the modules that take the datatype, without running them", async () => {
-    const drop = vi.fn(async (ctx, info) => info.doc["@patchwork"].type === "deck-doc");
-    const { host } = make({ mods: { deck: { create: () => ({}), drop } } });
-    host.sync(doc());
-    await flush();
-    expect(await host.drop({ url: "u", doc: { "@patchwork": { type: "other" } } })).toBe(false);
-    expect(drop).not.toHaveBeenCalled();
-    expect(await host.drop({ url: "u", doc: { "@patchwork": { type: "deck-doc" } } })).toBe(true);
-    expect(drop.mock.calls[0][0]).toEqual({ ctxFor: "deck" });
-    expect(ids().some((x) => x.startsWith("deck"))).toBe(false);
   });
 
   it("starts what a registry change installs", async () => {

@@ -75,7 +75,7 @@ import { drawerTab } from "./tab.js";
 import { LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, attachOptions, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
-import { own } from "../stage/own.js";
+import { editor } from "./editor.js";
 import { createOutline } from "./outline.js";
 import { atFocus } from "./per-focus.js";
 import { layerChoices, layerStates } from "../layers.js";
@@ -197,7 +197,7 @@ function create(api) {
       refreshNow(true);
       return null;
     }
-    here.edit(plan, { label });
+    editor(here).edit(plan, { label });
     return plan;
   }
   const FIELD_LABELS = { name: "Rename", visible: "Visible", wireframe: "Wireframe", locked: "Locked", color: "Colour", opacity: "Opacity", group: "In group", parent: "Attach", at: "Version" };
@@ -269,7 +269,7 @@ function create(api) {
   const holderIn = (d, id) => (id == null ? d : d.objects?.[id] ?? null);
 
   function addTrait(id, desc) {
-    here.edit((d) => {
+    editor(here).edit((d) => {
       const h = holderIn(d, id);
       if (!h) return;
       // the scene's map is pre-created (STAGE.md, "Shared maps"); an object's
@@ -280,7 +280,7 @@ function create(api) {
   }
 
   function removeTrait(id, key) {
-    here.edit((d) => {
+    editor(here).edit((d) => {
       const t = holderIn(d, id)?.traits;
       if (isMap(t) && key in t) delete t[key];
     }, { label: `Remove ${described.get(key)?.name ?? key}` });
@@ -295,7 +295,7 @@ function create(api) {
       refreshNow(true);
       return;
     }
-    here.edit((d) => {
+    editor(here).edit((d) => {
       let at = holderIn(d, id)?.traits?.[key];
       if (entry != null) at = isMap(at) ? at[entry] : null;
       if (!isMap(at)) return; // gone meanwhile, or not a map of fields
@@ -307,14 +307,14 @@ function create(api) {
 
   function addEntry(id, key, entries) {
     const eid = here.newId(entries.prefix);
-    here.edit((d) => {
+    editor(here).edit((d) => {
       const t = holderIn(d, id)?.traits?.[key];
       if (isMap(t) && !(eid in t)) t[eid] = newValue(entries);
     }, { label: "Add" });
   }
 
   function removeEntry(id, key, eid) {
-    here.edit((d) => {
+    editor(here).edit((d) => {
       const t = holderIn(d, id)?.traits?.[key];
       if (isMap(t) && eid in t) delete t[eid];
     }, { label: "Remove" });
@@ -326,7 +326,7 @@ function create(api) {
    * the home camera and the editor stay.
    */
   function startIn(body) {
-    here.edit((d) => {
+    editor(here).edit((d) => {
       if (!isMap(d.view)) d.view = {};
       const was = isMap(d.view.start) ? d.view.start : null;
       if ((was?.body ?? LOOK.id) === body) return;
@@ -340,7 +340,7 @@ function create(api) {
   }
   /** Start everyone who opens the scene holding the editor, or not: doc.view.start.edit (not, the default, is no key). */
   function startEditing(on) {
-    here.edit((d) => {
+    editor(here).edit((d) => {
       if (!isMap(d.view)) d.view = {};
       const was = isMap(d.view.start) ? d.view.start : null;
       if ((was?.edit === true) === on) return;
@@ -1160,4 +1160,4 @@ function create(api) {
   };
 }
 
-export default own({ create });
+export default { create };

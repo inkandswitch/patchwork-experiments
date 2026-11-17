@@ -1,7 +1,8 @@
 // The stage, mounted (no WebGL): extensions registered as plugins, started by
 // trait (`"*"`: every doc), in running order, as the doc calls
 // for them; the api they get; presence between two mounted stages; prefs
-// kept per scene; where the doc starts people; templates; undo.
+// kept per scene; where the doc starts people; and the editor's templates,
+// parts and drops (../parts/editor.js) run on an api.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
@@ -50,6 +51,7 @@ const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
 const { plugins } = await import("../index.js");
 const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
+const { add, drop, part, template: runTemplate } = await import("../parts/editor.js");
 // (and the editor's hand, a view plugin: view.start.edit picks it up)
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || p.id === "scene.edit") getRegistry(p.type).register(p);
 
@@ -509,7 +511,7 @@ describe("the stage, mounted", () => {
     ]);
   });
 
-  it("remove(ids): every extension's beforeRemove in the same change, before the removal", async () => {
+  it("remove(ids): a change function running every extension's beforeRemove before the removal; change(fn) says what it wrote", async () => {
     const seen = [];
     exts["t.scene"] = recorder("t.scene", () => ({
       beforeRemove(draft, ids) {
@@ -528,6 +530,9 @@ describe("the stage, mounted", () => {
     const api = exts["t.scene"].api;
     const plan = api.remove("g");
     expect(plan.ok).toBe(true);
+    expect(seen).toEqual([]);
+    expect(api.change(plan).map((p) => p.path.join("."))).toEqual(expect.arrayContaining(["objects.g", "objects.a", "dimensions.d1"]));
+    expect(api.change(null)).toEqual([]);
     expect(seen).toHaveLength(1);
     expect(seen[0].ids.sort()).toEqual(["a", "g"]);
     expect(seen[0].stillThere).toBe(true);
@@ -574,18 +579,18 @@ describe("the stage, mounted", () => {
       // a scene made new: its maker holds the editor (the datatype's init says so)
       expect(m.local.get().hands.map((h) => h.kind)).toEqual(["edit"]);
       const api = exts["t.always"].api;
-      expect(await api.template("t.template")).toBe(true);
+      expect(await runTemplate(api, "t.template")).toBe(true);
       await settle();
       expect(seen[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "notify", "registry", "repo", "scene"]));
       expect(m.local.get().body.id).toBe("stroll");
       // the template's start says nothing of the editor: put down
       expect(m.local.get().hands).toEqual([]);
       expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene"]);
-      expect(await api.template("nope")).toBe(false);
+      expect(await runTemplate(api, "nope")).toBe(false);
       template = () => {
         throw new Error("no room");
       };
-      expect(await api.template("t.template")).toBe(false);
+      expect(await runTemplate(api, "t.template")).toBe(false);
       expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
     } finally {
       template = null;
@@ -604,8 +609,8 @@ describe("the stage, mounted", () => {
       await settle();
       const api = exts["t.always"].api;
       for (const v of VALUES) {
-        expect(await api.template("t.template", v)).toBe(true);
-        expect(await api.template("t.players", v)).toBe(true);
+        expect(await runTemplate(api, "t.template", v)).toBe(true);
+        expect(await runTemplate(api, "t.players", v)).toBe(true);
       }
       expect(got.none).toEqual(VALUES.map(() => ({})));
       expect(got.players).toEqual([{ players: 2 }, { players: 2 }, { players: 3 }, { players: 4 }, { players: 2 }, { players: 3 }]);
@@ -632,7 +637,7 @@ describe("the stage, mounted", () => {
       const m = mount(h);
       await settle();
       const api = exts["t.always"].api;
-      const id = await api.part("t.part", { parent: "hull", transform: { position: [1, 2, 3] } });
+      const id = await part(api, "t.part", { parent: "hull", transform: { position: [1, 2, 3] } });
       expect(seen[0].keys).toEqual(expect.arrayContaining(["addObject", "change", "content", "doc", "file", "newId", "notify", "registry", "repo", "scene"]));
       // what it's dropped on can be read (a hull's stated bow), as api.content
       expect(seen[0].parentContent).toEqual(api.content("hull"));
@@ -641,17 +646,17 @@ describe("the stage, mounted", () => {
       expect(h.doc().objects[id]).toMatchObject({ name: "Block", parent: "hull" });
       expect(m.local.get().selected).toBe(id);
       // a parent that's gone or a group: the scene root
-      await api.part("t.part", { parent: "nope", transform: {} });
-      await api.part("t.part", { parent: "g" });
+      await part(api, "t.part", { parent: "nope", transform: {} });
+      await part(api, "t.part", { parent: "g" });
       expect(seen.slice(1).map((s) => s.at.parent)).toEqual([null, null]);
       // nothing returned, or no such part: null, nothing selected anew
       partCreate = () => null;
-      expect(await api.part("t.part", null)).toBe(null);
-      expect(await api.part("nope", null)).toBe(null);
+      expect(await part(api, "t.part", null)).toBe(null);
+      expect(await part(api, "nope", null)).toBe(null);
       partCreate = () => {
         throw new Error("no room");
       };
-      expect(await api.part("t.part", null)).toBe(null);
+      expect(await part(api, "t.part", null)).toBe(null);
       expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That part failed: no room", kind: "error" });
     } finally {
       partCreate = null;
@@ -669,7 +674,7 @@ describe("the stage, mounted", () => {
       ctx = c;
     };
     try {
-      await exts["t.always"].api.template("t.template");
+      await runTemplate(exts["t.always"].api, "t.template");
     } finally {
       template = null;
     }
@@ -713,13 +718,13 @@ describe("the stage, mounted", () => {
     expect(running(m)).not.toContain("t.dropped:scene");
     const deck = repo.add({ "@patchwork": { type: "t-deck" }, title: "Deck" });
     const api = exts["t.always"].api;
-    expect(await api.drop({ url: deck.url, doc: deck.doc(), handle: deck, group: null, at: null })).toBe(true);
+    expect(await drop(api, { url: deck.url, doc: deck.doc(), handle: deck, group: null, at: null })).toBe(true);
     await settle();
     expect(dropped).toHaveLength(1);
     expect(dropped[0].ctx).not.toContain("overlay");
     expect(dropped[0].ctx).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "registry", "repo"]));
     expect(running(m)).toContain("t.dropped:scene");
-    expect(await api.drop({ url: deck.url, doc: { "@patchwork": { type: "other" } } })).toBe(false);
+    expect(await drop(api, { url: deck.url, doc: { "@patchwork": { type: "other" } } })).toBe(false);
   });
 
   it("addObject: a GLB file (a \"file\" source) becomes an object with no render doc, where it's asked to go", async () => {
@@ -729,23 +734,23 @@ describe("the stage, mounted", () => {
     const api = exts["t.always"].api;
     const file = repo.add({ "@patchwork": { type: "file" }, name: "part.glb", extension: "glb", mimeType: "model/gltf-binary", content: new Uint8Array([1]) });
     expect((await api.providersFor(file.url, file.doc())).map((p) => p.id)).toEqual(["file-glb"]);
-    const id = await api.addObject(file.url, { name: "Part", group: "g", before: "p", transform: { position: [1, 2, 3] } });
+    const id = await add(api, file.url, { name: "Part", group: "g", before: "p", transform: { position: [1, 2, 3] } });
     const o = h.doc().objects[id];
     expect(o).toMatchObject({ name: "Part", sourceUrl: file.url, providerId: "file-glb", renderUrl: null, group: "g", parent: null });
     expect(o.transform).toEqual({ position: [1, 2, 3], rotation: [0, 0, 0], scale: 1 });
     expect(h.doc().order).toEqual([id, "p", "g"]);
-    const attached = await api.addObject(file.url, { parent: "p" });
+    const attached = await add(api, file.url, { parent: "p" });
     expect(h.doc().objects[attached].parent).toBe("p");
     // an id made beforehand (a copy maps its ids first): that one, and never one the scene has
     const mine = api.newId("o");
-    expect(await api.addObject(file.url, { id: mine })).toBe(mine);
+    expect(await add(api, file.url, { id: mine })).toBe(mine);
     expect(h.doc().objects[mine]).toMatchObject({ sourceUrl: file.url, visible: true, wireframe: false });
-    await expect(api.addObject(file.url, { id: "p" })).rejects.toThrow(/already has an object/);
+    await expect(add(api, file.url, { id: "p" })).rejects.toThrow(/already has an object/);
     expect(h.doc().objects.p).toEqual(card());
-    await expect(api.addObject("not a url")).rejects.toThrow(/automerge URL/);
+    await expect(add(api, "not a url")).rejects.toThrow(/automerge URL/);
     // (a scene in itself is a link its expansion closes, a cycle: links.test.js)
     const txt = repo.add({ "@patchwork": { type: "essay" } });
-    await expect(api.addObject(txt.url)).rejects.toThrow(/No scene provider/);
+    await expect(add(api, txt.url)).rejects.toThrow(/No scene provider/);
   });
 
   it("schedule(fn) runs in the next flush; notify() reaches local.notices", async () => {
