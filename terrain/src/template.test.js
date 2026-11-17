@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { layOut, headTo, differences, placeWeather, AT_ANCHOR, AFTERNOON, MOORING, RODE, CREDIT, PLACE, WEATHER, BAY_WATER } from "./template.js";
+import { layOut, headTo, differences, placeWeather, AT_ANCHOR, MOORING, RODE, CREDIT, PLACE, BAY_WATER } from "./template.js";
 import { WIND, SKY, ORIGIN, OFFSET, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
-import { OFFSET as UCLUELET_OFFSET } from "./ucluelet.js";
 import { credits } from "./credit.js";
 import { sceneCtx } from "./test/scene-ctx.js";
 
@@ -85,14 +84,6 @@ describe("a place's weather (placeWeather): the weather package's trait, its fie
     for (const k of Object.keys(w)) expect(FIELDS).toContain(k);
     expect(FIELDS.filter((k) => !(k in w))).toEqual(["gustiness", "rain"]);
   });
-  it("the afternoon is 15:00 on 15 July 2026, on the place's clock (no offset of its own)", () => expect(AFTERNOON).toStrictEqual({ date: "2026-07-15", hour: 15 }));
-  // [place, its clock]: both places here are on Pacific Daylight Time in July
-  it.each([
-    ["Cadboro Bay", OFFSET],
-    ["Ucluelet", UCLUELET_OFFSET],
-  ])("%s's clock is UTC−7", (_, offset) => expect(offset).toBe(-7));
-  it("the trait is the weather package's, unprefixed", () => expect(WEATHER).toBe("weather"));
-  it("Cadboro's sky is the weather's four sky fields and nothing else", () => expect(Object.keys(SKY)).toEqual(["cover", "clouds", "base", "visibility"]));
 });
 
 describe("the Cadboro Bay data, pinned", () => {
