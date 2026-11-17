@@ -22,8 +22,10 @@
 // mast at the contract's drawn width with ORC's 0.4 / 0.6 beside the sail,
 // and the rigging), so the agreement is to what that difference allows, and
 // the Laser, whose 0.15 m mast is three times her drawn one, is stated
-// apart. Sailing will read the contract's windage instead of its own rule
-// (a follow-up on sailing's side), which closes the rest by construction.
+// apart. Since 2026-11-17 (N6) sailing reads the contract's windage instead
+// of its own rule, so the figures above are its old rule's, a dated record:
+// this file is to be re-measured against sailing's agreement.slow.test.js or
+// retired (FOLLOWUPS, "N6 integrated").
 
 import { describe, it, expect } from "vitest";
 import { buildCase } from "./test/contract-cases.js";
