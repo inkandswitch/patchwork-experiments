@@ -392,8 +392,8 @@ try {
       check("7: seated, a plain click on the hull round the table doesn't board", !(await P("me('a')")).playing && !(await P("walking('a')")), { me: await P("me('a')") });
     } else check("7: the hull round the table is on A's screen", false);
     // seated: the bar of tools offers Come aboard (Enter); the HUD holds no button, no walking keys, and keeps clear of the hand at the bottom
-    const hud = await P("hud('a')");
-    check("7: seated, the bar offers Come aboard (Enter); the HUD has no button and no walking keys, its dial top left", hud?.seated && hud.bar?.text === "Come aboard" && hud.bar.enabled && hud.bar.title === "Walk the deck in first person (Enter)" && hud.buttons === 0 && hud.hint === "" && !/WASD/.test(hud.keys) && hud.panel && hud.panel.bottom < hud.panel.hostHeight * 0.4, hud);
+    const hud = { ...(await P("hud('a')")), body: await P("bodyLabel('a')") };
+    check("7: seated, the bar offers Come aboard (Enter); the HUD has no button, no hint and no walking keys, its dial top left", hud.body === "Seated" && hud.bar?.text === "Come aboard" && hud.bar.enabled && hud.bar.title === "Walk the deck in first person (Enter)" && hud.buttons === 0 && hud.hint === "" && !/WASD/.test(hud.keys) && hud.panel && hud.panel.bottom < hud.panel.hostHeight * 0.4, hud);
     // back in the seat for what follows
     await P("pick('a', '')");
     await P("pick('a', 'p1')");

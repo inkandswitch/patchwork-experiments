@@ -1,7 +1,10 @@
 // The HUD: its model (pure) and the DOM it keeps, against a stand-in api.
 import { describe, it, expect, vi } from "vitest";
 import { brokenClocks } from "./test/fakes.js";
-import { compass, createHud, hudModel, inIrons, knots, luffing, nearEye, NEAR, sailDownNudge, sailRow, speedOver, stationGuide, windFrom } from "./hud.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { compass, createHud, hudModel, inIrons, knots, luffing, sailDownNudge, sailRow, speedOver, stationGuide, windFrom } from "./hud.js";
 
 describe("the HUD's model", () => {
   it("knots and the compass", () => {
@@ -13,37 +16,30 @@ describe("the HUD's model", () => {
     expect(compass(2 * Math.PI - 0.001)).toEqual({ deg: 0, point: "N" });
   });
 
-  it("before coming aboard: no walking keys (nobody's walking yet), and the hint says only what a click on her does, where it does (every lobby case); the way in is the bar's Come aboard", () => {
-    // seated × near → the hint, exactly: a click on her comes aboard only near her and not seated
-    const LOBBY = [
-      [false, false, ""],
-      [false, true, "Click her to come aboard"],
-      [true, false, ""],
-      [true, true, ""],
-    ];
-    for (const [seated, near, hint] of LOBBY) {
-      const m = hudModel({ me: { playing: false }, seated, near });
-      expect(m, `seated ${seated}, near ${near}`).toMatchObject({ state: "lobby", keys: "", panel: false, seated, hint });
+  it("the hint in every state × seated × near (12 cases): before coming aboard it is empty, since what a click on her does is the base's (Edit's selects); the way in is the bar's Come aboard", () => {
+    // seated (the view rides a seat) and near (the eye within a click of her) were what the
+    // lobby's "Click her to come aboard" hung on; neither changes what the HUD says now
+    const HINT = { lobby: "", paused: "Click to carry on", aboard: "WASD walk · Shift run · Space jump · F use" };
+    const ME = { lobby: { playing: false }, paused: { playing: true, paused: true }, aboard: { playing: true } };
+    const rows = [];
+    for (const state of ["lobby", "paused", "aboard"]) for (const seated of [false, true]) for (const near of [false, true]) rows.push([state, seated, near]);
+    expect(rows).toHaveLength(12);
+    for (const [state, seated, near] of rows) {
+      const m = hudModel({ me: ME[state], seated, near });
+      expect(m, `${state}, seated ${seated}, near ${near}`).toMatchObject({ state, hint: HINT[state], keys: "", panel: false });
+      expect(m, `${state}: the model names no seat`).not.toHaveProperty("seated");
     }
-    // aboard, near means nothing
-    expect(hudModel({ me: { playing: true }, near: true }).hint).toMatch(/^WASD walk/);
   });
 
-  it("is near within NEAR metres of the eye, from an array or a vector, and not without either", () => {
-    const m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 30, 0, 40, 1];
-    expect(NEAR).toBe(60);
-    expect(nearEye([0, 0, 0], m)).toBe(true); // 50 m
-    expect(nearEye({ x: -30, y: 0, z: 0 }, m)).toBe(false); // 72 m
-    expect(nearEye([30, 60, 40], m)).toBe(true); // 60 m: on the edge
-    expect(nearEye(null, m)).toBe(false);
-    expect(nearEye([0, 0, 0], null)).toBe(false);
-  });
-
-  it("seated at a table aboard (the view rides it): no hint and no walking keys beside the game's (Enter, or the bar's Come aboard, comes aboard)", () => {
-    const m = hudModel({ me: { playing: false }, seated: true });
-    expect(m).toMatchObject({ state: "lobby", seated: true, hint: "", keys: "" });
-    // aboard, seated means nothing: you're walking
-    expect(hudModel({ me: { playing: true }, seated: true })).toMatchObject({ state: "aboard", seated: false });
+  it("takes no pointer event, by construction: its root says pointer-events none and no rule of its sheet gives one back", () => {
+    // the sheet as written (vitest hands a ?inline stylesheet over empty)
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "hud.css"), "utf8");
+    const decls = [...css.matchAll(/pointer-events\s*:\s*([^;}]+)/g)].map((m) => m[1].trim());
+    expect(decls).toEqual(["none"]);
+    // the one declaration is the root's (.sail-hud), which every node of the HUD inherits
+    const rule = css.slice(css.lastIndexOf("}", css.indexOf("pointer-events")) + 1, css.indexOf("pointer-events"));
+    expect(rule).toMatch(/\.sail-hud:where\([^)]*\)[^{]*\{[^}]*$/);
+    expect(rule).not.toMatch(/\.sail-hud\s+\S/);
   });
 
   it("aboard: the walking keys, a station's own hint, swimming, paused, no lock", () => {
@@ -281,24 +277,25 @@ describe("the HUD", () => {
       s.tick();
       expect(s.root.querySelector("button"), name).toBe(null);
       expect(s.root.dataset.state, name).toBe(name === "seated" || name === "lobby" ? "lobby" : name === "swimming" ? "aboard" : name);
-      expect(s.root.hasAttribute("data-seated"), name).toBe(seated);
+      if (name === "lobby" || name === "seated") expect(s.root.querySelector('[data-k="hint"]').textContent, name).toBe("");
       expect(s.root.style.display, name).toBe(""); // shown: her doc is the world
     }
     // never asks the crew to start: only the command does (stations.js "aboard")
     expect(s.ctx.crew.start).not.toHaveBeenCalled();
   });
 
-  it("before you're aboard: the dial is up (the ship is there to read), the hint empty until she's near", () => {
+  it("before you're aboard: the dial is up (the ship is there to read), the hint empty, near her or not", () => {
     const me = { current: { playing: false } };
     const s = stage(me);
     expect(s.root.dataset.state).toBe("lobby");
     expect(s.root.querySelector('[data-k="hint"]').textContent).toBe("");
     expect(s.root.querySelector(".sail-panel").hidden).toBe(false);
     expect(s.root.querySelector('[data-k="speed"]').textContent).toBe("3.9 kn");
-    // the eye within NEAR of her (at the world's origin, as worldOf says)
+    // the eye a few metres from her (at the world's origin, as worldOf says): a click there is Look's
+    // way aboard and Edit's selection, and the HUD can't tell which, so it still says nothing
     s.api.camera = { get: () => ({ position: [10, 5, 10] }) };
     s.tick();
-    expect(s.root.querySelector('[data-k="hint"]').textContent).toBe("Click her to come aboard");
+    expect(s.root.querySelector('[data-k="hint"]').textContent).toBe("");
   });
 
   it("shows only where her doc is the world, or while you're aboard: linked into a harbour nobody sees it until they come aboard; with no ship, nobody does", () => {

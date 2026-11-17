@@ -447,7 +447,7 @@ try {
       const panel = h.querySelector(".sail-panel");
       const r = panel && !panel.hidden ? panel.getBoundingClientRect() : null;
       const host = hosts[w].getBoundingClientRect();
-      return { state: h.dataset.state, seated: h.hasAttribute("data-seated"), buttons: h.querySelectorAll("button").length, hint: h.querySelector('[data-k="hint"]')?.textContent ?? "", bar: way ? { text: way.textContent.trim(), title: way.title, enabled: !way.disabled } : null, keys: h.querySelector('[data-k="keys"]')?.textContent ?? "", advice: h.querySelector('[data-k="advice"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
+      return { state: h.dataset.state, buttons: h.querySelectorAll("button").length, hint: h.querySelector('[data-k="hint"]')?.textContent ?? "", bar: way ? { text: way.textContent.trim(), title: way.title, enabled: !way.disabled } : null, keys: h.querySelector('[data-k="keys"]')?.textContent ?? "", advice: h.querySelector('[data-k="advice"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
     },
     /** a fitting's position in the hull's frame, as the doc has it */
     hullLocal(id) { const s = dbg.a.scene(); return s.toLocal(ids.hull, s.world(id).slice(12, 15)).map((v) => +v.toFixed(3)); },

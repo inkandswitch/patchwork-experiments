@@ -246,7 +246,10 @@ Fixed since (each item names its Decisions section below):
   Lost Cities aboard): the double-click 16 px below the canvas's top edge
   enters the game, and the canvas sits at the same place in Look, Edit and
   aboard; against the packages published before, the same check fails 11
-  of 17, the first press coming aboard.
+  of 17, the first press coming aboard. Its lobby hint, "Click her to come
+  aboard", false in Edit, went too (2026-11-17, lane/n11 step 10): before
+  you're aboard the HUD says nothing, and no node of it takes a press in
+  any state (sailing DESIGN.md, Decisions (N11) 1; editclick-run step 5).
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her

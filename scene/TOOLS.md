@@ -1686,6 +1686,9 @@ The project lead decided the five open questions on 2026-11-12.
       the HUD's own button, a private copy of the command that sat over the
       canvas's top edge in Edit (triage (f)), is gone, and the HUD only
       reads (`sailing/src/hud.js`, `probes/editclick-run.mjs` steps 5-6).
+      Its lobby hint, "Click her to come aboard", false in Edit, went
+      after (lane/n11 step 10): the HUD says nothing before you're aboard
+      (sailing DESIGN.md, Decisions (N11) 1).
       Arena's Play and Stand targets up (`show: ["world", "menu"]`): its
       HUD's lobby drew its own "▶ Play" / "▶ Pick up the gun" and "Stand
       them up" buttons, private copies of the two commands, so N8's "Play
