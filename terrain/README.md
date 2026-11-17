@@ -1003,7 +1003,7 @@ node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu] 
 #   Ozzard, low on the water off the yard, off the town and under the lighthouse; the top
 #   of every screen not black (the sky drawn at every eye). With --gpu (the machine's GPU,
 #   Metal on a Mac) every view's frame time (40 frames, the stage's render and a 1-pixel
-#   readPixels; median and p90, draw calls, triangles), and the home view within 22.7 ms;
+#   readPixels; median and p90, draw calls, triangles), and the home view against 22.7 ms (reported, not a check: the lead, 2026-11-17);
 #   and the look's own checks: no height legend, the ground's grain dressed, the water
 #   off the yard glassy, no horizontal stripes in the harbour's mirror (low-town's ratio
 #   sits at 1.23–1.32 against 1.3 from run to run, as the water moves: rerun before
