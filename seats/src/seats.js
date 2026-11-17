@@ -16,7 +16,7 @@
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it
 //     (Sit as …, Stand up: model.js);
-//   - telling the others when someone sits down (api.send: the seat id only);
+//   - telling everyone when someone sits down (api.tell: the seat id only);
 //   - who the parties are, for undo (`parties`): the people seated.
 //
 // Seats have an owner (model.js): the doc's own are its table's, an object's
@@ -457,12 +457,9 @@ function create(api) {
     seatView(ref);
     drawSeats();
   }
-  /** "Sat down", here and to the others. */
+  /** "Sat down", here and to the others (the stage says it: `messages`). */
   function said(ref) {
-    const data = ref.of == null ? { seat: ref.seat } : { seat: ref.seat, of: ref.of };
-    const text = told("sat", data, "You");
-    if (text) api.notify(text);
-    api.send("sat", data);
+    api.tell("sat", ref.of == null ? { seat: ref.seat } : { seat: ref.seat, of: ref.of });
   }
   /**
    * Watching, from the picker of owner `of`'s seats: up from the seat there
@@ -486,15 +483,16 @@ function create(api) {
     drawSeats();
   }
 
-  /** What a message says, from `name`; null if it's malformed or not one of ours. Seat ids (and the owner's object id) only. */
-  function told(type, data, name) {
-    if (type !== "sat" || !data || typeof data !== "object" || typeof data.seat !== "string" || !data.seat || data.seat.length >= 128) return null;
-    if (data.of != null && (typeof data.of !== "string" || data.of.length >= 128)) return null;
-    const seat = seatAt(scene ?? api.scene(), refOf(data));
-    if (!seat) return null;
-    const sn = seat.name || data.seat;
-    return `${name === sn ? "Someone" : name} sat down as ${sn}`;
-  }
+  /** What is told: "sat", a seat id (and its owner's object id) only; said once the seat is one of this scene's. */
+  const messages = {
+    sat: {
+      valid: (d) => !!d && typeof d === "object" && typeof d.seat === "string" && !!d.seat && d.seat.length < 128 && (d.of == null || (typeof d.of === "string" && d.of.length < 128)),
+      says(d, who, s) {
+        const seat = seatAt(s, refOf(d));
+        return seat ? `${who.name} sat down as ${seat.name || d.seat}` : null;
+      },
+    },
+  };
 
   // ── the seat's view: the seat body (body.js) ──
   // Sitting enters it (the stage pushes it over the body you're in: walking
@@ -673,10 +671,7 @@ function create(api) {
       followTags(snapshot, local);
       reconcile();
     },
-    receive(type, data, from) {
-      const text = told(type, data, who(from?.viewer));
-      if (text) api.notify(text);
-    },
+    messages,
     roster: Object.freeze({
       seats: (snap) => rosterOf(snap),
       viewers: (snap) => rosterOf(snap).map((s) => s.viewer).filter(Boolean),

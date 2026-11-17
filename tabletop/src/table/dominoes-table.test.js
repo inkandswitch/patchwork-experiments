@@ -98,7 +98,7 @@ describe("drawing a tile into your rack", () => {
     // hers alone to see; Bob sees its back
     expect(t.policy()("b0")).toEqual({ show: ["alice"], only: ["alice"] });
     expect(t.notices("A")).toEqual(["You drew a domino"]);
-    expect(t.notices("B")).toEqual(["<alice> drew a domino"]);
+    expect(t.notices("B")).toEqual(["Someone drew a domino"]);
     expect(t.w.sent.at(-1)).toMatchObject({ type: "drew", data: { n: 1, noun: "domino" } });
     t.w.done();
   });
@@ -203,8 +203,8 @@ describe("washing the boneyard", () => {
     }
     // the others' pieces are where they were
     expect(t.w.doc.objects.far.transform.position).toEqual([0.3, TILE_TOP, 0.3]);
-    expect(t.notices("A")).toEqual(["Washing 6 dominoes…"]);
-    expect(t.notices("B")).toEqual(["<alice> washed “Deck” (6)"]);
+    expect(t.notices("A")).toEqual(["You washed “Deck” (6)"]);
+    expect(t.notices("B")).toEqual(["Someone washed “Deck” (6)"]);
     expect(JSON.stringify(t.w.sent)).not.toMatch(/b[0-5]|slot|sourceUrl/);
     t.w.done();
   });
@@ -468,7 +468,7 @@ describe("laying your hand face up", () => {
     // in the order they stood across the rack
     const xs = hand.map((id) => worldOf(t, id)[12]);
     expect([...xs].sort((a, b) => a - b)).toEqual(xs);
-    expect(t.notices("B").at(-1)).toBe("<alice> laid 7 dominoes face up");
+    expect(t.notices("B").at(-1)).toBe("Someone laid 7 dominoes face up");
     expect(t.state(t.A, "reveal", "rack1")).toBeNull();
     t.w.done();
   });

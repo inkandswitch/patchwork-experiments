@@ -26,8 +26,9 @@
 // by the `scene.carry` trait the table writes; `landing` here only answers);
 // where each seat's hands are,
 // for whoever shows seats (`seatPlaces`);
-// and telling the others what happened (shuffled, drew) with api.send, as
-// counts only, never which card: `announce` here, `receive` there.
+// and telling everyone what happened (shuffled, drew, washed, laid face up)
+// with api.tell, as counts only, never which card: the stage says it, here as
+// "You" and to the others by name (`messages`; scene/STAGE.md "Telling").
 //
 // Component physics, not rules: nothing here knows a game, a turn or a
 // legal move. (Dice are their own package, dice/.)
@@ -99,7 +100,7 @@ export default {
       if (typeof kept?.keeper?.shuffle !== "function") return api.notify(kept ? "This pile can't be shuffled." : "Only cards something keeps can be shuffled: these are what they look like.", "error");
       const n = kept.keeper.shuffle(stackOf(id));
       if (!n) return api.notify("There's nothing here to shuffle with it.", "error");
-      announce("shuffled", { n, ...(titleOf(kept) ? { of: titleOf(kept) } : {}) }, `Shuffling ${n} card${n === 1 ? "" : "s"}…`);
+      api.tell("shuffled", { n, ...(titleOf(kept) ? { of: titleOf(kept) } : {}) });
     }
     /** A kept card's container's name, for a notice (public: the container's title). */
     function titleOf(kept) {
@@ -111,41 +112,14 @@ export default {
       }
     }
 
-    // ── telling the others: what happened, never which card ──
-    /** Who a peer is at this table, from whoever knows (the roster's `who`), else "Someone". */
-    const nameOf = (from) => {
-      for (const r of api.collect?.("roster") ?? []) {
-        if (typeof r?.value?.who !== "function") continue;
-        try {
-          const n = r.value.who(from?.viewer);
-          if (typeof n === "string" && n) return n;
-        } catch {
-          // nobody to ask
-        }
-      }
-      return "Someone";
+    // ── telling everyone: what happened, never which card (the doc bears it out at once: what a peer did is theirs to say) ──
+    const says = (text) => (d, who) => text(d, who.name);
+    const messages = {
+      shuffled: { valid: VALID.shuffled, says: says((d, who) => `${who} shuffled ${d.of && d.of !== "Deck" ? `“${d.of}”` : "the deck"} (${d.n})`) },
+      drew: { valid: VALID.drew, says: says((d, who) => `${who} drew ${counted(d.n, d.noun)}`) },
+      washed: { valid: VALID.washed, says: says((d, who) => `${who} washed ${d.of ? `“${d.of}”` : `the ${plural(d.noun ?? "card")}`} (${d.n})`) },
+      showed: { valid: VALID.showed, says: says((d, who) => `${who} laid ${counted(d.n, d.noun)} face up`) },
     };
-    /** What a message says, from `who`; null if it's malformed or not one of ours. */
-    function told(type, data, who) {
-      if (!data || typeof data !== "object" || !Object.hasOwn(MESSAGES, type) || !MESSAGES[type](data)) return null;
-      switch (type) {
-        case "shuffled":
-          return `${who} shuffled ${data.of && data.of !== "Deck" ? `“${data.of}”` : "the deck"} (${data.n})`;
-        case "drew":
-          return `${who} drew ${counted(data.n, data.noun)}`;
-        case "washed":
-          return `${who} washed ${data.of ? `“${data.of}”` : `the ${plural(data.noun ?? "card")}`} (${data.n})`;
-        case "showed":
-          return `${who} laid ${counted(data.n, data.noun)} face up`;
-      }
-      return null;
-    }
-    /** Say it here (sends are never echoed back), then to every other peer. */
-    function announce(type, data, local) {
-      const text = local ?? told(type, data, "You");
-      if (text) api.notify(text);
-      api.send?.(type, data);
-    }
 
     // ── drawing: a pile's top card, into your own hand ──
     // D over a pile that's out on the table: its top card glides into the
@@ -306,7 +280,7 @@ export default {
         stop();
         api.change(api.ops.setTransform(api.scene(), id, to));
         api.pose.release(id, { landed: true });
-        announce("drew", { n: 1, ...nounOf(api.scene(), id) });
+        api.tell("drew", { n: 1, ...nounOf(api.scene(), id) });
       });
       if (!api.pose.hold(id, from)) theirs();
     }
@@ -401,7 +375,7 @@ export default {
         })
         .filter(Boolean);
       if (writes.length) api.change((d) => writes.forEach((w) => w(d)));
-      announce("washed", { n, ...nounOf(snap, id), ...(titleOf(plan.kept) ? { of: titleOf(plan.kept) } : {}) }, `Washing ${counted(n, nounOf(snap, id).noun)}…`);
+      api.tell("washed", { n, ...nounOf(snap, id), ...(titleOf(plan.kept) ? { of: titleOf(plan.kept) } : {}) });
     }
 
     // ── standing a piece on edge, and laying it flat ──
@@ -515,7 +489,7 @@ export default {
         })
         .filter(Boolean);
       if (writes.length) api.change((d) => writes.forEach((w) => w(d)));
-      announce("showed", { n: ids.length, ...nounOf(snap, ids[0]) }, `You laid ${counted(ids.length, nounOf(snap, ids[0]).noun)} face up`);
+      api.tell("showed", { n: ids.length, ...nounOf(snap, ids[0]) });
     }
 
     return {
@@ -528,10 +502,7 @@ export default {
       seatPlaces: (snap) => zones(snap),
       // who may see what: hands to their seat, face-up cards to everyone (visibility.js)
       audience: (snap) => audienceOf(snap, seatsFrom(api, snap)),
-      receive(type, data, from) {
-        const text = told(type, data, nameOf(from));
-        if (text) api.notify(text);
-      },
+      messages,
       commands: [
         {
           id: "shuffle",
@@ -663,12 +634,13 @@ function between(from, to, t) {
 /** The tags a piece fits (its back's: one for every card, "card"; every tile, "domino"), else a card's. */
 const tagsOf = (o) => (Array.isArray(o?.tags) && o.tags.length ? o.tags : CARD_TAGS);
 
-/** What a peer may tell us, and the shape each must have. Counts and a container's title only, never which card. */
-const MESSAGES = {
-  shuffled: (d) => count(d.n, 10000) && title(d.of),
-  drew: (d) => count(d.n, 1000) && noun(d.noun),
-  washed: (d) => count(d.n, 10000) && title(d.of) && noun(d.noun),
-  showed: (d) => count(d.n, 1000) && noun(d.noun),
+/** The shape of each thing the table tells. Counts and a container's title only, never which card. */
+const plain = (d) => !!d && typeof d === "object";
+const VALID = {
+  shuffled: (d) => plain(d) && count(d.n, 10000) && title(d.of),
+  drew: (d) => plain(d) && count(d.n, 1000) && noun(d.noun),
+  washed: (d) => plain(d) && count(d.n, 10000) && title(d.of) && noun(d.noun),
+  showed: (d) => plain(d) && count(d.n, 1000) && noun(d.noun),
 };
 const title = (t) => t === undefined || (typeof t === "string" && t.length > 0 && t.length < 200);
 const noun = (t) => t === undefined || (typeof t === "string" && NOUN.test(t));
