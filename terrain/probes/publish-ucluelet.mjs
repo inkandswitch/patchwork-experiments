@@ -4,7 +4,7 @@
 // the planned dock, people starting in Look at a home view over the
 // boatyard. A copy of publish-rvyc.mjs for this place.
 //
-//   (in scene/, sailing/, water/ and terrain/) pnpm build
+//   (in scene/, sailing/, water/, weather/ and terrain/) pnpm build
 //   node probes/publish-ucluelet.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--seed <dir>] [--shots <dir>] (--lock <dir> | $CHROME_LOCK) [--show] [--gpu]
 //
 // Makes NEW docs on every run (no dedupe).
@@ -12,7 +12,7 @@
 // 1. The data: probes/fetch-ucluelet.mjs fetches (or replays its recording
 //    in --cache; --seed records from downloads already made) and checks it.
 // 2. The scene, made the way a person makes it: in headless Chrome, the
-//    BUILT scene, sailing, water and terrain plugins on an EMPTY scene
+//    BUILT scene, sailing, water, weather and terrain plugins on an EMPTY scene
 //    (ucluelet-probe.html, an in-memory repo); the start screen's "Ucluelet
 //    (Rising Tide Boat Works)" is clicked, its fetches answered from the
 //    recording. Chrome runs only while holding the lock (--lock, else
@@ -24,9 +24,13 @@
 //    - the terrain at the origin, locked, built by terrain-mesh from its four
 //      data files (heights, sources and canopy, OSM features, OSM look),
 //      sources and attribution traced; the credit shown;
-//    - the place's sky is the world's atmosphere (over the weather's);
-//    - the weather (5 m/s from 300°), the harbour's open water with
-//      sailing's sea at scale 0.6; people start in Look at the home view;
+//    - the world's weather is the template's (the weather package's trait:
+//      Ucluelet, 15:00 on 15 July on UTC−7, 5 m/s from 300°, Ukee grey), and
+//      it is the world's: the atmosphere Ukee grey exactly (its old colours,
+//      fog and deck), the sun within 1° of the one once hand-set for that
+//      moment, the wind 5 m/s from 300°; the place (terrain.place) offers no
+//      sky; the harbour's open water with sailing's sea at scale 0.6; people
+//      start in Look at the home view;
 //    - the sloop at anchor off the dock, head to wind, deep enough for her
 //      keel at the lowest normal tide all round her swing (from the GLB's
 //      own extras.terrain, through the copyable sampler);
@@ -64,11 +68,12 @@ import { pngPixel, pngRegion } from "./png-pixel.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the terrain's and the sloop's (with joints and traversal, for her
-// companionway's hatch and exit). In a real shell the stage works
+// the scene, the terrain's, the weather's (the world's weather is its trait)
+// and the sloop's (with joints and traversal, for her companionway's hatch
+// and exit). In a real shell the stage works
 // these out from the registry; the probe page has none that says where its
 // plugins come from, so they're stated here.
-const PACKAGES = ["scene", "terrain", "sailing", "water", "joints", "traversal"];
+const PACKAGES = ["scene", "terrain", "weather", "sailing", "water", "joints", "traversal"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -100,7 +105,7 @@ if (!LOCK) {
 }
 const SNAP = join(SHOTS, "snap");
 mkdirSync(SNAP, { recursive: true });
-for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "water/dist/index.js", "terrain/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "terrain/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 
 // ─── 1. the data ────────────────────────────────────────────────────────────
 console.error(`fetching (or replaying) the data into ${CACHE}`);
@@ -127,7 +132,15 @@ const J = JSON.stringify;
 const DRAFT = 2.0; // the sloop's keel, near enough
 const FRAME_BUDGET = 22.7; // ms, the home view's median before the denser forest (Apple M4, Metal, 1280 × 760)
 const LLWLT = -2.11; // the lowest normal tide, below mean water (CHS 08595 Ucluelet)
-const { HOME, WIND, GRID, WATER_COLOUR, SKIES } = await import("../src/ucluelet.js");
+const { HOME, WIND, GRID, WATER_COLOUR } = await import("../src/ucluelet.js");
+const { UKEE_GREY } = await import("../src/test/ukee-grey.js");
+// The world's weather as the template writes it (template-ucluelet.test.js pins the same), and Ukee grey as the
+// weather package draws it there (weather's atmosphere.test.js pins the same; terrain's tests use UKEE_GREY's copy)
+const WEATHER = (seed) => ({ lat: 48.95, lon: -125.558, date: "2026-07-15", hour: 15, offset: -7, wind: 5, from: 300, seed, cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 });
+const GREY = { sky: { top: "#c4cacc", horizon: UKEE_GREY.horizon, bottom: "#7a8487" }, fog: UKEE_GREY.fog, exposure: 1.05, clouds: { cover: 1, contrast: 0.12, scale: 500, base: 600 } };
+const OLD_SUN = [-0.36, 0.84, 0.4]; // hand-set for 15:00 PDT on 15 July (the old terrain.sky)
+const sorted = (v) => (Array.isArray(v) ? v.map(sorted) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v);
+const degreesBetween = (a, b) => (Math.acos(Math.min(1, a.reduce((s, v, i) => s + v * b[i], 0) / Math.hypot(...a) / Math.hypot(...b))) * 180) / Math.PI;
 let snapshot = null;
 try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
@@ -147,11 +160,12 @@ try {
   check("every source can be traced: a url each", s.terrainDoc.sourceUrls.every((u) => /^https:\/\//.test(u ?? "")), s.terrainDoc.sourceUrls.map((u) => u?.slice(0, 90)));
   check("OSM pinned to the checked moment, and the data is what was checked", s.terrainDoc.osmDate === "2026-11-16T05:30:00Z" && s.terrainDoc.matchesChecked === true, { osmDate: s.terrainDoc.osmDate, matchesChecked: s.terrainDoc.matchesChecked });
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
-  check("the terrain's About is its Terrain doc; it carries the credit and the place's sky", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && s.terrain.sky?.fog?.far === SKIES["ukee-grey"].fog.far, s.terrain);
+  check("the terrain's About is its Terrain doc; it is the place, with its credit, and no sky of its own (exactly terrain.credit and terrain.place)", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && J(sorted(s.terrain.traits)) === J({ "terrain.credit": {}, "terrain.place": {} }), s.terrain);
+  check("the world's weather is the template's: Ucluelet, 15:00 on 15 July on UTC−7, 5 m/s from 300°, Ukee grey (and the scene's only trait)", J(sorted(s.weather)) === J(sorted(WEATHER(s.weather?.seed))) && Number.isSafeInteger(s.weather.seed) && J(s.traits) === J(["weather"]), { weather: s.weather, traits: s.traits });
   const atBuild = await P("terrainNow()");
   check("the Terrain doc's fingerprint when its render is built is the render's", atBuild.fingerprint === s.render?.builtFrom?.fingerprint, { now: atBuild.fingerprint, heads: atBuild.heads, built: s.render?.builtFrom?.fingerprint });
   check("its render is built, fingerprinted, its four data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 4 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
-  check(`a summer afternoon: ${WIND.speed} m/s from ${WIND.from}°, the sea at scale ${WIND.scale} on one open water at the chart's y = 0`, J(s.sea?.wind) === J({ speed: WIND.speed, from: WIND.from }) && s.sea.scale === WIND.scale && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
+  check(`a summer afternoon: ${WIND.speed} m/s from ${WIND.from}°, the sea at scale ${WIND.scale} on one open water at the chart's y = 0`, s.weather?.wind === WIND.speed && s.weather.from === WIND.from && s.sea?.scale === WIND.scale && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
   // the terrain's grid (ucluelet.js GRID: 1025 nodes 20 m apart from (-3440, -6900)), down to the hint's deepest seabed (130 m)
   check("the harbour's Sea keeps the terrain's footprint where its world has no open water (its clip: the grid, 130 m deep, centred on it)", J(s.sea?.clip) === J([20480, 130, 20480]) && J(s.sea?.at) === J([6800, 0, 3340]), { clip: s.sea?.clip, at: s.sea?.at });
   check("the harbour's water is the inlet's own grey-green (its water trait's colour)", J(s.sea?.colour) === J(WATER_COLOUR), s.sea?.colour);
@@ -166,7 +180,12 @@ try {
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
   check("the GLB's layers: forest, buildings, boats, surf, the shore's dressing, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden) (no cloud mesh: the stratus is baked into the hills)", ["forest", "buildings", "boats", "surf", "shore", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
   check("the trees are drawn instanced (a species a tile, so the stage culls the forest a tile at a time)", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
-  check("the place's sky is the world's atmosphere (Ukee grey, its stratocumulus deck, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false && t.atmosphere?.clouds?.cover === 1, t.atmosphere);
+  // the weather's, as every peer computes it from the trait (the place offers none)
+  const a = t.atmosphere;
+  check("the world's atmosphere is the weather's Ukee grey, exactly as the place had it (sky, fog, exposure, its stratocumulus deck; the sun soft, no shadows)", a && J(sorted({ sky: a.sky, fog: a.fog, exposure: a.exposure, clouds: a.clouds })) === J(sorted(GREY)) && a.sun?.color === "#eef0f0" && a.sun.intensity === 1.1 && a.sun.shadows === false, a);
+  report.numbers.sunFromOld = a?.sun?.direction ? +degreesBetween(a.sun.direction, OLD_SUN).toFixed(3) : null;
+  check("the sun is where it is at 15:00 PDT on 15 July: within 1° of the one hand-set for that moment", report.numbers.sunFromOld != null && report.numbers.sunFromOld < 1, { direction: a?.sun?.direction, degrees: report.numbers.sunFromOld });
+  check("the world's wind is the weather's: 5 m/s from 300°, the trait's seed, the stock gustiness", t.wind?.speed === 5 && t.wind.from === 300 && t.wind.seed === s.weather?.seed && t.wind.gustiness === 0.3, t.wind);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
 
   check("no height legend over a ground coloured by what covers it", !t.legend, { legend: t.legend });
@@ -311,10 +330,11 @@ try {
   // a viewer without the terrain plugin
   await b.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/terrain/probes/ucluelet-probe.html?replay=1` });
   await sleep(500);
-  check("the replay page set up (scene and sailing only)", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
+  check("the replay page set up (no terrain plugin)", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   check("without the terrain plugin, the terrain still shows, with its extras.terrain", await until("terrain().loaded", 300_000), await P(`status(__p.ids().terrain)`));
   const rt = await P("terrain()");
   check("…and reads the same depths (the mooring field, and every known place)", rt.depthAtMooring === t.depthAtMooring && J(rt.known) === J(t.known), { replay: rt.depthAtMooring, made: t.depthAtMooring });
+  check("…under the same sky: the atmosphere is the weather's, not the terrain package's", J(rt.atmosphere) === J(t.atmosphere), { replay: rt.atmosphere, made: t.atmosphere });
   await until("loaded().loaded === __p.loaded().total", 60_000);
   await sleep(2000);
   report.shots.push(await b.shot(join(SHOTS, "ucluelet-replay.png")));

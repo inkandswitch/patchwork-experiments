@@ -3,7 +3,7 @@
 <title>ucluelet probe</title>
 <!-- Driven by probes/publish-ucluelet.mjs (a copy of rvyc-probe.html for
      Ucluelet). The BUILT scene tool (scene/dist) with the BUILT sailing,
-     water and terrain plugins in a stub registry, on an in-memory repo, on
+     water, weather and terrain plugins in a stub registry, on an in-memory repo, on
      an EMPTY scene. build() makes the scene the way a person would: the
      start screen's "Ucluelet (Rising Tide Boat Works)" (the template
      fetches the data, which this page answers from the recording
@@ -77,7 +77,7 @@ function urlsIn(doc, out = new Set()) {
 }
 
 try {
-  const urls = REPLAY ? ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../water/dist/index.js"] : ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../water/dist/index.js", "../dist/index.js"];
+  const urls = REPLAY ? ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js"] : ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../dist/index.js"];
   for (const url of urls) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
@@ -165,9 +165,12 @@ try {
         title: d.title,
         start: d.view?.start ?? null,
         home: d.view?.start?.home ?? null,
-        // the weather's wind and the bay's Sea (an open water object with a sea on it: WATER.md, "Water bodies")
-        sea: (() => { const w = Object.values(objects()).filter((o) => o.traits?.water); const s = w.find((o) => o.traits["sailing.sea"]); return { wind: d.traits?.["sailing.weather"]?.wind ?? null, scale: s?.traits["sailing.sea"].scale ?? null, waters: w.length, level: s?.transform.position[1] ?? null, open: !!s && s.traits.water.size == null, clip: s?.traits.water.clip ?? null, colour: s?.traits.water.colour ?? null, at: s?.transform.position ?? null }; })(),
-        terrain: t ? { transform: t.transform, locked: !!t.locked, providerId: t.providerId, parent: t.parent, sourceUrl: t.sourceUrl, infoUrl: t.infoUrl ?? null, credit: !!t.traits?.["terrain.credit"], sky: t.traits?.["terrain.sky"] ?? null } : null,
+        // the world's weather (the weather package's trait, as the template wrote it)
+        weather: d.traits?.weather ?? null,
+        traits: Object.keys(d.traits ?? {}).sort(),
+        // the bay's Sea (an open water object with a sea on it: WATER.md, "Water bodies")
+        sea: (() => { const w = Object.values(objects()).filter((o) => o.traits?.water); const s = w.find((o) => o.traits["sailing.sea"]); return { scale: s?.traits["sailing.sea"].scale ?? null, waters: w.length, level: s?.transform.position[1] ?? null, open: !!s && s.traits.water.size == null, clip: s?.traits.water.clip ?? null, colour: s?.traits.water.colour ?? null, at: s?.transform.position ?? null }; })(),
+        terrain: t ? { transform: t.transform, locked: !!t.locked, providerId: t.providerId, parent: t.parent, sourceUrl: t.sourceUrl, infoUrl: t.infoUrl ?? null, credit: !!t.traits?.["terrain.credit"], traits: t.traits ?? null } : null,
         terrainDoc: terrainDoc ? { files: ["dem", "features", "layers", "look"].filter((k) => terrainDoc.data?.[k]?.url), site: (terrainDoc.site?.structures ?? []).map((x) => x.id), summary: terrainDoc.data?.summary ?? null, title: terrainDoc.title, type: terrainDoc["@patchwork"]?.type, origin: terrainDoc.origin, grid: terrainDoc.grid, data: !!terrainDoc.data, sources: (terrainDoc.sources ?? []).map((s) => s.id), sourceUrls: (terrainDoc.sources ?? []).map((s) => s.url ?? null), requests: (terrainDoc.sources ?? []).reduce((a, s) => a + (s.requests?.length ?? 0), 0), osmDate: terrainDoc.osmDate ?? null, matchesChecked: terrainDoc.data?.summary?.matchesChecked ?? null, attribution: terrainDoc.attribution } : null,
         featuresFile: terrainDoc?.data?.features?.url ? (({ licence, attribution }) => ({ licence, attribution }))(repo.handles.get(terrainDoc.data.features.url)?.doc() ?? {}) : null,
         render: render ? { status: render.status, error: render.error, glbUrl: render.glbUrl, builtFrom: render.builtFrom ? { fingerprint: render.builtFrom.fingerprint, deps: render.builtFrom.deps, providerVersion: render.builtFrom.providerVersion } : null } : null,
@@ -238,7 +241,9 @@ try {
           return { meshes, instancedMeshes: inst, instances: count };
         })(),
         source: c.extras.terrain.source ? { names: c.extras.terrain.source.names, counts: c.extras.terrain.source.counts } : null,
+        // the world's ambients: the weather's (the place offers none)
         atmosphere: dbg.ambients().atmosphere ?? null,
+        wind: dbg.ambients().wind ?? null,
         credit: (() => {
           const el = host.querySelector(".terrain-credit");
           return { text: el?.textContent ?? "", link: el?.querySelector("a")?.href ?? null, shown: !!el && !el.hidden && el.getBoundingClientRect().width > 0 };

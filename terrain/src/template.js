@@ -4,21 +4,45 @@
 // scene's origin (locked: it is the ground), gives the scene a sea with a
 // summer afternoon's breeze, and lays a sloop on the club's moorings, head
 // to wind, main down, jib rolled away, her anchor down for a mooring. Then
-// it opens in play.
+// it opens in play. The world's weather is a summer afternoon here, written
+// as the weather package's trait (placeWeather): data, which that package
+// turns into the sky, the sun and the wind; without it installed the scene
+// has the stage's own sky and no wind.
 //
 // The sloop is sailing's, found in the plugin registry at run time (the
 // "sailing.sloop" part), never imported: without sailing the scene is the
 // place alone, and says so. Its sea and its stations are written as data
 // (sailing's trait vocabulary), as the inspector would.
 
-import { cadboroDoc, ORIGIN, WIND, HOME, GRID, OSM_DATE, EXPECTED } from "./cadboro.js";
+import { cadboroDoc, ORIGIN, OFFSET, WIND, SKY, HOME, GRID, OSM_DATE, EXPECTED } from "./cadboro.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
 
 /** Where the sloop lies: the mooring field, the frame's origin. */
 export const MOORING = Object.freeze([0, 0, 0]);
 /** sailing's trait keys this writes (its DESIGN.md, "Traits"). */
-export const SEA = "sailing.sea", WEATHER = "sailing.weather", SAIL = "sailing.sail", JIB = "sailing.jib", ANCHOR = "sailing.anchor";
+export const SEA = "sailing.sea", SAIL = "sailing.sail", JIB = "sailing.jib", ANCHOR = "sailing.anchor";
+/** The weather package's scene trait (its WEATHER.md, "The data"): the world's weather, flat plain data. */
+export const WEATHER = "weather";
+/**
+ * When a place is shown: 15 July 2026 at 15:00 on the place's own clock
+ * (its `offset`). For both places here, a summer afternoon inside the hours
+ * their wind climatologies are of (13:00–18:00 PDT). The weather's `date`
+ * and `hour`: the sun is where it is then.
+ */
+export const AFTERNOON = Object.freeze({ date: "2026-07-15", hour: 15 });
+
+/**
+ * A place's weather, the weather package's trait: where (the place's frame
+ * origin, so the weather's Place picker knows it), when (AFTERNOON on the
+ * place's clock, `offset` hours from UTC), the air (its wind climatology's
+ * speed and direction; the gust seed) and the sky (`sky`: cover, cloud
+ * kind, base, visibility). Nothing else: the gustiness and the rain are the
+ * weather's defaults (a missing field is its default). Pure.
+ */
+export function placeWeather({ origin, offset, wind, sky }, seed) {
+  return { lat: origin.lat, lon: origin.lon, ...AFTERNOON, offset, wind: wind.speed, from: wind.from, seed, cover: sky.cover, clouds: sky.clouds, base: sky.base, visibility: sky.visibility };
+}
 /** The water package's object trait (its WATER.md, "Water bodies"): this object is water, its origin the surface at rest; no size, open water (with a clip: the box it keeps where its world has none). */
 export const WATER = "water";
 
@@ -66,6 +90,8 @@ export function bayWater(seed, hint = HINT, colour = BAY_WATER) {
 export const BAY_WATER = Object.freeze({ deep: "#183b3c", scatter: "#2f7566", shore: "#26302a" });
 /** This package's: the data's credit at the foot of the view (credit.js). */
 export const CREDIT = "terrain.credit";
+/** This package's: the object that is the place (place.js: the shore in the water, the water's shelter, the ground's grain). */
+export const PLACE = "terrain.place";
 /** Chain out on the mooring (sailing's RODE: 25 m; the water is ~8 m deep). */
 export const RODE = 25;
 /**
@@ -108,12 +134,12 @@ export async function newCadboroTerrain(repo) {
  */
 export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() * 1e9) } = {}) {
   // locked (it is the ground); its About is the Terrain doc (sources, licences); its credit shows in the view
-  // its place's part (terrain.sky, sky.js) with no sky of its own (the weather's bright day stays the world's): the shore in the water, the water's shelter behind the breakwater and the ground's grain
-  const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {}, "terrain.sky": {} } } });
+  // the place (terrain.place, place.js): the shore in the water, the water's shelter behind the breakwater and the ground's grain
+  const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {}, [PLACE]: {} } } });
   const sea = ctx.newId("o");
   ctx.change((d) => {
-    // the world's wind and sky (sailing's weather), and the bay's water: open, at the chart's y = 0, with a sea on it
-    d.traits[WEATHER] = { wind: { speed: WIND.speed, from: WIND.from }, seed };
+    // the world's weather (a fair summer afternoon), and the bay's water: open, at the chart's y = 0, with a sea on it
+    d.traits[WEATHER] = placeWeather({ origin: ORIGIN, offset: OFFSET, wind: WIND, sky: SKY }, seed);
     d.objects[sea] = bayWater(seed);
     d.order.push(sea);
     // people start in Look over the bay (no body named: view.start, TOOLS.md §2); a click on the sloop comes aboard
