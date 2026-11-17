@@ -1594,7 +1594,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
 | `ambient()` → `{ [name]: json \| null }` or null | the stage, every flush: the values a world has once (its atmosphere, its water) that this extension offers. Stacked per name in running order (a later value wins whole, `null` clears), copied into frozen plain JSON (a value that isn't is refused, with a warning); the outermost stage's are the view's. See "Ambients" below |
 | `input` | the stage |
-| `messages` → `{ [type]: { valid(data) → boolean, says(data, who, scene) → string \| null } }` | the stage, for `api.tell` and what peers tell (see "Telling"). `who` is `{ viewer, name }`: "You" for one's own, else their contact's name or "Someone" |
+| `messages` → `{ [type]: { valid(data) → boolean, says(data, who, scene) → string \| null } }` | the stage, for `api.tell` and what peers tell (see "Telling"). `who` is `{ viewer, name, mine }`: "You" for one's own, else their contact's name or "Someone"; `data` is always an object |
 | `receive(type, data, from)` | the stage, for a peer's `send` of a type the instance doesn't declare in `messages` |
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
@@ -1799,32 +1799,42 @@ its evidence. It declares what it tells, `messages`, each with the shape of
 its data (`valid`) and how it reads in this view (`says`), and calls
 `api.tell(type, data)` after the change that bears it out.
 
+- **Data.** What is told is an object (anything else is dropped before
+  `valid` sees it, so `valid` never checks that) and is copied when told:
+  changing it afterwards changes nothing told.
 - **Here.** `tell` drops a type the instance doesn't declare and data that
-  isn't `valid`; otherwise it asks `says(data, { viewer, name: "You" },
-  scene)` and sends it. Sends are never echoed back, so one's own is told
-  once, here.
+  isn't `valid`; otherwise it sends it, and holds it to this stage's doc by
+  the same rule as a peer's (below), with `who` "You". Sends are never
+  echoed back, so one's own is told once, here.
 - **There.** A peer's message of a declared type is the stage's, never
   `receive`'s. It is dropped unless `valid`. Otherwise `says` is asked at
   once and again after every update of that stage (each flush, a content
   arrival's included), until it answers text or `TELL_MS` (3000 ms, the
-  stage's own time: "Time") has passed since it arrived; then it is told
-  once (a notice) and forgotten. A message delivered twice is one message
-  (presence de-duplicates by the sender's session and number).
+  stage's own time: "Time") has passed since it arrived. It is told once (a
+  notice), or forgotten when that time runs out, whether or not anything
+  updated meanwhile; also when its extension stops, or the stage goes. A
+  message delivered twice is one message (presence de-duplicates by the
+  sender's session and number).
 - **`says` is the evidence.** It answers null until the doc bears the
   message out (dice: the die moved lately to the face named; a cup: the
-  speaker's cup is down; tabletop and bag: at once, a bag of this scene),
-  and text once it does. Answering text is the moment it is told, so a
+  speaker's cup is down; a bag: once the bag is this scene's), and text
+  once it does. A `says` that answers at once vouches for the message
+  unchecked: tabletop's say counts only, never which card, so nothing in
+  them can be held to the doc. Answering text is the moment it is told, so a
   package may spend there what bore it out (a die's move is told once).
   An answer that throws drops the message.
 - **Who.** The stage names the speaker the same way for every package:
-  their contact's name, else "Someone", asked once per viewer (`who.name`;
-  `who.viewer` is theirs, for evidence such as "the speaker holds this
-  cup"). `says` isn't asked about someone whose name is still being looked
+  "You" for one's own, else their contact's name, else "Someone", asked
+  once per viewer (`who.name`). `who.viewer` is theirs, for evidence such
+  as "the speaker holds this cup"; `who.mine` is whether this view told it
+  (another tab of the same viewer is a peer). A package that knows a
+  better name may use it: the cup and tabletop call a peer what the
+  roster's `who(viewer)` does (seats), as their HUDs do. `says` isn't asked about someone whose name is still being looked
   up until it comes or `NAME_MS` (1000 ms, the stage's time) passes, so the
   first word from someone is told by name.
-- **Invariant.** Each received message is told at most once, only if
-  valid, only within `TELL_MS` of its arrival, and only once `says`
-  answers text. `stage/telling.js` is the whole rule; packages' fake
+- **Invariant.** Each message, one's own or a peer's, is told at most
+  once, only if valid, only within `TELL_MS` of its arrival (its telling,
+  for one's own), and only once `says` answers text; none waits longer. `stage/telling.js` is the whole rule; packages' fake
   stages copy it to tell exactly as the stage does.
 
 `receive` stays for what isn't told: a tracer from a shot (arena), anything

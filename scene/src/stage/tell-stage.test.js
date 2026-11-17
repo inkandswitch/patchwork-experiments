@@ -113,6 +113,23 @@ describe("a peer's word, held to the doc", () => {
   });
 });
 
+describe("a word the doc never bears out, in a quiet doc", () => {
+  // nothing updates the stage after it arrives, so nothing asks it again: it is forgotten when its time runs out
+  it.each([{ valid: true }, { valid: false }])("valid $valid: waits until TELL_MS, then is gone", async ({ valid }) => {
+    const t = await setup();
+    const t0 = t.time.now();
+    t.wire(valid ? { to: 99 } : { to: "99" });
+    await t.time.step(1);
+    expect(t.s.debug.telling.waiting()).toBe(valid ? 1 : 0);
+    await t.time.advance(TELL_MS - 2 * t.time.frameMs - (t.time.now() - t0));
+    expect(t.s.debug.telling.waiting()).toBe(valid ? 1 : 0);
+    await t.time.advance(4 * t.time.frameMs);
+    expect(t.s.debug.telling.waiting()).toBe(0);
+    expect(t.told()).toEqual([]);
+    expect(t.seen.asked).toHaveLength(valid ? 1 : 0);
+  });
+});
+
 describe("the speaker is named by the stage", () => {
   // contact {a doc with a name, a doc without one, no doc to be had, a doc that's slow to come, no viewer}
   it.each([
@@ -143,7 +160,7 @@ describe("the speaker is named by the stage", () => {
       expect(t.told()[0].at - t0).toBeGreaterThanOrEqual(NAME_MS);
     }
     expect(t.told().map((n) => n.text)).toEqual([text]);
-    expect(t.seen.asked.map((a) => a.who)).toEqual([{ viewer, name: text.split(" ")[0] }]);
+    expect(t.seen.asked.map((a) => a.who)).toEqual([{ viewer, name: text.split(" ")[0], mine: false }]);
   });
 
   it("is asked once per viewer: a second word from them waits on nothing", async () => {
@@ -159,6 +176,26 @@ describe("the speaker is named by the stage", () => {
     expect(t.told().map((n) => n.text)).toEqual(["Ana moved a to 0", "Ana moved a to -1"]);
     expect(find.mock.calls.filter(([u]) => u === ana.url)).toHaveLength(1);
     expect(t.seen.asked.map((a) => a.who.name)).toEqual(["Ana", "Ana"]);
+  });
+
+  it("a name that comes after NAME_MS names them from their next word on", async () => {
+    const repo = new FakeRepo();
+    const ana = repo.add({ name: "Ana" });
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const find = repo.find.bind(repo);
+    repo.find = (url) => (url === ana.url ? gate.then(() => find(url)) : find(url));
+    const t = await setup({ repo });
+    t.wire({ to: 0 }, { viewer: ana.url, n: 1 });
+    await settle();
+    await t.time.advance(NAME_MS + 100);
+    await settle();
+    release();
+    await settle();
+    t.wire({ to: 0 }, { viewer: ana.url, n: 2 });
+    await settle();
+    await t.time.step(1);
+    expect(t.told().map((n) => n.text)).toEqual(["Someone moved a to 0", "Ana moved a to 0"]);
   });
 });
 
@@ -203,9 +240,21 @@ describe("one's own tell, and what is still receive's", () => {
     await t.time.advance(TELL_MS + 100);
     expect(t.aNotices()).toEqual(["You moved a to 5"]);
     expect(t.bNotices()).toEqual(["Someone moved a to 5"]);
-    expect(t.A.seen.asked.map((a) => a.who)).toEqual([{ viewer: "viewer:ana", name: "You" }]);
+    expect(t.A.seen.asked.map((a) => a.who)).toEqual([{ viewer: "viewer:ana", name: "You", mine: true }]);
+    expect(t.B.seen.asked.map((a) => a.who)).toEqual([{ viewer: "viewer:ana", name: "Someone", mine: false }]);
     expect(t.A.seen.received).toEqual([]);
     expect(t.B.seen.received).toEqual([]);
+  });
+
+  it("what is told is a copy: changing one's data after telling it changes nothing told, here or there", async () => {
+    const t = await two();
+    const d = { to: 1 };
+    t.A.seen.api.tell("moved", d);
+    d.to = 99;
+    t.a.change((doc) => (doc.objects.a.transform.position = [1, 0, 0]));
+    await t.time.step(3);
+    expect(t.aNotices()).toEqual(["You moved a to 1"]);
+    expect(t.bNotices()).toEqual(["Someone moved a to 1"]);
   });
 
   it("one's own waits for the doc too, on this stage's updates", async () => {

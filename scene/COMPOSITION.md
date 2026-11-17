@@ -2642,19 +2642,26 @@ told and shape checks, bag's contact lookup and NAME_MS, seats' told. This
 retires the stage gap "api.send is unverifiable: the bookkeeping is copied
 between packages".
 
-1. **`who` is `{ viewer, name }`, not a name alone** (the plan had a name).
-   The cup's evidence for "peeked" is that the speaker holds the cup down,
-   which needs who they are, not what they're called.
-2. **The speaker is named one way everywhere: their contact's name, else
-   "Someone".** Tabletop and the cup named a speaker through the roster
-   (seats: contact, else the name of the seat they sit in), so someone with
-   no contact name who sits as "North" was "North shuffled the deck" and is
-   now "Someone shuffled the deck". In Patchwork everyone has a contact, so
-   this shows only for accounts with no name. **Question for the lead:**
-   should a seat's name stand in for a missing contact name? That would be
-   a contribution the stage asks before "Someone" (a `name(viewer)` of
-   whoever knows), which is one more convention for one corner case; not
-   built.
+1. **`who` is `{ viewer, name, mine }`, not a name alone** (the plan had a
+   name). The cup's evidence for "peeked" is that the speaker holds the cup
+   down, which needs who they are, not what they're called; `mine` (this
+   view told it) because another tab of the same viewer is a peer, so
+   `viewer` can't say it ("Ana lifted their own cup", not "your own").
+2. **The stage names the speaker: their contact's name, else "Someone";
+   a package that knows better may say better.** Seats already contributes
+   that better name: the roster's `who(viewer)` (contact, else the seat
+   they sit in, else "Someone"; seats/README.md). The cup's HUD and
+   tabletop's notices used it before this step, so the cup and tabletop
+   still call a peer by `roster.who(who.viewer)` where a roster runs, and
+   by `who.name` where none does; one viewer is then "North" in the cup's
+   HUD and in its notices alike. Dice, bag and seats' own "sat" use
+   `who.name`. (Review, 2026-11-17: the first cut dropped the roster and
+   made a contactless "North" "Someone".) **Question for the lead:** two
+   lookups of one contact name remain, the stage's and `roster.who`'s.
+   Should the stage's be the one name, `roster.who` deferring to it for
+   the contact and adding only the seat; or should the stage ask whoever
+   contributes a name (`roster.who` itself) before "Someone", so no package
+   picks; or is a package choosing its own name, as now, right?
 3. **`says` waits for the name**: not asked about a speaker whose contact
    is still being looked up until it comes or `NAME_MS` (1000 ms) passes, so
    the first word from someone is told by name (the bag waited the same
@@ -2675,12 +2682,29 @@ between packages".
    before the word, which the stage's window (from the word's arrival)
    doesn't cover.
 6. **Tabletop's and bag's `says` answer at once** (the bag: once every bag
-   named is in this scene), as planned: their doc changes are in other
-   documents (a keeper's deck, a bag's contents) that the scene doesn't
-   carry, so there is nothing in the scene to wait for.
+   named is in this scene), as planned, so they are told unchecked. For
+   tabletop's `shuffled` and the bag's contents that is all there is: the
+   change is in another document (a keeper's deck, a bag's) the scene
+   doesn't carry. But tabletop's `drew`, `washed` and `showed` do write the
+   scene (a card into a hand, a pile's cards moved, cards turned), and are
+   told on arrival anyway, before or without that change: their data is
+   counts only, never which card (who drew what is hidden), so nothing in
+   it names what in the doc to wait for. (Review, 2026-11-17: the first
+   wording said none of tabletop's wrote the scene.) **Question for the
+   lead:** hold them to the doc too, by sending the ids moved (an id says
+   no face, but does say which card went to whose hand) or by evidence
+   like the die's (a card of that noun moved lately into the speaker's
+   hand), or leave them vouched for?
 7. **A view that can't write the doc tells nothing** (`tell` is a no-op
    where `writable()` is false), as `send` reaches no one from a read-only
    stage.
 8. **Packages' fake stages copy `telling.js` whole** (`test/telling.js` in
    dice, tabletop, bag and seats), so their tests run the stage's own rule;
    packages stand alone, so it is a copy, not an import.
+9. **A waiting message is forgotten by its own timer** at `TELL_MS`, not
+   when something next asks it, so a quiet doc holds nothing past its time
+   and a chatty peer can't grow what waits (review, 2026-11-17: the first
+   cut kept it until the next update). The window is half-open, `[arrival,
+   arrival + TELL_MS)`, the same for the timer and for asking.
+10. **Data is an object, checked by the stage** before `valid`: every
+   package's `valid` began with the same guard, so it is said once.
