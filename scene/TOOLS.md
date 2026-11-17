@@ -1392,8 +1392,10 @@ The project lead decided the five open questions on 2026-11-12.
       button again.
     - Key legends (machine's controls panel, sailing's keys line, arena's
       help line, the Esc hint) are not commands and stay as they are; one
-      stage-drawn legend of declared keys is a *question for the lead*,
-      likely with N9's touch controls, which need the same keys.
+      stage-drawn legend of declared keys is a *question for the lead*.
+      N9's touch controls have since merged (Decisions 11 to 15):
+      `src/touch-keys.js` derives the controls each layer shows from the
+      same declared keys, so such a legend would read that model.
     - **Order within the world cluster.** It is right-aligned and in
       command order, so its last entry's place is anchored and an entry
       coming or going slides everything to its left. B3 holds the bar's

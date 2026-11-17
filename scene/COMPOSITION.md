@@ -154,6 +154,16 @@ Still open:
   strips don't (lane/n8, editclick-run step 5).
 
 Fixed since (each item names its Decisions section below):
+- keyboard bodies (walk, aboard, a station) had no touch input: on a
+  phone nobody could walk, sail or take a station, and under a touch
+  laptop's granted pointer lock a drag stopped looking. A finger now never
+  locks the pointer, and the stage's own pad (`scene.touch`) presses the
+  keys the gesture, the held tool and the body declare, derived from their
+  labels, with no per-body touch code; a use-prompt button with a key is
+  that key, so held verbs (the windlass) work by finger (TOOLS Decisions
+  11 to 15, lane/n9, merge f66a7d0a). Checked in the real Patchwork on
+  2026-11-16 (touch-check under Chrome's touch emulation, on scratch
+  copies of the Quiet games room and Lost Cities aboard).
 - in Edit on a boat that is the world, sailing's HUD drew its own "Come
   aboard" button over the canvas's top edge, so the first press of a
   double-click on a card there came aboard, left Edit and moved the canvas,
