@@ -160,6 +160,25 @@ export function walkTo(kind, stations = {}, near = {}) {
   }
 }
 
+// ─── the keys a station declares ──────────────────────────────────────
+// Each with what it does (scene/TOOLS.md §4: a label names the action, not
+// its state, and codes labelled alike do the same thing): the key handlers
+// below read ev.key, so these are the codes a keyboard (or the stage's touch
+// pad, which presses the first of a label's codes) sends for them.
+const declare = (code, label) => Object.freeze({ code, label });
+/** Q / E: the sheet the station works (the main's at a post or the helm, the jib's at its winch) toward 0 hard in, 1 eased. */
+const HAUL = declare("KeyQ", "Haul in");
+const EASE = declare("KeyE", "Ease out");
+/** Hold R: the main's halyard (raises it when it's down, lowers it when it's up). */
+const HALYARD_KEY = declare("KeyR", "Halyard");
+/** Hold R at a winch: the jib's furler (furls it when it's out, unrolls it when it's furled). */
+const FURLER = declare("KeyR", "Furler");
+/** B: back the jib (at a winch, make it fast on this side), or let it fly when it's held. */
+const BACK = declare("KeyB", "Back jib / let fly");
+/** A / ← and D / →: the wheel toward −1 or +1 (the rudder's sign: + turns her bow to starboard, physics.js). */
+const STEER = Object.freeze([declare("KeyA", "Steer to port"), declare("KeyD", "Steer to starboard"), declare("ArrowLeft", "Steer to port"), declare("ArrowRight", "Steer to starboard")]);
+const LEAVE = declare("KeyF", "Leave");
+
 /** Whether the sheet can be trimmed at the mast: only on a ship with neither a helm nor a mainsheet to trim it at. */
 export const sheetAtMast = (stations = {}) => !stations.helm && !stations.mainsheet;
 
@@ -276,7 +295,8 @@ export function heldWeigh({ rode, clock, input, commit, alive = () => true, done
 }
 
 /**
- * The commands for the use prompt (and Enter to come aboard).
+ * The commands for the use prompt, and Come aboard (Enter, and a button
+ * on the bar of tools in every body: show ["world"]).
  * @param {object} api
  * @param {{ sea, sim, crew }} ctx
  */
@@ -403,8 +423,8 @@ export function stationCommands(api, ctx) {
       if (t) open.set(slot, { code, trim: t });
     };
     return {
-      /** the keys these take (scene/TOOLS.md §5: declared, so a shown key works) */
-      codes: sailId ? [...(sheet ? ["KeyQ", "KeyE"] : []), ...(halyard ? ["KeyR"] : [])] : [],
+      /** the keys these take, each with what it does (scene/TOOLS.md §4, §5: declared, so a shown key works) */
+      keys: sailId ? [...(sheet ? [HAUL, EASE] : []), ...(halyard ? [HALYARD_KEY] : [])] : [],
       key(ev) {
         if (!sailId) return false;
         const k = String(ev.key).toLowerCase();
@@ -470,7 +490,7 @@ export function stationCommands(api, ctx) {
       release();
     };
     leave = ctx.crew.take(stationId, {
-      keys: [...keys.codes, "KeyF"],
+      keys: [...keys.keys, LEAVE],
       key(ev) {
         if (keys.key(ev)) return true;
         if (String(ev.key).toLowerCase() !== "f") return false;
@@ -592,7 +612,7 @@ export function stationCommands(api, ctx) {
     };
     return {
       /** the keys these take (declared, as the sail's are) */
-      codes: jibId ? [...(winch ? ["KeyQ", "KeyE", "KeyR"] : []), "KeyB"] : [],
+      keys: jibId ? [...(winch ? [HAUL, EASE, FURLER] : []), BACK] : [],
       key(ev) {
         if (!jibId) return false;
         const k = String(ev.key).toLowerCase();
@@ -692,7 +712,7 @@ export function stationCommands(api, ctx) {
       release();
     };
     leave = ctx.crew.take(id, {
-      keys: [...keys.codes, "KeyF"],
+      keys: [...keys.keys, LEAVE],
       // arriving, the eye turns to the jib's luff halfway up, where its middle telltales are
       look: () => jibLuffAt(jibId, 0.5),
       key(ev) {
@@ -796,7 +816,8 @@ export function stationCommands(api, ctx) {
     };
     ctx.sim.input(id, { angle });
     leave = ctx.crew.take(id, {
-      keys: ["KeyA", "KeyD", "ArrowLeft", "ArrowRight", ...new Set([...keys.codes, ...jib.codes]), "KeyF"],
+      // the jib's keys at the wheel (B) are none of the main's (Q, E, R)
+      keys: [...STEER, ...keys.keys, ...jib.keys, LEAVE],
       key(ev) {
         if (steering(ev.code)) {
           held.add(ev.code);
@@ -1061,12 +1082,16 @@ export function stationCommands(api, ctx) {
 
   // ─── coming aboard ────────────────────────────────────────────────────
 
+  // the way in, for the scene (the null target), until you're aboard: Enter,
+  // and a button on the stage's bar of tools in every body (show "world":
+  // scene/STAGE.md, "A command"). The HUD draws no button of its own. Its
+  // title names no key: the bar adds the key's hint itself ("… (Enter)").
   const aboard = {
     id: "aboard",
     name: "Come aboard",
     key: "Enter",
-    show: [],
-    state: (target) => (target == null && !me().playing ? { title: "Walk the deck in first person (Enter)" } : null),
+    show: ["world"],
+    state: (target) => (target == null && !me().playing ? { title: "Walk the deck in first person" } : null),
     run: () => ctx.crew.start?.(),
   };
 

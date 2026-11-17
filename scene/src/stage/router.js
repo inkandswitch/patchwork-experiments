@@ -23,7 +23,7 @@
 
 import { offer } from "./chain.js";
 import { fromEmbed } from "../embed.js";
-import { reservedBy } from "../keymap.js";
+import { keyOfCode, reservedBy } from "../keymap.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
 import { realTime } from "./time.js";
@@ -161,6 +161,7 @@ export function firstOfDouble(presses, dbl) {
  *   centerRay?: () => { origin: any, dir: any },
  *   hit?: object | null,                               // handed in: the event's hit is this, no pick (a double-click's first click's)
  *   widget?: object | null,                            // handed in, likewise
+ *   mods?: { shift?, alt?, ctrl?, meta? },             // the modifier keys down at the key root: each flag is the DOM's or this
  * }} ctx
  */
 export function buildEvent(type, e, ctx) {
@@ -194,10 +195,10 @@ export function buildEvent(type, e, ctx) {
     buttons: e?.buttons ?? 0,
     pointerId: e?.pointerId ?? null,
     pointerType: e?.pointerType ?? (e && "button" in e ? "mouse" : null),
-    shift: !!e?.shiftKey,
-    alt: !!e?.altKey,
-    ctrl: !!e?.ctrlKey,
-    meta: !!e?.metaKey,
+    shift: !!e?.shiftKey || !!ctx.mods?.shift,
+    alt: !!e?.altKey || !!ctx.mods?.alt,
+    ctrl: !!e?.ctrlKey || !!ctx.mods?.ctrl,
+    meta: !!e?.metaKey || !!ctx.mods?.meta,
     key: e?.key ?? null,
     code: e?.code ?? null,
     repeat: !!e?.repeat,
@@ -248,7 +249,7 @@ function call(owner, obj, name, ...args) {
  * @param {{
  *   port: HTMLElement,                   // the canvas's positioned parent; x, y are relative to it
  *   canvas: HTMLCanvasElement,
- *   keyRoot: HTMLElement,                // keys are heard here (the tool's root)
+ *   keyRoot: HTMLElement,                // keys are heard here, and what the input is (every press): the tool's root, around the port and its edges
  *   pick: (x: number, y: number, opts?: object) => object | null,
  *   pickWidget: (ev: object) => object | null,
  *   ray: (x: number, y: number) => { origin: any, dir: any },
@@ -267,6 +268,7 @@ function call(owner, obj, name, ...args) {
  *   leaveFocus?: () => void,
  *   requestLock?: () => Promise<void> | void,
  *   exitLock?: () => void,
+ *   touch?: boolean,                     // is the input touch before any press (a coarse pointer)? Every press then says
  *   mac?: boolean,
  *   live?: (hit: object) => boolean,     // is a double-click's first hit still there to resolve to? false: cast a new ray (its stage closed)
  * }} o
@@ -296,14 +298,19 @@ export function createRouter(o) {
       pickWidget: o.pickWidget,
       ray: o.ray,
       centerRay: o.centerRay,
+      mods: heldMods(),
       ...extra,
     });
 
   // The body stack, the base at the bottom; the held tool; the open popovers.
-  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], ahead: b?.ahead ?? [], suspended: false });
-  const stack = [baseEntry(o.base)]; // [{ owner, id, input, lock, keys, suspended }], top last
+  // Each body, tool and gesture is its own `serial` (one count for all):
+  // the same body left and entered again is a new one (the keys it held were
+  // let go), which the state says (the touch pad's controls are a layer's).
+  let made = 0;
+  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], ahead: b?.ahead ?? [], suspended: false, serial: ++made });
+  const stack = [baseEntry(o.base)]; // [{ owner, id, input, lock, keys, suspended, serial }], top last
   const top = () => stack.at(-1);
-  let tool = null; // { owner, command, name, input, keys, pointer }
+  let tool = null; // { owner, command, name, input, keys, pointer, serial }
   const popovers = []; // [{ owner, close }], latest last
 
   // An event offered to one handler set under a name that is never an extension's.
@@ -431,6 +438,14 @@ export function createRouter(o) {
     if (dispatch(kind, retype(ev, kind))) e?.preventDefault?.();
   }
 
+  // Every press on the view says what the input is, wherever it lands (the
+  // canvas, the chip, a prompt's button, an edge's bar), before anything
+  // hears it: a finger lets the lock go and never takes it; a mouse after a
+  // finger leaves it to the next press on the world (stage/pointer.js).
+  function onInput(e) {
+    pointerEvent({ type: "input", touch: e.pointerType === "touch" });
+  }
+
   function onPointerDown(e) {
     if (e.target !== canvas) return;
     // a second pointer while a gesture is claimed is swallowed; while one is
@@ -451,6 +466,7 @@ export function createRouter(o) {
     // focus, so bring keys to this view by hand
     if (keyRoot && doc.activeElement !== keyRoot) keyRoot.focus?.({ preventScroll: true });
     lastAt = { clientX: e.clientX, clientY: e.clientY };
+    tapped = false;
     // after the browser released the lock, a press on the world only takes it back
     if (pointerEvent({ type: "press" })) {
       claim(e);
@@ -470,13 +486,15 @@ export function createRouter(o) {
       owner: null,
       dead: false,
       holdTimer: null,
+      serial: ++made,
     };
     gesture = g;
     cancelHover();
     const ev = make("press", e);
-    // what is pressed is where the look is: the hover a frame would have
-    // brought (a touch has none before it), so the look, the use prompt and
-    // a menu from this press all name the thing under it
+    // what is pressed is where the pointer is: the hover a frame would have
+    // brought (a touch has none before it), so a menu from this press, and
+    // the look and the use prompt where the look is the pointer's (not the
+    // eye's: under lock the press is the eye's anyway), name the thing under it
     o.onHover?.(ev);
     // this press, kept for a double-click it may begin: its hit and widget resolved now, as it is pressed (the
     // event's own memo, so no second pick), so a double-click later reuses them rather than casting a new ray
@@ -515,7 +533,8 @@ export function createRouter(o) {
     if (g && !g.dead && g.pointerType === "mouse" && e.buttons === 0) return onPointerCancel(e);
     if (e.target !== canvas && !g) {
       // off the canvas: a look kept for something over it (the use prompt) lasts only while the pointer is on that thing
-      if (kept && !keepsLook(e.target)) onPointerLeave();
+      // (a mouse's: a finger moving elsewhere, on the touch pad, is another finger, not the mouse going)
+      if (kept && e.pointerType !== "touch" && !keepsLook(e.target)) onPointerLeave();
       return;
     }
     const locked = isLocked();
@@ -555,6 +574,7 @@ export function createRouter(o) {
     }
     gesture = null;
     release(g);
+    if (g.pointerType === "touch") tapped = !g.moved && travelled(g, e) <= SLOP;
     if (g.dead) {
       if (g.session) claim(e);
       return;
@@ -599,16 +619,27 @@ export function createRouter(o) {
   // prompt, whose buttons are the verbs of what's looked at), it is kept
   // while the pointer stays on that thing, so a button there can be reached
   // and clicked; anywhere else (other overlays, out of the port) it goes.
+  //
+  // A finger hovers nowhere: it leaves as it lifts. Its look is what it
+  // pressed (the press sets the hover), and a tap's is kept when it lifts,
+  // until the next press, so the prompt's buttons for what was tapped can
+  // be reached with another tap. A finger that dragged (orbit, a carry, a
+  // look) keeps none.
   let kept = false;
+  let tapped = false; // the last finger on the world tapped (and lifted)
   function onCanvasLeave(e) {
+    if (e?.pointerType === "touch") {
+      if (!tapped) onPointerLeave();
+      return;
+    }
     if (keepsLook(e?.relatedTarget)) {
       kept = true;
       return;
     }
     onPointerLeave();
   }
-  function onPortLeave() {
-    if (kept) onPointerLeave();
+  function onPortLeave(e) {
+    if (kept && e?.pointerType !== "touch") onPointerLeave();
   }
   function onPointerLeave() {
     kept = false;
@@ -697,10 +728,27 @@ export function createRouter(o) {
   // code → { owner, key, code, up(ev) }: who claimed each key that's down
   const down = new Map();
 
+  // The modifier keys down, as a keyboard has them: a keydown at the view's
+  // root puts one down (claimed or not, before anyone hears it, so its own
+  // keydown says it), a keyup anywhere in the window, a blur or a hidden
+  // page lets it go. Every event's flags are the DOM's or these. A
+  // keyboard's own are in its events already (these only agree); a key
+  // pressed for one (the touch pad's Alt, "Place freely") is in no event's
+  // flags, so without these every move would say it's up.
+  const MOD = { Shift: "shift", Alt: "alt", Control: "ctrl", Meta: "meta" };
+  const modsDown = new Set(); // codes
+  function heldMods() {
+    const m = {};
+    for (const code of modsDown) m[MOD[keyOfCode(code)]] = true;
+    return m;
+  }
+  const onAnyKeyUp = (e) => modsDown.delete(e.code);
+
   const keyEvent = (type, e) => make(type, e, { noHit: true });
 
   function onKeyDown(e) {
     if (fromEmbed(e, keyRoot)) return;
+    if (MOD[keyOfCode(e.code)]) modsDown.add(e.code);
     const target = e.composedPath?.()[0] ?? e.target;
     if (isTyping(target)) {
       // the field rung: Escape leaves the field, and is nothing else (a search
@@ -783,16 +831,18 @@ export function createRouter(o) {
   const onBlur = () => {
     dropGesture();
     releaseKeys();
+    modsDown.clear();
   };
   const onVisibility = () => {
     if (doc.visibilityState !== "hidden") return;
     dropGesture();
     releaseKeys();
+    modsDown.clear();
   };
 
   // ─── the pointer (stage/pointer.js) ───────────────────────────────────────
 
-  let ptr = { lock: !!stack[0].lock, wanted: false, released: false, refused: false };
+  let ptr = { lock: !!stack[0].lock, wanted: false, released: false, refused: false, touch: !!o.touch };
   let exiting = false; // the lock is going because this page let it go, not the browser
   let requested = false; // a request is out, unanswered
 
@@ -885,11 +935,11 @@ export function createRouter(o) {
     const b = top();
     const s = openSession();
     return {
-      body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])] },
+      body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])], serial: b.serial },
       bodies: stack.map((x) => ({ id: x.id, owner: x.owner })),
-      held: tool ? { ext: tool.owner, command: tool.command, name: tool.name ?? tool.command, keys: [...(tool.keys ?? [])], pointer: !!tool.pointer } : null,
-      gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])] } : null,
-      pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused },
+      held: tool ? { ext: tool.owner, command: tool.command, name: tool.name ?? tool.command, keys: [...(tool.keys ?? [])], pointer: !!tool.pointer, serial: tool.serial } : null,
+      gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])], serial: gesture.serial } : null,
+      pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused, touch: ptr.touch },
       escape: escapeLayer(ladderState()),
     };
   }
@@ -925,7 +975,7 @@ export function createRouter(o) {
   function pushBody(owner, body) {
     if (disposed) return () => {};
     const prevTop = top();
-    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], ahead: body.ahead ?? [], suspended: false };
+    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], ahead: body.ahead ?? [], suspended: false, serial: ++made };
     stack.push(entry);
     settle(prevTop);
     return () => popBody(entry);
@@ -972,7 +1022,7 @@ export function createRouter(o) {
   function hold(owner, t) {
     if (disposed) return () => {};
     putDown();
-    const entry = { owner, command: t.command, name: t.name, input: t.input ?? {}, keys: t.keys ?? [], pointer: !!t.pointer };
+    const entry = { owner, command: t.command, name: t.name, input: t.input ?? {}, keys: t.keys ?? [], pointer: !!t.pointer, serial: ++made };
     tool = entry;
     refresh();
     changed();
@@ -1023,6 +1073,7 @@ export function createRouter(o) {
   // ─── wiring ───────────────────────────────────────────────────────────────
 
   const listeners = [
+    [keyRoot ?? port, "pointerdown", onInput, { capture: true }],
     [port, "pointerdown", onPointerDown, { capture: true }],
     [port, "pointermove", onPointerMove, { capture: true }],
     [port, "pointerup", onPointerUp, { capture: true }],
@@ -1035,6 +1086,7 @@ export function createRouter(o) {
     [canvas, "lostpointercapture", onLostCapture, undefined],
     [keyRoot, "keydown", onKeyDown, undefined],
     [keyRoot, "keyup", onKeyUp, undefined],
+    [win, "keyup", onAnyKeyUp, { capture: true }],
     [win, "blur", onBlur, undefined],
     [doc, "visibilitychange", onVisibility, undefined],
     [doc, "pointerlockchange", onLockChange, undefined],

@@ -5,7 +5,8 @@
 // selects with it (a plain click on a thing selects it, before any
 // package's click verb; on nothing deselects), and the editor's chrome is its
 // alone (the halo's handles and knobs, the inspector, the grid, axes and
-// bounds, dimensions, the toolbar, and every command marked `edit: true`).
+// bounds, dimensions, the toolbar's editor commands, and every command
+// marked `edit: true`; the toolbar's world commands are everyone's).
 // Look has no default press, like walk, seat and station.
 //
 // Nothing stands on Edit: entering any other body first turns the bottom

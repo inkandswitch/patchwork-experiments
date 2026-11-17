@@ -24,17 +24,18 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   tabletop's *Card table* and *Lost Cities* parts) and to get under way
   from (raise the sail, weigh the anchor).
 - **Coming aboard.** Click her, her hull or a fitting of hers (or press
-  Enter, or the HUD's button). The sea, the sky and the shore are the
+  Enter, or *Come aboard* on the bar of tools above the view, there in
+  every body, Edit included). The sea, the sky and the shore are the
   world's, not hers, so a click on them doesn't come aboard (since 2026-11-14:
   the sea became its own part, water/WATER.md Decisions 24). A click on
   something else aboard her, a card on a table in her cockpit say, isn't a
   way aboard: it's that thing's (the scene's carry picks the card up).
-  Seated at a table aboard her (the seat body), only Enter or the button
-  comes aboard, so a stray click on the benches round the table doesn't throw you
-  into first person; the HUD then offers *Come aboard (Enter)* top left,
-  without the walking keys (S and D are the table's Shuffle and Draw), and
-  before you're aboard its panel is just the dial, top left, clear of your
-  hand of cards. Nothing of hers can be picked up: what can be carries the
+  Seated at a table aboard her (the seat body), only Enter or the bar's
+  *Come aboard* comes aboard, so a stray click on the benches round the table
+  doesn't throw you into first person; the HUD then shows no walking keys
+  (S and D are the table's Shuffle and Draw), and before you're aboard its
+  panel is just the dial, top left, clear of your hand of cards. The HUD
+  only reads: it has no buttons. Nothing of hers can be picked up: what can be carries the
   scene's `scene.carry` trait (a game's cards and pieces), and the ship and
   her fittings don't, so a game aboard her can't dismast her.
 - **From the parts bin, in any scene.** The toolbar's Parts opens the bin,
@@ -134,6 +135,13 @@ your body: scene/TOOLS.md §5). Where pointer lock is refused, drag to look.
 | Looking at the hatch, on the cabin top over the companionway | F slide it open / shut |
 | In the water | WASD swim · F at the ladder to climb aboard |
 
+On a touchscreen nothing locks the pointer: drag to look, and the stage's
+touch pad shows the keys above by what they do (Forward, Back, Left, Right,
+Run, Jump on deck; at a station Steer to port / starboard, Haul in, Ease
+out, Halyard, Furler, Back jib / let fly, Leave). The use prompt's buttons
+are their keys: a finger held on "hold F Raise anchor" winds the chain in
+for as long as it's down (scene/TOOLS.md Decisions 15).
+
 **The companionway**, at the cockpit's forward end, is the way below:
 washboards in the cabin's aft end, and a hatch over them that slides forward
 along the cabin top (the joints package's slide, `joints.slide`: F within
@@ -226,6 +234,7 @@ pnpm test:all      # both
 pnpm build
 node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
+node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad, the anchor dropped and raised by the prompt's buttons (build scene/, water/ too)
 node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, tabletop/, card-table/ too)
 node probes/publish-aboard.mjs --dry-run   # make that scene with the tools and check it; without --dry-run, publish it
 node probes/ship-shots.mjs <dir> "quarter?trim=luff"   # her parts rendered; ?trim= dresses the sails with looks.js (beat, luff, stall, backed, reef, run)

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { attentionPath, codeOfKey, hintFor, labelOf, lookChain, mapInvocation, reservedBy, resolveKey } from "./keymap.js";
+import { attentionPath, codeOfKey, codesOf, declaredKeys, hintFor, keyOfCode, labelOf, lookChain, mapInvocation, nameOfCode, reservedBy, resolveKey } from "./keymap.js";
 import { keyContext, resolverState } from "./parts/resolver.js";
-import { TOO_FAR, applicable, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
+import { TOO_FAR, barEntries, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
 import { promptEntries } from "./parts/use.js";
 import { menuEntries } from "./parts/menu.js";
 import { CARRY_KEYS } from "./parts/carry.js";
@@ -24,7 +24,9 @@ const COLLECTED = [
   { id: "scene.carry", value: [{ id: "flip", name: "Flip", key: "f", state: on("card", "crate"), run() {} }] },
   { id: "sailing", value: [
     { id: "helm", name: "Take the helm", key: "f", reach: true, state: on("helm"), run() {} },
-    { id: "aboard", name: "Come aboard", key: "Enter", show: [], state: (t) => (t == null ? {} : null), run() {} },
+    { id: "aboard", name: "Come aboard", key: "Enter", show: ["world"], state: (t) => (t == null ? {} : null), run() {} },
+    // (keyed, on no surface: a key works with nothing showing it)
+    { id: "anchor", name: "Drop anchor", key: "n", show: [], state: (t) => (t == null ? {} : null), run() {} },
   ] },
   { id: "dice", value: [{ id: "roll", name: "Roll", key: "r", state: on("crate"), run() {} }] },
   { id: "scene.measure", value: [{ id: "measure", name: "Measure", key: "m", tool: { pointer: true }, state: (t) => (t == null ? { checked: false } : null), run() {} }] },
@@ -33,10 +35,12 @@ const COLLECTED = [
 
 const WALK = ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft"].map((code) => ({ code }));
 const BODIES = [
-  { id: "orbit", keys: [], reach: Infinity },
+  { id: "look", keys: [], reach: Infinity },
   { id: "walk", keys: WALK, reach: 2 },
   { id: "seat", keys: [], reach: 2 },
   { id: "station", keys: [{ code: "KeyA" }, { code: "KeyD" }], reach: 2.5 },
+  // (the editor: the bar holds its commands too)
+  { id: "edit", keys: [], reach: Infinity },
 ];
 const TOOLS = [null, { name: "gun", keys: [{ code: "KeyR" }] }, { name: "measure", keys: [] }];
 const GESTURES = [null, { keys: CARRY_KEYS }];
@@ -91,7 +95,7 @@ function* cases() {
           }
 }
 
-/** Every entry a surface shows, with its target: the prompt's, the menu's (object and scene) and the bar's. */
+/** Every entry a surface shows, with its target: the prompt's, the menu's (object and scene) and the bar's (its editor's and world's clusters, as the bar works them out in this body). */
 function shown(state) {
   const out = [];
   const p = promptEntries(state.collected, state.attention, state.ctx, Infinity);
@@ -101,7 +105,8 @@ function shown(state) {
   const m = menuEntries(state.collected, target, state.ctx);
   for (const e of m.forObject) out.push({ ...e, target, surface: "menu" });
   for (const e of m.forScene) out.push({ ...e, target: null, surface: "menu" });
-  for (const e of applicable(flatCommands(state.collected), null, state.ctx, "toolbar")) out.push({ ...e, target: null, surface: "bar" });
+  const bar = barEntries([{ collected: state.collected, ctx: state.ctx }], state.ctx.view);
+  for (const e of [...bar.editor, ...bar.world]) out.push({ ...e, target: null, surface: "bar" });
   return out;
 }
 
@@ -221,5 +226,85 @@ describe("reach (H9), exhaustively", () => {
       }
     }
     expect(n).toBe(BODIES.length * 2 * 3);
+  });
+});
+
+describe("a keys declaration, read once (declaredKeys, codesOf)", () => {
+  it.each([
+    ["bare codes and { code } entries", ["KeyQ", { code: "KeyE" }], [{ code: "KeyQ", label: null }, { code: "KeyE", label: null }]],
+    ["a label", [{ code: "KeyW", label: "Forward" }], [{ code: "KeyW", label: "Forward" }]],
+    ["an empty label is none", [{ code: "KeyQ", label: "" }], [{ code: "KeyQ", label: null }]],
+    ["a code twice: its first place and label", [{ code: "KeyQ", label: "Ease" }, "KeyE", { code: "KeyQ", label: "Haul" }], [{ code: "KeyQ", label: "Ease" }, { code: "KeyE", label: null }]],
+    ["no code, an empty code, a non-string", [null, {}, { code: "" }, { code: 3 }, "", "KeyF"], [{ code: "KeyF", label: null }]],
+    ["not a list", undefined, []],
+  ])("%s", (_, declared, entries) => {
+    expect(declaredKeys(declared)).toEqual(entries);
+    expect([...codesOf(declared)]).toEqual(entries.map((e) => e.code));
+  });
+});
+
+/**
+ * What Chrome sends as KeyboardEvent.key for each code a declaration in the
+ * repo uses, on a US layout with no modifier held. Written from the UI
+ * Events `code` and `key` tables, not from keymap.js's own.
+ */
+const CHROME = {
+  KeyA: "a", KeyB: "b", KeyD: "d", KeyE: "e", KeyF: "f", KeyQ: "q", KeyR: "r", KeyS: "s", KeyW: "w", KeyX: "x", KeyZ: "z",
+  Digit1: "1", Digit2: "2", Digit3: "3", Digit4: "4", Digit5: "5", Digit6: "6", Digit7: "7",
+  ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft", ArrowRight: "ArrowRight",
+  ShiftLeft: "Shift", ShiftRight: "Shift", AltLeft: "Alt", AltRight: "Alt", ControlLeft: "Control", ControlRight: "Control",
+  Space: " ", Comma: ",", Period: ".", Enter: "Enter", Backspace: "Backspace",
+};
+
+describe("keyOfCode: the key a US keyboard sends", () => {
+  it.each(Object.entries(CHROME))("%s sends %j (every code a declaration in the repo uses)", (code, key) => {
+    expect(keyOfCode(code)).toBe(key);
+  });
+
+  // codeOfKey's inverse for every key it names (the same tables, read both ways)
+  const NAMED = [
+    ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => `Key${c}`),
+    ..."0123456789".split("").map((d) => `Digit${d}`),
+    "Space", "Period", "Comma", "Slash", "Semicolon", "Quote", "BracketLeft", "BracketRight", "Minus", "Equal", "Backquote", "Backslash",
+    "Enter", "Escape", "Delete", "Backspace", "Tab", "Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Insert",
+    ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
+  ];
+  it.each(NAMED)("codeOfKey(keyOfCode(%s)) is itself", (code) => {
+    expect(codeOfKey(keyOfCode(code))).toBe(code);
+  });
+
+  it.each([
+    ["MetaLeft", "Meta"],
+    ["MetaRight", "Meta"],
+    ["IntlBackslash", "Unidentified"],
+    ["", "Unidentified"],
+    [null, "Unidentified"],
+  ])("%s sends %j", (code, key) => {
+    expect(keyOfCode(code)).toBe(key);
+  });
+});
+
+describe("nameOfCode: an unlabelled code as a person reads it", () => {
+  it.each([
+    ["KeyQ", "Q"],
+    ["Digit3", "3"],
+    ["ArrowUp", "↑"],
+    ["ArrowDown", "↓"],
+    ["ArrowLeft", "←"],
+    ["ArrowRight", "→"],
+    ["Space", "Space"],
+    ["ShiftLeft", "Shift"],
+    ["ShiftRight", "Shift"],
+    ["AltLeft", "Alt"],
+    ["ControlRight", "Control"],
+    ["MetaLeft", "Meta"],
+    ["Enter", "Enter"],
+    ["Tab", "Tab"],
+    ["Backspace", "⌫"],
+    ["Escape", "Esc"],
+    ["Comma", ","],
+    ["IntlBackslash", "IntlBackslash"],
+  ])("%s reads %j", (code, name) => {
+    expect(nameOfCode(code)).toBe(name);
   });
 });

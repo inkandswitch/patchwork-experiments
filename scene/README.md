@@ -43,12 +43,14 @@ pnpm install && pnpm build && pnpm test
 Every part but carry declares no traits, so each runs in every scene, a
 game's included; carry runs where the doc has something carryable. What
 keeps the editor's chrome out of the way is that **editing is a body**
-(TOOLS.md §3, Decisions 6): the toolbar, the halo's handles and knobs, the
+(TOOLS.md §3, Decisions 6): the toolbar's editor commands, the halo's handles and knobs, the
 inspector (a drawer tab a selection opens; it stays open, on the scene
 when nothing is selected, until its ×, the toolbar or leaving Edit), the outline
 (Objects), Dimensions and Parts (tabs you open from the toolbar), the grid,
 axes and bounds, and every command marked `edit: true` show only in the
-Edit body. Look, walk, seat and station show none of it.
+Edit body. Look, walk, seat and station show none of it. The toolbar is
+the bar of tools: its world commands (`show: ["world"]`, a game's Play,
+say) sit at its right end in every body (TOOLS.md §6, Decisions 10).
 `scene.clock` is the clock chips (▶ or ⏸ for each doc's world time on the
 focus path, in a slim bar on the top edge, shown only for a doc with a
 process: TOOLS.md §6, §7); `scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the
@@ -71,7 +73,9 @@ the resolver's (`src/keymap.js` `hintFor`): shown only where pressing it
 does that. The key map (`scene.keys`) does the keys: a `run` that returns
 a session (`{ end(), cancel(), update?(dt) }`) is held while the key is
 down (`hold: true` shows "hold F"): `update` every frame, `end` on release,
-`cancel` if focus goes, the target goes or its extension stops. The prompt
+`cancel` if focus goes, the target goes or its extension stops. A button
+with a key is that key: pressed by a finger or a mouse it presses the key,
+so a held verb lasts as long as the button is held. The prompt
 runs in every scene; with nothing that has verbs under attention it shows
 nothing.
 
@@ -84,6 +88,16 @@ own bodies are Look and Edit (`src/stage/bodies.js`), both the orbit
 camera; others come with packages (`walk`, `seats`, sailing's). Nothing
 stands on Edit: walking or sitting down from it leaves it, and Leave comes
 back to Look.
+
+**Touch controls** (`scene.touch`, `src/parts/touch.js`) are the keys the
+open gesture, the held tool and the body declare, as controls a finger
+holds, while the input is touch (from the first finger on the view until a
+mouse press): the arrows' places bottom left, the rest as buttons bottom
+right under each layer's name. Which controls is `src/touch-keys.js`
+(pure, TOOLS.md §5); a control presses its key as a keyboard would
+(`src/hold-key.js`), so it goes the one key order. Look, Edit and a seat declare no keys and show
+none. With no keyboard the Esc hint is the Escape key: it says what it
+does ("Put it back") and a finger on it presses Escape.
 
 ## Using it
 
@@ -252,7 +266,9 @@ STAGE.md, "Extract and bundle".
   (in Edit a selection opens it, and it stays open, on the scene when
   nothing is selected, until its ×, the toolbar or leaving Edit), Objects, Dimensions and Parts when you open
   them from the toolbar, and any extension's docked editor (Camber's
-  Shape, a die's panel).
+  Shape, a die's panel). Drag its left edge to resize it (double-click for
+  the default): the stage's own panels and docked editors each keep the
+  width you last gave them, per scene.
 
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
@@ -864,7 +880,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage and the view: `stage.js` (a doc's stage: its doc loop, the api each extension gets), `view.js` (the view: the mount, the router, the body stack, the selection, hover and focus as paths, the stages and links it opens, input across stages), `links.js` (expansion of the link graph, pure), `scope.js` (one stage's frame onto the viewport, the choke point every spatial call goes through), `paths.js` (the key grammar), `readonly.js` (what a pin or a mirror is given), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip), `body` (the body chip, who's here and the Esc hint), `focus` (Enter on a link), `packages` (the packages prompt) and `autoframe` (an untouched camera framing what arrives); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip), `body` (the body chip, who's here and the Esc hint), `touch` (the touch controls), `focus` (Enter on a link), `packages` (the packages prompt) and `autoframe` (an untouched camera framing what arrives); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/undo.js` | undo of the stage's own edits: a step from its patches, its inverse (whole, or nothing if it has been written over since), the stacks, and the recorder the stage runs |
 | `src/extract.js` | extract and bundle (COMPOSITION.md §8): the plans (pure: T whole, the host's one change, the bundle's change) and doing them through a stage's own api; invariants I9 (`extract.test.js`) and I11 (`linearity.test.js`) |
@@ -888,7 +904,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/carry-rules.js` | carrying's pure parts: what can be carried (the trait), connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces by their trait, a scene extension of the page's own, and the halo; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
+| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces by their trait, a scene extension of the page's own, and the halo; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `touch-probe.html` + `touch-run.mjs` the touch controls with real fingers (touch emulation: `b.touch`): a lock body entered by tapping, its pad, held keys, a look drag at once, a tool's key, a carry turned by the pad, a long press's menu (what the finger pressed, not the eye's look), and the use prompt's buttons as keys (a tap's verbs kept in Look, a held verb wound by a finger and by a mouse); `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
 
 ### The editor probe
 

@@ -20,9 +20,9 @@
 //     companionway offers [F] Go below; F sends one open-document request
 //     for that doc, bubbling and composed out of the stage;
 //  5. the shell opens E1M1: the visitor arrives walking (the walk body) at
-//     the player 1 start, the camera at its eye, the lobby offering the gun;
+//     the player 1 start, the camera at its eye, the bar offering the gun;
 //     nothing mentions the ship;
-//  6. ▶ Pick up the gun: walking at the start with the gun, the camera where
+//  6. Pick up the gun (the bar's Play): walking at the start with the gun, the camera where
 //     it was; Esc puts the gun down, the body chip's Leave stops walking;
 //  7. at the exit switch (the spawn moved beside it: the walk there is long,
 //     and doom's tests show it can be walked), walking up to it (W), with
@@ -232,24 +232,24 @@ try {
     if (!(await loads(`p.showing() === "doom" && p.running().includes("arena")`, 20_000))) return null;
     await loads(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 120_000, 200);
     await b.rest(1200);
-    return P(`rect(".arena-play")`);
+    return P(`rect('.toolbar [data-command="play"]')`);
   })();
   const arrived = play && await until(`p.showing() === "doom" && p.bodyId() === "walk" && p.running().includes("arena")`, 20_000);
   const cam = await P("cam()");
   const doomText1 = await textOf();
   details.arrival = { cam: { position: r3(cam.position), target: r3(cam.target) }, home: ids.home, lobby: play, text: doomText1.slice(0, 400), notices: await P("notices()"), body: await P("body()") };
-  check("5a. the shell opens E1M1: the visitor arrives walking at the player 1 start (view.start), the eye there, the lobby offering the gun", arrived && Math.hypot(cam.position[0] - ids.home.position[0], cam.position[2] - ids.home.position[2]) < 0.3 && Math.abs(cam.position[1] - ids.home.position[1]) < 0.3 && /Pick up the gun/.test(play?.text ?? ""), details.arrival);
+  check("5a. the shell opens E1M1: the visitor arrives walking at the player 1 start (view.start), the eye there, the bar offering the gun", arrived && Math.hypot(cam.position[0] - ids.home.position[0], cam.position[2] - ids.home.position[2]) < 0.3 && Math.abs(cam.position[1] - ids.home.position[1]) < 0.3 && /Pick up the gun/.test(play?.text ?? ""), details.arrival);
   check("5b. nothing shown mentions the ship, and there are no notices", !SHIPPY.test(doomText1) && !doomText1.includes(urls.aboard) && (await P("notices()")).length === 0, details.arrival);
   check("5c. no target count in a level without targets", !/target|standing/i.test(doomText1), doomText1.slice(0, 300));
   await shot("5-doom-arrive");
 
-  if (!play) throw new Error("not in E1M1's lobby");
+  if (!play) throw new Error("no Play on E1M1's bar");
   // ─── 6. Play ──────────────────────────────────────────────────────────────
   await b.click(Math.round(play.x), Math.round(play.y));
   await b.rest(1500);
   const eye = (await P("cam()")).position;
   const walking = await P("body()");
-  check("6. ▶ Pick up the gun: walking at the start (the walk body over Look, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["look", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
+  check("6. Pick up the gun (the bar's Play): walking at the start (the walk body over Look, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["look", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect('.toolbar [data-command="play"]')`)), { eye: r3(eye), home: ids.home.position, body: walking });
   await shot("6-doom-play");
 
   // ─── 7. the exit switch ───────────────────────────────────────────────────
@@ -269,7 +269,7 @@ try {
   check("6b. Esc puts the gun down; the body chip's Leave stops walking (Look)", !!leave && (await P("body()")).id === "look", { items, body: await P("body()") });
   await P(`moveSpawn(${J(standAt)}, ${Math.PI / 2})`);
   await b.rest(300);
-  const play2 = await P(`rect(".arena-play")`);
+  const play2 = await P(`rect('.toolbar [data-command="play"]')`);
   if (play2) await b.click(Math.round(play2.x), Math.round(play2.y));
   await b.rest(1200);
   const e0 = (await P("cam()")).position;
