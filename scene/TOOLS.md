@@ -281,10 +281,13 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   object with `walk.support`, the person always on a kept cell of one, in
   its frame, so a level and a moving deck are one rule. (Built in `walk/`,
   replacing arena's; since N10 step 4 on the navmesh walker, the ray walker
-  gone; sailing keeps its own copy as `aboard` until N10 step 5 moves her
-  into walk.)
+  gone; since step 5 sailing's too: her Come aboard is
+  `api.body.enter("walk", hull)`. walk is a part of every doc, so a body
+  entered from a stage walks in that stage, a boat linked into a harbour in
+  her own.)
 - **seat**, `seats/`'s (COMPOSITION decision 5), rides the seat: no
-  movement keys, so D draws. **station**, sailing's: A/D steer.
+  movement keys, so D draws. **station**, sailing's, pushed over walk, its
+  eye at the station's stand spot (`walk.stand`): A/D steer.
 
 `enter` runs in the stage that called `api.body.enter(id, place)`, in its
 frame; the view converts the eye. The body's ride is the only ride. The

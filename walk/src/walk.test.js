@@ -25,7 +25,7 @@ describe("walk's traits' part (walk.spawn)", () => {
     const spawn = plugins.find((p) => p.id === "walk.spawn");
     expect(spawn.traits).toEqual(["walk.spawn", "walk.support", "walk.moves", "walk.stand", "walk.ladder"]);
     for (const t of spawn.traits) expect([t, spawn.describes[t]?.on]).toEqual([t, "object"]);
-    expect(plugins.find((p) => p.id === "walk").traits).toBeUndefined();
+    expect(plugins.find((p) => p.id === "walk").traits).toEqual(["*"]); // every stage offers the body (a boat linked into a harbour is boarded in her own)
     const { walkFromState } = await import("./spawn.js");
     const scene = { objects: { pad: { traits: { "walk.spawn": {} } }, crate: {} } };
     for (const body of ["look", "edit", "seat", "walk"])

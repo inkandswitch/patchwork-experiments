@@ -1,6 +1,6 @@
 // The verbs aboard (DESIGN.md, "Play"): what the use prompt offers when you
-// look at the helm, the mainsheet, the mast and sail, the windlass or the
-// ladder from within reach, and what its keys do. Commands over the stage's
+// look at the helm, the mainsheet, the mast and sail or the windlass from
+// within reach (her ladder's Climb is walk's: walk.ladder), and what its keys do. Commands over the stage's
 // contract (STAGE.md, "A command"); held verbs are sessions the prompt keeps
 // open while the key is down.
 //
@@ -16,8 +16,8 @@
 // ("Sail · work it at the wheel or the mainsheet (F)").
 //
 // The stations you stand at and lock in to (crew.take: the "station" body
-// over walking, at the station's stand spot in her navmesh, its keys
-// declared; F again leaves):
+// over walk, its eye at the station's stand spot (walk.stand), its keys
+// declared; F again leaves, and walk stands you there):
 // - the helm: A / D steer; the sheet and the halyard are led aft, so Q / E
 //   trim the sheet and hold R raises or lowers the sail from there too;
 // - the mainsheet (a traveller aft in the cockpit, by the boom's end): Q / E
@@ -59,10 +59,10 @@
 // down, as the sail's), so two people can't trim one sheet; each winch's own
 // "station" claim says who stands there.
 //
-// Looking at the mast (a part of the ship with no traits of its own) works
+// Looking at the mast (a part of the ship with no station trait of its own) works
 // the sail it carries: the rig hangs under it, or it carries the mast's tag.
 
-import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, WINCH, isUnder, shipOf, sideName, wheelTransform } from "./traits.js";
+import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, WINCH, isUnder, shipOf, sideName, stationKind, wheelTransform } from "./traits.js";
 import { heldEitherSide, trimOf } from "./trim.js";
 import { apply } from "./frames.js";
 
@@ -384,15 +384,16 @@ export function stationCommands(api, ctx) {
 
   /**
    * The sail station a look at `target` works, and whether that look is at
-   * its mast: the station itself; or (the mast) a traitless object aboard
-   * the same ship that the rig hangs under, or one tagged as her mast.
+   * its mast: the station itself; or (the mast) an object aboard the same
+   * ship with no station trait of its own (walk's stand spot is no station)
+   * that the rig hangs under, or one tagged as her mast.
    * Else null: anything else aboard (a table in the cockpit) is no part of
    * the sail.
    */
   function sailOf(sc, target) {
     if (traitOf(sc, target, SAIL)) return { id: target, mast: false };
     const o = objectOf(sc, target);
-    if (!o || (o.traits && Object.keys(o.traits).length)) return null;
+    if (!o || stationKind(o)) return null;
     const ship = shipOf(sc, target);
     const id = ship && ship !== target ? ctx.sim.stationsOf(ship)?.sail : null;
     if (!id || id === target) return null;
@@ -1056,30 +1057,6 @@ export function stationCommands(api, ctx) {
     run() {},
   };
 
-  // ─── the ladder ───────────────────────────────────────────────────────
-
-  /** The ship whose ladder this look reaches: the ladder itself, or the hull with its ladder in reach. */
-  function ladderShip(target, c) {
-    if (!me().swimming) return null;
-    const ship = shipOf(c?.scene, target);
-    if (!ship) return null;
-    const ladder = ctx.sim.stationsOf(ship)?.ladder;
-    if (!ladder || (target !== ladder && target !== ship)) return null;
-    return within(c?.from, originOf(ladder), reachOf(c)) ? ship : null;
-  }
-
-  const climb = {
-    id: "climb",
-    name: "Climb aboard",
-    key: "f",
-    show: ["use"],
-    state: (target, c) => (ladderShip(target, c) ? {} : null),
-    run(target) {
-      const ship = shipOf(api.scene(), target);
-      if (ship) ctx.crew.board(ship);
-    },
-  };
-
   // ─── coming aboard ────────────────────────────────────────────────────
 
   // the way in, for the scene (the null target), until you're aboard: Enter,
@@ -1098,5 +1075,5 @@ export function stationCommands(api, ctx) {
   // in the order the prompt shows them (at most three for one look): where
   // to go first, for a station beyond the body's reach (whose verbs the
   // stage then shows greyed, "too far", after it)
-  return [far, helm, mainsheet, winch, halyard, sail, sheet("haul", "Haul in", "q", 0), sheet("ease", "Ease out", "e", 1), jibSheet("jibHaul", "Haul in the jib sheet", "q", 0), jibSheet("jibEase", "Ease the jib sheet", "e", 1), weigh, drop, climb, aboard];
+  return [far, helm, mainsheet, winch, halyard, sail, sheet("haul", "Haul in", "q", 0), sheet("ease", "Ease out", "e", 1), jibSheet("jibHaul", "Haul in the jib sheet", "q", 0), jibSheet("jibEase", "Ease the jib sheet", "e", 1), weigh, drop, aboard];
 }

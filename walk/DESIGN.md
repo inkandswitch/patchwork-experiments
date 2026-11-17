@@ -716,7 +716,8 @@ the page for that long and keeps that much.
 
 Still owed (not built in step 4): tiles; pruning by passable sides (every
 support bakes with `prune: false`: every component kept, which is safe);
-W6, SW2 and SW1's clamp; drawing a stand spot's claim holder (`claim`);
+W6, SW2 and SW1's clamp; drawing a stand spot's claim holder (`claim`,
+built in step 5);
 Q6's check of the link-composed examples in real Patchwork (a link now
 bakes as nothing and never holds a bake back, so none waits; whether any
 example stands on a link's floor is still to see, before walk syncs); C10;
@@ -730,6 +731,41 @@ rebuilt in place rebaking.
 - sailing's suites and aboard-run; the browser probes the plan lists
   (aboard-run, sailing-run, touch-run, harbour-run and the rest), within the
   probe policy.
+
+**As built, step 5** (sailing walks in walk; commit on lane/n10): sailing's
+navmesh, walker, navcheck, walk.js, aboard body, avatars and WALK_KEYS copy
+are deleted; her parts write the traits ("What goes, what stays") and her
+crew keeps only the `station` body. What it took of walk:
+- the `walk` part runs in every stage (`traits: ["*"]`, Decision 32), so
+  Come aboard enters walk in her own stage, however she is linked;
+- the `avatar` contribution (Decision 33): this viewer's walker in this
+  stage, the record its presence says (or null), which is how a writer
+  reads `on` and `swimming` (presence has no record of one's own session);
+- the resume rule lowers the eye along the up of the support walk stood on
+  (Decision 34), so a body over walk on a heeled deck hands walk back
+  exactly its stand spot;
+- walk.people draws a stand spot's claim holder (`standing`, pure), placed
+  as the seeds are (the doc's placement in the owner, its drawn frame);
+- `globalThis.__WALK_LIVE__` (a probe page's Map) is told each live walker,
+  which can now `place(p, yaw, pitch)` (P1 at a point: a respawn, the
+  probes);
+- the stock sloop's fixture (`src/test/fixtures/deck-12m.json`, exported by
+  `sailing/probes/export-deck.mjs`, drift caught by
+  `scripts/check-fixtures.mjs`) read through walk's adapter:
+  `deck-12m.test.js`, C1–C9 on her seed-pruned bake, walk's own bake
+  holding every cell of it (Decision 37), the bake budget, the bow, and
+  every stand spot's link within 1 mm of the height it was written at.
+
+Tables: resume on a deck {still, turned, heeled 20°, heeled 30° the other
+way} → feet = P1 of the eye less BODY.eye along the deck's up, to 1e-9 (4
+rows; the old rule, world Y, fails both heeled rows); the avatar
+contribution before, on top, under a body, after (1); `standing` holder
+{nobody, me, someone} × spot {no claim named, claim "stand"} (6). Sailing's
+side: crew.test.js, part kind {hull, rig, jib, hook, helm, mainsheet, mast,
+windlass, winch, ladder} × {stock sloop, a camber hull fitted from the bin}
+→ exactly its walk traits (20), station {helm, mainsheet, mast, windlass,
+winch} × {take, leave} → the eye at its stand spot EYE up her up / walk
+asked P1 of the spot, to 1e-9 (10), on a pose turned and heeled 20°.
 
 **New check C10** (in the probes, not the bake; "The bake, Input"): every
 baked object stays at its doc pose, doc transform and drawn pose both, while
@@ -890,6 +926,56 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     refuses Cadboro Bay and Ucluelet until tiles land; whether to hold walk
     instead until tiles land is the lead's (Q4).
 
+32. **The `walk` part runs in every stage** (`traits: ["*"]`, decided
+    unattended (2026-11-17, lane/n10), for the lead). A general part runs
+    only at the focus, so a body asked for from a linked doc's stage (a
+    boat's Come aboard, in a harbour) would walk the focus's stage, where
+    her hull is no support (Q6). Every stage offering it, `enter` runs in
+    the stage that asked (the caller's first: scene/STAGE.md), so a boat
+    linked into a harbour is boarded in her own stage, and the body chip,
+    a general part at the focus, still walks the focus. Each stage keeps
+    an idle adapter (it bakes nothing until a walker needs it).
+33. **walk contributes `avatar`** (decided unattended (2026-11-17,
+    lane/n10), for the lead): `() => record | null`, this viewer's walker
+    in this stage, the record its presence says, on top or under a body.
+    `api.presence.get()` holds the peers, never one's own session, so a
+    writer that must know whether its viewer walks on its support, or
+    swims (sailing's HUD and verbs), reads it here, through the stage's
+    generic `collect`, not through a sailing word in walk.
+34. **Resuming lowers the eye along the up of the support walk stood on**
+    (decided unattended (2026-11-17, lane/n10), for the lead), not along
+    the stage's Y: a body over walk puts its eye BODY.eye up its support's
+    up (the walker's own eye is there too), so on a deck heeled 20° the
+    stage's Y would hand walk back a point 0.55 m to leeward, and each take
+    and leave would walk you sideways. On the ground, and under a seat on
+    level ground, the two are one.
+35. **A stand spot is placed by the doc in its owner, drawn in its owner's
+    frame** (decided unattended (2026-11-17, lane/n10), for the lead), for
+    whoever stands people there (a station body, walk.people's claim
+    holders), as its seed is: the owner's drawn frame · the spot's object
+    placed in the owner by the doc · `at`. Not the object's drawn matrix: a
+    stand spot on a turning wheel would turn with it. ("Bodies over walk"
+    said the object's drawn matrix; this supersedes it.)
+36. **Probe pages reach live walkers through `globalThis.__WALK_LIVE__`**
+    (decided unattended (2026-11-17, lane/n10), for the lead), as bakes
+    through `__WALK_BAKES__`; `place` is P1 at a point, which sailing's
+    probes use where they put someone overboard or by the ladder.
+37. **The sloop's static checks run on her seed-pruned bake** (decided
+    unattended (2026-11-17, lane/n10), for the lead): walk bakes with
+    `prune: false` (Decision 29), which keeps the bilge inside her hull,
+    unreachable from every seed, so C2 and C6 fail on walk's own mesh. The
+    fixture test and sailing's in-page check run C1–C9 on the same input
+    pruned by its seeds and check walk's mesh holds every cell of it. When
+    the pruning by passable sides lands they run on walk's own.
+
+38. **Resuming looks at what the body's view looked at** (decided
+    unattended (2026-11-17, lane/n10), for the lead): from where P1 stands
+    you, toward the camera's target point (a seat's: the table), not along
+    its old direction. Standing up from a seat P1 can move you half a metre
+    (the floor under a seat's eye is often under the table), and the old
+    direction then faced past the table; under a station, which leaves you
+    where its eye was, the two are one.
+
 ## Questions for the lead
 
 - **Q7. Doom's doors.** Step 4 tags each door `walk.moves { blocks }` in
@@ -900,6 +986,20 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 - **Q8. The traits' part id.** It is still `walk.spawn` though it declares
   all five traits. Docs carry trait names and package urls, not part ids,
   so a rename (say `walk.traits`) changes no doc. Rename?
+
+- **Q9. Reach while walking her deck.** Sailing's `aboard` body reached
+  2.5 m; walk's reaches 2 m, so a station's verbs answer from half a metre
+  closer than before (the station body still reaches 2.5). Should a
+  support be able to say a reach, or is 2 m right everywhere?
+- **Q10. The eye's frame.** Walking her deck now draws through walk's
+  camera (field of view 75°, far plane 800 m) where sailing's was 60° and
+  5,000 m: the horizon at sea is nearer and the deck wider. A body's
+  numbers, or the world's (a sea asking for a far plane)?
+- **Q11. A hull made a ship by hand.** The stock sloop is written a
+  support; a hull given the Ship trait in the inspector becomes one when
+  the first sailing part is put on her (parts.js writes `walk.support`
+  then). Should the Ship trait's own adding write it (scene has no
+  "adding this adds that"), or is fitting her out the moment?
 
 - **Q1. Who draws someone at a station?** As designed, walk.people draws
   the holder of a stand spot's named claim at the spot (no scene change;

@@ -11,6 +11,11 @@ import { apply } from "./frames.js";
 import { DEPTH, createSim } from "./sim.js";
 import { emptyScene, fakeDrop, fakeWorld } from "./test/fakes.js";
 
+/** An object's own traits but walk's (crew.test.js pins those, part kind × hull). */
+const own = (traits) => {
+  const out = Object.fromEntries(Object.entries(traits ?? {}).filter(([k]) => !k.startsWith("walk.")));
+  return Object.keys(out).length ? out : undefined;
+};
 const near = (a, b, digits = 9) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], digits));
 const children = (doc, id) => Object.keys(doc.objects).filter((k) => doc.objects[k].parent === id);
 /** Where a point local to `id` is in `root`'s frame (doc transforms). */
@@ -48,12 +53,12 @@ describe("the parts", () => {
       const id = await parts[name].create(ctx, { parent: null, transform: { position: [1, 0, 2], rotation: [0, 0.5, 0], scale: 1 } });
       expect(doc.order[0]).toBe(id);
       expect(doc.objects[id].name).toBe(pieces[0][0]);
-      expect(doc.objects[id].traits).toEqual(pieces[0][1]);
+      expect(own(doc.objects[id].traits)).toEqual(pieces[0][1]);
       expect(doc.objects[id].locked).toBe(false);
       // put on nothing: where the bin said, as it said
       expect(doc.objects[id].transform).toEqual({ position: [1, 0, 2], rotation: [0, 0.5, 0], scale: 1 });
       const rest = children(doc, id);
-      expect(rest.map((k) => [doc.objects[k].name, doc.objects[k].traits])).toEqual(pieces.slice(1));
+      expect(rest.map((k) => [doc.objects[k].name, own(doc.objects[k].traits)])).toEqual(pieces.slice(1));
       for (const k of rest) {
         const piece = PIECES[name].find((p) => p.name === doc.objects[k].name);
         // a pair's mirror: across her centreline from where the part went (put on nothing: the stock stand's x)
@@ -136,7 +141,7 @@ describe("put on a ship", () => {
     const { ctx } = fakeDrop(doc);
     const id = await parts.wheel.create(ctx, { parent: "hull", transform: { position: [-3, 0.72, 0] } });
     near(inFrame(doc, id, "hull"), [-3, 0.72 + LIFT.wheel, 0]);
-    expect(doc.objects[id].traits).toEqual({ [HELM]: { angle: 0 } });
+    expect(own(doc.objects[id].traits)).toEqual({ [HELM]: { angle: 0 } });
   });
 
   it("put on something aboard her (her mast), still squares to her, whatever way that was put", async () => {
@@ -172,10 +177,11 @@ describe("put on a ship", () => {
     expect(doc.objects[other].traits[WINCH]).toEqual(winchTrait(-1));
     expect(doc.objects[id].name).toBe("Starboard jib winch");
     near(inFrame(doc, other, "hull"), [-1.1, 1.2, 2]);
-    // each one's stand is inboard of it: toward her centreline
-    expect(winchTrait(1).stand[0]).toBeLessThan(0);
-    expect(winchTrait(-1).stand[0]).toBeGreaterThan(0);
-    expect(winchTrait(1).stand[1]).toBeLessThan(0); // down on the cockpit's sole
+    // each one's stand spot (walk's) is inboard of it: toward her centreline, across the well
+    const stand = (w) => doc.objects[w].traits["walk.stand"].at;
+    expect(stand(id)[0]).toBeLessThan(0);
+    expect(stand(other)[0]).toBeGreaterThan(0);
+    expect(stand(id)[1]).toBeLessThan(0); // the side deck across the well, a little lower
   });
 
   it("the Jib piece stands at the jib's tack under the mast, its Y up the luff and its Z square to it, aft, in her centreplane", () => {
@@ -215,9 +221,9 @@ describe("the sloop", () => {
     const id = await parts.sloop.create(ctx, { parent: null, transform: { position: [10, 0.3, -4], rotation: [0, 0.8, 0], scale: 1 }, world: { position: [10, 0.3, -4], rotation: [0, 0.8, 0], scale: 1 } });
     const hull = doc.objects[id];
     expect(hull).toMatchObject({ name: "Sloop", parent: null, transform: { position: [10, 0, -4], rotation: [0, 0.8, 0], scale: 1 } });
-    expect(hull.traits).toEqual({ [SHIP]: {} });
+    expect(own(hull.traits)).toEqual({ [SHIP]: {} });
     const aboard = Object.values(doc.objects).filter((o) => o.parent === id).map((o) => o.name).sort();
-    expect(aboard).toEqual(["Companionway", "Ladder", "Mainsheet", "Mast", "Port jib winch", "Wheel", "Windlass"]);
+    expect(aboard).toEqual(["Companionway", "Ladder", "Mainsheet", "Mast", "Port jib winch", "Spawn", "Wheel", "Windlass"]);
     const p = partsOf(fakeWorld(doc).scene(), id);
     for (const k of ["helm", "sail", "anchor", "mainsheet", "jib", "ladder", "hook"]) expect(p[k]).not.toBeNull();
     expect(p.winches.map((w) => doc.objects[w].traits[WINCH].side)).toEqual(["port", "starboard"]);

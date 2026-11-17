@@ -14,9 +14,13 @@
 // so it draws nobody; a mirror hears its doc's, so it draws them again, as
 // it draws everything else of its doc. This view is never drawn: its walker
 // is the camera.
+//
+// Someone under a body of their own at a stand spot (a boat's station) says
+// no avatar; they are drawn standing at the spot whose \`walk.stand\` names
+// the claim they hold there (\`standing\`).
 
-import { apply, headingOf } from "./frames.js";
-import { frameOf } from "./supports.js";
+import { apply, headingOf, scaleOf } from "./frames.js";
+import { STAND, frameOf, ownerOf, seedsOf } from "./supports.js";
 
 /** whose presence says where someone walks: the walk body's part (extension.js) */
 const WALK = "walk";
@@ -49,6 +53,29 @@ export function placeOf(a, frame) {
   if (a.on == null) return { feet: a.feet, yaw: a.yaw };
   const m = frame(a.on);
   return m ? { feet: apply(m, a.feet), yaw: a.yaw + headingOf(m) } : null;
+}
+
+/**
+ * Who stands at a stand spot by its claim (DESIGN.md, "Presence under a
+ * body"): for each \`walk.stand\` naming a \`claim\` kind, whoever holds that
+ * claim on its object, as a record in its owner's frame: at the spot,
+ * facing its \`facing\` (seedsOf's stand seed, placed by the doc). Pure over
+ * the scene, \`claimedBy(id, kind)\` and \`scale(owner)\` (the owner's drawn
+ * scale; the ground's 1). Mine are left out.
+ * @returns {Array<{ session, viewer, rec: { on, feet, yaw, pitch } }>}
+ */
+export function standing(scene, claimedBy, scale) {
+  const out = [];
+  for (const id of Object.keys(scene?.objects ?? {}).sort()) {
+    const kind = scene.objects[id]?.traits?.[STAND]?.claim;
+    if (typeof kind !== "string" || !kind) continue;
+    const by = claimedBy(id, kind);
+    if (!by?.session || by.mine) continue;
+    const on = ownerOf(scene, id);
+    const seed = seedsOf(scene, on, scale(on)).find((sd) => sd.kind === "stand" && sd.id === id);
+    if (seed) out.push({ session: by.session, viewer: by.viewer ?? null, rec: { on, feet: [...seed.at], yaw: seed.yaw + 0, pitch: 0 } });
+  }
+  return out;
 }
 
 /** A stable hue for a person. */
@@ -128,6 +155,19 @@ function create(api) {
       a.group.position.set(at.feet[0], at.feet[1], at.feet[2]);
       a.group.rotation.set(0, at.yaw, 0);
       items.push({ key: session, text: nameOf(p.viewer), position: [at.feet[0], at.feet[1] + 2.05, at.feet[2]], className: "walk-name", rank: 1 });
+    }
+    // and whoever stands at a stand spot under a body of their own (a station), by its claim
+    const scale = (on) => (on == null ? 1 : scaleOf(api.worldOf?.(on) ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+    for (const { session, viewer, rec } of standing(api.scene?.(), (id, kind) => api.claimedBy?.(id, kind) ?? null, scale)) {
+      if (seen.has(session) || session === api.session) continue;
+      const a = avatarFor(session, hueOf(viewer ?? session));
+      a.eased = ease(a.eased, rec, dt);
+      const at = placeOf(a.eased, (id) => frameOf(api, id));
+      if (!at) continue;
+      seen.add(session);
+      a.group.position.set(at.feet[0], at.feet[1], at.feet[2]);
+      a.group.rotation.set(0, at.yaw, 0);
+      items.push({ key: session, text: nameOf(viewer), position: [at.feet[0], at.feet[1] + 2.05, at.feet[2]], className: "walk-name", rank: 1 });
     }
     for (const [session, a] of avatars) {
       if (seen.has(session)) continue;

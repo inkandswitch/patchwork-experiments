@@ -49,7 +49,7 @@ import { clipProblems } from "./clip-check.mjs";
 // as the page made them list more: a doc's packages list grows as parts are
 // added and isn't pruned when they go, so S still lists the companionway's
 // joints and traversal. Published, each lists the packages here.)
-const PACKAGES = { s: ["scene", "sailing", "water"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
+const PACKAGES = { s: ["scene", "sailing", "walk", "water"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
 const SLIDE = "joints.slide";
 
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1 };
@@ -85,12 +85,12 @@ const TITLE = typeof args.title === "string" ? args.title : "Fitting out";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "sailing", "water", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
+for (const p of ["scene", "sailing", "walk", "water", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-fitout"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
 // each package's plugins registered from its URL, so the page can say which package each plugin is from
-const urls = Object.fromEntries(["scene", "sailing", "water", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
+const urls = Object.fromEntries(["scene", "sailing", "walk", "water", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 const { browser, checklist, sleep } = await import("./cdp.mjs");
 const b = await browser({ root: ROOT, port: 4797, cdp: 9797, page: `/sailing/probes/pins-probe.html?urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1700, height: 570, show: !!args.show, timeout: 600_000 });

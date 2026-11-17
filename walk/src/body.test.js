@@ -207,6 +207,46 @@ describe("on a support: presence while jumping, coming back from a station, a sc
     s.leave();
   });
 
+  // a body over walk (a stand spot's) puts its eye BODY.eye up the support's up from a point on the
+  // deck; when it goes, walk stands exactly at P1 of that point, however the deck is heeled or turned
+  const POSES = { still: M(0, [5, 1.5, -5]), turned: DECK, "heeled 20°": multiply(DECK, heel(0.35)), "heeled 30° the other way": multiply(M(2, [4, 2, -6]), heel(-0.52)) };
+  for (const [name, pose] of Object.entries(POSES)) {
+    it(`a body over walk on a deck ${name}: resumed, the feet are P1 of its eye less BODY.eye along the deck's up, to 1e-9`, () => {
+      const f = stage({ objects: deckObjects() });
+      f.pose("deck", pose);
+      const supports = createSupports(f.api);
+      const s = walkBody(f.api, supports).enter("deckpad");
+      f.frames(2);
+      s.input.suspended();
+      const spot = apply(pose, [-0.7, 0, 0.4]); // a point on the deck's top
+      const up = apply(pose, [0, 1, 0]).map((v, i) => v - pose[12 + i]);
+      const eye = spot.map((v, i) => v + up[i] * BODY.eye);
+      f.api.camera.set({ position: eye, target: [eye[0], eye[1], eye[2] - 1] });
+      s.input.resumed();
+      const want = walker.worldPose(walker.placeAt(supports.env, spot), supports.env).feet;
+      expect(s.state.on).toBe("deck");
+      expect(close(s.state.feet, want, 1e-9)).toBe(true);
+      expect(close(s.state.feet, spot, 1e-9)).toBe(true);
+      s.leave();
+    });
+  }
+
+  it("the avatar contribution: this viewer's walker here (on top or waiting under a body), null before and after", () => {
+    const f = stage({ objects: deckObjects() });
+    f.pose("deck", DECK);
+    const def = walkBody(f.api);
+    expect(def.avatar()).toBe(null);
+    const s = def.enter("deckpad");
+    f.frames(2);
+    expect(def.avatar()).toEqual(f.calls.presence.avatar);
+    expect(def.avatar().on).toBe("deck");
+    s.input.suspended();
+    expect(def.avatar()?.on).toBe("deck");
+    expect(def.avatar()?.swimming).toBe(false);
+    s.leave();
+    expect(def.avatar()).toBe(null);
+  });
+
   it("a support drawn at scale 2: its mesh in metres, its frame rigid (a spawn 1.5 of its units out is 3 m out)", () => {
     const objects = {
       deck: { transform: { position: [5, 1, -5], scale: 2 }, traits: { "walk.support": {} }, tris: model([-2, -0.3, -2], [2, 0, 2]) },
@@ -327,6 +367,23 @@ describe("the walk body", () => {
     f.frames(5);
     // the key went up while it waited: it stands
     expect(s.state.feet[2]).toBeCloseTo(-1, 9);
+  });
+
+  it("when the body over it goes and P1 moves you (a seat's eye over the table), you look at what its view looked at, from where you stand", () => {
+    const objects = { ...groundObjects(), table: { transform: { position: [3, 0, -3] }, tris: model([-0.5, 0, -0.5], [0.5, 0.7, 0.5]) } };
+    const f = stage({ objects });
+    const s = walkBody(f.api).enter(null);
+    f.frames(2);
+    s.input.suspended();
+    const target = [3, 0.7, -2.7];
+    f.api.camera.set({ position: [3.3, 1.15, -3.3], target });
+    s.input.resumed();
+    const eye = s.eye();
+    const d = target.map((v, i) => v - eye.position[i]);
+    const n = Math.hypot(...d);
+    expect(Math.hypot(eye.position[0] - 3.3, eye.position[2] + 3.3)).toBeGreaterThan(0.3); // moved off the table
+    expect(close(eye.direction, d.map((v) => v / n), 1e-9)).toBe(true);
+    s.leave();
   });
 
   it("presses: without the lock a drag looks round and a tap goes on as a click; under it a press is nothing", () => {

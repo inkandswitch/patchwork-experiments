@@ -87,9 +87,9 @@ const KINDS = {
 };
 
 describe("walk's parts", () => {
-  it("the body is general; the people are a part of every doc", () => {
+  it("the body and the people are parts of every doc (a body entered from a stage walks there)", () => {
     const meta = Object.fromEntries(plugins.map((p) => [p.id, p.traits ?? []]));
-    expect(meta.walk).toEqual([]);
+    expect(meta.walk).toEqual(["*"]);
     expect(meta["walk.people"]).toEqual(["*"]);
   });
 

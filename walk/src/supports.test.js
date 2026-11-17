@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { MAX_COLUMNS, bakeInput, bakeKey, bakedObjects, blockersOf, createSupports, keptMeshes, orientedBox, ownerOf, seedsOf, trianglesOf } from "./supports.js";
 import { walkBody, walkerOf } from "./body.js";
-import spawnPart, { climbState } from "./spawn.js";
+import spawnPart, { climbState, ladderFor } from "./spawn.js";
 import { meetsBlock } from "./walker.js";
 import { BODY } from "./walk.js";
 import { matrixOf } from "./frames.js";
@@ -274,17 +274,17 @@ describe("water and the ladder", () => {
     expect(env.water(5, 5)).toBe(0);
     expect(f.calls.waterNot.at(-1)).toEqual(["deck"]);
   });
-  it("Climb: offered on the ladder only while you swim within reach of its foot; taken, you walk at its top on her", () => {
-    for (const [place, offered] of [["buoy", true], ["far", false]]) {
+  it("Climb: offered on the ladder, or on the support it hangs on (a thin ladder is easily looked past), only while you swim within reach of its foot; taken, you walk at its top on her", () => {
+    for (const [place, offered, via] of [["buoy", true, "ladder"], ["far", false, "ladder"], ["buoy", true, "deck"], ["far", false, "deck"]]) {
       const f = stage({ objects: afloat(), water: 0, session: `s-${place}` });
       const s = walkBody(f.api).enter(place);
       f.frames(2);
       expect(s.state.mode).toBe("swimming");
       const w = walkerOf(`s-${place}`, f.api.url);
-      expect([place, !!climbState("ladder", f.api.scene(), w)]).toEqual([place, offered]);
-      expect(climbState("deck", f.api.scene(), w)).toBe(null);
+      expect([place, via, !!climbState(via, f.api.scene(), w)]).toEqual([place, via, offered]);
+      expect([ladderFor(via, f.api.scene(), w), climbState("buoy", f.api.scene(), w)]).toEqual([offered ? "ladder" : null, null]);
       if (offered) {
-        expect(w.climb("ladder")).toBe(true);
+        spawnPart.create(f.api).commands.find((c) => c.id === "climb").run(via);
         expect([s.state.mode, s.state.on]).toEqual(["walking", "deck"]);
         expect(s.state.local[0]).toBeGreaterThan(1);
         expect(climbState("ladder", f.api.scene(), w)).toBe(null);

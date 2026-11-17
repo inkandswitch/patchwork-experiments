@@ -2,8 +2,9 @@
 // every field except load() must survive structuredClone.
 //
 // The walk body (scene/TOOLS.md §4), in three scene:extensions:
-// - "walk", general (it runs wherever this package is installed),
-//   contributing `bodies: [walk]`;
+// - "walk", a part of every doc (traits ["*"]), contributing `bodies:
+//   [walk]` in every stage, so a body entered from a stage walks in that
+//   stage's frame, and `avatar` (this viewer's walker there);
 // - "walk.people", a part of every doc (traits ["*"]): the others who walk,
 //   drawn in whichever doc they walk in, wherever the focus is;
 // - "walk.spawn", the part of walk's traits (spawn point, support, moving
@@ -18,6 +19,7 @@ export const plugins = [
     type: "scene:extension",
     id: "walk",
     name: "Walk",
+    traits: ["*"],
     async load() {
       return (await import("./extension.js")).default;
     },

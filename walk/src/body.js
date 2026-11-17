@@ -15,7 +15,7 @@
 // model it bakes hasn't loaded it waits (no camera move, no avatar). It reserves the walking keys, asks for pointer lock and reaches
 // 2 m. Under another body (a seat, a station) it waits, its keys up, the
 // camera let go and its avatar withdrawn; when that body goes, it is put at
-// P1 of the eye lowered by BODY.eye.
+// P1 of the eye lowered by BODY.eye along the up of the support it stood on.
 //
 // The stage holds the stack; this answers enter(place) with what a sitting
 // is: { keys, input, eye(), leave() }.
@@ -84,6 +84,12 @@ export function floorUnder(env, p, depth = EYE_FLOOR_M) {
   return best;
 }
 
+/** The up of the support a state stands on (its frame's +Y), else the stage's. */
+export const upOf = (env, st) => {
+  const M = st && ON.has(st.mode) && st.on != null ? env.frame(st.on) : null;
+  return M ? rotateM(M, [0, 1, 0]) : [0, 1, 0];
+};
+
 /** The heading of the frame a state's yaw is measured in: its support's, else the ground's (0). */
 const headingIn = (env, st) => {
   const M = st && ON.has(st.mode) && st.on != null ? env.frame(st.on) : null;
@@ -144,7 +150,12 @@ export function avatarOf(st, env, yaw, pitch) {
   return { on, feet: on != null ? walker.localFeet(st) : pose.feet, yaw, pitch, swimming: st.mode === "swimming" };
 }
 
-/** The live walk sessions in this page (a ladder's Climb, walk.spawn's verb, finds its walker here: DESIGN.md, Decision 30). */
+/**
+ * The live walk sessions in this page (a ladder's Climb, walk.spawn's verb,
+ * finds its walker here: DESIGN.md, Decision 30). A probe page that sets
+ * globalThis.__WALK_LIVE__ to a Map is told each, by "session url", to read
+ * and place (as __WALK_BAKES__ is told each bake).
+ */
 const LIVE = new Set();
 /** The live walker of a session in a doc (its url), if any: { url, session, state(), env, climb(ladderId) }. */
 export const walkerOf = (session, url) => [...LIVE].find((w) => w.session === session && w.url === url) ?? null;
@@ -166,12 +177,16 @@ export function walkBody(api, supports = createSupports(api)) {
     return { position: [...c.position], direction: n > 1e-9 ? d.map((v) => v / n) : null };
   };
 
+  let current = null; // the live session entered from this api, while it is
+
   return {
     id: "walk",
     label: "Walk",
     keys: WALK_KEYS,
     lock: true,
     reach: REACH,
+    /** This viewer's walker here, as its presence says it (avatarOf), whether on top or waiting under another body; null when not walking here. */
+    avatar: () => current?.avatar() ?? null,
     enter(place = null) {
       const all = spawns();
       const named = typeof place === "string" && api.scene()?.objects?.[place] ? place : null;
@@ -292,6 +307,19 @@ export function walkBody(api, supports = createSupports(api)) {
         },
         state: () => st,
         env,
+        avatar: () => (st ? avatarOf(st, env, yaw, pitch) : null),
+        /** Put the walker at P1 of a point in this stage's frame, facing a yaw in it (a respawn; the probes). */
+        place(p, yawW = 0, look = 0) {
+          if (!supports.ready()) return false;
+          st = walker.placeAt(env, p);
+          yaw = yawW - headingIn(env, st);
+          pitch = look;
+          lag = 0;
+          checked(null);
+          placeCamera();
+          publish(true);
+          return true;
+        },
         /** L1: from the water up a ladder (its object id) onto its owner. */
         climb(ladderId) {
           if (st?.mode !== "swimming") return false;
@@ -307,6 +335,8 @@ export function walkBody(api, supports = createSupports(api)) {
         },
       };
       LIVE.add(live);
+      current = live;
+      globalThis.__WALK_LIVE__?.set?.(`${api.session ?? ""} ${api.url ?? ""}`, live);
       on();
       return {
         keys: WALK_KEYS,
@@ -330,12 +360,19 @@ export function walkBody(api, supports = createSupports(api)) {
             off();
             api.presence.set("avatar", undefined);
           },
-          // that body went: P1 of its eye lowered by BODY.eye (beside a seat; at a station's stand)
+          // that body went: P1 of its eye lowered by BODY.eye along the up of
+          // the support this walker stood on (beside a seat; at a stand spot,
+          // whose body put its eye BODY.eye up that support's up)
+          // looking at what its view looked at (a seat's: the table), from where you stand
           resumed() {
             const e = camEye();
             if (e && supports.ready()) {
-              const a = Array.isArray(e.direction) ? aimOf(e.direction) : { yaw: 0, pitch: 0 };
-              st = walker.placeAt(env, [e.position[0], e.position[1] - BODY.eye, e.position[2]]);
+              const up = upOf(env, st);
+              st = walker.placeAt(env, e.position.map((v, i) => v - up[i] * BODY.eye));
+              const t = api.camera.get?.()?.target;
+              const eye = walker.worldPose(st, env)?.eye;
+              const d = Array.isArray(t) && eye ? t.map((v, i) => v - eye[i]) : null;
+              const a = d && Math.hypot(...d) > 0.05 ? aimOf(d) : Array.isArray(e.direction) ? aimOf(e.direction) : { yaw: 0, pitch: 0 };
               yaw = a.yaw - headingIn(env, st);
               pitch = Math.max(-1.2, Math.min(1.2, a.pitch));
               lag = 0;
@@ -354,6 +391,8 @@ export function walkBody(api, supports = createSupports(api)) {
           off();
           gone = true;
           LIVE.delete(live);
+          if (current === live) current = null;
+          if (globalThis.__WALK_LIVE__?.get?.(`${api.session ?? ""} ${api.url ?? ""}`) === live) globalThis.__WALK_LIVE__.delete(`${api.session ?? ""} ${api.url ?? ""}`);
           api.presence.set("avatar", undefined);
           api.presence.rate(0);
         },

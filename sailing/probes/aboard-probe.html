@@ -46,7 +46,16 @@ import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
 
 // invariant I asserted on every walker step (walker.asserting): a breach throws in the crew's tick, so it shows as an error
-globalThis.__SAILING_ASSERT__ = true;
+globalThis.__WALK_ASSERT__ = true;
+// walk's live sessions (walk/src/body.js): a view's walker, to read and to place
+globalThis.__WALK_LIVE__ = new Map();
+const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.session ?? ""} ${api.url ?? ""}`) ?? null : null);
+const mapply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
+/** Put view api's walker at a point local to `on` (her hull's frame), else the stage's, facing yaw (to her heading): walk's P1 there. */
+const placeWalker = (api, on, position, yaw = 0, pitch = 0) => {
+  const m = on != null ? api?.worldOf(on) : null;
+  return liveOf(api)?.place(m ? mapply(m, position) : position, m ? yaw + Math.atan2(m[8], m[10]) : yaw, pitch) ?? false;
+};
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -116,7 +125,7 @@ try {
   // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
   // the stages can say which package each plugin comes from (publish-aboard checks what each doc lists)
   const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["water", "../../water/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
+  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
     registerPlugins((await import(url)).plugins, urls[dir]);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
@@ -308,7 +317,7 @@ try {
     /** what view w's body chip says ("Watching", "Seated", "Look", "Aboard") */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     // walking her deck: the crew's bodies on top of the stack (scene/TOOLS.md §4)
-    walking: (w) => ["aboard", "station"].includes(dbg[w]?.local.get().body?.id),
+    walking: (w) => ["walk", "station"].includes(dbg[w]?.local.get().body?.id),
     /** the body on top of view w's stack, and the stack */
     body: (w) => ({ ...dbg[w].local.get().body, stack: dbg[w].router.bodies().map((x) => x.id) }),
     /** the body chip's rect, and its menu's item starting `label`, to click */
@@ -438,7 +447,7 @@ try {
     /** the name tags a view shows: text and page px */
     tags: (w) => [...hosts[w].querySelectorAll(".label.seat-tag")].map((e) => { const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2, shown: e.style.display !== "none" && r.width > 0 }; }),
     me: (w) => ctx(w)?.crew.me() ?? null,
-    walker: (w) => { const s = ctx(w)?.crew.walker?.(); return s ? { mode: s.mode, ship: s.ship ?? null } : null; },
+    walker: (w) => { const s = liveOf(dbg[w]?.host.record("sailing")?.api)?.state(); return s ? { mode: s.mode, ship: s.on ?? null } : null; },
     /** what the sailing HUD says in a view: its state, how many buttons it holds (none: it only reads), its hint and keys lines, where its panel is; and the bar of tools' Come aboard (the way in) */
     hud(w) {
       const h = hosts[w].querySelector(".sail-hud");
@@ -458,7 +467,7 @@ try {
     /** the jib's doc trait: { sheet, held, furl } */
     jib: () => objects()[ids.jib]?.traits?.["sailing.jib"] ?? null,
     /** put a view's body somewhere aboard: local to ship `on` */
-    place: (w, on, position, yaw, pitch) => ctx(w).crew.place(on, position, yaw, pitch),
+    place: (w, on, position, yaw, pitch) => placeWalker(dbg[w]?.host.record("sailing")?.api, on, position, yaw, pitch),
     read: (w) => ctx(w)?.sim.read(ids.hull) ?? null,
     commit: (w, id, fields) => ctx(w).sim.commit(id, fields),
     /** an editor's move of the hull: her doc transform turned to `yaw` (the sim starts again from there, at rest) */
