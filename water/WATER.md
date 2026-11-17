@@ -689,8 +689,10 @@ Grafted from B:
   `atmosphere`, exactly as `sea.js` does today.
 - *Since then (weather W5): the trait is the weather package's flat
   `weather: { wind, from, seed, … }`, which offers the same `wind` and a
-  computed `atmosphere`; sailing offers no ambient. The doc shapes below
-  read `weather` for `sailing.weather` (weather/WEATHER.md).*
+  computed `atmosphere`; sailing offers no ambient. Read the doc shapes
+  below with the flat `weather: { wind: speed, from, seed }` in place of
+  `sailing.weather: { wind: { speed, from }, seed }`: the key and the
+  shape both changed (weather/WEATHER.md).*
 
 ### The rule: things come with their doc, weather doesn't
 

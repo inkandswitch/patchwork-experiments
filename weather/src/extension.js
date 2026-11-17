@@ -5,7 +5,7 @@
 //
 // ambient() is a pure function of the trait: the same trait gives the same
 // offer on every peer, and while the trait is unchanged the offer is the same
-// object (cached by the params in force, sailing's weather.js pattern), so
+// object (cached by the params in force), so
 // the stage's per-flush merge does nothing. No trait, no offer.
 //
 // The commands are the editor's (`edit: true`: in no body but Edit) and the

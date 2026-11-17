@@ -81,14 +81,15 @@ try {
     const off = s.map((u) => u.y - u.hWorld);
     alone[which] = { mean: mean(off), sd: sd(off), exact: s.every((u) => u.hOwn === u.hWorld) };
     check(`${which} alone floats on it: her own reading of the water under her is the world's exactly, and her hull sits a steady draft off it`, alone[which].exact && alone[which].sd < 0.35, alone[which]);
-    // her wind is her own weather's offer (the weather package's, from her doc's `weather`): its numbers, the default gustiness
-    // (her mean wind turned back into the world: equal to 1e-9, the turn's rounding)
+    // her wind is her own weather's offer (the weather package's, from her doc's `weather`): the world's ambient carries
+    // her doc's wind, from and seed (the rest is the weather's to fill), and her mean wind turned back into the world is
+    // that ambient (equal to 1e-9, the turn's rounding)
     {
       const air = await P(`weatherOf('${which}')`);
-      const want = { speed: air?.wind, from: air?.from, gustiness: air?.gustiness ?? 0.3 };
-      const got = await P("meanWind('a')");
       const world = await P("worldWind('a')");
-      check(`${which} alone sails in her own weather's wind: her wind and the world's ambient are her doc's weather`, nearWind(got, want) && J(world) === J({ speed: want.speed, from: want.from, seed: air?.seed, gustiness: want.gustiness }), { air, got, world });
+      const want = world && { speed: world.speed, from: world.from, gustiness: world.gustiness };
+      const got = await P("meanWind('a')");
+      check(`${which} alone sails in her own weather's wind: the world's ambient is her doc's weather, and her wind is it`, world?.speed === air?.wind && world?.from === air?.from && world?.seed === air?.seed && nearWind(got, want), { air, got, world });
     }
     check(`${which} alone shows her HUD (her doc is the world)`, (await P("huds('a')")).every(Boolean) && (await P("huds('a')")).length === 1, await P("huds('a')"));
     await shot(`alone-${which}`);
@@ -114,11 +115,11 @@ try {
   // linked in, each boat sails in the harbour's wind, not her own weather's (a linked world brings its things, not its weather)
   {
     const world = await P("worldWind('h')");
-    const want = { speed: 5, from: 250, gustiness: 0.3 };
-    const offer = { speed: 5, from: 250, seed: 7, gustiness: 0.3 }; // the convention's order, as the weather offers it
+    const want = world && { speed: world.speed, from: world.from, gustiness: world.gustiness };
     const winds = { LA: await P("meanWind('h', 'LA')"), LB: await P("meanWind('h', 'LB')") };
     report.numbers.winds = { world, ...winds };
-    check("the harbour's wind is its weather's offer, and each boat's wind turned back into the world is it (not her own 7 or 6.5 from 45)", J(world) === J(offer) && nearWind(winds.LA, want) && nearWind(winds.LB, want), report.numbers.winds);
+    // the harbour's weather as the probe page writes it: 5 m/s from 250°, seed 7
+    check("the harbour's wind is its weather's offer, and each boat's wind turned back into the world is it (not her own 7 or 6.5 from 45)", world?.speed === 5 && world?.from === 250 && world?.seed === 7 && nearWind(winds.LA, want) && nearWind(winds.LB, want), report.numbers.winds);
   }
   check("nobody aboard: neither boat shows her HUD in the harbour", (await P("huds('h')")).length === 2 && (await P("huds('h')")).every((v) => !v), await P("huds('h')"));
 

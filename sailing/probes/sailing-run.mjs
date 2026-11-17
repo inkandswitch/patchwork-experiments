@@ -214,16 +214,22 @@ try {
   // loaded: the world, held paused while loading took the wall's time, runs from here (the same moment every run)
   // (one seed for the waves and the gusts, as the template draws them: the Sea object's and the weather's)
   await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits.weather.seed = ${SEA}; })`);
+  // the seed just written reaches the wind offer on the stage's next flush (ambients are merged per flush): wait for
+  // it while the world is still held, so the run resumes from the same moment as ever
+  const settled = await until(`window.__p.A.host.record("sailing")?.api.ambient("wind")?.value.seed === ${SEA}`);
   report.measured.resumedAt = await P("resume()");
-  // the wind she sails in is the weather's offer (the weather package's extension, from the doc's `weather`): its
-  // numbers as the doc has them, the gustiness the weather's default (0.3) where the doc has none, in both views
+  // the wind she sails in is the weather's offer (the weather package's extension, from the doc's `weather`): the
+  // world's `wind` ambient carries the numbers the doc has (wind, from, seed; the rest is the weather's to fill), and
+  // her wind in both views is that ambient's, read from the stage, not rebuilt here from a copy of the weather's defaults
   {
     const air = (await P("doc()")).traits.weather;
-    const want = { speed: air.wind, from: air.from, gustiness: air.gustiness ?? 0.3 };
+    const offer = await js(`(() => { const a = window.__p.A.host.record("sailing")?.api.ambient("wind"); return a ? { ...a.value, mine: a.mine } : null; })()`);
+    const want = offer && { speed: offer.speed, from: offer.from, gustiness: offer.gustiness };
     const got = {};
     for (const w of ["a", "b"]) got[w] = await js(`(() => { const x = window.__p.ctx('${w}')?.sea.wind; return x ? { speed: x.speed, from: x.from, gustiness: x.gustiness } : null; })()`);
-    report.measured.wind = { doc: air, a: got.a, b: got.b };
-    check("her wind in both views is the weather's offer: the doc's weather (wind, from) with the default gustiness", JSON.stringify(got.a) === JSON.stringify(want) && JSON.stringify(got.b) === JSON.stringify(want), { want, got });
+    report.measured.wind = { doc: air, offer, a: got.a, b: got.b };
+    check("the world's wind is the weather's offer of the doc's weather: its own wind, from and seed, offered by her own doc (mine)", settled && offer?.mine === true && offer.speed === air.wind && offer.from === air.from && offer.seed === air.seed, { air, offer });
+    check("her wind in both views is that offer: speed, from and gustiness", want != null && JSON.stringify(got.a) === JSON.stringify(want) && JSON.stringify(got.b) === JSON.stringify(want), { want, got });
   }
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
