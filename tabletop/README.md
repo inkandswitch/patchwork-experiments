@@ -316,8 +316,9 @@ own places, and Draw looks for a free one for the piece being drawn.
 hand face up, they and everyone else get a notice ("You shuffled “Lost
 Cities: Deck” (44)" here, "Ana shuffled “Lost Cities: Deck” (44)" there),
 told with the scene's `api.tell` (scene STAGE.md "Telling": the stage
-checks the shape, names who did it by their contact, else "Someone", and
-says it): only `shuffled { n, of }` (a count and the container's title),
+checks the shape and says it; the table names a peer as the roster does,
+their contact, else their seat, else "Someone"). They are told on arrival,
+unchecked: the counts name no card in the doc to wait for. Only `shuffled { n, of }` (a count and the container's title),
 `drew { n, noun? }`, `washed { n, of?, noun? }` and `showed { n, noun? }`
 are told, never which card is which (`noun` is the piece's public name,
 "domino", where it isn't "card"). (Sitting down is told by the seats'

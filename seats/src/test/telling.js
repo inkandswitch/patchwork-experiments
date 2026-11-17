@@ -1,15 +1,17 @@
-// Copied whole from scene/src/stage/telling.js (packages stand alone: never import another
-// package's source). The fake stages here tell with it exactly as the stage does.
+// Copied whole from scene/src/stage/telling.js at commit c4db8b57 (packages stand alone: never
+// import another package's source). The fake stages here tell with it exactly as the stage does;
+// `git diff c4db8b57 -- scene/src/stage/telling.js` shows whether scene's has moved on since.
 //
 // Telling the others what the doc bears out (STAGE.md, "Telling").
 //
 // An extension declares what it tells, `messages: { [type]: { valid(data),
 // says(data, who, scene) } }`, and calls `api.tell(type, data)`. The stage
 // says it here as "You" and sends it; every peer's stage, on receipt, drops
-// it unless `valid`, then asks `says` at once and again on every update of
-// that stage until it answers text or TELL_MS of the stage's time has passed
-// since it arrived, tells it once and forgets it. One's own goes the same way
-// (sends are never echoed back, so it is told once, here).
+// it unless its data is an object and `valid`, then asks `says` at once and
+// again on every update of that stage until it answers text or TELL_MS of the
+// stage's time has passed since it arrived: told once, or forgotten when that
+// time runs out, whether or not anything updates. One's own goes the same
+// way (sends are never echoed back, so it is told once, here).
 //
 // `says` is where a package keeps its evidence: it answers null until the
 // doc bears the message out (a die moved lately to the face named), and text
@@ -17,7 +19,8 @@
 // package may spend what bore it out there.
 //
 // The speaker is named by the stage, the same way for every package: their
-// contact's name, else "Someone", asked once per viewer. `says` is not asked
+// contact's name, else "Someone", asked once per viewer; `who.mine` is
+// whether this view told it (another tab of the same viewer is a peer). `says` is not asked
 // until their name has come or NAME_MS has passed, so the first word from
 // someone is told by name.
 //
@@ -49,7 +52,7 @@ export function declared(instance, type) {
  */
 export function createTelling({ now, after, scene, notify, find, alive }) {
   let dead = false;
-  const pending = new Set(); // { ext, instance, spec, data, viewer, mine, at }
+  const pending = new Set(); // { ext, instance, spec, data, viewer, mine, at, cancel }
   const names = new Map(); // viewer → { name: string | null, settled: boolean }
   const cancels = new Set();
 
@@ -83,20 +86,26 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
     return n.settled ? (n.name ?? "Someone") : undefined;
   }
 
+  /** Forget a message: told, dropped or out of time. */
+  function forget(p) {
+    pending.delete(p);
+    cancels.delete(p.cancel);
+    p.cancel();
+  }
   /** Ask one waiting message whether the doc bears it out yet: told and forgotten, or kept. */
   function askOne(p) {
-    if (dead || !alive(p.ext, p.instance) || now() - p.at > TELL_MS) return void pending.delete(p);
+    if (dead || !alive(p.ext, p.instance) || now() - p.at >= TELL_MS) return forget(p);
     const name = p.mine ? "You" : nameOf(p.viewer);
     if (name === undefined) return;
     let text;
     try {
-      text = p.spec.says(p.data, Object.freeze({ viewer: p.viewer, name }), scene());
+      text = p.spec.says(p.data, Object.freeze({ viewer: p.viewer, name, mine: p.mine }), scene());
     } catch (err) {
       console.warn(`[scene] extension “${p.ext}”: says(“${p.type}”) failed`, err);
-      return void pending.delete(p);
+      return forget(p);
     }
     if (typeof text !== "string" || !text) return;
-    pending.delete(p);
+    forget(p);
     notify(text, p.ext);
   }
   /** Ask every waiting message (each update of the stage, and as a name comes). */
@@ -104,9 +113,9 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
     for (const p of [...pending]) askOne(p);
   }
 
-  /** Take a message in: dropped unless declared and valid (false), else asked now and kept until told or out of time. */
+  /** Take a message in: dropped unless declared, an object and valid (false), else asked now and kept until told or out of time. */
   function take(ext, instance, type, data, viewer, mine) {
-    if (dead) return false;
+    if (dead || data === null || typeof data !== "object") return false;
     const spec = declared(instance, type);
     if (typeof spec?.valid !== "function" || typeof spec.says !== "function") return false;
     let ok = false;
@@ -116,7 +125,10 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
       ok = false;
     }
     if (!ok) return false;
-    const p = { ext, instance, type, spec, data, viewer, mine, at: now() };
+    const p = { ext, instance, type, spec, data, viewer, mine, at: now(), cancel: null };
+    // out of time, it is forgotten then, not when something next asks (a quiet doc asks nothing)
+    p.cancel = after(TELL_MS, () => pending.has(p) && forget(p));
+    cancels.add(p.cancel);
     pending.add(p);
     askOne(p);
     return true;

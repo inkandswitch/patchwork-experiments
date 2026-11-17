@@ -383,13 +383,14 @@ describe("telling the others", () => {
     t.xa.commands.find((c) => c.id === "shuffle").run("faceDown");
     expect(t.w.sent).toEqual([{ session: "A", viewer: "alice", type: "shuffled", data: { n: 2, of: "Deck" } }]);
     expect(t.notices("A")).toEqual(["You shuffled the deck (2)"]);
-    // who did it is the stage's to name: their contact's name, else Someone (these viewers have no contact)
-    expect(t.notices("B")).toEqual(["Someone shuffled the deck (2)"]);
+    // who did it is whoever the roster says they are (as the HUD names them)
+    expect(t.notices("B")).toEqual(["<alice> shuffled the deck (2)"]);
     t.w.done();
   });
 
-  it("is told by the peer's contact name", async () => {
+  it("with no roster running, is told by the name the stage gives: the peer's contact's", async () => {
     const t = table();
+    t.w.view("B").collected = { ...t.w.view("B").collected, roster: undefined };
     const ana = t.w.repo.add({ name: "Ana" });
     t.w.hear("B", "drew", { n: 1 }, { session: "s-ana", viewer: ana.url });
     // (the stage looks her contact up: a few turns of promises, no time)
@@ -421,8 +422,11 @@ describe("telling the others", () => {
     t.w.hear("B", "shuffled", { n: 3, of: "Wagers" }, from("alice"));
     t.w.hear("B", "washed", { n: 6, noun: "domino" }, from("alice"));
     t.w.hear("B", "showed", { n: 3 }, from("alice"));
-    expect(t.notices("B")).toEqual(["Someone drew a card", "Someone drew 2 cards", "Someone shuffled the deck (44)", "Someone shuffled “Wagers” (3)", "Someone washed the dominoes (6)", "Someone laid 3 cards face up"]);
+    expect(t.notices("B")).toEqual(["<alice> drew a card", "Someone drew 2 cards", "<alice> shuffled the deck (44)", "<alice> shuffled “Wagers” (3)", "<alice> washed the dominoes (6)", "<alice> laid 3 cards face up"]);
     expect(Object.keys(t.xb.messages)).toEqual(["shuffled", "drew", "washed", "showed"]);
+    // her other tab is a peer: named, never "You"
+    t.w.hear("A", "drew", { n: 1 }, { session: "s-alice-2", viewer: "alice" });
+    expect(t.notices("A").at(-1)).toBe("<alice> drew a card");
     t.w.done();
   });
 
@@ -575,7 +579,7 @@ describe("drawing to your hand", () => {
     expect(t.w.doc.objects.mid.transform.position).toEqual([0.3, 0.002, 0]);
     // told: here as "You", there by seat, as a count only
     expect(t.notices("A")).toEqual(["You drew a card"]);
-    expect(t.notices("B")).toEqual(["Someone drew a card"]);
+    expect(t.notices("B")).toEqual(["<alice> drew a card"]);
     expect(t.w.sent).toEqual([expect.objectContaining({ type: "drew", data: { n: 1 } })]);
     t.w.done();
   });

@@ -42,6 +42,7 @@ export const roster = Object.freeze({
   viewers: (scene) => roster.seats(scene).map((s) => s.viewer).filter(Boolean),
   open: (scene) => roster.seats(scene).filter((s) => !s.viewer).map((s) => s.name),
   nameOf: (scene, v) => roster.seats(scene).find((s) => s.viewer === v)?.name ?? null,
+  who: (v) => (v ? `<${v}>` : "Someone"),
   // the seats whose view is in the nearest frame up each object's parents (the world's last)
   around: (scene, ids) => {
     const all = Object.entries(scene?.traits?.[SEATS] ?? {});
