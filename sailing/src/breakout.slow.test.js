@@ -1,10 +1,10 @@
 // Leaving the anchor in waves (DESIGN.md, "Leaving the anchor": "Open"),
 // replayed in node: sailing-run.mjs's own sequence on the stock sloop, the
 // seven seas of the Open table, each on the timeline the probe recorded in
-// Chrome (its measured.anchoring, 2026-11-16, lane/n6): laid at anchor at
+// Chrome (its measured.anchoring, 2026-11-17, lane/n6, step 5's final build): laid at anchor at
 // world time 7.62 s where the doc had her, the main eased at 20.42 s,
 // hoisted at the mast from 21.70 s for 0.35 s, raised at the helm from
-// 24.45 s, the windlass held from 29.30 s, the HUD read 1.25 s after the
+// 24.45 s, the windlass held from 29.35 s, the HUD read 1.25 s after the
 // anchor is up. test/breakout.js plays it with the stations' own held verbs
 // and asks hud.js's own model for the advice, on B's read as the probe's
 // gate does.
@@ -29,20 +29,20 @@ import { createOcean } from "./test/ocean.js";
 // calls, which otherwise queue behind a whole block of them and time out.
 beforeEach(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
-const TIMELINE = { lay: 7.616667, eased: 20.416667, hoist: 21.7, hoistFor: 0.35, raise: 24.45, weigh: 29.3, leaveAfter: 1.25 };
+const TIMELINE = { lay: 7.616667, eased: 20.416667, hoist: 21.7, hoistFor: 0.35, raise: 24.45, weigh: 29.35, leaveAfter: 1.25 };
 const BACK_THE_JIB = /back the jib \(B at the helm/;
 
-// sea → where the doc had her when she was laid at anchor (sailing-run on lane/n6 at 62756a05); then, today:
+// sea → where the doc had her when she was laid at anchor (sailing-run on lane/n6, step 5's final build; first measured at 62756a05, when the first step read the template's sea and wind); then, today:
 // - up, leave: B's HUD says to back the jib at the frame the anchor comes up / when the probe reads it
 // - pulled: while weighing, her rode is taut at some frame (the windlass pulls her, not only takes in slack)
 const SEAS = {
-  1: { at: [-14.074, -0.34, -14.321], up: true, leave: true, pulled: false },
-  2: { at: [-12.335, -0.554, -13.02], up: true, leave: false, pulled: true },
-  3: { at: [-12.692, 0.31, -15.206], up: true, leave: true, pulled: false },
-  4: { at: [-11.798, -0.334, -13.554], up: true, leave: true, pulled: false },
-  5: { at: [-14.129, -0.674, -16.68], up: false, leave: false, pulled: true },
-  383967344: { at: [-14.198, -0.291, -15.701], up: true, leave: true, pulled: true },
-  696349617: { at: [-13.18, -0.225, -13.502], up: true, leave: true, pulled: true },
+  1: { at: [-14.059, -0.34, -14.324], up: true, leave: true, pulled: false },
+  2: { at: [-12.338, -0.553, -13.014], up: true, leave: false, pulled: true },
+  3: { at: [-12.682, 0.309, -15.156], up: true, leave: true, pulled: false },
+  4: { at: [-11.791, -0.334, -13.559], up: true, leave: true, pulled: false },
+  5: { at: [-14.107, -0.671, -16.692], up: false, leave: false, pulled: true },
+  383967344: { at: [-14.173, -0.289, -15.715], up: true, leave: true, pulled: true },
+  696349617: { at: [-13.18, -0.225, -13.502], up: true, leave: false, pulled: true },
 };
 
 /** The least chain her rode has to spare from `from` until the windlass is held, and whether it is taut at any frame while weighing. */
@@ -59,7 +59,7 @@ const rodeWatch = (from) => {
 
 describe("OPEN: leaving the anchor in waves on sailing-run's timeline, main up (DESIGN.md, \"Leaving the anchor\": Open)", () => {
   // The plan's table: at breakout the HUD advises backing the jib on every sea. Today it does on six of seven at
-  // the frame the anchor comes up, and on five when the probe reads it 1.25 s later.
+  // the frame the anchor comes up, and on four when the probe reads it 1.25 s later, as in Chrome.
   // Before the windlass turns, laid at anchor she is never on her rode (the target: lying to it, taut).
   for (const [seaKey, want] of Object.entries(SEAS)) {
     const sea = Number(seaKey);

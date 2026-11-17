@@ -496,6 +496,7 @@ export function createSim(api, ctx) {
         // move above starts her again at rest where she landed.
         s.state = { ...s.state, t, acc: 0 };
         s.good = s.state;
+        s.stepped = null;
         continue;
       }
       // the water she is in, asked once a step at her body's origin (her waterline), leaving out what she carries.
@@ -507,6 +508,7 @@ export function createSim(api, ctx) {
       if (!env.water) {
         s.state = { ...s.state, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0 };
         s.good = s.state;
+        s.stepped = null;
         // put down out of the water, she is where the doc has her: nothing of ours to hold
         if (moved) s.drawn = null;
         continue;
@@ -521,7 +523,8 @@ export function createSim(api, ctx) {
       s.state = finiteState(next) ? next : { ...s.good, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0, boom: undefined };
       s.good = s.state;
       s.read = published(s.model.read(s.state, controls, env), s.state);
-      s.drawn = { p, controls, from };
+      s.drawn = { p, controls };
+      s.stepped = { spec: s.model.spec, key, controls, from, state: s.state };
     }
     for (const id of ships.keys()) if (!ids.includes(id)) ships.delete(id);
   }
@@ -640,19 +643,17 @@ export function createSim(api, ctx) {
       if (!m) modelMemo.set(contract, (m = Object.fromEntries(contract.sails.map((x) => [x.id, trimModelOf(x)]))));
       return m;
     },
-    /** The spec her physics steps with here (createShip's own); null on a view that isn't computing, or before her first step. */
-    specOf: (id) => ships.get(id)?.model?.spec ?? null,
     /**
-     * Her last step on this view, as it was taken: the spec's key, the
-     * controls it stepped with, the state it stepped from and the state it
-     * reached (the physics' own, unrounded); null on a view that isn't
-     * computing, or before her first step. For a trace
-     * (probes/sailing-probe.html ?trace): what two runs are compared on.
+     * Her latest step of world time on this view, as it was taken: `{ spec,
+     * key, controls, from, state }`, the spec her physics stepped with
+     * (createShip's own) and its key, the controls, the state it went on
+     * from and the state it reached (the physics' own, unrounded). null on a
+     * view that isn't computing, before her first step, and when her latest
+     * step didn't step her (held by a person, or no water under her). For
+     * tests and the probe's trace (probes/sailing-probe.html ?trace): what
+     * two runs are compared on.
      */
-    stepped(id) {
-      const s = ships.get(id);
-      return s?.drawn ? { key: s.key, controls: s.drawn.controls, from: s.drawn.from, state: s.state } : null;
-    },
+    stepped: (id) => ships.get(id)?.stepped ?? null,
     stationsOf(id) {
       const { helm, sail, anchor, mainsheet, jib, ladder, winches } = parts(api.scene(), id);
       return { helm, sail, anchor, mainsheet, jib, ladder, winches };

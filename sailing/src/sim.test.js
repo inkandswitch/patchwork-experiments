@@ -170,20 +170,20 @@ describe("createSim on a stage", () => {
     expect(a.sim.value(ids.wheel).angle).toBe(0);
   });
 
-  it("specOf is the spec her physics steps with on the computing view (her GLB's dimensions); null before her first step, and on a follower", async () => {
+  it("stepped's spec is the spec her physics steps with on the computing view (her GLB's dimensions); null before her first step, and on a follower", async () => {
     const { doc, ids, content } = await sloop();
     w = fakeWorld(doc, { content });
     const a = play(w.join("A"));
     const b = play(w.join("B"));
-    expect([a.sim.specOf(ids.hull), b.sim.specOf(ids.hull)]).toEqual([null, null]);
+    expect([a.sim.stepped(ids.hull), b.sim.stepped(ids.hull)]).toEqual([null, null]);
     w.tick(1 / 60, 2);
     expect([a.sim.simulating(), b.sim.simulating()]).toEqual([true, false]);
-    const spec = a.sim.specOf(ids.hull);
+    const spec = a.sim.stepped(ids.hull).spec;
     for (const k of ["length", "beam", "draft", "freeboard"]) expect(spec[k]).toBeCloseTo(DIMS[k]);
-    expect(b.sim.specOf(ids.hull)).toBeNull();
+    expect(b.sim.stepped(ids.hull)).toBeNull();
     // the same spec, frame after frame, while nothing about her changes
     w.tick(1 / 60, 2);
-    expect(a.sim.specOf(ids.hull)).toBe(spec);
+    expect(a.sim.stepped(ids.hull).spec).toBe(spec);
   });
 
   it("stepped is her last step as taken on the computing view (its spec's key, its controls, the state it went on from, the state unrounded); null before her first step, and on a follower", async () => {
@@ -200,7 +200,7 @@ describe("createSim on a stage", () => {
     for (const [t, st] of seen) {
       // her state at the grid point just stepped, unrounded: what read() publishes rounds it
       expect(st.state.t).toBeCloseTo(t, 9);
-      expect(st.key).toBe(specKey(a.sim.specOf(ids.hull)));
+      expect(st.key).toBe(specKey(st.spec));
       expect(Object.keys(st.controls)).toEqual(expect.arrayContaining(["rudder", "sail", "sheet", "anchor"]));
     }
     // each step went on from the one before it, the very state; the first from her start, cold from the doc at t 0
@@ -477,6 +477,8 @@ describe("createSim on a stage", () => {
     expect(bApi.pose.hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(true);
     w.tick(1 / 60, 3 * 60);
     expect(w.holds.get(ids.hull).session).toBe("B");
+    // not stepped: no step to show (not her last one, with a state it didn't reach)
+    expect(a.sim.stepped(ids.hull)).toBeNull();
     // Escape: put back, the doc unchanged (no move for movedByEditor to see)
     bApi.pose.release(ids.hull);
     w.tick(1 / 60, 1);
@@ -485,6 +487,9 @@ describe("createSim on a stage", () => {
     // at most the frame before the refusal was heard and the frame after the release: a few centimetres
     expect(Math.hypot(after[0] - before[0], after[2] - before[2])).toBeLessThan(3 * speed / 60 + 0.01);
     expect(a.sim.read(ids.hull).speed).toBeGreaterThan(speed * 0.7);
+    // stepped again (once the refusal is past): a step to show, going on from where she waited
+    w.tick(1 / 60, 2);
+    expect(a.sim.stepped(ids.hull)?.from.position).toEqual(expect.any(Array));
   });
 
   it("a hull at the helm doesn't yield: nobody takes it from her helmsman's ship", async () => {
@@ -556,9 +561,9 @@ describe("one body per hull per step (W25): env.water is the water package's at(
     const asked = [];
     const collect = api.collect;
     api.collect = (name) => (name === "water" ? [{ id: "water", value: { at: (p, o) => (asked.push({ p: [...p], not: o?.not ?? null }), answer(p, o?.not ?? null, ids.hull)) } }] : collect(name));
-    play(api);
+    const v = play(api);
     w.tick(1 / 60, 8 * 60);
-    const out = { asked, held: heldAt(w, ids.hull) ?? null, hull: ids.hull, doc: structuredClone(doc.objects[ids.hull].transform) };
+    const out = { asked, held: heldAt(w, ids.hull) ?? null, hull: ids.hull, doc: structuredClone(doc.objects[ids.hull].transform), stepped: v.sim.stepped(ids.hull) };
     w.done();
     w = null;
     return out;
@@ -574,13 +579,30 @@ describe("one body per hull per step (W25): env.water is the water package's at(
       for (const a of hers) expect(a.p.every(Number.isFinite)).toBe(true);
       const got = answer([0, 0, 0], r.hull, r.hull);
       if (!got) {
-        // no water: she isn't stepped, and rests where the doc has her
+        // no water: she isn't stepped, and rests where the doc has her; no step to show
         expect(r.held).toBeNull();
+        expect(r.stepped).toBeNull();
       } else {
         // she floats on the water she was given: her draft off its level is her draft in open water
         expect(r.held.position[1] - got.level).toBeCloseTo(base.held.position[1], 1);
+        expect(r.stepped).not.toBeNull();
       }
     });
+
+  it("stepped, then the water gone from under her: no step to show (not her last one, with a state it didn't reach)", async () => {
+    let wet = true;
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const api = w.join("A");
+    const collect = api.collect;
+    api.collect = (name) => (name === "water" ? [{ id: "water", value: { at: () => (wet ? OPEN : null) } }] : collect(name));
+    const v = play(api);
+    w.tick(1 / 60, 30);
+    expect(v.sim.stepped(ids.hull)).not.toBeNull();
+    wet = false;
+    w.tick(1 / 60, 2);
+    expect(v.sim.stepped(ids.hull)).toBeNull();
+  });
 
   it("astride a box's edge, her origin inside (W32): on the box's total reader she floats exactly as on open water; on a reader with Decision 63's floor outside the box she would heel", async () => {
     // the box's edge runs along her course, a metre to starboard of her centreline: her starboard bilge is over it

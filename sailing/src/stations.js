@@ -163,31 +163,31 @@ export function walkTo(kind, stations = {}, near = {}) {
 /** Whether the sheet can be trimmed at the mast: only on a ship with neither a helm nor a mainsheet to trim it at. */
 export const sheetAtMast = (stations = {}) => !stations.helm && !stations.mainsheet;
 
-/** A held station's step of world time (s): the world's grid (scene's STEP_S), the one her physics steps on. */
-export const HELD_STEP = 1 / 60;
+/** The world's grid (s): processes are stepped at every multiple of it. Scene's STEP_S, copied (a package stands alone). */
+export const STEP_S = 1 / 60;
+/** The index of the last grid point at or before world time t. Scene's gridIndex, copied. */
+export const gridIndex = (t) => Math.floor(t / STEP_S + 1e-9);
 
 /**
- * A held station's clock: each call takes a frame's dt and gives back the
- * whole steps of world time it completes, n·`step` (the same double for the
- * same n), carrying the rest to the next frame. A held key moves its value
- * by the steps it was held, not by the frames' dt: a frame's dt is the
- * difference of two readings of the page's clock, whose last bits depend on
- * how far that clock had run (four values for one 60 Hz frame), so the same
- * key held over the same world steps would leave values that differ in their
- * last bits from run to run, and the physics grows them (DESIGN.md,
- * "Determinism"). Exact on the grid: from nothing carried, a dt within 1e-9
- * s of n steps gives n steps and carries nothing.
- * @param {number} [step]
- * @returns {(dt: number) => number}
+ * A held station's clock: world time in whole steps of the world's grid.
+ * Made with `clock` (this view's world time, `api.clock.t()`) where the
+ * hold begins; each call gives back the grid steps t has crossed since the
+ * last, n·STEP_S (the same double for the same n). A held key moves its
+ * value by the world time it was held, never by the frames' dt: the dt's
+ * last bits depend on how far the page's clock had run, and so does a
+ * view's t, but not which grid points t has passed (DESIGN.md,
+ * "Determinism"). So a hold moves only while the world runs, and on a
+ * follower with the follower's t. A view's t never decreases (scene,
+ * clock.js), so neither does a hold.
+ * @param {() => number} clock
+ * @returns {() => number}
  */
-export function wholeSteps(step = HELD_STEP) {
-  let carried = 0;
-  return (dt) => {
-    carried += Math.max(0, Number(dt) || 0);
-    const n = Math.floor(carried / step + 1e-6);
-    carried -= n * step;
-    if (carried < 1e-9) carried = 0;
-    return n * step;
+export function worldSteps(clock) {
+  let k = gridIndex(clock());
+  return () => {
+    const n = gridIndex(clock()) - k;
+    k += n;
+    return n * STEP_S;
   };
 }
 
@@ -203,17 +203,18 @@ export const wheelStep = (angle, dir, dt, rate = WHEEL_RATE) => (dir ? approach(
 
 /**
  * A held verb that moves one number toward a goal while the key is down,
- * in whole steps of world time (wholeSteps). Pure but for what it's handed: `input` for each live value, `commit` once
+ * by the world time it's held (worldSteps on `clock`, read at each update:
+ * the stage's dt is not used). Pure but for what it's handed: `input` for each live value, `commit` once
  * at the end (let go or cancelled: wherever it got to), `alive()` false when
  * the station's gone or the claim was lost (then it stops, writing nothing),
  * `done` when it's over either way.
- * @param {{ value: number, goal: number, rate: number, input(v), commit(v), alive?(): boolean, done?() }} o
- * @returns {{ update(dt), end(), cancel(), readonly value: number, readonly open: boolean }}
+ * @param {{ value: number, goal: number, rate: number, clock(): number, input(v), commit(v), alive?(): boolean, done?() }} o
+ * @returns {{ update(), end(), cancel(), readonly value: number, readonly open: boolean }}
  */
-export function heldTrim({ value, goal, rate, input, commit, alive = () => true, done = () => {} }) {
+export function heldTrim({ value, goal, rate, clock, input, commit, alive = () => true, done = () => {} }) {
   let v = value;
   let open = true;
-  const steps = wholeSteps();
+  const steps = worldSteps(clock);
   const close = (write) => {
     if (!open) return;
     open = false;
@@ -221,10 +222,10 @@ export function heldTrim({ value, goal, rate, input, commit, alive = () => true,
     done();
   };
   return {
-    update(dt) {
+    update() {
       if (!open) return;
       if (!alive()) return close(false);
-      v = approach(v, goal, rate, steps(dt));
+      v = approach(v, goal, rate, steps());
       input(v);
     },
     end: () => close(alive()),
@@ -240,17 +241,17 @@ export function heldTrim({ value, goal, rate, input, commit, alive = () => true,
 
 /**
  * Winding the anchor up while the key is down: the chain comes in at
- * WINCH_RATE, in whole steps of world time (wholeSteps), and an anchor down
- * short still takes a moment to break out.
+ * WINCH_RATE for the world time it's held (worldSteps on `clock`), and an
+ * anchor down short still takes a moment to break out.
  * Up, it commits { down: false, rode: 0 } at once; let go before that, the
  * rode where it got to.
- * @param {{ rode: number, input(fields), commit(fields), alive?(): boolean, done?() }} o
+ * @param {{ rode: number, clock(): number, input(fields), commit(fields), alive?(): boolean, done?() }} o
  */
-export function heldWeigh({ rode, input, commit, alive = () => true, done = () => {} }) {
+export function heldWeigh({ rode, clock, input, commit, alive = () => true, done = () => {} }) {
   const start = Math.max(0, Number(rode) || 0);
   let left = Math.max(start, BREAKOUT); // metres of winding still to do
   let open = true;
-  const steps = wholeSteps();
+  const steps = worldSteps(clock);
   const out = () => Math.max(0, Math.min(start, left));
   const close = (fields) => {
     if (!open) return;
@@ -259,10 +260,10 @@ export function heldWeigh({ rode, input, commit, alive = () => true, done = () =
     done();
   };
   return {
-    update(dt) {
+    update() {
       if (!open) return;
       if (!alive()) return close(null);
-      left -= WINCH_RATE * steps(dt);
+      left -= WINCH_RATE * steps();
       if (left <= 0) return close({ down: false, rode: 0 });
       input({ rode: out() });
     },
@@ -341,6 +342,7 @@ export function stationCommands(api, ctx) {
       value: Number.isFinite(v) ? v : fallback,
       goal,
       rate,
+      clock: () => api.clock.t(),
       input: (x) => ctx.sim.input(id, { [field]: x }),
       commit: (x) => ctx.sim.commit(id, { [field]: x }),
       alive: () => !c.lost() && exists(id),
@@ -391,9 +393,8 @@ export function stationCommands(api, ctx) {
   function sailKeys(sailId, { sheet, halyard }) {
     const open = new Map(); // "sheet" | "raised" → { code, trim }
     // each frame's trims, without copying the map (deleting the entry being visited is safe in forEach)
-    let step = 0;
     const tickOne = (h, slot) => {
-      h.trim.update(step);
+      h.trim.update();
       if (!h.trim.open) open.delete(slot);
     };
     const start = (slot, code, make) => {
@@ -426,8 +427,8 @@ export function stationCommands(api, ctx) {
         }
         return false;
       },
-      tick(dt) {
-        step = dt;
+      /** each frame: every held key moves by the world time since the last (worldSteps) */
+      tick() {
         open.forEach(tickOne);
       },
       end() {
@@ -477,9 +478,9 @@ export function stationCommands(api, ctx) {
         return true;
       },
       keyup: (ev) => keys.keyup(ev),
-      tick(dt) {
+      tick() {
         if (lost || !exists(stationId) || (sailId && !exists(sailId))) return leave?.();
-        keys.tick(dt);
+        keys.tick();
       },
       left: close,
       hint: () => [keys.hint(), "F leave", sailId ? `sail ${pct(raised(sailId))}%` : ""].filter(Boolean).join(" · "),
@@ -562,9 +563,8 @@ export function stationCommands(api, ctx) {
    */
   function jibKeys(jibId, { winch = null, from = winch, wheel = () => 0 } = {}) {
     const open = new Map(); // "sheet" | "furl" → { code, trim, goal? } (goal: runs on its own until it's there)
-    let step = 0;
     const tickOne = (h, slot) => {
-      h.trim.update(step);
+      h.trim.update();
       if (h.goal !== undefined && h.trim.value === h.goal) h.trim.end();
       if (!h.trim.open) open.delete(slot);
     };
@@ -630,8 +630,8 @@ export function stationCommands(api, ctx) {
         }
         return false;
       },
-      tick(dt) {
-        step = dt;
+      /** each frame: every held key moves by the world time since the last (worldSteps) */
+      tick() {
         open.forEach(tickOne);
       },
       end() {
@@ -702,9 +702,9 @@ export function stationCommands(api, ctx) {
         return true;
       },
       keyup: (ev) => keys.keyup(ev),
-      tick(dt) {
+      tick() {
         if (lost || !exists(id) || (jibId && !exists(jibId))) return leave?.();
-        keys.tick(dt);
+        keys.tick();
       },
       left: close,
       hint: () => {
@@ -776,7 +776,7 @@ export function stationCommands(api, ctx) {
     const sailId = st.sail ?? null;
     const keys = sailKeys(sailId, { sheet: true, halyard: true });
     const jib = jibKeys(st.jib ?? null, { from: id, wheel: () => angle });
-    const steps = wholeSteps(); // the wheel turns in whole steps of world time, as the trims do
+    const steps = worldSteps(() => api.clock.t()); // the wheel turns by world time, as the trims do
     let closed = false;
     const steering = (code) => code === "KeyA" || code === "ArrowLeft" || code === "KeyD" || code === "ArrowRight";
     const showWheel = () => {
@@ -816,12 +816,12 @@ export function stationCommands(api, ctx) {
         if (![...held].some(steering) && !lost && exists(id)) ctx.sim.commit(id, { angle });
         return true;
       },
-      tick(dt) {
+      tick() {
         if (lost || !exists(id)) return leave?.();
-        keys.tick(dt);
-        jib.tick(dt);
+        keys.tick();
+        jib.tick();
         const dir = (held.has("KeyD") || held.has("ArrowRight") ? 1 : 0) - (held.has("KeyA") || held.has("ArrowLeft") ? 1 : 0);
-        const next = wheelStep(angle, dir, steps(dt));
+        const next = wheelStep(angle, dir, steps());
         if (next !== angle) {
           angle = next;
           ctx.sim.input(id, { angle });
@@ -972,6 +972,7 @@ export function stationCommands(api, ctx) {
       if (!c) return undefined;
       return heldWeigh({
         rode: value(target).rode,
+        clock: () => api.clock.t(),
         input: (f) => ctx.sim.input(target, f),
         commit: (f) => ctx.sim.commit(target, f),
         alive: () => !c.lost() && exists(target),
