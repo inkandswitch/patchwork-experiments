@@ -495,7 +495,7 @@ function create(api) {
 
   // ── the seat's view: the seat body (body.js) ──
   // Sitting enters it (the stage pushes it over the body you're in: walking
-  // her deck, or Look: from Edit the stage turns to Look first); standing up, watching or moving pops it, and
+  // her deck, or Look); standing up, watching or moving pops it, and
   // whatever is under it carries on (walking resumes from the eye).
   let sitting = null; // the seat this view sits in, as a body: { of, seat }
   // the seat this view arrived seated in (the doc seated it: view.start's seat
@@ -579,7 +579,7 @@ function create(api) {
   let walkedUp = null; // { ref, at }: the seat this view sat in from walking, and its claim's time; cleared by any other sit
   let confirming = null; // { ref, until }: an away seat's first F
   const drawnIn = (snap) => (id) => api.worldOf(id) ?? (snap?.objects?.[id] ? snap.world(id) : null);
-  /** Walking: in a body over the stage's Look or Edit (depth 0) that isn't the seat. */
+  /** Walking: in a body over the stage's Look (depth 0) that isn't the seat. */
   const walking = () => {
     const b = api.view.get()?.body;
     return (b?.depth ?? 0) > 0 && b.id !== body.id;

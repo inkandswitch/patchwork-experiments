@@ -122,6 +122,9 @@ try {
     stack: (w) => dbgOf(w).router.bodies().map((b) => b.id),
     tool: (w) => dbgOf(w).local.get().held?.command ?? null,
     pointer: (w) => dbgOf(w).local.get().pointer ?? null,
+    /** does view w hold the editor, and the Edit toggle beside its chip (a hand, not a body) */
+    editing: (w) => (dbgOf(w).local.get().hands ?? []).some((h) => h.kind === "edit"),
+    editToggle(w) { const e = hostOf(w).querySelector(".body-edit"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     /** the body chip's rect, and its menu's item starting `label` */
     chip(w) { const e = hostOf(w).querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height, text: e.textContent.trim() }; },
     chipItem(w, label) { const e = [...hostOf(w).querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; },

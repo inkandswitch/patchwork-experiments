@@ -45,7 +45,7 @@
 //   (under other ids where another table's seats have these; each hand
 //   follows its seat's id). A game with seats (every built-in one) starts
 //   people in the seat body (view.start); one without in Look (the stage's
-//   orbit camera, no body named), never in Edit.
+//   orbit camera, no body named), never holding the editor.
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 import { jumble } from "./table/wash.js";

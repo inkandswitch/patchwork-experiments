@@ -205,17 +205,6 @@ async function settled(w, ms = 4000) {
   }
 }
 const sorted = async (w) => [...(await P(`running('${w}')`))].sort();
-/** Choose body `label` on view w's body chip ("Look", "Edit", "Walk"…): true if the chip offered it. */
-async function chooseBody(w, label) {
-  const chip = await P(`chip('${w}')`);
-  if (!chip) return false;
-  await click(chip);
-  await until(`!!window.__p.chipItem('${w}', '${label}')`, 3000);
-  const item = await P(`chipItem('${w}', '${label}')`);
-  if (item) await click(item);
-  await rest(300);
-  return !!item;
-}
 /** Leave the top body of view w by its body chip's "Leave (…)": true if the chip offered it. */
 async function leaveBody(w = "a") {
   const chip = await P(`chip('${w}')`);
@@ -240,7 +229,7 @@ try {
   const startBtn = `.add-template[data-template="arena-level"]`;
   const haveStart = (await loads(`!!window.__p.hostA.querySelector('${startBtn}')`)) && (await steady(startBtn));
   check("an empty scene's start screen offers the Arena level template, and Blank", haveStart && (await shown(startBtn)) && (await shown('.add-template[data-template=""]')), await P("text('.add-template')"));
-  check("an empty scene: A in Edit, where a scene made new starts people (view.start names Edit)", (await P("body('a')")) === "edit" && (await P("doc()")).view?.start?.body === "edit", { body: await P("body('a')"), view: (await P("doc()")).view });
+  check("an empty scene: A in Look holding the editor, where a scene made new starts people (view.start says edit)", (await P("body('a')")) === "look" && (await P("editing('a')")) && (await P("doc()")).view?.start?.edit === true, { body: await P("body('a')"), view: (await P("doc()")).view });
   await shot("start");
   await click(await P(`rect('${startBtn}')`));
   await loads("window.__p.objects().length >= 29");
@@ -275,17 +264,19 @@ try {
   await shot("game");
 
   // ─── the designer edits, in the same running level ───────────────────────
-  // A leaves walking (Look: nothing of the editor), chooses Edit on the body
-  // chip (HISTORY.md, TOOLS Decisions 6), opens the parts bin from the toolbar, and B
-  // goes on walking.
+  // A leaves walking (Look: nothing of the editor), picks up the editor (Edit,
+  // beside the body chip: scene HISTORY.md, Kernel step 1), opens the parts bin
+  // from the toolbar, and B goes on walking.
   const leftToLook = await leaveBody("a");
   await settled("a");
   const lookBar = await bar();
   canvasAt.look = await canvasRect();
   const playInLook = await P(`rect('${PLAY}')`);
   check("A leaves walking: Look, where no editing aids are drawn, and the bar holds only the world's commands (Play), no editor command", leftToLook && (await P("body('a')")) === "look" && !(await P("layers('a')")).some((l) => /scene\\.(grid|axes)/.test(l)) && lookBar.shown && lookBar.tools.length === 0 && J(lookBar.world) === J(["play"]) && (await P(`text('${PLAY}')`))[0] === "Play", { body: await P("body('a')"), layers: await P("layers('a')"), bar: lookBar });
-  const toEdit = await chooseBody("a", "Edit");
-  check("A chooses Edit on the body chip: the axes are drawn (Edit's aids)", toEdit && (await P("body('a')")) === "edit" && (await until("window.__p.layers('a').some((l) => /scene\\.(grid|axes)/.test(l))", 3000)), { body: await P("body('a')"), layers: await P("layers('a')") });
+  const toggle = await P("editToggle('a')");
+  if (toggle) await click(toggle);
+  const toEdit = !!toggle && (await until("window.__p.editing('a')", 3000));
+  check("A picks up the editor (Edit, beside the body chip): the axes are drawn (the editor's aids)", toEdit && (await P("body('a')")) === "look" && (await until("window.__p.layers('a').some((l) => /scene\\.(grid|axes)/.test(l))", 3000)), { body: await P("body('a')"), layers: await P("layers('a')") });
   const editBar = await bar();
   check("in Edit the bar holds the editor's tools, and Play at its right end, where it was in Look", editBar.tools.includes("parts") && !editBar.tools.includes("play") && J(editBar.world) === J(["play"]) && !!playInLook && Math.abs((await P(`rect('${PLAY}')`)).x - playInLook.x) < 1, { ...editBar, playInLook, playInEdit: await P(`rect('${PLAY}')`) });
   await click(await P(`rect('.toolbar [data-command="parts"]')`));
@@ -307,6 +298,10 @@ try {
   await js("window.__p.A.viewport.frame(window.__p.A.viewport.sceneBox())");
   await rest(400);
   await shot("level");
+  // the editor put down to play (holding it, a walk looks by drag: it wants the pointer free)
+  const untoggle = await P("editToggle('a')");
+  if (untoggle) await click(untoggle);
+  check("A puts the editor down to play", !!untoggle && (await until("!window.__p.editing('a')", 3000)), await P("editing('a')"));
 
   // ─── play ────────────────────────────────────────────────────────────────
   // spawn deterministically at Spawn 1 (-15, 0, 15), facing the middle
@@ -319,7 +314,7 @@ try {
   check("holding the gun the bar is still up and holds nothing (Play and Stand targets up don't apply), and the HUD no button", holdBar.shown && holdBar.tools.length === 0 && holdBar.world.length === 0 && (await hudButtons()) === 0, holdBar);
   const lockState = { locked: await P("locked()"), element: await P("lockElement()"), body: await P("body()"), stack: await P("stack()"), tool: await P("tool()"), held: await P("held()"), pointer: await P("pointer()"), chip: await P("chip()"), hud: await P("text('.arena-hud')") };
   report.steps.lock = lockState;
-  check("Play walks in from Edit (the walk body over Look: nothing stands on Edit) with the gun in hand (the held tool); the walk body holds the camera; the chip says Walk", lockState.body === "walk" && JSON.stringify(lockState.stack) === '["look","walk"]' && lockState.tool === "gun" && lockState.held && /Walk/.test(lockState.chip?.text ?? ""), lockState);
+  check("Play walks in from Look (the walk body over Look) with the gun in hand (the held tool); the walk body holds the camera; the chip says Walk", lockState.body === "walk" && JSON.stringify(lockState.stack) === '["look","walk"]' && lockState.tool === "gun" && lockState.held && /Walk/.test(lockState.chip?.text ?? ""), lockState);
   if (!lockState.locked) turnMode = "drag";
   report.steps.turnMode = turnMode;
   const e0 = await eye();
@@ -443,7 +438,7 @@ try {
   // the body chip's Leave stops walking and gives the camera back
   const left = await leaveBody("a");
   const after = { left, body: await P("body()"), stack: await P("stack()"), held: await P("held()"), locked: await P("locked()"), play: await P(`text('${PLAY}')`) };
-  check("the body chip's Leave stops walking: Look (never back to Edit), camera back, Play on the bar again", left && after.body === "look" && JSON.stringify(after.stack) === '["look"]' && !after.held && !after.locked && after.play[0] === "Play", after);
+  check("the body chip's Leave stops walking: Look, camera back, Play on the bar again", left && after.body === "look" && JSON.stringify(after.stack) === '["look"]' && !after.held && !after.locked && after.play[0] === "Play", after);
   await rest(400);
   check("B's avatar goes when A stops walking", (await P("drawn('b')")).avatars.length === 0, await P("drawn('b')"));
   // Enter plays too (the play command's key, through the key map); Esc puts the gun down, Leave stops walking
@@ -530,7 +525,7 @@ try {
   await loads("window.__ready === true", 20_000);
   await loads("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 20_000);
   check("hybrid: the arena isn't running before any arena trait", !(await P("running('a')")).includes("arena"), await P("running('a')"));
-  check("hybrid: a scene made new starts A in Edit, where the toolbar is", (await P("body('a')")) === "edit" && (await loads("!!window.__p.hostA.querySelector('.toolbar [data-command=\"inspector\"]')", 5000)), { body: await P("body('a')"), toolbar: await js(`[...window.__p.hostA.querySelectorAll('.toolbar [data-command]')].map((e) => e.dataset.command)`), start: (await P("doc()")).view?.start });
+  check("hybrid: a scene made new starts A holding the editor, where the toolbar is", (await P("editing('a')")) && (await loads("!!window.__p.hostA.querySelector('.toolbar [data-command=\"inspector\"]')", 5000)), { body: await P("body('a')"), toolbar: await js(`[...window.__p.hostA.querySelectorAll('.toolbar [data-command]')].map((e) => e.dataset.command)`), start: (await P("doc()")).view?.start });
   // nothing selected: the inspector (opened from the toolbar) on the Scene,
   // whose "Add behaviour…" offers what the arena describes for a scene (the level)
   await click(await P(`rect('.toolbar [data-command="inspector"]')`));
