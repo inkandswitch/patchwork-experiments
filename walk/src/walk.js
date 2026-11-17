@@ -1,8 +1,6 @@
 // Walking's pure helpers and the body's numbers: which way the keys ask to
 // go, how the mouse turns the head, how the drawn eye eases across a STEP.
 // The walking itself is walker.js over each support's navmesh (navmesh.js).
-// `step` below is the ray walker, until walk's body moves onto the walker
-// (DESIGN.md, "Standing on supports", step 4).
 
 /**
  * The body: one set of numbers for a person on any support (DESIGN.md, "One
@@ -60,112 +58,6 @@ export function wishVelocity(input, yaw, body = BODY) {
   const sin = Math.sin(yaw);
   const cos = Math.cos(yaw);
   return [(-sin * f + cos * s) * speed, (-cos * f - sin * s) * speed];
-}
-
-/** Move `v` toward `target` by at most `max` (2D). */
-function approach(v, target, max) {
-  const dx = target[0] - v[0];
-  const dz = target[1] - v[1];
-  const d = len2(dx, dz);
-  if (d <= max || d === 0) return [target[0], target[1]];
-  return [v[0] + (dx / d) * max, v[1] + (dz / d) * max];
-}
-
-/**
- * One step.
- * @param {{ feet: number[], vel: number[], onGround: boolean }} state  feet: [x, y, z]; vel: [x, y, z]
- * @param {{ forward: number, strafe: number, run?: boolean, jump?: boolean }} input
- * @param {number} yaw
- * @param {number} dt  seconds (the caller clamps it)
- * @param {{ down(from: number[], max: number): number | null,
- *           ahead(from: number[], dir: number[], max: number): { distance: number, normal: number[] | null } | null }} world
- *   down: the distance from `from` straight down to the first surface (or null);
- *   ahead: the first surface along a horizontal unit `dir`
- * @returns {{ feet: number[], vel: number[], onGround: boolean, landed: boolean }}
- */
-export function step(state, input, yaw, dt, world, body = BODY) {
-  const feet = [...state.feet];
-  let vel = [...state.vel];
-  let onGround = state.onGround;
-
-  const want = wishVelocity(input, yaw, body);
-  const h = approach([vel[0], vel[2]], want, (onGround ? body.accelGround : body.accelAir) * dt);
-  vel[0] = h[0];
-  vel[2] = h[1];
-  if (onGround && input.jump) {
-    vel[1] = body.jump;
-    onGround = false;
-  }
-  if (!onGround) vel[1] -= body.gravity * dt;
-
-  // horizontal: probe at the knee and the chest; slide along what's hit
-  let mx = vel[0] * dt;
-  let mz = vel[2] * dt;
-  for (let pass = 0; pass < 2; pass++) {
-    const dist = len2(mx, mz);
-    if (dist < 1e-9) break;
-    const dir = [mx / dist, 0, mz / dist];
-    let hit = null;
-    for (const y of [body.step + 0.05, body.eye * 0.75]) {
-      // far enough to see a wall met at a glancing angle (see `cos` below)
-      const h2 = world.ahead([feet[0], feet[1] + y, feet[2]], dir, dist + body.radius / 0.2);
-      if (h2 && (!hit || h2.distance < hit.distance)) hit = h2;
-    }
-    if (!hit) break;
-    const n = hit.normal && Math.abs(hit.normal[1]) < 0.7 ? [hit.normal[0], hit.normal[2]] : [-dir[0], -dir[2]];
-    const nl = len2(n[0], n[1]) || 1;
-    const nx = n[0] / nl;
-    const nz = n[1] / nl;
-    // the radius is kept square to the wall, so a glancing approach stops as far off as a head-on one
-    const cos = Math.max(0.2, -(dir[0] * nx + dir[2] * nz));
-    const free = Math.max(0, Math.min(dist, hit.distance - body.radius / cos));
-    if (hit.distance - body.radius / cos > dist) break;
-    // go as far as is free, then slide what's left along the wall
-    const rest = dist - free;
-    feet[0] += dir[0] * free;
-    feet[2] += dir[2] * free;
-    const rx = dir[0] * rest;
-    const rz = dir[2] * rest;
-    const into = rx * nx + rz * nz;
-    mx = rx - into * nx;
-    mz = rz - into * nz;
-    // stop pushing into it
-    const vInto = vel[0] * nx + vel[2] * nz;
-    if (vInto < 0) {
-      vel[0] -= vInto * nx;
-      vel[2] -= vInto * nz;
-    }
-    if (pass === 1) (mx = 0), (mz = 0);
-  }
-  feet[0] += mx;
-  feet[2] += mz;
-
-  // vertical: fall, or stand on whatever is under you (stepping up what's low enough)
-  const dy = vel[1] * dt;
-  const probeFrom = [feet[0], feet[1] + body.step, feet[2]];
-  const below = world.down(probeFrom, body.step + Math.max(0, -dy) + 0.05);
-  let landed = false;
-  if (below != null && vel[1] <= 0) {
-    const ground = probeFrom[1] - below;
-    if (feet[1] + dy <= ground + 1e-4) {
-      landed = !state.onGround;
-      feet[1] = ground;
-      vel[1] = 0;
-      onGround = true;
-    } else {
-      feet[1] += dy;
-      onGround = false;
-    }
-  } else {
-    // a head bump stops a jump
-    if (vel[1] > 0) {
-      const up = world.ahead([feet[0], feet[1] + body.eye, feet[2]], [0, 1, 0], dy + 0.1);
-      if (up) vel[1] = 0;
-    }
-    feet[1] += vel[1] * dt;
-    onGround = false;
-  }
-  return { feet, vel, onGround, landed };
 }
 
 /** The eye's forward unit vector for a yaw and pitch (pitch up is positive). */

@@ -126,10 +126,10 @@ export function discOffsets(R, c) {
 
 /**
  * Bake a navmesh.
- * @param {{ triangles: ArrayLike<number>, seeds?: Array<{ kind: string, id?: string, at: number[], yaw?: number, hook?: number[] }>, key?: string }} input
+ * @param {{ triangles: ArrayLike<number>, seeds?: Array<{ kind: string, id?: string, at: number[], yaw?: number, hook?: number[] }>, key?: string, prune?: boolean }} input
  *   triangles: 9 numbers each, in the support's frame (metres, +Y up). seeds: where people must be able to stand
- *   (each spawn, each stand spot, a ladder's top with its `hook`, where it hangs). With no seeds, every
- *   component is kept (a fixture).
+ *   (each spawn, each stand spot, a ladder's top with its `hook`, where it hangs), each a link. With no seeds,
+ *   or `prune: false` (walk's body, until pruning by passable sides lands: DESIGN.md), every component is kept.
  * @param {object} [params]  NAV or anything shaped like it
  */
 export function bake(input, params = NAV) {
@@ -592,7 +592,7 @@ export function bake(input, params = NAV) {
   const geo = { c, nx, nz, X, Z, F, fStart, smin, smax, surf, ivStart, ivLo: Float64Array.from(ivLo), ivHi: Float64Array.from(ivHi) };
   const seeds = Array.isArray(input?.seeds) ? input.seeds : [];
   const keepComp = new Uint8Array(ncomp);
-  if (!seeds.length) keepComp.fill(1);
+  if (!seeds.length || input?.prune === false) keepComp.fill(1);
   for (const sd of seeds) {
     // the component the seed's link will project onto (P1): within a step of it, else the nearest
     const at = dropOnto(geo, sd.at, step);

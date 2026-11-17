@@ -1,7 +1,11 @@
 // walk.people: everyone else who walks, drawn where their presence says they
-// stand (`avatar`: { feet, yaw, pitch }, which the walk body says 20 Hz on
-// the channel of the doc it walks in, in that doc's frame: body.js), named
-// from their contact docs.
+// stand (`avatar`: { on, feet, yaw, pitch, swimming }, which the walk body
+// says 20 Hz on the channel of the doc it walks in: body.js), named from
+// their contact docs. `feet` and `yaw` are in the frame of the support `on`
+// (null: the doc's own frame), so each is drawn in that support's drawn
+// frame every frame, eased toward the latest record in that frame and
+// snapped when `on` changes (DESIGN.md, "Presence"). A record whose support
+// isn't in this doc draws nobody.
 //
 // A part of every doc (traits ["*"]), so the stage runs it in every stage,
 // as that doc's own part, whatever the focus: someone walking a boat's deck
@@ -11,8 +15,41 @@
 // it draws everything else of its doc. This view is never drawn: its walker
 // is the camera.
 
+import { apply, headingOf } from "./frames.js";
+import { frameOf } from "./supports.js";
+
 /** whose presence says where someone walks: the walk body's part (extension.js) */
 const WALK = "walk";
+/** How fast an avatar closes on its latest record (1/s). */
+const EASE = 12;
+
+/** The shorter way round from angle a to b. */
+const turnTo = (a, b) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a));
+
+/**
+ * An avatar closing on a peer's latest record (pure): eased in the record's
+ * frame, snapped when the frame changes (stepping onto a deck, falling off).
+ * @param {{ on, feet, yaw, pitch } | null} prev
+ * @param {{ on, feet, yaw, pitch }} rec
+ */
+export function ease(prev, rec, dt, rate = EASE) {
+  const target = { on: rec.on ?? null, feet: [...rec.feet], yaw: Number(rec.yaw) || 0, pitch: Number(rec.pitch) || 0 };
+  if (!prev?.feet || prev.on !== target.on) return target;
+  const k = 1 - Math.exp(-rate * Math.max(0, dt));
+  return {
+    on: target.on,
+    feet: prev.feet.map((v, i) => v + (target.feet[i] - v) * k),
+    yaw: prev.yaw + (turnTo(prev.yaw, target.yaw) - prev.yaw) * k,
+    pitch: prev.pitch + (target.pitch - prev.pitch) * k,
+  };
+}
+
+/** Where an avatar stands in the world: through its support's frame (`frame(on)`), or the doc's. null when its support isn't here. */
+export function placeOf(a, frame) {
+  if (a.on == null) return { feet: a.feet, yaw: a.yaw };
+  const m = frame(a.on);
+  return m ? { feet: apply(m, a.feet), yaw: a.yaw + headingOf(m) } : null;
+}
 
 /** A stable hue for a person. */
 export function hueOf(key) {
@@ -69,18 +106,28 @@ function create(api) {
     return a;
   }
 
+  const okRecord = (r) => !!r && Array.isArray(r.feet) && r.feet.length === 3 && r.feet.every(Number.isFinite);
+  let last = null; // the stage's time (ms) of the last draw
+  let stopLoop = null;
+
   function drawPeers() {
+    const now = api.clock?.now?.() ?? 0;
+    const dt = last == null ? 0 : (now - last) / 1000;
+    last = now;
     const seen = new Set();
     const items = [];
     for (const [session, p] of Object.entries(api.presence.get() ?? {})) {
       if (session === api.session) continue;
-      const av = p?.keys?.[WALK]?.avatar;
-      if (!av || !Array.isArray(av.feet)) continue;
-      seen.add(session);
+      const rec = p?.keys?.[WALK]?.avatar;
+      if (!okRecord(rec)) continue;
       const a = avatarFor(session, hueOf(p.viewer ?? session));
-      a.group.position.set(av.feet[0], av.feet[1], av.feet[2]);
-      a.group.rotation.set(0, av.yaw ?? 0, 0);
-      items.push({ key: session, text: nameOf(p.viewer), position: [av.feet[0], av.feet[1] + 2.05, av.feet[2]], className: "walk-name", rank: 1 });
+      a.eased = ease(a.eased, rec, dt);
+      const at = placeOf(a.eased, (id) => frameOf(api, id));
+      if (!at) continue;
+      seen.add(session);
+      a.group.position.set(at.feet[0], at.feet[1], at.feet[2]);
+      a.group.rotation.set(0, at.yaw, 0);
+      items.push({ key: session, text: nameOf(p.viewer), position: [at.feet[0], at.feet[1] + 2.05, at.feet[2]], className: "walk-name", rank: 1 });
     }
     for (const [session, a] of avatars) {
       if (seen.has(session)) continue;
@@ -93,6 +140,9 @@ function create(api) {
     }
     labels.set(items);
     api.invalidate();
+    // while anyone is drawn, every frame: they ease, and their supports move
+    if (avatars.size && !stopLoop) stopLoop = api.loop?.(() => drawPeers()) ?? null;
+    else if (!avatars.size && stopLoop) (stopLoop(), (stopLoop = null));
   }
 
   // the others move between doc changes
@@ -101,6 +151,8 @@ function create(api) {
   return {
     update: () => drawPeers(),
     dispose() {
+      stopLoop?.();
+      stopLoop = null;
       for (const a of avatars.values()) a.group.removeFromParent();
       avatars.clear();
     },

@@ -24,7 +24,7 @@
 // The environment it's stepped in:
 //   env.supports() → ids, the ground (null) among them    env.frame(id) → 4×4 | null (asked of moving supports only)
 //   env.mesh(id) → NavMesh | null                          env.water(x, z) → the surface's height there | null (no water)
-//   env.blockers?(id) → [{ a, b, r }] capsules in that support's frame: moving obstacles that only block
+//   env.blockers?(id) → [{ o, A, h }] oriented boxes in that support's frame: moving obstacles that only block
 
 import { DIRS, NONE, OFF, OPEN, STEP, WALL, columnAt, inShadow, isEmpty, planOf, pointOf, projectPoint, putOutAt, sideBase, surfaceAt } from "./navmesh.js";
 import { apply, headingOf, invert, rotateM, scaleOf, unrotateM } from "./frames.js";
@@ -350,11 +350,11 @@ export function respawn(env, P = BODY, S = SWIM) {
   return fallingAt(lift(env, [0, 0, 0], P, list));
 }
 
-/** L1: onto a support's ladder from the water: walking at its top, facing the way its link says. null with no mesh or no ladder. */
-export function climb(env, on) {
+/** L1: onto a support's ladder (`id`, else its first) from the water: walking at its top, facing the way its link says. null with no mesh or no such ladder. */
+export function climb(env, on, id = null) {
   const mesh = env.mesh(on);
   if (!mesh || isEmpty(mesh)) return null;
-  const link = mesh.links.find((l) => l.kind === "ladder");
+  const link = mesh.links.find((l) => l.kind === "ladder" && (id == null || l.id === id));
   if (!link) return null;
   return { state: walkingAt(env, on, mesh, link.at), yaw: link.yaw };
 }
@@ -539,40 +539,22 @@ function offSide(env, on, M, mesh, cell, side, y, vel, vy, yaw, P, S) {
 
 // ─── one move over the mesh ─────────────────────────────────────────────────
 
-/** Does a body (plan point q, feet y0 to head y1, radius r) meet a capsule { a, b, r }? Conservative: the capsule's ends as slabs. */
-export function meetsCapsule(q, y0, y1, r, cap) {
-  const { a, b } = cap;
-  const cr = cap.r;
-  let t0 = 0;
-  let t1 = 1;
-  const dy = b[1] - a[1];
-  if (Math.abs(dy) < 1e-12) {
-    if (a[1] < y0 - cr || a[1] > y1 + cr) return false;
-  } else {
-    let ta = (y0 - cr - a[1]) / dy;
-    let tb = (y1 + cr - a[1]) / dy;
-    if (ta > tb) [ta, tb] = [tb, ta];
-    t0 = Math.max(0, ta);
-    t1 = Math.min(1, tb);
-    if (t0 > t1) return false;
-  }
-  const px = a[0] + (b[0] - a[0]) * t0;
-  const pz = a[2] + (b[2] - a[2]) * t0;
-  const qx = a[0] + (b[0] - a[0]) * t1;
-  const qz = a[2] + (b[2] - a[2]) * t1;
-  const ex = qx - px;
-  const ez = qz - pz;
-  const l2 = ex * ex + ez * ez;
-  const s = l2 > 0 ? Math.max(0, Math.min(1, ((q[0] - px) * ex + (q[1] - pz) * ez) / l2)) : 0;
-  return Math.hypot(q[0] - (px + ex * s), q[1] - (pz + ez * s)) < r + cr;
+/**
+ * Does a body (plan point q, feet y0 to head y1, radius r) meet a blocker,
+ * an oriented box { o, A, h } (centre, three unit axes, half extents) in the
+ * same frame? The body as its square box (the cylinder's, grown at the
+ * corners), so the box is met grown by r, conservatively; separating axes.
+ */
+export function meetsBlock(q, y0, y1, r, box) {
+  return boxesMeet([q[0], (y0 + y1) / 2, q[1]], [r, (y1 - y0) / 2, r], box.o, box.A, box.h);
 }
 
 function blocked(env, on, mesh, cell, u, v, h, P) {
-  const caps = env.blockers?.(on);
-  if (!caps?.length) return false;
+  const boxes = env.blockers?.(on);
+  if (!boxes?.length) return false;
   const [x, z] = planOf(mesh, cell, u, v);
   const y = surfaceAt(mesh, cell, u, v) + h;
-  return caps.some((cap) => meetsCapsule([x, z], y, y + P.height, P.radius, cap));
+  return boxes.some((b) => meetsBlock([x, z], y, y + P.height, P.radius, b));
 }
 
 /**

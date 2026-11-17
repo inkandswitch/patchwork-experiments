@@ -276,9 +276,13 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
 - **walk**, one package's, replacing arena's and sailing's walkers. It
   starts at the eye if there is floor under it (within 10 m; decided unattended
   2026-11-14, so an eye over nothing doesn't fall out of the world first),
-  else the spawn; its floor is whatever the ray hits.
-  (Built in `walk/`, replacing arena's; sailing keeps its navmesh walker as
-  a body of its own for now: see build step 6.)
+  else the spawn; it stands on supports (walk/DESIGN.md, "Standing on
+  supports"): a navmesh per support, the ground (the stage's frame) and each
+  object with `walk.support`, the person always on a kept cell of one, in
+  its frame, so a level and a moving deck are one rule. (Built in `walk/`,
+  replacing arena's; since N10 step 4 on the navmesh walker, the ray walker
+  gone; sailing keeps its own copy as `aboard` until N10 step 5 moves her
+  into walk.)
 - **seat**, `seats/`'s (COMPOSITION decision 5), rides the seat: no
   movement keys, so D draws. **station**, sailing's: A/D steer.
 

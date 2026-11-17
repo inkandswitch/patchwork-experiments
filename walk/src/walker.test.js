@@ -6,7 +6,7 @@
 // navmesh.test.js.
 import { describe, it, expect } from "vitest";
 import { DIRS, OPEN, OFF, STEP, WALL, bake, inShadow, pointOf } from "./navmesh.js";
-import { asserting, assertWalker, checkWalker, climb, isClear, localFeet, meetsCapsule, place, placeAt, respawn, spawnOn, step, swimmingAt, travel, worldPose } from "./walker.js";
+import { asserting, assertWalker, checkWalker, climb, isClear, localFeet, meetsBlock, place, placeAt, respawn, spawnOn, step, swimmingAt, travel, worldPose } from "./walker.js";
 import { BODY, easeEye } from "./walk.js";
 import { apply, invert, matrixOf } from "./frames.js";
 import { I4, STILL, baked, box, drive, floor, oracleAll, placed, ramp, world } from "./test/arena.js";
@@ -436,19 +436,21 @@ describe("the walker, case by case", { timeout: 60_000 }, () => {
     assertWalker(air, env);
   });
 
-  it("28: the boom: walking into its capsule stops you; a jump under it is capped", () => {
-    let caps = [{ a: [-2, 1.2, -1], b: [2, 1.2, -1], r: 0.07 }];
+  it("28: the boom, a blocker box: walking into it stops you; a jump under it is capped", () => {
+    const I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    let caps = [{ o: [0, 1.2, -1], A: I3, h: [2, 0.07, 0.07] }];
     const env = one(floor(), { blockers: () => caps });
     const { st } = drive(env, at(env, [0.01, 0, 0.5]), { input: FWD, frames: 60 });
     const z = feet(st)[2];
     expect(z - -1).toBeGreaterThanOrEqual(BODY.radius + 0.07);
     expect(z - -1).toBeLessThan(BODY.radius + 0.07 + 0.1);
-    caps = [{ a: [-2, 2.02, 0.5], b: [2, 2.02, 0.5], r: 0.07 }];
+    caps = [{ o: [0, 2.02, 0.5], A: I3, h: [2, 0.07, 0.07] }];
     let peak = 0;
     drive(env, at(env, [0.01, 0, 0.5]), { input: (i) => (i === 0 ? JUMP(STILL) : STILL), frames: 40, each: (s) => (peak = Math.max(peak, s.h ?? 0)) });
     expect(peak).toBeGreaterThan(0.15);
     expect(peak).toBeLessThanOrEqual(0.2 + 1e-3);
-    expect(meetsCapsule([0, 0.5], 0, BODY.height, BODY.radius, caps[0])).toBe(false);
+    expect(meetsBlock([0, 0.5], 0, BODY.height, BODY.radius, caps[0])).toBe(false);
+    expect(meetsBlock([0, 0.5], 0.21, 0.21 + BODY.height, BODY.radius, caps[0])).toBe(true);
   });
 
   it("29: the cockpit's STEP (0.52 up, then down): the feet jump in one frame and step() says by how much; the drawn eye (easeEye) moves under 0.1 m a frame and catches up within 0.15 s", () => {

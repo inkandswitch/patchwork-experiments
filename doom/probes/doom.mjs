@@ -198,6 +198,9 @@ try {
   const spawnAt = world(-416, 256);
   check("A starts at the player 1 start", Math.hypot(startA[0] - spawnAt[0], startA[2] - spawnAt[2]) < 0.3, { eye: r3(startA), spawn: r3(spawnAt) });
   report.numbers.firstPersonStart = await P(`timeFrames("a")`);
+  // the walk body's bakes so far (the ground: E1M1 less its doors), against walk's budget of 500 ms a bake (walk/DESIGN.md)
+  report.numbers.walkBakes = await b.js("window.__WALK_BAKES__");
+  report.numbers.walkBakeBudgetMs = 500;
   await shot("1-a-start");
   await face("a", Math.PI / 2 - 0.3, -0.05); // looking north-ish round the start room
   await shot("1-a-start-north");

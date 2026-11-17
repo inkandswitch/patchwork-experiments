@@ -655,6 +655,57 @@ is W6's to stop.
   is its own stage's or a link's. Any that stands on a link stops the
   deletion, and the list goes to the lead with Q6.
 
+**As built, step 4** (2026-11-17, lane/n10). The ray walker is gone
+(`walk.js` `step`, `carried`, `invertRigid`, the rays, the old riding
+tests); the body (`body.js`) steps `walker.js` over `supports.js`, the input
+adapter: which objects are supports, what each bakes (`bakedObjects`: owned,
+not loose, groups out, of the moving parts only `swept` ones, a swept part's
+subtree swept with it), `trianglesOf` at the rest pose (instanced meshes as
+one copy per instance), `seedsOf` (spawn, stand, ladder; a ladder faces from
+its foot to its top, inboard), `bakeKey` (the support's own pose and the
+blockers not in it; null while a model it bakes is loading), the page's
+meshes by key (8 kept), `frameOf` (the drawn matrix, scale divided out),
+blockers as oriented boxes (`walk.moves { blocks }`, drawn box into the
+walker's support's frame; `meetsBlock` replaces `meetsCapsule`), and water
+from the stage's `water` contribution with every support's id in `not`
+(water's `at` takes a list now, with its test rows). The others are drawn by
+walk.people in their support's frame (`ease`, `placeOf`, a loop while
+anyone is drawn). Every walk trait is declared by the `walk.spawn` part,
+whose verbs are Walk from here and Climb (F, on a ladder, swimming within
+REACH of its foot). Doom's layout writes `walk.moves { blocks: true }` on
+each door (one test row per E1M1 door). Arena is unchanged. Tests (walk 137
+→ 155): `body.test.js` enter place × world (8, the eye rows asserting the
+fall from the eye), the first bake at need, a model loading, riding move ×
+walker (6: the local feet the still deck's to the bit, the world feet
+`frame · local` exactly), rebake {part added, floor removed} (P1 asserted
+against `place` on the new mesh), a seat; `supports.test.js` (9: instanced
+and indexed triangles, ownership over every kind of object, seeds, the key,
+a door shut and open across a corridor, a door's box in a deck's frame,
+water's `not`, Climb offered within reach and not beyond, and taken);
+`extension.test.js` presence round trip {ground, a heeled deck, swimming}
+to 1e-9. Failing twins, run by reverting: presence rounded to the mm (round
+trip), people ignoring `on` (round trip), no blockers (both door rows), the
+key reading the drawn pose (key row), every bake on the frame loop and no
+R1 (both rebake rows), the eye's floor by P1 alone (eye over floor),
+feeding the world pose back into the walker (all six riding rows); water's
+old single `not` fails 6 of its rows.
+
+Measured, E1M1's ground (whole, one bake; its doors are blockers, not in
+it): 5,465 triangles, 2,214 × 1,908 = 4.22M columns, 3.18M kept cells,
+**11.4 s in headless Chrome** (doom/probes/doom.mjs, which logs each bake),
+10.7 s in Node (erode 5.0, classify 2.2, putOut 1.2, rasterise 0.9 s),
+**649 MB** of typed arrays kept (2.6 GB peak RSS in Node while it runs): 23
+times the 500 ms budget. The two views of the probe share the one mesh (the
+page's cache). So tiles (above, "When it runs") are needed for any level,
+and are the first thing owed; until they land, a level's first walk blocks
+the page for that long and keeps that much.
+
+Still owed (not built in step 4): tiles; pruning by passable sides (every
+support bakes with `prune: false`: every component kept, which is safe);
+W6, SW2 and SW1's clamp; drawing a stand spot's claim holder (`claim`);
+Q6's check of the link-composed examples; C10; timing Cadboro Bay and
+Ucluelet.
+
 **Step 5** (sailing walks in walk):
 - part kind → walk trait, for the stock sloop and a camber hull;
 - each station kind: take puts the eye at its stand, leave puts walk at
@@ -771,6 +822,37 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     unattended (2026-11-17, lane/n10), for the lead). `env.frame` is asked
     of moving supports only; a turned ground was honoured by half the
     walker (yaw) and not the rest (poses, points).
+
+24. **The first mesh is baked when first needed, at once; only rebakes go
+    off the frame loop** (decided unattended (2026-11-17, lane/n10), for the
+    lead). An entering walker has nothing to stand on until its supports'
+    meshes exist, so a deferred first bake only delayed the camera a frame,
+    and an arrival read at once found nobody there (arena-run's "arrive at
+    the spawn"). Rebakes keep the old mesh until the new one lands. A
+    support whose models are still loading has no key, and the walker waits
+    for it, with no time limit (a model that never loads keeps it waiting).
+25. **Entering from the eye is P1 of the eye lowered by BODY.eye, when a
+    kept cell of any support lies under it within 10 m** (decided unattended
+    (2026-11-17, lane/n10), for the lead): more than DROP down that is
+    falling, so you land on it, as the ray walker did. The test is a scan of
+    the eye's column in every mesh (`floorUnder`).
+26. **Presence is at full precision** (decided unattended (2026-11-17,
+    lane/n10), for the lead): rounded to the millimetre, a peer was drawn up
+    to 0.5 mm off in a moving frame; the round trip is now exact to 1e-9.
+27. **Doom tags its doors in step 4** (decided unattended (2026-11-17,
+    lane/n10), for the lead). The step's brief said doom's source stays
+    unchanged; without the tag a door, which opens by pose hold, is baked
+    shut where its doc puts it, and walking through it open (doom.mjs)
+    cannot work. One trait per door, so E1M1's published docs must be
+    republished (no back-compat): until they are, their doors are walls.
+28. **Every walk trait is declared by the `walk.spawn` part** (decided
+    unattended (2026-11-17, lane/n10), for the lead), id kept so no doc
+    changes; it is now the part of walk's traits, with Climb beside Walk
+    from here.
+29. **Every support bakes with `prune: false` until the pruning by passable
+    sides lands** (decided unattended (2026-11-17, lane/n10), for the lead):
+    the seed-only rule would drop every floor of a level reached only by a
+    jump or a drop; keeping everything is safe for I.
 
 ## Questions for the lead
 

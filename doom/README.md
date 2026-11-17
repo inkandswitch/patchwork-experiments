@@ -12,7 +12,8 @@ pnpm install && pnpm build && pnpm test
 ```
 
 Nothing Doom-shaped is outside this package. The doors open with the joints
-package's slide (`joints.slide`), an exit switch is the traversal package's
+package's slide (`joints.slide`) and block walkers where they're drawn as
+the walk package's moving parts (`walk.moves { blocks: true }`), an exit switch is the traversal package's
 exit (`traversal.exit`), and a map that is a scene on its own is walked in
 the walk package's body (scene/TOOLS.md §4) from a spawn point at the player
 1 start (arena's spawn pad part, which carries `walk.spawn`), under the
