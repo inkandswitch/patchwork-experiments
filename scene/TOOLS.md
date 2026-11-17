@@ -335,8 +335,14 @@ pressed (keymap.js `keyFor`, what `hintFor` names), so a press presses only
 a key that does its verb then, by the same construction as a shown key. A
 verb with no key that does it (reserved: walking, D) is a click, run on its
 target; a held one has nothing to hold it by, so it shows disabled. A
-button stays the one element under its finger while the prompt changes
-round it (its key going down marks it held), as a pad control does.
+pointer's click runs a verb only on the button that had its press, and
+only when that press wasn't the key: a browser clicks whatever is under
+the lift once the button pressed has gone, so a verb that puts another
+button in its place would otherwise run that one too. Only a primary
+press is a key or a click (a right or middle press does nothing). A
+button stays the one element in the document while the prompt changes
+round it (its key going down marks it held), as a pad control does, so
+its capture takes the lift to it even if it moves on the screen.
 
 **Touch controls are the declared keys** (`touch-keys.js`, pure;
 Decisions 10). With no keyboard, the keys the gesture, the held tool and
@@ -1386,7 +1392,18 @@ The project lead decided the five open questions on 2026-11-12.
    moving the held button first took it out of the document, losing its
    capture, and slid the next button under the finger, so a finger's lift
    clicked that one and the held verb never ended (found in Chrome,
-   `probes/touch-run.mjs`; jsdom keeps no capture to lose).
+   `probes/touch-run.mjs`; jsdom keeps no capture to lose). The same
+   browser rule, the lift's click going to whatever replaced the button
+   pressed, holds for a plain verb that runs on the press and puts
+   another button in its slot (the next target's verb, an Open for a
+   Close), so a pointer's click runs a verb only on the button that had
+   its press, and only when that press wasn't its key: the view's every
+   press clears it first, and a second finger on a held button is the
+   key's too (step 5 review). A right or middle press is neither a key
+   nor a click (`holdKey` takes only a primary press), as on any button.
+   A held button keeps its place in the document, not always on the
+   screen: a verb before it that comes to apply pushes it along, and its
+   capture still takes the lift to it.
    And so a finger can reach the prompt at all where the look is the
    pointer's (Look, Edit): a finger hovers nowhere and leaves as it lifts,
    which cleared the look, so the prompt went with every tap. The router
@@ -1397,4 +1414,8 @@ The project lead decided the five open questions on 2026-11-12.
    jitter"). The prompt sits where the finger pressed (a press is where
    the pointer is; a finger has no moves before it). Open for the lead:
    whether the tapped look should also go after a while, or on a tap on
-   the prompt's own margin.
+   the prompt's own margin. It is shared, too: `hovered` is presence
+   (select.js), so other viewers see a touch viewer's tapped outline
+   until that viewer presses again, where before every lift cleared it;
+   and it outlives a body change (Look, walk, Look again brings the old
+   tapped prompt back).

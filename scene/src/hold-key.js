@@ -11,10 +11,15 @@
 // once (its key up) and leaves the element: a finger still on it presses
 // nothing until it comes down again, as after a keyboard's blur.
 //
+// Only a primary press holds the key (a finger, a pen's tip, a mouse's
+// main button): a right or middle press on the element presses nothing, as
+// it clicks nothing on a button.
+//
 // The code can be asked for as each press comes (a function): the use
 // prompt's button presses the key that does its verb now, if any. A press
 // that finds none isn't the key's: it isn't default-prevented, captured or
-// counted, so the element's click is what it does.
+// counted, so the element's click is what it does. holds(pointerId) says
+// whether a press is the key's (its pointer is one holding it).
 
 import { keyOfCode } from "./keymap.js";
 
@@ -39,7 +44,7 @@ export function pressKey(root, code) {
  * @param {HTMLElement} el  @param {EventTarget} root
  * @param {string | (() => string | null)} code  the code, or asked as the first finger comes down (null: not a key now)
  * @param {(held: boolean) => void} [onHeld]  told when the key goes down and comes up
- * @returns {{ letGo(): void }}
+ * @returns {{ letGo(): void, holds(pointerId: number): boolean }}
  */
 export function holdKey(el, root, code, onHeld = () => {}) {
   const fingers = new Set(); // pointerIds
@@ -52,6 +57,7 @@ export function holdKey(el, root, code, onHeld = () => {}) {
     onHeld(false);
   };
   el.addEventListener("pointerdown", (e) => {
+    if (e.button > 0) return; // not the primary press
     const now = fingers.size ? null : typeof code === "function" ? code() : code;
     if (!fingers.size && !now) return;
     e.preventDefault();
@@ -78,6 +84,7 @@ export function holdKey(el, root, code, onHeld = () => {}) {
       fingers.clear();
       up();
     },
+    holds: (pointerId) => fingers.has(pointerId),
   };
 }
 

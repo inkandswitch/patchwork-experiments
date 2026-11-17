@@ -1410,7 +1410,9 @@ describe("hover and cursor", () => {
   // end, by mouse and by finger, then the leave that follows it: a finger's
   // tap keeps the look it pressed (its prompt's buttons can be tapped); a
   // drag or a cancel keeps none; a mouse's leave is a mouse's.
+  // Each from a fresh view and after a finger's tap (whose look is kept): the press after it starts afresh.
   it("a finger's tap keeps the look it pressed when it lifts; a drag, a cancel or a mouse's leave doesn't", async () => {
+    for (const before of ["fresh", "after a tap"])
     for (const pointerType of ["mouse", "touch"])
       for (const [how, end, want] of [
         ["tapped", (t) => up(t, { pointerType, x: 20 }), { mouse: "cleared", touch: "kept" }],
@@ -1418,6 +1420,11 @@ describe("hover and cursor", () => {
         ["cancelled", (t) => ptr("pointercancel", t.canvas, { pointerType, x: 20 }), { mouse: "cleared", touch: "cleared" }],
       ]) {
         const t = setup();
+        if (before === "after a tap") {
+          down(t, { pointerType: "touch", x: 40 });
+          up(t, { pointerType: "touch", x: 40 });
+          t.canvas.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+        }
         down(t, { pointerType, x: 20 });
         end(t);
         t.onHover.mockClear();
@@ -1426,7 +1433,7 @@ describe("hover and cursor", () => {
         t.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType }));
         await frame();
         const got = t.onHover.mock.calls.length === 0 ? "kept" : t.onHover.mock.calls.at(-1)[0] === null ? "cleared" : "hovered";
-        expect([pointerType, how, got]).toEqual([pointerType, how, want[pointerType]]);
+        expect([before, pointerType, how, got]).toEqual([before, pointerType, how, want[pointerType]]);
       }
   });
   it("a tapped look stays while other fingers go elsewhere (the touch pad, the prompt), and goes with the next press on the world", async () => {

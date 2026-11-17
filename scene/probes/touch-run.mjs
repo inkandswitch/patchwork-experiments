@@ -18,9 +18,11 @@
 // The use prompt's buttons are keys (TOOLS.md §5): first in Look, a tap on
 // the post shows its verbs where it tapped and keeps them when the finger
 // lifts; Ring by a tap rings once; Wind (hold G) winds only while a finger
-// holds its button. Then walking, the eye on the post: Wind held from the
-// prompt in the middle, no lock asked. Last, with a mouse: the button held
-// down winds, let up stops. Prints a JSON report; exits non-zero on a
+// holds its button; Open runs once on a tap though Shut takes its place
+// under the finger before the lift. Then walking, the eye on the post:
+// Wind held from the prompt in the middle, no lock asked. Last, with a
+// mouse: the button held down winds, let up stops; its right or middle
+// button on Ring rings nothing. Prints a JSON report; exits non-zero on a
 // failure.
 //
 // Simulated time: the view runs on the page's manual clock (window.__time).
@@ -84,10 +86,31 @@ try {
   const wind0 = await verb("Wind");
   const w0 = await windBy(() => touch.fingers([[1, ...wind0.at]]), () => touch.fingers([]));
   check(
-    "0. in Look, a tap on the post shows Ring (T) and Wind (hold G) below where it tapped, still there after the lift; a tap on Ring rings once; Wind winds only while a finger holds it",
-    tapped.look === "post" && JSON.stringify(tapped.prompt?.map((v) => [v.name, v.key])) === JSON.stringify([["Ring", "T"], ["Wind", "G"]]) && Math.abs(tapped.prompt[0].at[0] - post[0]) < 80 && tapped.prompt[0].at[1] > post[1] &&
+    "0. in Look, a tap on the post shows Ring (T), Wind (hold G) and Open (Y) below where it tapped, still there after the lift; a tap on Ring rings once; Wind winds only while a finger holds it",
+    tapped.look === "post" && JSON.stringify(tapped.prompt?.map((v) => [v.name, v.key])) === JSON.stringify([["Ring", "T"], ["Wind", "G"], ["Open", "Y"]]) && Math.abs(tapped.prompt[0].at[0] - post[0]) < 80 && tapped.prompt[0].at[1] > post[1] &&
       JSON.stringify(rung) === JSON.stringify(["ring"]) && w0.wound >= 10 && w0.after === 0 && w0.held === true && JSON.stringify(w0.heard) === JSON.stringify(["wind", "wind end"]) && (await P("focused()")) === "root",
     { post, tapped, rung, w0 },
+  );
+
+  // 0b. a verb that runs on the press puts another in its place before the finger lifts (Open, then Shut, by a
+  // doc change): Chrome clicks the button under the lift once the one pressed has gone, and that click runs nothing
+  const lidTap = async (name) => {
+    const at = (await verb(name))?.at;
+    if (!at) return null;
+    await touch.fingers([[1, ...at]]);
+    await b.rest(120); // a human's tap: the prompt has drawn what the press did before the lift
+    const during = (await P("prompt()"))?.map((v) => v.name);
+    await touch.fingers([]);
+    await b.rest(60);
+    return { during, heard: await heard(), lid: await P("lid()"), after: (await P("prompt()"))?.map((v) => v.name) };
+  };
+  const opened = await lidTap("Open");
+  const shut = await lidTap("Shut");
+  check(
+    "0b. a tap on Open opens the lid once, though Shut takes its place under the finger before the lift (that lift's click runs nothing); a tap on Shut shuts it once",
+    JSON.stringify(opened?.during) === JSON.stringify(["Ring", "Wind", "Shut"]) && JSON.stringify(opened?.heard) === JSON.stringify(["open"]) && opened?.lid === true &&
+      JSON.stringify(shut?.heard) === JSON.stringify(["shut"]) && shut?.lid === false && JSON.stringify(shut?.after) === JSON.stringify(["Ring", "Wind", "Open"]),
+    { opened, shut },
   );
 
   // 1. into the body by fingers: the chip, then its menu
@@ -253,6 +276,18 @@ try {
     w10?.wound >= 10 && w10?.after === 0 && JSON.stringify(w10?.heard) === JSON.stringify(["wind", "wind end"]),
     { view: await P("view()"), wind10, w10 },
   );
+
+  // 10b. only a primary press: a mouse's right or middle button on Ring rings nothing (as it clicks no button)
+  const ring10 = await verb("Ring");
+  const aux = [];
+  if (ring10)
+    for (const button of ["right", "middle"]) {
+      await b.mouse("mousePressed", ring10.at[0], ring10.at[1], { button });
+      await b.mouse("mouseReleased", ring10.at[0], ring10.at[1], { button });
+      await b.rest(60);
+      aux.push([button, await heard(), await P("contextMenu()")]);
+    }
+  check("10b. a right or a middle press on Ring rings nothing, and opens no menu", JSON.stringify(aux) === JSON.stringify([["right", [], null], ["middle", [], null]]), { ring10, aux });
 
   const errs = await P("errors");
   check("no errors", !errs.length, errs);

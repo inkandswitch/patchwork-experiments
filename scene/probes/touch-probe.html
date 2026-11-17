@@ -7,8 +7,8 @@
      extension contract) that offers a keyboard body that locks the pointer
      ("Walkish": walk's labelled keys plus an unlabelled Q; a drag on the
      world looks), a tool with a key (a wrench: R, Reload), and verbs on a
-     post: Ring (T) and Wind (hold G: every frame it's held winds a turn).
-     Everything
+     post: Ring (T), Wind (hold G: every frame it's held winds a turn) and
+     its lid, Open then Shut in its place (Y, a doc change). Everything
      each of them hears goes in window.__log, so the runner can tell what a
      finger on the touch pad pressed. -->
 <script type="importmap">
@@ -73,7 +73,7 @@ try {
   const objects = {
     floor: obj("Floor", floorGLB, [0, -0.05, 0], { locked: true }),
     block: obj("Block", blockGLB, [0.6, 0, 0], { traits: { "scene.carry": {} } }),
-    post: obj("Post", postGLB, [-0.8, 0, 0], { locked: true }),
+    post: obj("Post", postGLB, [-0.8, 0, 0], { locked: true, traits: {} }),
   };
   // the post's verbs: Ring once, Wind for as long as it's held (a turn a frame)
   window.__turns = 0;
@@ -83,6 +83,8 @@ try {
     load: async () => ({
       create(api) {
         window.__probeApi = api;
+        const lidOf = (ctx) => !!ctx?.scene?.objects?.post?.traits?.["probe.lid"]?.open;
+        const setLid = (open) => api.change((d) => (d.objects.post.traits["probe.lid"] = { open }));
         const eye = (window.__eye = { position: [0, 1.6, 3.2], yaw: 0, pitch: -0.35 });
         const dir = () => [-Math.sin(eye.yaw) * Math.cos(eye.pitch), Math.sin(eye.pitch), -Math.cos(eye.yaw) * Math.cos(eye.pitch)];
         const walker = {
@@ -117,6 +119,10 @@ try {
               id: "wind", name: "Wind", key: "g", hold: true, state: (t) => (t === "post" ? {} : null),
               run: () => (log.push("wind"), { update: () => window.__turns++, end: () => log.push("wind end"), cancel: () => log.push("wind cancel") }),
             },
+            // the post's lid: Open, then Shut in its place (both Y), as a doc change: a verb that runs on the
+            // press puts another under the finger before it lifts
+            { id: "open", name: "Open", key: "y", state: (t, ctx) => (t === "post" && !lidOf(ctx) ? {} : null), run: () => (log.push("open"), setLid(true)) },
+            { id: "shut", name: "Shut", key: "y", state: (t, ctx) => (t === "post" && lidOf(ctx) ? {} : null), run: () => (log.push("shut"), setLid(false)) },
             {
               id: "wrench", name: "Wrench", tool: { keys: [{ code: "KeyR", label: "Reload" }] },
               run: () => ({
@@ -190,6 +196,7 @@ try {
     /** the use prompt's verbs (name, key, held), and where its first button is */
     prompt: () => { const p = host.querySelector(".use-prompt"); return p && !p.hidden ? [...p.querySelectorAll(".use-verb")].map((b) => ({ name: b.querySelector(".use-name").textContent, key: b.querySelector("kbd")?.textContent ?? null, held: b.hasAttribute("data-held"), disabled: b.disabled, at: centre(b) })) : null; },
     turns: () => window.__turns,
+    lid: () => !!scene.doc().objects.post.traits?.["probe.lid"]?.open,
   };
   const api = window.__probeApi;
   window.__ready = true;

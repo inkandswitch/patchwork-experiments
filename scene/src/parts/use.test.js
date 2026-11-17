@@ -521,15 +521,16 @@ describe("scene.use: a button with a key is that key", () => {
     return {
       button,
       kbd: () => button.querySelector("kbd")?.textContent ?? null,
-      down() {
-        const e = ev("pointerdown");
+      down(init) {
+        const e = ev("pointerdown", init);
         button.dispatchEvent(e);
         return e.defaultPrevented;
       },
-      // a lift: its pointerup, then the click the browser makes of a press and release on the button
-      up() {
-        button.dispatchEvent(ev("pointerup"));
-        button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+      // a lift: its pointerup, then the click the browser makes of a press and release on the button (`on`: the
+      // element under the lift, when the one pressed has gone)
+      up(init, on = button) {
+        button.dispatchEvent(ev("pointerup", init));
+        on.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
       },
       cancel: () => button.dispatchEvent(ev("pointercancel")),
     };
@@ -649,6 +650,67 @@ describe("scene.use: a button with a key is that key", () => {
     await settle();
     expect(sessions[0].end).toHaveBeenCalledTimes(1);
     expect(verbs()).toEqual(["PPawl", "holdEWind"]);
+  });
+
+  // A browser clicks what is under the lift once the button pressed has gone (Chrome: a finger's tap on a button
+  // replaced in place on its pointerdown clicks the replacement). A verb that runs on the press and so puts another
+  // target's verb in its slot: the lift's click on that one runs nothing.
+  it.each(BOTH)("a press's run puts another button under it (%s): the lift's click there runs nothing", async (input) => {
+    const b = await at("bell", input);
+    b.down();
+    expect(log).toEqual(["ring"]);
+    // the look moves on to the flag as the press runs: Wave (W, the body's while walking: a click) takes the slot
+    if (input === "mouse") s.local.swap((m) => ({ ...m, hovered: "flag" }));
+    else {
+      s.debug.viewport.raycast = () => ({ id: "flag", point: [0, 1, 0], normal: null, distance: 1 });
+      // (the prompt looks again every frame while walking; the harness has no frames, a lock change does at once)
+      document.dispatchEvent(new Event("pointerlockchange"));
+    }
+    await settle();
+    const wave = s.root.querySelector('.use-verb[data-command="wave"]');
+    expect([wave !== null, b.button.isConnected]).toEqual([true, false]);
+    b.up(undefined, wave);
+    expect(log).toEqual(["ring"]);
+    // a press of its own, then, is Wave's
+    wave.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 2, pointerType: input, button: 0, buttons: 1 }));
+    wave.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 2, pointerType: input, button: 0 }));
+    wave.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    expect(log).toEqual(["ring", "wave"]);
+  });
+
+  it("a click whose press was elsewhere on the view runs nothing, though the button had a press before it", async () => {
+    const b = await at("flag", "touch");
+    // a press on Wave that slid off it (no click), then a press on the world whose click lands on Wave
+    b.down();
+    b.button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch", button: 0 }));
+    s.canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch", button: 0, buttons: 1 }));
+    b.button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    expect(log).toEqual([]);
+  });
+
+  // Only a primary press is a key or a click: a mouse's middle (1) or right (2) button on a verb, keyed or a click,
+  // plain or held, does nothing (as it clicks nothing on any button), even with a click after it.
+  for (const button of [1, 2])
+    for (const [target, command, input] of [
+      ["bell", "ring", "mouse"],
+      ["winch", "wind", "mouse"],
+      ["flag", "wave", "touch"],
+    ])
+      it(`a press with button ${button} on ${command} (${input}): nothing pressed, nothing run`, async () => {
+        const b = await at(target, input, command);
+        expect(b.down({ button, buttons: 1 << (button === 1 ? 2 : 1) })).toBe(false);
+        b.up({ button });
+        await settle();
+        expect([log, sessions.length, walker.key.mock.calls.length]).toEqual([[], 0, 0]);
+      });
+
+  it("two fingers on a plain verb's button: one key, and neither lift's click runs it again", async () => {
+    const b = await at("bell", "touch");
+    b.down({ pointerId: 1 });
+    b.down({ pointerId: 2 });
+    b.up({ pointerId: 1 });
+    b.up({ pointerId: 2 });
+    expect(log).toEqual(["ring"]);
   });
 
   it("a press asks which key as it comes: one that no longer does the verb presses nothing", async () => {

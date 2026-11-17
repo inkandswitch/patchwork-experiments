@@ -29,8 +29,8 @@
 // While a verb is held (scene.keys' `keymap`), attention is pinned to its
 // target: the prompt shows the held verb (marked held, as it was when
 // pressed, even once it no longer applies from here) and that target's
-// other verbs, in their places (a held button doesn't move from under its
-// finger), until its key comes up.
+// other verbs, in their order (a held button keeps its place in the
+// document, so its pointer stays captured), until its key comes up.
 
 import css from "./use.css?inline";
 import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
@@ -48,10 +48,11 @@ export const MAX_VERBS = 3;
  * look is on. The target's verbs as they apply now, in their order, each
  * held one as it was when pressed (and kept where it no longer applies from
  * here, you've stepped back: after the rest), and as many others as fit
- * beside every held one. In their order, not the held first: a held verb's
- * button stays where it was under the finger holding it (moving it in the
- * document would lose its pointer capture, and moving it on the screen puts
- * another button under that finger). Pure (given the collected commands).
+ * beside every held one. In their order, not the held first: moving a held
+ * verb's button first takes it out of the document, which loses its pointer
+ * capture. It can still move on the screen (a verb before it comes to
+ * apply): its capture still takes the lift to it. Pure (given the collected
+ * commands).
  * @param {{ id, value }[]} collected
  * @param {string} target  the held verbs' target
  * @param {{ ext, command, state }[]} held  as they were when pressed
@@ -148,7 +149,7 @@ function create(api) {
   // key held while the prompt changes round it (the key going down marks it
   // held; a pinned target's other verbs come and go).
   const idOf = (e) => JSON.stringify([e.ext, e.command.id]);
-  const shown = new Map(); // id → { el, hold, entry, keyed }
+  const shown = new Map(); // id → { el, hold, entry }
 
   /** A button going: its fingers let go (its key up), and it's gone. */
   function drop(id) {
@@ -183,6 +184,18 @@ function create(api) {
     return k == null ? null : codeOfKey(k);
   }
 
+  // The press a click can be of: the button that had the latest press on
+  // the view, and whether that press was its key. A pointer's click runs a
+  // verb only on the button that had its press, and only when that press
+  // wasn't the key (the key did it). A browser clicks the element under the
+  // lift when the one pressed has gone, so a verb that runs on the press and
+  // puts another button in its place (the next verb, or the next target's)
+  // would otherwise have the lift's click run that one too. Every press on
+  // the view clears it (capture, before the button hears its own), so a
+  // press elsewhere is never taken for this button's.
+  let pressed = null; // { el, keyed }
+  api.listen(api.root, "pointerdown", () => (pressed = null), { capture: true });
+
   // One verb's button: a press on it is its key while it has one (holdKey
   // asks codeNow as each press comes), else its click runs the verb.
   function make() {
@@ -190,19 +203,23 @@ function create(api) {
     el.type = "button";
     el.className = "use-verb";
     el.tabIndex = -1;
-    const b = { el, entry: null, keyed: false, hold: null };
-    // each press decides afresh whether it's the key's
-    el.addEventListener("pointerdown", () => (b.keyed = false));
+    const b = { el, entry: null, hold: null };
     b.hold = holdKey(el, api.root, () => codeNow(b.entry), (down) => {
-      if (!down) return;
-      b.keyed = true;
       // keys come to this view after (a press elsewhere on the page had them); focus moving in cancels nothing
-      api.root.focus?.({ preventScroll: true });
+      if (down) api.root.focus?.({ preventScroll: true });
+    });
+    // (after holdKey's: a second finger on a held button is the key's too; a right or middle press is nobody's)
+    el.addEventListener("pointerdown", (e) => {
+      if (!(e.button > 0)) pressed = { el, keyed: b.hold.holds(e.pointerId) };
     });
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      // the click ending a press that was the key: the key did it
-      if (b.keyed && e.detail > 0) return;
+      // a pointer's click (a keyboard's on the button has no press: detail 0) is of the press this button had
+      if (e.detail > 0) {
+        const p = pressed;
+        pressed = null;
+        if (p?.el !== el || p.keyed) return;
+      }
       const { ext, command } = b.entry;
       // a held verb lasts as long as its key: with none that does it, there's nothing to hold
       if (command.hold) return;
