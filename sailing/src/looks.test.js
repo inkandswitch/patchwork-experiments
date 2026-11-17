@@ -5,7 +5,7 @@ import { createOcean } from "./test/ocean.js";
 import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness, ropeIndex, ropeTube } from "./looks.js";
 import { createSeaView } from "./sea-view.js";
 import { FLOAT, JIB, SAIL, SEA, SHIP, WINCH } from "./traits.js";
-import { composeMatrix, emptyScene, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
+import { brokenClocks, composeMatrix, emptyScene, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
 import { parseGLB } from "./glb.js";
 import { jibFit, partGLB } from "./ship.js";
 import { clothCount, clothVertices } from "./cloth.js";
@@ -146,7 +146,7 @@ describe("createLooks", () => {
     });
     w.tick(1 / 60, 45);
     const m = api.worldOf("buoy");
-    const expected = floatPose(sea.oceanAt([m[12], m[13], m[14]], "buoy"), m, sea.clock());
+    const expected = floatPose(sea.oceanAt([m[12], m[13], m[14]], "buoy"), m, api.clock.t());
     expect(root.position.y).toBeCloseTo(expected.offset[1], 9);
     expect(root.rotation.x).toBeCloseTo(expected.tilt[0], 9);
     expect(root.position.y).not.toBe(0);
@@ -154,6 +154,37 @@ describe("createLooks", () => {
     looks.dispose();
     expect(root.position.y).toBe(0);
     expect(root.rotation.x).toBe(0);
+  });
+
+  it("bobs it at the doc's world time, api.clock.t(), at every t of the table (the clock held there)", () => {
+    for (const t of [0, 1.5, 30]) {
+      w?.done();
+      const doc = {
+        ...emptyScene(),
+        clock: { running: false, t },
+        objects: { sea: object({ name: "Sea", traits: { water: {}, [SEA]: { seed: 2, scale: 1 } } }), buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }) },
+        order: ["sea", "buoy"],
+        traits: { weather: { wind: 8, from: 90, seed: 2 } },
+      };
+      const root = fakeNode();
+      w = fakeWorld(doc, { content: { buoy: { loaded: true, root } } });
+      const api = w.join("A");
+      const sea = createSeaView(api);
+      const looks = createLooks(api, { sea, sim: { ships: () => [] } });
+      api.loop(() => {
+        sea.tick();
+        looks.tick();
+      });
+      w.tick(1 / 60, 2);
+      expect(api.clock.t()).toBe(t);
+      const m = api.worldOf("buoy");
+      const water = sea.oceanAt([m[12], m[13], m[14]], "buoy");
+      const at = floatPose(water, m, t);
+      expect([t, root.position.y, root.rotation.x]).toEqual([t, at.offset[1], at.tilt[0]]);
+      // and the sea moves: half a second on, she'd sit elsewhere, so a wrong t shows
+      expect(floatPose(water, m, t + 0.5).offset[1]).not.toBeCloseTo(at.offset[1], 6);
+      looks.dispose();
+    }
   });
 });
 
@@ -258,11 +289,13 @@ function stockStage({ burgee = false } = {}) {
     content: (id) => content[id] ?? null,
     worldOf: (id) => worlds[id] ?? null,
     world: () => world,
+    clock: { t: () => clock },
   };
   let clock = 0;
-  const wind = { at: (x, z, t, out = [0, 0]) => ((out[0] = -3), (out[1] = 5), out) };
+  const windAsked = []; // the times the wind was read at
+  const wind = { at: (x, z, t, out = [0, 0]) => (windAsked.push(t), (out[0] = -3), (out[1] = 5), out) };
   const ctx = {
-    sea: { ocean: null, wind, clock: () => clock },
+    sea: { wind },
     sim: {
       ships: () => ["ship"],
       stationsOf: () => ({ sail: "rig", jib: "jib", winches: ["wp", "ws"] }),
@@ -271,10 +304,28 @@ function stockStage({ burgee = false } = {}) {
       sailModels: () => models,
     },
   };
-  return { api, ctx, read, values, rig, jib, world, contract, models, worlds, setClock: (t) => (clock = t) };
+  return { api, ctx, read, values, rig, jib, world, contract, models, worlds, windAsked, setClock: (t) => (clock = t) };
 }
 
 describe("the trim dressing: the drawn cloth and lines are the pure functions of the read", () => {
+  it("has no fallback for the clock: broken each way, the tick throws and the wind is asked at no time", () => {
+    const st = stockStage();
+    const looks = createLooks(st.api, st.ctx);
+    const clock = st.api.clock;
+    for (const row of brokenClocks(clock)) {
+      st.api.clock = row.clock;
+      st.windAsked.length = 0;
+      expect(() => looks.tick(), row.name).toThrow(row.throws);
+      expect(st.windAsked, row.name).toEqual([]);
+    }
+    st.api.clock = clock; // and whole again, every read of the wind is at t
+    st.setClock(3.7);
+    looks.tick();
+    expect(st.windAsked.length).toBeGreaterThan(0);
+    expect(new Set(st.windAsked)).toEqual(new Set([3.7]));
+    looks.dispose();
+  });
+
   it("the main's and the jib's cloth are clothVertices of trimOf, the sheets' slack and the flutter, exactly", () => {
     const st = stockStage();
     const looks = createLooks(st.api, st.ctx);

@@ -189,8 +189,9 @@ try {
     check("the mast brought its boom and sail, under the mast; the windlass its anchor, under the windlass", d.objects[rig]?.parent === mast && d.objects[report.ids.anchor]?.parent === windlass && d.objects[rig].traits?.["sailing.sail"]?.raised === 1, { rig: d.objects[rig], anchor: d.objects[report.ids.anchor]?.parent });
     // each kind under its drawing's version (parts.js VERSIONS, fileKey): the rig's 2 began carrying the stock
     // sloop's rig contract and the mast's 2 dropped the rolled jib (the mast brings the Jib piece instead); the
-    // render fixes (faces turned outward, parts seated into the deck) moved these to the versions below
-    const VERSION = { rig: 3, mast: 3, jib: 2, wheel: 2, windlass: 2, anchor: 2 };
+    // render fixes (faces turned outward, parts seated into the deck) moved these to the versions below; the
+    // rig's 4 states its windage (§3.13)
+    const VERSION = { rig: 4, mast: 3, jib: 2, wheel: 2, windlass: 2, anchor: 2 };
     check("the parts share the scene's files: one GLB doc per kind (doc.assets)", ["mast", "rig", "jib", "wheel", "windlass", "anchor", "ladder"].every((k) => d.assets?.[`sailing/${k}@${VERSION[k] ?? 1}`]?.url), Object.keys(d.assets ?? {}));
   }
   await loads(`['${mast}', '${rig}', '${wheel}', '${windlass}', '${ladder}'].every((id) => window.__p.content(id)?.loaded)`, 20_000);

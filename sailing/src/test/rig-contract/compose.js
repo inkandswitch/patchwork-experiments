@@ -14,7 +14,8 @@
 //
 // Air comes from each set's `trimmed` table (§6.3: the aid trims every sail
 // to its best sheet at each whole degree of β_e; a sim with its own sheets
-// evaluates §6.2 per sail instead). Water is evaluated from the formulas of
+// evaluates §6.2 per sail instead), at the set's CE with each sail swung to
+// its sheet (§6.6), and from the windage elements (§6.1). Water is evaluated from the formulas of
 // §6.4–6.5 with the contract's coefficients; `resistanceFromTable` swaps
 // the hull's part for the contract's R(V, φ) table.
 
@@ -208,7 +209,59 @@ export function composer(c, { resistanceFromTable = false } = {}) {
     const cdv = t.cdv[i] + f * (t.cdv[i + 1] - t.cdv[i]);
     const cd = cdv + (set.are > 0 ? (cl * cl) / (Math.PI * set.are) : 0);
     const q = 0.5 * rhoAir * awsE * awsE * set.areaM2;
-    return { drive: q * (cl * Math.sin(be) - cd * Math.cos(be)), heel: q * (cl * Math.cos(be) + cd * Math.sin(be)) };
+    return { drive: q * (cl * Math.sin(be) - cd * Math.cos(be)), heel: q * (cl * Math.cos(be) + cd * Math.sin(be)), betaEDeg: be / RAD, awsE };
+  }
+
+  /** §6.6 a sail's CE swung δ (deg, + to leeward) about its luff, tack to head: [x, y to leeward, z]. */
+  function swing(ce, tack, head, deg) {
+    const ux0 = head[0] - tack[0], uz0 = head[2] - tack[2];
+    const L = Math.hypot(ux0, uz0);
+    if (!(L > 0)) return [ce[0], 0, ce[2]];
+    const ux = ux0 / L, uz = uz0 / L;
+    const rx = ce[0] - tack[0], rz = ce[2] - tack[2];
+    const d = rx * ux + rz * uz;
+    const px = rx - d * ux, pz = rz - d * uz;
+    const n = Math.hypot(px, pz);
+    const co = Math.cos(deg * RAD), si = Math.sin(deg * RAD);
+    return [tack[0] + d * ux + px * co, n * si, tack[2] + d * uz + pz * co];
+  }
+
+  /** §6.6 the set's CE with each sail at its trimmed sheet at β_e (linear between whole degrees): the sails' swung CEs, area-weighted. */
+  function swungCE(set, betaEDeg) {
+    const t = set.trimmed;
+    if (!t) return set.ceM;
+    const x = Math.min(180, Math.max(0, Math.abs(betaEDeg)));
+    const i = Math.min(t.betaDeg.length - 2, Math.floor(x));
+    const f = x - t.betaDeg[i];
+    let A = 0;
+    const p = [0, 0, 0];
+    for (const id of set.sails) {
+      const s = c.sails.find((q) => q.id === id);
+      const r = s.id === "main" && set.reef >= 0 ? s.reefs[set.reef] : null;
+      const area = r ? r.areaM2 : s.areaM2;
+      const sh = t.sheetsDeg[id];
+      const q = swing(r ? r.ceM : s.ceM, s.tackM, s.headM, sh[i] + f * (sh[i + 1] - sh[i]));
+      A += area;
+      for (let k = 0; k < 3; k++) p[k] += area * q[k];
+    }
+    return p.map((v) => v / A);
+  }
+
+  /** §6.1 one windage element's drive (along the boat) and heel force (square to the mast) at its centre. */
+  function windageAt(e, awsE, betaEDeg, heelDeg) {
+    const q = 0.5 * rhoAir * awsE * awsE;
+    const cb = Math.cos(betaEDeg * RAD), sb = Math.sin(betaEDeg * RAD);
+    const sp = Math.sin(heelDeg * RAD);
+    let fx, fh;
+    if (e.shape === "body") {
+      fx = -q * e.cdFront * e.areaFrontM2 * cb * Math.abs(cb);
+      fh = q * e.cdSide * (e.areaSideM2 + e.sidePerSinHeelM2 * sp) * sb * Math.abs(sb);
+    } else {
+      const D = q * e.areaFrontM2 * (e.cdFront * cb * cb + e.cdSide * sb * sb);
+      fx = -D * cb;
+      fh = D * sb;
+    }
+    return { fx, fh, x: e.atM[0], z: e.atM[2] + e.zPerSinHeelM * sp };
   }
 
   /** Every force at a state (§6.1–6.6). */
@@ -236,15 +289,24 @@ export function composer(c, { resistanceFromTable = false } = {}) {
     const res = resistanceAt(V, phi, Y);
     const Rt = res.total;
     const L = Y * cphi;
-    const [xCE, , zCE] = set.ceM;
+    // §6.6: the sail set at its swung CE, and each windage element (§6.1) at its own centre, each a drive Fx_j and a heel force Fh_j
+    const [xCE, yCE, zCE] = swungCE(set, s.betaEDeg);
+    const parts = [{ fx: s.drive, fh: s.heel, x: xCE, y: yCE, z: zCE }, ...c.windage.elements.map((e) => ({ ...windageAt(e, s.awsE, s.betaEDeg, phi), y: 0 }))];
     const rm = lerp(rt.heelsDeg, rt.boatNm, phi) + lerp(rt.heelsDeg, rt.crewNm, phi);
     const xk = keel?.qcM[0] ?? 0, xr = rudder?.qcM[0] ?? 0;
+    let fx = 0, fh = 0, hm = 0, yawAir = 0;
+    for (const j of parts) {
+      fx += j.fx;
+      fh += j.fh;
+      hm += j.fh * (j.z - zY);
+      yawAir += -j.fh * cphi * j.x + j.fx * (j.z * sphi + j.y * cphi);
+    }
     return {
-      surge: s.drive - Rt * cl + L * sl,
-      sway: -s.heel * cphi + Rt * sl + L * cl,
-      hm: s.heel * (zCE - zY),
+      surge: fx - Rt * cl + L * sl,
+      sway: -fh * cphi + Rt * sl + L * cl,
+      hm,
       rm,
-      yaw: (Yk * xk + Yr * xr + Yh * sf.xMidM) * cphi + Nh - s.heel * cphi * xCE + s.drive * zCE * sphi - (res.appendages + res.induced) * zY * sphi + Rt * sl * H.lcbM,
+      yaw: (Yk * xk + Yr * xr + Yh * sf.xMidM) * cphi + Nh + yawAir - (res.appendages + res.induced) * zY * sphi + Rt * sl * H.lcbM,
       res,
     };
   }

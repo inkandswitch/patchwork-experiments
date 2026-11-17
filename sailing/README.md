@@ -100,15 +100,29 @@ in the console. Her keel and rudder are the ones it drew, her weight sits
 where it put it, and a dinghy's crew hike to windward. She floats on her
 own hull (her drawn model, when the rig was designed on it), meets the
 water's resistance the rig worked out for her, and a dinghy that can plane
-climbs onto the plane past her hull speed. She flies its main and jib, each
-its own sail where the rig drew it, a reef lowering the main's head; the
-physics can back the jib to get her out of irons, though no station
-works a contract boat's own jib (for now it's trimmed with the main;
-DESIGN.md, "The rig contract").
+climbs onto the plane past her hull speed. The wind on her hull, mast and
+rigging is the rig's windage (its §3.13 elements, each pushed by the air
+where it is, §6.1); a boat without a contract gets the same rules applied
+to her box and mast. She flies its main and jib, each
+its own sail where the rig drew it, swinging about its luff with its sheet
+and its centre of effort with it, a reef lowering the main's head. That
+swing is sailing's own: each sail by its own air and sheet, where the
+specification's §6.6 swings the set's CE by its trimmed sheets, so on a
+dead run the two still disagree (DESIGN.md, "The rig contract", Sails). The jib is worked at
+a jib winch (below) and can be backed to get her out of irons; a boat with
+no Jib piece flies it trimmed with the main.
+
+Sailing reads the contract (patchwork-rig v1) in full: every part its
+specification's §7 gives sailing's physics, and the windage §7 still calls
+"not yet" (DESIGN.md, "What sailing reads of v1"), and only in v1's
+current shape. A rig whose `extras.rig` predates the contract's windage
+(a doc holding `sailing/rig@3`, or an older rig-aid export) isn't read: it
+sails the plain path until it is made again.
 
 The stock sloop carries such a contract too, drawn from her own lines and
-rig (DESIGN.md, "Trim feedback"): a "Mast and sail" filed as
-`sailing/rig@3` on the stock hull sails her separate main and jib. A rig
+rig (DESIGN.md, "Trim feedback"), her windage stated by §3.13 from where
+her mast and rigging are drawn: a "Mast and sail" filed as
+`sailing/rig@4` on the stock hull sails her separate main and jib. A rig
 whose file carries no contract is a plain one, and so is the stock rig on
 any other hull (camber's): its contract describes the stock hull only.
 
@@ -210,7 +224,11 @@ the wind.
 
 Leaving the anchor (or stopped head to wind, or in irons, going astern),
 her rudder hardly bites. Do what a crew does: raise the main while she's
-anchored (she lies head to wind), weigh, take the wheel and press B. The
+anchored, weigh, take the wheel and press B. Lying back on her rode she is
+head to wind; laid at anchor in a seaway (as Ship at anchor lays her) she
+may not be, and the anchor can break out with her well off the wind
+(DESIGN.md, "Leaving the anchor", Open): read the HUD, which says to back
+the jib only when she is head to wind or in irons. The
 jib (unrolled first, if it was rolled away at anchor) is backed to
 windward and pushes her bow away from the wind, off in under ten seconds
 in the anchorage's breeze; press B again to let it fly and sail off. Dead
@@ -229,7 +247,8 @@ pnpm test          # the fast tier (~6 s): the physics, the sea, her navmesh (C1
 pnpm test:slow     # the slow tier (~5 s alone, longer beside other work): *.slow.test.js
 pnpm test:all      # both
 pnpm build
-node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
+node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too); --sea N picks the sea, --trace <file> keeps every step the computer took
+node probes/trace-diff.mjs a.jsonl b.jsonl --until left   # two traces compared: the first step where they differ (same-seed runs are the same world through the leave step: DESIGN.md, "Determinism")
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
 node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad, the anchor dropped and raised by the prompt's buttons (build scene/, water/ too)
 node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, tabletop/, card-table/ too)

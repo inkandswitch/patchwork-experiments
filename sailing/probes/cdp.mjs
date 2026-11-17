@@ -214,13 +214,25 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
     Shift: { code: "ShiftLeft", vk: 16 },
   };
   const keyInfo = (key) => KEYS[key] ?? (key.length === 1 ? { code: /[a-z]/i.test(key) ? `Key${key.toUpperCase()}` : "", vk: key.toUpperCase().charCodeAt(0), text: key } : { code: key, vk: 0 });
+  // A key reaches the page as an input task of its own, which the dispatch's reply doesn't wait for: a step sent
+  // straight after it could run first, and the key land a frame later in one run than in another (sailing/DESIGN.md,
+  // "Determinism"). So each key waits, on the wall and stepping no frames, until the page has seen it: a count of the
+  // key events the window has captured (installed by the first key). A key the page hasn't seen in 1 s is an error:
+  // whatever the probe checks after it would be checking a key that never came.
+  const KEYS_SEEN = "(window.__cdpKeys ??= (() => { const s = { n: 0 }; for (const t of ['keydown', 'keyup']) addEventListener(t, () => s.n++, true); return s; })()).n";
+  async function keySent(params) {
+    const before = await js(KEYS_SEEN);
+    await send("Input.dispatchKeyEvent", params);
+    for (const t0 = Date.now(); (await js(KEYS_SEEN)) <= before; await sleep(1))
+      if (Date.now() - t0 > 1000) throw new Error(`the page never saw ${params.type} ${params.key} (1 s)`);
+  }
   async function keyDown(key, mods = 0) {
     const k = keyInfo(key);
-    await send("Input.dispatchKeyEvent", { type: k.text ? "keyDown" : "rawKeyDown", key, code: k.code, windowsVirtualKeyCode: k.vk, text: k.text, modifiers: modBits(mods) });
+    await keySent({ type: k.text ? "keyDown" : "rawKeyDown", key, code: k.code, windowsVirtualKeyCode: k.vk, text: k.text, modifiers: modBits(mods) });
   }
   async function keyUp(key, mods = 0) {
     const k = keyInfo(key);
-    await send("Input.dispatchKeyEvent", { type: "keyUp", key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: modBits(mods) });
+    await keySent({ type: "keyUp", key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: modBits(mods) });
   }
 
   // ── touch ──

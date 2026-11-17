@@ -26,7 +26,7 @@
 import { createShip, specFromBox, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 import { mergeSpec } from "./hull-model.js";
 import { apply, eulerFromQuat, invert, matrixOf, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
-import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
+import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, rigContractOf, shipFrame, toBody, toObject, yawOf } from "./body.js";
 import { trimModelOf } from "./trim.js";
 import { ANCHOR, DEFAULTS as STATION_DEFAULTS, SHIP, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
 import { contractOn, rigKey, rigSpecParts } from "./rig-contract.js";
@@ -224,9 +224,9 @@ export function controlsOf(v, at, spec) {
 }
 
 /**
- * A state ready to step to sea time `t`: when it's further behind than one
+ * A state ready to step to world time `t`: when it's further behind than one
  * step catches up (MAX_SUBSTEPS: a stall, or frames too slow), the rest is
- * skipped, as the sea's clock skips it, so she stays on the waves drawn.
+ * skipped, as the doc's clock (api.clock.t()) skips it, so she stays on the waves drawn.
  * @returns {[object, number]}  the state, and the dt to step it by
  */
 export function catchUp(state, t) {
@@ -271,7 +271,7 @@ export function plainTransform(t) {
 
 /**
  * A ship's state from a pose ({ position, quaternion }) and a motion ({
- * velocity, spin }, world, or nothing: still), at sea time t.
+ * velocity, spin }, world, or nothing: still), at world time t.
  */
 export function stateOf(pose, motion, t) {
   return {
@@ -361,7 +361,7 @@ export function createSim(api, ctx) {
   let publishedAt = -Infinity;
 
   let memo = { scene: null, map: new Map() };
-  const modelMemo = new WeakMap(); // a rig GLB's extras → its sails' trim thresholds
+  const modelMemo = new WeakMap(); // a contract taken → its sails' trim thresholds
   /** A ship's parts, from a snapshot (traits.js partsOf), once per snapshot. */
   function parts(sc, ship) {
     if (memo.scene !== sc) memo = { scene: sc, map: new Map() };
@@ -496,6 +496,7 @@ export function createSim(api, ctx) {
         // move above starts her again at rest where she landed.
         s.state = { ...s.state, t, acc: 0 };
         s.good = s.state;
+        s.stepped = null;
         continue;
       }
       // the water she is in, asked once a step at her body's origin (her waterline), leaving out what she carries.
@@ -507,6 +508,7 @@ export function createSim(api, ctx) {
       if (!env.water) {
         s.state = { ...s.state, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0 };
         s.good = s.state;
+        s.stepped = null;
         // put down out of the water, she is where the doc has her: nothing of ours to hold
         if (moved) s.drawn = null;
         continue;
@@ -522,6 +524,7 @@ export function createSim(api, ctx) {
       s.good = s.state;
       s.read = published(s.model.read(s.state, controls, env), s.state);
       s.drawn = { p, controls };
+      s.stepped = { spec: s.model.spec, key, controls, from, state: s.state };
     }
     for (const id of ships.keys()) if (!ids.includes(id)) ships.delete(id);
   }
@@ -629,17 +632,28 @@ export function createSim(api, ctx) {
     /**
      * Each of a ship's contract sails' trim thresholds by id (trim.js
      * trimModelOf), from her rig's GLB as this view has it loaded (so a
-     * follower has them too); {} with no contract.
+     * follower has them too); {} when she takes no contract (body.js
+     * rigContractOf: the gate her physics reads it through, so a rig her
+     * physics sails plain has no contract sails' advice either).
      */
     sailModels(id) {
-      const rig = parts(api.scene(), id).sail;
-      const extras = rig ? api.content(rig)?.extras : null;
-      const sails = extras?.rig?.sails;
-      if (!Array.isArray(sails)) return {};
-      let m = modelMemo.get(extras);
-      if (!m) modelMemo.set(extras, (m = Object.fromEntries(sails.map((x) => [x.id, trimModelOf(x)]))));
+      const contract = rigContractOf(api, id);
+      if (!Array.isArray(contract?.sails)) return {};
+      let m = modelMemo.get(contract);
+      if (!m) modelMemo.set(contract, (m = Object.fromEntries(contract.sails.map((x) => [x.id, trimModelOf(x)]))));
       return m;
     },
+    /**
+     * Her latest step of world time on this view, as it was taken: `{ spec,
+     * key, controls, from, state }`, the spec her physics stepped with
+     * (createShip's own) and its key, the controls, the state it went on
+     * from and the state it reached (the physics' own, unrounded). null on a
+     * view that isn't computing, before her first step, and when her latest
+     * step didn't step her (held by a person, or no water under her). For
+     * tests and the probe's trace (probes/sailing-probe.html ?trace): what
+     * two runs are compared on.
+     */
+    stepped: (id) => ships.get(id)?.stepped ?? null,
     stationsOf(id) {
       const { helm, sail, anchor, mainsheet, jib, ladder, winches } = parts(api.scene(), id);
       return { helm, sail, anchor, mainsheet, jib, ladder, winches };

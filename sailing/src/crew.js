@@ -310,7 +310,6 @@ export function createCrew(api, ctx) {
   let warned = false;
   const keys = new Set();
 
-  const clock = () => ctx.sea?.clock?.() ?? 0;
   /** A ship's body frame as drawn (bow −Z), which a body aboard lives in; null when she's gone. */
   const frameOfShip = (id) => bodyOf(api, id);
 
@@ -363,7 +362,7 @@ export function createCrew(api, ctx) {
     frame: frameOfShip,
     ships: () => ctx.sim?.ships?.() ?? [],
     // the water there, from above (a swimmer is in whatever water's surface is highest in her column)
-    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, clock()) ?? 0,
+    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, api.clock.t()) ?? 0,
     blockers(ship) {
       if (boomsAt !== frameNo) (booms.clear(), (boomsAt = frameNo));
       if (!booms.has(ship)) booms.set(ship, boomOf(api, ship, frameOfShip(ship)));
@@ -927,7 +926,7 @@ export function createCrew(api, ctx) {
       frameNo++;
       const d = Math.min(dt, 0.05);
       // the walker's step is capped for its own sake; the station's verbs (the wheel, a sheet, the
-      // furler, the halyard, the windlass) run in sea time, as far as the ships step this frame
+      // furler, the halyard, the windlass) run in world time, as far as the ships step this frame
       if (playing && !suspended) walk(d, Math.min(Math.max(dt, 0), MAX_SUBSTEPS * SUBSTEP));
       else if (!playing) follow();
       drawPeers(d);
