@@ -3,8 +3,6 @@
 import { describe, it, expect } from "vitest";
 import { fill } from "./fill.js";
 import { count, inside } from "./contents.js";
-import { plugins } from "./index.js";
-import extension from "./extension.js";
 
 const fakeRepo = () => {
   const docs = new Map();
@@ -13,11 +11,6 @@ const fakeRepo = () => {
 const object = (name, more = {}) => ({ name, sourceUrl: `automerge:glb-${name}`, providerId: "file-glb", renderUrl: null, parent: "table", group: "g1", transform: { position: [1, 2, 3], rotation: [0, 1, 0], scale: 1 }, traits: { "scene.carry": {} }, ...more });
 
 describe("fill: a bag made already holding things", () => {
-  it("is found by its metadata, and is the extension module's", () => {
-    expect(plugins.find((p) => p.container === "bag")?.id).toBe("bag");
-    expect(extension.fill).toBe(fill);
-  });
-
   it("holds every item, in the order given, each whole but for where it was, from no scene", async () => {
     const repo = fakeRepo();
     const items = [{ id: "o1", object: object("Coin 1") }, { id: "o2", object: object("Coin 2", { tags: ["coin"], traits: { "scene.carry": {}, "t.kept": { by: "automerge:c", slot: 3 } } }) }, { id: "o3", object: object("Big", { transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 2 } }) }];

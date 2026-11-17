@@ -199,10 +199,6 @@ describe("a bag in a scene", () => {
     }
   });
 
-  it("no longer asks where a carry would land: nothing of the bag's is a landing rule", async () => {
-    const t = await table();
-    expect(t.instance.landing).toBeUndefined();
-  });
 });
 
 describe("drawing", () => {

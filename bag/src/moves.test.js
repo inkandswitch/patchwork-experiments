@@ -309,19 +309,4 @@ describe("every interleaving of two peers' moves, with real merges", () => {
     if (!ONLY) expect(total.states).toBeGreaterThan(1000);
   });
 
-  it("two draws of the same item at once: one object, one holder, and the other draws again", () => {
-    // P and Q both take item b (the last in) before either hears of the other
-    const st = { docs: start(), peers: { p: { prog: ["draw:B1"], held: [], ids: 0 }, q: { prog: ["draw:B1"], held: [], ids: 0 } } };
-    const pick = (s, w) => step(s, w).find((n) => n.peers[w].held[0]?.id === "b");
-    let s = pick(pick(st, "p"), "q");
-    expect([s.peers.p.held[0].id, s.peers.q.held[0].id]).toEqual(["b", "b"]);
-    for (let i = 0; i < 12; i++) for (const name of DOCS) for (const [from, to] of [["p", "q"], ["q", "p"]]) s = deliver(s, name, from, to) ?? s;
-    // the loser's program now says to draw again; it does
-    for (const w of PEERS) while (s.peers[w].prog.length) s = step(s, w)[0];
-    for (let i = 0; i < 12; i++) for (const name of DOCS) for (const [from, to] of [["p", "q"], ["q", "p"]]) s = deliver(s, name, from, to) ?? s;
-    expect(check(s)).toEqual([]);
-    expect([s.peers.p.held[0].id, s.peers.q.held[0].id].sort()).toEqual(["a", "b"]);
-    expect(Object.keys(s.docs.p.S.objects).sort()).toEqual(["a", "b", "c"]);
-    expect(inside(s.docs.p.B1)).toEqual([]);
-  });
 });

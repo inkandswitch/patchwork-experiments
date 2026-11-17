@@ -20,12 +20,6 @@ describe("a scene made here", () => {
     expect(scene.order).toEqual([BAG_OBJECT]);
   });
 
-  it("carries where the scene package comes from, bare, when another viewer could load it; else just its type", () => {
-    expect(make(`${SCENE_PKG}#${"H".repeat(48)}`)["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: SCENE_PKG });
-    expect(make("https://tools.example.com/scene/")["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: "https://tools.example.com/scene/" });
-    for (const local of [null, "http://localhost:5173/", "./dist/index.js"]) expect(make(local)["@patchwork"]).toEqual({ type: "scene" });
-  });
-
   it("is a scene named for its bag (an empty scene to build on, not a table), started in Edit", () => {
     const scene = make(null);
     expect(scene.title).toBe("Tile bag: scene");

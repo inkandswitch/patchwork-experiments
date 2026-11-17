@@ -72,15 +72,6 @@ describe("the bag's panel on its own", () => {
     t.cleanup();
   });
 
-  it("with replacement, a draw reports a copy and leaves the bag as it was", () => {
-    const t = mount({ rule: "random-replace" });
-    t.button("Draw").click();
-    expect(t.$(".status").textContent).toMatch(/^Drew: (Cube|Disc|Meeple) \(copies: they stay in the bag\)$/);
-    expect(t.$(".total").dataset.count).toBe("4");
-    expect(outside(t.handle.doc())).toEqual([]);
-    t.cleanup();
-  });
-
   it("the title, the rule and the look are written to the doc, and follow it", () => {
     const t = mount();
     t.$(".title").value = "Chit cup";

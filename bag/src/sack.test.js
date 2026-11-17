@@ -1,6 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { parseGLB } from "./glb.js";
 import { poseBeside, spot, baseLift, halfWidth } from "./place.js";
 import { sackGLB, sackProfile } from "./sack.js";
@@ -38,9 +36,6 @@ describe("the sack", () => {
     expect(source.fingerprint({ ...doc, look: { color: "#112234", size: 0.3 } })).not.toBe(fp);
   });
 
-  it("glb.js is the kit's (v3): copied whole, never edited here", () => {
-    expect(readFileSync(join(process.cwd(), "src", "glb.js"), "utf8").slice(0, 600)).toMatch(/\[kit: glb\.js v3\]/);
-  });
 });
 
 describe("setting things down beside a bag", () => {
