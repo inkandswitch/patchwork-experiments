@@ -1618,6 +1618,16 @@ Round 3's review (Decisions 41-45):
   the game is elsewhere; laying out another is a click).
 - Being a Doom player from the 3D world (the HUD puzzle): README.md, "Being
   a player from the 3D world", has what step 7 showed about it.
+- "Lay out its world" never refuses a second world for a cabinet that has
+  one: `worldCommand` (`src/scene/worlds.js`) asks only the kind, whether
+  the machine runs, the map source and the WAD count, never whether an
+  object already carries `machine.world` naming this cabinet. The published
+  Arcade (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) came to hold two, `world`
+  and `okg5pjo09`, at one pose, so every view drew Doom's world twice;
+  it was republished clean and the folder's link swapped (N7, 2026-11-16;
+  scene/COMPOSITION.md, Decisions, N7, 7). Whether the command should be
+  disabled ("It has its world") or replace the old one is a question for
+  the lead (Decisions, N7, 7).
 - A WAD dropped on an empty cabinet where the doom package is installed
   too goes to whichever of the two is first in registry order (Decision
   33). Next phase, by the lead's word: clean up the drop interfaces so the
