@@ -68,9 +68,11 @@ const LISTEN = `(() => {
   host.addEventListener("pointerdown", (e) => log.push(what(e)), true);
   return true; })()`;
 const events = () => js("window.__ev.splice(0)");
-const state = async () => ({ body: (await P("body('a')")).id, stack: (await P("body('a')")).stack, focus: await P("focusPath('a')"), selected: await P("selectionPath('a')"), locked: await js("!!document.pointerLockElement") });
+const state = async () => ({ body: (await P("body('a')")).id, stack: (await P("body('a')")).stack, editing: await js("(__p.A.local.get().hands ?? []).some((h) => h.kind === 'edit')"), focus: await P("focusPath('a')"), selected: await P("selectionPath('a')"), locked: await js("!!document.pointerLockElement") });
+// "in Edit": Look, holding the editor (a hand, not a body: scene HISTORY.md, Kernel step 1)
+const inEdit = (s) => s.body === "look" && s.editing === true;
 const editOver = async () => {
-  await js(`(__p.A.view.enterBody("edit"), true)`);
+  await js(`(__p.A.view.setEditing(true), true)`);
   await b.rest(200);
   await P("setCam('a', __p.overTable('a'))");
   await b.rest(300);
@@ -89,14 +91,14 @@ try {
   check("1: her world runs", await js("__p.A.view.stages().find((s) => s.path.length === 0).reader.clock.status().running"), null);
   await js(LISTEN);
   await editOver();
-  check("1: A in Edit, over the table, the focus on the boat", J(await state()).includes('"body":"edit"') && J(await P("focusPath('a')")) === "[]", await state());
+  check("1: A in Edit, over the table, the focus on the boat", inEdit(await state()) && J(await P("focusPath('a')")) === "[]", await state());
 
   // ── 2: A enters G ──
   await js(`(__p.A.view.enter(${J([ids.link])}), true)`);
   await b.rest(400);
   await events();
   check("2: Enter on the link enters G", J(await P("focusPath('a')")) === J([ids.link]), await state());
-  check("2: entering leaves the body Edit", (await state()).body === "edit", await state());
+  check("2: entering leaves the body Edit", inEdit(await state()), await state());
 
   // ── 3: a click on the boat, outside the focus ──
   // the boat's object nearest the canvas's middle, of those a click reaches on a 12 px grid: the table (its top
@@ -108,7 +110,7 @@ try {
       if (!p || p.length !== 1 || !want(p[0]) || document.elementFromPoint(r.left + x, r.top + y) !== v.canvas) continue;
       const d = Math.hypot(x - r.width / 2, y - r.height / 2); if (!best || d < best.d) best = { id: p[0], d, x: r.left + x, y: r.top + y }; } return best; })()`);
   for (const which of ["table", "other"]) {
-    if (J(await P("focusPath('a')")) !== J([ids.link]) || (await state()).body !== "edit") {
+    if (J(await P("focusPath('a')")) !== J([ids.link]) || !inEdit(await state())) {
       await editOver();
       await js(`__p.A.view.focusOn(${J([ids.link])})`);
       await b.rest(300);
@@ -124,7 +126,7 @@ try {
     const after = await state();
     const ev = await events();
     report.numbers[`click on ${name}`] = { before, at, ev, after };
-    check(`3: in Edit inside G, a click on ${name} (the boat's, outside the focus) leaves the body Edit, the pointer free`, after.body === "edit" && !after.locked, { id, hit: ev[0]?.hit, before: before.body, after });
+    check(`3: in Edit inside G, a click on ${name} (the boat's, outside the focus) leaves the body Edit, the pointer free`, inEdit(after) && !after.locked, { id, hit: ev[0]?.hit, before: before.body, after });
     check(`3: …and the focus and selection as they were`, J(after.focus) === J(before.focus) && J(after.selected) === J(before.selected), { before, after });
     await b.shot(join(SHOTS, `editclick-${which}.png`));
   }
@@ -132,7 +134,7 @@ try {
   // ── 4: single clicks at cards, her sea moving between the aim and the press ──
   const misses = [];
   for (let i = 0; i < MISSES; i++) {
-    if (J(await P("focusPath('a')")) !== J([ids.link]) || (await state()).body !== "edit") {
+    if (J(await P("focusPath('a')")) !== J([ids.link]) || !inEdit(await state())) {
       await editOver();
       await js(`__p.A.view.focusOn(${J([ids.link])})`);
       await b.rest(300);
@@ -151,12 +153,12 @@ try {
     const after = await state();
     // inside G: a card of G's, or another of G's things (its board); outside: the boat's
     const where = !ev?.hit ? "nothing" : ev.hit[0] === ids.link && ev.hit.length > 1 ? (ofG.includes(ev.hit[1]) ? "G card" : "G other") : "boat";
-    misses.push({ aimed: at.id, where, hit: ev?.hit ?? null, body: after.body, selected: after.selected });
+    misses.push({ aimed: at.id, where, hit: ev?.hit ?? null, body: after.body, editing: after.editing, selected: after.selected });
     await b.advance(700 + 137 * i); // (another moment of her sea for the next)
   }
   report.numbers.singleClicks = misses;
   const tally = misses.reduce((t, m) => ((t[m.where] = (t[m.where] ?? 0) + 1), t), {});
-  check(`4: ${MISSES} single clicks at cards on her moving table, in Edit inside G: none changes the body`, misses.every((m) => m.body === "edit"), { tally, misses });
+  check(`4: ${MISSES} single clicks at cards on her moving table, in Edit inside G: none changes the body`, misses.every((m) => inEdit(m)), { tally, misses });
   check("4: …each one on something of G's (a card, or its board) selects that thing", misses.filter((m) => m.where?.startsWith("G ")).every((m) => J(m.selected) === J(m.hit.slice(0, 2))), tally);
 
   // ── 5: triage (f): a click on a card by the canvas's top edge, in Edit on the boat ──
@@ -203,7 +205,7 @@ try {
   const after5 = await state();
   const ev5 = await events();
   report.numbers.topEdgeClick = { after: after5, canvas: await canvasRect(), events: ev5 };
-  check("5: a click by the top edge leaves the body Edit, the pointer free, and the canvas's top where it was (triage (f))", after5.body === "edit" && !after5.locked && (await canvasRect()).top === cr.top, { before: cr, after: after5, hits: ev5.map((e) => ({ type: e.type, on: e.on, hit: e.hit })) });
+  check("5: a click by the top edge leaves the body Edit, the pointer free, and the canvas's top where it was (triage (f))", inEdit(after5) && !after5.locked && (await canvasRect()).top === cr.top, { before: cr, after: after5, hits: ev5.map((e) => ({ type: e.type, on: e.on, hit: e.hit })) });
 
   // ── 6: the bar's Come aboard, from Edit ──
   await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
@@ -217,8 +219,7 @@ try {
     const after6 = await state();
     const cr6b = await canvasRect();
     report.numbers.barAboard = { way, after: after6, canvas: [cr6, cr6b] };
-    check("6: a click on it comes aboard: the crew's body, Edit left", after6.body === "walk" && after6.stack.includes("walk") && !after6.stack.includes("edit"), after6);
-    // (its width grows: Edit's side drawer goes with Edit)
+    check("6: a click on it comes aboard: the crew's body, the editor still held (a hand: walking while editing)", after6.body === "walk" && after6.stack.includes("walk") && after6.editing, after6);
     check("6: …and the canvas's top and height stay (the bar stays: Come aboard is declared)", cr6b.top === cr6.top && cr6b.height === cr6.height, { before: cr6, after: cr6b });
   }
 

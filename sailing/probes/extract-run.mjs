@@ -72,8 +72,9 @@ const HELPERS = `window.__ex = (() => {
     selected: () => dbg().local.get().selected ?? null,
     edits: () => plain(dbg().local.get().edits),
     run: (command, target, value) => api().run({ ext: "scene.transfer", command, target, value }),
-    edit: () => dbg().view.enterBody("edit"),
+    edit: () => dbg().view.setEditing(true),
     body: () => dbg().local.get().body?.id ?? null,
+    editing: () => (dbg().local.get().hands ?? []).some((h) => h.kind === "edit"),
     undo: () => api().undo(),
     redo: () => api().redo(),
     // the game's stage: where it acts, what runs there
@@ -127,7 +128,7 @@ try {
   const S = [...subtree(host0, ids.table)];
   report.numbers.extracted = S.map((id) => host0.objects[id].name);
   await X("edit()");
-  check("A is in Edit", await loads("window.__ex.body() === 'edit'", 5000), await X("body()"));
+  check("A holds the editor", await loads("window.__ex.editing()", 5000), await X("body()"));
   await shot("before");
 
   // ── 1 ──

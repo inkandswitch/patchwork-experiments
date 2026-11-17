@@ -95,7 +95,7 @@ try {
     title: "Editor probe", objects, order: Object.keys(objects),
     view: { units: "cm", grid: true, axes: true, bounds: false, snap: true,
             // an editor's scene: it starts people in Edit (scene/TOOLS.md Decisions 6)
-            start: { body: "edit", home: { position: [0.1, 0.6, 0.75], target: [0.1, 0, 0] } } },
+            start: { edit: true, home: { position: [0.1, 0.6, 0.75], target: [0.1, 0, 0] } } },
   }));
   window.sceneHandle = scene;
   try { localStorage.clear(); } catch {}

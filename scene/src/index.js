@@ -114,7 +114,7 @@ export const plugins = [
   // Carry runs by trait, where the doc has something carryable; others in
   // every doc (traits ["*"]), wherever the focus is. Chrome
   // follows attention, never the doc (STAGE.md, "Activation"), and the editor's chrome
-  // is the Edit body's (src/stage/bodies.js): the toolbar's editor commands
+  // is the Edit hand's (src/stage/bodies.js): the toolbar's editor commands
   // (its world commands show in every body: HISTORY.md, TOOLS Decisions 10), the halo
   // and its knobs, the inspector (one drawer tab: the object tree and the
   // selection's fields, open once something is selected), dimensions and

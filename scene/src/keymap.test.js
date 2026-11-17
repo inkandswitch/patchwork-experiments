@@ -39,8 +39,6 @@ const BODIES = [
   { id: "walk", keys: WALK, reach: 2 },
   { id: "seat", keys: [], reach: 2 },
   { id: "station", keys: [{ code: "KeyA" }, { code: "KeyD" }], reach: 2.5 },
-  // (the editor: the bar holds its commands too)
-  { id: "edit", keys: [], reach: Infinity },
 ];
 const TOOLS = [null, { name: "gun", keys: [{ code: "KeyR" }] }, { name: "measure", keys: [] }];
 const GESTURES = [null, { keys: CARRY_KEYS }];

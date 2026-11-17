@@ -51,7 +51,7 @@ export function sceneWithBag({ bagUrl, bagDoc, fileUrl, hint, sceneImportUrl = n
     traits: { [CONTAINER]: { doc: bagUrl }, [CARRY]: {} },
   };
   scene.order.push(BAG_OBJECT);
-  // where people start: in Edit, as a scene made new does (emptyScene's
+  // where people start: holding the editor, as a scene made new does (emptyScene's
   // view.start): it is an empty scene to build on, not a table, and a bag
   // has no seats to start anyone in (its home is left to the scene's own
   // framing)

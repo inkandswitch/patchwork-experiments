@@ -67,6 +67,8 @@ const DOC = {
     barrel: object({ name: "Barrel" }),
   },
   order: ["ship", "helm", "spoke", "capstan", "barrel"],
+  // (a game, played: nobody arrives holding the editor)
+  view: { start: {} },
 };
 
 describe("scene.use, the pure side", () => {
@@ -333,8 +335,7 @@ describe("scene.use", () => {
   // halo handle), never a button left there. An eye carried every frame (a ride) doesn't: it would never let the
   // pointer catch the prompt. However the pointer came onto it, it holds where it is.
   describe("the pointer on the prompt, and the eye", () => {
-    const LOOK = () => s.api("t.game").body.enter("look");
-    const EDIT = () => s.api("t.game").body.enter("edit");
+    const EDIT = (on) => s.api("t.game").view.edit(on);
     const origin = () => s.port.getBoundingClientRect();
     const px = (x, y) => [`${x - origin().left}px`, `${y - origin().top}px`];
     const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
@@ -376,8 +377,9 @@ describe("scene.use", () => {
           await settle(1);
         }
       }],
-      ["Edit entered (from Look)", true, async () => expect(EDIT()).toBe(true), LOOK],
-      ["Look entered (Edit left)", true, async () => expect(LOOK()).toBe(true)],
+      // (the editor is a hand, not a body: picking it up or putting it down moves no eye)
+      ["the editor picked up", false, async () => expect(EDIT(true)).toBe(true)],
+      ["the editor put down", false, async () => expect(EDIT(false)).toBe(false), () => EDIT(true)],
       ["the selection changes", false, async () => s.api("t.game").view.select("capstan")],
       ["a pointer lock taken and lost", true, async () => {
         document.pointerLockElement = s.canvas;
@@ -684,7 +686,7 @@ describe("scene.use: a button with a key is that key", () => {
     },
   };
   const TARGETS = ["bell", "winch", "flag", "anchor", "chest", "crate"];
-  const DOC5 = { traits: { "t.level": {} }, objects: Object.fromEntries(TARGETS.map((id) => [id, object({ name: id })])), order: TARGETS };
+  const DOC5 = { traits: { "t.level": {} }, objects: Object.fromEntries(TARGETS.map((id) => [id, object({ name: id })])), order: TARGETS, view: { start: {} } };
 
   /** Mount, and attend `target`: a mouse hovering it in Look, or a finger walking with the eye on it. */
   async function at(target, input, command = null) {

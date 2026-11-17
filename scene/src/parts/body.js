@@ -1,17 +1,19 @@
-// scene.body: the body chip, who's here, and the Esc hint (STAGE.md, "Bodies").
+// scene.body: the body chip, the Edit toggle, who's here, and the Esc hint
+// (STAGE.md, "Bodies", "Hands").
 //
-// - The chip ("Look ▾", "Edit ▾", "Walk ▾") names the body on top of the
-//   stack. Its menu offers the stage's Look and Edit (the orbit camera,
-//   ../stage/bodies.js: choosing one leaves every body over it), then any
-//   body a running extension offers that can start "here" (a body that
-//   needs a place, a seat or a station, says `here: false` and is entered by
-//   that thing's verb instead), and Leave pops the top body (never Look or
-//   Edit): standing up returns to walking, and from walking or a seat to
-//   Look.
+// - The chip ("Look ▾", "Walk ▾") names the body on top of the stack. Its
+//   menu offers the stage's Look (the orbit camera, ../stage/bodies.js:
+//   choosing it leaves every body), then any body a running extension offers
+//   that can start "here" (a body that needs a place, a seat or a station,
+//   says `here: false` and is entered by that thing's verb instead), and
+//   Leave pops the top body (never Look): standing up returns to walking,
+//   and from walking or a seat to Look.
+// - Edit, beside the chip, picks up the editor's hand or puts it down
+//   (api.view.edit). It is not a body: you can walk or sit holding it.
 // - Who's here: each person present in the focus doc, with their body and
-//   held tool, from presence (the view says every viewer's on every channel
-//   it acts on: a person at another placement of this doc shows as what
-//   they're doing there).
+//   what they hold (the top hand: "Edit", "Measure"), from presence (the view
+//   says every viewer's on every channel it acts on: a person at another
+//   placement of this doc shows as what they're doing there).
 // - The Esc hint names the layer the next Escape pops (stage/ladder.js),
 //   and after the browser has released the pointer, that a click takes it
 //   back. With no keyboard (the input is touch) it is the Escape key: it
@@ -20,7 +22,7 @@
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";
-import { LOOK, STAGE_BODIES } from "../stage/bodies.js";
+import { EDIT_HAND, LOOK, editing } from "../stage/bodies.js";
 import { holdKey } from "../hold-key.js";
 
 const el = (tag, cls, text) => {
@@ -30,16 +32,19 @@ const el = (tag, cls, text) => {
   return e;
 };
 
+/** What a view holds, as peers are told it: its top hand's name (an open menu is passed over), or null. Pure. */
+export const heldName = (view) => (Array.isArray(view?.hands) ? (view.hands.filter((h) => h?.kind !== "popover").at(-1)?.name ?? null) : null);
+
 /**
  * Who's here, from presence: [{ session, viewer, body, held, you }], this
  * view first, the others in session order; a person whose view hasn't said
  * its body yet is in Look. Pure.
  * @param {object} presence  api.presence.get() (each peer's `body` and `held`, as its view says them)
  * @param {string | null} self  this view's session
- * @param {{ body?: { id, label }, held?: { name } | null }} mine  this view's
+ * @param {{ body?: { id, label }, hands?: { kind, name }[] }} mine  this view's
  */
 export function whoIsHere(presence, self, mine) {
-  const out = [{ session: self, viewer: null, body: mine?.body?.label ?? LOOK.label, held: mine?.held?.name ?? null, you: true }];
+  const out = [{ session: self, viewer: null, body: mine?.body?.label ?? LOOK.label, held: heldName(mine), you: true }];
   for (const [session, p] of Object.entries(presence ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (session === self) continue;
     out.push({ session, viewer: p?.viewer ?? null, body: typeof p?.body?.label === "string" ? p.body.label : LOOK.label, held: typeof p?.held?.name === "string" ? p.held.name : null, you: false });
@@ -47,9 +52,9 @@ export function whoIsHere(presence, self, mine) {
   return out;
 }
 
-/** The bodies the chip offers: the stage's Look and Edit, then those that can start "here", by label. Pure. */
+/** The bodies the chip offers: the stage's Look, then those that can start "here", by label. Pure. */
 export function chipBodies(collected) {
-  const out = STAGE_BODIES.map((b) => ({ id: b.id, label: b.label }));
+  const out = [{ id: LOOK.id, label: LOOK.label }];
   const seen = new Set(out.map((b) => b.id));
   for (const { value } of collected ?? []) {
     for (const def of Array.isArray(value) ? value : []) {
@@ -71,11 +76,18 @@ function create(api) {
   const chip = el("button", "button body-chip");
   chip.type = "button";
   chip.setAttribute("aria-haspopup", "menu");
+  const edit = el("button", "button body-edit", EDIT_HAND);
+  edit.type = "button";
+  edit.title = "Pick up the editor: select, move and change things";
+  edit.addEventListener("click", () => {
+    api.view.edit(!editing(api.view.get()));
+    api.root.focus?.({ preventScroll: true });
+  });
   const hint = el("div", "body-escape");
   hint.setAttribute("aria-live", "polite");
   // a key only while it shows as one (data-key: the only time it takes a pointer)
   const escKey = holdKey(hint, api.root, "Escape");
-  bar.append(people, chip);
+  bar.append(people, edit, chip);
   overlay.append(hint, bar);
 
   const names = new Map(); // viewer → name (contact docs, looked up once)
@@ -151,7 +163,8 @@ function create(api) {
     const rung = local.escape?.hint ?? "";
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : !rung ? "" : touch ? rung[0].toUpperCase() + rung.slice(1) : `Esc: ${rung}`;
     const isKey = touch && !local.pointer?.released && !!rung;
-    const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, esc, isKey]);
+    const on = editing(local);
+    const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, on, esc, isKey]);
     if (key === shown) return;
     shown = key;
     people.replaceChildren(
@@ -165,6 +178,8 @@ function create(api) {
     );
     chip.textContent = `${local.body?.label ?? LOOK.label} ▾`;
     chip.title = (local.body?.depth ?? 0) > 0 ? "Your body: change it, or leave it" : "Your body: change it";
+    edit.setAttribute("aria-pressed", String(on));
+    edit.title = on ? "Put the editor down" : "Pick up the editor: select, move and change things";
     hint.textContent = esc;
     hint.hidden = !esc;
     if (isKey) {

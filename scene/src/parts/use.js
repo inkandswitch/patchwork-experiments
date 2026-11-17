@@ -339,7 +339,7 @@ function create(api) {
   }
 
   // A loop runs only while the eye moves on its own: a body over the
-  // stage's Look or Edit (walking, at a station: what's in reach changes
+  // stage's Look (walking, at a station: what's in reach changes
   // every frame).
   const moving = () => (api.view.get().body?.depth ?? 0) > 0;
   function wantLoop() {
@@ -386,7 +386,7 @@ function create(api) {
 
   return {
     update() {
-      // a body entered or left (a seat, Look from Edit) puts the eye somewhere else
+      // a body entered or left (a seat, Look from a walk) puts the eye somewhere else
       if (held && held.body !== bodyId()) letGo();
       wantLoop();
       refresh();

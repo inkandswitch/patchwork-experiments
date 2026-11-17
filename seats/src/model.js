@@ -287,7 +287,7 @@ function placeLike(snap, target, seats) {
 /**
  * The verb a seat offers this viewer, from where it stands for them
  * (seatState), and the body they're in, or null:
- * - walking (a body over the stage's Look or Edit that isn't the seat): a seat whose player is
+ * - walking (a body over the stage's Look that isn't the seat): a seat whose player is
  *   here is refused ("Ana is sitting there", greyed out); one whose player
  *   has gone asks first (`confirm`: F once says what you'd take over, F
  *   again within CONFIRM_MS takes it); your own is "Back to your seat"; any

@@ -10,8 +10,8 @@
 // the tab is open; dispose when the part stops.
 //
 // The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
-// while the body is Edit, and shuts when the body stops being Edit (not
-// the viewer closing it: onClosed isn't told). The parts that own tabs are
+// while the Edit hand is held, and shuts when it is put down (not the viewer
+// closing it: onClosed isn't told). The parts that own tabs are
 // general, so they move with the focus (Enter, Leave): a tab open as the
 // focus moved opens again where it went (api.view.reopened, which only a
 // general part has).
@@ -70,12 +70,12 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     const again = api.view.reopened?.(title) ?? null;
     if (again) open({ show: again.show });
   });
-  // out of Edit, the tab goes
+  // the editor put down, the tab goes
   api.view.watch?.(
     () => api.schedule(() => {
       if (close && !editing(api.view.get())) shut();
     }),
-    (v) => v.body,
+    (v) => v.hands,
   );
 
   return {
@@ -113,7 +113,7 @@ export function tabToggle(tab, { id, name, title, available = () => true }) {
   return {
     id,
     name,
-    // the drawer's tabs are the editor's (../stage/bodies.js): only in Edit
+    // the drawer's tabs are the editor's (../stage/bodies.js): only while editing
     edit: true,
     show: ["toolbar"],
     state: (target) => (target == null && available() ? { checked: tab.isOpen(), title } : null),

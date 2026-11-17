@@ -28,7 +28,7 @@
 //   (a click on the cabinet, P, the use prompt, the menu) is the way in: it
 //   sits you at the first free port's seat, through the seats' roster. A
 //   click is Play's only while you hold no pad and sit nowhere (hands.js
-//   `clicks`); in Edit, Edit's click selects first. Escape puts the pad down
+//   `clicks`); holding the editor, its click selects first. Escape puts the pad down
 //   (the port stays yours while you sit); P picks it up. A machine whose
 //   trait lists no seats is played by Play alone: P takes a free port with
 //   the pad, Escape gives it back;
@@ -476,7 +476,7 @@ function create(api) {
     // no pad in hand, sitting nowhere), through the stage, so the verb's
     // state and reach apply as on every surface; what Play can't do there is
     // said. It reaches a cabinet as its trait's holder (STAGE.md, "The input
-    // chain"), after Edit's click, which selects.
+    // chain"), after the Edit hand's click, which selects.
     input: {
       click: (ev) => pads.click(ev.holder, () => api.run({ ext: api.id, command: "play", target: ev.holder, hit: ev.hit })),
       cursor: (ev) => (pads.clicks(ev.holder) ? "pointer" : null),

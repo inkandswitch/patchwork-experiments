@@ -70,6 +70,9 @@ try {
     dbg, host, errors, ran,
     body: () => dbg.local.get().body?.id ?? null,
     enter: (id) => dbg.host.record("scene.body")?.api.body.enter(id, null) ?? false,
+    /** pick up the editor or put it down, as the body chip's Edit does (api.view.edit) */
+    edit: (on) => dbg.host.record("scene.body")?.api.view.edit(on) ?? false,
+    editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
     unplay: () => dbg.local.swap((m) => ({ ...m, playing: false })),
     width: (px) => { host.style.width = `${px}px`; },
     /** the bar: shown, its box, each cluster's commands, each control's box, and whether the editor's cluster overflows */

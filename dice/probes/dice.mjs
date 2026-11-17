@@ -144,7 +144,7 @@ try {
   check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const TOP = await P("TOP");
   const V = await P("viewers");
-  check("both views in Edit (a scene made new starts people there), the table loaded", await until("body('a') === 'Edit' && __p.body('b') === 'Edit' && __p.loaded('table', 'a') && __p.loaded('table', 'b')", 30_000));
+  check("both views in Look holding the editor (a scene made new starts people so), the table loaded", await until("body('a') === 'Look' && __p.body('b') === 'Look' && __p.editing('a') && __p.editing('b') && __p.loaded('table', 'a') && __p.loaded('table', 'b')", 30_000));
   check("with no die in the scene the dice extension isn't running", !(await P("running('a')")).includes("dice"), { running: await P("running('a')") });
   await settled();
 

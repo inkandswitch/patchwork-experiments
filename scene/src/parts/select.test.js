@@ -219,7 +219,7 @@ describe("scene.select: presence", () => {
 });
 
 describe("scene.select: commands", () => {
-  it("has no Deselect: Escape deselects as the stage's ladder's selection rung", async () => {
+  it("has no Deselect: Escape deselects (the Edit hand's escape, or the view's own with no hand held), then puts the editor down", async () => {
     await mount();
     expect(s.instance("scene.select").commands.find((x) => x.id === "deselect")).toBeUndefined();
     s.local.swap((m) => ({ ...m, selected: "a" }));
@@ -227,6 +227,14 @@ describe("scene.select: commands", () => {
     s.key("Escape", { code: "Escape" });
     expect(sel()).toBeNull();
     s.local.swap((m) => ({ ...m, selected: "dimension:d1" })); // any target
+    s.key("Escape", { code: "Escape" });
+    expect(sel()).toBeNull();
+    expect(s.local.get().escape).toEqual({ layer: "hand", hint: "put down Edit" });
+    s.key("Escape", { code: "Escape" });
+    expect(s.local.get().hands).toEqual([]);
+    // not editing, a selection (the menu's Select) still clears on Escape
+    s.local.swap((m) => ({ ...m, selected: "a" }));
+    expect(s.local.get().escape).toEqual({ layer: "selection", hint: "deselect" });
     s.key("Escape", { code: "Escape" });
     expect(sel()).toBeNull();
     expect(s.local.get().escape).toEqual({ layer: null, hint: "" });
@@ -293,11 +301,12 @@ describe("scene.select: commands", () => {
 });
 
 describe("scene.select: by body", () => {
-  // Every body (the stage's Look and Edit; a walk and a seat over Look; a
-  // station over a walk) × a click on an object or on nothing × what was
-  // selected before (nothing, an object, a ref): only Edit's click selects
-  // (on nothing, it clears); every other body's leaves the selection be.
-  // Select from the menu selects in every one, and Remove is Edit's.
+  // Every body (the stage's Look; a walk and a seat over Look; a station
+  // over a walk) × holding the editor or not × a click on an object or on
+  // nothing × what was selected before (nothing, an object, a ref): only the
+  // Edit hand's click selects (on nothing, it clears), whatever the body;
+  // without it the selection is left be. Select from the menu selects in
+  // every one, and Remove is the editor's.
   it("a click on an object or on nothing, in each body, from each selection", async () => {
     const bodies = { meta: { id: "t.bodies" }, module: { create: () => ({ bodies: [
       { id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, leave() {} }) },
@@ -307,42 +316,40 @@ describe("scene.select: by body", () => {
     await mount({ extensions: [bodies] });
     const api = s.api("t.bodies");
     // how to be in each: [stage base, ...bodies entered over it]
-    const BODIES = { look: ["look"], edit: ["edit"], walk: ["look", "walk"], seat: ["look", "seat"], station: ["look", "walk", "station"] };
+    const BODIES = { look: ["look"], walk: ["look", "walk"], seat: ["look", "seat"], station: ["look", "walk", "station"] };
     let cases = 0;
     for (const [name, path] of Object.entries(BODIES)) {
-      for (const before of [null, "a", "dimension:d1"]) {
-        for (const on of ["b", null]) {
-          for (const id of path) expect(api.body.enter(id)).toBe(true);
-          await settle();
-          expect(s.local.get().body.id).toBe(name);
-          s.local.swap((m) => ({ ...m, selected: before }));
-          hitOn(on);
-          s.click(20, 20);
-          await settle();
-          const want = name === "edit" ? on : before;
-          expect([name, before, on, sel()]).toEqual([name, before, on, want]);
-          // Select is everyone's; Remove (Delete) is Edit's
-          const pick = sel() === "a" ? "b" : "a";
-          expect(run("select", pick)).toBe(true);
-          expect(sel()).toBe(pick);
-          const remove = s.instance("scene.select").commands.find((c) => c.id === "remove");
-          expect(commandState(remove, "a", s.api("scene.select").context()) != null).toBe(name === "edit");
-          // back to Look, nothing standing (the next case starts clean)
-          expect(api.body.enter("look")).toBe(true);
-          s.local.swap((m) => ({ ...m, selected: null }));
-          await settle();
-          cases++;
+      for (const edit of [false, true]) {
+        for (const before of [null, "a", "dimension:d1"]) {
+          for (const on of ["b", null]) {
+            for (const id of path) expect(api.body.enter(id)).toBe(true);
+            api.view.edit(edit);
+            await settle();
+            expect(s.local.get().body.id).toBe(name);
+            s.local.swap((m) => ({ ...m, selected: before }));
+            hitOn(on);
+            s.click(20, 20);
+            await settle();
+            // holding the editor, a click selects whatever the body
+            const want = edit ? on : before;
+            expect([name, edit, before, on, sel()]).toEqual([name, edit, before, on, want]);
+            // Select is everyone's; Remove (Delete) is the editor's
+            const pick = sel() === "a" ? "b" : "a";
+            expect(run("select", pick)).toBe(true);
+            expect(sel()).toBe(pick);
+            const remove = s.instance("scene.select").commands.find((c) => c.id === "remove");
+            expect(commandState(remove, "a", s.api("scene.select").context()) != null).toBe(edit);
+            // back to Look, nothing standing (the next case starts clean)
+            expect(api.body.enter("look")).toBe(true);
+            s.local.swap((m) => ({ ...m, selected: null }));
+            await settle();
+            cases++;
+          }
         }
       }
     }
-    expect(cases).toBe(5 * 3 * 2);
+    expect(cases).toBe(4 * 2 * 3 * 2);
     expect(s.doc().objects.a).toBeTruthy(); // nothing was removed
-    // a walk entered from Edit stands over Look: leaving it is Look
-    expect(api.body.enter("edit")).toBe(true);
-    expect(api.body.enter("walk")).toBe(true);
-    api.body.leave();
-    await settle();
-    expect(s.local.get().body.id).toBe("look");
   }, 60_000);
 });
 

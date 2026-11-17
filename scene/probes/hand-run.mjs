@@ -195,9 +195,9 @@ try {
   const camFlipped = await T("camera()");
   check("and F at the table doesn't move the view", near(camFlip.position, camFlipped.position, 1e-4) && near(camFlip.target, camFlipped.target, 1e-4), { camFlip, camFlipped });
   await settle();
-  // carrying is everyone's (in Look, where the doc starts people); the halo and the outline are Edit's
-  // (scene/HISTORY.md, TOOLS Decisions 6): A chooses Edit, as on the body chip
-  check("the doc starts A in Look; A chooses Edit", (await T('bodyOf("a")')) === "look" && (await T('enter("a", "edit")')) && (await T('bodyOf("a")')) === "edit", await T('bodyOf("a")'));
+  // carrying is everyone's (in Look, where the doc starts people); the halo and the outline are the editor's
+  // (scene/HISTORY.md, Kernel step 1): A picks up the editor, as the body chip's Edit does
+  check("the doc starts A in Look, not editing; A picks up the editor", (await T('bodyOf("a")')) === "look" && !(await T('editingOf("a")')) && (await T('edit("a", true)')) && (await T('editingOf("a")')) && (await T('bodyOf("a")')) === "look", await T('bodyOf("a")'));
   // the outline is a drawer tab the viewer opens (Objects): open it, to click rows
   await T('openTab("a", "scene.inspector", "inspector")');
   await b.rest(500);

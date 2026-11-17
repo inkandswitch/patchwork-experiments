@@ -2,14 +2,14 @@
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
-// - A plain click selecting is the Edit body's (the stage's: view.js,
-//   ../stage/bodies.js), which takes a click ahead of the chain, after only
-//   the held tool and a widget: in Edit a click selects before any package's
-//   click verb (HISTORY.md, TOOLS Decisions 6). Look, walk, seat and station have
-//   none, so there a plain click selects nothing (STAGE.md, "The input chain"). Select is
-//   everyone's, in every body; what a selection shows beyond its box (the
-//   halo's handles, the inspector) is Edit's. Remove (Delete) is an edit, so
-//   Edit's too.
+// - A plain click selecting is the Edit hand's (the view's: view.js,
+//   ../stage/bodies.js), which takes a click before the chain unless a
+//   widget is under it: while editing a click selects before any package's
+//   click verb (HISTORY.md, Kernel step 1). Without the editor a plain click
+//   selects nothing (STAGE.md, "Hands"). Select is everyone's, whatever the
+//   viewer holds; what a selection shows beyond its box (the halo's handles,
+//   the inspector) is the editor's. Remove (Delete) is an edit, so the
+//   editor's too.
 // - Where a selection may be is ../selection.js (H10): an element of the
 //   focus stage. With one stage that's any object.
 // - local.selected is this view's selection: a target (STAGE.md, "Targets
@@ -24,7 +24,8 @@
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
 // - Asks the stage to load the selection first (api.focus), if it's an object.
 // - Commands: Remove (Delete, Backspace; objects only), Select. Escape
-//   deselects as a rung of the stage's ladder (stage/ladder.js), not a key.
+//   deselects (stage/ladder.js: the Edit hand's escape, or the view's own
+//   with no hand held), not a key.
 
 import { own } from "../stage/own.js";
 import { boxes } from "./boxes.js";

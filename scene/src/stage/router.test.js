@@ -27,7 +27,9 @@ function setup({ held = false, holders = {}, mac = false, base = {}, time, touch
     onCursor: vi.fn(),
     onState: vi.fn(),
     wanted: false,
+    // the view's own Escape (ladder.js restLayer): a selection, then how deep the focus is
     selected: false,
+    focus: 0,
     deselect: vi.fn(() => {
       t.selected = false;
     }),
@@ -52,10 +54,10 @@ function setup({ held = false, holders = {}, mac = false, base = {}, time, touch
     onHover: t.onHover,
     onCursor: t.onCursor,
     onState: t.onState,
-    base: { id: "edit", input: t.baseInput },
+    base: { id: "look", input: t.baseInput },
     pointerWanted: () => t.wanted,
-    selection: () => t.selected,
-    deselect: t.deselect,
+    restLayer: () => (t.selected ? "selection" : t.focus > 0 ? "focus" : null),
+    escapeRest: () => (t.selected ? t.deselect() : t.focus--),
     requestLock: t.requestLock,
     exitLock: t.exitLock,
     mac,
@@ -330,37 +332,58 @@ describe("clicks on unclaimed presses", () => {
   });
 });
 
-describe("a body's ahead types", () => {
-  // Every case: a widget's owner there or not, the base taking clicks ahead
-  // or not, and each of widget, chain and body claiming or passing. Who is
-  // offered the click is the order, cut at the first claim: widget, chain,
-  // body; or, ahead, widget, body, chain.
-  const cases = [];
-  for (const widget of [false, true])
-    for (const ahead of [false, true])
-      for (let claims = 0; claims < 8; claims++) cases.push({ widget, ahead, claims: { w: !!(claims & 1), x: !!(claims & 2), body: !!(claims & 4) } });
-  it.each(cases)("widget $widget, ahead $ahead, claims $claims", ({ widget, ahead, claims }) => {
-    const t = setup();
-    const heard = [];
-    const input = (who) => ({ click: () => (heard.push(who), claims[who] || null) });
-    if (widget) t.inputs.w = input("w");
-    t.inputs.x = input("x");
-    t.chainFor.mockImplementation(() => ({ order: Object.keys(t.inputs), holderOf: () => null, widget: widget ? "w" : null }));
-    t.router.setBase({ id: "edit", input: input("body"), ahead: ahead ? ["click"] : [] });
-    down(t);
-    up(t);
-    const order = [...(widget ? ["w"] : []), ...(ahead ? ["body", "x"] : ["x", "body"])];
-    const first = order.findIndex((who) => claims[who]);
-    expect(heard).toEqual(first < 0 ? order : order.slice(0, first + 1));
+describe("hands, top first", () => {
+  // Every stack of up to three hands picked up in turn (a tool, an
+  // editor-like hand, a popover; a tool picked up replaces the tool held),
+  // each hand and the chain claiming or passing a click: who hears it is
+  // the hands top first, then the chain, then the body, cut at the first
+  // claim. A tool picked up goes on top; picking up a tool puts down only
+  // the tool held.
+  const KINDS = ["tool", "edit", "popover"];
+  function* picks(n) {
+    yield [];
+    if (n === 0) return;
+    for (const p of picks(n - 1)) if (p.length === n - 1) for (const k of KINDS) yield [...p, k];
+  }
+  it("over every sequence of ≤3 pick-ups and every claim, the click goes down the hands top first, then the chain, then the body", () => {
+    let n = 0;
+    for (const seq of [...picks(3)].filter((p, i, all) => all.findIndex((q) => q.join() === p.join()) === i)) {
+      const t = setup();
+      const claims = {};
+      const heard = [];
+      const input = (who) => ({ click: () => (heard.push(who), claims[who] || null) });
+      t.router.pushBody("w", { id: "walk", input: input("body") });
+      t.inputs.x = input("x");
+      // the model: a tool replaces the tool held; anything else goes on top
+      let model = [];
+      seq.forEach((kind, i) => {
+        const name = `${kind}${i}`;
+        if (kind === "tool") model = model.filter((h) => !h.startsWith("tool"));
+        model.push(name);
+        t.router.pushHand(name, { kind, name, input: input(name) });
+      });
+      expect(t.router.hands().map((h) => h.owner)).toEqual(model);
+      const who = [...[...model].reverse(), "x", "body"];
+      for (let bits = 0; bits < 1 << who.length; bits++) {
+        who.forEach((w, i) => (claims[w] = !!(bits & (1 << i))));
+        heard.length = 0;
+        down(t);
+        up(t);
+        const first = who.findIndex((w) => claims[w]);
+        expect([seq, bits, heard]).toEqual([seq, bits, first < 0 ? who : who.slice(0, first + 1)]);
+        n++;
+      }
+    }
+    expect(n).toBeGreaterThan(0);
   });
-  it("a body's ahead types are only the ones it names: a press still goes down the chain first", () => {
+  it("a press is offered to the hands too, and a hand that passes it leaves it to the chain", () => {
     const t = setup();
     const heard = [];
     t.inputs.x = { press: () => (heard.push("x"), null) };
-    t.router.setBase({ id: "edit", input: { press: () => (heard.push("body"), null) }, ahead: ["click"] });
+    t.router.pushHand(null, { kind: "edit", name: "Edit", input: { click: () => true } });
     down(t);
     up(t);
-    expect(heard).toEqual(["x", "body"]);
+    expect(heard).toEqual(["x"]);
   });
 });
 
@@ -572,7 +595,7 @@ describe("the body stack", () => {
     const t = setup();
     const walk = { suspended: vi.fn(), resumed: vi.fn(), left: vi.fn() };
     const seat = { left: vi.fn() };
-    expect(t.router.bodies()).toEqual([{ id: "edit", owner: null }]);
+    expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
     expect(t.router.leave()).toBe(false);
     t.router.pushBody("walker", { id: "walk", input: walk });
     t.router.pushBody("seats", { id: "seat", input: seat });
@@ -583,32 +606,20 @@ describe("the body stack", () => {
     expect(walk.resumed).toHaveBeenCalledTimes(1);
     expect(t.router.leave()).toBe(true);
     expect(walk.left).toHaveBeenCalledTimes(1);
-    expect(t.router.body().id).toBe("edit");
+    expect(t.router.body().id).toBe("look");
     expect(t.router.leave()).toBe(false);
   });
-  it("setBase: every body over the base leaves (each told), then the base is replaced; its default press is the new one's", () => {
-    const order = [];
-    const edit = { click: () => (order.push("edit"), true), left: vi.fn() };
-    const t = setup({ base: edit });
+  it("leaveAll: every body over the base leaves (each told); the base stays", () => {
+    const t = setup();
     const walk = { left: vi.fn() };
     const seat = { left: vi.fn() };
     t.router.pushBody("walker", { id: "walk", input: walk });
     t.router.pushBody("seats", { id: "seat", input: seat });
-    t.router.setBase({ id: "look", input: {} });
-    expect(seat.left).toHaveBeenCalledTimes(1);
-    expect(walk.left).toHaveBeenCalledTimes(1);
-    expect(edit.left).toHaveBeenCalledTimes(1);
+    expect(t.router.leaveAll()).toBe(true);
+    expect([seat.left.mock.calls.length, walk.left.mock.calls.length]).toEqual([1, 1]);
     expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
     expect(t.onState.mock.calls.at(-1)[0].body).toMatchObject({ id: "look", depth: 0 });
-    // Look has no default press: the click goes nowhere (and on to OrbitControls)
-    down(t);
-    up(t);
-    expect(order).toEqual([]);
-    expect(t.router.leave()).toBe(false);
-    t.router.setBase({ id: "edit", input: edit });
-    down(t);
-    up(t);
-    expect(order).toEqual(["edit"]);
+    expect(t.router.leaveAll()).toBe(false);
   });
   it("a body popped from under another takes those over it with it", () => {
     const t = setup();
@@ -619,7 +630,7 @@ describe("the body stack", () => {
     popWalk();
     expect(seat.left).toHaveBeenCalledTimes(1);
     expect(walk.left).toHaveBeenCalledTimes(1);
-    expect(t.router.bodies().map((b) => b.id)).toEqual(["edit"]);
+    expect(t.router.bodies().map((b) => b.id)).toEqual(["look"]);
   });
   it("a press goes the held tool, the chain, then the top body's default (structurally last)", () => {
     const order = [];
@@ -659,7 +670,8 @@ describe("the body stack", () => {
     t.router.hold("m", { command: "measure", name: "Measure", input: {}, keys: [{ code: "KeyR" }], pointer: true });
     st = t.onState.mock.calls.at(-1)[0];
     expect(st.held).toEqual({ ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 });
-    expect(st.escape).toBe("tool");
+    expect(st.hands).toEqual([{ ext: "m", kind: "tool", name: "Measure", pointer: true, serial: 3 }]);
+    expect(st.escape).toBe("hand");
     expect(st.pointer.wanted).toBe(true);
   });
   it("each body, tool and gesture is its own serial: the same one left and taken again is a new one (the keys it held were let go)", () => {
@@ -725,36 +737,87 @@ describe("the held tool", () => {
   });
 });
 
-describe("the Escape ladder", () => {
-  it("pops exactly one layer each press: popover, gesture, tool, selection; never the body", () => {
+describe("Escape", () => {
+  // H4 (STAGE.md, Invariants), on the router: every sequence of up to four
+  // steps, each picking up a tool, an Edit-like hand (whose escape is the
+  // view's own, as the view's is) or a popover, opening a gesture, selecting,
+  // entering a link or pressing Escape. Each Escape pops exactly the model's
+  // top layer: the gesture, else the top hand (its own escape first), else
+  // the selection, else one level of focus; never the body.
+  const STEPS = ["tool", "edit", "popover", "gesture", "select", "enter", "esc"];
+  function* seqs(n) {
+    yield [];
+    if (n === 0) return;
+    for (const p of seqs(n - 1)) if (p.length === n - 1) for (const k of STEPS) yield [...p, k];
+  }
+  it("over every sequence of ≤4 steps, each Escape pops exactly the top layer, and the hint names it", () => {
+    let n = 0;
+    for (const seq of seqs(4)) {
+      if (seq.length !== 4) continue;
+      const t = setup();
+      const body = { left: vi.fn() };
+      t.router.pushBody("w", { id: "walk", input: body });
+      const session = { move() {}, end() {}, cancel: vi.fn() };
+      t.inputs.carry = { press: () => (gestureOpen ? null : session) };
+      let gestureOpen = false;
+      session.cancel.mockImplementation(() => (gestureOpen = false));
+      // the model
+      let hands = []; // kinds, top last
+      let m = { gesture: false, selected: false, focus: 0 };
+      const rest = () => (t.selected ? "selection" : t.focus > 0 ? "focus" : null);
+      const editHand = () => ({ kind: "edit", name: "Edit", escape: () => (rest() ? (t.selected ? t.deselect() : t.focus--, true) : false), escaping: rest });
+      let serial = 0;
+      for (const step of seq) {
+        if (step === "tool") {
+          hands = hands.filter((k) => k !== "tool");
+          hands.push("tool");
+          t.router.pushHand(`h${serial++}`, { kind: "tool", name: "Tool" });
+        } else if (step === "edit") {
+          hands.push("edit");
+          t.router.pushHand(`h${serial++}`, editHand());
+        } else if (step === "popover") {
+          hands.push("popover");
+          let release = null;
+          release = t.router.popover(`h${serial++}`, () => release());
+        } else if (step === "gesture") {
+          if (!gestureOpen && !hands.length) {
+            down(t);
+            gestureOpen = true;
+            m.gesture = true;
+          }
+        } else if (step === "select") t.selected = m.selected = true;
+        else if (step === "enter") t.focus = ++m.focus;
+        else {
+          // the model's top layer
+          const top = hands.at(-1);
+          const want = m.gesture ? "gesture" : top === "edit" ? (m.selected ? "selection" : m.focus ? "focus" : "hand") : top ? (top === "popover" ? "popover" : "hand") : m.selected ? "selection" : m.focus ? "focus" : null;
+          expect([seq, t.router.state().escape]).toEqual([seq, want]);
+          key(t.root, "keydown", "Escape", "Escape");
+          if (want === "gesture") m.gesture = false;
+          else if (want === "selection") m.selected = false;
+          else if (want === "focus") m.focus--;
+          else if (want) hands.pop();
+          expect([seq, t.router.hands().map((h) => h.kind), t.selected, t.focus, gestureOpen]).toEqual([seq, hands, m.selected, m.focus, m.gesture]);
+        }
+        expect(t.router.body().id).toBe("walk");
+      }
+      expect(body.left).not.toHaveBeenCalled();
+      if (gestureOpen) up(t);
+      n++;
+    }
+    expect(n).toBe(7 ** 4);
+  }, 60_000);
+  it("a hand whose escape does something stays; one whose escape does nothing is put down (told once)", () => {
     const t = setup();
-    const body = { left: vi.fn() };
-    t.router.pushBody("w", { id: "walk", input: body });
-    const tool = { put: vi.fn() };
-    t.router.hold("m", { command: "measure", input: tool });
-    t.selected = true;
-    const close = vi.fn();
-    t.router.popover("menu", close);
-    const session = { move() {}, end: vi.fn(), cancel: vi.fn() };
-    t.inputs.hand = { press: () => session };
-    t.router.putDown(); // (a tool takes presses first: put it down to open a gesture, then hold it again)
-    down(t);
-    t.router.hold("m", { command: "measure", input: tool });
-    tool.put.mockClear();
-    const esc = () => key(t.root, "keydown", "Escape", "Escape");
-    expect(t.router.state().escape).toBe("popover");
-    esc();
-    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 0, 0, 0]);
-    esc();
-    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 1, 0, 0]);
-    esc();
-    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 1, 1, 0]);
-    esc();
-    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 1, 1, 1]);
-    const last = esc();
-    expect(last.defaultPrevented).toBe(false); // nothing stood: the key is the page's
-    expect(body.left).not.toHaveBeenCalled();
-    expect(t.router.body().id).toBe("walk");
+    let left = 1;
+    const put = vi.fn();
+    t.router.pushHand("x", { kind: "edit", name: "Edit", escape: () => left-- > 0, escaping: () => (left > 0 ? "selection" : null), put });
+    expect(t.router.state().escape).toBe("selection");
+    key(t.root, "keydown", "Escape", "Escape");
+    expect([t.router.hands().length, put.mock.calls.length, t.router.state().escape]).toEqual([1, 0, "hand"]);
+    key(t.root, "keydown", "Escape", "Escape");
+    expect([t.router.hands().length, put.mock.calls.length, t.router.state().escape]).toEqual([0, 1, null]);
+    expect(key(t.root, "keydown", "Escape", "Escape").defaultPrevented).toBe(false); // nothing stood: the key is the page's
   });
 });
 
@@ -805,7 +868,6 @@ describe("the pointer", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const bodies = [
       { id: "look", lock: false, base: true },
-      { id: "edit", lock: false, base: true },
       { id: "walk", lock: true },
       { id: "seat", lock: false },
     ];
@@ -822,10 +884,7 @@ describe("the pointer", () => {
           const press = vi.fn(() => true);
           const keyFn = vi.fn(() => true);
           if (!body.base) t.router.pushBody("b", { id: body.id, input: { click: press, key: keyFn }, lock: body.lock, keys: [{ code: "KeyW" }] });
-          else {
-            t.router.setBase({ id: body.id, input: {} });
-            t.inputs.view = { click: press, key: keyFn };
-          }
+          else t.inputs.view = { click: press, key: keyFn };
           await settleLock();
           // under touch nothing was ever asked for
           if (want.touch) expect(t.requestLock).not.toHaveBeenCalled();
@@ -878,8 +937,8 @@ describe("the pointer", () => {
         }
       }
     }
-    // look, edit and seat: 16 cases each (lock false) × 3; walk: 16 × 3
-    expect(cases).toBe(192);
+    // look and seat: 16 cases each (lock false) × 3; walk: 16 × 3
+    expect(cases).toBe(144);
     warn.mockRestore();
   });
 
@@ -1117,7 +1176,7 @@ describe("stopping an owner", () => {
     expect(body.left).toHaveBeenCalledTimes(1);
     expect(tool.put).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
-    expect(t.router.body().id).toBe("edit");
+    expect(t.router.body().id).toBe("look");
     expect(t.router.held()).toBe(null);
     expect(t.router.state().escape).toBe(null);
     up(t, { x: 40 });

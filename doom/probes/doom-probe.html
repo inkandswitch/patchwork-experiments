@@ -67,7 +67,7 @@ try {
   const wad = await net.a.create2({ "@patchwork": { type: "file" }, name: "freedoom1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
   const wadMs = performance.now() - t0;
   // scenes made new, as the datatype makes them: they start people in Edit (where a WAD is pasted)
-  const scene1 = { a: await net.a.create2(emptyScene({ title: "Doom probe", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { body: "edit" } } })) };
+  const scene1 = { a: await net.a.create2(emptyScene({ title: "Doom probe", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { edit: true } } })) };
   scene1.b = await net.b.find(scene1.a.url);
   const scene2 = await net.a.create2(emptyScene({ title: "Somewhere else" }));
   try { localStorage.clear(); } catch {}
@@ -243,6 +243,9 @@ try {
     },
     /** the body on top of view w's stack, and the stack (TOOLS.md §4) */
     body: (w) => ({ ...dbg[w].local.get().body, stack: dbg[w].router.bodies().map((b) => b.id) }),
+    /** does view w hold the editor, and the Edit toggle beside its chip (a hand, not a body) */
+    editing: (w) => (dbg[w].local.get().hands ?? []).some((h) => h.kind === "edit"),
+    editToggle: (w) => { const e = hosts[w].querySelector(".body-edit"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     held: (w) => dbg[w].local.get().held?.command ?? null,
     /** the body chip's rect, and its menu's item called `label`, to click */
     chip: (w) => { const e = hosts[w].querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent }; },

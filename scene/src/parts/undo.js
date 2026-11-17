@@ -5,7 +5,7 @@
 // a process's save is never on it. ⌘Z / Ctrl+Z undoes, ⇧⌘Z / Ctrl+Y redoes,
 // unless a field has the keys (its own text undo) or they come from a docked
 // pane; the toolbar has both, named for the step they'd take. Both are the
-// editor's (../stage/bodies.js): only in the Edit body. A step recorded
+// editor's (../stage/bodies.js): only while editing. A step recorded
 // there stays on the stack while the viewer looks, walks or sits, and is
 // there to take back on coming back to Edit (if the doc still holds what it
 // wrote: undo's compare-and-set).
@@ -31,7 +31,7 @@ function create(api) {
 
   api.listen(root, "keydown", (e) => {
     const which = undoKey(e);
-    // undo is the editor's (../stage/bodies.js): only in Edit
+    // undo is the editor's (../stage/bodies.js): only while editing
     if (!which || e.defaultPrevented || fromEmbed(e, root) || !editing(api.view.get())) return;
     if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
     e.preventDefault();

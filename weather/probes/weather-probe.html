@@ -109,6 +109,7 @@ try {
     focus: () => [...dbg.view.atom.get().focus],
     running: () => dbg.local.get().running.map((r) => r.id),
     body: () => dbg.local.get().body?.id ?? null,
+    editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** the viewport's key light: its position and target (the direction it shines from is position - target) */
     key: () => ({ position: vp.keyLight.position.toArray(), target: vp.keyLight.target.position.toArray(), intensity: vp.keyLight.intensity, color: `#${vp.keyLight.color.getHexString()}`, shadows: vp.keyLight.castShadow }),
     /** the toolbar's controls as shown: [{ ext, command, tag, text, title, options, rect }] */

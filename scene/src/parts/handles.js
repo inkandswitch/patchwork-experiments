@@ -10,7 +10,7 @@
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
 // They are the halo's build-param knobs (STAGE.md, "The input chain"): shown for the
-// selection in the Edit body (they are the editor's: ../stage/bodies.js)
+// selection while editing (they are the editor's: ../stage/bodies.js)
 // where the scene may be written, hidden while another extension holds the
 // tool (measuring, say).
 //
@@ -30,7 +30,7 @@ export const GRAB_PX = 12;
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
 /**
- * May the selection's knobs show? Only in Edit, where the scene may be
+ * May the selection's knobs show? Only while editing, where the scene may be
  * written, and while no other extension holds the tool. Pure.
  * @param {object} view  api.view.get()  @param {boolean} writable  @param {string} self  this part's id
  */
@@ -369,7 +369,7 @@ export default own({
         const pl = prev?.view;
         // only the hover (or something else we don't read) changed: nothing to do.
         // (status: an object's content arriving moves where its handles go)
-        if (pl && (pl !== view || prev.local !== local) && prev.scene === scene && local.status === prev.local?.status && ["selected", "held", "body", "theme"].every((k) => pl[k] === view[k])) return;
+        if (pl && (pl !== view || prev.local !== local) && prev.scene === scene && local.status === prev.local?.status && ["selected", "held", "hands", "theme"].every((k) => pl[k] === view[k])) return;
         // the selection, its object, the provider, the held tool, theme, a move or content arriving
         refresh();
       },

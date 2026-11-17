@@ -37,7 +37,7 @@ export default {
     layer.userData.noPick = true;
     const labels = api.labels();
     const shown = () => api.pref("bounds", false) === true;
-    // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
+    // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
     let key = null;
 
@@ -95,7 +95,7 @@ export default {
       update(scene, local, prev, view) {
         const was = prev.view;
         const content = scene === prev.scene && local === prev.local && view === was;
-        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.selected === was.selected && view.body === was.body) return;
+        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.selected === was.selected && view.hands === was.hands) return;
         redraw(scene, view);
       },
       dispose() {

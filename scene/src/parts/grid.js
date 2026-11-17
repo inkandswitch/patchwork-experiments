@@ -49,7 +49,7 @@ export default {
     api.overlay().append(caption);
 
     const shown = () => api.pref("grid", true) !== false;
-    // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
+    // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
     let key = null;
@@ -107,7 +107,7 @@ export default {
         // only a doc change, a content change (same scene and local) or a pref or theme change can move the grid
         const was = prev.view;
         const content = scene === prev.scene && local === prev.local && view === was;
-        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.body === was.body) return;
+        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.hands === was.hands) return;
         if (was && view.theme !== was.theme) key = null;
         redraw(view.theme);
       },

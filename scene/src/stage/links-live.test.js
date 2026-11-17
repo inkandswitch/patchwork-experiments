@@ -189,8 +189,8 @@ describe("a live link opens a stage for its doc", () => {
     expect(hapi.view.get().selected).toBe("L");
     expect(gapi.view.get().selected).toBe(null);
     gapi.view.select(null);
-    // in Edit, a click on the card from outside selects the link (the focus is the host's)
-    hapi.body.enter("edit");
+    // editing, a click on the card from outside selects the link (the focus is the host's)
+    hapi.view.edit(true);
     s.click(20, 20);
     await settle();
     expect(s.debug.view.atom.get().selected).toEqual(["L"]);

@@ -154,17 +154,18 @@ try {
   }
 
   await snapLooks("card snapped");
-  // ── editing: Edit is a body (scene/HISTORY.md, TOOLS Decisions 6). A leaves the seat for Edit on the
-  // body chip (the seat stays A's), and opens the parts bin, a drawer tab, from the toolbar ──
+  // ── editing: the editor is a hand (scene/HISTORY.md, Kernel step 1). A picks it up (Edit, beside the
+  // body chip) and leaves the seat for Look (the seat stays A's), and opens the parts bin, a drawer tab, from the toolbar ──
   const chooseBody = async (w, label) => {
     await click(await P(`rect('.body-chip', '${w}')`));
     await until(`chipItem('${w}', '${label}')`, 3000);
     await click(await P(`chipItem('${w}', '${label}')`));
     return until(`body('${w}') === '${label}'`, 3000);
   };
-  check("A chooses Edit on the body chip: no longer seated, the seat still A's", (await chooseBody("a", "Edit")) && (await P("seats()")).p1.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
+  await click(await P(`rect('.body-edit', 'a')`));
+  check("A picks up the editor and chooses Look on the body chip: no longer seated, the seat still A's", (await until("editing('a')", 3000)) && (await chooseBody("a", "Look")) && (await P("seats()")).p1.player === viewers.a, { body: await P("body('a')"), editing: await P("editing('a')"), seats: await P("seats()") });
   await click(await P(`rect('.toolbar [data-command="parts"]')`));
-  check("A opens Parts from the toolbar", await until("tab('a', 'parts') && __p.body('a') === 'Edit'", 6000), { body: await P("body('a')"), running: await P("running('a')") });
+  check("A opens Parts from the toolbar", await until("tab('a', 'parts') && __p.body('a') === 'Look' && __p.editing('a')", 6000), { body: await P("body('a')"), running: await P("running('a')") });
   await settled();
   const bin = await P("binParts('a')");
   check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]), bin);
@@ -195,6 +196,9 @@ try {
   const partsButton = await P(`rect('.toolbar [data-command="parts"]')`);
   await click(partsButton);
   check("A shuts Parts again", await until("tab('a', 'parts') === false", 6000), { at: partsButton, tab: await P("tab('a', 'parts')") });
+  // the editor put down to play again (Edit, beside the chip)
+  await click(await P(`rect('.body-edit', 'a')`));
+  check("A puts the editor down", await until("!__p.editing('a')", 3000), { editing: await P("editing('a')") });
   // (the chip doesn't offer the seat body, which needs a seat: the picker sits A down again, in its own seat)
   await P("pick('a', 'p1')");
   check("A sits back down in Player 1 from the seat picker", await until("body('a') === 'Seated'", 3000), { body: await P("body('a')"), seats: await P("seats()") });

@@ -1,6 +1,6 @@
 // scene.halo: the selection's handles (STAGE.md, "The input chain"), after Morphic's halo.
 //
-// Round what's selected, in the Edit body (../stage/bodies.js: the halo is
+// Round what's selected, while editing (../stage/bodies.js: the halo is
 // the editor's), where its doc may be written and no tool is held:
 // a move arrow along each axis, a rotate ring about each, and a scale handle
 // at each corner, all outside its box (./halo-math.js says where), sized for
@@ -338,7 +338,7 @@ function create(api) {
     input,
     update(scene, local, prev, view) {
       const p = prev?.view;
-      if (p && scene === prev.scene && view.selected === p.selected && view.held === p.held && view.body === p.body && view.theme === p.theme && local.status === prev.local?.status) return;
+      if (p && scene === prev.scene && view.selected === p.selected && view.held === p.held && view.hands === p.hands && view.theme === p.theme && local.status === prev.local?.status) return;
       reconcile();
     },
     dispose() {

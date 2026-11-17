@@ -84,7 +84,7 @@ try {
   const scene = { a: await net.a.create2({
     "@patchwork": { type: "scene" }, title: "Machines", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, packages: [],
     clock: { running: true, t: 0 },
-    view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { body: "edit" } },
+    view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { edit: true } },
   }) };
   scene.b = await net.b.find(scene.a.url);
   try { localStorage.clear(); } catch {}
@@ -371,6 +371,9 @@ try {
     body: (w) => dbg[w].local.get().body?.id ?? null,
     // the play probe: a body entered (Look), the use prompt's verbs, the controls panel, the seat the roster says this view sits in
     enter: (w, body) => dbg[w].host.running().map((r) => dbg[w].host.record(r.id)?.api).find((a) => a?.body?.enter)?.body.enter(body) ?? null,
+    /** pick up the editor or put it down (a hand, not a body), and whether view w holds it */
+    edit: (w, on) => dbg[w].view.setEditing(on),
+    editing: (w) => (dbg[w].local.get().hands ?? []).some((h) => h.kind === "edit"),
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((v) => { const r = v.getBoundingClientRect(); return { text: v.textContent.trim(), disabled: v.disabled, title: v.title, x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
     controls: (w) => { const c = hosts[w].querySelector(".machine-controls"); const keys = c?.querySelector(".machine-controls-keys"); return c && !c.hidden ? { title: c.querySelector(".machine-controls-title")?.textContent, rows: [...c.querySelectorAll(".machine-controls-key")].map((k) => [[...k.querySelectorAll("kbd")].map((x) => x.textContent).join(""), k.querySelector(":scope > span")?.textContent]), foot: c.querySelector(".machine-controls-foot")?.textContent, folded: c.classList.contains("folded"), keysShown: !!keys && getComputedStyle(keys).display !== "none", box: (({ left, top, right, bottom }) => [left, top, right, bottom])(c.getBoundingClientRect()) } : null; },
     sitting: (w) => dbg[w].host.record("seats")?.instance?.roster?.sitting?.() ?? null,

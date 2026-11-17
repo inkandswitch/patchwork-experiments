@@ -14,10 +14,10 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
+import { editing } from "./bodies.js";
 import { elementOf, keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
 import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "../selection.js";
-import { EDIT } from "./bodies.js";
 import focusPart from "../parts/focus.js";
 import inspector from "../parts/inspector.js";
 import toolbar from "../parts/toolbar.js";
@@ -187,7 +187,7 @@ describe("H10 across docs: the selection is always an element of the focus stage
     const m = await mountNested();
     s = m.s;
     const { view } = m;
-    view.enterBody(EDIT.id);
+    view.setEditing(true);
     const writes = [spy(s.handle), spy(m.b), spy(m.c)].map((log) => () => log.filter((x) => x === "change"));
     const evs = events(m);
     const key = (st) => J([st.focus, st.selected]);
@@ -199,6 +199,8 @@ describe("H10 across docs: the selection is always an element of the focus stage
       for (const [name, model, run] of evs) {
         // reach `from` by the view's own moves, then the event; the focus moving shows no stage anything but
         // its element of the selection
+        // (an Escape with nothing to clear or leave puts the editor down: picked up again for every event)
+        view.setEditing(true);
         const seenBefore = projections(view);
         view.focusOn(from.focus);
         await placed(view);
@@ -356,7 +358,7 @@ describe("surfaces across docs", () => {
     s = await mountStage({ repo, extensions: [HOST, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug, 3000);
-    view.enterBody(EDIT.id);
+    view.setEditing(true);
     expect(s.api("t.host").view.enter("L")).toBe(true);
     await until(() => stageOf(view, "L").debug.host.instanceOf("scene.toolbar"), 2000);
     const labels = () => [...view.root.querySelectorAll(".toolbar button")].map((x) => x.textContent);
@@ -374,7 +376,7 @@ describe("surfaces across docs", () => {
   });
 });
 
-describe("the bar of tools across docs, outside Edit", () => {
+describe("the bar of tools across docs, not editing", () => {
   it("looking, entered in B: the game's and the host's world commands are on the bar, the game's first, and each runs where it's from; no editor command shows", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
@@ -387,7 +389,7 @@ describe("the bar of tools across docs, outside Edit", () => {
     s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug.host.instanceOf("t.game"), 3000);
-    view.enterBody("look", null);
+    view.setEditing(false);
     const buttons = (cluster) => [...view.root.querySelectorAll(`.toolbar .${cluster} button`)];
     const labels = (cluster) => buttons(cluster).map((x) => x.textContent);
     await until(() => J(labels("world")) === J(["Ring"]), 2000);
@@ -415,7 +417,7 @@ describe("the drawer follows the focus", () => {
     s = await mountStage({ repo, extensions: [{ meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.inspector" }, module: inspector }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug && s.instance("scene.focus") && view.linkState(["P"])?.open, 3000);
-    view.enterBody(EDIT.id);
+    view.setEditing(true);
     s.instance("scene.inspector").tab.open();
     await settle();
     const rows = () => [...view.root.querySelectorAll(".scene-outline .object-row")].map((li) => [li.dataset.id, li.querySelector(".link-mark")?.textContent ?? null, !!li.querySelector(".enter-link")]);
@@ -440,6 +442,7 @@ describe("the drawer follows the focus", () => {
 describe("what the viewer holds goes on across a focus move", () => {
   // A general part holding something (a body, the held tool) finishes it where it was: the view's move
   // takes H2's busy half (host.setGeneral). Its successor at the focus offers the same; it offers nothing.
+  // ("edit": Look holding the editor, which is a hand, not a body)
   const BODIES = ["look", "edit", "t.walk", "t.seat"];
   const MOVES = [
     ["Enter", [], ["L"]],
@@ -447,7 +450,7 @@ describe("what the viewer holds goes on across a focus move", () => {
     ["Leave", ["L"], []],
     ["Leave out of two", ["L", "M"], []],
   ];
-  const bodyId = (view) => view.atom.get().body?.id ?? null;
+  const bodyId = (view) => (editing(view.atom.get()) ? "edit" : (view.atom.get().body?.id ?? null));
   const offered = (view, name, id) => view.collect(name).flatMap((x) => x.value).filter((v) => v?.id === id).length;
 
   it("every body × every move: the body stays, the walk part holding it isn't started again, and nothing is offered twice", async () => {
@@ -462,7 +465,8 @@ describe("what the viewer holds goes on across a focus move", () => {
         expect(view.focusOn(from), name).toBe(true);
         await placed(view);
         await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 2000);
-        expect(view.enterBody(body), name).toBe(true);
+        view.setEditing(body === "edit");
+        expect(view.enterBody(body === "edit" ? "look" : body), name).toBe(true);
         expect(bodyId(view), name).toBe(body);
         const walks = started["t.walk"];
         const holder = body === "t.walk" ? view.focusStage() : null;
@@ -504,6 +508,7 @@ describe("what the viewer holds goes on across a focus move", () => {
     const { view } = m;
     await until(() => s.instance("t.walk"), 2000);
     const first = s.instance("t.walk");
+    view.setEditing(false);
     expect(view.enterBody("t.walk")).toBe(true);
     view.focusOn(["L"]);
     await placed(view);
@@ -598,16 +603,17 @@ describe("the camera's rides don't depend on the focus (I8)", () => {
   });
 });
 
-describe("leaving Edit puts the selection down (HISTORY.md, TOOLS Decisions 6)", () => {
-  // Attention is the selection, so a selection kept from Edit would aim F and
-  // the use prompt at what was last edited. Every body changed from × to
-  // (Look, Edit, a walk and a seat over Look) × the focus (the scene, one
-  // link in, two) × a selection or none: the selection goes exactly when the
-  // body leaves Edit; the focus never moves. 4 × 4 × 3 × 2 = 96 cases.
-  const BODIES = ["look", "edit", "t.walk", "t.seat"];
+describe("putting the editor down puts the selection down; a body doesn't (HISTORY.md, Kernel step 1)", () => {
+  // Attention is the selection, so a selection kept from editing would aim F
+  // and the use prompt at what was last edited. Every state changed from × to
+  // (Look and a walk, each holding the editor or not; a seat over Look) × the
+  // focus (the scene, one link in, two) × a selection or none: the selection
+  // goes exactly when the editor is put down; the focus never moves.
+  // 5 × 5 × 3 × 2 = 150 cases.
+  const STATES = [["look", false], ["look", true], ["t.walk", false], ["t.walk", true], ["t.seat", false]];
   const FOCI = [[], ["L"], ["L", "M"]];
   const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
-  it("every body × every body × every focus × a selection or none: cleared exactly on leaving Edit, the focus kept", async () => {
+  it("every state × every state × every focus × a selection or none: cleared exactly on putting the editor down, the focus kept", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const started = {};
     const m = await mountNested({ extra: holders(started) });
@@ -618,34 +624,36 @@ describe("leaving Edit puts the selection down (HISTORY.md, TOOLS Decisions 6)",
       expect(view.focusOn(focus)).toBe(true);
       await placed(view);
       await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 2000);
-      for (const from of BODIES)
-        for (const to of BODIES)
+      for (const from of STATES)
+        for (const to of STATES)
           for (const withSel of [false, true]) {
             const name = `${J(focus)} ${from} → ${to}${withSel ? " selected" : ""}`;
             view.enterBody("look");
-            expect(view.enterBody(from), name).toBe(true);
+            view.setEditing(from[1]);
+            expect(view.enterBody(from[0]), name).toBe(true);
             const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
             view.select(sel);
             expect(J(view.atom.get().selected), name).toBe(J(sel));
-            if (from !== to) expect(view.enterBody(to), name).toBe(true);
-            const want = from === "edit" && to !== "edit" ? null : sel;
+            if (from[0] !== to[0]) expect(view.enterBody(to[0]), name).toBe(true);
+            view.setEditing(to[1]);
+            const want = from[1] && !to[1] ? null : sel;
             expect([name, J(view.atom.get().selected), J(view.atom.get().focus)]).toEqual([name, J(want), J(focus)]);
             cases++;
           }
     }
-    expect(cases).toBe(96);
+    expect(cases).toBe(150);
   }, 60_000);
 });
 
-describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION Decisions, Edit's click is Edit's)", () => {
-  // HISTORY.md, TOOLS Decisions 6: in Edit a plain click selects, before any package's click verb. Inside an entered
+describe("holding the editor, a click is its wherever it lands (HISTORY.md, COMPOSITION Decisions, Edit's click is Edit's)", () => {
+  // HISTORY.md, Kernel step 1: holding the editor a plain click selects, before any package's click verb. Inside an entered
   // link a click on the host (the boat round a game linked aboard her) can't select, and it used to go down
   // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
   // her moving table (presence-check.nopause, 2026-11-16). Every base body × every focus × a selection or
   // none × every thing a click can land on (each stage's objects, a pin's and a closed link's, and
-  // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly in Look,
-  // or in Edit on nothing (or a stale hit) with nothing selected; the selection is selectionStep's (outside the
-  // focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 17 = 204 cases.
+  // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly without the
+  // editor, or holding it on nothing (or a stale hit) with nothing selected; the selection is selectionStep's
+  // (outside the focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 17 = 204 cases.
   const FOCI = [[], ["L"], ["L", "M"]];
   const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
   // a hit is { key: (view) => the viewport's key, path: the hit's path, or null for nothing }. Stale hits: an id
@@ -659,7 +667,7 @@ describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION D
     { name: "nothing", key: null, path: null },
   ];
   const HITS = [...live, ...stale];
-  it("every base body × every focus × a selection or none × every hit: down the chain only in Look or on nothing with nothing selected", async () => {
+  it("editing or not × every focus × a selection or none × every hit: down the chain only without the editor or on nothing with nothing selected", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
@@ -673,7 +681,7 @@ describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION D
           for (const hit of HITS) {
             const name = `${base} ${J(focus)}${withSel ? " selected" : ""} click on ${hit.name}`;
             view.enterBody("look");
-            expect(view.enterBody(base), name).toBe(true);
+            view.setEditing(base === "edit");
             const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
             view.select(sel);
             expect(J(view.atom.get().selected), name).toBe(J(sel));
@@ -683,7 +691,7 @@ describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION D
             await settle();
             const down = base === "look" || (!hit.path && !withSel);
             const want = base === "look" ? sel : selectionStep({ focus, selected: sel }, { type: "press", path: hit.path ?? [] }).selected;
-            expect([name, log.some((x) => x.startsWith("click ")), J(view.atom.get().selected), view.atom.get().body?.id, J(view.atom.get().focus)]).toEqual([name, down, J(want), base, J(focus)]);
+            expect([name, log.some((x) => x.startsWith("click ")), J(view.atom.get().selected), view.atom.get().body?.id, J(view.atom.get().focus)]).toEqual([name, down, J(want), "look", J(focus)]);
             cases++;
           }
     }

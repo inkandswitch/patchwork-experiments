@@ -7,7 +7,7 @@
 // camera comes from a `scene:extension`, which gets an api (makeApi below)
 // and is started and stopped by the host (host.js). The view holds what is
 // the viewer's: the mount, the viewport, the router, the body stack and the
-// held tool, the selection and the camera.
+// hands, the selection and the camera.
 //
 // A stage works in its own ids and its own root frame. Everything spatial
 // goes through its scope of the viewport (./scope.js), the one choke point
@@ -62,7 +62,7 @@ import { createEdits } from "../undo.js";
 import { isOwn } from "./own.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
 import { isLink } from "./links.js";
-import { isStageBody } from "./bodies.js";
+import { LOOK } from "./bodies.js";
 import { createView, projectView } from "./view.js";
 import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
@@ -1594,7 +1594,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const out = new Map();
     for (const { id: ext, value } of host.collect("bodies")) {
       for (const def of Array.isArray(value) ? value : []) {
-        if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || isStageBody(def.id)) continue;
+        if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || def.id === LOOK.id) continue;
         if (out.has(def.id)) {
           console.warn(`[scene] body “${def.id}” is offered by both ${out.get(def.id).ext} and ${ext}; ${out.get(def.id).ext}'s is used`);
           continue;
@@ -2132,7 +2132,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }),
       /**
        * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
-       * the held tool, the pointer, theme, notices, prefs, the drawer, and
+       * the hands and the held tool, the pointer, theme, notices, prefs, the drawer, and
        * the selection and hover as this stage's elements of their paths.
        * select(target) selects this stage's target (null: nothing).
        */
@@ -2158,6 +2158,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
          * stays until its × or close(); docking one url and tool again shows its tab (dock.js). → close
          */
         dock: (doc) => (live() ? view.dockDocument(doc) : noop),
+        /** pick up the editor (the Edit hand: STAGE.md, "Hands") or put it down; → whether the viewer is editing now */
+        edit: (on) => (live() ? view.setEditing(on !== false) : false),
         // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
         // a general part, the view's own, is told what moving the focus closed of its: was a tab
         // titled `title` open as the focus last moved here? Once per title per move ({ show } | null)
@@ -2376,13 +2378,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       body: Object.freeze({
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
         current: () => viewNow().body,
-        /** enter body `id` (any running extension's, or the stage's "look" or "edit") at `place`: false if none offers it or it can't */
+        /** enter body `id` (any running extension's; the stage's "look" leaves every body) at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
-        /** leave the top body (never the base: Look or Edit) */
+        /** leave the top body (never Look) */
         leave: () => (live() ? view.leaveBody() : false),
         /** the eye: { position, direction } in this stage's frame, or null */
         eye: () => bodyEye(),
-        /** the top body's reach (m; Look's and Edit's are Infinity) */
+        /** the top body's reach (m; Look's is Infinity) */
         reach: () => bodyReach(),
       }),
       /**
@@ -2477,7 +2479,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
-      view: facet(api.view, { select: noop, enter: () => false }),
+      view: facet(api.view, { select: noop, enter: () => false, edit: () => false }),
       setPref: noop,
       notify: () => null,
       overlay: () => loose("stage-overlay"),

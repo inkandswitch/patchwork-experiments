@@ -1,10 +1,11 @@
-// The editor is a body (STAGE.md, "The input chain"; HISTORY.md, TOOLS Decisions 6): its chrome shows in
-// Edit and nowhere else. Every body (the stage's Look and Edit; a walk and a
-// seat over Look; a station over a walk) × what's selected (nothing, an
-// object, a ref) × whether the scene may be written: the real parts, mounted
-// together, say whether the halo's handles, the build-param knobs, the
-// inspector (opening a beat after the selection), the grid, axes and bounds, and the
-// toolbar show. Finite and exhaustive: 5 × 3 × 2 = 30 cases.
+// The editor is a hand (STAGE.md, "Hands"; HISTORY.md, Kernel step 1): its chrome shows while the Edit
+// hand is held and never otherwise, whatever the body. Every body (the
+// stage's Look; a walk and a seat over Look; a station over a walk) × holding
+// the editor or not × what's selected (nothing, an object, a ref) × whether
+// the scene may be written: the real parts, mounted together, say whether the
+// halo's handles, the build-param knobs, the inspector (opening a beat after
+// the selection), the grid, axes and bounds, and the toolbar show. Finite and
+// exhaustive: 4 × 2 × 3 × 2 = 48 cases.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { Box3, Vector3 } from "three";
@@ -20,6 +21,7 @@ import axes from "./axes.js";
 import bounds from "./bounds.js";
 import toolbar from "./toolbar.js";
 import select from "./select.js";
+import { editing } from "../stage/bodies.js";
 
 const SLICE = {
   type: "scene:source",
@@ -100,7 +102,7 @@ async function mount({ writable }) {
 }
 
 // How to be in each body: what's entered, in order (the stage's first).
-const IN = { look: ["look"], edit: ["edit"], walk: ["look", "walk"], seat: ["look", "seat"], station: ["look", "walk", "station"] };
+const IN = { look: ["look"], walk: ["look", "walk"], seat: ["look", "seat"], station: ["look", "walk", "station"] };
 const SELECTIONS = [null, "a", "dimension:d1"];
 
 const drawnIn = (id) => [...(s.debug.viewport.layers.get(id) ?? [])].reduce((n, g) => n + g.children.length, 0) > 0;
@@ -118,61 +120,86 @@ function chrome() {
   };
 }
 
-/** What should show: only in Edit; handles and knobs on an object where the scene may be written; the inspector on an object. */
-function expected(body, selected, writable) {
-  const edit = body === "edit";
+/** What should show: only holding the editor; handles and knobs on an object where the scene may be written; the inspector on an object. */
+function expected(edit, selected, writable) {
   const obj = selected === "a";
   return { handles: edit && obj && writable, knobs: edit && obj && writable, inspector: edit && obj, grid: edit, axes: edit, bounds: edit, toolbar: edit };
 }
 
-describe("the editor is the Edit body", () => {
-  it("every body × nothing, an object or a ref selected × writable or not: handles, knobs, inspector, grid, axes, bounds, toolbar", async () => {
+describe("the editor is the Edit hand", () => {
+  it("every body × editing or not × nothing, an object or a ref selected × writable or not: handles, knobs, inspector, grid, axes, bounds, toolbar", async () => {
     let cases = 0;
     for (const writable of [true, false]) {
       await mount({ writable });
       const api = s.api("t.bodies");
       for (const [body, path] of Object.entries(IN)) {
-        for (const selected of SELECTIONS) {
-          // start each case from Look with nothing selected
-          api.body.enter("look");
-          s.local.swap((m) => ({ ...m, selected: null }));
-          await settle();
-          for (const id of path) expect(api.body.enter(id)).toBe(true);
-          s.local.swap((m) => ({ ...m, selected }));
-          await still();
-          expect(s.local.get().body.id).toBe(body);
-          expect({ body, selected, writable, ...chrome() }).toEqual({ body, selected, writable, ...expected(body, selected, writable) });
-          cases++;
+        for (const edit of [false, true]) {
+          for (const selected of SELECTIONS) {
+            // start each case from Look, not editing, with nothing selected
+            api.body.enter("look");
+            api.view.edit(false);
+            await settle();
+            for (const id of path) expect(api.body.enter(id)).toBe(true);
+            api.view.edit(edit);
+            s.local.swap((m) => ({ ...m, selected }));
+            await still();
+            expect([s.local.get().body.id, editing(s.local.get())]).toEqual([body, edit]);
+            expect({ body, edit, selected, writable, ...chrome() }).toEqual({ body, edit, selected, writable, ...expected(edit, selected, writable) });
+            cases++;
+          }
         }
       }
       s.unmount();
       s = null;
     }
-    expect(cases).toBe(5 * 3 * 2);
+    expect(cases).toBe(4 * 2 * 3 * 2);
   }, 60_000);
 
-  it("leaving Edit takes what Edit holds with it: the inspector shuts, a held Measure and the selection are put down; coming back and selecting, the inspector opens again", async () => {
+  it("a body doesn't touch the editor: walking, a held Measure, the selection and the inspector stay; Leave never puts the editor down", async () => {
     const { default: measure } = await import("./measure.js");
     PARTS.push({ meta: { id: "scene.measure" }, module: measure });
     try {
       await mount({ writable: true });
       const api = s.api("t.bodies");
-      expect(s.local.get().body.id).toBe("edit"); // a scene made new
+      expect(editing(s.local.get())).toBe(true); // a scene made new
+      s.local.swap((m) => ({ ...m, selected: "a" }));
+      await still();
+      expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
+      api.body.enter("walk");
+      await still();
+      expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command, s.local.get().selected, chrome().inspector]).toEqual(["walk", true, "measure", "a", true]);
+      // Measure sits over Edit: the top hand is what peers see
+      expect(s.local.get().hands.map((h) => h.name)).toEqual(["Edit", "Measure"]);
+      api.body.leave();
+      await still();
+      expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command]).toEqual(["look", true, "measure"]);
+    } finally {
+      PARTS.pop();
+    }
+  }, 30_000);
+
+  it("putting the editor down takes what it holds with it: the inspector shuts, a held Measure and the selection are put down; picking it up again and selecting, the inspector opens again", async () => {
+    const { default: measure } = await import("./measure.js");
+    PARTS.push({ meta: { id: "scene.measure" }, module: measure });
+    try {
+      await mount({ writable: true });
+      const api = s.api("t.bodies");
+      expect(editing(s.local.get())).toBe(true); // a scene made new
       s.local.swap((m) => ({ ...m, selected: "a" }));
       await still();
       expect(chrome().inspector).toBe(true);
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(true);
       expect(s.local.get().held?.command).toBe("measure");
-      api.body.enter("walk");
+      api.view.edit(false);
       await still();
-      expect(s.local.get().body.id).toBe("walk");
+      expect(editing(s.local.get())).toBe(false);
       expect(s.local.get().held).toBe(null);
       expect(chrome().inspector).toBe(false);
-      // Measure isn't on offer outside Edit: not run, not on a key
+      // Measure isn't on offer while not editing: not run, not on a key
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(false);
-      // the selection went with Edit (attention is the selection: F would act on what was last edited)
+      // the selection went with the editor (attention is the selection: F would act on what was last edited)
       expect(s.local.get().selected).toBe(null);
-      api.body.enter("edit");
+      api.view.edit(true);
       await still();
       expect(chrome()).toMatchObject({ inspector: false, handles: false, toolbar: true });
       s.local.swap((m) => ({ ...m, selected: "a" }));

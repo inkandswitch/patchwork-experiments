@@ -97,18 +97,19 @@ describe("scene.measure", () => {
     expect(inst().state.a).toBeNull();
   });
 
-  it("Escape puts it down (the ladder's tool rung), first point and all", async () => {
+  it("Escape puts it down (the top hand: Measure over Edit), first point and all; the editor stays", async () => {
     await mount();
     run();
     pickAt({ id: null, point: [0, 0, 0], snapped: false, ground: true });
     s.click();
     expect(inst().state.a).not.toBeNull();
-    expect(s.local.get().escape).toMatchObject({ layer: "tool", hint: "put down Measure" });
+    expect(s.local.get().escape).toMatchObject({ layer: "hand", hint: "put down Measure" });
     s.key("Escape", { code: "Escape" });
     expect(inst().state.a).toBeNull();
     expect(state()).toMatchObject({ checked: false });
     await settle();
     expect(s.local.get().held).toBeNull();
+    expect(s.local.get().hands.map((h) => h.name)).toEqual(["Edit"]);
   });
 
   it("other keys pass through while it's held", async () => {

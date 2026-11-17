@@ -367,7 +367,7 @@ describe("the verbs have no mode", () => {
     expect(base[0]).toMatchObject({ label: "Wash (5)" });
     expect(base[2]).toMatchObject({ label: "Lay flat" });
     for (const b of base) expect(b).not.toBeNull();
-    const locals = [{ body: { id: "look" } }, { body: { id: "edit" } }, { body: { id: "seat" } }, { body: { id: "walk" }, held: { name: "Measure" } }, { selected: "b3" }];
+    const locals = [{ body: { id: "look" } }, { body: { id: "look" }, hands: [{ kind: "edit", name: "Edit" }] }, { body: { id: "seat" } }, { body: { id: "walk" }, hands: [{ kind: "edit", name: "Edit" }, { kind: "tool", name: "Measure" }], held: { name: "Measure" } }, { selected: "b3" }];
     for (const extra of locals) {
       const local = { ...t.A.api.local.get(), ...extra };
       cases.forEach(([id, target], i) => expect(t.cmd(t.A, id).state(target, { scene: t.A.api.scene(), local }), `${id} ${target} ${JSON.stringify(extra)}`).toEqual(base[i]));

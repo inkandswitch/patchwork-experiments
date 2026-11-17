@@ -59,8 +59,8 @@ describe("scene.frame: commands", () => {
     expect(s.doc().view.start.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
     expect(s.local.get().edits.undo).toBe("Set home view");
     expect(s.api("scene.frame").undo()).toBe(true);
-    // (a scene made new starts people in Edit: that was there before)
-    expect(s.doc().view.start).toEqual({ body: "edit" });
+    // (a scene made new starts people holding the editor: that was there before)
+    expect(s.doc().view.start).toEqual({ edit: true });
     s.unmount();
   });
 });

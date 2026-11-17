@@ -106,6 +106,8 @@ try {
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     /** the body a view is in, by what its chip says ("Watching", "Seated", "Look") */
     body: (w) => dbg[w].local.get().body?.label ?? null,
+    /** does view w hold the editor (Edit, beside the chip: a hand, not a body) */
+    editing: (w) => (dbg[w].local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** is a drawer tab of the stage's own open in view w (its panel id: "parts", "inspector") */
     tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),

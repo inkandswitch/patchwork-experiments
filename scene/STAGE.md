@@ -12,13 +12,13 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | Word | Means |
 |---|---|
 | **Stage** | The core, one per open doc: the doc, content, presence, claims, holds, the world clock, lenses, the audience, its extensions and their apis. No UI. |
-| **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, held-tool slot, drawer, selection and hover (as paths), notices, prefs, one presence session. |
+| **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, hand stack, drawer, selection and hover (as paths), notices, prefs, one presence session. |
 | **Link** | An object whose source is a scene doc (`providerId: "scene.link"`). The view opens a stage for that doc in the link's frame. Live without `at`; pinned with it. |
 | **Pin** | A stage that is drawn and never acts: a doc at fixed heads. Read-only. |
 | **Closed link** | A link the view opens no stage for, drawn as its hint. |
 | **Focus** | The path of links the viewer has entered (`[]` until **Enter**; **Leave** goes out one). The view's alone. |
-| **Body** | Where a viewer is and how they move and look. One stack per view, Look or Edit (the stage's, both the orbit camera) at the bottom. |
-| **Held tool** | One slot per view: empty or one tool, offered every event first. |
+| **Body** | Where a viewer is and how they move and look. One stack per view, Look (the stage's orbit camera) at the bottom. |
+| **Hand** | What a viewer holds: the held tool, a popover, the editor. One stack per view, offered every event first. |
 | **Selection**, **attention** | One target per view, a path. Attention is the selection, else the look. |
 | **Clock**, **process** | The doc's world time (`doc.clock`), and what an extension registers to be stepped in it. |
 | **Edit** (a write) | A write through `api.edit`: undoable, this viewer's, in the focus doc. |
@@ -63,7 +63,7 @@ and those of every doc the pin's docs name by URL. A doc nothing names (a
 player's secret) is never recorded. Follow latest removes `at`.
 
 **The focus.** Enter moves it into a link whose doc acts there; pins and closed
-links can't be entered. Leave is Escape's last rung or the trail. If the entered
+links can't be entered. Leave is Escape's or the trail's. If the entered
 link stops acting, the focus leaves to the deepest acting stage. The focus
 scopes the selection (H10) and is where general parts run, so the editor edits
 the focus doc. It cuts no segment. Focus and selection change only through
@@ -121,12 +121,13 @@ prefixed `<id>.`; others run its commands instead of writing them.
 
 **`api.view`** (`get`, `watch`) is the viewer's value as this stage sees it:
 `selected` and `hovered` (this stage's element, or null); `body` (`{ id, label,
-ext, depth, lock, reach, keys, serial }`, depth 0 being Look or Edit); `held`
-(`{ ext, command, name, keys, pointer, serial }`); `gesture`; `pointer` (`{
-locked, lock, wanted, released, refused, touch }`); `escape` (`{ layer, hint
-}`); `theme`; `notices`; `drawer` (`{ tabs, shown, docs }`); `prefs`; and for
-general parts, `packages` and `clocks`. Presence keys are the extension's own;
-`scene.select` publishes `selected` and `hovered`, walk publishes `avatar`.
+ext, depth, lock, reach, keys, serial }`, depth 0 being Look); `hands` (`[{ ext,
+kind, name, pointer, serial }]`, top last); `held` (the tool among them, with
+its `command` and `keys`); `gesture`; `pointer` (`{ locked, lock, wanted,
+released, refused, touch }`); `escape` (`{ layer, hint }`); `theme`; `notices`;
+`drawer` (`{ tabs, shown, docs }`); `prefs`; and for general parts, `packages`
+and `clocks`. Presence keys are the extension's own; `scene.select` publishes
+`selected` and `hovered`, walk publishes `avatar`.
 
 ## Activation
 
@@ -160,11 +161,10 @@ trait covers the doc. What belongs to a thing lives on that object. One instance
 per extension per stage. **Order**: `scene`, `objects`, `general`, each in
 registry order (`local.running`), the only order anything combines in.
 
-**What is Edit's.** General parts run in every scene; the editor's chrome
-(click-select, halo, inspector, editor toolbar, grid, axes, bounds, Measure,
-Remove, Group, Copy, Paste, Undo) shows only in Edit. What packages bring is
-everyone's. A command says `edit: true` to be Edit's. Leaving Edit drops an Edit
-tool and the selection.
+**What is the editor's**: click-select, halo, inspector, editor toolbar, grid,
+axes, bounds, Measure, Remove, Group, Copy, Paste, Undo, and every command
+saying `edit: true`, only while `editing(view)` (H13). Putting the editor down
+puts down an `edit: true` tool and the selection. The rest is everyone's.
 
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
 (2 s), and while it holds a body, tool, session or pose. One loading or
@@ -202,12 +202,13 @@ traits and `view.start`, and this viewer then arrives as the doc says.
 
 ### Arriving
 
-`view.start = { body, place, home }` is read once, on open or after a template.
-`home` is the camera for a viewer with none saved. `"edit"` starts in Edit, else
-Look (`startBase`); a new scene says `"edit"`. Any other body is entered over
-Look at `place` once offered and loaded, or `ARRIVE_WAIT_MS` after the offer. A
-place that is a link arrives **through** it, as that doc starts people
-(`startArrival`); through a pin or a closed link nobody arrives.
+`view.start = { body, place, home, edit }` is read once, on open or after a
+template. `home` is the camera for a viewer with none saved; `edit: true` (the
+outermost's; a new scene's) picks up the editor, else it is put down. A `body`
+(none is Look) is entered over Look at `place` once offered and loaded, or
+`ARRIVE_WAIT_MS` after the offer. A place that is a link arrives **through** it,
+as that doc starts people (`startArrival`); through a pin or a closed link
+nobody arrives.
 
 ### Parts
 
@@ -221,7 +222,7 @@ that takes its `tags` (Alt: free), upright (`src/parts/parts-place.js`).
 
 ### Copying objects
 
-One copy rule (`src/transfer.js`; `scene.transfer`, Edit only) serves paste,
+One copy rule (`src/transfer.js`; `scene.transfer`, the editor's) serves paste,
 drops from another scene, extract and bundle. The payload is `application/x-scene-object` = `{ scene, id, ids, lift?, copy? }`. In its own scene paste duplicates; in another it copies the objects and
 everything under them with new ids, landing by the parts bin's rule. `claims`,
 `saved`, `runtime` keys and `copy: "drop"` fields stay behind. Files are shared;
@@ -232,7 +233,7 @@ else is kept in the same scene and cleared in another, with a notice
 ### Extract and bundle
 
 The copy rule in two directions (`src/extract.js`), each one host change and one
-undo step, Edit only. **Extract** takes S (tops sharing one parent p), writes doc T whole (ids and
+undo step, the editor's. **Extract** takes S (tops sharing one parent p), writes doc T whole (ids and
 transforms kept), then replaces S with a link to T at p, clearing references
 into S; if S changed meanwhile, nothing is written. **Bundle** copies what a
 link shows into the host in its place and removes the link; the linked doc is
@@ -281,28 +282,19 @@ the URL.
 ## The input chain
 
 The stage turns DOM input on the canvas into **events** (values); anything else
-is the DOM's. Each event goes down a chain:
-
-1. **the held tool**;
-2. **the widget's owner**;
-3. **the holders, nearest first**: the hit chain is the hit object, what it's
-   attached to, its groups, then the scene; an extension's holder is its nearest
-   member with one of its traits (`ev.holder`, null for the scene); across
-   links, one segment per stage, innermost first;
-4. **general** parts of the focus stage;
-5. **the top body's input**, which may take types ahead of 3 and 4 (Edit takes
-   `click`);
-6. **the default**: drag orbits or pans, the wheel zooms.
-
-Steps 2–4 are `chainOrder` and `holdersFor` (`src/stage/chain.js`). Each
-extension is offered an event once; the first to claim it wins. Running order
-breaks ties on one member; there is no priority to declare.
+is the DOM's. Each event goes, until one claims it: (1) **the hands**, top
+first; (2) **the widget's owner**; (3) **the holders, nearest first**: the hit
+object, what it's attached to, its groups, the scene (an extension's holder,
+`ev.holder`, is its nearest member with one of its traits; across links a
+segment per stage, innermost first); (4) the focus stage's **general** parts;
+(5) **the top body**; (6) **the default**: drag orbits or pans, the wheel zooms.
+Steps 2–4 are `chainOrder` and `holdersFor` (`src/stage/chain.js`); each
+extension is offered an event once, running order breaking ties.
 
 **Carrying** is `scene.carry`'s, offered a press as a holder; a press that
-doesn't move is a tap it gives back. **Select** is first in every menu; in Edit
-a plain click selects at the focus, clears on nothing, and does nothing outside
-the focus. **The halo** (`scene.halo`, `scene.handles`) works in the parent's
-drawn frame, has no keys, and writes once on release.
+doesn't move is a tap it gives back. **The halo** (`scene.halo`,
+`scene.handles`) works in the parent's drawn frame, has no keys, and writes once
+on release.
 
 ```js
 event = { type: "press" | "click" | "menu" | "key" | "keyup" | "wheel" | "move",
@@ -322,8 +314,8 @@ release under 4 px is a `tap`, else a `click` goes down the chain. A release
 never heard cancels. **Widgets** are meshes in `world()` groups, or `widgetAt`;
 `onTop` beats any object, others compare by distance; `userData.noPick` is never
 picked. There is no double-click event: a `dblclick` on the canvas is no one's.
-**Attention** is the selection, else the look: the pointer's hit, or the eye
-ray under lock (`looksFromEye`).
+**Attention** is the selection, else the look: the pointer's hit, or the eye ray
+under lock (`looksFromEye`).
 
 ### Keys
 
@@ -333,8 +325,7 @@ Keys are heard on the tool's root; those in an embedded document (marked
 tool's, the top body's, then the key map (`scene.keys`, the only `input.key`)
 over attention's path. Keys are declared `[{ code, label }]`, and a reserved key
 is its reserver's. **A shown key works** (H3): every surface asks the
-dispatching resolver. **Escape pops one layer** (`src/stage/ladder.js`; H4),
-never the body or clock. A `keyup` goes to its `keydown`'s claimer. On touch,
+dispatching resolver. A `keyup` goes to its `keydown`'s claimer. On touch,
 declared keys become pad controls (`src/touch-keys.js`); codes labelled alike
 are one control, so distinct actions need distinct labels.
 
@@ -347,40 +338,46 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // metres or Infin
                             ride?: { id, at?, turn?, rise?, tilt? }, keys?, label?, leave() } | null }]
 ```
 
-Bodies: Look and Edit (`src/stage/bodies.js`), **walk** (`walk/`), **seat**
-(`seats/`, `here: false`, rides its table with tilt) and sailing's **station**
-(over walk). The first extension to offer an id has it. `api.body.enter(id,
-place)` runs `enter` in the calling stage and pushes the answer; `leave()` pops
-the top, never the base. The top body hears every move and its keys, and presses
-after the chain. Its eye and reach are every command's `from` and `reach`.
-Stations are objects with traits: taking one pushes a body, and one person per
-station is a claim.
+Look (`src/stage/bodies.js`, the orbit camera) is at the bottom; **walk**,
+**seat** (`here: false`, tilting with its table) and sailing's **station** are
+packages'; the first to offer an id has it. `api.body.enter(id, place)` pushes
+what `enter` answers, in the calling stage; `enter("look")` leaves every body;
+`leave()` pops the top. The top body hears every move and its keys; its eye and
+reach are every command's `from` and `reach`. No body is the editor.
 
-**Conventions for bodies.** Nothing stands on Edit: entering a body from Edit
-makes the base Look. `enter("look")` or `("edit")` sets the base. Ask
-`view.body.depth === 0`, never "editing?"; mark commands `edit: true`.
+### Hands
 
-### The held tool
+What a viewer holds, a stack per view (`src/stage/router.js`): `{ kind, name,
+input, keys?, pointer?, escape?() → boolean, put?() }`, hearing every move; one
+that doesn't want an event answers false. **The held tool**: a command's `tool:
+{ keys?, pointer? }` holds what `run` returns, `api.hold({ name, keys?, pointer?
+}, input)` one without; it replaces the tool held, and only it declares keys.
+**A popover** (`api.popover(close)`) wants the pointer. **The Edit hand**, the
+view's (`api.view.edit(on)`, the chip's Edit), wants the pointer; its click
+selects at the focus (clears on nothing, nothing outside it) unless a widget is
+under it; presses aren't its; a tool can sit over it.
 
-A command declaring `tool: { keys?, pointer? }` is a tool: running it holds the
-input its `run` returns. `api.hold({ name, keys?, pointer? }, input)` holds one
-without a command. Another tool, Escape or the extension stopping puts it down
-(`input.put()`). **The pointer** (`src/stage/pointer.js`; H5): `locked ⇔ body.lock ∧ ¬wanted ∧
-¬released ∧ ¬refused ∧ ¬touch`. A tool with `pointer: true`, a selection, a
-popover or the drawer wants the pointer. After a release or touch, the next
-press on the world only relocks.
+**Escape** (`src/stage/ladder.js`; H4) pops one layer: the browser's lock, a
+focused field, the gesture (cancelled), then the top hand's `escape()` (a
+popover closes; Edit's clears the selection, else leaves the entered link), and
+when that does nothing the hand is put down (`put()`); with no hand, the
+selection clears, else the focus leaves. Never a body or the clock. **The
+pointer** (`src/stage/pointer.js`; H5): `locked ⇔ body.lock ∧ ¬wanted ∧
+¬released ∧ ¬refused ∧ ¬touch`; a hand with `pointer: true`, a selection or the
+drawer wants it; after a release or touch, the next press on the world only
+relocks.
 
 ## The interface
 
 General parts. The **toolbar** (`scene.toolbar`) shows the focus path's scene
-commands: the editor's (`show` `"toolbar"` or absent) only in Edit, the world's
-(`"world"`) in every body. The **body chip** offers Look, Edit, bodies with
-`here` not false, and Leave. The **clock chip** (`scene.clock`) shows each
-focus-path doc's clock. The **drawer** holds panes (`api.dock`) and documents
-(`api.view.dock`, the view's until their ×). The **inspector**
-(`scene.inspector`) is one pane: tree, fields and document sections (the
-selection's Source, File or Linked scene, Build and About, each shown in its
-tool with **Dock** and **Open**, its fold the pref
+commands: the editor's (`show` `"toolbar"` or absent) only while editing, the
+world's (`"world"`) always. The **body chip** offers Look, bodies with `here`
+not false, and Leave; **Edit** beside it picks up or puts down the editor. The
+**clock chip** (`scene.clock`) shows each focus-path doc's clock. The **drawer**
+holds panes (`api.dock`) and documents (`api.view.dock`, the view's until their
+×). The **inspector** (`scene.inspector`) is one pane: tree, fields and document
+sections (the selection's Source, File or Linked scene, Build and About, each
+shown in its tool with **Dock** and **Open**, its fold the pref
 `inspector.open.scene.inspector/<id>`; `documentsFor`,
 `src/parts/inspector-model.js`). The **use prompt** (`scene.use`) shows
 attention's `"use"` verbs; a button with a key presses that key. The **menu**
@@ -414,9 +411,9 @@ extension's.
 | `focus(ids)` | load first |
 | `providersFor(url, doc)`, `addObject(url, opts)` | `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }` |
 | `fixPoint(id)` | the `at` fixing an object at what it shows now |
-| `view` | `{ get, watch, select, enter, dock({ url, toolId?, title }) → close }` |
+| `view` | `{ get, watch, select, enter, edit(on), dock({ url, toolId?, title }) → close }` |
 | `link(id)`, `collect(name)`, `run(invocation)`, `path(opts)` | see "Views, stages and links" |
-| `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | see "Bodies"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
+| `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | see "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `THREE`, `world({ onTop? })` | three.js; a `Group` whose meshes are the extension's widgets |
 | `labels()` | `{ set(items) }`; decluttered by `rank`, 2 and up never hide |
 | `overlay()`, `edge(side)` | DOM over or beside the canvas; overlay children catch the pointer unless they opt out |
@@ -530,8 +527,8 @@ objects come back as their keeper has them now.
 whatever `show` says; absent `show` means every surface but `"world"`. `label`
 names the verb for this target; `title` is the tooltip, and the reason when
 `disabled`. `options` become inspector checkboxes passed as `value`. `reach:
-true`: beyond reach it is "too far" and runs nowhere (H9). `edit: true`: only in
-Edit (`inBody`). **Held verbs**: `run` returns `{ end(), cancel(), update?(dt)
+true`: beyond reach it is "too far" and runs nowhere (H9). `edit: true`: only
+while editing (`inBody`). **Held verbs**: `run` returns `{ end(), cancel(), update?(dt)
 }`, kept while the key is down.
 
 ### Targets and refs
@@ -646,7 +643,7 @@ One atmosphere wins whole. None is the stage's own look. Ask a flush with
 | H1 | What runs is the doc's: the host resyncs only on a registry or doc change. |
 | H2 | One stop rule: stop only when the doc stops calling, after the linger or once not busy. |
 | H3 | A shown key works: hints come from the dispatching resolver; each key reaches at most one invocation; a shown touch control reaches its reserver. |
-| H4 | Escape pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it. |
+| H4 | Escape pops exactly the top of lock, field, gesture, top hand (its escape first: Edit's clears, then leaves), else selection, then focus; never a body or the clock; the hint names it; every state ends in as many presses as layers. |
 | H5 | locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release or a finger, a press on the world only relocks. |
 | H6 | One holder per object, by (person before yielding, `since`); a process saves only what it holds. |
 | H7 | At most one clock computer per doc, only eligible views; t monotone per view; no kept process stepped once paused is seen. |
@@ -654,6 +651,8 @@ One atmosphere wins whole. None is the stage's own look. Ask a flush with
 | H9 | A `reach` command runs iff distance ≤ body.reach, else shows "too far". |
 | H10 | The selected path ends at an element of the focus stage. |
 | H11 | Carry only with `scene.carry`, no veto, no hold ahead, in its own doc's stage. |
+| H12 | An event goes to the hands top first, then the chain, then the top body, cut at the first claim; a tool held replaces only the tool held. |
+| H13 | Editing ⇔ the Edit hand is held: its chrome shows exactly then, in any body; no body changes it; putting it down puts down the selection and an `edit: true` tool. |
 | I1 | Every api read and write goes to its stage's handle. |
 | I2 | No reference crosses docs; a link is the only edge between docs. |
 | I3 | Expansion is finite and fixed by the graph: no identity repeats on a path, one acting occurrence per live doc, exact closed reasons. |
@@ -676,8 +675,8 @@ The rest:
 | Module | Holds |
 |---|---|
 | `stage/stage.js` | the mount, doc loop, `makeApi`, content, lenses, audience, arriving, claims, the clock's wiring |
-| `stage/view.js` | the view: viewport, router, bodies, selection, prefs, camera saving, session, link expansion, cross-stage input |
+| `stage/view.js` | the view: viewport, router, bodies, the Edit hand, selection, prefs, camera saving, session, link expansion, cross-stage input |
 | `stage/host.js` | starting and stopping extensions, `collect`, drops |
-| `stage/router.js` | DOM to events, sessions, the body stack, held tool, popovers, lock, keys, menu, cursor |
+| `stage/router.js` | DOM to events, sessions, the body stack, the hands, lock, keys, Escape, menu, cursor |
 | `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s), sends, poses |
 | `stage/viewport.js`, `stage/dock.js` | rendering and picking, one per view; the drawer |

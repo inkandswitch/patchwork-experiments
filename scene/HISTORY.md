@@ -521,3 +521,31 @@ A live doc linked more than once in one view acts at its first occurrence;
 every other is closed, reason `"repeat"`, drawn as its hint. The `mirror` role,
 Enter's go-where-it's-live case and a listener hearing its own session went;
 the page bus between views of one doc in a page stays.
+
+### 2026-11-17 — Kernel step 1: hands; Edit is a hand (reverses TOOLS Decisions 6's body)
+The lead reopened Decisions 6's "editing is a body" and kept its opting in:
+a game never selects or shows the editor's chrome unless the viewer has
+picked up the editor. The router's separate "who goes first" mechanisms
+became one **stack of hands** per view, offered every event first, top
+first: the held tool (a tool replaces only the tool held), popovers, and
+the **Edit hand**, which the viewer picks up or puts down (the body chip's
+Edit toggle, `api.view.edit`). Its click selects at the focus unless a
+widget is under it; presses stay the chain's; it wants the pointer, so
+walking while editing looks by drag. `editing(view)` is "the Edit hand is
+held"; `edit: true` commands keep their meaning. Gone: Edit as a body,
+`setBase`, the body's `ahead` types, "nothing stands on Edit" and Leave
+never returning to it; Look is the one stage body, and you can walk or sit
+holding the editor (a body never puts it down). Escape: the lock, a field,
+the gesture, then the top hand's `escape()`, putting the hand down when it
+does nothing; with no hand, the selection, then the focus. The lead's two
+calls: `view.start.edit: true` starts people holding the editor (a new
+scene, bag's and tabletop's new scenes; `view.start.body` names only real
+bodies; the inspector's Starts in has an "editing" box), and with Edit held
+Escape clears the selection, then leaves the entered link, then puts Edit
+down. Unattended: the Edit hand is the view's own for now, not scene.select's
+(a general part moves with the focus, and would take the editor with it);
+with no hand held Escape still clears a selection made by the menu's Select,
+then leaves; a stage's `view.escape` shows leaving an entered link as what
+Escape does at the outermost (the hand put down), so no stage learns the
+focus. Old docs saying `body: "edit"` start in Look, not editing (no
+back-compat; republished later).

@@ -188,6 +188,8 @@ try {
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
     /** the body a view is in, by what its chip says ("Look", "Seated") */
     body: (w) => dbg[w].local.get().body?.label ?? null,
+    /** does view w hold the editor (a hand, not a body) */
+    editing: (w) => (dbg[w].local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** a drawer tab's name button, by its title, in view w (to show that tab) */
     tabRect(w, title) { const e = [...hosts[w].querySelectorAll(".stage-drawer-tab-name")].find((n) => n.textContent === title); if (!e) return null; const r = e.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; },
     running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),

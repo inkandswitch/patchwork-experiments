@@ -20,10 +20,10 @@ describe("a scene made here", () => {
     expect(scene.order).toEqual([BAG_OBJECT]);
   });
 
-  it("is a scene named for its bag (an empty scene to build on, not a table), started in Edit", () => {
+  it("is a scene named for its bag (an empty scene to build on, not a table), started holding the editor", () => {
     const scene = make(null);
     expect(scene.title).toBe("Tile bag: scene");
-    expect(scene.view?.start).toEqual({ body: "edit" });
+    expect(scene.view?.start).toEqual({ edit: true });
   });
 
   it("has the bag on it as a container for that bag document, shown from the sack's file", () => {

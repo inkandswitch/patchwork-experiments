@@ -491,7 +491,7 @@ describe("Extract and Bundle", () => {
         traits: { "t.sea": { level: 0 } },
       },
     });
-    s.api("scene.transfer").body.enter("edit");
+    s.api("scene.transfer").view.edit(true);
     await settle();
   }
   const run = (command, target, value) => s.api("scene.transfer").run({ ext: "scene.transfer", command, target, value });
@@ -568,13 +568,13 @@ describe("Extract and Bundle", () => {
     expect(values()).toEqual(["t.lever"]);
   });
 
-  it("neither is offered outside Edit, nor where the scene can't be written; Bundle only on a link, and not on one that isn't open", async () => {
+  it("neither is offered without the editor, nor where the scene can't be written; Bundle only on a link, and not on one that isn't open", async () => {
     await mount();
     const api = s.api("scene.transfer");
-    api.body.enter("look");
+    api.view.edit(false);
     await settle();
     expect(run("extract", "winch", [])).toBe(false);
-    api.body.enter("edit");
+    api.view.edit(true);
     const cmds = s.instance("scene.transfer").commands;
     const ctx = { scene: { objects: s.doc().objects } };
     expect(cmds.find((c) => c.id === "bundle").state("winch", ctx)).toBe(null);

@@ -58,7 +58,7 @@ export function wallAt(get) {
 }
 
 // the view's keys (stage/view.js), and those of them that are paths
-const VIEW_KEYS = new Set(["hovered", "selected", "body", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
+const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
 export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null } = {}) {

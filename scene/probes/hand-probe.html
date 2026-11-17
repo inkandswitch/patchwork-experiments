@@ -200,9 +200,12 @@ try {
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
     carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().gesture != null,
     camera: () => vp.getCamera(),
-    /** enter a body in a view, as the body chip does (api.body.enter): "look", "edit" */
+    /** enter a body in a view, as the body chip does (api.body.enter): "look" */
     enter: (who, id) => (who === "a" ? dbgA : dbgB).host.record("scene.body")?.api.body.enter(id, null) ?? false,
     bodyOf: (who) => (who === "a" ? dbgA : dbgB).local.get().body?.id ?? null,
+    /** pick up the editor or put it down in a view, as the body chip's Edit does (api.view.edit) */
+    edit: (who, on) => (who === "a" ? dbgA : dbgB).host.record("scene.body")?.api.view.edit(on) ?? false,
+    editingOf: (who) => ((who === "a" ? dbgA : dbgB).local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** open a drawer tab of the stage's own, as its toolbar toggle does (ext "scene.inspector", command "inspector") */
     openTab: (who, ext, command) => (who === "a" ? dbgA : dbgB).host.record(ext)?.api.run({ ext, command, value: true }) ?? false,
     running: (who) => ((who === "a" ? dbgA : dbgB).local.get().running ?? []).map((r) => r.id),

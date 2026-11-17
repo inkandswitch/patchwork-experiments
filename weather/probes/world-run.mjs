@@ -180,16 +180,13 @@ try {
   // ─── (e) Fetch for this time, on a fake fetch ────────────────────────────
   // the fixture's moment: Ucluelet, 15 July 2025 15:00 on UTC-7 (the archive)
   check("Ucluelet, 15 July 2025 at 15:00: settles", await dial({ lat: 48.95, lon: -125.558, offset: -7, date: "2025-07-15", hour: 15 }), null);
-  // the weather's commands are editing commands: into Edit as a person goes (her template left her in Look): the body chip, then its menu's Edit
+  // the weather's commands are editing commands: the editor picked up as a person does (her template left her in Look, not editing): Edit, beside the body chip
   {
-    const was = await P("body()");
-    const chip = await P("chip()");
-    if (chip) await b.click(chip.x, chip.y);
-    await b.soon(`!!window.__p.menuItem("Edit")`, { frames: 60 });
-    const item = await P(`menuItem("Edit")`);
-    if (item) await b.click(item.x, item.y);
-    await b.soon(`window.__p.body() === "edit"`, { frames: 60 });
-    check("into Edit by the body chip's menu, from Look", was === "look" && !!chip && !!item && (await P("body()")) === "edit", { was, chip, item, now: await P("body()") });
+    const was = await P("editing()");
+    const toggle = await P("editToggle()");
+    if (toggle) await b.click(toggle.x, toggle.y);
+    await b.soon(`window.__p.editing()`, { frames: 60 });
+    check("the editor picked up by Edit beside the body chip, from Look", was === false && !!toggle && (await P("editing()")) && (await P("body()")) === "look", { was, toggle, now: await P("body()") });
   }
   const before = await P("weather()");
   const changes0 = await P("weatherChanges()");

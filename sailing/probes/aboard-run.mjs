@@ -47,7 +47,7 @@
 //     game's) and Select, which selects the link the card is in (the focus
 //     is the boat's: scene/STAGE.md, "The input chain"), not the card;
 // 13. editing in context (STAGE.md build step 14), under way: A picks
-//     Edit on the body chip and clicks a card on the table (it selects the
+//     up the editor (Edit, beside the body chip), Look on the chip, and clicks a card on the table (it selects the
 //     link: the focus is the boat's), then the inspector's Enter, which enters
 //     the game (the focus moves into G: the trail says where, the
 //     general parts run in G's stage); a click selects the card itself (the
@@ -600,13 +600,16 @@ try {
   // ── 13: editing in context, under way (STAGE.md build step 14) ──
   {
     await P("focus('a')");
+    const toggle = await P("editToggle('a')");
+    if (toggle) await b.click(Math.round(toggle.x), Math.round(toggle.y));
+    await until("editing('a')", 3000);
     const chip = await P("chip('a')");
     if (chip) await b.click(Math.round(chip.x), Math.round(chip.y));
-    await until("chipItem('a', 'Edit')", 3000);
-    const item = await P("chipItem('a', 'Edit')");
+    await until("chipItem('a', 'Look')", 3000);
+    const item = await P("chipItem('a', 'Look')");
     if (item) await b.click(Math.round(item.x), Math.round(item.y));
     await b.rest(500);
-    check("13: Edit on the body chip: the seat body leaves (nothing stands on Edit), the seat still A's", (await P("body('a')")).id === "edit" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
+    check("13: Edit beside the body chip, then Look on it: the editor held, the seat body left, the seat still A's", (await P("editing('a')")) && (await P("body('a')")).id === "look" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), editing: await P("editing('a')"), seats: await P("seats()") });
     // she orbits to look down on the table from above (the orbit camera rides her hull: it stays there)
     await P("setCam('a', __p.overTable('a'))");
     await b.rest(600);
@@ -629,7 +632,7 @@ try {
     if (!at) check("13: a card of G's is in plain sight on A's screen", false, { where: w0, cam: await P("cam('a')") });
     else {
       const bBody = await P("bodyLabel('b')");
-      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens on it,
+      // holding the editor a click selects first (the link: the focus is the boat's), and the inspector's tab opens on it,
       // narrowing the canvas: let it open and settle, then press its Enter
       const wide = await js(`__p.A.view.canvas.getBoundingClientRect().width`);
       await b.click(at.x, at.y);

@@ -227,7 +227,8 @@ describe("scene.menu", () => {
         log = [];
         s = await mountStage({
           extensions: [{ meta: { id: "scene.menu" }, module: menu }, { meta: { id: "t.walk" }, module: walker }],
-          doc: { objects: { a: object({ name: "Hull" }), b: object({ name: "Mast" }) }, order: ["a", "b"] },
+          // (not holding the editor, which wants the pointer free)
+          doc: { objects: { a: object({ name: "Hull" }), b: object({ name: "Mast" }) }, order: ["a", "b"], view: { start: {} } },
         });
         // (a primary press is the body's, as walk's drag to look is)
         const vp = s.debug.viewport;

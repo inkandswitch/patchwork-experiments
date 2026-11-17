@@ -71,7 +71,7 @@ try {
   const scene = repo.add(emptyScene({
     title: "Parts probe", objects: { hull }, order: ["hull"],
     // the parts bin is Edit's (scene/TOOLS.md Decisions 6): the scene starts people in Edit
-    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { body: "edit", home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } } },
+    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { edit: true, home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } } },
   }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -101,6 +101,7 @@ try {
     /** a toolbar command's button (the toolbar is Edit's) */
     tool: (id) => { const e = host.querySelector(`.toolbar [data-command="${id}"]`); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     body: () => dbg.local.get().body?.id ?? null,
+    editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
     ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
     selected: () => dbg.local.get().selected ?? null,
     camera: () => dbg.viewport.getCamera(),

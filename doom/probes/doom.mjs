@@ -307,14 +307,11 @@ try {
   if (leaveItem) await clickAt(leaveItem);
   await b.rest(300);
   check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (Look again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "look", { chip: chipA, body: await P(`body("a")`) });
-  // the tree is the top of the inspector's pane, which A opens from the toolbar, which is Edit's: A chooses Edit on the body chip first
-  const chipLook = await P(`chip("a")`);
-  if (chipLook) await clickAt(chipLook);
-  await b.soon(`!!window.__p.chipItem("a", "Edit")`, { frames: 180 });
-  const editItem = await P(`chipItem("a", "Edit")`);
+  // the tree is the top of the inspector's pane, which A opens from the toolbar, which is the editor's: A picks up the editor first
+  const editItem = await P(`editToggle("a")`);
   if (editItem) await clickAt(editItem);
   await b.rest(300);
-  check("A chooses Edit on the body chip (the toolbar, the inspector and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
+  check("A picks up the editor, beside the body chip (the toolbar, the inspector and Copy are the editor's)", !!editItem && (await P(`editing("a")`)), { body: await P(`body("a")`) });
   // the toolbar's Inspector is a toggle: pressed only if a selection hasn't opened the pane already
   if (!(await P(`panelOpen("a", "inspector")`))) {
     const inspectorButton = await P(`buttonRect("a", "Inspector")`);

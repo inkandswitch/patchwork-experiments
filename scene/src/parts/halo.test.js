@@ -29,15 +29,17 @@ describe("haloTarget: what the handles are on", () => {
     lg: group("Locked"),
     lm: object({ group: "lg", locked: true }),
   });
-  it("every body × selection × held tool × writable: only in Edit", () => {
+  it("every body × the editor held or not × selection × held tool × writable: only holding the editor", () => {
     const want = { a: { kind: "object", id: "a" }, g: { kind: "group", id: "g" }, m: { kind: "object", id: "m" } };
-    for (const body of ["look", "edit", "walk", "seat", "station", undefined])
-      for (const selected of [null, "a", "l", "g", "m", "e", "lg", "lm", "gone", "dimension:x"])
-        for (const armed of [null, { ext: "scene.measure", command: "measure" }])
-          for (const writable of [true, false]) {
-            const got = haloTarget(sc, { body: body ? { id: body } : undefined, selected, held: armed }, writable);
-            expect([body, selected, armed, writable, got]).toEqual([body, selected, armed, writable, body === "edit" && writable && armed == null ? (want[selected] ?? null) : null]);
-          }
+    for (const body of ["look", "walk", "seat", "station", undefined])
+      for (const edit of [false, true])
+        for (const selected of [null, "a", "l", "g", "m", "e", "lg", "lm", "gone", "dimension:x"])
+          for (const armed of [null, { ext: "scene.measure", command: "measure" }])
+            for (const writable of [true, false]) {
+              const hands = [...(edit ? [{ kind: "edit" }] : []), ...(armed ? [{ kind: "tool" }] : [])];
+              const got = haloTarget(sc, { body: body ? { id: body } : undefined, hands, selected, held: armed }, writable);
+              expect([body, edit, selected, armed, writable, got]).toEqual([body, edit, selected, armed, writable, edit && writable && armed == null ? (want[selected] ?? null) : null]);
+            }
   });
 });
 

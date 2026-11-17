@@ -104,8 +104,11 @@ try {
     net: { hold: () => net.hold(), release: () => net.release(), held: () => net.held(), stats: () => ({ ...net.stats }) },
     /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
-    /** the body chip, and its menu's item starting `label` ("Look", "Edit", "Leave"…), in a view */
+    /** the body chip, and its menu's item starting `label` ("Look", "Leave"…), in a view */
     chip: (w) => rectOf(hosts[w].querySelector(".body-chip")),
+    /** the Edit toggle beside the chip, and whether view w holds the editor */
+    editToggle: (w) => rectOf(hosts[w].querySelector(".body-edit")),
+    editing: (w) => (dbg[w]?.local.get().hands ?? []).some((h) => h.kind === "edit"),
     chipItem: (w, label) => rectOf([...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)) ?? null),
     /** a toolbar command's button (shown in Edit only), and whether a drawer tab is open, in a view */
     tool: (w, id) => rectOf(hosts[w].querySelector(`.toolbar [data-command="${id}"]`)),

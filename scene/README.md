@@ -30,13 +30,16 @@ are general except `scene.carry` (by trait) and `scene.others` (every doc).
 ## Using it
 
 - **Make a scene.** An empty scene lists the installed templates and Blank.
-  A new scene starts you in Edit; a doc's `view.start` puts you somewhere
-  else once, on arrival (a seat, a spawn point, Look).
+  A new scene starts you holding the editor; a doc's `view.start` puts you
+  somewhere else once, on arrival (a seat, a spawn point, Look, editing or not).
 - **Add things.** Drop docs from the sidebar or `.stl`/`.glb` files from the
   desktop, paste an automerge URL, or use the parts bin (toolbar, Parts).
-- **Bodies.** The body chip (bottom right) picks Look, Edit, or a body a
-  package offers (walk, a seat, a ship's station). Leave goes back to Look.
-- **Edit.** The editor is the Edit body. Click to select. The **halo** has
+- **Bodies.** The body chip (bottom right) picks Look or a body a package
+  offers (walk, a seat, a ship's station). Leave goes back to Look.
+- **Edit.** The editor is a hand: **Edit**, beside the body chip, picks it up
+  or puts it down, in any body (you can walk while editing). Holding it,
+  click to select; Escape deselects, then leaves an entered link, then puts
+  it down. The **halo** has
   move arrows, rotate rings, scale corners and a provider's param knobs. The
   **inspector** drawer tab holds the object tree, the selection's fields and
   behaviours, and its documents (Source, Build, About), each dockable. The

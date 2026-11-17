@@ -67,19 +67,17 @@ try {
   check("three tokens on the table, loaded in both views", await until(`tokens.every((id) => __p.loaded('a', id) && __p.loaded('b', id))`, 30_000), tokens);
 
   // ── 1. a bag from the parts bin ──
-  // The doc names no body: both start in Look. The parts bin is Edit's (a
-  // drawer tab, from the toolbar: scene/HISTORY.md, TOOLS Decisions 6), so A chooses
-  // Edit on the body chip, opens Parts, clicks Token bag, shuts Parts and
-  // goes back to Look to play.
+  // The doc names no body: both start in Look. The parts bin is the editor's
+  // (a drawer tab, from the toolbar: scene/HISTORY.md, Kernel step 1), so A
+  // picks up the editor (Edit, beside the body chip), opens Parts, clicks
+  // Token bag, shuts Parts and puts the editor down to play.
   check("both start in Look (the doc names no body)", await until("bodyLabel('a') === 'Look' && __p.bodyLabel('b') === 'Look'", 10_000), { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
-  const choose = async (w, label) => {
-    const chip = await until(`chip('${w}')`, 5000);
-    await b.click(chip.x, chip.y);
-    const item = await until(`chipItem('${w}', '${label}')`, 3000);
-    if (item) await b.click(item.x, item.y);
-    return !!item && (await until(`bodyLabel('${w}') === '${label}'`, 3000));
+  const toggleEdit = async (w, on) => {
+    const t = await until(`editToggle('${w}')`, 5000);
+    if (t) await b.click(t.x, t.y);
+    return !!t && (await until(on ? `editing('${w}')` : `!__p.editing('${w}')`, 3000));
   };
-  check("A chooses Edit on the body chip", await choose("a", "Edit"), await P("bodyLabel('a')"));
+  check("A picks up the editor (Edit, beside the body chip)", await toggleEdit("a", true), await P("editing('a')"));
   const partsBtn = await until("tool('a', 'parts')", 5000);
   if (partsBtn) await b.click(partsBtn.x, partsBtn.y);
   check("Parts, from the toolbar: a drawer tab", await until("tab('a', 'parts')", 5000));
@@ -94,7 +92,7 @@ try {
   check("the draw rule is the bag doc's, on both peers", await until(`rule('a') === ${Q(RULE)} && __p.rule('b') === ${Q(RULE)}`, 5000), { a: await P("rule('a')"), b: await P("rule('b')") });
   const shut = await P("tool('a', 'parts')");
   await b.click(shut.x, shut.y);
-  check("A shuts Parts and goes back to Look: the bag's verbs are everyone's, in any body", (await until("tab('a', 'parts') === false", 3000)) && (await choose("a", "Look")), { tab: await P("tab('a', 'parts')"), body: await P("bodyLabel('a')") });
+  check("A shuts Parts and puts the editor down: the bag's verbs are everyone's, in any body", (await until("tab('a', 'parts') === false", 3000)) && (await toggleEdit("a", false)), { tab: await P("tab('a', 'parts')"), body: await P("bodyLabel('a')") });
   await mark("set up");
   await shot("set-up");
 

@@ -120,3 +120,17 @@
   .menu-item[aria-checked="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font-weight: 600;
 }
+
+.scene-stage
+  .body-layer
+  .body-edit:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.scene-stage
+  .body-layer
+  .body-edit[aria-pressed="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill, #35f7ca);
+  color: var(--scene-accent-line, #15181c);
+}

@@ -96,7 +96,7 @@ try {
   const wad = await repo.create2({ "@patchwork": { type: "file" }, name: "freedoom1-e1m1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
   const aboard = await repo.create2(emptyScene({ title: "Lost Cities aboard" }));
   // made new, it starts its maker in Edit, where the WAD is pasted (the layout then names its own start: walking)
-  const doom = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { body: "edit" } } }));
+  const doom = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { edit: true } } }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("view");

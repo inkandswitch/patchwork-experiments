@@ -49,10 +49,11 @@ const same = (a, c, eps = 0.5) => !!a && !!c && ["x", "y", "w", "h"].every((k) =
 const ctl = (bar, id) => bar?.controls.find((c) => c.id === id) ?? null;
 /** every control and the empty-or-not world cluster are the one control height */
 const oneHeight = (bar) => !!bar && bar.control > 0 && bar.controls.every((c) => Math.abs(c.h - bar.control) <= 0.5) && Math.abs(bar.worldRect.h - bar.control) <= 0.5;
+// "edit": pick up the editor (a hand, not a body); a body: enter it, the editor put down
 const enter = async (id) => {
-  const ok = await P(`enter(${JSON.stringify(id)})`);
+  const ok = id === "edit" ? await P("edit(true)") : (await P(`enter(${JSON.stringify(id)})`)) && (await P("edit(false)")) === false;
   await b.rest(200);
-  return ok && (await P("body()")) === id;
+  return ok && (id === "edit" ? await P("editing()") : (await P("body()")) === id && !(await P("editing()")));
 };
 const clickOn = async (bar, id) => {
   const c = ctl(bar, id);

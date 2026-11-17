@@ -85,16 +85,15 @@ at. A key a surface shows is resolved by the function that runs it.
 ## Bodies and the held tool
 
 A **body** is where a viewer is and how they move and look. The stage owns
-Look and Edit, both the orbit camera. Packages add the rest: walk, a seat,
-a ship's station. Bodies stack: sitting down from walking pushes a seat. The
-top body's eye and reach measure every verb ("too far" is computed once).
+Look, the orbit camera. Packages add the rest: walk, a seat, a ship's
+station. Bodies stack: sitting down from walking pushes a seat. The top
+body's eye and reach measure every verb ("too far" is computed once).
 
-**Editing is a body.** In Edit a click selects, and the halo, inspector,
-grid and editor commands appear; in any other body none of it shows.
-Entering another body leaves Edit.
-
-The **held tool** is one slot per view: empty, or one tool that takes every
-press first (measure, a gun, a piece drawn from a bag). Playing is the empty
+**Hands** are what a viewer holds, a stack per view, offered every event
+first: a tool (measure, a gun, a piece drawn from a bag), an open menu, and
+the editor. **Editing is a hand.** Holding it a click selects, and the halo,
+inspector, grid and editor commands appear; put down, none of it shows. It
+is picked up, never imposed, and held in any body. Playing is the empty
 hand. Carrying needs no tool and no body: it is a trait.
 
 ## Three places for state

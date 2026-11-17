@@ -98,7 +98,7 @@ const barOf = (w) => js(`(() => {
   const of = (c) => [...h.querySelectorAll('.toolbar .' + c + ' [data-command]')].map((e) => ({ id: e.dataset.command, text: e.textContent.trim(), disabled: !!e.disabled }));
   const d = h.querySelector('.scene-stage').__sceneDebug;
   const r = d.viewport.canvas.getBoundingClientRect();
-  return { shown: !!t && t.getBoundingClientRect().height > 0, tools: of('tools'), world: of('world'), body: d.local.get().body?.id ?? null, canvas: [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 10) / 10) };
+  return { shown: !!t && t.getBoundingClientRect().height > 0, tools: of('tools'), world: of('world'), body: d.local.get().body?.id ?? null, editing: (d.local.get().hands ?? []).some((x) => x.kind === "edit"), canvas: [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 10) / 10) };
 })()`);
 /** The centre of a bar button in view w, or null. */
 const barButton = (w, id) => js(`(() => { const e = document.querySelector(${Q(`#${w} .toolbar .world [data-command="${id}"]`)}); if (!e) return null; const r = e.getBoundingClientRect(); return r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`);
@@ -151,6 +151,9 @@ try {
   mark("table laid out", { cup });
 
   // ── 2. seats ──
+  // (B opened the scene as it was made, holding the editor, which sitting doesn't put down: B puts it down to play;
+  // A's template started A as the table says, not editing)
+  await P("edit('b', false)");
   await P("pick('a', 'seat1')");
   await P("pick('b', 'seat2')");
   check("A sits as Red, B as Blue; both play", await until(`seats().seat1.player === ${Q(V.a)} && __p.seats().seat2.player === ${Q(V.b)} `, 10_000), await P("seats()"));
@@ -159,7 +162,7 @@ try {
   await shot("seated");
   // the bar of tools, seated and not in Edit: up, for a cups table declares Lift all cups (a world command), whatever its state
   const bar0 = { a: await barOf("a"), b: await barOf("b") };
-  check("seated, neither view in Edit: each bar of tools is up, with no editor command on it and nothing to lift yet", ["a", "b"].every((w) => bar0[w].shown && bar0[w].body !== "edit" && bar0[w].tools.length === 0 && bar0[w].world.length === 0), bar0);
+  check("seated, neither view editing: each bar of tools is up, with no editor command on it and nothing to lift yet", ["a", "b"].every((w) => bar0[w].shown && !bar0[w].editing && bar0[w].tools.length === 0 && bar0[w].world.length === 0), bar0);
 
   // ── 3. both shake ──
   const overA = await hover("a", cup.a);
@@ -183,7 +186,7 @@ try {
   check("the cups are down over them: nobody else may see under either", Q(await P(`audience('a', ${Q(dice.a[0])})`)) === Q([V.a]) && Q(await P(`audience('b', ${Q(dice.b[0])})`)) === Q([V.b]), { a: await P(`audience('a', ${Q(dice.a[0])})`), b: await P(`audience('b', ${Q(dice.b[0])})`) });
   await b.rest(900); // the rattle ends
   const bar3 = { a: await barOf("a"), b: await barOf("b") };
-  check("…and each bar now offers an enabled Lift all cups, still no editor command, and neither canvas moved", ["a", "b"].every((w) => bar3[w].shown && bar3[w].body !== "edit" && bar3[w].tools.length === 0 && Q(bar3[w].world) === Q([{ id: "lift-all", text: "Lift all cups", disabled: false }]) && Q(bar3[w].canvas) === Q(bar0[w].canvas)), { bar0, bar3 });
+  check("…and each bar now offers an enabled Lift all cups, still no editor command, and neither canvas moved", ["a", "b"].every((w) => bar3[w].shown && !bar3[w].editing && bar3[w].tools.length === 0 && Q(bar3[w].world) === Q([{ id: "lift-all", text: "Lift all cups", disabled: false }]) && Q(bar3[w].canvas) === Q(bar0[w].canvas)), { bar0, bar3 });
 
   // ── 4. each sees their own dice, and the other's cup only ──
   const wantA = await P(`expected(${Q(st.aa.seed)})`);
@@ -400,7 +403,7 @@ try {
   check("…the knocked-over Blue cup untouched", Q(await P(`transform('a', ${Q(cup.b)})`)) === Q(blueAt) && Q(await P(`transform('b', ${Q(cup.b)})`)) === Q(blueAt), { blueAt, a: await P(`transform('a', ${Q(cup.b)})`) });
   const gone = await b.soon(`!document.querySelector('#a .toolbar [data-command="lift-all"]') && !document.querySelector('#b .toolbar [data-command="lift-all"]')`, { frames: 120 });
   const bar15 = { a: await barOf("a"), b: await barOf("b") };
-  check("…Lift all cups leaves both bars, which stay up (nothing else on them), and neither canvas moved since they sat down", gone && ["a", "b"].every((w) => bar15[w].shown && bar15[w].body !== "edit" && bar15[w].tools.length === 0 && bar15[w].world.length === 0 && Q(bar15[w].canvas) === Q(bar0[w].canvas)), { bar0, bar15 });
+  check("…Lift all cups leaves both bars, which stay up (nothing else on them), and neither canvas moved since they sat down", gone && ["a", "b"].every((w) => bar15[w].shown && !bar15[w].editing && bar15[w].tools.length === 0 && bar15[w].world.length === 0 && Q(bar15[w].canvas) === Q(bar0[w].canvas)), { bar0, bar15 });
   await shot("lifted-all");
   mark("lifted all from the bar");
 

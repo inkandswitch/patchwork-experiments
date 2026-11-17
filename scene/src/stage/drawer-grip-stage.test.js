@@ -10,6 +10,7 @@ import { openTabs } from "../test/tabs.js";
 import select from "../parts/select.js";
 import inspector from "../parts/inspector.js";
 import { MAX_PX, prefKey } from "./dock.js";
+import { editing } from "./bodies.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };
@@ -109,14 +110,15 @@ describe("the drawer's grip, mounted", () => {
     it(`I5 in ${body}: with A selected, a drag, a click, a double-click and the grip's keys select nothing, deselect nothing, lock nothing, and reach no part`, async () => {
       const seen = [];
       await mount(seen);
-      expect(s.api("scene.select").body.enter(body)).toBe(true);
+      // ("edit": Look holding the editor)
+      expect(s.api("scene.select").view.edit(body === "edit")).toBe(body === "edit");
       s.local.swap((m) => ({ ...m, selected: "a" }));
       await settle();
       // a panel of its own, so there is a drawer in Look too (the inspector is Edit's)
       s.instance("t.seen").dockPanel();
       await settle();
       expect(s.root.querySelector(".stage-drawer").dataset.kind).toBe("editor");
-      const before = { body: s.local.get().body.id, selected: s.local.get().selected, pointer: s.local.get().pointer, doc: JSON.stringify(s.doc()) };
+      const before = { body: editing(s.local.get()) ? "edit" : s.local.get().body.id, selected: s.local.get().selected, pointer: s.local.get().pointer, doc: JSON.stringify(s.doc()) };
       expect(before).toMatchObject({ body, selected: "a" });
       seen.length = 0;
       // a drag, a click, a double-click
@@ -131,7 +133,7 @@ describe("the drawer's grip, mounted", () => {
       for (const k of ["ArrowLeft", "ArrowRight", "Home", "End"]) key(k);
       key("ArrowLeft", { shiftKey: true });
       await settle();
-      const after = { body: s.local.get().body.id, selected: s.local.get().selected, pointer: s.local.get().pointer, doc: JSON.stringify(s.doc()) };
+      const after = { body: editing(s.local.get()) ? "edit" : s.local.get().body.id, selected: s.local.get().selected, pointer: s.local.get().pointer, doc: JSON.stringify(s.doc()) };
       expect(after).toEqual(before);
       expect(s.local.get().gesture).toBeNull();
       expect(s.local.get().pointer.locked).toBe(false);

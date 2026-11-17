@@ -56,7 +56,7 @@ export function groupRoots(scene, gid) {
 
 /**
  * What the halo's handles are on: { kind: "object" | "group", id }, or null.
- * Handles are the editor's: they show only in the Edit body
+ * Handles are the editor's: they show only while editing
  * (../stage/bodies.js), for the selection where its doc may be written, while
  * no tool is held (a held tool takes every press), on an object that
  * isn't locked or a group with something it can move.

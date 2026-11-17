@@ -215,14 +215,14 @@ describe("the stage's pure helpers", () => {
     expect(initialCamera({ doc: { view: { home } } })).toBeNull();
     expect(initialCamera({ doc: {} })).toBeNull();
   });
-  it("view.start: a body (look and edit too: the stage's), a place, a home; anything else is nothing", () => {
+  it("view.start: a body (look too: the stage's), a place, a home, whether editing (exactly true); anything else is nothing", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
-    expect(startOf({ view: { start: { body: "walk", place: "spawn1", home } } })).toEqual({ body: "walk", place: "spawn1", home });
-    expect(startOf({ view: { start: { body: "edit", place: "x" } } })).toEqual({ body: "edit", place: "x", home: null });
-    expect(startOf({ view: { start: { body: "look" } } })).toEqual({ body: "look", place: null, home: null });
-    expect(startOf({ view: { start: { body: 3, place: "" } } })).toEqual({ body: null, place: null, home: null });
-    expect(startOf({ view: { activity: "play" } })).toEqual({ body: null, place: null, home: null });
-    expect(startOf(null)).toEqual({ body: null, place: null, home: null });
+    expect(startOf({ view: { start: { body: "walk", place: "spawn1", home } } })).toEqual({ body: "walk", place: "spawn1", home, edit: false });
+    expect(startOf({ view: { start: { body: "walk", place: "x", edit: true } } })).toEqual({ body: "walk", place: "x", home: null, edit: true });
+    expect(startOf({ view: { start: { body: "look", edit: 1 } } })).toEqual({ body: "look", place: null, home: null, edit: false });
+    expect(startOf({ view: { start: { body: 3, place: "" } } })).toEqual({ body: null, place: null, home: null, edit: false });
+    expect(startOf({ view: { activity: "play" } })).toEqual({ body: null, place: null, home: null, edit: false });
+    expect(startOf(null)).toEqual({ body: null, place: null, home: null, edit: false });
   });
   it("notices: one saying what one still showing says replaces it (shown once, timed from now); others pile up", () => {
     const n = (id, text, kind = "info") => ({ id, text, kind });
@@ -547,14 +547,14 @@ describe("the stage, mounted", () => {
     expect(api.pref("units", "cm")).toBe("mm");
     expect(JSON.parse(localStorage.getItem(`scene-prefs:${h.url}`))).toEqual({ units: "mm" });
     expect(Object.keys(localStorage).filter((k) => k.includes(h.url) && !k.startsWith("scene-prefs:") && !k.startsWith("scene-camera:"))).toEqual([]);
-    // a second open of the same scene starts with the prefs, and where the doc says (made new: Edit), not where the last left
+    // a second open of the same scene starts with the prefs, and where the doc says (made new: holding the editor), not where the last left
     m.cleanup();
     mounted.splice(mounted.indexOf(m), 1);
     m.element.remove();
     const again = mount(h);
     await settle();
     expect(again.local.get().prefs).toEqual({ units: "mm" });
-    expect(again.local.get().body.id).toBe("edit");
+    expect(again.local.get().hands.map((h) => h.kind)).toEqual(["edit"]);
   });
 
   it("template(id): the template writes the doc through a drop context, and this viewer starts where it now says", async () => {
@@ -570,13 +570,15 @@ describe("the stage, mounted", () => {
     try {
       const m = mount(newScene());
       await settle();
-      // a scene made new: its maker is in Edit (the datatype's init says so)
-      expect(m.local.get().body.id).toBe("edit");
+      // a scene made new: its maker holds the editor (the datatype's init says so)
+      expect(m.local.get().hands.map((h) => h.kind)).toEqual(["edit"]);
       const api = exts["t.always"].api;
       expect(await api.template("t.template")).toBe(true);
       await settle();
       expect(seen[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "notify", "registry", "repo", "scene"]));
       expect(m.local.get().body.id).toBe("stroll");
+      // the template's start says nothing of the editor: put down
+      expect(m.local.get().hands).toEqual([]);
       expect(running(m)).toEqual(["t.scene:scene", "t.edit:general", "t.always:general"]);
       expect(await api.template("nope")).toBe(false);
       template = () => {
@@ -794,7 +796,7 @@ describe("the stage, mounted", () => {
     ]);
   });
 
-  it("bodies: entering pushes one over the base (local.body says which), turning Edit to Look; its keys are its; its extension stopping pops it", async () => {
+  it("bodies: entering pushes one over Look (local.body says which), the editor held on; its keys are its; its extension stopping pops it", async () => {
     const order = [];
     const left = [];
     exts["t.edit"] = recorder("t.edit", () => ({
@@ -814,7 +816,7 @@ describe("the stage, mounted", () => {
     const m = mount(newScene());
     await settle();
     const api = m.debug.host.record("t.always").api;
-    expect(m.local.get().body).toMatchObject({ id: "edit", label: "Edit", depth: 0, reach: Infinity });
+    expect(m.local.get().body).toMatchObject({ id: "look", label: "Look", depth: 0, reach: Infinity });
     expect(api.body.enter("nowhere")).toBe(false);
     expect(api.body.enter("missing")).toBe(false);
     expect(api.body.enter("walk", "here")).toBe(true);
@@ -827,8 +829,9 @@ describe("the stage, mounted", () => {
     // the body's extension stops (uninstalled): its body goes with it
     uninstall("t.edit");
     await settle();
-    // nothing stands on Edit: walking was over Look, and Look is what's left
+    // walking was over Look, and Look is what's left; the editor was held throughout
     expect(m.local.get().body).toMatchObject({ id: "look", label: "Look", depth: 0 });
+    expect(m.local.get().hands.map((h) => h.kind)).toEqual(["edit"]);
     expect(left).toEqual(["walk"]);
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
     expect(order).toEqual([
@@ -889,6 +892,8 @@ describe("the stage, mounted", () => {
     const m = mount(newScene());
     await settle();
     const api = m.debug.host.record("t.always").api;
+    // (not editing: the Edit hand wants the pointer too)
+    api.view.edit(false);
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
     expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) });
     const serials = [m.local.get().held.serial];

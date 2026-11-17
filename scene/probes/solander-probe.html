@@ -308,9 +308,9 @@ try {
   P.expand = (name) => { const id = ids((o) => o.name === name)[0]; document.querySelector(`.object-row[data-id="${id}"] .twisty`)?.click(); };
   P.stop = () => { sampling = false; };
   // filter the outline, Enter to select (and reveal) the first match
-  // the tree and the fields are the inspector's one pane, the editor's (TOOLS.md §6): Edit, then the toolbar's Inspector
+  // the tree and the fields are the inspector's one pane, the editor's: pick up the editor, then the toolbar's Inspector
   P.openInspector = async () => {
-    dbg.host.record("scene.body")?.api.body.enter("edit", null);
+    dbg.host.record("scene.body")?.api.view.edit(true);
     await stable();
     dbg.host.record("scene.inspector")?.api.run({ ext: "scene.inspector", command: "inspector", value: true });
     await stable();

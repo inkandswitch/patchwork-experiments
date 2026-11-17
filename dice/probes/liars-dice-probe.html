@@ -47,7 +47,7 @@ try {
   window.repo = net.a;
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
-  // a scene made new: it starts people in Edit, where its start screen is (scene/TOOLS.md Decisions 6)
+  // a scene made new: it starts people holding the editor, where its start screen is (scene HISTORY.md, Kernel step 1)
   const sceneA = await net.a.create2(emptyScene({ title: "Untitled scene" }));
   const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
   try { localStorage.clear(); } catch {}
@@ -104,6 +104,8 @@ try {
     id: (w, name) => byName(w, name),
     loaded: (w, id) => !!dbg[w].viewport.contentOf(id)?.loaded,
     allLoaded: (w) => Object.keys(objectsOf(w)).every((id) => dbg[w].viewport.contentOf(id)?.loaded),
+    /** pick up the editor or put it down in view w (a hand, not a body) */
+    edit: (w, on) => dbg[w].view.setEditing(on),
     /** the seat picker */
     pick(w, sid) { const s = hosts[w].querySelector(".seats-pick"); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     seats: () => plain(scene.a.doc().traits?.seats),

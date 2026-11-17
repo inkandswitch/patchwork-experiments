@@ -8,7 +8,6 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
-import { EDIT, LOOK } from "./bodies.js";
 import focusPart from "../parts/focus.js";
 import inspector from "../parts/inspector.js";
 import add from "../parts/add.js";
@@ -55,7 +54,7 @@ async function mountWithLink() {
   });
   const view = s.debug.view;
   await until(() => view.enterable(["L"]), 3000);
-  view.enterBody(EDIT.id);
+  view.setEditing(true);
   view.select(["table"]);
   // the selection opens the shut inspector
   await until(() => view.drawer.state().order.some((el) => el.dataset.panel === "inspector"), 3000);
@@ -67,7 +66,7 @@ const docsOf = (view) => view.atom.get().drawer.docs;
 // [what happens, does the pane stay?, the act]
 const EVENTS = [
   ["another object selected", true, async ({ view }) => view.select(["chair"])],
-  ["Edit → Look", true, async ({ view }) => view.enterBody(LOOK.id)],
+  ["the editor put down", true, async ({ view }) => view.setEditing(false)],
   ["Enter a link", true, async ({ view }) => expect(view.enter(["L"])).toBe(true)],
   ["Leave", true, async ({ view }) => (expect(view.enter(["L"])).toBe(true), await settle(), view.leave())],
   ["the inspector stopped", true, async () => s.uninstall("scene.inspector")],
@@ -100,7 +99,8 @@ describe("a document docked in the drawer is the view's", () => {
 
   it("a pane docked with nothing selected: the router is told the pointer is wanted, and not once it's closed", async () => {
     const { view, notes } = await mountWithLink();
-    // nothing selected, nothing docked (the inspector may stay open on the scene: its × shuts it)
+    // nothing selected, nothing docked, not editing (the Edit hand wants the pointer too)
+    view.setEditing(false);
     view.select(null);
     await settle();
     const wanted = () => view.atom.get().pointer.wanted;

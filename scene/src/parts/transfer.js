@@ -36,7 +36,7 @@
 // Keys, pastes and drops inside an embedded document are that document's.
 // Copying, pasting, extracting and bundling are the editor's
 // (../stage/bodies.js): the commands, ⌘C / ⌘V and a dropped row are taken
-// only in the Edit body.
+// only while editing.
 
 import { isGroup } from "../groups.js";
 import { editing } from "../stage/bodies.js";

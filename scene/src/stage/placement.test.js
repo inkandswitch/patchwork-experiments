@@ -191,9 +191,11 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
           for (const focus of into.length ? ["outside", "inside"] : ["outside"]) {
             if (focus === "inside") expect(v.enter(into)).toBe(true);
             // (a pin offers no seat: it acts for nobody)
+            // ("edit": Look holding the editor, which is no body)
             for (const body of pinned ? ["look", "edit", "t.walk"] : ["look", "edit", "t.walk", "t.sit"])
               for (const held of pinned ? [false] : [false, true]) {
-                expect(v.enterBody(body, null)).toBeTruthy();
+                v.setEditing(body === "edit");
+                expect(v.enterBody(body === "edit" ? "look" : body, null)).toBeTruthy();
                 const acting = gStages(v).find((st) => st.acts);
                 const release = held ? v.holdTool(keyOf(acting.n, "t.table"), { name: "Measure" }, {}) : null;
                 await settle();

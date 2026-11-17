@@ -1,9 +1,9 @@
 // The view (STAGE.md, "Views, stages and links"): one per mounted tool, shared by every stage
 // it opens. It holds what is the viewer's, not any doc's: the DOM and its
 // edges, the viewport, the router, the camera and its saving, labels, the
-// body stack and the held tool, the view's atom (the body, the held tool,
-// the pointer, the selection and hover, theme, notices, prefs, the drawer,
-// the focus), the session every stage's channel names, and the stages
+// body stack and the hands, the view's atom (the body, the hands, the held
+// tool, the pointer, the selection and hover, theme, notices, prefs, the
+// drawer, the focus), the session every stage's channel names, and the stages
 // themselves. A stage (./stage.js) is one per open doc and holds what is
 // the doc's.
 //
@@ -27,8 +27,8 @@ import { createAtom, assoc } from "./atom.js";
 import { createRouter } from "./router.js";
 import { looksFromEye } from "./pointer.js";
 import { createDrawer } from "./dock.js";
-import { escapeHint } from "./ladder.js";
-import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
+import { escapeHint, restLayer } from "./ladder.js";
+import { EDIT_HAND, LOOK } from "./bodies.js";
 import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
@@ -49,10 +49,9 @@ export const ARRIVE_WAIT_MS = 20_000;
 const EDGES = ["top", "right", "bottom", "left"];
 const noop = () => {};
 
-// The stage's own bodies, Look and Edit (./bodies.js, STAGE.md, "Bodies"): the
-// orbit camera, one of them always at the bottom of the stack. As view.body:
-const baseLocal = (b) => Object.freeze({ id: b.id, label: b.label, ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
-const BASE_LOCAL = Object.freeze({ [LOOK.id]: baseLocal(LOOK), [EDIT.id]: baseLocal(EDIT) });
+// The stage's own body, Look (./bodies.js, STAGE.md, "Bodies"): the orbit
+// camera, always at the bottom of the stack. As view.body:
+const LOOK_LOCAL = Object.freeze({ id: LOOK.id, label: LOOK.label, ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
@@ -69,17 +68,18 @@ export function cleanCamera(c) {
 
 /**
  * Where the doc starts people (STAGE.md, "Arriving"): `view.start = { body, place,
- * home }`, read once on arrival. `body` is a body's id ("look" and "edit"
- * are the stage's, ./bodies.js; none is Look), `place` what its enter is
- * given (a spawn point's object id, a seat's id), `home` the camera. Pure.
- * @returns {{ body: string | null, place: string | null, home: object | null }}
+ * home, edit }`, read once on arrival. `body` is a body's id (none, or
+ * "look", is Look), `place` what its enter is given (a spawn point's object
+ * id, a seat's id), `home` the camera, `edit: true` that they start holding
+ * the editor. Pure.
+ * @returns {{ body: string | null, place: string | null, home: object | null, edit: boolean }}
  */
 export function startOf(doc) {
   const s = doc?.view?.start;
-  if (!s || typeof s !== "object") return { body: null, place: null, home: null };
+  if (!s || typeof s !== "object") return { body: null, place: null, home: null, edit: false };
   const body = typeof s.body === "string" && s.body ? s.body : null;
   const place = typeof s.place === "string" && s.place ? s.place : null;
-  return { body, place, home: cleanCamera(s.home) };
+  return { body, place, home: cleanCamera(s.home), edit: s.edit === true };
 }
 
 /**
@@ -125,6 +125,12 @@ export function withNotice(list, n) {
 }
 
 const NO_ESCAPE = Object.freeze({ layer: null, hint: "" });
+// What Escape does with the focus at the outermost, where it is leaving a link: the top hand (the Edit hand, whose
+// escape leaves) put down, else nothing.
+const outermostEscape = (hands) => {
+  const top = hands?.at(-1);
+  return top ? Object.freeze({ layer: "hand", hint: escapeHint("hand", { hand: top.name }) }) : NO_ESCAPE;
+};
 
 /** A viewer's prefs as stored: a plain object. */
 export function cleanPrefs(v) {
@@ -137,9 +143,10 @@ export function cleanPrefs(v) {
  * owner as its extension's id where they are its own (else the view's key,
  * which no id of a stage's equals), and not the focus: where the viewer has
  * entered is the view's, and a stage that read it could act differently
- * entered than not (I4). So Escape's last rung (leave an entered link) is
- * shown as no rung, but to the general parts (`general`), the view's own,
- * whose chrome says what Escape does. Pure.
+ * entered than not (I4). So Escape leaving an entered link is shown as
+ * what it would do at the outermost (the hand under it put down, else
+ * nothing), but to the general parts (`general`), the view's own, whose
+ * chrome says what Escape does. Pure.
  * @param {object} v  the view's value  @param {number} n  the stage's number  @param {string[]} prefix  its path
  * @param {{ general?: boolean }} [o]
  */
@@ -157,10 +164,11 @@ export function projectView(v, n, prefix, { general = false } = {}) {
     ...rest,
     ...(general && v.packages ? { packages: v.packages } : {}),
     ...(general && v.clocks ? { clocks: v.clocks } : {}),
-    ...(!general && v.escape?.layer === "focus" ? { escape: NO_ESCAPE } : {}),
+    ...(!general && v.escape?.layer === "focus" ? { escape: outermostEscape(v.hands) } : {}),
     selected: elementOf(v.selected, prefix),
     hovered: elementOf(v.hovered, prefix),
     body: v.body?.ext != null ? Object.freeze({ ...v.body, ext: own(v.body.ext) }) : v.body,
+    hands: v.hands?.some((h) => h.ext != null) ? Object.freeze(v.hands.map((h) => (h.ext != null ? Object.freeze({ ...h, ext: own(h.ext) }) : h))) : v.hands,
     held: v.held?.ext != null ? Object.freeze({ ...v.held, ext: own(v.held.ext) }) : v.held,
     gesture: v.gesture?.owner != null ? Object.freeze({ ...v.gesture, owner: own(v.gesture.owner) }) : v.gesture,
   });
@@ -298,7 +306,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     hovered: null,
     selected: null,
     // the body on top of the stack (STAGE.md, "Bodies"); Look until arriving says otherwise
-    body: BASE_LOCAL.look,
+    body: LOOK_LOCAL,
+    // what the viewer holds, top last (STAGE.md, "Hands"), and the held tool among them
+    hands: Object.freeze([]),
     held: null,
     gesture: null,
     pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
@@ -388,14 +398,16 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     clocksChanged();
     return s;
   }
-  // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and held tool are the
+  // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and top hand are the
   // view's, so the view says them on every channel it acts on, not a part on
   // the focus doc's: whoever has a doc open sees what a person at any
   // placement of it is doing (a viewer of the game alone sees the boat's
-  // sailor seated at it). A drawn stage's channel only listens.
+  // sailor seated at it). A drawn stage's channel only listens. An open menu
+  // is nobody else's business: the hand under it is said.
   const announced = () => {
     const v = atom.get();
-    return { body: { id: v.body?.id ?? LOOK.id, label: v.body?.label ?? LOOK.label }, held: v.held ? { name: v.held.name } : null };
+    const top = (v.hands ?? []).filter((h) => h.kind !== "popover").at(-1);
+    return { body: { id: v.body?.id ?? LOOK.id, label: v.body?.label ?? LOOK.label }, held: top ? { name: top.name } : null };
   };
   function announce() {
     const a = announced();
@@ -659,7 +671,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // The focus and the selection change here only, a selectionStep at a time
   // (../selection.js), so the selection is always an element of the focus
-  // stage (H10), whoever asks: an extension of any stage, the Edit body, the
+  // stage (H10), whoever asks: an extension of any stage, the Edit hand, the
   // ladder, a link going.
 
   /** Apply selection events in turn, as one change; a move of the focus moves what follows it. @returns did anything change */
@@ -830,11 +842,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (!trail.isConnected) edges.top.prepend(trail);
   }
 
-  // ─── bodies and the held tool (STAGE.md, "Bodies") ───────────────────────────────
+  // ─── bodies and hands (STAGE.md, "Bodies", "Hands") ──────────────────────
 
-  // The bodies entered, bottom first, over the base: { stage, ext, owner, def, sitting, pop, place }.
+  // The bodies entered, bottom first, over Look: { stage, ext, owner, def, sitting, pop, place }.
   const sittings = [];
-  let base = LOOK;
   const topSitting = () => sittings.at(-1) ?? null;
   const reachOf = (def) => (typeof def?.reach === "number" && def.reach >= 0 ? def.reach : Infinity);
   let router = null;
@@ -880,58 +891,72 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     return s ? s.stage.frame().lengthOut(reachOf(s.def)) : Infinity;
   };
 
-  const lookInput = {};
-  // Edit's click goes ahead of the chain: a plain click in Edit selects, before any package's click verb (STAGE.md, "The input chain")
-  const EDIT_AHEAD = Object.freeze(["click"]);
+  // Escape's own last steps, with no hand over them (./ladder.js restLayer): the selection clears, then the focus leaves one link.
+  const restNow = () => restLayer({ selection: atom.get().selected != null, focus: atom.get().focus.length });
+  function escapeRest() {
+    const l = restNow();
+    if (l === "selection") selectStep({ type: "clear" });
+    else if (l === "focus") leave();
+    return l != null;
+  }
+
+  // The Edit hand (./bodies.js, STAGE.md, "Hands"): the view's own. Its click selects at the focus, ahead
+  // of any package's click; a click with a widget under it is the widget's (the halo's handles and knobs).
+  // Presses are not its: carries and drags go down the chain. It wants the pointer free (walking while
+  // editing looks by drag), and its Escape is the view's own (clear, then leave) before it is put down.
   const editInput = {
     click(ev) {
+      if (widgetWins(ev?.widget, ev?.hit)) return false;
       // a hit on something its doc no longer has is a hit on nothing
       const p = ev?.hit?.id != null ? parseKey(ev.hit.id) : null;
       const path = p && stages.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(ev.hit.id) : null;
       if (!path && atom.get().selected == null) return false;
       // A click on something is Edit's wherever it lands: outside the focus it selects nothing (selectionStep's
       // "outside, nothing") and goes no further, so no package's click verb acts for an Edit click (STAGE.md,
-      // Decisions, Edit's click is Edit's). Presses, keys, the menu and the prompt still reach outside the focus.
+      // "Hands"). Presses, keys, the menu and the prompt still reach outside the focus.
       selectStep({ type: "press", path: path ?? [] });
       return true;
     },
   };
-
+  let editRelease = null;
   /**
-   * Make Look or Edit the base (./bodies.js): every body standing on it
-   * leaves, and leaving Edit puts down what Edit holds: a tool held through
-   * an editing command (Measure), whose input is the editor's, and the
-   * selection (attention is the selection, so a selection kept from Edit
-   * would aim F and the use prompt at what was last edited). The focus
-   * stays: it is where the viewer is, as the camera is.
+   * Pick up the Edit hand (true) or put it down (false). Putting it down puts
+   * down what it holds: a tool picked up through an `edit: true` command
+   * (Measure), whose input is the editor's, and the selection (attention is
+   * the selection, so one kept from editing would aim F and the use prompt
+   * at what was last edited). The focus stays: it is where the viewer is.
+   * @returns whether the view is editing now
    */
-  function setBase(b) {
-    if (dead || !router) return;
-    const leavingEdit = base === EDIT && b !== EDIT;
-    base = b;
-    router.setBase({ id: b.id, input: b === EDIT ? editInput : lookInput, lock: false, keys: [], ahead: b === EDIT ? EDIT_AHEAD : [] });
-    if (b !== EDIT) putDownEditTool();
-    if (leavingEdit) selectStep({ type: "clear" });
+  function setEditing(on) {
+    if (dead || !router) return false;
+    if (!on) {
+      editRelease?.();
+      return false;
+    }
+    if (editRelease) return true;
+    const release = router.pushHand(null, { kind: "edit", name: EDIT_HAND, input: editInput, pointer: true, escape: escapeRest, escaping: restNow, put: editPut });
+    editRelease = release;
+    return true;
   }
-  function putDownEditTool() {
+  function editPut() {
+    editRelease = null;
     const held = router?.held();
-    if (!held?.command) return;
-    const p = parseKey(held.owner);
-    if (stages.get(p?.n)?.commandOf(p.id, held.command)?.edit === true) router.putDown();
+    const p = held?.command ? parseKey(held.owner) : null;
+    if (p && stages.get(p.n)?.commandOf(p.id, held.command)?.edit === true) router.putDown();
+    selectStep({ type: "clear" });
   }
 
   /**
    * Enter body `id` at `place` (STAGE.md, "Arriving"), from stage `caller`: the first
    * acting stage offering it (the caller's own first) runs its enter, in its
-   * frame, and what it answers goes on top of the stack, over Look. "look"
-   * and "edit" are the stage's: every body leaves and that one is the base.
+   * frame, and what it answers goes on top of the stack. "look" is the
+   * stage's: every body leaves.
    */
   function enterBody(id, place = null, caller = null, only = false) {
     if (dead || !router) return false;
-    const stageB = stageBody(id);
-    if (stageB) {
+    if (id === LOOK.id) {
       arrival = null; // they went somewhere themselves
-      setBase(stageB);
+      router.leaveAll();
       return true;
     }
     const found = bodyDefs(caller, only).get(id);
@@ -947,7 +972,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (!sitting || typeof sitting !== "object") return false;
     const owner = keyOf(stage.n, ext);
     const rec = { stage, ext, owner, def, sitting, pop: null, place: place ?? null };
-    if (base === EDIT) setBase(LOOK); // nothing stands on Edit
     const input = stage.bodyInput(ext, rec, sitting.input ?? {}, () => leftBody(rec));
     if (!input) return false;
     sittings.push(rec);
@@ -999,10 +1023,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // offer. Until then it waits as long as the body may still come. A body
   // that refuses when entered is asked again until ARRIVE_WAIT_MS after the
   // offer.
-  let arrival = null; // { offered, based }
+  let arrival = null; // { offered }
   function arrive() {
     if (!outermost()) return;
-    arrival = { offered: null, based: false };
+    // the editor at once: the outermost doc's to say (a scene made new is made to be built)
+    setEditing(startOf(outermost().doc()).edit);
+    arrival = { offered: null };
     tryArrive();
     requestFlush();
   }
@@ -1057,12 +1083,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       if (linksPending()) requestFlushSoon();
       return;
     }
-    // the base at once (Look, or Edit for a scene made to be built)
-    if (!a.based) {
-      a.based = true;
-      setBase(startBase(at.body));
-    }
-    if (!at.body || isStageBody(at.body)) {
+    if (!at.body || at.body === LOOK.id) {
       arrival = null;
       return;
     }
@@ -1242,7 +1263,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     centerRay: () => viewport.centerRay(),
     chainFor,
     inputOf,
-    base: { id: base.id, lock: false, keys: [], input: lookInput },
+    base: { id: LOOK.id, lock: false, keys: [], input: {} },
     // a coarse pointer is touch until a press says otherwise (STAGE.md, "Bodies")
     touch: !!globalThis.matchMedia?.("(pointer: coarse)")?.matches,
     cameraHeld: () => viewport.held,
@@ -1261,10 +1282,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       atom.swap((m) => ({ ...m, ...viewOfRouter(st, m) }));
     },
     pointerWanted: () => atom.get().selected != null || drawer.state().order.length > 0,
-    selection: () => atom.get().selected != null,
-    deselect: () => selectStep({ type: "clear" }),
-    focusDepth: () => atom.get().focus.length,
-    leaveFocus: () => leave(),
+    restLayer: restNow,
+    escapeRest,
   });
 
   // The router's state as the view's fields. A field that didn't change keeps its value.
@@ -1273,13 +1292,15 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const body =
       s && s.def.id === st.body.id
         ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]), serial: st.body.serial })
-        : BASE_LOCAL[base.id];
+        : LOOK_LOCAL;
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const hands = Object.freeze(st.hands.map((h) => Object.freeze({ ...h })));
     const held = st.held ? Object.freeze({ ...st.held }) : null;
     const pointer = Object.freeze({ ...st.pointer });
-    const escape = Object.freeze({ layer: st.escape, hint: escapeHint(st.escape, { tool: st.held?.name ?? null }) });
+    const escape = Object.freeze({ layer: st.escape, hint: escapeHint(st.escape, { hand: st.hands.at(-1)?.name ?? null }) });
     return {
       body: same(m.body, body) ? m.body : body,
+      hands: same(m.hands, hands) ? m.hands : hands,
       held: same(m.held, held) ? m.held : held,
       gesture: same(m.gesture, st.gesture) ? m.gesture : st.gesture ? Object.freeze(st.gesture) : null,
       pointer: same(m.pointer, pointer) ? m.pointer : pointer,
@@ -1310,7 +1331,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         writeJSON(prefsKey, next.prefs);
         drawer.refreshWidth();
       }
-      if (next.body !== prev.body || next.held !== prev.held) announce();
+      if (next.body !== prev.body || next.hands !== prev.hands) announce();
       // (an open drawer wants the pointer: a document docked or closed in it changes that)
       if (next.selected !== prev.selected || next.drawer !== prev.drawer) router?.refresh();
       requestFlush();
@@ -1475,7 +1496,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     leaveBodiesOf,
     holdTool,
     cursor,
-    setBase,
+    /** pick up the Edit hand (true) or put it down (false) (STAGE.md, "Hands"); → editing now */
+    setEditing,
     arrive,
     tryArrive,
     relink,

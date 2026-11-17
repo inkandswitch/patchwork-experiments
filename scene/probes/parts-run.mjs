@@ -71,7 +71,7 @@ try {
 
   // ── the bin: a drawer tab, opened from the toolbar (Edit's) ───────────────
   {
-    check("startsInEdit", (await P("body()")) === "edit", await P("body()"));
+    check("startsInEdit", (await P("body()")) === "look" && (await P("editing()")), { body: await P("body()"), editing: await P("editing()") });
     const btn = await b.waitFor("__p.tool('parts')", 5000);
     if (btn) await b.click(btn.x, btn.y);
     const drawer = await b.waitFor("__p.drawer()?.parts && __p.drawer()", 5000);

@@ -165,13 +165,13 @@ describe("scene.toolbar", () => {
 });
 
 // The bar of tools (STAGE.md, "The interface", Decisions 10): the editor's commands only
-// in Edit, the world's in every body. (B1) outside Edit it holds exactly
-// the world commands that apply, never an editor command; (B2) in Edit the
+// while editing, the world's always. (B1) not editing it holds exactly the
+// world commands that apply, never an editor command; (B2) editing, the
 // editor's, then the world's; (B3) it shows ⇔ some command on the path is
-// the bar's in this body, whatever that command's state.
-const LOOK = { body: { id: "look" } };
-const EDIT = { body: { id: "edit" } };
-const WALK = { body: { id: "walk" } };
+// the bar's now, whatever that command's state. (`name` names the row.)
+const LOOK = { name: "look", body: { id: "look" }, hands: [] };
+const EDIT = { name: "edit", body: { id: "look" }, hands: [{ kind: "edit", name: "Edit" }] };
+const WALK = { name: "walk", body: { id: "walk" }, hands: [] };
 const ctxIn = (view) => ({ scene: { objects: {} }, local: {}, view });
 const segIn = (view, commands, stage) => ({ stage, collected: [{ id: "t.x", value: commands }], ctx: ctxIn(view) });
 
@@ -205,7 +205,7 @@ describe("the bar of tools, exhaustively", () => {
         const { editor, world } = barEntries([segIn(view, [command])], view);
         const got = world.length ? "w" : editor.length ? "e" : "-";
         expect(editor.length + world.length, name).toBeLessThanOrEqual(1);
-        expect(`${name} ${view.body.id}${edit ? " edit" : ""} ${got}`).toBe(`${name} ${view.body.id}${edit ? " edit" : ""} ${expected[i]}`);
+        expect(`${name} ${view.name}${edit ? " edit" : ""} ${got}`).toBe(`${name} ${view.name}${edit ? " edit" : ""} ${expected[i]}`);
         // onBar is the surface's half, before state and edit: true (commandState's)
         expect(onBar(command, view), name).toBe(expected[i - (i % 2)] !== "-");
         n++;
@@ -248,7 +248,7 @@ describe("the bar of tools, exhaustively", () => {
         ...(w !== "none" ? [{ id: "w", name: "Play", show: ["world", "menu"], state: state(w), run() {} }] : []),
       ];
       const entries = barEntries([segIn(view, commands)], view);
-      const row = [view.body.id, ed, w];
+      const row = [view.name, ed, w];
       expect([...row, entries.shown, entries.editor.map((e) => e.command.id), entries.world.map((e) => e.command.id)]).toEqual([...row, shown, eds, ws]);
     }
     expect(ROWS).toHaveLength(18);
@@ -305,27 +305,30 @@ describe("the bar of tools in every body", () => {
   const edge = () => s.root.querySelector('.stage-edge-part[data-owner="scene.toolbar"]');
   const ids = (cluster) => [...s.root.querySelectorAll(`.toolbar .${cluster} [data-command]`)].map((e) => e.dataset.command);
 
-  it("Look → Edit → a walk → Look, playing or not: the world's Play in every body, Snap only in Edit, and the bar never hides", async () => {
+  it("Look and a walk, editing or not, playing or not: the world's Play always, Snap only while editing, and the bar never hides", async () => {
     const api = s.api("t.game");
     let n = 0;
-    for (const [body, path] of [["look", ["look"]], ["edit", ["edit"]], ["t.walk", ["look", "t.walk"]], ["look", ["look"]]]) {
-      for (const playing of [false, true]) {
-        api.body.enter("look");
-        s.local.swap((m) => ({ ...m, playing }));
-        await s.settle();
-        for (const id of path) expect(api.body.enter(id)).toBe(true);
-        await s.settle();
-        expect(s.local.get().body.id).toBe(body);
-        const want = { tools: body === "edit" ? ["snap"] : [], world: playing ? [] : ["play"], hidden: false };
-        expect({ body, playing, tools: ids("tools"), world: ids("world"), hidden: edge().hidden }).toEqual({ body, playing, ...want });
-        n++;
+    for (const [body, path] of [["look", ["look"]], ["t.walk", ["look", "t.walk"]]]) {
+      for (const edit of [false, true]) {
+        for (const playing of [false, true]) {
+          api.body.enter("look");
+          s.local.swap((m) => ({ ...m, playing }));
+          await s.settle();
+          for (const id of path) expect(api.body.enter(id)).toBe(true);
+          api.view.edit(edit);
+          await s.settle();
+          expect(s.local.get().body.id).toBe(body);
+          const want = { tools: edit ? ["snap"] : [], world: playing ? [] : ["play"], hidden: false };
+          expect({ body, edit, playing, tools: ids("tools"), world: ids("world"), hidden: edge().hidden }).toEqual({ body, edit, playing, ...want });
+          n++;
+        }
       }
     }
     expect(n).toBe(8);
   });
 
-  it("clicking the world's button runs it, outside Edit; it goes when it no longer applies and the bar stays", async () => {
-    s.api("t.game").body.enter("look");
+  it("clicking the world's button runs it, not editing; it goes when it no longer applies and the bar stays", async () => {
+    s.api("t.game").view.edit(false);
     await s.settle();
     s.root.querySelector('.toolbar .world [data-command="play"]').click();
     expect(log).toEqual(["play"]);
@@ -336,7 +339,7 @@ describe("the bar of tools in every body", () => {
 
   it("a plain scene, looking, has no bar: nothing declares a world command", async () => {
     await s.uninstall("t.game");
-    s.api("scene.toolbar").body.enter("look");
+    s.api("scene.toolbar").view.edit(false);
     await s.settle();
     expect(edge().hidden).toBe(true);
   });

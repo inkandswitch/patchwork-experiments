@@ -90,9 +90,9 @@ describe("drawing at a table aboard", () => {
   it("Shuffle and Draw apply whatever body you're in: walking, their keys are the body's (the stage shows them without), never hidden", async () => {
     const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
     const ctx = (local) => ({ scene: t.a.scene(), local: { ...t.a.local.get(), ...local } });
-    for (const body of [{ id: "walk" }, { id: "seat" }, { id: "look" }, { id: "edit" }]) {
-      expect(t.cmd(t.xa, "shuffle").state("top", ctx({ body }))).not.toBe(null);
-      expect(t.cmd(t.xa, "draw").state("top", ctx({ body }))).not.toBe(null);
+    for (const [body, hands] of [[{ id: "walk" }, []], [{ id: "seat" }, []], [{ id: "look" }, []], [{ id: "look" }, [{ kind: "edit", name: "Edit" }]], [{ id: "walk" }, [{ kind: "edit", name: "Edit" }]]]) {
+      expect(t.cmd(t.xa, "shuffle").state("top", ctx({ body, hands }))).not.toBe(null);
+      expect(t.cmd(t.xa, "draw").state("top", ctx({ body, hands }))).not.toBe(null);
     }
     t.w.done();
   });

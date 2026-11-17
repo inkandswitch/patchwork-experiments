@@ -34,10 +34,10 @@ export function flatCommands(collected) {
  * `reach` (the body's, metres or Infinity) and `distance(target)` (from the
  * eye to the look's hit when the look is on the target, else to the
  * target's box), and beyond reach the verb shows disabled, "too far". Reach
- * is ergonomics, not permission: Look's and Edit's are Infinity.
+ * is ergonomics, not permission: Look's is Infinity.
  *
  * A command that says `edit: true` is the editor's (../stage/bodies.js): it
- * applies only while the body is Edit, so outside it it is on no surface
+ * applies only while editing, so outside it it is on no surface
  * and doesn't run.
  * @param {object} command
  * @param {string | null} target
@@ -174,7 +174,7 @@ export const isWorld = (command) => shownOn(command, "world", { strict: true });
 /**
  * Is this command meant for the bar of tools in this view (STAGE.md, "The interface")?
  * A world command is, in every body; a toolbar command (show names
- * "toolbar", or says nothing) is the editor's, so only in Edit. Whether it
+ * "toolbar", or says nothing) is the editor's, so only while editing. Whether it
  * applies (state, and `edit: true`) is commandState's, as on every surface.
  */
 export const onBar = (command, view) => isWorld(command) || (editing(view) && shownOn(command, "toolbar"));

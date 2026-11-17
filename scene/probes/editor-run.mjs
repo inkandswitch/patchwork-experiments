@@ -484,10 +484,10 @@ try {
     check("menuRemoveRemoves", !(await obj("b1")));
   }
 
-  // ── no modes: the Edit body (the doc starts people in it), and no activity anywhere ──
+  // ── no modes: Look holding the editor (the doc starts people so), and no activity anywhere ──
   {
-    const sw = await A(`({ switcher: !!p.hostA.querySelector('.activity-switch'), body: d.local.get().body?.id, activity: "activity" in d.local.get(), activities: "activities" in d.local.get() })`);
-    check("noModes", !sw.switcher && sw.body === "edit" && !sw.activity && !sw.activities, sw);
+    const sw = await A(`({ switcher: !!p.hostA.querySelector('.activity-switch'), body: d.local.get().body?.id, hands: (d.local.get().hands ?? []).map((h) => h.kind), activity: "activity" in d.local.get(), activities: "activities" in d.local.get() })`);
+    check("noModes", !sw.switcher && sw.body === "look" && sw.hands.includes("edit") && !sw.activity && !sw.activities, sw);
   }
 
   // ── paste an automerge URL ──────────────────────────────────────────────
@@ -609,10 +609,11 @@ try {
       return r && { shown: r.getBoundingClientRect().height > 40, kind: r.querySelector('.inspector-kind')?.textContent ?? null,
         label: r.querySelector('.starts-in-group .group-label')?.textContent ?? null,
         startsIn: ${startsIn},
+        editing: r.querySelector('.starts-in-group input[data-start="edit"]')?.checked ?? null,
         addable: [...r.querySelectorAll('.behaviour-add option')].map((o) => o.textContent) };
     })()`);
     report.sceneInspector = sc ?? { selected: await selected(), tabs: await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`), kinds: await A(`[...p.hostA.querySelectorAll('.inspector')].map((e) => e.dataset.kind)`), pressed: await pressed() };
-    check("sceneSectionStartsIn", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Starts in" && JSON.stringify(sc.startsIn) === '[["look",false],["edit",true]]', sc);
+    check("sceneSectionStartsIn", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Starts in" && JSON.stringify(sc.startsIn) === '[["look",true]]' && sc.editing === true, sc);
     await shot("17-scene-inspector");
     if (!ARENA) report.skipped.push("addBehaviourRunsTheArena, theGameRunsBesideTheEditor, removeBehaviourStopsArena: arena/ isn't built");
     else {
@@ -635,9 +636,9 @@ try {
       check("addBehaviourRunsTheArena", (await selected()) === "b2" && offered.some(([v, l]) => v === "arena.target" && l === "Target") && !offered.some(([v]) => v === "arena.level") && !wasRunning && started && card && t?.["arena.target"] != null && report.behaviour.play, report.behaviour);
       await b.rest(300);
       await shot("18-behaviour-added");
-      // the game runs beside the editor: nothing went from either view, and the doc still starts people in Edit (a behaviour doesn't move its start)
+      // the game runs beside the editor: nothing went from either view, and the doc still starts people holding the editor (a behaviour doesn't move its start)
       const both = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), select: p.running().includes("scene.select"), peerToolbar: !!p.hostB.querySelector('.toolbar'), peerEditor: p.running(p.B).includes("scene.inspector"), start: window.sceneHandle.doc().view?.start ?? null })`);
-      check("theGameRunsBesideTheEditor", both.toolbar && both.select && both.peerToolbar && both.peerEditor && both.start?.body === "edit", both);
+      check("theGameRunsBesideTheEditor", both.toolbar && both.select && both.peerToolbar && both.peerEditor && both.start?.edit === true, both);
       await shot("19-game-and-editor");
 
       // × on the card: the trait goes, and the arena stops (after a doc-caused stop's linger)

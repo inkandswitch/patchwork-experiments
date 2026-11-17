@@ -3,11 +3,11 @@
 // selection's fields below; the selection is one value (view.selected), so a
 // row click selects and the fields follow in the same flush, and a canvas,
 // menu or Escape selection marks and reveals its row. Chrome follows
-// attention: in Edit the pane opens on the first selection and then stays
+// attention: while editing the pane opens on the first selection and then stays
 // open, showing whatever is selected and the scene when nothing is
 // (HISTORY.md, TOOLS Decisions 6, "The inspector stays open"), so the canvas doesn't
 // change width at every select and deselect. Its × shuts it until the
-// selection changes; leaving Edit shuts it; the toolbar's Inspector opens it
+// selection changes; putting the editor down shuts it; the toolbar's Inspector opens it
 // with nothing selected, on the scene.
 //
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
@@ -28,8 +28,9 @@
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
 // Starts in: the body everyone who opens the scene arrives in
 // (doc.view.start.body, read once on arrival: STAGE.md, "Arriving"), Look (no body
-// named), Edit or one of the bodies on offer here; each viewer can still
-// change body for themselves.
+// named) or one of the bodies on offer here, and whether they arrive holding
+// the editor (doc.view.start.edit); each viewer can still change both for
+// themselves.
 //
 // Last, for either, its documents: the object's Source, File or Linked
 // scene, its Build controls, About (inspector-model.js inspectorDocuments).
@@ -71,7 +72,7 @@ import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
-import { EDIT, LOOK, editing } from "../stage/bodies.js";
+import { LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, attachOptions, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
@@ -127,7 +128,7 @@ function shortHeads(heads) {
 export const sectionPref = (ext, id) => `inspector.open.${ext}/${id}`;
 
 /**
- * The bodies Starts in offers: the stage's Look and Edit, then each body on
+ * The bodies Starts in offers: the stage's Look, then each body on
  * offer here (by its label, once per id), then the doc's own choice if
  * nothing here offers it (so it still shows as chosen). Pure.
  * @param {{ id: string, value: any }[]} collected  api.collect("bodies")
@@ -135,10 +136,7 @@ export const sectionPref = (ext, id) => `inspector.open.${ext}/${id}`;
  * @returns {[string, string][]}  [id, label]
  */
 export function startBodies(collected, want = LOOK.id) {
-  const out = [
-    [LOOK.id, LOOK.label],
-    [EDIT.id, EDIT.label],
-  ];
+  const out = [[LOOK.id, LOOK.label]];
   for (const { value } of collected ?? []) {
     for (const def of Array.isArray(value) ? value : []) {
       if (!def || typeof def.id !== "string" || out.some(([id]) => id === def.id)) continue;
@@ -322,7 +320,7 @@ function create(api) {
   /**
    * Start everyone who opens the scene in this body: doc.view.start.body
    * (Look, the default, is no key). A new body drops the old one's place;
-   * the home camera stays.
+   * the home camera and the editor stay.
    */
   function startIn(body) {
     api.edit((d) => {
@@ -335,6 +333,17 @@ function create(api) {
       if (body === LOOK.id) {
         if ("body" in start) delete start.body;
       } else start.body = body;
+    }, { label: "Starts in" });
+  }
+  /** Start everyone who opens the scene holding the editor, or not: doc.view.start.edit (not, the default, is no key). */
+  function startEditing(on) {
+    api.edit((d) => {
+      if (!isMap(d.view)) d.view = {};
+      const was = isMap(d.view.start) ? d.view.start : null;
+      if ((was?.edit === true) === on) return;
+      if (!was) d.view.start = {};
+      if (on) d.view.start.edit = true;
+      else delete d.view.start.edit;
     }, { label: "Starts in" });
   }
 
@@ -734,17 +743,19 @@ function create(api) {
     const behaviours = behavioursView(null, "scene");
     const sections = sectionsView();
     const starts = el("div", { class: "starts-in", role: "radiogroup", "aria-label": "Starts in" });
+    const editBox = el("input", { type: "checkbox", dataset: { start: "edit" } });
+    editBox.addEventListener("change", () => startEditing(editBox.checked));
     const note = el("p", { class: "hint starts-in-note" });
     const root = el(
       "div",
       { class: "inspector", dataset: { kind: "scene" } },
       el("div", { class: "inspector-kind" }, "Scene"),
       behaviours.section,
-      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "Where everyone who opens this scene starts out: looking at it, editing it, or in a body (walking, seated)" }, "Starts in"), starts, note),
+      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "Where everyone who opens this scene starts out: looking at it or in a body (walking, seated), and whether editing it" }, "Starts in"), starts, el("label", { class: "toggle" }, editBox, " editing"), note),
       sections.section,
     );
     body.replaceChildren(root);
-    view = { id: null, scene: true, root, behaviours, sections, starts, note, startsKey: null };
+    view = { id: null, scene: true, root, behaviours, sections, starts, editBox, note, startsKey: null };
   }
 
   function fillScene(scene, local) {
@@ -764,11 +775,12 @@ function create(api) {
         }),
       );
       view.note.textContent =
-        bodies.length > 2
-          ? "Everyone who opens this scene starts here, once. Each viewer can change body for themselves."
-          : "Everyone who opens this scene starts here, once: Look shows it, Edit is the editor. A package that brings a body (walking, seats) adds a choice.";
+        bodies.length > 1
+          ? "Everyone who opens this scene starts here, once. Each viewer can change body, and pick up or put down the editor, for themselves."
+          : "Everyone who opens this scene starts here, once: Look shows it; editing, they hold the editor. A package that brings a body (walking, seats) adds a choice.";
     }
     for (const radio of view.starts.querySelectorAll("input[data-body]")) radio.checked = radio.dataset.body === want;
+    view.editBox.checked = scene.d?.view?.start?.edit === true;
     view.sections.update(null);
   }
 
@@ -1103,7 +1115,7 @@ function create(api) {
       lastSel = sel;
       dismissed = false;
     }
-    // the inspector is the editor's (../stage/bodies.js): only in Edit, where
+    // the inspector is the editor's (../stage/bodies.js): only while editing, where
     // a selection opens it and it stays open (on the scene when nothing is
     // selected) until its × or the toolbar shuts it, or Edit is left
     if (!editing(local)) asked = false;

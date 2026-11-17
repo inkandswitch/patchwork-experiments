@@ -274,6 +274,10 @@ describe("scene.touch", () => {
     expect(s.local.get().held).toBe(null);
     hint().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch" }));
     await settle();
+    // the editor under it is the next rung
+    expect([hint().textContent, hint().dataset.key]).toEqual(["Put down Edit", "Escape"]);
+    api().view.edit(false);
+    await settle();
     expect([hint().hidden, hint().hasAttribute("data-key")]).toEqual([true, false]);
   });
 

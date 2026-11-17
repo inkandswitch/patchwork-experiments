@@ -6,6 +6,7 @@ import { manualTime } from "../stage/time.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector, { sectionPref, startBodies } from "./inspector.js";
+import { editing } from "../stage/bodies.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
@@ -923,12 +924,12 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
   // (inside a group the viewer folded) comes before the pane opens.
   const REVEALS = [
     // [name, before the pane opens (shut, x selected), how it opens]
-    ["selected in Look, opened by entering Edit", async () => {
-      s.api("scene.inspector").body.enter("look");
+    ["selected not editing, opened by picking up the editor", async () => {
+      s.api("scene.inspector").view.edit(false);
       await settle();
       s.api("scene.inspector").view.select("x");
       await settle();
-    }, () => s.api("scene.inspector").body.enter("edit")],
+    }, () => s.api("scene.inspector").view.edit(true)],
     ["selected, ×, the toolbar's Inspector", async () => {
       s.api("scene.inspector").view.select("x");
       await settle();
@@ -977,7 +978,7 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
   // isn't redrawn into a tree nobody sees); it catches up as it opens.
   it.each([
     ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn],
-    ["Look", () => s.api("scene.inspector").body.enter("look"), () => (s.api("scene.inspector").body.enter("edit"), toolbarOn())],
+    ["putting the editor down", () => s.api("scene.inspector").view.edit(false), () => (s.api("scene.inspector").view.edit(true), toolbarOn())],
   ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen) => {
     s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     await settle();
@@ -1098,12 +1099,13 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
   });
 
   it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, Enter; and of 3 of an object, nothing, ×, Look, Edit, Enter: open exactly as the rule says", async () => {
-    // The rule, as a model: in Edit, open once the toolbar opened it, or
-    // once something it shows is selected, until × / toolbar off (then shut
-    // until the selection changes) or leaving Edit, which also puts the
-    // selection down (HISTORY.md, TOOLS Decisions 6); open, it stays open
-    // across selections; out of Edit, shut; back in Edit, open on an object
-    // selected (in Look, by the menu) that wasn't shut by hand. Enter (the
+    // The rule, as a model ("edit": the editor picked up, "look": put
+    // down): editing, open once the toolbar opened it, or once something it
+    // shows is selected, until × / toolbar off (then shut until the
+    // selection changes) or the editor put down, which also puts the
+    // selection down (HISTORY.md, Kernel step 1); open, it stays open across
+    // selections; not editing, shut; editing again, open on an object
+    // selected (not editing, by the menu) that wasn't shut by hand. Enter (the
     // focus moves into the link L and the selection clears) carries the tab
     // as it was (an open one reopens there, parts/tab.js); inside, Enter on
     // L again changes nothing. So: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was
@@ -1145,8 +1147,8 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
       else if (e === "x") {
         if (open()) s.root.querySelector(".stage-drawer-tab-close").click();
       } else if (e === "on" || e === "off") {
-        if (view.atom.get().body.id === "edit") inspectorApi().run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
-      } else if (e === "look" || e === "edit") view.enterBody(e);
+        if (editing(view.atom.get())) inspectorApi().run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
+      } else if (e === "look" || e === "edit") view.setEditing(e === "edit");
       else if (e === "enter") view.enter(["L"]);
       await still();
     };
@@ -1156,12 +1158,12 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
       .concat(words(["obj", "none", "x", "look", "edit", "enter"], 3));
     let cases = 0;
     for (const q of seqs) {
-      // from Edit at the outermost scene, nothing selected, the tab shut
+      // editing at the outermost scene, nothing selected, the tab shut
       view.focusOn([]);
-      view.enterBody("look");
+      view.setEditing(false);
       view.select(null);
       await still();
-      view.enterBody("edit");
+      view.setEditing(true);
       await still();
       expect(open()).toBe(false);
       let m = { edit: true, sel: null, open: false, dismissed: false, inside: false };
@@ -1203,7 +1205,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     expect(pressed()).toBe("false");
   });
 
-  it("startBodies: Look and Edit, each body on offer once, then the doc's own if nothing here offers it", () => {
+  it("startBodies: Look, each body on offer once, then the doc's own if nothing here offers it", () => {
     const collected = [
       { id: "walk", value: [{ id: "walk", label: "Walk", enter() {} }] },
       { id: "seats", value: [{ id: "seat", label: "Seated", enter() {} }, { id: "walk", label: "Again" }] },
@@ -1211,15 +1213,11 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     ];
     expect(startBodies(collected)).toEqual([
       ["look", "Look"],
-      ["edit", "Edit"],
       ["walk", "Walk"],
       ["seat", "Seated"],
     ]);
     expect(startBodies(collected, "ferry").at(-1)).toEqual(["ferry", "ferry"]);
-    expect(startBodies([], "look")).toEqual([
-      ["look", "Look"],
-      ["edit", "Edit"],
-    ]);
+    expect(startBodies([], "look")).toEqual([["look", "Look"]]);
     // a body no longer anyone's (an old doc's "orbit") still shows as chosen
     expect(startBodies([], "orbit").at(-1)).toEqual(["orbit", "orbit"]);
   });

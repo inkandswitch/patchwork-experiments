@@ -1,15 +1,17 @@
-// Look and Edit (./bodies.js, STAGE.md, "Bodies"): the stack the stage keeps, as a
-// model and as the stage keeps it, over every sequence of entering and
-// leaving. Finite and exhaustive: no randomness.
+// Look and the Edit hand (./bodies.js, STAGE.md, "Bodies", "Hands"): the body
+// stack and whether the editor is held, as a model and as the stage keeps
+// them, over every sequence of entering, leaving, picking up and putting
+// down. Finite and exhaustive: no randomness.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { editing, enterStep, inBody, isStageBody, leaveStep, startBase } from "./bodies.js";
+import { editing, enterStep, inBody, leaveStep } from "./bodies.js";
 import { mountStage } from "../test/stage-harness.js";
 
-// What can happen: entering each body (the stage's two; walk, seat and
-// station, a package's) and Leave.
-const EVENTS = ["look", "edit", "walk", "seat", "station", "leave"];
-const apply = (stack, ev) => (ev === "leave" ? leaveStep(stack) : enterStep(stack, ev));
+// What can happen: entering each body (the stage's Look; walk, seat and
+// station, a package's), Leave, and picking up or putting down the editor.
+const EVENTS = ["look", "walk", "seat", "station", "leave", "edit", "unedit"];
+// the model: [bodies, editing]
+const apply = ([stack, ed], ev) => (ev === "leave" ? [leaveStep(stack), ed] : ev === "edit" ? [stack, true] : ev === "unedit" ? [stack, false] : [enterStep(stack, ev), ed]);
 
 /** Every sequence of up to `n` events. */
 function* sequences(n) {
@@ -24,51 +26,40 @@ const all = (n) => {
 };
 
 describe("bodies: the model", () => {
-  it("the stage's two, and what reads them", () => {
-    expect(["look", "edit", "walk", "orbit", null].map(isStageBody)).toEqual([true, true, false, false, false]);
-    expect([{ body: { id: "edit" } }, { body: { id: "look" } }, { body: { id: "walk" } }, {}, null].map(editing)).toEqual([true, false, false, false, false]);
-    // an edit: true command is Edit's; anything else is everyone's
-    for (const body of ["look", "edit", "walk"])
-      for (const edit of [true, false, undefined]) expect(inBody({ edit }, { body: { id: body } })).toBe(edit !== true || body === "edit");
-    // where a doc starts people: Edit only where it says so
-    expect(["edit", "look", "walk", "seat", "orbit", null].map((b) => startBase(b).id)).toEqual(["edit", "look", "look", "look", "look", "look"]);
+  it("what reads them", () => {
+    const edit = { hands: [{ kind: "tool" }, { kind: "edit" }] };
+    expect([edit, { hands: [{ kind: "tool" }] }, { hands: [] }, { body: { id: "edit" } }, {}, null].map(editing)).toEqual([true, false, false, false, false, false]);
+    // an edit: true command applies only while editing; anything else always
+    for (const view of [edit, { hands: [] }]) for (const e of [true, false, undefined]) expect(inBody({ edit: e }, view)).toBe(e !== true || editing(view));
   });
 
-  // Every sequence of up to 5 events from each start (6^5 + … + 1 = 9,331 each).
-  it("over every sequence of ≤5 enters and leaves: Look or Edit at the bottom; nothing stands on Edit; Leave never comes back to Edit", () => {
+  // Every sequence of up to 5 events (7^5 + … + 1 = 19,608).
+  it("over every sequence of ≤5 events: Look at the bottom and nowhere else; Leave pops the top and never Look; the editor is held exactly when last picked up, whatever the bodies do", () => {
     let n = 0;
-    for (const start of [["look"], ["edit"]]) {
-      for (const seq of all(5)) {
-        let stack = start;
-        for (const ev of seq) {
-          const before = stack;
-          stack = apply(stack, ev);
-          // the bottom is always one of the stage's
-          expect(isStageBody(stack[0])).toBe(true);
-          // only the bottom is the stage's
-          expect(stack.slice(1).every((b) => !isStageBody(b))).toBe(true);
-          // nothing stands on Edit
-          if (stack[0] === "edit") expect(stack).toEqual(["edit"]);
-          if (ev === "leave") {
-            // the top goes and the one under carries on; the bottom never leaves
-            expect(stack).toEqual(before.length > 1 ? before.slice(0, -1) : before);
-            // so Leave never lands in Edit, unless already there
-            if (stack.at(-1) === "edit") expect(before).toEqual(["edit"]);
-          } else if (isStageBody(ev)) expect(stack).toEqual([ev]);
-          else expect(stack.at(-1)).toBe(ev);
-        }
-        n++;
+    for (const seq of all(5)) {
+      let m = [["look"], false];
+      for (const ev of seq) {
+        const [before, wasEditing] = m;
+        m = apply(m, ev);
+        const [stack, ed] = m;
+        expect(stack[0]).toBe("look");
+        expect(stack.slice(1).includes("look")).toBe(false);
+        if (ev === "leave") expect(stack).toEqual(before.length > 1 ? before.slice(0, -1) : before);
+        else if (ev === "look") expect(stack).toEqual(["look"]);
+        else if (ev === "edit" || ev === "unedit") expect(stack).toBe(before);
+        else expect(stack.at(-1)).toBe(ev);
+        expect(ed).toBe(ev === "edit" ? true : ev === "unedit" ? false : wasEditing);
       }
+      n++;
     }
-    expect(n).toBe(2 * (1 + 6 + 36 + 216 + 1296 + 7776));
+    expect(n).toBe(1 + 7 + 49 + 343 + 2401 + 16807);
   });
-
 });
 
 // The same, on the stage itself: every sequence of up to 4 events, from a
-// scene that starts people in Look and one made new (Edit). After each, the
-// stage's body and depth are the model's. Entering and leaving are
-// synchronous, so no waiting between events.
+// scene that starts people in Look and one made new (holding the editor).
+// After each, the stage's body, depth and hands are the model's. Entering,
+// leaving and the editor are synchronous, so no waiting between events.
 describe("bodies: the stage keeps the model", () => {
   let s = null;
   afterEach(() => {
@@ -84,29 +75,41 @@ describe("bodies: the stage keeps the model", () => {
     },
   };
 
-  it("every sequence of ≤4 enters and leaves, from Look and from Edit", async () => {
+  it("every sequence of ≤4 events, from Look and holding the editor", async () => {
     let n = 0;
-    for (const start of ["look", "edit"]) {
-      s = await mountStage({ extensions: [BODIES], doc: { view: { start: start === "edit" ? { body: "edit" } : {} } } });
+    for (const start of [false, true]) {
+      s = await mountStage({ extensions: [BODIES], doc: { view: { start: start ? { edit: true } : {} } } });
       const api = s.api("t.bodies");
-      expect(s.local.get().body.id).toBe(start);
+      expect(editing(s.local.get())).toBe(start);
       for (const seq of all(4)) {
         // back to the start, nothing standing
-        api.body.enter(start);
-        let model = [start];
+        api.body.enter("look");
+        api.view.edit(start);
+        let m = [["look"], start];
         for (const ev of seq) {
-          if (ev === "leave") expect(api.body.leave()).toBe(model.length > 1);
+          if (ev === "leave") expect(api.body.leave()).toBe(m[0].length > 1);
+          else if (ev === "edit" || ev === "unedit") expect(api.view.edit(ev === "edit")).toBe(ev === "edit");
           else expect(api.body.enter(ev)).toBe(true);
-          model = apply(model, ev);
+          m = apply(m, ev);
           const b = s.local.get().body;
-          expect([seq, ev, b.id, b.depth]).toEqual([seq, ev, model.at(-1), model.length - 1]);
-          expect(s.debug.router.bodies().map((x) => x.id)).toEqual(model);
+          expect([seq, ev, b.id, b.depth, editing(s.local.get())]).toEqual([seq, ev, m[0].at(-1), m[0].length - 1, m[1]]);
+          expect(s.debug.router.bodies().map((x) => x.id)).toEqual(m[0]);
+          expect(s.local.get().hands.map((h) => h.name)).toEqual(m[1] ? ["Edit"] : []);
         }
         n++;
       }
       s.unmount();
       s = null;
     }
-    expect(n).toBe(2 * (1 + 6 + 36 + 216 + 1296));
+    expect(n).toBe(2 * (1 + 7 + 49 + 343 + 2401));
   }, 60_000);
+
+  it("a scene starts people holding the editor only where its view.start says edit: true; an old body: \"edit\" names no body", async () => {
+    for (const [start, want] of [[{ edit: true }, true], [{}, false], [{ body: "edit" }, false], [{ edit: "yes" }, false]]) {
+      s = await mountStage({ extensions: [BODIES], doc: { view: { start } } });
+      expect([start, editing(s.local.get()), s.local.get().body.id]).toEqual([start, want, "look"]);
+      s.unmount();
+      s = null;
+    }
+  });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import inspector from "./inspector.js";
+import { editing } from "../stage/bodies.js";
 import { openTabs } from "../test/tabs.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { resolveParents } from "../hierarchy.js";
@@ -231,34 +232,37 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect(Object.keys(s.doc().traits).sort()).toEqual(["t.level", "t.seats"]);
   });
 
-  it("Starts in: Look, Edit and the bodies on offer, written to doc.view.start.body (dropping the place, keeping the home), read once (this viewer stays where they are); an edit undo takes it back", async () => {
+  it("Starts in: Look and the bodies on offer, written to doc.view.start.body (dropping the place, keeping the home and the editor), and editing, to doc.view.start.edit; read once (this viewer stays where they are); an edit undo takes it back", async () => {
     // a game whose trait brings a body
     const BODY_GAME = { meta: { ...GAME.meta, id: "t.bodygame" }, module: { create: () => ({ bodies: [{ id: "t.stroll", label: "Stroll", enter: () => ({ input: {}, eye: () => null }) }] }) } };
     await mount({ objects: {}, extensions: [BODY_GAME] });
     const radio = (a) => $(`.starts-in input[data-body="${a}"]`);
+    const editBox = () => $('.starts-in-group input[data-start="edit"]');
     const labels = () => [...$(".starts-in").querySelectorAll("label")].map((l) => l.textContent.trim());
-    // a plain scene, made new: Look and Edit, and it starts people in Edit
-    expect(labels()).toEqual(["Look", "Edit"]);
-    expect(radio("edit").checked).toBe(true);
-    expect($(".starts-in-note").textContent).toMatch(/Look shows it, Edit is the editor/);
+    // a plain scene, made new: Look, and it starts people in Look holding the editor
+    expect(labels()).toEqual(["Look"]);
+    expect([radio("look").checked, editBox().checked]).toEqual([true, true]);
+    expect($(".starts-in-note").textContent).toMatch(/Look shows it; editing, they hold the editor/);
     // the game's trait brings its body: a choice
     s.change((d) => {
       d.traits["t.level"] = {};
     });
     await settle();
-    expect(labels()).toEqual(["Look", "Edit", "Stroll"]);
-    expect(radio("edit").checked).toBe(true);
-    expect($(".starts-in-note").textContent).toMatch(/Each viewer can change body for themselves/);
+    expect(labels()).toEqual(["Look", "Stroll"]);
+    expect($(".starts-in-note").textContent).toMatch(/Each viewer can change body/);
     await fire(radio("t.stroll"), true);
-    expect(s.doc().view.start).toEqual({ body: "t.stroll" });
+    expect(s.doc().view.start).toEqual({ body: "t.stroll", edit: true });
     expect(radio("t.stroll").checked).toBe(true);
-    // it's where people start: this viewer, already here, stays in Edit
-    expect(s.local.get().body.id).toBe("edit");
-    // Look is no key
+    // it's where people start: this viewer, already here, stays where they are, holding the editor
+    expect([s.local.get().body.id, editing(s.local.get())]).toEqual(["look", true]);
+    // not editing is no key, nor is Look
+    await fire(editBox(), false);
+    expect(s.doc().view.start).toEqual({ body: "t.stroll" });
+    expect(editing(s.local.get())).toBe(true);
     await fire(radio("look"), true);
     expect(s.doc().view.start).toEqual({});
-    await fire(radio("edit"), true);
-    expect(s.doc().view.start).toEqual({ body: "edit" });
+    await fire(editBox(), true);
+    expect(s.doc().view.start).toEqual({ edit: true });
     // a peer's change shows
     s.change((d) => {
       d.view.start.body = "t.stroll";
@@ -272,7 +276,8 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
       d.view.start = { body: "seat", place: "p1", home };
     });
     await settle();
-    expect(labels()).toEqual(["Look", "Edit", "Stroll", "seat"]);
+    expect(labels()).toEqual(["Look", "Stroll", "seat"]);
+    expect(editBox().checked).toBe(false);
     expect(radio("seat").checked).toBe(true);
     await fire(radio("t.stroll"), true);
     expect(s.doc().view.start).toEqual({ body: "t.stroll", home });

@@ -16,7 +16,7 @@
 // sets local.selected, the one selection, to its ref "dimension:<id>"
 // (STAGE.md, "Targets and refs"), so selecting an object (or anything else)
 // lets go of it with nothing to reconcile. Delete is a command on that ref;
-// Escape (the stage's ladder) and a click elsewhere in the view (Edit's
+// Escape (the stage's ladder) and a click elsewhere in the view (the Edit hand's
 // click) clear it, as they clear any selection. This
 // extension lets go of a ref whose dimension went.
 
@@ -331,7 +331,7 @@ export function create(api) {
         className: "dimension-label",
         rank: 3,
         data: { id: d.id, selected: d.selected, detached: d.detached, offsurface: d.offSurface },
-        // selecting one is the editor's (../stage/bodies.js): only in Edit
+        // selecting one is the editor's (../stage/bodies.js): only while editing
         onPointerDown: () => editing(api.view.get()) && select(d.id),
       })),
     );

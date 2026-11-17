@@ -24,8 +24,8 @@
 // Pastes, drops and keys inside an embedded document (marked with the
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
 // Adding is the editor's (../stage/bodies.js): drops, pastes and the start
-// screen are only taken or shown in the Edit body. (A scene made new starts
-// people in Edit, so its maker sees the start screen.)
+// screen are only taken or shown while editing. (A scene made new starts
+// people holding the editor, so its maker sees the start screen.)
 
 import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
@@ -395,7 +395,7 @@ function create(api) {
 
   return {
     update(scene, local, prev, view) {
-      if (scene === prev.scene && view.body === prev.view?.body) return;
+      if (scene === prev.scene && view.hands === prev.view?.hands) return;
       const none = !scene.ids.length && editing(view);
       if (empty.hidden !== !none) empty.hidden = !none;
     },

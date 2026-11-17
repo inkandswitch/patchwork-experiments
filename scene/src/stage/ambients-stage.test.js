@@ -80,7 +80,9 @@ describe("one world's ambients (W2): the outermost's, everywhere in the view", (
       const world = v.outermost();
       const value = expected(world);
       let checked = 0;
-      for (const body of ["look", "edit", "t.walk"]) {
+      // (holding the editor is no body: it is tried in Look and walking)
+      for (const [body, edit] of [["look", false], ["look", true], ["t.walk", true]]) {
+        v.setEditing(edit);
         expect(v.enterBody(body, null)).toBeTruthy();
         await settle();
         for (const st of v.stages()) {

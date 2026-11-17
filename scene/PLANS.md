@@ -2,7 +2,7 @@
 
 **Everything in this file is deferred until further notice, except section 1,
 which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
-deferred).** Nothing else here is to be started without the lead asking.
+deferred; step 1 is done, HISTORY.md "Kernel step 1").** Nothing else here is to be started without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
@@ -79,8 +79,8 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 
 | Today | Goes to |
 |---|---|
-| Edit body, `ahead`, "nothing stands on Edit", `edit: true` | **editor** (view): Edit is a hand it pushes; opting in by picking it up keeps TOOLS Decisions 6; editing while walking works |
-| held-tool slot, popover, gesture, Escape ladder | kernel **hands** stack; rungs become hands and their `escape()` |
+| ~~Edit body, `ahead`, "nothing stands on Edit"~~ | done (step 1): the Edit hand, the view's for now; to the **editor** (view plugin) in step 2 |
+| ~~held-tool slot, popover, Escape ladder~~; gesture | done (step 1): the hands stack; the open gesture is still its own Escape layer, not a hand |
 | Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
 | "general" scope, `api.path`, `reopened`, general-only packages/clocks | **view plugins**; the ~25 `general` branches go |
 | `own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading | **editor**, recording from `change → patches` |
@@ -107,7 +107,7 @@ example republished at the end of the queue.
 ### Build order
 
 Each step leaves everything green and deletes a section of STAGE.md:
-1 hands, Edit the editor's hand; 2 view plugins (`scene:view`), every
+1 hands, Edit the editor's hand (done 2026-11-17); 2 view plugins (`scene:view`), every
 `general` branch gone; 3 undo leaves (`change → patches`, one `revert-veto`
 convention); 4 services and `channel` (claims, poses, clock, telling,
 notices, drawer, prefs out one at a time); 5 `display` (lenses, veil,
@@ -143,7 +143,7 @@ Each names where it came from (in git at d80a2bfa for the removed notes).
 - **Multi-select**: at all, or Group is enough? If so A2 (`several: true`)
   or A3 (every command takes a list); Shift-click Edit's alone or "Also
   select" in every menu; does the halo move several? (TOOLS D20, §3.)
-- **Edit's click asymmetry**: a click on nothing clears the selection, one
+- **The Edit hand's click asymmetry**: a click on nothing clears the selection, one
   outside the focus keeps it; both should probably match. (COMPOSITION
   "Waiting on the lead".)
 - **Out of focus isn't tinted.** (COMPOSITION "Still open".)
@@ -170,7 +170,7 @@ Each names where it came from (in git at d80a2bfa for the removed notes).
   source; fixed height; an explicit default tool the same section? Rename
   `.about-embed` once parallel lanes land.
 - **Docked documents** (TOOLS D18): the drawer, or a Patchwork panel; a
-  section's head dropped on the view adds its doc?; leave with Edit?; pane
+  section's head dropped on the view adds its doc?; put down with the editor?; pane
   titles.
 - **The use prompt** (TOOLS D19; COMP the use prompt and the eye): the cap
   of three; close the opened prompt on an eye move; is "the viewer moved

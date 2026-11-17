@@ -119,6 +119,7 @@ try {
   check("both cabinets have their session and a seat per port (Doom one, the Super NES four)", J(laid.doom?.seats) === J(["p1"]) && J(laid.snes?.seats) === J(["p1", "p2", "p3", "p4"]), laid);
   for (const w of ["a", "b"]) {
     await P(`enter("${w}", "look")`);
+    await P(`edit("${w}", false)`);
     await P(`setCamera("${w}", { position: [0, 1.45, 2.9], target: [0, 1.1, 0] })`);
   }
   await b.waitFor(`(() => { const s = [...Object.values(__p.shows("a")), ...Object.values(__p.shows("b"))]; return s.length === 4 && s.every((x) => x.tick !== null && x.shown && !x.shown.blank) })()`, 180_000).catch(() => null);
@@ -310,15 +311,15 @@ try {
   check("7. getting up stops it, the last picture held (not blank)", !!snesStopped && snesAfter.every((s) => !s.running && s.shown && !s.shown.blank) && (await P(`body("a")`)) === "look", snesAfter);
   await shot("7-snes-up");
 
-  // ---- 8. Play from Edit: a click selects there; P plays the selection
-  await P(`enter("a", "edit")`);
+  // ---- 8. Play holding the editor: a click selects there; P plays the selection
+  await P(`edit("a", true)`);
   await P(`setCamera("a", { position: [0, 1.45, 2.9], target: [0, 1.1, 0] })`);
   await b.step(10);
   const snesAgain = await P(`project("a", [${AT.snes[0]}, 1.0, 0.36])`);
   await b.click(snesAgain.x, snesAgain.y);
   await b.step(10);
-  const edit = { body: await P(`body("a")`), selected: await P(`selected("a")`), sitting: await P(`sitting("a")`) };
-  check("8. in Edit a click on the Super NES selects it, and sits nobody", edit.body === "edit" && J(edit.selected) === J(ids.snes) && edit.sitting === null, edit);
+  const edit = { body: await P(`body("a")`), editing: await P(`editing("a")`), selected: await P(`selected("a")`), sitting: await P(`sitting("a")`) };
+  check("8. holding the editor a click on the Super NES selects it, and sits nobody", edit.body === "look" && edit.editing && J(edit.selected) === J(ids.snes) && edit.sitting === null, edit);
   const off = await P(`project("a", [0, 0.05, 1.6])`); // the floor in front, off both cabinets
   await b.move(off.x, off.y);
   await b.step(5);
@@ -330,7 +331,7 @@ try {
   await shot("8-from-edit");
   await P(`pickSeat("a", "")`);
   await b.step(30);
-  check("8. standing up lands her in Look (nothing stands on Edit)", (await P(`body("a")`)) === "look" && (await P(`sitting("a")`)) === null, await P(`body("a")`));
+  check("8. standing up lands her in Look, the editor still held (a hand, not a body)", (await P(`body("a")`)) === "look" && (await P(`editing("a")`)) && (await P(`sitting("a")`)) === null, await P(`body("a")`));
 
   const errors = await P("errors");
   const ours = errors.filter((e) => !/KHR_parallel_shader_compile|AudioContext was not allowed to start/.test(e));

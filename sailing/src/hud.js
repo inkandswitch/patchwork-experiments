@@ -4,7 +4,7 @@
 // "aboard" command (stations.js), Enter or its button on the stage's bar of
 // tools; before you come aboard the panel shrinks to its dial in the top left
 // (the bottom of the view is a seated player's hand of cards) and says
-// nothing: what a click on her does is the base's (in Edit it selects her),
+// nothing: what a click on her does is the base's (holding the editor, it selects her),
 // which no package may ask, and the bar's Come aboard shows its own key
 // where that key reaches it. The panel's dial is the boat
 // bow-up with north on its rim, the apparent wind as a solid arrow (what the
@@ -186,7 +186,7 @@ export function sailRow(s, k, v = {}) {
  *   the line saying where they are (`guide`, walking her deck) and where to raise a
  *   lowered sail (`advice`, under way). Before coming aboard (the lobby) nobody
  *   is walking and the HUD says nothing: whether a click on her comes aboard is
- *   the base's (Look's click does, Edit's selects, a seat's is the game's), which
+ *   the base's (Look's click does, the Edit hand's selects, a seat's is the game's), which
  *   a package may not ask (scene STAGE.md, "Conventions for bodies"), and the
  *   way in that holds in every base is the bar of tools' Come aboard, whose key
  *   the bar shows where it reaches it (scene STAGE.md, H3)

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { touchControls } from "./touch-keys.js";
 import { keyOfCode, nameOfCode, reservedBy } from "./keymap.js";
 import { CARRY_KEYS } from "./parts/carry.js";
-import { EDIT, LOOK } from "./stage/bodies.js";
+import { LOOK } from "./stage/bodies.js";
 
 // Every keys declaration in the repo, copied as literals (scene can't import
 // another package). Re-copy when one changes.
@@ -148,7 +148,7 @@ describe("touchControls: every keys declaration in the repo, in every combinatio
 });
 
 describe("touchControls: the bodies with no keys", () => {
-  it.each([["Look", LOOK], ["Edit", EDIT], ["a seat", { id: "seat", keys: [] }]])("%s shows nothing", (_, body) => {
+  it.each([["Look", LOOK], ["a seat", { id: "seat", keys: [] }]])("%s shows nothing", (_, body) => {
     expect(touchControls({ body, held: null, gesture: null })).toEqual([]);
   });
   it("nothing at all (no body yet) shows nothing", () => {
