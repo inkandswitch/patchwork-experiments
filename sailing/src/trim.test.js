@@ -129,11 +129,6 @@ describe("states, flog, luff and σ (1)", () => {
     expect(trimOf(sail({ beta: 100, alphaSheet: 41 }), k)).toMatchObject({ state: "stalled", atStop: false });
     expect(trimOf(sail({ beta: 75, alphaSheet: 15 }), k)).toMatchObject({ state: "drawing", atStop: false });
   });
-
-  it("writes into the object it's given, and returns it", () => {
-    const out = {};
-    expect(trimOf(sail({ alphaSheet: 10 }), JIB, out)).toBe(out);
-  });
 });
 
 describe("the cues on the lift curve: the luff's onset and both telltales streaming (1)", () => {

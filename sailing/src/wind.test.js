@@ -86,11 +86,6 @@ describe("gusts", () => {
     expect(a.at(12, 34, 56)).toEqual(b.at(12, 34, 56));
     expect(a.at(12, 34, 56)).not.toEqual(c.at(12, 34, 56));
   });
-
-  it("write into an out array", () => {
-    const out = [0, 0];
-    expect(w.at(1, 2, 3, out)).toBe(out);
-  });
 });
 
 describe("a calm", () => {

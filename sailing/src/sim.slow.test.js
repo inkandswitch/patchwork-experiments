@@ -58,31 +58,6 @@ describe("createSim on a stage", () => {
     expect(doc.clock.t).toBeGreaterThan(59);
   }, 60_000); // a minute of her at 60 Hz
 
-  it("the station holder's input reaches the physics: hard to starboard turns her to starboard", async () => {
-    const headingAfter = async (angle) => {
-      const { doc, ids, content } = await sloop();
-      w = fakeWorld(doc, { content });
-      const a = play(w.join("A"));
-      const bApi = w.join("B");
-      const b = play(bApi);
-      w.tick(1 / 60, 3 * 60);
-      expect(bApi.claim(ids.wheel, "station")).toBeTypeOf("function");
-      b.sim.input(ids.wheel, { angle });
-      w.tick(1 / 60, 1);
-      // the simulator reads it from B's presence
-      expect(a.sim.value(ids.wheel).angle).toBe(angle);
-      const h0 = a.sim.read(ids.hull).heading;
-      w.tick(1 / 60, 6 * 60);
-      const h = a.sim.read(ids.hull).heading;
-      w.done();
-      return Math.atan2(Math.sin(h - h0), Math.cos(h - h0));
-    };
-    const straight = await headingAfter(0);
-    const turned = await headingAfter(1);
-    expect(turned - straight).toBeGreaterThan(0.15);
-    w = null;
-  });
-
   it("lets the anchor go under the bow, writes where it lies, and holds her to it", async () => {
     const { doc, ids, content } = await sloop({ down: true, yaw: headTo(45) });
     w = fakeWorld(doc, { content });

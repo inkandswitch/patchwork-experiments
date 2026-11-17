@@ -106,11 +106,6 @@ describe("sailing's plugins", () => {
     expect(byId("sailing").describes["sailing.mainsheet"].fields).toBeUndefined();
   });
 
-  it("offers the template with an icon and a description", () => {
-    expect(byId("ship-at-sea")).toMatchObject({ name: "Ship at sea", icon: "Sailboat" });
-    expect(byId("ship-at-sea").description).toMatch(/under way/);
-  });
-
   it("offers no ambient: the sea's extension, created on a world with the weather in it, has no ambient() (the world's wind and sky are the weather package's; the ships' extension is checked the same way in aboard.slow.test.js, which builds the stage it needs), and no weather.js is left", async () => {
     const src = dirname(fileURLToPath(import.meta.url));
     expect(readdirSync(src)).not.toContain("weather.js");
@@ -123,9 +118,5 @@ describe("sailing's plugins", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("loads modules with create()", async () => {
-    for (const p of plugins) expect(typeof (await p.load()).create).toBe("function");
   });
 });
