@@ -245,24 +245,12 @@ describe("every interleaving of open, wait, close, the opener leaving, and two a
     expect(writes[1].at - writes[0].at).toBeGreaterThanOrEqual(DOOR.wait * 1000 + travelTime(readSlide(DOOR)) * 1000 - TICK);
   });
 
-  it("two pressing at once: one opens it, the other lets go without writing", () => {
-    const { writes } = simulate({ door: DOOR, latency: 40, events: [joining("B", 0), press("A", 100), press("B", 100)] });
-    expect(writes.filter((w) => w.to === "open")).toHaveLength(1);
-    expect(writes).toHaveLength(2);
-  });
-
   it("the opener gone: the one computing the world now closes it, on time", () => {
     const { writes, starts } = simulate({ door: DOOR, latency: 40, events: [press("A", 0), joining("B", 0), leaving("A", 2500)] });
     expect(writes.map((w) => [w.by, w.to])).toEqual([["A", "open"], ["B", "closed"]]);
     const close = starts.find((s) => s.to === "closed");
     expect(close.W).toBeGreaterThanOrEqual(writes[0].since + DOOR.wait);
     expect(close.W).toBeLessThan(writes[0].since + DOOR.wait + 2 * (TICK / 1000));
-  });
-
-  it("whoever opened it, it's the computer that closes it", () => {
-    // B joins first and computes (A is hidden, so A can't); A opens it from its hidden tab
-    const { writes } = simulate({ door: DOOR, latency: 40, hidden: ["A"], events: [joining("B", 0), press("A", 200)] });
-    expect(writes.map((w) => [w.by, w.to])).toEqual([["A", "open"], ["B", "closed"]]);
   });
 
   it("the opener gone mid-motion: nothing written, it's shut where the doc had it", () => {

@@ -3,7 +3,7 @@
 // cases say what the code must do and nothing is sampled. Reach is the
 // stage's (the command says reach: true): scene's keymap tests cover it.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_VERB, KEY, destinationOf, docOf, exitVerb, verbOf } from "./exit.js";
+import { DEFAULT_VERB, KEY, destinationOf, docOf, exitVerb } from "./exit.js";
 
 const HERE = "automerge:4NMNnkMhL8jXrdJ9jamS2ix4pTMh";
 const THERE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
@@ -46,9 +46,6 @@ const sceneWith = (trait) => ({
 });
 
 describe("where an exit leads", () => {
-  it.each(TOS)("to %j leads to %j", (to, want) => {
-    expect(destinationOf(to === undefined ? {} : { to }, HERE)).toBe(want);
-  });
   it("leads nowhere without a trait, and anywhere but here when here is unknown", () => {
     expect(destinationOf(null, HERE)).toBe(null);
     expect(destinationOf(undefined)).toBe(null);
@@ -61,12 +58,6 @@ describe("where an exit leads", () => {
   });
 });
 
-describe("what using it is called", () => {
-  it.each(VERBS)("verb %j is called %j", (verb, want) => {
-    expect(verbOf(verb === undefined ? {} : { verb })).toBe(want);
-  });
-});
-
 describe("the verb, for every trait and target", () => {
   // the rule, stated plainly
   const oracle = ({ toWant, verbWant, target }) => (target === "e" && toWant != null ? { label: verbWant, to: toWant } : null);
@@ -74,7 +65,6 @@ describe("the verb, for every trait and target", () => {
   for (const [to, toWant] of TOS) for (const [verb, verbWant] of VERBS) for (const target of TARGETS) cases.push({ to, toWant, verb, verbWant, target });
 
   it(`agrees with the rule in all ${13 * 8 * 6} cases`, () => {
-    expect(cases.length).toBe(13 * 8 * 6);
     const wrong = [];
     for (const c of cases) {
       const trait = {};

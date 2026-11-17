@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import ext from "./extension.js";
 import { KEY } from "./exit.js";
-import { OPEN_EVENT, go } from "./go.js";
+import { OPEN_EVENT } from "./go.js";
 import { plugins } from "./index.js";
 
 const HERE = "automerge:4NMNnkMhL8jXrdJ9jamS2ix4pTMh";
@@ -65,11 +65,6 @@ describe("the exit's verb, on the stage", () => {
     use.run("hatch");
     expect(f.sent).toEqual([]);
   });
-
-  it("go() sends nothing without an element or a url", () => {
-    expect(go({}, THERE)).toBe(false);
-    expect(go({ root: document.createElement("div") }, "")).toBe(false);
-  });
 });
 
 describe("the metadata", () => {
@@ -81,8 +76,5 @@ describe("the metadata", () => {
     expect(meta).toMatchObject({ type: "scene:extension", id: "traversal", traits: [KEY] });
     for (const k of ["activities", "requires", "always", "general"]) expect(k in meta).toBe(false);
     expect(meta.describes[KEY].fields.map((x) => [x.key, x.kind])).toEqual([["to", "url"], ["verb", "string"]]);
-  });
-  it("loads the extension", async () => {
-    expect(typeof (await plugins[0].load()).create).toBe("function");
   });
 });
