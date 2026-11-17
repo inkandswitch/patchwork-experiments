@@ -82,7 +82,7 @@ export const LAND_GRACE_MS = 1500;
 export const TOLD_MS = 6000;
 
 const str = (s) => typeof s === "string" && s.length > 0 && s.length < 128;
-const item = (d) => !!d && typeof d === "object" && str(d.die) && Number.isInteger(d.face) && d.face >= 0 && d.face < 100;
+const item = (d) => str(d.die) && Number.isInteger(d.face) && d.face >= 0 && d.face < 100;
 /** The shape of a turn's word: which die, which face. Never a label: each view reads its own. A roll is told from the doc, never by a word. */
 export const validTurn = (d) => item(d);
 

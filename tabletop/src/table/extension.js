@@ -112,8 +112,21 @@ export default {
       }
     }
 
-    // ── telling everyone: what happened, never which card (the doc bears it out at once: what a peer did is theirs to say) ──
-    const says = (text) => (d, who) => text(d, who.name);
+    // ── telling everyone: what happened, never which card; told on arrival, unchecked, as counts name no card to wait for (scene/COMPOSITION.md, telling 6) ──
+    /** Whoever told it: "You", else what the table calls them (the roster's `who`: their seat's name stands in for a missing contact's), else the stage's name. */
+    const speaker = (who) => {
+      if (who.mine) return who.name;
+      for (const r of api.collect?.("roster") ?? []) {
+        try {
+          const n = r?.value?.who?.(who.viewer);
+          if (typeof n === "string" && n) return n;
+        } catch {
+          // nobody to ask
+        }
+      }
+      return who.name;
+    };
+    const says = (text) => (d, who) => text(d, speaker(who));
     const messages = {
       shuffled: { valid: VALID.shuffled, says: says((d, who) => `${who} shuffled ${d.of && d.of !== "Deck" ? `“${d.of}”` : "the deck"} (${d.n})`) },
       drew: { valid: VALID.drew, says: says((d, who) => `${who} drew ${counted(d.n, d.noun)}`) },
@@ -635,12 +648,11 @@ function between(from, to, t) {
 const tagsOf = (o) => (Array.isArray(o?.tags) && o.tags.length ? o.tags : CARD_TAGS);
 
 /** The shape of each thing the table tells. Counts and a container's title only, never which card. */
-const plain = (d) => !!d && typeof d === "object";
 const VALID = {
-  shuffled: (d) => plain(d) && count(d.n, 10000) && title(d.of),
-  drew: (d) => plain(d) && count(d.n, 1000) && noun(d.noun),
-  washed: (d) => plain(d) && count(d.n, 10000) && title(d.of) && noun(d.noun),
-  showed: (d) => plain(d) && count(d.n, 1000) && noun(d.noun),
+  shuffled: (d) => count(d.n, 10000) && title(d.of),
+  drew: (d) => count(d.n, 1000) && noun(d.noun),
+  washed: (d) => count(d.n, 10000) && title(d.of) && noun(d.noun),
+  showed: (d) => count(d.n, 1000) && noun(d.noun),
 };
 const title = (t) => t === undefined || (typeof t === "string" && t.length > 0 && t.length < 200);
 const noun = (t) => t === undefined || (typeof t === "string" && NOUN.test(t));

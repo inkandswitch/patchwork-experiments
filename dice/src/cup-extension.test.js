@@ -206,10 +206,11 @@ describe("the cup's verbs and what the doc says", () => {
     const labels = t.dice.map((d, i) => BUILT.faces[faceOfSeed(seedFor(seed, i), BUILT.faces.length)].label).join(", ");
     expect(t.notices("A")).toContain(`You rolled ${labels}: drawn by you and Bob.`);
     expect(t.notices("B")).toContain(`Alice rolled ${labels}: drawn by Alice and you.`);
-    // told by each as the doc bears it out; the speaker named by the stage (these viewers have no contact: "Someone")
+    // told by each as the doc bears it out; a peer named as the HUD names them (the roster's who: these
+    // viewers have no contact, so the stage alone would say "Someone")
     expect(t.notices("B")).toContain("You lifted Alice's cup.");
-    expect(t.notices("A")).toContain("Someone lifted your cup.");
-    expect(t.notices("S")).toContain("Someone lifted Alice's cup.");
+    expect(t.notices("A")).toContain("Bob lifted your cup.");
+    expect(t.notices("S")).toContain("Bob lifted Alice's cup.");
     t.w.done();
   });
 
@@ -543,7 +544,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.shake();
     expect(t.notices("B").filter((n) => /peeked/.test(n))).toEqual([]);
     t.w.hear("B", "peeked", { cup: "cup" }, alice);
-    expect(t.notices("B")).toContain("Someone peeked under their cup.");
+    expect(t.notices("B")).toContain("Alice peeked under their cup.");
     // the shape is exact: which cup, and nothing about what's under it
     t.w.hear("B", "peeked", { cup: "cup", faces: [1, 2] }, alice);
     t.w.hear("B", "peeked", { nope: 1 }, alice);
@@ -554,7 +555,8 @@ describe("the cup's verbs and what the doc says", () => {
     const { messages } = t.views.B.x;
     expect(messages.peeked.valid({ cup: "cup", faces: [1] })).toBe(false);
     expect(messages.lifted.valid({ cups: ["cup"], seed: "x" })).toBe(false);
-    for (const d of [null, 7, { cups: [] }, { cups: ["x".repeat(128)] }]) expect(messages.lifted.valid(d)).toBe(false);
+    // (anything but an object the stage drops before `valid` sees it)
+    for (const d of [{}, { cups: [] }, { cups: ["x".repeat(128)] }]) expect(messages.lifted.valid(d)).toBe(false);
     t.w.done();
   });
 
@@ -564,8 +566,24 @@ describe("the cup's verbs and what the doc says", () => {
     t.run("A", "peek");
     t.w.flush();
     expect(t.notices("A")).toContain("You peeked under your cup.");
-    expect(t.notices("B")).toContain("Someone peeked under their cup.");
-    expect(t.notices("S")).toContain("Someone peeked under their cup.");
+    expect(t.notices("B")).toContain("Alice peeked under their cup.");
+    expect(t.notices("S")).toContain("Alice peeked under their cup.");
+    t.w.done();
+  });
+
+  it("her other tab is a peer: what it tells her is in her name, never “you”", () => {
+    const t = table();
+    t.shake();
+    const herOtherTab = { viewer: "alice", session: "A2" };
+    t.w.hear("A", "peeked", { cup: "cup" }, herOtherTab);
+    t.w.flush();
+    expect(t.notices("A")).toContain("Alice peeked under their cup.");
+    t.run("A", "lift");
+    t.w.flush();
+    const before = t.notices("A").length;
+    t.w.hear("A", "lifted", { cups: ["cup"] }, herOtherTab);
+    t.w.flush();
+    expect(t.notices("A").slice(before)).toEqual(["Alice lifted their own cup."]);
     t.w.done();
   });
 

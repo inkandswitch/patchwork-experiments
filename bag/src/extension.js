@@ -709,13 +709,12 @@ export default {
 /** The shape of each thing a bag tells: which bag and how many, never what. */
 const url = (u) => typeof u === "string" && u.length < 512 && u.startsWith("automerge:");
 const howMany = (n) => Number.isInteger(n) && n > 0 && n <= 100_000;
-const plain = (d) => !!d && typeof d === "object";
 const VALID = {
-  drew: (d) => plain(d) && url(d.bag) && howMany(d.n),
-  put: (d) => plain(d) && url(d.bag) && howMany(d.n),
-  emptied: (d) => plain(d) && url(d.bag) && howMany(d.n),
-  poured: (d) => plain(d) && url(d.from) && url(d.to) && howMany(d.n),
-  looked: (d) => plain(d) && url(d.bag),
+  drew: (d) => url(d.bag) && howMany(d.n),
+  put: (d) => url(d.bag) && howMany(d.n),
+  emptied: (d) => url(d.bag) && howMany(d.n),
+  poured: (d) => url(d.from) && url(d.to) && howMany(d.n),
+  looked: (d) => url(d.bag),
 };
 
 export { CONTAINER };

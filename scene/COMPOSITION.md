@@ -2700,7 +2700,9 @@ between packages".
    stage.
 8. **Packages' fake stages copy `telling.js` whole** (`test/telling.js` in
    dice, tabletop, bag and seats), so their tests run the stage's own rule;
-   packages stand alone, so it is a copy, not an import.
+   packages stand alone, so it is a copy, not an import. Each copy's first
+   line names the scene commit it was taken from, so drift shows in a
+   `git diff` of scene's since then.
 9. **A waiting message is forgotten by its own timer** at `TELL_MS`, not
    when something next asks it, so a quiet doc holds nothing past its time
    and a chatty peer can't grow what waits (review, 2026-11-17: the first

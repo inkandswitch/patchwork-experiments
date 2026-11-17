@@ -69,8 +69,8 @@ const cap = (t) => t.replace(/^./, (x) => x.toUpperCase());
 const only = (d, keys) => Object.keys(d).every((k) => keys.includes(k));
 /** The shapes of what a cup tells: which cup, and nothing else (nothing about what's under it). A shake is told from the doc: a new draw on a cup. */
 const valid = {
-  peeked: (d) => !!d && typeof d === "object" && only(d, ["cup"]) && str(d.cup),
-  lifted: (d) => !!d && typeof d === "object" && only(d, ["cups"]) && Array.isArray(d.cups) && d.cups.length > 0 && d.cups.length <= 64 && d.cups.every(str),
+  peeked: (d) => only(d, ["cup"]) && str(d.cup),
+  lifted: (d) => only(d, ["cups"]) && Array.isArray(d.cups) && d.cups.length > 0 && d.cups.length <= 64 && d.cups.every(str),
 };
 
 const vec = (v) => [0, 1, 2].map((i) => Number(v?.[i]) || 0);
@@ -416,6 +416,15 @@ function create(api) {
   });
 
   // ── telling the others (ids only; each view words it from its own doc, once it bears it out: STAGE.md "Telling") ──
+  /** Whoever told it, as the HUD names them: "You", else the roster's name for them (seats), else the stage's. */
+  const speaker = (by) => {
+    if (by.mine) return by.name;
+    try {
+      return rosterApi()?.who?.(by.viewer) || by.name;
+    } catch {
+      return by.name;
+    }
+  };
   const messages = {
     peeked: {
       valid: valid.peeked,
@@ -423,7 +432,7 @@ function create(api) {
       says(d, by, s) {
         const c = cupAt(d.cup, s);
         if (!c?.covering || c.cup.holder !== by.viewer) return null;
-        return by.viewer === viewer ? "You peeked under your cup." : `${by.name} peeked under their cup.`;
+        return by.mine ? "You peeked under your cup." : `${speaker(by)} peeked under their cup.`;
       },
     },
     lifted: {
@@ -432,9 +441,9 @@ function create(api) {
       says(d, by, s) {
         const cs = d.cups.map((id) => cupAt(id, s));
         if (!cs.every((c) => c && !c.covering)) return null;
-        if (d.cups.length > 1) return `${by.name} lifted every cup.`;
+        if (d.cups.length > 1) return `${speaker(by)} lifted every cup.`;
         const holder = cs[0].cup.holder;
-        return `${by.name} lifted ${holder === by.viewer ? (by.viewer === viewer ? "your own" : "their own") : holder ? whose(holder) : "a"} cup.`;
+        return `${speaker(by)} lifted ${holder === by.viewer ? (by.mine ? "your own" : "their own") : holder ? whose(holder) : "a"} cup.`;
       },
     },
   };

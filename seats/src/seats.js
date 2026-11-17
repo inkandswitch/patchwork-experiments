@@ -486,7 +486,7 @@ function create(api) {
   /** What is told: "sat", a seat id (and its owner's object id) only; said once the seat is one of this scene's. */
   const messages = {
     sat: {
-      valid: (d) => !!d && typeof d === "object" && typeof d.seat === "string" && !!d.seat && d.seat.length < 128 && (d.of == null || (typeof d.of === "string" && d.of.length < 128)),
+      valid: (d) => typeof d.seat === "string" && !!d.seat && d.seat.length < 128 && (d.of == null || (typeof d.of === "string" && d.of.length < 128)),
       says(d, who, s) {
         const seat = seatAt(s, refOf(d));
         return seat ? `${who.name} sat down as ${seat.name || d.seat}` : null;
