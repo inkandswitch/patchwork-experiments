@@ -146,13 +146,3 @@ describe("scene.autoframe", () => {
     expect(camera.frames).toEqual([]);
   });
 });
-
-describe("scene.autoframe has nothing to invoke", () => {
-  it("no commands and no input: a game can require it and keep F for itself", async () => {
-    const { s } = await mount();
-    const x = s.instance("scene.autoframe");
-    expect(x.commands).toBeUndefined();
-    expect(x.input).toBeUndefined();
-    s.unmount();
-  });
-});

@@ -231,7 +231,7 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect(Object.keys(s.doc().traits).sort()).toEqual(["t.level", "t.seats"]);
   });
 
-  it("Starts in: Look, Edit and the bodies on offer, written to doc.view.start.body, read once (this viewer stays where they are)", async () => {
+  it("Starts in: Look, Edit and the bodies on offer, written to doc.view.start.body (dropping the place, keeping the home), read once (this viewer stays where they are); an edit undo takes it back", async () => {
     // a game whose trait brings a body
     const BODY_GAME = { meta: { ...GAME.meta, id: "t.bodygame" }, module: { create: () => ({ bodies: [{ id: "t.stroll", label: "Stroll", enter: () => ({ input: {}, eye: () => null }) }] }) } };
     await mount({ objects: {}, extensions: [BODY_GAME] });
@@ -265,6 +265,24 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     });
     await settle();
     expect(radio("t.stroll").checked).toBe(true);
+    // a start at a place, with a home: a body nothing here offers shows as chosen; a choice drops the place and keeps
+    // the home (Look is no key); an edit undo takes each back
+    const home = { position: [1, 1, 1], target: [0, 0, 0] };
+    s.change((d) => {
+      d.view.start = { body: "seat", place: "p1", home };
+    });
+    await settle();
+    expect(labels()).toEqual(["Look", "Edit", "Stroll", "seat"]);
+    expect(radio("seat").checked).toBe(true);
+    await fire(radio("t.stroll"), true);
+    expect(s.doc().view.start).toEqual({ body: "t.stroll", home });
+    await fire(radio("look"), true);
+    expect(s.doc().view.start).toEqual({ home });
+    expect(s.local.get().edits.undo).toBe("Starts in");
+    s.api("scene.inspector").undo();
+    expect(s.doc().view.start).toEqual({ body: "t.stroll", home });
+    s.api("scene.inspector").undo();
+    expect(s.doc().view.start).toEqual({ body: "seat", place: "p1", home });
   });
 });
 

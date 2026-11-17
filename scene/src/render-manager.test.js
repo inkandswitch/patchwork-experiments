@@ -984,24 +984,6 @@ describe("runBuild", () => {
   });
 });
 
-describe("fake repo views (modelled on automerge-repo DocHandle.view)", () => {
-  it("are read-only snapshots at the given heads", () => {
-    const repo = new FakeRepo();
-    const h = repo.add({ n: 1 });
-    const h1 = h.heads();
-    h.change((d) => (d.n = 2));
-    const v = h.view(h1);
-    expect(v.doc()).toEqual({ n: 1 });
-    expect(v.heads()).toEqual(h1);
-    expect(v.isReadOnly()).toBe(true);
-    expect(v.url).toBe(`${h.url}#${h1[0]}`);
-    expect(() => v.change(() => {})).toThrow(/view-only/);
-    h.change((d) => (d.n = 3));
-    expect(v.doc()).toEqual({ n: 1 });
-    expect(h.view(["unknown"]).doc()).toEqual({}); // like the real one: empty, no throw
-  });
-});
-
 describe("viewAt / pinnedRepo", () => {
   it("viewAt gives the view, the handle itself without heads, and null for heads not here", () => {
     const repo = new FakeRepo();

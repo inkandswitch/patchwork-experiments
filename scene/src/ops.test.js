@@ -106,13 +106,8 @@ describe("attachTo", () => {
     const plan = attachTo(doc, "b", "a");
     expect({ ...plan }).toMatchObject({ ok: true, id: "b", parent: "a" });
     const next = apply(doc, plan);
-    const ob = next.objects.b;
-    expect(ob.parent).toBe("a");
-    // a is at x=1, turned 90° about y (its x axis points along world -z), scale 2;
-    // b at world (1,0,-2) is 2 m along that axis, i.e. 1 unit of a's local x
-    expectClose(ob.transform.position, [1, 0, 0]);
-    expectClose(ob.transform.rotation, [0, -Math.PI / 2, 0]);
-    expect(ob.transform.scale).toBeCloseTo(0.5, 9);
+    expect(next.objects.b.parent).toBe("a");
+    // (the pose: hierarchy.test.js, "re-parenting preserves the world pose")
     expectClose(origin(next.objects, "b"), [1, 0, -2]);
 
     // a can't be attached to b now (b is attached to a)
@@ -139,8 +134,7 @@ describe("attachTo", () => {
     const doc = docWith({ a: leaf("a", { x: 2, transform: T([2, 0, 0], [0, 0, 0], 3) }), b: leaf("b", { parent: "a", x: 1 }) });
     const next = apply(doc, attachTo(doc, "b", null));
     expect(next.objects.b.parent).toBeNull();
-    expectClose(next.objects.b.transform.position, [5, 0, 0]);
-    expect(next.objects.b.transform.scale).toBeCloseTo(3, 9);
+    expectClose(origin(next.objects, "b"), origin(doc.objects, "b"));
     expect(attachTo(doc, "b", "a")).toBeNull();
     expect(attachTo(doc, "a", null)).toBeNull();
   });
@@ -165,8 +159,7 @@ describe("removeObjects", () => {
     expect(next.objects.a).toBeUndefined();
     expect(next.order).toEqual(["b"]);
     expect(next.objects.b.parent).toBeNull();
-    expectClose(next.objects.b.transform.position, [3, 0, -2]);
-    expect(next.objects.b.transform.scale).toBeCloseTo(1, 9);
+    expectClose(origin(next.objects, "b"), origin(doc.objects, "b"));
   });
 
   // tool-v3.test.js: "removing a group asks, with a count, and takes everything in it"
@@ -241,11 +234,6 @@ describe("ungroup", () => {
     expectClose(origin(next.objects, "hull"), was);
   });
 
-  it("members keep looking as they did: a hidden group's stay hidden, a faded one's faded", () => {
-    const doc = docWith({ g: group("G", null, { visible: false, opacity: 0.5 }), a: leaf("a", { group: "g", opacity: 0.5 }) });
-    const next = apply(doc, ungroup(doc, "g"));
-    expect(next.objects.a).toMatchObject({ group: null, visible: false, opacity: 0.25 });
-  });
 });
 
 describe("newGroup and fileIn", () => {

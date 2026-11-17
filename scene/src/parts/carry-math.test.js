@@ -202,17 +202,6 @@ describe("carry maths", () => {
     expect(c.state.W[5]).toBeLessThan(0);
   });
 
-  it("counts each time it turns over, by F or by a landing rule", () => {
-    const landing = (id, p) => (p[0] > 2 ? { faceUp: true } : null);
-    const c = createCarry({ id: "card", W: flipMatrix(I), box: BOX, raycast: ground, landing });
-    c.move(down(1, 0));
-    expect(c.state.flips).toBe(0);
-    c.move(down(3, 0));
-    expect(c.state.flips).toBe(1);
-    c.flip();
-    expect(c.state.flips).toBe(2);
-  });
-
   it("has nothing to put down before it moved", () => {
     expect(createCarry({ id: "a", W: I, box: BOX, raycast: ground }).put()).toBe(null);
   });

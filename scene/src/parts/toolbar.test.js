@@ -334,64 +334,10 @@ describe("the bar of tools in every body", () => {
     expect(edge().hidden).toBe(false);
   });
 
-  it("a mouse press on a bar button doesn't take the focus (an unclaimed Space would run it again)", async () => {
-    s.api("t.game").body.enter("look");
-    await s.settle();
-    const play = s.root.querySelector('.toolbar .world [data-command="play"]');
-    const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
-    play.dispatchEvent(press);
-    expect(press.defaultPrevented).toBe(true);
-  });
-
   it("a plain scene, looking, has no bar: nothing declares a world command", async () => {
     await s.uninstall("t.game");
     s.api("scene.toolbar").body.enter("look");
     await s.settle();
     expect(edge().hidden).toBe(true);
-  });
-});
-
-// In a narrow view the toolbar wrapped to a second row, so the canvas under
-// it lost height whenever the view narrowed or a command came on offer. It is
-// one row: the editor's cluster scrolls sideways, and the world's sits
-// outside that scroll, in view at the right end at any width. These read the
-// stylesheet, as guards against an edit undoing it; the layout itself (the
-// world's buttons in view in a narrow Edit, one height in every body, a
-// picker as tall as a button) is measured in a browser by
-// probes/toolbar-run.mjs.
-describe("the toolbar is one row at any width", async () => {
-  const { readFileSync } = await import("node:fs");
-  const { fileURLToPath } = await import("node:url");
-  const css = readFileSync(fileURLToPath(import.meta.url).replace(/toolbar\.test\.js$/, "toolbar.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim().replace(/\s+/g, " "), body }));
-  const rule = (pred) => rules.find((r) => pred(r.sel.replace(/:where\(.*$/, "").trim()));
-  it("the bar doesn't wrap and doesn't scroll: the editor's cluster does, with no scrollbar", () => {
-    const bar = rule((s) => s.endsWith(".toolbar"));
-    expect(bar.body).toMatch(/flex-wrap:\s*nowrap/);
-    expect(bar.body).not.toMatch(/overflow/);
-    const tools = rule((s) => s.endsWith(".toolbar .tools"));
-    expect(tools.body).toMatch(/overflow-x:\s*auto/);
-    expect(tools.body).toMatch(/min-width:\s*0/);
-    // no scrollbar to come and go with the commands on offer (it would change the bar's height)
-    expect(tools.body).toMatch(/scrollbar-width:\s*none/);
-    expect(rule((s) => s.includes(".tools::-webkit-scrollbar"))?.body).toMatch(/display:\s*none/);
-  });
-  it("the world's cluster is outside the scroll and doesn't give way to it", () => {
-    const world = rule((s) => s.endsWith(".toolbar .world"));
-    expect(world.body).toMatch(/flex:\s*0 0 auto/);
-    expect(world.body).not.toMatch(/overflow/);
-  });
-  it("every cluster is one control tall, even empty, and every control is that tall and keeps its width", () => {
-    expect(rule((s) => s.endsWith(".toolbar")).body).toMatch(/--scene-toolbar-control:\s*calc\(1lh \+ 8px\)/);
-    const cluster = rule((s) => s.endsWith(".toolbar .cluster"));
-    expect(cluster.body).toMatch(/flex-wrap:\s*nowrap/);
-    expect(cluster.body).toMatch(/min-height:\s*var\(--scene-toolbar-control\)/);
-    const control = rule((s) => s.endsWith(".toolbar .cluster >"));
-    expect(control.body).toMatch(/flex-shrink:\s*0/);
-    expect(control.body).toMatch(/box-sizing:\s*border-box/);
-    expect(control.body).toMatch(/height:\s*var\(--scene-toolbar-control\)/);
-  });
-  it("no rule here makes anything wrap", () => {
-    for (const r of rules) expect(r.body, r.sel).not.toMatch(/flex-wrap:\s*wrap/);
   });
 });

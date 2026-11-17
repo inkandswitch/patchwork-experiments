@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { canMove, dropIntent, isMove, moveInOrder, placementFor, siblings, spliceOrder } from "./tree-drop.js";
+import { dropIntent, isMove, moveInOrder, placementFor, siblings, spliceOrder } from "./tree-drop.js";
 
 // A group with two children, a loose object after it.
 //   g1
@@ -71,18 +71,6 @@ describe("placementFor", () => {
 
   test("a row that isn't there puts it at the top level", () => {
     expect(placementFor(objects, order, "nope", "into")).toEqual({ parent: null, before: null });
-  });
-});
-
-describe("canMove", () => {
-  test("a group cannot be moved inside itself or its own descendants", () => {
-    expect(canMove(objects, "g1", "g1")).toBe(false);
-    expect(canMove(objects, "g1", "a")).toBe(false);
-  });
-
-  test("an ordinary move is allowed", () => {
-    expect(canMove(objects, "c", "g1")).toBe(true);
-    expect(canMove(objects, "a", null)).toBe(true);
   });
 });
 

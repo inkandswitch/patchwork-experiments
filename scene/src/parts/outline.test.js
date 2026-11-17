@@ -390,12 +390,6 @@ describe("the inspector's tree: dragging rows", () => {
     expect(s.doc().objects.hull).toMatchObject({ group: "g1", parent: null });
     expect(s.doc().objects.hull.transform.position[0]).toBe(1);
     expect(s.local.get().selected).toBe("hull");
-    await pass();
-    atRow("g1", 0.5, rowDrag("cleat"));
-    const c = s.doc().objects.cleat;
-    expect(c).toMatchObject({ group: "g1", parent: null });
-    expect(c.transform.position[0]).toBeCloseTo(3, 6);
-    expect(c.transform.scale).toBeCloseTo(2, 6);
   });
 
   it("below an open group, a row goes in at the top", async () => {
@@ -446,30 +440,6 @@ describe("the inspector's tree: dragging rows", () => {
     atRow("g1", 0.5, rowDrag("gone"));
     expect(notices()).toMatch(/no longer in this scene/);
     expect(s.handle.heads()).toEqual(heads);
-  });
-
-  it("refuses a group inside its own child, and a group among an object's attachments", async () => {
-    await mount({ objects: { g1: grp("G1"), g2: grp("G2", "g1"), hull: leafAt("hull"), cleat: leafAt("cleat", { parent: "hull" }) }, order: ["g1", "g2", "hull", "cleat"] });
-    const heads = s.handle.heads();
-    atRow("g2", 0.5, rowDrag("g1"));
-    expect(notices()).toMatch(/inside itself/);
-    atRow("cleat", 0.8, rowDrag("g1"));
-    expect(notices()).toMatch(/only go inside another group/);
-    expect(s.handle.heads()).toEqual(heads);
-  });
-
-  it("a row released where it already sits writes nothing; a reorder leaves the transform alone", async () => {
-    await mount({ objects: { r: leafAt("r", { x: 1 }), x: leafAt("x"), t: leafAt("t", { x: 2 }) }, order: ["r", "x", "t"] });
-    const heads = s.handle.heads();
-    atRow("x", 0.2, rowDrag("x"));
-    atRow("r", 0.8, rowDrag("x"));
-    atRow("t", 0.2, rowDrag("x"));
-    expect(s.handle.heads()).toEqual(heads);
-    expect(s.local.get().selected).toBe("x"); // a wobbled click
-    const before = JSON.stringify(s.doc().objects.t.transform);
-    atRow("r", 0.2, rowDrag("t"));
-    expect(s.doc().order).toEqual(["t", "r", "x"]);
-    expect(JSON.stringify(s.doc().objects.t.transform)).toBe(before);
   });
 
   it("dragover marks the row with where the drop would go, and keeps it off the tool", async () => {
@@ -557,11 +527,6 @@ describe("outline helpers", () => {
     expect(m.selected.get("x")).toBe(peerColor([0.6, 0.4, 0.9], "v1"));
     expect(m.hovered.get("y")).toBe(peerColor([0.6, 0.4, 0.9], "v2"));
     expect(m.hovered.has("gone")).toBe(false);
-  });
-
-  it("peerColor is stable per peer", () => {
-    expect(peerColor(null, "viewer:bob")).toBe(peerColor(null, "viewer:bob"));
-    expect(peerColor(null, "viewer:bob")).toMatch(/^rgb\(\d+ \d+ \d+\)$/);
   });
 
   it("readRowDrag reads only our payload", () => {

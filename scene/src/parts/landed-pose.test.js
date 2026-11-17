@@ -82,8 +82,6 @@ const CASES = [];
 for (const start of Object.keys(STARTS)) for (const answer of Object.keys(ANSWERS)) for (const snap of Object.keys(SNAPS)) CASES.push([start, answer, snap]);
 
 describe("landedPose: start × answer × snap (48 cases)", () => {
-  it("is 48 cases", () => expect(CASES).toHaveLength(48));
-
   it.each(CASES)("%s, answer %s, snap %s", (start, answer, snap) => {
     const own = frame(...STARTS[start]);
     own[12] = 0.3;
@@ -183,12 +181,19 @@ describe("intoFrame and layFlat", () => {
 });
 
 // The same rules through the carry: picked up at the origin, carried to x = 1
-// where the snap is (if any) and the rules answer.
-describe("the carry lands each case as landedPose says", () => {
+// where the snap is (if any) and the rules answer. (Every case is landedPose's,
+// above; here a row of each kind: turned by a rule, laid flat on a yaw-only
+// connector, stood in a frame.)
+describe("the carry lands as landedPose says", () => {
   const ground = () => null;
   const down = (x, z) => ({ origin: [x, 10, z], dir: [0, -1, 0] });
+  const ROWS = [
+    ["flat face down", "faceUp", "none"],
+    ["standing facing +Z", "flat", "yaw-only connector (π/2)"],
+    ["standing facing −X", "none", "framed standing connector"],
+  ];
 
-  it.each(CASES)("%s, answer %s, snap %s", (start, answer, snap) => {
+  it.each(ROWS)("%s, answer %s, snap %s", (start, answer, snap) => {
     const s = SNAPS[snap];
     const snaps = s ? [{ world: [1, 0, 0], rotation: s.rotation, yaw: s.yaw, radius: 0.5, objectId: "rack" }] : [];
     const landing = (id, p) => (p[0] > 0.5 ? ANSWERS[answer] : null);
@@ -268,21 +273,10 @@ describe("leaning and tilted frames", () => {
   for (const start of PIECES) ROWS.push(["rack leaned 50° (face down)", leaned(50 * D), start, false, start === "flat face up"]);
   for (const a of [5, -5, 30, -30]) for (const start of PIECES) ROWS.push([`tray tilted ${a}°`, tilted(a * D), start, false, start === "flat face down"]);
 
-  it("is 36 rows", () => expect(ROWS).toHaveLength(36));
-
   it.each(ROWS)("%s, %s held %s", (_, F, start, stands, isOver) => {
     const p = landedPose(frame(...STARTS[start]), TILE, { snap: { rotation: rotationOf(F), yaw: null } });
     expect(p.stands).toBe(stands);
     expect(near(axes(p.W), isOver ? over(F) : F)).toBe(true);
-  });
-
-  it("the reviewer's rack leaned back 10°: a face-down tile carried in with flat stands facing its player", () => {
-    const rotation = [H - 0.1745, H, 0];
-    const F = axes(composeMatrix({ rotation }));
-    const p = landedPose(frame(...STARTS["flat face down"]), TILE, { snap: { rotation, yaw: H }, answer: { flat: true } });
-    expect(p.stands).toBe(true);
-    expect(near(axes(p.W), F)).toBe(true);
-    expect(axes(p.W)[1][2]).toBeGreaterThan(0.98); // its face toward the player, at +Z
   });
 
   it("faceOf is the face's side when the face is the most upright axis, else 0, and ties go to the face", () => {

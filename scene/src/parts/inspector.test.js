@@ -8,7 +8,7 @@ import { worldMatrix } from "../hierarchy.js";
 import inspector, { sectionPref, startBodies } from "./inspector.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
-import { aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
+import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { EMBED_ATTR, EMBED_CLASS } from "../embed.js";
 import { SECTION_MIME } from "../dnd.js";
 import { LINK } from "../stage/links.js";
@@ -390,12 +390,6 @@ describe("scene.inspector: the panel", () => {
     st = {};
     await select("b");
     expect($(".command-reason")).toBeNull();
-  });
-
-  it("commandsKey changes with a state's label", () => {
-    const entry = (state) => [{ ext: "x", command: { id: "a", name: "A" }, state }];
-    expect(commandsKey(entry({}))).not.toBe(commandsKey(entry({ label: "B" })));
-    expect(commandsKey(entry({ label: "B" }))).toBe(commandsKey(entry({ label: "B" })));
   });
 
   it("a lens's name is shown read-only, never written back", async () => {
@@ -1230,38 +1224,4 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     expect(startBodies([], "orbit").at(-1)).toEqual(["orbit", "orbit"]);
   });
 
-  it("Starts in writes view.start.body (Look is no key), drops the place, keeps the home; an edit undo takes back", async () => {
-    const walker = { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", enter: () => null }] }) } };
-    s = await mountStage({
-      extensions: [INSPECTOR, OPENED, walker],
-      doc: { objects: {}, order: [], view: { start: { body: "seat", place: "p1", home: { position: [1, 1, 1], target: [0, 0, 0] } } } },
-    });
-    await settle();
-    // the doc starts people seated (nothing here offers a seat: Look); the inspector is Edit's
-    expect(s.local.get().body.id).toBe("look");
-    expect(s.instance("scene.inspector").tab.isOpen()).toBe(false);
-    s.api("scene.inspector").body.enter("edit");
-    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
-    await settle();
-    const radios = () => [...s.instance("scene.inspector").tab.body.querySelectorAll("input[data-body]")];
-    expect(radios().map((r) => [r.dataset.body, r.checked])).toEqual([
-      ["look", false],
-      ["edit", false],
-      ["walk", false],
-      ["seat", true],
-    ]);
-    const pick = (r) => {
-      r.checked = true;
-      r.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-    pick(radios()[2]);
-    expect(s.doc().view.start).toEqual({ body: "walk", home: { position: [1, 1, 1], target: [0, 0, 0] } });
-    pick(radios()[0]);
-    expect(s.doc().view.start).toEqual({ home: { position: [1, 1, 1], target: [0, 0, 0] } });
-    expect(s.local.get().edits.undo).toBe("Starts in");
-    s.api("scene.inspector").undo();
-    expect(s.doc().view.start).toEqual({ body: "walk", home: { position: [1, 1, 1], target: [0, 0, 0] } });
-    s.api("scene.inspector").undo();
-    expect(s.doc().view.start).toEqual({ body: "seat", place: "p1", home: { position: [1, 1, 1], target: [0, 0, 0] } });
-  });
 });

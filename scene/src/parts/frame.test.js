@@ -64,18 +64,3 @@ describe("scene.frame: commands", () => {
     s.unmount();
   });
 });
-
-describe("scene.frame with the key map", () => {
-  it(". frames everything with nothing selected; F is no longer Frame's", async () => {
-    const { default: keys } = await import("./keys.js");
-    const s = await mountStage({ extensions: [{ meta: { id: "scene.keys" }, module: keys }, { meta: { id: "scene.frame" }, module: frame }] });
-    const camera = fakeCamera();
-    s.api("scene.frame").camera = camera.rig;
-    s.api("scene.frame").sceneBox = () => B3;
-    s.key("f");
-    expect(camera.frames).toEqual([]);
-    s.key(".", { code: "Period" });
-    expect(camera.frames).toEqual([B3]);
-    s.unmount();
-  });
-});

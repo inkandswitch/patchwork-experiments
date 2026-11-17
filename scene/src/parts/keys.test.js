@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import keys from "./keys.js";
-import { mapInvocation } from "../keymap.js";
 
 /** Commands keyed on k for flagged objects, and on k / Escape / Delete for the scene. */
 function commandsExt(id, log) {
@@ -42,32 +41,6 @@ function commandsExt(id, log) {
     },
   };
 }
-
-describe("the key map's invocation (pure: ../keymap.js mapInvocation)", () => {
-  const cmds = (log) => [
-    { id: "x", value: commandsExt("x", log).create().commands },
-    { id: "y", value: commandsExt("y", log).create().commands },
-  ];
-  const scene = { objects: { a: { traits: { "test.flag": {} } }, b: {} }, parents: new Map() };
-  const ctx = { scene, local: {} };
-  it("tries attention's path (the selection, else the look), then the scene; first in running order wins", () => {
-    // the selection doesn't take it: the scene's does (the look plays no part while something is selected)
-    expect(mapInvocation(cmds([]), "k", ctx, { selected: "b", hit: null })).toEqual({ ext: "x", command: "scene-k", target: null });
-    expect(mapInvocation(cmds([]), "K", ctx, { selected: "a", hit: null })).toEqual({ ext: "x", command: "poke", target: "a" });
-    // nothing selected: what is looked at, then the scene
-    expect(mapInvocation(cmds([]), "k", ctx, { selected: null, hit: { id: "a" } })).toEqual({ ext: "x", command: "poke", target: "a" });
-    expect(mapInvocation(cmds([]), "k", ctx, { selected: null, hit: { id: "b" } })).toEqual({ ext: "x", command: "scene-k", target: null });
-    expect(mapInvocation(cmds([]), "Backspace", ctx, { selected: "b", hit: null })).toEqual({ ext: "x", command: "remove", target: "b" });
-    expect(mapInvocation(cmds([]), "Delete", ctx, {})).toBeNull();
-    expect(mapInvocation(cmds([]), "n", ctx, {})).toBeNull();
-    // a selection that isn't an object (a ref) is offered all the same: its owner's command answers for it
-    expect(mapInvocation(cmds([]), "Delete", ctx, { selected: "dimension:d1", hit: null })).toEqual({ ext: "x", command: "remove", target: "dimension:d1" });
-    const objectsOnly = [{ id: "z", value: [{ id: "remove", name: "Remove", key: "Delete", state: (t, { scene: sc }) => (sc.objects[t] ? {} : null), run() {} }] }];
-    expect(mapInvocation(objectsOnly, "Delete", ctx, { selected: "dimension:d1", hit: null })).toBeNull();
-    // a looked-at id that isn't in the scene is passed over
-    expect(mapInvocation(cmds([]), "k", ctx, { selected: null, hit: { id: "gone" } })).toEqual({ ext: "x", command: "scene-k", target: null });
-  });
-});
 
 describe("scene.keys", () => {
   let s, log;

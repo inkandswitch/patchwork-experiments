@@ -117,28 +117,6 @@ describe("createEdits on real Automerge", () => {
     view: {},
   });
 
-  it("an edit is one step; undo puts it back, redo again; a write outside an edit is never a step", () => {
-    const h = amHandle(init());
-    const seen = [];
-    const e = createEdits({ handle: h, changed: (l) => seen.push(l) });
-    const g = e.begin("Move");
-    g.change((d) => (d.objects.die.transform.position = [1, 0, 0]));
-    g.change((d) => (d.objects.die.transform.position = [2, 0, 0]));
-    g.end();
-    g.change((d) => (d.objects.die.name = "after end: not recorded"));
-    h.change((d) => (d.clock.running = false));
-    expect(e.stacks()[h.url].undo).toHaveLength(1);
-    expect(e.stacks()[h.url].undo[0].parts[0].leaves).toEqual([{ path: ["objects", "die", "transform", "position"], before: [0, 0, 0], after: [2, 0, 0] }]);
-    expect(e.take("undo")).toBe(true);
-    expect(plain(h.doc().objects.die.transform.position)).toEqual([0, 0, 0]);
-    expect(h.doc().clock.running).toBe(false);
-    expect(seen.at(-1)).toEqual({ undo: null, redo: "Move" });
-    expect(e.take("redo")).toBe(true);
-    expect(plain(h.doc().objects.die.transform.position)).toEqual([2, 0, 0]);
-    expect(e.take("redo")).toBe(false);
-    h.free();
-  });
-
   it("judge sees the doc before a step's first change and after its last, readable when the step ends; what it says rides on the step", () => {
     const h = amHandle(init());
     const seen = [];

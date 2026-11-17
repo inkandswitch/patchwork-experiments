@@ -90,15 +90,6 @@ describe("scene.touch", () => {
     expect(shown()).not.toBe(null);
   });
 
-  it("shows nothing in Look, Edit or a seat: they declare no keys", async () => {
-    await mount();
-    await input("touch");
-    for (const body of ["look", "edit", "seat"]) {
-      if (s.local.get().body.id !== body) await enter(body);
-      expect([body, s.local.get().body.id, shown()]).toEqual([body, body, null]);
-    }
-  });
-
   it("a walk-like body: the arrows' four places on the pad, its other keys as buttons under its name, in declared order", async () => {
     await mount();
     await enter("walkish");
@@ -109,24 +100,18 @@ describe("scene.touch", () => {
     });
   });
 
-  it("a control is a held key: down with the finger (the key a keyboard sends), up once with it, or with its cancel", async () => {
+  // (every order of fingers, cancels and lost captures, and the default-prevented press: hold-key.test.js)
+  it("a control is a held key: down with the finger (the key a keyboard sends), lit while held, up once with it", async () => {
     await mount();
     await enter("walkish");
     await input("touch");
-    for (const end of ["pointerup", "pointercancel"]) {
-      walker.key.mockClear();
-      walker.keyup.mockClear();
-      const e = finger("pointerdown", "Forward", 1);
-      // focus stays where it is: the key map cancels held verbs when focus leaves the view
-      expect(e.defaultPrevented).toBe(true);
-      expect(keys(walker.key)).toEqual(["KeyW/w"]);
-      expect(control("Forward").hasAttribute("data-held")).toBe(true);
-      expect(walker.keyup).not.toHaveBeenCalled();
-      finger(end, "Forward", 1);
-      finger("lostpointercapture", "Forward", 1); // the browser's, after either
-      expect([end, keys(walker.keyup)]).toEqual([end, ["KeyW/w"]]);
-      expect(control("Forward").hasAttribute("data-held")).toBe(false);
-    }
+    finger("pointerdown", "Forward", 1);
+    expect(keys(walker.key)).toEqual(["KeyW/w"]);
+    expect(control("Forward").hasAttribute("data-held")).toBe(true);
+    expect(walker.keyup).not.toHaveBeenCalled();
+    finger("pointerup", "Forward", 1);
+    expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
+    expect(control("Forward").hasAttribute("data-held")).toBe(false);
     // a key with no label presses its own code; Run, its first; Jump, Space
     walker.key.mockClear();
     for (const label of ["Q", "Run", "Jump"]) {
@@ -152,19 +137,6 @@ describe("scene.touch", () => {
       finger("pointerup", label[order[1]], order[1]);
       expect(keys(walker.keyup).sort()).toEqual(["KeyW/w", "ShiftLeft/Shift"]);
     }
-  });
-
-  it("two fingers on one control: down with the first, up with the last", async () => {
-    await mount();
-    await enter("walkish");
-    await input("touch");
-    finger("pointerdown", "Forward", 1);
-    finger("pointerdown", "Forward", 2);
-    expect(keys(walker.key)).toEqual(["KeyW/w"]);
-    finger("pointerup", "Forward", 1);
-    expect(walker.keyup).not.toHaveBeenCalled();
-    finger("pointerup", "Forward", 2);
-    expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
   });
 
   it("leaving the body mid-press: the body hears exactly one keyup, and the finger's coming up is nothing", async () => {
@@ -219,18 +191,6 @@ describe("scene.touch", () => {
     putDown();
     await settle();
     expect(shown().buttons).toEqual([["Walkish", "Run", "Jump", "Q"]]);
-  });
-
-  it("a lost capture alone lets go (the browser took the pointer)", async () => {
-    await mount();
-    await enter("walkish");
-    await input("touch");
-    finger("pointerdown", "Forward", 1);
-    finger("lostpointercapture", "Forward", 1);
-    expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
-    expect(control("Forward").hasAttribute("data-held")).toBe(false);
-    finger("pointerup", "Forward", 1);
-    expect(walker.keyup).toHaveBeenCalledTimes(1);
   });
 
   for (const how of ["blur", "hidden"]) {

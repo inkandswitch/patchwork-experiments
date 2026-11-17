@@ -503,20 +503,10 @@ describe("scene.use", () => {
       expect(log).toEqual([["helm", "helm", undefined]]);
     });
 
-    it("a verb whose key the body reserves shows without it, and no key runs it", async () => {
-      await walking({ hitId: "barrel", distance: 1 });
-      expect(verbs()).toEqual(["GPick up", "Wave"]);
-      s.key("w");
-      expect(log).toEqual([]);
-    });
-
-    it("a reach verb beyond the body's reach shows disabled, too far, and its key does nothing; within reach it runs", async () => {
+    // (too far, disabled, no key: keymap.test.js's reach run)
+    it("looks again on a lock change: a reach verb beyond reach comes in when the body steps up to it", async () => {
       const vp = await walking({ hitId: "barrel", distance: 3 });
       expect(prompt().querySelector('[data-command="grab"]').hasAttribute("data-disabled")).toBe(true);
-      expect(prompt().querySelector('[data-command="grab"]').title).toBe("too far");
-      expect(prompt().querySelector('[data-command="grab"] kbd')).toBeNull();
-      s.key("g");
-      expect(log).toEqual([]);
       // stepping up to it (the prompt looks again every frame while walking; a lock change does at once)
       vp.raycast = () => ({ id: "barrel", point: [0, 1, 0], normal: null, distance: 1.5 });
       document.dispatchEvent(new Event("pointerlockchange"));

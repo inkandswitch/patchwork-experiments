@@ -3,7 +3,6 @@ import { fakeUrl } from "../test/fake-repo.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { CONTROLS_TOOL, commandsFor, documentsFor, inspectorDocuments } from "./inspector-model.js";
-import { plugins } from "../index.js";
 
 // The inspector's documents (STAGE.md, "The interface"): every related
 // document of an object is a section, and documentsFor is the one rule for
@@ -58,22 +57,6 @@ describe("documentsFor: the inspector's own documents, by kind of selection", ()
   });
 });
 
-describe("documentsFor's sources: one doc, three sections, each its own fold", () => {
-  const U = fakeUrl();
-  const scene = snap({ x: obj({ sourceUrl: U }) });
-  // what the stage routed x to → the one section its source is (a section is its extension and id)
-  const ROUTED = [
-    ["built", "source", "Source", false],
-    ["file", "file", "File", true],
-    ["scene", "link", "Linked scene", true],
-    [null, "source", "Source", true],
-  ];
-  it.each(ROUTED)("routed to %s → %s (%s, folded %s)", (kind, id, label, folded) => {
-    const own = inspectorDocuments(() => kind);
-    expect(documentsFor(own, "x", { scene }, ME).map((d) => [d.id, d.label, d.folded])).toEqual([[id, label, folded]]);
-  });
-});
-
 describe("commandsFor: what's contributed", () => {
   it("a command whose state throws doesn't apply, and says so", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -83,12 +66,5 @@ describe("commandsFor: what's contributed", () => {
     const commands = [{ id: "t.x", value: [{ id: "bad", run() {}, state: boom }, { id: "ok", run() {}, state: () => ({}) }] }];
     expect(commandsFor(commands, "x", {}, null).map((c) => c.command.id)).toEqual(["ok"]);
     expect(warn).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("the build controls' tool id", () => {
-  it("is the one this package registers the controls under (src/index.js)", () => {
-    const tool = plugins.find((p) => p.type === "patchwork:tool" && p.id === CONTROLS_TOOL);
-    expect(tool?.supportedDatatypes).toEqual(["scene-render"]);
   });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodeGLB, computeNormals, parseGLB, MODE } from "./glb.js";
-import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials, sharedLoader } from "./gltf-content.js";
+import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials } from "./gltf-content.js";
 import { Box3, Euler, Matrix4, Group } from "three";
 import { nearestScreenVertex } from "./stage/viewport.js";
 import { composeMatrix } from "./transform.js";
@@ -40,11 +40,6 @@ function packGLB(json, bin) {
 }
 
 describe("gltf content", () => {
-  it("shares one loader with a meshopt decoder", () => {
-    expect(sharedLoader()).toBe(sharedLoader());
-    expect(sharedLoader().meshoptDecoder).toBeTruthy();
-  });
-
   it("decodes a meshopt + quantized site GLB and dequantizes POSITION to Float32 metres", async () => {
     const gltf = await loadGLTF(FREEZER);
     const meshes = [];

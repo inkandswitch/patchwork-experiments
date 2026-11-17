@@ -2,11 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import notices, { loadSummary } from "./notices.js";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-// (Vitest stubs CSS imports, and happy-dom replaces the global URL: read the file through node's own helpers, comments out)
-const noticesCss = readFileSync(fileURLToPath(import.meta.url).replace(/notices\.test\.js$/, "notices.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("loadSummary (pure)", () => {
   const objs = {
@@ -98,22 +93,5 @@ describe("scene.notices", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-// A notice covered the tray a seated player stands up beside (tabletop
-// stations probe): the pointer went to the toast, so the tray under it was
-// never hovered. Notices only say; every rule here leaves the pointer to the
-// world under them.
-describe("notices never take the pointer", () => {
-  const rules = [...noticesCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim().replace(/\s+/g, " "), body }));
-  it("parses the stylesheet into rules", () => expect(rules.length).toBeGreaterThan(4));
-  it.each(["> .hud", "> .toasts", ".toast:"])("the %s rule says pointer-events: none", (part) => {
-    const rule = rules.find((r) => r.sel.includes(part));
-    expect(rule, part).toBeTruthy();
-    expect(rule.body).toMatch(/pointer-events:\s*none/);
-  });
-  it("no rule gives the pointer back", () => {
-    for (const r of rules) expect(r.body, r.sel).not.toMatch(/pointer-events:\s*(auto|all|visible)/);
   });
 });

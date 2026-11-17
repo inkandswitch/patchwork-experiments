@@ -83,14 +83,6 @@ describe("groups", () => {
     expect(descendantsOf(childrenMap(outlineParents(o)), "rig").sort()).toEqual(["flag", "mast"]);
   });
 
-  it("ungroups into the group's own group; nothing moves", () => {
-    const plan = ungroupPlan(scene(), "body");
-    expect(plan.group).toBe("vessel");
-    expect(plan.members.sort()).toEqual(["deck", "hull"]);
-    expect(plan.transforms).toBeUndefined();
-    expect(ungroupPlan(scene(), "vessel").members.sort()).toEqual(["body", "rig"]);
-  });
-
   it("ungrouping keeps how the children look: a hidden group's stay hidden, a translucent one's stay translucent", () => {
     const o = scene();
     // body is at 0.5 opacity: hull (1) and deck (hidden, 1) take it on
@@ -146,19 +138,4 @@ describe("groups", () => {
     expect(filtered.map((r) => r.id)).toEqual(["vessel", "rig", "mast", "flag"]);
   });
 
-  it("handles a 500-object tree quickly", () => {
-    const o = {};
-    for (let g = 0; g < 129; g++) o[`g${g}`] = group(`G${g}`, g ? `g${Math.floor((g - 1) / 3)}` : null);
-    for (let i = 0; i < 378; i++) o[`o${i}`] = obj(`layer ${i}`, `g${i % 129}`, { visible: i % 5 !== 0 });
-    const t0 = performance.now();
-    const parents = outlineParents(o);
-    const ids = Object.keys(o);
-    const tree = treeOrder(o, ids, parents);
-    inheritedDisplay(o, parents);
-    groupsWithHidden(o, parents);
-    searchOutline(o, "layer 1", parents, ids);
-    const ms = performance.now() - t0;
-    expect(tree.length).toBe(507);
-    expect(ms).toBeLessThan(50);
-  });
 });

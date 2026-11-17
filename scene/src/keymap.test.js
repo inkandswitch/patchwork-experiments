@@ -195,6 +195,14 @@ describe("the key resolver (H3), exhaustively", () => {
     expect(promptEntries(COLLECTED, { selected: null, hit: { id: "spoke" } }, ctx).target).toBe("helm");
     // the path first, then the scene: Enter comes aboard from anywhere
     expect(mapInvocation(COLLECTED, "Enter", ctx, { selected: "card", hit: null })).toEqual({ ext: "sailing", command: "aboard", target: null });
+    // a selection that isn't an object (a ref) is offered all the same: its owner's command answers for it, or nobody's
+    const removeAny = [{ id: "z", value: [{ id: "remove", name: "Remove", key: "Delete", state: (t) => (t ? {} : null), run() {} }] }];
+    expect(mapInvocation(removeAny, "Delete", ctx, { selected: "dimension:d1", hit: null })).toEqual({ ext: "z", command: "remove", target: "dimension:d1" });
+    const objectsOnly = [{ id: "z", value: [{ id: "remove", name: "Remove", key: "Delete", state: (t, { scene: sc }) => (sc.objects[t] ? {} : null), run() {} }] }];
+    expect(mapInvocation(objectsOnly, "Delete", ctx, { selected: "dimension:d1", hit: null })).toBeNull();
+    // a looked-at id that isn't in the scene is passed over, for the scene
+    const anyTarget = [{ id: "z", value: [{ id: "poke", name: "Poke", key: "k", state: () => ({}), run() {} }] }];
+    expect(mapInvocation(anyTarget, "k", ctx, { selected: null, hit: { id: "gone" } })).toEqual({ ext: "z", command: "poke", target: null });
   });
 
   it("Escape is no command's", () => {

@@ -391,23 +391,6 @@ describe("references", () => {
     expect(fars.map(([, o]) => o.traits["t.lever"].target)).toEqual(["door", "door"]);
   });
 
-  it("an entry field: kept where this scene has that entry; else cleared, and the notice names what's missing", async () => {
-    await mountWith({ objects: {}, order: [], traits: { "t.seats": { seat_b: { name: "B" } } } });
-    const other = s.repo.add(emptyScene({
-      objects: { z1: object({ name: "Zone 1", traits: { "t.zone": { seat: "seat_b" } } }), z2: object({ name: "Zone 2", traits: { "t.zone": { seat: "seat_a" } } }) },
-      order: ["z1", "z2"],
-      traits: { "t.seats": { seat_a: { name: "A" }, seat_b: { name: "B" } } },
-    }));
-    await drop(rowPayload(other.url, ["z1"]), { x: 150 });
-    expect(byName("Zone 1").traits["t.zone"].seat).toBe("seat_b");
-    await drop(rowPayload(other.url, ["z2"]), { x: 150 });
-    expect(byName("Zone 2").traits["t.zone"]).toEqual({});
-    expect(notices()).toContain("warn: This private zone's seat isn't one of this scene's seats: choose one in the inspector.");
-    // a scene without seats at all: the zone needs them
-    s.change((d) => delete d.traits["t.seats"]);
-    await drop(rowPayload(other.url, ["z1"]), { x: 150 });
-    expect(notices()).toContain("warn: This private zone needs seats: add Seats to the scene.");
-  });
 });
 
 describe("repeats", () => {

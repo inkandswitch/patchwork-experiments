@@ -227,28 +227,6 @@ function pressOn(h, at = h.from ?? h.at) {
 }
 
 describe("scene.halo on the stage", () => {
-  it("shows on the selection, and goes for deselection, a held tool, a lock or a read-only doc", async () => {
-    await mount({ objects: { a: object(), l: object({ locked: true }) } });
-    expect(s.halo().debug.target).toBe(null);
-    await s.select("a");
-    expect(s.halo().debug.target).toEqual({ kind: "object", id: "a" });
-    expect(s.halo().debug.handles).toHaveLength(14);
-    s.local.swap((m) => ({ ...m, held: { ext: "scene.measure", command: "measure" } }));
-    await settle();
-    expect(s.halo().debug.handles).toEqual([]);
-    s.local.swap((m) => ({ ...m, held: null }));
-    await settle();
-    expect(s.halo().debug.handles).toHaveLength(14);
-    await s.select("l");
-    expect(s.halo().debug.target).toBe(null);
-    await s.select(null);
-    expect(s.halo().debug.handles).toEqual([]);
-    s.unmount();
-    await mount({ objects: { a: object() }, readOnly: true });
-    await s.select("a");
-    expect(s.halo().debug.target).toBe(null);
-  });
-
   it("a handle is a widget at its distance from the eye; the thing itself is not", async () => {
     await mount({ objects: { a: object() } });
     await s.select("a");

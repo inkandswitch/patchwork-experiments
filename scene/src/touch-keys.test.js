@@ -123,11 +123,6 @@ const viewOf = (b, t, g) => ({ body: { keys: BODIES[b] }, held: TOOLS[t] && { ke
 const CASES = Object.keys(BODIES).flatMap((b) => Object.keys(TOOLS).flatMap((t) => Object.keys(GESTURES).map((g) => [b, t, g])));
 
 describe("touchControls: every keys declaration in the repo, in every combination (10 bodies × 5 tools × 2 gestures)", () => {
-  it("the table covers every case and only those", () => {
-    expect(CASES.length).toBe(100);
-    expect(Object.keys(EXPECTED).sort()).toEqual(CASES.map((c) => c.join("|")).sort());
-  });
-
   it.each(CASES)("%s body, %s tool, %s gesture", (b, t, g) => {
     const view = viewOf(b, t, g);
     const got = touchControls(view);

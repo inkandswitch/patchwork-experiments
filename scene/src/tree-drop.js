@@ -9,7 +9,7 @@
 // "Parent" here is the outline's (groups.js outlineParents): a group, or the
 // object a row is attached to within its group.
 
-import { isGroup, outlineParents } from "./groups.js";
+import { outlineParents } from "./groups.js";
 
 /** A group's middle band means "inside it". A leaf has no middle. */
 export const INTO_BAND = 0.25;
@@ -96,22 +96,6 @@ export function isMove(objects, order, id, place, parents = outlineParents(objec
   const now = siblings(objects, order, parent, parents);
   const next = siblings(objects, moveInOrder(order, id, place.before), parent, parents);
   return now.length !== next.length || now.some((x, i) => x !== next[i]);
-}
-
-/**
- * Can `id` be moved to `parent` (a row of the outline)? Not onto itself, not
- * into anything below it, and a group only into a group. (Whether an
- * attachment would loop is hierarchy.js's to say; below it in the outline is
- * the same question for what the outline shows.)
- */
-export function canMove(objects, id, parent, parents = outlineParents(objects)) {
-  if (!objects?.[id]) return false;
-  const target = parent && objects[parent] ? parent : null;
-  if (target == null) return true;
-  if (target === id) return false;
-  if (isGroup(objects[id]) && !isGroup(objects[target])) return false;
-  for (let p = target; p != null; p = parents.get(p)) if (p === id) return false;
-  return true;
 }
 
 /**

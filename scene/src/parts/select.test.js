@@ -48,20 +48,6 @@ function peer(session, keys, { viewer = `viewer:${session}`, seq = 1 } = {}) {
 }
 
 describe("scene.select: clicking", () => {
-  it("a click on an object selects it; a click on nothing clears", async () => {
-    await mount();
-    hitOn("a");
-    s.click(20, 20);
-    await settle();
-    expect(sel()).toBe("a");
-    hitOn("b");
-    s.click(20, 20);
-    expect(sel()).toBe("b");
-    hitOn(null);
-    s.click(20, 20);
-    expect(sel()).toBeNull();
-  });
-
   it("is the Edit body's click, ahead of every extension down the chain: a package's click verb never sees it", async () => {
     const log = [];
     const verb = { meta: { id: "t.verb" }, module: { create: () => ({ input: { click: (ev) => (log.push(ev.hit?.id ?? null), true) } }) } };
@@ -307,37 +293,6 @@ describe("scene.select: commands", () => {
 });
 
 describe("scene.select: by body", () => {
-  it("in Edit a plain click selects, as Select does", async () => {
-    await mount();
-    boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] } });
-    s.local.swap((m) => ({ ...m, selected: "a" }));
-    await settle();
-    expect(sel()).toBe("a");
-    hitOn("b");
-    s.click(20, 20);
-    expect(sel()).toBe("b");
-    expect(run("select", "a")).toBe(true);
-    expect(sel()).toBe("a");
-    await until(() => mineSent().selected === "a");
-  });
-
-  it("a body other than Edit has no default press: a plain click selects nothing; Select still does", async () => {
-    const walker = { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, leave() {} }) }] }) } };
-    await mount({ extensions: [walker] });
-    expect(s.api("t.walk").body.enter("walk")).toBe(true);
-    await settle();
-    expect(s.local.get().body).toMatchObject({ id: "walk", label: "Walk", depth: 1, reach: 2 });
-    hitOn("a");
-    s.click(20, 20);
-    expect(sel()).toBeNull();
-    expect(run("select", "a")).toBe(true);
-    expect(sel()).toBe("a");
-    s.api("t.walk").body.leave();
-    await settle();
-    // walking was entered from Edit, so over Look: leaving it is Look
-    expect(s.local.get().body.id).toBe("look");
-  });
-
   // Every body (the stage's Look and Edit; a walk and a seat over Look; a
   // station over a walk) × a click on an object or on nothing × what was
   // selected before (nothing, an object, a ref): only Edit's click selects
@@ -382,6 +337,12 @@ describe("scene.select: by body", () => {
     }
     expect(cases).toBe(5 * 3 * 2);
     expect(s.doc().objects.a).toBeTruthy(); // nothing was removed
+    // a walk entered from Edit stands over Look: leaving it is Look
+    expect(api.body.enter("edit")).toBe(true);
+    expect(api.body.enter("walk")).toBe(true);
+    api.body.leave();
+    await settle();
+    expect(s.local.get().body.id).toBe("look");
   }, 60_000);
 });
 

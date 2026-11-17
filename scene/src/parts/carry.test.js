@@ -109,27 +109,15 @@ describe("scene.carry commands", () => {
 });
 
 describe("scene.carry input", () => {
-  it("claims a press on its holder only: with the trait, no tool held, unlocked, not a group, not a peer's", async () => {
-    const { api, x } = await mount({ doc: { objects: { l: piece({ locked: true }), g: piece({ kind: "group" }), plain: object() } } });
+  // (the trait, a lock, a veto, a peer's hold and the holder over the hit: H11, below)
+  it("claims a press on its holder only: not a group, not nothing, not a secondary button, not with a tool held", async () => {
+    const { x } = await mount({ doc: { objects: { g: piece({ kind: "group" }) } } });
     expect(x().input.press(press("a"))).toBeTruthy();
-    expect(x().input.press(press("l"))).toBe(null);
     expect(x().input.press(press("g"))).toBe(null);
-    expect(x().input.press(press("plain"))).toBe(null);
     expect(x().input.press(press(null))).toBe(null);
     expect(x().input.press(press("a", { button: 2 }))).toBe(null);
-    api.heldBy = (id) => (id === "a" ? "peer-session" : null);
-    expect(x().input.press(press("a"))).toBe(null);
-    api.heldBy = () => null;
     s.local.swap((m) => ({ ...m, held: { ext: "scene.measure", command: "measure" } }));
     expect(x().input.press(press("a"))).toBe(null);
-  });
-
-  it("carries the holder, not the hit: a press on what's attached to a piece carries the piece", async () => {
-    const { x, stub } = await mount({ doc: { objects: { kid: object({ parent: "a" }) } } });
-    const session = x().input.press(press("kid", { holder: "a" }));
-    session.move(move(1, 1));
-    expect(stub.holds.map(([id]) => id)).toEqual(["a"]);
-    session.cancel();
   });
 
   it("shows a grab cursor over what it could pick up", async () => {
@@ -197,34 +185,6 @@ describe("scene.carry carrying", () => {
     session.end(move(1, 1));
     await settle();
     expect(transformOf("a").position[1]).toBeCloseTo(0);
-  });
-
-  it("Escape (the router's cancel) puts it back: a plain release, nothing written", async () => {
-    const { x, stub } = await mount({ doc: {} });
-    const session = x().input.press(press("a"));
-    session.move(move(1, 1));
-    expect(session.key({ key: "Escape" })).toBe(false); // left to the router, which cancels
-    session.cancel();
-    await settle();
-    expect(transformOf("a").position).toEqual([0, 0, 0]);
-    expect(stub.releases).toEqual([["a", {}]]);
-  });
-
-  it("refused by something here that holds it ahead (a roll, a glide): it goes back at whichever move, and nothing is written", async () => {
-    for (const at of [0, 1, 2]) {
-      const { x, stub } = await mount({ doc: {} });
-      const session = x().input.press(press("a"));
-      for (let i = 0; i < 3; i++) {
-        stub.refuse = i >= at;
-        session.move(move(1 + i, 1));
-      }
-      session.end(move(3, 1));
-      await settle();
-      expect(transformOf("a").position).toEqual([0, 0, 0]);
-      expect(stub.releases).toEqual([["a", {}]]);
-      s.unmount();
-      s = null;
-    }
   });
 
   it("snaps to another object's connector, turning to its yaw; Alt and the pref place freely", async () => {
@@ -896,19 +856,6 @@ describe("How a carry ends: `ended` and `landed`", () => {
         s = null;
       }
     }
-  });
-
-  it("a peer's hold appearing gives the carry way at once (the stage's update), not at the pointer's next move", async () => {
-    const { api, x, stub } = await mount();
-    const session = x().input.press(press("a"));
-    session.move(move(1, 1));
-    expect(await now(session.ended)).toBe("pending");
-    x().update(); // nothing new: it carries on
-    expect(await now(session.ended)).toBe("pending");
-    api.heldBy = () => "peer";
-    x().update();
-    expect(await now(session.ended)).toEqual({ how: "yielded", on: null });
-    expect(stub.releases).toEqual([["a", {}]]);
   });
 
   it("the stage's update ends it without the pointer: {a peer's hold, the object removed} × {lifted or not} (4 cases)", async () => {

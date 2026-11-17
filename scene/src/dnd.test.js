@@ -43,9 +43,6 @@ describe("parseAutomergeLink", () => {
     expect(parseAutomergeLink(ID)).toEqual({ url: `automerge:${ID}`, heads: null });
     expect(parseAutomergeLink("hello")).toBeNull();
   });
-  it("parseAutomergeUrl still strips the heads", () => {
-    expect(parseAutomergeUrl(`automerge:${ID}#${H1}`)).toBe(`automerge:${ID}`);
-  });
 });
 
 describe("parsePatchworkDrop", () => {

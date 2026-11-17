@@ -5,6 +5,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import handles, { handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } from "./handles.js";
+import { handleSpecs } from "../handles.js";
 
 const SLICE = {
   type: "scene:source",
@@ -68,6 +69,24 @@ afterEach(() => {
 });
 
 describe("scene.handles: pure helpers", () => {
+  it("handles come from a provider's declared number params, with their ranges, the value from the render doc", () => {
+    const provider = {
+      params: [
+        { key: "height", label: "Height (m)", kind: "number", default: 0, min: -10, max: 10, step: 0.05 },
+        { key: "resolution", kind: "integer", default: 110, min: 8, max: 160 },
+        { key: "colorBy", kind: "enum", default: "cp" },
+      ],
+      handles: [
+        { param: "height", axis: [0, 2, 0], label: "Slice height" },
+        { param: "colorBy", axis: [1, 0, 0] }, // not a number
+        { param: "missing", axis: [1, 0, 0] },
+        { param: "resolution", axis: [0, 0, 0] }, // no direction
+      ],
+    };
+    expect(handleSpecs(provider, { height: 1.5 })).toEqual([{ key: "height", label: "Slice height", axis: [0, 1, 0], value: 1.5, min: -10, max: 10, step: 0.05, integer: false }]);
+    expect(handleSpecs(provider, {})[0].value).toBe(0); // the default
+    expect(handleSpecs({ params: provider.params }, {})).toEqual([]);
+  });
   it("finds the provider by id", () => {
     const reg = { filter: (fn) => [SLICE, { id: "x" }].filter(fn) };
     expect(providerOf(reg, "slice-test")).toBe(SLICE);
@@ -94,6 +113,7 @@ describe("scene.handles: pure helpers", () => {
     const line = { base: [0, 0, 0], unit: [0, 1, 0], size: 1 };
     expect(dragValue(spec, line, { origin: [0, 0.43, 10], dir: [0, 0, -1] })).toBe(0.4);
     expect(dragValue(spec, line, { origin: [0, 7, 10], dir: [0, 0, -1] })).toBe(1);
+    expect(dragValue({ ...spec, min: 8, max: 160, step: undefined, integer: true }, line, { origin: [0, 9.6, 10], dir: [0, 0, -1] })).toBe(10);
     expect(dragValue(spec, line, { origin: [0, 0, 0], dir: [0, 1, 0] })).toBe(null); // along the line
     expect(dragValue(spec, line, null)).toBe(null);
   });
