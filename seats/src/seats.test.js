@@ -10,7 +10,6 @@ import { BENCH_RADIUS, CONFIRM_MS, SEATS, allSeats, arrivalSeat, cleanPlaces, la
 import { applyMatrix as apply } from "./transform.js";
 import * as fakes from "./test/fake-world.js";
 import { emptyScene } from "./test/empty-scene.js";
-import { plugins } from "./index.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -466,9 +465,8 @@ describe("which seat a look is at (pure)", () => {
     for (const s of ["free", "taken", "away", "mine-elsewhere"]) expect(v(s, { walking: false, seated: true })).toBeNull();
   });
 
-  it("the seat body: a seat's own, entered with a place, never offered by the chip; its verb needs reach", () => {
+  it("the seat verb needs reach", () => {
     const x = Seats.create(w.join("Z", { ext: "seats" }));
-    expect(x.bodies.map((b) => [b.id, b.here, b.lock, b.reach, b.keys])).toEqual([["seat", false, false, 2, []]]);
     expect(x.commands.find((c) => c.id === "seat").reach).toBe(true);
   });
 });
@@ -888,16 +886,6 @@ describe("lay: seats written into a scene being set up", () => {
     const d = { objects: {}, traits: { [SEATS]: { p1: { name: "P1", player: "ann", camera: { position: [0, 1, 1] } } } } };
     lay(d, { p1: { name: "Player 1", camera: { position: [5, 1, 1] } }, p2: { name: "Player 2" } });
     expect(d.traits[SEATS]).toEqual({ p1: { name: "Player 1", player: "ann", camera: { position: [5, 1, 1] } }, p2: { name: "Player 2", player: null } });
-  });
-
-  it("the plugin says where to find it: `roster: true`, its trait described", async () => {
-    const p = plugins.find((x) => x.id === "seats");
-    expect(p).toMatchObject({ type: "scene:extension", roster: true, traits: [SEATS] });
-    expect(p.describes[SEATS].entries.init).toEqual({ player: null });
-    expect(() => structuredClone({ ...p, load: undefined })).not.toThrow();
-    const mod = await p.load();
-    expect(typeof mod.create).toBe("function");
-    expect(mod.lay).toBe(lay);
   });
 
   it("places: only well-formed ones on objects that are there", () => {

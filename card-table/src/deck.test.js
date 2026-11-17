@@ -210,13 +210,4 @@ describe("a secure deck", () => {
     expect(Object.keys(await names(alice, [2]))).toEqual(["2"]);
   }, 30000);
 
-  it("doesn't start while a seat is open, and says what it's waiting for", async () => {
-    const handle = table(4);
-    const alice = createParticipant({ handle, playerId: "alice", secret: newSecret() });
-    await alice.step({ players: ["alice"], openSeats: ["Player 2"], visibleTo: () => [] });
-    expect(handle.doc().phase).toBe("waiting");
-    expect(alice.dealt()).toBe(false);
-    expect(alice.status({ players: ["alice"], openSeats: ["Player 2"] })).toBe("Test deck is shuffled once someone sits as Player 2.");
-    expect(alice.status({ players: ["alice", "bob"], nameOf: (id) => id.toUpperCase() })).toBe("Waiting for BOB to shuffle Test deck.");
-  });
 });

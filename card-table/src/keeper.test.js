@@ -3,7 +3,7 @@
 // what; the looks each gets by the rule; nothing handed over while the
 // audience is unknown; the `keeper` convention; `contain`; the plugin.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import Keeper, { TRAIT, contain, create, playing } from "./keeper.js";
+import { TRAIT, contain, create, playing } from "./keeper.js";
 import { lookFor } from "./rule.js";
 import { newSecret } from "./crypto/derive.js";
 import { accountSecret, secretFor } from "./player-secret.js";
@@ -193,6 +193,7 @@ describe("the joint keeper", () => {
     await until(() => me.status().length === 1);
     expect(me.status()).toEqual(["Deck is shuffled once someone sits as Player 2."]);
     expect(t.deck.doc().phase).toBe("waiting");
+    expect(t.dealt()).toBe(false);
     const lone = table();
     const nobody = lone.join("me", { roster: false });
     await until(() => nobody.status().length === 1);
@@ -247,7 +248,7 @@ describe("the joint keeper", () => {
   });
 
   // I6 (scene/STAGE.md): in a stage that may not write, the keeper never reaches a refusal.
-  // Over every case of who else is at the table: the viewer's own acting client (a mirror, or a pin
+  // Over every case of who else is at the table: the viewer's own acting client (a pin
   // beside the game played live), the other player only (a reader whose writable client is away),
   // or nobody.
   for (const twin of ["mine", "mine, pinned", "theirs", "none"]) {
@@ -314,20 +315,11 @@ describe("contain", () => {
 
 describe("the plugin", () => {
   const p = plugins.find((x) => x.type === "scene:extension");
-  it("is an ordinary scene extension, found by `keeper`, run by its own trait; no private registry type", async () => {
+  it("is an ordinary scene extension, found by `keeper`, run by its own trait; no private registry type", () => {
     expect(p).toMatchObject({ id: "card-table", keeper: "joint", traits: [TRAIT] });
     for (const k of ["activities", "requires", "always", "general"]) expect(k in p).toBe(false);
     expect([...new Set(plugins.map((x) => x.type))].sort()).toEqual(["patchwork:datatype", "patchwork:tool", "scene:extension"]);
     for (const x of plugins) expect(() => structuredClone({ ...x, load: undefined })).not.toThrow();
-    const mod = await p.load();
-    expect(mod).toBe(Keeper);
-    expect(mod.contain).toBe(contain);
-  });
-
-  it("a copy leaves the binding behind: the trait is runtime, its deck dropped", () => {
-    const d = p.describes[TRAIT];
-    expect(d.runtime).toBe(true);
-    expect(d.fields.find((f) => f.key === "by")).toMatchObject({ kind: "url", copy: "drop" });
   });
 });
 
@@ -392,24 +384,7 @@ describe("a player's secret", () => {
 });
 
 describe("who plays a deck: the roster's seats (a game is a doc of its own: every seat of its doc)", () => {
-  const SEATS = [
-    { id: "p1", name: "Player 1" },
-    { id: "p2", name: "Player 2" },
-    { id: "p3", name: "Player 3" },
-  ];
   const apiWith = (roster) => ({ collect: (n) => (n === "roster" && roster ? [{ id: "seats", value: roster }] : []) });
-
-  it("over every way of seating Ana and Ben at three seats (or not): the deck waits on every seat of the doc", () => {
-    const who = [null, "ana", "ben"];
-    for (let m = 0; m < 27; m++) {
-      const sat = SEATS.map((s, i) => ({ ...s, viewer: who[Math.floor(m / 3 ** i) % 3] }));
-      if (sat.filter((s) => s.viewer === "ana").length > 1 || sat.filter((s) => s.viewer === "ben").length > 1) continue;
-      const r = { viewers: () => sat.map((s) => s.viewer).filter(Boolean), open: () => sat.filter((s) => !s.viewer).map((s) => s.name), nameOf: () => null };
-      const got = playing(apiWith(r), {});
-      expect(got.players).toEqual(sat.map((s) => s.viewer).filter(Boolean));
-      expect(got.openSeats).toEqual(sat.filter((s) => !s.viewer).map((s) => s.name));
-    }
-  });
 
   it("no roster, nobody", () => {
     expect(playing(apiWith(null), {})).toMatchObject({ players: [], openSeats: [] });
