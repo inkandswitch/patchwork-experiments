@@ -778,6 +778,23 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   which hold her as scenery (ucluelet-check asserts "sloop floats").
   Ucluelet's 45 MB GLB costs a long Chrome-lock hold; that is scheduling
   for the integrator, not a question.
+- *Integrated 2026-11-17 (merge 4fe5aeab; decided unattended by the
+  integrator of lane/n6, for the lead).* Every one above is republished on
+  rig@4 and swapped in the folder (Ship at sea, Ship at anchor, Lost Cities
+  aboard with a new game G, the Quiet games room, Games night, N7's two
+  Arcade mashups, which link the room and Games night, Fitting out, the
+  Harbour, the Model room, the basin mashup, Cadboro Bay), **except
+  Ucluelet**: three runs of its publisher on the machine's GPU missed only
+  the home view's frame budget (24.1, 23.4, 24.5 ms against 22.7), every
+  view about 1.45 times its time of 2026-11-16 in proportion (the overview
+  26.9 to 42.9 ms), with other lanes' Chrome running. A cost added by
+  sailing's step would add a constant, not a proportion, so it reads as the
+  GPU shared, not as N6; that is not proved. Without the GPU its timing
+  never answers. It still holds her on rig@3, so she sails the plain path
+  there until a quiet machine republishes it. The same runs found its
+  harbour-mirror check reading the shore itself, since N8's bar starts the
+  canvas lower; its pixel strips are now carried to the canvas the page has
+  (terrain e2a45395).
 
 ## Trim feedback
 
