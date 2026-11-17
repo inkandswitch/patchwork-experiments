@@ -224,7 +224,7 @@ export function controlsOf(v, at, spec) {
 }
 
 /**
- * A state ready to step to sea time `t`: when it's further behind than one
+ * A state ready to step to world time `t`: when it's further behind than one
  * step catches up (MAX_SUBSTEPS: a stall, or frames too slow), the rest is
  * skipped, as the doc's clock (api.clock.t()) skips it, so she stays on the waves drawn.
  * @returns {[object, number]}  the state, and the dt to step it by
@@ -271,7 +271,7 @@ export function plainTransform(t) {
 
 /**
  * A ship's state from a pose ({ position, quaternion }) and a motion ({
- * velocity, spin }, world, or nothing: still), at sea time t.
+ * velocity, spin }, world, or nothing: still), at world time t.
  */
 export function stateOf(pose, motion, t) {
   return {

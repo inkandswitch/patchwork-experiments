@@ -26,7 +26,7 @@
 //   names the move and B leaves as a crew does (DESIGN.md, "Leaving the
 //   anchor"): the wheel to port, B backs the jib on the side opposite the
 //   bow its hint names, and she falls off that way past 45° within 30 s of
-//   sea time, one bounded step; B lets it fly; A finds the helm taken, B
+//   world time, one bounded step; B lets it fly; A finds the helm taken, B
 //   bears away onto a beam reach and she picks up speed; B lets go and A
 //   can take it;
 // - at the mainsheet in the cockpit B hauls in (hold Q), takes it (F) and
@@ -125,9 +125,9 @@ async function press(k, ms = 60) { await keyDown(k); await b.rest(ms); await key
 /**
  * A simple helmsman at B's wheel (B's view focused): steer `hull` onto the
  * compass course `want` (radians), holding A or D, until on course and
- * making `speed` for `settle` s of sea time, or `ms` pass. The wheel goes
+ * making `speed` for `settle` s of world time, or `ms` pass. The wheel goes
  * toward a little of the error, less her turn rate.
- * @returns {{ onCourse: number | null, reached: { sea, speed } | null, trace }}  sea times since the start
+ * @returns {{ onCourse: number | null, reached: { sea, speed } | null, trace }}  world times since the start
  */
 async function steer(ids, sim, want, { ms = 90_000, speed = 2, settle = 6 } = {}) {
   const sea0 = await P(`clock('${sim}')`);
@@ -263,7 +263,7 @@ try {
   check("exactly one view computes the ships, and the doc's clock claim names its session", simA !== simB && simClaim?.session === (simA ? sess.a : sess.b), { simA, simB, simClaim, sess });
   const SIM = simA ? "a" : "b", FOL = simA ? "b" : "a";
   report.measured.simulator = SIM;
-  // The anchoring's timeline (sea time, her pose and the simulator's read at each move), so a node harness can
+  // The anchoring's timeline (world time, her pose and the simulator's read at each move), so a node harness can
   // replay it (src/test/breakout.js; src/breakout.slow.test.js starts from these timings and positions).
   const anchoring = (report.measured.anchoring = { marks: {}, weigh: [] });
   const poseNow = async () => {
@@ -272,7 +272,7 @@ try {
     return { t: await P(`clock('${SIM}')`), at: [+m[12].toFixed(3), +m[14].toFixed(3)], compass: +((compassOf(m) * 180) / Math.PI).toFixed(2), speed: rd ? +rd.speed.toFixed(3) : null, awa: rd ? +((rd.apparentWind.angle * 180) / Math.PI).toFixed(2) : null };
   };
   const mark = async (name, extra = {}) => { anchoring.marks[name] = { ...(await poseNow()), ...extra }; await traceMark(name); };
-  // the clock: how fast sea time runs against the wall, and the follower's lag
+  // the clock: how fast world time runs against the wall, and the follower's lag
   const c0 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
   await b.advance(3000);
   const c1 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
@@ -501,7 +501,7 @@ try {
 
   // ─── leaving head to wind, as a crew does (DESIGN.md, "Leaving the anchor") ─
   // She lies near head to wind, where her rudder hardly bites. The tack chosen with the wheel (to
-  // port), B backs the jib, and her heading must swing past 45° within 30 s of sea time: one bounded
+  // port), B backs the jib, and her heading must swing past 45° within 30 s of world time: one bounded
   // step, reported whatever happens, nothing retried; then B lets it fly.
   const jibId = await P(`byName("Jib")`);
   // the main hoisted at anchor, she lies head to wind as it breaks out, as the HUD itself has it: its advice says
@@ -546,7 +546,7 @@ try {
   // port turns her bow to port first until the backed jib wins: sea 383967344 passes 45° in 18.9 s; the default
   // sea, in irons going astern, in 5.85 s (2026-11-16). From rest the stock rig does it in 6–10 s: stock-rig.test.js,
   // DESIGN.md "Leaving the anchor", which lists every sea measured.)
-  check("backed, she falls off the way the hint said: her heading swings past 45° that way within 30 s of sea time", headToWind && leave.past != null && Math.sign(leave.turned) === (leave.bow === "starboard" ? 1 : -1), leave);
+  check("backed, she falls off the way the hint said: her heading swings past 45° that way within 30 s of world time", headToWind && leave.past != null && Math.sign(leave.turned) === (leave.bow === "starboard" ? 1 : -1), leave);
   // the tack she's on: +1 the wind on her port side (her heading the wind's + 90°), −1 starboard
   const side = (await P(`read('${hull}', 'b')`)).apparentWind.angle < 0 ? 1 : -1;
   report.measured.tack = side > 0 ? "port" : "starboard";
@@ -575,7 +575,7 @@ try {
   const { onCourse, reached } = reach;
   report.measured.reach = reach.trace.filter((_, i) => i % 8 === 0);
   const rdB = await P(`read('${hull}', 'b')`), rdA = await P(`read('${hull}', 'a')`);
-  check("bearing away onto a beam reach she gains speed to 2–5 m/s within a minute of sea time", onCourse != null && !!reached && reached.sea - onCourse < 60 && rdB.speed > 2 && rdB.speed < 5, { onCourse, reached, speed: rdB?.speed });
+  check("bearing away onto a beam reach she gains speed to 2–5 m/s within a minute of world time", onCourse != null && !!reached && reached.sea - onCourse < 60 && rdB.speed > 2 && rdB.speed < 5, { onCourse, reached, speed: rdB?.speed });
   check("both views read the same speed and heading (the simulator's, through presence)", Math.abs(rdA.speed - rdB.speed) < 0.3 && Math.abs(wrap(rdA.heading - rdB.heading)) < 0.05, { a: rdA, b: rdB });
   // heel: + to starboard; leeward is starboard on starboard tack; averaged, as each wave rolls her
   const heels = [];

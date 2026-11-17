@@ -105,14 +105,17 @@ rigging is the rig's windage (its §3.13 elements, each pushed by the air
 where it is, §6.1); a boat without a contract gets the same rules applied
 to her box and mast. She flies its main and jib, each
 its own sail where the rig drew it, swinging about its luff with its sheet
-and its centre of effort with it (§6.6), a reef lowering the main's head; the
-physics can back the jib to get her out of irons, though no station
-works a contract boat's own jib (for now it's trimmed with the main;
-DESIGN.md, "The rig contract").
+and its centre of effort with it, a reef lowering the main's head. That
+swing is sailing's own: each sail by its own air and sheet, where the
+specification's §6.6 swings the set's CE by its trimmed sheets, so on a
+dead run the two still disagree (DESIGN.md, "The rig contract", Sails). The jib is worked at
+a jib winch (below) and can be backed to get her out of irons; a boat with
+no Jib piece flies it trimmed with the main.
 
 Sailing reads the contract (patchwork-rig v1) in full: every part its
-specification's §7 gives sailing's physics, windage included, and only in
-v1's current shape. A rig whose `extras.rig` predates the contract's windage
+specification's §7 gives sailing's physics, and the windage §7 still calls
+"not yet" (DESIGN.md, "What sailing reads of v1"), and only in v1's
+current shape. A rig whose `extras.rig` predates the contract's windage
 (a doc holding `sailing/rig@3`, or an older rig-aid export) isn't read: it
 sails the plain path until it is made again.
 
