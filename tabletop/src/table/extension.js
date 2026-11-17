@@ -21,8 +21,8 @@
 // domino in your rack, or out on the table, facing you) and Lay my hand face
 // up (everything in your hand, and anything standing facing it, out in front
 // of it for everyone) as verbs on the use prompt and the menu; a card
-// carried into your own hand turning face up, and a domino carried anywhere
-// lying down flat unless a rack's place stands it (carrying is the scene's,
+// carried into your own hand turning face up, and a domino carried out of a
+// hand lying down flat unless a rack's place stands it (carrying is the scene's,
 // by the `scene.carry` trait the table writes; `landing` here only answers);
 // where each seat's hands are,
 // for whoever shows seats (`seatPlaces`);
@@ -599,14 +599,19 @@ export default {
       // a card carried into your own hand turns face up for you
       // (the point is where it's seen: against the trays as drawn, which aboard a moving ship is
       // not where the doc last saved them; who may see it is still the doc's, visibility.js);
-      // a piece thick enough to stand (a domino) goes down lying flat, wherever it's carried: a
-      // place that stands it (a rack's, its connector's frame) stands it there, the stage's rule
+      // a piece thick enough to stand (a domino) taken out of a hand is being played: it goes
+      // down lying flat (a place that stands it, a rack's, stands it there: the stage's rule).
+      // Out of a hand only: one standing on the table in front of someone (no rack) is theirs
+      // alone (visibility.js facing), and carried it stays as it is, so moving it never shows it.
+      // Where it was taken from is where the doc has it: a carry writes only where it ends.
       landing(id, world) {
         if (!scene || !isCard(scene.objects[id])) return null;
-        const flat = canStand(bodyBox(scene, id)) ? { flat: true } : null;
+        regions ??= zones(scene);
+        const w = scene.world(id);
+        const played = canStand(bodyBox(scene, id)) && !!w && seatAt(scene, regions, [w[12], w[13], w[14]]) != null;
+        const flat = played ? { flat: true } : null;
         const mine = seatOf(seatsFrom(api, scene), viewer);
         if (!mine) return flat;
-        regions ??= zones(scene);
         const drawn = {
           toLocal: (zid, p) => {
             const m = api.worldOf?.(zid);

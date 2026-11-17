@@ -30,7 +30,9 @@
 //   it on edge, facing B, as Draw does;
 // - played without a rack: A carries a standing tile out of the rack onto
 //   the felt turning it over on the way (F: it lies face down, hidden), and
-//   stands it up there with U, facing A; B stands a boneyard tile up on the
+//   stands it up there with U, facing A, then carries it 4 cm along the felt
+//   and it goes down still standing (taken from no hand, nothing lays it
+//   flat, so B never sees its face); B stands a boneyard tile up on the
 //   table with U, facing B; each sees their own standing tile's face and the
 //   other's back, never a veil;
 // - nothing is duplicated or lost: both replicas have the same 28 tiles on
@@ -292,6 +294,17 @@ try {
   const dA = (await until(`where().stand.includes(${J(standA)})`, 5000)) ? await P(`faceDir(${J(standA)})`) : null;
   check("U stands it up on the felt where it lay, its face level and toward A", !!dA && dA[1] === 0 && dA[2] > 0.9, { dir: dA, where: await P("where()"), at: await P(`transform(${J(standA)})`) });
   check("…A still sees its face, B its back, no veil", await until(`faces('a').includes(${J(standA)}) && __p.backs('b').includes(${J(standA)}) && __p.veils('a').length === 0 && __p.veils('b').length === 0`, 20_000), { a: await P(`faces('a').includes(${J(standA)})`), b: await P(`backs('b').includes(${J(standA)})`), veilsA: await P("veils('a')"), veilsB: await P("veils('b')") });
+  // moved along the felt, out of no hand: it goes down as carried, still standing, never laid face up for B
+  check("A hovers it standing on the felt", !!(await hover(standA, "a")), await P("hovered('a')"));
+  {
+    const p0 = await P(`aimAt(${J(standA)}, 'a')`);
+    const at = (await P(`transform(${J(standA)})`)).position;
+    const p1 = await P(`pointAt(${J([at[0] + 0.04, 0.003, at[2]])}, 'a')`);
+    await b.drag([p0.x, p0.y], [p1.x, p1.y], { steps: 12, settle: 600 });
+  }
+  const dMoved = (await until(`where().stand.includes(${J(standA)})`, 5000)) ? await P(`faceDir(${J(standA)})`) : null;
+  check("A carries it 4 cm along the felt: it goes down still standing, facing A (taken from no hand, nothing lays it flat)", !!dMoved && dMoved[1] === 0 && dMoved[2] > 0.9, { dir: dMoved, where: await P("where()"), at: await P(`transform(${J(standA)})`) });
+  check("…B still sees only its back", await until(`faces('a').includes(${J(standA)}) && __p.backs('b').includes(${J(standA)})`, 20_000), { a: await P(`faces('a').includes(${J(standA)})`), b: await P(`backs('b').includes(${J(standA)})`) });
   const standB = (await P("where()")).down[0];
   // the prompt shows three verbs (the stage's cap): carry's Flip holds the tile as nearly as
   // the table does and runs first, so Flip, Draw and Wash; Stand on edge is U's, and the menu's
