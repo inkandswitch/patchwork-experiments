@@ -105,20 +105,23 @@ try {
   const viewers = await P("viewers");
 
   // ── A starts the table from the start screen ──
-  check("A's start screen offers Draw Dominoes for 2, 3 and 4", await until("['tabletop.dominoes-2', 'tabletop.dominoes-3', 'tabletop.dominoes-4'].every((t) => __p.templates('a').includes(t))", 20_000), await P("templates('a')"));
+  check("A's start screen offers one Draw Dominoes, for 2, 3 or 4 players", (await until("templates('a').includes('tabletop.dominoes')", 20_000)) && J(await P("paramOptions('a', 'tabletop.dominoes', 'players')")) === J(["2", "3", "4"]), { templates: await P("templates('a')"), players: await P("paramOptions('a', 'tabletop.dominoes', 'players')") });
   // (the start screen lays itself out as the view's panels arrive: click once the button has stopped moving)
   let btn = null;
   let made = false;
   for (let attempt = 0; attempt < 3 && !made; attempt++) {
-    await until(`templateAt('a', 'tabletop.dominoes-${PLAYERS}')`, 10_000);
+    await until(`templateAt('a', 'tabletop.dominoes')`, 10_000);
     for (let k = 0; k < 40; k++) {
-      const one = await P(`templateAt('a', 'tabletop.dominoes-${PLAYERS}')`);
+      const one = await P(`templateAt('a', 'tabletop.dominoes')`);
       await b.rest(250);
-      btn = await P(`templateAt('a', 'tabletop.dominoes-${PLAYERS}')`);
+      btn = await P(`templateAt('a', 'tabletop.dominoes')`);
       if (one && btn && one.x === btn.x && one.y === btn.y) break;
     }
+    // how many play: chosen in its form under the button, then the button
+    if (!(await P(`param('a', 'tabletop.dominoes', 'players', ${PLAYERS})`))) throw new Error(`the form has no ${PLAYERS} players`);
+    if (attempt === 0) await shot("start-screen");
     await b.click(btn.x, btn.y);
-    mark("clicked the template", { attempt, btn });
+    mark("clicked the template", { attempt, btn, players: PLAYERS });
     made = await until("census().a.n === 28", attempt < 2 ? 20_000 : 60_000);
   }
   if (!made) await shot("no-table");

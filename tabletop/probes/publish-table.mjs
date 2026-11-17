@@ -2,7 +2,7 @@
 // Two ways, the two ways a table is made:
 //
 //   node probes/publish-table.mjs [--sync wss://…] [--settle 8000] [--dry-run]
-//   node probes/publish-table.mjs --template lost-cities|santorini|dominoes-2 [--sync …] [--dry-run] [--show] [--shots <dir>]
+//   node probes/publish-table.mjs --template lost-cities|santorini|dominoes [--players 2|3|4] [--sync …] [--dry-run] [--show] [--shots <dir>]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -40,12 +40,16 @@
 // - nothing failed to load (in either view, once B is there), and the page
 //   logged no errors.
 // What differs between games is data (TABLES, below), not branches. Draw
-// Dominoes for two (dominoes-2) deals nothing (each player draws), so for it:
-// - the table lays 2 seats, and the boneyard's 28 tiles are kept by the
-//   joint keeper on 28 slots of one container;
-// - with A and B seated, the first joint shuffle reaches every tile (each
-//   shuffled exactly once, nothing under way) and nothing is dealt: no
-//   tile in a rack, no face to either player;
+// Dominoes is one template whose form says how many play (--players, 2 by
+// default: the start screen's form is set to it before the click). It
+// deals nothing (each player draws), so for it:
+// - the table lays a seat per player, and the boneyard's 28 tiles are kept
+//   by the joint keeper on 28 slots of one container;
+// - for two, with A and B seated, the first joint shuffle reaches every
+//   tile (each shuffled exactly once, nothing under way) and nothing is
+//   dealt: no tile in a rack, no face to either player; for more, with
+//   only A and B seated the shuffle waits for every seat, so nothing is
+//   shuffled or dealt;
 // - neither view veils a tile: all 28 are backs to both.
 // Then (unless --dry-run) it publishes the table as the template left it
 // (before anyone sat): its files, its deck and the scene, each made anew on
@@ -96,7 +100,7 @@ const args = Object.fromEntries(
 );
 // It publishes by default, so a flag it doesn't know (--help, a typo of
 // --dry-run) stops it here, before any repo exists, with the usage above.
-const KNOWN = new Set(["sync", "settle", "dry-run", "template", "show", "shots"]);
+const KNOWN = new Set(["sync", "settle", "dry-run", "template", "players", "show", "shots"]);
 const unknown = Object.keys(args).filter((k) => !KNOWN.has(k));
 const stray = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--") && args[all[i - 1].slice(2)] === a));
 if (unknown.length || stray.length) {
@@ -110,6 +114,7 @@ const DRY = !!args["dry-run"];
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 
 const TEMPLATE = typeof args.template === "string" ? args.template : null;
+const PLAYERS = Number(args.players ?? 2);
 
 // What each template's table must be, for --template's checks:
 //   seats  how many seats it lays (A and B sit in the first two)
@@ -120,13 +125,18 @@ const TEMPLATE = typeof args.template === "string" ? args.template : null;
 //          neither view may veil one
 //   hand   how many faces reach each player once both sit (0: nothing is
 //          dealt, and no piece lies in a hand)
+//   params what the template's form is set to before the click
 const TABLES = {
   "lost-cities": { seats: 2, deck: "deck", piece: "card", count: null, hand: 8 },
   santorini: { seats: 3 },
-  "dominoes-2": { seats: 2, deck: "boneyard", piece: "tile", count: 28, hand: 0 },
+  dominoes: { seats: PLAYERS, deck: "boneyard", piece: "tile", count: 28, hand: 0, params: { players: PLAYERS } },
 };
 if (TEMPLATE && !TABLES[TEMPLATE]) {
   console.error(`no template ${JSON.stringify(TEMPLATE)}: one of ${Object.keys(TABLES).join(", ")}`);
+  process.exit(2);
+}
+if (args.players != null && (TEMPLATE !== "dominoes" || ![2, 3, 4].includes(PLAYERS))) {
+  console.error("--players is Draw Dominoes' (--template dominoes): 2, 3 or 4");
   process.exit(2);
 }
 
@@ -278,7 +288,7 @@ async function fromTemplate(gameId) {
     }
   }
   const folderOf = (url) => Object.keys(urls).find((dir) => urls[dir] === url) ?? url;
-  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}&urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
+  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}&params=${encodeURIComponent(JSON.stringify(TABLES[gameId].params ?? {}))}&urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
   // b.stop() exits the process; this keeps it alive until the publish is done
   const done = (code) => b.stop(code);
   const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -343,8 +353,15 @@ async function fromTemplate(gameId) {
       await P(`pick('b', ${JSON.stringify(seated[1])})`);
       const viewers = await P("viewers");
       check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
+      // a table whose players shuffle between them, with seats left empty: the shuffle waits for every seat
+      if (deck && seats > 2) {
+        await b.rest(3000);
+        const where = await P("where()");
+        const inHands = Object.entries(where).filter(([at]) => at !== "table").reduce((n, [, ids]) => n + ids.length, 0);
+        check(`with 2 of ${seats} seated the first shuffle waits for every seat: not playing, nothing dealt, no face to either player`, (await P("phase()")) !== "playing" && inHands === 0 && (await P("faces('a')")).length === 0 && (await P("faces('b')")).length === 0, { phase: await P("phase()"), shuffle: await P("shuffle()"), inHands });
+      }
       // a table with a deck: its first shuffle, and what reaches each hand
-      if (deck) {
+      else if (deck) {
         // the first shuffle, done: every counted piece shuffled exactly once, by every seat, nothing under way
         const shuffled = count == null ? "true" : `((s) => !!s && s.phase === 'playing' && s.op === null && s.queue === 0 && s.participants === ${seats} && s.epochs.length === ${count} && s.epochs.every((e) => e === 1))(__p.shuffle())`;
         const playing = await until(`phase() === 'playing' && ${shuffled} && __p.faces('a').length === ${hand} && __p.faces('b').length === ${hand}`, 120_000);
