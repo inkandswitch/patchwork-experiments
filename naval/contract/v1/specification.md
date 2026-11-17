@@ -693,9 +693,10 @@ agreement test doesn't use it.
 
 - **Sailing's physics**: `frame` (to put the rig on the hull and convert to
   its own frame), `loading` (mass, CG, gyradii, crew and the righting
-  curve), `appendages`, `sails`, `sailModel`, `sets`, `windage` (not yet:
-  sailing applies its own windage rule today, and the naval package's
-  `src/sailing-agreement.test.js` measures the difference), `hull` (its
+  curve), `appendages`, `sails`, `sailModel`, `sets`, `windage` (its §3.13
+  elements, by §6.1's force law, since sailing's N6, 2026-11-17; the naval
+  package's `src/sailing-agreement.test.js` still pins figures sailing
+  measured under its earlier rule of its own), `hull` (its
   particulars, to float her on the hull the contract describes when her
   drawn hull isn't it, and `hull.sideForce`), `resistance`, `lumpedSail`
   (§6.8), and `source.hull` (to warn when the rig is on another

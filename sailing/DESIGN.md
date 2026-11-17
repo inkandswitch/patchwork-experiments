@@ -2,8 +2,8 @@
 
 A water body (the water package's `water` object trait) becomes a sea when
 it carries the `sailing.sea` trait, a scene has wind and sky when it carries
-`sailing.weather`, and an object becomes a ship when it carries
-`sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
+the weather package's `weather` (weather/WEATHER.md), and an object becomes
+a ship when it carries `sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
 attached under the ship (stations, the mast, the sail) and contributions from
 this package and the scene's shared parts. The requirements are use case 4
 in [../scene/DESIGN.md](../scene/DESIGN.md) and section 9 of
@@ -25,36 +25,34 @@ modules share.
   *from*, in degrees, measured from −Z (north) toward +X (east), as sailors
   say it. A wind "from 0" blows toward +Z. Velocities in code are vectors.
 - **Densities:** water 1025 kg/m³, air 1.225 kg/m³.
-- **The `wind` ambient** (scene/STAGE.md, "Conventions", names it; this
-  package's sea offers it). How the world's air moves:
-  `{ speed, from, seed, gustiness }`, speed in m/s at 10 m, `from` the
-  compass bearing it blows from in degrees (as above: 0 from −Z, 90 from
-  +X), in the outermost doc's root frame on its world time; `seed` and
-  `gustiness` (0..1) make its gusts (`wind.js`). Two readers: this
-  package's physics, which makes it a wind in each stage's frame
-  (`sea-view.js`), and the water package's surface, whose fine waves,
-  roughness and foam follow it. One copy: nothing else carries it.
+- **The `wind` ambient** is the weather package's: it offers it from the
+  outermost doc's `weather` trait, and documents its value
+  (weather/WEATHER.md, "What it offers"; scene/STAGE.md, "Conventions",
+  points there). Sailing offers no ambient. It reads the wind twice: its
+  physics makes it a wind in each stage's frame (`sea-view.js`, by
+  `wind.js`: `seed` and `gustiness` make its gusts), and every sea builds
+  its waves from it (`sea.js`). Its `from` is the compass convention above.
 
 ## Modules (sailing/src)
 
 | Module | Pure? | What it is |
 |---|---|---|
 | `ocean.js` | yes | The sea's spectrum: a wind-driven directional wave spectrum sampled into Gerstner components (`seaWaves`), plain data. The water package evaluates them, for the shader and for physics and walking (`heightAt`, `normalAt`, `velocityAt`), so what floats is what you see. Sailing keeps no evaluator: its tests' fakes use a copy of water's (`test/surface.js`), pinned by the golden file |
-| `weather.js` | yes but for create() | The weather, its own scene:extension on the scene trait `sailing.weather`: it offers the ambients `wind` (read by every boat's physics, by every sea for its waves and by the water package's surface) and `atmosphere` |
 | `sea.js` | yes but for create() | The sea, its own scene:extension on the object trait `sailing.sea`, a behaviour on a water body: for each object with both the sea and the water package's `water`, it builds the spectrum's components from the world's `wind` ambient in its stage's frame and gives them, with what only it knows of them (seed, stats), away as `water.waves` keyed by body (the water package's convention); on a new wind (by value) it asks for one more flush; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surfaces (the open grid round the camera, a bounded body's patch, the Gerstner shader) are the water package's `material.js` |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
-| `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
+| `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds, and the wind on her hull, mast and rigging, each a windage element of her contract's (§3.13) or of `plainWindage`'s, in its own air (§6.1, windage.js `elementForce`). `step(state, controls, env, dt)` |
 | `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder, companionway and its hatch; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, mainsheet, jib winches, companionway, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the weather and a Sea (a water object with a sea on it, first in the order: `bringSea`; its `clip` the box of her layout, `seaClip`: her swing circle or start and the landmarks, 10 m to spare, centred and turned with the layout, so in a world with no open water she floats on a block of her own sea: water/WATER.md, "Clipped open water"), the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
-| `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
-| `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@3` GLB): the 12 m fixture's hull, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`). See "Trim feedback" |
+| `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), §3.13's elements in her body frame (`windageInBody`: a contract's, and the plain path's), the hull it was designed on checked (`checkSource`) |
+| `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@4` GLB): the 12 m fixture's hull, its windage element, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig and its windage computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`, `windageOf`, `rm30Of`). See "Trim feedback" |
+| `windage.js` | yes | §3.13's windage elements and §6.1's force on one (`hullElement`, `rigElements`, `planOf`, `contractElement`, `elementForce`, the one force law physics.js flies): naval's `naval/windage.js` rules, copied (its header says what differs) |
 | `resistance.js` | yes | A rig contract's resistance table (§6.5) unpacked for the 120 Hz loop: the canoe body's R(V, φ) with its planing blend, the planing weight, and the induced drag's effective draft (`contractResistance`) |
 | `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame), its clock `api.clock.t`. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
+| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame). It has no clock: its time is the doc's world time, `api.clock.t()`, which each reader asks itself. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
@@ -63,8 +61,8 @@ modules share.
 | `navcheck.js` | yes | Checking a bake: the oracle on the raw triangles, the bake properties B1–B7, the static checks C1–C9 |
 | `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
 | `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
-| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions) |
-| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`) |
+| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
+| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the hint is only "Click her to come aboard", beside the dial, while a click does (near, not seated) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
@@ -77,7 +75,12 @@ every sea exercises the leave step: it is gated on the HUD saying to back
 the jib, and on some seas the anchor breaks out with her well off the
 wind, so the step reports itself not exercised. Which seas, and why that
 is an open defect in her physics rather than a property of the probe, is
-under "Leaving the anchor". `probes/camber-run.mjs` takes a
+under "Leaving the anchor" (the probe records its anchoring timeline,
+`measured.anchoring`, which `src/test/breakout.js` replays in node). With
+`--trace <file>` it also writes every step of world time the computing
+view took, as taken, and `probes/trace-diff.mjs` names the first step two
+runs differ at ("Determinism": runs of one seed and sea are identical, step
+for step, through the leave step). `probes/camber-run.mjs` takes a
 hull drawn in camber (its built plugins, borrowed at dev time) from a bare
 sea to sailing: the Ship trait with her frame from her GLB, the parts
 dragged from the bin onto her deck, floating, sailing bow first, stood on
@@ -238,7 +241,34 @@ plain path (`specFor`: her box, her `extras.ship` and the rig's
 one on her rig's GLB ("Trim feedback" item 1). Two live cases sail the
 plain path: a rig file with no `extras.rig`, and the stock rig on any hull
 but her own (camber's), where her contract isn't taken.
-`stock-rig.test.js` pins the plain spec key for key for both.
+`stock-rig.test.js` pins the plain spec key for key for both. A contract
+is read (`rigContract`) only in v1's current shape: with its frame matrix,
+mass, hull and the windage elements the schema requires (§3.13). Any
+`extras.rig` stated before v1 had windage (naval 01b9b8cb) is not read and
+sails the plain path until it is restated: no back-compat. That is every
+doc holding `sailing/rig@3`, and any rig-aid GLB exported before then. Not
+read means not read anywhere: the physics, and the contract sails' trim
+models the HUD, the looks and the jib station read (`sim.sailModels`), all
+go through the same gate (`body.js` `rigContractOf`, `contractOn`).
+
+**What sailing reads of v1: all of it that §7 gives its physics.** §7's
+list is the one list; two things differ from it. `windage` is read: §7
+still says "not yet" (written before N6), but since N6 (2026-11-16)
+sailing's rule of its own is gone, and §3.13's elements, each pushed by its
+own air as §6.1 says, are sailing's windage ("Windage" below; a ship
+without a contract has the elements stated from her box). And of fit-out's
+parts, which §7 says only `loading.crew.stations` of is read, sailing also
+reads `hardpoints`, to draw the sheets. The stock sloop's contract is on
+`sailing/rig@4` (parts.js `VERSIONS`), the first to state windage.
+
+The copies (`test/rig-contract/`: naval's schema, validator, `compose.js`
+and five valid fixtures; `windage.js`: naval's windage rules) are copies,
+never links. `windage.test.js` holds each copied file to its sha256 and
+`windage.js` to what naval states with its rules (every fixture's
+elements and mast sections, and compose's §6.1 windage force over a finite
+table of states), so an edit to a copy shows. A change in naval doesn't,
+since sailing stands alone: to take a newer contract, re-copy them all and
+rewrite that table.
 
 - **Frame.** The contract is x forward, y port, z up, the design
   waterplane at z = 0; the body is (−y, z, −x) of it. `frame.glbToFrame`
@@ -252,8 +282,8 @@ but her own (camber's), where her contract isn't taken.
   box): the box her columns are built over is her waterline's length
   (between its ends), her overall beam, from the deepest foil to the sheer;
   her mass is the contract's roll-up, her CG's height its `cgM`, her sail
-  its lumped sail (§6.8: what places the mast's windage and the wind she
-  reads; her sails are flown separately, below), her keel and rudder the contract's areas at their
+  its lumped sail (§6.8: what places the wind she reads; her sails are
+  flown separately, below, and her windage is the contract's elements), her keel and rudder the contract's areas at their
   MAC quarter chords, the rudder's travel its `maxDeg`. `spec.rig` is the whole contract in her body frame
   (`bodyRig`: points converted, lengths ×k, areas ×k², masses and volumes
   ×k³ at her hull object's scale k; coefficient and force tables by
@@ -426,11 +456,19 @@ but her own (camber's), where her contract isn't taken.
     kept); with none given, the contract's furl, or more as the main comes
     down (1 − sail), so lowering the sail stows both.
   - Each sail swings about its luff (tack to head: the head stays on the
-    mast or the stay), and its CE with it. That is a moment §6.6 doesn't
-    have: eased right out, the main's drive acts to leeward of the
-    centreplane and turns her to windward (on the Laser's dead run, 0.9 m
-    out, a yaw residual of 1.08 tolerances at 16 kn; on her reaches and runs
-    at 20 kn, up to 1.6).
+    mast or the stay), and its CE with it: eased right out, the main's
+    drive acts to leeward of the centreplane and turns her to windward.
+    Since naval's 01b9b8cb, §6.6 swings the set's CE too ("The set's CE,
+    swung"), but by a different rule: every sail by the set's trimmed
+    sheeting angle at |β_e| (`trimmed.sheetsDeg`), area-weighted, where
+    sailing swings each sail by where its own air and sheet put it (the
+    agreement harness setting each sheet to the point's). The two rules
+    disagree on the Laser's dead run, and by more than before §6.6 swung at
+    all: then sailing gave more weather helm than predicted (yaw 1.08
+    tolerances at 16 kn, up to 1.6 at 20 kn); now it gives 2.4–4.2° less,
+    all seven 180° points fail, worst yaw −2.93 tolerances at 20 kn
+    (KNOWN_GAPS laser-ilca7, below). Open: which rule's swung CE at 85° is
+    the boat's.
   - In irons, head to wind from rest in 12 kn, with the jib backed to
     starboard and the rudder over to bear her away to port, the sloop falls
     off past 60° in 12.5 s, the J/24 in 6.1 s, the Catalina in 7.5 s,
@@ -448,6 +486,30 @@ but her own (camber's), where her contract isn't taken.
   - A contract without sails flies its lumped sail on the stock boom.
   - The sim's input has the jib's controls: `controlsOf` reads the Jib
     piece's value (`v.jib`: sheet, held, furl) as jibSheet, jibHeld and furl.
+- **Windage** (§3.13, §6.1; one loop in physics.js over `spec.rig.windage`,
+  `bodyRig`'s elements by `windageInBody`: areas ×k², centres ×k, each
+  through windage.js `elementForce`, the one force law). Each element is in the air
+  at its own centre: the true wind (sampled once, at the mast, as the sail
+  reads it) less her motion there, her rotation included. Her heel lifts
+  the centre `zPerSinHeelM`·|sin φ| up the mast. In her heeled sail plane
+  the air's components square to her centreplane (ux) and along it (uz)
+  are §6.1's AWS_e·sin β_e and AWS_e·cos β_e, so §6.1's two resolutions
+  are, with q in ½ρ·u² (ρ the contract's `rhoAirKgM3`, which her sails
+  use too):
+  - a body (the hull), in cross flow: along her ½ρ·Cd_f·A_f·uz|uz|, across
+    her ½ρ·Cd_s·(A_s + `sidePerSinHeelM2`·|sin φ|)·ux|ux|;
+  - a spar (the mast beside the main, the bare mast, the rigging), drag
+    along the air: D = ½ρ·A·(Cd_f·uz² + Cd_s·ux²), along (ux, uz)/|u|.
+  That is compose's `windageAt` at every predicted point to rounding
+  (windage.test.js: surge, sway, roll and yaw about her CG, to 1e-6 of her
+  weight), and physics.test.js holds each kind of element (and a body with
+  two Cds in thinner air) to the formulas at β_e 0–180° and −90°, upright
+  and heeled 15° either way, at k 1 and ½, and turning in still air. A
+  ship with no contract (the plain path) flies the same loop over
+  `windageInBody(plainWindage(spec))` (hull-model.js): the same rules on
+  what she knows (her box and her lumped sail's mast, each on its own
+  fore-and-aft plane), stated as a contract states them, no rigging
+  element. There is no other windage rule.
 - **Wrench.** `ship.wrench(pose, motion, controls, env)` is the sum of
   forces and moments `step` integrates (gravity, buoyancy, resistance,
   foils, sails, windage, anchor), at a state, about her CG, with the boom
@@ -475,28 +537,261 @@ but her own (camber's), where her contract isn't taken.
   0.005 m/s and 0.05° of the 15 s before) and average its speed ±10%, heel
   ±2°, leeway ±1.5°, rudder on the same side. Her crew are all the way out
   at a heeled point; at an upright one roll passes if somewhere between in
-  and out they hold her there. The 12 m sloop and the Catalina 30 pass at
-  every point, and they and the J/24 settle within every tolerance. The
-  Laser settles 2.1° short of her heel and cuvature 16.4% slow (3.24 m/s
-  against 3.88), both by windage: cuvature's is 395 N, a quarter of her
-  drive at 12 kn 45°, and without it she settles 0.8% slow. What still
-  fails is listed in `KNOWN_GAPS`
-  point by point with its measured values, each held to them, so the list
-  moves when the physics does: windage, which §6.1 leaves out and sailing
-  doesn't (all of the Laser's surge, sway and roll failures; less windage,
-  every fixture's surge residual is within 0.07 of its tolerance),
-  cuvature's stand-in hull's righting moment, one J/24 point where her
-  righting curve is near flat (14 kn 52°, 2.2° less heel), and the Laser's
-  main's CE swung out on reaches and runs (weather helm 1.5–2.2° more than
-  predicted running, yaw past tolerance from 90° at 16 kn and up, planing
-  points included). The report beside it gives each fixture's residual at
-  the reference point and how much of it is windage. Each
+  and out they hold her there. Since naval's 01b9b8cb and 7d473f91 the
+  fixtures' predictions include §3.13's windage and each sail's CE swung
+  to its sheet (§6.6), and sailing's physics reads the same windage (see
+  "Windage" above), so at every predicted point her windage is compose's
+  to rounding (`windage.test.js`). Measured on 2026-11-16, the sloop and
+  the Catalina balance at every point, and every fixture settles within
+  every tolerance but the J/24's leeway (7.4° against 9.0°: not windage,
+  which agrees; part is settle reading leeway in her heeled body frame); the sloop settles 0.8% slow (3.402 against 3.430 m/s),
+  cuvature at 3.276 against 3.268. What still fails is listed in
+  `KNOWN_GAPS` point by point with its measured values, each held to them,
+  so the list moves when the physics does: cuvature's stand-in hull's
+  righting moment (17 points from 14 kn), the J/24's heel by her 25°
+  limit (every wrench passes, but where her curve is flat a small roll
+  residual reads as 2–4.5° less heel: 20 points), and the Laser dead
+  downwind (both swing the main's CE, and sailing's turns her bow up
+  2.4–4.2° of helm less than §6.6's: open). The report beside it gives
+  each fixture's residual at the reference point and its windage, sailing's
+  beside compose's. Each
   mechanism also has its own finite cases: `foils-mass-crew.test.js` (item
   9), `hull-resistance.test.js` (her hull, resistance, planing, side force
   and induced drag, and one seeded sea run as a guard), `sails-jib.test.js`
   (item 11: the coefficients, the sets' trimmed tables through the wrench,
   each sail at its own CE and in its own air, the jib's swing, sheet and
   lead, backing and goose-winging, furling, reefing's CE, and irons).
+
+### Decisions (N6)
+
+Each decided unattended (2026-11-16, lane/n6), for the lead:
+- *`windage.js` is naval's rules, copied, with three seams.* Its builder
+  is split into `hullElement` and `rigElements`, and `rigElements` takes the
+  mast's width where naval works it out from the mast's length (`planOf`
+  reads its plan off a contract's rig and sails): the stock sloop keeps the
+  fixture's hull element and states only her rig's, at her drawn 0.19 m
+  section (`rig.mast.sectionM`), not `mastSection(14)` (0.087 m). For
+  naval's contracts the result is the same, since each states
+  `sectionM = mastSection(lengthM)` (windage.test.js checks it). And
+  `elementForce` reads a contract element and takes the air as its two
+  components in her heeled sail plane and the heel's sine as given, the
+  form physics.js has them in; it is the one force law (physics.js calls
+  it, no copy inline), held to compose's `windageAt` element by element.
+- *The stock hull's windage element is the fixture's*, as her canoe body
+  is, not §3.13's rule on her drawn sheer (her drawn hull isn't the one she
+  floats on: "Which hull").
+- *RM30 for her rigging* is the kept righting curve's (boat + crew at 30°,
+  the curve she sails on: `rm30Of`, which equals each fixture's own
+  `loads.rm30Nm`), over her drawn chainplates' half-breadth, as naval's
+  loads use the chainplate base; `loads` stays null. **Question for the
+  lead:** her rigging element's d (9.1 mm) then comes from an RM30 and a
+  chainplate base the contract doesn't state, where in naval's contracts
+  it traces to `loads.rm30Nm` and `loads.chainplateBaseM`. The schema
+  allows a partial `loads` (those two, the rest null), which would make
+  the stock contract self-consistent; fit-out reads `loads`, so that is
+  left to you.
+- *The contract sails' trim models go through the same gate as the
+  physics* (`sim.sailModels` reads `rigContractOf`, not the GLB's
+  `extras.rig.sails`): a rig her physics sails plain (a pre-windage
+  contract, or the stock rig on a camber hull) gives the HUD, the looks
+  and the jib station no contract sails' thresholds, as it gives her
+  physics none.
+- *`rigContract` requires `windage.elements`* (an array: the schema
+  requires it). Any `extras.rig` stated before naval's windage (every doc
+  filed with `rig@3`) sails the plain path until it is restated; no shim.
+- *The agreement harness reads compose's water side force (`hydroAt`) on
+  the contract with its windage elements taken off* (`windageless`): L is
+  read off compose's sway equation, whose air heeling force now includes
+  the elements', which `breakdown`'s §6.3 reading of the sails alone
+  doesn't hold. Without it the water check failed by 2–4% at every
+  reference point though no water force had changed.
+- *KNOWN_GAPS were re-measured, not re-tuned*, twice: once when the
+  predictions moved (naval's windage and swung CE) and sailing's physics
+  didn't (the sloop and the Catalina were listed), and again when the
+  physics read §3.13's windage (they balance again and list nothing;
+  agreement.slow.test.js's header has the numbers).
+- *One windage rule: the plain path's elements are §3.13's too.* A ship
+  without a contract (a rig file with no `extras.rig`, the stock rig on a
+  camber hull) used sailing's own rule (topsides 0.7·L·f and 0.7·B·f at
+  Cd 1, the mast 0.15·luff at the lumped sail's mast point). It is deleted;
+  `plainWindage` (hull-model.js, beside the box it reads; not in the
+  copied windage.js) states the elements, in the contract's frame, from
+  her box (LOA her length, beam,
+  FBAV her freeboard: the sheer is level) and her lumped mast, from the
+  deck to the head of the lumped sail, beside the sail from its tack
+  (taken as a main's luff: BAS the tack's height over the deck) and bare
+  below, its width `mastSection` of the mast's length above the deck (naval's
+  rule takes the mast's length; the plan said the luff, a few mm less for
+  the stock sloop). No rigging element: she states no I and no RM30.
+  physics.js takes them into her body by `windageInBody`, as `bodyRig`
+  takes a contract's, so there is one converter. camber-run (the stock
+  rig on a camber hull, the plain path) moved with it, measured on
+  2026-11-16: over the ground 0.96 → 0.98 m/s, read speed 1.01 → 1.05
+  m/s, heel −2.08° → −1.97°, leeway 12.47° → 11.9°.
+- *|sin φ|.* §3.13 states the heeled terms (`sidePerSinHeelM2`,
+  `zPerSinHeelM`) for heel to leeward (compose's φ ≥ 0). The sim heels
+  either way, so it applies them by |sin φ|: whichever side is down, more
+  of her side is in the wind and its centre is higher (heeled to windward,
+  that is the moment bringing her back up). physics.js takes |sin φ| in
+  one place and hands it to `elementForce` and the centre's lift alike;
+  physics.test.js's φ = −15° rows pin it. A question if you'd rather apply
+  them only to leeward (those rows are what would change).
+- *The wind on the elements is sampled once, at the mast,* as the sails'
+  is, and each element's air is that wind less her motion at its centre;
+  a wind field that changes across her length isn't resolved per element.
+  The elements and the lumped sail use the contract's
+  `sailModel.rhoAirKgM3` (1.225 in every fixture), the plain path
+  physics.js's RHO_AIR (the same): one air density per ship.
+- *The windage elements are fixed per rig,* as §3.13 states them and
+  compose flies them: the mast beside the main is the 0.4/0.6 element
+  even with the main lowered at anchor, and the plain path always takes
+  her lumped sail as set. That agrees with compose by construction, and it
+  shapes how she lies at anchor and breaks out ("Leaving the anchor"). A question
+  if you'd rather the mast go bare (Cd 0.8) with the main down; §3.13
+  states no such rule.
+- *The agreement harness measures §6.1's windage from compose alone*
+  (`composeWindage`): compose with the elements less without them gives
+  Σfx, Σfh·cos φ, Σfh·(z − zY) and the yaw about x = 0; compose with every
+  element lowered to the waterplane (the same forces) gives −zY·Σfh, so
+  Σfh·z needs no reading of compose's internals; both moments are then
+  taken to her CG. Sailing's (`sailingWindage`) is her wrench in the
+  point's wind less in air moving with her, sails stowed.
+- *`ctx.sea` has no clock.* It had `clock: () => api.clock.t()`, the same
+  function under a second name: a seam, not a source of run-to-run
+  divergence. Every reader (the crew's swimmer, the HUD's wind, the looks'
+  bobbing and flutter) asks `api.clock.t()` itself, with no fallback for a
+  missing clock (the HUD's and the crew's `?? 0` are gone: a stage always
+  has one). `ctx.sea` is exactly `{ oceanAt, wind, world, tick }`. That
+  no reader has a fallback is shown by behaviour, whatever its spelling:
+  each reader's table runs it on a stage clock broken three ways (none, no
+  `t`, a `t` that throws; test/fakes.js `brokenClocks`), and each time the
+  read throws and the sea or wind is asked at no time. A test also reads
+  every .js/.mjs/.html file of the package (source, tests, probes, itself
+  but for its two pattern lines) for a clock read off the sea (`.clock`,
+  `["clock"]`, destructured) and the spelled defaults `api.clock?.`,
+  `clock.t?.(`, `clock.t() ??` and `clock.t() ||` (sea-view.test.js, "the
+  sea's time is api.clock.t()"): a net for spellings, so a fake can't
+  bring the seam back. The probe pages' `clock(w)` reads the sailing
+  extension's own `api.clock.t()`. water/WATER.md's "`ctx.sea.clock` is
+  `api.clock.t`" (line 351) and its list of ctx.sea's members with `clock`
+  (line 106) were stale; the integrator corrected both (2026-11-17, merge
+  of lane/n6).
+- *Leaving the anchor: diagnosed, not fixed; stopped for the lead.* The
+  physics doesn't give the step's claim, and every fix measured is a
+  choice of the lead's ("Leaving the anchor", Open, with its questions), so
+  the physics, stations, HUD and probe gate are as they were. What the
+  step adds: the probe records its anchoring timeline
+  (`measured.anchoring`), a node replay of it (`src/test/breakout.js`, with
+  `sim.stepped`'s spec, the spec her physics steps with), and the diagnosis pinned
+  as verdict-only OPEN ratchets (`src/breakout.slow.test.js`). The
+  candidate fixes are scratch patches outside the tree:
+  `/Users/pvh/.claude/projects/-Users-pvh-dev-patchwork-base/5cc6c087-e4f2-4927-93fb-4f98c0b7eab2/recovered/loose/n6-step4-candidate-set-anchor-windlass.patch` (a set anchor and a
+  bounded windlass), `n6-step4-heave-hybrid.patch` and
+  `n6-step4-heave-world-vertical.patch` (the two heave switches), beside it.
+- *Run-to-run divergence: three causes, two of them sailing's, fixed where
+  they were* ("Determinism"). (1) A held station moves by the world time
+  it's held, `api.clock.t()`, counted in whole steps of the world's grid
+  (`worldSteps`: the grid points t crossed since the last frame, each
+  STEP_S; scene's STEP_S and gridIndex copied, as a package stands alone),
+  for every held verb and the wheel. They integrated the frame's dt, whose
+  last bits depend on how far the page's clock had run; t's last bits do
+  too, but not which grid points it has crossed. What it means: a held key
+  moves nothing while the world is paused (no world time passes), on a
+  follower it moves with the follower's t, and at a display faster than
+  60 Hz a key moves on the frames where t crosses a grid point, not on
+  every frame (the physics reads it once a step anyway). Whether a held
+  key should work while the world is paused is the lead's (a question,
+  below). (2) `ctx.sea.wind` is the wind ambient's as it is when read,
+  made again only when the ambient's value or the frame's numbers changed
+  (it was refreshed in the frame's tick, which comes after the frame's
+  steps, so a step could read the last value's wind). (3) The probe's: the
+  runner waits, in paused frames, until both views read the seeds it wrote
+  before it resumes the world, and its keys wait until the page has seen
+  them (a key it never sees in 1 s is an error). The scene's flush budget,
+  which made (3) a race, is the scene's and is left as it is; whether it
+  should be deterministic is a question for the lead (below, and
+  FOLLOWUPS).
+- *Question for the lead: held keys while the world is paused.* A held
+  key now moves only while world time passes, so with the world paused the
+  halyard, the sheets, the windlass and the wheel don't move however long
+  the key is held (and a key let go commits where it was). Before step 5
+  they moved on the page's frames, paused or not. Is a paused world one
+  where the crew can still work the ship (then the verbs need a clock of
+  their own, and determinism needs another answer), or a frozen one, as
+  now?
+- *Question for the lead (scene's): which frame a doc change reaches the
+  extensions in.* A change reaches a stage's extensions at once only while
+  fewer than `UI_PASSES` passes have run since its last frame (scene
+  `stage.js` `requestFlush`), and how many have run is the wall's, so the
+  frame an edit lands in differs from run to run. In play a frame late is
+  harmless; for a world that must repeat (the probe, and the queued
+  Croquet-without-a-reflector work) it is a source of divergence the probe
+  now has to wait out. Should the scene deliver doc changes on a frame
+  that doesn't depend on the wall?
+- *The trace and `ctx.sim.stepped`.* `stepped(id)` is a read of her
+  latest step of world time as taken (`{ spec, key, controls, from,
+  state }`: the spec her physics stepped with, the controls, the state it
+  went on from, the unrounded state it reached), on the computing view
+  only, and null when that step didn't step her (held by a person, or no
+  water under her), so its parts are always one step's. It replaces step
+  4's `specOf` (one read, not two). The probe
+  page records it from a kept process of its own, registered after
+  sailing's, so only the computer records and it reads each step just
+  taken. Marks carry the last step's t, so a trace is byte-comparable; a
+  step that doesn't go on from the last one recorded (a start) also records
+  where it started and the water and wind it read there, which is what
+  named causes (2) and (3).
+- *The runner closes the simulator on a fixed frame* (the handoff check:
+  a second's sampling, the close, then the rest of the sampling; no frame
+  passes between page calls), where it closed it from a call racing the
+  sampling's frames. The handoff's remaining difference (one run in three)
+  is recorded under "Determinism", open: it is past the leave step, in the
+  stage's two-peer playback.
+
+Decided unattended (2026-11-17, lane/n6), for the lead:
+- *Docs that are other packages' are left as they are, and listed.* Once
+  sailing reads the contract's windage, three places outside sailing say
+  otherwise: naval's `contract/v1/specification.md` §7 ("`windage` (not
+  yet: sailing applies its own windage rule today …)"); naval's
+  `src/sailing-agreement.test.js`, whose header and pinned figures (209,
+  395 and 36 N of windage surge, sailing's old settle speeds) describe the
+  rule N6 deleted and pass on their own constants; and water/WATER.md,
+  whose list of `ctx.sea`'s members has `clock` (line 106) and which says
+  "`ctx.sea.clock` is `api.clock.t`" (line 351). The lane works in sailing
+  only, so each is listed in FOLLOWUPS for the integrator. Whether a lane
+  may make a one-sentence edit to another package's docs is a question.
+  *Integrated (2026-11-17, decided unattended by the integrator of lane/n6,
+  for the lead):* the integrator corrected naval's §7 and WATER.md's two
+  sentences (docs only, both packages synced); naval's
+  `sailing-agreement.test.js` is a test of naval's and stays as it is,
+  still open in FOLLOWUPS ("N6 integrated").
+- *Every example holding the stock sloop is republished* (the lead's
+  standing no-back-compat rule decides it; nothing here is the lead's
+  taste). rig@4 is a new rig GLB, and a published doc keeps the GLB it was
+  made with, so each carries a contract without windage and sails the plain
+  path (one lumped sail, one Sail row) until it is made again: Ship at sea
+  and at anchor, Lost Cities aboard and what links it, Fitting out, the
+  Harbour, the Model room, the basin mashup, and Cadboro Bay and Ucluelet,
+  which hold her as scenery (ucluelet-check asserts "sloop floats").
+  Ucluelet's 45 MB GLB costs a long Chrome-lock hold; that is scheduling
+  for the integrator, not a question.
+- *Integrated 2026-11-17 (merge 4fe5aeab; decided unattended by the
+  integrator of lane/n6, for the lead).* Every one above is republished on
+  rig@4 and swapped in the folder (Ship at sea, Ship at anchor, Lost Cities
+  aboard with a new game G, the Quiet games room, Games night, N7's two
+  Arcade mashups, which link the room and Games night, Fitting out, the
+  Harbour, the Model room, the basin mashup, Cadboro Bay), **except
+  Ucluelet**: three runs of its publisher on the machine's GPU missed only
+  the home view's frame budget (24.1, 23.4, 24.5 ms against 22.7), every
+  view about 1.45 times its time of 2026-11-16 in proportion (the overview
+  26.9 to 42.9 ms), with other lanes' Chrome running. A cost added by
+  sailing's step would add a constant, not a proportion, so it reads as the
+  GPU shared, not as N6; that is not proved. Without the GPU its timing
+  never answers. It still holds her on rig@3, so she sails the plain path
+  there until a quiet machine republishes it. The same runs found its
+  harbour-mirror check reading the shore itself, since N8's bar starts the
+  canvas lower; its pixel strips are now carried to the canvas the page has
+  (terrain e2a45395).
 
 ## Trim feedback
 
@@ -513,9 +808,8 @@ the deck. The cloth is one camber, scaled. This section makes every one of
 those cues a **pure function of the physics' own state**: the fields
 `riggedSails` already computes, read out by `read()`. Nothing is animated
 on its own clock, so nothing can disagree with the forces. The one time
-input is the doc's world time, which every view shares (`ctx.sea.clock()`,
-`api.clock.t()`). It
-only sets the phase of a flutter whose amplitude the physics gives.
+input is the doc's world time, which every view shares (`api.clock.t()`).
+It only sets the phase of a flutter whose amplitude the physics gives.
 
 It covers five things, each below:
 1. the stock sloop carrying the contract;
@@ -620,6 +914,15 @@ so a test can re-derive it:
   moved (mast, boom, rigging, sails). `gyradiiM` stays the fixture's: an
   estimate either way, and marked so.
 - `loads`: null (§3.1 allows it; fit-out reads it, sailing doesn't).
+- `windage` (§3.13; `windageOf`, rig@4): `source` naval's, and four
+  elements. `hull` is the fixture's own (kept, as her canoe body is:
+  FBAV 1.2 × beam 3.8 and × LOA 12, Cd 0.816, at mid-LOA). `mast-sail` and
+  `mast-bare` are §3.13's rules on her drawn mast (plumb, stepped on deck,
+  14 m, section 0.19 m: BAS 1.45, P 12.2, so 1.8 m of it is bare).
+  `rigging` is I (13.9) × 4·d at Cd 1.2, half way up I, d the cap shroud's
+  for the kept righting curve's RM30 (`rm30Of`: boat + crew at 30°, 43.5
+  kN·m) over her drawn chainplates' half-breadth (1.67 m): 9.1 mm.
+  `stock-rig.test.js` re-derives each element by hand from the drawing.
 - `predicted`: { status "not-computed", why "generated by sailing from the
   stock drawing; the rig aid's VPP wasn't run on it" }, with empty tables.
   The agreement test reads only the fixtures, so nothing is lost.
@@ -944,7 +1247,7 @@ the neutral colour.
 | **Mainsheet**: boom → traveller | `controls.sheet` (through `limit`), the boom as drawn (θ_shown: the rig object's held pose, which is `read().boom` played back) | B(θ) = `hardpoints.mainsheet.boomM` swung by θ about the main's luff (`swungCE`'s rotation, on a point). C = the traveller's car, fixed at the track's middle as drawn (the physics has no traveller control). Rope length L = \|B(±limit) − C\| on θ's side; d = \|B(θ_shown) − C\|; slack s = max(0, L − d). Drawn as `sheetCurve` (below) from B to C. d is strictly increasing in \|θ\| on [0, 85°], so s > 0 exactly when \|θ\| < limit (eased past where the sail is), and s = 0 when it's pinned |
 | **Jib sheets**: clew → lead → winch | `jibSheet` / backed / wing (through `limit`), `furl`, the jib as drawn (its held pose: `read().jib`) | The clew is `furledClew(sail, furl)` swung by θ. The lead is `hardpoints.jibLeads[side]` interpolated at `furl` (clamped to the track's ends). The **working sheet** is the one on the clew's side (sign θ). L = \|clew(side·limit) − lead\|, s = max(0, L − \|clew(θ) − lead\|). The **lazy sheet** is the other. Its length is the largest distance from its lead to the clew over the jib's whole travel (\|θ\| ≤ max(maxDeg, wing.hi), at that furl), so its s ≥ 0 by construction. Lead → winch is always taut (it's on the drum). The clew end is the cloth's clew vertex as displaced (below), so the sheet never leaves the sail |
 | `sheetCurve(out, a, b, s, down, n)` | s, the ends, gravity in her body frame (−Y turned by her drawn quaternion) | A parabola in the vertical plane through a–b, sagging toward `down`: p(u) = a + u(b − a) + 4h·u(1 − u)·down⊥. The sag is h = √(3·d·s/8), the parabola's arc length ≈ d + 8h²/(3d) = d + s, capped at (d + s)/2. 16 points. s = 0 is a straight line |
-| **Cloth** (main and jib) | `angle`, belly, flog, σ, `area` (reef or furl), `controls.flat`, the sea clock t, `q` | `clothVertices(out, sail, cloth, trim, t)`. Rows run parallel to the foot from the luff to the leech (the stock main's rows already are: `lerp(clew, head, h) + roach`, `lerp(tack, head, h)`). The camber depth is cloth.depth·chord·flat·belly·max(FLAT, 1 − flog), deepest at cloth.draft. The twist is cloth.twist·(1 − ½σ): a stalled sail's leech closes. The luff's bubble pushes the front BUBBLE.width (0.3) of each row back to windward by 0.8·luff of the camber, breathing ±25%. A flutter is added (cosmetic constants below) |
+| **Cloth** (main and jib) | `angle`, belly, flog, σ, `area` (reef or furl), `controls.flat`, the world time t (`api.clock.t()`), `q` | `clothVertices(out, sail, cloth, trim, t)`. Rows run parallel to the foot from the luff to the leech (the stock main's rows already are: `lerp(clew, head, h) + roach`, `lerp(tack, head, h)`). The camber depth is cloth.depth·chord·flat·belly·max(FLAT, 1 − flog), deepest at cloth.draft. The twist is cloth.twist·(1 − ½σ): a stalled sail's leech closes. The luff's bubble pushes the front BUBBLE.width (0.3) of each row back to windward by 0.8·luff of the camber, breathing ±25%. A flutter is added (cosmetic constants below) |
 | **Reef** (main) | `controls.sail` (raised r; reef f = 1 − r) | Row h maps to the cloth's h′ = f + (1 − f)·h, moved down by f·(head − tack): §6.3's rule, the same as `rig-sails.reefed`. A bunt along the boom has radius 0.02 + 0.08·√f. At f = 1 the cloth is hidden |
 | **Furl** (jib) | `furl` | The cloth's clew column moves to `furledClew(sail, furl)`, each row's leech point along with it (the rows keep their luff point). The roll on the luff has radius 0.02 + 0.06·√furl. At furl = 1 only the roll shows |
 | **Flutter** | flog, `q`, s, t | The displacement along the cloth's normal is flog·A·u^1.5·sin(2π(f·t − 1.5u) + 3h), u along the chord. A = min(0.08·foot, ½·s + 0.02) m: the clew can't move further than the slack sheet lets it. f = clamp(√(2q/ρ) / (2·foot), 0.5, 4) Hz. flog = 0 means no displacement at any t |
@@ -1101,7 +1404,7 @@ parent.
 (every point the mast and rig meshes are drawn from, now shared constants,
 so the meshes are byte for byte what they were) and the kept parts of the
 fixture (`stock-rig-12m.js`). `partGLB("rig")` carries it as `extras.rig`,
-filed under `sailing/rig@2` then (`rig@3` today: parts.js `VERSIONS`). Where the build differs
+filed under `sailing/rig@2` then (`rig@4` today: parts.js `VERSIONS`). Where the build differs
 from the spec above, or says more:
 - *The runtime copy is a module, not JSON* (`stock-rig-12m.js`, the kept
   parts only: about 19 KB, not the fixture's 199 KB), because plain node
@@ -1357,7 +1660,8 @@ node is the cloth and the battens (now ribbons, `battenVertices`, not
 tubes) at `NEUTRAL`; a new `Bunt` node lies along the boom at radius
 `BUNT_R` 0.02 (inside the boom until a view swells it). The file keys
 stayed `rig@2` and `jib@1` (nothing filed before item 4 needed them kept);
-they are `rig@3` and `jib@2` since, their cloth taking no shadows.
+they are `rig@3` and `jib@2` since, their cloth taking no shadows, and the
+rig `rig@4` since its contract states its windage (§3.13).
 
 **Where it differs from §4, and why.**
 - *The reef* cuts level at f of the contract's own tack → head (the
@@ -1434,7 +1738,10 @@ lighting, not the dressing).
 
 ## Leaving the anchor
 
-At anchor she lies head to wind; that's what an anchor is for. The moment
+At anchor, lying back on her rode, she lies head to wind; that's what an
+anchor is for. Laid at anchor in a seaway she isn't lying to it yet, and
+where she points as it breaks out is chance ("Open", below: measured, not
+fixed, the fix the lead's). The moment
 it breaks out, she is in irons unless the crew does something, and for
 days every probe's slowest, flakiest step was getting her off the wind.
 The cause was in the physics, not the helmsman.
@@ -1467,11 +1774,11 @@ from rest, the jib where the wind and its sheet put it:
 
 | 12 kn unless noted | from 0° / 1° / 2° / 5° off | target |
 |---|---|---|
-| jib backed (wheel to port) | 7.20 / 7.03 / 6.87 / 6.60 s to 45° (±0.05 s) | under 10 s |
-| jib backed, 6 kn | – / 14.73 / 14.50 / 14.03 s | under 18 s |
-| B at the helm: 0–10° off either bow, the wheel to port, amidships or to starboard, the jib's sheet 0, ½ and 1 (99 cases) | the side B holds it on is backed from the first read; past 45° the way the hint names in 6.1–10.1 s | within 11 s, the hint's way |
-| jib luffing, wheel reversed in sternway | – / 48.40 / 45.77 / 38.50 s (±5%) | under a minute, slower than backing the jib and sooner than left alone |
-| left alone | 70.80 s from 2° (±5%) | none sourced: falls off by herself, slower than the rudder |
+| jib backed (wheel to port) | 7.20 / 7.03 / 6.87 / 6.57 s to 45° (±0.05 s) | under 10 s |
+| jib backed, 6 kn | – / 14.70 / 14.50 / 14.03 s | under 18 s |
+| B at the helm: 0–10° off either bow, the wheel to port, amidships or to starboard, the jib's sheet 0, ½ and 1 (99 cases) | the side B holds it on is backed from the first read; past 45° the way the hint names in 6.1–9.9 s | within 11 s, the hint's way |
+| jib luffing, wheel reversed in sternway | – / 46.60 / 44.63 / 38.67 s (±5%) | under a minute, slower than backing the jib and sooner than left alone |
+| left alone | 75.70 s from 2° (±5%) | none sourced: falls off by herself, slower than the rudder |
 
 Without the jib she starts on an unstable equilibrium and creeps off it,
 so those times move with the smallest change in where she starts: they're
@@ -1479,13 +1786,14 @@ pinned to a band, not to 0.05 s.
 
 The reversed rudder's time is what her sternway allows, and the diagnosis'
 first estimate for it (15–30 s, unsourced) was wrong for this breeze. In
-12 kn, luffing, about 150 N of windage pushes 8 t astern: she makes
-0.07 m/s after 5 s, 0.26 m/s after 30 s and 0.37 m/s after 45 s (from 2°
-off). A rudder of 0.6 m² at 0.26 m/s has 35 Pa to work with, so nothing
-turns her until she has that sternway: from 2° off she passes 5° at 20 s,
-10° at 30 s, 20° at 38 s and 45° at 45.8 s, having drifted back less than
-her own length. The time goes with the wind: in 20 kn the same move takes
-20.0–24.0 s (5°–1° off). So the target is the ordering and a bound, both
+12 kn, luffing, about 180 N of air drag pushes 8 t astern (129 N of it
+her windage, §3.13's elements, the rest the luffing sails): she makes
+0.08 m/s after 5 s, 0.30 m/s after 30 s and 0.34 m/s after 45 s (from 2°
+off; measured 2026-11-16). A rudder of 0.6 m² at 0.30 m/s has 46 Pa to
+work with, so nothing turns her until she has that sternway: from 2° off
+she passes 5° at 20.2 s, 10° at 29.1 s, 20° at 37.5 s and 45° at 44.6 s,
+having drifted back less than her own length. The time goes with the
+wind: in 20 kn the same move takes 20.1–23.4 s (5°–1° off). So the target is the ordering and a bound, both
 asserted: backed (7 s) before reversed (under 60 s) before left alone.
 That is why the HUD's advice is to back the jib.
 
@@ -1509,43 +1817,339 @@ to back the jib (it gives it when she is luffing, the apparent wind within
 40° and under 0.5 m/s, not going astern faster than 0.15 m/s, or in irons,
 within 35° and going astern faster than that; else the step fails, not
 exercised), and her heading must swing past 45° the way the hint names
-within 30 s of sea time, with the jib unrolled, recorded either way, never
+within 30 s of world time, with the jib unrolled, recorded either way, never
 retried. The bound is 30 s, not the stock rig's 10 s, for a sea where she
 breaks out luffing with a little headway: going ahead, the wheel to port
 turns her bow to port first, for some seconds, until the backed jib wins.
 On the probe's default sea (`--sea 1`) she breaks out in irons, going
-astern, and passes 45° in 5.55 s; on sea 383967344 she breaks out luffing
-and takes 16.35 s. The station's verbs (the wheel, sheets, furler, halyard,
-windlass) run in sea time, as far as the ships step a frame (0.25 s), so
-at a few frames a second the jib still unrolls in its 4 s.
+astern, and passes 45° in 5.85 s; on sea 383967344 she breaks out luffing
+and takes 21 s (2026-11-17, step 5's final build; 18.9 s on 62756a05). The station's verbs (the wheel, sheets, furler, halyard,
+windlass) run in world time, `api.clock.t()`, in whole steps of its grid
+(`worldSteps`, "Determinism"), so at a few frames a second the jib still
+unrolls in its 4 s of world time.
 
-**Open: in waves she doesn't reliably lie head to wind as the anchor
-breaks out.** This section says she does, and in flat water she does
-(within 6°, pinned above). After weighing in waves, with the main up, she
-doesn't on about half the seas the template hands out. A sweep of the
-probe's pinned seas, each the sea trait's own seed:
+**Open: laid at anchor, she isn't lying to it, so in waves where she points
+as it breaks out is chance.** This section's opening claim holds once her
+rode is taut (the flat-water case pinned above starts her 20 m from her
+anchor and gives her 90 s). It does not hold for a ship *laid* at anchor,
+by an editor's move (as the probes do) or as the template lays out Ship at
+anchor. Diagnosed 2026-11-16 (lane/n6) in node, without Chrome:
+`src/test/breakout.js` replays sailing-run's own sequence (laid at anchor,
+the main eased, hoisted and raised, the windlass held, all through the
+stations' own held verbs, on the timeline and from the positions the probe
+records, `measured.anchoring`), and asks hud.js's own model for the
+advice. Measured against the probe's marks on step 5's final build
+(2026-11-17; first on 62756a05, when the world's first step read the
+template's sea and wind, "Determinism"), the replay follows the
+simulator's read to within 3.5° of apparent wind and 0.06 m/s on six
+seas; on sea 5, far off the wind with the windlass pulling her, to 15°
+and 0.55 m/s at breakout, the verdict the same (a calibration, not
+pinned: it moves with any change to her physics).
 
-| sea | as the anchor breaks out (apparent wind, speed) | the HUD says | leave step |
-|---|---|---|---|
-| 1 | 9° off, 0.37 m/s astern | in irons: back the jib | exercised; past 45° in 5.55 s |
-| 2 | 42° off, 0.57 m/s astern | nothing | not exercised |
-| 3 | 1° off, 0.57 m/s astern | in irons: back the jib | exercised; past 45° in 9.15 s |
-| 4 | 22° off, 0.40 m/s astern | in irons: back the jib | exercised; past 45° in 6.00 s |
-| 5 | 179° off (stern to it), 0.95 m/s ahead | nothing | not exercised |
-| 383967344 | 14° off, 0.08 m/s ahead | head to wind: back the jib | exercised; past 45° in 16.35 s |
-| 696349617 | 23° off, 0.67 m/s ahead | nothing | not exercised |
+| sea | as the anchor comes up: apparent wind, speed; B's HUD | 1.25 s later, as the probe reads B's HUD (Chrome) | chain to spare, laid → windlass | while weighing, the windlass |
+|---|---|---|---|---|
+| 1 | 3° off, 0.58 m/s astern; back the jib | 11° off, 0.36 astern; in irons: back the jib | 12.9 m | never pulls |
+| 2 | 32° off, 0.36 astern; back the jib | 38° off, 0.42 astern; nothing (in irons is within 35°) | 11.5 m | pulls for the last 0.7 s, 0.10 m short |
+| 3 | 5° off, 0.45 astern; back the jib | 5° off, 0.60 astern; in irons: back the jib | 12.8 m | never pulls |
+| 4 | 15° off, 0.44 astern; back the jib | 22° off, 0.49 astern; in irons: back the jib | 12.7 m | never pulls |
+| 5 | 143° off, 0.37 ahead; nothing | 178° off, 0.63 ahead; nothing | 9.9 m | pulls from 31.4 to 35.0 s, up to 1.3 m short |
+| 383967344 | 29° off, 0.50 ahead; back the jib | 14° off, 0.06 ahead; head to wind: back the jib | 6.3 m | pulls from 30.6 s to breakout, up to 3.9 m short |
+| 696349617 | 31° off, 0.36 ahead; back the jib | 21° off, 0.66 ahead; nothing (luffing is under 0.5) | 11.2 m | pulls from 31.6 to 33.5 s, up to 0.5 m short |
 
-(sailing-run on the tree of 2026-11-15, one run per sea; the last two are
-the seas `--seed 1` drew before and after the water package's split, when
-the probe didn't yet pin its sea.)
+(The reads are Chrome's: sailing-run on step 5's final build, 2026-11-17,
+one run per sea; the verdicts at breakout and the windlass's columns are
+the replay's.) `src/breakout.slow.test.js` pins every verdict here (never
+a magnitude) as an OPEN ratchet, row by row, as KNOWN_GAPS are. The
+replay's B and Chrome's now agree on every sea's verdict when the probe
+reads the HUD; on 62756a05's calibration they differed on sea 696349617
+(0.48 m/s ahead in node, 0.53 in Chrome, either side of luffing's 0.5),
+so which publish B shows can still decide a row this close.
 
-So four of seven. This contradicts the claim the section opens with, and
-it is a question for her physics (does a rode made fast at the bow hold
-her head to wind with the main up, in a seaway?), not a property of the
-probe: the probe pins its default sea so that a run repeats, and that
-default happens to be one where the step is exercised. Until the physics
-is settled, sailing-run's verdict on the leave step holds only for the
-sea it ran on; it is queued with "sailing catches up with naval".
+What the replay shows:
+- **Before the windlass turns, she is never on her rode.** The anchor of a
+  ship laid at anchor goes down under her bow (sim.js `dropPoint`; Ship at
+  anchor's, layout.js, the same) with 25 m of chain in 10 m of water: 22 m
+  of horizontal scope. From being laid (7.6 s) until the windlass turns
+  (29.35 s) her rode has 6–13 m to spare at every frame, on every sea, laid
+  by an editor's move or as Ship at anchor, main up or sails down (28
+  cases, pinned). She is a free boat beside her anchor, sailing or drifting
+  as the gusts and waves take her: with the main up she had 0.6–0.9 m/s of
+  headway, 59–85° off the wind, when the windlass turned on seas 5,
+  383967344 and 696349617.
+- **The windlass is a cause too, on four seas of seven.** It shortens the
+  rode kinematically (all 25 m in 6 s), and on seas 2, 5, 383967344 and
+  696349617 the rode goes taut while it does. On the last three the pull
+  swings her bow by tens of degrees, toward the wind on two of them and
+  away from it on sea 5, and slows her; on sea 2 it pulls only for the
+  last 0.7 s. On seas 1, 3 and 4 it never pulls: the physics holds her
+  on at least the drop plus her freeboard plus `SLACK` (sim.js
+  `effectiveRode`, about 14.8 m), so the last 15 m wound in change nothing.
+  The plan's leading hypothesis, that weighing yanks her forward, is still
+  refuted: her headway came from sailing adrift under the main before the
+  windlass turned, and the pull slowed her.
+- **Two of the three seas that fail in Chrome fail on the HUD's
+  instantaneous gate.** At the frame the anchor comes up, B's HUD advises
+  backing the jib on six seas of seven, all but sea 5. When the probe reads
+  it 1.25 s later, sea 2 is 37–38° off (in irons is within 35°) and sea
+  696349617 is going 0.66 m/s ahead (luffing is under 0.5), and backed
+  anyway, as the probe does whatever the gate says, she passed 45° in 9 s
+  and 8.85 s (step 5's final build). Only on sea 5 is she truly off the wind (159°, stern to
+  it). The HUD reads her speed through the water, which swings by the
+  waves' orbital velocity (±0.5 m/s), so on seas like these the verdict is
+  the instant's.
+- **Adrift with no wind and her sails down, on most seas she makes way
+  toward the waves.** In 60 s, bow or stern to them (pinned as a table of
+  verdicts in the same file; metres made toward the waves from 045°):
+
+  | sea | today, bow / stern to the waves | hybrid switch | world's vertical |
+  |---|---|---|---|
+  | 1 | +10.6 / +10.9 | −6.4 / −6.1 | −6.0 / −5.9 |
+  | 2 | +32.7 / +30.2 | +6.5 / +5.5 | +5.8 / +4.9 |
+  | 3 | +8.0 / +9.3 | −12.3 / −10.1 | −10.3 / −8.6 |
+  | 4 | −5.3 / −1.3 | −21.1 / −21.7 | −19.8 / −20.1 |
+  | 5 | −4.3 / +0.3 | −30.1 / −43.9 | −27.2 / −31.4 |
+  | 383967344 | +2.7 / +7.1 | −27.9 / −33.7 | −21.6 / −22.7 |
+  | 696349617 | +11.4 / +12.2 | −8.1 / −7.2 | −7.0 / −6.5 |
+
+  A hull in waves is pushed slowly down-wave. Most of this is her
+  contract's heave damping, applied along her body's vertical (`HEAVE_LINEAR`,
+  "moving ahead pitched, that's her bottom's lift"): two scratch switches
+  turn every sea but one down-wave. The hybrid damps her body-vertical
+  rate along the world's vertical; the other damps the world's vertical
+  rate along it. Neither is the whole story: on sea 2 she still makes 5–6
+  m toward the waves, so there is a second source, not found. And it isn't
+  a head sea's: stern to the waves she makes way toward them as much. At
+  anchor this keeps her creeping up on her chain (with the anchor set ahead
+  of her, below, her rode was still slack in 75–84% of the frames).
+- **Fixing those isn't enough with the windlass as it is.** A scratch
+  candidate (kept out of the tree; the lead's to choose, see the
+  questions): the anchor of a ship laid at anchor *set* ahead of her bow at
+  the reach of her rode, as a ship at anchor lies; and a windlass with a
+  bounded pull in her physics (it hauls the chain at its line speed only
+  while the tension is under its rated pull, and pulls no harder; a Lewmar
+  V2, 12 V, for 35–43 ft yachts: 650 kg, 21 m/min, from its owner's
+  manual), the station turning it until her physics has the chain up and
+  down. With the windlass alone at the game's 4.2 m/s (25 m in 6 s) and the
+  anchor set, she lay within 17° but came up to the anchor at 0.9–1.6 m/s
+  ahead on all seven seas: the HUD said nothing (luffing is under 0.5 m/s).
+  With the bounded windlass at 21 m/min, weighing took 40–54 s, and in flat
+  water she came over the anchor head to wind (2°) at 0.8 m/s ahead: a
+  straight chain shortening at 0.35 m/s draws her bow in faster as it comes
+  up and down (dx/dL = L/x), so the HUD still said nothing. With all three
+  (set, bounded, and the hybrid heave switch) in waves, she lay within
+  32–38° (76° on sea 5). Side by side, on the simulator's read as these
+  were measured:
+
+  | the HUD advises backing the jib | at breakout | when the probe reads it |
+  |---|---|---|
+  | today | 6 of 7 seas | 4 of 7 (as in Chrome) |
+  | all three candidate fixes | 2 of 7 | 5 of 7 |
+
+  So the candidate is worse at breakout and better 1.25 s later. Raised or
+  not, the main changed little with it applied (measured with the
+  candidate only, so not pinned).
+
+The plan's table row "sails down" has no verdict to ask for: the HUD gives
+the jib's advice only with the main up (hud.js `luffing`, `inIrons`); with
+the sails down only the rode's slack before weighing is pinned.
+
+**Two other probe failures on these seas, on 62756a05** (both the same to
+the digit on 62756a05's uninstrumented sailing-run.mjs with the same build,
+so not the anchoring instrumentation). On step 5's final build (2026-11-17)
+both pass: those runs' first step had read the template's sea and wind
+("Determinism", cause 2), so they were another world:
+- *Sea 383967344: "with the sails down she carries her way, and slows"*
+  fails by a hair (a mean of 1.77 m/s over 24 s against 0.9 × 1.95 =
+  1.755; the first sample, 2.50, a wave's surge). On b4318ae0's build,
+  before N6, the same sea passes (2.62 m/s when the sails came down, a
+  mean of 2.15): §3.13's windage changed the whole run before it, and the
+  check's bound is marginal. In node, from 1.95 m/s under bare poles in 7
+  m/s of wind, running before it she averages 0.91 of her speed over 24 s
+  even in flat water (1.77; 1.76 with sailing's old windage), and 0.73–0.88
+  of it on other points of sail. It isn't the heave thrust above (flat water
+  fails too). Whether the check's bound should depend on her point of
+  sail is a question for the lead.
+- *Sea 5: "F climbs the ladder: B is back on deck"* fails (B not on deck
+  after the climb). That is the walker's (N10's to replace), not diagnosed
+  here; it is in the follow-up log.
+
+So the claim is not met, and the remaining choices are the lead's
+(questions for the lead, 2026-11-16, lane/n6): whether a laid ship's anchor
+is set; the windlass's line speed (real, 40–54 s to weigh, or the game's 6
+s) and whether it pulls her at all before the chain is up and down;
+whether her heave damping goes along the world's vertical (it was put
+along her body's for her speed in a seaway, 97% of flat water against 83%,
+above), and what else drives her toward the waves on sea 2; whether her
+rode should be a catenary rather than a stiff spring that goes slack (in
+waves she snatches on it); and whether "head to wind" at breakout is read
+through the water, as the HUD does, or over the ground, or over some
+seconds rather than an instant (the second finding above: two of the three
+failing seas are within a few degrees or a few cm/s of the gate). Until
+then sailing-run's verdict on the leave step holds only for the sea it ran
+on, and `breakout.slow.test.js` holds the diagnosis: its OPEN rows fail as
+soon as any of this is changed, and are rewritten with this section then.
+
+## Determinism
+
+Runs of sailing-run with one `--seed` and `--sea`, the world held until
+both views have loaded (`?held`), are the same world, measured on sea 1:
+every step of world time the computing view takes has the same controls
+and reaches the same state, to the bit, through the leave step. Measured
+2026-11-16 on sea 1, three traced runs on the final build (held verbs on
+world time, below): identical to the end of the leave step (2633 rows:
+every step and the runner's marks), two of them identical to the end of
+the run (13499 rows), the third differing first at the simulator's
+handoff (row 13139, 218.63 s: "What's left"), and every check passing
+(86) in all three; the step-5 build with the frame-quantum held verbs gave
+the same. The other six seas were run once each on the final build
+("Leaving the anchor"), not traced twice: that they repeat is expected
+from the causes below, not measured. Before, five runs in six took one
+world and one another, identical until about 11 s into leaving the
+anchor, after which a 0.01 m/s difference grew; on the way to the fix,
+three more worlds showed up, each a step or a frame different.
+
+**The trace.** `sailing-run.mjs --trace <file>` (the page's `?trace`) keeps
+one row per ship per step of world time, on the computing view, as the step
+was taken (`ctx.sim.stepped(id)`: her spec's key, the controls she stepped
+with, her state unrounded), and the runner's marks (`{ mark, t }`, t the
+last step's, so a mark is on the grid too). A step that doesn't go on from
+the last one recorded (her first on a view: a start, warm or cold) adds
+where it started and what it read there: the water's seed and height and
+the true wind. `probes/trace-diff.mjs a b [--until <mark>]` names the first
+row the two differ at, and every field that differs there.
+
+**Three causes, in the order the trace found them.**
+
+1. *A held verb integrated the frame's dt* (sailing's). The first
+   difference between two runs on the old build was row 1310, world time
+   21.733 s, just after the "hoist" mark: `controls.sail`
+   0.0041666666666860695 against 0.004166666666656965, the halyard's first
+   frame. A held verb moved its value by `rate × dt`, `dt` the frame's; the
+   page's clock reads `now()` as start + frames × frameMs (scene
+   `manualTime`), and a frame's dt is the difference of two readings over
+   1000, whose last bits depend on how far the clock has run: one of a
+   handful of values for a 60 Hz frame, unevenly and with no period,
+   1/60 s give or take 3e-13 (a real browser's frames differ far more). How many frames the page ran before the world
+   resumed depends on the wall, so each run's held keys put in values that
+   differ in their last bits, and the physics grew those. Fixed in
+   sailing: a held station moves by the world time it's held, counted on
+   the world's grid (`stations.js` `worldSteps`). Made where the hold
+   begins with the view's world clock (`api.clock.t()`), each frame it
+   gives back the grid points t has crossed since the last, n × STEP_S
+   (scene's STEP_S, 1/60 s, and its `gridIndex`, copied: the grid her
+   physics steps on), the same double for the same n. A view's t carries
+   the same last-bit noise as the dt it is summed from, but which grid
+   points it has crossed doesn't, within scene's own 1e-9 tolerance; and
+   nothing is carried from frame to frame but the last grid index, so
+   there is nothing to round. Every held station uses it: `heldTrim` (the
+   halyard, the sheets, the jib's sheet and furl), `heldWeigh` (the
+   windlass) and the wheel. It follows that a held key moves nothing while
+   the world is paused, and on a follower moves with the follower's t
+   (Decisions (N6) has the question this raises). Held: `stations.test.js`
+   (a finite table of world times in and steps out; the steps over any
+   readings are exactly the grid points crossed; the halyard and the
+   windlass held from five page-clock offsets put in the same values to
+   the bit; and each key at the helm held through paused frames moves
+   nothing, then moves its rate for a second of world time) and
+   `aboard.slow.test.js` (B's keys over the same frames from three
+   offsets: every step the same, to the bit). With the world time taken
+   unquantized (`t − last`) both fail; so does scene's tolerance dropped.
+   Step 5's first fix quantized the frames' dt instead (a 1/60 s
+   accumulator on page time); it made the probe repeat, but only because
+   the probe's frames are exactly 1/60 s, it ran on while the world was
+   paused, and its carry dropped or forgave sub-nanosecond remainders, so
+   it was replaced by this.
+2. *The world's first step read the template's sea, or the probe's*
+   (the probe's, against the scene's flush budget). The runner writes the
+   Sea's and the weather's seed into the doc and resumes the world in its
+   next call. A doc change reaches a stage's extensions at once (a
+   microtask) only while fewer than three passes have run since its last
+   frame (scene `stage.js` `requestFlush`, `UI_PASSES`); past that it waits
+   for the next frame, and how many passes loading's wall-timed arrivals
+   ran in the last frame is the wall's. The start rows showed it: most runs'
+   first step read the water of the template's own seed (696349617), some
+   seed 1's. Fixed in the probe: after writing the seeds, the runner steps
+   paused frames (no world time passes) until both views' water and wind
+   ambients carry them (a check of its own).
+3. *Then the first step read the right water and the last wind* (sailing's).
+   With the water right, runs still split at the first step: the start rows
+   read the same water and two winds, (−3.749, 4.779) and (−4.021, 5.200)
+   m/s at her origin at t 0, which are `createWind` at seed 696349617 and
+   at seed 1. `ctx.sea.wind` was made again only in the frame's tick
+   (play.js), which comes after the frame's steps, so a step after the
+   ambient changed read the last value's wind until the next tick. Fixed in
+   sailing: `ctx.sea.wind` is the ambient's as it is when read, made again
+   only when the ambient changed (the water package's reader already
+   refreshes at the read). Held: `sea-view.test.js` (five ambient values in
+   turn, read with no tick between: each the wind of its value), which
+   fails on the old getter.
+
+Each fix was proved the way the trace proves anything: the run with the
+fix applied equals, row for row, the odd run that had happened to read the
+right thing. With (2) applied, a run's trace equalled an earlier run whose
+first step had read seed 1's water and the last wind (18341 rows, to the
+end); with (3), it equals the run whose start row had read seed 1's water
+and wind, up to the handoff (13139 rows of 13499).
+
+**The keys.** After the leave step, two runs once differed at the
+helmsman's first wheel move (world time 45.667 s, the rudder −0.48 against
+−0.49: B's wheel a frame, 0.01, ahead in one). A key reaches the page as an
+input task of its own, which the dispatch's reply doesn't wait for, so a
+step sent straight after it can run first. The probe's keys
+(`probes/cdp.mjs`) now wait, on the wall and stepping no frames, until the
+page has captured them, and a key the page hasn't seen in 1 s is an error
+rather than a silent go-on. Not seen again in the runs since; that this
+race was the cause is likely, not proved: the input path below has two
+other ways to put a control a step off.
+
+**Ruled out.** `ctx.sea.clock` (it was `api.clock.t()`, and is gone);
+iteration order over maps keyed by ids (one ship; every row the same); a
+0.25 s quantum in the verbs (there is none: 0.25 s is the most world time
+the ships catch up in one frame).
+
+**Not seen, not ruled out: B's input reaching the computing view.** In
+the runs measured every control landed on the same step in every run
+through the leave step (the rows' controls are identical), but that shows
+only that it didn't happen there. Two mechanisms in sailing's input path
+can put a control a step off, and neither is tested:
+- *Presence coalescing.* A crew view asks for presence at CREW_RATE
+  (20 Hz, play.js), so a change waits up to 50 ms (three frames) after
+  its last send (scene presence.js `requestSend`), and the 5 s heartbeat
+  restarts that window; the heartbeat's phase goes back to the
+  wall-timed load.
+- *The key-up race.* Let go, a held trim commits its value to the doc
+  (`ctx.sim.commit`), and its claim's release clears the live input in
+  presence (`ctx.sim.input(id, null)`) and the claim in the doc. The
+  computing view reads B's presence input while the doc still shows B's
+  claim (`sim.js` `liveInput`); if the presence arrives before the doc's
+  commit, it steps on the doc's old value until the commit lands, a frame
+  or more, by the wall (the same flush budget as cause 2).
+Both are open (FOLLOWUPS, N6 step 5).
+
+**What's left.**
+- A view's own world time, `api.clock.t()`, is a sum of the frames' dt and
+  carries the same last-bit noise (the runner's clock reads at the same
+  moment of two runs: 1.016666666666628 s and 1.0166666666667448 s). The
+  physics never reads it (its steps are on the grid, at `k / 60`), but the
+  HUD, the crew, the looks and the runner's own waits compare it with
+  thresholds; a comparison within 1e-13 of its threshold could still split
+  two runs. None did in the runs measured. It is the scene's clock, not
+  sailing's.
+- At the simulator's handoff, past the leave step: one run in three
+  differs from the successor's first step (world time 218.63 s on the final
+  build): B's warm start, its pose a few 1e-5 m apart, the controls and the
+  step the same. B starts from what it last saw of A's hull (`api.worldOf`,
+  the stage's playback of a peer's holds) and A's last published motion;
+  which of the two, and why, is not traced (the stage's two-peer playback).
+  Open.
+- The per-sea table under "Leaving the anchor" was measured again on the
+  final build (2026-11-17, one run per sea), and the replay recalibrated
+  to it (`breakout.slow.test.js`: where the doc had her when laid, the
+  windlass from 29.35 s). The same four seas exercise the leave step (1, 3,
+  4, 383967344) and fail it (2, 5, 696349617) as before; sea 1's leave
+  step is unchanged (past 45° in 5.85 s). On the new calibration the
+  replay's verdict for sea 696349617 when the probe reads the HUD is
+  Chrome's (nothing), where it had been to back the jib.
 
 ## Parts
 
@@ -1554,8 +2158,8 @@ a scene:part in index.js under "Sailing":
 
 | Part | Pieces (the first is selected) | Tags | Traits |
 |---|---|---|---|
-| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `sailing.weather` if the scene has none |
-| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `sailing.weather` if the scene has no open water |
+| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `weather` (the weather package's: `{ wind, from, seed }`) if the scene has none |
+| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea (its clip 60 × 11 × 60 m, centred on her: deep enough for her anchor, which lies at 10 m) and `weather` if the scene has no open water |
 | Mast and sail | the mast; the boom and sail, and the jib on its forestay, under it | `sailing.mast` | `sailing.sail`, `sailing.jib` |
 | Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
 | Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |
@@ -1598,7 +2202,6 @@ a scene:part in index.js under "Sailing":
 
 | Trait | On | Fields |
 |---|---|---|
-| `sailing.weather` | scene | `{ wind: { speed, from }, seed? }` — speed m/s, from degrees; `seed` the gusts' |
 | `sailing.sea` | a water object (the water package's `water`) | `{ seed, scale }`: its waves are the spectrum of the world's wind, `scale` their height. On an object without water it does nothing, and says so |
 | `sailing.ship` | the hull object | `{ frame?, spec?, motion? }`: `frame: { position?, rotation? }`, where her body frame sits in her hull's, each part over what her GLB says ("The ship's frame"); spec overrides; `motion: { velocity, spin }` (world, her body's) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
@@ -1610,6 +2213,13 @@ a scene:part in index.js under "Sailing":
 | `sailing.hook` | the anchor itself, under the ship | `{}`: drawn lying on the bottom at `at` while its windlass has it down, at the bow (its doc place) when it's up |
 | `sailing.ladder` | the ladder under the ship | `{}`: the way aboard from the water |
 | `sailing.float` | any object | `{}`: bobs and tilts with the waves where it's moored (each view, from the shared clock; no hold) |
+
+The weather package's `weather` (a scene trait) is written by her Sea and
+Sloop parts and her templates where a scene has none (`newWeather`: the air
+of it only, `{ wind, from, seed }`, m/s, degrees and the gusts' seed; every
+other field is the weather's default), in the shape weather/WEATHER.md
+documents; sailing never reads it, only the `wind` ambient it becomes, and
+imports nothing of the weather's.
 
 Two other packages' traits ride on her companionway, written in the shapes
 those packages document (traits.js `SLIDE`, `EXIT`); sailing reads neither
@@ -1683,14 +2293,15 @@ api.loop((dt) => {
 ```js
 // sea-view.js — createSeaView(api) → ctx.sea
 ctx.sea.oceanAt(p, not)  // the water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries (the water package's reader), null with none, tilted or the world's at another scale
-ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, or null
-ctx.sea.clock()          // the sea's time t (s): the doc's world time, api.clock.t()
+ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, the ambient's as it is when read ("Determinism"), or null
 ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard
-ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads
+ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads; answers api.clock.t()
+// ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the crew's swimmer, the HUD's wind, the looks) asks api.clock.t()
 
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
 ctx.sim.read(shipId)     // what a sailor reads off her (published(): diagnostics, velocity, spin), as simulated or streamed, or null
+ctx.sim.stepped(shipId)  // her latest step as taken on this view: { spec, key, controls, from, state } (createShip's spec, the states unrounded); null following, before her first step, or when that step didn't step her (held, no water)
 ctx.sim.stationsOf(shipId) → { helm, sail, anchor, mainsheet, jib, ladder, winches }   // object ids anywhere under her (a rig on a mast on the hull), null if missing; winches a list
 ctx.sim.value(stationId) // the station's live value: its trait fields, with its holder's input over them
 ctx.sim.input(stationId, partial)   // this view's live input at a station it holds (presence), e.g. { angle }
@@ -1703,16 +2314,17 @@ ctx.sim.tick()           // every view, every frame: stale inputs; computing, th
 ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). A click reaches
                          //   her only through something of hers (the ships' part holds no scene trait, so the world's sea, sky and shore
                          //   aren't hers); what nearer takes it (a card's carry) has it first. Seated (seatedView: a body over the stage's
-                         //   Look or Edit, not the crew's, a seat), no click does; the HUD (hudModel's `seated`) then offers Enter, no walking keys
+                         //   Look or Edit, not the crew's, a seat), no click does (Enter or the bar's Come aboard does); the HUD (hudModel's `seated`) shows no walking keys
 ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
-                         //   (the navmesh walker), the walking keys, the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
+                         //   (the navmesh walker), the walking keys (labelled as walk's), the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
                          //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves
                          //   the walker waiting; when it goes you stand at the projection (P1) of where its view was
 ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to Look off the quarter
 ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
                          //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line) }
 ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
-                         //   pushes the station body over walking; handlers: { keys: codes, key, keyup, tick(dt), left(), hint?() }
+                         //   pushes the station body over walking; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(),
+                         //   hint?(), look?() }: keys as every body declares them (scene/TOOLS.md §4), each saying what it does
 ctx.crew.leave()         // step away from the station you're at
 ctx.crew.board(shipId)   // climb aboard (from the water, by the ladder)
 ctx.crew.place(on, position, yaw?, pitch?)   // put the body somewhere (local to ship `on`, else in the water): a respawn
@@ -1722,6 +2334,31 @@ ctx.crew.tick(dt)
 // stations.js — stationCommands(api, ctx) → commands for the use prompt (and keys)
 // hud.js — createHud(api, ctx) → crosshair, wind, speed, heading, what the keys do here; tick(dt)
 ```
+
+**A station's keys say what they do** (decided unattended (2026-11-16,
+lane/n9), for the lead). A station declares its keys as every body, tool
+and gesture does, `[{ code, label }]` (scene/TOOLS.md §4: a label names
+the action, not its state, and codes labelled alike do the same thing), so
+the stage's touch pad (scene.touch) shows one control per label: Steer to
+port (A, ←) and Steer to starboard (D, →) in the pad's left and right
+places, Haul in (Q), Ease out (E), Halyard (R at a post or the helm),
+Furler (R at a winch), Back jib / let fly (B), Leave (F). The labels live
+beside the handlers in stations.js (`HAUL`, `STEER`, …); "aboard" declares
+walk's labelled keys (a copy, until N10 folds it into walk). An action can
+be unavailable in some states: a winch declares the jib sheet's Q and E on
+either side, because which winch is the working one changes while you
+stand there (a tack, backing the jib), and at the lazy one they do
+nothing. The HUD's hint line is unchanged. `stations.test.js` asserts
+every variant's declaration as a literal (the lazy winch among them),
+and checks from one state, the station just taken in the stage's starting
+trim, holding each code half a second: exactly the variant's listed idle
+codes do nothing (only the lazy winch's Q and E), and among the rest two
+codes do the same thing (the same inputs, writes and place) exactly when
+they share a label. `crew.test.js` checks aboard's the same way, every
+code alone against what it asks of the walker (`walkWanted`). Open for the lead: the
+words, B's above all (it backs the jib, makes it fast at a winch, or lets
+it fly, by state), and whether the HUD's hint should drop key names on
+touch.
 
 The play instance also carries `debug: ctx`, which nothing in the stage
 reads: the browser probe (`probes/sailing-run.mjs`) reads and nudges the

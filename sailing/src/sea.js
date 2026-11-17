@@ -18,9 +18,8 @@
 // Pure but for create().
 
 import { seaWaves } from "./ocean.js";
-import { SEA, WATER_TRAIT } from "./traits.js";
+import { SEA, WATER_TRAIT, WIND_AMBIENT } from "./traits.js";
 import { meanWindHere } from "./sea-view.js";
-import { WIND_AMBIENT } from "./weather.js";
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
 const STILL = Object.freeze({ hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 });

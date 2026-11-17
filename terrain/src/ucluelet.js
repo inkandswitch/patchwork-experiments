@@ -15,6 +15,8 @@
  * haul-out pier's head is about 55 m east of it.
  */
 export const ORIGIN = Object.freeze({ lat: 48.95, lon: -125.558 });
+/** The place's clock in July, hours from UTC (the weather's `offset`): Pacific Daylight Time. */
+export const OFFSET = -7;
 
 /**
  * 1025 × 1025 nodes 20 m apart, 20.48 km a side: x −3440…17040, z
@@ -208,25 +210,27 @@ export const WIND = Object.freeze({ speed: 5, from: 300, scale: 0.6, source: "EC
 export const SWELL = Object.freeze({ hs: 1.2, tp: 8.3, from: 285, note: "not modelled (sailing.sea has no swell); direction assumed" });
 
 /**
- * The sky (terrain.sky, sky.js): Amphitrite Point's July–August afternoons
+ * Its skies (the template's `sky`), as the weather package's sky fields (its
+ * WEATHER.md, "The data": cover 0..1, the cloud kind, the cloud base in
+ * metres, visibility in metres): Amphitrite Point's July–August afternoons
  * (ECCC 1030426, 1991–96, 13:00–18:00 PDT, the 732 hours with a weather
  * report): mostly cloudy 23%, cloudy 19%, fog 20%, mainly clear 22%, clear
  * 13%; visibility median 19 km, p10 1.2 km. "Ukee grey", overcast but
- * bright, is how it looks most afternoons. The sun is where it is on 15 July
- * at 15:00 PDT at 48.95 N (elevation 57°, azimuth 222°). Colours are art
- * direction, not measurements, but an overcast's gradient is the CIE
- * standard overcast sky's way round: brightest overhead, darker toward the
- * horizon (there about a third of the zenith's luminance; here gentler), so
- * the far water, which reflects the horizon at a grazing angle, reads as
- * pewter, not a white band, and the far hills fade into a grey that matches
- * it (the fog is the horizon's colour). Ukee grey's overcast is a
- * stratocumulus deck about 600 m up, its cells' undersides a little lighter
- * and darker (±12%: scene STAGE.md's atmosphere clouds), not a flat grey.
+ * bright, is how it looks most afternoons: a stratocumulus deck about 600 m
+ * up, 19 km visibility. The "marine layer" is the fog of a fifth of them:
+ * stratus on the water, 1 km visibility. A "clear afternoon" is a sky with
+ * no cloud and 20 km visibility.
+ *
+ * How each looks is the weather's (its anchors: these three are exactly the
+ * art direction this place had, its colours and fog, now one sky model's
+ * fixed points at these conditions); where the sun is, is the weather's
+ * too, computed for the place and the moment. The cloud base under the
+ * clear afternoon is the weather's default, since it has no cloud.
  */
 export const SKIES = Object.freeze({
-  "ukee-grey": { name: "Ukee grey (overcast, bright)", sky: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" }, fog: { color: "#959ea1", near: 900, far: 17000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05, clouds: { cover: 1, contrast: 0.12, scale: 500, base: 600 } },
-  "marine-layer": { name: "Marine layer (fog, 20% of afternoons)", sky: { top: "#bfc6c7", horizon: "#c9cfcf", bottom: "#b4bbbb" }, fog: { color: "#c9cfcf", near: 30, far: 900 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#f2f3f2", intensity: 0.6, shadows: false }, exposure: 1 },
-  "clear-afternoon": { name: "Clear afternoon", sky: { top: "#5b86b0", horizon: "#d5e0e4", bottom: "#a9bcc4" }, fog: { color: "#d5e0e4", near: 800, far: 18000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#fff4e2", intensity: 2.2, shadows: true }, exposure: 1 },
+  "ukee-grey": Object.freeze({ cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 }),
+  "marine-layer": Object.freeze({ cover: 1, clouds: "stratus", base: 100, visibility: 1000 }),
+  "clear-afternoon": Object.freeze({ cover: 0, clouds: "cumulus", base: 1200, visibility: 20000 }),
 });
 
 /** Named places (lat, lon from OSM unless noted). */

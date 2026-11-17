@@ -67,7 +67,7 @@ function peer(handle) {
 }
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -127,13 +127,15 @@ try {
     },
     /** the sailing extension's parts in a view (play.js's debug: ctx) */
     ctx: (w) => dbg[w].host.record("sailing")?.instance?.debug ?? null,
+    /** the sailing extension's stage api in a view (its clock is the doc's world time, the sea's) */
+    api: (w) => dbg[w].host.record("sailing")?.api ?? null,
     /** the displayed world matrix of an object, as a view draws it */
     worldOf: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m ? [...m] : null; },
     cam: (w) => dbg[w].viewport.getCamera(),
     held: (w) => !dbg[w].viewport.controls.enabled,
     me: (w) => P.ctx(w)?.crew.me() ?? null,
     read: (id, w) => P.ctx(w)?.sim.read(id) ?? null,
-    clock: (w) => P.ctx(w)?.sea.clock() ?? null,
+    clock: (w) => { const api = P.api(w); return api ? api.clock.t() : null; },
     simulating: (w) => !!P.ctx(w)?.sim.simulating(),
     value: (id, w) => P.ctx(w)?.sim.value(id) ?? null,
     stations: (ship, w) => P.ctx(w)?.sim.stationsOf(ship) ?? null,
@@ -182,7 +184,7 @@ try {
       });
       P.docSeen = seen;
     },
-    /** sample a view's displayed hull every frame for `ms` of the page's clock: [t, x, y, z, yaw, roll] */
+    /** sample a view's displayed hull every frame for `ms` of the page's clock: [t, x, y, z, yaw, roll], t from the call's start */
     async sampleFrames(id, w, ms = 1500) {
       const out = [];
       const t0 = time.now();
@@ -200,7 +202,7 @@ try {
         await time.step(1, { draw: false }); // (no picture: a sample)
         const m = dbg[w]?.viewport.worldOf(id);
         const sea = P.ctx(w)?.sea;
-        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], sea.clock()));
+        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], P.api(w).clock.t()));
       }
       return out;
     },
@@ -268,6 +270,57 @@ try {
     /** is view w's look on `id`, or on something attached to it (a spoke of the wheel)? */
     lookIsAt(id, w) { const parents = dbg[w].scene().parents; for (let at = dbg[w].local.get().hovered ?? null, n = 0; at != null && n < 32; at = parents.get(at), n++) if (at === id) return true; return false; },
   });
+
+  // ?trace: every step of world time the computing view takes, as it took it (sim.js stepped): one row per
+  // ship and grid step, [view, grid t, ship, spec key's hash, controls, state], the state's numbers unrounded
+  // (a start's row adds { from, water, wind }: where it started and what it read there),
+  // plus the runner's marks ({ mark, t }: t the last step's, so a mark is on the grid too). Two runs of one seed and sea are compared row by row
+  // (probes/trace-diff.mjs). Recorded by a kept process on each view, registered after sailing's, so only
+  // the computer records and it reads each step just taken.
+  if (new URLSearchParams(location.search).has("trace")) {
+    const rows = [];
+    const hash = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0; return h.toString(16); };
+    const keys = new Map(); // spec key → its hash (a contract's key is long; hashed once)
+    const off = [];
+    let last = null; // the grid t of the last step recorded
+    const was = new Map(); // view + ship → the state its last recorded step reached
+    const pick = ({ t, position, quaternion, velocity, spin, acc, boom, crew, jib }) => ({ t, position, quaternion, velocity, spin, acc, boom, crew, jib });
+    P.trace = {
+      /** record from now on, in both views */
+      start() {
+        for (const w of ["a", "b"]) {
+          const sim = P.ctx(w).sim;
+          off.push(P.api(w).clock.process({
+            step(_dt, t) {
+              last = t;
+              for (const id of sim.ships()) {
+                const st = sim.stepped(id);
+                if (!st) continue;
+                let k = keys.get(st.key);
+                if (k == null) keys.set(st.key, (k = hash(st.key)));
+                const row = [w, t, id, k, st.controls, pick(st.state)];
+                // a step that doesn't go on from the last one recorded (her first on this view: a start, warm or
+                // cold) also gives where it started and what it read there: the water's seed and height, the true wind
+                if (st.from !== was.get(w + id)) {
+                  const [x, , z] = st.from.position;
+                  const sea = P.ctx(w).sea;
+                  const water = sea.oceanAt(st.from.position, id);
+                  row.push({ from: pick(st.from), water: water ? { seed: water.seed, height: water.heightAt(x, z, st.from.t) } : null, wind: sea.wind ? sea.wind.at(x, z, st.from.t, [0, 0]) : null });
+                }
+                was.set(w + id, st.state);
+                rows.push(row);
+              }
+            },
+          }));
+        }
+      },
+      mark(name) { rows.push({ mark: name, t: last }); },
+      stop() { for (const f of off.splice(0)) f(); },
+      size: () => rows.length,
+      /** rows [from, from + n) as JSON (the state's numbers as the shortest strings that read back the same) */
+      take: (from, n) => JSON.stringify(rows.slice(from, from + n)),
+    };
+  }
   window.__ready = true;
 } catch (err) {
   errors.push(`setup: ${err?.stack ?? err}`);

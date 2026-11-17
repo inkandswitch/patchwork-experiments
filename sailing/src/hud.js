@@ -1,9 +1,12 @@
 // What you see over the view while sailing (DESIGN.md, "Play"): a crosshair
 // while aboard, a small sailing panel and one hint line saying what the keys
-// do here. Before you come aboard, the way in, and the panel shrinks to its
-// dial in the top left (the bottom of the view is a seated player's hand of
-// cards); seated at something aboard (the view rides it), the way in is a
-// small button up there too, with no walking keys (they're the game's). The panel's dial is the boat
+// do here. It reads and never acts: no button (S1). The way in is the
+// "aboard" command (stations.js), Enter or its button on the stage's bar of
+// tools; before you come aboard the panel shrinks to its dial in the top left
+// (the bottom of the view is a seated player's hand of cards), with "Click her
+// to come aboard" beside it while she's near enough for a click; seated at
+// something aboard (the view rides it) no hint and no walking keys (they're
+// the game's). The panel's dial is the boat
 // bow-up with north on its rim, the apparent wind as a solid arrow (what the
 // sail feels) and the true wind as a hollow mark on the rim (where the
 // weather comes from); beside it her speed over the ground along her bow,
@@ -167,10 +170,12 @@ export function sailRow(s, k, v = {}) {
  *   lowered sail (`advice`, under way); seated: the view rides something
  *   (a seat at a table aboard her: crew.js seatedView), where the keys mean
   *   that thing's verbs, so the walking keys aren't offered and a click on
- *   her doesn't come aboard (Enter or the button does); near: she is within
- *   NEAR metres of the eye, so a click on her is the way in. Before coming
- *   aboard nobody is walking yet: no walking keys, and the way in is a small
- *   button by the dial, not a call in the middle of the first view
+ *   her doesn't come aboard (Enter or the bar's Come aboard does); near: she
+ *   is within NEAR metres of the eye, so a click on her is a way in. Before
+ *   coming aboard nobody is walking yet: no walking keys, and the hint is only
+ *   "Click her to come aboard" while that works (near, not seated), else
+ *   empty: the bar of tools offers the way in, not a call in the middle of
+ *   the first view
  */
 export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null, seated = false, near = false }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";
@@ -178,8 +183,7 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
   const c = read ? compass(read.heading) : null;
   let hint;
   let keys = "";
-  if (state === "lobby" && seated) hint = "Come aboard (Enter)";
-  else if (state === "lobby") hint = near ? "Click her to come aboard" : "Come aboard";
+  if (state === "lobby") hint = near && !seated ? "Click her to come aboard" : "";
   else if (state === "paused") hint = "Click to carry on";
   else if (me.hint) hint = me.hint;
   else if (me.swimming) hint = "WASD swim · F at the ladder to climb aboard";
@@ -281,13 +285,11 @@ export function createHud(api, ctx) {
   const panel = el("section", { class: "sail-panel", "aria-label": "Sailing" }, dial, read);
   panel.hidden = true;
 
-  const button = el("button", { type: "button" });
-  button.addEventListener("click", () => ctx.crew.start?.());
   const hint = el("div", { "data-k": "hint", role: "status" });
   const keys = el("div", { "data-k": "keys" });
   const advice = el("div", { "data-k": "advice" });
   const guide = el("div", { "data-k": "guide" });
-  const hints = el("div", { class: "sail-hint" }, button, hint, keys, guide, advice);
+  const hints = el("div", { class: "sail-hint" }, hint, keys, guide, advice);
   root.append(el("div", { class: "sail-crosshair" }), panel, hints);
   overlay.append(root);
 
@@ -316,7 +318,7 @@ export function createHud(api, ctx) {
     const st = ship ? ctx.sim.stationsOf?.(ship) : null;
     let wind = null;
     const m = ship ? bodyOf(api, ship) : null;
-    if (m && ctx.sea?.wind) wind = ctx.sea.wind.at(m[12], m[14], ctx.sea.clock?.() ?? 0);
+    if (m && ctx.sea?.wind) wind = ctx.sea.wind.at(m[12], m[14], api.clock.t());
     const read = ship ? ctx.sim.read(ship) : null;
     const model = hudModel({
       me,
@@ -336,10 +338,7 @@ export function createHud(api, ctx) {
     // harbour of two boats, each one's HUD stays away until you come aboard her (WATER.md)
     put("shown", !!me.playing || (!!ctx.sea?.world?.() && !!ship), (v) => (root.style.display = v ? "" : "none"));
     put("seated", model.seated, (v) => root.toggleAttribute("data-seated", v));
-    // before coming aboard the hint is a button (a click on her does the same)
-    const lobby = model.state === "lobby";
-    put("lobby", lobby, (v) => ((button.hidden = !v), (hint.hidden = v)));
-    put("hint", model.hint, (v) => ((lobby ? button : hint).textContent = v));
+    put("hint", model.hint, text(hint));
     put("keys", model.keys, text(keys));
     put("advice", model.advice, text(advice));
     put("guide", model.guide, (v) => ((guide.textContent = v), (guide.hidden = !v)));

@@ -22,7 +22,7 @@
 import { vi } from "vitest";
 import { createSurface } from "./surface.js";
 import { seaWavesFor } from "../sea.js";
-import { weatherOffer, weatherParams } from "../weather.js";
+import { windOffer } from "./weather.js";
 
 /**
  * An empty scene doc, as the scene datatype's init writes one: every map a
@@ -43,6 +43,36 @@ export function emptyScene() {
     clock: { running: true, t: 0 },
     view: { units: "m", grid: true, axes: true, bounds: false, snap: true, start: { body: "edit" } },
   };
+}
+
+/** What a broken clock's t() throws (brokenClocks' third row). */
+export const CLOCK_FAULT = new Error("the clock's t() failed");
+
+/**
+ * A stage's clock (api.clock) broken each way a reader could paper over:
+ * none, one without t, and a t that throws CLOCK_FAULT. The stage always
+ * has a clock with t (scene TOOLS.md §7), so a reader of the world time has
+ * no fallback: with each row in place of `clock` the read throws (`throws`:
+ * an Error class, or the fault itself) and asks the sea at no time at all.
+ * Whatever a fallback's spelling, it shows as a read that didn't throw or a
+ * time that reached the sea. The rest of `clock` (now, after) is kept.
+ */
+export function brokenClocks(clock) {
+  const { t, ...rest } = clock;
+  return [
+    { name: "no clock", clock: undefined, throws: TypeError },
+    { name: "a clock without t", clock: rest, throws: TypeError },
+    {
+      name: "a t that throws",
+      clock: {
+        ...rest,
+        t() {
+          throw CLOCK_FAULT;
+        },
+      },
+      throws: CLOCK_FAULT,
+    },
+  ];
 }
 
 /** T · R(XYZ) · S as a column-major 4×4 (scene/src/transform.js). */
@@ -365,17 +395,20 @@ export function fakeWorld(doc, { content = {} } = {}) {
   function waterReader() {
     const w = openWater();
     if (!w) return null;
-    const weather = doc.traits?.["sailing.weather"];
-    const wind = weather ? weatherParams(weather).wind : null;
+    const wind = windOffer(doc.traits?.weather);
     const sea = w.o.traits["sailing.sea"];
     const waves = sea ? seaWavesFor(sea, wind) : { components: [], look: { seed: 1, stats: {} } };
     return memoOf(`water:${JSON.stringify(waves)}`, () => Object.freeze({ ...createSurface(waves.components), body: null, level: 0, seed: waves.look.seed, stats: waves.look.stats }));
   }
   const contribution = Object.freeze({ at: () => waterReader() });
+  let offered = null; // { version, value }: the ambients as of a version of the doc (a stage's are flushed, not made at each ask)
   function ambients() {
-    const out = { ...(weatherOffer(doc.traits?.["sailing.weather"]) ?? {}) };
+    if (offered?.version === version) return offered.value;
+    // the weather's: its wind (a stand-in for the weather package's offer, ./weather.js); no atmosphere, which nothing here reads
+    const out = doc.traits?.weather ? { wind: windOffer(doc.traits.weather) } : {};
     if (openWater()) out.water = { v: 2, level: 0, components: waterReader().components };
     for (const k of Object.keys(out)) out[k] = memoOf(`ambient:${k}:${JSON.stringify(out[k])}`, () => structuredClone(out[k]));
+    offered = { version, value: out };
     return out;
   }
 

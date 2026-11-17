@@ -103,7 +103,7 @@ scale) and the doc's world time: `ocean.js` turns the trait into at most 32
 Gerstner components, and both the shader and the physics use them, so what
 floats is what is drawn. Every read of the sea goes through one seam,
 `ctx.sea` (`ocean.heightAt/sampleAt/normalAt/velocityAt/displaced`,
-`wind.at`, `clock`), read by `physics.js`, `crew.js`, `looks.js` and
+`wind.at`; no clock since sailing's N6: each reader asks `api.clock.t()`), read by `physics.js`, `crew.js`, `looks.js` and
 `hud.js`.
 
 Link two boats into a harbour and each boat's sailing draws her own sea, in
@@ -348,7 +348,9 @@ one frame of wave motion.
   `water` reader, `ctx.sea.wind` is sailing's own wind built from
   `ambient("wind")` converted by the same frame and timing (a few lines;
   sailing cannot import water's; its at(), speed and from all in the
-  stage's frame, Decisions 34), `ctx.sea.clock` is `api.clock.t`. Its
+  stage's frame, Decisions 34), `ctx.sea.clock` is `api.clock.t` (later gone: since
+  sailing's N6, `ctx.sea` has no clock and each reader asks
+  `api.clock.t()`). Its
   drawing goes to water/. `physics.js`, `looks.js` and `stations.js` don't
   change.
 - **Ride and HUD only where her doc is the world, or while someone is
@@ -439,6 +441,8 @@ water and the sea move onto a Sea object, the wind onto `sailing.weather`.*
 - **A click on the open sea no longer boards a boat alone** (Decisions 24
   and 30): the sea, sky and shore are the world's, and the ships' part
   holds no scene trait. Her hull, Enter and the HUD's button board.
+  *(The HUD's button is now the `aboard` command's Come aboard on the
+  stage's bar of tools: scene TOOLS.md Decision 10, 2026-11-16.)*
 - **Not addressed**: wakes, splashes, boats colliding or pushing each other
   across docs, crew swimming from one boat's water to another's ladder
   (bodies don't hand over between docs), bounded water (ponds, rivers),
@@ -685,6 +689,12 @@ Grafted from B:
   `sailing.weather: { wind: { speed, from }, seed? }`. It offers the
   `wind` ambient (`{ speed, from, seed, gustiness }`, unchanged) and
   `atmosphere`, exactly as `sea.js` does today.
+- *Since then (weather W5): the trait is the weather package's flat
+  `weather: { wind, from, seed, … }`, which offers the same `wind` and a
+  computed `atmosphere`; sailing offers no ambient. Read the doc shapes
+  below with the flat `weather: { wind: speed, from, seed }` in place of
+  `sailing.weather: { wind: { speed, from }, seed }`: the key and the
+  shape both changed (weather/WEATHER.md).*
 
 ### The rule: things come with their doc, weather doesn't
 

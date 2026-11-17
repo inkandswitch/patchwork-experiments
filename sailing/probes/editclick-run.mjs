@@ -28,8 +28,18 @@
 //     script's or a hand's latency is): what each press hit (a card of G's,
 //     another of G's things such as its board, the boat outside the focus,
 //     nothing) and the body after; none boards, and each hit inside G
-//     selects what it hit.
-//  5. back at the boat, in Edit, nothing selected: a slow double-click at a
+//     selects what it hit;
+//  5. triage (f): back on the boat (not entered), in Edit, the clock still:
+//     a card of G's put ~16 px below the canvas's top edge, near its left
+//     (where the HUD's Come aboard button sat before the bar of tools took
+//     the command, scene TOOLS.md Decision 10); nothing of sailing's HUD is
+//     a button or takes a press anywhere along that edge, and a double-click
+//     on the card enters G, the body Edit, the canvas where it was;
+//  6. the bar's Come aboard in Edit: there, and a real click on it comes
+//     aboard (the crew's body), the canvas's top and height where they were
+//     (the bar stays: B3, Come aboard is declared; Edit's drawer goes, so
+//     its width grows);
+//  7. back at the boat, in Edit, nothing selected: a slow double-click at a
 //     card of G's, slow but one the router still takes (second press
 //     480 ms after the first, dblclick 170 ms after that, on the stage's
 //     clock): the canvas keeps its width to the dblclick (the inspector's
@@ -187,20 +197,88 @@ try {
   check(`4: ${MISSES} single clicks at cards on her moving table, in Edit inside G: none changes the body`, misses.every((m) => m.body === "edit"), { tally, misses });
   check("4: …each one on something of G's (a card, or its board) selects that thing", misses.filter((m) => m.where?.startsWith("G ")).every((m) => J(m.selected) === J(m.hit.slice(0, 2))), tally);
 
-  // ── 5: a slow double-click, at the boat ──
+  // ── 5: triage (f): a double-click on a card by the canvas's top edge, in Edit on the boat ──
+  const canvasRect = () => js(`(() => { const r = __p.A.view.canvas.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; })()`);
+  await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
+  await editOver();
+  await events();
+  const want = { x: 40, y: 16 }; // canvas px: where the HUD's Come aboard button sat (top left, 12 px in)
+  const gCards = await cards();
+  const card = gCards[0];
+  // slide the camera (no turn) toward the card's middle projecting at `want` (the clock is the page's manual one, so nothing
+  // moves meanwhile); it needn't land exactly: what counts is that the view's pick at `want` is a card of G's
+  let at = null;
+  for (let i = 0; i < 16; i++) {
+    at = await js(`(() => { const v = __p.A.view.viewport; const c = v.getCamera(); const m = __p.worldOf(${J(card)}, "a"); if (!m) return null;
+      const p = v.project([m[12], m[13], m[14]]); const f = c.target.map((t, i) => t - c.position[i]); const d = Math.hypot(...f); const fw = f.map((x) => x / d);
+      const up = c.up, right = [fw[1] * up[2] - fw[2] * up[1], fw[2] * up[0] - fw[0] * up[2], fw[0] * up[1] - fw[1] * up[0]];
+      const dist = Math.hypot(m[12] - c.position[0], m[13] - c.position[1], m[14] - c.position[2]);
+      const k = (2 * dist * Math.tan((c.fov * Math.PI) / 360)) / v.size.h;
+      const dx = ${want.x} - p.x, dy = ${want.y} - p.y;
+      if (Math.hypot(dx, dy) < 1.5) return { x: p.x, y: p.y, done: true };
+      const shift = right.map((r, i) => 0.7 * (-dx * k * r + dy * k * up[i])); // damped: the card isn't at the distance k assumes
+      v.setCamera({ position: c.position.map((x, i) => x + shift[i]), target: c.target.map((x, i) => x + shift[i]) });
+      return { x: p.x, y: p.y, done: false }; })()`);
+    if (!at || at.done) break;
+    await b.rest(120);
+  }
+  await b.rest(300);
+  const cr = await canvasRect();
+  const onCard = await js(`(() => { const v = __p.A.view.viewport; const h = v.pick(${want.x}, ${want.y}); return h?.id ? __p.A.view.pathOfKey(h.id) : null; })()`);
+  report.numbers.topEdge = { at, onCard, card, canvas: cr };
+  check("5: a card of G's lies 16 px below the canvas's top edge, 40 px in from its left (the view's pick there is one)", onCard?.[0] === ids.link && gCards.includes(onCard[1]), report.numbers.topEdge);
+  // nothing of sailing's HUD takes a press along the top edge: no button in it, and every point of the top 48 px band that isn't
+  // the canvas is something else's (the HUD's own nodes are pointer-events: none)
+  const band = await js(`(() => { const v = __p.A.view, r = v.canvas.getBoundingClientRect(), hud = document.querySelector("#a .sail-hud"); const takers = new Set();
+    for (let y = 2; y < 48; y += 4) for (let x = 2; x < r.width - 2; x += 8) { const e = document.elementFromPoint(r.left + x, r.top + y); if (e && hud?.contains(e)) takers.add(e.className || e.tagName); }
+    return { hud: !!hud, state: hud?.dataset.state ?? null, seated: !!hud?.hasAttribute("data-seated"), buttons: hud ? hud.querySelectorAll("button").length : null, hint: hud?.querySelector('[data-k="hint"]')?.textContent ?? null, takers: [...takers] }; })()`);
+  report.numbers.hudBand = band;
+  check("5: in Edit on her, sailing's HUD holds no button and takes no press along the canvas's top edge", band.hud && band.buttons === 0 && band.takers.length === 0, band);
+  const x = cr.left + want.x, y = cr.top + want.y;
+  await b.move(x, y);
+  await press(x, y, 1);
+  // between the presses: what the first did (triage (f): it hit the HUD's button, came aboard, left Edit and moved the canvas 36 px)
+  const between = { body: (await P("body('a')")).id, canvas: await canvasRect() };
+  await b.rest(60);
+  await press(x, y, 2);
+  await b.rest(400);
+  const after5 = await state();
+  const ev5 = await events();
+  report.numbers.topEdgeDouble = { between, after: after5, canvas: await canvasRect(), events: ev5 };
+  check("5: the first press by the top edge leaves the body Edit and the canvas where it was", between.body === "edit" && J(between.canvas) === J(cr), { before: cr, between });
+  check("5: the double-click by the top edge enters G, the body Edit, the pointer free (triage (f))", J(after5.focus) === J([ids.link]) && after5.body === "edit" && !after5.locked, { after: after5, hits: ev5.map((e) => ({ type: e.type, on: e.on, hit: e.hit })) });
+
+  // ── 6: the bar's Come aboard, from Edit ──
+  await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
+  await b.rest(300);
+  const way = await js(`(() => { const e = document.querySelector('#a .toolbar .world [data-command="aboard"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim(), title: e.title, enabled: !e.disabled }; })()`);
+  const cr6 = await canvasRect();
+  check("6: in Edit on her, the bar of tools offers Come aboard (Enter)", way?.text === "Come aboard" && way.enabled && way.title === "Walk the deck in first person (Enter)", way);
+  if (way) {
+    await b.click(way.x, way.y);
+    await b.rest(600);
+    const after6 = await state();
+    const cr6b = await canvasRect();
+    report.numbers.barAboard = { way, after: after6, canvas: [cr6, cr6b] };
+    check("6: a click on it comes aboard: the crew's body, Edit left", after6.body === "aboard" && after6.stack.includes("aboard") && !after6.stack.includes("edit"), after6);
+    // (its width grows: Edit's side drawer goes with Edit)
+    check("6: …and the canvas's top and height stay (the bar stays: Come aboard is declared)", cr6b.top === cr6.top && cr6b.height === cr6.height, { before: cr6, after: cr6b });
+  }
+
+  // ── 7: a slow double-click, at the boat ──
   await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
   await editOver();
   // the inspector shut (steps 3 and 4 opened it), as the toolbar's Inspector shuts it
   await js(`(() => { const t = document.getElementById("a").querySelector('.toolbar [data-command="inspector"]'); if (t?.getAttribute("aria-pressed") === "true") t.click(); return true; })()`);
   await b.rest(300);
-  check("5: the inspector shut to start the slow double-click", await js(`!document.getElementById("a").querySelector('.stage-drawer [data-panel="inspector"]')`), null);
+  check("7: the inspector shut to start the slow double-click", await js(`!document.getElementById("a").querySelector('.stage-drawer [data-panel="inspector"]')`), null);
   // aimed on the canvas at its full width: the view takes the wider canvas in (a ResizeObserver, on the page's
   // own time) on a frame after it
   await sleep(300);
   await b.rest(100);
   await events();
   const slowAt = await P(`aimBest(${J(await cards())}, 'a')`);
-  if (!slowAt) check("5: a card of G's in plain sight for the slow double-click", false, null);
+  if (!slowAt) check("7: a card of G's in plain sight for the slow double-click", false, null);
   else {
     await b.move(slowAt.x, slowAt.y);
     await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 1 });
@@ -213,7 +291,7 @@ try {
     await b.rest(400);
     const ev = await events();
     report.numbers.slowDouble = { at: slowAt, events: ev, after: await state(), entered: J((await state()).focus) === J([ids.link]) };
-    check("5: a slow double-click's presses and dblclick all reach the canvas at the width the first press found", ev.length >= 3 && ev.some((e) => e.type === "dblclick") && ev.every((e) => e.on === "canvas" && e.cw === ev[0].cw), ev.map((e) => `${e.type} ${e.on} ${e.cw}`));
+    check("7: a slow double-click's presses and dblclick all reach the canvas at the width the first press found", ev.length >= 3 && ev.some((e) => e.type === "dblclick") && ev.every((e) => e.on === "canvas" && e.cw === ev[0].cw), ev.map((e) => `${e.type} ${e.on} ${e.cw}`));
   }
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));

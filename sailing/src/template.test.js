@@ -30,9 +30,11 @@ describe("the Ship at sea template", () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await template.create(ctx);
-    const weather = doc.traits["sailing.weather"];
-    expect(weather.wind).toEqual({ speed: 7, from: 45 });
-    expect(Number.isInteger(weather.seed)).toBe(true);
+    // the weather package's trait, the air of it only (every other field the weather's default): exactly wind, from and seed
+    const weather = doc.traits.weather;
+    expect(Object.keys(weather)).toEqual(["wind", "from", "seed"]);
+    expect([weather.wind, weather.from]).toEqual([7, 45]);
+    expect(Number.isSafeInteger(weather.seed)).toBe(true);
     expect(doc.traits["sailing.sea"]).toBeUndefined();
     const first = doc.objects[doc.order[0]];
     // the Sea keeps the box its layout covers, centred on it, where its world offers no open water (seaClip)
@@ -59,7 +61,7 @@ describe("the Ship at sea template", () => {
     }
     // one per kind, under its versioned key
     expect(Object.keys(doc.assets).sort()).toEqual(
-      ["anchor", "companionway", "greenBuoy", "hatch", "hull", "islet", "jib", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "winch", "windlass"].map((k) => `sailing/${k}@${{ hull: 5, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 }[k] ?? 1}`),
+      ["anchor", "companionway", "greenBuoy", "hatch", "hull", "islet", "jib", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "winch", "windlass"].map((k) => `sailing/${k}@${{ hull: 5, rig: 4, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 }[k] ?? 1}`),
     );
     expect(calls.created).toHaveLength(15);
     // every object but the Sea (its shape is its trait's data: no source)
@@ -83,7 +85,7 @@ describe("the Ship at sea template", () => {
     // no spec (read from its box), only the way she has on
     expect(Object.keys(hull.traits["sailing.ship"])).toEqual(["motion"]);
     expect(hull.parent).toBeNull();
-    expect(doc.traits["sailing.weather"].seed).toBe(7);
+    expect(doc.traits.weather.seed).toBe(7);
     expect(Object.values(doc.objects).find((o) => o.name === "Sea").traits["sailing.sea"].seed).toBe(7);
 
     const ids = Object.fromEntries(Object.entries(doc.objects).map(([id, o]) => [o.name, id]));
@@ -168,7 +170,7 @@ describe("the Ship at anchor template", () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await atAnchor.create(ctx);
-    expect(doc.traits["sailing.weather"].wind).toEqual({ speed: ANCHORAGE_AIR.speed, from: ANCHORAGE_AIR.from });
+    expect(doc.traits.weather).toMatchObject({ wind: ANCHORAGE_AIR.speed, from: ANCHORAGE_AIR.from });
     expect(ANCHORAGE_AIR.speed).toBeGreaterThanOrEqual(6); // enough to get her out of irons and away
     expect(ANCHORAGE_AIR.speed).toBeLessThanOrEqual(7);
     expect(doc.view.start.home).toBeTruthy();

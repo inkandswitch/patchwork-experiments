@@ -51,7 +51,7 @@ import { clipProblems } from "./clip-check.mjs";
 // the stages work them out here too, and the probe checks that what each doc
 // calls for is exactly what is stated here (the stage takes off a listed
 // package nothing in the doc calls for).
-const PACKAGES = ["scene", "sailing", "water", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "water", "weather", "joints", "traversal"];
 // The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
 // from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
 // together, so a viewer arriving at the boat is asked for what her linked game runs too.
@@ -157,7 +157,7 @@ try {
   check("every object shows one of its own doc's files (the link shows the game; the Sea has no source)", strays.length === 0, strays);
   const boatDoc = snap.docs[snap.scene];
   const seas = Object.values(boatDoc.objects).filter((o) => o.traits?.water);
-  check("the boat has one Sea (open water with a sea on it) and the weather, as the template writes them (WATER.md, \"Water bodies\")", seas.length === 1 && !seas[0].traits.water.size && !!seas[0].traits["sailing.sea"] && !!boatDoc.traits?.["sailing.weather"] && !boatDoc.traits?.["sailing.sea"] && !boatDoc.traits?.water, { seas, traits: Object.keys(boatDoc.traits ?? {}) });
+  check("the boat has one Sea (open water with a sea on it) and the weather, as the template writes them (WATER.md, \"Water bodies\")", seas.length === 1 && !seas[0].traits.water.size && !!seas[0].traits["sailing.sea"] && !!boatDoc.traits?.weather && !boatDoc.traits?.["sailing.sea"] && !boatDoc.traits?.water, { seas, traits: Object.keys(boatDoc.traits ?? {}) });
   // the box her Sea keeps where the world she is placed in offers no open water (water/WATER.md, "Clipped open water"): her swing circle and the landmarks
   const clipped = clipProblems(boatDoc, { anchored: true });
   check("her Sea's clip covers her swing circle and the landmarks, with the margin (clip-check.mjs)", clipped.length === 0, { clip: seas[0]?.traits?.water?.clip, problems: clipped });

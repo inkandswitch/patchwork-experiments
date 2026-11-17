@@ -227,7 +227,7 @@ describe("the sloop", () => {
     const doc = emptyScene();
     const { ctx } = fakeDrop(doc);
     await parts.sloop.create(ctx, { parent: null, transform: {}, world: {} });
-    expect(doc.traits[WEATHER]).toMatchObject({ wind: { speed: 7, from: 45 } });
+    expect(doc.traits[WEATHER]).toMatchObject({ wind: 7, from: 45 });
     const sea = doc.objects[doc.order[0]];
     // a 60 m box centred on her, turned with her, where its world offers no open water; 11 m
     // deep, so an anchor her crew lets go (it lies at sim.js DEPTH, 10 m) and its chain stay in it
@@ -237,7 +237,7 @@ describe("the sloop", () => {
     expect(sea.transform.position).toEqual([her.transform.position[0], 0, her.transform.position[2]]);
     expect(sea.transform.rotation).toEqual([0, her.transform.rotation[1], 0]);
     // open water there already (with or without a sea, with or without weather): nothing more of either water or weather is written
-    for (const weather of [null, { wind: { speed: 3, from: 200 }, seed: 5 }]) {
+    for (const weather of [null, { wind: 3, from: 200, seed: 5 }]) {
       const other = emptyScene();
       other.objects.w = { name: "Water", parent: null, transform: { position: [0, 2, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {} } };
       other.order.push("w");
@@ -275,7 +275,7 @@ describe("the sloop", () => {
     "two open bodies, the keeper with no sea": { a: { water: {} }, b: { water: {}, [SEA]: { seed: 4, scale: 1 } } },
     "two open bodies, the keeper with a sea": { a: { water: {}, [SEA]: { seed: 4, scale: 1 } }, b: { water: {} } },
   };
-  const WEATHERS = { "no weather": null, weather: { wind: { speed: 3, from: 200 }, seed: 5 } };
+  const WEATHERS = { "no weather": null, weather: { wind: 3, from: 200, seed: 5 } };
   const docWith = (waters, weather) => {
     const d = emptyScene();
     for (const [id, traits] of Object.entries(waters)) {
@@ -302,7 +302,7 @@ describe("the sloop", () => {
         } else {
           expect(d.order[0]).toBe(id);
           expect(d.objects[id].traits).toEqual({ water: {}, [SEA]: { seed: 9, scale: 1 } });
-          expect(d.traits[WEATHER]).toEqual(weather ?? { wind: { speed: 7, from: 45 }, seed: 9 });
+          expect(d.traits[WEATHER]).toEqual(weather ?? { wind: 7, from: 45, seed: 9 });
         }
       });
       it(`the Sea part, ${w}, ${x}: never a second open body; ${keeper && waters[keeper][SEA] ? "says the water has a sea" : "a sea on the open water"}`, async () => {
@@ -320,7 +320,7 @@ describe("the sloop", () => {
         }
         expect(calls.notices).toEqual([]);
         const seed = d.traits[WEATHER].seed;
-        expect(d.traits[WEATHER]).toEqual(weather ?? { wind: { speed: 7, from: 45 }, seed });
+        expect(d.traits[WEATHER]).toEqual(weather ?? { wind: 7, from: 45, seed });
         expect(d.objects[id].traits[SEA]).toEqual({ seed, scale: 1 });
         if (keeper) expect(id).toBe(keeper);
         else {
@@ -409,7 +409,7 @@ describe("the ship finds what's aboard her anywhere under her", () => {
     doc.order.push("pedestal");
     const wheel = await parts.wheel.create(ctx, { parent: "pedestal", transform: { position: [0, 0.2, 0] } });
     w = fakeWorld(doc);
-    const sim = createSim(w.join("A"), { sea: { clock: () => 0 } });
+    const sim = createSim(w.join("A"), {});
     const st = sim.stationsOf("hull");
     expect(st.sail).toBe(children(doc, mast)[0]);
     expect(st.helm).toBe(wheel);

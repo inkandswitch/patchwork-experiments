@@ -79,7 +79,7 @@ const AT_A = { position: [40, 0, 0], rotation: [0, 0, 0], scale: 1 };
 const BASIN = [30, 3, 30];
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -143,7 +143,7 @@ try {
       ids.hullM = withTrait(docs.M, "sailing.ship");
       unmount("a");
       docs.M.change((d) => {
-        delete d.traits["sailing.weather"];
+        delete d.traits.weather;
         const gone = Object.keys(d.objects).filter((id) => d.objects[id].traits?.water || d.objects[id].kind === "group" || (d.objects[id].group && d.objects[d.objects[id].group]?.kind === "group"));
         for (const id of gone) delete d.objects[id];
         d.order = d.order.filter((id) => !gone.includes(id));
