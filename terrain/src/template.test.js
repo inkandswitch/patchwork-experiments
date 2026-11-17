@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { layOut, headTo, differences, placeWeather, AT_ANCHOR, AFTERNOON, MOORING, RODE, CREDIT, PLACE, WEATHER, BAY_WATER } from "./template.js";
-import { WIND, SKY, ORIGIN, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
+import { WIND, SKY, ORIGIN, OFFSET, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
+import { OFFSET as UCLUELET_OFFSET } from "./ucluelet.js";
 import { credits } from "./credit.js";
 import { sceneCtx } from "./test/scene-ctx.js";
 
@@ -49,7 +50,7 @@ describe("the Cadboro Bay template's layout", () => {
     // every station the layout sets, and nothing else of the sloop's
     expect(Object.keys(AT_ANCHOR).sort()).toEqual(["sailing.anchor", "sailing.jib", "sailing.sail"]);
     // its own weather, not the part's default (the sloop writes the air only where there is no weather)
-    expect(d.traits).toStrictEqual({ weather: placeWeather({ origin: ORIGIN, wind: WIND, sky: SKY }, d.traits.weather.seed) });
+    expect(d.traits).toStrictEqual({ weather: placeWeather({ origin: ORIGIN, offset: OFFSET, wind: WIND, sky: SKY }, d.traits.weather.seed) });
     expect(d.traits.weather.from).toBe(WIND.from);
   });
 
@@ -76,16 +77,22 @@ describe("a place's weather (placeWeather): the weather package's trait, its fie
   // the weather's own field names (weather/src/index.js): every one this writes is one of them, and only gustiness and rain are left to its defaults
   const FIELDS = ["lat", "lon", "date", "hour", "offset", "wind", "from", "gustiness", "seed", "cover", "clouds", "base", "visibility", "rain"];
   it.each([
-    ["Cadboro Bay's", { origin: ORIGIN, wind: WIND, sky: SKY }, 3, { lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed: 3, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 }],
-    ["any place's: where, its wind, its sky; when is the afternoon", { origin: { lat: -33.5, lon: 151.25 }, wind: { speed: 0, from: 0, scale: 9, source: "x" }, sky: { name: "y", cover: 1, clouds: "stratus", base: 50, visibility: 100 } }, 0, { lat: -33.5, lon: 151.25, date: "2026-07-15", hour: 15, offset: -7, wind: 0, from: 0, seed: 0, cover: 1, clouds: "stratus", base: 50, visibility: 100 }],
+    ["Cadboro Bay's", { origin: ORIGIN, offset: OFFSET, wind: WIND, sky: SKY }, 3, { lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed: 3, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 }],
+    ["any place's: where, its clock, its wind, its sky; when is the afternoon on its clock", { origin: { lat: -33.5, lon: 151.25 }, offset: 10, wind: { speed: 0, from: 0, scale: 9, source: "x" }, sky: { cover: 1, clouds: "stratus", base: 50, visibility: 100 } }, 0, { lat: -33.5, lon: 151.25, date: "2026-07-15", hour: 15, offset: 10, wind: 0, from: 0, seed: 0, cover: 1, clouds: "stratus", base: 50, visibility: 100 }],
   ])("%s", (_, place, seed, want) => {
     const w = placeWeather(place, seed);
     expect(w).toStrictEqual(want);
     for (const k of Object.keys(w)) expect(FIELDS).toContain(k);
     expect(FIELDS.filter((k) => !(k in w))).toEqual(["gustiness", "rain"]);
   });
-  it("the afternoon is 15:00 on 15 July 2026, on UTC−7", () => expect(AFTERNOON).toStrictEqual({ date: "2026-07-15", hour: 15, offset: -7 }));
+  it("the afternoon is 15:00 on 15 July 2026, on the place's clock (no offset of its own)", () => expect(AFTERNOON).toStrictEqual({ date: "2026-07-15", hour: 15 }));
+  // [place, its clock]: both places here are on Pacific Daylight Time in July
+  it.each([
+    ["Cadboro Bay", OFFSET],
+    ["Ucluelet", UCLUELET_OFFSET],
+  ])("%s's clock is UTC−7", (_, offset) => expect(offset).toBe(-7));
   it("the trait is the weather package's, unprefixed", () => expect(WEATHER).toBe("weather"));
+  it("Cadboro's sky is the weather's four sky fields and nothing else", () => expect(Object.keys(SKY)).toEqual(["cover", "clouds", "base", "visibility"]));
 });
 
 describe("the Cadboro Bay data, pinned", () => {
