@@ -35,7 +35,7 @@ const TRAITS = ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "
 
 // what the traits are, for the scene's inspector ("Add behaviour…"), so a
 // ship can be rigged without a script. Who's at a station is a claim, and
-// who computes her is the doc's clock's (scene TOOLS.md §7): neither is a
+// who computes her is the doc's clock's (scene STAGE.md, "World time"): neither is a
 // setting, so nothing to describe.
 const DESCRIBES = {
   "sailing.ship": {

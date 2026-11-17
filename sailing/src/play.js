@@ -67,7 +67,7 @@ export default {
       },
       commands: stationCommands(api, ctx),
       input: ctx.crew.input,
-      // the crew's body (scene/TOOLS.md §4): standing at a station, over walk (walking her deck is walk's)
+      // the crew's body (scene/STAGE.md, "Bodies"): standing at a station, over walk (walking her deck is walk's)
       bodies: ctx.crew.bodies,
       receive(type, data, from) {
         for (const p of parts) p.receive?.(type, data, from);

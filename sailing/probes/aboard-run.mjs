@@ -45,8 +45,8 @@
 // 11. screens of both views at anchor and under way.
 // 12. under way, seated: the menu on a card has the card's verbs (the
 //     game's) and Select, which selects the link the card is in (the focus
-//     is the boat's: scene/COMPOSITION.md §5), not the card;
-// 13. editing in context (COMPOSITION.md build step 14), under way: A picks
+//     is the boat's: scene/STAGE.md, "The input chain"), not the card;
+// 13. editing in context (STAGE.md build step 14), under way: A picks
 //     Edit on the body chip and clicks a card on the table (it selects the
 //     link: the focus is the boat's), then double-clicks it, which enters
 //     the game (the focus moves into G: the trail says where, the
@@ -305,7 +305,7 @@ try {
   check("built through the start screen and the parts bin", !ids.error && ids.table && ids.board, ids);
   const shape = await P("shape()");
   // ── 1 ──
-  // Lost Cities aboard is two docs (scene/COMPOSITION.md, worked example 1): the boat, with a locked link to the game on its card table
+  // Lost Cities aboard is two docs (scene/STAGE.md, worked example 1): the boat, with a locked link to the game on its card table
   check("1: the boat holds one link to the game, locked, on the table, and none of its pieces or seats; the table under the hull, locked", shape.link?.parent === ids.table && shape.link.locked && shape.link.providerId === "scene.link" && shape.boatPieces === 0 && !shape.boatSeats && shape.tableParent === ids.hull && shape.tableLocked, { link: shape.link, boatPieces: shape.boatPieces, boatSeats: shape.boatSeats });
   check("1: the game is a doc of its own: every piece at its root, its own title and start", shape.pieces === 63 && shape.piecesAtGameRoot === 63 && shape.gameTitle === "Lost Cities table" && shape.gameStart === "seat", { pieces: shape.pieces, atRoot: shape.piecesAtGameRoot, title: shape.gameTitle, start: shape.gameStart });
   // titled by the game and its deck, never by the scene it was set down in (tabletop/GAME-FORMAT.md)
@@ -470,7 +470,7 @@ try {
     await shot("under-way-played");
   }
 
-  // ── 12: selecting a game's card from outside selects the link (scene/COMPOSITION.md §5), under way ──
+  // ── 12: selecting a game's card from outside selects the link (scene/STAGE.md, "The input chain"), under way ──
   // (the game is a doc of its own: editing a piece inside it is Enter's, build step 14, not a halo from the boat)
   {
     const lying = (await P("where()")).table[0] ?? null;
@@ -511,7 +511,7 @@ try {
     }
     await b.rest(300);
     const prompt = await P("promptKeys('a')");
-    // a shown key works (TOOLS.md H3): walking, S and D are the body's, so Shuffle and Draw show without them
+    // a shown key works (STAGE.md, H3): walking, S and D are the body's, so Shuffle and Draw show without them
     const flip = prompt.find((v) => /Flip/.test(v.name));
     const keyed = prompt.filter((v) => /Shuffle|Draw/.test(v.name));
     check("9: over the deck walking, the prompt shows Flip with F, and Shuffle or Draw only without their keys (S and D walk)", over && flip?.key === "F" && keyed.every((v) => v.key === ""), { prompt, over, hovered: await P("hovered('a')") });
@@ -597,7 +597,7 @@ try {
     check("10: F at it again: back in the seat view", again && Math.hypot(...cam2.position.map((v, i) => v - seat.position[i])) < 0.3, { cam: cam2.position, seat: seat.position, body: await P("body('a')") });
   }
 
-  // ── 13: editing in context, under way (COMPOSITION.md build step 14) ──
+  // ── 13: editing in context, under way (STAGE.md build step 14) ──
   {
     await P("focus('a')");
     const chip = await P("chip('a')");
@@ -630,7 +630,7 @@ try {
     else {
       const bBody = await P("bodyLabel('b')");
       // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens a beat
-      // later (500 ms of the stage's time: TOOLS.md Decisions 6), narrowing the canvas: let it open and settle
+      // later (500 ms of the stage's time: HISTORY.md, TOOLS Decisions 6), narrowing the canvas: let it open and settle
       // and aim again, so the double-click lands on the card. The beat is the stage's time, which under way in
       // a headless Chrome runs behind the wall's (each frame's step is capped), so it waits for the canvas to
       // narrow, not for a time of its own

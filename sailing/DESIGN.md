@@ -7,7 +7,7 @@ a ship when it carries `sailing.ship` (water/WATER.md, "Water bodies"). Everythi
 attached under the ship (stations, the mast, the sail) and contributions from
 this package and the scene's shared parts. The requirements are use case 4
 in [../scene/DESIGN.md](../scene/DESIGN.md) and section 9 of
-[../scene/SCOPE.md](../scene/SCOPE.md); this note fixes the conventions the
+[../scene/STAGE.md](../scene/STAGE.md); this note fixes the conventions the
 modules share.
 
 ## Conventions
@@ -58,7 +58,7 @@ modules share.
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
 | `crew.js` | stage side thin | ctx.crew: coming aboard (`api.body.enter("walk", hull)`: walking her deck is walk's) and the `station` body, pushed over walk, its eye walk's walker's at the station's stand spot (walk's `stand` contribution); what the viewer is doing (`viewerOf`: the top body, its declared keys, walk's `avatar`); the orbit following her before anyone is aboard |
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
-| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the HUD is the dial alone and says nothing: what a click on her does is the base's (Look's comes aboard, Edit's selects, a seat's is the game's), which a package may not ask; its sheet's one `pointer-events` is the root's `none`, so no node of it takes a press in any state (`hud.test.js`; Decisions (N11) 1); aboard, the walking hint is the keys the top body declares (`keysHint`: walk's own) |
+| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene HISTORY.md, TOOLS Decisions 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the HUD is the dial alone and says nothing: what a click on her does is the base's (Look's comes aboard, Edit's selects, a seat's is the game's), which a package may not ask; its sheet's one `pointer-events` is the root's `none`, so no node of it takes a press in any state (`hud.test.js`; Decisions (N11) 1); aboard, the walking hint is the keys the top body declares (`keysHint`: walk's own) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
@@ -562,7 +562,7 @@ rewrite that table.
 
 1. *Before you're aboard the HUD says nothing* (decided unattended
    (2026-11-17, lane/n11), for the lead). N8 took the HUD's Come aboard
-   button out to the bar of tools (scene TOOLS.md Decisions 10) but kept
+   button out to the bar of tools (scene HISTORY.md, TOOLS Decisions 10) but kept
    the lobby's hint, "Click her to come aboard" while she was near
    (`NEAR` 60 m) and the view wasn't seated. In Edit that was false (Edit's
    click selects her, TOOLS Decisions 6), and a package may not ask
@@ -570,7 +570,7 @@ rewrite that table.
    bodies"), so no condition sailing can see makes it true. The plan had
    "Come aboard (Enter)" in its place; that names a key the HUD can't
    check (a key is shown only where the resolver says it reaches the
-   command, scene TOOLS.md H3, and the bar already shows Come aboard's
+   command, scene STAGE.md, H3, and the bar already shows Come aboard's
    key that way). So the lobby hint is empty in every base, and with it
    `NEAR`, `nearEye`, hudModel's `seated` and `near`, the `data-seated`
    attribute and the import of crew.js's `seatedView` are gone: the HUD
@@ -2305,7 +2305,7 @@ moved).
 Who is at a station is a **claim** in the doc (`claims: { station | halyard:
 { viewer, session } }` on the object), lapsing when the holder's session
 leaves presence; who computes the sea and the ships is the doc's clock's
-claim, the stage's (`claims.clock`, scene TOOLS.md §7). `halyard`, on the sail
+claim, the stage's (`claims.clock`, scene STAGE.md, "World time"). `halyard`, on the sail
 station, is who stands at the mast; the sail's own `station` claim is held
 only while a key works it, from wherever, so someone at the mast doesn't
 stop the helmsman trimming. The ship's motion is a
@@ -2395,7 +2395,7 @@ ctx.crew.me()            // viewerOf: { on: shipId | null, position, yaw, pitch 
                          //   keys (the top body's declared keys: the HUD's walking hint is walk's own) }
 ctx.crew.take(stationId, handlers) → leave   // stand at a station (coming aboard first if you walk anywhere else): pushes the station
                          //   body over walk; handlers: { keys: [{ code, label }], key, keyup, tick(dt), left(), hint?(), look?() }: keys
-                         //   as every body declares them (scene/TOOLS.md §4). Who stands there is the claim the station's verb holds
+                         //   as every body declares them (scene/STAGE.md, "Bodies"). Who stands there is the claim the station's verb holds
                          //   (stations.js), the one its stand spot names
 ctx.crew.leave()         // step away from the station you're at
 ctx.crew.tick(dt)
@@ -2407,7 +2407,7 @@ ctx.crew.tick(dt)
 
 **A station's keys say what they do** (decided unattended (2026-11-16,
 lane/n9), for the lead). A station declares its keys as every body, tool
-and gesture does, `[{ code, label }]` (scene/TOOLS.md §4: a label names
+and gesture does, `[{ code, label }]` (scene/STAGE.md, "Bodies": a label names
 the action, not its state, and codes labelled alike do the same thing), so
 the stage's touch pad (scene.touch) shows one control per label: Steer to
 port (A, ←) and Steer to starboard (D, →) in the pad's left and right
@@ -2435,14 +2435,14 @@ parts through it.
 
 **The sea's time is the world's.** The sea, the wind's gusts, the ships'
 physics and the floats' bob all read one time, the doc's world time
-(`api.clock.t()`, scene TOOLS.md §7). The view computing it runs it at the
+(`api.clock.t()`, scene STAGE.md, "World time"). The view computing it runs it at the
 wall's rate, at most a quarter second a frame (a longer stall is skipped;
 the physics skips with it, `catchUp`), and steps the ships' process on a
 fixed grid of it. A follower's is the computer's at the moment whose held
 poses it is drawing, so the hull sits on the waves drawn under it. Paused,
 or with nobody able to compute (only read-only viewers, or viewers missing
 a listed package), the sea stands still; someone editing her runs the same
-extension, so she sails on (scene TOOLS.md step 8). Nobody present, no time
+extension, so she sails on (scene STAGE.md step 8). Nobody present, no time
 passes.
 
 **Who computes.** The ships are a process of the doc's clock

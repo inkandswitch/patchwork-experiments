@@ -5,7 +5,7 @@ wind and waves, a 12 m sloop that floats and sails by the forces on it, and
 first-person play where everyone in the scene walks her deck, takes the
 helm, trims the sail, works the windlass, falls overboard and climbs back up
 the ladder. The sea and the ships run on the scene's world clock (scene
-TOOLS.md §7): one view computes it, everyone else sees the same ship, played
+STAGE.md, "World time"): one view computes it, everyone else sees the same ship, played
 back smoothly, and takes over if that view goes. Anyone may pause the world
 (the clock chip); nobody present, no time passes.
 
@@ -132,7 +132,7 @@ any other hull (camber's): its contract describes the stock hull only.
 
 Click her (or press Enter) to come aboard; the body chip's Leave goes
 back to the view off her quarter (Escape releases the pointer, and never
-your body: scene/TOOLS.md §5). Where pointer lock is refused, drag to look.
+your body: scene/STAGE.md, "Keys"). Where pointer lock is refused, drag to look.
 
 | Where | Keys |
 |---|---|
@@ -153,7 +153,7 @@ touch pad shows the keys above by what they do (Forward, Back, Left, Right,
 Run, Jump on deck; at a station Steer to port / starboard, Haul in, Ease
 out, Halyard, Furler, Back jib / let fly, Leave). The use prompt's buttons
 are their keys: a finger held on "hold F Raise anchor" winds the chain in
-for as long as it's down (scene/TOOLS.md Decisions 15).
+for as long as it's down (scene/HISTORY.md, TOOLS Decisions 15).
 
 **The companionway**, at the cockpit's forward end, is the way below:
 washboards in the cabin's aft end, and a hatch over them that slides forward

@@ -259,13 +259,13 @@ try {
   };
 
   // both open off her quarter (Look: view.start's home), running what the doc calls for: sailing,
-  // by its traits, and every general part, the same in both views (scene/TOOLS.md H1)
+  // by its traits, and every general part, the same in both views (scene/STAGE.md, H1)
   const SOME = ["sailing", "scene.body", "scene.clock", "scene.halo", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
   await b.rest(1000);
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in Look, off her quarter", (await P("bodyLabel('a')")) === "Look" && (await P("bodyLabel('b')")) === "Look", { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
   check("both run what the doc calls for, the same: sailing and the general parts", JSON.stringify(run.a) === JSON.stringify(run.b) && SOME.every((id) => run.a.includes(id)), run);
-  // the way in is the aboard command's Come aboard on the bar of tools (show "world": scene TOOLS.md Decision 10); the HUD only reads
+  // the way in is the aboard command's Come aboard on the bar of tools (show "world": scene HISTORY.md, TOOLS Decisions 10); the HUD only reads
   const wayIn = { a: await P("text('.toolbar .world [data-command=\"aboard\"]', 'a')"), b: await P("text('.toolbar .world [data-command=\"aboard\"]', 'b')"), hudButtons: [...(await P("text('.sail-hud button', 'a')")), ...(await P("text('.sail-hud button', 'b')"))] };
   check("the bar of tools offers Come aboard in both views, and the HUD holds no button", /^come aboard$/i.test(wayIn.a[0] ?? "") && /^come aboard$/i.test(wayIn.b[0] ?? "") && wayIn.hudButtons.length === 0, wayIn);
   const looks = { a: await P("look('a')"), b: await P("look('b')") };
@@ -697,7 +697,7 @@ try {
   await b.rest(6000);
 
   // a view from off the quarter, A not aboard: Escape never leaves a body
-  // (scene/TOOLS.md §5); the body chip's Leave stops A walking her deck
+  // (scene/STAGE.md, "Keys"); the body chip's Leave stops A walking her deck
   await focus("a", await P("canvasCentre('a')"));
   await press("Escape");
   await b.rest(300);

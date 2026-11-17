@@ -126,7 +126,7 @@ export function seaClip({ anchored = false, at = [0, 0, 0], yaw = 0, loa = SLOOP
  * Lay out a sloop under way on open water in one change: the weather and a
  * Sea (a water object with a sea on it, first in the order), the Sloop part
  * with way on, landmarks in a group, the editor's home view
- * from the stern quarter (view.start's home: TOOLS.md §2), where whoever
+ * from the stern quarter (view.start's home: STAGE.md, "Arriving"), where whoever
  * opens it (its maker too) sees her and a click on her comes aboard (crew.js).
  *
  * `anchored`: lying at anchor instead, head to wind, still, her sail down

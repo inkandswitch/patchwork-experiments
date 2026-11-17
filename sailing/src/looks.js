@@ -1,5 +1,5 @@
 // What each view dresses for itself, from what it shows, with no hold and
-// nothing sent (DESIGN.md, "Play"; STAGE.md, "dressing content";
+// nothing sent (DESIGN.md, "Play"; STAGE.md, "Dressing";
 // "Trim feedback" §4): whatever floats bobs and tilts on the waves where
 // it's moored, and each ship's sails are drawn as her physics flies them:
 // the cloth (cloth.js) bellied, twisted, flogging, reefed or furled by its

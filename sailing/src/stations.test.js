@@ -344,7 +344,7 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
   };
   s.commands = stationCommands(s.api, s.ctx);
   s.cmd = (id) => s.commands.find((c) => c.id === id);
-  // the command context every surface passes (scene/TOOLS.md §4): the eye, the body's reach (the crew's), the look
+  // the command context every surface passes (scene/STAGE.md, "Bodies"): the eye, the body's reach (the crew's), the look
   const origin = (id) => (worlds[id] ? [worlds[id][12], worlds[id][13], worlds[id][14]] : null);
   const context = (from, hit, reach = REACH) => ({ scene: s.scene, local: {}, from, hit, reach, distance: (t) => lookDistance({ scene: s.scene, from, hit }, t, origin(t)) });
   s.look = (from, reach) => context(from, null, reach);
@@ -1070,7 +1070,7 @@ describe("the keys each station declares", () => {
   // halyard, so there is no post with the sheet alone. A winch declares the sheet's Q E on either
   // side, since which is the working one changes while you stand there (a tack, backing the jib):
   // at the lazy one they are declared and do nothing, a labelled action unavailable in this state
-  // (a label names the action, not its state: scene/TOOLS.md §4). The last column is the codes
+  // (a label names the action, not its state: scene/STAGE.md, "Bodies"). The last column is the codes
   // that do nothing from the station just taken.
   const Q = ["KeyQ", "Haul in"], E = ["KeyE", "Ease out"], R = ["KeyR", "Halyard"], F = ["KeyF", "Leave"];
   const FURL = ["KeyR", "Furler"], B = ["KeyB", "Back jib / let fly"];
@@ -1119,7 +1119,7 @@ describe("the keys each station declares", () => {
     return JSON.stringify({ inputs: s.inputs.slice(n), commits: s.commits.slice(m), at: s.taken?.id ?? null });
   };
 
-  // codes labelled alike do the same thing, and codes labelled apart don't (scene/TOOLS.md §4): a
+  // codes labelled alike do the same thing, and codes labelled apart don't (scene/STAGE.md, "Bodies"): a
   // touch pad shows one control per label, which presses the first of its codes. Checked from one
   // state, the station just taken in the stage's starting trim: exactly the variant's idle codes do
   // nothing there, and among the rest two codes do the same thing iff they share a label.

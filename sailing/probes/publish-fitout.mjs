@@ -1,5 +1,5 @@
 // Publish "Fitting out" to a real sync server, and print its Patchwork URLs:
-// pins and mirrors (scene/COMPOSITION.md §7; worked example 2, and a part
+// pins and mirrors (scene/STAGE.md, "Views, stages and links"; worked example 2, and a part
 // repeated live). A sloop at anchor whose companionway is a fit-out F,
 // linked and fixed at a version, with F changed since (its hatch open: the
 // boat still shows it shut, until someone chooses Follow latest); and one
@@ -44,7 +44,7 @@ import { clipProblems } from "./clip-check.mjs";
 
 // What each doc's contents come from (scene/STAGE.md, "Packages"): each
 // lists its own only (the view's one prompt covers every open doc's:
-// COMPOSITION.md, Decisions, links loose ends 1), and the page checks that
+// HISTORY.md, COMPOSITION Decisions, links loose ends 1), and the page checks that
 // each, open alone, calls for plugins of exactly those packages. The boat as
 // the page made her lists exactly hers too: her own companionway's joints
 // and traversal were listed when the start screen made her and taken off

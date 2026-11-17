@@ -3,7 +3,7 @@
 A note to decide from, written 2026-11-14, built the same day in the lane
 `lane/scene`, then merged into `scene-stage` (f2ac0784) and published (see
 "Where it stands", at the end). It answers the last line of
-COMPOSITION.md's "Where we are": *two linked docs that each draw a sea draw
+STAGE.md's "Where we are": *two linked docs that each draw a sea draw
 two.* The mashup it unblocks is a harbour holding two boats, each a doc of
 its own, floating on one sea.
 
@@ -442,7 +442,7 @@ water and the sea move onto a Sea object, the wind onto `sailing.weather`.*
   and 30): the sea, sky and shore are the world's, and the ships' part
   holds no scene trait. Her hull, Enter and the HUD's button board.
   *(The HUD's button is now the `aboard` command's Come aboard on the
-  stage's bar of tools: scene TOOLS.md Decision 10, 2026-11-16.)*
+  stage's bar of tools: scene HISTORY.md, TOOLS Decisions 10, 2026-11-16.)*
 - **Not addressed**: wakes, splashes, boats colliding or pushing each other
   across docs, crew swimming from one boat's water to another's ladder
   (bodies don't hand over between docs), bounded water (ponds, rivers),
@@ -486,7 +486,7 @@ Doc edits with step 1:
 - DESIGN.md §3 and "How the examples compose": "the outermost doc gives
   the defaults: its ambients and `view.start`"; a sea is `water` plus
   `sailing.sea`.
-- SCOPE.md §9: drop "water height as a contribution other extensions
+- PLANS.md: drop "water height as a contribution other extensions
   read".
 
 ## Water bodies: a shape, with the sea on it (2026-11-15)

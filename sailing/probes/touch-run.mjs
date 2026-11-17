@@ -6,15 +6,15 @@
 //
 // Every press is a finger (cdp.mjs's b.touch). It checks:
 //  1. "Ship at sea" by a tap, then Come aboard on the stage's bar of tools
-//     (scene/TOOLS.md Decisions 10) by a tap:
+//     (scene/HISTORY.md, TOOLS Decisions 10) by a tap:
 //     A walks her deck ("aboard", a lock body) and the pointer lock is never
-//     asked for (scene/TOOLS.md Decisions 11);
+//     asked for (scene/HISTORY.md, TOOLS Decisions 11);
 //  2. the stage's touch pad shows aboard's declared keys by what they do:
 //     Forward, Left, Back, Right in the pad's places, Run and Jump under
 //     "Walk" (walk's own declared keys; the pad is scene's);
 //  3. Forward held 0.6 s walks her (the walker's place on her moves);
 //  4. at the wheel, looking at it (no pointer under touch: the look is the
-//     eye's, scene/TOOLS.md Decisions 14), the use prompt offers the helm in
+//     eye's, scene/HISTORY.md, TOOLS Decisions 14), the use prompt offers the helm in
 //     the middle of the view, and a tap on its button stands A at it;
 //     the pad then shows Steer to port / starboard in the left and right
 //     places and Haul in, Ease out, Halyard, Back jib / let fly, Leave under
@@ -22,7 +22,7 @@
 //  5. Steer to starboard held a second turns the wheel to starboard (its
 //     angle up), Steer to port back the other way;
 //  6. Leave leaves the helm: walking again, the claim gone.
-//  7. at the windlass, the prompt's buttons are its keys (scene/TOOLS.md
+//  7. at the windlass, the prompt's buttons are its keys (scene/STAGE.md
 //     Decisions 15): a tap on Drop anchor (F) lets it go; then Raise anchor
 //     (hold F) brings the chain in only while a finger holds its button, and
 //     stops when it lifts.
@@ -126,7 +126,7 @@ try {
   check("3. Forward held 0.6 s walks her: her place on the deck moves", held && moved > 0.3, { p0: p0.map(n3), p1: p1.map(n3), moved: n3(moved) });
 
   // ─── 4. the helm, by the use prompt's button ─────────────────────────────
-  // (no pointer under touch: the look is the eye's, at the middle of the view, as under lock; scene/TOOLS.md Decisions 14)
+  // (no pointer under touch: the look is the eye's, at the middle of the view, as under lock; scene/HISTORY.md, TOOLS Decisions 14)
   const wh = await local(ids.wheel);
   await P(`place('a', '${ids.hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, -0.45)`);
   const offered = await until(`window.__p.verbs('a').some((v) => v.command === "helm" && !v.disabled)`, 3000);

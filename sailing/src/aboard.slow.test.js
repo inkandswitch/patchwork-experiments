@@ -116,7 +116,7 @@ function join(w, session, hull) {
     labels: () => ({ set: (items) => (s.labels = items) }),
     listen: (t, type, fn, o) => t.addEventListener(type, fn, o),
     raycast: rays(base.worldOf, hull),
-    // the stage's body stack, as far as the crew meets it (scene/TOOLS.md §4)
+    // the stage's body stack, as far as the crew meets it (scene/STAGE.md, "Bodies")
     local: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     view: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     // walk's avatar here, while its stand-in is on the stack (on her deck, at her helm's stand spot)
