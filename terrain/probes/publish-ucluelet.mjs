@@ -56,7 +56,8 @@
 //    - every view's frame time (40 frames of the stage's render and a
 //      1-pixel readPixels: median, p90, draw calls, triangles); with --gpu
 //      (the machine's GPU, Metal on a Mac, not SwiftShader) the home view's
-//      median within FRAME_BUDGET.
+//      median against FRAME_BUDGET, reported, not a check (the lead,
+//      2026-11-17: report-only).
 // 3. Unless --dry-run: as publish-rvyc.mjs, every doc made anew on the
 //    server and read back from a fresh repo.
 
@@ -245,8 +246,14 @@ try {
   }
   report.numbers.frames = frames;
   console.error(`frame times (${args.gpu ? "GPU" : "software: not a budget"}), median ms: ${Object.entries(frames).map(([k, v]) => `${k.replace("ucluelet-", "")} ${v.median}`).join(", ")}`);
-  // on the machine's GPU (--gpu): the home view within the budget it had before the forest was made denser (22.7 ms on an M4, 2026-11-16)
-  if (args.gpu) check(`the home view renders in ${FRAME_BUDGET} ms or less (median of 40, GPU)`, frames["ucluelet-home"].median <= FRAME_BUDGET, frames["ucluelet-home"]);
+  // on the machine's GPU (--gpu): the home view against the budget it had before the forest was made denser (22.7 ms on
+  // an M4, 2026-11-16). Report-only, the lead's answer (2026-11-17): it is printed and kept in the report, never refuses
+  // a publish, since other lanes' Chrome on the same GPU moves it more than the scene does.
+  if (args.gpu) {
+    const home = frames["ucluelet-home"].median;
+    report.numbers.frameBudget = { budget: FRAME_BUDGET, home, within: home <= FRAME_BUDGET };
+    console.error(`frame budget (report-only): home ${home} ms, ${home <= FRAME_BUDGET ? "within" : "OVER"} ${FRAME_BUDGET} ms`);
+  }
   const grain = await P("grain()");
   check("the ground carries its grain and the place dresses it (every ground mesh's material, a program compiled with it)", grain.meshes > 0 && grain.dressed === grain.meshes && grain.grainPrograms > 0, grain);
   check("no view's top is black (the sky drawn at every eye)", Object.values(topPixels).every((c) => Math.max(...c) > 24), topPixels);
