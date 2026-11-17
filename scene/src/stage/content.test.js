@@ -1,30 +1,29 @@
-// The stage's content loop, mounted with the model's add, outline and
-// inspector (no WebGL, and no <patchwork-view>, so the inspector mounts the
-// build controls itself): render docs built through the stage, the sync
+// The stage's content loop, mounted with the model's add and inspector (its
+// tree too) (no WebGL; a stand-in <patchwork-view>, src/test/patchwork-view.js,
+// mounts the inspector's Build section in this package's build controls, as
+// Patchwork's does): render docs built through the stage, the sync
 // settle window, the embedded controls' rebuild and context events, objects
 // fixed at a version of their source (`at`), and what a dragged row carries.
 // Ported from tool.test.js / tool-v3.test.js (scene contract v3).
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import add from "../parts/add.js";
-import outline from "../parts/outline.js";
 import inspector from "../parts/inspector.js";
 import { Viewport } from "./viewport.js";
 import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
+import { plugins } from "../index.js";
+import { defineStandInView } from "../test/patchwork-view.js";
 
-// The outline is a drawer tab the viewer opens, and the inspector one a
-// selection opens a beat later (TOOLS.md Decisions 6): these tests have both
-// open, the inspector from the toolbar.
+// The inspector's pane (the tree and the fields): these tests have it open, as the toolbar's Inspector does.
 const opener = {
   create(api) {
     let asked = false;
     return {
       update() {
-        api.run({ ext: "scene.outline", command: "objects", value: true });
         if (!asked) asked = api.run({ ext: "scene.inspector", command: "inspector", value: true });
       },
     };
@@ -33,7 +32,6 @@ const opener = {
 
 const EXTS = [
   { meta: { id: "scene.add" }, module: add },
-  { meta: { id: "scene.outline" }, module: outline },
   { meta: { id: "scene.inspector" }, module: inspector },
   { meta: { id: "t.opener" }, module: opener },
 ];
@@ -54,6 +52,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe("the stage's content loop (mounted, no WebGL)", () => {
   let s, repo, file;
+  beforeAll(() => defineStandInView({ plugins, repo: () => repo }));
   beforeEach(async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -95,7 +94,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await settle();
     const firstGlb = (await repo.find(renderUrl)).doc().glbUrl;
     expect(firstGlb).toBeTruthy();
-    // add selected it; the inspector mounts the controls itself (no <patchwork-view> here)
+    // add selected it; its Build section is the build controls, in the (stand-in) <patchwork-view>
     const controls = $(".scene-render-controls");
     expect(controls).toBeTruthy();
     const unit = controls.querySelector("select");

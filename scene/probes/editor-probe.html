@@ -26,6 +26,7 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
 import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
+import { defineStandInView } from "../src/test/patchwork-view.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -59,6 +60,9 @@ try {
   for (const url of more) for (const p of (await import(url)).plugins) getRegistry(p.type).register(p);
   const repo = new FakeRepo();
   window.repo = repo;
+  // Patchwork's <patchwork-view>, stood in for: the inspector's sections mount this package's own tools in it
+  // (Build: the build controls), by the built plugins' registrations, as Patchwork does
+  defineStandInView({ plugins, repo: () => repo });
   const box = (w, h, d, color, at = [0, 0, 0]) => {
     const [x, y, z] = at, a = w / 2, c = d / 2;
     const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
@@ -102,12 +106,20 @@ try {
   hostA.repo = repo; hostB.repo = repo;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   hostA.time = time; hostB.time = time;
-  Tool(A, hostA);
+  let cleanA = Tool(A, hostA);
   Tool(B, hostB);
   const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
   const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
   window.__p = {
     A: dbgA, B: dbgB, hostA, hostB, errors,
+    /** A opened again, as a reload would (its prefs read back from storage): the runner's last act, since screen() and the rest keep the first A */
+    remountA() {
+      cleanA?.();
+      hostA.replaceChildren();
+      cleanA = Tool(A, hostA);
+      this.A = hostA.querySelector(".scene-stage").__sceneDebug;
+      return true;
+    },
     doc: () => scene.doc(),
     /** where an object's origin (plus an offset) is on the page, from A's camera */
     screen(id, off = [0, 0, 0], dbg = dbgA) {

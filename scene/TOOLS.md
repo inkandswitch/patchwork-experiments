@@ -24,8 +24,8 @@ finite cases, permissions left to Keyhive.
   reversing this note's first answer, "Editing is the selection's halo,
   with no switch and no pref"): Edit is the orbit camera with the editor
   on it, where a click selects and the selection's halo shows handles where
-  you may write, the inspector follows the selection and the toolbar,
-  grid, axes and bounds show. Look is the same camera without any of it.
+  you may write, the inspector follows the selection and the toolbar's
+  editor commands, grid, axes and bounds show. Look is the same camera without any of it.
   Playing is any other body, or Look, with the empty hand. One person
   editing while another plays is ordinary; one person can't do both at
   once.
@@ -139,7 +139,11 @@ stage's doc).
 ## 3. Attention, selection and handles
 
 **Attention** is one target per view: the selection if any, else the look
-(the pointer's hit, or the eye ray under lock). The prompt and the halo are
+(the pointer's hit, or the eye ray under lock and for a lock body under
+touch, where a finger hovers nowhere: `pointer.js` `looksFromEye`,
+Decisions 14). A finger's hit is what it pressed, and a tap's stays the
+look when it lifts, until the next press on the world (a drag's doesn't;
+Decisions 15). The prompt and the halo are
 one surface over it, and keys go to it (§5): what is shown is what keys do.
 
 **A press** runs COMPOSITION §5's chain: the held tool, the widget owner
@@ -151,8 +155,8 @@ at a card table it draws. A holder's `cursor(ev)` may name its click
 
 **Select** is also the first entry of every target's menu (right-click,
 long-press, the context-menu key; under lock, at the crosshair): the
-deliberate select in a game, in every body. The outline is the keyboard's,
-in Edit. Alt keeps its one meaning: place freely during a carry.
+deliberate select in a game, in every body. The inspector's tree is the
+keyboard's, in Edit. Alt keeps its one meaning: place freely during a carry.
 
 **The halo.** A selection shows its verbs and, in Edit where its doc is
 writable, handles: move arrows, rotate rings and scale corners around its box,
@@ -173,8 +177,8 @@ table or walking a level sees no editor.
 |---|---|
 | a plain click selecting (Edit's click, ahead of the chain) | Select in every target's menu, Esc to deselect; the selection's box |
 | the halo's handles and build-param knobs | carrying (press-drag, Q / E, F to flip), and every package's verbs |
-| the inspector (opening on the selection; Starts in) and the outline, Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
-| the toolbar, all of it (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint |
+| the inspector, the object tree and the fields in one tab (opening on the selection; Starts in), and the Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
+| the bar of tools' editor commands (Snap, Frame all, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint; the bar of tools' world commands (a game's Play, Lift all cups, Come aboard) |
 | grid, axes and bounds | the seat picker, the clock chip (Pause is anyone's: Decisions 5) |
 | Measure; selecting and deleting a dimension (saved ones are drawn everywhere: the doc's annotation) | notices and HUD pills, legends, the packages prompt |
 | Remove (Delete), Group, Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste | Frame (`.`) and a double-click to frame |
@@ -190,9 +194,10 @@ when the body leaves Edit, and so is the selection (Decisions 6: attention
 is the selection, so one kept from Edit would aim F and the use prompt at
 what was last edited). A menu's Select works in every body, and that
 selection stays until something clears it or Edit is left.
-A package's command meant for the toolbar (arena's Play and Gun, the cups'
-Lift all) shows there only in Edit; elsewhere it's in the menu and on its
-key, until §6's bar of tools exists for games.
+A package's command meant for the toolbar (`show: ["toolbar"]`, or no
+`show`) is the editor's and shows there only in Edit. One meant for games
+says `show: ["world"]`: the bar of tools holds it in every body, at its
+right end (§6, Decisions 10).
 
 **Focus scopes selection only.** Selection lives at the focus (COMPOSITION
 §3): with the focus on the boat, selecting a card aboard selects the link.
@@ -205,8 +210,8 @@ selection is; it goes where the link's doc acts (a mirror's: where it's
 live), and a pin or a closed link says why it can't be entered. The
 breadcrumb is the view's trail along the top while the focus is inside a
 link, with Leave; Escape's last rung leaves. The general parts (the
-editor's chrome among them) move into the focus stage, so the halo, the
-inspector and the outline act on the entered doc's objects in its frame;
+editor's chrome among them) move into the focus stage, so the halo and the
+inspector (its tree too) act on the entered doc's objects in its frame;
 one holding something (a walk's body, a held Measure) finishes it where it
 was, so Enter and Leave never change the body or drop the tool (the tool
 goes down only when its stage leaves the focus path);
@@ -215,7 +220,7 @@ menu, keys and prompt still reach outside. In Edit, a click outside the
 focus is still Edit's: it selects nothing and goes no further, so no
 package's click verb acts for it (COMPOSITION.md, Decisions, Edit's click
 is Edit's, reversing step 14's "isn't Edit's"). The
-outline's link rows say what each link is here and enter; drawer tabs
+tree's link rows say what each link is here and enter; drawer tabs
 open as the focus moved open again inside. Select's menu entry is the
 focus stage's alone, so it's offered only on what can be selected.
 
@@ -238,6 +243,11 @@ picking one replaces it, Esc empties it. `local.tool`, `effectiveTool` and
 bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres | Infinity
            enter(place) → { input, eye() → { position, direction }, ride?, leave() } }]
 // a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
+// keys (a body's, a tool's, a gesture's): codes labelled alike do the same thing (walk's W and ↑
+// are both "Forward"); touch shows them as one control (§5), so distinct actions need distinct labels.
+// A label names the action, not its state ("Halyard", not "Hoist" turning "Lower" once hoisted),
+// and an action may be unavailable in some states, its key declared and doing nothing then (the
+// jib's sheet at the lazy winch): the keys are declared on entering, and the state changes under them.
 ```
 
 - **Look** and **Edit**, the stage's (`src/stage/bodies.js`; they replace
@@ -284,7 +294,18 @@ nothing else wants the pointer (a held tool with `pointer: true`, a
 selection, an open menu, dialog or dock). The browser's Esc **releases** it
 unseen by the page; the next press on the world only relocks. A **refused**
 lock leaves the body looking by drag, as arena does (`play.js:90-95`).
-**locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused.**
+While the input is **touch** there is no mouse to look with, so the body
+looks by drag as when refused: every press on the view (on the canvas, on
+anything over it, on its edges: the chip, the prompt's buttons, the clock's
+bar) says whether it was a finger, before anything hears it, and a coarse
+pointer starts as touch. Keys never change it. A finger on a locked view
+lets the lock go, and leaves nothing released (there is no lock to take
+back). A mouse after a finger finds the lock **released**, as after the
+browser's Esc, wherever it pressed: the next press on the world only
+relocks (Decisions 11). So the lock is only ever taken by a press on the
+world that is nothing else, a new body, or the pointer no longer wanted;
+never by a press on a button, and never halfway through a click.
+**locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch.**
 
 ## 5. Keys and Escape
 
@@ -303,6 +324,71 @@ router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
 Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
+
+**A prompt button with a key is that key** (Decisions 15). A press on a
+verb's button presses the key that does that verb on that target, as the
+pad's controls press theirs (`src/hold-key.js`), and lifting it lets the
+key up: so the verb goes the one key order and the key map, and a held
+verb (winding a windlass, `hold: true`) lasts exactly as long as the finger
+or the mouse button, its session the key map's (`end` on the lift, `cancel`
+if the window goes or the target goes first). Which key is asked as it is
+pressed (keymap.js `keyFor`, what `hintFor` names), so a press presses only
+a key that does its verb then, by the same construction as a shown key. A
+verb with no key that does it (reserved: walking, D) is a click, run on its
+target; a held one has nothing to hold it by, so it shows disabled. A
+pointer's click runs a verb only on the button that had its press, and
+only when that press wasn't the key: a browser clicks whatever is under
+the lift once the button pressed has gone, so a verb that puts another
+button in its place would otherwise run that one too. Only a primary
+press is a key or a click (a right or middle press does nothing). A
+button stays the one element in the document while the prompt changes
+round it (its key going down marks it held), as a pad control does, so
+its capture takes the lift to it even if it moves on the screen.
+
+**Touch controls are the declared keys** (`touch-keys.js`, pure;
+Decisions 12). With no keyboard, the keys the gesture, the held tool and
+the body declare become controls a finger holds, in the key order: a code
+shows only under the reserver `reservedBy` names for it, so a shown control
+works by the same construction as a shown key. Within one reserver, codes
+shown alike are one control (the label, else the code's name: walk's W and
+↑ are one "Forward"), pressing the first of its codes the earlier layers
+leave it. A control with an arrow among its codes takes that arrow's place
+on the pad, the rest are buttons: keyboard geometry, so the stage knows
+nothing of "Forward". Look, Edit and a seat declare no keys and show none.
+Labels are one per reserver, not across them (snes's "Right" and walk's
+"Right" are both shown under a held pad), so the pad shows each control
+under its reserver. A control presses its code with the key a US keyboard
+sends (keymap.js `keyOfCode`, `codeOfKey` read the other way), since
+handlers read `ev.key` as often as `ev.code`.
+
+**The pad presses keys as a keyboard does** (`scene.touch`,
+`src/parts/touch.js`; Decisions 13). While the input is touch (the view's
+`pointer.touch`, §4) and there are controls, it shows them: the arrows'
+places bottom left, the other buttons bottom right over the body chip, a
+group per layer named for it (the body's label, the held tool's name; a
+gesture's group is unnamed, since the stage knows no gesture's name). A finger down on a control
+sends the keydown a keyboard sends for its code to the view's root, where
+the router hears keys, and its finger coming up (or cancelled, or its
+capture lost) the keyup (`src/hold-key.js`, which the Esc hint uses too).
+So a pad key goes the one key order and a shown control works as a shown
+key does; nothing is per body, and no new api. Fingers are each their own
+(Forward, Run and a look drag on the canvas at once); a control held by
+two is down until the last lifts. A control is a layer's key: that body,
+that tool, that gesture (each its own `serial`, STAGE.md). When its layer
+goes (the body left, even for one with the same id; a carry took its key;
+another tool) or the pad hides, it lets go and is gone, so a lit control
+is a key its layer holds; on a blur or a hidden page every finger lets go,
+as the router lets go of every key. A pressed control keeps focus where it
+is, so the key map's held verbs stay held. Modifiers are the router's, as
+a keyboard has them: a modifier key down at the view's root (claimed or
+not, by a keyboard or the pad) is in every event's `shift`, `alt`, `ctrl`,
+`meta` until its keyup anywhere in the window, a blur or a hidden page, so
+the pad's Alt places a carry freely, before the lift or after.
+
+**With no keyboard, the Esc hint is the Escape key.** It says what it
+does ("Put it back", "Put down Measure") and a finger on it presses
+Escape, so each rung the hint shows (a carry put back, a tool put down,
+a selection cleared, a link left) can be popped by touch.
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused
 field, popover or dock field (a search field with text clears first, then
@@ -335,7 +421,10 @@ it's refused and said, as for any later write.
 +--------------------------------------------------------------------------------------+
 ```
 *Walking aboard, empty hand. Left of the bar is the world's, right is yours.
-No editor: the bar of tools (Measure, Dimensions…) is Edit's.*
+No editor: the bar of tools' editor commands (Measure, Dimensions…) are
+Edit's. (Since Decisions 10 the bar of tools also holds the world's
+commands, a game's Play or Come aboard, at its right end in every body:
+not this sketch's world bar, which is not built.)*
 
 ```
 +-- Harbour > Wanderer -- ▶ sea -- o Ana · helm  o Ben · walk -- | [Walk v] [View v] -+
@@ -366,11 +455,20 @@ right-click Select still selects it (no handles, no inspector).*
 *A linked scene entered while the boat is paused: the focus moves in; tools and body stay.*
 
 - **The bar of tools** holds the general tools and those of the stages on
-  the focus path. *Built* as the toolbar, which is Edit's (Decisions 6):
-  outside Edit there is no bar, and a package's toolbar command is in the
-  menu and on its key. Since COMPOSITION step 14 it is the focus path's:
-  each stage's scene commands from the focus out, worked out and run in
-  that stage, whatever the pointer is over.
+  the focus path. *Built* as the toolbar (`scene.toolbar`), in two
+  clusters (Decisions 10): the editor's commands (`show` names "toolbar",
+  or says nothing) at the left, only in Edit (Decisions 6), and the world's
+  (`show` names "world": only an explicit mention counts) at the right, in
+  every body, so a game's Play, a table's Lift all cups and a boat's Come
+  aboard sit at the same place looking, walking, seated or editing. It
+  shows while some extension on the focus path has a command that is the
+  bar's in this body, applying just now or not, and every cluster and
+  control is one control tall: the canvas under it doesn't move as a
+  command comes and goes. In a narrow view the editor's cluster scrolls
+  sideways and the world's stays in view. A plain scene, looking, has no
+  bar. Since COMPOSITION step 14 it is the focus path's: each stage's
+  scene commands from the focus out, worked out and run in that stage,
+  whatever the pointer is over.
 - **The body chip** offers Look and Edit first, then the bodies that can
   start here (Walk), then Leave while a body stands over the base. **Who's here** shows each person's body and held tool,
   from presence: the view says its viewer's on every channel it acts on, so
@@ -403,9 +501,52 @@ right-click Select still selects it (no handles, no inspector).*
   with its reason ("too far", "view only").
 - **Try a copy**, on the world bar: the scene copied at its heads, opened,
   then discarded: play-testing without spending the real doors.
-- **One drawer** with tabs: inspector, outline, and an object's own editor
+- **One drawer** with tabs: the inspector, and an object's own editor
   (Camber, a dice table, a bag), docked by its verb with `api.dock` and
   closed by its × or its caller; the pane with the keys shows a focus ring.
+  A grip on its left edge sets its width, the viewer's for the kind of pane
+  shown (Decisions 9).
+- **The inspector is one pane**: the object tree on top and the
+  selection's fields below, one tab, one selection (Decisions 16). A row
+  click selects and the fields follow in the same flush; a click in the
+  view, the menu's Select or Escape marks and reveals the row, and a
+  selection made while the pane was shut is revealed as it opens. Both
+  halves are drawn only while it's docked. The tree takes at most about
+  40% of the pane's height, its rows scrolling below its bar; the fields
+  scroll under it. It opens by the inspector's rule (a selection in Edit, or the
+  toolbar's Inspector), so the tree comes with it; there is no Objects tab
+  or toggle.
+- **An object's documents are sections of the inspector** (Decisions 17):
+  every document that goes with the selection (or, with nothing selected,
+  the scene) is one kind of thing, a section: its label, a fold, **Open**
+  and the document itself inline, in its own tool. The inspector's own are
+  the object's **Source** (the doc it shows, in that doc's own tool, open
+  beside its Build), or that doc as its **File** (a GLB shown as it is) or
+  its **Linked scene**, each a section of its own and starting folded, its
+  **Build** (the render doc in the build controls)
+  and **About** (its `infoUrl`, else its nearest group's); any package adds
+  its own by declaring `documents` (STAGE.md "A document"), with no
+  inspector code. Open asks Patchwork to show the document as the main view
+  (`patchwork:open-document`, its url and tool); nothing else in the
+  inspector or the build controls opens a document, so "Open source",
+  "Open file" and the link's Open are gone. Whether a section is open is
+  the viewer's (a pref per section, `inspector.open.<ext>/<id>`, so
+  unfolding one File leaves every Source and Linked scene as it was), and
+  nothing is written to the doc. A section stays mounted while it's shown,
+  whatever comes and goes beside it.
+- **Documents in the drawer** (Decisions 18): a section comes out of the
+  inspector into a drawer pane of its own, by its **Dock** or by dragging
+  its head onto the drawer's tab strip. The strip takes any Patchwork
+  document dropped on it (from Patchwork's sidebar, an outline row, a
+  section's head) and docks each, highlighting while one is over it;
+  nothing dropped there reaches the scene. A docked document is the
+  view's (`api.view.dock`), not Edit's nor any extension's: it stays across
+  selections, bodies, focus moves and the inspector restarting, until its
+  × (or the scene closes). There is one pane per document and tool, so
+  docking one again shows its tab. While it's docked, its section in the
+  inspector shows "In the drawer · Show" instead of a second live view of
+  it. So a document has three places, all the same value `{ url, toolId }`:
+  inline, a drawer pane, and the main view (Open).
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -635,9 +776,9 @@ and Dee still walks. To try his changes, he plays a copy.
 |---|---|---|
 | H1 | **What runs is the doc's.** The host resyncs only on a registry or doc change | Over each fixture doc, every change to body, held tool, selection, focus, prefs or clock triggers no sync |
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
-| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch |
+| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them, each asserted in sailing's `stations.test.js`), 11 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`); the pad presses each shown control's code into the key order, to the layer shown, and a lit control is one its layer holds (`src/parts/touch.test.js`; every finger sequence, `src/hold-key.test.js`); every modifier code × {claimed, reserved but passed, not reserved} × {let go at the root, elsewhere in the window, by a blur}: an event's flag is set iff that key is down, or the DOM's (`src/stage/router.test.js`); the Esc hint, by a finger, pops the rung it names |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
-| H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused; after a release the next press only relocks | All 2⁴ cases × each body × {press, key} |
+| H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release, or a finger, the next mouse press on the world only relocks; a finger never locks; nothing but a relock, a body or the pointer unwanted takes the lock | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router); finger then mouse on a button, on an edge, on the world with the grant after the handler (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
 | H7 | **Clock**: ≤1 computer per doc once claims arrive, only eligible views; t monotone per view (a cold start after a crash is a new view's first t); once a view has seen paused, no `step` of a kept process (a replicated one only up to `clock.t`) | ≤3 views × {visible, hidden, gone} × {writable, read-only, missing a package} × every order of ≤5 of join, leave, hide, crash, pause, resume, save, on in-memory Automerge |
 | H8 | **Three times**: a pause changes no actor or liveness outcome | Each dice, lots and cup protocol test, and joints' slide, paused at every step |
@@ -705,6 +846,24 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   drawer holds docked panes only; the inspector and outline stay in the
   sidebar for now (step 3 left them: see its note). One width for every
   pane (Camber had its own, wider); a pane gets no resize handle yet.
+  *Built since* (N13, lane/n13, merged cc3a6d78): a grip on the drawer's left edge. The
+  drawer has two widths, the stage's chrome's (`embed: false`) and a
+  docked editor's, each the viewer's own: dragging the grip (or its arrow
+  keys, Home, End) sets the shown kind's, double-clicking gives that kind
+  its default back, and the widths are view prefs (`drawer.chrome`,
+  `drawer.editor`). A docked editor's default is Camber's old
+  `clamp(360px, 46cqw, 760px)`, so Camber has its room back without
+  docking with a width of its own. The width is a function of the kind
+  shown, its pref and the stage's size only (`src/stage/dock.js`,
+  tested over every sequence of up to three of ten acts); a window resize
+  clamps what shows (the drawer takes at most all but 160px of the stage,
+  70% on a narrow stage, so the stage keeps at least 160px, or 30%, for the
+  scene and any left edge) and never rewrites a pref; the grip's presses
+  and keys reach no part of the scene, and a key held at the stage is let
+  go there even if focus comes to the grip (`drawer-grip-stage.test.js`);
+  a drag ends on its release, a cancel, lost capture, a move with the
+  button up, or its pane's kind no longer being shown, and only its
+  release stores.
 - **3. Selection and carrying.** The halo; Select in the menu and as
   orbit's default; `scene.carry`; `local.tool` and the forced-hand
   workarounds go; activities remain. *Proves:* dice's R rolls; a drag
@@ -778,7 +937,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   parts and outline filters' own Escape went to the field rung, which
   clears a search field's text before it leaves the field). The
   body chip, who's here (body and held tool from presence) and the Esc hint
-  are `scene.body`, bottom right; the world bar of §6 is not built. Tabletop's
+  are `scene.body`, bottom right; the world bar of §6 is not built (games'
+  world commands are on the bar of tools instead: Decisions 10). Tabletop's
   verbs no longer hide walking: their keys are the walk body's, so they show
   without them. Bag's drawn piece in hand is a held tool.
   Three deviations, each the smaller step: (1) **walk** is a new package,
@@ -851,7 +1011,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   their keys are the stage's; the inspector following the selection docks
   with `show: false`, behind a pane in use such as the parts bin); while one
   of them is shown the drawer is a side panel's width, not a docked
-  editor's; `local.drawer` says what's docked, so the toolbar's toggles hear
+  editor's (each kind's width the viewer's own, set with the drawer's grip:
+  Decisions 9); `local.drawer` says what's docked, so the toolbar's toggles hear
   a tab close. Grid, axes and bounds were already the orbit body's. The use
   prompt hides while a gesture is open (a carry: its keys come first). Every general part runs in a game too (the toolbar, the use
   prompt), showing what attention asks for. **`view.start = { body, place,
@@ -961,7 +1122,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   Look before pushing any other, and on arrival sets the base from
   `view.start.body` at once (`startBase`). The halo (`haloTarget`), the
   knobs (`knobsShown`), the inspector's follow, the drawer tabs, grid, axes
-  and bounds, the toolbar (`toolbarShown`), add, transfer, undo's keys and
+  and bounds, the toolbar's editor cluster (`onBar`), add, transfer, undo's keys and
   dimensions' label select ask `editing`; the stage's editing commands say
   `edit: true`. The scene datatype's `init` writes `view.start = { body:
   "edit" }`, and so does every package's copy of `emptyScene`. Packages
@@ -972,7 +1133,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   seat" once. *Proves* (finite, exhaustive): every body (Look, Edit, walk,
   seat, station) × nothing, an object or a ref selected × writable or not,
   on the real parts mounted together: handles, knobs, inspector on select,
-  grid, axes, bounds and the toolbar show exactly in Edit (handles and
+  grid, axes, bounds and the toolbar (with no world command running) show exactly in Edit (handles and
   knobs only where writable, the inspector only on an object; 30 cases,
   `parts/edit-body.test.js`); a click on an object or on nothing in each
   body from each selection (30, `parts/select.test.js`); every sequence of
@@ -980,13 +1141,207 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   on the stage itself (3,110), the bottom always Look or Edit, nothing
   standing on Edit, Leave never landing in it, and the fall-back after
   Leave from every body (`stage/bodies.test.js`).
+- **Sidebar 1 (lane/sidebar, 2026-11-16): one pane for the tree and the
+  inspector** (Decisions 16). `scene.outline` and its Objects toggle went;
+  `parts/outline.js` is `createOutline(api)`, mounted by `scene.inspector`
+  at the top of its one tab, over the fields. *Proves* (finite): six
+  sources of a selection (a row click, `api.view.select`, the menu's
+  Select, Escape, a group's row, a dimension's ref) × the pane, the row
+  marked and what the fields show, read together after the flush (they
+  agree in every row); the inspector's open-rule table (216 sequences)
+  unchanged, with the tree shown exactly while the pane is; the tree mounted
+  with the pane and the same tree after × and a reopen; arrow keys in the
+  tree reach no scene key; the package registers no `scene.outline` and
+  Edit's toolbar has Inspector and no Objects (`parts/inspector.test.js`,
+  "one pane"); a focus move with the pane open reopens it inside, its tree
+  on the link's objects (`stage/focus.test.js`). Local probes (built
+  tool, headless Chrome): editor-run 81/81 with arena built (new
+  `treeAboveTheFields`: the tree on top, at most 40% of the pane;
+  `inspectorShowsIt`: one Inspector tab, its tree's row and its fields on
+  the same object), parts-run 20/20, xdnd-run (main) 60/60, hand-run 33/33.
+  drag-run times out on scene-stage too (not this change). The real
+  Patchwork checks (realcheck-editbody, grip-check, enter-check) wait for
+  the integrator's build and sync.
+  *Review fixes:* the tree is drawn by the tab's update, only while the
+  pane is docked, and reveals the selection as the pane opens (drawerTab's
+  new `opened()`); the rows scroll below a fixed bar. *Proves*
+  (`parts/inspector.test.js`, "one pane"): the six-source table reads the
+  row and the fields in every flush from the one the selection lands in
+  (an extension running after the inspector) and the doc unchanged; three
+  ways a selection comes before the pane opens (Look then Edit, × then the
+  toolbar, a later select) × the row drawn and scrolled into view in the
+  drawer, never in a detached pane; shut by × or by Look, a doc change
+  isn't drawn, and is on opening. Each fails on the code before (and the
+  first table with the tree's update a tick late). Local probes after
+  merging scene-stage (N8): editor-run 86/86 with arena built (new
+  `tallTree*`: 76 rows, the tree 245 of the pane's 613 px, the fields 368;
+  the last row revealed below the bar, the first again on the way up, and
+  again after × and the toolbar's Inspector), xdnd-run 60/60 (it failed
+  `outlineDropCopies` with a sticky bar, which covered the row it dropped
+  on), parts-run 20/20, hand-run 33/33.
+- **Sidebar 2 (lane/sidebar, 2026-11-16): an object's documents are
+  inspector sections** (Decisions 17). One contribution, `documents`
+  (STAGE.md "A document"), and one pure rule, `documentsFor`; the
+  inspector's own are Source, Build and About; "Open source" (the build
+  controls), "Open file" and the link's Open went. *Proves* (finite):
+  eight kinds of selection (built, a GLB file, a link, a plain group, a
+  group with an infoUrl, an object in one, an object with its own,
+  nothing) × the sections, their labels, folds, urls and tools, and five
+  contributions (null, a non-automerge url, a throw, a repeat of the
+  Source's url and tool, a doc on the scene) × kept or dropped
+  (`parts/inspector-model.test.js`); in the stage, the sections shown are
+  documentsFor's in its order, each view inside the embed marker; one live
+  view per open section, the same elements kept while nothing changes and
+  every one unmounted on a new selection; fold {no pref, true, false} ×
+  {folded entry, open entry} (6); the fold writes only the pref; Open on
+  Source, Build and About dispatches its own url and tool (3); no other
+  button in the pane (any selection) or the build controls dispatches an
+  open; a lens's sourceUrl is never shown (`parts/inspector.test.js`,
+  "documents"; `controls-tool.test.js`). On the code before, all 15 stage
+  tests, the controls test and the model file fail; dropping the dedupe,
+  the url check or the own-first order each fails two model rows. Full
+  scene suite 1629/1629 (113 files). Local probes (built tool):
+  editor-run 89/89 (`sectionsSourceThenBuild`, `noOpenSource`, the inline
+  Build controls still rebuild at 200 mm in cm); solander-run shows the
+  hull's group About as a section ("About BODY", its stand-in view
+  rendered). The real-Patchwork check, `recovered/publish/sections-check.mjs
+  <showcase url> <shots>` (Source inline in its own tool, Build's
+  controls, the fold is the pref, Open sets doc= to the source, the doc
+  unchanged), waits for the build to be synced after the merge.
+- **Sidebar 2, review fixes (lane/sidebar, 2026-11-16).** A section stays
+  mounted while it's shown (sections coming and going are inserted and
+  removed around it; before, every open one was taken out and put back,
+  which unmounts a `<patchwork-view>`'s tool). The source is three
+  sections, `source`, `file` and `link`, each its own fold pref (one pref
+  had covered all three). `documentsFor` drops a second entry with one id
+  from one extension (warned); it and `commandsFor` share one walk of
+  what's collected, and a command whose state throws is warned of too. A
+  section's box has a definite height (min(40vh, 22rem), resizable) its
+  view fills. Without a host `<patchwork-view>` a section names its doc:
+  the build controls are no longer mounted by hand; the tests and the
+  editor probe use a stand-in host (`src/test/patchwork-view.js`) that
+  mounts the package's own tools by their registrations. `docKey` lives
+  in `dnd.js`; the link's text row is "Link" (the section is "Linked
+  scene"). *Proves* (finite, each failing on the code before): sections
+  around an open one coming and going {About goes, About comes, another
+  extension's comes, goes} → exactly that mount or unmount (4 steps); a
+  section's doc changing under one selection shows and opens the new
+  one; fold {no pref, true, false} × {File, Source} (6) and one kind's
+  pref × the three kinds (3); routing {built, file, scene, none} → the
+  one section (4); a repeated id (warned); a throwing command warned;
+  Open on File and Linked scene (folded) (2 more rows); the placeholder
+  without a host (`inspector-nohost.test.js`); the CSS height; the
+  controls' tool id is index.js's. Full scene suite 1645/1645 (114 files;
+  one vitest "onTaskUpdate" RPC timeout under load). Local probes (built
+  tool): editor-run 90/90 (new `sectionsHaveAHeight`: Source and Build
+  boxes 286 px, their views 284), solander-run "About BODY" shown, no
+  errors. `sections-check.mjs` now resets and reads the fold through the
+  api's prefs (it had written the stage atom, whose empty `prefs` shadowed
+  the view's), measures the views' heights, and checks the fold is per
+  section; it still waits for the synced build.
+- **Sidebar 3 (lane/sidebar, 2026-11-16): documents in the drawer**
+  (§6 "Documents in the drawer", Decisions 18). `api.view.dock({ url,
+  toolId?, title })` → close docks the host's view of a document
+  (`embed.js` `documentView`, the one the sections use) in an editor-kind,
+  embedded drawer pane, one per `docKey(url, toolId)`; the panes are the
+  view's (`dock.js` `dockDocument`, owned by no extension), so only their
+  ×, `close()` or the view's dispose takes them. `view.drawer` gains
+  `docs`. The tab strip docks any Patchwork document dropped on it
+  (highlighted while one is over it; its drags never reach the stage);
+  `dnd.js` carries an item's string `toolId` through. A section's head
+  drags as a Patchwork document (the three types) and has **Dock**; while
+  its key is docked it shows "In the drawer · Show". *Proves* (finite,
+  each failing on the code before: 29 tests): a dock sequence {A, A again,
+  A in X, A in Y, × on A, close() twice} → tabs, shown, docs and one
+  embedded pane per key (6 rows); a non-document url docks nothing, heads
+  dropped; no owner's close reaches a doc pane, dispose takes all; drops
+  on the strip {one item with a tool, two items, url list, text url,
+  text garbage, an outline row, nothing} → docked keys, nothing past the
+  strip (7 rows); lifetime {another selection, Edit → Look, Enter, Leave,
+  the inspector stopped, the view disposed} → still docked and never
+  remounted, but on dispose (6 rows); ×; a drop in the view never docks,
+  one on the strip adds nothing to the doc; Escape inside a doc pane is
+  its own; fold while docked {docked, docked then ×, docked under another
+  tool} (3 rows) with never two live views of one key; Show; the head's
+  payload is exactly the three types (four since the review fixes below). Mutations: inline while docked (2
+  fail), the strip's drop bubbling (7), no dispose with the view (1), no
+  one-pane-per-key (1), toolId dropped by dnd (2). Full scene suite
+  1672/1672 (115 files; one vitest "onTaskUpdate" RPC timeout under
+  load). Local probes (built tool): xdnd-run 68/68 (its new
+  section-to-strip drag: the head's payload, docked on the strip,
+  folded while docked, the strip's drop adds nothing, a selection keeps
+  the pane, × closes it and unfolds the section) and editor-run 90/90. `sections-check.mjs`
+  gains the drag to the strip (CDP), Dock, a selection and Look keeping
+  the pane, × unfolding the section, and a doc from Patchwork's sidebar
+  docking; it waits for the synced build. Review fixes (2026-11-17): a
+  section's head also carries `application/x-scene-section` (`dnd.js`
+  `ownDrag`, refused by the add and the tree as a row's drag is), so let
+  go anywhere in the stage but the strip it is nothing, the tree in its
+  own pane included; a pane is titled `<object> · <label>` and keeps the
+  title it was first docked with; a dock with nothing selected tells the
+  pointer router.
+- **Sidebar 4 (lane/sidebar, 2026-11-17): the sweep.** scene-stage (N6,
+  N8, N9) merged into the lane; its Decisions 11 to 15 keep their numbers
+  and the sidebar's become 16 to 18. A repo grep (outside agent/,
+  model-viewer/, patchwork-frame-tiling/) finds `scene.outline`, the
+  Objects toggle and `open-source`/`open-file`/`open-linked`/`open-about`
+  only in the docs saying they went and in tests and probes checking they
+  are gone; the dice, bag, tabletop, arena and doom probes already name
+  the inspector. DESIGN.md's general parts say inspector, not outline;
+  COMPOSITION.md's traversal names a section's Open. *Proves*:
+  `src/removed.test.js`, a static check over src/'s non-test sources for
+  the eight removed things (the extension, the toggle, the tab title, the
+  four buttons, the hand-made About, controls and Open file), each row
+  failing on the sources before step 1 (8 of 8). `pnpm build` passes.
+  Full scene suite 2047/2047 (119 files) on the merged tree. Local probes
+  (built tool): editor-run 90/90, xdnd-run 69/69, parts-run 20/20, and
+  dice's dice.mjs 60/60 (the inspector's tab and Edit die's panel side by
+  side). Not run: the real-Patchwork checks (realcheck-editbody,
+  grip-check, enter-check, sections-check, dice.mjs under publish/), which
+  need the integrator's build and pushwork sync of scene. No doc shape
+  changed: nothing republished, the folder untouched. Review fixes
+  (2026-11-17): a docked doc's box was outside the style guard, so the
+  scene's `.label`, `.button` and the like restyled the docked tool; both
+  boxes are now `documentBox` (Decision 17). *Proves*: dock.test.js's
+  7-row sequence checks each docked view is unstyled by the scene (fails
+  without the fix); xdnd-run's `dockedDocLooksAsInline` compares a probe
+  `.label button`'s computed look docked and inline (without the fix,
+  docked is `position: absolute`, 69/70; with it 70/70). removed.test.js
+  gains the removed classes (a dead `.controls-embed` rule in styles.css
+  went). Full suite 2048/2048; editor-run 90/90. The real-Patchwork checks
+  are still owed (integrator's build and sync).
+- **Sidebar, integrated (2026-11-17, merge 50a6b379 into scene-stage).**
+  A clean merge (scene-stage's N6 docs since the lane's own merge touch
+  no file of the lane's). Scene suite 2048/2048 (119 files; one vitest
+  `onTaskUpdate` RPC timeout under load, no failure); arena 56, doom 86,
+  tabletop 569 (their probes only changed). Built and pushwork-synced
+  (clean on the first sync). Local probes on the built tool: editor-run
+  90/90, xdnd-run 70/70, dice.mjs 60/60 (55/60 on a first run under load:
+  the d20 dropped on the table landed on the ground; 60/60 on the rerun,
+  nothing in the merge touches a part's drop). Real Patchwork (shots
+  recovered/publish/shots/sidebar/): sections-check 22/22 on the Geometry
+  showcase, after two fixes to the check itself, never run before (the
+  section head is now scrolled into view before it's pressed, as
+  xdnd-probe's `sectionHead` does: the sections sit below the fields; and
+  the drag from Patchwork's sidebar picks a titled item, not the sidebar's
+  untitled new-doc button, which is draggable but carries only
+  `application/x-patchwork-new-doc`); realcheck-editbody 8/8; grip-check
+  8/8; enter-check 13/13 on the third run (scratch clones 2xwN3KcU…,
+  B2dDw4BB…, 4Ur934X2…; the first two 12/13, see FOLLOWUPS "Sidebar
+  integrated"). No doc shape changed: nothing republished, the folder
+  untouched. The lead's questions in Decisions 16 to 18 stand.
 
 ## What it costs
 
 - Every piece carries a trait; a plain CAD scene moves things by handle
   until someone ticks Carryable. Selecting in a game takes the menu, and
   editing takes the Edit body (Decisions 6).
-- Keyboard bodies have no touch controls yet (`keys` carry labels for one).
+- Touch controls are digital keys, a d-pad and buttons: no stick, no
+  analog walk (Decisions 12, 13). They cover what keys do, not what a
+  locked press does: arena's gun shoots only on a locked press
+  (`arena/src/play.js`, `ev.locked`), so under touch its pad shows Reload
+  and nothing fires. Whether a tap fires from the eye is arena's call,
+  open for the lead.
 - One computer per doc: a weak machine slows everyone; a crash freezes the
   world up to 15 s; a running world adds a checkpoint every 30 s while
   anyone is present (~120 changes an hour) to its history.
@@ -1155,8 +1510,8 @@ The project lead decided the five open questions on 2026-11-12.
      before leaving Edit stay, to take back on returning (§5).
    What it costs: editing a thing in a running game is a body change (Ben
    stops walking to move the winch, §6), and a package's toolbar command
-   (arena's Play, the cups' Lift all) is in the menu and on its key outside
-   Edit, until there is a bar of tools for games.
+   (arena's Play, the cups' Lift all) was only in the menu (and on a key,
+   where it had one) outside Edit, until there was a bar of tools for games (Decisions 10).
 7. **No tie rule for verbs beyond running order** (decided unattended,
    2026-11-14, final fixer). The domino prompt shows Flip, Draw and Wash
    (the cap is three), and Stand on edge is on U and in the menu: carry's
@@ -1184,3 +1539,613 @@ The project lead decided the five open questions on 2026-11-12.
    the view already says each viewer's body on every channel it acts on, so
    it lists everyone with that doc open anywhere. Pause and Resume act on
    the chip's own doc, never the focus's.
+9. **The drawer's width is the viewer's, by the kind of pane shown**
+   (decided unattended, 2026-11-16, lane/n13, for the lead). The drawer
+   has a resize grip, and a pane declares no width (`api.dock` has no
+   `width` option). There are two widths, the stage's own chrome's
+   (inspector, outline, dimensions, parts: docked with `embed: false`) and
+   a docked editor's (Camber's Shape, a die's panel, a bag's); dragging the
+   grip sets the width of the kind shown.
+   - Not one width per owner extension: the four chrome tabs are four
+     extensions, so the drawer would jump width going from Inspector to
+     Objects, and every new package would add a width to keep.
+   - Not a width a pane declares: Camber's lost room comes back by making
+     its old `clamp(360px, 46cqw, 760px)` the editor default, so the stage
+     learns nothing of one extension's layout, and the person, not the
+     package, decides how much of the screen the scene gives up.
+   - The widths are view prefs (`drawer.chrome`, `drawer.editor`), per
+     viewer and per scene like the grid, units and snap, so another tab of
+     the same scene follows. A stored width outside [220, 1200] px is no
+     setting (the default shows), not one to clamp; the CSS clamps what
+     shows: the drawer takes at most all but 160px of the stage (70% of a
+     stage 640px wide or less), so a narrow window never rewrites a stored
+     width. The 160px (or 30%) is the scene's and any left edge's
+     together: the CSS can't see the left edge's width, so with one the
+     port itself may get less.
+   - A click on the grip that doesn't move stores nothing, so a pane's
+     default (which follows the stage's width) stays until the person
+     actually drags.
+   - The grip owns a key from its keydown on the grip until that key's
+     keyup, the grip's blur or its drawer going, and owns no other key. A
+     key held at the stage when focus comes to the grip (a helm's or a
+     walk's ArrowLeft) stays its holder's: its auto-repeats resize nothing
+     and its keyup reaches the holder, so no held key is left stuck. A drag
+     ends on its release, a cancel, lost capture, a move with the button
+     up, or its kind no longer being shown, and only its release stores.
+   - Checked in the real Patchwork after the merge (2026-11-16, the
+     Geometry showcase in a 640px pane beside comments): the inspector
+     docks at 220px with the grip on its edge; a 200px drag gives the
+     drawer +200 and the canvas -200 and stores `drawer.chrome` only;
+     ArrowLeft +16; a reload keeps the width; a double-click gives the
+     default back and forgets the pref (8/8).
+   - Still open (a nit): the grip's `aria-valuemin`/`aria-valuemax` are
+     the fixed 220/1200 a pref may hold, while the CSS may show less on a
+     narrow stage, so `aria-valuenow` (what shows) can fall below the
+     minimum; nor is it refreshed on a window resize.
+   Questions for the lead: are two kinds right, or should each pane's
+   owner have its own width? Should the widths be one per viewer across
+   all scenes, as screen layout usually is, rather than per scene? Should
+   a pane still be able to declare a preferred width on top of the grip?
+10. **The bar of tools holds the world's commands in every body**
+    (decided unattended, 2026-11-16, lane/n8, for the lead). Outside Edit,
+    a game's Play and the cups' Lift all were reachable only by menu (and
+    key, where they had one) or a HUD's private copy of the command,
+    because the toolbar was Edit's whole. A command that says `show: ["world"]` (only an explicit
+    mention counts, as for the menu's scene commands; for scene commands,
+    the null target, as "toolbar" is) is now on the bar of tools in every
+    body, in a cluster at its right end; the editor's commands stay at the
+    left, in Edit only. One mechanism, the existing toolbar part
+    (`scene.toolbar`, the id unchanged): `onBar` and `barEntries` in
+    `src/parts/toolbar-commands.js`. What it keeps true:
+    - **B1** outside Edit the bar holds exactly the world commands that
+      apply, never an editor command;
+    - **B2** in Edit it holds the editor's commands, then the world's (a
+      command naming both surfaces is a world command);
+    - **B3** it shows ⇔ some command on the focus path is the bar's in this
+      body (a world command, or in Edit an editor command), whatever that
+      command's state; one rule for both clusters;
+    - **B4** a shown key works (H3): the bar's world entries, in every
+      body, are among the hints the key resolver's table checks.
+    - **When it shows (B3).** So the bar's height depends only on which
+      extensions run, never on a command's state, and every cluster and
+      every control (button, toggle or picker) is one control tall, even an
+      empty cluster: the canvas doesn't jump as Play, Lift all or Come
+      aboard comes and goes (the 36 px shift that made a double-click near
+      the canvas's top edge miss in Edit). The cost is not an edge case:
+      outside Edit an empty row is the usual state wherever a world command
+      applies only now and then (aboard a boat whose Come aboard applies
+      only in the lobby, so walking, at a station or seated; a dice table
+      while no cup is down; holding arena's gun). Showing the bar only
+      while a world command applies was rejected for that jump. *Question
+      for the lead:* is the empty row acceptable? The other way that keeps
+      the height and the x: a world command that is declared but doesn't
+      apply shows disabled (§6's "Can't shows"), at the cost of a greyed
+      Come aboard while aboard; the contract has no way today for a
+      command to say "don't apply" apart from "can't now".
+    - **Where it sits.** At the right end of the bar of tools, the same x
+      in every body and at every width: the editor's cluster scrolls
+      sideways in a narrow view and the world's sits outside that scroll.
+      This runs against §6's sketch, where the world bar's left is the
+      world's and its right is yours, and "world bar" (§6: breadcrumb,
+      clock chips, who's here, body chip; not built) and `show: "world"`
+      (a cluster on the bar of tools) are now two things with one word.
+      *Question for the lead:* should world commands go at the bar's left
+      (the world's side) or join the clock chips' slim bar, making the two
+      top strips one, and should the surface have another name?
+    - **A new surface, or `edit: true` alone?** The alternative not taken:
+      the bar shows in every body and `edit: true` keeps the editor's
+      commands Edit-only, with no new surface name. Nearly every stage
+      command on the bar already says `edit: true` (Snap, Units, Grid,
+      Axes, Bounds, Undo, Redo, Objects, Dimensions, Parts, Inspector,
+      Measure); only Frame all doesn't, and §3's table lists Frame as
+      everyone's. That would be fewer words (no strict special case, no
+      precedence between clusters, games keeping `show: ["toolbar"]`), but
+      any package command with `show` absent or "toolbar", no `edit: true`,
+      that applies to the scene would appear outside Edit (arena's Gun is
+      one; the rest would want an audit), and a game would say where its
+      button goes by saying it isn't the editor's. The lane chose the
+      explicit surface: a package says "this is for players". `show`'s
+      vocabulary is an API every package writes against, so this is a
+      *question for the lead*.
+    - **The focus path's only**, as the toolbar and the clock chips: in a
+      mashup a game's world commands show once the game is entered (Games
+      night's Lift all inside Liar's dice; the Model room's Come aboard
+      inside Ship at anchor). *Question for the lead:* should a game's
+      world commands show without entering it?
+    - A bar button doesn't take the focus from a mouse press (it stays on
+      the tool's root, where keys are heard), so outside Edit an unclaimed
+      Space or Enter after a click goes on to the stage and doesn't run the
+      button again.
+    - Key legends (machine's controls panel, sailing's keys line, arena's
+      help line, the Esc hint) are not commands and stay as they are; one
+      stage-drawn legend of declared keys is a *question for the lead*.
+      N9's touch controls have since merged (Decisions 11 to 15):
+      `src/touch-keys.js` derives the controls each layer shows from the
+      same declared keys, so such a legend would read that model.
+    - **Order within the world cluster.** It is right-aligned and in
+      command order, so its last entry's place is anchored and an entry
+      coming or going slides everything to its left. B3 holds the bar's
+      height, not a button's x, so a package lists a world command that
+      comes and goes (Stand targets up, there while a target is down)
+      before the one people reach for (Play), which then never moves under
+      a pending click. Between packages the order is running order, which
+      the stage doesn't promise; nothing has two packages' world commands
+      on one path yet. *Decided unattended (2026-11-16, lane/n8), for the
+      lead:* a convention, not a mechanism; a stable slot per command (a
+      declared, disabled one) is the first question above.
+    - **Consumers.** Sailing's Come aboard (`aboard`, `show: ["world"]`):
+      the HUD's own button, a private copy of the command that sat over the
+      canvas's top edge in Edit (triage (f)), is gone, and the HUD only
+      reads (`sailing/src/hud.js`, `probes/editclick-run.mjs` steps 5-6).
+      Arena's Play and Stand targets up (`show: ["world", "menu"]`): its
+      HUD's lobby drew its own "▶ Play" / "▶ Pick up the gun" and "Stand
+      them up" buttons, private copies of the two commands, so N8's "Play
+      only by menu and key" was stale for arena; they're gone, Play's
+      `state` carries the label ("Pick up the gun" while walking, when it
+      only hands you the gun), and the HUD only reads: the count, the
+      scores, the crosshair, the ammo (`arena/src/play.js` `playState`,
+      `probes/arena-run.mjs`: the canvas rect is the same looking, walking,
+      holding the gun and as Stand targets up comes, and Play's rect as
+      Stand targets up comes and goes to its left). The Gun toggle stays
+      Edit's toolbar, the menu and G: outside Edit, Play offers the gun.
+      *Question for the lead:* a big Play call to action over the level
+      (what the lobby had) is gone with it; should a game keep one, and if
+      so as what, given that a HUD button is the triage (f) hazard? The
+      cups' Lift all (`lift-all`, `show: ["menu", "world"]`, was
+      `["menu", "toolbar"]`) is now a button outside Edit too, where it
+      had been the menu's alone: seated watching, walking, Look. Its state
+      is unchanged (some cup covers, or is shaken blind with a holder),
+      and since it's declared the bar is up at a cups table whether or not
+      a cup is down (`dice/src/cup-extension.test.js`: its surfaces, and
+      the 21-row state table, knocked-over cups among its cases, and a run that
+      lifts exactly the cups the state counts; `dice/probes/liars-dice.mjs`: seated, the
+      bars are up with nothing on them, both shake and each bar offers it
+      with neither canvas moved, and at the end A's click lifts every cup
+      down in both docs and leaves the knocked-over one alone). It's the
+      cups' only world command, so the order convention doesn't come up.
+      Sailing's button reaches
+      further than her HUD did: it's on the bar wherever sailing runs on
+      the focus path (an entered boat in a harbour, the Model room's boat),
+      where the HUD is hidden because her doc isn't the world. It applies
+      there exactly where Enter and a click on her already did, so nothing
+      new can happen; the focus-path question above covers it.
+    - **Where the bar is now up on arrival.** Outside Edit the bar is up
+      wherever a world command is declared on the arrival's focus path,
+      so these published examples now arrive with it, their canvas one
+      control row (about 38 px) shorter than before: Ship at anchor, Ship
+      at sea, Cadboro Bay and Ucluelet (a sloop at the root: Come aboard);
+      Lost Cities aboard (watching the game, the boat on the focus path:
+      Come aboard); Arena level (walking: Play, "Pick up the gun"); Liar's
+      dice (seated: Lift all cups declared, the bar empty while every cup
+      is up). The cameras' fov is vertical, so a shorter canvas crops
+      nothing above or below; it narrows the view's aspect. A plain scene
+      (no world command) arrives with no bar at all, as before.
+    - **Known: entering a link moves the canvas.** Entered in Edit (a
+      double-click on G's card aboard Lost Cities), the canvas moves down
+      about 31 px as the entered path's chrome appears. That's after the
+      entering press, so it isn't triage (f), but a click straight after
+      lands that far off; B3 holds the bar of tools still, not the other
+      strips. Left for a later item (a constant-height strip for the
+      path's chrome).
+    *Proves* (finite, exhaustive, `src/parts/toolbar.test.js`): every
+    `show` (absent, [], toolbar, world, both, menu, the string "world") ×
+    Look, Edit and a walk × `edit: true` or not lands in exactly the
+    cluster B1 and B2 say (42 rows); Look and Edit × an editor command
+    (none, there, applying) × a world command (likewise), the bar shows
+    exactly when B3 says and holds exactly what applies (18 rows); on the
+    stage, Look, Edit, a walk and Look again × playing or not, the world's
+    button is there exactly while it applies, the editor's only in Edit,
+    and the bar never hides; a mouse press on a button is kept from moving
+    the focus; entered in a link, looking, the game's and the host's world
+    commands are both on it, each run in its own doc (`stage/focus.test.js`).
+    The key resolver's H3 table enumerates the bar's world entries in
+    every body, Edit's among them, and keeps a keyed command on no surface
+    (`keymap.test.js`, B4). In a browser (`probes/toolbar-run.mjs`), wide
+    and narrow: a button and a picker are one control tall, as is an empty
+    cluster; Play clicked goes and neither the bar nor the canvas moves; in
+    Edit the world's controls are where they were in Look, still in view
+    and clickable while the editor's cluster overflows. Two checks for the
+    real Patchwork (recovered/publish/). worldbar-check, on scratch copies
+    of Ship at anchor and Lost Cities aboard in a 639 px pane beside
+    comments, checks that Look's bar holds exactly Come aboard and the HUD
+    no button; that Edit adds the editor's commands with Come aboard where
+    it was; that the bar's Come aboard, clicked from Edit, comes aboard;
+    that the canvas's top and height are the same in Look, Edit and
+    aboard; and that in Edit on Lost Cities aboard a double-click on a
+    card 16 px below the canvas's top edge enters the game, the first
+    press read two frames on. realcheck-editbody's rows say what the bar
+    is outside Edit, on arrival and after a press: none on a plain scene
+    (the Geometry showcase, Santorini), and on the examples above exactly
+    their world commands, with no editor command. Before this change,
+    against the published packages (2026-11-16), worldbar-check fails 11
+    of its 17 checks then (an 18th, no error in the page's log, came
+    later), triage (f) among them: the first press lands on the
+    HUD's Come aboard, comes aboard, leaves Edit and lifts the canvas
+    38.5 px (Look's canvas sat at 101 px and Edit's at 140, the bar being
+    Edit's alone), and nothing is entered. After the merge (7aba1de4) and
+    the sync of scene, sailing, arena and dice, it passes 18 of 18 (its 17
+    and the page log's), the canvas at 140 px in Look, Edit and aboard; the
+    first run showed Come aboard's tooltip as "… (Enter) (Enter)" (the
+    command's title named its key and the bar adds the key's hint), fixed
+    in sailing (c0f79738) and pinned in the check. realcheck-editbody passes
+    on its eight rows (8/8), Play on the Arena level and the bar up and
+    empty at Liar's dice among them.
+11. **Touch is part of the pointer's state; a mouse after touch finds the
+   lock released** (decided unattended (2026-11-16, lane/n9), for the lead).
+   `touch` sits beside `refused` in the formula, set by every press on the
+   view (`pointerType === "touch"`, heard on the view's root in the capture
+   phase, so the edges count) and by a coarse pointer at the start; keys
+   never change it, so a keyboard on a tablet leaves it be. A finger on a
+   locked view lets the lock go as the page's own exit, and clears
+   `released` (nothing to take back under touch, so the chip never says
+   "Click the view to take the pointer back" to a finger). Going back to a
+   mouse sets `released` where the formula would lock: the press that ends
+   touch, wherever it lands, never asks for the lock itself, and the next
+   press on the world only relocks, as after the browser's Esc, and the
+   chip says so. Rejected: making that press ordinary and asking for the
+   lock in its handler. A press on the chip or a prompt's button would then
+   take the lock mid-click (Chrome grants it before the mouseup, so the
+   click lands on the lock target and the button never hears it), and a
+   press on the world would be half a press: dispatched unlocked, its click
+   resolved locked at the crosshair. The cost: the first mouse click on the
+   world after touch is swallowed, as the first after an Esc is.
+   `pointerType === "pen"` counts as a mouse (a pen has a position to
+   hover and usually a keyboard beside it); open for the lead whether a pen
+   should be touch. Open for the lead: whether the touch controls show from
+   the first touch, always on a coarse pointer, or by a toggle in the chip's
+   menu (lane/n9's plan asks).
+12. **Touch controls are derived from declared keys, grouped by what they
+   show** (decided unattended (2026-11-16, lane/n9), for the lead).
+   `touchControls({ gesture, held, body })` (`touch-keys.js`) is pure and
+   per view, never per body. Codes group by the label a person sees: the
+   declared one, else the code's name from one table (`nameOf`: KeyQ "Q",
+   ShiftLeft "Shift", ArrowUp "↑", via keymap.js `labelOf`), so two
+   unlabelled Shifts are one "Shift" and no reserver ever shows two
+   controls that look the same; a control presses its first unshadowed
+   code. The pad's places come from the arrow codes alone (a code is in at
+   most one control, so no place is held twice), and geometry wins over
+   the label: a "Forward" declared on ArrowDown sits in the down place. A
+   body that declares only W A S D gets four buttons, not a pad: WASD is
+   geometry too, but arrows alone is the smaller rule. Labels are unique
+   per reserver only; across reservers two controls can read the same
+   (walk's "Right" under snes's), so the pad shows each control under its
+   reserver (`from`, reservedBy's names: "tool" is the view's `held`).
+   `keyOfCode(code)` and `nameOfCode(code)` live in keymap.js beside
+   `codeOfKey`, built from the same tables read the other way, and
+   `declaredKeys` is the one reading of a declaration (`codesOf` and the
+   touch controls both use it). `keyOfCode` is the US layout's
+   `KeyboardEvent.key` (KeyQ "q", Space " ", AltLeft "Alt"), checked
+   against what Chrome sends, since handlers read `ev.key` as often as
+   `ev.code`. Grouping by label makes "labelled alike is the same action"
+   part of the declaration contract, now stated where packages read it
+   (§4's code block, STAGE.md's bodies). The cost: codes a declaration
+   labels alike but that act differently collapse to the first. machine's
+   doom pad labels Digit1–7 all "Weapon" (its controls panel reads one
+   label as a row of keys, "Weapon: 1 2 3 4 5 6 7"), so its touch control
+   picks weapon 1 only; the test asserts that loss as it stands. The fix
+   is the declaration's ("Weapon 1"…), left to machine. Open for the lead:
+   label-as-identity, or an explicit grouping field in the declaration
+   (e.g. `{ code, label, same: "KeyW" }`), which would let machine keep
+   one "Weapon" row and still show seven controls. Open for the lead: a
+   digital d-pad from the arrow codes, or an analog stick (a new body input
+   contract, an axis), and whether WASD should make a pad too.
+13. **The touch pad presses keys as a keyboard does** (decided unattended
+   (2026-11-16, lane/n9), for the lead). `scene.touch` presses a
+   control's key by dispatching the DOM `keydown`/`keyup` a keyboard
+   sends for its code (with the US key) on the view's root, so the router
+   hears it as any key, in the one key order; nothing new in the api.
+   Rejected: a router entry point (`api.input.key(code)`), which would
+   make pad keys distinguishable and skip the DOM; it adds a second way
+   in for no case that needs one. Where the pad is not a keyboard, and
+   why: a control that goes lets go at once (a keyboard's key stays down
+   till it's lifted, and its autorepeat presses it again for a new body;
+   a finger presses nothing until it comes down again, so a lit control
+   is always a key its layer holds); a pad key under a pad Shift sends
+   the unshifted key (`q`, not `Q`); handlers already take both.
+   Modifier state is the router's (§5): the modifier keys down at the
+   root, claimed or not, as a keyboard's are, set every event's flags,
+   and go on a keyup anywhere in the window, a blur or a hidden page.
+   (Rejected: only claimed modifiers, which made a reserver that declines
+   Alt before a lift lose the pad's Alt, and made "claimed" mean "set my
+   flag".) Modifiers on the pad are momentary, held by a second finger,
+   not latching. A control's identity is its layer (the body, tool or
+   gesture's `serial`: the router counts each one taken, so the same body
+   left and entered again is a new one), its code, its label and its
+   place; kept across renders its element stays put (moving one can lose
+   its pointer capture; only a change of order among kept controls moves
+   one, and then its key is let go). Labels name the action, not its
+   state (§4): a label that changed while held would be a new control.
+   The gesture's group is unnamed: the stage knows no gesture's name, and
+   one part's word ("Carrying") would be wrong for every other gesture.
+   The Esc hint is the Escape key on touch (§5), since a finger can't
+   press Escape and lifting it ends a carry where it is. The pad shows
+   from the first touch to the next mouse press (`pointer.touch`,
+   Decisions 11). Open for the lead: always on a coarse pointer, or a
+   toggle in the chip's menu; whether a finger held still on the world
+   while a body looks by drag should still open the menu after 500 ms
+   (the router's touch hold), as it does now; the layout (arrows bottom
+   left, buttons bottom right in groups under their layer's name, in
+   capitals) is provisional, the lead's taste; whether a press session
+   should declare a `label` of its own (as a body has a label and a tool
+   a name) to name its group, or the group take its extension's name
+   (which `local.running` would then have to carry).
+   The pad lies under every other part's overlay (its own at z-index 1,
+   theirs at 2; decided unattended (2026-11-16, lane/n9 integration), for
+   the lead): before, it came above whichever overlays had installed
+   before it, so the chip's menu opened under the pad's buttons and a tap
+   on Edit or on the current body pressed Jump or Run (found at
+   integration; `probes/touch-run.mjs` 2b fails on the lane's dist). A
+   menu or prompt drawn over the pad now takes the finger where it is
+   drawn. The cost: anything another part draws over the pad hides it
+   (sailing's HUD panel at bottom left, which lets the pointer through, so
+   the arrows still work unseen; COMPOSITION "Waiting on the lead").
+14. **A lock body under touch looks from its eye** (decided unattended
+   (2026-11-16, lane/n9), for the lead). A finger never locks the pointer
+   (Decisions 11) and never hovers (it only presses and drags, and the
+   router hovers only a pointer with no button down), so a first-person
+   body under touch had no look at all: no use prompt, no F, nothing to
+   take a station by. The look is now the eye ray's wherever the body
+   would lock and nothing wants the pointer, by mouse or finger:
+   `looksFromEye(pointer)` ⇔ locked ∨ (body.lock ∧ ¬wanted ∧ touch)
+   (`stage/pointer.js`, checked over all 32 pointer states), read by the
+   view's look and by the use prompt, which then sits in the middle of the
+   view as under lock and doesn't follow a finger dragging to look. So a
+   verb is a tap on the prompt's button, at what the eye looks at (sailing
+   takes the helm that way, `sailing/probes/touch-run.mjs`). A mouse that
+   isn't locked (released, refused) still looks where it hovers. A
+   press's hit is unchanged (a finger's press is still where it lands, and
+   the router still sets the hover to it), and a menu is of that, not of
+   the look: `api.path({ pointer: true })` and each reader's `pointed()`
+   read the pointer's hit (the hover the press set), which the look is in
+   every other pointer state, so only here do they differ. Before that, a
+   finger's long press in walk opened the menu of whatever the eye looked
+   at (menu.test.js "a menu is of what was pressed, in every pointer
+   state", four rows). The rejected alternative: the look gives way to
+   the press's hover while a finger is down on the world, which would pin
+   the use prompt to what a drag to look started on.
+   Open for the lead: whether a lock body under touch should draw the
+   stage's own crosshair (sailing draws its own; walk draws none).
+15. **A prompt button with a key is that key; a finger's tap is its look**
+   (decided unattended (2026-11-16, lane/n9), for the lead). Before, a
+   held verb's button was disabled ("a held verb is the keyboard's"), so
+   nobody on touch could wind sailing's windlass, its only way to raise
+   the anchor. Now a press on a verb's button presses the key that does
+   it (§5): keydown on the press, keyup on the lift, the cancel or a lost
+   capture, through `src/hold-key.js` as the pad does, default-prevented
+   so focus stays and the key map's held verb stays held. The key is
+   asked as the press comes (`keyFor`, against the resolver's state then),
+   not taken from what the prompt drew, so a stale button presses nothing
+   wrong. The same for a mouse, not only a finger: a mouse held on a held
+   verb's button holds it, which a mouse user could not do before, and a
+   plain verb runs on the press, as its key does, not on the release (the
+   click that follows a press that was the key is that press's). Rejected:
+   keeping the click path for a mouse, which would be two rules for one
+   button and leave held verbs to the keyboard there too. A pointercancel
+   lets the key up, as a lift does: a key has no cancel; when the window
+   went first the key map cancels (its keyup with the page away), and a
+   target gone cancels by its sweep before the lift. (The plan said a
+   pointercancel cancels the session; that would need a cancel channel
+   beside the keyboard's, for the case the window rule already covers.)
+   The buttons take no browser gesture (`touch-action: none`, no callout,
+   no context menu), so a held finger isn't taken for a scroll.
+   While a verb is held the prompt keeps the target's verbs in their
+   order (the held one as pressed, in its place; one that no longer
+   applies from here after the rest), not the held first as before:
+   moving the held button first took it out of the document, losing its
+   capture, and slid the next button under the finger, so a finger's lift
+   clicked that one and the held verb never ended (found in Chrome,
+   `probes/touch-run.mjs`; jsdom keeps no capture to lose). The same
+   browser rule, the lift's click going to whatever replaced the button
+   pressed, holds for a plain verb that runs on the press and puts
+   another button in its slot (the next target's verb, an Open for a
+   Close), so a pointer's click runs a verb only on the button that had
+   its press, and only when that press wasn't its key: the view's every
+   press clears it first, and a second finger on a held button is the
+   key's too (step 5 review). A right or middle press is neither a key
+   nor a click (`holdKey` takes only a primary press), as on any button.
+   A held button keeps its place in the document, not always on the
+   screen: a verb before it that comes to apply pushes it along, and its
+   capture still takes the lift to it.
+   And so a finger can reach the prompt at all where the look is the
+   pointer's (Look, Edit): a finger hovers nowhere and leaves as it lifts,
+   which cleared the look, so the prompt went with every tap. The router
+   now keeps the hover a finger's tap set when it lifts, until the next
+   press on the world; a finger that dragged (an orbit, a carry, a look)
+   or was cancelled keeps none, and a finger moving elsewhere (the pad)
+   is never the mouse leaving a kept look (the deferred "kept-look
+   jitter"). The prompt sits where the finger pressed (a press is where
+   the pointer is; a finger has no moves before it). Open for the lead:
+   whether the tapped look should also go after a while, or on a tap on
+   the prompt's own margin. It is shared, too: `hovered` is presence
+   (select.js), so other viewers see a touch viewer's tapped outline
+   until that viewer presses again, where before every lift cleared it;
+   and it outlives a body change (Look, walk, Look again brings the old
+   tapped prompt back).
+   Proves, for Decisions 11 to 15 together: merged into scene-stage
+   (f66a7d0a; the lane's Decisions 9 to 13 renumbered after the drawer
+   grip's 9 and the world bar's 10) and checked in the real Patchwork on
+   2026-11-16 under Chrome's touch emulation (recovered/publish/
+   touch-check.mjs, 14/14 on scratch copies of the Quiet games room and
+   Lost Cities aboard): the room arrives with `pointer.touch`; a tap on the
+   chip, then Walk, walks with the lock never asked for; the pad shows
+   Forward, Left, Back, Right in its places and Run, Jump; Forward held
+   moves the eye, and with a second finger dragging on the world it both
+   moves and turns. Aboard, the bar's Come aboard by a tap; the pad is
+   aboard's; at the wheel the prompt sits in the middle and a tap on Take
+   the helm stands there; Steer to starboard held turns the wheel 0.48 and
+   Steer to port back; Leave leaves; at the windlass a finger on Raise
+   anchor brings the rode from 25 to 18.4 m and it stops when the finger
+   lifts. The published room, boat and game were never written. Locally on
+   the merged tree: scene `probes/touch-run.mjs` 19/19 (2b new: the chip's
+   menu over the pad's buttons), sailing's 11/11, and the mouse probes
+   toolbar-run 28/28 and aboard-run --quick 54/54.
+16. **The object tree and the inspector are one pane** (the lead,
+    2026-11-16: "the sidebar's objects / inspector should be integrated
+    together"; the shape of it decided unattended, 2026-11-16,
+    lane/sidebar, for the lead). The rule is §6's ("The inspector is one
+    pane"); what was decided, and why:
+    - **One extension, the tree a module.** `scene.outline` and its
+      `objects` toggle went; the tree is `createOutline(api, { shown })`
+      (`parts/outline.js`), which `scene.inspector` mounts at the top of
+      its one tab. Two tabs over one selection could disagree for a flush
+      and opened by two rules; one tab can't, and needs no second toggle.
+    - **Both halves are drawn by one rule:** the tab's update, only while
+      it's docked. A shut pane is drawn into by nothing (the tree used to
+      redraw a detached list on every flush, every frame of a sailing sim),
+      and what to reveal is noted on every flush and revealed as the pane
+      opens, whichever way it opens (a selection in Look then Edit, the
+      toolbar after ×, a later open), since a scroller put back comes back
+      at the top.
+    - **The name stays Inspector** (the tab, its `data-panel`, the toolbar
+      button), so every probe hook and the open rule are unchanged.
+    - **A fixed split:** the tree takes at most about 40% of the pane's
+      height; its bar (filter, New group) stays put and only its rows
+      scroll, so a row scrolled into view is never under the bar (a sticky
+      bar over a scrolling tree hid the row a drop aimed at); the fields
+      fill the rest. With a ref selected (a dimension: no fields here) the
+      tree has the whole pane.
+    - **The tree arrives with a selection**, by the inspector's open rule,
+      where Objects opened only when asked.
+    Questions for the lead: is "Inspector" the right name for the pane
+    (or "Objects", or "Scene")? Should the split be draggable (a view
+    pref, like the drawer's grip) or the tree foldable, rather than a fixed
+    40%? Should the tree arrive with a selection (as now), or stay folded
+    until asked?
+17. **An object's documents are inspector sections, one kind of thing**
+    (the lead, 2026-11-16: "the 'open source' is unnecessary! it should be
+    a kind of inspector and render inline"; the shape of it decided
+    unattended, 2026-11-16, lane/sidebar, for the lead). The rule is §6's
+    ("An object's documents are sections of the inspector"); what was
+    decided, and why:
+    - **A section is a document, `{ url, toolId }`, nothing else**: a
+      `<patchwork-view>` of it inline, and Open for the main view (the
+      drawer, next, is a third place for the same value). About, the build
+      controls, "Open file", the link's Open and the controls' "Open
+      source" were five shapes of one idea; now there is one. A section
+      that was a mount function couldn't be opened as the main view, so a
+      die's or a bag's panel, which needs this scene's context (it rolls as
+      this viewer), stays a command docking its own element.
+    - **A contribution, `documents`, beside `commands`**: read with
+      `api.collect`, worked out by one pure rule (`inspector-model.js`
+      `documentsFor`: the inspector's own first, then running order; a null,
+      a non-automerge url, a throw (warned), a second entry with one id
+      from one extension (warned) or a repeated url and tool is dropped,
+      the first kept). Commands and documents share that walk of what's
+      collected, so a command whose state throws is warned of too. Unlike
+      a command, a document may go with the scene.
+    - **The Source is the doc's own `sourceUrl`**, in the source doc
+      type's default tool, never a lens's: a veiled card's face is never
+      offered. It is three sections, one per kind of content (`source`,
+      `file`, `link`), so each keeps its own fold: a file and a link start
+      folded (what they show is already in the scene, and a linked scene
+      inline is a whole second stage); a built object's source starts
+      open, beside its Build. A source routed nowhere (its provider isn't
+      here) is a folded Source.
+    - **Folding is the viewer's**, a pref per section (extension and id),
+      not per object, and no fold is written to the doc. (A question, below.)
+    - **The build controls open nothing.** (A question, below.)
+    - **A section's box has a definite height** (min(40vh, 22rem), and the
+      viewer can drag it taller or shorter), which its view fills: a tool
+      that fills its host (an editor, a scene) needs one, and the build
+      controls, which size to their content, leave room below.
+    - **No tool of this package is mounted in a section by hand**: without
+      a host `<patchwork-view>`, a section names its doc. The tests and the
+      editor probe use a stand-in `<patchwork-view>` (`src/test/
+      patchwork-view.js`) that mounts the package's own tools by their
+      registrations, as Patchwork does, so they check the one path.
+    - **A section stays mounted while it's shown**: sections coming and
+      going beside it are inserted and removed around it. The inspector's
+      whole field list is rebuilt when the selected object becomes another
+      kind of thing (its render doc, routing or link-ness changes), and
+      its sections are remounted then.
+    - A document's box, inline or docked, is `embed.js` `documentBox`:
+      it carries both the `data-stage-embed` marker (its keys are its own)
+      and the stage-wide CSS guard's class, `.about-embed` (every
+      stage-scoped rule, in some thirty stylesheets in eight packages,
+      stops at it), so a document looks the same inline and docked. The
+      two aren't one marker: a docked extension panel (a die's, a bag's)
+      is `data-stage-embed` for its keys but keeps the scene's styles.
+      Renaming the class waits for the parallel lanes to land.
+    Questions for the lead: which tool shows a Source (now its type's
+    default; should a provider name one, a `sourceTool` in its
+    `scene:source` metadata)? For an object fixed at a version, the Source
+    shows the latest (the doc you'd edit) while the Version row says Fixed
+    at…: should it show the source at those heads, read-only? Should a
+    die's or a bag's panel become a section (its tool working as a plain
+    doc tool), or stay a docked panel? Should a fold be per section for
+    every object (as now: folding Source folds every object's Source), or
+    per object? The build controls lost "Open source", so opened on their
+    own they have no way back to the source: accept that (the inspector is
+    where you meet them, their Source beside them), or should they show
+    their source too? Is a fixed section height (the viewer dragging it)
+    right, or should a tool that sizes to its content (the build controls)
+    take only its own height? And should a tool named explicitly as the
+    type's default count as the same section as one shown in the default
+    (the scene can't know a type's default tool, so today they are two)?
+18. **Documents in the drawer are the view's** (the lead, 2026-11-16: "it
+    should be a kind of inspector and render inline but be draggable out
+    into its own panel / openable as the main view"; the shape of it
+    decided unattended, 2026-11-16, lane/sidebar, for the lead). The rule
+    is §6's ("Documents in the drawer"); what was decided, and why:
+    - **The drawer docks a document as well as an element**: `api.view.dock({
+      url, toolId?, title })` → close, the same `{ url, toolId }` a section
+      is, shown by the one `documentView` (`src/embed.js`) the sections use,
+      in a pane of the editor kind (embedded: its keys its own; the
+      editor's width). One pane per `docKey(url, toolId)`, so a second dock
+      shows the first: there's never two panes of one doc and tool.
+    - **The pane is the view's, not Edit's or the inspector's**: you
+      dragged it out on purpose, so a new selection, leaving Edit, Enter or
+      Leave, or the inspector stopping keeps it; only its × (or closing the
+      scene) takes it away. `api.view.dock` is on every extension's api, in
+      any body, since docking a document is something a viewer does, not an
+      edit.
+    - **One way in, the standard payload**: a section's head drags as a
+      Patchwork document (the three types Patchwork's sidebar uses, the
+      item carrying its `toolId`), plus the scene's own type
+      (`application/x-scene-section`), and the tab strip docks any Patchwork
+      document dropped on it. So a doc from Patchwork's sidebar, an outline
+      row's own document and a section all dock the same way, and a frame
+      that takes Patchwork drops takes a section's head too. `dnd.js` now
+      carries an item's string `toolId` through, and one entry is one url,
+      version and tool.
+    - **The strip's drags are its own**: a drag over it never reaches the
+      stage (the scene's add, a row's copy), whatever it carries; one that
+      carries a document may drop there. A section's head let go anywhere
+      else in the stage (its pane, the tree, the view) is nothing: nothing
+      in a scene adds it. That is told by its type, as a tree row's is
+      (`dnd.js` `ownDrag`, which the add and the tree both refuse), so it
+      holds at dragover and needs no flag (review fix, 2026-11-17: the
+      tree, in the same pane, used to add it). Adding a section's doc to
+      the scene by dragging is the lead's to opt into (a question, below).
+    - **A pane is titled after its object**: `<object> · <label>` ("Hull ·
+      Source"; the label alone for the scene's), so two objects' Sources,
+      when they are different documents, are two tabs with two titles.
+      Docking a doc that's docked shows it under the title it was first
+      docked with (a doc dropped as "My notes" stays that). Its limits, as
+      built: a pane is one per `docKey(url, toolId)`, not per object, so
+      two objects sharing a source (two instances of one built object)
+      share one pane, titled after whichever docked it first; two objects
+      of one name give two tabs of one title, which `view.drawer.tabs` (by
+      title) can't tell apart (`view.drawer.docs`, by key, can); a renamed
+      object's pane keeps its old name. Decided unattended (2026-11-17,
+      lane/sidebar), for the lead.
+    - **The drawer changing tells the pointer router**: any change of
+      `view.drawer` (not only a selection) has the router look again, so a
+      pane docked by a command in a pointer-locked body frees the pointer,
+      and its last × gives it back.
+    - **Docked, a section shows where it is**: an open section whose doc
+      and tool are in `view.drawer.docs` shows "In the drawer · Show"
+      instead of its view (a pure function of the drawer, so there's never
+      a second live editor of it in the stage); its fold is still the
+      viewer's pref; Show docks it again, which shows its tab. Docked under
+      another tool, it's another document: the section stays inline.
+    - **A pane follows the latest**: a dropped link at a version docks the
+      doc itself (heads dropped), as a section shows the doc you'd edit.
+    Questions for the lead: is the drawer the right "own panel", or should
+    Dock ask Patchwork for a panel beside the scene (it has no such event
+    today: Open is the main view)? Should a section's head dropped on the
+    scene's view add that document to the scene, as any doc dropped there
+    does (now it never adds: a missed drag at the strip writes nothing)?
+    Should a docked document leave with Edit, as the inspector does? And
+    what should a docked doc's pane be called (now `<object> · <label>`;
+    the doc's own title would need a load)?

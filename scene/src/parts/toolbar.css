@@ -1,39 +1,71 @@
-/* scene.toolbar: the row of scene commands along the top (old styles.css
-   .toolbar). Buttons and toggles use the stage's .button primitive. */
+/* scene.toolbar: the bar of tools, the row of scene commands along the top
+   (old styles.css .toolbar): the editor's cluster at the left (Edit only)
+   and the world's at the right (every body), so a world command sits at the
+   same place whatever the body. Buttons and toggles use the stage's .button
+   primitive. */
 
-/* One row, whatever the width: in a narrow view it scrolls sideways rather
-   than wrapping to a second row, so the canvas under it keeps its height.
-   No scrollbar is drawn (a horizontal one would come and go with the
-   commands on offer and change that height after all); the row scrolls by
-   wheel or trackpad, and every command is in the menu too. */
+/* One row, whatever the width, and one height, whatever it holds: every
+   control is --scene-toolbar-control tall (a .button's line, its 3px padding
+   and 1px border each side; a picker is made that tall too) and so is each
+   cluster, even empty. So a bar shown for a world command that doesn't apply
+   just now is as tall as one holding it, a picker is as tall as a button,
+   and the canvas under the bar doesn't move as commands come and go. */
 .scene-stage .toolbar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --scene-toolbar-control: calc(1lh + 8px);
   display: flex;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
   align-items: center;
-  justify-content: space-between;
   gap: var(--studio-space-xs, 0.375rem);
   padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
   border-bottom: 1px solid var(--scene-border);
   background: var(--scene-bg);
 }
 
-.scene-stage .toolbar::-webkit-scrollbar {
-  display: none;
+.scene-stage
+  .toolbar
+  .cluster:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex-wrap: nowrap;
+  min-height: var(--scene-toolbar-control);
 }
 
+.scene-stage
+  .toolbar
+  .cluster
+  > :where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: var(--scene-toolbar-control);
+}
+
+/* The editor's cluster takes the room there is and, in a view too narrow
+   for it, scrolls sideways rather than wrapping to a second row. No
+   scrollbar is drawn (a horizontal one would come and go with the commands
+   on offer and change the bar's height after all); it scrolls by wheel or
+   trackpad, and its commands are in the menu too. Its 2px padding, taken
+   back by a margin, is room for a focused control's ring inside the
+   scroll's clip. */
 .scene-stage
   .toolbar
   .tools:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  flex-wrap: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px;
+  margin: -2px;
 }
 
+.scene-stage .toolbar .tools::-webkit-scrollbar {
+  display: none;
+}
+
+/* The world's cluster sits outside that scroll at the right end, so a
+   world command is in view, at the same place, in every body and at every
+   width. */
 .scene-stage
   .toolbar
-  .tools
-  > :where(:not(.about-embed *), .about-embed .scene-tool *) {
-  flex-shrink: 0;
+  .world:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 0 auto;
 }
 
 .scene-stage

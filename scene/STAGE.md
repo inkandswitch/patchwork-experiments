@@ -35,17 +35,17 @@ each build step.
 | **Invocation** | A command call as a value: `{ ext, command, target, value? }`. |
 | **Body** | Where a viewer is in the world and how they move and look: Look or Edit (the stage's own, both the orbit camera, one always at the bottom: `src/stage/bodies.js`), walk (`walk/`), a seat (`seats/`), sailing's `aboard` and `station`. One stack per view; the top one is current, and its eye and reach are what verbs are measured from. Nothing stands on Edit. Contributed as `bodies` (the stage's two aren't). |
 | **Look** | The stage's body for looking: the orbit camera, no default press, none of the editor. Where a doc that names no body starts people. |
-| **Edit** (body) | The stage's body for editing: the orbit camera whose plain click selects, and the only body the editor's chrome shows in (TOOLS.md §3, "What is Edit's"): the halo and knobs, the inspector, the toolbar, grid, axes and bounds, and every command that says `edit: true`. |
+| **Edit** (body) | The stage's body for editing: the orbit camera whose plain click selects, and the only body the editor's chrome shows in (TOOLS.md §3, "What is Edit's"): the halo and knobs, the inspector, the toolbar's editor commands, grid, axes and bounds, and every command that says `edit: true`. |
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
 | **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
-| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock; a press moves the look to what it pressed, before anything handles it). Keys, the use prompt and a menu go to it. |
+| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock and for a lock body under touch, `looksFromEye`; a press moves the pointer's hit, and so the look where the look is the pointer's, to what it pressed, before anything handles it). Keys and the use prompt go to it; a menu is of the pointer's hit (what was pressed: under lock the crosshair's), which differs from the look only for a lock body under touch (TOOLS.md Decisions 14). |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
-| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (a selection opens it in Edit, a beat later if it's shut; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
+| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (one pane: the object tree over the selection's fields; a selection opens it in Edit, a beat later if it's shut; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's; and documents (`api.view.dock`, a drop on its tab strip, an inspector section's Dock), which are the view's: one pane per document and tool, kept across selections, bodies, focus moves and extensions stopping until its × or close(). Its width is the viewer's for the kind of pane shown (the stage's chrome or a docked editor), set with the grip on its left edge. |
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
-| **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
+| **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector and its tree, transfer, add, remove): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
 ## Views, stages and links
 
@@ -117,8 +117,8 @@ or identity closes, with what was opened under it, and opens again.
   the viewer has entered: the outermost ([]) until **Enter** moves it into
   a link whose doc acts there. It scopes the selection (a selection is
   always an element of the focus stage: H10), and the general parts run in
-  the focus stage and no other, so the editor (the halo, the inspector, the
-  outline, add, paste, undo) edits the focus's doc in its frame. It cuts no
+  the focus stage and no other, so the editor (the halo, the inspector and
+  its tree, add, paste, undo) edits the focus's doc in its frame. It cuts no
   segment: outside it, verbs, carries, keys and the menu still work. Enter
   goes where a link's doc acts: a live link there, a mirror where its doc
   is live (the same doc); a pin (a value) and a closed link aren't entered.
@@ -153,9 +153,9 @@ or identity closes, with what was opened under it, and opens again.
   pin draws nobody (a value has no channel); a mirror hears its doc's
   channel, so it draws them again, as it draws their carried cards again.
   `scene.focus` offers Enter on a link (the menu,
-  the inspector) and takes a double-click on one; the outline's link rows
-  say what the link is here and enter; the inspector has a Linked scene
-  row.
+  the inspector) and takes a double-click on one; the tree's link rows
+  say what the link is here and enter; the inspector has a Link row
+  (and the linked doc as a folded Linked scene section).
 - **Frames.** Everything spatial in an api is in its stage's root frame,
   through one choke point (`stage/scope.js`): `worldOf`, `box`, `sceneBox`,
   `pick`, `ray`, `raycast`, `project`, `camera.*`, labels, world layers,
@@ -190,13 +190,17 @@ or identity closes, with what was opened under it, and opens again.
   each item tagged with its `stage`, and runs a command with
   `api.run({ stage, ext, command, target })`; `api.path()` is the input
   path's stages (each `{ stage, scene, collect, context, attention, look,
-  run, nameOf }`), attention's from the innermost out, then the focus stage
+  pointed, run, nameOf }`), attention's from the innermost out, then the focus stage
   if it isn't among them, which the key map, the use prompt and the menu
   walk a stage at a time, each in its own context (a held verb pins
   attention in the stage it was held in). So the focus's scene commands
   (Frame all, Measure, Undo) are on every surface wherever the pointer is.
   `api.path({ focus: true })` is the focus path instead (the focus stage
   out to the outermost): the toolbar's, which doesn't follow the pointer.
+  `api.path({ pointer: true })` is the pointer's hit's path (the hover a
+  press sets to what it pressed), whatever the selection and the eye, and a
+  reader's `pointed()` its element of that hit: the menu's, which is of
+  what was pressed.
   A reader also has `writable()` and its doc's `clock` (`status()`, as
   `local.clock`; `pause()`, `resume()`), so the clock chip shows and
   pauses each doc on the focus path (`view.clocks` says when any of them
@@ -267,16 +271,16 @@ the calls named here, never swapped.
 
 | Key | Changed by | Means |
 |---|---|---|
-| `selected` | `api.view.select(target)` (the selection, the outline, add, a game, dimensions), Edit's click | the selection, as this stage's element of its path: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null (nothing, or not in this stage) |
-| `hovered` | the view | the object under the pointer, as this stage's element, or null |
-| `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
-| `held` | the view | the held tool, `{ ext, command, name, keys, pointer }`, or null |
-| `gesture` | the view | the open press session's declared keys, `{ owner, keys }`, or null |
-| `pointer` | the view | `{ locked, lock, wanted, released, refused }` (`src/stage/pointer.js`) |
+| `selected` | `api.view.select(target)` (the selection, the inspector's tree, add, a game, dimensions), Edit's click | the selection, as this stage's element of its path: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null (nothing, or not in this stage) |
+| `hovered` | the view | the object under the pointer, as this stage's element, or null (a finger's: what it pressed, kept after a tap until the next press on the world, TOOLS.md Decisions 15) |
+| `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys, serial }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `serial` says which time it was entered: the same body left and entered again is a new serial (the keys it held were let go; the touch pad's controls are a serial's, TOOLS.md §5). `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
+| `held` | the view | the held tool, `{ ext, command, name, keys, pointer, serial }`, or null; held again, a new `serial` |
+| `gesture` | the view | the open press session's declared keys, `{ owner, keys, serial }` (each press its own `serial`), or null |
+| `pointer` | the view | `{ locked, lock, wanted, released, refused, touch }` (`src/stage/pointer.js`; `touch`: the last press on the view was a finger, or none yet on a coarse pointer) |
 | `escape` | the view | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`). Leaving the focus is a layer only a general part sees |
 | `theme` | the view | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | `api.notify` | `[{ id, text, kind, at }]` |
-| `drawer` | `api.dock` | `{ tabs, shown }`: the drawer's tabs by title, in docking order, and the one shown (null with none docked), so a surface showing whether a tab is open (the toolbar's Objects, Inspector) hears when it closes |
+| `drawer` | `api.dock`, `api.view.dock` | `{ tabs, shown, docs }`: the drawer's tabs by title, in docking order, the one shown (null with none docked), and the documents docked there, each `docKey(url, toolId)` (`src/dnd.js`), in docking order (tabs are told apart by title; a document's pane by its key in `docs`). Any change of it tells the pointer router to look again, since an open drawer wants the pointer; so a surface showing whether a tab is open (the toolbar's Inspector, Dimensions, Parts) hears when it closes, and an inspector section knows its doc is in the drawer |
 | `prefs` | `api.setPref` | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | the view (general parts only) | every open doc's packages this viewer doesn't have, one prompt's worth (see "Packages") |
 | `clocks` | the view (general parts only) | the focus path's clocks, outermost first: `[{ stage, name, status }]`, one per stage on the path whose `clock` is not null, `name` the trail's for that doc. The clock chip's: a chip per doc, Pause and Resume through each stage's reader (`clock`) |
@@ -287,7 +291,7 @@ commands instead (measure saves through `scene.dimensions`' `add`).
 
 Presence keys are the extension's own too, with one shared convention: the
 selection extension (`scene.select`) publishes `selected` (any target) and
-`hovered`, and surfaces read them: the outline marks peers' rows (objects
+`hovered`, and surfaces read them: the inspector's tree marks peers' rows (objects
 only) and `scene.others` draws their boxes. Peer colours come from
 `src/peers.js`, so a peer's box and row match. Likewise walk's body (`walk`)
 says `avatar` and `walk.people` draws it.
@@ -355,15 +359,16 @@ happened to start in never counts.
 **Chrome follows attention, never the doc** (TOOLS.md §1). Every general
 part runs in every scene, a game's included; what keeps the editor's chrome
 out of a game is that it shows only where attention asks for it. The
-inspector is a drawer tab a selection opens in Edit (a beat later,
-DOUBLE_MS after the selection and after any press in the view, if
+inspector is a drawer tab a selection opens in Edit, one pane holding the
+object tree over the selection's fields (TOOLS.md, Decisions 16), a beat
+later (DOUBLE_MS after the selection and after any press in the view) if
 it's shut, so a double-click's second press and its dblclick find the
-canvas its first click did); it stays open, on
-the scene when nothing is selected, until its × (shut until the selection
-changes), the toolbar's Inspector or leaving Edit shuts it; the outline (Objects), Dimensions and Parts are
-drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
+canvas its first click did; it stays
+open, on the scene when nothing is selected, until its × (shut until the
+selection changes), the toolbar's Inspector or leaving Edit shuts it;
+Dimensions and Parts are drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
 drawn only in the Edit body (and, as display prefs, a doc may suggest them
-off: a table does). All of that, the toolbar, and every command that says
+off: a table does). All of that, the toolbar's editor commands, and every command that says
 `edit: true` are the Edit body's alone (TOOLS.md §3, "What is Edit's"):
 looking, walking or seated, nobody sees an editor. The use prompt shows attention's verbs wherever there
 are any. A part that was an edit-only verb is a verb with no mode: a bag's
@@ -1031,7 +1036,7 @@ event = {
   widget,                     // lazy: { owner, onTop, distance, ...data } | null; a dblclick's: its first press's
   holder,                     // step 3: the holding object, null for the scene (and at every other step)
   button, buttons, pointerId, pointerType,
-  shift, alt, ctrl, meta,
+  shift, alt, ctrl, meta,     // the DOM's flag, or a modifier key down at the view's root, claimed or not (a touch pad's Alt: TOOLS.md §5)
   key, code, repeat,          // key events
   dx, dy, deltaY,             // move (locked) and wheel
   locked,                     // pointer lock: x, y and ndc are the canvas centre, ray and hit lie along the camera's forward ray
@@ -1126,9 +1131,13 @@ a selected dimension too, whatever order the two run in.
   Focus that leaves an element in the stage for nowhere (a clicked button
   that was then removed) comes back to the root.
 - Keys, pastes and drops inside a document embedded in the stage (another
-  tool, such as the inspector's About) are that tool's. Whoever embeds marks
+  tool, such as an inspector section) are that tool's. Whoever embeds marks
   the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
-  `src/embed.js`); every pane of the drawer (`dock`) is marked so.
+  `src/embed.js`); every pane of the drawer (`dock`, and a docked
+  document's, `view.dock`) is marked so. A document the stage shows,
+  inline or docked, sits in `documentBox`, which also carries the class
+  every stage-scoped style rule stops at (`.about-embed`), so it looks
+  the same in either place.
 - **One key order** (TOOLS.md §5; `src/keymap.js`): a focused field (the
   DOM's), the open gesture's declared keys (a carry's Q/E/F), the held
   tool's, the top body's, then the chain, where the key map (`scene.keys`)
@@ -1155,6 +1164,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, 
            here?,                                               // false: it needs a place, so the body chip doesn't offer it
            enter(place) → { input, eye?() → { position, direction }, ride?: { id, at?, turn?, rise?, tilt? },
                             keys?, label?, leave() } | null }]
+// keys: the codes it takes. Codes one declaration labels alike do the same thing (walk's W and ↑
+// are both "Forward"): touch shows them as one control (TOOLS.md §5), so distinct actions need
+// distinct labels. The same holds for a tool's and a gesture's keys.
 ```
 
 The bodies there are: **Look** and **Edit** (the stage's, `src/stage/bodies.js`:
@@ -1204,8 +1216,13 @@ event first, and its declared keys are its own.
 view grants it while nothing else wants the pointer (a held tool with
 `pointer: true`, a selection, an open popover or drawer). The browser's
 Escape releases it; the next press on the world only relocks. A refused
-lock leaves the body looking by drag. `locked ⇔ body.lock ∧ ¬wanted ∧
-¬released ∧ ¬refused`.
+lock leaves the body looking by drag, and so does touch (`touch`: every
+press on the view, wherever it lands, edges included, says whether it was
+a finger; a coarse pointer starts as touch; keys never change it). A finger
+on a locked view lets the lock go and leaves nothing released; a mouse
+after touch finds the lock released, so the next press on the world only
+relocks (TOOLS.md Decisions 11). `locked ⇔ body.lock ∧ ¬wanted ∧ ¬released
+∧ ¬refused ∧ ¬touch`.
 
 ## `api`
 
@@ -1222,7 +1239,7 @@ that extension.
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids, { edit? })` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids. With `edit` (an `edits` step), the change is that edit's |
-| `edit(fn, { label?, handle? })`, `edits(label)` → `{ change(fn, handle?), end() }` | the stage's own editing (TOOLS.md, Decisions 2; "Undo" below): `edit` writes `fn` as one undoable step of this viewer's, on the scene or on `handle` (an object's render doc); `edits` opens a step of several writes, passed as `{ edit }` to `addObject`, `remove`, `drop` and `part` or made with its `change`, closed by `end()`. The halo, the handles, the inspector, the outline, transfer, add, the parts bin, dimensions and Set home view write through it. **Only the stage's own parts' api has these four** (`stage/own.js`: a module this package marks); a package's api has none, so its verbs, clock acts and process saves can't be on a stack |
+| `edit(fn, { label?, handle? })`, `edits(label)` → `{ change(fn, handle?), end() }` | the stage's own editing (TOOLS.md, Decisions 2; "Undo" below): `edit` writes `fn` as one undoable step of this viewer's, on the scene or on `handle` (an object's render doc); `edits` opens a step of several writes, passed as `{ edit }` to `addObject`, `remove`, `drop` and `part` or made with its `change`, closed by `end()`. The halo, the handles, the inspector (its tree too), transfer, add, the parts bin, dimensions and Set home view write through it. **Only the stage's own parts' api has these four** (`stage/own.js`: a module this package marks); a package's api has none, so its verbs, clock acts and process saves can't be on a stack |
 | `undo()`, `redo()` → boolean | take back (or again) this viewer's last edit in the focus doc: false when there's none, the doc isn't writable, something it wrote has been written since (then it's dropped, whole, and said), or it showed or decided something others have a stake in (then it stays, and that's said). `scene.undo` binds ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y and the toolbar's Undo and Redo to them |
 | `claim(id, kind, { onLost? })` → release \| null | take a claim of `kind` on an object (`id` null: the scene); null when another view, or another extension here, holds a live one. See "Claims". The scene's `"clock"` claim is the stage's own (see "World time") |
 | `claimedBy(id, kind)` → `{ viewer, session, mine }` \| null | who holds it, if they're still here. `mine`: this view (any of its extensions) |
@@ -1272,7 +1289,7 @@ that extension.
 
 | | |
 |---|---|
-| `view` | `{ get(), watch(fn, select?), select(target), enter(linkId) → boolean }`, and a general part's `reopened(title)`: the viewer's local value as this stage sees it ("Three places for state"), selecting this stage's target (cut at the focus), and entering one of its links |
+| `view` | `{ get(), watch(fn, select?), select(target), enter(linkId) → boolean, dock({ url, toolId?, title }) → close }`, and a general part's `reopened(title)`: the viewer's local value as this stage sees it ("Three places for state"), selecting this stage's target (cut at the focus), entering one of its links, and docking a document in the drawer. `dock` puts the host's view of the doc (a `<patchwork-view doc-url tool-id>`, `src/embed.js` `documentView`) in a drawer pane of the editor kind, embedded (its keys its own), titled `title`; there is one pane per `docKey(url, toolId)`, so docking one again only shows its tab, under the title it was first docked with; a url that isn't an automerge URL docks nothing, and any heads are dropped (a pane follows the latest). The pane is the view's, not the extension's: it stays across selections, bodies, focus moves and its docker stopping, and goes by its ×, `close()` (idempotent) or the view going. `view.drawer.docs` lists what's docked. The drawer's tab strip docks any Patchwork document dropped on it the same way (`src/stage/dock.js`), and nothing dropped there reaches the scene |
 | `link(id)` | `{ role: "acting" \| "mirror" \| "pinned" \| "closed", open, reason? }` for one of this doc's links: what the view made of it here, and whether its doc is drawn |
 | `collect(name)` | `[{ id, value }]`: running extensions' contributions of that name, in running order; a general part's from every acting stage, each item tagged with its `stage` |
 | `run({ stage?, ext, command, target, value?, hit? })` | run a command, in the context surfaces compute (`context` below); `stage` (a general part's) runs it in that stage |
@@ -1327,7 +1344,7 @@ How the camera parts behave:
 | `world({ onTop? })` | a `Group` owned by the extension. Its meshes are widgets the owner gets first refusal of. `onTop` groups are drawn in a second pass over everything (depth-tested among themselves, lit) |
 | `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together: one gives way to an overlapping label of higher (or equal, earlier) `rank` (default 1), and rank 2 and up never hide. The editor's: dimensions 3, axes 2, bounds 1, grid 0 |
 | `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas and lets the pointer through, except that its direct children catch it by default (a rule with no specificity, so any extension rule wins): a full-size child (a HUD) sets `pointer-events: none`. An edge sits beside it, and the canvas shrinks to fit |
-| `dock(el, { title, onClose?, embed?, show? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it (`show: false`: behind the pane shown, a tab to pick, unless nothing else is docked; the inspector following the selection docks so, not covering the parts bin in use); closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own; `embed: false` makes it the stage's own chrome instead, whose keys are the stage's (the inspector, the outline, dimensions and parts: `src/parts/tab.js`), and while one of those is shown the drawer is a side panel's width rather than a docked editor's. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it too |
+| `dock(el, { title, onClose?, embed?, show? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it (`show: false`: behind the pane shown, a tab to pick, unless nothing else is docked; the inspector following the selection docks so, not covering the parts bin in use); closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own; `embed: false` makes it the stage's own chrome instead, whose keys are the stage's (the inspector, dimensions and parts: `src/parts/tab.js`), and while one of those is shown the drawer is a side panel's width rather than a docked editor's. The width is the viewer's, not the pane's: a grip on the drawer's left edge (drag it, arrow it, double-click it for the default) sets the shown kind's width, kept in this viewer's prefs for the scene (`drawer.chrome`, `drawer.editor`); the CSS clamps it to leave the scene its share. A pane declares no width. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it too |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
 | `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
 | `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
@@ -1539,7 +1556,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 - **What is an edit.** A write through `api.edit` or an `api.edits` step:
   the halo's move, rotate and scale; the build-param knobs (on the object's
   render doc, undone from the scene's stack); the inspector's fields,
-  behaviours and Starts in; the outline's rename, re-file and new group;
+  behaviours and Starts in; the tree's rename, re-file and new group;
   Delete; add (a drop laid out by an extension is one step with it); the
   parts bin; copy in and paste; dimensions; Set home view. A package's verb
   (a roll, a shuffle, a draw), a clock act (pause, resume, a checkpoint) and
@@ -1598,6 +1615,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `receive(type, data, from)` | the stage, for a peer's `send` of a type the instance doesn't declare in `messages` |
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
+| `documents` | the inspector: a section each (below, "A document") |
 | `hud()` → `[{ text, state }]` | status surfaces |
 | `landing(id, worldPoint, hitId)` → `{ faceUp?, flat? }` | the carry (`scene.carry`), on every move while it carries, after F too (see "Landing"). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
 | `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
@@ -1611,7 +1629,7 @@ A **command**:
 ```js
 { id, name,
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
-  show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
+  show?: string | string[],  // the surfaces that show it ("toolbar", "world", "menu", "inspector", "use"); [] none; absent: every surface it applies to, except the strict ones ("world", and the menu for the scene)
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
   reach?: true,              // applies only within the body's reach (below)
   edit?: true,               // the editor's: applies only in the Edit body (below)
@@ -1653,12 +1671,22 @@ A **command**:
   Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste,
   Measure, the dimensions', the drawer tabs' toggles, Grid, Axes, Bounds,
   Units, Snap, Inspector, Undo, Redo); a package may mark its own.
-- Toolbars show commands for the null target. The toolbar (`scene.toolbar`)
-  shows only in Edit.
+- Toolbars show commands for the null target. The toolbar (`scene.toolbar`,
+  the bar of tools) holds two clusters: the editor's (`show` names
+  "toolbar", or says nothing) only in Edit, and at its right end the
+  world's (`show` names "world": strict, only an explicit mention counts,
+  as for the menu's scene commands) in every body: a game's Play, say.
+  "world" is for scene commands, as "toolbar" is: an object verb tagged
+  "world" never applies there, and would keep an empty bar up. A command
+  naming both is a world command. The bar shows while some command on the
+  focus path is the bar's in this body, applying now or not, so its height
+  doesn't change with a command's state (`src/parts/toolbar-commands.js`
+  `barEntries`; TOOLS.md Decisions 10).
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - **Attention** is one target per view (TOOLS.md §3): the selection if
-  any, else the look (the pointer's hit, or the eye ray under lock;
+  any, else the look (the pointer's hit, or the eye ray under lock and for
+  a lock body under touch, `pointer.js` `looksFromEye`;
   `api.attention()`, `api.look()`). The key map (`scene.keys`) tries
   attention's path (the selection; or the look's hit, then what it's
   attached to, nearest first), then the scene, whatever kind of target the
@@ -1667,21 +1695,82 @@ A **command**:
   shows a key asks it (`hintFor`): a key is shown only where pressing it
   does that (H3), so walking, Draw shows without D and is in the menu.
 - **The use prompt** (`scene.use`, general: it runs in every scene) shows
-  attention's verbs where attention is (the crosshair under lock, else the
-  pointer): on the selection, or the first object along the look's chain
+  attention's verbs where attention is (the crosshair when the look is the
+  eye's, else the pointer): on the selection, or the first object along the look's chain
   with a keyed command shown on `"use"`, at most three, each a button, its
-  key the resolver's. It shows; the key map does.
+  key the resolver's. It shows; the key map does. A button whose verb has
+  a key is that key: a press presses it (the key `keyFor` says does that
+  verb then) and the lift lets it up, so a held verb lasts as long as a
+  finger or a mouse button holds its button (TOOLS.md §5, Decisions 15);
+  a verb with no key that does it is a click.
 - **Held verbs.** `run` may return a session, `{ end(), cancel(), update?(dt) }`.
   The key map keeps it open while the key is down: `update(dt)` each frame,
   `end()` when the key is let go, `cancel()` when the window or the view
   loses focus, the target leaves the doc, or the command's extension stops.
-  `api.run` discards what `run` returns, so elsewhere a held verb is a press.
+  `api.run` discards what `run` returns, so elsewhere a held verb is a press
+  (the use prompt's button presses the verb's key, so it holds).
   A held verb keeps its target until its key is up: while anything is held,
   attention is pinned to that target wherever the look goes, and the prompt
   shows the held verb (marked held, as it was when pressed, even once it no
   longer applies from where you are) and that target's other verbs, whose
   keys run on it; the held key's auto-repeat is the key map's. Once the last
   key is up attention follows the look again.
+
+A **document** (an instance's `documents`: the documents that go with a
+target, which the inspector shows as sections):
+
+```js
+{ id, name,
+  state(target, ctx) → null | { url, toolId?, label?, folded? } }   // ctx: api.context(null)
+```
+
+- `state` null (or false) means it doesn't go with that target. Unlike a
+  command, a document may go with the scene (target null).
+- A section is its extension and `id`: one id names one section (its fold
+  is the viewer's pref for that id), so a doc that is shown three ways is
+  three entries, each answering for its own kind of target, as the
+  inspector's Source, File and Linked scene are.
+- `url` is an automerge URL (any heads are dropped: a section is the doc
+  you'd edit); `toolId` names the tool it's shown in, absent its type's
+  default; `label` is the section's title, over `name`; `folded` is how it
+  starts when the viewer hasn't chosen.
+- The inspector (`scene.inspector`) shows `documentsFor(api.collect("documents"),
+  target, ctx, "scene.inspector")` (`src/parts/inspector-model.js`): its own
+  first (Source, File or Linked scene, Build, About), then the rest in
+  running order. An entry whose url isn't an automerge URL, whose `state`
+  throws (warned, as a command's is: the two share one walk of what's
+  collected), whose id its extension has already listed for the target
+  (warned), or whose url and tool repeat one already listed (the first
+  stays) is dropped.
+- Each is a section: its label (which folds it: the viewer's pref
+  `inspector.open.<ext>/<id>`, else `folded`), **Dock** (`api.view.dock`:
+  its own pane in the drawer), **Open** (`patchwork:open-document` with its
+  `url` and `toolId`, the main view), and, while open and not docked, a
+  `<patchwork-view>` of it (`documentView`) inside the embed marker, so
+  its keys are its own, in a box of a definite height (the viewer can drag
+  it taller) that a tool filling its host fills. A section stays mounted
+  while it's shown: others coming and going beside it don't take it out.
+  Without a host `<patchwork-view>` (a local probe, a test), the section
+  names its doc instead (`src/test/patchwork-view.js` is a stand-in host
+  that mounts a package's own tools). It's a document, not a mount: something that needs
+  this scene's context (a die's panel) is a command that docks its own
+  element (`api.dock`).
+- Its head drags as a Patchwork document (`text/x-patchwork-dnd`
+  `{ source: "scene", items: [{ url, name: title, toolId? }] }`,
+  `text/x-patchwork-urls` and `text/plain`) and as the scene's own
+  (`application/x-scene-section`, its `docKey`; `src/dnd.js` `ownDrag`, as
+  a tree row's `application/x-scene-object` is), nothing else. So whatever
+  takes a Patchwork document takes it (the drawer's tab strip docks it, as
+  Dock does), and nothing in a scene adds it: let go anywhere else in the
+  stage (its pane, the tree, the view), it's nothing. Its pane is titled
+  after what the section is of, `<object> · <label>` ("Hull · Source"),
+  and keeps the title it was first docked with; there's one pane per
+  `docKey(url, toolId)`, not per object (two objects sharing a source
+  share one; two of one name give two tabs of one title, told apart only
+  by `docs`). While its `docKey(url, toolId)` is
+  in `view.drawer.docs`, an open section shows "In the drawer · Show"
+  (Show docks it again, which shows its tab) instead of the doc: a doc and
+  tool has one live view in the stage, never two.
 
 **Targets and refs.** A target is a string, or null for the scene:
 - an **object or group id** names that object;
@@ -1698,7 +1787,7 @@ and selecting an object (or clicking on nothing) replaces the dimension.
   and lets go of a selected ref whose thing is gone.
 - Everything that only cares about objects checks `scene.objects[target]`
   and treats any other target as nothing selected: the halo, handles,
-  bounds, the outline's marks, the inspector, the selection box. Commands on
+  bounds, the tree's marks, the inspector's fields, the selection box. Commands on
   objects (Remove) don't apply to refs.
 - `scene.select` prunes a selected object that's gone, and leaves refs to
   their owners.
@@ -2096,10 +2185,11 @@ values, its reader and who draws what are the package's to document:
 [water/WATER.md](../water/WATER.md), "Water bodies" and "Clipped open
 water".
 
-**Wind** (the ambient `wind`; offered by sailing's weather). How the world's
-air moves, read by sailing's physics and the water package's surface. Its
-value and compass convention are sailing's to document:
-[sailing/DESIGN.md](../sailing/DESIGN.md), "Conventions".
+**Wind** (the ambient `wind`; offered by the `weather` package from the
+scene trait `weather`). How the world's air moves, read by sailing's physics
+and seas and the water package's surface. Its value and compass convention
+are the weather's to document: [weather/WEATHER.md](../weather/WEATHER.md),
+"What it offers".
 
 ---
 
@@ -2110,7 +2200,7 @@ value and compass convention are sailing's to document:
 | `stage/atom.js` | the local value |
 | `stage/activation.js` | the running set and scopes: traits only (pure) |
 | `stage/chain.js` | the chain order (pure) |
-| `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
+| `stage/dock.js` | the drawer: its model (pure) and its tabs and panes, the documents docked in it (the view's) and the drop on its tab strip |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
 | `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages, the focus path's clocks |
@@ -2126,7 +2216,7 @@ value and compass convention are sailing's to document:
 | `stage/ride.js` | riding: the camera carried by a moving object (pure) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the body stack, the held tool, popovers, lock, the ladder, keys, menu, cursor |
-| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused (pure) |
+| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch (pure) |
 | `stage/ladder.js` | the Escape ladder: which layer one Escape pops, and its hint (pure) |
 | `stage/bodies.js` | the stage's two bodies, Look and Edit; `editing(local)`, the one question the editor's chrome asks; `inBody`, the `edit: true` rule; the stack's model (`enterStep`, `leaveStep`) and where a doc starts people (`startBase`) (pure) |
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |

@@ -2,7 +2,7 @@
 // the waters off the Royal Victoria Yacht Club, from open data, with the
 // stock sloop on the club's moorings, people starting in Look at a home view.
 //
-//   (in scene/, sailing/ and terrain/) pnpm build
+//   (in scene/, sailing/, water/, weather/ and terrain/) pnpm build
 //   node probes/publish-rvyc.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--shots <dir>] (--lock <dir> | $CHROME_LOCK) [--show]
 //
 // Makes NEW docs on every run (no dedupe).
@@ -11,8 +11,8 @@
 //    shore, docks and marks (or replays its recording in --cache, so a
 //    second run asks nobody), and checks them.
 // 2. The scene, made the way a person makes it, by the tools themselves: in
-//    headless Chrome, the BUILT scene tool with the BUILT sailing and
-//    terrain plugins on an EMPTY scene (rvyc-probe.html, an in-memory
+//    headless Chrome, the BUILT scene tool with the BUILT sailing, water,
+//    weather and terrain plugins on an EMPTY scene (rvyc-probe.html, an in-memory
 //    repo); the start screen's "Cadboro Bay (RVYC)" is clicked, and its
 //    fetches are answered from the recording. The scene builds the terrain
 //    through the terrain-mesh source like any object. It checks:
@@ -23,6 +23,11 @@
 //    - the fingerprint survives publishing: recomputed on the docs with every
 //      url rewritten and every map's keys sorted (as automerge returns
 //      them), it is still the render's builtFrom.fingerprint;
+//    - the world's weather is the template's (the weather package's trait:
+//      Cadboro Bay, 15:00 on 15 July on UTC−7, 4 m/s from 235°, a fair
+//      afternoon), and it is the world's: the atmosphere sailing's bright day
+//      exactly, the sun where it is (the south-west), the wind 4 m/s from
+//      235°; the place (terrain.place) offers no sky;
 //    - the sea has the summer breeze; people start in Look (no body named) at a home view (view.start);
 //    - the sloop is on the mooring with her main down, her jib rolled away and her anchor down,
 //      in water deeper than her draft at the lowest normal tide all round
@@ -49,11 +54,12 @@ import { lockDir } from "./chrome-lock.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the terrain's and the sloop's (with joints and traversal, for her
-// companionway's hatch and exit). In a real shell the stage works
+// the scene, the terrain's, the weather's (the world's weather is its trait)
+// and the sloop's (with joints and traversal, for her companionway's hatch
+// and exit). In a real shell the stage works
 // these out from the registry; the probe page has none that says where its
 // plugins come from, so they're stated here.
-const PACKAGES = ["scene", "terrain", "sailing", "water", "joints", "traversal"];
+const PACKAGES = ["scene", "terrain", "weather", "sailing", "water", "joints", "traversal"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -84,7 +90,7 @@ const CACHE = resolve(typeof args.cache === "string" ? args.cache : join(TMP, "t
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(TMP, "terrain-rvyc"));
 const SNAP = join(SHOTS, "snap");
 mkdirSync(SNAP, { recursive: true });
-for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "terrain/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "water/dist/index.js", "weather/dist/index.js", "terrain/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 
 // ─── 1. the data ────────────────────────────────────────────────────────────
 console.error(`fetching (or replaying) the data into ${CACHE}`);
@@ -110,6 +116,11 @@ const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels|pointe
 const J = JSON.stringify;
 const DRAFT = 2.0; // the sloop's keel, near enough
 const LLWLT = -2.14; // the lowest normal tide, below mean water (Finnerty Cove)
+// The world's weather as the template writes it (template.test.js pins the same), and sailing's bright day as the
+// weather package draws it there (its atmosphere.test.js pins the same)
+const WEATHER = (seed) => ({ lat: 48.454, lon: -123.2915, date: "2026-07-15", hour: 15, offset: -7, wind: 4, from: 235, seed, cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 });
+const BRIGHT = { sky: { top: "#2f6db5", horizon: "#cfe2ee", bottom: "#a9c6d8" }, fog: { color: "#cfe2ee", near: 300, far: 9000 }, exposure: 1, clouds: { cover: 0.35, contrast: 0.25, scale: 700, base: 1200 } };
+const sorted = (v) => (Array.isArray(v) ? v.map(sorted) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v);
 let snapshot = null;
 try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
@@ -128,9 +139,10 @@ try {
   check("every source can be traced: a url, and the tide and wind sources their exact requests", s.terrainDoc.sourceUrls.every((u) => /^https:\/\//.test(u ?? "")) && s.terrainDoc.requests >= 11, { urls: s.terrainDoc.sourceUrls.map((u) => u?.slice(0, 90)), requests: s.terrainDoc.requests });
   check("OSM pinned to the checked moment, and the data is what was checked", s.terrainDoc.osmDate === "2026-11-09T20:32:33Z" && s.terrainDoc.matchesChecked === true, { osmDate: s.terrainDoc.osmDate, matchesChecked: s.terrainDoc.matchesChecked });
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
-  check("the terrain's About is its Terrain doc, and it carries the credit trait", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit, s.terrain);
+  check("the terrain's About is its Terrain doc; it is the place, with its credit, and no sky of its own (exactly terrain.credit and terrain.place)", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && J(sorted(s.terrain.traits)) === J({ "terrain.credit": {}, "terrain.place": {} }), s.terrain);
+  check("the world's weather is the template's: Cadboro Bay, 15:00 on 15 July on UTC−7, 4 m/s from 235°, a fair afternoon (and the scene's only trait)", J(sorted(s.weather)) === J(sorted(WEATHER(s.weather?.seed))) && Number.isSafeInteger(s.weather.seed) && J(s.traits) === J(["weather"]), { weather: s.weather, traits: s.traits });
   check("its render is built, fingerprinted, its data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 3 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
-  check("a summer afternoon's sea: 4 m/s from 235°, small waves, on the bay's one open water at the chart's y = 0", J(s.sea?.wind) === J({ speed: 4, from: 235 }) && s.sea.scale === 0.5 && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
+  check("a summer afternoon's sea: 4 m/s from 235°, small waves, on the bay's one open water at the chart's y = 0", s.weather?.wind === 4 && s.weather.from === 235 && s.sea?.scale === 0.5 && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
   // the terrain's grid (cadboro.js GRID: 1025 nodes 8 m apart from (-1600, -2400)), down to the hint's deepest seabed (150 m)
   check("the bay's Sea keeps the terrain's footprint where its world has no open water (its clip: the grid, 150 m deep, centred on it)", J(s.sea?.clip) === J([8192, 150, 8192]) && J(s.sea?.at) === J([2496, 0, 1696]), { clip: s.sea?.clip, at: s.sea?.at });
   check("it starts people in Look (no body named) at a home view from the club (view.start)", !s.start?.body && (await P("bodyLabel()")) === "Look" && J(s.home) === J({ position: [-400, 40, 300], target: [120, 0, -40] }), { start: s.start, here: await P("bodyLabel()"), home: s.home });
@@ -143,6 +155,11 @@ try {
   check("the club and the mooring field are among its places", ["Royal Victoria Yacht Club", "RVYC mooring field"].every((n) => t.places.some((p) => p.name === n)), t.places.map((p) => p.name));
   check("the depth under her is the DEM's own (measured), and the heightfield says where depths are made up", t.qualityUnderHull === "dem" && t.quality?.clamped > 0 && t.quality.dem > 0, { under: t.qualityUnderHull, counts: t.quality });
   check("OSM rocks too small for the grid travel with the heightfield; the rocks off the club stand above the highest tide", t.rocks > 50 && t.offClub.every((h) => h >= 1.5), { rocks: t.rocks, offClub: t.offClub });
+  // the weather's, as every peer computes it from the trait (the place offers none)
+  const a = t.atmosphere;
+  check("the world's atmosphere is the weather's: sailing's bright day exactly (sky, fog, exposure, the cumulus; the sun's colour and strength, shadows)", a && J(sorted({ sky: a.sky, fog: a.fog, exposure: a.exposure, clouds: a.clouds })) === J(sorted(BRIGHT)) && a.sun?.color === "#fff3df" && a.sun.intensity === 2.2 && a.sun.shadows === true, a);
+  check("the sun is where it is at 15:00 PDT on 15 July: high in the south-west (east +X, north −Z)", a?.sun?.direction?.[0] < 0 && a.sun.direction[2] > 0 && a.sun.direction[1] > 0.8, a?.sun?.direction);
+  check("the world's wind is the weather's: 4 m/s from 235°, the trait's seed, the stock gustiness", t.wind?.speed === 4 && t.wind.from === 235 && t.wind.seed === s.weather?.seed && t.wind.gustiness === 0.3, t.wind);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
 
   // screens
@@ -185,10 +202,11 @@ try {
   // a viewer without the terrain plugin
   await b.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/terrain/probes/rvyc-probe.html?replay=1` });
   await sleep(500);
-  check("the replay page set up (scene and sailing only)", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
+  check("the replay page set up (no terrain plugin)", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   check("without the terrain plugin, the terrain still shows, with its extras.terrain", await until("terrain().loaded", 120_000), await P(`status(__p.ids().terrain)`));
   const rt = await P("terrain()");
   check("…and reads the same depths (the mooring field, and every known place)", rt.depthAtMooring === t.depthAtMooring && J(rt.known) === J(t.known), { replay: rt.depthAtMooring, made: t.depthAtMooring });
+  check("…under the same sky: the atmosphere is the weather's, not the terrain package's", J(rt.atmosphere) === J(t.atmosphere), { replay: rt.atmosphere, made: t.atmosphere });
   await until("loaded().loaded === __p.loaded().total", 60_000);
   await sleep(2000);
   report.shots.push(await b.shot(join(SHOTS, "rvyc-replay-play.png")));

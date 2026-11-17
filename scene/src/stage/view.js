@@ -25,6 +25,7 @@ import css from "./stage.css?inline";
 import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
 import { createRouter } from "./router.js";
+import { looksFromEye } from "./pointer.js";
 import { createDrawer } from "./dock.js";
 import { escapeHint } from "./ladder.js";
 import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
@@ -279,7 +280,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     parent: edges.right,
     onChange: (d) => {
       if (dead) return;
-      atom.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown }) }));
+      atom.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown, docs: Object.freeze([...d.docs]) }) }));
+    },
+    // its widths are this viewer's prefs, like the grid and the units (dock.js)
+    prefs: () => atom.get().prefs,
+    setPref: (key, px) => {
+      if (!dead) setPref(key, px);
     },
   });
 
@@ -299,7 +305,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     escape: Object.freeze({ layer: null, hint: "" }),
     theme: null,
     notices: Object.freeze([]),
-    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null }),
+    // the drawer's tabs by title, the one shown, and the documents docked in it (dock.js), by docKey
+    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (COMPOSITION.md §5): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
@@ -1099,19 +1106,27 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── the look and attention (TOOLS.md §3) ─────────────────────────────────
 
-  // Where the look is, in the world and in keys: under lock, the eye ray's hit; else the pointer's (the last hover).
+  // Where the look is, in the world and in keys: under lock (or a lock body under touch: pointer.js
+  // looksFromEye), the eye ray's hit; else the pointer's (the last hover).
   let hoverHit = null; // { id: key, point, distance }
   function look() {
-    if (atom.get().pointer?.locked) {
-      let h = null;
-      try {
-        const r = viewport.centerRay();
-        h = r ? viewport.raycast(r.origin, r.dir) : null;
-      } catch {
-        h = null;
-      }
-      return h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
+    return looksFromEye(atom.get().pointer) ? eyeHit() : pointed();
+  }
+  // The eye ray's hit (where the middle of the view is), or null.
+  function eyeHit() {
+    let h = null;
+    try {
+      const r = viewport.centerRay();
+      h = r ? viewport.raycast(r.origin, r.dir) : null;
+    } catch {
+      h = null;
     }
+    return h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
+  }
+  // The pointer's hit: the last hover, which every press sets to what it pressed first (the router), so under
+  // lock the crosshair's and under touch the finger's. A menu is of this, not the look: a finger's long press
+  // in a lock body names what it pressed, not what the eye looks at.
+  function pointed() {
     const hovered = atom.get().hovered;
     if (hovered == null) return null;
     if (hoverHit && samePath(pathOfKey(hoverHit.id), hovered)) return hoverHit;
@@ -1175,8 +1190,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   /**
    * The input path (COMPOSITION.md §3): the stages from attention's innermost
-   * out to the outermost (the selection's path, else the look's; `look: true`
-   * the look's), then the focus stage if it isn't among them, each as its
+   * out to the outermost (the selection's path, else the look's; `pointer: true`
+   * the pointer's, what a menu is of), then the focus stage if it isn't among them, each as its
    * reader (stage.js). Nothing under attention: the outermost, and the focus.
    * The focus is always on it, since the scene a surface speaks of (its
    * commands on nothing: Frame all, Measure, Undo) is the focus's.
@@ -1184,7 +1199,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * outermost, whatever attention is (the toolbar's: it doesn't follow the
    * pointer).
    */
-  function inputPath({ look: lookOnly = false, focus: focusOnly = false, at = null } = {}) {
+  function inputPath({ pointer = false, focus: focusOnly = false, at = null } = {}) {
     if (focusOnly) {
       const f = atom.get().focus;
       const out = [];
@@ -1196,8 +1211,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     }
     // (`at`: a full path attention is held to, a held verb's target, whatever the selection and the look)
     const sel = Array.isArray(at) && at.length ? at : atom.get().selected;
-    const l = !lookOnly && sel ? null : look();
-    const path = !lookOnly && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
+    const l = pointer ? pointed() : sel ? null : look();
+    const path = !pointer && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
     const on = path ? onPath(path) : [];
     const out = on.length ? on : [outermost()].filter(Boolean);
     const f = focusStage();
@@ -1233,6 +1248,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     chainFor,
     inputOf,
     base: { id: base.id, lock: false, keys: [], input: lookInput },
+    // a coarse pointer is touch until a press says otherwise (TOOLS.md §4)
+    touch: !!globalThis.matchMedia?.("(pointer: coarse)")?.matches,
     cameraHeld: () => viewport.held,
     // a double-click's first hit is still there while its stage is (a key's n is never reused): one whose stage
     // closed between the clicks is cast again; one whose object the first click removed is kept, and what it comes
@@ -1265,7 +1282,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const s = topSitting();
     const body =
       s && s.def.id === st.body.id
-        ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
+        ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]), serial: st.body.serial })
         : BASE_LOCAL[base.id];
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const held = st.held ? Object.freeze({ ...st.held }) : null;
@@ -1299,9 +1316,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   cleanups.push(
     atom.watch((next, prev) => {
-      if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
+      if (next.prefs !== prev.prefs) {
+        writeJSON(prefsKey, next.prefs);
+        drawer.refreshWidth();
+      }
       if (next.body !== prev.body || next.held !== prev.held) announce();
-      if (next.selected !== prev.selected) router?.refresh();
+      // (an open drawer wants the pointer: a document docked or closed in it changes that)
+      if (next.selected !== prev.selected || next.drawer !== prev.drawer) router?.refresh();
       requestFlush();
     }),
   );
@@ -1360,6 +1381,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function dispose() {
     if (dead) return;
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
+    // the documents docked in the drawer are the view's: they go with it
+    drawer.dispose();
     for (const d of docs.values()) d.off?.();
     announcer.dispose();
     dead = true;
@@ -1412,6 +1435,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     },
     restoreCamera,
     reopened,
+    /**
+     * Dock a document in the drawer (api.view.dock): the view's, so it stays
+     * across selections, bodies, focus moves and extensions stopping, until
+     * its × or close(). One pane per docKey(url, toolId). → close
+     */
+    dockDocument: (doc) => (dead ? () => {} : drawer.dockDocument(doc ?? {})),
     packages,
     packagesChanged,
     /** a stage's clock said something new (local.clock): the focus path's clocks again */
@@ -1447,6 +1476,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     enterable,
     stageAt,
     look,
+    pointed,
     bodyDefs,
     bodyEye,
     bodyReach,

@@ -73,6 +73,20 @@
   pointer-events: none;
 }
 
+/* with no keyboard it is the Escape key (body.js): a finger presses it */
+.scene-stage
+  .body-layer
+  > .body-escape[data-key]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .scene-stage
   .body-layer
   > .body-escape[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {

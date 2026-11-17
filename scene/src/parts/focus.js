@@ -2,7 +2,7 @@
 // selection: with the focus on a boat, selecting a card of the game linked
 // on her table selects the link, as CAD selects a component before its
 // parts. Entering the link moves the focus into the game: the selection,
-// the halo, the inspector and the outline then act on the game's objects,
+// the halo and the inspector (its tree too) then act on the game's objects,
 // in the game's frame, and the boat stays live around it (its verbs and
 // carries still work; TOOLS.md Decisions 4).
 //

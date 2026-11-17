@@ -19,7 +19,7 @@ import { spy } from "../test/spy.js";
 import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "../selection.js";
 import { EDIT } from "./bodies.js";
 import focusPart from "../parts/focus.js";
-import outline from "../parts/outline.js";
+import inspector from "../parts/inspector.js";
 import toolbar from "../parts/toolbar.js";
 
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
@@ -499,18 +499,49 @@ describe("surfaces across docs", () => {
   });
 });
 
+describe("the bar of tools across docs, outside Edit", () => {
+  it("looking, entered in B: the game's and the host's world commands are on the bar, the game's first, and each runs where it's from; no editor command shows", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    const ran = [];
+    const world = (id, name) => (api) => ({ commands: [{ id, name, show: ["world"], run: () => ran.push([id, api.url]) }, { id: `${id}-edit`, name: `${name} (editor)`, show: ["toolbar"], run() {} }] });
+    const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card", traits: { "t.game": {} } }) }, order: ["card"] }));
+    const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: world("ring", "Ring") } };
+    const GAME = { meta: { id: "t.game", traits: ["t.game"] }, module: { create: world("deal", "Deal") } };
+    const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
+    s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    const view = s.debug.view;
+    await until(() => stageOf(view, "L")?.debug.host.instanceOf("t.game"), 3000);
+    view.enterBody("look", null);
+    const buttons = (cluster) => [...view.root.querySelectorAll(`.toolbar .${cluster} button`)];
+    const labels = (cluster) => buttons(cluster).map((x) => x.textContent);
+    await until(() => J(labels("world")) === J(["Ring"]), 2000);
+    // outside the game, its command isn't on the focus path
+    expect([labels("tools"), labels("world")]).toEqual([[], ["Ring"]]);
+    expect(s.api("t.host").view.enter("L")).toBe(true);
+    await until(() => J(labels("world")) === J(["Deal", "Ring"]), 2000);
+    expect(s.local.get().body.id).toBe("look");
+    expect(labels("tools")).toEqual([]);
+    for (const x of buttons("world")) x.click();
+    expect(ran).toEqual([
+      ["deal", b.url],
+      ["ring", s.handle.url],
+    ]);
+  });
+});
+
 describe("the drawer follows the focus", () => {
-  it("the Objects tab open as the focus moves opens again inside, on the linked doc's objects; link rows say what they are and enter", async () => {
+  it("the inspector's pane open as the focus moves opens again inside, its tree on the linked doc's objects; link rows say what they are and enter", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
     const c = repo.add(emptyScene({ title: "C", objects: { piece: object({ name: "Piece" }) }, order: ["piece"] }));
     const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }), M: link(c.url, { name: "C" }) }, order: ["card", "M"] }));
     const objects = { table: object({ name: "Table" }), L: link(b.url, { name: "B" }), P: link(b.url, { name: "B fixed", at: { heads: b.heads() } }) };
-    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.outline" }, module: outline }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.inspector" }, module: inspector }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug && s.instance("scene.focus") && view.linkState(["P"])?.open, 3000);
     view.enterBody(EDIT.id);
-    s.instance("scene.outline").tab.open();
+    s.instance("scene.inspector").tab.open();
     await settle();
     const rows = () => [...view.root.querySelectorAll(".scene-outline .object-row")].map((li) => [li.dataset.id, li.querySelector(".link-mark")?.textContent ?? null, !!li.querySelector(".enter-link")]);
     await until(() => J(rows()) === J([["table", null, false], ["L", "linked", true], ["P", "fixed", false]]), 2000).catch(() => {});
@@ -520,6 +551,9 @@ describe("the drawer follows the focus", () => {
     expect(view.atom.get().focus).toEqual(["L"]);
     await until(() => J(rows()) === J([["card", null, false], ["M", "linked", true]]), 2000).catch(() => {});
     expect(rows()).toEqual([["card", null, false], ["M", "linked", true]]);
+    // one pane, the tree and the fields together, in the focus doc
+    expect(view.root.querySelectorAll('.stage-drawer [data-panel="inspector"]').length).toBe(1);
+    expect(view.root.querySelector('.stage-drawer [data-panel="inspector"] .inspector-body .inspector')?.dataset.kind).toBe("scene");
     // a double-click on a link row enters it too
     view.root.querySelector('.object-row[data-id="M"] .row-main').dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     expect(view.atom.get().focus).toEqual(["L", "M"]);

@@ -79,8 +79,8 @@ pieces, each published and checked in the real Patchwork:
 - **One sea for a world** ([water/WATER.md](../water/WATER.md)): a world's
   ambients are its outermost doc's, and a new `water` package draws and
   evaluates the world's water. The *Harbour*
-  (automerge:wWT7oXqy2avFoaA12RELnJag6Yi, republished 2026-11-16 with
-  clipped open water) links Lost Cities aboard and Fitting out, both at anchor on its
+  (automerge:2wvYRaAWRU8xCKBmrtF2qf4ErRcR, republished 2026-11-16 with
+  clipped open water and 2026-11-17 with the stock sloop on rig@4, N6) links Lost Cities aboard and Fitting out, both at anchor on its
   one sea. It rests on Decision 1's
   amended sentence, which the lead accepted on 2026-11-15.
 - **Water bodies** (WATER.md, "Water bodies", built in `lane/water`, merged
@@ -90,7 +90,7 @@ pieces, each published and checked in the real Patchwork:
   sea and a current are behaviours put on it, and the weather is a scene
   trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
   sloop in a box of water, floats in a dry room beside Ship at anchor
-  (*Model basin and Ship at anchor*, automerge:3YCHXSNChAC1zLeC16hXcoVKAgTR,
+  (*Model basin and Ship at anchor*, automerge:T5cwhWMcGzvPXMyqHD6VmmDqMFX, republished 2026-11-17, N6,
   a doc of two links, laid out so her block clears the basin by 10 m or
   more, WATER.md Decisions 121 and 123, its home fitted to frame both in a
   640 px pane, Decision 122; it linked Ship at sea until the lead chose
@@ -109,16 +109,33 @@ pieces, each published and checked in the real Patchwork:
   box is the guest's (the lead's Q1), liveness is global (Q2), and the
   stage is unchanged: the path rule a fixer committed unaware of the
   lead's choice is reverted (Decision 90). The *Model room*
-  (automerge:4RbKJ9A83XkEX6u1GBNoPYDE3xto, its home fitted, WATER.md
+  (automerge:TCPsebdYmzQnK8JCsGQFHMZH6VS, its home fitted, republished 2026-11-17, N6; WATER.md
   Decision 122) lays boats out as 1:25
   dioramas on its floor, among them *Ship at anchor*
-  (automerge:3NkHf9D3oWisX4E4BCRk3FM1xQNA, now published on her own,
+  (automerge:4QoRjMjsP8PHqh6mAHsJFQcrKv9T, now published on her own,
   Decision 120).
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a
   screen, sound, a seat per port and Doom's world beside them, and no stage
-  change. The *Arcade* (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) holds both,
-  each cabinet whole in the home view with its own label beside it.
+  change. The *Arcade* (automerge:3T4KdCM2LxkxGj9rwy4bWjZdfXMF,
+  republished with one Doom world on 2026-11-16: Decisions, N7, 7) holds
+  both, each cabinet whole in the home view with its own label beside it.
+- **Mashups of published docs** (N7; Decisions, N7): docs linked
+  unchanged into a new doc, with no stage code. *Games night* came first
+  (the room and the Liar's dice table). *Arcade in the games room*
+  (automerge:2FEoL22wHa6XL9y54Dwg164wyXSG, republished by N6's
+  integration; Decisions, N7, 16) links the Quiet games room and
+  the Arcade: people arrive Watching at Lost Cities two links deep, the
+  cabinets' seats sit in the Arcade stage's roster beside the games' in
+  theirs, and on a running world P on a cabinet in the link sits you at
+  its port and your keys drive the engine while the room's game seats
+  stay free (the published Arcade's world is paused, so there the
+  picture holds still: Decisions, N7, 8 and 9). *Games night and the
+  Arcade* (automerge:2Vxh319RwLpNkbc2NegkFaBPLTfc, republished likewise)
+  puts the same Arcade,
+  at the same pose, beside Games night: a mashup of a mashup, its games
+  three links deep (Decisions, N7, 11). E1M1 on the Cadboro Bay shore
+  was gated and not published (Decisions, N7, 1 and 2).
 
 Still open:
 - out of focus isn't tinted;
@@ -134,7 +151,36 @@ Still open:
   landed on the boat 3 to 8 times in 12. Aiming only at a card the view's
   own pick lands on doesn't cure it: in the real Patchwork on 2026-11-16
   (presence-check.nopause runs 3 and 4, aims checked so) first presses
-  still landed on her Card table 80 ms after the aim.
+  still landed on her Card table 80 ms after the aim;
+- entering a link moves the canvas: entered in Edit (a double-click on G's
+  card aboard Lost Cities), the canvas moves down about 31 px as the
+  entered path's chrome appears, so a click straight after lands that far
+  off. The bar of tools holds still (TOOLS Decisions 10, B3), the other
+  strips don't (lane/n8, editclick-run step 5);
+- a place handed across docs to a body: a body offered by one stage,
+  entered with a place that names another doc's object, reads the id in
+  its own doc, so a start through a link into a general body doesn't
+  arrive and Walk from here on a linked spawn starts at the camera (found
+  by N7's gate, 2026-11-16; Decisions, N7, 1; Questions for the lead);
+- the real Patchwork ran package versions days apart in one page, and a
+  viewer with an older terrain provider rebuilt Cadboro Bay's published
+  render without its buildings and trees (whole again since 20:54 UTC
+  2026-11-16; Decisions, N7, 6; Questions for the lead);
+- machine's "Lay out its world" never refuses a second world for a
+  cabinet, and the published Arcade had come to hold two (republished;
+  machine/HOST.md, phase 2b, Not done yet; Decisions, N7, 7; Questions for
+  the lead);
+- in a mashup, a linked world's pause says so nowhere: the clock chips are
+  the focus path's (I12) and machine shows no note while the world is
+  paused, so Play on a cabinet in a link whose world is paused sits you at
+  a machine that never moves (found by N7, 2026-11-16: the published
+  Arcade's world is paused; Decisions, N7, 9; Questions for the lead);
+- two docs' seat bodies, one stacked on the other, look the same to the
+  lower doc's seats: every stage's seat body is `"seat"` and seats'
+  `seated()` reads the top body's id alone, so the lower doc's `sitting()`
+  still reports its seat and its `getUp` (its Stand up, or its stage
+  stopping) leaves the upper doc's body (seats/README.md, Still open,
+  pinned by `seats/src/stacked-bodies.test.js`; Decisions, N7, 14).
 
 Fixed since (each item names its Decisions section below):
 - a doc's packages list grew as parts were added and wasn't pruned when
@@ -170,6 +216,28 @@ Fixed since (each item names its Decisions section below):
   table, which is the single-click item under "Still open", not this one.
   Not yet checked in the real Patchwork (enter-check, presence-check.nopause
   on scratch copies, once the integrator has synced the scene package).
+- keyboard bodies (walk, aboard, a station) had no touch input: on a
+  phone nobody could walk, sail or take a station, and under a touch
+  laptop's granted pointer lock a drag stopped looking. A finger now never
+  locks the pointer, and the stage's own pad (`scene.touch`) presses the
+  keys the gesture, the held tool and the body declare, derived from their
+  labels, with no per-body touch code; a use-prompt button with a key is
+  that key, so held verbs (the windlass) work by finger (TOOLS Decisions
+  11 to 15, lane/n9, merge f66a7d0a). Checked in the real Patchwork on
+  2026-11-16 (touch-check under Chrome's touch emulation, on scratch
+  copies of the Quiet games room and Lost Cities aboard).
+- in Edit on a boat that is the world, sailing's HUD drew its own "Come
+  aboard" button over the canvas's top edge, so the first press of a
+  double-click on a card there came aboard, left Edit and moved the canvas,
+  and nothing was entered (triage (f)). The HUD now holds no button: Come
+  aboard is a world command on the bar of tools in every body, and the bar
+  keeps its height whether or not a world command applies (TOOLS
+  Decisions 10, lane/n8, merge 7aba1de4). Checked in the real Patchwork on
+  2026-11-16 (worldbar-check, 18/18 on scratch copies of Ship at anchor and
+  Lost Cities aboard): the double-click 16 px below the canvas's top edge
+  enters the game, and the canvas sits at the same place in Look, Edit and
+  aboard; against the packages published before, the same check fails 11
+  of 17, the first press coming aboard.
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her
@@ -244,6 +312,85 @@ the lead confirms or reverses it):
   serves tests; and a test that drives the stage's manual clock no longer
   drives the gate unless it sets `timeStamp` (Decisions, double-click
   stamps, 4). Not chosen: refusing a double-click with a missing stamp.
+- **The bar of tools for games** (TOOLS Decisions 10; lane/n8): the empty
+  row outside Edit, where the world cluster sits and what the surface is
+  called, a new `show` surface or `edit: true` alone, a game's world
+  commands without entering it, one stage-drawn key legend, and whether a
+  game keeps a big Play call to action. The questions are there.
+- **Touch controls for keyboard bodies** (TOOLS Decisions 11 to 15;
+  sailing DESIGN.md "A station's keys say what they do"; lane/n9, merge
+  f66a7d0a): when the pad shows (from the first touch, always on a coarse
+  pointer, or a chip toggle) and whether a pen is touch; a digital d-pad
+  or an analog stick, and whether WASD makes a pad; label-as-identity or
+  an explicit grouping field (machine's doom pad shows one "Weapon"); the
+  pad's layout and group names (a press session's `label`); whether the
+  500 ms touch hold opens the menu while a body looks by drag; a stage
+  crosshair under touch; whether a tapped look should expire; the station
+  labels' words (B above all); whether sailing's HUD hint keeps key names
+  on touch; whether arena's gun fires on a tap (today it fires only
+  locked). The questions are there.
+- **The pad and sailing's HUD share the bottom left** (lane/n9): the pad
+  lies under every other overlay (TOOLS Decisions 13, so a menu opened
+  over it takes the finger), and sailing's panel paints over its arrows
+  (they still work, the panel letting the pointer through); move the pad,
+  or have the HUD keep clear. Layout is the lead's taste.
+
+Questions for the lead (not decided; each names what stands meanwhile):
+- **A place handed across docs to a body** (Decisions, N7, 1): when a body
+  offered by one stage is entered with a place that names an object of
+  another stage's doc, should that stage resolve the place to a pose in
+  the world (frames cross, references don't, as §9 has it), should the
+  enter be refused, or should arriving through a link move the focus
+  there? Arrival through a link into a general body and Walk from here on
+  a linked spawn are the two cases today. Stands meanwhile: the enter
+  silently starts the walker at the camera, and E1M1 on the Cadboro Bay
+  shore isn't published (Decisions, N7, 2).
+- **Package versions in one page, and a render an old provider can
+  overwrite** (Decisions, N7, 6): Cadboro Bay's terrain render drew
+  without its buildings and trees from 18:35 to 20:54 UTC on 2026-11-16,
+  until a build that reads every layer made it whole again. Is a viewer
+  whose provider is older than a render's allowed to rebuild it? Stands
+  meanwhile: Cadboro Bay as it is now (whole; the weather merge may
+  change its doc: Decisions, N7, 16), and
+  no real-Patchwork checks from N7 of published docs with older renders
+  until the lead says (checks of docs N7 made itself, and of docs with
+  no render docs, go ahead, guarded, naming the versions they ran on:
+  Decisions, N7, 6, 7 and 10).
+- **A second world for a cabinet** (Decisions, N7, 7): should machine's
+  "Lay out its world" be disabled on a cabinet that has one, or replace
+  it? Stands meanwhile: the Arcade republished with one world; the
+  command unchanged.
+- **The Arcade's paused world, and who says so in a link** (Decisions, N7,
+  9): the published Arcade's world has been paused since 20:20:57 UTC on
+  2026-11-16, by your registered contact (how, isn't recorded). Resume
+  it, or leave it? And inside a link, which should say a world is
+  paused: the stage (a clock chip for every linked doc with a process,
+  not only the focus path's), or machine (its note, which today stays silent because "the
+  world's pause says so already")? Stands meanwhile: the Arcade paused, the
+  two mashups linking it as it is; the checks play on a scratch clone
+  whose world starts running.
+- **Games night and the Arcade's folder slot** (Decisions, N7, 11): it
+  adds depth, not a new kind of composition, and neither N7 mashup has a
+  scaled link. Keep it in the folder, drop it, or swap it for E1M1 as a
+  1:50 diorama in the Model room? Stands meanwhile: in the folder.
+- **A place as a mashup's ground** (Decisions, N7, 3 and 4): a linked world
+  brings its things, not its weather (STAGE.md, "Ambients"), so Cadboro
+  Bay linked under E1M1 loses its sky and its wind (since the weather
+  merge its sky is the weather's; to re-read after N7's merge:
+  Decisions, N7, 16). Should a doc be able
+  to say "my world's ambients are link N's" (a stage capability), or is
+  the answer that the place's own doc holds the level (not a mashup)? And
+  E1M1 floats over the Gyro Park lawn by a median 4.8 m (p90 9.3, max
+  17 m), its spawn floor 4.9 m up: acceptable as a diorama on the shore,
+  or should it have a stand? Stands meanwhile: E1M1 at Cadboro Bay is not
+  published (Decisions, N7, 2), for 1's reason, not these.
+- **Dice cups at the Lost Cities table** (Decisions, N7, 14): by reading,
+  two games' seats in two linked docs can both be one person's, and the
+  card table's and the cups' keepers each count their own doc's players,
+  so no seat across docs looks needed. Try it (a doc of cups and seats to
+  link onto the table, and seats' fix for two stacked seat bodies first),
+  or is "a game that wants both is one doc" the answer? Stands meanwhile:
+  not built.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -713,7 +860,7 @@ on its root. A GLB connector with a `name` is the same thing. Two consumers:
 - **Traversal.** A Doom exit, a teleporter, an OMI link or crossing a
   Croquet portal is a package's field holding `url#name`. Going there is
   the view's: `api.go(url)` opens that doc as the outermost (with the
-  `patchwork:open-document` event the inspector already sends) and puts the
+  `patchwork:open-document` event an inspector section's Open already sends) and puts the
   eye at the named frame, as standing up puts the walker at the eye. The
   arriving doc reads its own frame, so nothing crosses.
 
@@ -854,7 +1001,7 @@ ships alone and proves something.
    probe (135 GLBs open, 378 in all) fetches, subscribes, draws and times
    the same as before. Routes are recomputed when the registry changes,
    and `api.loadState(id).content` says which
-   (the inspector's "Open file" and status line read it). `"scene"` is
+   (the inspector's status line and its Source section read it). `"scene"` is
    not a kind yet: it arrives with the `scene.link` source at step 11,
    so no branch exists for a source nothing registers.
 5. **Seats to `seats/`**, with the seat body's home ready for step 6.
@@ -1094,8 +1241,9 @@ ships alone and proves something.
     offers Enter on a link (menu, inspector; everyone's, every body) and
     takes a double-click on one; the outline's link rows say what the link
     is here (linked, shown again, fixed, closed) and enter (→, or a
-    double-click); the inspector's Linked scene row says the same, with
-    Open and what the host sets of it. The trail, the view's own chrome
+    double-click); the inspector's Link row says the same, with
+    what the host sets of it (the linked doc is its folded Linked scene
+    section, whose Open shows it on its own). The trail, the view's own chrome
     along the top while the focus is inside a link, names the outermost doc
     and each link entered (each crumb a way out) and has Leave; Escape's
     last rung leaves. Drawer tabs open as the focus moved open again inside.
@@ -1385,7 +1533,13 @@ The five open questions were put to the project lead and answered:
    hover's menu or the scene's. Rejected: passing the press's hit to the
    menu through `api.path({ hit })`, which would give the path a second
    notion of where the pointer is; one look, updated by the press, keeps
-   the use prompt, the keys and the menu on the same thing.
+   the use prompt, the keys and the menu on the same thing. Amended
+   (2026-11-16, lane/n9, decided unattended, for the lead): a lock body
+   under touch looks from its eye while a finger presses where it lands
+   (TOOLS.md Decisions 14), so the menu reads the pointer's hit
+   (`api.path({ pointer: true })`, a reader's `pointed()`): still not a
+   second notion, the same hover the press sets, which the look is in
+   every other pointer state.
 3. **Leaving Edit puts the selection down; the toolbar is one row with no
    scrollbar; no tie rule for verbs beyond running order**: TOOLS.md
    Decisions 6 and 7.
@@ -2710,3 +2864,502 @@ between packages".
    arrival + TELL_MS)`, the same for the timer and for asking.
 10. **Data is an object, checked by the stage** before `valid`: every
    package's `valid` began with the same guard, so it is said once.
+
+## Decisions, N7 (decided unattended (2026-11-16, lane/n7), for the lead)
+
+N7 is mashups: published docs linked unchanged into a new doc, with no
+stage code. The first candidate was E1M1 on the Cadboro Bay shore, gated on
+an unlisted scratch doc, *E1M1 at Cadboro Bay (scratch)*
+(automerge:25Zpxs48qfj7ZaNAaapmwWFvLZCv): Cadboro Bay's link at the origin,
+E1M1's on the Gyro Park lawn, the start on E1M1's link. It was checked in
+the real Patchwork by the lane's `shore-check` (kept with its publish
+scripts, outside git; each run's results are kept). The figures below are
+its run of 18:37 UTC, 2026-11-16 (8/11: rows 3 and 10 fail by design, they are
+the finding; row 6 failed to a stale package, 6 below).
+
+1. **Finding: a place handed across docs to a body.** *A question for the
+   lead, not a decision.* A body's `enter(place)` takes an object id and
+   reads it in the body's own doc (TOOLS.md, "A place is not a type";
+   seats' `enter`, sailing's station, `walk/src/body.js` `enter`). TOOLS.md
+   says `enter` runs in the stage that called `api.body.enter(id, place)`,
+   but `view.enterBody` finds the body wherever it is offered, and a
+   general body (walk: its plugin has no traits, `walk/src/index.js`) is
+   offered only by the focus stage (§3; `src/stage/host.js` `offering`).
+   So when stage S hands a place to a body offered by stage T ≠ S, T reads
+   S's id in its own doc. Two consumers hit it today:
+   - **Arrival through a link.** E1M1 starts people with `{ body: "walk",
+     place: <its spawn> }`. A start on a link hands arrival to the linked
+     doc, in its stage and only there (Decisions, step 16, 2; step 15
+     review, 1: `tryArrive`, `const only = at.through`), and walk isn't
+     offered there, so nobody arrives. shore-check 9 reads the cause rather
+     than narrating it: the mashup starts on link 2 with no body, E1M1's
+     start is walk at its spawn, walk runs in the focus stage and not in
+     E1M1's, E1M1's host has settled, arrival gave up and the body is
+     Look (it passes). Row 11 is the control: E1M1 alone arrives walking at
+     its spawn (its feet 0.05 m over it, 77 s after the page opened). So a doc that starts people in a general body
+     starts them differently alone and linked, against the reason
+     Decisions, step 16, 2 gives.
+   - **Walk from here on a linked spawn.** walk.spawn runs in E1M1's stage
+     (a trait part) and its verb calls `api.body.enter("walk", <spawn>)`.
+     The view finds the focus's walk, which looks the spawn up in the
+     mashup's scene, doesn't find it, and starts at the camera's eye (or
+     over the middle of the whole scene's box), with no notice, since the
+     enter succeeded (shore-check 10: the walker started 40.2 m from the spawn, under the camera, no notice). Were the ids to collide (a
+     bundle's extracted copy holds its source's ids), it would start at an
+     unrelated object. walk's `spawns()` reads the focus doc only too, so
+     its "else any spawn" never sees a linked level's.
+
+   The options, for the lead, as one rule for both consumers:
+   - (a) **The calling stage resolves the place to a pose in the world**
+     (frames cross, references don't: §9 has the view answer a link's
+     connectors in the host's frame). Then a start through a link also
+     offers the focus's general bodies. The price: the body contract
+     changes for every body. A seat or a station needs its id (the place
+     *is* the seat), so `enter` would take the id for its own doc and a
+     world pose for another's, and the view would have to know which is
+     which. That is a TOOLS change touching seats, sailing and walk, not
+     a line in `tryArrive`.
+   - (b) **Arriving through a link moves the focus there** (an Enter), so
+     the general parts run in that stage and the place is local. It covers
+     arrival only; Walk from here on a linked spawn still crosses.
+   - (c) **Refuse**: an enter whose place isn't of the body's own doc
+     fails, so the verb says "Couldn't walk from there" instead of
+     starting somewhere else, and a linked doc that starts people walking
+     isn't started so. The gap stays, but visibly.
+
+   Not taken: the publisher writing `{ body: "walk", home: <the spawn's
+   eye> }` on the mashup itself. walk would start at the eye, which a
+   returning viewer's saved camera replaces; that hides the gap. (The
+   check's own Walk, entered directly with `view.enterBody("walk")` so rows
+   5–7 can read the rest, starts on E1M1's floor only because the camera
+   is at the home, which is the spawn's eye carried through the link: the
+   home's coincidence, not the spawn.)
+
+   Everything else composed with no change (shore-check 2, 4, 5, 7 and 8): walk,
+   a general body in the outermost stage, walks a linked doc's floors (W
+   held 1.5 s moved 2.24 m, and the ray down hits E1M1's level in its
+   stage); E1M1's 11 doors offer Open from E1M1's own joints, Cadboro's
+   hatch from Cadboro's; no error notices. E1M1's exit offered Exit from
+   its own traversal in the two earlier runs (row 6).
+2. **E1M1 at Cadboro Bay is not published.** The gate's rule was "NO-GO if
+   arrival needs a stage change", and it does (1). The scratch doc stays
+   unlisted, out of the folder. N7's second mashup falls back to the
+   Arcade nested in Games night. The place's proof, the check and the
+   publish command are kept with the lane's publish scripts, for when (1)
+   is answered.
+3. **The place is Gyro Park**, the flat lawn at the head of Cadboro Bay
+   (centre −145, −680, yaw 0): land, nothing standing, nothing swinging
+   over it, the level's drawn floors clearing the drawn ground. A Doom
+   level isn't flat, so it floats over the lawn by a median 4.8 m per 5 m
+   cell (p90 9.3, max 17 m), its spawn floor 4.9 m up. Whether that is
+   acceptable, or the level wants a stand, is the lead's call.
+4. **A linked place brings its things, not its weather** (STAGE.md
+   Ambients; shore-check 4 asserts the rule, it is not a bug). Row 4 first
+   requires that Cadboro's stage runs `sailing.weather` and offers
+   `atmosphere` and `wind`, so the rule can't hold vacuously: in an earlier
+   run its stage ran no weather at all, and the row passed with nothing to
+   refuse (6 below says why). With the weather running, the world has
+   neither: the default sky and still air. Alone, Cadboro has sailing's
+   bright maritime day and a 4 m/s wind from 235° (its `terrain.sky` is
+   `{}`, which offers nothing, so its sky is the weather's); linked, the
+   place loses its sky as well as its wind. Its Sea is drawn as a clipped
+   block (one `water-patch`, no open ocean, water running in Cadboro's
+   stage alone). Whether a doc should be able to say "my world's ambients
+   are link N's" is the lead's question.
+5. **Name and icon, if (1) lets it publish:** *E1M1 at Cadboro Bay*,
+   Castle.
+6. **Finding, not the stage's: the real Patchwork ran package versions
+   days apart in one page, and an old provider rewrote a published
+   render.** A *question for the lead*, and outside N7's reach (no
+   Patchwork core changes). shore-check keeps each run's results, and
+   they disagree in ways no doc change explains:
+   - one run's Cadboro stage ran no `sailing.weather` (a doc trait, so it
+     should always run);
+   - row 6 failed in the last two runs, and the last shows why: E1M1's
+     traversal offered commands `use` and `exit`, not `go`, the
+     traversal from before 2026-11-12;
+   - one run loaded scene at old heads (`automerge:2zt6…#ZKap91…`, the
+     stage without `view.ambient`, older than 2026-11-14), so water's
+     current part failed to start (`e.ambient is not a function`) and no
+     view could be read (that run scored 4/11);
+   - and during the 18:37 run, Cadboro Bay's terrain render
+     (automerge:38pgCBi4…) was rebuilt by a viewer at 18:35:16 UTC with a
+     terrain provider from before 2026-11-15 (its build reads no `look`
+     file): the new GLB has no Buildings, Trees, Forest canopy or Moored
+     boats, and the published Cadboro Bay drew without them (whole again
+     since 20:54 UTC; see below). The
+     lane's Chrome held the lock then, so it was very likely that run's
+     page. The previous GLB is still on the server (the render doc's
+     history); the lane didn't write it back.
+
+   So a real-Patchwork check reads whatever versions the shell resolved
+   that load, and any viewer whose provider is older than a render's can
+   overwrite it. The lane ran no more real-Patchwork checks once this was
+   seen.
+
+   Narrowed by 7 below: a check may open docs the lane itself made (fresh
+   render docs, nothing older to overwrite) when it reads, node-side,
+   before and after, the heads of every published doc it reaches but must
+   not write. A scratch clone counts as the lane's own only when its
+   render docs are its own too: `repo.clone` keeps every object's
+   `renderUrl`, so a clone shares its source's render docs, and a
+   viewer's builds write the render doc (`scene/src/build.js`; a GLB is a
+   new doc each build). Checks that open published docs with renders
+   built before (Cadboro Bay) still wait for the lead. The Quiet games
+   room and Games night have no render docs at all, so checks may open
+   them, guarded the same way (10).
+
+   Read again node-side at 04:21 UTC on 2026-11-17 (step 7): Cadboro
+   Bay's render has been whole since 20:54:34 UTC on 2026-11-16. A build
+   that reads every layer (params buildings, forest, boats true; the
+   fingerprint `d3b9f2e636cc0` and three deps of the build before the
+   damage) wrote a new GLB (automerge:48dzaSpx…), and `shore-place.mjs
+   --check`'s clubhouse control, which had failed while the render was
+   damaged, passes again (Buildings ×118 and Trees ×34 drawn there;
+   18/18). Who rebuilt it isn't recorded. So the write-back half of the
+   question is moot; whether an older provider may rebuild a newer
+   render still stands, and shore-check still waits, since opening
+   Cadboro Bay is what risked it.
+7. **The Arcade republished with one Doom world.** The published Arcade
+   (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) had come to hold two objects
+   carrying `machine.world` for the Doom cabinet, `world` and `okg5pjo09`,
+   at one pose with their own render docs, so every view drew Doom's map
+   twice. Its publisher writes one (`machine/probes/publish-arcade.mjs`);
+   the second came from "Lay out its world" pressed on the published doc,
+   which never refuses a second world (`machine/src/scene/worlds.js`
+   `worldCommand`; machine/HOST.md, phase 2b, Not done yet). With no
+   back-compat, the Arcade is republished by the unchanged publisher, at
+   automerge:3T4KdCM2LxkxGj9rwy4bWjZdfXMF, and the folder's *Arcade* link
+   swapped by name; the old doc stays, unlisted. The invariant, read
+   node-side from a repo that never saw the doc, before any visit and
+   again after every check: for each cabinet id, the number of objects
+   whose `machine.world.machine` names it is 1 for `doom` and 0 for
+   `snes`, and no world names an object that isn't a cabinet (the old doc
+   reads 2 and 0; it also requires every object whose render is Doom's
+   map to carry the trait, and every world's `source` to be its
+   cabinet's machine doc). Checked in the real Patchwork by
+   `arcade-check` (kept with the lane's publish scripts), which also
+   sees the defect in the page: the scene draws exactly one node named
+   `machine.world:*`, and it is `machine.world:world`. The new Arcade
+   scores 30/30 with play on its own scratch clone, then 14/14 with
+   `--no-play` as a later visit; the old doc, `--no-play`, scores 13/14,
+   failing that row (it draws `machine.world:world` and
+   `machine.world:okg5pjo09`). The scratch clone now clones each
+   object's render doc and drops the shell's `@patchwork.mainDraftUrl`, a
+   row checks it shares no doc a viewer writes with the published one,
+   and a row reads, before part 2 and after, the heads of the published
+   docs it still reaches (the Arcade, its sessions, the machine docs and
+   their content, the WAD): unchanged. The earlier runs' clones shared
+   the published renders: the world's render was first built by the
+   first run's scratch page, not by a visit to the published doc (a
+   fresh render doc, the old docs' GLB hash, so the same provider
+   version). The first two runs scored 16/27: in a fresh profile the
+   shell's first page came up with the stage but none of the doc's
+   packages and no prompt to load them for 7 minutes, while the next
+   navigation, to the scratch clone, prompted, loaded and played. The
+   check now reloads once after 150 s with nothing loaded and nothing to
+   click, and its summary says so ("after a reload", naming the page);
+   no scored run since needed it. The machine docs, their content, the
+   WAD, both Arcades, their render docs and sessions kept their heads
+   through the last three runs.
+   *For the lead:* should "Lay out its world" be disabled on a cabinet
+   that has its world ("It has its world"), or replace it? Either is a
+   small change in machine, outside N7.
+8. **Mashup B: *Arcade in the games room*** (automerge:3gvFRkHB8YbCm9B2bRmoVKPbNXyB,
+   icon Gamepad2; the name and icon decided here): the Quiet games room
+   at the origin and the Arcade of 7, both published, linked unchanged
+   (`publish-links`), people starting as the room starts them. Gated
+   first on an unlisted scratch doc (automerge:2Vs2KeZL5vY6yYBgBdteYMhNDTxP)
+   by the lane's `arcade-room-check` (kept with its publish scripts,
+   outside git), and GO: nothing in scene, walk or machine changed.
+   - **What composed without change** (the published doc; the check's
+     rows in brackets): every doc it opens acts in it, one stage each:
+     the mashup, the room, its three games, the Arcade (1). People
+     arrive Watching at Lost Cities, two links deep (2). Both cabinets'
+     screens sit on their bezels, and each cabinet has its session (3).
+     One seat mechanism serves two packages: a tabletop game declares
+     seats on its doc, machine lays a cabinet's ports as seats on its
+     object (seats' `lay`, seats/README.md), and each stage has its own
+     roster, so each game shows a picker with its own seats, the Arcade
+     one more, and the cabinets' eight seats are free in the Arcade
+     stage's roster (4). Walk is on offer (5); no error notices (7). The
+     machine docs are reached one link and a reference down: the mashup
+     links the Arcade, whose cabinet objects name their machine docs.
+   - **Play, on a running world only.** The published Arcade's world is
+     paused (9), so on the published mashup P on a cabinet sits you at a
+     picture that never moves. Play was shown on a scratch Arcade (its
+     renders cloned, its runtime fields dropped, its world started)
+     linked with the published room at the same poses: from Look, P
+     aimed at the Doom screen sits you at the Doom P1 seat in the
+     Arcade's stage with the keys panel up (8); held forward reaches the
+     engine and the picture moves (9); Lost Cities' seats stay free (10),
+     since the cabinet's seat is in the Arcade stage's roster, not the
+     game's, and a view sits in one seat at a time (`roster.sitting()`);
+     Watching stands you up, the port goes back and the picture holds
+     (11). So a running emulator on world time works inside a link when
+     its world runs.
+   - **The place** (`arcade-room-place`, kept with the check; its table
+     and mutants in 12): the Arcade at (3.4, 0.035, 1.65), turned 180°,
+     its screens facing the tables. The rule ("room to play"): every box
+     of the Arcade (each cabinet, Doom's world, and a players' strip from
+     each cabinet's front out to its seats' cameras) stands on the room's
+     floor and is 0.3 m clear in plan of every triangle the room draws in
+     the slab a player uses (floor + 5 mm to floor + 2.1 m), of each
+     linked game's hint box, and of a column on the walk spawn; the walls
+     being drawn, the clearance is also what keeps it inside them. Of the
+     poses on a 5 cm grid at the four right angles that keep it, the one
+     with the most room (0.908 m, to a Lost Cities chair). Triangles, not
+     hint boxes: the room's Lamps and its Bamboo and moss are one mesh
+     each, spread round the room, and their boxes cover nearly all its
+     free floor. Two clauses never decide a real pose in this room, so
+     synthetic controls test them: every game sits on a table that
+     reaches further (a game set on the floor under a players' strip
+     fails the pose by its box), and nothing between 0.6 m and the
+     slab's top stands where the Arcade could go (a thing at head height
+     over a strip fails it, the same thing just over 2.1 m doesn't). The
+     page agrees: row 6 reads every triangle the room draws, as drawn,
+     and finds the same 0.908 m.
+   - **The hover:** the room's tatami are islands 3.5 cm proud of wooden
+     aisles, and a link is one rigid pose, so the Arcade stands at the
+     tatami's top and what is over an aisle hovers 3.5 cm (Doom's world
+     54% of it, each players' strip 40%, the cabinets about 1%).
+     Reported, as 3 reports E1M1's, not decided.
+9. **Finding: a linked world's pause says so nowhere.** *A question for
+   the lead.* The gate's first play failed row 9: seated at the Doom
+   cabinet, the session's clock stood still and no tick ran. The
+   published Arcade's world is paused (`clock: { running: false, t:
+   32.751 }`): its history has it running from its publish, then at
+   20:20:54 UTC, 2026-11-16, one actor writing `{ running: true, t:
+   29.96 }` and, three seconds later, the pause, its `by` your
+   registered contact. How it was paused isn't recorded (a clock chip,
+   or code calling `clock.pause()`). It wasn't a lane check: a check's
+   Chrome runs in a fresh profile, which has no contact
+   (`terrain/probes/cdp.mjs`), and no N7 Chrome ran between 20:08 and
+   21:12 UTC. A scratch clone kept that clock. A paused world runs no
+   machine (machine/HOST.md, phase 2b), and machine shows no note then,
+   because "the world's pause says so already"
+   (`machine/src/scene/shown.js` `stoppedNote`). In a mashup it doesn't:
+   the clock chips are the focus path's docs (I12), and the Arcade is a
+   link off it, so Play sits you at a cabinet whose picture never moves
+   and nothing says why, until you enter the link and its chip appears.
+   Not changed here (no package code in N7). The checks' scratch clones
+   start their world running (`clock: { running: true, t: 0 }`, as
+   published), in `arcade-room-check` and in step 3's `arcade-check`
+   alike; with that, play passed. The published Arcade stays paused: the
+   pause is yours.
+10. **6, narrowed for the room and Games night; its versions half
+   recorded, not answered.** Read node-side, no object of the room, its
+   three games, Games night or the Liar's dice table has a `renderUrl`
+   (their GLBs are files, drawn from their source; their games are
+   links), so no provider's build writes into them and 6's overwrite
+   can't happen there; 6 now says so. The other half of 6, a page
+   running package versions days apart, stands: a page runs whatever the
+   shell resolves. `arcade-room-check` now names them: each module the
+   page loaded from an automerge URL, with its heads, by package, and
+   whether that is the package's current heads (read node-side after
+   the run); it scores only that the page names them, one heads per
+   package, the stage's among them. Its write guard is every published
+   doc a visitor could write: the docs it opens below the mashup and
+   every render and session they name (the Arcade's three renders and
+   two sessions too), their heads read before and after.
+11. **N7's second mashup: *Games night and the Arcade***
+   (automerge:48Szu3pnC7mVUupS2mSZUt7ZRJQt, icon Trophy; the name and
+   icon decided here). With A not published (2), this is the fallback 2
+   named: Games night at the origin, the Arcade at B's pose, a mashup of
+   a mashup, its games three links deep. The rule holds there unchanged
+   (the host walked through its links, 59 GLBs; least 0.908 m, the same
+   chair), and the check passes the same rows: four game seat pickers
+   and the Arcade's, arrival Watching at Lost Cities three links deep,
+   play on a scratch Arcade as in 8. What it adds over B is depth only:
+   Games night already links a doc with links, and depth three is the
+   same mechanism as depth two. Neither mashup has a scaled link (the
+   plan's other fallback, E1M1 as a 1:50 diorama in the Model room,
+   would). Whether it keeps its folder slot is a question for the lead.
+12. **Scores of record** (the real Patchwork, 2026-11-17, 02:50–03:22
+   UTC): `arcade-room-check` on *Arcade in the games room* 20/20 with
+   play (its first page reloaded once: the shell's fresh-profile start
+   with no packages and no prompt, 7), on *Games night and the Arcade*
+   20/20 with play. Both named their package versions: every one the
+   current heads but once, Games night's published page running scene at
+   a heads other than its current one (`2zt6…#nBUHTf…`), while the room's
+   run minutes before and its own scratch page minutes after ran the
+   current (`#nHZXa1…`): 6's versions half, seen again within one
+   check.
+   `arcade-room-place --check` at the published pose: 15/15 on the room
+   (each of nine mutants fails its own rows) and 4/4 on Games night (its
+   controls are the room's). The runs before these, and the gate's, are
+   in the lane's report.
+13. **Not built, by design: a game table in Fitting out's saloon, as a
+   mashup.** Fitting out (automerge:234hYUvZMozmQ3bo3c6BRcTJmVXB) has no
+   saloon of her own; the candidate is a table anywhere aboard her, linked
+   in a new doc. It can't ride her:
+   - A mashup places each link in its own frame: `publish-links` writes
+     every link on the doc's root (`parent: null`). Writing a parent
+     instead changes nothing, because a parent is doc-local: `rawParent`
+     (`src/hierarchy.js`) keeps one only if it names an object (not a
+     group) in the same doc, and her Sloop (`oga3461ux`) is in her doc,
+     not the mashup's.
+   - She moves in her own doc. Her Sloop carries `sailing.ship`, lies to
+     her own Windlass and Anchor, and pitches and swings on her own Sea in
+     her world time. What rides her is what her doc parents to her: her two
+     W hatches and F's companionway are links parented to the Sloop. Lost
+     Cities aboard is the shape that works: its game's link sits on the
+     Card table, and the Card table on the Sloop
+     (`omkjnt9w5 → onocu6k6f → oz3e3gr5o`), all in one doc.
+   - §9 leaves only a landing: a carry may snap to a linked doc's named
+     frame, but it stays where it landed ("no reference crosses docs"); §9
+     says so of an edit to the linked doc ("It doesn't follow the winch if
+     the fit-out changes"). Motion is the same case: the landed pose is
+     written in the host's frame, so a table snapped to her cockpit also
+     stays put while she pitches and swings out from under it.
+
+   So the candidate needs an attachment across docs, which §9 rules out.
+   By design, the answer is the boat's own doc holding the link (Lost
+   Cities aboard), which isn't a mashup. Nothing to ask.
+14. **Dice cups at the Lost Cities table: not the capability the plan
+   expected; not built; a question for the lead.** The plan held that a
+   view sits in one seat at a time (`roster.sitting()`), so a person could
+   be player 1 of G or of a dice doc linked onto the same table, never
+   both, and that this forces a seat spanning linked docs. Reading the
+   code says otherwise for the keepers:
+   - Players and claims are per doc. Each doc's seats part holds its own
+     lasting seat's claim (`held`; seats' `sit` and `reconcile`, in
+     `seats/src/seats.js`), and "a viewer has at most one lasting seat in
+     a doc" (seats/README.md) is per doc. Sitting in a second doc's seat
+     neither writes nor lets go of the first's, so one person can be
+     player 1 of both at once.
+   - Each keeper counts its own doc's players, from a roster that is pure
+     in that doc: card-table's hand keeper through `playing()` →
+     `roster.viewers(scene)` (`card-table/src/keeper.js`), dice's cups
+     through `seated()` → `roster.viewers(s)`
+     (`dice/src/cup-extension.js`). Neither reads `sitting()`.
+   - What is one per view is the body on top: you look from one doc's
+     seat at a time. At one table, the two seats' cameras can be the same.
+
+   So, by reading, the keepers compose with no new seats capability. Two
+   things stand in the way, neither of them stage code:
+   - No published doc holds dice cups alone. Liar's dice
+     (automerge:BEkpNoJVsGN4FXHUkC9yjJ9C1kT) is a round table of its own
+     (`dice/probes/publish-liars.mjs`), so this mashup needs a new doc of
+     cups and seats, which is more than publishing.
+   - A latent seats bug, met by the first person to sit in both. Every
+     stage's seat body has the id `"seat"`, and seats' `seated()` compares
+     the top body's id alone (`seats/src/seats.js`, `const seated`), not
+     its `ext`; the stage projects `ext` as its own extension's id only for
+     its own body (`src/stage/view.js` `projectView`). Seats' own UI can't
+     put one seat body straight over another: with another doc's seat on
+     top, the lower doc's picker hides (`pickerOwner` checks `ext`) and F
+     offers only Stand up (`seats/src/model.js` `seatVerb`). Two ways do
+     reach it: a body in between (sit at G, walk off from the seat, then F
+     at the dice doc's seat: look, seat(G), walk, seat(dice)), and another
+     package's `roster.sit` (machine's Play asks its own stage's
+     `sitting()`, `machine/src/scene/hands.js` `clicks`, which is null
+     there, and pushes the Arcade's seat over a game's). Then G's
+     `sitting()` still reports G's seat, against seats' roster contract
+     ("the seat body on top"), and G's `getUp` leaves the body on top, the
+     dice doc's, wherever G calls it: its F Stand up, `dispose` when G's
+     stage stops, the lost-race and perch paths. Pinned in
+     `seats/src/stacked-bodies.test.js` (decided unattended, a test only,
+     no seats code): G's picker hides under the other body, and `sitting()`
+     being null there is an expected failure (`it.fails`). With `seated()`
+     also checking `ext` (one line, as `pickerOwner` does) the expected
+     failure flips and the other 86 seats tests pass; with `pickerOwner`
+     not checking `ext` the picker test fails. The fix leaves a decision
+     for seats: `getUp`'s `downToSeat` would then pop the dice doc's body
+     to get down to G's. In the review a scratch run of the second way
+     showed G's `dispose` calling the dice body's `leave` and leaving
+     look, seat(G). Recorded in seats/README.md, Still open.
+
+   *For the lead:* try it (a doc of cups and seats to link onto the table,
+   and seats' fix for two stacked seat bodies first), or is "a game that
+   wants both is one doc" the answer?
+15. **N7's findings, by owner** (the evidence is in the entries named):
+   - **scene:** a place handed across docs to a body (1); a linked
+     place's ambients are lost by rule (4; STAGE.md, "Ambients"); a
+     linked world's pause shown nowhere (9; scene's clock chips or
+     machine's note, the lead's call).
+   - **machine:** "Lay out its world" never refuses a second world
+     (7; `machine/src/scene/worlds.js` `worldCommand`; machine/HOST.md,
+     phase 2b, Not done yet).
+   - **seats:** two stacked seat bodies told apart by id alone (14;
+     pinned by `seats/src/stacked-bodies.test.js`).
+   - **terrain:** `terrain/src/terrain-sample.js`'s header says the canopy
+     layer holds "the trees' (and roofs') height", but the build leaves
+     built ground out of it ("no forest where something is built",
+     `terrain/src/build.js`; `forest.js` `effectiveCanopy`), so it never
+     shows a roof. E1M1's place reads the drawn GLB instead (3). A line of
+     terrain's docs, not edited here.
+   - **the Patchwork shell** (not ours; no core changes): package versions
+     days apart in one page, and an old provider rebuilding a published
+     render (6, 10, 12); a fresh profile's first page with no packages and
+     no prompt (7), and once, shore-check's first run, the scene package's
+     `package.json` failing with HTTP 557 for 10 minutes.
+   - **reported, not decided:** E1M1's float over Gyro Park (3), and the
+     Arcade's 3.5 cm over the games room's aisles (8).
+16. **Step 7, the re-run on the integrated tree, is the integrator's**
+   (2026-11-17, 11:08 UTC). It runs when the integrator asks, after N7's
+   merge and a sync, on whatever scene-stage then holds. lane/n7 isn't
+   merged (at 11:30 UTC, 9 commits ahead of scene-stage 1eb3c344, 96
+   behind), and the lead's probe policy of 2026-11-17 gives the one
+   real-Patchwork sweep after a merge to the integrator, so the lane ran
+   none. N7 changes no package code (its one code file is seats' test),
+   so its merge needs no build; the integrator's sync after it still
+   takes in seats and machine, whose README, test and HOST.md pushwork
+   mirrors. The packages changed twice after N6's run: the sidebar's
+   sync (20390028) and the weather merge (1eb3c344), whose W6 (45d53bf9)
+   turns terrain's sky into the weather's: terrain's place gives no sky,
+   and Cadboro Bay's template writes a weather trait. Under no back-compat
+   that may change Cadboro Bay's published doc, so three items here may be
+   affected: Cadboro Bay standing as it is (6), the deferred `shore-check`,
+   and the ambients question (4: a linked place's sky). Part of the re-run is already done: N6's integrator
+   republished both of N7's mashups with the same links and places
+   (*Arcade in the games room* automerge:2FEoL22w…, *Games night and the
+   Arcade* automerge:2Vxh319R…; 8 and 11 name the URLs they replace) and
+   scored `arcade-room-check` 19/20 ×2 (row C, the shell's "scene package
+   unavailable" log) and `mashup-check` 5/5 on Games night
+   (automerge:Zty1huc3…). Owed, one at a time under the Chrome lock:
+   - `arcade-check` on the Arcade (automerge:3T4KdCM2…, swapped into the
+     folder by `swaps-n7.tsv`; the folder note still names gfLLzkhg…):
+     30/30 with play, then 14/14 with `--no-play` (7);
+   - `arcade-room-check` on both mashups, 20/20 each, and `mashup-check`
+     on Games night, 5/5, again, since the packages changed after N6's
+     run; a shell resolver timeout or row C's
+     log is noted, not counted, as for `ucluelet-check`;
+   - `shore-check`: not run. It opens Cadboro Bay, and the older-provider
+     half of 6 still waits for the lead; E1M1 at Cadboro Bay isn't
+     published (2).
+   Merging N7 meets one conflict, in this file's list of what is still
+   open (N7's five items against lane/n8's "entering a link moves the
+   canvas"): keep both.
+17. **Step 7, run by the integrator** (2026-11-17, 11:30–11:59 UTC; decided
+   unattended (2026-11-17, lane/n7 integration), for the lead). N7 merged
+   into scene-stage as 11eea508, the conflict resolved as 16 says; seats,
+   machine and scene built (each dist the same as the published one: only
+   docs and seats' test differ) and synced, scene's sync also taking in the
+   weather merge's docs (DESIGN, SCOPE, STAGE) and `probes/xdnd-run.mjs`.
+   Suites: seats 87/87 (the stacked-bodies expected failure holding),
+   machine 551 (56 skipped), scene 2048/2048. The real Patchwork, one at a
+   time under the Chrome lock (shots `recovered/publish/shots/n7int/`):
+   - `arcade-check` on the Arcade (automerge:3T4KdCM2…): 29/30 with play,
+     13/14 with `--no-play`. The one red row in both is "each stopped
+     cabinet's note says how to play it", which reads no notes on the
+     published Arcade: its seats are laid now (four a cabinet, read in the
+     same run), and once they are, a seat's tag is a cabinet's label in
+     place of its note, as the same check's framing row already says ("its
+     note, or once its seats are laid a seat's tag") and the folder note
+     has said since N8. The scratch clone, whose seats aren't laid yet,
+     shows both notes. So the row is the check's, not the Arcade's: the
+     lane's 30/30 and 14/14 (7) read an Arcade whose seats weren't laid
+     yet. Not a regression; the check is to read labels as its framing
+     row does.
+   - `arcade-room-check`: *Arcade in the games room* 19/20 after a reload,
+     the red row C (the shell's resolver: scene's package doc `2zt6…`
+     "unavailable"), noted, not counted, as N6's integrator saw; *Games
+     night and the Arcade* 20/20.
+   - `mashup-check` on Games night: 5/5.
+   - `shore-check`: not run, as 16 says.
+   No doc shape changed, so nothing is republished and no folder link
+   moves. Cadboro Bay standing as it is (6), `shore-check` and the
+   ambients question (4) now wait on the weather's W8 republish as well as
+   on the lead: W8 may run now that N7 is in (WEATHER Decision 54 waits on
+   N11 too).

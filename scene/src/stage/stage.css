@@ -290,9 +290,16 @@
 
 /* ─── the drawer: what extensions dock (api.dock), one pane shown ─────────── */
 
+/* Its width (dock.js): the viewer's for the kind shown (--stage-drawer-width,
+   set by the grip), else that kind's default; at least 220px, and never
+   more than leaves the scene its share. A narrow stage clamps a wide
+   setting without forgetting it. */
 .scene-stage .stage-drawer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --stage-drawer-default: clamp(360px, 46cqw, 760px);
+  --stage-drawer-max: calc(100cqw - 160px);
+  position: relative;
   flex: 0 0 auto;
-  width: clamp(300px, 40cqw, 720px);
+  width: min(max(220px, var(--stage-drawer-width, var(--stage-drawer-default))), var(--stage-drawer-max));
   height: 100%;
   min-height: 0;
   display: flex;
@@ -302,16 +309,35 @@
   color: var(--scene-fg);
 }
 
-/* the stage's own chrome shown (the inspector, the outline): a side panel's width */
-.scene-stage .stage-drawer[data-narrow]:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  width: clamp(220px, 30cqi, 290px);
+/* the stage's own chrome shown (the inspector, the parts bin): a side panel's width */
+.scene-stage .stage-drawer[data-kind="chrome"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --stage-drawer-default: clamp(220px, 30cqi, 290px);
 }
 
-/* a narrow view keeps some of its width for the scene */
+/* a narrow view keeps some of its width for the scene; an editor takes the rest */
 @container (max-width: 640px) {
   .scene-stage .stage-drawer:where(:not(.about-embed *), .about-embed .scene-tool *) {
-    width: 70cqw;
+    --stage-drawer-max: 70cqw;
   }
+  .scene-stage .stage-drawer[data-kind="editor"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+    --stage-drawer-default: 70cqw;
+  }
+}
+
+/* the grip: the drawer's left edge, inside it (never over the scene) */
+.scene-stage .stage-drawer-grip:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -1px;
+  width: 6px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.scene-stage .stage-drawer-grip:is(:hover, :focus-visible):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-accent) 45%, transparent);
 }
 
 .scene-stage .stage-drawer-tabs:where(:not(.about-embed *), .about-embed .scene-tool *) {
@@ -320,6 +346,29 @@
   overflow-x: auto;
   border-bottom: 1px solid var(--scene-border);
   background: var(--scene-surface);
+}
+
+/* a document dragged over the tabs docks there (dock.js) */
+.scene-stage .stage-drawer-tabs.drop-over:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  outline: 2px dashed var(--studio-link, steelblue);
+  outline-offset: -2px;
+}
+
+/* a document docked in the drawer fills its pane */
+.scene-stage .stage-drawer-doc:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scene-stage .stage-drawer-doc > .doc-placeholder {
+  margin: 8px;
+}
+
+.scene-stage .stage-drawer-doc > patchwork-view {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .scene-stage .stage-drawer-tab:where(:not(.about-embed *), .about-embed .scene-tool *) {

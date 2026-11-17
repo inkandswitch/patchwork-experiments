@@ -14,11 +14,14 @@
 //   they're doing there).
 // - The Esc hint names the layer the next Escape pops (stage/ladder.js),
 //   and after the browser has released the pointer, that a click takes it
-//   back.
+//   back. With no keyboard (the input is touch) it is the Escape key: it
+//   says what it does ("Put it back") and a finger on it presses Escape
+//   (../hold-key.js), so a shown rung is one a finger can pop.
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";
 import { LOOK, STAGE_BODIES } from "../stage/bodies.js";
+import { holdKey } from "../hold-key.js";
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -70,6 +73,8 @@ function create(api) {
   chip.setAttribute("aria-haspopup", "menu");
   const hint = el("div", "body-escape");
   hint.setAttribute("aria-live", "polite");
+  // a key only while it shows as one (data-key: the only time it takes a pointer)
+  const escKey = holdKey(hint, api.root, "Escape");
   bar.append(people, chip);
   overlay.append(hint, bar);
 
@@ -142,8 +147,11 @@ function create(api) {
   function render() {
     const local = api.view.get();
     const list = whoIsHere(api.presence.get(), api.session ?? null, local);
-    const esc = local.pointer?.released ? "Click the view to take the pointer back" : local.escape?.hint ? `Esc: ${local.escape.hint}` : "";
-    const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, esc]);
+    const touch = !!local.pointer?.touch;
+    const rung = local.escape?.hint ?? "";
+    const esc = local.pointer?.released ? "Click the view to take the pointer back" : !rung ? "" : touch ? rung[0].toUpperCase() + rung.slice(1) : `Esc: ${rung}`;
+    const isKey = touch && !local.pointer?.released && !!rung;
+    const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, esc, isKey]);
     if (key === shown) return;
     shown = key;
     people.replaceChildren(
@@ -159,6 +167,14 @@ function create(api) {
     chip.title = (local.body?.depth ?? 0) > 0 ? "Your body: change it, or leave it" : "Your body: change it";
     hint.textContent = esc;
     hint.hidden = !esc;
+    if (isKey) {
+      hint.dataset.key = "Escape";
+      hint.setAttribute("role", "button");
+    } else {
+      if ("key" in hint.dataset) escKey.letGo();
+      delete hint.dataset.key;
+      hint.removeAttribute("role");
+    }
   }
 
   api.presence.watch(() => api.schedule(render));
@@ -169,6 +185,7 @@ function create(api) {
     },
     dispose() {
       closeMenu();
+      escKey.letGo();
     },
   };
 }

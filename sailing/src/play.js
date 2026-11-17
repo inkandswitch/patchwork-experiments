@@ -2,7 +2,7 @@
 // runs wherever the doc has a sailing trait, whatever anyone is doing.
 // This file only joins the parts; each is its own module with its own tests:
 //
-//   sea-view.js  the sea: the world's water and wind, and the clock  (createSeaView)
+//   sea-view.js  the sea: the world's water and wind (no clock)      (createSeaView)
 //   sim.js       the ships: who simulates, physics, poses, controls  (createSim)
 //   crew.js      people: walking the deck, swimming, avatars, camera (createCrew)
 //   looks.js     what each view dresses for itself: floats, the sail (createLooks)

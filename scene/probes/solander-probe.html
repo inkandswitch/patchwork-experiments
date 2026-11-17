@@ -118,8 +118,8 @@ try {
   const tMount = performance.now();
   P.tMount = tMount;
   // per-frame sampler: UI flushes (each one updates every extension, the
-  // outline among them) per animation frame. The stage keeps no outline-only
-  // timing since the outline became a part (scene.outline).
+  // inspector's tree among them) per animation frame. The stage keeps no
+  // tree-only timing since the tree became a part (now the inspector's).
   const flushPerFrame = [];
   let lastFlush = 0;
   let sampling = true;
@@ -321,7 +321,16 @@ try {
   P.expand = (name) => { const id = ids((o) => o.name === name)[0]; document.querySelector(`.object-row[data-id="${id}"] .twisty`)?.click(); };
   P.stop = () => { sampling = false; };
   // filter the outline, Enter to select (and reveal) the first match
+  // the tree and the fields are the inspector's one pane, the editor's (TOOLS.md §6): Edit, then the toolbar's Inspector
+  P.openInspector = async () => {
+    dbg.host.record("scene.body")?.api.body.enter("edit", null);
+    await stable();
+    dbg.host.record("scene.inspector")?.api.run({ ext: "scene.inspector", command: "inspector", value: true });
+    await stable();
+    return !!document.querySelector('.stage-drawer [data-panel="inspector"]');
+  };
   P.searchSelect = async (q) => {
+    await P.openInspector();
     const input = document.querySelector(".outline-filter");
     input.value = q;
     input.dispatchEvent(new Event("input"));
@@ -331,7 +340,7 @@ try {
     const selectMs = performance.now() - t0;
     await stable();
     await sleep(200);
-    return { count, selectMs: +selectMs.toFixed(2), selected: document.querySelector(".object-row[data-selected] .name")?.textContent, about: document.querySelector(".about-title")?.textContent ?? null };
+    return { count, selectMs: +selectMs.toFixed(2), selected: document.querySelector(".object-row[data-selected] .name")?.textContent, about: document.querySelector('.doc-section[data-section="about"] .section-label')?.textContent ?? null, aboutShown: document.querySelector('.doc-section[data-section="about"] .section-embed > patchwork-view')?.textContent?.slice(0, 40) ?? null };
   };
   P.clearSearch = async () => {
     const input = document.querySelector(".outline-filter");

@@ -1,4 +1,5 @@
-/* scene.outline: the object tree (ported from ../styles.css's outline rules).
+/* the object tree, at the top of the inspector's pane (ported from
+   ../styles.css's outline rules).
    Every rule is scoped like stage.css's, so an embedded tool's DOM (the
    inspector's About) never picks them up. */
 

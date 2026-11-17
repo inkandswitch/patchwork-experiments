@@ -132,9 +132,9 @@ async function menuPick(x, y, label) {
 async function main() {
   check("allLoadedA", await b.waitFor(`__p.allLoaded("a")`, 30_000));
   check("allLoadedB", await b.waitFor(`__p.allLoaded("b")`, 30_000));
-  // the outline is a drawer tab each viewer opens from Edit's toolbar
-  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
-  check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
+  // the tree is the top of the inspector's pane, which each viewer opens from Edit's toolbar
+  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "inspector")`);
+  check("treesOpen", await b.waitFor(`__p.tab("a", "inspector") && __p.tab("b", "inspector")`, 5000));
   const files = await P("files");
   const urlA = await P(`url("a")`);
   // the bracket's render built in A (so a copy can take its build)
@@ -442,13 +442,65 @@ async function main() {
     report.counts.menuPastedInB = fresh.length + fresh2.length;
     await shot("7-menu");
   }
+  // ── 10. a section of the inspector dragged out to the drawer (TOOLS.md §6, "Documents in the drawer") ──
+  {
+    await P(`select("a", "bracket")`);
+    await b.rest(400);
+    const before = await P(`doc("a")`);
+    const strip = await P(`strip("a")`);
+    const s0 = await P(`section("a", "source")`);
+    check("sourceSectionInline", !!(await P(`sectionHead("a", "source")`)) && s0?.inline && !s0.docked, s0);
+    const lookInline = await P(`look("a", "inline")`);
+    // let go on a row of the tree, in the same pane: nothing (the head's drag is the scene's own, never added)
+    {
+      const row = await P(`row("a", "crate")`);
+      const h = await P(`sectionHead("a", "source")`);
+      // (where it's let go is really the row: what's under the last point)
+      const under = (x, y) => b.js(`document.elementFromPoint(${x}, ${y})?.closest("li.object-row")?.dataset.id ?? null`);
+      const { seen } = await b.htmlDrag([Math.round(h.x), Math.round(h.y)], [[Math.round(h.x - 8), Math.round(h.y)], ...towards([h.x, h.y], [row.li.x, row.li.y], 5)].map(([x, y]) => [Math.round(x), Math.round(y)]), { during: under });
+      await b.rest(600);
+      check("headOnTreeRowAddsNothing", seen.at(-1) === "crate" && sameJSON(await P(`doc("a")`), before) && sameJSON((await P(`drawer("a")`))?.docs ?? [], []), { under: seen.at(-1) });
+    }
+    const head = await P(`sectionHead("a", "source")`);
+    const to = [Math.round(strip.left + strip.w - 24), Math.round(strip.y)];
+    const { types } = await b.htmlDrag([Math.round(head.x), Math.round(head.y)], [[Math.round(head.x - 8), Math.round(head.y)], ...towards([head.x, head.y], to, 5)].map(([x, y]) => [Math.round(x), Math.round(y)]));
+    await b.rest(400);
+    const d1 = await P(`drawer("a")`);
+    const s1 = await P(`section("a", "source")`);
+    report.detach = { types, drawer: d1, section: s1 };
+    check("headDragCarriesADocument", ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain", "application/x-scene-section"].every((t) => (types ?? []).includes(t)), types);
+    check("droppedOnStripDocks", sameJSON(d1?.docs, [`${files.stl}|`]) && d1.panes === 1 && d1.tabs.some((t) => t.endsWith(" · Source")) && d1.shown?.endsWith(" · Source") && d1.kind === "editor" && d1.embedded, d1);
+    check("sectionFoldsWhileDocked", s1?.docked && !s1.inline && s1.away, s1);
+    // the scene's styles stop at a document's box, docked as inline: a `.label` in it isn't the scene's (absolute) label
+    const lookDocked = await P(`look("a", "docked")`);
+    report.detach.look = { inline: lookInline, docked: lookDocked };
+    check("dockedDocLooksAsInline", lookInline && lookInline.position !== "absolute" && sameJSON(lookDocked, lookInline), report.detach.look);
+    check("stripDropAddsNothing", sameJSON(await P(`doc("a")`), before));
+    await shot("8-source-docked");
+    // the pane is the view's: another selection keeps it
+    await P(`select("a", "crate")`);
+    await b.rest(300);
+    check("dockedPaneOutlivesSelection", sameJSON((await P(`drawer("a")`))?.docs, [`${files.stl}|`]));
+    await P(`select("a", "bracket")`);
+    await b.rest(300);
+    // its ×: the pane goes, the section unfolds
+    const x = await P(`tabClose("a", " · Source")`);
+    await b.click(x.x, x.y);
+    await b.rest(400);
+    const d2 = await P(`drawer("a")`);
+    const s2 = await P(`section("a", "source")`);
+    report.detach.closed = { drawer: d2, section: s2 };
+    check("closedPaneGoes", sameJSON(d2?.docs, []) && d2.panes === 0 && !d2.tabs.some((t) => t.endsWith(" · Source")), d2);
+    check("sectionUnfoldsWhenClosed", s2?.inline && !s2.docked && !s2.away, s2);
+    await shot("9-source-closed");
+  }
   report.counts.bObjectsAtEnd = (await ids("b")).length;
   report.counts.aObjectsAtEnd = (await ids("a")).length;
 }
 
 async function sail() {
   const before = await ids("a");
-  // the bin and the outline are drawer tabs A opens from Edit's toolbar
+  // the bin and the inspector (the tree on top) are drawer tabs A opens from Edit's toolbar
   await b.waitFor(`__p.openTab("a", "parts") && __p.tab("a", "parts")`, 20_000);
   await b.waitFor(`__p.part("a", "sailing.sloop")`, 20_000);
   const it = await P(`part("a", "sailing.sloop")`);
@@ -460,10 +512,10 @@ async function sail() {
   const A = await P(`doc("a")`);
   const ship = Object.keys(A.objects).find((id) => A.objects[id].traits?.["sailing.ship"]);
   const aSea = Object.keys(A.objects).find((id) => A.objects[id].traits?.water && A.objects[id].traits?.["sailing.sea"]);
-  check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.["sailing.weather"], { ship, aSea, traits: Object.keys(A.traits ?? {}) });
+  check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.weather, { ship, aSea, traits: Object.keys(A.traits ?? {}) });
   if (!ship) return;
-  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
-  check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
+  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "inspector")`);
+  check("treesOpen", await b.waitFor(`__p.tab("a", "inspector") && __p.tab("b", "inspector")`, 5000));
   // runtime state on her, as play would leave it
   await b.js(`__p.change("a", (d) => { d.objects[${J(ship)}].traits["sailing.ship"].motion = { position: [1, 0, 2], velocity: [0.5, 0, 0], t: 12 }; d.objects[${J(ship)}].claims = { sim: { viewer: "viewer:zz", session: "s-9" } }; })`);
   await b.waitFor(`__p.allLoaded("a")`, 30_000);
@@ -495,7 +547,7 @@ async function sail() {
   check("shipRelationsKept", sameJSON(aChains, bChains), { aChains, bChains });
   check("shipTraitsCome", bIds.every((id) => sameJSON(Object.keys(B.objects[id].traits ?? {}).sort(), Object.keys(A0.objects[[...under].find((x) => names(A0, x) === names(B, id))]?.traits ?? {}).sort())));
   check("shipClaimsStayBehind", !("claims" in (B.objects[bShip] ?? {})));
-  check("seaStaysBehind", !bIds.some((id) => B.objects[id].traits?.water) && !B.traits?.["sailing.weather"], { bTraits: Object.keys(B.traits ?? {}) });
+  check("seaStaysBehind", !bIds.some((id) => B.objects[id].traits?.water) && !B.traits?.weather, { bTraits: Object.keys(B.traits ?? {}) });
   const assetKeys = Object.keys(A0.assets ?? {});
   check("shipAssetsCopied", assetKeys.length > 0 && assetKeys.filter((k) => bIds.some((id) => B.objects[id].sourceUrl === A0.assets[k].url)).every((k) => sameJSON(B.assets?.[k], A0.assets[k])), { a: assetKeys, b: Object.keys(B.assets ?? {}) });
   // sailing.ship's describes says runtime ["motion"] (sailing/src/index.js), so the copy leaves her motion

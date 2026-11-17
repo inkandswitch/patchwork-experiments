@@ -1765,7 +1765,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   /** Where the look is, in this stage's frame, when it is on something of this stage's (or in one of its links): { id, point, distance }, else null. */
   function look() {
-    const h = view.look();
+    return viewHitIn(view.look());
+  }
+  /** A hit of the view's (keys), in this stage's frame, when it is on something of this stage's (or in one of its links), else null. */
+  function viewHitIn(h) {
     if (!h) return null;
     const el = elementOfKey(h.id);
     if (el == null) return null;
@@ -2253,6 +2256,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         },
         /** move the focus into this stage's link `target` (where its doc acts: a mirror's, where it's live): false if it can't be entered */
         enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
+        /**
+         * dock a document in the drawer ({ url, toolId?, title }): the view's, not this extension's, so it
+         * stays until its × or close(); docking one url and tool again shows its tab (dock.js). → close
+         */
+        dock: (doc) => (live() ? view.dockDocument(doc) : noop),
         // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
         // a general part, the view's own, is told what moving the focus closed of its: was a tab
         // titled `title` open as the focus last moved here? Once per title per move ({ show } | null)
@@ -2507,7 +2515,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // runs a command in the stage it names
       collect: (name) => (rec.scope === "general" ? view.collect(name) : reader.collect(name)),
       /**
-       * the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's).
+       * the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, pointed, run, nameOf } (pointer: true for the pointer's path, what a menu is of, not the selection's or the eye's; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's).
        * A general part's only: the other stages' readers are other docs (their packages, their scenes, what they run), which a stage's extension reading would make it depend on its placement (I4)
        */
       path: general ? (o) => view.inputPath(o) : undefined,
@@ -2801,6 +2809,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     context: (hit) => context(hit),
     attention: () => attention(),
     look: () => look(),
+    /** the pointer's hit (the last hover, which a press sets to what it pressed), in this stage's frame: what a menu is of */
+    pointed: () => viewHitIn(view.pointed()),
     run: (inv) => run(inv),
     nameOf: (oid) => nameOf(oid),
     /** its doc's packages this viewer doesn't have (local.packages; the view asks every open doc's together) */

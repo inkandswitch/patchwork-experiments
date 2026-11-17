@@ -917,9 +917,11 @@ describe("the stage, mounted", () => {
     await settle();
     const api = m.debug.host.record("t.always").api;
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
-    expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false });
+    expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) });
+    const serials = [m.local.get().held.serial];
     expect(m.local.get().pointer.wanted).toBe(false);
     api.run({ ext: "t.always", command: "brush" });
+    serials.push(m.local.get().held.serial);
     expect(put).toEqual(["gun"]);
     expect(m.local.get().held.command).toBe("brush");
     expect(m.local.get().pointer.wanted).toBe(true);
@@ -927,12 +929,16 @@ describe("the stage, mounted", () => {
     expect(put).toEqual(["gun", "brush"]);
     expect(m.local.get().held).toBe(null);
     api.run({ ext: "t.always", command: "gun" });
+    serials.push(m.local.get().held.serial);
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
     expect(put).toEqual(["gun", "brush", "gun"]);
     expect(m.local.get().held).toBe(null);
     // a tool held directly, not through a command: its declaration, and no command
     const putDown = api.hold({ name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true }, { put: () => put.push("piece") });
-    expect(m.local.get().held).toEqual({ ext: "t.always", command: null, name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true });
+    expect(m.local.get().held).toEqual({ ext: "t.always", command: null, name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
+    serials.push(m.local.get().held.serial);
+    // each tool held is its own (the gun held again is a new one)
+    expect(new Set(serials).size).toBe(4);
     putDown();
     expect(put).toEqual(["gun", "brush", "gun", "piece"]);
     expect(m.local.get().held).toBe(null);

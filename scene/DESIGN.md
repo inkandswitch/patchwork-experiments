@@ -54,7 +54,7 @@ which also give it a scope:
 |---|---|---|
 | **Object** | Some object in the doc carries one of its traits | A card shuffles and draws; a die rolls; a door slides; anything with `scene.carry` can be picked up |
 | **Scene** | The scene itself carries one of its traits | Seats; a sea; an arena level |
-| **General** | It declares no traits: it serves whatever is there | The key map, the menu, notices, the walk body, the editor's outline |
+| **General** | It declares no traits: it serves whatever is there | The key map, the menu, notices, the walk body, the editor's inspector (its object tree on top) |
 
 A contribution can provide:
 
@@ -164,9 +164,11 @@ press first (measure, arena's gun, a piece just drawn from a bag). A tool is
 held only if it takes input outside its own widgets; Escape puts it down.
 Playing is the empty hand. **Editing is a body**: in Edit a click selects,
 and a selection shows its **halo** (move, rotate and scale handles where
-the doc may be written) and the inspector; the toolbar, the grid, axes and
-bounds and every editing command are Edit's alone, so someone at a table or
-walking a level sees no editor. Carrying needs no tool and no body:
+the doc may be written) and the inspector; the toolbar's editor commands,
+the grid, axes and bounds and every editing command are Edit's alone, so
+someone at a table or walking a level sees no editor (the toolbar's world
+commands, a game's Play or Lift all, show in every body: TOOLS.md
+Decisions 10). Carrying needs no tool and no body:
 whatever has the `scene.carry` trait can be picked up by anyone, and Select
 is in every menu.
 
@@ -184,9 +186,10 @@ has one of its traits, and one that declares none runs in the focus stage.
 Nothing a viewer holds, where they stand or the clock changes it, so a
 sailing sim never stops for someone editing her (a pause does, by name).
 The editor's parts run everywhere and show only in Edit, where attention
-asks: the inspector is a drawer tab a selection opens, which stays open
-(on the scene when nothing is selected) until its ×, the toolbar or
-leaving Edit shuts it, the outline a tab the viewer opens, the grid and axes are drawn. A doc says
+asks: there the grid and axes are drawn, and a selection opens the
+inspector, a drawer tab holding the object tree over the selection's
+fields, which stays open (on the scene when nothing is selected) until its
+×, the toolbar or leaving Edit shuts it. A doc says
 where people **start** (`view.start`: a body, a place, a home camera), read
 once on arrival: a table starts people seated (or watching from a seat), a
 level walking at a spawn point, a ship or a showcase in Look (no body
@@ -248,10 +251,10 @@ by name: they meet through conventions (`roster`, `seatPlaces`, `keeper`).
 
 **The sailboat.** A sea is a Water object (the water package's: an object
 whose extent says what the water is, open here) with sailing's sea on it
-(its waves), and the weather is a scene trait (`sailing.weather`: the
-world's wind and sky). Open water is weather, the outermost doc's, so a
-boat alone sails on her own sea and a boat linked into a harbour on the
-harbour's, one surface drawn; water with bounds (a basin, a tank) is a
+(its waves), and the weather is a scene trait (`weather`, the weather
+package's: the world's wind and sky). Open water is weather, the
+outermost doc's, so a boat alone sails on her own sea and a boat linked
+into a harbour on the harbour's, one surface drawn; water with bounds (a basin, a tank) is a
 thing, which its doc keeps wherever it is placed. A sloop is a hull with
 `sailing.ship` and her fittings attached under her, each with a trait
 (helm, sail, winches, windlass, ladder). Her physics is a process on the

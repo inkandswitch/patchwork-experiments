@@ -26,6 +26,14 @@ Built only from the scene's extension contract (scene/STAGE.md).
 - **Presses**: without the lock a drag looks round and a tap goes on as a
   click (walking has no default press); under it a press is nothing of the
   body's, so the held tool and the holders down the chain have it.
+- **On touch** there is no lock: the stage's touch pad (scene's
+  `scene.touch`) shows the walking keys from their labels (Forward, Back,
+  Left, Right on the pad; Run and Jump as buttons), and a finger dragging on
+  the world looks round, at the same time. The look is the eye's, as under
+  lock (scene/TOOLS.md Decisions 14): the use prompt sits in the middle of
+  the view, and a tap on its button uses what you look at; a held verb
+  ("hold F") lasts as long as the finger is on its button (scene/TOOLS.md
+  Decisions 15).
 - **Under another body** (a seat): it waits, its keys up and the camera let
   go; when that body goes, it walks on from the eye.
 - **Presence**: `avatar` `{ feet, yaw, pitch }` at 20 Hz while walking; the

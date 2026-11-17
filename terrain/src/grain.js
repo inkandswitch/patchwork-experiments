@@ -3,7 +3,7 @@
 // intertidal are flat planes of colour. Its GLB carries each vertex's grain
 // (build.js groundGrain: the shore's cobble and rock in full, the yard's
 // apron lightly, the water none) as the custom attribute _GRAIN, and the
-// place's own extension (sky.js) dresses the ground's material with this:
+// place's own extension (place.js) dresses the ground's material with this:
 // two octaves of luminance noise in world space, ±12% at about 1.5 m and ±18%
 // at about 8 m (the most: value noise is mostly well inside it; at ±8% and ±12%
 // it didn't show), scaled by the grain, fading out from 150 to 300 m from the

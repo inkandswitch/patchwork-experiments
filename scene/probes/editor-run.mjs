@@ -8,19 +8,23 @@
 // B small; each one's broadcasts reach only the other), a locked board with a
 // 5×5 grid of connectors, three blocks and two pawns. Then, with real CDP mouse
 // and key events: the layout (toolbar top, the drawer at the right with the
-// Objects tab each viewer opened from the toolbar, canvas the rest); click to
-// select (outline row, the inspector's tab coming in behind it a beat later,
-// B's box);
+// Inspector pane each viewer opened from the toolbar: the tree on top, the
+// fields below; canvas the rest); click to select (the tree's row and the
+// fields in the one pane, B's box);
 // Escape; no tools to pick (G, R and H do nothing); a halo drag (B sees the
 // pose mid-drag, then the landed transform); carrying by the trait (snaps to a
 // connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
-// board; Measure (its Dimensions tab); Delete; . (Frame); the Objects tab's ×
-// and the toolbar's Objects; double-click; the context menu; no modes (the
+// board; Measure (its Dimensions tab); Delete; . (Frame); the Inspector's ×
+// and the toolbar's Inspector; double-click; the context menu; no modes (the
 // Edit body the doc starts people in, no activity anywhere); a pasted automerge URL; a dimension
 // selected by its label and deleted; the inspector on the Scene (the
 // toolbar's Inspector: Starts in, Look or Edit) and "Add behaviour…" (an arena
 // Target on a block starts the arena in both views, beside the editor: its
-// Play in the toolbar, the editor still there in both; × stops it). The arena's checks need
+// Play in the toolbar, the editor still there in both; × stops it); the
+// drawer's grip (drag, keys, double-click, an editor's own width, a narrow
+// stage, the width remembered on opening again); a tall tree (capped at ~40%
+// of the pane, its bar on top, a selection deep in it revealed, and again
+// after × and the toolbar's Inspector). The arena's checks need
 // arena/ built (its dist/ is registered alongside); without it they are
 // skipped and say so. Prints a JSON report and exits non-zero if any check
 // fails.
@@ -29,7 +33,6 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { browser, checklist } from "./cdp.mjs";
-import { DOUBLE_MS } from "../src/stage/router.js";
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -82,8 +85,8 @@ try {
   if ((await b.js("window.__ready")) !== true) throw new Error(`setup failed: ${JSON.stringify(await P("errors"))}`);
   check("contentLoaded", await b.waitFor("__p.loaded() && __p.loaded(__p.B)", 30_000));
   await b.rest(600);
-  // the outline is a drawer tab each viewer opens (the toolbar's Objects): both open it
-  for (const h of ["hostA", "hostB"]) await b.js(`(() => { const e = [...__p.${h}.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return !!e; })()`);
+  // the tree is the top of the inspector's pane, which each viewer opens (the toolbar's Inspector): both open it
+  for (const h of ["hostA", "hostB"]) await b.js(`(() => { const e = [...__p.${h}.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return !!e; })()`);
   await soon(`!!__p.hostA.querySelector('.stage-drawer .object-row') && !!__p.hostB.querySelector('.stage-drawer .object-row')`, 5000);
   await b.rest(400);
   await shot("0-open");
@@ -97,48 +100,35 @@ try {
         buttons: [...h.querySelectorAll('.toolbar button')].map((e) => e.textContent.trim()), picker: [...h.querySelectorAll('.toolbar select')].map((e) => [...e.options].map((o) => o.textContent)),
         oneRow: new Set([...h.querySelectorAll(".toolbar button, .toolbar select")].map((e) => { const r = e.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 20); })).size,
         tabs: [...h.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()),
+        pane: r(h.querySelector('.stage-drawer [data-panel="inspector"]')), tree: r(h.querySelector('.stage-drawer .inspector-tree')), fields: r(h.querySelector('.stage-drawer .inspector-body')),
         rows: [...h.querySelectorAll('.object-row')].map((e) => e.textContent.replace('×','').trim()) };
     })()`);
     report.layout = L;
-    const want = ["Objects", "Inspector", "Dimensions", "Frame all", "Measure", "Snap", "Grid", "Axes", "Bounds", "Undo", "Redo"];
-    check("toolbarButtons", want.every((w) => L.buttons.includes(w)) && !["Move", "Rotate", "No gizmo", "Hand", "Panel"].some((w) => L.buttons.includes(w)) && L.picker[0]?.includes("cm"), { buttons: L.buttons, picker: L.picker });
+    const want = ["Inspector", "Dimensions", "Frame all", "Measure", "Snap", "Grid", "Axes", "Bounds", "Undo", "Redo"];
+    check("toolbarButtons", want.every((w) => L.buttons.includes(w)) && !["Objects", "Move", "Rotate", "No gizmo", "Hand", "Panel"].some((w) => L.buttons.includes(w)) && L.picker[0]?.includes("cm"), { buttons: L.buttons, picker: L.picker });
     const t = L.toolbar, s = L.drawer, c = L.canvas, st = L.stage;
     check("toolbarAlongTop", t && Math.abs(t.y - st.y) < 1 && Math.abs(t.w - st.w) < 1 && L.oneRow === 1, { t, st, rows: L.oneRow });
     check("drawerAtRight", s && Math.abs(s.r - st.r) < 1 && Math.abs(s.y - t.b) < 1 && Math.abs(s.b - st.b) < 1 && s.w > 200 && s.w < 400, { s });
     check("canvasFillsTheRest", c && Math.abs(c.x - st.x) < 1 && Math.abs(c.y - t.b) < 1 && Math.abs(c.r - s.x) < 1 && Math.abs(c.b - st.b) < 1, { c });
-    // chrome follows attention: only the tab the viewer opened (nothing is selected, so no inspector);
+    // chrome follows attention: only the pane the viewer opened, one tab for the tree and the fields;
     // Parts is a toggle in the toolbar only when a package offers parts (arena's do)
-    check("drawerHasOnlyObjects", JSON.stringify(L.tabs) === '["Objects"]' && L.buttons.includes("Parts") === !!ARENA_PARTS, { tabs: L.tabs, parts: L.buttons.includes("Parts") });
+    check("drawerHasOnlyTheInspector", JSON.stringify(L.tabs) === '["Inspector"]' && L.buttons.includes("Parts") === !!ARENA_PARTS, { tabs: L.tabs, parts: L.buttons.includes("Parts") });
+    // the tree on top (at most ~40% of the pane), the fields under it, both inside the one pane
+    const tr = L.tree, f = L.fields, pn = L.pane;
+    check("treeAboveTheFields", tr && f && pn && tr.y >= pn.y - 1 && tr.b <= f.y + 1 && f.b <= pn.b + 1 && tr.h <= 0.4 * pn.h + 2 && f.h > 40, { pane: pn, tree: tr, fields: f });
     check("outlineRows", JSON.stringify(L.rows) === JSON.stringify(["Board", "Block 1", "Block 2", "Block 3", "Pawn 1", "Pawn 2"]), L.rows);
   }
 
   // ── click selects; B sees it; Escape deselects ─────────────────────────────
   {
     const p = await scr("b0", [0, 0.016, 0]);
-    // when the outline first shows b0 selected, and when the Inspector's tab first appears: stamped on the
-    // page's own (manual) clock as each happens (a MutationObserver), so how long the tab waited is the stage's
-    // measure, not the probe's
-    await A(`(() => {
-      const h = p.hostA, at = (window.__beat = { selected: null, tab: null });
-      const look = () => {
-        if (at.selected == null && h.querySelector('.object-row[data-id="b0"][data-selected]')) at.selected = window.__time.now();
-        if (at.tab == null && [...h.querySelectorAll('.stage-drawer-tab-name')].some((e) => e.textContent.trim() === "Inspector")) at.tab = window.__time.now();
-      };
-      new MutationObserver(look).observe(h, { subtree: true, childList: true, attributes: true, characterData: true });
-      return true;
-    })()`);
     await b.click(p.x, p.y);
     await b.rest(250);
     check("clickSelects", (await selected()) === "b0", await selected());
     check("outlineRowHighlighted", await A(`!!p.hostA.querySelector('.object-row[data-id="b0"][data-selected]')`));
-    // the inspector, shut, waits a beat (the double-click's DOUBLE_MS, TOOLS.md Decisions 6) from the
-    // selection before its tab comes in: as the page timed them, give or take the frame that drew the
-    // outline's row
-    const beat = await soon(`window.__beat.tab != null && window.__beat`, 4000);
-    check("inspectorWaitsABeat", !!beat && beat.selected != null && beat.tab - beat.selected >= DOUBLE_MS - 1000 / 60, { ...beat, waited: beat && beat.tab - beat.selected });
-    // then its tab comes in behind the Objects tab the viewer is using
-    const insp = await A(`(() => ({ tabs: [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()), shown: p.hostA.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null }))()`);
-    check("inspectorShowsIt", JSON.stringify(insp.tabs) === '["Objects","Inspector"]' && insp.shown === "Objects" && insp.name === "Block 1", insp);
+    // the one pane: its tree marks the row, its fields show the object (one selection)
+    const insp = await A(`(() => ({ tabs: [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()), shown: p.hostA.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null, id: p.hostA.querySelector('.inspector-body .inspector')?.dataset.id ?? null, row: [...p.hostA.querySelectorAll('.inspector-tree .object-row[aria-selected="true"]')].map((e) => e.dataset.id) }))()`);
+    check("inspectorShowsIt", JSON.stringify(insp.tabs) === '["Inspector"]' && insp.shown === "Inspector" && insp.name === "Block 1" && insp.id === "b0" && JSON.stringify(insp.row) === '["b0"]', insp);
     const peerBox = await soon(`(() => { let f = null; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:') && o.visible) f = o; }); return f && f.box.max.x > f.box.min.x; })()`, 3000);
     const bRow = await Bv(`!!p.hostB.querySelector('.object-row[data-id="b0"][data-remote-selected]')`);
     const bPres = await Bv(`Object.values(d.presence.get()).some((s) => s.keys?.['scene.select']?.selected === 'b0')`);
@@ -306,11 +296,11 @@ try {
     report.measure = { dims, label };
     const wd = dims[0] && [dims[0].a.world ?? null, dims[0].b.world ?? null];
     check("measureWritesDimension", dims.length === 1 && label.some((l) => /^24(\.0+)?\s*cm$/.test(l)), { dims, label, wd });
-    // the toolbar's Dimensions opens its tab, listing it; then back to Objects
+    // the toolbar's Dimensions opens its tab, listing it; then back to the Inspector
     await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Dimensions"); e.click(); return true; })()`);
     await b.rest(200);
     check("dimensionInItsTab", (await A(`p.text('.stage-drawer [data-panel="dimensions"]').join(' ')`)).includes("24"), await A(`p.text('.stage-drawer [data-panel="dimensions"]')`));
-    await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e.click(); return true; })()`);
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e.click(); return true; })()`);
     await shot("7-measured");
     await b.key("Escape");
     await b.key("Escape");
@@ -352,7 +342,7 @@ try {
     check("peerOutlineLosesRow", await soon(`!__p.hostB.querySelector('.object-row[data-id="p0"]')`, 2000));
   }
 
-  // ── the drawer: its tabs' × close them, and the canvas takes the room; the toolbar's Objects opens it again ──
+  // ── the drawer: its tabs' × close them, and the canvas takes the room; the toolbar's Inspector opens it again ──
   {
     for (let i = 0; i < 4 && (await A(`!!p.hostA.querySelector('.stage-drawer-tab-close')`)); i++) {
       const x = await A(`p.rect('.stage-drawer-tab-close')`);
@@ -362,10 +352,10 @@ try {
     const hid = await A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage') })`);
     check("closingTheTabsGivesTheCanvasTheRoom", !hid.drawer && Math.abs(hid.canvas.w - hid.stage.w) < 1, hid);
     await shot("8-no-drawer");
-    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects"); e.click(); return true; })()`);
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector"); e.click(); return true; })()`);
     await b.rest(200);
     const back = await A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas') })`);
-    check("objectsOpensItAgain", back.drawer?.w > 200 && Math.abs(back.canvas.x + back.canvas.w - back.drawer.x) < 1, back);
+    check("inspectorOpensItAgain", back.drawer?.w > 200 && Math.abs(back.canvas.x + back.canvas.w - back.drawer.x) < 1, back);
   }
 
   // ── double-click frames an object ───────────────────────────────────────
@@ -453,6 +443,18 @@ try {
       // the build controls embedded in the inspector: the STL's unit param to cm
       const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.scene-render-controls select')`, 4000);
       check("inspectorEmbedsBuildControls", hasControls);
+      // the built object's documents, a section each (TOOLS.md §6): its Source, then its Build (the
+      // controls, open); no button anywhere opens the source but a section's Open
+      const docs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section')].map((s) => [s.dataset.section, s.querySelector('.section-label').textContent, !s.hasAttribute('data-folded'), !!s.querySelector('.scene-render-controls')])`);
+      check("sectionsSourceThenBuild", JSON.stringify(docs) === JSON.stringify([["source", "Source", true, false], ["build", "Build", true, true]]), docs);
+      // long fields (two sections) never squeeze the tree: it keeps its rows' height, up to its 40%
+      const sq = await A(`(() => { const t = p.hostA.querySelector('.inspector-tree'), pane = p.hostA.querySelector('.inspector-pane'), want = t.querySelector('.scene-outline').scrollHeight; return { tree: t.getBoundingClientRect().height, pane: pane.getBoundingClientRect().height, want, fieldsScroll: p.hostA.querySelector('.inspector-body').scrollHeight }; })()`);
+      check("treeNotSqueezedByLongFields", sq.tree >= Math.min(sq.want, 0.38 * sq.pane) && sq.fieldsScroll > sq.pane - sq.tree, sq);
+      // an open section's box has a height of its own, which its (stand-in) view fills, so a tool that fills its host
+      // gets one; a tool taller than it scrolls inside it (the build controls are the stand-in's mount here)
+      const hs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section:not([data-folded])')].map((s) => { const e = s.querySelector('.section-embed'), v = e.querySelector('patchwork-view'); return [s.dataset.section, Math.round(e.getBoundingClientRect().height), Math.round(v?.getBoundingClientRect().height ?? 0)]; })`);
+      check("sectionsHaveAHeight", hs.length === 2 && hs.every(([, box, view]) => box >= 120 && Math.abs(view - (box - 2)) <= 2), hs);
+      check("noOpenSource", (await A(`p.hostA.querySelectorAll('.open-source, .open-file, .open-linked, .open-about').length`)) === 0);
       if (hasControls) {
         await A(`(() => { const s = p.hostA.querySelector('.scene-render-controls select'); s.value = "cm"; s.dispatchEvent(new Event("change")); return true; })()`);
         const rebuilt = await b.waitFor(`(() => { const l = __p.text('.bounds-label'); return l.length === 3 && l.every((t) => /^200(\\.0+)?\\s*mm$/.test(t)) && l; })()`, 20_000);
@@ -530,8 +532,8 @@ try {
     await shot("17-scene-inspector");
     if (!ARENA) report.skipped.push("addBehaviourRunsTheArena, theGameRunsBesideTheEditor, removeBehaviourStopsArena: arena/ isn't built");
     else {
-      // a block, selected from its outline row (the Objects tab shown again); "Add behaviour…" → Target
-      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return true; })()`);
+      // a block, selected from its row in the pane's tree; "Add behaviour…" → Target
+      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
       await b.rest(150);
       const row = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row.x, row.y);
@@ -555,12 +557,12 @@ try {
       await shot("19-game-and-editor");
 
       // × on the card: the trait goes, and the arena stops (after a doc-caused stop's linger)
-      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return true; })()`);
+      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
       await b.rest(150);
       const row2 = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row2.x, row2.y);
       await soon(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`, 2000);
-      // (the inspector's tab shown, and the block's Carryable card above it now: bring it into view)
+      // (the block's Carryable card above it now: bring it into view)
       await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
       await b.rest(150);
       await A(`p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove').scrollIntoView({ block: "center" })`);
@@ -570,6 +572,118 @@ try {
       const stopped = await soon(`!__p.running().includes("arena") && !__p.running(__p.B).includes("arena")`, 8000);
       check("removeBehaviourStopsArena", !!x && gone && stopped && !(await A(`!!p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`)), { x, gone, stopped, running: await P("running()") });
     }
+  }
+
+  // ── the drawer's grip (TOOLS.md Decisions 9): a drag widens the shown kind, the canvas gives the room, the
+  // selection stays; an editor's pane has its own width; a double-click gives the default back; a narrow stage
+  // clamps a stored width without forgetting it; opening the scene again remembers it ──
+  {
+    const R = () => A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), grip: p.rect('.stage-drawer-grip'),
+      kind: p.hostA.querySelector('.stage-drawer')?.dataset.kind ?? null, rows: p.hostA.querySelectorAll('.stage-drawer .object-row').length,
+      prefs: JSON.parse(localStorage.getItem('scene-prefs:' + window.sceneHandle.url) ?? '{}'), locked: !!document.pointerLockElement })`);
+    const tab = (name) => A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === ${JSON.stringify(name)}); e?.click(); return !!e; })()`);
+    const near1 = (a, c, eps = 2) => Math.abs(a - c) <= eps;
+    const gripAt = (g) => [g.x + g.w / 2, g.y + g.h / 2];
+    // the Inspector shown (the stage's chrome), Block 1 selected
+    if (!(await tab("Inspector"))) await A(`(() => { [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector").click(); return true; })()`);
+    await A(`(p.A.view.atom.swap((m) => ({ ...m, selected: Object.freeze(["b0"]) })), true)`);
+    await b.rest(200);
+    await tab("Inspector");
+    await b.rest(150);
+    const r0 = await R();
+    const sel0 = await selected();
+    check("gripOnTheDrawersEdge", r0.grip && r0.kind === "chrome" && r0.grip.x >= r0.drawer.x - 1.5 && r0.grip.x + r0.grip.w <= r0.drawer.x + 8 && near1(r0.drawer.w, 290), r0);
+    const [gx, gy] = gripAt(r0.grip);
+    await b.drag([gx, gy], [gx - 200, gy], { steps: 10 });
+    const r1 = await R();
+    check("gripDragWidensTheDrawer", near1(r1.drawer.w, r0.drawer.w + 200) && near1(r1.canvas.w, r0.canvas.w - 200) && near1(r1.canvas.x + r1.canvas.w, r1.drawer.x, 1) && r1.rows > 0, { before: r0, after: r1 });
+    check("gripDragStoresTheChromeWidth", near1(r1.prefs["drawer.chrome"], r0.drawer.w + 200) && !("drawer.editor" in r1.prefs), r1.prefs);
+    check("gripDragSelectsNothingLocksNothing", (await selected()) === sel0 && sel0 === "b0" && !r1.locked, { sel0, now: await selected(), locked: r1.locked });
+    // the grip's keys: ArrowLeft widens by 16
+    await A(`(p.hostA.querySelector('.stage-drawer-grip').focus(), true)`);
+    await b.key("ArrowLeft");
+    const rk = await R();
+    check("gripArrowLeftWidens16", near1(rk.drawer.w, r1.drawer.w + 16) && near1(rk.prefs["drawer.chrome"], r1.drawer.w + 16) && (await selected()) === "b0", { before: r1.drawer.w, after: rk.drawer.w, prefs: rk.prefs });
+    await shot("9-grip-wide");
+    // an editor's pane: its own width (the editor default, 46% of the stage), set apart from the chrome's
+    await A(`(() => { const el = document.createElement("div"); el.textContent = "An editor"; el.className = "probe-editor"; p.closeEditor = p.A.host.record("scene.select").api.dock(el, { title: "Editor" }); return true; })()`);
+    await b.rest(150);
+    const re = await R();
+    check("editorPaneHasItsOwnDefault", re.kind === "editor" && near1(re.drawer.w, 0.46 * re.stage.w), re);
+    const [ex, ey] = gripAt(re.grip);
+    await b.drag([ex, ey], [ex - 100, ey], { steps: 6 });
+    const re2 = await R();
+    check("editorWidthIsItsOwn", near1(re2.drawer.w, re.drawer.w + 100) && near1(re2.prefs["drawer.editor"], re.drawer.w + 100) && near1(re2.prefs["drawer.chrome"], rk.drawer.w), re2);
+    await tab("Inspector");
+    await b.rest(150);
+    const rc = await R();
+    check("switchingKindsSwitchesWidths", rc.kind === "chrome" && near1(rc.drawer.w, rk.drawer.w), { chrome: rc.drawer.w, want: rk.drawer.w });
+    // a double-click: the chrome's default back, the editor's kept
+    const [dx, dy] = gripAt(rc.grip);
+    await b.dblclick(dx, dy);
+    await b.rest(150);
+    const rd = await R();
+    check("doubleClickGivesTheDefaultBack", near1(rd.drawer.w, 290) && !("drawer.chrome" in rd.prefs) && "drawer.editor" in rd.prefs && (await selected()) === "b0", rd);
+    // set it again, then a narrow stage: at most 70% of it, and the stored width back when it grows
+    await b.drag(gripAt(rd.grip), [gripAt(rd.grip)[0] - 300, gripAt(rd.grip)[1]], { steps: 8 });
+    const rw = await R();
+    await A(`(p.hostA.style.width = "600px", true)`);
+    await b.rest(250);
+    const rn = await R();
+    check("narrowStageClampsTheDrawer", rn.drawer.w <= 0.7 * rn.stage.w + 1 && rn.canvas.w >= 0.3 * rn.stage.w - 1 && rn.prefs["drawer.chrome"] === rw.prefs["drawer.chrome"], { stored: rw.prefs, narrow: rn });
+    await A(`(p.hostA.style.width = "", true)`);
+    await b.rest(250);
+    const rg = await R();
+    check("widerAgainTheStoredWidthReturns", near1(rg.drawer.w, rw.drawer.w) && near1(rw.drawer.w, rw.prefs["drawer.chrome"]), { stored: rw.prefs["drawer.chrome"], back: rg.drawer.w });
+    // opened again (as a reload would): the stored widths are read back
+    await A(`(p.closeEditor?.(), true)`);
+    await P("remountA()");
+    await b.rest(400);
+    await A(`(() => { [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector").click(); return true; })()`);
+    await b.rest(300);
+    const rr = await R();
+    check("openedAgainTheWidthIsRemembered", rr.kind === "chrome" && near1(rr.drawer.w, rw.drawer.w), { stored: rw.prefs["drawer.chrome"], now: rr.drawer.w });
+    report.grip = { r0: r0.drawer.w, dragged: r1.drawer.w, key: rk.drawer.w, editor: [re.drawer.w, re2.drawer.w], reset: rd.drawer.w, set: rw.drawer.w, narrow: [rn.drawer.w, rn.stage.w], back: rg.drawer.w, reopened: rr.drawer.w };
+    await shot("10-grip-reopened");
+  }
+
+  // ── a tall tree: at most ~40% of the pane, scrolling under its bar; a selection deep in it is revealed, and again on opening
+  {
+    await b.js(`(window.sceneHandle.change((d) => { for (let i = 0; i < 70; i++) { const id = "tall" + i; d.objects[id] = { kind: "group", name: "Tall " + i, group: null, visible: true, opacity: 1 }; d.order.push(id); } }), true)`);
+    await b.rest(300);
+    const T = (id = "tall69") => A(`(() => {
+      const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return { y: b.y, h: b.height, b: b.bottom }; };
+      const h = p.hostA, tree = h.querySelector('.stage-drawer .inspector-tree'), list = tree?.querySelector('.object-list');
+      return { open: !!h.querySelector('.stage-drawer [data-panel="inspector"]'), pane: r(h.querySelector('.stage-drawer [data-panel="inspector"]')), tree: r(tree), fields: r(h.querySelector('.stage-drawer .inspector-body')),
+        bar: r(h.querySelector('.inspector-tree .outline-bar')), row: r(h.querySelector('.inspector-tree .object-row[data-id="${id}"]')), scrollTop: list?.scrollTop ?? null, scrollH: list?.scrollHeight ?? null };
+    })()`);
+    // in view: inside the tree and below its bar (the rows scroll under nothing)
+    const inView = (t) => !!t.row && !!t.bar && t.row.y >= t.bar.b - 1 && t.row.b <= t.tree.b + 1;
+    const t0 = await T();
+    check("tallTreeCappedAt40", t0.open && t0.tree.h <= 0.4 * t0.pane.h + 2 && t0.tree.h >= 0.38 * t0.pane.h && t0.fields.h >= 0.55 * t0.pane.h && t0.scrollH > t0.tree.h + 100, t0);
+    // the last group, below the tree's fold, selected elsewhere (as a click in the view would): its rows scrolled to it, the bar still on top
+    await A(`(p.A.host.record("scene.inspector").api.view.select("tall69"), true)`);
+    await b.rest(300);
+    const t1 = await T();
+    check("tallTreeRevealsTheSelection", inView(t1) && t1.scrollTop > 0, t1);
+    check("tallTreeBarStaysOnTop", !!t1.bar && Math.abs(t1.bar.y - t1.tree.y) <= 1, t1);
+    // back up to the first row: scrolled into view below the bar, not under it
+    await A(`(p.A.host.record("scene.inspector").api.view.select("board"), true)`);
+    await b.rest(300);
+    const tUp = await T("board");
+    check("tallTreeRowUpTopIsBelowTheBar", inView(tUp) && tUp.scrollTop < t1.scrollTop, tUp);
+    await A(`(p.A.host.record("scene.inspector").api.view.select("tall69"), true)`);
+    await b.rest(300);
+    // × and the toolbar's Inspector: the same selection, revealed again in the reopened pane
+    await A(`(() => { [...p.hostA.querySelectorAll('.stage-drawer-tab')].find((t) => t.textContent.includes("Inspector"))?.querySelector('.stage-drawer-tab-close')?.click(); return true; })()`);
+    await b.rest(200);
+    const shut = await T();
+    await A(`(() => { [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector").click(); return true; })()`);
+    await b.rest(300);
+    const t2 = await T();
+    check("tallTreeRevealedAgainOnOpening", !shut.open && t2.open && inView(t2), { shut: shut.open, t2 });
+    report.tallTree = { capped: t0, revealed: t1, up: tUp, reopened: t2 };
+    await shot("11-tall-tree");
   }
 
   report.errors = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile/.test(e));

@@ -17,7 +17,7 @@ The tool itself is a **stage** with no UI of its own: it keeps the doc,
 loads and builds content, renders, picks and routes input. Everything you
 see or do in a scene comes from **extensions** (`scene:extension` plugins),
 and the editor described under "Using it" is the ones this package ships
-(selection, halo, carry, outline, inspector, toolbar, undo…), each its own
+(selection, halo, carry, the inspector and its tree, toolbar, undo…), each its own
 module in `src/parts/`. Other packages add more (tabletop's game table,
 arena's first-person level). What runs is decided by the doc's traits
 alone: there are no modes, and editing and playing happen in the same
@@ -43,12 +43,15 @@ pnpm install && pnpm build && pnpm test
 Every part but carry declares no traits, so each runs in every scene, a
 game's included; carry runs where the doc has something carryable. What
 keeps the editor's chrome out of the way is that **editing is a body**
-(TOOLS.md §3, Decisions 6): the toolbar, the halo's handles and knobs, the
-inspector (a drawer tab a selection opens; it stays open, on the scene
-when nothing is selected, until its ×, the toolbar or leaving Edit), the outline
-(Objects), Dimensions and Parts (tabs you open from the toolbar), the grid,
+(TOOLS.md §3, Decisions 6): the toolbar's editor commands, the halo's
+handles and knobs, the inspector (a drawer tab a selection opens, the
+object tree over the selection's fields; it stays open, on the scene when
+nothing is selected, until its ×, the toolbar or leaving Edit), Dimensions
+and Parts (tabs you open from the toolbar), the grid,
 axes and bounds, and every command marked `edit: true` show only in the
-Edit body. Look, walk, seat and station show none of it.
+Edit body. Look, walk, seat and station show none of it. The toolbar is
+the bar of tools: its world commands (`show: ["world"]`, a game's Play,
+say) sit at its right end in every body (TOOLS.md §6, Decisions 10).
 `scene.clock` is the clock chips (▶ or ⏸ for each doc's world time on the
 focus path, in a slim bar on the top edge, shown only for a doc with a
 process: TOOLS.md §6, §7); `scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the
@@ -71,7 +74,9 @@ the resolver's (`src/keymap.js` `hintFor`): shown only where pressing it
 does that. The key map (`scene.keys`) does the keys: a `run` that returns
 a session (`{ end(), cancel(), update?(dt) }`) is held while the key is
 down (`hold: true` shows "hold F"): `update` every frame, `end` on release,
-`cancel` if focus goes, the target goes or its extension stops. The prompt
+`cancel` if focus goes, the target goes or its extension stops. A button
+with a key is that key: pressed by a finger or a mouse it presses the key,
+so a held verb lasts as long as the button is held. The prompt
 runs in every scene; with nothing that has verbs under attention it shows
 nothing.
 
@@ -84,6 +89,16 @@ own bodies are Look and Edit (`src/stage/bodies.js`), both the orbit
 camera; others come with packages (`walk`, `seats`, sailing's). Nothing
 stands on Edit: walking or sitting down from it leaves it, and Leave comes
 back to Look.
+
+**Touch controls** (`scene.touch`, `src/parts/touch.js`) are the keys the
+open gesture, the held tool and the body declare, as controls a finger
+holds, while the input is touch (from the first finger on the view until a
+mouse press): the arrows' places bottom left, the rest as buttons bottom
+right under each layer's name. Which controls is `src/touch-keys.js`
+(pure, TOOLS.md §5); a control presses its key as a keyboard would
+(`src/hold-key.js`), so it goes the one key order. Look, Edit and a seat declare no keys and show
+none. With no keyboard the Esc hint is the Escape key: it says what it
+does ("Put it back") and a finger on it presses Escape.
 
 ## Using it
 
@@ -168,7 +183,8 @@ inspector each lists the scene's root behaviours (Seats, a Sea) as
 checkboxes, none ticked, for what goes along. Each is one undo step. See
 STAGE.md, "Extract and bundle".
 
-- **Outline**: visibility, colour, remove; click to select, double-click to frame.
+- **The tree** (the top of the Inspector's pane; the selection's fields are
+  under it): visibility, colour, remove; click to select, double-click to frame.
   An object fixed at a version shows a small "◷ fixed" tag (display only).
   What's in a group is listed under it, and an object attached to another in
   the same group under that object (indented, 10 px a level up to 8); an
@@ -195,11 +211,20 @@ STAGE.md, "Extract and bundle".
   group it's in, and **Ungroup** moves its contents up a level, as they look
   (a hidden group's contents stay hidden, a translucent one's keep its
   opacity), and removes it. Commands from extensions (*Shuffle pile* at a game
-  table, say) are buttons here too. **About** shows the object's `infoUrl` document (or its nearest
-  group's, labelled "About <group>") in an embedded `<patchwork-view>`, with
-  **Open**. Then, for objects that have a render doc, **Version** ("Latest", or
+  table, say) are buttons here too. Then, for objects that have a render doc, **Version** ("Latest", or
   "Fixed at <short heads> · built <time>") with **Fix at this version** and
-  **Follow latest**, and the embedded build controls.
+  **Follow latest**. Last, the selection's documents, each a section with its
+  label, a fold and **Open** (the main view), shown inline in its own tool:
+  **Source** (the doc it shows), or that doc as a folded **File** for a GLB
+  or **Linked scene** for a link, **Build** (the build controls on its render doc) and
+  **About** (its `infoUrl` document, or its nearest group's, labelled
+  "About <group>"). A package adds its own by declaring `documents`
+  (STAGE.md "A document"). **Dock**, or dragging a section's head onto the
+  drawer's tabs, puts the document in a drawer pane of its own (titled
+  after its object: "Hull · Source"), which stays
+  until its × whatever you select or wherever you go; the section then says
+  "In the drawer · Show". The drawer's tabs take any document dropped on
+  them, from Patchwork's sidebar too.
 - **Attaching**: pick an object under *Attached to* and this one moves with it
   from then on (a flow field attached to its hull, say). Attaching and
   detaching keep the object exactly where it is; only its stored transform
@@ -256,9 +281,13 @@ STAGE.md, "Extract and bundle".
   halo — a game board, say. Everything else about it still works.
 - **The drawer**: one panel at the right, a tab per pane: the inspector
   (in Edit a selection opens it, and it stays open, on the scene when
-  nothing is selected, until its ×, the toolbar or leaving Edit), Objects, Dimensions and Parts when you open
+  nothing is selected, until its ×, the toolbar or leaving Edit), which
+  holds the object tree on top and the selection's fields below, one
+  selection between them; Dimensions and Parts when you open
   them from the toolbar, and any extension's docked editor (Camber's
-  Shape, a die's panel).
+  Shape, a die's panel). Drag its left edge to resize it (double-click for
+  the default): the stage's own panels and docked editors each keep the
+  width you last gave them, per scene.
 
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
@@ -802,7 +831,7 @@ while the link is closed. The linked doc runs its own extensions on its own
 channel, and nothing of the host reads into it. A game part does this for
 you: Lost Cities dropped on a table makes a game doc and links it there.
 
-**Enter** a link (its menu, the inspector's Linked scene row, the outline's
+**Enter** a link (its menu, the inspector's Link row, the outline's
 →, or a double-click) to select and edit what's in it, in place: the
 selection, the halo, the inspector and the outline then act on the linked
 doc, while the host stays live around you and its verbs, carries and keys
@@ -884,7 +913,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage and the view: `stage.js` (a doc's stage: its doc loop, the api each extension gets), `view.js` (the view: the mount, the router, the body stack, the selection, hover and focus as paths, the stages and links it opens, input across stages), `links.js` (expansion of the link graph, pure), `scope.js` (one stage's frame onto the viewport, the choke point every spatial call goes through), `paths.js` (the key grammar), `readonly.js` (what a pin or a mirror is given), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip), `body` (the body chip, who's here and the Esc hint), `focus` (Enter on a link), `packages` (the packages prompt) and `autoframe` (an untouched camera framing what arrives); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline` (the object tree, a module the inspector mounts at the top of its pane, not an extension), `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip), `body` (the body chip, who's here and the Esc hint), `touch` (the touch controls), `focus` (Enter on a link), `packages` (the packages prompt) and `autoframe` (an untouched camera framing what arrives); `tab.js` is a part's drawer tab (the inspector, dimensions, parts) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/undo.js` | undo of the stage's own edits: a step from its patches, its inverse (whole, or nothing if it has been written over since), the stacks, and the recorder the stage runs |
 | `src/extract.js` | extract and bundle (COMPOSITION.md §8): the plans (pure: T whole, the host's one change, the bundle's change) and doing them through a stage's own api; invariants I9 (`extract.test.js`) and I11 (`linearity.test.js`) |
@@ -908,7 +937,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/carry-rules.js` | carrying's pure parts: what can be carried (the trait), connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces by their trait, a scene extension of the page's own, and the halo; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
+| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces by their trait, a scene extension of the page's own, and the halo; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `touch-probe.html` + `touch-run.mjs` the touch controls with real fingers (touch emulation: `b.touch`): a lock body entered by tapping, its pad, held keys, a look drag at once, a tool's key, a carry turned by the pad, a long press's menu (what the finger pressed, not the eye's look), and the use prompt's buttons as keys (a tap's verbs kept in Look, a held verb wound by a finger and by a mouse); `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
 
 ### The editor probe
 
@@ -919,12 +948,12 @@ node probes/editor-run.mjs     # --show to watch, --shots <dir> for the screensh
 
 Two views of one doc (A, and a small B; each one's broadcasts reach only the
 other): a locked 5×5 board with connectors, three blocks, two pawns, and an
-STL file in the repo. Each viewer opens the outline from the toolbar
-(Objects). A real mouse and keyboard over CDP check the layout (toolbar
-along the top in one row, the drawer at the right with only the Objects
-tab, the canvas filling the rest); a click selects (the outline row is
-marked, the inspector's tab comes in behind the Objects tab, B draws A's
-selection box and marks the row); Escape and a click on nothing deselect;
+STL file in the repo. Each viewer opens the Inspector from the toolbar. A
+real mouse and keyboard over CDP check the layout (toolbar along the top in
+one row, the drawer at the right with only the Inspector tab, its tree on
+top and the fields below, the canvas filling the rest); a click selects
+(the tree's row is marked and the fields show it, in the one pane; B draws
+A's selection box and marks the row); Escape and a click on nothing deselect;
 G / R / H are nobody's (there are no tools), Grid / Axes / Bounds toggle (per
 viewer, never the doc); a drag on the halo's X arrow moves a block, B seeing
 the pose mid-drag and then the landed transform; a block (it has the carry
@@ -935,7 +964,7 @@ writes nothing; . frames everything; M and two clicks on the board write a
 opens); a click on that label selects the dimension in place of a selected
 block (one selection; B hears it) and Delete removes it, and only it; Delete
 removes a selected object; the tabs' × close the drawer and the canvas takes
-the room, and the toolbar's Objects opens it again; a double-click frames an
+the room, and the toolbar's Inspector opens it again; a double-click frames an
 object; a right-click opens the menu (Select and Remove work); there are no
 modes (the Edit body); pasted automerge URLs add a
 GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at

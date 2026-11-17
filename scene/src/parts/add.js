@@ -3,8 +3,9 @@
 //     anywhere in the stage. Files become file docs first, named after the
 //     file. A "Drop to add" hint shows while an acceptable drag is over the
 //     port.
-//     Outline row drags (ROW_MIME) are never ours: a row from another scene
-//     is copied in by scene.transfer, one from this scene is the outline's.
+//     The scene's own drags (dnd.js ownDrag) are never ours: a row from
+//     another scene is copied in by scene.transfer, one from this scene is
+//     the outline's, and an inspector section's head adds nothing anywhere.
 //   - Paste an automerge URL anywhere in the stage outside a text field
 //     (scene.transfer hears pastes first, and takes a copied object's).
 //   - Each URL goes first to api.drop (an extension that lays out that
@@ -27,7 +28,7 @@
 // people in Edit, so its maker sees the start screen.)
 
 import css from "./add.css?inline";
-import { ROW_MIME, hasPatchworkDrop, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
+import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
 import { own } from "../stage/own.js";
@@ -39,11 +40,10 @@ export { fromEmbed };
 
 export { ROW_MIME };
 
-/** Is this a drag we take: documents or files, and not an outline row? Pure. */
+/** Is this a drag we take: documents or files, and not one of the scene's own (a row, a section's head)? Pure. */
 export function accepts(dt) {
-  const types = dt?.types ? [...dt.types] : [];
-  if (types.includes(ROW_MIME)) return false;
-  return hasPatchworkDrop(dt) || types.includes("Files");
+  if (ownDrag(dt)) return false;
+  return hasPatchworkDrop(dt) || [...(dt?.types ?? [])].includes("Files");
 }
 
 /** A desktop file's mime type, guessed from its extension when the browser doesn't say. Pure. */

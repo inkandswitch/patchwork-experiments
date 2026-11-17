@@ -128,12 +128,12 @@ describe("plugins", () => {
       expect(typeof load).toBe("function");
       expect(() => structuredClone(meta)).not.toThrow();
     }
-    expect(plugins.map((p) => `${p.type}:${p.id}`)).toEqual(["patchwork:datatype:terrain", "patchwork:tool:terrain", "scene:source:terrain-mesh", "scene:template:terrain.cadboro-bay", "scene:template:terrain.ucluelet", "scene:extension:terrain.sky", "scene:extension:terrain.credit"]);
+    expect(plugins.map((p) => `${p.type}:${p.id}`)).toEqual(["patchwork:datatype:terrain", "patchwork:tool:terrain", "scene:source:terrain-mesh", "scene:template:terrain.cadboro-bay", "scene:template:terrain.ucluelet", "scene:extension:terrain.place", "scene:extension:terrain.credit"]);
   });
   it("load what they say", async () => {
-    const [dt, tool, src, tpl, tplU, sky, credit] = await Promise.all(plugins.map((p) => p.load()));
+    const [dt, tool, src, tpl, tplU, place, credit] = await Promise.all(plugins.map((p) => p.load()));
     expect(typeof credit.create).toBe("function");
-    expect(typeof sky.create).toBe("function");
+    expect(typeof place.create).toBe("function");
     expect(typeof tplU.create).toBe("function");
     expect(typeof dt.init).toBe("function");
     expect(typeof tool).toBe("function");

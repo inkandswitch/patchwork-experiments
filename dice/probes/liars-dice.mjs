@@ -12,9 +12,13 @@
 //  1. A starts the empty scene from the start screen's "Liar's dice": six
 //     cups, thirty dice, a pool, six seats, in both peers' docs.
 //  2. A sits as Red, B as Blue.
+//     Seated, neither in Edit, each view's bar of tools is up (a cups table
+//     declares Lift all cups, a world command: scene/TOOLS.md Decision 10),
+//     with no editor command on it and nothing to lift yet.
 //  3. Both shake (S over their own cup). Each one's lots are drawn by both
 //     clients; each view knows its own dice and not the other's; the doc
-//     says nothing of either roll.
+//     says nothing of either roll. Each bar now offers Lift all cups, and
+//     neither canvas moved.
 //  4. Each sees their own dice (drawn showing what their seed says) and the
 //     other's cup only (the other's dice aren't drawn at all).
 //  5. A peeks (hold P): A's cup tilts in A's view alone; B is told, and sees
@@ -48,6 +52,10 @@
 //     dice, never a new attempt of the old one, which B's client would
 //     refuse as A's reroll); B is told why, B takes part (no protest), the
 //     dice never moved, and B's client never knows A's roll.
+// 15. Lift all cups from the bar, not in Edit: A clicks it, and every cup
+//     down over dice (Green, Yellow, Purple, Black) is up in both docs, the
+//     knocked-over Blue cup untouched; it leaves both bars, which stay up,
+//     and neither canvas ever moved.
 //
 // Prints a JSON checklist and a timeline; exits non-zero if any check fails.
 //
@@ -83,6 +91,17 @@ const t0 = Date.now();
 const mark = (what, extra = {}) => report.timeline.push({ t: +((Date.now() - t0) / 1000).toFixed(2), what, ...extra });
 const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `liars-dice-${name}.png`)));
 const Q = JSON.stringify;
+/** View w's bar of tools (scene's toolbar part): up or not, each cluster's commands, the body, and the canvas's rect. */
+const barOf = (w) => js(`(() => {
+  const h = document.getElementById(${Q(w)});
+  const t = h.querySelector('.toolbar');
+  const of = (c) => [...h.querySelectorAll('.toolbar .' + c + ' [data-command]')].map((e) => ({ id: e.dataset.command, text: e.textContent.trim(), disabled: !!e.disabled }));
+  const d = h.querySelector('.scene-stage').__sceneDebug;
+  const r = d.viewport.canvas.getBoundingClientRect();
+  return { shown: !!t && t.getBoundingClientRect().height > 0, tools: of('tools'), world: of('world'), body: d.local.get().body?.id ?? null, canvas: [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 10) / 10) };
+})()`);
+/** The centre of a bar button in view w, or null. */
+const barButton = (w, id) => js(`(() => { const e = document.querySelector(${Q(`#${w} .toolbar .world [data-command="${id}"]`)}); if (!e) return null; const r = e.getBoundingClientRect(); return r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`);
 
 /** Hover an object in a view (two moves, so the stage sees the pointer arrive) and give that view the keys. */
 async function hover(w, id) {
@@ -138,6 +157,9 @@ try {
   check("the cup extension and the dice's own lots run in both views, and nothing of keep's", (await P("running('a')")).includes("dice.cup") && (await P("running('b')")).includes("dice.lots") && !(await P("running('a')")).some((x) => x.startsWith("keep.")), { a: await P("running('a')") });
   await b.rest(1500); // seat cameras settle
   await shot("seated");
+  // the bar of tools, seated and not in Edit: up, for a cups table declares Lift all cups (a world command), whatever its state
+  const bar0 = { a: await barOf("a"), b: await barOf("b") };
+  check("seated, neither view in Edit: each bar of tools is up, with no editor command on it and nothing to lift yet", ["a", "b"].every((w) => bar0[w].shown && bar0[w].body !== "edit" && bar0[w].tools.length === 0 && bar0[w].world.length === 0), bar0);
 
   // ── 3. both shake ──
   const overA = await hover("a", cup.a);
@@ -160,6 +182,8 @@ try {
   check("the doc says nothing of either roll: every die under a cup lies face 0 up, turned only about +Y", under.every((t) => t.rotation[0] === 0 && t.rotation[2] === 0), under.map((t) => t.rotation));
   check("the cups are down over them: nobody else may see under either", Q(await P(`audience('a', ${Q(dice.a[0])})`)) === Q([V.a]) && Q(await P(`audience('b', ${Q(dice.b[0])})`)) === Q([V.b]), { a: await P(`audience('a', ${Q(dice.a[0])})`), b: await P(`audience('b', ${Q(dice.b[0])})`) });
   await b.rest(900); // the rattle ends
+  const bar3 = { a: await barOf("a"), b: await barOf("b") };
+  check("…and each bar now offers an enabled Lift all cups, still no editor command, and neither canvas moved", ["a", "b"].every((w) => bar3[w].shown && bar3[w].body !== "edit" && bar3[w].tools.length === 0 && Q(bar3[w].world) === Q([{ id: "lift-all", text: "Lift all cups", disabled: false }]) && Q(bar3[w].canvas) === Q(bar0[w].canvas)), { bar0, bar3 });
 
   // ── 4. each sees their own dice, and the other's cup only ──
   const wantA = await P(`expected(${Q(st.aa.seed)})`);
@@ -363,6 +387,22 @@ try {
   const toldK = await until(`notices('b').slice(${toldBefore}).includes(${Q("Ana's cup was drawn again: Ana says its lots were written in their name by someone else.")})`, 5000);
   check("…and B is told why, from the doc", toldK, (await P("notices('b')")).slice(toldBefore));
   mark("forgery redrawn");
+
+  // ── 15. Lift all cups, from the bar ──
+  const downCups = [green, yellow, purple, black];
+  const blueAt = await P(`transform('a', ${Q(cup.b)})`);
+  const downBefore = await Promise.all(downCups.map((c) => P(`cup('a', ${Q(c)})`)));
+  check("Green, Yellow, Purple and Black are down; both bars offer Lift all cups", downBefore.every((c) => c && !c.up) && (await barOf("a")).world.some((x) => x.id === "lift-all" && !x.disabled) && (await barOf("b")).world.some((x) => x.id === "lift-all" && !x.disabled), downBefore);
+  const liftAt = await barButton("a", "lift-all");
+  if (liftAt) await b.click(liftAt.x, liftAt.y);
+  const allUp = await b.waitFor(`${Q(downCups)}.every((c) => window.__p.cup('a', c)?.up && window.__p.cup('b', c)?.up)`, 10_000, 40);
+  check("A clicked Lift all cups on her bar, not in Edit: every cup that was down is up in both docs", !!liftAt && allUp, { liftAt, a: await Promise.all(downCups.map((c) => P(`cup('a', ${Q(c)})`))), b: await Promise.all(downCups.map((c) => P(`cup('b', ${Q(c)})`))) });
+  check("…the knocked-over Blue cup untouched", Q(await P(`transform('a', ${Q(cup.b)})`)) === Q(blueAt) && Q(await P(`transform('b', ${Q(cup.b)})`)) === Q(blueAt), { blueAt, a: await P(`transform('a', ${Q(cup.b)})`) });
+  const gone = await b.soon(`!document.querySelector('#a .toolbar [data-command="lift-all"]') && !document.querySelector('#b .toolbar [data-command="lift-all"]')`, { frames: 120 });
+  const bar15 = { a: await barOf("a"), b: await barOf("b") };
+  check("…Lift all cups leaves both bars, which stay up (nothing else on them), and neither canvas moved since they sat down", gone && ["a", "b"].every((w) => bar15[w].shown && bar15[w].body !== "edit" && bar15[w].tools.length === 0 && bar15[w].world.length === 0 && Q(bar15[w].canvas) === Q(bar0[w].canvas)), { bar0, bar15 });
+  await shot("lifted-all");
+  mark("lifted all from the bar");
 
   const errs = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile|GPU stall due to ReadPixels/.test(e));
   check("no errors or warnings on the page", errs.length === 0, errs);
