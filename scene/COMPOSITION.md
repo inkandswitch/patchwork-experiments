@@ -2874,10 +2874,10 @@ the finding; row 6 failed to a stale package, 6 below).
      place of its note, as the same check's framing row already says ("its
      note, or once its seats are laid a seat's tag") and the folder note
      has said since N8. The scratch clone, whose seats aren't laid yet,
-     shows both notes. So the row is the check's, not the Arcade's: it
-     held 30/30 on the lane's run, when nobody had yet laid the published
-     Arcade's seats. Not a regression; the check is to read labels as its
-     framing row does.
+     shows both notes. So the row is the check's, not the Arcade's: the
+     lane's 30/30 and 14/14 (7) read an Arcade whose seats weren't laid
+     yet. Not a regression; the check is to read labels as its framing
+     row does.
    - `arcade-room-check`: *Arcade in the games room* 19/20 after a reload,
      the red row C (the shell's resolver: scene's package doc `2zt6…`
      "unavailable"), noted, not counted, as N6's integrator saw; *Games
