@@ -24,6 +24,16 @@ showing exactly the look it had (Decisions 48–52). A doc with the trait has
 its weather's wind, sun and sky, dialled or fetched. The plan's
 steps are listed under "Plan" below.
 
+Package (pushwork rootUrl): `automerge:4WrsSV3pjAoLbbZg7EPwiTrahcwC`, made
+and first synced 2026-11-17 when lane/weather merged into scene-stage
+(1eb3c344). W7 (the end-to-end probe) and W9 (the real-Patchwork check) are
+built. W8 is not done: sailing and terrain are not synced, and nothing is
+republished (Decision 54: after N11 and N7 merge). **Sync sailing and
+terrain only together with W8's republish**: a published boat whose sailing
+reads this package's `wind` but whose doc still carries `sailing.weather`
+is becalmed, and Cadboro Bay and Ucluelet lose their shore and grain
+(their docs carry `terrain.sky`).
+
 ## The data
 
 The trait is flat: one field per inspector slider, so two peers dialling
@@ -1167,7 +1177,12 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     answer to N7's open question (COMPOSITION.md, Decisions N7 6): a
     republish renders the terrain afresh, which would answer it. The run
     itself is in the lane's handoff, not here. *Decided unattended
-    (2026-11-17, lane/weather), for the lead.*
+    (2026-11-17, lane/weather), for the lead.* The integrator held to it
+    at the merge (1eb3c344): neither N11 nor N7 had merged, and N7's
+    question was unanswered, so only this package was synced (it is new,
+    and no doc lists it yet); sailing and terrain were built but not
+    synced, and nothing was republished. *Decided unattended (2026-11-17,
+    lane/weather integrator), for the lead.*
 55. **The real-Patchwork check comes before the examples it checks, and
     it expects only what the doc implies.** W9's real runs need the
     weather package synced and the examples republished (W8). Only the
