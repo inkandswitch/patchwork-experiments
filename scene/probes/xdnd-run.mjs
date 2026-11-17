@@ -442,7 +442,7 @@ async function main() {
     report.counts.menuPastedInB = fresh.length + fresh2.length;
     await shot("7-menu");
   }
-  // ── 10. a section of the inspector dragged out to the drawer (TOOLS.md §6, "Documents in the drawer") ──
+  // ── 10. a section of the inspector dragged out to the drawer (STAGE.md, "The interface", "Documents in the drawer") ──
   {
     await P(`select("a", "bracket")`);
     await b.rest(400);

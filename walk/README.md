@@ -1,6 +1,6 @@
 # walk
 
-The walk body for scenes (scene/TOOLS.md §4): first person on whatever the
+The walk body for scenes (scene/STAGE.md, "Bodies"): first person on whatever the
 scene is made of, contributed to the stage's body stack as `bodies: [walk]`.
 Built only from the scene's extension contract (scene/STAGE.md).
 
@@ -60,9 +60,9 @@ checks (`deck-12m.test.js`, over a copy of her bake input) included.
   `scene.touch`) shows the walking keys from their labels (Forward, Back,
   Left, Right on the pad; Run and Jump as buttons), and a finger dragging on
   the world looks round, at the same time. The look is the eye's, as under
-  lock (scene/TOOLS.md Decisions 14): the use prompt sits in the middle of
+  lock (scene/HISTORY.md, TOOLS Decisions 14): the use prompt sits in the middle of
   the view, and a tap on its button uses what you look at; a held verb
-  ("hold F") lasts as long as the finger is on its button (scene/TOOLS.md
+  ("hold F") lasts as long as the finger is on its button (scene/STAGE.md
   Decisions 15).
 - **Under another body** (a seat): it waits, its keys up and the camera let
   go; when that body goes, it walks on from the eye.

@@ -1,4 +1,4 @@
-// scene.body: the body chip, who's here, and the Esc hint (TOOLS.md §4, §6).
+// scene.body: the body chip, who's here, and the Esc hint (STAGE.md, "Bodies").
 //
 // - The chip ("Look ▾", "Edit ▾", "Walk ▾") names the body on top of the
 //   stack. Its menu offers the stage's Look and Edit (the orbit camera,

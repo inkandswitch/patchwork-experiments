@@ -25,7 +25,7 @@ import { QUARTER, partsOf, shipOf } from "./traits.js";
 import { bodyOf } from "./body.js";
 import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
-/** How far the station body reaches (m): the bodies' reach (scene/TOOLS.md §4). Walking, walk's own is the body's. */
+/** How far the station body reaches (m): the bodies' reach (scene/STAGE.md, "Bodies"). Walking, walk's own is the body's. */
 export const REACH = 2.5;
 /** How far down you look on taking a station (rad). */
 const PITCH = -0.2;
@@ -50,7 +50,7 @@ export function aimOf(eye, at, heading) {
 
 /**
  * Is the view under a body that is neither hers nor walk's (a seat at a
- * table aboard her: scene/TOOLS.md §4)? Then nobody is working her: the keys
+ * table aboard her: scene/STAGE.md, "Bodies")? Then nobody is working her: the keys
  * are the seat's.
  */
 export const seatedView = (api) => {
@@ -132,7 +132,7 @@ export function createCrew(api, ctx) {
     s.pitch = l.pitch;
   };
 
-  // looking and pressing at a station: the body's input, last in the chain for presses (scene/TOOLS.md §5)
+  // looking and pressing at a station: the body's input, last in the chain for presses (scene/STAGE.md, "Keys")
   const looking = (s) => ({
     move(ev) {
       if (ev.locked) turn(s, ev.dx ?? 0, ev.dy ?? 0);
@@ -241,7 +241,7 @@ export function createCrew(api, ctx) {
    * @param {string} id
    * @param {{ keys: { code: string, label: string }[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
    *   keys: the keys the station takes, each with what it does (the shape every body,
-   *   tool and gesture declares, scene/TOOLS.md §4, §5: declared, so a shown key works;
+   *   tool and gesture declares, scene/STAGE.md, "Bodies": declared, so a shown key works;
    *   labelled alike, the same thing, so a touch pad shows them as one control);
    *   look: a world point to turn the eye to on arriving (else its stand spot's facing)
    * @returns {() => void} leave

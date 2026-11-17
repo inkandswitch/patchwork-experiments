@@ -1,4 +1,4 @@
-// Extract and bundle (COMPOSITION.md §8, invariants I9 and I11): one copy
+// Extract and bundle (STAGE.md, "Extract and bundle", invariants I9 and I11): one copy
 // rule used in two directions, each followed by one change to the host.
 //
 //   extract(S, K): objects S of a scene, siblings under one parent p, become
@@ -36,7 +36,7 @@
 //     both ends on S goes to T; one with one end on S stays, that end frozen
 //     where it is (as removing the object would). A start placed on S moves
 //     to T, and the host then starts people through the link (arriving at a
-//     link arrives as its doc starts people: TOOLS.md §2).
+//     link arrives as its doc starts people: STAGE.md, "Arriving").
 //   - bundle: references among T's objects follow their ids; null stays the
 //     root; any other is cleared; an entry is kept where the host (with K)
 //     has it. In the host, a reference to L is cleared; what was attached to

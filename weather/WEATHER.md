@@ -1174,7 +1174,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     They are published once, by the integrator (who alone syncs), after
     N11 and N7 have merged into scene-stage: both change what is
     republished. Cadboro Bay and Ucluelet wait as well for the lead's
-    answer to N7's open question (COMPOSITION.md, Decisions N7 6): a
+    answer to N7's open question (HISTORY.md, COMPOSITION Decisions N7 6): a
     republish renders the terrain afresh, which would answer it. The run
     itself is in the lane's handoff, not here. *Decided unattended
     (2026-11-17, lane/weather), for the lead.* The integrator held to it
@@ -1184,7 +1184,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     synced, and nothing was republished. *Decided unattended (2026-11-17,
     lane/weather integrator), for the lead.* N11 merged into scene-stage
     on 2026-11-17 (6339f82c). Its publishers state each doc's packages
-    exactly, and a writable visit now prunes a list (COMPOSITION.md,
+    exactly, and a writable visit now prunes a list (STAGE.md,
     Decisions, packages pruned, 10). That makes four of this table's
     examples republish anyway: Lost Cities aboard, the Quiet games room
     (both its Lost Cities and Santorini tables), and Fitting out's boat and
@@ -1196,7 +1196,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     (2026-11-17): republish now.** W8 does not wait for N10 or any later
     lane; if one changes a boating doc's shape, those examples are
     republished again then. Cadboro Bay's and Ucluelet's fresh render
-    docs are fine (COMPOSITION.md, Decisions, N7, 6: the lead's answer),
+    docs are fine (HISTORY.md, COMPOSITION Decisions, N7, 6: the lead's answer),
     and Ucluelet's GPU frame budget is report-only. W8 ran on 2026-11-17
     (scene-stage cb0e1a70, then da0c8f50): every example in the table,
     plus the games-room cascade and N11's pruned lists, in one batch
@@ -1452,5 +1452,5 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     naturally in `weather/probes/` beside `world-run.mjs`, importing
     `../src` relatively (the check script, which drives the real
     Patchwork, would stay with its neighbours). Default: leave it where
-    the other session checks are, as scene's TOOLS.md and COMPOSITION.md
+    the other session checks are, as scene's STAGE.md and STAGE.md
     already cite them.

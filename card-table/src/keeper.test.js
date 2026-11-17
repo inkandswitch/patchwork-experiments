@@ -246,7 +246,7 @@ describe("the joint keeper", () => {
     x.dispose();
   });
 
-  // I6 (scene/COMPOSITION.md): in a stage that may not write, the keeper never reaches a refusal.
+  // I6 (scene/STAGE.md): in a stage that may not write, the keeper never reaches a refusal.
   // Over every case of who else is at the table: the viewer's own acting client (a mirror, or a pin
   // beside the game played live), the other player only (a reader whose writable client is away),
   // or nobody.

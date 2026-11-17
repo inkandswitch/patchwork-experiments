@@ -5,7 +5,7 @@
 //   scene:presence  this view's whole state, keys namespaced by extension,
 //                   and what the view itself says of the viewer on every
 //                   channel it acts on: its body and held tool (`body`,
-//                   `held`: COMPOSITION.md §6, so whoever has this doc open
+//                   `held`: STAGE.md, "Views, stages and links", so whoever has this doc open
 //                   sees what a person at any placement of it is doing). It
 //                   goes out coalesced, at the highest rate any extension
 //                   asked for, and again as a heartbeat. Peers drop a view
@@ -28,7 +28,7 @@
 // `since` stamp.
 //
 // A presence that only listens (`listen: true`: a read-only stage's, a pin's
-// or a mirror's, COMPOSITION.md §7) hears its doc's channel and says nothing
+// or a mirror's, STAGE.md, "Views, stages and links") hears its doc's channel and says nothing
 // on it: no hello, no heartbeat, no keys, sends or holds, no bye. It hears
 // its own session too, since it never speaks: that is how a mirror hears its
 // own view's acting stage of the same doc (one session per view).
@@ -120,7 +120,7 @@ export function cleanHeld(v) {
 /**
  * Does hold `a` rank ahead of hold `b` on one object? One still held beats a
  * landed one; then a person's beats a yielding one (a process's that gives
- * way: TOOLS.md §7); then the lower `since`, then the lower session id. One
+ * way: STAGE.md, "World time"); then the lower `since`, then the lower session id. One
  * total order, the same in every view.
  * @param {{ session: string, since: number, landed?: object | null, yields?: boolean }} a
  * @param {{ session: string, since: number, landed?: object | null, yields?: boolean }} b

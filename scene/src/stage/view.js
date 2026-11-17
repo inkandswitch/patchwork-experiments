@@ -1,4 +1,4 @@
-// The view (COMPOSITION.md §2): one per mounted tool, shared by every stage
+// The view (STAGE.md, "Views, stages and links"): one per mounted tool, shared by every stage
 // it opens. It holds what is the viewer's, not any doc's: the DOM and its
 // edges, the viewport, the router, the camera and its saving, labels, the
 // body stack and the held tool, the view's atom (the body, the held tool,
@@ -12,7 +12,7 @@
 // (`project`), so an extension reads `view.selected` as an id of its own doc
 // and never sees another doc's.
 //
-// The focus (COMPOSITION.md §5, TOOLS.md §3) is the path of the links
+// The focus (STAGE.md, "The input chain") is the path of the links
 // entered: [] the outermost, until Enter moves it into a link whose doc acts.
 // It scopes the selection (../selection.js, H10: a selection is an element
 // of the focus stage) and is where the general parts run (§3: the editor
@@ -37,7 +37,7 @@ import { viewAt } from "../build.js";
 import { unionPackages } from "../packages.js";
 import { multiplyMatrices } from "../transform.js";
 
-/** How many stages a view opens at most, nearest first (COMPOSITION.md §7: the budget is the view's). */
+/** How many stages a view opens at most, nearest first (STAGE.md, "Views, stages and links": the budget is the view's). */
 export const LINK_BUDGET = 64;
 
 /** How long after the orbit stops the camera is saved. */
@@ -49,7 +49,7 @@ export const ARRIVE_WAIT_MS = 20_000;
 const EDGES = ["top", "right", "bottom", "left"];
 const noop = () => {};
 
-// The stage's own bodies, Look and Edit (./bodies.js, TOOLS.md §4): the
+// The stage's own bodies, Look and Edit (./bodies.js, STAGE.md, "Bodies"): the
 // orbit camera, one of them always at the bottom of the stack. As view.body:
 const baseLocal = (b) => Object.freeze({ id: b.id, label: b.label, ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
 const BASE_LOCAL = Object.freeze({ [LOOK.id]: baseLocal(LOOK), [EDIT.id]: baseLocal(EDIT) });
@@ -68,7 +68,7 @@ export function cleanCamera(c) {
 }
 
 /**
- * Where the doc starts people (TOOLS.md §2): `view.start = { body, place,
+ * Where the doc starts people (STAGE.md, "Arriving"): `view.start = { body, place,
  * home }`, read once on arrival. `body` is a body's id ("look" and "edit"
  * are the stage's, ./bodies.js; none is Look), `place` what its enter is
  * given (a spawn point's object id, a seat's id), `home` the camera. Pure.
@@ -83,7 +83,7 @@ export function startOf(doc) {
 }
 
 /**
- * Where a start leads (TOOLS.md §2): from stage `s`, its doc's start; while
+ * Where a start leads (STAGE.md, "Arriving"): from stage `s`, its doc's start; while
  * its place is one of that doc's links, on through it, as the linked doc
  * starts people. `next(s, linkId)` → the stage the link opens (undefined:
  * not yet; null: nobody arrives through it). Links can't repeat on a path
@@ -132,7 +132,7 @@ export function cleanPrefs(v) {
 }
 
 /**
- * The view's value as one stage sees it (COMPOSITION.md §3): the selection
+ * The view's value as one stage sees it (STAGE.md, "Views, stages and links"): the selection
  * and hover as its element of their paths, the body's and the held tool's
  * owner as its extension's id where they are its own (else the view's key,
  * which no id of a stage's equals), and not the focus: where the viewer has
@@ -297,7 +297,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // paths (./paths.js), each stage seeing its own element
     hovered: null,
     selected: null,
-    // the body on top of the stack (TOOLS.md §4); Look until arriving says otherwise
+    // the body on top of the stack (STAGE.md, "Bodies"); Look until arriving says otherwise
     body: BASE_LOCAL.look,
     held: null,
     gesture: null,
@@ -308,7 +308,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // the drawer's tabs by title, the one shown, and the documents docked in it (dock.js), by docKey
     drawer: Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
-    // the stage selection is scoped by (COMPOSITION.md §5): the outermost's ([]) until Enter moves it
+    // the stage selection is scoped by (STAGE.md, "The input chain"): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
     // every open doc's packages this viewer doesn't have (unionPackages): the general parts' prompt
     packages: unionPackages([]),
@@ -374,7 +374,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /**
    * The stages that act, outermost first, then by path: a doc's structure,
    * not the order its links' docs arrived in. A pin or a mirror is drawn and
-   * never acts (COMPOSITION.md §7), so it is never among them.
+   * never acts (STAGE.md, "Views, stages and links"), so it is never among them.
    */
   const acting = () => [...stages.values()].filter((s) => s.acts).sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
   /** Give a stage its number; the first is the outermost. */
@@ -388,7 +388,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     clocksChanged();
     return s;
   }
-  // Who's here (COMPOSITION.md §6): the viewer's body and held tool are the
+  // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and held tool are the
   // view's, so the view says them on every channel it acts on, not a part on
   // the focus doc's: whoever has a doc open sees what a person at any
   // placement of it is doing (a viewer of the game alone sees the boat's
@@ -436,7 +436,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     for (const s of stages.values()) if (s.path.length === p.length - 1 && s.path.every((x, i) => x === p[i])) return keyOf(s.n, p.at(-1));
     return null;
   }
-  // ─── links: the stages this view opens (COMPOSITION.md §7) ────────────────
+  // ─── links: the stages this view opens (STAGE.md, "Views, stages and links") ────────────────
   // The expansion (links.js) is a pure function of the link graph as the view
   // has it: worked out again whenever a stage's doc changes or a linked doc
   // arrives. Every occurrence that isn't closed gets a stage of its own, keyed
@@ -584,7 +584,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** A link's state as the view has it ({ role: "acting" | "mirror" | "pinned" | "closed", open, reason? }: open, its doc is drawn, else its hint), by its path; null if it isn't one. */
   const linkState = (p) => linkStates.get(pathKey(p)) ?? null;
   /**
-   * Where fixing the link at path `p` would fix it (COMPOSITION.md §7, "a pin
+   * Where fixing the link at path `p` would fix it (STAGE.md, "Views, stages and links", "a pin
    * is whole"): `{ heads, deps? }`, the heads of its doc as this view has it,
    * and in `deps` the heads of every doc reached through it: of the docs the
    * stages opened under it hold or found through their repos (live linked
@@ -709,7 +709,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** Leave: the focus one link out. */
   const leave = () => selectStep({ type: "leave" });
 
-  /** The general parts run in the focus stage and no other (COMPOSITION.md §3). */
+  /** The general parts run in the focus stage and no other (STAGE.md, "Views, stages and links"). */
   function placeGeneral() {
     const at = focusStage();
     for (const s of stages.values()) s.setGeneral(s === at);
@@ -758,7 +758,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const next = unionPackages(stagesInOrder().map((s) => s.reader.packages()));
     atom.swap((m) => (JSON.stringify(m.packages) === JSON.stringify(next) ? m : { ...m, packages: next }));
   }
-  // ─── clocks: the focus path's (TOOLS.md §6's clock chip) ───────────────────
+  // ─── clocks: the focus path's (STAGE.md, "The interface"'s clock chip) ───────────────────
   // Each stage computes its doc's world time and says what its chip would
   // show (local.clock: ./clock.js). The chip is one general part, the view's,
   // so the view puts the focus path's together, as view.clocks, which only
@@ -787,7 +787,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     },
   });
 
-  // ─── the trail: where the focus is (TOOLS.md §6's breadcrumb) ─────────────
+  // ─── the trail: where the focus is (STAGE.md, "The interface"'s breadcrumb) ─────────────
   // The view's own chrome, shown only while the focus is inside a link: the
   // outermost doc's title, then each link entered by its host's name for it,
   // each a way back out to there, and Leave.
@@ -837,7 +837,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (!trail.isConnected) edges.top.prepend(trail);
   }
 
-  // ─── bodies and the held tool (TOOLS.md §4) ───────────────────────────────
+  // ─── bodies and the held tool (STAGE.md, "Bodies") ───────────────────────────────
 
   // The bodies entered, bottom first, over the base: { stage, ext, owner, def, sitting, pop, place }.
   const sittings = [];
@@ -888,7 +888,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   };
 
   const lookInput = {};
-  // Edit's click goes ahead of the chain: a plain click in Edit selects, before any package's click verb (TOOLS.md §3)
+  // Edit's click goes ahead of the chain: a plain click in Edit selects, before any package's click verb (STAGE.md, "The input chain")
   const EDIT_AHEAD = Object.freeze(["click"]);
   const editInput = {
     click(ev) {
@@ -897,7 +897,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const path = p && stages.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(ev.hit.id) : null;
       if (!path && atom.get().selected == null) return false;
       // A click on something is Edit's wherever it lands: outside the focus it selects nothing (selectionStep's
-      // "outside, nothing") and goes no further, so no package's click verb acts for an Edit click (COMPOSITION.md,
+      // "outside, nothing") and goes no further, so no package's click verb acts for an Edit click (STAGE.md,
       // Decisions, Edit's click is Edit's). Presses, keys, the menu and the prompt still reach outside the focus.
       selectStep({ type: "press", path: path ?? [] });
       return true;
@@ -928,7 +928,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
 
   /**
-   * Enter body `id` at `place` (TOOLS.md §2), from stage `caller`: the first
+   * Enter body `id` at `place` (STAGE.md, "Arriving"), from stage `caller`: the first
    * acting stage offering it (the caller's own first) runs its enter, in its
    * frame, and what it answers goes on top of the stack, over Look. "look"
    * and "edit" are the stage's: every body leaves and that one is the base.
@@ -995,7 +995,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
   }
 
-  // ─── arriving: view.start (TOOLS.md §2) ───────────────────────────────────
+  // ─── arriving: view.start (STAGE.md, "Arriving") ───────────────────────────────────
   // The outermost doc's, read once: on arrival, and again after a template
   // has written one for its maker. A start whose place is one of the doc's
   // links arrives through it: as the linked doc starts people, in its stage
@@ -1106,7 +1106,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     else if (pending || all.some(unsettled)) requestFlushSoon();
   }
 
-  // ─── the look and attention (TOOLS.md §3) ─────────────────────────────────
+  // ─── the look and attention (STAGE.md, "The input chain") ─────────────────────────────────
 
   // Where the look is, in the world and in keys: under lock (or a lock body under touch: pointer.js
   // looksFromEye), the eye ray's hit; else the pointer's (the last hover).
@@ -1158,7 +1158,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
 
   /**
-   * The chain for an event (COMPOSITION.md §5): the widget's owner, then one
+   * The chain for an event (STAGE.md, "The input chain"): the widget's owner, then one
    * segment per stage on the hit's path, innermost first (each its holders,
    * nearest first, then its root's), out to the outermost whatever the
    * focus, then the general parts (the focus stage's). Owners are keys
@@ -1191,7 +1191,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     return { order, holderOf: (k) => holders.get(k) ?? null, widget: won ? widget.owner : null };
   }
   /**
-   * The input path (COMPOSITION.md §3): the stages from attention's innermost
+   * The input path (STAGE.md, "Views, stages and links"): the stages from attention's innermost
    * out to the outermost (the selection's path, else the look's; `pointer: true`
    * the pointer's, what a menu is of), then the focus stage if it isn't among them, each as its
    * reader (stage.js). Nothing under attention: the outermost, and the focus.
@@ -1250,7 +1250,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     chainFor,
     inputOf,
     base: { id: base.id, lock: false, keys: [], input: lookInput },
-    // a coarse pointer is touch until a press says otherwise (TOOLS.md §4)
+    // a coarse pointer is touch until a press says otherwise (STAGE.md, "Bodies")
     touch: !!globalThis.matchMedia?.("(pointer: coarse)")?.matches,
     cameraHeld: () => viewport.held,
     // a double-click's first hit is still there while its stage is (a key's n is never reused): one whose stage

@@ -1,4 +1,4 @@
-// Extract and bundle (COMPOSITION.md §8), invariant I9: each is one host
+// Extract and bundle (STAGE.md, "Extract and bundle"), invariant I9: each is one host
 // change and writes no other existing doc, and bundle(extract(S, K), K) is
 // the original on every field but runtime state and render doc identity
 // when S has no edge outside it. Checked over every set of roots of a fixed

@@ -595,7 +595,7 @@ describe("without a usable handle", () => {
   });
 });
 
-// A presence that only listens (a read-only stage's: COMPOSITION.md §7): over
+// A presence that only listens (a read-only stage's: STAGE.md, "Views, stages and links"): over
 // every call that would speak and over time, it says nothing; it hears the
 // channel, its own session included (how a mirror hears its view's acting
 // stage of the same doc).
@@ -644,7 +644,7 @@ describe("listening only", () => {
   });
 });
 
-// What the view says of the viewer (COMPOSITION.md §6): its body and held
+// What the view says of the viewer (STAGE.md, "Views, stages and links"): its body and held
 // tool, beside `viewer`, on every channel it acts on; cleaned on the way in;
 // a listening presence says none of it.
 describe("the view's body and held tool", () => {

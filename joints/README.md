@@ -27,7 +27,7 @@ someone selecting things as well as by someone walking); the use prompt
 that shows its verb is the scene's, in every scene.
 While any part in the scene closes itself (a `wait`), it registers a
 **process** on the scene's world clock (`api.clock.process`, scene
-TOOLS.md §7): the closing.
+STAGE.md, "World time"): the closing.
 
 ## The trait
 
@@ -55,7 +55,7 @@ TOOLS.md §7): the closing.
 One verb (**Open**, or **Close** when it's open), **F**, on every surface:
 the use prompt, the menu, the inspector and the key map. It says `reach:
 true`, so the stage measures it from the body's eye against the body's
-reach (scene/TOOLS.md §4): walking, within 2 m of the point looked at (out
+reach (scene/STAGE.md, "Bodies"): walking, within 2 m of the point looked at (out
 of reach it shows disabled, "too far", and F goes by); in Look or Edit (the orbit camera), anywhere.
 
 While it moves the verb says Opening / Closing; while someone else moves it,
@@ -68,7 +68,7 @@ the verb is there but disabled.
   raycasts and `worldOf` see it too, so a door blocks a walker as it's
   drawn); it writes the stop it reaches **once**, with `since` (the world
   time it got there). A cycle (open, wait, close) is **two writes**.
-- **Three times** (scene TOOLS.md §7). A motion is an *act*: timed by the
+- **Three times** (scene STAGE.md, "World time"). A motion is an *act*: timed by the
   wall clock from when it started. Where it's drawn is the fraction of its
   travel time gone by, and its write is due at a fixed time (below), set on
   a timer. Frames only draw it, so a view that draws none (a hidden tab)
@@ -159,7 +159,7 @@ or be worked from a distance (a switch, a wire: a trigger that names the part).
   and the door stays open), and that the bound is real: at 600 ms of
   latency, the loser pressing first, both write an open; at 440 ms, the
   same presses write one.
-- **H8** (scene TOOLS.md): a plain cycle and two pressing at once, for both
+- **H8** (scene STAGE.md): a plain cycle and two pressing at once, for both
   doors, with the world paused for 0.5 s or 3 s from every 250 ms of the
   first 12 s: 392 cases. In every one the same writes by the same views as
   unpaused, each open landing when it would have (acts aren't paused),

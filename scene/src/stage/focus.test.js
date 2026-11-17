@@ -1,4 +1,4 @@
-// Edit in context (COMPOSITION.md build step 14): Enter moves the focus into
+// Edit in context (STAGE.md build step 14): Enter moves the focus into
 // a link whose doc acts, Leave moves it out, and H10 holds across docs: a
 // selection is always an element of the focus stage. Checked in a real view
 // with nested stages (no WebGL: hits are stubbed as the viewport keys them).
@@ -37,7 +37,7 @@ function extensions(log) {
 }
 
 /**
- * Parts that hold something (TOOLS.md §4): a general one offering a body
+ * Parts that hold something (STAGE.md, "Bodies"): a general one offering a body
  * (as walk does), a general one offering a tool (as Measure does), and the
  * host's trait part offering a seat. Each counts its starts.
  */
@@ -388,7 +388,7 @@ describe("Enter and Leave", () => {
     s.click(20, 20);
     await settle();
     // the host's table: the press reaches its holder, then the general parts, now B's (their element of the path:
-    // nothing); the click is Edit's (COMPOSITION.md, Decisions, Edit's click is Edit's): no package's click verb
+    // nothing); the click is Edit's (HISTORY.md, COMPOSITION Decisions, Edit's click is Edit's): no package's click verb
     expect(log).toEqual(["t.host table", "t.general -"]);
     expect(view.atom.get().selected).toBe(null);
     // in Look the same click goes down the chain: the table's holder's click, then the general parts'
@@ -642,7 +642,7 @@ describe("what the viewer holds goes on across a focus move", () => {
     expect(stageOf(view, "L").debug.host.record("t.walk")).toBe(null);
   });
 
-  // the held tool × every move: kept while its stage is on the focus path (TOOLS.md §3), put down
+  // the held tool × every move: kept while its stage is on the focus path (STAGE.md, "The input chain"), put down
   // when it leaves it, and the part holding it finishes there
   const TOOL_MOVES = [
     // [label, held from, from, to, still held]
@@ -723,7 +723,7 @@ describe("the camera's rides don't depend on the focus (I8)", () => {
   });
 });
 
-describe("leaving Edit puts the selection down (TOOLS.md Decisions 6)", () => {
+describe("leaving Edit puts the selection down (HISTORY.md, TOOLS Decisions 6)", () => {
   // Attention is the selection, so a selection kept from Edit would aim F and
   // the use prompt at what was last edited. Every body changed from × to
   // (Look, Edit, a walk and a seat over Look) × the focus (the scene, one
@@ -762,8 +762,8 @@ describe("leaving Edit puts the selection down (TOOLS.md Decisions 6)", () => {
   }, 60_000);
 });
 
-describe("in Edit a click is Edit's wherever it lands (COMPOSITION.md, Decisions, Edit's click is Edit's)", () => {
-  // TOOLS.md Decisions 6: in Edit a plain click selects, before any package's click verb. Inside an entered
+describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION Decisions, Edit's click is Edit's)", () => {
+  // HISTORY.md, TOOLS Decisions 6: in Edit a plain click selects, before any package's click verb. Inside an entered
   // link a click on the host (the boat round a game linked aboard her) can't select, and it used to go down
   // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
   // her moving table (presence-check.nopause, 2026-11-16). Every base body × every focus × a selection or

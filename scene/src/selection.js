@@ -1,4 +1,4 @@
-// The selection lives at the focus (TOOLS.md §3, invariant H10). Pure.
+// The selection lives at the focus (STAGE.md, "The input chain", invariant H10). Pure.
 //
 // A path names something through the stages it is inside: the links from
 // the outermost stage in, then the thing itself ([] is nothing). The focus

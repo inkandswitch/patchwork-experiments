@@ -225,7 +225,7 @@ function create(api) {
       box.append(cancel);
       chooserLayer.append(box);
       choosing = { box, done, close: null };
-      // a focused dialog (TOOLS.md §4): it wants the pointer, Escape (the
+      // a focused dialog (STAGE.md, "Bodies"): it wants the pointer, Escape (the
       // ladder's popover rung) cancels, and its buttons keep Enter and Space
       choosing.close = api.popover(() => done(null));
       box.querySelector("button")?.focus?.({ preventScroll: true });

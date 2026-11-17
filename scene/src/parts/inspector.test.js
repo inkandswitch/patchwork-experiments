@@ -422,7 +422,7 @@ describe("scene.inspector: the panel", () => {
   });
 });
 
-describe("scene.inspector: documents, a section each (STAGE.md \"A document\", TOOLS.md §6)", () => {
+describe("scene.inspector: documents, a section each (STAGE.md \"A document\", STAGE.md, “The interface”)", () => {
   const ME = "scene.inspector";
   /** the sections as shown: [ext/id, label, open?, the doc-url and tool-id of its view, or null while folded] */
   const sections = () =>
@@ -652,7 +652,7 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
     expect(rule(".scene-stage .inspector .section-embed > patchwork-view")).toMatch(/(^|[\s;])height:\s*100%/);
   });
 
-  // ─── detach: a section in the drawer (TOOLS.md §6, "Documents in the drawer") ───
+  // ─── detach: a section in the drawer (STAGE.md, "The interface", "Documents in the drawer") ───
   const drawerViews = () => [...s.root.querySelectorAll(".stage-drawer-doc > patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
   const docTab = (title) => [...s.root.querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title);
   /** a section as shown: [docked?, its inline view's doc-url or null, "In the drawer" shown?] */
@@ -855,7 +855,7 @@ describe("scene.inspector: the pure side", () => {
   });
 });
 
-describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md §6)", () => {
+describe("scene.inspector: one pane, the tree and the fields together (STAGE.md, “The interface”)", () => {
   const tab = () => s.instance("scene.inspector").tab;
   const marked = () => [...tab().body.querySelectorAll('.inspector-tree .object-row[aria-selected="true"]')].map((r) => r.dataset.id);
   /** what the fields show: an object's or group's id and kind, the scene's, or hidden (a ref) */
@@ -986,7 +986,7 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
       expect(tab().isOpen()).toBe(false);
       calls.length = 0;
       open();
-      // a selection opens the shut pane a beat later (TOOLS.md Decisions 6), the toolbar at once
+      // a selection opens the shut pane a beat later (HISTORY.md, TOOLS Decisions 6), the toolbar at once
       await new Promise((r) => setTimeout(r, DOUBLE_MS + 2 * FRAME_MS));
       await settle();
       expect(tab().isOpen()).toBe(true);
@@ -1060,7 +1060,7 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
   });
 });
 
-describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §6)", () => {
+describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Activation”)", () => {
   const tab = () => s.instance("scene.inspector").tab;
   // the stage's time, stepped: a beat is the double-click's interval (DOUBLE_MS), and a frame past it;
   // part of one is half a beat and a frame, so two parts pass a beat and one doesn't
@@ -1094,7 +1094,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
     expect(tab().isOpen()).toBe(false);
     await pick("a");
-    // a beat first (TOOLS.md Decisions 6, "The inspector waits a beat"): to the frame before it, the canvas keeps its width
+    // a beat first (HISTORY.md, TOOLS Decisions 6, "The inspector waits a beat"): to the frame before it, the canvas keeps its width
     expect(tab().isOpen()).toBe(false);
     await time.advance(DOUBLE_MS - FRAME_MS);
     await settle(1);
@@ -1113,7 +1113,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     expect(tab().isOpen()).toBe(false);
     await beat();
     expect(tab().isOpen()).toBe(true);
-    // open, it stays open whatever is selected next, and shows it at once: the canvas keeps its width (TOOLS.md Decisions 6)
+    // open, it stays open whatever is selected next, and shows it at once: the canvas keeps its width (HISTORY.md, TOOLS Decisions 6)
     await pick("dimension:d1");
     expect(tab().isOpen()).toBe(true);
     await pick(null);
@@ -1208,7 +1208,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     // beat (DOUBLE_MS on the stage's time) after a selection of something
     // it shows made while it was shut, until × / toolbar off (then shut
     // until the selection changes) or leaving Edit, which also puts the
-    // selection down (TOOLS.md Decisions 6); open, it stays open across
+    // selection down (HISTORY.md, TOOLS Decisions 6); open, it stays open across
     // selections; out of Edit, shut; back in Edit, open on an object
     // selected (in Look, by the menu) a beat ago that wasn't shut by hand.
     // Enter (a double-click's: the focus moves into the link L and the

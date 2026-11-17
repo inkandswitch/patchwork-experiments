@@ -5,7 +5,7 @@ import { isGroup } from "./groups.js";
 
 /**
  * The kinds of content a `scene:source` makes, which it declares as its
- * `content` (COMPOSITION.md §1):
+ * `content` (STAGE.md, "Views, stages and links"):
  *   - "file": the source doc already is a GLB file. Its objects get no render
  *     doc; the stage shows the file as it is (the GLB queue).
  *   - "built": the provider builds a GLB from the source into a render doc of

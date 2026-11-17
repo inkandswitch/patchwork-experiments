@@ -1,4 +1,4 @@
-// Pose holds in one view, and the one order they go in (TOOLS.md §7, "A
+// Pose holds in one view, and the one order they go in (STAGE.md, "World time", "A
 // person and a process on one object"; STAGE.md, "Holding a pose").
 //
 // An object has at most one holder in a view, and every view agrees on one

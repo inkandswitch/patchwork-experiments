@@ -20,7 +20,7 @@
 // blocks a walker as drawn), and writes the stop it reaches once. So a cycle
 // (open, wait, close) is two writes.
 //
-// THREE TIMES (scene/TOOLS.md §7). A motion is an act: timed by the wall
+// THREE TIMES (scene/STAGE.md, "World time"). A motion is an act: timed by the wall
 // clock from when it started, not by frames and not by the world's clock,
 // so a pause never stops one halfway. Where the part is drawn is
 // (now − started) / travel time along the line, and the write is due at a

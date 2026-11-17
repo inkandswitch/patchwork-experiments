@@ -1,5 +1,5 @@
 // I6, a read-only stage writes nothing, through its api or its repo
-// (COMPOSITION.md, Invariants), checked over every read-only stage there is
+// (STAGE.md, Invariants), checked over every read-only stage there is
 // (a pin, a mirror, and a live doc acting where its handle refuses writes)
 // × every way an extension can write or speak: the api's writes, sends,
 // holds, claims, processes, the stage's own edits, parts, templates and

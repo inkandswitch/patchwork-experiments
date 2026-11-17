@@ -185,7 +185,7 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
   });
 });
 
-// The frame audit (COMPOSITION.md §4, I7): what reads three.js matrices goes
+// The frame audit (STAGE.md, "Views, stages and links", I7): what reads three.js matrices goes
 // through the choke point. Geometry inside an object is read in the object's
 // own frame (contentMatrix: the dimension tool's surface gaps), which every
 // frame above it cancels; the camera comes into a stage's frame with its up

@@ -785,7 +785,7 @@ describe("the stage, mounted", () => {
     expect(clicks.at(-1)).toEqual(["key", "k"]);
   });
 
-  it("offers the holders nearest first, the scene last of them, then the general ones (SCOPE.md §2)", async () => {
+  it("offers the holders nearest first, the scene last of them, then the general ones (STAGE.md, “The input chain”)", async () => {
     const offered = [];
     const pass = (id) => () => ({ input: { click: (ev) => (offered.push([id, ev.holder, ev.hit?.id ?? null]), null) } });
     for (const id of ["t.scene", "t.far", "t.near", "t.always"]) exts[id] = recorder(id, pass(id));

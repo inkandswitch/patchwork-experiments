@@ -211,7 +211,7 @@ try {
     }
   }
 
-  // ── the use prompt goes back under the pointer when the eye moves (COMPOSITION.md, Fixed since) ──
+  // ── the use prompt goes back under the pointer when the eye moves (STAGE.md, Fixed since) ──
   // Block 1 selected, its halo up. Frame it (.) to learn where a spot the halo's widget pick takes (its X arrow, or framed
   // this close its rotate ring) lands then, and put the camera
   // back; set the pointer so the prompt's first button lies over that spot, and go onto it: the prompt
@@ -362,7 +362,7 @@ try {
   // ── measure: M, two clicks on the board ─────────────────────────────────
   {
     await b.key("m");
-    // Measure is a held tool (TOOLS.md §4): it goes in the one slot
+    // Measure is a held tool (STAGE.md, "Bodies"): it goes in the one slot
     check("measureArmed", (await A(`d.local.get().held?.ext`)) === "scene.measure" && (await pressed()).includes("Measure"), await A(`d.local.get().held`));
     const p1 = await world([-0.12, 0.04, -0.13]), p2 = await world([0.12, 0.04, -0.13]);
     await b.click(p1.x, p1.y);
@@ -525,7 +525,7 @@ try {
       // the build controls embedded in the inspector: the STL's unit param to cm
       const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.scene-render-controls select')`, 4000);
       check("inspectorEmbedsBuildControls", hasControls);
-      // the built object's documents, a section each (TOOLS.md §6): its Source, then its Build (the
+      // the built object's documents, a section each (STAGE.md, "The interface"): its Source, then its Build (the
       // controls, open); no button anywhere opens the source but a section's Open
       const docs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section')].map((s) => [s.dataset.section, s.querySelector('.section-label').textContent, !s.hasAttribute('data-folded'), !!s.querySelector('.scene-render-controls')])`);
       check("sectionsSourceThenBuild", JSON.stringify(docs) === JSON.stringify([["source", "Source", true, false], ["build", "Build", true, true]]), docs);
@@ -594,7 +594,7 @@ try {
     await b.key("Escape");
     await clickEmpty();
     // nothing selected: the inspector, opened by the selections before, stays open, now on the Scene
-    // (TOOLS.md Decisions 6, "The inspector stays open"); its tab is shown to look at it
+    // (HISTORY.md, TOOLS Decisions 6, "The inspector stays open"); its tab is shown to look at it
     check("inspectorStaysOpenOnTheScene", await soon(`!!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"] .inspector[data-kind="scene"]')`, 3000), await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`));
     await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
     await b.rest(150);
@@ -656,7 +656,7 @@ try {
     }
   }
 
-  // ── the drawer's grip (TOOLS.md Decisions 9): a drag widens the shown kind, the canvas gives the room, the
+  // ── the drawer's grip (HISTORY.md, TOOLS Decisions 9): a drag widens the shown kind, the canvas gives the room, the
   // selection stays; an editor's pane has its own width; a double-click gives the default back; a narrow stage
   // clamps a stored width without forgetting it; opening the scene again remembers it ──
   {

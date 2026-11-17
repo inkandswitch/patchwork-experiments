@@ -1,4 +1,4 @@
-// I1, one doc per extension (COMPOSITION.md, Invariants): every read and
+// I1, one doc per extension (STAGE.md, Invariants): every read and
 // write through an api goes to its stage's handle. The harness: spy handles
 // on every doc a view can reach, an extension that uses every api that
 // writes or sends (change, claim, send, presence, a pose hold, remove, a

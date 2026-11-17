@@ -1,4 +1,4 @@
-// I5, channels (COMPOSITION.md §6, Invariants): an object's claims, holds
+// I5, channels (STAGE.md, "Views, stages and links", Invariants): an object's claims, holds
 // and sends travel on its doc's channel, wherever the doc is open. Three
 // views of one game G on a manual clock, in two pages: G alone and G linked
 // into X (and mirrored there) in one page, on one repo, where the page bus

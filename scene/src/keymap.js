@@ -1,4 +1,4 @@
-// The one key resolver (TOOLS.md §5). Pure: no DOM, no api.
+// The one key resolver (STAGE.md, "Keys"). Pure: no DOM, no api.
 //
 // One key order: a focused field (the DOM's, before any of this), the open
 // gesture (a carry's Q/E/F), the held tool's declared keys, the body's, then
@@ -147,7 +147,7 @@ export function mapInvocation(collected, key, ctx, attention) {
  * @returns {{ layer: "gesture" | "tool" | "body" } | { layer: "map", invocation: object } | null}
  */
 /**
- * The segments the key map visits (COMPOSITION.md §5): attention's path,
+ * The segments the key map visits (STAGE.md, "The input chain"): attention's path,
  * one per stage, innermost first, each with its own commands, context and
  * attention; a state with none is one segment of its own fields.
  */

@@ -68,7 +68,7 @@ try {
 
   // ── 1. a bag from the parts bin ──
   // The doc names no body: both start in Look. The parts bin is Edit's (a
-  // drawer tab, from the toolbar: scene/TOOLS.md Decisions 6), so A chooses
+  // drawer tab, from the toolbar: scene/HISTORY.md, TOOLS Decisions 6), so A chooses
   // Edit on the body chip, opens Parts, clicks Token bag, shuts Parts and
   // goes back to Look to play.
   check("both start in Look (the doc names no body)", await until("bodyLabel('a') === 'Look' && __p.bodyLabel('b') === 'Look'", 10_000), { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });

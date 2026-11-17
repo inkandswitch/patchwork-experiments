@@ -1011,7 +1011,7 @@ describe("riding along (camera.ride)", () => {
   });
 });
 
-// A link's content is its doc (COMPOSITION.md §2): the roots of the stage it
+// A link's content is its doc (STAGE.md, "Views, stages and links"): the roots of the stage it
 // opens hang in the link's body, so hiding the link hides its doc, as hiding
 // any object hides what it's made of, while an attachment of the link's own
 // doc stays shown. Every case of the link shown / hidden / under a hidden

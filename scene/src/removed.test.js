@@ -1,4 +1,4 @@
-// What the sidebar's change took out stays out (TOOLS.md §6, Decisions 16
+// What the sidebar's change took out stays out (STAGE.md, "The interface", Decisions 16
 // to 18): no source file under src/ (its tests aside, which name these only
 // to say they're gone) names a removed extension, command, tab, button or
 // function. A static check, so a stray reference is caught even where no

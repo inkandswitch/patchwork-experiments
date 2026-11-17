@@ -1,12 +1,12 @@
-// scene.select: the selection (TOOLS.md §3).
+// scene.select: the selection (STAGE.md, "The input chain").
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
 // - A plain click selecting is the Edit body's (the stage's: view.js,
 //   ../stage/bodies.js), which takes a click ahead of the chain, after only
 //   the held tool and a widget: in Edit a click selects before any package's
-//   click verb (TOOLS.md Decisions 6). Look, walk, seat and station have
-//   none, so there a plain click selects nothing (TOOLS.md §3, §4). Select is
+//   click verb (HISTORY.md, TOOLS Decisions 6). Look, walk, seat and station have
+//   none, so there a plain click selects nothing (STAGE.md, "The input chain"). Select is
 //   everyone's, in every body; what a selection shows beyond its box (the
 //   halo's handles, the inspector) is Edit's. Remove (Delete) is an edit, so
 //   Edit's too.
@@ -20,7 +20,7 @@
 // - Draws the selection box (accent) in a world layer (./boxes.js); it
 //   follows held poses. Everyone else's boxes are scene.others', a part of
 //   every doc (./others.js), drawn wherever their doc is, whatever the focus
-//   (COMPOSITION.md §3, "Presence where it is").
+//   (STAGE.md, "Views, stages and links", "Presence where it is").
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
 // - Asks the stage to load the selection first (api.focus), if it's an object.
 // - Commands: Remove (Delete, Backspace; objects only), Select. Escape

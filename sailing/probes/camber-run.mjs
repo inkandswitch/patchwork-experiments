@@ -144,7 +144,7 @@ try {
   };
   const rigidApply = (m, p) => { const k = Math.hypot(m[0], m[1], m[2]); return [0, 1, 2].map((i) => m[12 + i] + (m[i] * p[0] + m[4 + i] * p[1] + m[8 + i] * p[2]) / k); };
 
-  // rigging her is done with the world paused (the clock chip's Pause, anyone's: scene/TOOLS.md Decisions 5):
+  // rigging her is done with the world paused (the clock chip's Pause, anyone's: scene/HISTORY.md, TOOLS Decisions 5):
   // editing never stops her, so at sea she'd pitch and heel under the pointer between a part's aim and its drop
   const pauseBtn = (await loads("window.__p.clockChip()?.label === 'Pause'", 15_000)) && (await P("clockChip()"));
   if (pauseBtn) await b.click(pauseBtn.x, pauseBtn.y);
@@ -296,13 +296,13 @@ try {
 
   // ─── aboard: on her deck, and the wheel ──────────────────────────────────
   {
-    // rigged: out of Edit (where a click selects her: scene/TOOLS.md Decisions 6) into Look, where a click comes aboard
+    // rigged: out of Edit (where a click selects her: scene/HISTORY.md, TOOLS Decisions 6) into Look, where a click comes aboard
     const chip = await P("chip()");
     if (chip) await b.click(chip.x, chip.y);
     const lookItem = (await loads("!!window.__p.chipItem('Look')", 5000)) && (await P("chipItem('Look')"));
     if (lookItem) await b.click(lookItem.x, lookItem.y);
     check("done rigging, Look on the body chip", (await loads("window.__p.body() === 'look'", 5000)), await P("body()"));
-    // the last part dragged is still selected (a selection outlives the body: TOOLS.md Decisions 6), and attention is
+    // the last part dragged is still selected (a selection outlives the body: HISTORY.md, TOOLS Decisions 6), and attention is
     // the selection if any (scene.use): Esc lets it go, so the look, not the mast, is what the use prompt follows
     await b.key("Escape");
     check("Esc lets the last part go: nothing selected", await until("window.__p.selected() == null", 1000), await P("selected()"));

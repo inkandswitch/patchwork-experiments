@@ -182,7 +182,7 @@ export function squared(t) {
 }
 
 /**
- * A game's whole table as a part (scene/COMPOSITION.md §8: a game part makes
+ * A game's whole table as a part (scene/STAGE.md, "Extract and bundle": a game part makes
  * a game doc and links it): a registered game, by its id, laid out in a scene
  * doc of its own (template.js setUp, as the start screen's template lays it
  * out: its own seats, title, view and keepers' containers), then linked where

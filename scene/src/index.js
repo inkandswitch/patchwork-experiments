@@ -85,7 +85,7 @@ export const plugins = [
     icon: "Link",
     supportedDatatypes: ["scene"],
     params: [],
-    // A scene doc placed in another: a link (COMPOSITION.md §1). Its object
+    // A scene doc placed in another: a link (STAGE.md, "Views, stages and links"). Its object
     // gets no render doc; the view opens a stage for the linked doc and
     // draws it where the link is (stage/links.js).
     content: "scene",
@@ -109,13 +109,13 @@ export const plugins = [
   // ─── extensions: the parts the scene editor is made of ───
   // All but carry and others declare no traits ("general" scope): the view runs them
   // once, in the focus stage (the outermost doc until Enter moves the focus
-  // into a link: COMPOSITION.md §3, §5), in this order, which is the order
+  // into a link: STAGE.md, "Views, stages and links"), in this order, which is the order
   // input is offered to them, after every stage's own parts.
   // Carry runs by trait, where the doc has something carryable; others in
   // every doc (traits ["*"]), wherever the focus is. Chrome
-  // follows attention, never the doc (TOOLS.md §1), and the editor's chrome
+  // follows attention, never the doc (STAGE.md, "Activation"), and the editor's chrome
   // is the Edit body's (src/stage/bodies.js): the toolbar's editor commands
-  // (its world commands show in every body: TOOLS.md Decisions 10), the halo
+  // (its world commands show in every body: HISTORY.md, TOOLS Decisions 10), the halo
   // and its knobs, the inspector (one drawer tab: the object tree and the
   // selection's fields, open once something is selected), dimensions and
   // parts (tabs the viewer opens), the grid, axes
@@ -157,7 +157,7 @@ export const plugins = [
     },
   },
   {
-    // the body chip, who's here and the Esc hint (TOOLS.md §4, §6)
+    // the body chip, who's here and the Esc hint (STAGE.md, "Bodies")
     type: "scene:extension",
     id: "scene.body",
     name: "Body",
@@ -166,7 +166,7 @@ export const plugins = [
     },
   },
   {
-    // the touch controls: the declared keys as controls a finger holds, while the input is touch (TOOLS.md §5)
+    // the touch controls: the declared keys as controls a finger holds, while the input is touch (STAGE.md, "Keys")
     type: "scene:extension",
     id: "scene.touch",
     name: "Touch controls",
@@ -183,7 +183,7 @@ export const plugins = [
     },
   },
   {
-    // every target's verbs, Select first (TOOLS.md §3)
+    // every target's verbs, Select first (STAGE.md, "The input chain")
     type: "scene:extension",
     id: "scene.menu",
     name: "Context menu",
@@ -192,7 +192,7 @@ export const plugins = [
     },
   },
   {
-    // Enter a link: the focus, which scopes the selection, moves into it (COMPOSITION.md §5)
+    // Enter a link: the focus, which scopes the selection, moves into it (STAGE.md, "The input chain")
     type: "scene:extension",
     id: "scene.focus",
     name: "Enter",
@@ -243,7 +243,7 @@ export const plugins = [
   },
   {
     // the selection's handles: move arrows, rotate rings and scale corners
-    // outside its box, in its parent's frame (TOOLS.md §3). It follows the
+    // outside its box, in its parent's frame (STAGE.md, "The input chain"). It follows the
     // selection
     type: "scene:extension",
     id: "scene.halo",
@@ -254,7 +254,7 @@ export const plugins = [
   },
   {
     // carrying: whatever has the trait can be picked up and put down, in
-    // any stage whose doc has something carryable (TOOLS.md §1). Not
+    // any stage whose doc has something carryable (STAGE.md, "Activation"). Not
     // general: the trait is its only reason to run.
     type: "scene:extension",
     id: "scene.carry",
@@ -281,7 +281,7 @@ export const plugins = [
   },
   {
     // the selection: Select is every menu's first entry, and the Edit
-    // body's click (TOOLS.md §3)
+    // body's click (STAGE.md, "The input chain")
     type: "scene:extension",
     id: "scene.select",
     name: "Selection",
@@ -291,7 +291,7 @@ export const plugins = [
   },
   {
     // everyone else's selection boxes: a part of every doc, so they show
-    // wherever their doc is drawn, whatever the focus (COMPOSITION.md §3,
+    // wherever their doc is drawn, whatever the focus (STAGE.md, "Views, stages and links",
     // "Presence where it is")
     type: "scene:extension",
     id: "scene.others",
@@ -370,7 +370,7 @@ export const plugins = [
       return (await import("./parts/parts.js")).default;
     },
   },
-  // the stage's own edits, undone and redone (TOOLS.md, Decisions 2): this
+  // the stage's own edits, undone and redone (HISTORY.md, TOOLS Decisions 2): this
   // viewer's, in the focus doc
   {
     type: "scene:extension",

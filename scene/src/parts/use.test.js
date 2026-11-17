@@ -328,7 +328,7 @@ describe("scene.use", () => {
   });
 
   // Held still where it is while the pointer is on it, until the viewer moves the eye (step 8 of lane/n11 and its
-  // fixes; COMPOSITION.md, "Decisions, the use prompt and the eye"): an orbit or a Frame ends, a body entered or
+  // fixes; HISTORY.md, COMPOSITION Decisions, the use prompt and the eye): an orbit or a Frame ends, a body entered or
   // left, a pointer lock taken or lost put it back under the pointer, so a press there reaches what is under it (a
   // halo handle), never a button left there. An eye carried every frame (a ride) doesn't: it would never let the
   // pointer catch the prompt. However the pointer came onto it, it holds where it is.
@@ -647,7 +647,7 @@ describe("scene.use", () => {
   });
 });
 
-// A verb's button with a key is that key (TOOLS.md §5): a press on it is
+// A verb's button with a key is that key (STAGE.md, "Keys"): a press on it is
 // the key's keydown, its lift the keyup, so a held verb lasts as long as the
 // finger (or the mouse button); a verb with no key that does it is a click.
 // One fixture, every kind of verb a prompt shows, each on its own target (a
@@ -984,7 +984,7 @@ describe("scene.use: a button with a key is that key", () => {
   });
 });
 
-// A held verb's target in a linked doc (COMPOSITION.md §5): the pin is the
+// A held verb's target in a linked doc (STAGE.md, "The input chain"): the pin is the
 // target's path, so it holds wherever the look goes (onto the host's deck,
 // onto nothing), the target's other keys are its, a change to the host's
 // doc is no reason to let go, and it lets go when the target goes from its

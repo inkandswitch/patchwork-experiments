@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { RUNGS, escapeHint, escapeLayer, escapeStep } from "./ladder.js";
 
-// H4 (TOOLS.md, Invariants): Escape pops exactly the top of lock, field,
+// H4 (STAGE.md, Invariants): Escape pops exactly the top of lock, field,
 // popover, gesture, tool, selection, focus; never the body or the clock; the
 // hint names it. Every state: the six layers on or off × focus depth 0–3,
 // with a body and a clock that must come through untouched.

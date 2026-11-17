@@ -1,4 +1,4 @@
-// H8 (scene/TOOLS.md §7, "Three times"): a pause changes no actor or
+// H8 (scene/STAGE.md, "World time", "Three times"): a pause changes no actor or
 // liveness outcome. Dice, lots and the cup run on actor time (their loops)
 // and liveness (the stage's time, api.clock.now and api.clock.after: THROW,
 // TOLD, lots' deadlines), never on the doc's world time, so pausing the world

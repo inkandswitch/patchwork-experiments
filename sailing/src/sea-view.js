@@ -25,7 +25,7 @@
 //     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
 //
 // It has no clock of its own: the sea's time is the doc's world time, which
-// every reader asks of api.clock.t() (scene TOOLS.md §7: the computing
+// every reader asks of api.clock.t() (scene STAGE.md, "World time": the computing
 // view's own, every other view's following it).
 //
 // A boat at another scale than her world's doesn't sail (gravity doesn't

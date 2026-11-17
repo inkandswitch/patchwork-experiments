@@ -16,7 +16,7 @@
 // finger still on the block (its menu, not the eye's look's), then a
 // mouse click on the world hides the pad and only asks for the lock.
 //
-// The use prompt's buttons are keys (TOOLS.md §5): first in Look, a tap on
+// The use prompt's buttons are keys (STAGE.md, "Keys"): first in Look, a tap on
 // the post shows its verbs where it tapped and keeps them when the finger
 // lifts; Ring by a tap rings once; Wind (hold G) winds only while a finger
 // holds its button; Open runs once on a tap though Shut takes its place
@@ -231,7 +231,7 @@ try {
   await heard();
 
   // 7c. a finger's long press on the block opens the block's menu: what it pressed, not what the eye looks at
-  // (the look of a lock body under touch is the eye's, TOOLS.md Decisions 14)
+  // (the look of a lock body under touch is the eye's, HISTORY.md, TOOLS Decisions 14)
   const lookBefore = await P("look()");
   const block3 = await P("block()");
   await touch.fingers([[1, ...block3]]);
@@ -261,7 +261,7 @@ try {
   );
   await shot("4-wind");
 
-  // 8. back to a mouse: the pad hides; a press on the world after a finger only takes the lock back (TOOLS.md Decisions 11)
+  // 8. back to a mouse: the pad hides; a press on the world after a finger only takes the lock back (HISTORY.md, TOOLS Decisions 11)
   await b.click(world[0], world[1]);
   await b.rest(100);
   v = await P("view()");

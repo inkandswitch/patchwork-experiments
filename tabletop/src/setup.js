@@ -54,7 +54,7 @@ import { jumble } from "./table/wash.js";
 const CARD = "tabletop.card";
 /** The trait of a hand: a seat's box on the table (table/visibility.js zones). */
 const ZONE = "tabletop.zone";
-/** The scene's trait for what can be picked up (scene/TOOLS.md §1). */
+/** The scene's trait for what can be picked up (scene/STAGE.md, "Activation"). */
 const CARRY = "scene.carry";
 /** The container the game's loose cards (those in no deck) are kept in. */
 export const LOOSE = "cards";
@@ -315,7 +315,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
       axes: false,
       bounds: false,
       snap: true,
-      // where people start (scene TOOLS.md §2): at a game with seats (every
+      // where people start (scene STAGE.md, "Arriving"): at a game with seats (every
       // built-in one), the seat body (back in your own seat, else watching
       // from the first seat's view), where pressing a piece picks it up or
       // uses it; a game laid out with none starts in Look (no body named) at the home view
@@ -355,7 +355,7 @@ export function bound(oid, o, { binds = {}, bags = {} } = {}) {
  * Write a layout into a scene doc (inside a change, or onto a plain
  * skeleton): its objects and their order, each bound (above); the seats,
  * through their owner's `lay`; and the view and the game's origin. A game is
- * a doc of its own (scene/COMPOSITION.md: a game part makes one and links it
+ * a doc of its own (scene/STAGE.md: a game part makes one and links it
  * onto what it was put on), so all of it is the game's to write. Throws,
  * writing nothing, if a card's container has no binding.
  * @param {object} d  the scene doc (a draft)

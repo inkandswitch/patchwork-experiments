@@ -53,11 +53,11 @@ might reasonably want it otherwise.
    `prepareTable`).
 5. **Containers are titled by the game and the deck** ("Lost Cities: Deck"),
    never by the scene a table is set down in (host-titled decks are gone,
-   COMPOSITION.md §11).
+   HISTORY.md).
 6. **A hand is a piece with a `zone`, placed for a `seat`.** The seat moved
    from the piece to the thing, so two players' trays are one kind.
 7. **A game with seats starts people in the seat body** (`view.start`,
-   scene/TOOLS.md §2), where a press picks a piece up; one without starts
+   scene/STAGE.md, "Arriving"), where a press picks a piece up; one without starts
    them in Look (the orbit camera, not the editor). Every built-in game has
    seats.
 8. **Pieces drawn by another package are documents.** A die is `doc: { "@patchwork": { type: "die" }, … }`, drawn by whatever `scene:source`

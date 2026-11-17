@@ -1,4 +1,4 @@
-// The Escape ladder (TOOLS.md §5): one press of Escape pops exactly one
+// The Escape ladder (STAGE.md, "Keys"): one press of Escape pops exactly one
 // layer, the top one standing, and the hint names the layer the next press
 // would pop. Pure: the router gathers the state and does what this says.
 //

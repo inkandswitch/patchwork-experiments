@@ -1,4 +1,4 @@
-// Touch controls derived from declared keys (TOOLS.md §5). Pure: no DOM,
+// Touch controls derived from declared keys (STAGE.md, "Keys"). Pure: no DOM,
 // no api.
 //
 // The open gesture, the held tool and the body declare the keys they take
@@ -22,7 +22,7 @@
 // - A control presses its code with the key a US keyboard sends for it
 //   (keymap.js keyOfCode), since handlers read ev.key as often as ev.code.
 //
-// The contract this reads into a declaration (TOOLS.md §4): codes one
+// The contract this reads into a declaration (STAGE.md, "Bodies"): codes one
 // reserver labels alike do the same thing, so touch shows one control for
 // them. Labels are one per reserver, not across them: a pad shows each
 // control under its reserver (`from`).

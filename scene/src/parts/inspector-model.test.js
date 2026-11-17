@@ -5,7 +5,7 @@ import { resolveGroups } from "../groups.js";
 import { CONTROLS_TOOL, commandsFor, documentsFor, inspectorDocuments } from "./inspector-model.js";
 import { plugins } from "../index.js";
 
-// The inspector's documents (STAGE.md "A document"; TOOLS.md §6): every
+// The inspector's documents (STAGE.md "A document"; STAGE.md, "The interface"): every
 // related document of an object is a section, and documentsFor is the one
 // rule for which sections show, in which order.
 

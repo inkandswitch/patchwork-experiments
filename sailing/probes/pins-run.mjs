@@ -1,4 +1,4 @@
-// Pins and mirrors (scene/COMPOSITION.md §7: worked example 2, and a part
+// Pins and mirrors (scene/STAGE.md, "Views, stages and links": worked example 2, and a part
 // repeated live), in one headless Chrome, one page, one repo
 // (pins-probe.html): the BUILT scene, sailing, joints and traversal plugins.
 // S is a sloop at anchor whose companionway is a fit-out F, linked and fixed

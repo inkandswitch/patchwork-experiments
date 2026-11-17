@@ -1,4 +1,4 @@
-// Links, open and live (COMPOSITION.md build step 12): a live link's doc
+// Links, open and live (STAGE.md build step 12): a live link's doc
 // gets a stage of its own in the view, which runs that doc's extensions in
 // its own frame, on its own channel. Checked here without WebGL: the frame
 // comes from the host's doc (a link's transform), hits are stubbed as the
@@ -224,7 +224,7 @@ describe("arriving through a link", () => {
   });
 
   // A start whose place is a link arrives through it, as the linked doc
-  // starts people (TOOLS.md §2): the second of two games, named by its link,
+  // starts people (STAGE.md, "Arriving"): the second of two games, named by its link,
   // whatever the first offers; the game's own start body and place.
   it("a start placed on a link arrives as the linked doc starts people, in its stage, whichever link comes first", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});

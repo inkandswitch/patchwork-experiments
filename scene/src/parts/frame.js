@@ -1,9 +1,9 @@
 // scene.frame: the editor's verbs for pointing the camera at things.
 //   - "Frame" (.): the selection, or with nothing selected the whole scene
-//     ("Frame all"). Not F: F is carry's Flip, on every surface (TOOLS.md §4).
+//     ("Frame all"). Not F: F is carry's Flip, on every surface (STAGE.md, "Bodies").
 //   - a double-click on an object frames it (or the selected group it's in).
 //   - "Set home view" (menu): this camera as the doc's suggested start
-//     (doc.view.start.home, TOOLS.md §2), which a viewer without a saved
+//     (doc.view.start.home, STAGE.md, "Arriving"), which a viewer without a saved
 //     camera opens at. An edit: undo takes it back.
 // Following the content as it loads is scene.autoframe's.
 

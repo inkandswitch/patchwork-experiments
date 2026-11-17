@@ -1,4 +1,4 @@
-// Links, closed only (COMPOSITION.md build step 11): a scene doc added to a
+// Links, closed only (STAGE.md build step 11): a scene doc added to a
 // scene is a link, an ordinary object through the scene.link source, with
 // no render doc, routed as "scene" and drawn as its hint.
 

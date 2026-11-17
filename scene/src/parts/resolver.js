@@ -40,7 +40,7 @@ export function keyAttention(api) {
 export function resolverState(api, attention = keyAttention(api)) {
   const view = api.view.get();
   // the input path's stages, innermost first, the focus always among them
-  // (COMPOSITION.md §5): each its own commands, in its own context, at its
+  // (STAGE.md, "The input chain"): each its own commands, in its own context, at its
   // own element of attention; a held verb holds attention to its target's
   // path, wherever the selection and the look have gone since
   const pinned = Array.isArray(attention?.pinned) ? attention.pinned : null;

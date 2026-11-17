@@ -1,7 +1,7 @@
 // scene.menu: the context menu. A right-click (or a touch hold) opens a small
 // menu at the pointer listing the commands that apply to the object under it
 // (show includes "menu", or says nothing), Select first (the selection's verb,
-// scene.select's: TOOLS.md §3), then, under a separator, the
+// scene.select's: STAGE.md, "The input chain"), then, under a separator, the
 // scene's commands that ask for a menu (show includes "menu"). Picking one
 // runs it; Escape (the stage's ladder: it is a popover), a click outside, or
 // picking closes it. Arrow keys move through it, Enter (or Space) picks.
@@ -134,7 +134,7 @@ function create(api) {
     const ctx = api.context(hit);
     keys = resolverState(api);
     menuHit = hit;
-    // The pointer's path (COMPOSITION.md §5): a section per stage on it,
+    // The pointer's path (STAGE.md, "The input chain"): a section per stage on it,
     // innermost first, each its element's verbs in its own context, titled
     // with its name; then the scene's, each stage's in its own
     // context. The focus is always on the path, so its scene (Frame all, Set

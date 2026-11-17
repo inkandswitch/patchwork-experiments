@@ -1,6 +1,6 @@
 // Selection boxes: a world layer of Box3Helpers, one per target, in the
 // api's doc and frame. scene.select draws this view's selection with it and
-// scene.others everyone else's (TOOLS.md §3; COMPOSITION.md §3, "Presence
+// scene.others everyone else's (STAGE.md, "The input chain"; STAGE.md, "Views, stages and links", "Presence
 // where it is"). The boxes follow held poses (checked after each frame).
 
 const EPS = 1e-9;

@@ -1,4 +1,4 @@
-// scene.halo: the selection's handles (TOOLS.md §3), after Morphic's halo.
+// scene.halo: the selection's handles (STAGE.md, "The input chain"), after Morphic's halo.
 //
 // Round what's selected, in the Edit body (../stage/bodies.js: the halo is
 // the editor's), where its doc may be written and no tool is held:
@@ -279,7 +279,7 @@ function create(api) {
       drag = null;
       if (d?.poses?.size) {
         // each moved object's put-down, as one change (a group's members
-        // together): an edit, so undo puts it back (TOOLS.md, Decisions 2)
+        // together): an edit, so undo puts it back (HISTORY.md, TOOLS Decisions 2)
         api.edit(api.ops.setTransform(api.scene(), d.poses), { label: { rotate: "Rotate", scale: "Scale" }[d.grab?.handle?.kind] ?? "Move" });
         release(d, true);
       }

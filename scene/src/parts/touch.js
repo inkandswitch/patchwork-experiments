@@ -1,4 +1,4 @@
-// scene.touch: the touch controls (TOOLS.md §5). With no keyboard, the keys
+// scene.touch: the touch controls (STAGE.md, "Keys"). With no keyboard, the keys
 // the open gesture, the held tool and the body declare are shown as controls
 // a finger holds: the pad's arrows bottom left, the rest as buttons bottom
 // right, each under the layer it is for. Which controls, and which key each

@@ -1,6 +1,6 @@
 // scene.carry: carrying objects like pieces on a table (README, "Carry").
 //
-// "Can be carried" is data: the `scene.carry` trait on an object (TOOLS.md
+// "Can be carried" is data: the `scene.carry` trait on an object (STAGE.md
 // §1). This part declares that trait, so it runs, with object scope, in any
 // stage whose doc has something carryable, and the input chain offers it a
 // press when the nearest link of the hit's chain that carries the trait is

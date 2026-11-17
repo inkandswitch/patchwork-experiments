@@ -1,5 +1,5 @@
 // patchwork:tool "scene": a view (./view.js) and the stages it opens, one per
-// open doc (COMPOSITION.md §2). This file is the stage: the doc, loading and
+// open doc (STAGE.md, "Views, stages and links"). This file is the stage: the doc, loading and
 // building object content, lenses and veils, the audience, presence and
 // claims on its doc's channel, its clock, its extensions and the api each
 // gets. It has no UI of its own and no opinion about what a click means:
@@ -13,7 +13,7 @@
 // goes through its scope of the viewport (./scope.js), the one choke point
 // where its frame and its keys (./paths.js) meet the view's.
 //
-// A stage acts, or it is drawn (COMPOSITION.md §7). One that acts is where
+// A stage acts, or it is drawn (STAGE.md, "Views, stages and links"). One that acts is where
 // its doc is played: its extensions hear input, offer bodies, tools and
 // commands, compute its clock and speak on its channel. A pin (its doc at
 // fixed heads) and a mirror (a live doc acting at another placement in this
@@ -256,7 +256,7 @@ export default function Stage(handle, element) {
 }
 
 /**
- * One open doc's stage (COMPOSITION.md §2): its handle, derive and snapshot,
+ * One open doc's stage (STAGE.md, "Views, stages and links"): its handle, derive and snapshot,
  * content, lenses and veils, the audience, its extensions, claims, its
  * channel, packages and clock, and its own atom (`api.local`). It sees only
  * its doc, in its own root frame; the view (./view.js) is everything it
@@ -272,7 +272,7 @@ export default function Stage(handle, element) {
  * }} o
  */
 export function createStage({ handle: given, view, n, path = [], frame = () => null, under = null, general = true, role = "acting", deps = null }) {
-  // does it act (COMPOSITION.md §7): a pin or a mirror is drawn, never acted on
+  // does it act (STAGE.md, "Views, stages and links"): a pin or a mirror is drawn, never acted on
   const acts = role === "acting";
   // read-only: its doc, and every doc it reaches, refuse writes (I6)
   const readOnly = !acts || handleReadOnly(given);
@@ -310,7 +310,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const viewer = view.viewer;
   let stage = null; // what the view knows this stage by (made at the end)
 
-  // ─── local state: the stage's own (COMPOSITION.md §3) ─────────────────────
+  // ─── local state: the stage's own (STAGE.md, "Views, stages and links") ─────────────────────
   const local = createAtom({
     running: Object.freeze([]),
     status: Object.freeze({}),
@@ -801,7 +801,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return answers ? mergeShown(answers) : null;
   };
 
-  // ─── what an edit did, for undo (TOOLS.md, Decisions 2; src/undo.js) ──────
+  // ─── what an edit did, for undo (HISTORY.md, TOOLS Decisions 2; src/undo.js) ──────
   // Judged when a step of the stage's own editing is recorded, from the doc
   // before its first change and after its last:
   //   shows  the objects it revealed (who may see what one is grew, by the
@@ -1290,7 +1290,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── the clock ────────────────────────────────────────────────────────────
   //
-  // World time for this doc (clock.js; TOOLS.md §7): one "clock" claim, held
+  // World time for this doc (clock.js; STAGE.md, "World time"): one "clock" claim, held
   // by the view that computes it and steps every process; the others
   // follow. The stage holds the claim itself, under the usual rules. What
   // the chip shows is local.clock.
@@ -1463,7 +1463,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       displayChanged();
     }
     // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
-    // the outermost doc's are the world's (COMPOSITION.md §3), which the view reads (view.ambient)
+    // the outermost doc's are the world's (STAGE.md, "Views, stages and links"), which the view reads (view.ambient)
     const offered = mergeAmbients(
       running.map((r) => {
         try {
@@ -1614,7 +1614,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   const setPref = (key, value) => view.setPref(key, value);
-  /** A pref: the viewer's, else this doc's suggestion (COMPOSITION.md §3), else the fallback. */
+  /** A pref: the viewer's, else this doc's suggestion (STAGE.md, "Views, stages and links"), else the fallback. */
   const pref = (key, fallback) => view.atom.get().prefs?.[key] ?? doc().view?.[key] ?? fallback;
   const notify = (text, kind = "info", from = null) => (dead ? null : view.notify(text, kind, from));
 
@@ -1686,7 +1686,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
   }
 
-  // ─── bodies, attention and the command context (TOOLS.md §3, §4) ──────────
+  // ─── bodies, attention and the command context (STAGE.md, "The input chain") ──────────
   // The stack and the slot are the view's; a body or a tool an extension of
   // this stage puts there hears events in this stage's frame, and is its own
   // (a stopping extension's go with it).
@@ -1776,7 +1776,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return { id: el, point: Array.isArray(h.point) ? f.pointIn(h.point) : null, distance: Number.isFinite(h.distance) ? f.lengthIn(h.distance) : null };
   }
 
-  /** Attention (TOOLS.md §3): the selection if any, else the look; this stage's elements of them. */
+  /** Attention (STAGE.md, "The input chain"): the selection if any, else the look; this stage's elements of them. */
   function attention() {
     const selected = viewValue().selected ?? null;
     return Object.freeze({ selected, hit: view.atom.get().selected != null ? null : look() });
@@ -2234,7 +2234,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           ),
       }),
       /**
-       * The viewer's (COMPOSITION.md §3), as this stage sees it: the body,
+       * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
        * the held tool, the pointer, theme, notices, prefs, the drawer, and
        * the selection and hover as this stage's elements of their paths.
        * select(target) selects this stage's target (null: nothing).
@@ -2327,7 +2327,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       template: (templateId, params) => applyTemplate(templateId, params),
       part: (partId, at, opts) => applyPart(partId, at, opts),
       /**
-       * The stage's own editing (TOOLS.md, Decisions 2), on the stage's own
+       * The stage's own editing (HISTORY.md, TOOLS Decisions 2), on the stage's own
        * parts' api only (own.js): edit(fn, { label, handle? }) writes fn as
        * one undoable step (on the scene, or on `handle`: an object's render
        * doc); edits(label) opens a step of several writes, passed as
@@ -2449,7 +2449,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
       afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
       /**
-       * World time (TOOLS.md §7): this view's t (s), running, pause and
+       * World time (STAGE.md, "World time"): this view's t (s), running, pause and
        * resume (anyone who may write), and process({ start?, step, save?,
        * stop?, replicated? }) → remove. And the stage's own time (time.js),
        * which acts and liveness run on: now() (ms), after(ms, fn) → cancel,
@@ -2478,7 +2478,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         requestFlush();
       },
 
-      // bodies, the held tool, attention (TOOLS.md §3–§5)
+      // bodies, the held tool, attention (STAGE.md, "The input chain"–§5)
       body: Object.freeze({
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
         current: () => viewNow().body,
@@ -2509,7 +2509,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
       look: () => look(),
 
-      // the others (COMPOSITION.md §3): a stage's extension collects from its own
+      // the others (STAGE.md, "Views, stages and links"): a stage's extension collects from its own
       // stage; a general one, the view's, from every acting stage (the input
       // path's first, innermost first), each item tagged with its `stage`, and
       // runs a command in the stage it names
@@ -2567,7 +2567,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
-   * A drawn stage's api (COMPOSITION.md §7): the acting api less everything
+   * A drawn stage's api (STAGE.md, "Views, stages and links"): the acting api less everything
    * that acts, all in this one place. A pin's or a mirror's extensions run
    * and draw into the world (layers, labels, looks, styles) and read all
    * they like; what would take input, put chrome in the view, move the
@@ -2646,7 +2646,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return out;
   }
 
-  // This stage's segment of the chain (COMPOSITION.md §5) for its element of
+  // This stage's segment of the chain (STAGE.md, "The input chain") for its element of
   // the hit's path: its holders, nearest first, then its root's. The general
   // ones (it runs them while it is the focus) are the view's, offered after
   // every segment: generals().

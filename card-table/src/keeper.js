@@ -57,7 +57,7 @@ export async function contain({ repo }, { title, items }) {
 /**
  * The roster, from whoever contributes one (the seats' owner): who is
  * playing, in this snapshot. A game is a doc of its own (scene's
- * COMPOSITION.md), so every seat of its doc is at its table.
+ * STAGE.md), so every seat of its doc is at its table.
  */
 export function playing(api, scene) {
   const roster = api.collect("roster").map((r) => r?.value).find((r) => r && typeof r.viewers === "function");

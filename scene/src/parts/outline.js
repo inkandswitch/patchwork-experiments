@@ -1,5 +1,5 @@
 // The object tree: the top of the inspector's one pane (./inspector.js,
-// TOOLS.md §6), mounted with it and following the same selection
+// STAGE.md, "The interface"), mounted with it and following the same selection
 // (view.selected): a row click selects, and the inspector's fields below
 // follow in the same flush. Not an extension of its own: createOutline(api,
 // { shown }) is called by the inspector with its api, and answers

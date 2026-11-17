@@ -367,7 +367,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
 // ─── routing at sync: by the kind of content the object's provider makes ────
 
-describe("content is routed at sync by its provider's kind (COMPOSITION.md §1)", () => {
+describe("content is routed at sync by its provider's kind (STAGE.md, “Views, stages and links”)", () => {
   let s, repo;
   beforeEach(() => {
     repo = new FakeRepo();

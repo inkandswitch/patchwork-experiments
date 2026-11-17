@@ -1,4 +1,4 @@
-// Links (COMPOSITION.md §1, §7): an ordinary object whose source is a scene
+// Links (STAGE.md, "Views, stages and links"): an ordinary object whose source is a scene
 // doc places that doc, a world of its own, in the host. Expanding a view's
 // links is one pure function of the link graph, so what a view opens is
 // fixed by the graph and never by the order docs arrived in (invariant I3).

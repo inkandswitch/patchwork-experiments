@@ -1,8 +1,8 @@
 // scene.others: everyone else's selection boxes, each in their colour
-// (TOOLS.md §3). A part of every doc (traits ["*"]: stage/activation.js), so
+// (STAGE.md, "The input chain"). A part of every doc (traits ["*"]: stage/activation.js), so
 // it runs in every stage, as that doc's own part, whatever the focus: what
 // someone selects on the boat shows from inside the game on her table, in
-// the boat's frame (COMPOSITION.md §3, "Presence where it is"). It reads
+// the boat's frame (STAGE.md, "Views, stages and links", "Presence where it is"). It reads
 // what scene.select tells each doc's channel (presence "selected"), draws in
 // the doc's world layer (./boxes.js), and says nothing itself. A pin has no
 // channel, so it draws none; a mirror hears its doc's, so it draws them

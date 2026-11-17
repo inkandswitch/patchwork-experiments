@@ -1,4 +1,4 @@
-// Linearity (COMPOSITION.md §7, invariant I11): runtime state has at most one
+// Linearity (STAGE.md, "Views, stages and links", invariant I11): runtime state has at most one
 // writable holder among the docs a view reaches. A live link shares the one
 // holder, a pin can't write, and copy, extract and bundle leave runtime
 // state behind (src/transfer.js cleanObject, src/extract.js), so nothing

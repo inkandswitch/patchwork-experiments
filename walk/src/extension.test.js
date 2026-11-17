@@ -1,4 +1,4 @@
-// walk's two parts (scene/COMPOSITION.md §3, "Presence where it is"): the
+// walk's two parts (scene/STAGE.md, "Views, stages and links", "Presence where it is"): the
 // body (extension.js, general: it runs at the focus) and the others walking
 // (people.js, a part of every doc: it runs in every stage). The people part
 // draws exactly the others whose presence (under the body's key, "walk")

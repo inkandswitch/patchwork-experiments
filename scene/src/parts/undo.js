@@ -1,4 +1,4 @@
-// scene.undo: Undo and Redo (TOOLS.md, Decisions 2). What they take back is
+// scene.undo: Undo and Redo (HISTORY.md, TOOLS Decisions 2). What they take back is
 // the stage's own editing only (the halo's handles, the inspector, transfer,
 // add, remove: whatever wrote through api.edit), this viewer's, in the focus
 // doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or

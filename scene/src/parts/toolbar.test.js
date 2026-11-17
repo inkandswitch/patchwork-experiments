@@ -164,7 +164,7 @@ describe("scene.toolbar", () => {
   });
 });
 
-// The bar of tools (TOOLS.md §6, Decisions 10): the editor's commands only
+// The bar of tools (STAGE.md, "The interface", Decisions 10): the editor's commands only
 // in Edit, the world's in every body. (B1) outside Edit it holds exactly
 // the world commands that apply, never an editor command; (B2) in Edit the
 // editor's, then the world's; (B3) it shows ⇔ some command on the path is

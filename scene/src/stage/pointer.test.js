@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { lockedNow, looksFromEye, pointerStep } from "./pointer.js";
 
-// H5's pure side (TOOLS.md §4): locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧
+// H5's pure side (STAGE.md, "Bodies"): locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧
 // ¬refused ∧ ¬touch, over all 2⁵ states, and every event on each.
 const FIELDS = ["lock", "wanted", "released", "refused", "touch"];
 const states = () => Array.from({ length: 1 << FIELDS.length }, (_, b) => Object.fromEntries(FIELDS.map((f, i) => [f, !!(b & (1 << i))])));

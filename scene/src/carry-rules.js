@@ -14,7 +14,7 @@
 
 import { composeMatrix, decomposeMatrix } from "./transform.js";
 
-/** The trait that says an object can be picked up: "can", as data (TOOLS.md §1). */
+/** The trait that says an object can be picked up: "can", as data (STAGE.md, "Activation"). */
 export const CARRY = "scene.carry";
 
 /**

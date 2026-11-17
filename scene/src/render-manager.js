@@ -7,7 +7,7 @@
 // lists; staleness is judged against those views, so edits to the live docs
 // never make it stale. Params and provider versions still do.
 //
-// A read-only manager (`readOnly`: a pinned or mirrored stage's, COMPOSITION.md
+// A read-only manager (`readOnly`: a pinned or mirrored stage's, STAGE.md
 // §7) shows what is built and nothing else: it judges nothing, builds
 // nothing and writes no render doc. The acting stage keeps them built.
 

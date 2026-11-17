@@ -101,7 +101,7 @@ export async function layOutArena(ctx) {
       d.order.push(id);
       if (!spawn && b.traits?.["walk.spawn"]) spawn = id;
     }
-    // people start walking at the first spawn point (TOOLS.md §2): its trait
+    // people start walking at the first spawn point (STAGE.md, "Arriving"): its trait
     // calls for the walk package, which brings the body
     if (spawn) d.view.start = { body: "walk", place: spawn };
   });

@@ -1,5 +1,5 @@
 // Nobody holds a port: time stands still where the last player left it, so
-// nobody comes back to hours of an empty world to catch up on (scene/TOOLS.md
+// nobody comes back to hours of an empty world to catch up on (scene/STAGE.md
 // Decisions 1, "Nobody present: no time passes", as the machine has it).
 import { seating } from "../host/session.js";
 

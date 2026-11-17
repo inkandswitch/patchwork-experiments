@@ -1,7 +1,7 @@
 // A game's table laid out in a scene doc: an empty scene's start screen
 // (`scene:template`), or a game dropped from the parts bin (`scene:part`,
 // parts.js), which makes a game doc of its own, lays it out there and links
-// it onto what it was put on (scene/COMPOSITION.md §8). Through the same
+// it onto what it was put on (scene/STAGE.md, "Extract and bundle"). Through the same
 // writer as the game page's "Set up a table" (setup.js tableLayout +
 // writeTable), so they can't drift apart. The table is always the whole
 // doc's: its seats, title, view and origin are the doc's own.

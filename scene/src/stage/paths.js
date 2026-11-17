@@ -1,4 +1,4 @@
-// Occurrence paths and the keys the view gives them (COMPOSITION.md §2):
+// Occurrence paths and the keys the view gives them (STAGE.md, "Views, stages and links"):
 // the one place their grammar lives. Pure.
 //
 // A view shows one stage per open doc. Every stage works in its own ids;

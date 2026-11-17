@@ -3,7 +3,7 @@
 // exit.js is the trait and its rules, go.js the leaving. The verb is one
 // command, F, on every surface (the prompt, the menu, the inspector, the key
 // map), within the body's reach: it says `reach: true`, and the stage
-// measures from the body's eye against its reach (scene/TOOLS.md §4).
+// measures from the body's eye against its reach (scene/STAGE.md, "Bodies").
 //
 // Nothing is written, claimed or held: using an exit opens another document.
 

@@ -1,7 +1,7 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// The walk body (scene/TOOLS.md §4), in three scene:extensions:
+// The walk body (scene/STAGE.md, "Bodies"), in three scene:extensions:
 // - "walk", a part of every doc (traits ["*"]), contributing `bodies:
 //   [walk]` in every stage, so a body entered from a stage walks in that
 //   stage's frame, and `avatar` (this viewer's walker there);

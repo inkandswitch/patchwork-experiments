@@ -1,6 +1,6 @@
 // One Lost Cities game doc G, linked live into a still room and aboard the
 // sloop at anchor, played by two people; G open alone in a third view
-// (scene/COMPOSITION.md, worked example 3). All in one headless Chrome, one
+// (scene/STAGE.md, worked example 3). All in one headless Chrome, one
 // page, one repo (links-probe.html).
 //
 //   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, traversal/, walk/) pnpm build
@@ -19,7 +19,7 @@
 //  5. Ana draws a card (D over the deck, the room's key map reaching into
 //     G) and carries one onto an expedition column; Ben and Cara see both
 //     moves; Ben draws and plays one of his, and Ana and Cara see it;
-//  6. I6 with the real packages (scene/COMPOSITION.md, Invariants): mid-play,
+//  6. I6 with the real packages (scene/STAGE.md, Invariants): mid-play,
 //     Ana's room links G twice more, live (a mirror, Ana seated in the
 //     acting stage) and fixed at this version (a pin), and Ana opens G in a
 //     view of her own whose handle refuses writes (D). Each runs G's
@@ -28,7 +28,7 @@
 //     saw when it was fixed (her hand, and the cards played face up); Ana then plays a card face up (her keeper hands over
 //     its key) and draws, and all of it stays so, with nothing written
 //     through any of them: no warning, no error (7);
-//  6b. editing in context (COMPOSITION.md build step 14): Ana, seated, enters
+//  6b. editing in context (STAGE.md build step 14): Ana, seated, enters
 //     G from her room by its mirror's link (Enter goes where G acts: the
 //     room's first link); her general parts move into her G stage and
 //     nothing else changes, for her (still seated, the same docs running
@@ -37,7 +37,7 @@
 //  7. with the boat's world running, a card leans with her in Ben's view
 //     and stays upright in Ana's and Cara's; Ben's seat view rolls with the
 //     table (the camera's up is the table's), Ana's keeps the world's;
-//  7b. presence where it is (scene/COMPOSITION.md §3, TOOLS.md §6): with the
+//  7b. presence where it is (scene/STAGE.md, "Views, stages and links", STAGE.md, "The interface"): with the
 //     boat's world running, Ben enters G: his clock chips are the focus
 //     path's, so the boat's chip stays, named; he leaves. Cara (G alone)
 //     selects a card: Ben (outside G) and Ana (outside G, in the room) see

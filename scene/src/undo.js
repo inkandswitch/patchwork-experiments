@@ -1,4 +1,4 @@
-// Undo (TOOLS.md, Decisions 2): the stage's own editing writes only (the
+// Undo (HISTORY.md, TOOLS Decisions 2): the stage's own editing writes only (the
 // halo's handles, the inspector, transfer, add, remove), per person and per
 // focus doc, as inverse changes. Package verbs, clock acts and process saves
 // are never on it, so undo can't un-roll a die, un-shuffle a deck or rewind

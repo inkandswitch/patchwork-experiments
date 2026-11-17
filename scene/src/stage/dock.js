@@ -1,5 +1,5 @@
 // The drawer: one panel at the stage's right with a tab for each docked
-// element (TOOLS.md §6). An extension docks an element of its own with
+// element (STAGE.md, "The interface"). An extension docks an element of its own with
 // api.dock(el, { title, onClose }) and gets back close(); the element then
 // sits in a pane of the drawer, under a tab with its title and a ×, until
 // its caller closes it, the × does, or its extension stops. The × is a
@@ -16,7 +16,7 @@
 // were docked. With nothing docked, the drawer leaves the edge, which then
 // takes no room.
 //
-// The drawer is as wide as the kind of pane it shows (TOOLS.md §6): the
+// The drawer is as wide as the kind of pane it shows (STAGE.md, "The interface"): the
 // stage's own chrome (embed: false) a side panel's width, anything else a
 // docked editor's room. A grip on its left edge sets the shown kind's width,
 // the viewer's own (view prefs `drawer.chrome`, `drawer.editor`): drag it,
@@ -26,7 +26,7 @@
 // panes of one kind never moves it, and a window resize never rewrites a
 // pref (the CSS clamps what it shows, so the scene keeps its share).
 //
-// A document can be docked as well as an element (TOOLS.md §6, "Documents
+// A document can be docked as well as an element (STAGE.md, "The interface", "Documents
 // in the drawer"): dockDocument({ url, toolId, title }) docks the host's view
 // of it (embed.js documentView, in a documentBox) in a pane of the editor kind, keyed by
 // docKey(url, toolId), so docking one key again only shows (keeping its title)
@@ -345,7 +345,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   }
 
   /**
-   * Dock a document (the view's: TOOLS.md §6): its view in an editor pane,
+   * Dock a document (the view's: STAGE.md, "The interface"): its view in an editor pane,
    * one per docKey(url, toolId); docking a key that's docked shows its tab,
    * under the title it was first docked with. → close. A url that isn't a document's docks
    * nothing (a version's heads are dropped: a pane follows the latest).

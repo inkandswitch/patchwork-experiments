@@ -213,7 +213,7 @@ tells the seats' owner where each seat's hands are (`seatPlaces`: each
 `tabletop.zone`), which gets a name tag on each tray ("Player 1 · Ana
 (away)") and makes a look at a tray a look at its seat; and it reads who
 sits where from the `roster`. Walking, S and D are the walk body's keys, so
-Shuffle and Draw show without them (buttons, and in the menu: scene/TOOLS.md
+Shuffle and Draw show without them (buttons, and in the menu: scene/STAGE.md
 §5); seated, S shuffles and D draws.
 
 **Shuffle** (`S` over a card: the scene's use prompt shows it, with the
@@ -424,7 +424,7 @@ the table into the empty scene it was started on, in one `ctx.change`.
 Its view opens with snapping on (its pieces carry by their trait), the
 grid and axes off, units in cm, looking from the game's `camera`
 (`view.start.home`), and, when it has seats, starts people in the seat body
-(`view.start.body: "seat"`, read once on arrival: scene/TOOLS.md §2): back
+(`view.start.body: "seat"`, read once on arrival: scene/STAGE.md, "Arriving"): back
 in your own seat if the doc seats you, else watching from the first seat's
 view (nothing written), where a press on a piece carries it or uses it and
 nothing selects; the seat picker or a seat's verb sits you down. The table's
@@ -480,7 +480,7 @@ The editor's parts bin has a **Tabletop** heading (`src/table/parts.js`):
   template's layout, `setUp` with the game's id, in a new scene doc:
   `gamePart("lost-cities")`), linked where it was put, under that object,
   squared to it (on a Card table: squarely in the middle of the top),
-  locked (scene's COMPOSITION.md §8: a game part makes a game doc and links
+  locked (scene's STAGE.md, "Extract and bundle": a game part makes a game doc and links
   it). The game doc has everything of the game's: its pieces, seats, title,
   `view.start`, files and its deck, kept by a joint keeper where one is
   installed; the host gains one object, the link. So a game aboard a ship is

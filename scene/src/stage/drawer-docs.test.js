@@ -1,4 +1,4 @@
-// Documents docked in the drawer are the view's (TOOLS.md §6, "Documents in
+// Documents docked in the drawer are the view's (STAGE.md, "The interface", "Documents in
 // the drawer"; STAGE.md api.view.dock): a finite table of what happens around
 // one, each with the pane still docked and its view never remounted, but the
 // view going; a drop in the view never docks; keys typed in one are its own.
@@ -57,7 +57,7 @@ async function mountWithLink() {
   await until(() => view.enterable(["L"]), 3000);
   view.enterBody(EDIT.id);
   view.select(["table"]);
-  // the selection opens the shut inspector a beat later (TOOLS.md Decisions 6, "The inspector waits a beat")
+  // the selection opens the shut inspector a beat later (HISTORY.md, TOOLS Decisions 6, "The inspector waits a beat")
   await until(() => view.drawer.state().order.some((el) => el.dataset.panel === "inspector"), 3000);
   return { view, notes };
 }

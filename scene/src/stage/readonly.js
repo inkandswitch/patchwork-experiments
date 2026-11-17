@@ -1,4 +1,4 @@
-// What a stage holds of its doc, and of every doc it reaches (COMPOSITION.md
+// What a stage holds of its doc, and of every doc it reaches (STAGE.md
 // §7, invariant I6). A stage is read-only when its handle is, or when it
 // doesn't act: a pin (a value: its doc at fixed heads) or a mirror (a live
 // doc acting at another placement in the same view). A read-only stage is

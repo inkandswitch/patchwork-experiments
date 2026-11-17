@@ -58,15 +58,15 @@ it came from.)
 
 ## Playing
 
-Enter, or **Play** on the bar of tools (scene/TOOLS.md §6: a world command,
+Enter, or **Play** on the bar of tools (scene/STAGE.md, "The interface": a world command,
 `show: ["world", "menu"]`, so it is at the bar's right end looking, walking
-or editing) walks you in: the walk body (scene/TOOLS.md §4, the walk
+or editing) walks you in: the walk body (scene/STAGE.md, "Bodies", the walk
 package's) entered at a spawn point (a random one; with none, at the eye),
 with the gun in hand. The pointer is locked (where it can't be, drag to
 look). W A S D or the arrows move, Shift runs, Space jumps: those keys are
 the walk body's.
 
-The **gun** is a held tool (`gun`, G; scene/TOOLS.md §4): a click shoots
+The **gun** is a held tool (`gun`, G; scene/STAGE.md, "Bodies"): a click shoots
 (12 in the magazine, reloading when it's empty), R or a right-click reloads
 sooner, and Escape (the stage's ladder) puts it down; walking goes on, and
 Play on the bar says **Pick up the gun** (it only hands you the gun then).
@@ -99,7 +99,7 @@ State lives where the scene's contract says:
 
 The use prompt (the verbs of what you look at), the key map (Enter), notices
 and the camera framing the level as it loads are the scene's general parts,
-in every scene; the editor's are too, following attention (scene/TOOLS.md
+in every scene; the editor's are too, following attention (scene/STAGE.md
 §1).
 
 ## The level

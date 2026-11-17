@@ -1,4 +1,4 @@
-// The pointer (TOOLS.md §4). Pure: the router holds the state and asks the
+// The pointer (STAGE.md, "Bodies"). Pure: the router holds the state and asks the
 // browser for what this says.
 //
 // The top body asks for pointer lock (`lock`); the view grants it while

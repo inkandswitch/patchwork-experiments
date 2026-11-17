@@ -9,7 +9,7 @@
 // go writes the param to the object's render doc, and the stage rebuilds the
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
-// They are the halo's build-param knobs (TOOLS.md §3): shown for the
+// They are the halo's build-param knobs (STAGE.md, "The input chain"): shown for the
 // selection in the Edit body (they are the editor's: ../stage/bodies.js)
 // where the scene may be written, hidden while another extension holds the
 // tool (measuring, say).

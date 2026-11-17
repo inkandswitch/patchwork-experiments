@@ -1,4 +1,4 @@
-// The stage's own two bodies (TOOLS.md §4): Look and Edit. Both are the
+// The stage's own two bodies (STAGE.md, "Bodies"): Look and Edit. Both are the
 // orbit camera (OrbitControls, `frame`, `autoframe`, reach everywhere), and
 // one of them is always at the bottom of the body stack. They differ in one
 // thing: Edit is the editor. It takes a click ahead of the chain and
@@ -69,7 +69,7 @@ export function leaveStep(stack) {
 
 /**
  * Where the doc starts people, as the stage reads `view.start.body`
- * (TOOLS.md §2): Edit only when it says "edit"; every other value, or none,
+ * (STAGE.md, "Arriving"): Edit only when it says "edit"; every other value, or none,
  * starts them in Look, and a package's body (walk, seat) is entered over
  * Look once it's on offer. A scene made new (the datatype's init) says
  * "edit": it was made to be built. Pure.

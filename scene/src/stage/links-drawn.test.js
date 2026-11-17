@@ -1,4 +1,4 @@
-// Pins and mirrors (COMPOSITION.md §7, build step 13): every occurrence of
+// Pins and mirrors (STAGE.md, "Views, stages and links", build step 13): every occurrence of
 // a linked doc that isn't closed is opened. A live doc acts at one
 // occurrence (the first in path order) and is a mirror at the others: a
 // read-only stage on the same live handle, drawn at its own placement,

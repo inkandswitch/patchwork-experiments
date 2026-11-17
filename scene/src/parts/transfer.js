@@ -29,7 +29,7 @@
 //   - Extract (on an object or group) makes it a scene of its own, linked
 //     here in its place; Bundle (on a link) copies the scene it shows into
 //     this one in its place, which then no longer follows it
-//     (COMPOSITION.md §8; the rule is ../extract.js). Each takes a set of
+//     (STAGE.md, "Extract and bundle"; the rule is ../extract.js). Each takes a set of
 //     the scene's root traits to go along (Extract: this scene's; Bundle:
 //     the linked scene's), offered as `options`: checkboxes in the
 //     inspector, none ticked; the menu takes none.

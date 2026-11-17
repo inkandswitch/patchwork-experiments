@@ -1,8 +1,8 @@
 // Publish a scene made of nothing but links to scenes already published: a
-// mashup (scene/COMPOSITION.md §1, a link). Each linked doc is used as it is,
+// mashup (scene/STAGE.md, "Views, stages and links", a link). Each linked doc is used as it is,
 // unchanged and uncopied, where a person would drop it; the new doc lists only
 // the scene package, since one packages prompt covers every open doc's
-// (COMPOSITION.md, Decisions, links loose ends 1). Prints its Patchwork URL.
+// (HISTORY.md, COMPOSITION Decisions, links loose ends 1). Prints its Patchwork URL.
 //
 //   (in scene/) node probes/publish-links.mjs --title "Games night" \
 //     --link "Quiet games room=automerge:…@0,0,0" \
@@ -13,7 +13,7 @@
 // --link NAME=URL@x,y,z[@yawDegrees[@scale]] places a locked link (as a game
 // part's link is) at that position on the doc's root, turned and at that
 // uniform scale (1 when not given: 0.04 is a diorama at 1:25). --start N makes people arrive
-// through the Nth link (1-based), as that doc starts people (TOOLS.md §2: a
+// through the Nth link (1-based), as that doc starts people (STAGE.md, "Arriving": a
 // start placed on a link). --view-like N copies the Nth linked doc's display
 // prefs (grid, axes, bounds, units, snap), so a room stays a room. --home sets
 // the home view; without it the started link's doc's home, moved by its link.

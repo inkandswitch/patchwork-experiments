@@ -1,4 +1,4 @@
-// Look and Edit (./bodies.js, TOOLS.md §4): the stack the stage keeps, as a
+// Look and Edit (./bodies.js, STAGE.md, "Bodies"): the stack the stage keeps, as a
 // model and as the stage keeps it, over every sequence of entering and
 // leaving. Finite and exhaustive: no randomness.
 import { describe, it, expect, vi, afterEach } from "vitest";

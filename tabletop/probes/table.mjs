@@ -154,7 +154,7 @@ try {
   }
 
   await snapLooks("card snapped");
-  // ── editing: Edit is a body (scene/TOOLS.md Decisions 6). A leaves the seat for Edit on the
+  // ── editing: Edit is a body (scene/HISTORY.md, TOOLS Decisions 6). A leaves the seat for Edit on the
   // body chip (the seat stays A's), and opens the parts bin, a drawer tab, from the toolbar ──
   const chooseBody = async (w, label) => {
     await click(await P(`rect('.body-chip', '${w}')`));

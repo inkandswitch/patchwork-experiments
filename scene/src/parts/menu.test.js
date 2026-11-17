@@ -202,7 +202,7 @@ describe("scene.menu", () => {
   }, 30_000);
 
   // A menu is of what was pressed (the pointer's hit, which the press sets), not the look: they differ for a
-  // lock body under touch, whose look is the eye's (TOOLS.md Decisions 14) while a finger presses where it
+  // lock body under touch, whose look is the eye's (HISTORY.md, TOOLS Decisions 14) while a finger presses where it
   // lands. Every pointer state a menu can open in: the finger at (20, 20) is over the Hull; the middle of the
   // view (the eye ray, and a locked press) is on the Mast.
   describe("a menu is of what was pressed, in every pointer state", () => {

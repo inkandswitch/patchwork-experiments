@@ -18,7 +18,7 @@ export function flatCommands(collected) {
     } catch {
       continue;
     }
-    // (a general surface's collection tags each with the stage it is from: COMPOSITION.md §3)
+    // (a general surface's collection tags each with the stage it is from: STAGE.md, "Views, stages and links")
     for (const command of list) if (command && command.id != null && typeof command.run === "function") out.push(stage === undefined ? { ext, command } : { ext, command, stage });
   }
   return out;
@@ -30,7 +30,7 @@ export function flatCommands(collected) {
  * that throws doesn't apply.
  *
  * A command that says `reach: true` applies only within the body's reach
- * (TOOLS.md §4): every surface passes the same context, `from` (the eye),
+ * (STAGE.md, "Bodies"): every surface passes the same context, `from` (the eye),
  * `reach` (the body's, metres or Infinity) and `distance(target)` (from the
  * eye to the look's hit when the look is on the target, else to the
  * target's box), and beyond reach the verb shows disabled, "too far". Reach
@@ -172,7 +172,7 @@ export function applicable(flat, target, ctx, surface, opts) {
 export const isWorld = (command) => shownOn(command, "world", { strict: true });
 
 /**
- * Is this command meant for the bar of tools in this view (TOOLS.md §6)?
+ * Is this command meant for the bar of tools in this view (STAGE.md, "The interface")?
  * A world command is, in every body; a toolbar command (show names
  * "toolbar", or says nothing) is the editor's, so only in Edit. Whether it
  * applies (state, and `edit: true`) is commandState's, as on every surface.

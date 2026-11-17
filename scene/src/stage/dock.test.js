@@ -547,7 +547,7 @@ describe("the drawer tells what's docked and shown", () => {
   });
 });
 
-// ─── documents in the drawer (TOOLS.md §6, "Documents in the drawer") ──────
+// ─── documents in the drawer (STAGE.md, "The interface", "Documents in the drawer") ──────
 
 const A = "automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh";
 const B = "automerge:3k9vHjM4kfgV7xYGVhQjNzr2Ucqh";

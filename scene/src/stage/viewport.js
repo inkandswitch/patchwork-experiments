@@ -1586,7 +1586,7 @@ export class Viewport {
   // stay visible; hiding a GROUP object (kind "group", no geometry) hides its
   // whole `group` node, so everything below it goes too. Boxes, picking and
   // snapping look at bodies, so they never count a child's geometry as the
-  // parent's. A link's content is its doc (COMPOSITION.md §2): the roots of
+  // parent's. A link's content is its doc (STAGE.md, "Views, stages and links"): the roots of
   // the stage it opens (keys of another stage, ./paths.js) hang in the
   // link's body, so hiding a link hides its doc, as hiding any object hides
   // what it's made of; a link has no GLB, so its body's own box is its hint.

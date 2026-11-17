@@ -1,4 +1,4 @@
-// Who's here across links (COMPOSITION.md §6): a viewer's body and held tool
+// Who's here across links (STAGE.md, "Views, stages and links"): a viewer's body and held tool
 // are the view's, so the view says them on every channel it acts on. A
 // person seated at a game linked into a host shows as seated to someone
 // viewing the game alone, and entering the game (moving the focus) doesn't

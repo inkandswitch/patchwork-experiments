@@ -124,7 +124,7 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
       rec.docked.push(d);
       return close;
     },
-    // the held tool (scene/TOOLS.md §4): one slot; holding again puts the last down
+    // the held tool (scene/STAGE.md, "Bodies"): one slot; holding again puts the last down
     hold(tool, handlers) {
       const was = rec.arms.at(-1);
       if (was?.on) (was.on = false), was.handlers.put?.();

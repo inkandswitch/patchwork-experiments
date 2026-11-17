@@ -1,4 +1,4 @@
-// I3, expansion is finite and fixed by the graph (COMPOSITION.md,
+// I3, expansion is finite and fixed by the graph (STAGE.md,
 // Invariants), checked over every link graph of a few finite families and
 // every order its docs arrive in: it terminates, no identity repeats on a
 // path, each live doc has exactly one acting occurrence (the first in path

@@ -1,5 +1,5 @@
 // The input router: DOM input on the canvas → event values, offered down the
-// chain until something claims them (STAGE.md, "The input chain"; TOOLS.md
+// chain until something claims them (STAGE.md, "The input chain"; STAGE.md
 // §4, §5). It owns the open session (one gesture at a time), the body stack
 // (the stage's Look or Edit always at the bottom), the held tool (one slot), the open popovers,
 // pointer lock (stage/pointer.js), the Escape ladder (stage/ladder.js),
@@ -11,7 +11,7 @@
 // nearest first, the general extensions), then the top body's default (Look
 // has none). A body may take some event types `ahead` of the chain, after
 // only the tool and a widget: Edit takes a click, so a plain click in Edit
-// selects before any package's click does (TOOLS.md §3). A key goes: the open gesture's declared keys, the held
+// selects before any package's click does (STAGE.md, "The input chain"). A key goes: the open gesture's declared keys, the held
 // tool's, the top body's, then the chain (where the key map is the only
 // taker). Presses have a position, so the body comes last there; keys have
 // none, so what reserves them comes first.

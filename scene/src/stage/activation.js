@@ -1,5 +1,5 @@
 // Which extensions run in a stage: a function of the registry's metadata and
-// the doc, nothing else (STAGE.md, "Activation"; TOOLS.md §1). Nothing the
+// the doc, nothing else (STAGE.md, "Activation"). Nothing the
 // viewer holds, where they stand, what they have selected or the clock
 // changes it. Pure.
 
@@ -13,7 +13,7 @@ export const traitKeys = (o) => (o?.traits && typeof o.traits === "object" ? Obj
  * at all: `traits: ["*"]`, as `drops: ["*"]` takes any datatype), "objects"
  * (only object traits), or null. An extension of every doc runs in every
  * stage, as that doc's own part, wherever the focus is: what it draws is the
- * doc's, never the viewer's (other people: COMPOSITION.md §3, "Presence
+ * doc's, never the viewer's (other people: STAGE.md, "Views, stages and links", "Presence
  * where it is").
  */
 export function docReason(meta, d) {

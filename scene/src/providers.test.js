@@ -36,7 +36,7 @@ describe("matchProviders", () => {
   });
 });
 
-describe("content kinds (COMPOSITION.md §1)", () => {
+describe("content kinds (STAGE.md, “Views, stages and links”)", () => {
   // every value a `content` field might hold, the old flag's among them
   const VALUES = [undefined, null, "", "file", "built", "scene", "passthrough", "File", true, 1, {}, ["file"]];
 

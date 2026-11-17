@@ -488,7 +488,7 @@ describe("the menu's Copy", () => {
   });
 });
 
-// Extract and bundle through the stage (COMPOSITION.md §8; the exhaustive
+// Extract and bundle through the stage (STAGE.md, "Extract and bundle"; the exhaustive
 // harness is ../extract.test.js): the commands in Edit, the link the view
 // opens, one undo step each, and the inspector's checkboxes for K.
 describe("Extract and Bundle", () => {
@@ -607,7 +607,7 @@ describe("Extract and Bundle", () => {
     const { default: inspector } = await import("./inspector.js");
     await mount([{ meta: { id: "scene.inspector" }, module: inspector }]);
     s.local.swap((m) => ({ ...m, selected: "winch" }));
-    // (opened from the toolbar: a selection would open it a beat later, TOOLS.md Decisions 6)
+    // (opened from the toolbar: a selection would open it a beat later, HISTORY.md, TOOLS Decisions 6)
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
     await settle();
     const host = s.root.querySelector(".inspector [data-command='extract']")?.parentElement;

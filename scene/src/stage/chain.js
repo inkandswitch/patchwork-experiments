@@ -1,5 +1,5 @@
 // Who is offered an input event, in order (STAGE.md, "The input chain";
-// SCOPE.md §2). Pure: the router asks each in turn until one claims it.
+// STAGE.md, "The input chain"). Pure: the router asks each in turn until one claims it.
 //
 // Precedence is nearness. The hit chain runs from the hit object outward (what
 // it's attached to, then its groups) and ends at the scene, its last link. An

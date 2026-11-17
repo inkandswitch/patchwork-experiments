@@ -1,10 +1,10 @@
-// scene.focus: Enter (COMPOSITION.md §5, TOOLS.md §3). The focus scopes the
+// scene.focus: Enter (STAGE.md, "The input chain"). The focus scopes the
 // selection: with the focus on a boat, selecting a card of the game linked
 // on her table selects the link, as CAD selects a component before its
 // parts. Entering the link moves the focus into the game: the selection,
 // the halo and the inspector (its tree too) then act on the game's objects,
 // in the game's frame, and the boat stays live around it (its verbs and
-// carries still work; TOOLS.md Decisions 4).
+// carries still work; HISTORY.md, TOOLS Decisions 4).
 //
 // - "Enter" is a verb on a link (menu, inspector), everyone's in every body:
 //   the selection is everyone's, so is where it is scoped. A double-click on

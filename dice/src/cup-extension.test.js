@@ -602,7 +602,7 @@ describe("the cup's verbs and what the doc says", () => {
   });
 });
 
-describe("Lift all cups: on the bar of tools in every body, its state pinned (TOOLS.md Decision 10)", () => {
+describe("Lift all cups: on the bar of tools in every body, its state pinned (HISTORY.md, TOOLS Decisions 10)", () => {
   it("is a world command (the bar in every body) and a menu entry, nowhere else: in Edit the bar's world cluster shows it too", () => {
     const t = table();
     expect(t.cmd("A", "lift-all").show).toEqual(["menu", "world"]);

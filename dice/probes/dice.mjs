@@ -12,7 +12,7 @@
 //   is a new die doc, built at real size by the scene's own render pipeline
 //   in both views, lying on the table; a plus/minus die DOC dropped on the
 //   ground becomes a die too; a percentile pair lands as two dice in a group;
-//   R over a die rolls it (the halo has no keys: TOOLS.md §10);
+//   R over a die rolls it (the halo has no keys: STAGE.md, "The input chain");
 // - the die's own panel: selecting the d20 (its inspector tab comes in
 //   behind the bin), the inspector's "Edit die" docks its 2D tool in the
 //   stage's drawer; naming a face there rebuilds the die, and both views'
@@ -224,7 +224,7 @@ try {
 
   // ── the die's own panel, docked in the stage's drawer ──
   {
-    // the bin put away, and the inspector shut (it stays open once a selection opened it: TOOLS.md
+    // the bin put away, and the inspector shut (it stays open once a selection opened it: STAGE.md
     // Decisions 6), so the drawer is empty to start from
     await click(await P(`rect('.toolbar [data-command="parts"]')`));
     if ((await P(`rect('.toolbar [data-command="inspector"][aria-pressed="true"]')`)) != null) await click(await P(`rect('.toolbar [data-command="inspector"]')`));

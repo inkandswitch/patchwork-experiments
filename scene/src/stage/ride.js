@@ -11,7 +11,7 @@
 // table rolls with the table: the boat is how the boat is). Otherwise the
 // orbit keeps world up.
 //
-// Only one ride applies at a time (TOOLS.md §4): the current body's, when
+// Only one ride applies at a time (STAGE.md, "Bodies"): the current body's, when
 // it has one (a seat rides its table), else the latest base ride (orbit
 // rides it: a ship keeping herself in view). So a seat at a table aboard a
 // ship wins over the ship's follow with no flag: it is the body's. A ride

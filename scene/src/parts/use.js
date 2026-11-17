@@ -1,5 +1,5 @@
 // scene.use: the use prompt ("[F] Raise the anchor"), attention's verbs
-// shown where attention is (TOOLS.md §3, §5): under the crosshair while the
+// shown where attention is (STAGE.md, "The input chain"): under the crosshair while the
 // pointer is locked, else at the pointer. It shows; the key map
 // (scene.keys) does. It runs in every scene, as the key map does: with
 // nothing that has verbs under attention, it shows nothing.

@@ -52,7 +52,7 @@ import { clipProblems } from "./clip-check.mjs";
 // calls for is exactly what is stated here (the stage takes off a listed
 // package nothing in the doc calls for).
 const PACKAGES = ["scene", "sailing", "walk", "water", "weather", "joints", "traversal"];
-// The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
+// The game is a doc of its own (scene/STAGE.md, worked example 1), and lists what its contents come
 // from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
 // together, so a viewer arriving at the boat is asked for what her linked game runs too.
 const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];

@@ -1,4 +1,4 @@
-// The editor is a body (TOOLS.md §3, §4, Decisions 6): its chrome shows in
+// The editor is a body (STAGE.md, "The input chain"; HISTORY.md, TOOLS Decisions 6): its chrome shows in
 // Edit and nowhere else. Every body (the stage's Look and Edit; a walk and a
 // seat over Look; a station over a walk) × what's selected (nothing, an
 // object, a ref) × whether the scene may be written: the real parts, mounted
@@ -67,7 +67,7 @@ function stubViewport(s) {
 }
 
 let s = null;
-// the stage's time, stepped: a selection opens a shut inspector a beat later (TOOLS.md Decisions 6)
+// the stage's time, stepped: a selection opens a shut inspector a beat later (HISTORY.md, TOOLS Decisions 6)
 let time = null;
 async function beat() {
   await time.advance(DOUBLE_MS + FRAME_MS);

@@ -2,7 +2,7 @@
 // processes, the poses everyone sees, and the stations' controls. ctx.sim is
 // what the other parts read.
 //
-// The ships are a process on the doc's clock (api.clock, scene TOOLS.md §7):
+// The ships are a process on the doc's clock (api.clock, scene STAGE.md, "World time"):
 // the view that computes the clock starts it (`start`: warm from the poses
 // it last saw held and the motion last published, else cold from the doc),
 // steps every ship's physics in world time, and once a frame holds each

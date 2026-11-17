@@ -18,10 +18,10 @@ export const SceneDatatype = {
     // the packages its contents come from, as { url } (STAGE.md, "Packages"):
     // the stage adds to it, and offers a viewer the ones they don't have
     doc.packages = [];
-    // world time (TOOLS.md §7): the stage only ever writes its fields, so a
+    // world time (STAGE.md, "World time"): the stage only ever writes its fields, so a
     // pause and a checkpoint made at once both keep theirs
     doc.clock = { running: true, t: 0 };
-    // where people start (TOOLS.md §2): a scene made new is made to be
+    // where people start (STAGE.md, "Arriving"): a scene made new is made to be
     // built, so it starts them in Edit (src/stage/bodies.js). A doc that
     // names no body starts them in Look; a template or a publisher that
     // makes something to look at, play or walk writes its own view.start

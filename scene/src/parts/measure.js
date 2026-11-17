@@ -1,4 +1,4 @@
-// scene.measure: point-to-point measuring, as a held tool (TOOLS.md §4).
+// scene.measure: point-to-point measuring, as a held tool (STAGE.md, "Bodies").
 //
 // "Measure" (M) picks it up; M again, or Escape (the ladder's tool rung),
 // puts it down. It takes every press, so it is held, one tool at a time,

@@ -4,7 +4,7 @@
 // contract (STAGE.md, "A command"); held verbs are sessions the prompt keeps
 // open while the key is down.
 //
-// Reach is the stage's (scene/TOOLS.md §4): each verb says `reach: true`,
+// Reach is the stage's (scene/STAGE.md, "Bodies"): each verb says `reach: true`,
 // and the stage measures from the body's eye to what you look at (the point
 // the look lands on, when it lands on the thing or something under it, else
 // its box) against the body's reach (the crew's: 2.5 m). So the boom over
@@ -98,7 +98,7 @@ export function helmBackSide({ from, alpha0 = 0, wheel = 0, clew = 0 }) {
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-/** Is `point` within `reach` (the body's: scene/TOOLS.md §4) of an eye at `from`? */
+/** Is `point` within `reach` (the body's: scene/STAGE.md, "Bodies") of an eye at `from`? */
 export function within(from, point, reach) {
   if (!Array.isArray(from) || !Array.isArray(point)) return false;
   return dist(from, point) <= reach;
@@ -161,7 +161,7 @@ export function walkTo(kind, stations = {}, near = {}) {
 }
 
 // ─── the keys a station declares ──────────────────────────────────────
-// Each with what it does (scene/TOOLS.md §4: a label names the action, not
+// Each with what it does (scene/STAGE.md, "Bodies": a label names the action, not
 // its state, and codes labelled alike do the same thing): the key handlers
 // below read ev.key, so these are the codes a keyboard (or the stage's touch
 // pad, which presses the first of a label's codes) sends for them.
@@ -423,7 +423,7 @@ export function stationCommands(api, ctx) {
       if (t) open.set(slot, { code, trim: t });
     };
     return {
-      /** the keys these take, each with what it does (scene/TOOLS.md §4, §5: declared, so a shown key works) */
+      /** the keys these take, each with what it does (scene/STAGE.md, "Bodies": declared, so a shown key works) */
       keys: sailId ? [...(sheet ? [HAUL, EASE] : []), ...(halyard ? [HALYARD_KEY] : [])] : [],
       key(ev) {
         if (!sailId) return false;

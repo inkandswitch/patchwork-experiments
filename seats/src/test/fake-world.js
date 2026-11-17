@@ -22,7 +22,7 @@
 // test ticks the world. A peer's held pose shows at once (worldOf is what's
 // drawn: holds included). camera.ride is recorded in view.rides, as is the
 // ride of the body on top (a seat's). Bodies stack as the stage stacks them
-// (scene/TOOLS.md §4): view.bodies, the stage's Look at the bottom; the defs come from
+// (scene/STAGE.md, "Bodies"): view.bodies, the stage's Look at the bottom; the defs come from
 // the attached instance's `bodies` and view.collected.bodies. scene() is a
 // snapshot like the stage's: { d, objects, ids, parents, traits, world(id),
 // toLocal(id, p) }, its matrices column-major, Euler XYZ.

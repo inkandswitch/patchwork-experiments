@@ -3,7 +3,7 @@
 // and its tree, add, the parts bin, transfer, dimensions, Frame's Set home
 // view, Delete, Undo). Only these get `api.edit`, `api.edits`, `api.undo`
 // and `api.redo`; every other extension's api has none, so a package's verb
-// can't put itself on anyone's undo stack (TOOLS.md, Decisions 2).
+// can't put itself on anyone's undo stack (HISTORY.md, TOOLS Decisions 2).
 //
 // A part says so by its module being passed through `own()` here. The mark
 // is this module's own set, and this module is the scene package's: another

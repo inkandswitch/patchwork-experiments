@@ -1,4 +1,4 @@
-// One stage's view of the viewport (COMPOSITION.md §4): the one place a
+// One stage's view of the viewport (STAGE.md, "Views, stages and links"): the one place a
 // stage's frame and its keys meet the viewport, so every spatial call an
 // extension makes goes through one choke point (invariant I7).
 //

@@ -8,7 +8,7 @@ another scene: the same trait, each with a verb of its own.
 pnpm install && pnpm build && pnpm test
 ```
 
-Going somewhere is traversal, not a link (scene/COMPOSITION.md §9): a link
+Going somewhere is traversal, not a link (scene/PLANS.md): a link
 places one world inside another, and an exit opens another world in place of
 this one. Nothing crosses: the document it leads to opens as itself, where it
 starts people (its `view.start`), as it would for anyone opening it.
@@ -43,7 +43,7 @@ shows its verb is the scene's, in every scene.
 - `to` is passed on as written, `#…` and all (`automerge:<id>#<heads>` opens
   that version, as any Patchwork link does). Named frames (landing at a
   frame the other doc publishes) aren't built: every exit so far lands where
-  its doc starts people (scene/COMPOSITION.md, Decisions, step 16). When
+  its doc starts people (scene/HISTORY.md, COMPOSITION Decisions, step 16). When
   one is needed, the name gets a field of its own beside `to`, since `#`
   already means a version here.
 - The verb is trimmed and at most 40 characters.
@@ -55,7 +55,7 @@ shows its verb is the scene's, in every scene.
 One verb, its own (**[F] Go below**, or "Go"), on every surface: the use
 prompt, the menu, the inspector and the key map. It says `reach: true`, so
 the stage measures it from the body's eye against the body's reach
-(scene/TOOLS.md §4): walking, within 2 m of the point looked at (out of
+(scene/STAGE.md, "Bodies"): walking, within 2 m of the point looked at (out of
 reach it shows disabled, "too far"); in Look or Edit (the orbit camera), anywhere.
 
 Using it sends Patchwork's `patchwork:open-document` event, `{ url: to }`,
@@ -65,7 +65,7 @@ sends to open a file. Patchwork opens that document there. It reads where the
 exit leads again when it's used, so a destination changed meanwhile goes
 where the doc now says. Nothing is written, claimed or held.
 
-`go()` (`src/go.js`) is the one place that leaves. COMPOSITION.md §9 plans
+`go()` (`src/go.js`) is the one place that leaves. PLANS.md plans
 `api.go(url)` on the stage (the view opening the doc and putting the eye at a
 named frame); when it exists, `go()` becomes that call.
 

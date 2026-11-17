@@ -61,7 +61,7 @@ const PIECE = "t.KeyQ=Turn left, t.KeyE=Turn right, t.KeyF=Turn over, t.AltLeft=
 const DOOM = "t.ArrowUp=Forward@up, t.ArrowDown=Back@down, t.ArrowLeft=Turn left@left, t.ArrowRight=Turn right@right, t.KeyA=Strafe left, t.KeyD=Strafe right";
 // Digit1–7 are all labelled "Weapon", so they read as one control that picks
 // weapon 1: a known loss, asserted as it is (machine labels them alike;
-// TOOLS.md Decisions 12, for the lead)
+// HISTORY.md, TOOLS Decisions 12, for the lead)
 const DOOM_REST = "t.ShiftLeft=Run, t.ControlLeft=Fire, t.Space=Use, t.Digit1=Weapon"; // after Strafe (AltLeft), which a carry takes
 const SNES = "t.ArrowUp=Up@up, t.ArrowDown=Down@down, t.ArrowLeft=Left@left, t.ArrowRight=Right@right, t.KeyZ=B, t.KeyX=A, t.KeyA=Y, t.KeyS=X";
 const SNES_REST = "t.KeyW=R, t.Enter=Start, t.ShiftRight=Select"; // after L (KeyQ), which a carry takes

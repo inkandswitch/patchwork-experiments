@@ -16,7 +16,7 @@ describe("the local atom", () => {
   });
 });
 
-describe("activation: traits only (TOOLS.md §1)", () => {
+describe("activation: traits only (STAGE.md, “Activation”)", () => {
   const metas = [
     { id: "tabletop", traits: ["tabletop.seats", "tabletop.hidden"] },
     { id: "arena", traits: ["arena.target"] },
@@ -133,7 +133,7 @@ describe("the input chain", () => {
       }
   });
 
-  // SCOPE.md's sailing case: a card on the saloon table of a boat in an arena level.
+  // STAGE.md's sailing case: a card on the saloon table of a boat in an arena level.
   it("a card on a table aboard a boat in an arena: the table's, then the boat's, then the scene's", () => {
     const sim = [
       { id: "arena", meta: { traits: ["arena.level", "arena.target"] }, scope: "scene" },

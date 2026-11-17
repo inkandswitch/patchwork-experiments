@@ -48,7 +48,7 @@ const CARRY_KEYS = Object.freeze([
   { code: "AltLeft", label: "Place freely" },
   { code: "AltRight", label: "Place freely" },
 ]);
-/** The drawn piece in hand, held as a tool (scene/TOOLS.md §4): never picked up through a command, so held directly. */
+/** The drawn piece in hand, held as a tool (scene/STAGE.md, "Bodies"): never picked up through a command, so held directly. */
 const DRAWN_PIECE = Object.freeze({ name: "Drawn piece", keys: CARRY_KEYS, pointer: true });
 /** The most a single Draw several takes. */
 export const MAX_DRAW = 10;
@@ -399,7 +399,7 @@ export default {
         if (how === "yielded") p.contested = poseKey(objectsNow()[p.id]?.transform);
         else retire(p);
       });
-      // the drawn piece in hand is a held tool (scene/TOOLS.md §4): it takes
+      // the drawn piece in hand is a held tool (scene/STAGE.md, "Bodies"): it takes
       // every press until it's put down; Escape (the stage's ladder) or
       // another tool picked up puts it back where it came out
       p.putDown = api.hold(DRAWN_PIECE, {

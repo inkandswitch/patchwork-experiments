@@ -8,7 +8,7 @@ import { roundBounds, sackGLB } from "./sack.js";
 
 /** The trait that makes an object a container: { doc: the bag document's URL }. */
 export const CONTAINER = "bag.container";
-/** The scene's trait for what can be picked up (scene/TOOLS.md §1): a bag is, and only what is goes in one. */
+/** The scene's trait for what can be picked up (scene/STAGE.md, "Activation"): a bag is, and only what is goes in one. */
 export const CARRY = "scene.carry";
 export const SOURCE_ID = "bag-sack";
 

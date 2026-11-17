@@ -5,7 +5,7 @@
 // - the verb, Open / Close: one command, F, on every surface (the prompt, the
 //   menu, the inspector, the key map), within the body's reach: it says
 //   `reach: true`, and the stage measures from the body's eye against its
-//   reach (scene/TOOLS.md §4), so walking you open a door within 2 m and in
+//   reach (scene/STAGE.md, "Bodies"), so walking you open a door within 2 m and in
 //   Look or Edit (the orbit camera) anywhere;
 // - the motion: an act, a pose hold each frame while this view moves a part
 //   (a loop, only then, to draw it), released as landed after the one write;
@@ -16,7 +16,7 @@
 //   part closes itself: its step closes each part once the doc's world time
 //   is its wait past `since`. Only the view computing the clock steps it, so
 //   exactly one view closes a part, whoever opened it; paused, or with
-//   nobody present, doors stay open (TOOLS.md §7).
+//   nobody present, doors stay open (STAGE.md, "World time").
 //
 // The motion's holds yield (a process's, giving way to a person's): someone
 // carrying the door, in this view or another, stops it, and the act lets go

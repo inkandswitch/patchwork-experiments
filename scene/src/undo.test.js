@@ -1,4 +1,4 @@
-// Undo (TOOLS.md, Decisions 2): the stage's own edits only, as inverse
+// Undo (HISTORY.md, TOOLS Decisions 2): the stage's own edits only, as inverse
 // changes, never anyone's later write. The pure parts, then the recorder the
 // stage runs (createEdits) on real Automerge, over every sequence of edits,
 // package verbs, process saves, clock acts, undos and redos up to a depth.

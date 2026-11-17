@@ -23,7 +23,7 @@
 //   - `seatPlaces`, contributed by whoever gives a seat somewhere to be (a
 //     hand tray): where its name tag goes, and what a look at it means.
 // Sitting is a body (body.js), the stage's: sitting down from walking pushes
-// it over the walk body, standing up pops it (scene/TOOLS.md §4).
+// it over the walk body, standing up pops it (scene/STAGE.md, "Bodies").
 // And setup code writes seats with this module's `lay(d, seats)`, found by
 // the plugin's `roster: true` in the scene:extension registry.
 
@@ -76,7 +76,7 @@ export function mySeat(scene, viewer) {
 
 /**
  * Where arriving puts a viewer when the doc starts people seated with no
- * seat named (view.start = { body: "seat" }: TOOLS.md §2): their own seat if
+ * seat named (view.start = { body: "seat" }: STAGE.md, "Arriving"): their own seat if
  * the doc seats them (back at the table), else the first seat in seat order
  * that has a view, watching from it (nothing written: sitting down is the
  * picker's and the seat's verb). Null: no seat with a view. Pure.

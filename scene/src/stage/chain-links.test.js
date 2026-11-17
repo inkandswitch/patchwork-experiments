@@ -1,4 +1,4 @@
-// I8, the chain across links (COMPOSITION.md §5, Invariants): for a hit
+// I8, the chain across links (STAGE.md, "The input chain", Invariants): for a hit
 // anywhere in a composition three docs deep, the chain is each acting stage
 // on the hit's path, innermost first, out to the outermost, each its own
 // segment (its holders nearest first, then its root's), then the general

@@ -1,15 +1,15 @@
 // scene.inspector: the editor's one pane for what's in the scene, a drawer
-// tab (TOOLS.md §6). It holds the object tree on top (./outline.js) and the
+// tab (STAGE.md, "The interface"). It holds the object tree on top (./outline.js) and the
 // selection's fields below; the selection is one value (view.selected), so a
 // row click selects and the fields follow in the same flush, and a canvas,
 // menu or Escape selection marks and reveals its row. Chrome follows
 // attention: in Edit the pane opens on the first selection and then stays
 // open, showing whatever is selected and the scene when nothing is
-// (TOOLS.md Decisions 6, "The inspector stays open"), so the canvas doesn't
+// (HISTORY.md, TOOLS Decisions 6, "The inspector stays open"), so the canvas doesn't
 // change width at every select and deselect. A selection opens a shut pane
 // a beat later (DOUBLE_MS, on the stage's time, from the selection or the
 // latest press in the view), so a double-click's second press and its
-// dblclick land on the canvas its first click did (TOOLS.md Decisions 6,
+// dblclick land on the canvas its first click did (HISTORY.md, TOOLS Decisions 6,
 // "The inspector waits a beat"). Its × shuts it until the
 // selection changes; leaving Edit shuts it; the toolbar's Inspector opens it
 // with nothing selected, on the scene.
@@ -21,7 +21,7 @@
 // (below). Then the commands that apply to it (every running extension's,
 // shown on "inspector" or on every surface) as buttons: this extension's
 // Frame, Group and Ungroup first. For a link (an object whose content is
-// another scene: COMPOSITION.md §1), a Link row: what it is here
+// another scene: STAGE.md, "Views, stages and links"), a Link row: what it is here
 // (live, shown again, fixed at a version, closed and why) and what this
 // scene sets of it: its place, name, display, lock and its own traits on it,
 // never what's inside (Enter, scene.focus's command, goes in for that). The
@@ -31,7 +31,7 @@
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
 // Starts in: the body everyone who opens the scene arrives in
-// (doc.view.start.body, read once on arrival: TOOLS.md §2), Look (no body
+// (doc.view.start.body, read once on arrival: STAGE.md, "Arriving"), Look (no body
 // named), Edit or one of the bodies on offer here; each viewer can still
 // change body for themselves.
 //
@@ -476,7 +476,7 @@ function create(api) {
    * takes it, and as the scene's own (SECTION_MIME), so nothing in a scene
    * adds it: let go anywhere else in the stage, it's nothing. A pane is
    * titled after what the section is of (`title`: "Built · Source"), and
-   * keeps its first title: one pane per docKey, not per object (TOOLS.md
+   * keeps its first title: one pane per docKey, not per object (STAGE.md
    * Decision 18 says where that falls short).
    */
   function sectionView(doc) {

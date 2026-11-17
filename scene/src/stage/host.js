@@ -88,7 +88,7 @@ export function createHost({
   lingerMs = LINGER_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
-  // does this stage run the general extensions (no traits)? The focus does, and no other stage (COMPOSITION.md §3);
+  // does this stage run the general extensions (no traits)? The focus does, and no other stage (STAGE.md, "Views, stages and links");
   // the view moves them with setGeneral
   general = true,
 }) {
@@ -366,7 +366,7 @@ export function createHost({
 
   /**
    * Run the general extensions here, or stop running them (the focus moved:
-   * COMPOSITION.md §3, §5). What the doc runs is untouched (H1): only the
+   * STAGE.md, "Views, stages and links"). What the doc runs is untouched (H1): only the
    * view's parts come or go. One holding nothing goes at once (the doc's
    * LINGER_MS grace is for a peer's edit undone, and a focus move isn't
    * one); one that's busy (a body entered, the held tool, an open session, a

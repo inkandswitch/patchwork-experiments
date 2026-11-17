@@ -28,7 +28,7 @@ const CAPS = Object.freeze({ ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←",
 const capOf = (code) => CAPS[code] ?? (/^Key[A-Z]$/.test(code) ? code.slice(3) : /^Digit[0-9]$/.test(code) ? code.slice(5) : code);
 
 /**
- * A body's declared keys ({ code, label }, scene/TOOLS.md §4) as one hint:
+ * A body's declared keys ({ code, label }, scene/STAGE.md, "Bodies") as one hint:
  * each label once, in the order declared, after its keys ("W/↑ Forward ·
  * … · Shift Run"). Pure.
  */
@@ -189,7 +189,7 @@ export function sailRow(s, k, v = {}) {
  *   the base's (Look's click does, Edit's selects, a seat's is the game's), which
  *   a package may not ask (scene STAGE.md, "Conventions for bodies"), and the
  *   way in that holds in every base is the bar of tools' Come aboard, whose key
- *   the bar shows where it reaches it (scene TOOLS.md H3)
+ *   the bar shows where it reaches it (scene STAGE.md, H3)
  */
 export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";

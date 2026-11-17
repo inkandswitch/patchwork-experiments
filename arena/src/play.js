@@ -1,6 +1,6 @@
 // Playing a level (the "arena" extension): a gun, and targets to shoot down,
 // in whatever the scene is made of. Walking is the walk body's (the walk
-// package, scene/TOOLS.md §4): this enters it, at a spawn point, when you
+// package, scene/STAGE.md, "Bodies"): this enters it, at a spawn point, when you
 // walk in. The gun is a held tool: "Gun" (G) picks it up and Escape (the
 // stage's ladder) puts it down; a click shoots, R reloads, and so does the
 // other mouse button. Shooting is one more ray, and what counts as a target
@@ -8,7 +8,7 @@
 // level too.
 //
 // Play and Stand targets up are world commands (show "world"): buttons on
-// the stage's bar of tools in every body (scene/TOOLS.md §6, Decisions 10),
+// the stage's bar of tools in every body (scene/STAGE.md, "The interface", Decisions 10),
 // and in the menu. The HUD only reads: the count, the scores, the
 // crosshair, the ammo. It holds no button and takes no press.
 //
@@ -327,7 +327,7 @@ export default {
       },
       // the bar's world cluster is right-aligned and in this order, so Play
       // goes last: its place is anchored, and Stand targets up comes and goes
-      // to its left, never sliding Play under a pending click (TOOLS.md §6)
+      // to its left, never sliding Play under a pending click (STAGE.md, "The interface")
       commands: [
         resetCommand(api),
         { id: "play", name: "Play", key: "Enter", show: ["world", "menu"], state: (t, ctx) => playState(t, { holding, walking: ctx.view?.body?.id === "walk" }), run: () => start() },

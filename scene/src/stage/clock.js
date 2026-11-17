@@ -1,4 +1,4 @@
-// World time for one doc (TOOLS.md §7, "World time and processes").
+// World time for one doc (STAGE.md, "World time", "World time and processes").
 //
 // A doc has one clock, `doc.clock = { running, t, by? }` (absent: running
 // from 0), made with the doc (the scene datatype's init, STAGE.md "Shared

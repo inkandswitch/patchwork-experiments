@@ -7,7 +7,7 @@
 // link goes: the destination opens as itself, where it starts people
 // (its view.start); nothing crosses.
 //
-// scene/COMPOSITION.md §9 plans this as the view's: `api.go(url)`, which will
+// scene/PLANS.md plans this as the view's: `api.go(url)`, which will
 // also put the eye at a named frame. When the stage has it, this function is
 // the one to replace with that call.
 

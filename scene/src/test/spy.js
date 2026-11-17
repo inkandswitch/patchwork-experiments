@@ -1,4 +1,4 @@
-// For tests of which docs a view writes (I1, COMPOSITION.md): a handle wrapped to log its writes and sends.
+// For tests of which docs a view writes (I1, STAGE.md): a handle wrapped to log its writes and sends.
 
 /** Record every write and send a handle takes. */
 export function spy(handle) {

@@ -1,28 +1,11 @@
 # scene
 
-A 3D scene for Patchwork that composes geometry from many datatypes. Each
-datatype keeps its own canonical format; its package registers a
-**`scene:source` provider** that renders it to GLB. The scene links each object
-to a small **`scene-render`** doc that records how it was built, rebuilds it
-when the source or the build params change, and shows the result with grid,
-axes, bounding-box dimensions and point-to-point measurements. A GLB file is
-shown as it is, with no render doc: each provider says which kind of
-**content** it makes, `"built"` or `"file"`. Objects are
-filed in **groups** (which organise, and hide or fade what's in them) and
-**attached** to one another (which is where they are: an attachment moves
-with its parent), two separate things; a scene of hundreds of parts only
-loads what is shown.
-
-The tool itself is a **stage** with no UI of its own: it keeps the doc,
-loads and builds content, renders, picks and routes input. Everything you
-see or do in a scene comes from **extensions** (`scene:extension` plugins),
-and the editor described under "Using it" is the ones this package ships
-(selection, halo, carry, the inspector and its tree, toolbar, undo…), each its own
-module in `src/parts/`. Other packages add more (tabletop's game table,
-arena's first-person level). What runs is decided by the doc's traits
-alone: there are no modes, and editing and playing happen in the same
-running world (TOOLS.md). [STAGE.md](STAGE.md) is the contract between the
-stage and extensions; [DESIGN.md](DESIGN.md) says why it's built this way.
+A 3D scene for Patchwork that composes content from many datatypes. Each
+datatype's package registers a `scene:source` provider that shows it,
+usually by building a GLB. The tool is a **stage** with no UI of its own:
+everything you see or do comes from **extensions**, chosen by the doc's
+traits alone. The editor below is the set this package ships; other packages
+add games, ships and walking. Editing and playing share one running world.
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -32,1090 +15,186 @@ pnpm install && pnpm build && pnpm test
 
 | type | id | for |
 |---|---|---|
-| `patchwork:datatype` | `scene` | the composition (listed) |
-| `patchwork:datatype` | `scene-render` | one per scene object (unlisted) |
+| `patchwork:datatype` | `scene` | the composition |
+| `patchwork:datatype` | `scene-render` | one per built object (unlisted) |
 | `patchwork:tool` | `scene` | the stage (`src/stage/stage.js`) |
-| `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
-| `scene:source` | `file-glb` | `file` docs with extension `glb` — `content: "file"`: shown straight from the file, never built |
-| `scene:source` | `file-stl` | `file` docs with extension `stl` — `content: "built"` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (27) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
+| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc |
+| `scene:source` | `file-glb` | `.glb` file docs, `content: "file"` |
+| `scene:source` | `file-stl` | `.stl` file docs, `content: "built"` (params `unit`, `up`) |
+| `scene:source` | `scene.link` | a scene doc placed in a scene, `content: "scene"` |
+| `scene:extension` | `scene.*` | the editor and the surfaces every scene has, one module each in `src/parts/` |
 
-Every part but carry declares no traits, so each runs in every scene, a
-game's included; carry runs where the doc has something carryable. What
-keeps the editor's chrome out of the way is that **editing is a body**
-(TOOLS.md §3, Decisions 6): the toolbar's editor commands, the halo's
-handles and knobs, the inspector (a drawer tab a selection opens, the
-object tree over the selection's fields; it stays open, on the scene when
-nothing is selected, until its ×, the toolbar or leaving Edit), Dimensions
-and Parts (tabs you open from the toolbar), the grid,
-axes and bounds, and every command marked `edit: true` show only in the
-Edit body. Look, walk, seat and station show none of it. The toolbar is
-the bar of tools: its world commands (`show: ["world"]`, a game's Play,
-say) sit at its right end in every body (TOOLS.md §6, Decisions 10).
-`scene.clock` is the clock chips (▶ or ⏸ for each doc's world time on the
-focus path, in a slim bar on the top edge, shown only for a doc with a
-process: TOOLS.md §6, §7); `scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the
-toolbar); `scene.others` draws everyone else's selection boxes, a part of
-every doc (`traits: ["*"]`), so they show wherever their doc is.
-
-The stage also answers **who may see what** (`api.audience`, from every
-package's `audience` policy) and draws **the veil** for a look that says
-`veil: true` (STAGE.md, "Audience" and "The veil"); it holds no secrets
-itself.
-
-**Use** (`scene.use`, `src/parts/use.js`) is the use prompt: it
-shows attention's verbs (TOOLS.md §3: the selection, else what you look at,
-the middle of the view under pointer lock, else what's under the pointer,
-or the nearest thing it's attached to that has any), up to three, as
-"[F] Take the helm", each a button. It shows a command with a `key` whose
-`show` doesn't leave out `"use"`, in the context every surface passes
-(`api.context`: the body's eye and reach, the look's hit), and each key is
-the resolver's (`src/keymap.js` `hintFor`): shown only where pressing it
-does that. The key map (`scene.keys`) does the keys: a `run` that returns
-a session (`{ end(), cancel(), update?(dt) }`) is held while the key is
-down (`hold: true` shows "hold F"): `update` every frame, `end` on release,
-`cancel` if focus goes, the target goes or its extension stops. A button
-with a key is that key: pressed by a finger or a mouse it presses the key,
-so a held verb lasts as long as the button is held. The prompt
-runs in every scene; with nothing that has verbs under attention it shows
-nothing.
-
-**Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Look ▾",
-"Edit ▾", "Walk ▾": Look or Edit, a body that can start here, or Leave the
-one you're in), who's here (each person in the focus doc, with their body
-and held tool, which every view says on every channel it acts on: someone
-seated at a game linked elsewhere shows seated) and the Esc hint (the layer the next Escape pops). The stage's
-own bodies are Look and Edit (`src/stage/bodies.js`), both the orbit
-camera; others come with packages (`walk`, `seats`, sailing's). Nothing
-stands on Edit: walking or sitting down from it leaves it, and Leave comes
-back to Look.
-
-**Touch controls** (`scene.touch`, `src/parts/touch.js`) are the keys the
-open gesture, the held tool and the body declare, as controls a finger
-holds, while the input is touch (from the first finger on the view until a
-mouse press): the arrows' places bottom left, the rest as buttons bottom
-right under each layer's name. Which controls is `src/touch-keys.js`
-(pure, TOOLS.md §5); a control presses its key as a keyboard would
-(`src/hold-key.js`), so it goes the one key order. Look, Edit and a seat declare no keys and show
-none. With no keyboard the Esc hint is the Escape key: it says what it
-does ("Put it back") and a finger on it presses Escape.
+`src/index.js` lists the extensions in the order input reaches them. All
+are general except `scene.carry` (by trait) and `scene.others` (every doc).
 
 ## Using it
 
-This is the editor, in the **Edit** body: choose Edit on the body chip
-(bottom right), click something, and its halo and the inspector are the
-editor. A scene you make new starts you in Edit. A scene whose doc says
-where to start (`view.start`, the inspector's "Starts in": an arena level
-starts you walking at a spawn point, a card table seated or watching from a
-seat, a ship or a showcase in Look) puts you there once, when you open it;
-the body chip and Leave change it for you alone. Undo (⌘Z, in Edit) takes
-back your own edits (the halo, the inspector, add, delete, paste), never a
-verb's (a die's roll stays rolled).
-
-An empty scene is a start screen: "Start from:" lists every installed
-template (`scene:template`: arena's "Arena level", say) and Blank. A template
-lays the scene out and says where to start, so choosing the arena puts you
-straight into the game.
-
-Make a Scene, then drop documents onto it from the sidebar (or drop `.stl` /
-`.glb` files from the desktop, or paste an automerge URL anywhere outside a
-text field). If more than one provider can show a document you pick one. A URL
-that names a version (`automerge:<id>#<heads>`, or a Patchwork link to a
-version) adds the object **fixed at that version** (see *Fixed versions*).
-
-Dropping onto the **outline** puts the document where you dropped it rather than
-at the top level: on a group's row it goes inside that group, and near a row's
-top or bottom edge it goes before or after that row instead. The row under the
-pointer says which it will be. Below an open row with children the line sits
-between that row and its first child, and that is where the drop goes: inside,
-at the top. Beside an object that is attached to another, a dropped document
-is attached to the same object (and filed in its group). Rows can be dragged
-by their name to move them the same way: among a group's rows a row is filed
-in that group and detached from whatever it was attached to; among an
-object's attachments it's attached to that object. Either way it stays
-exactly where it is on screen (a group has no transform; attaching and
-detaching rewrite the object's transform to keep its world pose). A row
-released where it already sits writes nothing, and a reorder among siblings
-changes only `order` (spliced, so a collaborator's concurrent add survives the
-merge). A group can't be dropped into itself or anything inside it, or among
-an object's attachments. Dragged out of the scene, a row is its geometry: it
-carries the object's render doc (a file object, its GLB file) in the
-sidebar's drag formats, so it can be dropped on a slicer or a flow field's
-body slot; scenes never add a dragged row as a document.
-
-**Between scenes.** A row dragged into *another* scene is copied there, with
-everything attached under it (a mast's boom and sail) or, for a group,
-everything filed in it. Into that scene's view it lands where the pointer
-hits, the way a part from the bin does: on an object it goes under that
-object and snaps to a connector whose tags take it (Alt places freely), and
-a ring the size of the object shows where while you drag. Into its outline
-the tree says only where it goes in the tree; it's put down as the view
-would: dropped among an object's attachments, on that object at the nearest
-connector that takes it; at the top or in a group, where the view is
-looking. Unless it snaps to a connector, a copy lands on its base, not its
-origin (a crate whose origin is its middle sits on the floor). **Copy** (⌘C /
-Ctrl+C with something selected, or the right-click menu) puts the same thing
-on the clipboard, and **Paste** (⌘V / Ctrl+V, or the menu) copies it in:
-into another scene where the view is looking (under the object there only
-if it snaps to one of its connectors), each repeat beside the last; into
-its own scene as a duplicate beside the original, each repeat one more
-width along. (The menu's Copy writes what ⌘C writes where the browser lets
-a menu click copy; where it doesn't, only the link, and the copy can be
-pasted only into scenes on the same page.) A copy keeps its names, colours,
-tags, behaviours and their settings, and the relative transforms of what's
-under it; it shares GLB files (they never change) and the source scene's
-`assets` entries for them, but gets render docs of its own (same source,
-same params, same build), so tuning a camber hull in one scene leaves the
-other alone. A behaviour's link to another object follows the copy when
-that object came too (a lever and its door), and is cleared, with a notice,
-when it didn't; a link to a scene's entry (a private zone's seat) is kept
-only where the new scene has that entry. Runtime state (claims, and
-whatever an extension marks as runtime: a ship's motion) stays behind. If
-what you copied names an entry of a scene trait the scene lacks (a private
-zone's seat, and no seats), a notice says what to add. See STAGE.md,
-"Copying objects".
-
-**Extract** (in Edit, on an object or group: the menu or the inspector)
-makes it a scene of its own, linked where it was, everything on it coming
-along and its pose unchanged; **Bundle** (on a link) copies the scene it
-shows back in, in its place, and the copy no longer follows it. In the
-inspector each lists the scene's root behaviours (Seats, a Sea) as
-checkboxes, none ticked, for what goes along. Each is one undo step. See
-STAGE.md, "Extract and bundle".
-
-- **The tree** (the top of the Inspector's pane; the selection's fields are
-  under it): visibility, colour, remove; click to select, double-click to frame.
-  An object fixed at a version shows a small "◷ fixed" tag (display only).
-  What's in a group is listed under it, and an object attached to another in
-  the same group under that object (indented, 10 px a level up to 8); an
-  object attached to something filed elsewhere is listed in its own group.
-  Anything with children folds open and shut (the
-  chevron, or ← / → on a focused row; ↑ / ↓ move). What's open is yours alone,
-  kept in this browser (`localStorage`, `scene-outline:<scene url>`), never in
-  the doc; by default a visible top-level group is open and everything deeper is
-  closed. A group's checkbox hides or shows everything in it (one write) and
-  shows a dash when something inside is hidden. **Remove** on a group takes the
-  group and everything in it, after asking. **New group** makes an empty group
-  (inside the selected group, if one is selected).
-- **Filter** (above the list, once there are 8 or more objects): matches every
-  word, case-insensitively, against each object's name and its group path, and
-  shows the matches with their groups (dimmed) and a count ("12 of 507").
-  Enter selects and frames the first match; Esc clears. It never touches the doc.
-- **Inspector**: name, colour, opacity, wireframe, **Layers** (when the
-  object's GLB has layers: a tree of ticks, each writing that one layer's
-  choice; unticking a layer dims what's in it; a choice that matches the file
-  is dropped, and **Reset** drops them all), **In group** (the groups,
-  as a tree; filing moves nothing), **Attached to** (objects), position
-  (display units), rotation (degrees), scale; **Group** puts the object in a
-  new group where it's filed; for a group, name, visibility, opacity and the
-  group it's in, and **Ungroup** moves its contents up a level, as they look
-  (a hidden group's contents stay hidden, a translucent one's keep its
-  opacity), and removes it. Commands from extensions (*Shuffle pile* at a game
-  table, say) are buttons here too. Then, for objects that have a render doc, **Version** ("Latest", or
-  "Fixed at <short heads> · built <time>") with **Fix at this version** and
-  **Follow latest**. Last, the selection's documents, each a section with its
-  label, a fold and **Open** (the main view), shown inline in its own tool:
-  **Source** (the doc it shows), or that doc as a folded **File** for a GLB
-  or **Linked scene** for a link, **Build** (the build controls on its render doc) and
-  **About** (its `infoUrl` document, or its nearest group's, labelled
-  "About <group>"). A package adds its own by declaring `documents`
-  (STAGE.md "A document"). **Dock**, or dragging a section's head onto the
-  drawer's tabs, puts the document in a drawer pane of its own (titled
-  after its object: "Hull · Source"), which stays
-  until its × whatever you select or wherever you go; the section then says
-  "In the drawer · Show". The drawer's tabs take any document dropped on
-  them, from Patchwork's sidebar too.
-- **Attaching**: pick an object under *Attached to* and this one moves with it
-  from then on (a flow field attached to its hull, say). Attaching and
-  detaching keep the object exactly where it is; only its stored transform
-  changes, since that is relative to what it's attached to. The list leaves out
-  the object itself and anything attached to it, so a loop can't be made.
-  Hiding an object doesn't hide what's attached to it. Removing an object
-  leaves its attachments where they were, now at the scene root.
-- **Viewport**: orbit/pan/zoom (Look and Edit), click to select (in Edit;
-  anywhere, *Select*, first in every right-click menu), **Frame** (`.`: the
-  selection, else everything, in every body; the toolbar's Frame all is in
-  Edit). There are no tools to pick and no modes: the editor is a body.
-- **Halo**: what's selected shows handles round its box, after Morphic's: a
-  move arrow along each axis, a rotate ring about each, a scale handle at
-  each corner (uniform scale, about its middle), all outside the box and the
-  same size on screen at any zoom, plus a provider's build-param knobs
-  (below). Drag one; a press on the thing itself is still the thing's. They
-  are in the frame of what it's attached to, so a fitting's handles heel with
-  the hull and drag along her deck while she sails. A group's halo moves all
-  of it (what's attached to a member follows the member; locked members
-  stay), written as one change. No handles on a locked object, a read-only
-  doc, or while a tool is held (measuring).
-- **Carry**: what has the `scene.carry` trait (*Carryable* in the inspector's
-  "Add behaviour…"; a game's pieces have it) can be picked up and put
-  down elsewhere, like pieces on a table. Press on it and drag: it
-  floats just above the spot under the pointer (the table, or the top of a
-  stack) and a ring shows where it will land. Let go and it rests on the
-  highest surface under its footprint, or on the ground. If another object
-  has **connectors** (snap points, from its GLB, below) near that spot that
-  take it, it goes to the nearest one (accent ring) — hold **Alt** to put it down exactly where you
-  are, or untick **Snap** to turn snapping off for this scene. A snap point
-  with a whole frame takes the piece into it (a rack's place stands a tile
-  on edge), one with a yaw turns it to face that way; either turn lasts only
-  while it's over that point. **Q** / **E** turn it 45°
-  while carried, **F** turns it over (about its own length, as a card goes
-  face down, turning in the air rather than snapping); **Esc** puts it back.
-  **F** over a piece that's lying there (or *Flip* in its right-click menu)
-  turns it over where it lies: it rises, turns and comes back down on
-  whatever is under it, and only where it lands is written. A press that
-  doesn't move is still a click (select), and a press on empty space, on
-  something without the trait or on a **locked** object orbits. There is no physics: nothing tips or slides, and only the
-  final pose is written. While it's carried, other people see it move (over
-  `handle.broadcast`, below). An extension can ask for the piece to go
-  down another way where it's put (`landing`: face up, as tabletop turns a
-  card face up in your hand; flat, on its broadest face, as tabletop lays a
-  domino taken out of a hand), or say it can't be
-  picked up just now (dice: a die under a cup). How it lands is a pure
-  function of how you hold it, the snap point and those answers
-  (`landedPose`, STAGE.md "Landing").
-  A piece attached to something is carried in that thing's
-  frame: a card on a table aboard a moving ship goes with the table, snaps
-  to its slots and goes down square to it, however she heels and swings.
-  Carrying runs wherever the doc has something carryable, whatever anyone is doing.
-- **Locked** (inspector): a locked object can't be carried or moved by its
-  halo — a game board, say. Everything else about it still works.
-- **The drawer**: one panel at the right, a tab per pane: the inspector
-  (in Edit a selection opens it, and it stays open, on the scene when
-  nothing is selected, until its ×, the toolbar or leaving Edit), which
-  holds the object tree on top and the selection's fields below, one
-  selection between them; Dimensions and Parts when you open
-  them from the toolbar, and any extension's docked editor (Camber's
-  Shape, a die's panel). Drag its left edge to resize it (double-click for
-  the default): the stage's own panels and docked editors each keep the
-  width you last gave them, per scene.
-
-- **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
-  With **Bounds** on, the selected object (or every object) gets width / height /
-  depth labels. These are yours: the doc's `view` only gives their defaults,
-  and changing one changes it for you alone.
-- **Panel** (`P`) hides the side panel for a full-width view. It is yours
-  alone, not saved in the doc.
-- **Legends**: an object whose GLB says how it was coloured (below) gets a
-  colour bar in the viewport's corner while it is visible.
-- **Loading**: only objects that are actually shown (their own box ticked and
-  every group above them shown) are loaded; a hidden group costs nothing until
-  it is shown, and what has loaded stays loaded when hidden again. Until an
-  object's GLB arrives, a `hint.bounds` box (if the doc has one) is drawn in its
-  place, and **Frame all** uses it. The HUD says "Loading 40 of 74…".
-- **Measure** (`M`): click two points on geometry (snaps to a vertex within
-  10 px; misses land on the ground plane). The dimension is saved in the scene,
-  anchored to each object's local coordinates so it follows when the object
-  moves. Click a dimension label to select it, `Delete` to remove it, `Esc` to
-  cancel or stop measuring. A dimension that is short on screen (under 2½
-  label widths, like a cleat's length) has its label lifted off the line on a
-  leader, so the label doesn't cover the part it measures.
-
-Lighting is a key light fixed in the world (so faceted panels shade
-differently as you orbit), a weak headlight fill, and a dim sky/ground and
-room environment, kept near 1 in total so light baked colours don't clip.
-
-Selection and hover are shared with other people in the scene over
-`handle.broadcast`; nothing about presence is written to the doc. So is an
-object someone is carrying or moving with the halo (and each member of a group being
-moved): `{ type: "scene:carry", id, transform }` (its local transform, at
-most every 50 ms) while it moves, and `transform: null` when it is put down,
-let go or the carry is cancelled. Peers show it there instead of where
-the doc says; the put-down shows the doc's pose as soon as the doc has it (or
-after a second), and a carry that goes quiet for 3 s is put back.
+- **Make a scene.** An empty scene lists the installed templates and Blank.
+  A new scene starts you in Edit; a doc's `view.start` puts you somewhere
+  else once, on arrival (a seat, a spawn point, Look).
+- **Add things.** Drop docs from the sidebar or `.stl`/`.glb` files from the
+  desktop, paste an automerge URL, or use the parts bin (toolbar, Parts).
+- **Bodies.** The body chip (bottom right) picks Look, Edit, or a body a
+  package offers (walk, a seat, a ship's station). Leave goes back to Look.
+- **Edit.** The editor is the Edit body. Click to select. The **halo** has
+  move arrows, rotate rings, scale corners and a provider's param knobs. The
+  **inspector** drawer tab holds the object tree, the selection's fields and
+  behaviours, and its documents (Source, Build, About), each dockable. The
+  toolbar opens Dimensions and Parts; `M` measures.
+- **Groups and attachment** are two things. A group organises and hides or
+  fades what's in it; it has no transform. An attached object moves with its
+  parent. Re-filing or re-attaching keeps everything where it is on screen.
+- **Carry.** Anyone in any body can pick up what has the `scene.carry` trait.
+  It lands on the highest surface under it and snaps to a connector that
+  takes it (Alt places freely). Q/E turn it, F flips it, Escape puts it back.
+  A **locked** object can't be carried or moved.
+- **Verbs.** The use prompt shows attention's keyed verbs ("[F] Take the
+  helm"); the right-click menu shows them all, Select first. Under touch,
+  the keys in play become on-screen controls.
+- **Undo** (⌘Z, ⇧⌘Z) takes back your own edits, never a verb's.
+- **Copy and paste** (⌘C/⌘V, or a tree row dragged into another scene)
+  copies an object with what's attached under it. The copy shares GLB files,
+  gets its own render docs, and leaves runtime state behind.
+- **Links.** A scene doc dropped on a scene is a link: its own world, drawn
+  in the link's frame. **Enter** it (double-click, menu, inspector) to edit
+  inside it in place; Leave or Escape comes back out. **Extract** makes a
+  selection its own linked doc; **Bundle** copies a linked doc back in.
+- **Fixed versions.** A URL with heads, or *Fix at this version*, holds an
+  object at one version (a fixed link is a pin); *Follow latest* lets go.
+- **The clock.** A doc with processes gets a chip to pause its world time.
+- **Yours alone:** the camera, grid, axes, bounds, units and panel (`P`);
+  the doc's `view` gives defaults. Selection, hover and carries are shared
+  live, never written. Only shown objects load.
 
 ## Extensions
 
-A `scene:extension` adds behaviour or UI to a scene without the scene
-knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
+A `scene:extension` adds behaviour or UI without the scene knowing what it
+means; a `scene:template` lays out an empty scene; a `scene:part` is in the
+parts bin. Extensions never import one another. [STAGE.md](STAGE.md) is the
+contract.
+
+## Content
+
+### Writing a provider
+
+A provider lives in the package that owns the datatype, as metadata in its
+`plugins` array (every field but `load` must survive `structuredClone`):
 
 ```js
-{ type: "scene:extension", id: "tabletop", name: "Tabletop",
-  traits: ["tabletop.zone", "tabletop.card"],                        // trait keys that start it
-  drops: ["*"],                                                      // datatypes it may lay out when dropped
-  describes: { "tabletop.card": { name: "Card", on: "object", … } },  // for "Add behaviour…" (STAGE.md)
-  async load() { return { create(api) { return instance }, drop?(ctx, info) } } }
+{ type: "scene:source", id: "camber-hull-surface", name: "Camber hull", icon: "Sailboat",
+  supportedDatatypes: ["camber-hull"],  // ["file"] plus `extensions: ["stl"]` for file docs
+  content: "built",                     // REQUIRED: "built" or "file"; neither is never used
+  params: [ParamSpec], handles: [{ param, axis: [x, y, z], label? }],  // optional
+  cost: "expensive", version: 1,        // bump version when build() output changes
+  async load() { return (await import("./scene-source.js")).default } }
 
-{ type: "scene:template", id: "arena-level", name: "Arena level", icon?, description?,
-  async load() { return { create(ctx) } } }                           // lays out an empty scene
-
-{ type: "scene:part", id: "sailing.mast", name: "Mast and sail", icon?, category?, description?,
-  tags?: ["mast"], traits?: ["sailing.sail"],
-  async load() { return { create(ctx, at) } } }                       // puts something in, from the parts bin
+ParamSpec = { key, label?, kind: "number"|"integer"|"boolean"|"enum"|"string"|"color", default,
+              min?, max?, step?, log?, options?: [{ value, label }], cost?: "cheap"|"expensive" }
+SourceImpl = {
+  build({ doc, handle, url, params, repo }): Promise<{ kind: "glb", glb: Uint8Array,
+        meta?: { bounds?: { min, max }, notes?: string } }>,   // must not write the source
+  fingerprint?(doc): string,              // changes iff something build() reads changes
+  dependencies?(doc): AutomergeUrl[],     // other docs build() reads; rebuilt when they change
+  fingerprintDependency?(url, doc): string | null }
 ```
 
-- **What runs** is a function of the registry and the doc, nothing else:
-  an extension runs when the scene or an object has one of its traits, or
-  when it declares no traits at all (a general part, like the toolbar). A
-  viewer starts where the doc says (`view.start`: a body, a place, a home
-  camera), once, and goes on from there for themselves.
-- **State** lives in three places: the doc (shared, kept), presence (shared,
-  passing: selections, carries, avatars) and local (this view only:
-  selection, the current tool, display prefs). Extensions talk to each other
-  through local keys, commands and contributions, never by importing one
-  another.
-- **Input** is offered down a chain: the held tool (measure, a gun), the
-  widget under the pointer, the extensions whose traits are on the object
-  under it, the scene's, the general ones in registry order, then the top
-  body's default (Edit's selects; Look has none). A press nobody claims orbits. Keys go
-  the gesture's, the held tool's and the body's declared keys first, then
-  the key map; Escape is the stage's ladder (TOOLS.md §5).
-- **Commands** are verbs with a target (an object, a ref such as a selected
-  dimension's `"dimension:<id>"`, or null for the scene).
-  Surfaces (toolbar, inspector, menu, key map) show and run them; the
-  extension that owns a verb doesn't know which surfaces exist.
-- **Parts** (`scene:part`) are what the editor's parts bin (`scene.parts`)
-  offers: drag one into the view and it lands where the pointer hits, under
-  the object it was dropped on (snapped to a connector that takes it, by the
-  hand's rule); click one to put it where you're looking. `create(ctx, at)`
-  gets the place in its parent's frame and in the world (`at.world`), and
-  `ctx.file(key, make)` gives the scene one file
-  doc per key, so ten buoys share one GLB.
-- **Everything acquired through `api`** (layers, overlays, listeners,
-  loops, pose holds, presence keys) is the extension's, and goes when it
-  stops.
-
-## Writing a provider
-
-A provider lives in the package that owns the datatype. It is plain metadata in
-the exported `plugins` array (the entry module runs in a worker, so every field
-except `load` must survive `structuredClone`) with the code behind `load()`:
-
-```js
-{
-  type: "scene:source",
-  id: "camber-hull-surface",          // globally unique
-  name: "Camber hull",
-  icon: "Sailboat",                    // lucide name, optional
-  supportedDatatypes: ["camber-hull"], // datatype ids; ["file"] for file docs
-  extensions: ["stl"],                 // ONLY for file providers: lower-case, no dot
-  content: "built",                    // REQUIRED: "built" (load() builds a GLB into a render doc) or "file" (below)
-  params: [ParamSpec, ...],            // build params, optional
-  handles: [Handle, ...],              // params to drag in the viewport, optional (below)
-  cost: "expensive",                   // what a build after a source edit costs (set it!)
-  version: 1,                          // integer; bump when build() output changes for the same inputs
-  async load() { return (await import("./scene-source.js")).default },
-}
-```
-
-**Content.** Every provider says what kind of content it makes, and one that
-says neither is never offered or used (the stage warns once):
-- `"built"`: `load()` gives a `build()` that makes a GLB from the source doc,
-  kept in the object's own render doc (`scene-render`) and rebuilt as the
-  source, params or provider version change.
-- `"file"`: the source doc already is a GLB `file` doc. The object gets no
-  render doc and the scene shows the file's bytes as they are, so there is no
-  `load()`. The scene's own `file-glb` is one; any package may add another.
-
-**Handles.** A number or integer param that is a position along an axis of
-the object (a slice's height, a rake's) can be dragged in place:
-
-```ts
-type Handle = { param: string, axis: [x, y, z], label?: string }  // axis: in the object's (GLB's) frame
-```
-
-While the object is selected (and no tool is held: measuring), the scene
-draws a knob for each on the line through the middle of its geometry along
-`axis`, at the param's value (from its render doc, else the default), with
-its label, and a track over its range. Drag the knob: it follows the pointer
-along the line, held to the param's `min`, `max` and `step`; let go and the
-value is written to the render doc's params, which rebuilds the object like
-any other param change (`src/handles.js`). flow-field's slice (height) and
-streamlines (seed height) have one.
-
-```ts
-type ParamSpec = {
-  key: string
-  label?: string
-  kind: "number" | "integer" | "boolean" | "enum" | "string" | "color"
-  default: any
-  min?: number; max?: number; step?: number; log?: boolean   // number/integer
-  options?: { value: any; label: string }[]                  // enum
-  cost?: "cheap" | "expensive"                               // default "expensive"
-}
-
-type SourceImpl = {
-  build(args: { doc, handle, url, params, repo }): Promise<BuildResult>  // must not write the source
-  fingerprint?(doc): string   // changes iff something build() reads changes; else heads are used
-  dependencies?(doc): AutomergeUrl[]  // sync: the OTHER docs build() reads (imports, a linked hull…)
-  fingerprintDependency?(url, doc): string | null  // sync: like fingerprint(), for one dependency
-}
-
-type BuildResult = {
-  kind: "glb"
-  glb: Uint8Array                                        // glTF 2.0 binary
-  meta?: { bounds?: { min: [x,y,z], max: [x,y,z] }, notes?: string }
-}
-```
-
-`params` passed to `build()` always have every ParamSpec default filled in, so a
-provider can add params later without migrating render docs. They are also
-**coerced and clamped to their spec** (`min`/`max`, integer rounding, enum
-options, `#rrggbb` colours); a value that can't be coerced is replaced by the
-default. Render docs are written by forms, agents, other tools and merges, so
-the host checks them once and a provider can trust its own metadata instead of
-re-clamping (and disagreeing with it). Keys without a spec pass through.
-
-**Version.** A provider that declares an integer `version` gets it recorded in
-`builtFrom.providerVersion`. Bump it whenever `build()` would make different
-output from the same doc and params (a better mesher, a fixed transform), and
-every render built by an older version (or by one that declared none) goes
-stale once. A render built by a *newer* version is never stale to an older
-provider, so two collaborators on different versions don't rebuild over each
-other; the newer build stays. Prefer this to a hand-bumped prefix inside the
-fingerprint.
-
-**Dependencies.** If `build()` reads documents besides its source (an OpenSCAD
-file's imports, a flow field's linked hull), return their URLs from
-`dependencies(doc)`. The scene calls it whenever the source changes, keeps a
-subscription to exactly the docs it lists (adding and dropping them as the list
-changes), and rebuilds when one of them changes, debounced like a source edit.
-Each build records the heads of every dependency as it was read
-(`builtFrom.deps`). A dependency that can't be loaded doesn't block the build —
-`build()` decides what that means — and is retried in the background; the
-render goes stale (and rebuilds) once it arrives. On first open the scene waits
-up to 5 s for dependencies that are still loading, so it doesn't build once
-without them and again with them. Dependencies are only transitive if you list
-them transitively. Duplicates and the source's own URL are ignored.
-
-By default a dependency is recorded by its heads, so *any* edit to it rebuilds.
-`fingerprintDependency(url, doc)` narrows that the way `fingerprint` narrows
-the source: return a string that changes iff something build() reads from that
-doc changes (null = use heads), and it is recorded as `["fp:<string>"]` in
-place of the heads. A **scene-render** dependency needs nothing: the host keys
-it by its `glbUrl` on its own, so a consumer rebuilds when the render it reads
-gets a new GLB, never on the render's status writes (see *Consuming a render*).
-
-The form in `scene-render-controls` is generated from `params`: `number` /
-`integer` get a number field plus a slider when both `min` and `max` are given
-(logarithmic when `log: true` and `min > 0`), `enum` a select, `boolean` a
-checkbox, `color` a colour picker (`#rrggbb`), `string` a text field.
-
-**Rebuild debounce** is by cost: a params edit where every changed key is
-`cheap` waits 150 ms, anything else 800 ms; a never-built render builds at once.
-For source-doc edits the scene uses 150 ms if every param is `cheap`, otherwise
-800 ms. A provider may also set an optional top-level `cost: "cheap" |
-"expensive"` to say how expensive a build from a source edit is (this is an
-extension; hosts that don't know it fall back to the rule above).
+- `"built"`: `build()` makes a GLB, kept in the object's own `scene-render`
+  doc and rebuilt when the source, params, dependencies or `version` change.
+  `params` arrive with defaults filled in and clamped to their spec.
+- `"file"`: the source doc already is a GLB file. No render doc, no `load()`.
+- A render doc records `glbUrl` and what it was `builtFrom`; new bytes make a
+  new immutable GLB file doc (`newRenderDoc` in `src/datatype.js`, staleness
+  in `src/staleness.js`).
 
 ### Consuming a render
 
-When your provider (or tool) needs another object's geometry — a flow field
-around a hull, a slicer, an FEA mesh — read that object's **render doc**, not
-its source, and never call another package's provider yourself:
-
-- the work is done once and shared, by whichever scene keeps it fresh;
-- you get exactly the geometry the scene shows, built with the params the
-  scene chose for it, not the provider's defaults;
-- its own dependencies come along for free: an OpenSCAD part's imports are the
-  render's business, and a new GLB is all you see.
-
-Copy `src/render-read.js` (see *The kit*) and list the render's url in
-`dependencies(doc)`; `readRender(repo, url)` gives you `{ glb, glbUrl,
-builtFrom, status, error, bounds, source }`. The GLB is in the render's own
-frame (Y-up metres); to follow the object around the scene, attach your object
-to it. A render that hasn't been built yet gives `glb: null`: say so in your
-`meta.notes` rather than throwing, and you rebuild when it arrives.
-
-### GLB conventions
-
-- glTF 2.0, **Y-up, metres**, right-handed. Convert units and axes inside the
-  provider. If the source is unitless, expose a `scale`-style param.
-- Name nodes and meshes; names show up in the scene.
-- Triangles (mode 4) for surfaces. Lines (mode 1) or line strips (mode 3) for
-  edges and curves.
-- Optional per-vertex FLOAT attributes: `_ID` (a stable face/part id) and scalar
-  fields as `_<NAME>`. (three.js lower-cases custom attribute names on load:
-  `_ID` arrives as `_id`.)
-- Hosts accept `EXT_meshopt_compression` and `KHR_mesh_quantization` (as
-  gltfpack and Rhino's exporter write them), `KHR_materials_*` and
-  `KHR_texture_transform`. Quantized positions are converted to Float32 on load,
-  so measuring snaps to them. Meshes that reuse one (geometry, material) pair
-  inside a GLB are drawn as one InstancedMesh.
-- Include `NORMAL` where you can. Materials are optional; the scene may override
-  colour. A mesh without a material is drawn in the theme's object colour
-  (GLTFLoader's default material, found exactly; a material the file does
-  define keeps its colour even if it is unnamed white metal). An
-  object colour replaces the base colour only, so a material's metalness and
-  roughness survive it (a white metal part tinted bronze stays metal), and
-  `KHR_materials_unlit` draws baked colours exactly.
-- Optional **layers** (a CAD file's: Rhino's layers, SketchUp's tags):
-  `extras.layers = [{ id, name?, parent?, visible? }, …]` on the glTF scene,
-  and `extras.layer = id` on a node, which puts that node and everything under
-  it on that layer unless a nearer node says otherwise. `id` is a string that
-  stays the same when the source is rebuilt (Rhino's layer id), `parent`
-  another entry's id, `visible` (default true) whether the source shows it.
-  An object's `layers` choices (Object, above) override `visible`, and a layer
-  is drawn only when it and every layer above it are shown. A hidden layer's
-  meshes aren't drawn, picked or snapped to, and aren't in the object's bounds.
-  Meshes are only instanced within a layer. Entries without an id, repeats,
-  parents that aren't there and parent loops are dropped or cut (`src/layers.js`);
-  a mesh on no layer, or on an id that isn't in the table, is always drawn.
-  Emit every layer the user might want to turn on, hidden ones included:
-  showing a layer is a display change, not a rebuild.
-- Optional **connectors**: `extras.connectors = [{ position: [x, y, z],
-  rotation?: [x, y, z], tags?: string[] }, …]` on any node (or on the glTF
-  scene), in that node's frame: places where something goes. `rotation`
-  (Euler XYZ, radians) is the connector's frame, and the scene keeps it
-  whole: `content(id).extras.connectors` gives each one in the object's body
-  frame, its node's rotation composed in (a connector on a tilted node stays
-  tilted; a node's scale, even an uneven one, never shears it, and a
-  mirrored node mirrors where it faces without turning it inside out), with its yaw
-  (where the frame turns +Z, seen from above; none pointing straight up)
-  derived from it. A carry puts whatever it brings there into that frame:
-  its body axes become the connector's (so a card in the far player's column
-  reads right for them, and a rack's place stands a tile on edge, facing its
-  player), face up or face down as it was or as a `landing` rule asks, unless
-  the frame stands it on an edge or an end, which then says alone which way
-  it faces (which it does is by the frame's most upright axis, so a leaning
-  rack still stands a tile). A connector with only a yaw turns it about the
-  vertical to face that way, tilt kept. The parts bin and Paste use the same
-  rule (a part, or one copied top-level object, goes into the frame, and a
-  carried piece copied alone with a load hint rests on the connector as it
-  would carried). A connector with
-  `tags` takes only objects whose `tags` share one (none: anything), as
-  Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
-  [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as
-  untagged connectors that give only a yaw (`rotation` null; on a node, the
-  yaw that node turns their facing to). Optionally `extras.snapRadius` (metres, in the GLB's
-  frame). When a carry puts something down near one — the centre of its
-  footprint within the radius, in plan — it goes there; height is still
-  decided by what is underneath, so pieces stack on a board's spaces. Without
-  a radius it is 0.71 × the closest spacing between the points, so every part
-  of a square grid's cell, corners included, snaps to that cell. A lone
-  connector has no spacing to take one from, so with no `snapRadius` a carry
-  doesn't snap to it. Malformed connectors are ignored.
-- Optional colour legend: put `extras.legend = { title, unit, min, max, stops }`
-  on a mesh, `stops` being 2–32 `#rrggbb` colours spaced evenly from `min` to
-  `max`. The scene draws it as a bar with three ticks. Anything else in it is
-  ignored, and a legend that doesn't check out is simply not shown.
-
-### The kit
-
-Small modules that several packages need are **copied**, never imported across
-packages. Each says `[kit: <name> v<N>]` in its header; the canonical copies
-live here in `src/`:
-
-| file | what |
-|---|---|
-| `src/glb.js` | the GLB encoder (and a minimal reader), below |
-| `src/render-read.js` | reading a `scene-render` doc and its GLB from another package |
-| `src/layers.js` | a GLB's layer table, checked, and which layers an object's choices show (GLB conventions, above) |
-
-To change one, edit the canonical copy, bump its version, and run
-`node scripts/check-kit.mjs --fix` at the repo root to copy it over every other;
-without `--fix` the script fails on any copy that has drifted.
-
-### The encoder
-
-`src/glb.js` is a dependency-free GLB encoder. **Copy it** into your package
-(never import across packages). Its API is documented at the top of the file.
-v2 adds per-vertex `colors` (COLOR_0), `unlit` (KHR_materials_unlit), `blend`
-(alphaMode BLEND) and writes `asset.extras.units = "m"`, so a consumer outside
-a scene (a slicer, say) knows the scale without guessing; v3 adds an optional
-`copyright` (`asset.copyright`, written only when given):
-
-```js
-import { encodeGLB, computeNormals, MODE } from "./glb.js"
-
-const glb = encodeGLB({
-  meshes: [
-    { name: "hull", positions, indices, normals: computeNormals(positions, indices),
-      attributes: { _ID: faceIds }, color: "#c0c8d8" },
-    { name: "sheer", positions: sheerPts, mode: MODE.LINE_STRIP, color: [0, 0, 0] },
-  ],
-})
-```
-
-It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
-
-## Documents
-
-### `scene-render` — one per object, URL stable forever
-
-```ts
-{
-  "@patchwork": { type: "scene-render" },
-  title: string,
-  parent: AutomergeUrl,             // the source doc (never written)
-  providerId: string,
-  params: { [key]: value },         // edited by the controls
-  glbUrl: AutomergeUrl | null,      // repointed on every rebuild
-  builtFrom: {
-    heads: string[], fingerprint: string | null, paramsKey: string,
-    deps: { [url: AutomergeUrl]: string[] },   // each dependency's sorted heads, as read ({} when none),
-                                               // or ["fp:<key>"] for a keyed dependency
-    providerVersion?: number,                  // the provider's `version`, if it declares one
-    glbHash?: string                           // content hash of the GLB at glbUrl
-  } | null,
-  builtAt: number | null,
-  bounds?: { min: [x,y,z], max: [x,y,z] } | null,  // the last build's meta.bounds (placeholder box)
-  status: "idle" | "building" | "error",
-  error: string | null,
-  pinned: boolean                   // true = never auto-rebuild (see Fixed versions for the difference)
-}
-```
-
-- `paramsKey` is JSON of `params` (as stored, before defaults and clamping)
-  with keys sorted at every level.
-- **Stale** iff `builtFrom` is null, or `paramsKey` differs, or the installed
-  provider declares a `version` newer than `builtFrom.providerVersion` (or
-  there is none recorded), or (provider has a
-  fingerprint ? `fingerprint(source) !== builtFrom.fingerprint` : sorted source
-  heads ≠ sorted `builtFrom.heads`), or the provider's current dependency URLs
-  differ from the keys of `builtFrom.deps`, or any dependency's sorted heads
-  differ from the recorded ones. A dependency that isn't loaded counts as
-  having no heads (`[]`).
-- Every build that produces new bytes makes a **new immutable GLB file doc**
-  and repoints `glbUrl`: `{ "@patchwork": { type: "file" }, name:
-  "<title>.glb", extension: "glb", mimeType: "model/gltf-binary", content:
-  Uint8Array }`. A build whose bytes hash the same as the current GLB's
-  (`builtFrom.glbHash`) keeps the current file doc, so a rebuild that changes
-  nothing (a rename, a version bump with identical output) makes no new doc
-  and doesn't disturb anything that depends on the render. Superseded GLBs are
-  simply orphaned.
-- `bounds` is the last build's `meta.bounds`; until the GLB loads it is drawn
-  as a placeholder box (a scene object's own `hint.bounds` wins).
-- The previous GLB stays on screen while the next one builds.
-- A render built from changes to its source (or to a dependency recorded by
-  heads) that this client hasn't synced yet is never auto-rebuilt, however
-  stale it looks: a peer that is ahead built it, and rebuilding would put a
-  build from an older version over a newer one, with that peer rebuilding
-  straight back. (`Automerge.hasHeads` on the source doc; seen in Patchwork,
-  where a client missing one edit to a flow doc and one with it took turns
-  rebuilding the flow.) A change to the source re-evaluates.
-- A scene doesn't start an automatic build until 2.5 s after it opened a
-  render doc it didn't create itself. A fresh peer can be handed the doc
-  before its history has synced and briefly see `builtFrom: null`; without the
-  wait, every new viewer rebuilt renders that were already built. Each change
-  re-evaluates, so the build is called off as soon as the real record arrives.
-  Renders the scene creates itself build at once.
-- A build that rejects with an error named `AbortError` was cancelled by its
-  provider (say, superseded by a newer build of the same doc): the status goes
-  back to idle, nothing is recorded, and the render is evaluated again at once.
-- A failed build records `status: "error"` and `error`. It is retried
-  automatically after 5 s, 30 s and 2 min (inputs unchanged; covers a CDN
-  fetch, a worker that ran out of memory once), then not again until its
-  inputs change or someone presses Rebuild.
-- Before building, a scene broadcasts `{ type: "scene-render:building", key }` on
-  the render doc; other open scenes hold off on the same inputs for 20 s so two
-  peers don't both run an expensive build.
-- "Rebuild now" in the controls dispatches a bubbling, cancelable
-  `scene:rebuild` DOM event (`detail.renderUrl`). A scene around it claims it
-  and rebuilds through its own loop; standalone, the controls build directly.
+To use another object's geometry, read its render doc, never its source or
+another package's provider. Copy `src/render-read.js`: `readRender(repo,
+url)` gives `{ glb, glbUrl, builtFrom, status, error, bounds, source }`. List
+the render's URL in `dependencies(doc)`; you rebuild only on a new GLB. An
+unbuilt render gives `glb: null`: say so in `meta.notes`.
 
 ### `scene` — the composition
 
 ```ts
-{
-  title: string,
-  objects: { [objectId]: Object | Group },
-  order: string[],                  // objects and groups, as the outline lists them
-  dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
-  // defaults for each viewer (each can change their own): display, snapping, where to start
-  view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
-          snap?: boolean,                                  // a carry snaps (absent = true)
-          start?: { body?: string,                         // the body people arrive in ("edit"; absent or any other: Look, then that body), read once; a scene made new says "edit"
-                    place?: string,                        // what that body's enter is given: a spawn point's id, a seat's
-                    home?: { position, target, fov? } } }, // where a viewer with no saved camera starts
-  traits: { [key: string]: any },   // extensions' data on the scene itself
-  assets: { [key: string]: { url: AutomergeUrl, hint?: Object["hint"] } },  // the scene's own file docs (ctx.file: STAGE.md, "Parts")
-  packages: { url: string }[],      // the packages its contents come from (STAGE.md, "Packages")
-  materialRules?: MaterialRule[]
-}
-Object = {
-    kind?: "object",                // absent = an object
-    name: string,
-    sourceUrl: AutomergeUrl | null, providerId: string | null,
-    renderUrl: AutomergeUrl | null, // null: not built (its provider's content is "file": shown from sourceUrl)
-    visible: boolean, color: string | null, opacity: number, wireframe: boolean,
-    transform: { position: [x,y,z], rotation: [x,y,z] /* Euler XYZ, radians */, scale: number },
-    parent?: string | null,         // the object it's attached to (never a group); absent = null
-    group?: string | null,          // the group it's filed in; absent = none
-    infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
-    infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
-    locked?: boolean,               // true: it can't be carried, and its halo has no handles
-    tags?: string[],                // what tagged connectors it fits (GLB conventions, below)
-    layers?: { [layerId: string]: boolean },  // shown or not, per layer of its GLB (GLB conventions, below); only where chosen
-    traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
-    hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number },
-    at?: { heads: string[], deps?: { [url: AutomergeUrl]: string[] } } | null  // fixed version; absent/null = latest
-}
-Group = {
-    kind: "group", name: string,
-    group?: string | null,          // the group it's in; absent = none
-    visible: boolean, opacity: number,
-    infoUrl?: AutomergeUrl | null, infoToolId?: string | null,
-    traits?: { [key: string]: any },
-}
-Anchor = { objectId: string | null, local: [x,y,z] | null, world: [x,y,z] }
-MaterialRule = {
-  match: { nameIncludes: string } | { nameEquals: string } | { unnamed: true },   // case-sensitive
-  set: { color?: "#rrggbb", emissive?: "#rrggbb", metalness?, roughness?, opacity?, transmission? }  // 0..1
-}
+{ title, objects: { [id]: Object | Group }, order: string[],
+  dimensions: { [id]: { a: Anchor, b: Anchor, label } },
+  view: { units, grid, axes, bounds, snap?, start?: { body?, place?, home? } },
+  traits, assets: { [key]: { url, hint? } }, packages: { url }[], clock: { running, t },
+  materialRules?: MaterialRule[] }
+Object = { kind?: "object", name, sourceUrl, providerId, renderUrl /* null: not built */,
+  visible, color, opacity, wireframe, transform: { position, rotation /* Euler XYZ rad */, scale },
+  parent?, group?, infoUrl?, infoToolId?, locked?, tags?, layers?, traits?,
+  hint?: { bounds?, triangles?, bytes? }, at?: { heads, deps? } | null }
+Group = { kind: "group", name, group?, visible, opacity, infoUrl?, infoToolId?, traits? }
+Anchor = { objectId, local, world }  // a point in its object's frame: follows its transform
 ```
 
-- `renderUrl` is written once, when the object is added. It is `null` for an
-  object added through a provider whose content is `"file"` (`file-glb`): no
-  render doc and no GLB copy are made, the scene shows `sourceUrl`'s bytes
-  directly and never builds it.
-- **Content is routed at sync** (`routeOf` in `src/providers.js`): an object
-  with a render doc goes to the render manager, which shows what was built
-  even where its provider isn't installed; one without goes where its
-  provider's `content` says (`"file"`: the GLB queue). Anything else (its
-  provider isn't here, or builds but there is no render doc) loads nothing
-  and is drawn as its `hint`, with "no provider" while the registry lacks the
-  id it names. `api.loadState(id).content` says which.
-- **Groups** (`kind: "group"`) organise: no geometry and no transform.
-  Hiding a group hides everything filed in it (at any depth), and its opacity
-  multiplies into everything filed in it. A group is never picked, never a
-  parent and can't anchor a dimension; its box (Frame, selection, its halo)
-  is the union of what's shown inside it. Moving it with its halo writes
-  each member's transform. A loop of groups (two concurrent edits) is
-  broken the same way on every peer, like an attachment cycle.
-- **Only this shape is read.** Nothing upgrades a scene written in
-  another one, and extensions read only their traits: such a scene is
-  replaced, not read. `traits`, `view`,
-  `dimensions`, `assets` and `packages` are made with the doc (STAGE.md,
-  "Shared maps").
-- `packages` lists the packages the scene's contents come from, as package
-  URLs (`automerge:<id>`, bare, or `https://…`). The stage keeps it true: it
-  adds the package of every registered plugin the doc calls for (a
-  provider, a trait's extension, a part that was used), and offers a viewer
-  the listed ones they don't have, in one prompt for every doc open in the
-  view (STAGE.md, "Packages"): a scene lists only its own contents'
-  packages, never its linked docs'.
-  `@patchwork.suggestedImportUrl` is the scene package itself, so a viewer
-  with nothing installed is offered the scene tool, which offers the rest.
-  A doc written whole (a publish script, another tool) writes both:
-  `probes/scene-packages.mjs` does it for node scripts.
-- `hint` is written by importers: `bounds` (metres, in the GLB's own frame)
-  is drawn as a placeholder until the GLB loads and decides load order (bigger
-  first, the selected object before everything).
-- `materialRules` are applied, in order, to every loaded material whose name
-  matches, after the GLB's own values and before the object's colour and
-  opacity; later rules win. `unnamed` matches authored materials with no name,
-  never GLTFLoader's default material. Changing them re-applies them at once,
-  with no rebuild.
-- Build params live on the render doc; display state lives here and never
-  triggers a rebuild.
-- **Attachment.** `transform` is relative to `parent`: world = parent's world ·
-  local (`src/hierarchy.js`). A `parent` naming a missing object (or the object
-  itself) means the scene root. Cycles are never written by the UI; if
-  concurrent edits merge into one, every peer breaks it the same way (the
-  object with the smallest id in the loop is treated as a root). Attaching and
-  detaching rewrite `transform` so the world pose is unchanged. Removing an
-  object sets each of its children's `parent` to null and their `transform` to
-  their world pose. The halo edits the local transform.
-- An anchor with an `objectId` whose object still exists resolves through that
-  object's current world matrix (so it follows whatever the object is attached
-  to); otherwise it uses `world`. Removing an object freezes its anchors at
-  their current world position.
-- Bounds, **Frame all** and selection boxes are world-space boxes of each
-  object's own geometry (not including what is attached to it).
-- The camera is each viewer's own, kept in this browser per scene. A viewer
-  with no saved camera starts at `view.start.home` (set with *Set home view*),
-  else framing what's there. Orbiting never writes the doc.
+- `transform` is relative to `parent` (`src/hierarchy.js`). Loops from
+  concurrent edits break the same way on every peer.
+- `renderUrl` is written once; null for `"file"` content and links.
+  `hint.bounds` is drawn until content loads.
+- `materialRules` restyle materials by name; `packages` lists where the
+  contents come from, kept true by the stage. Only this shape is read.
 
-### Links: a scene in a scene
+### Content is routed at sync
 
-An object whose source is another scene doc, through the scene's own
-`scene.link` source (`content: "scene"`), is a **link**: no render doc,
-and the view opens a stage for the linked doc, drawn where the link is, in
-its frame (COMPOSITION.md; STAGE.md, "Views, stages and links"). Dropping a
-scene doc adds one, live; a URL with heads, or *Fix at this version*, makes
-it a pin: its doc at those heads, read-only. A doc linked live twice acts at
-the first link and is a **mirror** at the other: the same live doc, drawn
-there and never acted on. The host's facts about it are its own fields: its transform,
-parent, `locked`, and `hint.bounds`, the room it gives the linked doc, drawn
-while the link is closed. The linked doc runs its own extensions on its own
-channel, and nothing of the host reads into it. A game part does this for
-you: Lost Cities dropped on a table makes a game doc and links it there.
-
-**Enter** a link (its menu, the inspector's Link row, the outline's
-→, or a double-click) to select and edit what's in it, in place: the
-selection, the halo, the inspector and the outline then act on the linked
-doc, while the host stays live around you and its verbs, carries and keys
-still work. The trail along the top names each link entered; a crumb, its
-Leave or Escape goes back out. A link is entered where its doc acts (a
-mirror's, where it's live); a pin and a closed link aren't entered.
-
-**Extract** (on an object or group) makes it and what's attached
-under it a scene doc of its own, linked where it was; **Bundle** (on a
-link) copies the linked doc into this one in the link's place, never
-writing the linked doc. Runtime state (claims, a game's deal) stays
-behind. Both are Edit's, each one undo step; the inspector's checkboxes say which of the
-scene's own traits go along (STAGE.md, "Extract and bundle").
+`routeOf` in `src/providers.js`: an object with a render doc goes to the
+render manager, which shows what was built even without its provider. One
+without goes where its provider's `content` says (`"file"`: the GLB queue;
+`"scene"`: a link). Anything else is drawn as its `hint`.
+`api.loadState(id).content` says which.
 
 ### Fixed versions (`at`)
 
-An object normally shows the latest version of its source. With `at` set it
-shows a fixed one: the render manager builds from a read-only view of the
-source at `at.heads` (automerge-repo's `DocHandle.view(heads)`), and build()
-is handed a repo whose `find(url)` gives a view at `at.deps[url]` for every
-dependency listed there, so a fixed OpenSCAD part's imports are fixed too.
-Dependencies that aren't listed are read live. Heads are automerge-repo's
-URL heads (base58check change hashes, what `handle.heads()` returns).
+With `at`, an object builds from its source at `at.heads`, and each
+dependency in `at.deps` at its heads. Source edits never make it stale.
+*Fix at this version* copies `at` from the render's `builtFrom`, so nothing
+rebuilds. A file object is never fixed. `pinned` on a render doc only stops
+automatic rebuilds. Render docs aren't branch-aware.
 
-- `builtFrom.heads` records the fixed heads, and listed dependencies are
-  recorded from their views, so edits to the live source or a listed
-  dependency never make the object stale. A params edit or a newer provider
-  `version` still rebuilds it, at the fixed heads. An unlisted dependency
-  still rebuilds it when it changes.
-- Until this replica has the fixed heads (they haven't synced yet) the object
-  stays "loading" and nothing is built.
-- **Fix at this version** sets `at` from the render's current `builtFrom`:
-  its heads, and every dependency it recorded by heads. A dependency recorded
-  by key (`["fp:<key>"]`, e.g. a scene-render dependency) has no heads there;
-  while its key is still the one built from, its current heads are used. So
-  you freeze exactly what you see, and nothing rebuilds: same inputs, same
-  build (and if one ever happens, the `glbHash` check keeps the same GLB doc).
-  It is disabled until the render has been built here. **Follow latest**
-  deletes `at`; the object then catches up like any stale render. Both are
-  buttons on the inspector's **Version** row (`scene.inspector`, which also
-  offers them as commands on the right-click menu); the point to fix at
-  comes from `api.fixPoint(id)` (STAGE.md), and the write is a plain
-  `ops.setField(scene, id, "at", …)`. The outline marks a fixed object with a
-  small "◷ fixed" tag. A **link** (a scene doc placed in this one) is fixed
-  the same way: at its doc's heads, with the heads of every doc reached
-  through it in `deps` (the docs it links, the files and containers its
-  extensions read), so the whole of what it shows is held. A fixed link is
-  a **pin**: its doc at those heads, drawn and never acted on (STAGE.md,
-  "Views, stages and links").
-- **URLs.** A dropped or pasted URL with heads adds the object with
-  `at: { heads }` (no `deps`). Accepted: `automerge:<id>#<h1>|<h2>` (the form
-  automerge-repo's `stringifyAutomergeUrl` writes, heads `|`-joined), a
-  Patchwork link `…/#doc=automerge:<id>#<heads>&tool=…`, an older
-  `…#doc=<id>&heads=<heads>`, and the same percent-encoded. A path suffix is
-  dropped; heads that don't look like heads are ignored (the object follows the
-  latest). A file object (`file-glb`) is shown straight from its file and is
-  never fixed.
-- **How this differs from `pinned`.** `pinned` lives on the render doc and only
-  stops automatic rebuilds: it keeps showing whatever was last built, stale or
-  not, and any Rebuild builds the latest. `at` lives on the scene object and
-  changes *what* is built: Rebuild, params edits and provider bumps all build
-  the fixed version, and it is never stale from source edits.
-- The embedded `scene-render-controls` only see the render doc, so they ask
-  the scene around them with a bubbling `scene:render-context` DOM event
-  (`detail.renderUrl`; the stage fills in `detail.at`), and judge staleness at
-  those heads. The stage fires `scene:render-context-changed` at them when
-  `at` changes.
-- **Copies and branches.** Render docs are per scene object, and copying or
-  branching a scene copies the objects' `renderUrl`s, so the copies share
-  render docs. `at` is on the scene object, so a branch of the scene can fix
-  a different version, but both then build into the same render doc and
-  rebuild over each other while both are open. Render docs are not
-  branch-aware; remove and re-add the object in the branch if that matters.
+## Conventions
 
-## Layout
+Traits are keyed `<extension>.<name>`. Names shared between packages are in
+STAGE.md, "Conventions".
 
-| file | what |
-|---|---|
-| `src/index.js` | plugin metadata only (worker-safe) |
-| `src/datatype.js` | the two datatypes |
-| `src/stage/` | the stage and the view: `stage.js` (a doc's stage: its doc loop, the api each extension gets), `view.js` (the view: the mount, the router, the body stack, the selection, hover and focus as paths, the stages and links it opens, input across stages), `links.js` (expansion of the link graph, pure), `scope.js` (one stage's frame onto the viewport, the choke point every spatial call goes through), `paths.js` (the key grammar), `readonly.js` (what a pin or a mirror is given), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline` (the object tree, a module the inspector mounts at the top of its pane, not an extension), `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip), `body` (the body chip, who's here and the Esc hint), `touch` (the touch controls), `focus` (Enter on a link), `packages` (the packages prompt) and `autoframe` (an untouched camera framing what arrives); `tab.js` is a part's drawer tab (the inspector, dimensions, parts) |
-| `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
-| `src/undo.js` | undo of the stage's own edits: a step from its patches, its inverse (whole, or nothing if it has been written over since), the stacks, and the recorder the stage runs |
-| `src/extract.js` | extract and bundle (COMPOSITION.md §8): the plans (pure: T whole, the host's one change, the bundle's change) and doing them through a stage's own api; invariants I9 (`extract.test.js`) and I11 (`linearity.test.js`) |
-| `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
-| `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
-| `src/pick-accel.js` | lazy three-mesh-bvh for big meshes (built in idle time or on the first ray that crosses one) |
-| `src/render-manager.js` | per-object watch / stale / debounce / build / load loop (render-doc objects) |
-| `src/glb-queue.js` | the load queue for file objects (content `"file"`): priority, ≤ 4 finds, 1 parse at a time, retries, subscriptions |
-| `src/groups.js` | groups: inherited visibility / opacity, remove / ungroup plans, the outline's rows and filter |
-| `src/material-rules.js` | `materialRules`: checking and matching |
-| `src/deps.js` | watches a provider's dependency docs (subscribe, retry, heads) |
-| `src/packages.js`, `src/stage/packages.js`, `src/parts/packages.js` | a scene's packages (STAGE.md, "Packages"): the rules (which URLs can be listed, what a doc calls for, what's missing; pure), the stage's side (reconcile, loading), and the prompt |
-| `src/build.js` | one build: provider → GLB file doc → repoint render doc |
-| `src/controls-tool.js`, `src/param-form.js` | the `scene-render-controls` tool |
-| `src/glb.js` | the GLB encoder (kit: copy me) |
-| `src/render-read.js` | reading a render doc and its GLB from another package (kit: copy me) |
-| `src/stl.js`, `src/sources/file-stl.js` | STL parsing and the STL file provider (the GLB one's content is `"file"`: metadata in `src/index.js`, nothing to build) |
-| `src/test/` | test doubles (a repo, the plugin registry, a camera), the stage harness, and `empty-scene.js`: the whole scene doc every test, probe page and publish script starts from, which is the datatype's `init` |
-| `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
-| `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
-| `src/carry-rules.js` | carrying's pure parts: what can be carried (the trait), connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
-| `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
-| `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces by their trait, a scene extension of the page's own, and the halo; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `touch-probe.html` + `touch-run.mjs` the touch controls with real fingers (touch emulation: `b.touch`): a lock body entered by tapping, its pad, held keys, a look drag at once, a tool's key, a carry turned by the pad, a long press's menu (what the finger pressed, not the eye's look), and the use prompt's buttons as keys (a tap's verbs kept in Look, a held verb wound by a finger and by a mouse); `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
+### GLB conventions
 
-### The editor probe
+- glTF 2.0, **Y-up, metres**, right-handed. Convert inside the provider.
+- Name nodes and meshes. Triangles for surfaces, lines for edges. Include
+  `NORMAL`. A mesh with no material takes the theme colour. Optional vertex
+  attributes: `_ID`, `_<NAME>`. Meshopt, quantization, `KHR_materials_*` and
+  `KHR_texture_transform` are accepted.
+- **Layers:** `extras.layers = [{ id, name?, parent?, visible? }]` on the
+  scene, `extras.layer = id` on a node. Keep ids stable across rebuilds, and
+  emit hidden layers too (`src/layers.js`).
+- **Connectors:** `extras.connectors = [{ position, rotation?, tags? }]` on
+  any node, in its frame: where things go. A carry, part or paste goes into
+  the connector's frame. A tagged connector takes only objects sharing a
+  tag. `extras.snapRadius` (metres) sets the reach; without it, 0.71 × the
+  closest spacing, so a lone connector doesn't snap.
+- **Legend:** `extras.legend = { title, unit, min, max, stops }` on a mesh,
+  2–32 `#rrggbb` stops, draws a colour bar.
 
-```
-pnpm build
-node probes/editor-run.mjs     # --show to watch, --shots <dir> for the screenshots
-```
+### The kit
 
-Two views of one doc (A, and a small B; each one's broadcasts reach only the
-other): a locked 5×5 board with connectors, three blocks, two pawns, and an
-STL file in the repo. Each viewer opens the Inspector from the toolbar. A
-real mouse and keyboard over CDP check the layout (toolbar along the top in
-one row, the drawer at the right with only the Inspector tab, its tree on
-top and the fields below, the canvas filling the rest); a click selects
-(the tree's row is marked and the fields show it, in the one pane; B draws
-A's selection box and marks the row); Escape and a click on nothing deselect;
-G / R / H are nobody's (there are no tools), Grid / Axes / Bounds toggle (per
-viewer, never the doc); a drag on the halo's X arrow moves a block, B seeing
-the pose mid-drag and then the landed transform; a block (it has the carry
-trait) is carried onto a connector, Q turns it 45°, Esc puts it back, Alt
-puts one down between connectors; dragging the locked board orbits and
-writes nothing; . frames everything; M and two clicks on the board write a
-24 cm dimension (label on the canvas, and in the Dimensions tab the toolbar
-opens); a click on that label selects the dimension in place of a selected
-block (one selection; B hears it) and Delete removes it, and only it; Delete
-removes a selected object; the tabs' × close the drawer and the canvas takes
-the room, and the toolbar's Inspector opens it again; a double-click frames an
-object; a right-click opens the menu (Select and Remove work); there are no
-modes (the Edit body); pasted automerge URLs add a
-GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
-200 mm when its unit param changes in the inspector's embedded controls; an
-object attached through the inspector keeps its world pose and follows its
-parent's halo drag. With nothing selected the toolbar's Inspector opens it
-on the Scene: its "Starts in" offers Look and Edit. Then, with arena/ built (its
-plugins are registered too; otherwise these are skipped), "Add behaviour…"
-on a block offers Target and not the scene-only Arena level; adding Target
-starts the arena in both views, beside the editor (its Play in the toolbar;
-both views' editors still there, the doc starting nobody anywhere); the
-Target's × stops it again. Paste, and choosing in a `<select>`, are the synthetic events (headless
-Chrome won't give a page the system clipboard or a select's popup).
+Small modules several packages need are copied, never imported:
+`src/glb.js` (GLB encoder), `src/render-read.js`, `src/layers.js`. Each
+says `[kit: <name> v<N>]`. Edit the canonical copy here, bump its version,
+and run `node scripts/check-kit.mjs --fix` at the repo root.
 
-### The hand
+## Where to look
 
-```
-pnpm build
-node probes/hand-run.mjs        # --show to watch, --shots <dir>
-```
+[STAGE.md](STAGE.md) is the contract, [DESIGN.md](DESIGN.md) the idea,
+[HISTORY.md](HISTORY.md) how and why, [PLANS.md](PLANS.md) deferred work.
+`src/index.js` is plugin metadata only (worker-safe); `src/stage/` the stage
+and view; `src/parts/` the editor's extensions; `src/test/` the harness.
 
-Two scene tools on one doc (each one's broadcasts reach only the other, and
-`element.viewerId` makes them two viewers), a locked 5×5 board GLB with
-`extras.snapPoints`, four blocks, two pawns, a tray and three cards, and a
-`scene:extension` the probe page registers itself (a stand-in for tabletop's,
-which this package can't import): a lens that shows a card's face to whoever
-sits at the tray (a scene trait) when it's in the tray and to everyone when
-it's face up, a Shuffle command on S, a landing hook that turns a card face up
-over the tray, and a panel. A real mouse over CDP carries a block onto a space
-released off-centre (it snaps, and rests on the board; the other peer sees it
-in the air, then where it landed), stacks two more blocks on it, puts a pawn
-down with Alt (exactly where dropped), another off the board (on the ground),
-drags the locked board (it stays; the camera orbits) and cancels a carry with
-Esc. Then the extension: its panel docks in the drawer (and is closed again);
-with nobody seated both
-viewers show both cards' backs; once A sits, A shows the card in the tray as
-itself and B still its back; S over a pile of two face-down cards runs its
-command; a face-down card is carried, turned over with F and put down, and
-both show its face; another carried into the tray lands face up, seen by A
-alone.
-Last, the halo with a real drag on its X arrow: B sees the block move
-before the doc does, then the written pose; and on a group's pivot, both
-pawns move by the same amount. The page's extension is written to
-[STAGE.md](STAGE.md)'s contract (`looks`, `landing`, commands with `state`,
-`api.dock`, `api.notify`).
+## Probes
 
-### At scale: the Solander 38 probe
-
-`solander-run.mjs` serves the Solander 38 site's original GLBs (378 files,
-13.0 MB, meshopt + quantized) and a scene doc of the importer's shape (507
-objects: 378 GLB file layers under 129 groups, 74 shown by default, the
-battery and deck-jig roots hidden), mounts the built tool in headless Chrome
-(real WebGL: ANGLE Metal, Apple M4) against an in-memory repo whose file docs
-arrive over HTTP on first `find`, throttled to 50 Mbit/s and 20 ms, and
-reports:
-
-```
-pnpm build
-node probes/solander-run.mjs --geom <site>/frontend/public --scene <importer>/dry/scene.json --out /tmp/solander [--site]
-```
-
-Measured 2026-09-30 (warm runs; the very first launch after a reboot was
-slower, see below):
-
-| metric | target | measured |
-|---|---|---|
-| docs fetched on open | 74 docs, 3.97 MB; hidden: 0 | 74 docs, 3,968,988 B; 0 hidden fetched |
-| concurrency | ≤ 4 finds, ≤ 1 parse | 4 finds, 1 parse |
-| handles per loaded object | ≤ 1 | 1 (74 subscriptions) |
-| first pixels (hull + deck) | < 1.5 s | 0.14–0.23 s |
-| all 74 default layers loaded | < 8 s | 0.95–1.05 s |
-| long tasks during load | none > 50 ms | none after mount; the mount's own task (WebGL context, environment map, first sync) is 66–126 ms |
-| sync + outline, one visibility toggle | < 8 ms | layer p95 2.8 ms, group p95 2.1 ms |
-| `renderOutline()` | ≤ 1 per frame, < 4 ms | max 1 per frame during load; p95 0.2 ms, max 1.2 ms. A burst of doc changes redraws at once for the first 3 (≤ 4 ms), then once per frame: 100 changes in one task → 3 passes, then 1 |
-| draw calls, default view (renderer.info) | ≤ 150 | 238, not met: 117 objects drawn, and three's transmission pre-pass redraws the opaque ones for the Glass / Acrylic / Solar panels materials. 129 with a transmission → opacity rule, which the importer can write |
-| draw calls, everything shown (renderer.info) | ≤ 500 | 928 with the pre-pass, not met: 462 objects drawn (battery 2,953 nodes → 265 instanced) |
-| triangles | 0.55 M / 4.18 M | 550,417 / 4,176,884 |
-| hover pick, default view | p95 < 4 ms | p95 0.5 ms (7 ms before the lazy BVH); in Measure mode (10 px vertex snap) p95 1.1 ms, everything shown 1.6 ms |
-| idle | 0 frames | 0 |
-
-The first launch after the machine had been idle (cold GPU process and page
-cache) took 0.95 s to first pixels and 2.2 s to load, with five long tasks
-(57–386 ms). Making every shader source unique (`--query cold=1`) did not
-reproduce it, so it isn't shader compilation (compileAsync runs before a GLB is
-shown).
-
-### The example scene, without the importer
-
-`--scene <importer>/dry/scene.json` needs the original importer checkout.
-`probes/solander-scene.example.json` is the portable stand-in: the same shape
-(378 objects, 129 groups, 507 total), reconstructed from the GLB filenames,
-which carry their assembly path separated by `__`. Regenerate it, and run the
-probe against it, with:
-
-```
-node probes/make-example-scene.mjs --geom <site>/frontend/public
-node probes/solander-run.mjs --geom <site>/frontend/public --scene probes/solander-scene.example.json --out /tmp/solander
-```
-
-Its default visibility is a guess (the main set shown, battery and deck jig
-hidden), so it opens **135 objects, not the 74** in the table above; the
-structural rows are comparable, "docs fetched on open" is not.
-
-`publish-example-scene.mjs` turns it into a real document you can open in
-Patchwork. **Every run creates new docs on a shared sync server** — 378 file
-docs and a scene doc, about 13 MB — with no dedupe across runs, so run it only
-when you need a fresh URL. It uses `wss://subduction.sync.inkandswitch.com`
-unless `--sync <url>` or `PATCHWORK_SYNC` says otherwise, then reads every doc
-back from a fresh repo and exits non-zero (without printing the URL) if any is
-missing or has no content.
-
-```
-node probes/publish-example-scene.mjs --geom <site>/frontend/public [--scene probes/solander-scene.example.json] [--sync wss://…]
-```
-
-### Packages probe
-
-```
-pnpm build
-node probes/packages-run.mjs          # ports 4840 / 9840
-```
-
-`packages-probe.html` mounts the built tool on a scene whose `packages`
-lists two packages nothing on the page has registered: one served
-(`packages-probe-package.js`: an extension for a trait the scene has, the
-provider one object is built by, a part) through a stand-in for the host's
-`importPackage` (`filesystem-stub.js`), and one that isn't. A third package
-is registered on the page, at heads, for a trait the scene has, and isn't
-listed; a fourth is registered and listed, and nothing calls for it.
-`packages-run.mjs` checks, with real clicks: one prompt naming both,
-nothing imported before a yes, the registered package listed (bare) and the
-fourth kept while the scene calls for what nothing on the page answers;
-Not now loads and remembers nothing, and the next open asks again; Load
-imports the served package at its heads, registers it under its bare URL,
-its extension starts and its provider builds the object, while the other's
-failure is on the card, and with every need answered the fourth is taken
-off; opened again, the remembered one loads unasked and
-only the other is asked about; the third's trait taken off the scene takes
-its entry off, and the failed one (not here) stays listed.
-
-### Drag probe
-
-```
-pnpm build
-node probes/drag-run.mjs              # serves the package, drives headless Chrome, prints the report
-```
-
-`drag-probe.html` mounts the built tool against an in-memory repo next to a
-fake sidebar whose rows start a drag carrying the same payload Patchwork's
-sidebar does (`text/x-patchwork-dnd`, `text/x-patchwork-urls`, `text/plain`).
-`drag-run.mjs` moves a real mouse over CDP at the rows' real heights: a
-document dragged onto a group goes inside it, a row reorders, a row reparents
-into a group keeping its world pose, a group refuses to go into its own child,
-and the whole-tool hint is down afterwards.
+`probes/` holds browser probes: a page that mounts the built tool against an
+in-memory repo, and a `*-run.mjs` runner that drives it in headless Chrome
+over CDP with a real mouse, keyboard or touch. Run `pnpm build`, then `node
+probes/<name>-run.mjs` (`--show` to watch). `solander-run.mjs` measures a
+507-object scene and needs the original GLBs. Each `publish-*.mjs` run
+makes new docs on a real sync server.

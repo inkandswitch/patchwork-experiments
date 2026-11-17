@@ -13,7 +13,7 @@
 //     cups, thirty dice, a pool, six seats, in both peers' docs.
 //  2. A sits as Red, B as Blue.
 //     Seated, neither in Edit, each view's bar of tools is up (a cups table
-//     declares Lift all cups, a world command: scene/TOOLS.md Decision 10),
+//     declares Lift all cups, a world command: scene/HISTORY.md, TOOLS Decisions 10),
 //     with no editor command on it and nothing to lift yet.
 //  3. Both shake (S over their own cup). Each one's lots are drawn by both
 //     clients; each view knows its own dice and not the other's; the doc

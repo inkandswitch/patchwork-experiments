@@ -142,7 +142,7 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
     d.traits[WEATHER] = placeWeather({ origin: ORIGIN, offset: OFFSET, wind: WIND, sky: SKY }, seed);
     d.objects[sea] = bayWater(seed);
     d.order.push(sea);
-    // people start in Look over the bay (no body named: view.start, TOOLS.md §2); a click on the sloop comes aboard
+    // people start in Look over the bay (no body named: view.start, STAGE.md, "Arriving"); a click on the sloop comes aboard
     d.view.start = { home: { position: [...HOME.position], target: [...HOME.target] } };
     if (!d.title || /^untitled/i.test(d.title)) d.title = "Cadboro Bay";
   });

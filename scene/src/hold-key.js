@@ -1,4 +1,4 @@
-// A key held by a finger (TOOLS.md §5): the touch pad's controls and the
+// A key held by a finger (STAGE.md, "Keys"): the touch pad's controls and the
 // use prompt's held verbs. It presses what a keyboard presses for a code
 // (keydown, then keyup, with the US layout's key: keymap.js keyOfCode) at the
 // view's root, where the router hears keys, so it goes the one key order.

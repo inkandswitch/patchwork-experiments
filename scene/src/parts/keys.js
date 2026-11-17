@@ -1,4 +1,4 @@
-// scene.keys: the key map, the only `input.key` implementer (TOOLS.md §5).
+// scene.keys: the key map, the only `input.key` implementer (STAGE.md, "Keys").
 // A key the open gesture, the held tool and the body don't reserve comes
 // here (the router decides that first), and runs the command the resolver
 // says (../keymap.js mapInvocation): the first whose `key` matches and that
@@ -143,7 +143,7 @@ function create(api) {
     // the held key's own repeat: still the held verb's, on its target
     if (ev.repeat && held.has(codeOf(ev))) return true;
     // the state every hint is computed from (resolver.js), so a shown key does what it showed
-    // attention's path, a stage at a time, innermost first (COMPOSITION.md §5)
+    // attention's path, a stage at a time, innermost first (STAGE.md, "The input chain")
     let inv = null;
     let seg = null;
     for (const s of segmentsOf(resolverState(api, attentionNow()))) {

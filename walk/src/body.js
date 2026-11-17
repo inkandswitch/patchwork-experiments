@@ -1,4 +1,4 @@
-// The walk body (scene/TOOLS.md §4): first person on supports (DESIGN.md,
+// The walk body (scene/STAGE.md, "Bodies"): first person on supports (DESIGN.md,
 // "Standing on supports"). Each frame the walker (walker.js, pure) steps
 // over the navmesh of the support it stands on, in that support's frame;
 // the ground, the stage's own frame, is a support too, so a level's slab, a
