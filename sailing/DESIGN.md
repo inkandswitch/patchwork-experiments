@@ -578,10 +578,15 @@ rewrite that table.
    key that way). So the lobby hint is empty in every base, and with it
    `NEAR`, `nearEye`, hudModel's `seated` and `near`, the `data-seated`
    attribute and the import of crew.js's `seatedView` are gone: the HUD
-   read them only for that line. Table: state {lobby, paused, aboard} ×
-   seated × near, 12 cases (`hud.test.js`), and the sheet's only
-   `pointer-events` is the root's `none`, checked from the file, so no node
-   of the HUD takes a press in any state. Lost: in Look, near her, nothing
+   read them only for that line, and the HUD's second line, `keys`, never
+   set by anything, went too (one line says what the keys do). Table:
+   state {lobby, paused, aboard} × what the crew says (`me.hint`,
+   `swimming`, `free`), 24 cases (`hud.test.js`). The sheet's only
+   `pointer-events`, comments aside, is the root's `none`, and hud.js sets
+   none inline: read from the files, so a test sees only sailing's own
+   sheet. Of scene's, stage.css gives each child of the overlay `auto` at
+   no specificity (`:where`), which the root's own rule outranks, and none
+   names a `.sail-hud` node (checked by reading them, 2026-11-17). Lost: in Look, near her, nothing
    on the view says a click on her boards (the bar's Come aboard and the
    templates' notice still do). *Question for the lead:* should the base
    say what a click does (Look's own "Click to …" under the pointer)? It is

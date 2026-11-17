@@ -16,34 +16,63 @@ describe("the HUD's model", () => {
     expect(compass(2 * Math.PI - 0.001)).toEqual({ deg: 0, point: "N" });
   });
 
-  it("the hint in every state × seated × near (12 cases): before coming aboard it is empty, since what a click on her does is the base's (Edit's selects); the way in is the bar's Come aboard", () => {
-    // seated (the view rides a seat) and near (the eye within a click of her) were what the
-    // lobby's "Click her to come aboard" hung on; neither changes what the HUD says now
-    const HINT = { lobby: "", paused: "Click to carry on", aboard: "WASD walk · Shift run · Space jump · F use" };
+  it("the hint in every state × what the crew says of her walker (me.hint, swimming, free): 24 cases; before coming aboard it is empty whatever the crew says, since what a click on her does is the base's (Edit's selects); the way in is the bar's Come aboard", () => {
     const ME = { lobby: { playing: false }, paused: { playing: true, paused: true }, aboard: { playing: true } };
+    const SWIM = "WASD swim · F at the ladder to climb aboard";
+    const WALK = "WASD walk · Shift run · Space jump · F use";
+    // aboard: a station's own hint over swimming over free over walking; [hint, swimming, free] -> the line
+    const ABOARD = [
+      [false, false, false, WALK],
+      [false, false, true, `Drag to look · ${WALK}`],
+      [false, true, false, SWIM],
+      [false, true, true, SWIM],
+      [true, false, false, "A / D steer"],
+      [true, false, true, "A / D steer"],
+      [true, true, false, "A / D steer"],
+      [true, true, true, "A / D steer"],
+    ];
     const rows = [];
-    for (const state of ["lobby", "paused", "aboard"]) for (const seated of [false, true]) for (const near of [false, true]) rows.push([state, seated, near]);
-    expect(rows).toHaveLength(12);
-    for (const [state, seated, near] of rows) {
-      const m = hudModel({ me: ME[state], seated, near });
-      expect(m, `${state}, seated ${seated}, near ${near}`).toMatchObject({ state, hint: HINT[state], keys: "", panel: false });
-      expect(m, `${state}: the model names no seat`).not.toHaveProperty("seated");
+    for (const state of ["lobby", "paused", "aboard"])
+      for (const [hint, swimming, free, line] of ABOARD)
+        rows.push([state, hint, swimming, free, state === "lobby" ? "" : state === "paused" ? "Click to carry on" : line]);
+    expect(rows).toHaveLength(24);
+    for (const [state, hint, swimming, free, line] of rows) {
+      const me = { ...ME[state], ...(hint && { hint: "A / D steer" }), ...(swimming && { swimming }), ...(free && { free }) };
+      const m = hudModel({ me });
+      expect(m, `${state}, hint ${hint}, swimming ${swimming}, free ${free}`).toMatchObject({ state, hint: line, panel: false });
+      // one line says what the keys do: there's no second keys channel
+      expect(m).not.toHaveProperty("keys");
     }
   });
 
-  it("takes no pointer event, by construction: its root says pointer-events none and no rule of its sheet gives one back", () => {
-    // the sheet as written (vitest hands a ?inline stylesheet over empty)
-    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "hud.css"), "utf8");
-    const decls = [...css.matchAll(/pointer-events\s*:\s*([^;}]+)/g)].map((m) => m[1].trim());
-    expect(decls).toEqual(["none"]);
-    // the one declaration is the root's (.sail-hud), which every node of the HUD inherits
-    const rule = css.slice(css.lastIndexOf("}", css.indexOf("pointer-events")) + 1, css.indexOf("pointer-events"));
-    expect(rule).toMatch(/\.sail-hud:where\([^)]*\)[^{]*\{[^}]*$/);
-    expect(rule).not.toMatch(/\.sail-hud\s+\S/);
+  // what a stylesheet's rules say of pointer-events, comments gone: [{ sel, value }], the innermost selector of each
+  const pointerRules = (css) =>
+    css
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("}")
+      .map((r) => r.split("{"))
+      .filter((parts) => parts.length > 1 && /pointer-events/.test(parts.at(-1)))
+      .map((parts) => ({ sel: parts.at(-2).trim(), value: parts.at(-1).match(/pointer-events\s*:\s*([^;]+)/)[1].trim() }));
+
+  it.each([
+    ["a comment that names it", "/* not pointer-events: auto */ .a { color: red; }", []],
+    ["the root's none", ".a { pointer-events: none; }", [{ sel: ".a", value: "none" }]],
+    ["a child giving it back, in a media block", "@media (hover) { .a .b { pointer-events: auto } }", [{ sel: ".a .b", value: "auto" }]],
+  ])("reading a sheet's pointer-events: %s", (_, css, want) => {
+    expect(pointerRules(css)).toEqual(want);
+  });
+
+  it("takes no pointer event: its sheet's one pointer-events is the root's none, which its nodes inherit, and hud.js sets none inline", () => {
+    // the sheet as written (vitest hands a ?inline stylesheet over empty). Scene's sheets aren't read here:
+    // none of them gives pointer events back to a .sail-hud node (sailing DESIGN.md Decisions (N11) 1)
+    const here = dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(join(here, "hud.css"), "utf8");
+    expect(pointerRules(css)).toEqual([{ sel: ".scene-stage .sail-hud:where(:not(.about-embed *), .about-embed .scene-tool *)", value: "none" }]);
+    expect(readFileSync(join(here, "hud.js"), "utf8")).not.toMatch(/pointer-?events/i);
   });
 
   it("aboard: the walking keys, a station's own hint, swimming, paused, no lock", () => {
-    expect(hudModel({ me: { playing: true } })).toMatchObject({ state: "aboard", keys: "" });
+    expect(hudModel({ me: { playing: true } }).state).toBe("aboard");
     expect(hudModel({ me: { playing: true } }).hint).toMatch(/^WASD walk/);
     expect(hudModel({ me: { playing: true, hint: "A / D steer · F leave" } }).hint).toBe("A / D steer · F leave");
     expect(hudModel({ me: { playing: true, swimming: true } }).hint).toMatch(/ladder/);
@@ -289,6 +318,8 @@ describe("the HUD", () => {
     const s = stage(me);
     expect(s.root.dataset.state).toBe("lobby");
     expect(s.root.querySelector('[data-k="hint"]').textContent).toBe("");
+    // the lines under the view: the hint, where her stations are, the advice; no second keys line
+    expect([...s.root.querySelector(".sail-hint").children].map((n) => n.dataset.k)).toEqual(["hint", "guide", "advice"]);
     expect(s.root.querySelector(".sail-panel").hidden).toBe(false);
     expect(s.root.querySelector('[data-k="speed"]').textContent).toBe("3.9 kn");
     // the eye a few metres from her (at the world's origin, as worldOf says): a click there is Look's
