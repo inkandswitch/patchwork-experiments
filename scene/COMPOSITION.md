@@ -2857,3 +2857,35 @@ the finding; row 6 failed to a stale package, 6 below).
    Merging N7 meets one conflict, in this file's list of what is still
    open (N7's five items against lane/n8's "entering a link moves the
    canvas"): keep both.
+17. **Step 7, run by the integrator** (2026-11-17, 11:30–11:59 UTC; decided
+   unattended (2026-11-17, lane/n7 integration), for the lead). N7 merged
+   into scene-stage as 11eea508, the conflict resolved as 16 says; seats,
+   machine and scene built (each dist the same as the published one: only
+   docs and seats' test differ) and synced, scene's sync also taking in the
+   weather merge's docs (DESIGN, SCOPE, STAGE) and `probes/xdnd-run.mjs`.
+   Suites: seats 87/87 (the stacked-bodies expected failure holding),
+   machine 551 (56 skipped), scene 2048/2048. The real Patchwork, one at a
+   time under the Chrome lock (shots `recovered/publish/shots/n7int/`):
+   - `arcade-check` on the Arcade (automerge:3T4KdCM2…): 29/30 with play,
+     13/14 with `--no-play`. The one red row in both is "each stopped
+     cabinet's note says how to play it", which reads no notes on the
+     published Arcade: its seats are laid now (four a cabinet, read in the
+     same run), and once they are, a seat's tag is a cabinet's label in
+     place of its note, as the same check's framing row already says ("its
+     note, or once its seats are laid a seat's tag") and the folder note
+     has said since N8. The scratch clone, whose seats aren't laid yet,
+     shows both notes. So the row is the check's, not the Arcade's: it
+     held 30/30 on the lane's run, when nobody had yet laid the published
+     Arcade's seats. Not a regression; the check is to read labels as its
+     framing row does.
+   - `arcade-room-check`: *Arcade in the games room* 19/20 after a reload,
+     the red row C (the shell's resolver: scene's package doc `2zt6…`
+     "unavailable"), noted, not counted, as N6's integrator saw; *Games
+     night and the Arcade* 20/20.
+   - `mashup-check` on Games night: 5/5.
+   - `shore-check`: not run, as 16 says.
+   No doc shape changed, so nothing is republished and no folder link
+   moves. Cadboro Bay standing as it is (6), `shore-check` and the
+   ambients question (4) now wait on the weather's W8 republish as well as
+   on the lead: W8 may run now that N7 is in (WEATHER Decision 54 waits on
+   N11 too).
