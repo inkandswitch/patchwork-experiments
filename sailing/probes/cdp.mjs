@@ -208,12 +208,14 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
   // A key reaches the page as an input task of its own, which the dispatch's reply doesn't wait for: a step sent
   // straight after it could run first, and the key land a frame later in one run than in another (sailing/DESIGN.md,
   // "Determinism"). So each key waits, on the wall and stepping no frames, until the page has seen it: a count of the
-  // key events the window has captured (installed by the first key). After 1 s it goes on (a key the browser kept).
+  // key events the window has captured (installed by the first key). A key the page hasn't seen in 1 s is an error:
+  // whatever the probe checks after it would be checking a key that never came.
   const KEYS_SEEN = "(window.__cdpKeys ??= (() => { const s = { n: 0 }; for (const t of ['keydown', 'keyup']) addEventListener(t, () => s.n++, true); return s; })()).n";
   async function keySent(params) {
     const before = await js(KEYS_SEEN);
     await send("Input.dispatchKeyEvent", params);
-    for (const t0 = Date.now(); (await js(KEYS_SEEN)) <= before && Date.now() - t0 < 1000; ) await sleep(1);
+    for (const t0 = Date.now(); (await js(KEYS_SEEN)) <= before; await sleep(1))
+      if (Date.now() - t0 > 1000) throw new Error(`the page never saw ${params.type} ${params.key} (1 s)`);
   }
   async function keyDown(key, mods = 0) {
     const k = keyInfo(key);

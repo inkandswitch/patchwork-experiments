@@ -225,6 +225,31 @@ describe("createSeaView: a boat alone is her own world", () => {
     }
   });
 
+  // Inside an outer world the stage hands the frame as a new matrix at every ask (scene scope.frame → frameOf). Each
+  // row: the matrix's numbers at the next read (a fresh array every time) → is the wind made again?
+  it("in a frame handed afresh at every read, the wind is made again only when the frame's numbers or the value changed", () => {
+    const M = (tx) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, 0, 0, 1];
+    const st = { value: { speed: 7, from: 45, seed: 1, gustiness: GUSTINESS }, matrix: M(0) };
+    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: false, frame: { matrix: [...st.matrix] }, clock: { t: 0, running: true } } : null), clock: { t: () => 0 } };
+    const s = createSeaView(api);
+    const ROWS = [
+      ["the same numbers", () => {}, false],
+      ["the same numbers again", () => {}, false],
+      ["moved", () => (st.matrix = M(5)), true],
+      ["the same numbers as moved", () => {}, false],
+      ["a new value", () => (st.value = { ...st.value, speed: 9 }), true],
+      ["the same value", () => {}, false],
+    ];
+    let last = s.wind;
+    expect(last).not.toBeNull();
+    for (const [label, change, remade] of ROWS) {
+      change();
+      const now = s.wind;
+      expect(now !== last, label).toBe(remade);
+      last = now;
+    }
+  });
+
   it("no water, no water: nothing sails, though the weather's wind still blows; her doc is still the world (her ride and HUD don't hang on water)", () => {
     const doc = scene();
     delete doc.objects.sea;

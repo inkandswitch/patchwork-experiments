@@ -58,7 +58,7 @@ function play(api) {
 
 /**
  * The stock sloop's spec as her physics has it laid out on a stage (the
- * computing view's sim.specOf, after one frame): her contract, her bow's
+ * computing view's sim.stepped, after one frame): her contract, her bow's
  * fairlead, her freeboard.
  */
 export async function stockSpec() {
@@ -67,7 +67,7 @@ export async function stockSpec() {
   try {
     const A = play(w.join("A"));
     w.tick(FRAME, 1);
-    return A.sim.specOf(ids.hull);
+    return A.sim.stepped(ids.hull).spec;
   } finally {
     w.done();
   }
@@ -84,7 +84,7 @@ export function slackOf(w, A, ids) {
   const at = w.doc.objects[ids.windlass].traits[ANCHOR].at;
   const held = w.holds.get(ids.hull)?.transform;
   const v = A.sim.value(ids.windlass);
-  const sp = A.sim.specOf(ids.hull);
+  const sp = A.sim.stepped(ids.hull)?.spec;
   if (!Array.isArray(at) || !held || !sp || v.down === false) return null;
   const body = toBody({ position: held.position, quaternion: quatFromEuler(held.rotation) }, shipFrame(A.api, ids.hull), held.scale ?? 1);
   const b = rotateQ(body.quaternion, bowOf(sp));
@@ -166,15 +166,12 @@ export async function replay({ sea, anchored = false, lay = 0, at = null, eased 
       const v = Number(B.sim.value(ids.rig).raised) || 0;
       held = {
         until,
-        trim: heldTrim({ value: v, goal: 1, rate: RAISE_RATE, input: (x) => B.sim.input(ids.rig, { raised: x }), commit: (x) => B.sim.commit(ids.rig, { raised: x }), alive: () => true, done: release }),
+        trim: heldTrim({ value: v, goal: 1, rate: RAISE_RATE, clock: () => bApi.clock.t(), input: (x) => B.sim.input(ids.rig, { raised: x }), commit: (x) => B.sim.commit(ids.rig, { raised: x }), alive: () => true, done: release }),
       };
     };
-    let last = t();
     for (let frame = 0; frame < 60 * 600; frame++) {
       w.tick(FRAME, 1);
       const now = t();
-      const dt = now - last;
-      last = now;
       if (now >= end) return out;
       onFrame?.({ w, A, B, ids, t: now, phase });
       if (next === "eased" && now >= eased) {
@@ -182,7 +179,7 @@ export async function replay({ sea, anchored = false, lay = 0, at = null, eased 
         next = main && hoist != null ? "hoist" : main && raise != null ? "raise" : "weigh";
       }
       if (held) {
-        held.trim.update(dt);
+        held.trim.update();
         if (!held.trim.open || held.until(now)) {
           held.trim.end();
           held = null;
@@ -206,7 +203,7 @@ export async function replay({ sea, anchored = false, lay = 0, at = null, eased 
         const release = bApi.claim(ids.windlass, STATION);
         held = {
           until: () => false,
-          trim: heldWeigh({ rode: B.sim.value(ids.windlass).rode, input: (f) => B.sim.input(ids.windlass, f), commit: (f) => B.sim.commit(ids.windlass, f), done: release }),
+          trim: heldWeigh({ rode: B.sim.value(ids.windlass).rode, clock: () => bApi.clock.t(), input: (f) => B.sim.input(ids.windlass, f), commit: (f) => B.sim.commit(ids.windlass, f), done: release }),
         };
         next = null;
         phase = "weighing";

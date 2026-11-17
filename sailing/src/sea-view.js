@@ -115,7 +115,7 @@ const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
 export function createSeaView(api) {
   const timing = { mine: false, delta: 0, running: true, worldT: 0 };
   let wind = null;
-  let windFrom = null; // { value, matrix, key, mine }: the ambient the wind was made from
+  let windFrom = null; // { value, key, mine }: the ambient the wind was made from
   let scaled = false; // said once: at another scale, she doesn't sail
 
   function latch(clock) {
@@ -131,15 +131,15 @@ export function createSeaView(api) {
       windFrom = null;
       return null;
     }
-    const matrix = a.frame?.matrix ?? null;
-    if (windFrom && windFrom.value === a.value && windFrom.matrix === matrix && windFrom.mine === a.mine) return a;
+    // the stage hands the frame as a new matrix at every ask (an outer world's: scene scope.frame), so the frame
+    // is compared by its numbers, the value by identity (an ambient's value is a new object only when it changed)
     const key = frameKey(a.frame);
     if (!windFrom || windFrom.value !== a.value || windFrom.key !== key || windFrom.mine !== a.mine) {
       timing.mine = a.mine;
       if (!a.mine && !windFrom) latch(a.clock);
       wind = windFor(a.value, a.frame, timing);
+      windFrom = { value: a.value, key, mine: a.mine };
     }
-    windFrom = { value: a.value, matrix, key, mine: a.mine };
     return a;
   }
 
@@ -170,7 +170,7 @@ export function createSeaView(api) {
     },
     /**
      * The world's wind as it is now: made again whenever the ambient's value
-     * changed, at the read, not at the next frame's tick (which comes after
+     * or its frame's numbers changed, at the read, not at the next frame's tick (which comes after
      * the frame's steps), so a step never reads the last value's wind
      * (DESIGN.md, "Determinism"), as the water package's reader is.
      */

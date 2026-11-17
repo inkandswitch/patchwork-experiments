@@ -184,16 +184,11 @@ try {
       });
       P.docSeen = seen;
     },
-    /**
-     * sample a view's displayed hull every frame for `ms` of the page's clock: [t, x, y, z, yaw, roll].
-     * `close` ({ view, after } ms): that view closed on the frame `after` ms in, so the frame it goes on is the
-     * same every run (a close sent alongside, while this steps, lands on whichever frame the wall gives it)
-     */
-    async sampleFrames(id, w, ms = 1500, close = null) {
+    /** sample a view's displayed hull every frame for `ms` of the page's clock: [t, x, y, z, yaw, roll], t from the call's start */
+    async sampleFrames(id, w, ms = 1500) {
       const out = [];
       const t0 = time.now();
       for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
-        if (close && i === Math.round(close.after / time.frameMs)) P.close(close.view);
         await time.step(1, { draw: false }); // (no picture: a sample)
         const m = dbg[w]?.viewport.worldOf(id);
         if (m) out.push([time.now() - t0, m[12], m[13], m[14], Math.atan2(m[8], m[10]), Math.asin(Math.max(-1, Math.min(1, m[1])))]);

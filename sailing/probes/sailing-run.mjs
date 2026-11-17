@@ -58,7 +58,8 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sa
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
 
 // The page seeds Math.random (--seed) and holds the world until both views have loaded, so runs of one --seed
-// and --sea repeat, step for step, through the leave step (sailing/DESIGN.md, "Determinism"). The sea (its waves and its
+// and --sea can repeat, step for step (measured on sea 1, through the leave step: sailing/DESIGN.md,
+// "Determinism"). The sea (its waves and its
 // gusts) is pinned apart from that: the template draws the sea's seed from Math.random, which every
 // new id draws from too, so a package more or an object more before it would hand the same --seed
 // another sea. The probe writes the sea's own seed into the doc before the world first runs: --sea N,
@@ -106,7 +107,7 @@ const mean = (a) => a.reduce((s, v) => s + v, 0) / (a.length || 1);
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] ?? 0; };
 const T0 = Date.now();
 const traceMark = async (name) => { if (TRACE) await P(`trace.mark(${JSON.stringify(name)})`); };
-const section = (name) => { report.measured.lastSection = name; if (TRACE) void traceMark(`section ${name}`); console.error(`---- ${name} done at ${((Date.now() - T0) / 1000).toFixed(0)} s`); return UNTIL && name === UNTIL; };
+const section = async (name) => { report.measured.lastSection = name; await traceMark(`section ${name}`); console.error(`---- ${name} done at ${((Date.now() - T0) / 1000).toFixed(0)} s`); return UNTIL && name === UNTIL; };
 class Done extends Error {}
 
 // the ship's frame: a point local to the hull, through a displayed world matrix
@@ -253,7 +254,7 @@ try {
   await shot("opening");
 
   // ─── who simulates ───────────────────────────────────────────────────────
-  if (section("opening")) throw new Done();
+  if (await section("opening")) throw new Done();
   const sess = { a: await P("session('a')"), b: await P("session('b')") };
   const simClaim = (await P("doc()")).claims?.clock ?? null;
   const simA = await P("simulating('a')"), simB = await P("simulating('b')");
@@ -327,7 +328,7 @@ try {
   await b.rest(1500);
 
   // ─── floating at anchor ──────────────────────────────────────────────────
-  if (section("sim")) throw new Done();
+  if (await section("sim")) throw new Done();
   const docAnchor = async () => (await P("doc()")).objects[windlass].traits["sailing.anchor"];
   await until(`Array.isArray(window.__p.doc().objects['${windlass}'].traits['sailing.anchor'].at)`, 5000);
   const anchorAt = (await docAnchor()).at;
@@ -346,7 +347,7 @@ try {
   await shot("at-anchor", FOL);
 
   // ─── B comes aboard and weighs the anchor ────────────────────────────────
-  if (section("float")) throw new Done();
+  if (await section("float")) throw new Done();
   // a click on her comes aboard (WATER.md Decisions 30: the sea and the sky are the world's, not hers),
   // wherever she lies on B's screen: the pixel clicked is one of hers
   const onHer = await P(`aimAt('${hull}', 'b')`);
@@ -429,7 +430,7 @@ try {
   check("F leaves the mast: walking again, the halyard's claim gone", (await P("me('b')")).station == null && !(await P("doc()")).objects[rig].claims?.halyard, await P("me('b')"));
 
   // ─── the helm ────────────────────────────────────────────────────────────
-  if (section("anchor")) throw new Done();
+  if (await section("anchor")) throw new Done();
   const wh = await local(wheel);
   // from the wheel, the mast is out of reach: it says where to go
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, 0.15)`);
@@ -563,7 +564,7 @@ try {
   check("and F does nothing for A: the claim stays B's", (await P("me('a')")).station == null && (await P("doc()")).objects[wheel].claims?.station?.session === sess.b);
 
   // ─── under sail: bear away onto a beam reach ─────────────────────────────
-  if (section("helm")) throw new Done();
+  if (await section("helm")) throw new Done();
   // a beam reach on the tack she fell off on: the wind from 45°, the wind on her port beam she heads 135°
   const wind = (await P("doc()")).traits["sailing.weather"].wind;
   const want = ((wind.from + side * 90) * Math.PI) / 180;
@@ -687,7 +688,7 @@ try {
   await shot("quarter-heeled", "a");
 
   // ─── walking the moving deck ─────────────────────────────────────────────
-  if (section("sail")) throw new Done();
+  if (await section("sail")) throw new Done();
   // B stands still for a while up on the cabin top, to windward of the boom, looking
   // forward past the mast (dropped from a little above it: the walker lands on what's there)
   await P(`place('b', '${hull}', [${-0.35 * side}, ${mast[1] + 1.0}, ${mast[2] + 1.4}], 0.1, -0.1)`);
@@ -719,7 +720,7 @@ try {
 
 
   // ─── her navmesh, and the cockpit's edges walked with real keys ───────────
-  if (section("deck")) throw new Done();
+  if (await section("deck")) throw new Done();
   const nav = await staticChecks(js, "b", hull, "sloop");
   report.measured.navmesh = { cells: nav.cells, triangles: nav.triangles, links: nav.links, bakeMs: nav.bakeMs };
   for (const [name, c] of Object.entries(nav.checks ?? {})) check(`her navmesh, baked in B's view from her GLBs: ${name}`, c.ok, c.detail);
@@ -758,7 +759,7 @@ try {
   check("the walk went where it meant to: the sole, both side decks, the aft deck, and into the air", ["sole", "port", "starboard", "aft deck", "air"].every((k) => walked.visited[k] > 0), walked.visited);
 
   // ─── lowering the sail ───────────────────────────────────────────────────
-  if (section("navmesh")) throw new Done();
+  if (await section("navmesh")) throw new Done();
   // She has sailed herself since the helm was left (the wheel where it was): on her rig
   // contract's physics, the main eased (its CE swung out to leeward) rounds her up toward the
   // wind, and in a minute or so she may have lost her way. So B takes the helm and puts her back
@@ -854,7 +855,7 @@ try {
   check("with the sails down (main lowered, jib furled) she carries her way, and slows", trend < -0.01 && mean(slowing) < sp0 * 0.9 && slowing.at(-1) > 0.3, { before: n2(sp0), every4s: slowing, trend: +trend.toFixed(3), mean: n2(mean(slowing)) });
 
   // ─── over the side, and back by the ladder ───────────────────────────────
-  if (section("lower")) throw new Done();
+  if (await section("lower")) throw new Done();
   const ld = await local(ladder);
   await P(`place('b', '${hull}', [${ld[0] + 1.0}, ${ld[1] + 0.2}, ${ld[2]}], -1.57, -0.2)`); // past the rail, over the water
   await until("window.__p.me('b')?.swimming === true", 5000);
@@ -887,7 +888,7 @@ try {
   check("F climbs the ladder: B is back on deck, by the ladder", back.on === hull && !back.swimming && Math.hypot(back.position[0] - ld[0], back.position[2] - ld[2]) < 1.5 && back.eye[1] > mB[13] + 1.6, { back: { on: back.on, position: r3(back.position), eye: r3(back.eye) } });
 
   // ─── the doc hears of her now and then ───────────────────────────────────
-  if (section("swim")) throw new Done();
+  if (await section("swim")) throw new Done();
   // raise the sail again from A's view (not aboard: the use prompt is only in first person… so B does it)
   await P(`place('b', '${hull}', ${atMast}, 0, -0.25)`);
   await b.rest(400);
@@ -904,10 +905,13 @@ try {
   check("the doc gets the hull's transform at the clock's checkpoints (every 30 s), not every frame", seen.n >= 1 && seen.n <= 3, { changes: seen.n, writes: seen.writes, seconds: n2(((await clockMs()) - wall0) / 1000), framesPerSecond: fps });
 
   // ─── handoff: the simulator leaves ───────────────────────────────────────
-  if (section("doc")) throw new Done();
+  if (await section("doc")) throw new Done();
   const before = await P(`read('${hull}', '${FOL}')`);
-  // the simulator closes a second in, on that frame of the page's clock every run (the sampling closes it)
-  const across = await js(`window.__p.sampleFrames('${hull}', '${FOL}', 4000, { view: '${SIM}', after: 1000 })`);
+  // the simulator closes a second in, between two samplings: on that frame of the page's clock every run (no
+  // frame passes between page calls; a close sent while a sampling steps would land on whichever frame the wall gave it)
+  const ahead = await P(`sampleFrames('${hull}', '${FOL}', 1000)`);
+  await P(`close('${SIM}')`);
+  const across = [...ahead, ...(await js(`window.__p.sampleFrames('${hull}', '${FOL}', 3000)`)).map(([t, ...f]) => [ahead.at(-1)[0] + t, ...f])];
   // each frame's step past what her speed carries her in that frame's time: a long frame (the page
   // busy as the other view closes) is a stall, not a jump
   const stepsH = across.slice(1).map((f, i) => Math.max(0, Math.hypot(f[1] - across[i][1], f[3] - across[i][3]) - (Math.abs(before.speed) * Math.max(0, f[0] - across[i][0])) / 1000));

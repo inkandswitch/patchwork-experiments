@@ -210,11 +210,12 @@ describe("aboard, together", () => {
   // The probe page's clock (scene/src/stage/time.js manualTime: now() is start + frames × frameMs, start
   // MANUAL_EPOCH 1e6 ms, frameMs 1000/60) and the dt a loop gets from it (viewport.js: the difference of two
   // readings, over 1000), from its k0-th frame on. Copied, as packages don't import each other. Its last bits
-  // depend on how far the clock has run (four values for one 60 Hz frame), so a page that took one frame more
-  // to load hands every frame after a different dt.
+  // depend on how far the clock has run (a handful of values for one 60 Hz frame, unevenly), so a page that
+  // took one frame more to load hands the frames after it different dts, and the world's t, their sum, differs
+  // in its last bits too.
   const pageFrames = (k0, n) => Array.from({ length: n }, (_, i) => ((1e6 + (k0 + i + 1) * (1000 / 60)) - (1e6 + (k0 + i) * (1000 / 60))) / 1000);
 
-  it("the same keys held over the same world steps sail her the same, whatever frame the page's clock had reached: every step bit for bit (DESIGN.md, \"Determinism\")", async () => {
+  it("the same keys held over the same frames sail her the same, whatever frame the page's clock had reached: every step bit for bit (DESIGN.md, \"Determinism\")", async () => {
     // B at the helm: the wheel to starboard (D), the halyard (R: the main comes part way down), the
     // sheet hauled (Q), each held for a whole number of frames; A computes, and every step her physics
     // takes is kept as taken (sim.stepped: the controls and the state, unrounded)
@@ -248,7 +249,7 @@ describe("aboard, together", () => {
       return { ...out, ids };
     };
     const runs = [];
-    // (the page's dt repeat every third frame here: these three offsets are its three different runs)
+    // (three offsets whose frames' dts differ, asserted below)
     for (const k0 of [0, 1, 2]) runs.push(await sail(k0));
     // the frames' dt differ from run to run (the case this is about) ...
     expect(new Set(runs.map((r) => r.frames.join())).size).toBe(3);
