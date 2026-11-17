@@ -43,7 +43,7 @@ modules share.
 | `weather.js` | yes but for create() | The weather, its own scene:extension on the scene trait `sailing.weather`: it offers the ambients `wind` (read by every boat's physics, by every sea for its waves and by the water package's surface) and `atmosphere` |
 | `sea.js` | yes but for create() | The sea, its own scene:extension on the object trait `sailing.sea`, a behaviour on a water body: for each object with both the sea and the water package's `water`, it builds the spectrum's components from the world's `wind` ambient in its stage's frame and gives them, with what only it knows of them (seed, stats), away as `water.waves` keyed by body (the water package's convention); on a new wind (by value) it asks for one more flush; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surfaces (the open grid round the camera, a bounded body's patch, the Gerstner shader) are the water package's `material.js` |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
-| `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
+| `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds, and the wind on her hull, mast and rigging, each a windage element of her contract's (§3.13) or of `plainWindage`'s, in its own air (§6.1, windage.js `elementForce`). `step(state, controls, env, dt)` |
 | `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder, companionway and its hatch; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, mainsheet, jib winches, companionway, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the weather and a Sea (a water object with a sea on it, first in the order: `bringSea`; its `clip` the box of her layout, `seaClip`: her swing circle or start and the landmarks, 10 m to spare, centred and turned with the layout, so in a world with no open water she floats on a block of her own sea: water/WATER.md, "Clipped open water"), the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
@@ -254,6 +254,20 @@ read means not read anywhere: the physics, and the contract sails' trim
 models the HUD, the looks and the jib station read (`sim.sailModels`), all
 go through the same gate (`body.js` `rigContractOf`, `contractOn`).
 
+**What sailing reads of v1: all of it that §7 gives its physics.**
+`frame`, `loading` (mass, CG, gyradii, crew, the righting curve),
+`appendages`, `sails`, `sailModel`, `sets`, `windage` (§3.13's elements,
+each pushed by its own air as §6.1 says: "Windage" below), `hull` (with
+`hull.sideForce`), `resistance`, `lumpedSail` (§6.8) and `source.hull`;
+each sail's CE swings to its sheet as §6.6's set CE does ("Sails" below);
+`predicted` only in the agreement test. Of fit-out's parts it reads
+`loading.crew.stations` and, for drawing the sheets, `hardpoints`; not
+`loads`, `rig.standing` or `rig.spreaders`. Before N6 (2026-11-16) the
+one part it didn't read was `windage`, with a rule of its own in its
+place; that rule is gone, and a ship without a contract has §3.13's
+elements stated from her box ("Windage"). The stock sloop's contract is
+on `sailing/rig@4` (parts.js `VERSIONS`), the first to state windage.
+
 The copies (`test/rig-contract/`: naval's schema, validator, `compose.js`
 and five valid fixtures; `windage.js`: naval's windage rules) are copies,
 never links. `windage.test.js` holds each copied file to its sha256 and
@@ -449,11 +463,16 @@ rewrite that table.
     kept); with none given, the contract's furl, or more as the main comes
     down (1 − sail), so lowering the sail stows both.
   - Each sail swings about its luff (tack to head: the head stays on the
-    mast or the stay), and its CE with it. That is a moment §6.6 doesn't
-    have: eased right out, the main's drive acts to leeward of the
-    centreplane and turns her to windward (on the Laser's dead run, 0.9 m
-    out, a yaw residual of 1.08 tolerances at 16 kn; on her reaches and runs
-    at 20 kn, up to 1.6).
+    mast or the stay), and its CE with it: eased right out, the main's
+    drive acts to leeward of the centreplane and turns her to windward.
+    Since naval's 01b9b8cb, §6.6 swings the set's CE the same way ("The
+    set's CE, swung": each sail by the set's trimmed sheeting angle,
+    area-weighted), so the fixtures' predicted rudders carry that moment;
+    sailing swings each sail by where its own air and sheet put it, the
+    agreement harness setting each sheet to the point's. Before the swing
+    was in §6.6 it was the Laser's yaw residual (1.08 tolerances on her
+    dead run at 16 kn, up to 1.6 at 20 kn); what is left is the dead-run
+    gap in KNOWN_GAPS (below).
   - In irons, head to wind from rest in 12 kn, with the jib backed to
     starboard and the rudder over to bear her away to port, the sloop falls
     off past 60° in 12.5 s, the J/24 in 6.1 s, the Catalina in 7.5 s,
@@ -731,6 +750,27 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   sampling's frames. The handoff's remaining difference (one run in three)
   is recorded under "Determinism", open: it is past the leave step, in the
   stage's two-peer playback.
+
+Decided unattended (2026-11-17, lane/n6), for the lead:
+- *Docs that are other packages' are left as they are, and listed.* Once
+  sailing reads the contract's windage, three places outside sailing say
+  otherwise: naval's `contract/v1/specification.md` §7 ("`windage` (not
+  yet: sailing applies its own windage rule today …)"); naval's
+  `src/sailing-agreement.test.js`, whose header and pinned figures (209,
+  395 and 36 N of windage surge, sailing's old settle speeds) describe the
+  rule N6 deleted and pass on their own constants; and water/WATER.md,
+  whose list of `ctx.sea`'s members has `clock` (line 106) and which says
+  "`ctx.sea.clock` is `api.clock.t`" (line 351). The lane works in sailing
+  only, so each is listed in FOLLOWUPS for the integrator. Whether a lane
+  may make a one-sentence edit to another package's docs is a question.
+- *Question for the lead: which examples are republished.* rig@4 is a new
+  rig GLB, and a published doc keeps the GLB it was made with, so every
+  example holding the stock sloop carries a contract without windage and
+  sails the plain path (one lumped sail, one Sail row) until it is made
+  again. The integrator republishes the ones that are about sailing her
+  (Ship at sea and at anchor, Lost Cities aboard and what links it,
+  Fitting out, the Harbour, the Model room, the basin mashup). Cadboro Bay
+  and Ucluelet hold her as scenery; republish those too?
 
 ## Trim feedback
 
@@ -1677,7 +1717,10 @@ lighting, not the dressing).
 
 ## Leaving the anchor
 
-At anchor she lies head to wind; that's what an anchor is for. The moment
+At anchor, lying back on her rode, she lies head to wind; that's what an
+anchor is for. Laid at anchor in a seaway she isn't lying to it yet, and
+where she points as it breaks out is chance ("Open", below: measured, not
+fixed, the fix the lead's). The moment
 it breaks out, she is in irons unless the crew does something, and for
 days every probe's slowest, flakiest step was getting her off the wind.
 The cause was in the physics, not the helmsman.
@@ -1753,15 +1796,16 @@ to back the jib (it gives it when she is luffing, the apparent wind within
 40° and under 0.5 m/s, not going astern faster than 0.15 m/s, or in irons,
 within 35° and going astern faster than that; else the step fails, not
 exercised), and her heading must swing past 45° the way the hint names
-within 30 s of sea time, with the jib unrolled, recorded either way, never
+within 30 s of world time, with the jib unrolled, recorded either way, never
 retried. The bound is 30 s, not the stock rig's 10 s, for a sea where she
 breaks out luffing with a little headway: going ahead, the wheel to port
 turns her bow to port first, for some seconds, until the backed jib wins.
 On the probe's default sea (`--sea 1`) she breaks out in irons, going
 astern, and passes 45° in 5.85 s; on sea 383967344 she breaks out luffing
 and takes 21 s (2026-11-17, step 5's final build; 18.9 s on 62756a05). The station's verbs (the wheel, sheets, furler, halyard,
-windlass) run in sea time, as far as the ships step a frame (0.25 s), so
-at a few frames a second the jib still unrolls in its 4 s.
+windlass) run in world time, `api.clock.t()`, in whole steps of its grid
+(`worldSteps`, "Determinism"), so at a few frames a second the jib still
+unrolls in its 4 s of world time.
 
 **Open: laid at anchor, she isn't lying to it, so in waves where she points
 as it breaks out is chance.** This section's opening claim holds once her
