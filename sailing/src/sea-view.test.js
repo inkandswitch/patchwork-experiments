@@ -30,12 +30,15 @@ describe("the wind a boat's physics reads is the weather's offer", () => {
     expect([WEATHER, WIND_AMBIENT]).toEqual(["weather", "wind"]);
   });
 
-  it("the offer of every row is the trait's own numbers, the gustiness its default where the trait has none", () => {
+  it("the stand-in copies none of the weather's policy: a trait's own numbers pass through unclamped and undefaulted (the weather's ranges and defaults are its own, tested in weather), only a missing gustiness is sailing's", async () => {
     expect(rows).toHaveLength(48);
-    for (const t of rows) expect([t, windOffer(t)]).toEqual([t, { speed: t.wind, from: t.from, seed: t.seed, gustiness: t.gustiness ?? 0.3 }]);
-    expect(GUSTINESS).toBe(0.3);
-    expect(windOffer(null)).toBeNull();
-    expect(windOffer({})).toEqual({ speed: 4, from: 235, seed: 1, gustiness: 0.3 });
+    // numbers the weather would clamp (wind 45, from 400) or refuse (a fractional seed) pass as they are
+    expect(windOffer({ wind: 45, from: 400, seed: 2.5 })).toEqual({ speed: 45, from: 400, seed: 2.5, gustiness: GUSTINESS });
+    expect(windOffer({ wind: 3, from: 10, seed: 4, gustiness: 1.7 })).toEqual({ speed: 3, from: 10, seed: 4, gustiness: 1.7 });
+    expect(windOffer({})).toEqual({ speed: undefined, from: undefined, seed: undefined, gustiness: GUSTINESS });
+    expect([null, undefined, false, 0].map(windOffer)).toEqual([null, null, null, null]);
+    // one export, the pass-through: no copied table of the weather's fields to drift
+    expect(Object.keys(await import("./test/weather.js"))).toEqual(["windOffer"]);
   });
 
   it("every row: her wind is createWind of the offer's four numbers, sampled exactly; speed, from and gustiness as offered", () => {

@@ -1,10 +1,11 @@
 // The plugin metadata: plain data that survives the worker's structuredClone,
 // every trait described for "Add behaviour…", and modules that load.
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { plugins } from "./index.js";
+import { emptyScene, fakeWorld } from "./test/fakes.js";
 
 const byId = (id) => plugins.find((p) => p.id === id);
 const TRAITS = ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "sailing.winch", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
@@ -110,17 +111,17 @@ describe("sailing's plugins", () => {
     expect(byId("ship-at-sea").description).toMatch(/under way/);
   });
 
-  it("offers no ambient: no runtime module defines ambient() or names the ambient atmosphere (the world's wind and sky are the weather package's)", () => {
+  it("offers no ambient: the sea's extension, created on a world with the weather in it, has no ambient() (the world's wind and sky are the weather package's; the ships' extension is checked the same way in aboard.slow.test.js, which builds the stage it needs), and no weather.js is left", async () => {
     const src = dirname(fileURLToPath(import.meta.url));
-    const runtime = readdirSync(src).filter((f) => f.endsWith(".js") && !/\.test\.js$/.test(f));
-    expect(runtime).toContain("sea.js");
-    expect(runtime).not.toContain("weather.js");
-    const offers = /\bambient\s*\(\s*\)\s*\{|\bambient\s*:/;
-    // the ambient's name as a key or a string (a comment pointing at STAGE.md's "Atmosphere" section is neither)
-    const atmosphere = /["'`]atmosphere["'`]|\batmosphere\s*:/;
-    for (const f of runtime) {
-      const text = readFileSync(join(src, f), "utf8");
-      expect([f, offers.test(text), atmosphere.test(text)]).toEqual([f, false, false]);
+    expect(readdirSync(src)).not.toContain("weather.js");
+    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["sailing.sea", "sailing"]);
+    try {
+      const doc = { ...emptyScene(), traits: { weather: { wind: 7, from: 45, seed: 3 } } };
+      const x = (await byId("sailing.sea").load()).create(fakeWorld(doc).join("A"));
+      expect([typeof x, "ambient" in x]).toEqual(["object", false]);
+      x.dispose?.();
+    } finally {
+      vi.useRealTimers();
     }
   });
 

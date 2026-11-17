@@ -250,10 +250,10 @@ by name: they meet through conventions (`roster`, `seatPlaces`, `keeper`).
 
 **The sailboat.** A sea is a Water object (the water package's: an object
 whose extent says what the water is, open here) with sailing's sea on it
-(its waves), and the weather is a scene trait (`sailing.weather`: the
-world's wind and sky). Open water is weather, the outermost doc's, so a
-boat alone sails on her own sea and a boat linked into a harbour on the
-harbour's, one surface drawn; water with bounds (a basin, a tank) is a
+(its waves), and the weather is a scene trait (`weather`, the weather
+package's: the world's wind and sky). Open water is weather, the
+outermost doc's, so a boat alone sails on her own sea and a boat linked
+into a harbour on the harbour's, one surface drawn; water with bounds (a basin, a tank) is a
 thing, which its doc keeps wherever it is placed. A sloop is a hull with
 `sailing.ship` and her fittings attached under her, each with a trait
 (helm, sail, winches, windlass, ladder). Her physics is a process on the

@@ -12,7 +12,7 @@ The case that tests it: a card on the saloon table of a sloop sailing
 through an arena level, its game a linked doc of its own.
 
 ```
-card (tabletop.card) → table → [game root: seats]  ┊  link → saloon table → sole → hull (sailing.ship) → [groups] → scene (sailing.weather, arena.level)
+card (tabletop.card) → table → [game root: seats]  ┊  link → saloon table → sole → hull (sailing.ship) → [groups] → scene (weather, arena.level)
 ```
 
 ## 1. Scope is where a trait sits

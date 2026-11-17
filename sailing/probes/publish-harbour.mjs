@@ -96,7 +96,11 @@ if (!OFFLINE) {
     b.from = Number(d.traits?.weather?.from);
     const open = Object.values(d.objects).filter(isOpen);
     if (!open.length) problems.push(`${b.name} (${b.url}) has no open water object: she was published before water bodies; republish her first`);
-    if (!Number.isFinite(b.from)) problems.push(`${b.name} (${b.url}) has no weather of her own to turn her by`);
+    // a weather that leaves `from` out blows from the weather package's default, which this publisher doesn't copy (a
+    // package's defaults are its own): such a boat is refused by name, to be given an explicit `from` (sailing's parts
+    // and templates always write one)
+    if (!d.traits?.weather) problems.push(`${b.name} (${b.url}) has no weather of her own to turn her by`);
+    else if (!Number.isFinite(b.from)) problems.push(`${b.name} (${b.url}): her weather leaves its wind's \`from\` at the weather package's default; write it into her doc to turn her by`);
     console.error(`boat: ${b.name} = ${d.title} (${Object.keys(d.objects).length} objects, wind from ${b.from}, open water ${open.map((o) => o.name).join(", ") || "none"})`);
   }
 }

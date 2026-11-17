@@ -352,16 +352,18 @@ describe("Now", () => {
   // no repeated hours.
   it("puts the sun at the present quarter hour, every minute of two days on eight clocks", () => {
     const Q = 15 * 60_000;
+    const bad = [];
     let n = 0;
     for (const offset of [-12, -8, -7, 0, 5.5, 5.75, 12.75, 14])
       for (const start of ["2026-07-15T00:00:00Z", "2026-12-31T12:00:00Z"])
         for (let m = 0; m < 24 * 60; m++) {
           const t = at(start) + m * 60_000 + 59_999;
           const w = nowWrites({ offset }, t);
-          expect(Number.isInteger(w.hour * 4) && w.hour >= 0 && w.hour < 24).toBe(true);
-          expect(instantOf({ ...w, offset })).toBe(Math.floor(t / Q) * Q);
+          // collected, not asserted per row: 46 080 expects took over 5 s on a loaded machine
+          if (!(Number.isInteger(w.hour * 4) && w.hour >= 0 && w.hour < 24) || instantOf({ ...w, offset }) !== Math.floor(t / Q) * Q) bad.push({ offset, t, w });
           n++;
         }
+    expect(bad).toEqual([]);
     expect(n).toBe(8 * 2 * 24 * 60);
   });
 
@@ -649,8 +651,8 @@ describe("Fetch: run", () => {
     expect(api.changes).toBe(0);
   });
 
-  // Another extension may still offer the world's wind (sailing.weather,
-  // until W5), so the stage is still the world's: the write finds no trait,
+  // Another extension may offer the world's wind (nothing does since W5,
+  // but the convention doesn't forbid it), so the stage is still the world's: the write finds no trait,
   // writes nothing, and nothing says it fetched.
   it("the trait gone when the reply lands: not made again, and no notice", async () => {
     const { api, cmd } = setup();
