@@ -86,8 +86,10 @@ async function pumping(fn) {
   return out;
 }
 
-// the harbour's weather: unlike hers in wind, direction, seed, hour and cover (the run sets hers)
-const HARBOUR_WEATHER = { wind: 5, from: 90, seed: 7, hour: 9, cover: 0.6 };
+// the harbour's weather: unlike hers in every field of the wind (speed, from, seed, gustiness), hour and cover
+const HARBOUR_WEATHER = { wind: 5, from: 90, seed: 7, gustiness: 0.6, hour: 9, cover: 0.6 };
+// her sea's and her weather's seed, written once she's laid out (the template draws one from Math.random)
+const SEED = 4242;
 // her link turns her 30° in the harbour, so her frame matters when her wind is turned back into the world
 const AT = { position: [0, 0, 0], rotation: [0, deg(30), 0], scale: 1 };
 
@@ -121,6 +123,9 @@ try {
   /** the outermost's stage ([]) or the one at link `id` */
   const stageOf = (id = null) => dbg?.view.stages().find((s) => (id == null ? s.path.length === 0 : s.path.length === 1 && s.path[0] === id)) ?? null;
   const inst = (st, ext) => st?.debug.host.instanceOf(ext) ?? null;
+  /** the sailing extension's stage api on a stage (the outermost's by default) */
+  const api = (st = stageOf()) => st?.debug.host.record("sailing")?.api ?? null;
+  const centre = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
   const frameOf = (st) => st.frame()?.matrix ?? I4;
   const worldOf = (st, oid) => mul(frameOf(st), st.displayedWorld(oid));
   /** the drawn ocean (a visible mesh named "ocean"), or null */
@@ -138,9 +143,15 @@ try {
 
   const P = (window.__p = {
     errors, ids, fixture: FIXTURE.request,
-    /** her doc: an empty scene, the "Ship at sea" template clicked as a person does */
+    /**
+     * her doc: an empty scene with its clock held at 0, the "Ship at sea"
+     * template clicked as a person does, her sea's and weather's seed set to
+     * SEED; → once her stage has read that seed. The frames loading takes
+     * are the wall's, but held they pass no world time, so (c) starts her
+     * from the same t, the same seed and the same doc every run.
+     */
     build: () => pumping(async () => {
-      const doc = (docs.boat = repo.add(emptyScene({ title: "Sloop" })));
+      const doc = (docs.boat = repo.add({ ...emptyScene({ title: "Sloop" }), clock: { running: false, t: 0 } }));
       mount(doc);
       const sel = '[data-template="ship-at-sea"]';
       await loaded(() => host.querySelector(sel));
@@ -148,19 +159,28 @@ try {
       await loaded(() => withTrait(doc, "sailing.ship") && withTrait(doc, "sailing.sail") && inst(stageOf(), "sailing") && inst(stageOf(), "water") && inst(stageOf(), "weather") && ocean());
       ids.hull = withTrait(doc, "sailing.ship");
       ids.mast = withTrait(doc, "sailing.sail");
+      ids.sea = withTrait(doc, "sailing.sea");
+      doc.change((d) => {
+        d.objects[ids.sea].traits["sailing.sea"].seed = SEED;
+        d.traits.weather.seed = SEED;
+      });
+      await loaded(() => api()?.ambient("wind")?.value?.seed === SEED && inst(stageOf(), "sailing")?.debug.sea?.oceanAt([0, 0, 0])?.seed === SEED);
       let last = JSON.stringify(doc.doc().traits?.weather ?? null);
       doc.on("change", ({ doc: d }) => {
         const now = JSON.stringify(d.traits?.weather ?? null);
         if (now !== last) weatherChanges++;
         last = now;
       });
-      return { ...ids, weather: doc.doc().traits?.weather ?? null, running: stageOf().debug.host.running().map((r) => r.id), body: dbg.local.get().body?.id ?? null };
+      return { ...ids, weather: doc.doc().traits?.weather ?? null, running: stageOf().debug.host.running().map((r) => r.id), body: dbg.local.get().body?.id ?? null, clock: P.clock() };
     }),
-    /** into Edit, as the menu's Edit does → the body now */
-    edit() {
-      dbg.view.enterBody("edit");
-      return dbg.local.get().body?.id ?? null;
-    },
+    /** the world's clock (her sailing's api.clock, as the clock chip reads it): { t, running } */
+    clock: () => ({ t: api().clock.t(), running: api().clock.running() }),
+    /** the world's clock running again, as the clock chip's ▶ does → its t */
+    resume() { api().clock.resume(); return api().clock.t(); },
+    body: () => dbg.local.get().body?.id ?? null,
+    /** the body chip and its menu's items, where they're drawn (centres), for the runner's clicks */
+    chip: () => centre(host.querySelector(".body-chip")),
+    menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
     weather: () => world.doc().traits?.weather ?? null,
     /** fields of the world's weather, written in one change (as the inspector writes several) */
     set: (fields) => world.change((d) => Object.assign(d.traits.weather, fields)),
@@ -200,9 +220,12 @@ try {
     /**
      * The true wind at her mast now, as the stage she sails in reads it
      * (its sailing extension's sea.wind, at the mast's world point mapped
-     * into her frame, at her clock), turned back into the world; and her
-     * mean wind (that sea's own speed, from and gustiness), from turned
-     * back into the world.
+     * into her frame, at api.clock.t() as physics and the HUD ask it),
+     * turned back into the world; her mean wind (that sea's own speed, from
+     * and gustiness), from turned back into the world; and the `wind`
+     * ambient that stage's sailing reads ({ value, mine }), which its sea
+     * makes that wind of (seed included: sailing's sea-view tests pin the
+     * ambient → createWind step).
      */
     mastWind(link = null) {
       const st = stageOf(link);
@@ -212,7 +235,10 @@ try {
       const F = frameOf(st);
       const dx = m[12] - F[12], dz = m[14] - F[14];
       const lx = F[0] * dx + F[2] * dz, lz = F[8] * dx + F[10] * dz;
-      const t = st.worldTime().t;
+      const a = api(st);
+      // at the grid instant physics stepped her at (scene's STEP_S, 1/60 s): the clock's t can sit up to a
+      // microsecond past it (the doc keeps t rounded up to 1e-6, scene stage/clock.js), and when it does is the wall's
+      const t = Math.round(a.clock.t() * 60) / 60;
       const [vx, vz] = sea.wind.at(lx, lz, t);
       const r = deg(sea.wind.from), ux = -Math.sin(r), uz = Math.cos(r);
       const wx = F[0] * ux + F[8] * uz, wz = F[2] * ux + F[10] * uz;
@@ -220,6 +246,7 @@ try {
         at: [m[12], m[14]], t,
         v: [F[0] * vx + F[8] * vz, F[2] * vx + F[10] * vz],
         mean: { speed: sea.wind.speed, from: ((Math.atan2(-wx, wz) * 180) / Math.PI + 360) % 360, gustiness: sea.wind.gustiness },
+        ambient: (({ value, mine }) => ({ value, mine }))(a.ambient("wind") ?? {}),
       };
     },
     /** the harbour: a weather of its own, water and a Sea, and her linked in live */

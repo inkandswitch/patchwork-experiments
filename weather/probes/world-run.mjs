@@ -19,25 +19,35 @@
 //       atmosphere's; the water's sun direction, sun intensity and sky are
 //       the atmosphere's. At 23 the sun is more than 12° down: no sun
 //       (intensity 0, colour black, no key light, the water's sun at 0) and
-//       the exposure is the night band's, 0.15 of noon's;
+//       the exposure is the night band's (W2's BANDS, whose value W2's tables
+//       pin: this checks the wiring, not the number);
 //   (b) noon, cover 0 then 1: the sky's top changes (in the atmosphere, the
 //       viewport and the water alike); the water's uClouds is the clouds
 //       field ((0, 0, 1, 1): none, at cover 0); the sun's shadows go off, in
 //       the key light too, so the water's scatter takes its overcast third
 //       (uScatterGain 1 → 0.35); then a fog (visibility 300 m): no deck;
-//   (c) wind 10 m/s from 270, gustiness 0.3 (gusts to 13): her sea's wind is
-//       those numbers, and the true wind at her mast, sampled each second
-//       of 60 s of her clock as she sails and averaged as a vector, is
-//       10 ± 1.5 m/s from 270 ± 5°;
+//   (c) wind 10 m/s from 270, gustiness 0.4 (gusts to 14; not 0.3, the
+//       default the weather and sailing share, so a sailing that ignored
+//       the weather's gustiness would show): her stage's wind ambient is the
+//       weather's (seed included) and her sea's wind is those numbers; the
+//       world, held at t = 0 since her doc was made (the frames loading took
+//       passed no world time), runs from here, and the true wind at her mast,
+//       sampled each second of 60 s of her clock as she sails and averaged
+//       as a vector, is 10 ± 1.5 m/s from 270 ± 5°. Held until now, on a
+//       fixed seed, the run gives the same numbers every time;
+//   Edit is entered as a person does: the body chip, then its menu's Edit.
 //   (e) Ucluelet, 15 July 2025 at 15:00, then Fetch for this time on a fake
 //       fetch (the committed archive reply): exactly one request, of the
 //       fixture's URL; exactly one change to the weather, its source
 //       written (Open-Meteo, archive) and it reads fetched; the ambients
 //       are those of the fetched weather;
-//   (d) her doc linked live into a harbour whose weather differs (5 m/s
-//       from 90, seed 7, 09:00, cover 0.6), turned 30°: the world's wind
-//       and sky are the harbour's, and the wind she sails in, turned back
-//       into the world, is the harbour's (not her own 10 from 270);
+//   (d) her doc linked live into a harbour whose weather differs in every
+//       field of the wind (5 m/s from 90, seed 7, gustiness 0.6) and in the
+//       sky (09:00, cover 0.6), turned 30°: the world's wind and sky are the
+//       harbour's; the wind ambient her linked stage's sailing reads is the
+//       harbour's, whole (not hers: mine false), and the wind she sails in,
+//       turned back into the world, is the harbour's speed, from and
+//       gustiness (not her own);
 //   no page errors or warnings.
 // Screenshots for the lead: dawn (6), noon (12), afternoon (18), dusk (21),
 // night (23), overcast, fog, fetched, harbour. Prints a JSON checklist;
@@ -108,6 +118,7 @@ try {
   check("the page mounts with no errors", setup.length === 0, setup);
   const built = await P("build()", 300_000);
   check("Ship at sea makes a sloop on a Sea whose doc carries a weather, and its stage runs sailing, water and weather", !!built.hull && !!built.mast && !!built.weather && ["sailing", "water", "weather"].every((x) => built.running.includes(x)), built);
+  check("her world is held at t = 0 (her doc was made with its clock paused), on the fixed seed", built.clock.t === 0 && built.clock.running === false && built.weather.seed === 4242, { clock: built.clock, seed: built.weather.seed });
 
   // ─── (a) the sun through the day, clear, at Cadboro Bay ─────────────────
   const BASE = { lat: 48.454, lon: -123.2915, offset: -7, date: "2026-07-15", cover: 0, rain: 0, visibility: 30000, wind: 10, from: 270, gustiness: 0.3 };
@@ -121,7 +132,7 @@ try {
     const { e, atm, vp, w } = day[23];
     const noon = day[12].atm;
     check("hour 23: the sun is below the night band's edge (−12°), so it gives no light: intensity 0, colour black, no key light, the water's sun at 0", e.sun.geometric < e.night.at && atm.sun.intensity === 0 && atm.sun.color === "#000000" && vp.key.intensity === 0 && w.sunIntensity === 0, { geometric: e.sun.geometric, sun: atm.sun, key: vp.key, water: w });
-    check("hour 23: the exposure is the night value, 0.15 of noon's (the same sky, the day band at noon)", e.band.exposure === e.night.exposure && Math.abs(atm.exposure / noon.exposure - e.night.exposure) <= 1e-12 && day[12].e.band.exposure === 1, { night: atm.exposure, noon: noon.exposure, band: e.band, nightBand: e.night });
+    check("hour 23: the exposure is the night band's, that fraction of noon's (the same sky, the day band at noon)", e.band.exposure === e.night.exposure && Math.abs(atm.exposure / noon.exposure - e.night.exposure) <= 1e-12 && day[12].e.band.exposure === 1, { night: atm.exposure, noon: noon.exposure, band: e.band, nightBand: e.night });
     // solar noon at 123.3° W on UTC-7 in mid-July is about 13:20, and sunset about 21:10
     const hs = [6, 12, 18, 21, 23];
     check("the sun moves with the hour: its azimuth grows hour by hour, east of south at 6 and 12, west at 18, 21 and 23; up from 6 to 21, down at 23", hs.every((x, i) => i === 0 || day[x].e.sun.azimuth > day[hs[i - 1]].e.sun.azimuth) && day[6].e.sun.azimuth < 90 && day[12].e.sun.azimuth < 180 && day[18].e.sun.azimuth > 180 && [6, 12, 18, 21].every((x) => day[x].e.sun.geometric > 0) && day[23].e.sun.geometric < 0, Object.fromEntries(Object.entries(day).map(([h, d]) => [h, [d.e.sun.azimuth, d.e.sun.geometric]])));
@@ -144,11 +155,13 @@ try {
   await shot("fog");
 
   // ─── (c) her true wind at the mast over 60 s ─────────────────────────────
-  check("wind 10 from 270, gustiness 0.3, clear noon: settles", await dial({ ...BASE, hour: 12 }), null);
-  await b.soon(`window.__p.mastWind()?.mean.speed === 10 && window.__p.mastWind()?.mean.from === 270`, { frames: 60 });
+  check("wind 10 from 270, gustiness 0.4, clear noon: settles", await dial({ ...BASE, hour: 12, gustiness: 0.4 }), null);
+  await b.soon(`window.__p.mastWind()?.mean.speed === 10 && window.__p.mastWind()?.mean.from === 270 && window.__p.mastWind()?.mean.gustiness === 0.4`, { frames: 60 });
   const m0 = await P("mastWind()");
   const wa = await P(`ambient("wind")`);
-  check("her sea's wind is the weather's: 10 m/s from 270, gustiness 0.3 (gusts to 13), the world's wind ambient", m0?.mean.speed === 10 && Math.abs(m0.mean.from - 270) <= 1e-9 && m0.mean.gustiness === 0.3 && wa.speed === 10 && wa.from === 270 && wa.gustiness === 0.3, { mean: m0?.mean, ambient: wa });
+  check("her sea's wind is the weather's: 10 m/s from 270, gustiness 0.4 (gusts to 14), the world's wind ambient, which her stage's sailing reads as its own (seed included)", m0?.mean.speed === 10 && Math.abs(m0.mean.from - 270) <= 1e-9 && m0.mean.gustiness === 0.4 && wa.speed === 10 && wa.from === 270 && wa.gustiness === 0.4 && wa.seed === 4242 && m0.ambient.mine === true && J(m0.ambient.value) === J(wa), { mean: m0?.mean, ambient: wa, read: m0?.ambient });
+  const held = await P("clock()");
+  check("still held at t = 0 after (a), (b) and the settling: then the clock chip's ▶ runs it", held.t === 0 && held.running === false && (await P("resume()")) === 0, held);
   const samples = [];
   for (let s = 0; s < 60; s++) {
     await b.advance(1000);
@@ -167,8 +180,17 @@ try {
   // ─── (e) Fetch for this time, on a fake fetch ────────────────────────────
   // the fixture's moment: Ucluelet, 15 July 2025 15:00 on UTC-7 (the archive)
   check("Ucluelet, 15 July 2025 at 15:00: settles", await dial({ lat: 48.95, lon: -125.558, offset: -7, date: "2025-07-15", hour: 15 }), null);
-  // the weather's commands are editing commands: into Edit, as the menu's Edit does (her template left her in Look)
-  check("into Edit", (await P("edit()")) === "edit", null);
+  // the weather's commands are editing commands: into Edit as a person goes (her template left her in Look): the body chip, then its menu's Edit
+  {
+    const was = await P("body()");
+    const chip = await P("chip()");
+    if (chip) await b.click(chip.x, chip.y);
+    await b.soon(`!!window.__p.menuItem("Edit")`, { frames: 60 });
+    const item = await P(`menuItem("Edit")`);
+    if (item) await b.click(item.x, item.y);
+    await b.soon(`window.__p.body() === "edit"`, { frames: 60 });
+    check("into Edit by the body chip's menu, from Look", was === "look" && !!chip && !!item && (await P("body()")) === "edit", { was, chip, item, now: await P("body()") });
+  }
   const before = await P("weather()");
   const changes0 = await P("weatherChanges()");
   await b.soon(`window.__p.toolbar().some((t) => t.command === "fetch" && !t.disabled)`, { frames: 60 });
@@ -202,7 +224,9 @@ try {
   const harbourSky = await agree("the harbour");
   check("the sky is the harbour's (09:00, cover 0.6), not hers", J(harbourSky.atm) === J(hx.atmosphere) && hx.params.hour === 9 && hx.params.cover === 0.6 && harbourSky.atm.sky.top !== atmosphereOf(weatherParams(own)).sky.top, { harbour: harbourSky.atm.sky, hers: atmosphereOf(weatherParams(own)).sky });
   const linked = await P(`mastWind("LB")`);
-  check("she sails in the harbour's wind: her sea's wind, turned back into the world, is 5 m/s from 90 (not her own)", linked?.mean.speed === 5 && Math.abs(linked.mean.from - 90) <= 1e-9 && linked.mean.gustiness === hw.gustiness, { linked: linked?.mean, own: { wind: own.wind, from: own.from } });
+  check("the harbour's wind differs from hers in every field (speed, from, seed, gustiness)", ["speed", "from", "seed", "gustiness"].every((x) => hw[x] !== own[x === "speed" ? "wind" : x]) && hw.gustiness === 0.6, { harbour: hw, hers: own });
+  check("her linked stage's sailing reads the harbour's wind ambient, whole (speed, from, seed, gustiness), not its own", linked?.ambient.mine === false && J(linked.ambient.value) === J(hw), { read: linked?.ambient, harbour: hw });
+  check("she sails in the harbour's wind: her sea's wind, turned back into the world, is 5 m/s from 90, gustiness 0.6 (not her own)", linked?.mean.speed === 5 && Math.abs(linked.mean.from - 90) <= 1e-9 && linked.mean.gustiness === 0.6, { linked: linked?.mean, own: { wind: own.wind, from: own.from, gustiness: own.gustiness } });
   await shot("harbour");
 
   const errs = (await P("errors")).filter((x) => !EXPECTED.test(x));
