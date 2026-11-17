@@ -741,7 +741,7 @@ on its root. A GLB connector with a `name` is the same thing. Two consumers:
 - **Traversal.** A Doom exit, a teleporter, an OMI link or crossing a
   Croquet portal is a package's field holding `url#name`. Going there is
   the view's: `api.go(url)` opens that doc as the outermost (with the
-  `patchwork:open-document` event the inspector already sends) and puts the
+  `patchwork:open-document` event an inspector section's Open already sends) and puts the
   eye at the named frame, as standing up puts the walker at the eye. The
   arriving doc reads its own frame, so nothing crosses.
 

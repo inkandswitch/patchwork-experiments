@@ -54,7 +54,7 @@ which also give it a scope:
 |---|---|---|
 | **Object** | Some object in the doc carries one of its traits | A card shuffles and draws; a die rolls; a door slides; anything with `scene.carry` can be picked up |
 | **Scene** | The scene itself carries one of its traits | Seats; a sea; an arena level |
-| **General** | It declares no traits: it serves whatever is there | The key map, the menu, notices, the walk body, the editor's outline |
+| **General** | It declares no traits: it serves whatever is there | The key map, the menu, notices, the walk body, the editor's inspector (its object tree on top) |
 
 A contribution can provide:
 
