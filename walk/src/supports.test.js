@@ -204,6 +204,48 @@ describe("a support too big to bake, and the meshes the page keeps", () => {
     expect([s.state.mode, f.calls.notices.length]).toEqual(["walking", 1]);
     s.leave();
   });
+  // Cadboro Bay's case (Decision 43): a 20 × 20 m ground the cap refuses, a 4 × 4 m deck over it that fits; the ground's spawn pad, the deck's
+  // (meshes are kept for the page by key, and a key has the ground's ids, not its triangles: each test names its ground's own)
+  const capped = (ground = {}, name = "floor") => ({
+    [name]: { tris: model([-10, -0.2, -10], [10, 0, 10]), ...ground },
+    pad: { transform: { position: [-4, 0, 2] }, traits: { "walk.spawn": {} } },
+    deck: { transform: { position: [5, 1, -5] }, traits: { "walk.support": {} }, tris: model([-2, -0.3, -2], [2, 0, 2]) },
+    deckpad: { parent: "deck", transform: { position: [1, 0, 1] }, traits: { "walk.spawn": {} } },
+  });
+  const READY = [
+    // [the ground, entering at, its mode after 60 frames, on]
+    ["refused", "deckpad", "walking", "deck"], // a refused support doesn't hold the walk back
+    ["refused", "pad", "walking", "deck"], // a spawn on the refused ground: no floor there, so you fall, and start again on the deck (F4)
+    ["loading", "deckpad", "waiting", null], // one still loading holds every walker back
+    ["baked", "deckpad", "walking", "deck"],
+  ];
+  for (const [ground, place, mode, on] of READY)
+    it(`readiness: the ground ${ground} × entering at ${place} → ${mode}`, () => {
+      const f = stage({ objects: capped(ground === "loading" ? { sourceUrl: "automerge:floor", loaded: false } : {}, ground) });
+      const supports = createSupports(f.api, BODY, { maxColumns: ground === "refused" ? 1e4 : MAX_COLUMNS });
+      const s = walkBody(f.api, supports).enter(place);
+      f.frames(300);
+      expect([s.state.mode, s.state.on ?? null]).toEqual([mode, on]);
+      expect(f.calls.notices.length).toBe(ground === "refused" ? 1 : 0);
+      s.leave();
+    });
+  it("readiness is 4 rows", () => expect(READY.length).toBe(4));
+  // (the ground refused and no other support: nothing can be walked, so the walk waits: the row above, "over the column cap")
+  it("walking off a deck over a refused ground: no floor there (it isn't), so you fall, and land back on the deck's spawn (F4); never waiting", () => {
+    const f = stage({ objects: capped({}, "off") });
+    const supports = createSupports(f.api, BODY, { maxColumns: 1e4 });
+    const s = walkBody(f.api, supports).enter("deckpad");
+    f.frames(2);
+    s.input.key({ code: "KeyW" });
+    const modes = [];
+    for (let i = 0; i < 300 && s.state.mode !== "falling"; i++) (f.frames(1), modes.push(s.state.mode));
+    s.input.keyup({ code: "KeyW" });
+    for (let i = 0; i < 400; i++) (f.frames(1), modes.push(s.state.mode));
+    expect(modes.includes("waiting")).toBe(false);
+    expect(modes.includes("falling")).toBe(true);
+    expect([s.state.mode, s.state.on]).toEqual(["walking", "deck"]);
+    s.leave();
+  });
   it("a mesh is kept while a support uses it and no longer: five rebakes keep only the last; dispose lets it go", () => {
     const objects = { floor: { tris: model([-5, -0.2, -5], [5, 0, 5]) } };
     const f = stage({ objects, camera: { position: [0, 1.6, 0], target: [0, 1.6, -1] } });

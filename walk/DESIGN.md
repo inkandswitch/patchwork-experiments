@@ -128,7 +128,7 @@ over walk").
 
 ## The bake, per support
 
-`bake(input, BODY) → NavMesh` is sailing's `navmesh.js`, moved as it is
+`bake(input, BODY) → NavMesh` is `navmesh.js`, moved from sailing as it was
 after step 1 (a floor only where its triangle meets the column's open
 square, KNOWN_GAPS empty). Its steps 1–5, 7 and 8 do not change. What
 changes is the input, the pruning (step 6), and when it runs.
@@ -182,7 +182,7 @@ that makes a thing move says how walkers meet it:
   hold), while every door, lift and joint in the doc is cycled once by its
   own verb.
 
-### Pruning (step 6), generalised
+### Pruning (the bake's step 6), generalised
 
 Sailing kept the components holding a seed and dropped the rest. That
 can't stay: a floor you reach only by dropping off a ledge, from another
@@ -192,7 +192,7 @@ replaced by a parity test ("inside closed geometry", C6): a level's room is
 a closed shell, so parity calls every room inside.
 
 **Order.** Today the bake renumbers kept cells right after pruning and
-marches sides over kept cells only (sailing/src/navmesh.js, the `newOf`
+marches sides over kept cells only (src/navmesh.js, moved from sailing, the `newOf`
 renumbering before the side classification), so no side can name a dropped
 component. In walk the order is: erode → components → **march every side
 of every eroded cell** → prune → renumber, and a side whose `to` was
@@ -519,7 +519,12 @@ their labels.
 sailing's `ship.js`. walk keeps a copy of the stock sloop's bake input (her
 triangles and seeds) as its own test arena,
 `walk/src/test/fixtures/deck-12m.json`, a copy as CLAUDE.md allows, and
-walk's tests run C1–C9, the bow check and C8 on it. Neither package's test
+walk's tests run C1–C9, the bow check and C8 on it, and whatever the
+boat claims of a right bake of her: the export's `claims`, in walk's words
+(a floor at a height, the kind of a rise going one way, a stand spot that
+stays put beside added boxes), so the boat's own facts (her cockpit is a
+STEP, the traveller isn't a WALL) are hers to state and walk's to check,
+and nothing in walk names a part of hers. Neither package's test
 reads the other's files, so each still passes copied out on its own. The
 copy is refreshed by a sailing script (`probes/export-deck.mjs <out>`), and
 drift is caught at the repo root, as kit copies are (`scripts/check-kit.mjs`):
@@ -935,7 +940,8 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     terrain, a failed one was retried every frame, and eight kept meshes
     could be 5 GB on E1M1. The cap admits E1M1 (4.22M, 10–11 s once) and
     refuses Cadboro Bay and Ucluelet until tiles land; whether to hold walk
-    instead until tiles land is the lead's (Q4).
+    instead until tiles land is the lead's (Q4). A refused support doesn't
+    hold the walk back (Decision 43).
 
 32. **The `walk` part runs in every stage** (`traits: ["*"]`, decided
     unattended (2026-11-17, lane/n10), for the lead). A general part runs
@@ -1023,6 +1029,22 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     dropped (station, ladder, boarding; S1, S2, L1, L2, B1, B2, G1; unit
     cases 20, 23b, 25) are not carried over: "States" and "Transitions"
     above say what replaced them.
+43. **A refused support is walked as if it weren't there** (decided
+    unattended (2026-11-17, lane/n10, step 6 fixes), for the lead): the
+    walk waits until every support has settled, its first mesh landed or
+    refused for its key (Decision 31), and one at least has a mesh (with
+    none there is nowhere to stand: it waits), not until every one has a
+    mesh. A
+    refused support never lands, so waiting for it waited forever: in
+    Cadboro Bay and Ucluelet, whose ground the cap refuses and whose doc
+    carries the sloop, Come aboard never stood you on her deck. Now you
+    walk her deck; off her, the ground isn't there (the water, else
+    falling, then F4 back to her spawn), and the notice has said why; so
+    is a spawn on the refused ground. One
+    still loading is still waited for: it lands, and a walker already
+    round it would break I. Readiness per support (waiting only for the
+    one entered) is the alternative; it needs I to survive a support
+    landing round a walker, which nothing here gives yet.
 
 ## Questions for the lead
 

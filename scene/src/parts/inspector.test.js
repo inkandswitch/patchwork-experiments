@@ -1205,7 +1205,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
       ["walk", "Walk"],
       ["seat", "Seated"],
     ]);
-    expect(startBodies(collected, "aboard").at(-1)).toEqual(["aboard", "aboard"]);
+    expect(startBodies(collected, "ferry").at(-1)).toEqual(["ferry", "ferry"]);
     expect(startBodies([], "look")).toEqual([
       ["look", "Look"],
       ["edit", "Edit"],

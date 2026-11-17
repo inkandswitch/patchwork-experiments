@@ -121,7 +121,7 @@ surface shows is resolved by the same function that runs it.
   section per doc on its path, innermost first.
 - **Hover** is one path, each stage seeing its element.
 - **Where a person is**, as opposed to where the pointer is, is the body.
-  Standing at the tiller pushes sailing's station body over aboard; getting
+  Standing at the tiller pushes sailing's station body over walk; getting
   up pops it. The top body is offered presses after the chain, so a
   station's holder gets a press before a walker would.
 

@@ -398,6 +398,10 @@ export function orientedBox(M, { min, max }) {
  */
 export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {}) {
   const entries = new Map(); // id (null: the ground) → { key, mesh, want, seen, timer, failed }
+  const refused = (id) => {
+    const e = entries.get(id);
+    return e != null && e.want != null && e.failed === e.want;
+  };
   let version = 0;
   let frameNo = 0;
   const boxes = new Map(); // on → [box], this frame
@@ -472,8 +476,22 @@ export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {})
 
   return {
     env,
-    /** Has every support (the ground included) its first mesh? */
-    ready: () => ids().every((id) => env.mesh(id) != null),
+    /**
+     * Has every support (the ground included) settled: its first mesh landed,
+     * or refused for its key (too big, or its bake failed: it never lands, so
+     * it is walked as if it weren't there; DESIGN.md, Decision 43), and one
+     * at least walkable? One still loading holds every walker back, as one
+     * that lands later could be round them; with none walkable, there is
+     * nowhere to stand.
+     */
+    ready() {
+      let some = false;
+      for (const id of ids()) {
+        if (env.mesh(id) != null) some = true;
+        else if (!refused(id)) return false;
+      }
+      return some;
+    },
     changed: () => void version++,
     frame: () => void frameNo++,
     dispose() {
