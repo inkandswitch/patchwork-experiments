@@ -120,6 +120,18 @@ pieces, each published and checked in the real Patchwork:
   change. The *Arcade* (automerge:3T4KdCM2LxkxGj9rwy4bWjZdfXMF,
   republished with one Doom world on 2026-11-16: Decisions, N7, 7) holds
   both, each cabinet whole in the home view with its own label beside it.
+- **Mashups of published docs** (N7; Decisions, N7): docs linked
+  unchanged into a new doc, with no stage code. *Games night* came first
+  (the room and the Liar's dice table). *Arcade in the games room*
+  (automerge:3gvFRkHB8YbCm9B2bRmoVKPbNXyB) links the Quiet games room and
+  the Arcade: people arrive Watching at Lost Cities two links deep, and
+  from Look, P on a cabinet in the link sits you at its port in the
+  Arcade's stage, your keys drive the engine, and the room's game seats
+  stay free. *Games night and the Arcade*
+  (automerge:48Szu3pnC7mVUupS2mSZUt7ZRJQt) puts the same Arcade, at the
+  same pose, beside Games night: a mashup of a mashup, its games three
+  links deep. E1M1 on the Cadboro Bay shore was gated and not published
+  (Decisions, N7, 1 and 2).
 
 Still open:
 - out of focus isn't tinted;
@@ -160,7 +172,12 @@ Still open:
 - machine's "Lay out its world" never refuses a second world for a
   cabinet, and the published Arcade had come to hold two (republished;
   machine/HOST.md, phase 2b, Not done yet; Decisions, N7, 7; Questions for
-  the lead).
+  the lead);
+- in a mashup, a linked world's pause says so nowhere: the clock chips are
+  the focus path's (I12) and machine shows no note while the world is
+  paused, so Play on a cabinet in a link whose world is paused sits you at
+  a machine that never moves (found by N7, 2026-11-16: the published
+  Arcade's world is paused; Decisions, N7, 9; Questions for the lead).
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -262,6 +279,15 @@ Questions for the lead (not decided; each names what stands meanwhile):
   "Lay out its world" be disabled on a cabinet that has one, or replace
   it? Stands meanwhile: the Arcade republished with one world; the
   command unchanged.
+- **The Arcade's paused world, and who says so in a link** (Decisions, N7,
+  9): the published Arcade's world has been paused since 20:20:57 UTC on
+  2026-11-16, by your contact, from its clock chip. Resume it, or leave
+  it? And inside a link, which should say a world is paused: the stage (a
+  clock chip for every linked doc with a process, not only the focus
+  path's), or machine (its note, which today stays silent because "the
+  world's pause says so already")? Stands meanwhile: the Arcade paused, the
+  two mashups linking it as it is; the checks play on a scratch clone
+  whose world starts running.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2462,3 +2488,102 @@ the finding; row 6 failed to a stale package, 6 below).
    *For the lead:* should "Lay out its world" be disabled on a cabinet
    that has its world ("It has its world"), or replace it? Either is a
    small change in machine, outside N7.
+8. **Mashup B: *Arcade in the games room*** (automerge:3gvFRkHB8YbCm9B2bRmoVKPbNXyB,
+   icon Gamepad2; the name and icon decided here): the Quiet games room
+   at the origin and the Arcade of 7, both published, linked unchanged
+   (`publish-links`), people starting as the room starts them. Gated
+   first on an unlisted scratch doc (automerge:2Vs2KeZL5vY6yYBgBdteYMhNDTxP)
+   by the lane's `arcade-room-check` (kept with its publish scripts,
+   outside git), and GO: nothing in scene, walk or machine changed.
+   - **What composed without change** (the published doc, 16/16, its
+     results kept): every doc it opens acts in it, one stage each
+     (the mashup, the room, its three games, the Arcade); people arrive
+     Watching at Lost Cities, two links deep; both cabinets' screens sit
+     on their bezels, read through the Arcade stage's own machine, and
+     each has its session; a seat picker for each game, its options that
+     game's own seats, one more for the Arcade, and the cabinets' eight
+     seats free in the Arcade stage's roster; Walk is on offer; no error
+     notices. Play, on a scratch Arcade (its renders cloned, its runtime
+     fields dropped, its world started) linked with the published room
+     at the same poses: from Look, P aimed at the Doom screen sits you at
+     the Doom P1 seat in the Arcade's stage with the keys panel up; two
+     seconds of held forward reach the engine (71 forward ticcmds in port
+     0's input docs) and the picture moves; Lost Cities' seats stay free;
+     Watching stands you up, the port goes back and the picture holds. So
+     two packages' seat systems share one view through the one roster, a
+     running emulator on world time works inside a link, and machine
+     docs are reached two links down. The published docs it opens that
+     the lane didn't make (the room and its games) kept their heads
+     through the published visit, and every published doc the scratch
+     reaches kept its heads through play.
+   - **The place** (`arcade-room-place`, kept with the check, 13/13 and
+     each mutant killing its rows): the Arcade at (3.4, 0.035, 1.65),
+     turned 180°, its screens facing the tables. The rule ("room to
+     play"): every box of the Arcade (each cabinet, Doom's world, and a
+     players' strip from each cabinet's front out to its seats' cameras)
+     stands on the room's floor and is 0.3 m clear in plan of every
+     triangle the room draws in the slab a player uses (floor + 5 mm to
+     floor + 2.1 m), of each linked game's hint box, and of a column on
+     the walk spawn; of the poses on a 5 cm grid at the four right angles
+     that keep it, the one with the most room (0.908 m, to a Lost Cities
+     chair). Triangles, not hint boxes: the room's Lamps and its Bamboo
+     and moss are one mesh each, spread round the room, and their boxes
+     cover nearly all its free floor (the table's controls 7 to 9). The
+     page agrees: row 6 reads every triangle the room draws, as drawn,
+     against the Arcade's drawn boxes, and finds the same 0.908 m.
+   - **The hover:** the room's tatami are islands 3.5 cm proud of wooden
+     aisles, and a link is one rigid pose, so the Arcade stands at the
+     tatami's top and what is over an aisle hovers 3.5 cm (Doom's world
+     54% of it, each players' strip 40%, the cabinets about 1%). Measured,
+     not decided by; the same rule as E1M1's hover (3).
+9. **Finding: a linked world's pause says so nowhere.** *A question for
+   the lead.* The gate's first play failed row 9: seated at the Doom
+   cabinet, the session's clock stood still and no tick ran. The
+   published Arcade's world is paused (`clock: { running: false, t:
+   32.751, by: <your contact> }`, written at 20:20:57 UTC, 2026-11-16,
+   from its clock chip, after 30 s of world time), and a scratch clone
+   kept that clock. A paused world runs no machine (machine/HOST.md,
+   phase 2b), and machine shows no note then, because "the world's pause
+   says so already" (`machine/src/scene/shown.js` `stoppedNote`). In a
+   mashup it doesn't: the clock chips are the focus path's docs (I12),
+   and the Arcade is a link off it, so Play sits you at a cabinet whose
+   picture never moves and nothing says why, until you enter the link and
+   its chip appears. Not changed here (no package code in N7). The
+   checks' scratch clones now start their world running (`clock: {
+   running: true, t: 0 }`, as published), in `arcade-room-check` and in
+   step 3's `arcade-check` alike; with that, play passed. The published
+   Arcade stays paused: it is the lead's pause.
+10. **6's stop doesn't reach the room.** 6 named the Quiet games room
+   among the published docs with older renders. It has none: read
+   node-side, no object of the room, its three games, Games night or
+   the Liar's dice table has a `renderUrl` (their GLBs are files, drawn
+   from their source; their games are links), so no provider's build
+   writes into them, and the overwrite 6 is about can't happen there.
+   The checks that open them still read their heads before and after,
+   and found them unchanged.
+11. **The fallback, done too: *Games night and the Arcade***
+   (automerge:48Szu3pnC7mVUupS2mSZUt7ZRJQt, icon Trophy; name and icon
+   decided here). 2 sent N7's second mashup to the Arcade nested in Games
+   night; with B a GO, that is published as well, as the composition
+   B doesn't exercise: a mashup of a mashup. Games night at the origin,
+   the Arcade at B's pose. The rule holds there unchanged (the host
+   walked through its links: the room, and the Liar's dice table's
+   drawn dice, cups and pool, 59 GLBs; least 0.908 m, the same chair).
+   Checked by the same `arcade-room-check`, 16/16: every doc acts, one
+   stage each (the two mashups, the room, its three games, the Liar's
+   dice table, the Arcade); people arrive Watching at Lost Cities three
+   links deep; four game seat pickers and the Arcade's; Play on a
+   scratch Arcade linked beside the published Games night passes 8 to
+   11 as in 8; the six published docs it opens that the lane didn't make,
+   and every one the scratch reaches, kept their heads.
+12. **The checks' record for 8 and 11.** B's first published run was
+   14/16: rows 3 and 6 failed on the check's own reads (row 3 read the
+   screens before both machines had put them up, and row 6 counted what
+   the page drew in other terms than the node-side count it compares
+   with; its least, 0.908 m, already agreed); fixed in the check (it waits
+   for both screens, and counts alike), the second run 16/16, a later visit
+   (`--no-play`) 9/9, Games night and the Arcade 16/16. The gate's
+   four scratch runs found 9 (above) and nothing else. Re-read node-side
+   after all of them: `arcade-room-place --check` at the published pose
+   13/13 on the room and 4/4 on Games night (its controls are the
+   room's).
