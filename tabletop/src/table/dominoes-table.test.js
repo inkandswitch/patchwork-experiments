@@ -4,7 +4,7 @@
 // up, and who may see what at each step (visibility.js). Seats and the keeper
 // are stand-ins (test/stand-ins.js), met only through the conventions.
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { CARD, ZONE, audienceOf } from "./visibility.js";
+import { CARD, ZONE, audienceOf, seatAt, zones } from "./visibility.js";
 import Extension from "./extension.js";
 import * as fakes from "../test/fakes.js";
 import { SEATS, keeperOf, keptTrait, roster, stageExtras } from "../test/stand-ins.js";
@@ -302,33 +302,43 @@ describe("standing a tile on edge, and laying it flat", () => {
   });
 });
 
-// What the table answers the scene's carry (`landing`): a domino goes down
-// lying flat wherever it's carried (a rack's place, a connector with a
-// standing frame, stands it: the stage's rule, scene landedPose); a card or a
-// domino carried into your own hand turns face up for you. Every case:
-// piece {domino, card} × where {your rack, the other rack, the table} ×
-// you {seated, not}.
+// What the table answers the scene's carry (`landing`): a domino taken out
+// of a hand (a rack) is being played, and goes down lying flat (a rack's
+// place, a connector with a standing frame, stands it: the stage's rule,
+// scene landedPose); one taken from anywhere else goes down as it is carried,
+// so a tile standing in front of its player (no rack) is never laid face up
+// for everyone by moving it. A card or a domino carried into your own hand
+// turns face up for you. Every case: piece {domino, card} × taken from {a
+// hand, the table lying, the table standing toward your rack} × where {your
+// rack, the other rack, the table} × you {seated, not}.
 describe("what the table answers a carry (landing)", () => {
   afterEach(() => vi.useRealTimers());
   const WHERE = { "your rack": [0, 0.01, OUT], "the other rack": [0, 0.01, -OUT], "the table": [0, 0.004, 0] };
-  const EXPECTED = {
-    domino: { seated: { "your rack": { flat: true, faceUp: true }, "the other rack": { flat: true }, "the table": { flat: true } } },
-    card: { seated: { "your rack": { faceUp: true }, "the other rack": null, "the table": null } },
+  // where the piece is in the doc as it's carried (a carry writes only where it ends)
+  const FROM = {
+    "a hand": T([0.1, RACK.base, OUT + 0.016], [Math.PI / 2, 0, 0]), // standing in Alice's rack, facing her
+    "the table, lying": T([0.05, 0, 0.05], FACE_DOWN()),
+    "the table, standing toward your rack": T([0, 0.0125, 0.15], [Math.PI / 2, 0, 0]), // no rack: Alice's alone
   };
-  for (const piece of ["domino", "card"]) {
-    for (const you of ["seated", "not seated"]) {
-      for (const where of Object.keys(WHERE)) {
-        it(`${piece}, ${where}, ${you}`, () => {
-          const t = table({ seated: you === "seated" ? seats() : seats("carol", "dave") });
-          const id = piece === "domino" ? "b0" : "card";
-          const want = you === "seated" ? EXPECTED[piece].seated[where] : piece === "domino" ? { flat: true } : null;
-          expect(t.A.x.landing(id, WHERE[where])).toEqual(want);
-          t.w.done();
-        });
-      }
-    }
-  }
-  it("a domino standing in your rack is asked the same: flat, face up (it stands again only in a place that stands it)", async () => {
+  const CASES = [];
+  for (const piece of ["domino", "card"]) for (const from of Object.keys(FROM)) for (const where of Object.keys(WHERE)) for (const you of ["seated", "not seated"]) CASES.push([piece, from, where, you]);
+  it("is 36 cases", () => expect(CASES).toHaveLength(36));
+  it.each(CASES)("%s, taken from %s, carried to %s, %s", (piece, from, where, you) => {
+    const t = table({ seated: you === "seated" ? seats() : seats("carol", "dave") });
+    const id = piece === "domino" ? "b0" : "card";
+    // a card never stands: it lies where the domino would
+    const at = FROM[from];
+    t.w.change(fakes.ops.setTransform(t.A.api.scene(), id, piece === "card" ? T(at.position, FACE_DOWN()) : at));
+    const s = t.A.api.scene();
+    const w = s.world(id);
+    expect(seatAt(s, zones(s), [w[12], w[13], w[14]])).toBe(from === "a hand" ? "p1" : null);
+    const flat = piece === "domino" && from === "a hand";
+    const faceUp = you === "seated" && where === "your rack";
+    const want = flat || faceUp ? { ...(flat ? { flat: true } : {}), ...(faceUp ? { faceUp: true } : {}) } : null;
+    expect(t.A.x.landing(id, WHERE[where])).toEqual(want);
+    t.w.done();
+  });
+  it("a domino drawn into your rack is asked the same: flat, face up in your hand (it stands again only in a place that stands it)", async () => {
     const t = table();
     await vi.advanceTimersByTimeAsync(10);
     t.cmd(t.A, "draw").run("b0");

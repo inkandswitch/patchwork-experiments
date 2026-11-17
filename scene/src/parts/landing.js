@@ -20,10 +20,10 @@
 // somewhere already); `rotation` is the whole frame (world, Euler XYZ) of a
 // connector it snapped to that has one (a rack's place, standing a tile on
 // edge), else null: the copy goes into that frame, face up or down as it
-// was (src/transfer.js moveBy).
+// was (carry-rules intoSnap, the carry's rule, through src/transfer.js moveBy).
 
 import { isGroup } from "../groups.js";
-import { connectorFor, partLanding } from "./parts-place.js";
+import { partLanding } from "./parts-place.js";
 import { yawOfMatrix } from "./carry-math.js";
 
 export function landings(api) {
@@ -98,8 +98,9 @@ export function landings(api) {
     if (!parent) return null;
     const m = parent.matrix;
     const origin = [m[12], m[13], m[14]];
-    const snap = snapOff(free) ? null : connectorFor({ ...parent, snapRadius: Infinity }, origin, tags);
-    if (snap) return { point: snap.world, yaw: snap.yaw ?? yawOfMatrix(m), rotation: snap.rotation, parent: id, parentWorld: m, snapped: true, spot: snap.world };
+    // the nearest of its connectors that takes it, whatever the distance: placed as from() places it
+    const land = partLanding({ point: origin, parent: { ...parent, snapRadius: Infinity }, tags, free: snapOff(free) });
+    if (land.snapped) return { point: land.spot, yaw: land.yaw, rotation: land.rotation, parent: id, parentWorld: m, snapped: true, spot: land.spot };
     // on top of it at its origin, if a look straight down finds it there
     const h = down(origin[0], origin[2]);
     const point = h?.point && h.id === id ? h.point : origin;

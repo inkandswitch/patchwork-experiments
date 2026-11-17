@@ -282,13 +282,16 @@ a tile over, and one in someone's hand stays in it, so stays theirs. A
 rack's places hold tiles standing (below), so a
 tile drawn with D arrives standing, and so does one carried into a free
 place of a rack by hand: the place's connector has a whole frame, and the
-scene's carry puts a piece into it (scene/STAGE.md "Landing"). Carried
-anywhere else, a tile goes down lying flat: the table's `landing` answers
-`flat: true` for any piece thick enough to stand (and face up in your own
-hand, as for a card), so a tile carried out of your rack onto the felt is
-played face up in one move, and one carried with F pressed on the way goes
-down face down. A tile stood on the felt with U goes down flat if carried;
-U stands it again.
+scene's carry puts a piece into it (scene/STAGE.md "Landing"). A tile taken
+out of a hand (your rack) is being played: carried anywhere but a place
+that stands it, it goes down lying flat. The table's `landing` answers
+`flat: true` for a piece thick enough to stand that the doc still has in a
+hand (a carry writes only where it ends), and face up in your own hand as
+for a card. So a tile carried out of your rack onto the felt is played face
+up in one move, and one carried with F pressed on the way goes down face
+down. A tile taken from anywhere else goes down as it is carried: one stood
+on the felt in front of you with U (no rack) stays standing, and yours
+alone, however you move it.
 
 **Lay my hand face up** (the menu and inspector only, over your hand or
 anything in it, or a tile standing facing it: no key, so a slip doesn't show
@@ -532,7 +535,7 @@ are none.
 | `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in walking body (`probe-walk`): Sit as Player 1 (the seat body over it), Stand up (popped: walking on from the seat's eye), Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
 | `probes/table.mjs`, `probes/table-probe.html` | two players arriving at a Lost Cities table (watching from a seat: view.start) whose deck a plain keeper keeps, then seated: the use prompt over the pile (Flip, Shuffle) and S shuffling the container and telling B; a card squaring onto a tray slot and a pawn not; seated still, the Parts tab from the toolbar, a pawn dragged out of the bin |
 | `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`, or `dominoes-2`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, that its stage lists the package of every plugin the table calls for (the page registers each built package from its pushwork URL, as a host does) and each is one the script states, play, seats and the jointly kept deck reaching play (Lost Cities: 8 faces each; Draw Dominoes: all 28 tiles shuffled once, none dealt, no veil), and publish the table it made. What each game's table must be is data (`TABLES`) |
-| `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen, both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A carries two standing tiles straight out of the rack into the line, each going down flat and face up in one move (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again, and carries a boneyard tile into a free place of B's rack, where it stands facing B; A carries a standing tile out onto the felt with F on the way (face down) and stands it with U, and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |
+| `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen, both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A carries two standing tiles straight out of the rack into the line, each going down flat and face up in one move (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again, and carries a boneyard tile into a free place of B's rack, where it stands facing B; A carries a standing tile out onto the felt with F on the way (face down), stands it with U and carries it 4 cm on, where it goes down still standing, and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |
 | `probes/chrome-guard.mjs`, `probes/chrome-guard-check.mjs` | Chrome never outlives the probe driver that started it (a watchdog; copied, the same in every package), and a finite check of it |
 | `probes/scene-packages.mjs` | for the publish script: the suggested import and `packages` of a published scene, from each package's pushwork URL (copied, the same in every package) |
 | `src/test/stand-ins.js` | for tests: stand-ins for whoever owns seats and for keepers, made the way the conventions say and naming no real package |

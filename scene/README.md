@@ -244,7 +244,7 @@ STAGE.md, "Extract and bundle".
   `handle.broadcast`, below). An extension can ask for the piece to go
   down another way where it's put (`landing`: face up, as tabletop turns a
   card face up in your hand; flat, on its broadest face, as tabletop lays a
-  domino down wherever it's carried but a rack's place), or say it can't be
+  domino taken out of a hand), or say it can't be
   picked up just now (dice: a die under a cup). How it lands is a pure
   function of how you hold it, the snap point and those answers
   (`landedPose`, STAGE.md "Landing").
@@ -536,10 +536,13 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
   its body axes become the connector's (so a card in the far player's column
   reads right for them, and a rack's place stands a tile on edge, facing its
   player), face up or face down as it was or as a `landing` rule asks, unless
-  the frame stands it on edge, which then says alone which way it faces. A
-  connector with only a yaw turns it about the vertical to face that way.
-  The parts bin and Paste use the same frame (a part, or one copied object,
-  goes into it). A connector with
+  the frame stands it on an edge or an end, which then says alone which way
+  it faces (which it does is by the frame's most upright axis, so a leaning
+  rack still stands a tile). A connector with only a yaw turns it about the
+  vertical to face that way, tilt kept. The parts bin and Paste use the same
+  rule (a part, or one copied top-level object, goes into the frame, and a
+  carried piece copied alone with a load hint rests on the connector as it
+  would carried). A connector with
   `tags` takes only objects whose `tags` share one (none: anything), as
   Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
   [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as

@@ -140,38 +140,75 @@ export function placeConnector(c, m) {
 }
 
 /**
- * How near level a unit axis may be (the size of its vertical part) and still
- * count as level, neither up nor down: a frame read from a GLB's 32-bit
- * floats, or decomposed and composed again, comes out a few 1e-8 off.
+ * Which way body axis `k` of `m` lies: +1 up or −1 down when it is the most
+ * upright of the three (a tie goes to it), else 0: on an edge or an end, as
+ * far as that axis goes. It compares the three axes, never one against a
+ * tolerance, so a GLB's 32-bit noise never decides it and a frame leaning
+ * 10° (a rack tipped back toward its player) stands a piece as an upright
+ * one does: the line is at 45°, the same as tabletop's Stand on edge.
  */
-export const LEVEL = 1e-6;
-
-/** Which way its face (+Y) points: +1 up, −1 down, 0 level (within LEVEL). */
-export function faceOf(m) {
-  const v = m[5] / (Math.hypot(m[4], m[5], m[6]) || 1);
-  return v > LEVEL ? 1 : v < -LEVEL ? -1 : 0;
+export function sideOf(m, k) {
+  const up = [0, 1, 2].map((c) => m[4 * c + 1] / (Math.hypot(m[4 * c], m[4 * c + 1], m[4 * c + 2]) || 1));
+  const a = Math.abs(up[k]);
+  return [0, 1, 2].some((c) => c !== k && Math.abs(up[c]) > a) ? 0 : Math.sign(up[k]);
 }
+
+/** Which way its face (+Y) points: +1 up, −1 down, 0 standing on an edge or an end (sideOf). */
+export const faceOf = (m) => sideOf(m, 1);
 
 /**
  * `W` turned into a connector's frame (`rotation`, Euler XYZ, in the frame
- * W is in): its body axes become the frame's, its own scale and its origin
- * kept. The frame as given, or the frame turned over about its own length
- * (its +Z, as F turns a piece) when that keeps the face the way `face` asks
- * (+1 up, −1 down, 0 either) and the frame's own face isn't level: a frame
- * that stands a piece on edge says alone which way it faces. Pure.
+ * W is in): its body axes become the frame's, its own scale, its handedness
+ * (a mirrored piece stays mirrored, in X) and its origin kept. The frame as
+ * given, or the frame turned over about its own length (its +Z, as F turns
+ * a piece) when that keeps the face the way `face` asks (+1 up, −1 down, 0
+ * either) and the frame lays a piece flat (faceOf: its +Y the most upright
+ * of its axes); a frame that stands a piece on an edge or an end says alone
+ * which way it faces. Pure.
  */
 export function intoFrame(W, rotation, face = 0) {
   const F = composeMatrix({ rotation });
-  const up = F[5] > LEVEL ? 1 : F[5] < -LEVEL ? -1 : 0;
+  const up = faceOf(F);
   const over = up !== 0 && face !== 0 && up !== face;
+  const mirror = det3(W) < 0;
   const out = W.slice();
   for (let k = 0; k < 3; k++) {
     const s = Math.hypot(W[4 * k], W[4 * k + 1], W[4 * k + 2]);
-    const sign = over && k < 2 ? -1 : 1; // turned over about its Z: X and Y reversed
+    const sign = (over && k < 2 ? -1 : 1) * (mirror && k === 0 ? -1 : 1); // turned over about its Z: X and Y reversed
     for (let r = 0; r < 3; r++) out[4 * k + r] = F[4 * k + r] * s * sign;
   }
   return out;
 }
+
+/**
+ * `W` turned as a connector turns what is set down on it (`snap`: { rotation,
+ * yaw } in the frame W is in): into its whole frame when it has one, face up
+ * or down as W is (intoFrame); else, when it says a yaw, about the vertical
+ * through W's origin until W's length (+Z) faces that way, seen from above
+ * (left as it is when that length is within VERTICAL of straight up or down:
+ * it faces no way); else as it is. The one rule for a carry (carry-math
+ * landedPose) and a copy (transfer.js moveBy). Pure.
+ */
+export function intoSnap(W, snap) {
+  if (finite3(snap?.rotation)) return intoFrame(W, snap.rotation.map(Number), faceOf(W));
+  const out = W.slice();
+  if (snap?.yaw == null || !Number.isFinite(Number(snap.yaw))) return out;
+  const len = Math.hypot(W[8], W[9], W[10]) || 1;
+  const now = yawOfDirection(W[8] / len, W[10] / len);
+  const t = now == null ? 0 : yawDelta(now, Number(snap.yaw));
+  if (!t) return out;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  for (let k = 0; k < 3; k++) {
+    const x = W[4 * k];
+    const z = W[4 * k + 2];
+    out[4 * k] = c * x + s * z;
+    out[4 * k + 2] = -s * x + c * z;
+  }
+  return out;
+}
+
+const det3 = (m) => m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5]);
 
 /** Does a connector with these tags take an object with those? (No tags on the connector: anything.) */
 export function accepts(connectorTags, objectTags) {

@@ -5,8 +5,9 @@
 // landedPose's comment, not by the code under test.
 
 import { describe, it, expect } from "vitest";
-import { createCarry, flipMatrix, intoFrame, landedPose, layFlat, rotateAbout, yawOfMatrix } from "./carry-math.js";
-import { composeMatrix } from "../transform.js";
+import { createCarry, flipMatrix, landedPose, layFlat, rotateAbout, yawOfMatrix } from "./carry-math.js";
+import { faceOf, intoFrame, intoSnap } from "../carry-rules.js";
+import { composeMatrix, decomposeMatrix } from "../transform.js";
 
 const H = Math.PI / 2;
 /** A rotation from its three body axes in world (columns). */
@@ -38,7 +39,8 @@ const SNAPS = { none: null, "yaw-only connector (π/2)": { rotation: null, yaw: 
 // Worked out by hand (the rules, in order: flat lays it on its broadest face,
 // face up from standing; faceUp turns a face-down one over about its length;
 // a frame takes it whole, face kept unless the frame stands it; a yaw turns
-// it about the vertical). `turned`: the faceUp turn happened and shows.
+// it about the vertical). `turned`: the faceUp turn happened and shows (not
+// in a frame that stands it, `stands`).
 const R = {
   I: [PX, PY, PZ],
   yawed: [NZ, PY, PX], // flat face up, length along +X (I turned a quarter about +Y)
@@ -96,7 +98,8 @@ describe("landedPose: start × answer × snap (48 cases)", () => {
     const yaw = yawOfZ(want[2]);
     if (yaw == null) expect(Math.hypot(p.W[8], p.W[10])).toBeLessThan(1e-9);
     else expect(Math.abs(Math.atan2(Math.sin(yawOfMatrix(p.W) - yaw), Math.cos(yawOfMatrix(p.W) - yaw)))).toBeLessThan(1e-9);
-    expect(p.turned).toBe(turned);
+    expect(p.turned && !p.stands).toBe(turned);
+    expect(p.stands).toBe(snap === "framed standing connector");
     // turned where it is: its origin kept
     expect(p.W.slice(12)).toEqual([0.3, 0.01, -0.2, 1]);
   });
@@ -128,6 +131,7 @@ describe("landedPose: start × answer × snap (48 cases)", () => {
     const p = landedPose(frame(...STARTS[start]), TILE, { snap: { rotation: [0, H, 0], yaw: H }, answer, faceYou: true });
     expect(near(axes(p.W), want)).toBe(true);
     expect(p.turned).toBe(turned);
+    expect(p.stands).toBe(false);
   });
 });
 
@@ -239,5 +243,169 @@ describe("the carry lands each case as landedPose says", () => {
     c.move(down(1.1, 0));
     expect(c.state.W[5]).toBeLessThan(0);
     expect(c.state.flips).toBe(2);
+  });
+});
+
+// Which frames stand a piece and which lay it flat is decided by the frame's
+// most upright axis (carry-rules sideOf), never by a hair off level: a rack
+// leaning toward its player still stands a tile, facing the way the rack
+// says, whichever way up the tile was held. Every row's answer is the
+// frame's own axes, or those turned over about its length (X and Y
+// reversed), written out from the frame.
+describe("leaning and tilted frames", () => {
+  const D = Math.PI / 180;
+  // the rack's place (face +Z, length +X, X up) leaned about its length by a: + tips its face down, − up
+  const leaned = (a) => [[0, Math.cos(a), Math.sin(a)], [0, -Math.sin(a), Math.cos(a)], PX];
+  // a tray (face up, length +Z) tilted about +X by a
+  const tilted = (a) => [PX, [0, Math.cos(a), Math.sin(a)], [0, -Math.sin(a), Math.cos(a)]];
+  const over = ([x, y, z]) => [x.map((v) => -v), y.map((v) => -v), z];
+  const rotationOf = (ax) => decomposeMatrix(frame(...ax)).rotation;
+  const PIECES = ["flat face up", "flat face down", "standing facing +Z"];
+  const ROWS = [];
+  for (const a of [5, -5, 30, -30, 44, -44]) for (const start of PIECES) ROWS.push([`rack leaned ${a}°`, leaned(a * D), start, true, false]);
+  // past 45° the face is the most upright axis: a frame that lays a piece flat, face kept as held
+  for (const start of PIECES) ROWS.push(["rack leaned −50° (face up)", leaned(-50 * D), start, false, start === "flat face down"]);
+  for (const start of PIECES) ROWS.push(["rack leaned 50° (face down)", leaned(50 * D), start, false, start === "flat face up"]);
+  for (const a of [5, -5, 30, -30]) for (const start of PIECES) ROWS.push([`tray tilted ${a}°`, tilted(a * D), start, false, start === "flat face down"]);
+
+  it("is 36 rows", () => expect(ROWS).toHaveLength(36));
+
+  it.each(ROWS)("%s, %s held %s", (_, F, start, stands, isOver) => {
+    const p = landedPose(frame(...STARTS[start]), TILE, { snap: { rotation: rotationOf(F), yaw: null } });
+    expect(p.stands).toBe(stands);
+    expect(near(axes(p.W), isOver ? over(F) : F)).toBe(true);
+  });
+
+  it("the reviewer's rack leaned back 10°: a face-down tile carried in with flat stands facing its player", () => {
+    const rotation = [H - 0.1745, H, 0];
+    const F = axes(composeMatrix({ rotation }));
+    const p = landedPose(frame(...STARTS["flat face down"]), TILE, { snap: { rotation, yaw: H }, answer: { flat: true } });
+    expect(p.stands).toBe(true);
+    expect(near(axes(p.W), F)).toBe(true);
+    expect(axes(p.W)[1][2]).toBeGreaterThan(0.98); // its face toward the player, at +Z
+  });
+
+  it("faceOf is the face's side when the face is the most upright axis, else 0, and ties go to the face", () => {
+    expect([faceOf(frame(PX, PY, PZ)), faceOf(frame(NX, NY, PZ)), faceOf(frame(PY, PZ, PX))]).toEqual([1, -1, 0]);
+    const at45 = frame(PX, [0, Math.SQRT1_2, Math.SQRT1_2], [0, -Math.SQRT1_2, Math.SQRT1_2]);
+    expect(faceOf(at45)).toBe(1);
+  });
+});
+
+describe("what the landing rules turn, pinned", () => {
+  // thinnest across (X), held face down with X level: flat first lays it on its side (X up), and its
+  // face, now level, is no longer down, so faceUp doesn't turn it. (faceUp first would turn it over.)
+  it("flat comes before faceUp", () => {
+    const THIN_X = { min: [-0.005, -0.02, -0.03], max: [0.005, 0.02, 0.03] };
+    const p = landedPose(frame(PX, NY, NZ), THIN_X, { answer: { flat: true, faceUp: true }, faceYou: true });
+    expect(near(axes(p.W), [PY, PX, NZ])).toBe(true);
+    expect(p.turned).toBe(false);
+  });
+
+  // which way a standing tile goes down is by its most upright axis, as a frame's is: tipped 30° toward
+  // its face it is still on edge (laid face up), tipped 60° it lies face down already (kept so)
+  it.each([
+    [30, R.yawed],
+    [44, R.yawed],
+    [46, R.downYawed],
+    [60, R.downYawed],
+  ])("a standing tile tipped %i° toward its face lays flat as %j", (deg, want) => {
+    const tipped = rotateAbout(frame(...STARTS["standing facing +Z"]), PX, (deg * Math.PI) / 180);
+    expect(near(axes(layFlat(tipped, TILE)), want)).toBe(true);
+  });
+
+  it("a mirrored piece stays mirrored in a frame, its X reversed", () => {
+    const M = frame(NX, PY, PZ); // mirrored in X
+    const out = intoFrame(M, STAND, 0);
+    expect(near(axes(out), [NY, PZ, PX])).toBe(true);
+    const det = (m) => m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5]);
+    expect(det(out)).toBeCloseTo(-1, 12);
+    // and through a yaw-only connector
+    expect(det(landedPose(M, TILE, { snap: { rotation: null, yaw: 1 } }).W)).toBeCloseTo(-1, 12);
+  });
+
+  // a start turned 0.3 and a connector at 1.0, so the yaw column tells "the connector turned it" apart
+  it.each([
+    ["flat face up, yawed 0.3", rotateAbout(frame(PX, PY, PZ), PY, 0.3), 1],
+    ["flat face down, yawed 0.3", rotateAbout(frame(NX, NY, PZ), PY, 0.3), -1],
+    ["standing facing +Z, yawed 0.3", rotateAbout(frame(PY, PZ, PX), PY, 0.3), 0],
+  ])("a yaw-only connector at 1.0 turns %s to face 1.0, its up kept", (_, own, face) => {
+    const p = landedPose(own, TILE, { snap: { rotation: null, yaw: 1 } });
+    expect(yawOfMatrix(p.W)).toBeCloseTo(1, 12);
+    expect(faceOf(p.W)).toBe(face);
+    expect(p.W[1]).toBeCloseTo(own[1], 12); // X's height: turned only about the vertical
+    expect(landedPose(own, TILE).W).toEqual(own);
+  });
+
+  it("a piece whose length is straight up faces no way: a yaw-only connector leaves it", () => {
+    const onEnd = frame(NX, PZ, PY);
+    expect(landedPose(onEnd, TILE, { snap: { rotation: null, yaw: 1 } }).W).toEqual(onEnd);
+    // within VERTICAL (1e-6) of straight up: noise, not a heading
+    const hair = rotateAbout(onEnd, PX, 1e-8);
+    expect(intoSnap(hair, { rotation: null, yaw: 1 })).toEqual(hair);
+    // further off, it has a heading and turns to it
+    const off = rotateAbout(onEnd, PX, 1e-3);
+    expect(yawOfMatrix(intoSnap(off, { rotation: null, yaw: 1 }))).toBeCloseTo(1, 9);
+  });
+});
+
+describe("the carry: where the rules are asked, and turns over that show", () => {
+  const ground = () => null;
+  const down = (x, z) => ({ origin: [x, 10, z], dir: [0, -1, 0] });
+  const rack = [{ world: [1, 0, 0], rotation: STAND, yaw: H, radius: 0.5, objectId: "rack" }];
+
+  // asked where it would go down turned to the snap: its footprint on the place as it stands there
+  it("landing is asked at where it goes down in the snap's frame, on what it snaps to", () => {
+    const asked = [];
+    const landing = (id, p, on) => {
+      asked.push({ p, on });
+      return null;
+    };
+    const c = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground, landing });
+    c.move(down(1, 0));
+    const W = c.put();
+    const last = asked.at(-1);
+    expect(last.on).toBe("rack");
+    expect(last.p.map((v) => +v.toFixed(12))).toEqual([W[12], W[13], W[14]].map((v) => +v.toFixed(12)));
+    // where it would go down as held (flat) is elsewhere: the frame moved its footprint
+    expect(Math.hypot(last.p[0] - 1, last.p[2])).toBeGreaterThan(1e-3);
+  });
+
+  it("F in a frame that stands it shows nothing; it turns over in the air as it leaves", () => {
+    const c = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground });
+    c.move(down(1, 0));
+    const inRack = c.state.W.slice();
+    c.flip();
+    expect(near(c.state.W, inRack, 1e-12)).toBe(true);
+    expect(c.state.flips).toBe(0);
+    c.move(down(3, 0)); // off the place: face down now, and that turn shows
+    expect(faceOf(c.state.W)).toBe(-1);
+    expect(c.state.flips).toBe(1);
+    c.move(down(1, 0)); // back in: nothing shows
+    expect(c.state.flips).toBe(1);
+    c.move(down(3, 0)); // out again face down, as it was last seen: no turn
+    expect(c.state.flips).toBe(1);
+  });
+
+  it("F twice in a frame that stands it: nothing ever shows", () => {
+    const c = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground });
+    c.move(down(1, 0));
+    c.flip();
+    c.flip();
+    c.move(down(3, 0));
+    expect(faceOf(c.state.W)).toBe(1);
+    expect(c.state.flips).toBe(0);
+  });
+
+  it("Q over a yaw-only snap turns how it is held, seen as it leaves", () => {
+    const snaps = [{ world: [1, 0, 0], rotation: null, yaw: 1, radius: 0.5, objectId: "slot" }];
+    const own = rotateAbout(frame(PX, PY, PZ), PY, 0.3);
+    const c = createCarry({ id: "card", W: own, box: TILE, snaps, raycast: ground });
+    c.move(down(1, 0));
+    expect(yawOfMatrix(c.state.W)).toBeCloseTo(1, 12);
+    c.turn(0.5);
+    expect(yawOfMatrix(c.state.W)).toBeCloseTo(1, 12);
+    c.move(down(3, 0));
+    expect(yawOfMatrix(c.state.W)).toBeCloseTo(0.8, 12);
   });
 });

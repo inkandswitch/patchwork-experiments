@@ -531,10 +531,12 @@ view's side is `scene.transfer`, editing only).
     the middle of the view) they land by the parts bin's rule: under the
     object hit, snapped to a connector whose tags take a lone object's tags
     (Alt, or Snap off: freely), turned to the connector's or that object's
-    heading; on the ground they keep the heading they had. A lone object
-    snapped to a connector with a whole frame goes into that frame, face up
-    or down as it was ("Landing"). Tilt, scale and every transform below the
-    top come as they were. Pasted, they go under
+    heading; on the ground they keep the heading they had. A lone
+    top-level object snapped to a connector is turned the carry's way
+    ("Landing", step 3): into a whole frame (its tilt replaced by the
+    frame's, face up or down as it was, a mirror kept), else to the yaw.
+    Scale and every transform below the top come as they were, and so does
+    the tilt of anything not going into a frame. Pasted, they go under
     the object at the middle of the view only when they snap to one of its
     connectors; else on the surface there, under nothing, and each repeat of
     one Copy steps sideways by the copy's width onto whatever is under that
@@ -548,9 +550,12 @@ view's side is `scene.transfer`, editing only).
     the objects' `hint.bounds` through the doc's transforms), so the copy
     rests on its base: a crate whose origin is its middle sits on the floor.
     A connector is made for an origin at the base, so a snapped copy isn't
-    raised; but one going into a connector's frame with a load hint rests on
-    it the carry's way (a tile stood on edge in a rack's place sits on the
-    rack, its origin no longer at its base).
+    raised and its origin goes to the connector (the parts bin's rule), with
+    one exception: a lone top-level carried piece (`scene.carry`) with a
+    load hint rests on the connector as the carry rests it, the middle of
+    its footprint over it and its underside at its height, whether the
+    connector has a frame or a yaw (a tile stood on edge in a rack's place
+    sits on the rack, as it would carried there).
   - **Every field but runtime state.** Not copied: `claims` and `saved` (the stage's), and
     any trait key an extension marks as runtime in `describes` (below). Pose
     holds and presence were never in the doc.
@@ -1695,34 +1700,55 @@ things (`landedPose`, src/parts/carry-math.js), and nothing else turns it:
 - **the snap**: the connector it goes to (its whole frame, `rotation`, or
   only its `yaw`), or none;
 - **the answer**: every running extension's `landing(id, worldPoint, hitId)`
-  merged, the last word winning per field. It is asked on every move,
-  where the piece would go down turned to the snap, after F as before.
+  merged, the last word winning per field. It is asked on every move, F or
+  no F (before this, F stopped it being asked), at the point where the
+  piece's origin would go down turned to the snap (on what it would rest on
+  there, `hitId`). The doc still has the piece where it was picked up (a
+  carry writes only where it ends), so a rule can ask where it came from.
 
 In order:
 
 1. `flat: true`: it lies on its broadest face (its thinnest body axis
-   upright, by the smallest turn about a level axis). Face down stays face
-   down; standing on edge it goes face up. Its length keeps the way it
-   pointed, seen from above, wherever it was level. A piece lying flat
-   already is left as it is.
+   upright, by the smallest turn about a level axis). Its length keeps the
+   way it pointed, seen from above, wherever it was level. A piece lying
+   flat already is left as it is; one face down stays face down; one on an
+   edge or an end goes face up.
 2. `faceUp: true`: turned over about its length if its face is down. Only
    while the carry is the rule's to turn: picked up where no rule asked
-   it, and not turned over by F since. A face that is level (standing) is
-   left alone.
-3. A connector with a whole frame: its body axes become the frame's, face
-   up or face down as 1 and 2 left it (the frame turned over about its own
-   length for a face-down piece). A frame whose face is level (a rack's
-   place, standing a tile on edge) says alone which way it faces. A
-   connector with only a yaw turns it about the vertical to face that way.
+   it, and not turned over by F since. A piece on an edge or an end is left
+   alone.
+3. The snap (`intoSnap`, src/carry-rules.js). A connector with a whole
+   frame: its body axes become the frame's, face up or face down as 1 and 2
+   left it (the frame turned over about its own length for a face-down
+   piece; a mirrored piece stays mirrored, in X). A frame that stands a
+   piece on an edge or an end (a rack's place) says alone which way it
+   faces. A connector with only a yaw turns it about the vertical until its
+   length faces that way, tilt kept (a piece whose length is straight up
+   faces no way and isn't turned).
+
+"Face up", "face down" and "on an edge or an end" are one test, for a piece
+and a frame alike (`sideOf`): an axis lies up or down when it is the most
+upright of the three, else on an edge. So a rack leaning back 30° still
+stands a tile, and a tray tilted 30° still lays one flat; the line is at
+45°, never a hair off level.
 
 With no snap and no answer it is exactly as held. A snap's or a rule's turn
 lasts only while the piece is over that place; carried away again, it is as
-held. F turns over what you see (after 1 and 2), and from then on it is
-yours: faceUp is no longer heeded, `flat` still is. The parts bin and Paste
-use step 3: a part goes into a connector's frame as the frame gives it, a
-single copied object face up or down as it was (several take only the yaw),
-and a copied object with a load hint rests on the connector the carry's way,
-the middle of its footprint over it and its underside at its height.
+held. So Q / E over a connector turn how it is held, out of sight, and the
+turns show once it leaves (the connector's own turn wins while it is over
+it). F turns over what you see (after 1 and 2), and from then on it is
+yours: faceUp is no longer heeded, `flat` still is. A turn over is shown
+(the piece turns in the air) when what shows changes: F in a frame that
+stands the piece shows nothing until it leaves the frame, and then it turns.
+
+The parts bin and Paste use step 3: a part goes into a connector's frame as
+the frame gives it; a copy with one top-level object is turned by the same
+`intoSnap` (several take only the yaw). Where it goes is the parts bin's
+rule, its origin at the connector, except for a carried piece (`scene.carry`)
+copied alone with a load hint, which rests on the connector as the carry
+rests it: the middle of its footprint over it, its underside at the
+connector's height (the carry's rays find the surface there; a copy has
+none). So a piece lands where it would carried, whichever way it arrives.
 
 ### Audience
 

@@ -7,12 +7,11 @@
 // (arrays); `raycast(origin, dir)` → { id, point } | null is the stage's,
 // already told to skip the carried object and what's attached to it.
 
-import { LEVEL, accepts, faceOf, footprintSamples, intoFrame, liftFor, nearestSnap, placeConnector, yawDelta } from "../carry-rules.js";
-import { decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
+import { accepts, faceOf, footprintSamples, intoSnap, liftFor, nearestSnap, placeConnector, sideOf } from "../carry-rules.js";
+import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 
 const Y = [0, 1, 0];
 
-export { LEVEL, faceOf, intoFrame };
 
 /** The yaw (radians about +Y) a world matrix turns +Z to, seen from above. */
 export const yawOfMatrix = (m) => Math.atan2(m[8], m[10]);
@@ -264,10 +263,11 @@ const axisOf = (m, k) => {
  * `W` lying on its broadest face: the smallest turn (about a level axis,
  * through its origin) that brings its thinnest body axis (`box`, as W scales
  * it) upright. Of axes equally thin, the most upright already, then +Y, +X,
- * +Z. That axis ends pointing the way it pointed, up or down; one that was
- * level (a tile standing on edge) ends up. So a piece lying flat already is
- * left as it is, and the way its length points, seen from above, is kept
- * wherever its length was level. Pure.
+ * +Z. That axis ends pointing the way it lay (sideOf: up or down when it is
+ * the most upright of the three); one on an edge or an end (a tile standing)
+ * ends up. So a piece lying flat already is left as it is, and the way its
+ * length points, seen from above, is kept wherever its length was level.
+ * Pure.
  */
 export function layFlat(W, box) {
   const size = [0, 1, 2].map((k) => Math.abs(box.max[k] - box.min[k]) * Math.hypot(W[4 * k], W[4 * k + 1], W[4 * k + 2]));
@@ -278,7 +278,7 @@ export function layFlat(W, box) {
     if (k < 0 || Math.abs(axisOf(W, c)[1]) > Math.abs(axisOf(W, k)[1]) + 1e-12) k = c;
   }
   const a = axisOf(W, k);
-  const to = a[1] < -LEVEL ? -1 : 1;
+  const to = sideOf(W, k) < 0 ? -1 : 1;
   // the turn from a to (0, to, 0): about a × (0, to, 0), by the angle between them
   const axis = [-a[2] * to, 0, a[0] * to];
   const angle = Math.atan2(Math.hypot(axis[0], axis[2]), a[1] * to);
@@ -294,30 +294,26 @@ export function layFlat(W, box) {
  * Nothing else turns it.
  *
  *   1. flat: layFlat (on its broadest face; one standing on edge face up).
- *   2. faceUp: turned over (F's turn) if its face is down.
- *   3. a connector's whole frame: into it, face up or down as 1 and 2 left
- *      it (intoFrame; a frame that stands it on edge decides alone); else a
- *      connector's yaw: turned about the vertical to face that way.
+ *   2. faceUp: turned over (F's turn) if its face is down (faceOf).
+ *   3. the snap: carry-rules intoSnap, a connector's whole frame (face up or
+ *      down as 1 and 2 left it; a frame that stands it on edge decides
+ *      alone), else its yaw (about the vertical).
  *
  * With no snap and no answer it is `own`. Returns the pose `W`, `held` (it
- * after 1 and 2: what F turns over, as seen) and `turned` (2 turned it over,
- * and that shows: not in a frame that stands it on edge).
- * @returns {{ W: number[], held: number[], turned: boolean }}
+ * after 1 and 2: what F turns over, as seen), `turned` (2 turned it over)
+ * and `stands` (the snap's frame stands it on an edge or an end, so which
+ * way up it was held doesn't show).
+ * @returns {{ W: number[], held: number[], turned: boolean, stands: boolean }}
  */
 export function landedPose(own, box, { snap = null, answer = null, faceYou = false } = {}) {
-  const frame = Array.isArray(snap?.rotation) ? snap.rotation : null;
   let held = answer?.flat ? layFlat(own, box) : own.slice();
   let turned = false;
   if (faceYou && answer?.faceUp && faceOf(held) < 0) {
     held = flipMatrix(held);
     turned = true;
   }
-  if (frame) {
-    const W = intoFrame(held, frame, faceOf(held));
-    return { W, held, turned: turned && faceOf(W) !== 0 };
-  }
-  const turn = snap?.yaw != null ? yawDelta(yawOfMatrix(held), snap.yaw) : 0;
-  return { W: turn ? rotateAbout(held, Y, turn) : held.slice(), held, turned };
+  const stands = Array.isArray(snap?.rotation) && faceOf(composeMatrix({ rotation: snap.rotation })) === 0;
+  return { W: intoSnap(held, snap), held, turned, stands };
 }
 
 /**
@@ -340,12 +336,18 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
     // while it is over that snap or that rule's place.
     own: W.slice(),
     held: null, // landedPose's `held`, last time: what F turns over
+    raised: false, // landedPose's `turned`, last time: held is own turned over
     last: null, // { ray, alt }: the pointer the last move had
     land: null,
     // picked up where nothing asks it to face up: it turns face up while over somewhere that does
     faceYou: !landing(id, W.slice(12, 15), null)?.faceUp,
-    turned: false,
-    flips: 0, // times it has turned over: the part shows each one turning in the air
+    // Turning over, counted as it shows: `over` is how many times own is
+    // turned over from how it was picked up (F's), odd or even; what shows is
+    // that and a faceUp turn, except in a frame that stands it, where which
+    // way up it is held doesn't show. `shown` is that, the last time it showed.
+    over: 0,
+    shown: 0,
+    flips: 0, // times what shows has turned over: the part shows each one turning in the air
   };
   const landOf = (M, ray, alt) => landingFor({ W: M, box, ray, offset, alt, snaps, raycast });
   /** A pose at where it is now. */
@@ -356,6 +358,13 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
     out[14] = state.W[14];
     return out;
   };
+  /** It shows this way up now (0 as picked up, 1 turned over): one more turn over to show, if that's new. */
+  const shows = (parity) => {
+    if (parity === state.shown) return;
+    state.shown = parity;
+    state.flips++;
+  };
+  const same = (a, b) => a.every((v, i) => v === b[i]);
 
   // Where it lands from this pointer, and how it lies there (landedPose). The
   // snap is the pointer's (where, not how it is turned); the rules are asked
@@ -366,17 +375,15 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
     const first = landOf(own, ray, alt);
     if (!first) return null;
     const snap = first.snapped ? { rotation: first.frame, yaw: first.yaw } : null;
-    const S = landedPose(own, box, { snap }).W;
-    const there = landOf(S, ray, alt) ?? first;
+    const S = snap ? landedPose(own, box, { snap }).W : own;
+    const there = snap ? (landOf(S, ray, alt) ?? first) : first;
     const answer = landing(id, [S[12] + there.delta[0], S[13] + there.delta[1], S[14] + there.delta[2]], there.on) ?? null;
     const p = landedPose(own, box, { snap, answer, faceYou: state.faceYou });
-    if (p.turned !== state.turned) {
-      state.turned = p.turned;
-      state.flips++;
-    }
     state.held = p.held;
+    state.raised = p.turned;
     state.W = p.W;
-    return landOf(p.W, ray, alt) ?? there;
+    if (!p.stands) shows(state.over ^ (p.turned ? 1 : 0));
+    return same(p.W, S) ? there : (landOf(p.W, ray, alt) ?? there);
   }
 
   const again = () => (state.last ? move(state.last.ray, state.last.alt) : null);
@@ -408,11 +415,13 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
      */
     flip() {
       state.own = flipMatrix(here(state.held ?? state.own));
-      if (!state.last) state.W = state.own.slice();
-      state.flips++;
+      state.over ^= (state.raised ? 1 : 0) ^ 1;
       state.faceYou = false;
-      state.turned = false;
-      return again();
+      state.raised = false;
+      if (state.last) return again();
+      state.W = state.own.slice();
+      shows(state.over);
+      return null;
     },
     /** Put it down (re-landed from this pointer, else the last): its world matrix, or null if it never had a landing. */
     put(ray = null, alt = null) {
