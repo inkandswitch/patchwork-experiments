@@ -5,19 +5,25 @@
 //
 // Opens probes/packages-probe.html: the BUILT tool on a scene whose
 // doc.packages lists two packages nothing here has registered (one served,
-// one whose load fails), with a third that IS registered here and unlisted.
+// one whose load fails), with a third that IS registered here and unlisted,
+// and a fourth registered here and listed that nothing calls for.
 // Then, with real clicks:
 //   - the prompt: one card naming both packages, nothing imported, the
 //     scene's trait extension not running and its object without a provider;
-//     the registered package gets listed (reconcile), bare;
+//     the registered package gets listed (reconcile), bare, and the one
+//     nothing calls for stays while the scene calls for what nothing here
+//     answers;
 //   - Not now: the card goes, nothing is imported or remembered; opened
 //     again, it asks again;
 //   - Load: the served package is imported at its heads and registered under
 //     its bare URL, its extension starts, its provider builds the object;
 //     the other's failure is on the card and stopped nothing; only the one
-//     that loaded is remembered;
+//     that loaded is remembered; every need answered now, the one nothing
+//     calls for is taken off;
 //   - opened again: the remembered one loads without a click, and only the
-//     other is asked about.
+//     other is asked about;
+//   - the trait the third package answers taken off the scene: its entry
+//     goes, and the one that failed (not here) stays.
 // Prints a JSON report and exits non-zero if any check fails.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,11 +74,13 @@ try {
   const PKG = await P("PKG");
   const BROKEN = await P("BROKEN");
   const LOCAL = await P("LOCAL");
+  const STALE = await P("STALE");
 
   // ── the prompt ────────────────────────────────────────────────────────────
   {
     // not at once: the registry has to have been quiet for a moment
     const early = await P("packages()");
+    const earlyListed = await P("listed()");
     const asked = await b.waitFor(`window.__p.packages().ask.length === 2 && window.__p.packages().ask.every((e) => e.name)`, 10_000);
     const card = await P("card()");
     await shot("prompt");
@@ -87,12 +95,15 @@ try {
     const before = { imported: await P("imported()"), registered: await P("registered()"), running: await P("running()"), status: await P('status("box")'), sea: await P("sea()") };
     check(
       "nothingLoadedBeforeAYes",
-      before.imported.length === 0 && before.registered.every((p) => p.id === "probe.local") && !before.running.includes("probe.sea") && before.sea.started === 0 && before.status === "warn",
+      before.imported.length === 0 && before.registered.every((p) => p.id === "probe.local" || p.id === "probe.stale") && !before.running.includes("probe.sea") && before.sea.started === 0 && before.status === "warn",
       before,
     );
-    // reconcile: the package this viewer has, and the scene's trait calls for, is now listed (bare), after the two that were
+    // reconcile: the package this viewer has, and the scene's trait calls for, is now listed (bare), after those that were;
+    // the one this viewer has and nothing calls for stays while the scene calls for what nothing here answers (the
+    // served package's provider and trait: it may be what answers them elsewhere), though the registry has gone quiet
     const listed = await P("listed()");
-    check("listsWhatThisViewerHas", JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]), listed);
+    check("listsWhatThisViewerHas", JSON.stringify(listed) === JSON.stringify([PKG, STALE, BROKEN, LOCAL]), listed);
+    check("takesNothingOffWhileANeedIsUnanswered", earlyListed.includes(STALE) && listed.includes(STALE) && (await P("registered()")).some((p) => p.id === "probe.stale"), { earlyListed, listed, STALE });
   }
 
   // ── Not now ───────────────────────────────────────────────────────────────
@@ -115,7 +126,7 @@ try {
     const imported = await P("imported()");
     const registered = await P("registered()");
     check("loadedAtItsHeads", !!settled && imported.length === 2 && imported.every((u) => /^automerge:[^#]+#.+/.test(u)) && imported.some((u) => u.startsWith(`${PKG}#`)), imported);
-    const mine = registered.filter((p) => p.id !== "probe.local");
+    const mine = registered.filter((p) => p.id !== "probe.local" && p.id !== "probe.stale");
     check("registeredUnderItsBareUrl", mine.length === 3 && mine.every((p) => p.importUrl === PKG), registered);
     const sea = await P("sea()");
     check("itsExtensionStarted", sea.started === 1 && sea.shown && (await P("running()")).includes("probe.sea"), sea);
@@ -131,8 +142,10 @@ try {
     );
     const accepted = await P("accepted()");
     check("onlyWhatLoadedIsRemembered", JSON.stringify(accepted) === JSON.stringify([PKG]), accepted);
+    // every need answered now: the one nothing calls for goes, the one that failed (not here) stays, and nothing is added
+    const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.STALE)`, 5_000);
     const listed = await P("listed()");
-    check("loadingAddsNothingToTheList", JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]), listed);
+    check("takesOffWhatNothingCallsForOnceEveryNeedIsAnswered", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]) && (await P("registered()")).some((p) => p.id === "probe.stale"), listed);
   }
 
   // ── remembered ────────────────────────────────────────────────────────────
@@ -145,6 +158,14 @@ try {
     check("rememberedLoadsWithoutAsking", !!started && (await P("imported()")).length === 1 && (await P("imported()"))[0].startsWith(`${PKG}#`), { imported: await P("imported()"), packages });
     check("theOtherIsStillAskedAbout", JSON.stringify(urls(packages.ask)) === JSON.stringify([BROKEN]) && card.title === "This scene uses a package you don't have." && JSON.stringify(card.actions) === JSON.stringify(["Not now", "Load it"]), card);
     check("builtAgainUnasked", !!(await b.waitFor(`window.__p.loaded("box")`, 20_000)), await P('status("box")'));
+  }
+
+  // ── pruned ────────────────────────────────────────────────────────────────
+  {
+    await P('untrait("probe.local")');
+    const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.LOCAL)`, 5_000);
+    const listed = await P("listed()");
+    check("takesOffWhatIsNoLongerCalledFor", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN]), listed);
   }
 
   // SwiftShader's WebGL says it lacks an extension; the package that isn't served is meant to fail

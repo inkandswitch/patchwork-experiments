@@ -1094,11 +1094,7 @@ export class Viewport {
     this.controls.addEventListener("start", () => {
       this.wasTouched = true;
     });
-    this.controls.addEventListener("end", () => {
-      if (this.holds > 0) return;
-      const cam = this.getCamera();
-      for (const fn of [...this.cameraEndListeners]) fn(cam);
-    });
+    this.controls.addEventListener("end", () => this.endCamera("orbit"));
   }
 
   invalidate() {
@@ -2107,6 +2103,14 @@ export class Viewport {
       this.controls.update();
     }
     this.invalidate();
+    this.endCamera("frame");
+  }
+
+  /** Someone finished moving the camera: `how` an orbit or zoom ("orbit") or a Frame ("frame"); never while it's held. */
+  endCamera(how) {
+    if (this.holds > 0) return;
+    const cam = this.getCamera();
+    for (const fn of [...this.cameraEndListeners]) fn(cam, how);
   }
 
   /**
@@ -2234,7 +2238,7 @@ export class Viewport {
     return () => this.cameraWatchers.delete(fn);
   }
 
-  /** Call fn(camera) when someone stops orbiting or zooming (never while the camera is held). @returns {() => void} off */
+  /** Call fn(camera, how) when someone stops orbiting or zooming ("orbit") or frames something ("frame"); never while the camera is held. @returns {() => void} off */
   onCameraEnd(fn) {
     this.cameraEndListeners.add(fn);
     return () => this.cameraEndListeners.delete(fn);

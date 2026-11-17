@@ -4,13 +4,27 @@
 // (scene.keys) does. It runs in every scene, as the key map does: with
 // nothing that has verbs under attention, it shows nothing.
 //
+// The pointer on the prompt (going for a button) holds it still where it
+// is, until the viewer moves the eye (an orbit or zoom ends, a Frame, a
+// body entered or left, a pointer lock taken or lost): then it goes back
+// under the pointer, so a press never reaches a button left over what the
+// eye moved there (a halo handle). An eye carried (a ride, a body's own
+// going, a seat rolling with its table) doesn't let go: it moves every
+// frame, and a button that moved off from under the pointer every frame
+// could never be pressed.
+//
 // Attention is the selection if any, else the look (api.attention). The
 // prompt is on the selection, or the first object along the look's chain
 // (../keymap.js attentionPath) with any verbs for it (looking at a spoke of
 // the wheel offers the helm's). Its verbs are the keyed commands that apply
-// to it, unless their `show` leaves "use" out, at most three, in the context every
-// surface passes (from, reach, hit), so a verb beyond the body's reach shows
-// disabled, "too far". Each verb's key is the resolver's (hintFor): shown
+// to it, unless their `show` leaves "use" out, in running order, in the
+// context every surface passes (from, reach, hit), so a verb beyond the
+// body's reach shows disabled, "too far". It shows the first three; past
+// three, a last button, "⋯ 2 more", opens the prompt to every one of them,
+// until attention moves to another target or none (or a carry takes the
+// prompt down). So every verb on attention is
+// on the prompt, shown or one press away, and each is its own button: on
+// its key, held as long as the finger, as the first three are. Each verb's key is the resolver's (hintFor): shown
 // only when pressing it does that, so a verb whose key the body reserves
 // (walking, D) shows without one.
 //
@@ -40,7 +54,7 @@ import { samePath } from "../stage/paths.js";
 import { looksFromEye } from "../stage/pointer.js";
 import { arrange, holdKey } from "../hold-key.js";
 
-/** How many verbs the prompt shows. */
+/** How many verbs the prompt shows before its "more". */
 export const MAX_VERBS = 3;
 
 /**
@@ -57,38 +71,40 @@ export const MAX_VERBS = 3;
  * @param {string} target  the held verbs' target
  * @param {{ ext, command, state }[]} held  as they were when pressed
  * @param {object} ctx  the command context now
- * @returns {{ target: string, entries: { ext, command, state }[] }}
+ * @returns {{ target: string, entries: { ext, command, state }[], more: number }}
+ *   `more`: how many of the target's verbs that apply now aren't shown
  */
 export function heldEntries(collected, target, held, ctx, max = MAX_VERBS) {
-  const live = ctx.scene?.objects?.[target] ? verbsOf(collected, target, ctx, Infinity) : [];
+  const live = ctx.scene?.objects?.[target] ? verbsOf(collected, target, ctx) : [];
   const same = (a, b) => a.ext === b.ext && a.command.id === b.command.id;
   const heldAs = (e) => held.find((h) => same(h, e));
   let room = max - held.length;
   const shown = live.map((e) => heldAs(e) ?? e).filter((e) => held.includes(e) || room-- > 0);
   const away = held.filter((h) => !live.some((e) => same(h, e)));
-  return { target, entries: [...shown, ...away] };
+  return { target, entries: [...shown, ...away], more: live.length - shown.length };
 }
 
 /**
  * The prompt's verbs for attention: the first target along its path with
- * keyed commands shown on "use", and up to `max` of them. Pure (given the collected commands).
+ * keyed commands shown on "use", the first `max` of them, and how many more
+ * there are. Pure (given the collected commands).
  * @param {{ id, value }[]} collected
  * @param {{ selected?, hit? }} attention
  * @param {object} ctx  the command context
- * @returns {{ target: string, entries: { ext, command, state }[] } | null}
+ * @returns {{ target: string, entries: { ext, command, state }[], more: number } | null}
  */
 export function promptEntries(collected, attention, ctx, max = MAX_VERBS) {
   for (const target of attentionPath(attention, ctx?.scene?.parents)) {
     if (attention?.selected == null && !ctx?.scene?.objects?.[target]) continue;
-    const entries = verbsOf(collected, target, ctx, max);
-    if (entries.length) return { target, entries };
+    const all = verbsOf(collected, target, ctx);
+    if (all.length) return { target, entries: all.slice(0, max), more: Math.max(0, all.length - max) };
   }
   return null;
 }
 
-function verbsOf(collected, target, ctx, max) {
+function verbsOf(collected, target, ctx) {
   const flat = flatCommands(collected).filter(({ command }) => keysOf(command).length);
-  return applicable(flat, target, ctx, "use").slice(0, max);
+  return applicable(flat, target, ctx, "use");
 }
 
 const verbName = ({ command, state }) => String(state.label ?? command.name ?? command.id);
@@ -109,9 +125,17 @@ function create(api) {
 
   let current = null; // { target, entries: [{ ext, command, state, key }], hit }
   let shownKey = "";
-  let pointer = null; // port-local { x, y }, the last place the pointer was over the view
+  let pointer = null; // port-local { x, y }: where the pointer is over the view (over the world or the prompt)
+  let placed = null; // port-local { x, y } the prompt was last put under, or null: the view's middle
+  // The prompt holding still under a pointer that went onto it: { at, body }, where it was (`placed` then) and
+  // whose eye (the body's id). Null while it follows the pointer.
+  let held = null;
   let offLoop = null;
   let offWatch = null;
+  // The target whose every verb shows (its "more" pressed): JSON [stage, target], or null. Attention on any
+  // other target, or none, closes it, as does the prompt going while a gesture is open (`found` is null then).
+  let opened = null;
+  const whereOf = (stage, target) => JSON.stringify([stage ?? null, target]);
 
   const keymap = () => api.collect("keymap").map((r) => r.value).find((v) => v && typeof v.pinned === "function") ?? null;
   // the look is the eye's (the crosshair's): under lock, or a lock body under touch
@@ -127,19 +151,23 @@ function create(api) {
     // the verbs of the nearest thing that has any: attention's path, a stage at a time, innermost first
     let found = null;
     let seg = null;
+    const entriesIn = (s, max) => (pinned !== undefined ? heldEntries(s.collected, pinned.at(-1), km.entries(pinned), s.ctx, max) : promptEntries(s.collected, s.attention, s.ctx, max));
     if (!gesture)
       for (const s of segmentsOf(keys)) {
         // (a held verb's target is in its own stage: the one whose path its path goes on from)
         if (pinned !== undefined && Array.isArray(s.reader?.path) && !samePath(s.reader.path, pinned.slice(0, -1))) continue;
-        found = pinned !== undefined ? heldEntries(s.collected, pinned.at(-1), km.entries(pinned), s.ctx) : promptEntries(s.collected, s.attention, s.ctx);
+        found = entriesIn(s, MAX_VERBS);
         if (found?.entries.length) {
           seg = s;
+          // opened: the same target, every verb (which target doesn't hang on how many show)
+          if (whereOf(s.stage, found.target) === opened) found = entriesIn(s, Infinity);
           break;
         }
         found = null;
       }
+    if (!found || whereOf(seg.stage, found.target) !== opened) opened = null;
     if (found) {
-      current = { target: found.target, hit: seg.ctx.hit, stage: seg.stage, reader: seg.reader ?? null, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target, stage: seg.stage }, keys) })) };
+      current = { target: found.target, hit: seg.ctx.hit, stage: seg.stage, reader: seg.reader ?? null, more: found.more, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target, stage: seg.stage }, keys) })) };
     } else current = null;
     render();
   }
@@ -162,7 +190,8 @@ function create(api) {
   function render() {
     const km = keymap();
     const entries = current?.entries ?? [];
-    const key = JSON.stringify(entries.map((e) => [e.ext, e.command.id, verbName(e), e.key, !!e.command.hold, !!e.state.disabled, e.state.title ?? null, !!km?.holding(e.ext, e.command.id)]));
+    const more = current?.more ?? 0;
+    const key = JSON.stringify([more, entries.map((e) => [e.ext, e.command.id, verbName(e), e.key, !!e.command.hold, !!e.state.disabled, e.state.title ?? null, !!km?.holding(e.ext, e.command.id)])]);
     if (key !== shownKey) {
       shownKey = key;
       const ids = new Set(entries.map(idOf));
@@ -171,7 +200,8 @@ function create(api) {
         if (!shown.has(idOf(e))) shown.set(idOf(e), make());
         fill(shown.get(idOf(e)), e, km);
       }
-      arrange(prompt, entries.map((e) => shown.get(idOf(e)).el));
+      moreEl.textContent = `⋯ ${more} more`;
+      arrange(prompt, [...entries.map((e) => shown.get(idOf(e)).el), ...(more ? [moreEl] : [])]);
       prompt.hidden = !entries.length;
     }
     place();
@@ -232,6 +262,26 @@ function create(api) {
     return b;
   }
 
+  // The last button past three verbs: a click (of a press it had, as a verb's) opens the prompt to them all.
+  const moreEl = document.createElement("button");
+  moreEl.type = "button";
+  moreEl.className = "use-more";
+  moreEl.tabIndex = -1;
+  moreEl.addEventListener("pointerdown", (e) => {
+    if (!(e.button > 0)) pressed = { el: moreEl, keyed: false };
+  });
+  moreEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.detail > 0) {
+      const p = pressed;
+      pressed = null;
+      if (p?.el !== moreEl) return;
+    }
+    if (current) opened = whereOf(current.stage, current.target);
+    refresh();
+    api.root.focus?.({ preventScroll: true });
+  });
+
   // What a verb's button shows: the key in a keycap (after "hold" for a
   // held one), then its name.
   function fill(b, entry, km) {
@@ -268,12 +318,24 @@ function create(api) {
   }
   const toggle = (el, flag, on) => (on ? (el.dataset[flag] = "") : delete el.dataset[flag]);
 
-  // Under the crosshair when the look is the eye's; under the pointer otherwise.
+  const bodyId = () => api.view.get().body?.id ?? null;
+  // held where it is, whatever put it there (a pointer coming back into the view straight onto it, too)
+  function hold() {
+    if (!held) held = { at: placed, body: bodyId() };
+  }
+  // the viewer moved the eye: back under the pointer (36 px below it, use.css), so a press there reaches what
+  // is under it now, not a button the prompt left there
+  function letGo() {
+    held = null;
+  }
+
+  // Under the crosshair when the look is the eye's; under the pointer otherwise, or held where it is.
   function place() {
     if (prompt.hidden) return;
-    const at = fromEye() || !pointer ? null : pointer;
-    prompt.style.setProperty("--use-x", at ? `${at.x}px` : "50%");
-    prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
+    const a = held ? held.at : pointer;
+    placed = fromEye() || !a ? null : a;
+    prompt.style.setProperty("--use-x", placed ? `${placed.x}px` : "50%");
+    prompt.style.setProperty("--use-y", placed ? `${placed.y}px` : "50%");
   }
 
   // A loop runs only while the eye moves on its own: a body over the
@@ -290,12 +352,15 @@ function create(api) {
   }
 
   // it follows a pointer over the world, not over anything put over it: over the prompt itself (going for one of
-  // its buttons) it stays where it is, or it would move off from under the pointer; a finger on the touch pad, the
-  // body chip, any part's overlay isn't where anyone looks. A press is where the pointer is too: a finger has no
-  // moves before it, and what it taps is where the prompt shows.
+  // its buttons) it holds still, or it would move off from under the pointer, until the viewer moves the eye; a
+  // finger on the touch pad, the body chip, any part's overlay isn't where anyone looks. A press is where the
+  // pointer is too: a finger has no moves before it, and what it taps is where the prompt shows.
   const follow = (e) => {
-    if (e.target instanceof Element && e.target.closest(".stage-overlay")) return;
+    const over = e.target instanceof Element ? e.target.closest(".stage-overlay") : null;
+    if (over && !prompt.contains(e.target)) return;
     const r = api.port.getBoundingClientRect();
+    if (over) hold();
+    else letGo();
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
     place();
   };
@@ -303,15 +368,26 @@ function create(api) {
   api.listen(api.port, "pointerdown", follow, { capture: true }); // (before a press claimed on the world stops it)
   // (a finger leaves as it lifts: where it tapped stays, as its look does: router.js)
   api.listen(api.port, "pointerleave", (e) => {
-    if (e.pointerType !== "touch") pointer = null;
+    if (e.pointerType === "touch") return;
+    pointer = null;
+    letGo();
   });
-  // an orbit or zoom moves the eye, and so what's in reach; a lock taken or
-  // lost moves the look between the pointer and the crosshair
-  api.camera.onEnd(() => refresh());
-  api.listen(document, "pointerlockchange", () => refresh());
+  // an orbit, a zoom or a Frame moves the eye, and so what's in reach; a lock
+  // taken or lost moves the look between the pointer and the crosshair (and,
+  // locked, the eye with the mouse)
+  api.camera.onEnd(() => {
+    letGo();
+    refresh();
+  });
+  api.listen(document, "pointerlockchange", () => {
+    letGo();
+    refresh();
+  });
 
   return {
     update() {
+      // a body entered or left (a seat, Look from Edit) puts the eye somewhere else
+      if (held && held.body !== bodyId()) letGo();
       wantLoop();
       refresh();
     },

@@ -378,17 +378,28 @@ describe("telling the others", () => {
     t.w.done();
   });
 
-  it("a shuffle is sent once, as a count and the container's title, and the others hear who did it", () => {
+  it("a shuffle is told once, as a count and the container's title: said here as yours, and the others hear who did it", () => {
     const t = table();
     t.xa.commands.find((c) => c.id === "shuffle").run("faceDown");
     expect(t.w.sent).toEqual([{ session: "A", viewer: "alice", type: "shuffled", data: { n: 2, of: "Deck" } }]);
-    expect(t.notices("A")).toEqual(["Shuffling 2 cards…"]);
-    // who did it is whoever the roster says they are
+    expect(t.notices("A")).toEqual(["You shuffled the deck (2)"]);
+    // who did it is whoever the roster says they are (as the HUD names them)
     expect(t.notices("B")).toEqual(["<alice> shuffled the deck (2)"]);
     t.w.done();
   });
 
-  it("receives only what it knows, in the shape it expects", () => {
+  it("with no roster running, is told by the name the stage gives: the peer's contact's", async () => {
+    const t = table();
+    t.w.view("B").collected = { ...t.w.view("B").collected, roster: undefined };
+    const ana = t.w.repo.add({ name: "Ana" });
+    t.w.hear("B", "drew", { n: 1 }, { session: "s-ana", viewer: ana.url });
+    // (the stage looks her contact up: a few turns of promises, no time)
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(t.notices("B")).toEqual(["Ana drew a card"]);
+    t.w.done();
+  });
+
+  it("tells only what it declares, in the shape it expects", () => {
     const t = table();
     const from = (viewer) => ({ session: `s-${viewer}`, viewer });
     for (const [type, data] of [
@@ -401,17 +412,21 @@ describe("telling the others", () => {
       ["drew", { n: 1.5 }],
       ["drew", "1"],
       ["rolled", { die: "board", value: 4 }], // dice are the dice package's: nothing the table hears
-    ]) t.xb.receive(type, data, from("alice"));
+      ["drew", null],
+    ]) t.w.hear("B", type, data, from("alice"));
+    t.w.flush();
     expect(t.notices("B")).toEqual([]);
-    t.xb.receive("drew", { n: 1 }, from("alice"));
-    t.xb.receive("drew", { n: 2 }, from(undefined));
-    t.xb.receive("shuffled", { n: 44 }, from("alice"));
-    t.xb.receive("shuffled", { n: 3, of: "Wagers" }, from("alice"));
-    expect(t.notices("B")).toEqual(["<alice> drew a card", "Someone drew 2 cards", "<alice> shuffled the deck (44)", "<alice> shuffled “Wagers” (3)"]);
-    // with nobody to say who a peer is: Someone
-    t.w.view("B").collected = {};
-    t.xb.receive("drew", { n: 1 }, from("alice"));
-    expect(t.notices("B").at(-1)).toBe("Someone drew a card");
+    t.w.hear("B", "drew", { n: 1 }, from("alice"));
+    t.w.hear("B", "drew", { n: 2 }, from(undefined));
+    t.w.hear("B", "shuffled", { n: 44 }, from("alice"));
+    t.w.hear("B", "shuffled", { n: 3, of: "Wagers" }, from("alice"));
+    t.w.hear("B", "washed", { n: 6, noun: "domino" }, from("alice"));
+    t.w.hear("B", "showed", { n: 3 }, from("alice"));
+    expect(t.notices("B")).toEqual(["<alice> drew a card", "Someone drew 2 cards", "<alice> shuffled the deck (44)", "<alice> shuffled “Wagers” (3)", "<alice> washed the dominoes (6)", "<alice> laid 3 cards face up"]);
+    expect(Object.keys(t.xb.messages)).toEqual(["shuffled", "drew", "washed", "showed"]);
+    // her other tab is a peer: named, never "You"
+    t.w.hear("A", "drew", { n: 1 }, { session: "s-alice-2", viewer: "alice" });
+    expect(t.notices("A").at(-1)).toBe("<alice> drew a card");
     t.w.done();
   });
 

@@ -21,9 +21,10 @@ import { defineStandInView } from "../test/patchwork-view.js";
 // The inspector's pane (the tree and the fields): these tests have it open, as the toolbar's Inspector does.
 const opener = {
   create(api) {
+    let asked = false;
     return {
       update() {
-        api.run({ ext: "scene.inspector", command: "inspector", value: true });
+        if (!asked) asked = api.run({ ext: "scene.inspector", command: "inspector", value: true });
       },
     };
   },

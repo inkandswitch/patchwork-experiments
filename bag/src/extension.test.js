@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { inside, itemKey, outside } from "./contents.js";
 import { newBag } from "./datatype.js";
-import extension, { CONTAINER, MESSAGES } from "./extension.js";
+import extension, { CONTAINER } from "./extension.js";
 import { SCENE_URL, fakeStage, snapshot, FakeRepo } from "./test/fake-stage.js";
 
 const BAG1 = "automerge:3AAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -35,17 +35,49 @@ async function table({ session = "s-me", rule = "top", carry = false, repo = new
   };
   const stage = fakeStage(doc, { session, repo, half: { bag1: 0.1, bag2: 0.1, cube: 0.01, disc: 0.01, meeple: 0.01, t1: 0.01, t2: 0.01, rock: 0.01 } });
   const carries = [];
+  let instance = null;
   if (carry) {
+    // the hand's carry as the stage's contract has it (STAGE.md, "How a carry
+    // ends"): it ends once; a put tells every extension's `landed` after its
+    // write, then `ended` says "put"; `s.on` is what the next put rests on
     stage.rec.contributions.carry = [
       (id, ev, opts) => {
-        const s = { id, ev, opts, moves: [], ended: null, cancelled: false, move: (e) => s.moves.push(e), end: (e) => (s.ended = e ?? true), cancel: () => (s.cancelled = true), key: () => false };
+        let resolve;
+        const s = {
+          id,
+          ev,
+          opts,
+          moves: [],
+          endedAt: null,
+          cancelled: false,
+          on: null,
+          how: null,
+          ended: new Promise((r) => (resolve = r)),
+          move: (e) => s.moves.push(e),
+          end(e) {
+            if (s.how) return;
+            s.endedAt = e ?? true;
+            s.how = "put";
+            instance?.landed?.(id, s.on);
+            resolve({ how: "put", on: s.on });
+          },
+          cancel: () => s.finish("back", () => (s.cancelled = true)),
+          /** end it another way ("yielded", "refused", "back"), as the carry does on its own */
+          finish(how, then = () => {}) {
+            if (s.how) return;
+            s.how = how;
+            then();
+            resolve({ how, on: null });
+          },
+          key: () => false,
+        };
         carries.push(s);
         return s;
       },
     ];
   }
-  const instance = extension.create(stage.api);
-  const sync = () => instance.update(snapshot(stage.handle.doc()), stage.rec.local, null);
+  instance = stage.attach(extension.create(stage.api));
+  const sync = () => (instance.update(snapshot(stage.handle.doc()), stage.rec.local, null), stage.ask());
   // the bags' documents are found asynchronously
   await vi.waitFor(() => expect(stage.rec.labels.length).toBe(2));
   const cmd = (id) => instance.commands.find((c) => c.id === id);
@@ -124,22 +156,52 @@ describe("a bag in a scene", () => {
     expect(t.state("put", "cube").choices.length).toBe(2);
   });
 
-  it("a piece this view's hand lets go of over a bag goes in; one put down elsewhere doesn't", async () => {
+  it("a piece this view's hand puts down on a bag goes in (the carry's `landed`); one put down anywhere else, or moved by anything else, doesn't", async () => {
+    // (the carry writes where it went down, then tells `landed(id, on)`: `on` is what it rests on.
+    // A flip on the way changes nothing here: the carry tells every put, F or no F; scene's carry
+    // tests and probes/bag.mjs pin that end of it.)
+    const rows = [
+      { what: "on a bag", id: "cube", on: "bag1", bag1: ["cube"], told: [["put", { bag: BAG1, n: 1 }]] },
+      { what: "on the other bag", id: "disc", on: "bag2", bag2: ["disc"], told: [["put", { bag: BAG2, n: 1 }]] },
+      { what: "on another object", id: "cube", on: "disc" },
+      // attached under (scene's parent chain): the nearest bag up it
+      { what: "on what is attached to a bag (its label)", id: "cube", on: "label", bag1: ["cube"], told: [["put", { bag: BAG1, n: 1 }]] },
+      { what: "on what is attached to that (two deep)", id: "cube", on: "tag", bag1: ["cube"], told: [["put", { bag: BAG1, n: 1 }]] },
+      { what: "on what is attached to another object", id: "cube", on: "sticker" },
+      { what: "on what is attached to a bag attached to a bag: the nearer", id: "cube", on: "inner", bag2: ["cube"], told: [["put", { bag: BAG2, n: 1 }]], nest: true },
+      { what: "on nothing (the ground)", id: "cube", on: null },
+      { what: "a bag on itself (the carry never says so; nothing to refuse)", id: "bag1", on: "bag1" },
+      { what: "a bag on another bag", id: "bag2", on: "bag1", bag1: ["bag2"], told: [["put", { bag: BAG1, n: 1 }]] },
+      { what: "on a bag, but locked meanwhile", id: "rock", on: "bag1", why: "error: Rock is locked in place." },
+      { what: "moved by something else (a gizmo, a peer): no landed", id: "cube", on: undefined },
+    ];
+    for (const row of rows) {
+      const t = await table();
+      // attached things: a label on bag1 with a tag on it, a sticker on the disc; bag2 attached under bag1 (`nest`)
+      t.handle.change((d) => {
+        d.objects.label = token("Label", 0, { parent: "bag1" });
+        d.objects.tag = token("Tag", 0, { parent: "label" });
+        d.objects.sticker = token("Sticker", 0.6, { parent: "disc" });
+        if (row.nest) {
+          d.objects.bag2.parent = "bag1";
+          d.objects.inner = token("Inner", 1, { parent: "bag2" });
+        }
+      });
+      t.sync();
+      t.handle.change((d) => (d.objects[row.id].transform.position = [0.02, 0.2, 0.03]));
+      if (row.on !== undefined) t.instance.landed(row.id, row.on);
+      t.sync();
+      expect(t.ids(BAG1), row.what).toEqual(row.bag1 ?? []);
+      expect(t.ids(BAG2), row.what).toEqual(row.bag2 ?? []);
+      expect(!!t.handle.doc().objects[row.id], row.what).toBe(!(row.bag1 ?? row.bag2));
+      expect(t.rec.sends, row.what).toEqual(row.told ?? []);
+      expect(t.rec.notices.filter((n) => !/^You /.test(n)), row.what).toEqual(row.why ? [row.why] : []);
+    }
+  });
+
+  it("no longer asks where a carry would land: nothing of the bag's is a landing rule", async () => {
     const t = await table();
-    // the hand asks where it would land while carrying (STAGE.md, `landing`), then writes where it put it
-    expect(t.instance.landing("cube", [0.5, 0, 1], null)).toBeNull();
-    t.handle.change((d) => (d.objects.cube.transform.position = [0.02, 0.2, 0.03]));
-    t.sync();
-    expect(t.ids(BAG1)).toEqual(["cube"]);
-    expect(t.handle.doc().objects.cube).toBeUndefined();
-    t.instance.landing("disc", [0.6, 0, 1], null);
-    t.handle.change((d) => (d.objects.disc.transform.position = [0.4, 0, 0.4]));
-    t.sync();
-    expect(t.handle.doc().objects.disc).toBeDefined();
-    // moved by something else later (a gizmo, a peer): not a drop of ours
-    t.handle.change((d) => (d.objects.disc.transform.position = [1, 0.2, 0]));
-    t.sync();
-    expect(t.ids(BAG2)).toEqual([]);
+    expect(t.instance.landing).toBeUndefined();
   });
 });
 
@@ -185,7 +247,7 @@ describe("drawing", () => {
     // the next click puts it down where the drawer chose
     const press = arm.handlers.press({ button: 0, x: 30, y: 40 });
     expect(press.tap({ x: 30, y: 40 })).toBe(true);
-    expect(t.carries[0].ended).toEqual({ x: 30, y: 40 });
+    expect(t.carries[0].endedAt).toEqual({ x: 30, y: 40 });
     expect(arm.on).toBe(false);
     // told: that, from which bag, how many. Never what
     expect(t.rec.sends).toEqual([["drew", { bag: BAG1, n: 1 }]]);
@@ -198,7 +260,7 @@ describe("drawing", () => {
     const arm = t.rec.arms.at(-1);
     arm.handlers.put();
     expect(t.carries[0].cancelled).toBe(true);
-    expect(t.carries[0].ended ?? null).toBe(null);
+    expect(t.carries[0].endedAt).toBe(null);
   });
 
   it("with nothing to carry it, the piece is set down beside the bag", async () => {
@@ -252,15 +314,19 @@ describe("drawing", () => {
     expect(t.carries.map((c) => c.id)).toEqual(["meeple"]);
   });
 
-  it("the hand gave way to a peer's hold: picked up again if the peer lets go where it lies, given up (and another drawn) if the peer puts it somewhere", async () => {
+  it("the hand gave way to a peer's hold (its carry ended \"yielded\"): picked up again if the peer lets go where it lies, given up (and another drawn) if the peer puts it somewhere", async () => {
     for (const placed of [false, true]) {
       const t = await filled({ carry: true });
       t.run("draw", "bag1");
       expect(t.carries.map((c) => c.id)).toEqual(["meeple"]);
-      // both grabbed it at once, and the stage says the peer's hold was first
+      // both grabbed it at once, and the stage says the peer's hold was first:
+      // the carry is what gives way (it says so), not the bag on seeing the hold
       t.rec.held.set("meeple", "s-peer");
       t.frame();
-      expect(t.carries[0].cancelled).toBe(true);
+      expect(t.carries[0].how).toBe(null);
+      expect(t.rec.arms.at(-1).on).toBe(true);
+      t.carries[0].finish("yielded");
+      await Promise.resolve();
       expect(t.rec.arms.at(-1).on).toBe(false);
       t.frame();
       expect(t.carries.length).toBe(1); // not while they hold it
@@ -271,6 +337,44 @@ describe("drawing", () => {
       expect(t.carries.map((c) => c.id)).toEqual(placed ? ["meeple", "disc"] : ["meeple", "meeple"]);
       expect(t.handle.doc().objects.meeple).toBeDefined();
       expect(t.ids(BAG1)).toEqual(placed ? ["cube"] : ["cube", "disc"]);
+    }
+  });
+
+  it("every way the drawn piece's carry can end, and what the bag does then", async () => {
+    // how × who ended it → (the hand free, carried again on the next frame, where the piece is, notices)
+    const rows = [
+      { how: "put", on: null, by: "click", inScene: true, bag1: ["cube", "disc"] },
+      { how: "put", on: "bag1", by: "click", inScene: false, bag1: ["cube", "disc", "meeple"] },
+      { how: "put", on: "bag2", by: "click", inScene: false, bag1: ["cube", "disc"], bag2: ["meeple"] },
+      { how: "back", by: "put down (Escape, another tool)", inScene: true, bag1: ["cube", "disc"] },
+      { how: "back", by: "the carry (a newer carry)", inScene: true, bag1: ["cube", "disc"] },
+      { how: "refused", by: "the carry", inScene: true, bag1: ["cube", "disc"] },
+      // a peer's hold ranked ahead: the bag waits on what the peer does (the test above)
+      { how: "yielded", by: "the carry", inScene: true, bag1: ["cube", "disc"], contested: true },
+    ];
+    for (const row of rows) {
+      const t = await filled({ carry: true });
+      t.run("draw", "bag1");
+      const s = t.carries[0];
+      const arm = t.rec.arms.at(-1);
+      if (row.by === "click") {
+        s.on = row.on;
+        arm.handlers.press({ button: 0, x: 1, y: 1 }).tap({ x: 1, y: 1 });
+      } else if (row.by.startsWith("put down")) arm.handlers.put();
+      else {
+        if (row.contested) t.rec.held.set("meeple", "s-peer");
+        s.finish(row.how);
+      }
+      await Promise.resolve();
+      t.sync();
+      t.frame();
+      expect(s.how, row.by).toBe(row.how);
+      expect(arm.on, row.by).toBe(false);
+      expect(t.carries.length, `${row.how} by ${row.by}: not carried again`).toBe(1);
+      expect(t.rec.loops.size, `${row.how} by ${row.by}: nothing left to watch each frame`).toBe(row.contested ? 1 : 0);
+      expect(!!t.handle.doc().objects.meeple, row.by).toBe(row.inScene);
+      expect(t.ids(BAG1), row.by).toEqual(row.bag1);
+      expect(t.ids(BAG2), row.by).toEqual(row.bag2 ?? []);
     }
   });
 
@@ -358,15 +462,15 @@ describe("looking inside", () => {
 });
 
 describe("what peers may tell us", () => {
-  it("a well-formed message about a bag of this scene becomes a notice; anything else is dropped", async () => {
+  it("a well-formed message about a bag of this scene is told; anything else is dropped", async () => {
     const t = await table();
     const from = { session: "s-peer", viewer: "viewer:x" };
-    t.instance.receive("drew", { bag: BAG1, n: 1 }, from);
-    t.instance.receive("drew", { bag: BAG1, n: 3 }, from);
-    t.instance.receive("put", { bag: BAG2, n: 2 }, from);
-    t.instance.receive("poured", { from: BAG1, to: BAG2, n: 4 }, from);
-    t.instance.receive("emptied", { bag: BAG1, n: 5 }, from);
-    t.instance.receive("looked", { bag: BAG2 }, from);
+    t.hear("drew", { bag: BAG1, n: 1 }, from);
+    t.hear("drew", { bag: BAG1, n: 3 }, from);
+    t.hear("put", { bag: BAG2, n: 2 }, from);
+    t.hear("poured", { from: BAG1, to: BAG2, n: 4 }, from);
+    t.hear("emptied", { bag: BAG1, n: 5 }, from);
+    t.hear("looked", { bag: BAG2 }, from);
     await vi.waitFor(() => expect(t.rec.notices.length).toBe(6));
     expect(t.rec.notices).toEqual([
       "Someone drew from Red bag",
@@ -390,22 +494,22 @@ describe("what peers may tell us", () => {
       ["poured", { from: BAG1, to: "https://evil", n: 1 }],
       ["constructor", { bag: BAG1, n: 1 }],
       ["stole", { bag: BAG1, n: 1 }],
-    ]) t.instance.receive(type, data, from);
+    ]) t.hear(type, data, from);
     await new Promise((r) => setTimeout(r, 20));
     expect(t.rec.notices).toEqual([]);
-    expect(Object.keys(MESSAGES).sort()).toEqual(["drew", "emptied", "looked", "poured", "put"]);
+    expect(Object.keys(t.instance.messages).sort()).toEqual(["drew", "emptied", "looked", "poured", "put"]);
   });
 
   it("a peer is named by their contact", async () => {
     const repo = new FakeRepo();
     const ana = repo.add({ name: "Ana" });
     const t = await table({ repo });
-    // from the first thing they say: the notice waits for the name
-    t.instance.receive("looked", { bag: BAG1 }, { session: "s", viewer: ana.url });
-    t.instance.receive("drew", { bag: BAG1, n: 1 }, { session: "s", viewer: ana.url });
+    // from the first thing they say: the stage waits for the name
+    t.hear("looked", { bag: BAG1 }, { session: "s", viewer: ana.url });
+    t.hear("drew", { bag: BAG1, n: 1 }, { session: "s", viewer: ana.url });
     await vi.waitFor(() => expect(t.rec.notices).toEqual(["Ana looked inside Red bag", "Ana drew from Red bag"]));
     // someone whose contact can't be had is still heard, a moment later
-    t.instance.receive("drew", { bag: BAG1, n: 1 }, { session: "s2", viewer: "automerge:nobody" });
+    t.hear("drew", { bag: BAG1, n: 1 }, { session: "s2", viewer: "automerge:nobody" });
     await vi.waitFor(() => expect(t.rec.notices.at(-1)).toBe("Someone drew from Red bag"));
   });
 });

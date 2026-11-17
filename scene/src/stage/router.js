@@ -76,9 +76,10 @@ export const retype = (ev, type) => copyWith(ev, "type", type);
  * A double-click's second click is resolved to its first click's hit (and
  * widget): what was under the pointer when the double-click began, so a
  * thing that moves between the clicks (a boat pitching on her sea), or a
- * canvas that narrows under the pointer (the inspector opening on the first
- * click's selection), still has the double-click, not whatever has come
- * under the pointer since.
+ * canvas that narrows under the pointer (a drawer opening between the
+ * clicks; the inspector waits a beat, DOUBLE_MS from the latest selection
+ * change or press, so as not to), still
+ * has the double-click, not whatever has come under the pointer since.
  *
  * The browser has already decided that a `dblclick` is a double; these
  * gates only check that the router's last two presses are the two clicks it
@@ -96,7 +97,7 @@ export const retype = (ev, type) => copyWith(ev, "type", type);
  * The time gates measure the clicks as the person made them: each event's
  * own `timeStamp` (one clock for pointerdown and dblclick, stamped when the
  * input happened), not when the page got round to handling it. So a page
- * busy between the clicks (the inspector opening on the first click's
+ * busy between the clicks (a drawer opening on the first click's
  * selection) neither refuses a double the browser fired nor, handling the
  * queued events back to back, passes clicks made too far apart. When any of
  * the three lacks a stamp (a synthetic event without one), all three are

@@ -37,6 +37,7 @@ import { ROW_MIME, parseAutomergeUrl } from "./dnd.js";
 import { isGroup, resolveGroups } from "./groups.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "./transform.js";
+import { CARRY, intoSnap } from "./carry-rules.js";
 
 export { ROW_MIME };
 
@@ -391,10 +392,11 @@ const yawOf = (m) => Math.atan2(m[8], m[10]);
 
 /**
  * What a set of top-level objects is moved by: one object's own origin and
- * heading; several, the middle of their origins (at the lowest), heading 0.
+ * heading (and its world: `world`, which a connector's frame turns); several,
+ * the middle of their origins (at the lowest), heading 0.
  */
 export function referenceOf(worlds) {
-  if (worlds.length === 1) return { point: [worlds[0][12], worlds[0][13], worlds[0][14]], yaw: yawOf(worlds[0]) };
+  if (worlds.length === 1) return { point: [worlds[0][12], worlds[0][13], worlds[0][14]], yaw: yawOf(worlds[0]), world: worlds[0].slice() };
   if (!worlds.length) return { point: [0, 0, 0], yaw: 0 };
   const xs = worlds.map((m) => m[12]);
   const ys = worlds.map((m) => m[13]);
@@ -403,16 +405,76 @@ export function referenceOf(worlds) {
 }
 
 /**
- * The rigid move that puts `ref` at `point`, turned about the vertical so its
- * heading becomes `yaw` (null: as it was). Column-major 4×4.
+ * The rigid move that puts `ref` at `point`, turned as a connector turns
+ * what is set down on it. One object (`ref.world`) is turned the carry's way
+ * (carry-rules intoSnap: into a connector's whole frame, `rotation`, Euler
+ * XYZ, world, face up or down as it was; else about the vertical to face
+ * `yaw`). Several are turned about the vertical through `ref.point` from
+ * heading `ref.yaw` to `yaw`. null: as it was. Column-major 4×4.
  */
-export function moveBy(ref, point, yaw = null) {
+export function moveBy(ref, point, yaw = null, rotation = null) {
+  if (ref.world) {
+    const W = ref.world;
+    const into = intoSnap(W, { rotation, yaw });
+    const turned = [0, 1, 2, 4, 5, 6, 8, 9, 10].some((i) => into[i] !== W[i]);
+    const m = turned ? multiplyMatrices(into, invertMatrix(W)) : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    m[12] += point[0] - ref.point[0];
+    m[13] += point[1] - ref.point[1];
+    m[14] += point[2] - ref.point[2];
+    return m;
+  }
   const t = yaw == null ? 0 : yaw - ref.yaw;
   const c = Math.cos(t);
   const s = Math.sin(t);
   const [px, py, pz] = ref.point;
   // T(point) · Ry(t) · T(−ref)
   return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, point[0] - (c * px + s * pz), point[1] - py, point[2] - (-s * px + c * pz), 1];
+}
+
+/**
+ * A landing on a connector (`land.snapped`) for a copy whose one top-level
+ * object is a carried piece (the `scene.carry` trait) with a load hint: moved
+ * so that the piece, as moveBy turns it there, has the middle of its
+ * footprint over the connector and its underside at the connector's height,
+ * as the carry sets a piece on one (the carry's rays find the surface; a
+ * copy has none, and a connector is where its surface is). So a piece lands
+ * on a connector where it would carried, whichever way the connector is
+ * written (a whole frame or a yaw): a tile stood on edge in a rack's place
+ * sits on the rack, not half through it. Anything else keeps the parts
+ * bin's rule, its origin at the connector (a connector for a part, a mast
+ * step, is made for the part's origin), as do several objects and one
+ * without a hint. Pure.
+ */
+export function restOnConnector(objects, roots, order, land) {
+  if (!land?.snapped) return land;
+  const parents = resolveParents(objects);
+  const tops = topsOf(objects, subtreeOf(objects, roots, order).ids, parents);
+  if (tops.length !== 1) return land;
+  const o = objects[tops[0]];
+  const b = o?.hint?.bounds;
+  if (!o?.traits || !Object.hasOwn(o.traits, CARRY) || o.traits[CARRY] == null || !Array.isArray(b?.min) || !Array.isArray(b?.max)) return land;
+  const w = worldMatrix(objects, tops[0], parents);
+  const box = boxUnder(b, multiplyMatrices(moveBy(referenceOf([w]), land.point, land.yaw ?? null, land.rotation ?? null), w));
+  if (!box) return land;
+  const d = [land.point[0] - (box.min[0] + box.max[0]) / 2, land.point[1] - box.min[1], land.point[2] - (box.min[2] + box.max[2]) / 2];
+  return { ...land, point: land.point.map((v, k) => v + d[k]) };
+}
+
+/** A body box (`hint.bounds`: { min, max }) under a matrix, boxed again; null if it isn't finite. Pure. */
+function boxUnder(b, m) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const x of [b.min[0], b.max[0]])
+    for (const y of [b.min[1], b.max[1]])
+      for (const z of [b.min[2], b.max[2]]) {
+        const p = [x, y, z].map(Number);
+        for (let i = 0; i < 3; i++) {
+          const v = m[i] * p[0] + m[4 + i] * p[1] + m[8 + i] * p[2] + m[12 + i];
+          min[i] = Math.min(min[i], v);
+          max[i] = Math.max(max[i], v);
+        }
+      }
+  return min.every(Number.isFinite) && max.every(Number.isFinite) ? { min, max } : null;
 }
 
 /** The copy's top-level objects: what isn't a group and isn't attached under something copied. Pure. */
@@ -449,19 +511,7 @@ export function liftOf(objects, roots, order, { box, worldOf }) {
 export function hintBoxOf(objects, id, parents = resolveParents(objects)) {
   const b = objects?.[id]?.hint?.bounds;
   if (!Array.isArray(b?.min) || !Array.isArray(b?.max)) return null;
-  const m = worldMatrix(objects, id, parents);
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (const x of [b.min[0], b.max[0]])
-    for (const y of [b.min[1], b.max[1]])
-      for (const z of [b.min[2], b.max[2]]) {
-        const p = [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
-        for (let i = 0; i < 3; i++) {
-          min[i] = Math.min(min[i], p[i]);
-          max[i] = Math.max(max[i], p[i]);
-        }
-      }
-  return min.every(Number.isFinite) ? { min, max } : null;
+  return boxUnder(b, worldMatrix(objects, id, parents));
 }
 
 /** The local transform that shows a world matrix under a parent's world (null: the root). */
@@ -476,7 +526,7 @@ export function localOf(parentWorld, world) {
  * @param {{
  *   objects: object, order?: string[], roots: string[],
  *   runtime?: Map,                                  // runtimeOf(describes)
- *   target: { land?: { point, yaw?, parent?, parentWorld?, group? }, // where it lands (a drop, a paste; `group`: the tree's, for the top)
+ *   target: { land?: { point, yaw?, rotation?, parent?, parentWorld?, group? }, // where it lands (a drop, a paste; `rotation`: a connector's frame; `group`: the tree's, for the top)
  *             beside?: { offset: number[] } },                     // a duplicate in its own scene
  * }} o
  * @returns {{ items: { from, group: boolean, data, top: boolean, parent, parentIn, groupOf, groupIn, transform, world }[], listed: string[], tops: string[] }}
@@ -492,7 +542,7 @@ export function planCopy({ objects, order = [], roots, runtime = new Map(), targ
   const tops = topsOf(objects, ids, parents);
   const worlds = new Map(tops.map((id) => [id, worldMatrix(objects, id, parents)]));
   let move = null;
-  if (target.land) move = moveBy(referenceOf([...worlds.values()]), target.land.point, target.land.yaw ?? null);
+  if (target.land) move = moveBy(referenceOf([...worlds.values()]), target.land.point, target.land.yaw ?? null, target.land.rotation ?? null);
   else if (target.beside) {
     const [dx = 0, dy = 0, dz = 0] = target.beside.offset ?? [];
     move = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, dy, dz, 1];
@@ -613,6 +663,7 @@ async function copyInto(api, payload, target, edit) {
     t.land = t.land(single ? strings(objects[roots[0]].tags) : []);
     if (!t.land) return null;
   }
+  t.land = restOnConnector(objects, roots, source.order ?? [], t.land);
   if (t.land && !t.land.snapped) {
     const parents = resolveParents(objects);
     const lift = Number.isFinite(payload.lift)

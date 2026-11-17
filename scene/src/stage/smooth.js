@@ -17,7 +17,7 @@
 // Everything here is pure: plain transforms ({ position, rotation (Euler
 // XYZ, radians), scale }, as the doc stores them) and numbers.
 
-import { normalizeTransform } from "../transform.js";
+import { eulerOfRotation, normalizeTransform } from "../transform.js";
 
 /** How far behind the newest sample a peer plays, in the sender's send intervals. */
 export const PLAYOUT_INTERVALS = 1.5;
@@ -82,15 +82,14 @@ export function quatFromEuler(r) {
   return [s1 * c2 * c3 + c1 * s2 * s3, c1 * s2 * c3 - s1 * c2 * s3, c1 * c2 * s3 + s1 * s2 * c3, c1 * c2 * c3 - s1 * s2 * s3];
 }
 
-/** A unit quaternion → Euler XYZ (radians) (three's Euler.setFromQuaternion, "XYZ"). */
+/** A unit quaternion → Euler XYZ (radians): three's Euler.setFromQuaternion, "XYZ", but exact to gimbal lock (transform.js eulerOfRotation). */
 export function eulerFromQuat(q) {
   const [x, y, z, w] = q;
-  const m11 = 1 - 2 * (y * y + z * z), m12 = 2 * (x * y - w * z), m13 = 2 * (x * z + w * y);
-  const m22 = 1 - 2 * (x * x + z * z), m23 = 2 * (y * z - w * x);
-  const m32 = 2 * (y * z + w * x), m33 = 1 - 2 * (x * x + y * y);
-  const ry = Math.asin(Math.max(-1, Math.min(1, m13)));
-  if (Math.abs(m13) < 0.9999999) return [Math.atan2(-m23, m33), ry, Math.atan2(-m12, m11)];
-  return [Math.atan2(m32, m22), ry, 0];
+  return eulerOfRotation([
+    1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y),
+    2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x),
+    2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y),
+  ]);
 }
 
 /**

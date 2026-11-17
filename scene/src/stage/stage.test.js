@@ -113,7 +113,7 @@ const forgetModules = () => {
 };
 // a template, whose create() is per test too
 let template = null;
-getRegistry("scene:template").register({ type: "scene:template", id: "t.template", name: "Test level", load: async () => ({ create: (ctx) => template?.(ctx) }) });
+getRegistry("scene:template").register({ type: "scene:template", id: "t.template", name: "Test level", load: async () => ({ create: (ctx, params) => template?.(ctx, params) }) });
 // a part, likewise
 let partCreate = null;
 getRegistry("scene:part").register({ type: "scene:part", id: "t.part", name: "Test part", load: async () => ({ create: (ctx, at) => partCreate?.(ctx, at) }) });
@@ -587,6 +587,29 @@ describe("the stage, mounted", () => {
       expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
     } finally {
       template = null;
+    }
+  });
+
+  // spec {none, players 2|3|4} × value {untouched, each of 2/3/4, out of range, an extra key} → what create gets
+  it("template(id, params): create gets exactly the params its metadata declares, coerced, defaults filled, other keys dropped; {} where it declares none", async () => {
+    const PLAYERS = { key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 };
+    const got = { none: [], players: [] };
+    template = (ctx, params) => void got.none.push(params);
+    getRegistry("scene:template").register({ type: "scene:template", id: "t.players", name: "For some", params: [PLAYERS], load: async () => ({ create: (ctx, params) => void got.players.push(params) }) });
+    const VALUES = [undefined, { players: 2 }, { players: 3 }, { players: 4 }, { players: 5 }, { players: 3, seats: 9 }];
+    try {
+      mount(newScene());
+      await settle();
+      const api = exts["t.always"].api;
+      for (const v of VALUES) {
+        expect(await api.template("t.template", v)).toBe(true);
+        expect(await api.template("t.players", v)).toBe(true);
+      }
+      expect(got.none).toEqual(VALUES.map(() => ({})));
+      expect(got.players).toEqual([{ players: 2 }, { players: 2 }, { players: 3 }, { players: 4 }, { players: 2 }, { players: 3 }]);
+    } finally {
+      template = null;
+      getRegistry("scene:template").unregister("t.players");
     }
   });
 

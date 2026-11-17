@@ -139,10 +139,6 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
-- the use prompt stays put while the pointer is on it (since lane/arcade),
-  so when the camera moves and the pointer doesn't (a ride, Frame, a body
-  change) it can be left over a halo handle or anything else, and a press
-  there goes to the prompt's button (found by lane/xarrow, 2026-11-16);
 - a single click on a moving thing can still miss it: aboard-run's step-13
   click selecting the card inside G missed on about one run in ten
   (lane/xarrow); the double-click fix covers only the second press. A miss
@@ -152,18 +148,6 @@ Still open:
   own pick lands on doesn't cure it: in the real Patchwork on 2026-11-16
   (presence-check.nopause runs 3 and 4, aims checked so) first presses
   still landed on her Card table 80 ms after the aim;
-- the first click of a double-click can open the inspector under the
-  second: with the inspector shut, a first press that selects anything
-  (the link, or the Card table it missed onto) narrows the canvas, and
-  where the inspector now lies the second press and the dblclick are the
-  inspector's, so the stage never hears them (editclick-run's first try,
-  every run: a 700 px view, its press missing the card for the Card table,
-  the gaps 222 to 250 ms, well inside the gate). The second try, the
-  inspector already open, enters. The same in the real Patchwork
-  (presence-check.nopause run 3, B's first try: the first press on the
-  Card table, the second on the inspector's behaviour picker);
-- a doc's packages list grows as parts are added and isn't pruned when
-  they go;
 - entering a link moves the canvas: entered in Edit (a double-click on G's
   card aboard Lost Cities), the canvas moves down about 31 px as the
   entered path's chrome appears, so a click straight after lands that far
@@ -195,6 +179,52 @@ Still open:
   pinned by `seats/src/stacked-bodies.test.js`; Decisions, N7, 14).
 
 Fixed since (each item names its Decisions section below):
+- the use prompt stayed put while the pointer was on it (since
+  lane/arcade), so when the camera moved and the pointer didn't (a ride,
+  Frame, a body change) it could be left over a halo handle or anything
+  else, and a press there went to the prompt's button (found by
+  lane/xarrow, 2026-11-16). It now holds still where it is only until the
+  viewer moves the eye (an orbit or a Frame ends, a body entered or left, a
+  pointer lock taken or lost), which puts it back under the pointer; an eye
+  carried (a ride) doesn't let go (TOOLS.md §3, "A shown key works";
+  Decisions, the use prompt and the eye, below; lane/n11). editor-run's
+  new step leaves the prompt's button over a spot on Block 1's halo (framed
+  that close, its rotate ring), presses `.`, and the press at the pointer
+  goes to the halo's widget and drag, and Flip doesn't run. Not yet checked
+  in the real Patchwork.
+- a doc's packages list grew as parts were added and wasn't pruned when
+  they went (Fitting out's boat, as the tools made her, still listed her
+  companionway's joints and traversal). Reconcile now goes both ways: a
+  listed package this viewer has, that nothing in the doc calls for and
+  isn't the scene package, is taken off once the registry has gone quiet,
+  while every need of the doc is answered here (STAGE.md, "Packages";
+  Decisions, packages pruned, below; lane/n11). publish-fitout's page now lists exactly the
+  boat's own (scene, sailing, water: its new check, 15/15 dry run), and
+  packages-run takes off a listed package nothing calls for and, later,
+  one whose trait goes (21/21). Not yet checked in the real Patchwork.
+- the first click of a double-click could open the inspector under the
+  second: with the inspector shut, a first press that selected anything
+  (the link, or the Card table it missed onto) narrowed the canvas, and
+  the second press and the dblclick landed on the inspector or on
+  whatever the narrower canvas put under the pointer (editclick-run's
+  first try, every run: a 700 px view narrowed to 480 px between the
+  presses; the real Patchwork's presence-check.nopause run 3, B's first
+  try, the second press on the inspector's behaviour picker). A selection
+  now opens a shut inspector a beat later, DOUBLE_MS (the router's
+  double-click gate) on the stage's time, counted from the latest
+  selection change or press in the view
+  (TOOLS.md, Decisions 6, "The inspector waits a beat"; lane/n11). In
+  editclick-run (seeds 1, 2 and 3; seed 2 before too) every press and
+  dblclick now reaches the canvas at the width the first press found
+  (700 px), where before the second press found it 480 px; its step 5, a
+  slow double-click (second press 480 ms after the first, dblclick 170 ms
+  after that), keeps the width to the dblclick and enters (with the beat
+  counted from the selection alone, as first built, the tab opened under
+  it: the dblclick at 480 px, and no Enter). Seeds 2 and 3's first
+  tries enter; seed 1's first press still misses the card for the Card
+  table, which is the single-click item under "Still open", not this one.
+  Not yet checked in the real Patchwork (enter-check, presence-check.nopause
+  on scratch copies, once the integrator has synced the scene package).
 - keyboard bodies (walk, aboard, a station) had no touch input: on a
   phone nobody could walk, sail or take a station, and under a touch
   laptop's granted pointer lock a drag stopped looking. A finger now never
@@ -216,7 +246,10 @@ Fixed since (each item names its Decisions section below):
   Lost Cities aboard): the double-click 16 px below the canvas's top edge
   enters the game, and the canvas sits at the same place in Look, Edit and
   aboard; against the packages published before, the same check fails 11
-  of 17, the first press coming aboard.
+  of 17, the first press coming aboard. Its lobby hint, "Click her to come
+  aboard", false in Edit, went too (2026-11-17, lane/n11 step 10): before
+  you're aboard the HUD says nothing, and no node of it takes a press in
+  any state (sailing DESIGN.md, Decisions (N11) 1; editclick-run step 5).
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her
@@ -313,6 +346,14 @@ the lead confirms or reverses it):
   over it takes the finger), and sailing's panel paints over its arrows
   (they still work, the panel letting the pointer through); move the pad,
   or have the HUD keep clear. Layout is the lead's taste.
+- **Multi-select** (decided unattended on 2026-11-17; TOOLS §3 and
+  Decisions 20; lane/n11): not built, so a handful is still a group.
+  Options A1, A2, A3, B, C and D are checked against H3, H4 and H10. The
+  recommendation: the selection is a set at the focus, kept to its tops,
+  and nothing runs on part of it. The questions are there: whether to
+  build it at all, A2 (a `several: true` flag) or A3 (every command takes
+  a list), whether Shift-click is Edit's alone, and what the halo does
+  with several selected.
 
 Questions for the lead (not decided; each names what stands meanwhile):
 - **A place handed across docs to a body** (Decisions, N7, 1): when a body
@@ -1543,7 +1584,8 @@ The five open questions were put to the project lead and answered:
    tools made it, still lists the companionway's joints and traversal):
    recorded as a stage gap, not fixed tonight (a prune would have to know
    which package each remaining object needs, the registry's question, and
-   a doc edited while a package is missing must not lose it).
+   a doc edited while a package is missing must not lose it). Since fixed
+   on both counts (Decisions, packages pruned).
 
 ## Decisions, step 9 (2026-11-14, made unattended)
 
@@ -2390,6 +2432,508 @@ near-misses at cards on her moving table: all boarded before, none after).
    symptom by those today; a package that did would be wrong by TOOLS
    Decisions 6 (nothing stands on Edit), not something the stage would
    cut, since a carry out there is meant to work.
+
+## Decisions, packages pruned (2026-11-16): decided unattended (2026-11-16, lane/n11), for the lead
+
+The doc's packages list reconciles both ways (STAGE.md, "Packages";
+`reconcileList`, `packagesToList`, `packagesToPrune`, `unansweredNeeds` and
+`changeList` in `src/packages.js`). Both halves are a function of the doc and
+the viewer's registry; the view remembers nothing.
+
+1. **What may be taken off.** A listed package goes only when every need of
+   the doc's is answered here, this viewer has the package registered, none
+   of its registered plugins answers a need (the registry's question,
+   `answeringPlugins`, with the providers render docs asked for), it isn't
+   the scene package, and, while a render doc built here hasn't said which
+   provider it names, it registers no source. So a package missing here
+   (never installed, loading, failed, declined) is never dropped, nor one
+   that answers a need: a doc edited while a package is missing keeps it.
+   Tested over every case of (registered × answers × scene package × every
+   need answered × render docs heard), for each kind of need (a source, a
+   render doc's provider, a scene trait, an object trait): pruned iff (yes,
+   no, no, yes, yes or not a source), 128 cases; and the fixed point over
+   two packages in every state (listed not/once/twice × registered × a
+   source or an extension × called for) with the scene package, render docs
+   heard and a need nothing answers: 4608 cases, where one pass reaches
+   `answering ∪ (listed ∩ (unregistered ∪ {scene} ∪ kept))` and the next
+   writes nothing.
+2. **Not before the registry has gone quiet.** Additions are made at once,
+   as before; removals wait for `PACKAGE_SETTLE_MS`, as the prompt does.
+   The unanswered-needs gate already holds a removal while a package the doc
+   needs is still registering; the wait also keeps the list still while a
+   viewer's own packages arrive.
+3. **Parts and templates list nothing of their own.** The list used to keep
+   the package of a part or template run in the view (the step 13 rule,
+   written when the list only grew). That made the list a function of who
+   had visited: the next viewer took it off and the one that ran it put it
+   back. A part or template counts by what it makes, objects and traits,
+   which are needs like any other; one whose result calls for nothing of its
+   package leaves it unlisted. (The plan for this step had it as a fourth
+   condition; the review dropped it.)
+4. **A viewer who can't answer the whole doc takes nothing off.** Two
+   viewers can hold different versions of one package URL. When the older
+   lacks the plugin the doc calls for, that need goes unanswered there, and
+   the older version's viewer prunes nothing (the listed package may be what
+   answers it elsewhere). This replaces the first build's per-view memory
+   (`relisted`: a view didn't take off again what someone else put back),
+   which made the list depend on the view's history, didn't survive a
+   reload, and left a stale package listed. Over the published examples (the
+   folder, and every doc a live link reaches, against every package's built
+   metadata) only Geometry showcase has a need nothing here answers
+   (camber-hull-surface), so the gate costs nothing there today.
+5. **Two packages registering one source id** both answer it, whichever the
+   registry hands out, so viewers registering them in different orders
+   agree (tested: both listed, one write).
+6. **The render docs' providers.** A render doc may name a provider other
+   than its object's field. Until every render doc built here has said
+   (hidden or veiled objects never load theirs), no package registering a
+   source is taken off. Tested in the stage: P listed for a hidden object's
+   render doc stays while it is hidden, and is never off the list on the way
+   to being called for once it shows; R, a source nothing calls for, goes
+   then.
+7. **Extensions of every doc** (`traits: ["*"]`, walk's people) answer no
+   need: they run wherever they are installed, so a doc doesn't list them
+   for having them. A package that wants a doc to bring it declares a trait
+   the doc carries (walk's spawn point does). Late-bound references (an
+   `infoToolId`, a tool by id) aren't needs either, and a package listed
+   only for one is taken off.
+8. **Concurrent prune and add.** One peer taking P off while another adds
+   an object needing P ends with P listed for both, in every order of their
+   passes around the merge (real Automerge merges, 4 orders).
+9. **Publishers state exactly what each doc calls for.** `withPackages`
+   (every `*/probes/scene-packages.mjs`, all copies the same) now sets the
+   list to the stated packages, where it used to append them to what the
+   page listed, and `packageProblems` checks equality, each once. The stated
+   lists that said more are cut: publish-office's room (scene, walk) and its
+   Santorini (scene, seats), publish-aboard's boat (no tabletop), and
+   publish-table's Santorini (seats and a deck decide: no deck, no tabletop
+   or card-table). publish-office, publish-aboard, publish-table and
+   publish-fitout check on the page that the stage's answering packages are
+   exactly those stated.
+10. **Published examples.** Six lists shrink on a writable visit (worked out
+    in node from each doc in the folder and every doc its live links reach,
+    against every package's built plugin metadata): Santorini table, both
+    copies (tabletop and card-table: its pieces carry only `scene.carry` and
+    `seats`); Lost Cities aboard (tabletop: her game is a link that lists
+    its own); Quiet games room (tabletop: its tables are links); Fitting
+    out's boat (joints, traversal) and its hatch W (traversal, sailing:
+    published with the old appending `withPackages`). By the no-back-compat
+    rule they are republished from the fixed publishers and swapped in the
+    folder by the integrator, before any check visits them writable.
+
+Questions for the lead:
+- The one disagreement left takes turns: P's versions differ on a trait
+  another package answers on both viewers. Each is right by its own
+  registry, so while both are open on different versions one takes P off
+  and the other lists it again, until their versions meet (a test plays
+  it: 20 writes in 10 rounds, none once the versions agree). Acceptable,
+  or should something (a version on the entry, a hold on removals while
+  another viewer is here) settle it?
+
+## Decisions, connector frames (2026-11-16): decided unattended (2026-11-16, lane/n11), for the lead
+
+The scene keeps a connector's whole frame (README "connectors", STAGE.md
+`content(id)`; `sanitizeConnectors` and `placeConnector` in
+`src/carry-rules.js`, used by `findSnapPoints` and `snapCandidates`). It
+used to keep only the yaw, so Tabletop wrote its rack places' frames a
+second time under the GLB's `extras["tabletop.slots"]`; that copy is gone.
+
+1. **One source per connector.** A clean connector is `{ position, rotation,
+   yaw, tags }`. With a `rotation`, `yaw` is derived from it
+   (`yawOfEuler`), never taken from beside it, so the two can't disagree.
+   Without one, the connector gives only a yaw (the older `snapPoints`), or
+   nothing.
+2. **The frame on a node is the connector's up and facing carried by the
+   node** (`carryFrame`): the node's matrix with each column made unit (its
+   scale's sizes left out, a mirror's sign kept) carries the connector's Y
+   and Z as directions; Y is kept, Z is squared to it, and X = Y × Z. On an
+   ordinary node (any scale, even uneven: a CAD export's stretch) that is
+   exactly the node's rotation · the connector's. On a mirrored node (a
+   negative scale; glTF allows it, and mirrored CAD parts use it) where the
+   connector faces is mirrored but its frame stays a right-handed rotation,
+   never inside out or upside down. Under a parent stretched unevenly (which
+   skews a turned child's columns) it stays a rotation, its up as drawn.
+   The result goes back to Euler XYZ by `decomposeMatrix`, which is now
+   exact as a matrix everywhere, gimbal lock included: it used to give up
+   part of the turn within about 4.5e-4 rad of y = ±π/2 (three's rule),
+   which is exactly where a rack's standing places are on a rack turned a
+   hair (a rack yawed 1e-4 lost its yaw). It now takes z from the first two
+   columns turned back by x (Day's method), so whatever x comes out near the
+   lock, the frame is kept; exactly on edge z is 0, as three's. It is one
+   function, `eulerOfRotation`, that the presence smoothing's
+   `eulerFromQuat` (`src/stage/smooth.js`) now uses too, so a peer's tile
+   standing in a rack turned a hair is drawn turned while it glides.
+   Tabletop's copy (`src/table/frame.js` `decompose`, used for every slot
+   pose) has the same fix. The angles may be another triple for the same frame (the
+   rack's [π/2, π/2, 0] comes back as itself).
+3. **A yaw-only connector on a node** gets the yaw at which the node turns
+   its facing (+Z turned by its yaw). On an upright node that is its yaw
+   plus the node's, as before. On a node whose +Z is vertical the old rule
+   added a yaw taken from a vector with no plan length, which is noise; the
+   new one is defined and is null only when the facing itself goes vertical.
+   A connector facing +Z on a node tilted about X faces straight down: null
+   (the old sum gave 0). The table pins it (forms with yaw 0 and π/4).
+4. **"Straight up" is within 1e-6** (`VERTICAL`), not 1e-9: a GLB stores
+   32-bit floats, so a connector pointing up on a turned node comes out a
+   few 1e-8 off vertical and would otherwise get a yaw from float noise.
+   The table has a frame 5e-7 off straight up (no yaw) and one 2e-6 off (a
+   yaw), and a GLB case whose float32 node leaves 6e-8 of noise.
+5. **The hand's candidates carry the frame** (`snapCandidates` gives
+   `rotation` in the carry's frame beside `world` and `yaw`), and the carry
+   now lands a piece in it ("Decisions, landing" below). The candidate's yaw is the
+   placed frame's: the same as before for every upright object, and
+   correct, where the old sum wasn't, for a tilted one.
+6. **No LOOK_VERSION bump in Tabletop.** A table GLB already drawn still
+   carries `tabletop.slots` beside its connectors, and its connectors
+   already carry the rotation (`connectorsOf` wrote it), so it reads the
+   same; the leftover key is ignored. A golden test reads every built-in
+   game's places both ways and finds them equal.
+7. **Tabletop trusts the stage's frame** and keeps no Euler maths of its own
+   for places: `slots.js` lost its `yawOfEuler` and `yawOfMatrix`, a place
+   is `{ position, rotation, tags }` (a yaw-only connector as [0, yaw, 0]),
+   and `worldSlots` gives `{ world, radius, local: { position, rotation } }`,
+   no world yaw (nothing read it, and summing yaws is the rule the scene
+   dropped). Its tests read GLB extras through a stand-in for the stage
+   (`test/stand-ins.js` `stageExtras`) that writes each frame back through
+   decompose as the stage does, so they see the triples real docs get; the
+   golden compares frames as matrices. The seam with the real stage is the
+   probes' (dominoes.mjs, table.mjs).
+   So Tabletop now needs a scene that keeps the frame: syncing one without
+   the other leaves rack places yaw-only (a drawn tile would lie flat).
+
+## Decisions, landing (2026-11-16): decided unattended (2026-11-16, lane/n11), for the lead
+
+A carry lands a piece in a connector's frame, and `landing()` can lay it
+flat (STAGE.md "Landing"; `landedPose`, `layFlat` in
+`src/parts/carry-math.js`; `sideOf`, `faceOf`, `intoFrame`, `intoSnap` in
+`src/carry-rules.js`). This retires the stage gap "`landing()` can only say
+faceUp", Tabletop's README "Not yet" item 1 and the U-then-carry dance: a
+domino carried out of its rack goes down flat in one move, and one carried
+into a rack's place stands there.
+
+1. **The landed pose is a pure function** of how the piece is held (as
+   picked up, with every Q/E and F since: `own`), the snap (frame, yaw or
+   none) and the merged answer. The carry keeps `own` and derives what it
+   shows from it on every move. With no snap and no answer that is `own`
+   exactly, so every carry today that meets no snap and no rule is
+   unchanged. The 48-case table (start {flat up, flat down, standing facing
+   +Z, standing facing −X} × answer {none, faceUp, flat, both} × snap {none,
+   yaw-only, framed standing}) is worked out by hand and run twice, on
+   `landedPose` and through `createCarry`; the old carry fails 26 of the
+   carry rows, every one with a frame or an answer that changes the pose.
+   Beside it: 36 leaning and tilted frames, a yaw that the table can tell
+   from the start's own (start 0.3, connector 1.0), a mirrored piece, a
+   piece whose length is straight up, and where `landing` is asked.
+2. **A snap's turn no longer sticks** (a behaviour change; a question for
+   the lead). The old carry turned its own pose to a connector's yaw and
+   kept it after the pointer left (the face-up turn it already undid). Now
+   leaving a snap gives back the pose as held, as the face-up rule always
+   did, so what lands never depends on which snaps the pointer crossed on
+   the way. The cost: Q/E over a snap turns what is held out of sight (the
+   connector's turn wins while over it), and the turns show once it
+   leaves; a card carried across a tray slot and on to the felt keeps its
+   held heading, not the slot's.
+3. **Order: flat, then faceUp, then the snap.** Flat before faceUp is
+   pinned by a piece thinnest across and held face down: laid on its side,
+   its face is no longer down, so faceUp leaves it (faceUp first would
+   turn it over, a flip that shows). Flat before a frame matters only for
+   a frame that lies face down, where a standing piece then goes in face
+   up. A yaw sets the heading of the piece's length as 1 and 2 left it; a
+   piece whose length is within `VERTICAL` (1e-6) of straight up faces no
+   way and is left as it is (before, noise gave it a heading).
+4. **Up, down or on edge is one test, by the most upright axis**
+   (`sideOf`): an axis lies up or down when it is the most upright of the
+   three (a tie goes to it), else on an edge or an end. It decides a
+   piece's face (`faceOf`), a frame's (does it stand the piece?) and which
+   way `flat` lays an axis down, and it is Tabletop's Stand on edge test
+   (45°). It compares axes, never one against a tolerance: the first
+   build's "level within 1e-6" (`LEVEL`) made a rack leaning 1e-5 a tray,
+   so a face-down tile went in facing away from its player. That constant
+   is gone. Into a frame that lays a piece flat, it goes face up or face
+   down as it is (or as faceUp asks): the frame, or the frame turned over
+   about its own length. A frame that stands it says alone which way it
+   faces. A flat frame with a face-down card is exactly today's yaw turn.
+5. **faceUp turns over only a face that points down** (a behaviour
+   change; a question for the lead). The old rule turned over anything not
+   face up, so a standing piece asked faceUp spun about its length to face
+   the other way. Now a piece on an edge is left alone (flat lays it; a
+   frame stands it).
+6. **`flat` means the broadest face down**: the thinnest body axis (box ×
+   the piece's scale) upright by the smallest turn about a level axis; of
+   axes equally thin, the most upright already, then Y, X, Z, so it is the
+   identity on a piece lying flat. The axis keeps up or down (`sideOf`);
+   on an edge or an end it goes up, as Lay flat does. Its length keeps its
+   heading wherever it was level.
+7. **F turns over what you see.** `own` becomes the shown pose (after flat
+   and faceUp) turned over, so F over a tile laid flat by the rule leaves
+   it face down, and F over a card a hand turned face up leaves it face
+   down (the old carry did the same by turning `state.W`). After F, faceUp
+   is no longer heeded (unchanged) but `flat` still is: `landing` is asked
+   on every move now, not only while faceUp could matter, which also gives
+   the bag its answer after a flip.
+8. **A turn over is shown when what shows turns over.** The carry keeps
+   which way up the shown pose is (F's turns and the faceUp turn, odd or
+   even) and the last way it showed; in a frame that stands the piece it
+   doesn't show. So F in a rack's place shows nothing, and the piece turns
+   in the air as it leaves; F twice there shows nothing at all.
+9. **Paste and the parts bin take the snap's turn** (step 3 only: flat and
+   faceUp are the carry's). A part goes into a connector's frame as the
+   frame gives it. A copy with one top-level object is turned by the same
+   `intoSnap` as the carry (`moveBy`), so there is one rule, not a copy of
+   it; several take only the yaw, since a frame for a handful has no
+   meaning. Where a copy goes on a connector is decided by what it is,
+   not by how the connector is written (the first build rested a copy only
+   going into a frame, so a frame and a yaw for the same flat place pasted
+   differently): a carried piece (`scene.carry`) copied alone with a load
+   hint rests on any connector it snaps to as the carry rests it
+   (`restOnConnector`: footprint middle over the connector, underside at
+   its height; the carry's rays find the surface, the copy uses the
+   connector's height), and anything else keeps the parts bin's rule, its
+   origin at the connector, which a part's connector (a mast step) is made
+   for. Paste's
+   drop on an object row (`on`) and at the pointer (`at`) answer through
+   the same `partLanding`, so a frame facing straight up gives no yaw in
+   both (`on` used to fall back to the parent's heading).
+10. **Tabletop answers `flat: true` for a domino taken out of a hand**
+   (`canStand`, and where the doc still has it, since a carry writes only
+   where it ends, lies in a hand: a rack's), plus faceUp in your own hand
+   as before. Taken out of a hand it is being played: it goes down flat,
+   face up, as playing it does (or face down with F). Anything else goes
+   down as carried, so a tile standing on the felt in front of its player
+   (no rack: theirs alone, visibility.js `facing`) stays standing and
+   hidden when moved; the first build answered flat wherever a domino was
+   carried, which laid such a tile face up for everyone on any nudge. A
+   rack's place stands a tile by its frame, so `landing` needs no
+   knowledge of slots. Options for the lead: (a) this; (b) flat for every
+   domino, a standing one tipping onto its face (face down; playing is F);
+   (c) flat everywhere, face up, accepting the reveal.
+11. **The answer shape is `{ faceUp?, flat? }`**, flat meaning "on the
+   broadest face". Standing comes from a connector's frame, not from
+   `landing`. A general `up` axis in the piece's body frame is the
+   alternative: a question for the lead.
+12. **A yaw-only connector is a frame with its tilt left free** (stated,
+   not changed; a question for the lead). Into a whole frame a piece takes
+   the frame's tilt (a tilted piece put on a flat tray place lies flat); a
+   connector with only a yaw (`{ position, yaw }`, or the older
+   `extras.snapPoints`) turns it about the vertical and keeps its tilt. So
+   one place written two ways lands a tilted piece two ways. Under the
+   no-back-compat rule the older forms could go (every connector a whole
+   frame, a yaw written as [0, yaw, 0]); they are kept here because that
+   changes the GLB contract (README "connectors") for every package that
+   writes one, which is the lead's call.
+
+
+## Decisions, how a carry ends (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+A carry session says how it ended, and the carry tells what it put down
+and on what (STAGE.md "How a carry ends"; `src/parts/carry.js`). This
+retires bag README's "What the stage lacks" rows "this was put down on me"
+and "is my own carry still holding this?".
+
+1. **`ended` is a promise of `{ how, on }`**, one of four outcomes: put,
+   back, yielded, refused. Every session settles it exactly once, whatever
+   ends it (end, cancel, a newer carry, the part stopping, a peer's hold,
+   a refused hold, the object gone). A promise rather than a callback in
+   `opts`, so whoever holds the session can ask, and a session already over
+   answers on the next microtask. The outcome names the cause, not the code
+   path that ended it: a refused hold with a peer's ahead (`heldBy`) is
+   "yielded", wherever it was refused (fixed in review). "put" means
+   written: a stage read-only at the put ends it "back".
+2. **`landed(id, on)` is an event, not a claim**: after the put's write,
+   once per running extension, on the carrier's client only. Nothing is
+   ordered and nothing can refuse it; who may refuse a drop is drop claims,
+   N15's, the lead's. A rule that throws is warned of and the rest hear.
+3. **A peer's hold gives the carry way at the stage's `update`**, the flush
+   that shows the hold, not the pointer's next move, so `ended` says
+   "yielded" while the pointer is still. The bag stopped watching for that
+   hold itself. The object removed ends it "back" at the same `update`.
+   **Question for the lead:** the carry learns of the loss twice (it polls
+   `heldBy` at each `update`, and its next `pose.hold` is refused), though
+   the stage knows the moment it drops a hold (holds.js `lost`, used only
+   for bookkeeping). Should holds tell their holder (a refusal that says its
+   cause, or a `lost` the holder hears)? That would retire the poll and the
+   `update` hook; it changes the scene contract, so it waits for you.
+4. **No new query for one's own hold.** `pose.hold`'s boolean says whether
+   it stands, `ended` how it ended; `heldBy` stays "the peer ahead of this
+   view".
+5. **A drop into a bag is still two changes** (the put, then the bag's
+   removal), so undo takes two steps. One change would need the put to be
+   offered to rules before its write, which is a drop claim: a question
+   for the lead, tied to N15.
+
+## Decisions, templates take parameters (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+A `scene:template` may declare `params` (ParamSpecs), drawn as a form under
+its button on the start screen; `api.template(id, params)` runs
+`create(ctx, params)` (STAGE.md "Templates"). Tabletop's three Draw Dominoes
+templates are one, `tabletop.dominoes`, with `players` 2, 3 or 4. This
+retires the stage gap "templates take no parameters (one template per
+count)".
+
+1. **The params are ParamSpecs, the kinds every other form here uses**
+   (`src/param-form.js`; an `enum` for a choice of counts). No new kind,
+   and the start screen draws the form from metadata alone, so nothing is
+   loaded to offer a template, as before.
+2. **The stage coerces, not the form.** `api.template` hands create
+   exactly its declared params: coerced to each spec, the default where a
+   value is missing or can't be, every other key dropped (`paramsBySpec`,
+   which is `effectiveParams` without the pass-through of unknown keys). A
+   render's params keep unknown keys because a doc outlives its provider's
+   metadata; a template runs once, so there's nothing to keep. Any caller
+   (the start screen, another tool, an agent) gets the same guarantee, and
+   a template trusts its params as `build()` trusts its own.
+3. **A template that declares none gets `{}`** and is offered as the same
+   bare button, so it runs as before. One shape for every template, rather
+   than calling create with one argument or two.
+4. **What's chosen is the view's until it runs**, and survives the list
+   being drawn again when another package registers a template (the start
+   screen keeps each template's values by id). It isn't written anywhere:
+   the template writes what it made of it.
+5. **Tabletop's games stay one per count, as data** (`draw-dominoes-2/3/4`,
+   GAME-FORMAT's shape); only the template is one. Its `game` maps
+   `players` to the game's id. The parts bin keeps its three Draw Dominoes
+   parts: a part takes no params. **Question for the lead:** should
+   `scene:part` take `params` the same way (the bin drawing a form, or the
+   part asking after it lands)? Not built: the bin is a drag, and where its
+   form would go is your call.
+6. No published example records which template made it (a template writes
+   a table, not its own id), so none needs republishing; the Draw Dominoes
+   (2 players) table in the examples folder is unchanged.
+
+## Decisions, telling is the stage's (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+An extension declares `messages: { [type]: { valid(data), says(data, who,
+scene) } }` and calls `api.tell(type, data)`; the stage says it here as
+"You", sends it, and on each peer drops it unless valid, asks `says` at once
+and after every update until it answers text or `TELL_MS` (3000 ms, stage
+time) has passed, tells it once and forgets it (STAGE.md "Telling",
+`stage/telling.js`). Dice (turned), the cup (peeked, lifted), tabletop
+(shuffled, drew, washed, showed), bag (drew, put, emptied, poured, looked)
+and seats (sat) tell this way; arena's shot is drawn, not said, and stays
+`receive`'s. Retired: dice's MESSAGES, heard, waiting and TRUST_MS, the
+cup's waiting, settleWaiting and TRUST_MS, tabletop's and bag's announce,
+told and shape checks, bag's contact lookup and NAME_MS, seats' told. This
+retires the stage gap "api.send is unverifiable: the bookkeeping is copied
+between packages".
+
+1. **`who` is `{ viewer, name, mine }`, not a name alone** (the plan had a
+   name). The cup's evidence for "peeked" is that the speaker holds the cup
+   down, which needs who they are, not what they're called; `mine` (this
+   view told it) because another tab of the same viewer is a peer, so
+   `viewer` can't say it ("Ana lifted their own cup", not "your own").
+2. **The stage names the speaker: their contact's name, else "Someone";
+   a package that knows better may say better.** Seats already contributes
+   that better name: the roster's `who(viewer)` (contact, else the seat
+   they sit in, else "Someone"; seats/README.md). The cup's HUD and
+   tabletop's notices used it before this step, so the cup and tabletop
+   still call a peer by `roster.who(who.viewer)` where a roster runs, and
+   by `who.name` where none does; one viewer is then "North" in the cup's
+   HUD and in its notices alike. Dice, bag and seats' own "sat" use
+   `who.name`. (Review, 2026-11-17: the first cut dropped the roster and
+   made a contactless "North" "Someone".) **Question for the lead:** two
+   lookups of one contact name remain, the stage's and `roster.who`'s.
+   Should the stage's be the one name, `roster.who` deferring to it for
+   the contact and adding only the seat; or should the stage ask whoever
+   contributes a name (`roster.who` itself) before "Someone", so no package
+   picks; or is a package choosing its own name, as now, right?
+3. **`says` waits for the name**: not asked about a speaker whose contact
+   is still being looked up until it comes or `NAME_MS` (1000 ms) passes, so
+   the first word from someone is told by name (the bag waited the same
+   way; dice and tabletop said "Someone" until the name came).
+4. **One's own goes through the same rule**, asked at once and on this
+   stage's updates, so a local `says` that needs the doc to have caught up
+   (dice) waits for it as a peer's does. Every tell is said here too.
+   Changes: tabletop's "Shuffling 44 cards…" and "Washing 6 dominoes…" are
+   now "You shuffled “Deck” (44)" and "You washed “Deck” (6)"; the cup's
+   own peek and lift are said to their maker ("You peeked under your cup.",
+   "You lifted Alice's cup."), where before they were told only to the
+   others. **Question for the lead:** is a notice for your own peek noise?
+   `says` could answer null for one's own, but then null would mean "not
+   worth saying" as well as "not borne out", and the rule is simpler with
+   one meaning.
+5. **A die's evidence keeps its own clock** (`MOVED_MS`, 3000 ms: how
+   recently the doc must have moved the die), since the move may arrive
+   before the word, which the stage's window (from the word's arrival)
+   doesn't cover.
+6. **Tabletop's and bag's `says` answer at once** (the bag: once every bag
+   named is in this scene), as planned, so they are told unchecked. For
+   tabletop's `shuffled` and the bag's contents that is all there is: the
+   change is in another document (a keeper's deck, a bag's) the scene
+   doesn't carry. But tabletop's `drew`, `washed` and `showed` do write the
+   scene (a card into a hand, a pile's cards moved, cards turned), and are
+   told on arrival anyway, before or without that change: their data is
+   counts only, never which card (who drew what is hidden), so nothing in
+   it names what in the doc to wait for. (Review, 2026-11-17: the first
+   wording said none of tabletop's wrote the scene.) **Question for the
+   lead:** hold them to the doc too, by sending the ids moved (an id says
+   no face, but does say which card went to whose hand) or by evidence
+   like the die's (a card of that noun moved lately into the speaker's
+   hand), or leave them vouched for?
+7. **A view that can't write the doc tells nothing** (`tell` is a no-op
+   where `writable()` is false), as `send` reaches no one from a read-only
+   stage.
+8. **Packages' fake stages copy `telling.js` whole** (`test/telling.js` in
+   dice, tabletop, bag and seats), so their tests run the stage's own rule;
+   packages stand alone, so it is a copy, not an import. Each copy's first
+   line names the scene commit it was taken from, so drift shows in a
+   `git diff` of scene's since then.
+9. **A waiting message is forgotten by its own timer** at `TELL_MS`, not
+   when something next asks it, so a quiet doc holds nothing past its time
+   and a chatty peer can't grow what waits (review, 2026-11-17: the first
+   cut kept it until the next update). The window is half-open, `[arrival,
+   arrival + TELL_MS)`, the same for the timer and for asking.
+10. **Data is an object, checked by the stage** before `valid`: every
+   package's `valid` began with the same guard, so it is said once.
+
+## Decisions, the use prompt and the eye (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+The use prompt (`src/parts/use.js`) follows the pointer over the world and
+holds still where it is while the pointer is on it, so a button can be
+reached. Invariant: a press reaches a prompt button only if the viewer
+hasn't moved the eye since the pointer reached that button; moves the eye
+makes on its own (a ride, a body's own going, a seat rolling with its
+table) carry the prompt's hold with them. Pinned by use.test.js, "the
+pointer on the prompt, and the eye": how the pointer came onto it (moved
+from the world, back into the view straight onto it, a finger's tap) ×
+{nothing, an orbit or zoom ends, a Frame, a ride carrying the eye for five
+frames, Edit entered, Look entered, a selection change, a pointer lock
+taken and lost} = 24 cases, plus off the prompt and onto it again, and the
+pointer leaving while held. Against the first cut of this (cb0458d7) 17
+fail: every ride, re-entry and lock row (and the orbit and Frame rows,
+since its camera compare sees no camera in the test's viewport).
+
+1. **The viewer moving the eye lets go; the eye moving on its own doesn't.**
+   The first cut let go on any change of the eye seen on a frame drawn.
+   Review found that makes the prompt unreachable with a mouse whenever
+   the eye moves every frame: the base ride on a ship under way, walking
+   aboard without the lock, a seat at a rolling table. A held verb's button
+   (Haul in) is the one most often pressed there, and before this the
+   prompt was reachable. A ride and a body's own going can't be told from a
+   Frame by looking at the camera, so the prompt listens for the moves
+   themselves: `api.camera.onEnd` (an orbit, a zoom and now a Frame: the
+   viewport ends a `frame(box)` as it ends an orbit, never while held), the
+   view's update (the top body's id changed), `pointerlockchange`. One
+   place decides: no frame hook, no camera compare. Question for the lead:
+   is "the viewer moved it" the line you want? A package's own
+   `camera.set` jump (sailing's first framing of a ship) isn't seen.
+2. **A body entered or left lets go** even if the camera stays (Edit from
+   Look): it is another eye, and Edit brings its halo, which is what a
+   press at the pointer should reach.
+3. **A selection change doesn't let go**: the eye hasn't moved, so what is
+   under the pointer is what it was, the prompt's button included.
+4. **Holding keeps the prompt where it is**, however the pointer came onto
+   it: moved from the world, a finger's tap, or back into the view straight
+   onto it (the first cut held it at the pointer's last place, none after a
+   leave, and sent it to the view's middle). The pointer is tracked over the
+   prompt only; over another part's overlay (the touch pad, the body chip)
+   it is still ignored. The pointer leaving the view lets go.
+5. **Let go means back under the pointer, 36 px below it** (use.css), so
+   the pointer is no longer on the prompt; a still pointer stays off it
+   until it moves onto it again, which holds it anew.
+6. **The view doesn't keep a Frame as the viewer's camera.** The view saves
+   the camera after an orbit (`onCameraEnd`'s `how` is "orbit"), not after a
+   Frame, as before, so the autoframe's frames still don't mark a scene as
+   placed for its viewer.
 
 ## Decisions, N7 (decided unattended (2026-11-16, lane/n7), for the lead)
 

@@ -66,8 +66,9 @@ people lists this package in its `packages`, like any other.
   (`here: false`: the body chip doesn't offer it). Sitting pushes it over
   whatever body you're in (walking her deck, or Look); standing up, the
   chip's Leave or watching pops it, and that body carries on.
-- **"Sat down"**, told to the others (`api.send`: the seat id, and the
-  owner's object id for an object's seat).
+- **"Sat down"**, told to everyone (`api.tell`: the seat id, and the
+  owner's object id for an object's seat; scene STAGE.md "Telling"): said
+  once the seat is one of the scene's, by the sitter's contact name.
 
 ## Conventions
 

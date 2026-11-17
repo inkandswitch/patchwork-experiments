@@ -62,7 +62,7 @@ modules share.
 | `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
 | `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions, each moving by the world time it's held, in whole steps of the world's grid: `worldSteps`, "Determinism") |
-| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the hint is only "Click her to come aboard", beside the dial, while a click does (near, not seated) |
+| `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`). It only reads: (S1) it never holds a button; the way in is stations.js's `aboard` command (Enter, and `show: ["world"]`, so a *Come aboard* button on the stage's bar of tools in every body: scene TOOLS.md Decision 10); (S2) that command applies exactly before you're aboard (the null target, not playing); (S3) the HUD shows where her doc is the world or while you're aboard. Before you're aboard the HUD is the dial alone and says nothing: what a click on her does is the base's (Look's comes aboard, Edit's selects, a seat's is the game's), which a package may not ask; its sheet's one `pointer-events` is the root's `none`, so no node of it takes a press in any state (`hud.test.js`; Decisions (N11) 1) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
@@ -561,6 +561,36 @@ rewrite that table.
   (item 11: the coefficients, the sets' trimmed tables through the wrench,
   each sail at its own CE and in its own air, the jib's swing, sheet and
   lead, backing and goose-winging, furling, reefing's CE, and irons).
+
+### Decisions (N11)
+
+1. *Before you're aboard the HUD says nothing* (decided unattended
+   (2026-11-17, lane/n11), for the lead). N8 took the HUD's Come aboard
+   button out to the bar of tools (scene TOOLS.md Decisions 10) but kept
+   the lobby's hint, "Click her to come aboard" while she was near
+   (`NEAR` 60 m) and the view wasn't seated. In Edit that was false (Edit's
+   click selects her, TOOLS Decisions 6), and a package may not ask
+   whether the viewer is editing (scene STAGE.md, "Conventions for
+   bodies"), so no condition sailing can see makes it true. The plan had
+   "Come aboard (Enter)" in its place; that names a key the HUD can't
+   check (a key is shown only where the resolver says it reaches the
+   command, scene TOOLS.md H3, and the bar already shows Come aboard's
+   key that way). So the lobby hint is empty in every base, and with it
+   `NEAR`, `nearEye`, hudModel's `seated` and `near`, the `data-seated`
+   attribute and the import of crew.js's `seatedView` are gone: the HUD
+   read them only for that line, and the HUD's second line, `keys`, never
+   set by anything, went too (one line says what the keys do). Table:
+   state {lobby, paused, aboard} × what the crew says (`me.hint`,
+   `swimming`, `free`), 24 cases (`hud.test.js`). The sheet's only
+   `pointer-events`, comments aside, is the root's `none`, and hud.js sets
+   none inline: read from the files, so a test sees only sailing's own
+   sheet. Of scene's, stage.css gives each child of the overlay `auto` at
+   no specificity (`:where`), which the root's own rule outranks, and none
+   names a `.sail-hud` node (checked by reading them, 2026-11-17). Lost: in Look, near her, nothing
+   on the view says a click on her boards (the bar's Come aboard and the
+   templates' notice still do). *Question for the lead:* should the base
+   say what a click does (Look's own "Click to …" under the pointer)? It is
+   the only one that knows.
 
 ### Decisions (N6)
 
@@ -2266,9 +2296,8 @@ traits mark, put back when it stops).
 `create…(api, ctx) → part`, where a part may have `tick(…)`, `update(scene,
 local, prev)`, `receive(type, data, from)` and `dispose()`, and fills in
 what the others read. No part calls `api.loop`: play.js runs one loop and
-ticks them in the order a frame needs, and no part imports another, but
-for hud.js taking crew.js's `seatedView` (what they share of the doc is
-traits.js, of the maths frames.js). Nothing of the ship's can be carried:
+ticks them in the order a frame needs, and no part imports another
+(what they share of the doc is traits.js, of the maths frames.js). Nothing of the ship's can be carried:
 what can says so with the scene's `scene.carry` trait (a game's cards and
 pieces), which the ship and her fittings never have, so a game played aboard
 can't carry off her mast and sailing needs no veto. And the sail's
@@ -2314,7 +2343,7 @@ ctx.sim.tick()           // every view, every frame: stale inputs; computing, th
 ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). A click reaches
                          //   her only through something of hers (the ships' part holds no scene trait, so the world's sea, sky and shore
                          //   aren't hers); what nearer takes it (a card's carry) has it first. Seated (seatedView: a body over the stage's
-                         //   Look or Edit, not the crew's, a seat), no click does (Enter or the bar's Come aboard does); the HUD (hudModel's `seated`) shows no walking keys
+                         //   Look or Edit, not the crew's, a seat), no click does (Enter or the bar's Come aboard does)
 ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
                          //   (the navmesh walker), the walking keys (labelled as walk's), the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
                          //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves

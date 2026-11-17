@@ -64,9 +64,12 @@ describe("scene.add", () => {
     expect(mimeOf("a.bin", "")).toBe("application/octet-stream");
     expect(mimeOf("a.glb", "x/y")).toBe("x/y");
     expect(baseName("part.v2.stl")).toBe("part.v2");
-    expect(templatesOf([{ id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot" }, { name: "no id" }, { id: "b" }])).toEqual([
-      { id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot" },
-      { id: "b", name: "b", icon: null, description: null },
+    const players = { key: "players", kind: "enum", options: [{ value: 2 }], default: 2 };
+    expect(templatesOf([{ id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot" }, { name: "no id" }, { id: "b" }, { id: "c", params: [players, { kind: "enum" }, null] }, { id: "d", params: "players" }])).toEqual([
+      { id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot", params: [] },
+      { id: "b", name: "b", icon: null, description: null, params: [] },
+      { id: "c", name: "c", icon: null, description: null, params: [players] },
+      { id: "d", name: "d", icon: null, description: null, params: [] },
     ]);
   });
 
@@ -116,6 +119,77 @@ describe("scene.add", () => {
     // its maker lands in the game, in the body it starts people in; nothing stops
     expect(s.local.get().body.id).toBe("t.sit");
     expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game", "scene.add"]);
+  });
+
+  // templates {no params, with params} × {click it as offered, choose in its form then click} → what create gets
+  it("a template's params are a form under its button, drawn from metadata; a click runs it with the form's values; one without params is the bare button, run with {}", async () => {
+    const PLAYERS = { key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 };
+    const got = [];
+    // (the params are metadata only: the module knows nothing of them)
+    const tpl = (id, params) => ({ meta: { id, name: id, ...(params ? { params } : {}) }, module: { create: (ctx, p) => void got.push([id, p]) } });
+    await mount({ templates: [tpl("t.plain"), tpl("t.some", [PLAYERS])] });
+    const start = s.port.querySelector(".add-start");
+    const button = (id) => start.querySelector(`button[data-template="${id}"]`);
+    const select = () => start.querySelector('[data-params="t.some"] [data-key="players"] select');
+    // the one without params is offered as before: the bare button, no form
+    expect(button("t.plain").parentElement.className).toBe("add-templates");
+    expect(start.querySelector('[data-params="t.plain"]')).toBeNull();
+    // the one with: its button, and its form under it, showing the default
+    expect(button("t.some").parentElement.className).toBe("add-template-group");
+    expect(button("t.some").nextElementSibling.dataset.params).toBe("t.some");
+    expect([...select().options].map((o) => [o.value, o.textContent])).toEqual([["2", "2"], ["3", "3"], ["4", "4"]]);
+    expect(select().value).toBe("2");
+    const click = async (id) => {
+      button(id).click();
+      await settle();
+      await settle();
+    };
+    const choose = (v) => {
+      select().value = v;
+      select().dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    await click("t.plain");
+    await click("t.some");
+    for (const v of ["3", "4", "2"]) {
+      choose(v);
+      await click("t.some");
+    }
+    choose("3");
+    await click("t.plain");
+    expect(got).toEqual([
+      ["t.plain", {}],
+      ["t.some", { players: 2 }],
+      ["t.some", { players: 3 }],
+      ["t.some", { players: 4 }],
+      ["t.some", { players: 2 }],
+      ["t.plain", {}],
+    ]);
+    // a choice outlives the list being drawn again (another package registering a template)
+    getRegistry("scene:template").register({ type: "scene:template", id: "t.later", name: "Later", load: async () => ({ create() {} }) });
+    await settle();
+    expect(button("t.later")).not.toBeNull();
+    expect(select().value).toBe("3");
+    await click("t.some");
+    expect(got.at(-1)).toEqual(["t.some", { players: 3 }]);
+    getRegistry("scene:template").unregister("t.later");
+  });
+
+  // {before, while, after} a template runs × {its button, its form's select, Blank} → disabled?
+  it("while a template runs, the start screen's buttons and its form's fields are disabled; after, enabled again", async () => {
+    const PLAYERS = { key: "players", label: "Players", kind: "enum", options: [2, 3].map((n) => ({ value: n, label: String(n) })), default: 2 };
+    let finish;
+    const running = new Promise((r) => (finish = r));
+    await mount({ templates: [{ meta: { id: "t.some", name: "Some", params: [PLAYERS] }, module: { create: () => running } }] });
+    const start = s.port.querySelector(".add-start");
+    const fields = () => [...start.querySelectorAll('button[data-template="t.some"], [data-params="t.some"] select, button[data-template=""]')].map((f) => f.disabled);
+    expect(fields()).toEqual([false, false, false]);
+    start.querySelector('button[data-template="t.some"]').click();
+    await settle();
+    expect(fields()).toEqual([true, true, true]);
+    finish();
+    await settle();
+    await settle();
+    expect(fields()).toEqual([false, false, false]);
   });
 
   it("Blank puts the start screen away for this view, leaving the drop hint", async () => {

@@ -27,6 +27,7 @@ export function createParamForm(container, specs, onChange) {
     const row = document.createElement("label");
     row.className = "param";
     row.dataset.kind = spec.kind;
+    row.dataset.key = spec.key;
     const name = document.createElement("span");
     name.className = "param-label";
     name.textContent = spec.label ?? spec.key;

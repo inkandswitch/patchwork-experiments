@@ -120,7 +120,7 @@ try {
     mark("pressed S");
     await b.rest(500);
     await snapLooks("shuffled");
-    check("A is told it's shuffling", await until("notices('a').some((n) => /^Shuffling \\d+ cards/.test(n))", 3000), await P("notices('a')"));
+    check("A is told she shuffled it, as hers (the stage says her own tell as You)", await until("notices('a').some((n) => /^You shuffled “.+” \\(\\d+\\)$/.test(n))", 3000), await P("notices('a')"));
     check("B is told Ana shuffled it, by its container's name and a count", await until(`notices('b').includes('Ana shuffled “Lost Cities: Deck” (${pile.length})')`, 3000), await P("notices('b')"));
     const deck1 = await P("deckDoc()");
     // the keeper's container: the same items, untouched, and which slot holds which permuted among the pile's slots

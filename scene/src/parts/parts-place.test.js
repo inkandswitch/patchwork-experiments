@@ -82,6 +82,26 @@ describe("connectorFor", () => {
     expect(connectorFor({ matrix: composeMatrix({ scale: 1 }), connectors, snapRadius: 0.5 }, [1.8, 0, 0])).toBe(null);
     expect(connectorFor({ matrix: composeMatrix({ scale: 2 }), connectors, snapRadius: 0.5 }, [2.8, 0, 0])?.world).toEqual([2, 0, 0]);
   });
+  it("a connector with a whole frame takes the part into it (a rack's place stands it on edge); a yaw-only one turns it upright", () => {
+    // a rack turned a quarter about Y: its place's X up, its Y (face) toward +Z of the rack, its length along the rack's +X
+    const matrix = composeMatrix({ position: [1, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
+    const connectors = [{ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], tags: ["domino"] }];
+    const land = partLanding({ point: [1, 0, 0], parent: { id: "rack", matrix, connectors, snapRadius: 0.1 }, tags: ["domino"] });
+    expect(land.snapped).toBe(true);
+    const W = worldOf(land, matrix);
+    // world scale 1; X up, Y (+Z of the rack turned a quarter) +X, Z (+X turned) −Z
+    expect(near([W[0], W[1], W[2]], [0, 1, 0])).toBe(true);
+    expect(near([W[4], W[5], W[6]], [1, 0, 0])).toBe(true);
+    expect(near([W[8], W[9], W[10]], [0, 0, -1])).toBe(true);
+    expect(land.rotation).not.toBe(null);
+    expect(land.yaw).toBeCloseTo(Math.PI, 9);
+    // the same place with only its yaw: upright, turned that way
+    const yawOnly = partLanding({ point: [1, 0, 0], parent: { id: "rack", matrix, connectors: [{ position: [0, 0, 0], yaw: Math.PI / 2, tags: ["domino"] }], snapRadius: 0.1 }, tags: ["domino"] });
+    const Y = worldOf(yawOnly, matrix);
+    expect(yawOnly.rotation).toBe(null);
+    expect(near([Y[4], Y[5], Y[6]], [0, 1, 0])).toBe(true);
+    expect(near([Y[8], Y[9], Y[10]], [0, 0, -1])).toBe(true); // facing yaw π
+  });
   it("facingEye: 0 straight overhead", () => {
     expect(facingEye([0, 5, 0], [0, 0, 0])).toBe(0);
   });

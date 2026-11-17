@@ -83,6 +83,10 @@ try {
     /** a start-screen button's middle, for a real click */
     templateAt: (w, id) => { const b = [...hosts[w].querySelectorAll(`[data-template="${id}"]`)].find((e) => e.getBoundingClientRect().width > 0); return b ? rect(b) : null; },
     templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    /** a field of a template's params form on the start screen: its options, or [] */
+    paramOptions: (w, id, key) => [...(hosts[w].querySelector(`[data-params="${id}"] [data-key="${key}"] select`)?.options ?? [])].map((o) => o.value),
+    /** choose a value in that field, as a person's pick does (its change event); true when it shows it */
+    param(w, id, key, value) { const f = hosts[w].querySelector(`[data-params="${id}"] [data-key="${key}"] select`); if (!f) return false; f.value = String(value); f.dispatchEvent(new Event("change", { bubbles: true })); return f.value === String(value); },
     openB() { if (!dbg.b) { Tool(scene.b, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
     seats: () => seatsOf(scene.a.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
@@ -133,6 +137,13 @@ try {
       return { min: min.map(r), max: max.map(r) };
     },
     racks: () => Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).length,
+    /** a point in a seat's rack (its own frame: a place's position, games/draw-dominoes-2.json), in the world, by A's snapshot */
+    rackSpot(seat, p) {
+      const s = dbg.a.scene();
+      const zid = Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat);
+      const m = zid ? s.world(zid) : null;
+      return m ? [0, 1, 2].map((k) => +(m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]).toFixed(6) + 0) : null;
+    },
     transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
     /** a tile's face direction (its +Y in the world), by A's snapshot, to 3 places */
     faceDir: (id) => { const m = dbg.a.scene().world(id); return [m[4], m[5], m[6]].map((v) => +v.toFixed(3) + 0); },
@@ -145,6 +156,11 @@ try {
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    /** the use prompt's verbs and where each is, and what is under (x, y): a verb's text, or its tag */
+    verbsAt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => ({ text: e.textContent.trim(), ...rect(e) })),
+    under: (x, y) => { const e = document.elementFromPoint(x, y); return e?.closest(".use-verb")?.textContent.trim() ?? e?.tagName ?? null; },
+    /** the use prompt's "⋯ N more" past three verbs, and where it is, or null */
+    more: (w) => { const e = hosts[w].querySelector(".use-prompt:not([hidden]) .use-more"); return e ? { text: e.textContent.trim(), ...rect(e) } : null; },
     /** the right-click menu's items in a view, and where each is */
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: e.textContent.trim(), ...rect(e) })),
     loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
@@ -162,7 +178,7 @@ try {
         const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
         if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
         const hit = v.pick(x, y);
-        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id, point: hit.point ? [...hit.point] : null };
       }
       return null;
     },

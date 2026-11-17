@@ -6,8 +6,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as parts from "./parts.js";
 import { PIECES, partKey, makeFile } from "./parts.js";
 import { CARD_TAGS, accepts, nearestSlot, worldSlots } from "./slots.js";
-import { SEATS } from "../test/stand-ins.js";
+import { SEATS, stageExtras } from "../test/stand-ins.js";
+import { extrasOf } from "../look/look.js";
 import { composeMatrix, fakeDrop } from "../test/fakes.js";
+import { multiply } from "./frame.js";
 import { emptyScene } from "../empty-scene.js";
 
 const KINDS = { pawn: "pawn", token: "token", cardSpot: "card-spot" };
@@ -103,13 +105,15 @@ describe("the card spot", () => {
 
   it("takes a card dropped near it, squared to the mat; a pawn doesn't fit it", () => {
     const piece = PIECES["card-spot"];
-    // as the stage normalises a connector: its rotation's yaw
-    const extras = { connectors: piece.snapPoints.map((p) => ({ position: p.position, yaw: p.rotation[1], tags: p.tags })), snapRadius: piece.snapRadius };
+    // as the stage reads the GLB's connectors: the rotation kept, its yaw derived
+    const extras = stageExtras(extrasOf(piece));
     const m = composeMatrix({ position: [0.4, 0, 0.1], rotation: [0, 0.7, 0], scale: 1 });
     const slot = nearestSlot(worldSlots(m, extras, CARD_TAGS), [0.42, 0, 0.11]);
     expect(slot.world[0]).toBeCloseTo(0.4, 9);
     expect(slot.world[2]).toBeCloseTo(0.1, 9);
-    expect(slot.yaw).toBeCloseTo(0.7, 9);
+    const f = multiply(m, composeMatrix({ rotation: slot.local.rotation })); // the slot's frame in the world: squared to the mat
+    expect(Math.atan2(f[8], f[10])).toBeCloseTo(0.7, 9);
+    expect(f[5]).toBeCloseTo(1, 9);
     expect(nearestSlot(worldSlots(m, extras, CARD_TAGS), [0.5, 0, 0.1])).toBeNull();
     expect(accepts(extras.connectors[0].tags, undefined)).toBe(false);
   });

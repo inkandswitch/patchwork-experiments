@@ -40,6 +40,18 @@ describe("rotations", () => {
     expect(sameRotation(eulerFromQuat(quatFromEuler(locked)), locked, 1e-6)).toBe(true);
   });
 
+  // a hair from gimbal lock (a tile on edge in a rack turned a hair) three's rule gives up part of the turn; ours keeps it
+  it.each([1e-10, 1e-7, 1e-5, 1e-4, 4.4e-4])("a quaternion %s short of gimbal lock comes back the same frame", (eps) => {
+    const m = (r) => new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...r, "XYZ")).elements;
+    for (const sign of [1, -1]) {
+      for (const [x, z] of [[0.3, 0.2], [Math.PI / 2, 0], [1e-4, 0], [-2.5, 1.1]]) {
+        const r = [x, sign * (Math.PI / 2 - eps), z];
+        const a = m(r), b = m(eulerFromQuat(quatFromEuler(r)));
+        for (let k = 0; k < 16; k++) expect(Math.abs(a[k] - b[k]), `${r}: [${k}]`).toBeLessThan(1e-9);
+      }
+    }
+  });
+
   it("slerp agrees with three, takes the short way round, and carries on past 1", () => {
     const a = quatFromEuler([0, 0, 0]);
     const b = quatFromEuler([0, 1, 0]);

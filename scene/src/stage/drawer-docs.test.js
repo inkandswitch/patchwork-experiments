@@ -57,7 +57,8 @@ async function mountWithLink() {
   await until(() => view.enterable(["L"]), 3000);
   view.enterBody(EDIT.id);
   view.select(["table"]);
-  await settle();
+  // the selection opens the shut inspector a beat later (TOOLS.md Decisions 6, "The inspector waits a beat")
+  await until(() => view.drawer.state().order.some((el) => el.dataset.panel === "inspector"), 3000);
   return { view, notes };
 }
 

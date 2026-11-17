@@ -3,6 +3,7 @@
 // do is recorded so a test can read it back: notices, sends, labels, held tools (arms),
 // loops, docked panels, addObject calls.
 import { FakeHandle, FakeRepo } from "./fake-repo.js";
+import { createTelling, declared } from "./telling.js";
 
 export const SCENE_URL = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 
@@ -40,6 +41,19 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
   const handle = repo.handles.get(SCENE_URL) ?? repo.add(sceneDoc, SCENE_URL);
   const rec = { notices: [], sends: [], labels: [], arms: [], loops: new Set(), docked: [], added: [], removed: [], held: new Map(), contributions: {}, local: {} };
   let n = 0;
+  let instance = null; // the extension's instance (attach): what tells and is told
+  // what the stage tells for it (telling.js, as the stage's): its own here as "You", a peer's as heard
+  const telling = createTelling({
+    now: () => Date.now(),
+    after(ms, fn) {
+      const h = setTimeout(fn, ms);
+      return () => clearTimeout(h);
+    },
+    scene: () => snapshot(handle.doc()),
+    notify: (text) => rec.notices.push(text),
+    find: (url) => repo.find(url),
+    alive: (_ext, x) => x === instance,
+  });
   const boxOf = (id) => {
     const h = half[id];
     const o = handle.doc().objects[id];
@@ -81,6 +95,11 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     },
     notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text),
     send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]),
+    // said here (and recorded as sent) when declared and valid
+    tell(type, data) {
+      const copy = JSON.parse(JSON.stringify(data));
+      if (declared(instance, type) && telling.say("bag", instance, type, copy, api.viewer)) rec.sends.push([type, copy]);
+    },
     // the stage's time (scene/src/stage/time.js): the event loop's wall, here
     clock: {
       now: () => Date.now(),
@@ -126,7 +145,24 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     port: null,
     local: { get: () => rec.local },
   };
-  return { api, rec, handle, repo, half, frame: () => [...rec.loops].forEach((fn) => fn(0.016)) };
+  return {
+    api,
+    rec,
+    handle,
+    repo,
+    half,
+    frame: () => [...rec.loops].forEach((fn) => fn(0.016)),
+    /** the extension's instance: what tells, and is told */
+    attach: (x) => (instance = x),
+    /** a peer's send arriving, as the stage routes it: told if declared, else receive's */
+    hear(type, data, from) {
+      const copy = structuredClone(data);
+      if (declared(instance, type)) telling.hear("bag", instance, type, copy, from);
+      else instance?.receive?.(type, copy, from);
+    },
+    /** the stage's flush: what waits is asked again */
+    ask: () => telling.ask(),
+  };
 }
 
 export { FakeHandle, FakeRepo };

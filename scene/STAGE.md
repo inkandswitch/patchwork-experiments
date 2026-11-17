@@ -43,7 +43,7 @@ each build step.
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
-| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (one pane: the object tree over the selection's fields; a selection opens it in Edit; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's; and documents (`api.view.dock`, a drop on its tab strip, an inspector section's Dock), which are the view's: one pane per document and tool, kept across selections, bodies, focus moves and extensions stopping until its × or close(). Its width is the viewer's for the kind of pane shown (the stage's chrome or a docked editor), set with the grip on its left edge. |
+| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (one pane: the object tree over the selection's fields; a selection opens it in Edit, a beat later if it's shut; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's; and documents (`api.view.dock`, a drop on its tab strip, an inspector section's Dock), which are the view's: one pane per document and tool, kept across selections, bodies, focus moves and extensions stopping until its × or close(). Its width is the viewer's for the kind of pane shown (the stage's chrome or a docked editor), set with the grip on its left edge. |
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
 | **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector and its tree, transfer, add, remove): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
@@ -225,7 +225,7 @@ or identity closes, with what was opened under it, and opens again.
 | | Shared? | Lasts? | Read | Write |
 |---|---|---|---|---|
 | **Doc** | yes | yes | `api.doc()`, `api.scene()`, `api.claimedBy(id, kind)` | `api.change(fn)`, `api.claim(id, kind)` |
-| **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
+| **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)`, `api.tell(type, data)` |
 | **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, and the selection and hover as this stage's elements; never the focus) | `api.local.swap(fn)`; `api.view.select(target)`, `api.view.enter(link)`, `api.setPref`, `api.notify` |
 
 (There is no fourth, private place yet: what is one viewer's alone, lasting
@@ -308,7 +308,8 @@ says `avatar` and `walk.people` draws it.
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean>, … } } }
 
 { type: "scene:template", id, name, icon?, description?,
-  async load() { return { create(ctx) → Promise } } }
+  params?: ParamSpec[],               // what it is started with, chosen on the start screen (below)
+  async load() { return { create(ctx, params) → Promise } } }
 
 { type: "scene:part", id, name, icon?, category?, description?,
   tags?:   string[],                  // the connector tags it fits (as an object's tags, for the carry)
@@ -359,7 +360,10 @@ happened to start in never counts.
 part runs in every scene, a game's included; what keeps the editor's chrome
 out of a game is that it shows only where attention asks for it. The
 inspector is a drawer tab a selection opens in Edit, one pane holding the
-object tree over the selection's fields (TOOLS.md, Decisions 16); it stays
+object tree over the selection's fields (TOOLS.md, Decisions 16), a beat
+later (DOUBLE_MS after the selection and after any press in the view) if
+it's shut, so a double-click's second press and its dblclick find the
+canvas its first click did; it stays
 open, on the scene when nothing is selected, until its × (shut until the
 selection changes), the toolbar's Inspector or leaving Edit shuts it;
 Dimensions and Parts are drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
@@ -387,9 +391,20 @@ extension.
 
 **Templates** start an empty scene. An empty scene's start screen (the add
 extension's) lists every registered `scene:template` from the registry's
-metadata (`name`, `icon`, `description`; nothing is loaded to offer one),
-and Blank. Choosing one calls `api.template(id)`, which loads it and runs
-`create(ctx)` with the same `ctx` a drop gets. The template writes whatever
+metadata (`name`, `icon`, `description`, `params`; nothing is loaded to
+offer one), and Blank. A template that declares `params` (ParamSpecs, each
+with a string `key`, or it is no spec to the form or to create; the kinds of `src/param-form.js`: Draw Dominoes' `players`, an `enum` of 2, 3
+or 4) has their form under its button, showing each default until changed;
+what's chosen is this view's until the template runs. Choosing one calls
+`api.template(id, params)`, which loads it and runs `create(ctx, params)`
+with the same `ctx` a drop gets and exactly the params its metadata
+declares: each coerced to its spec (`coerceParam`: an enum's option, a
+number clamped), the default where one is missing or can't be, and every
+other key dropped (`paramsBySpec`, `src/staleness.js`). A template that
+declares none gets `{}`, so it is offered and run as before params
+existed. So one template stands for a family (one Draw Dominoes, not one
+per count), and whoever calls `api.template` (the start screen, another
+tool) can't hand it what it didn't declare. The template writes whatever
 it needs into the doc: objects, traits, and `view.start`. Then this viewer
 starts where the doc now says, as arriving does (below), so an arena
 template that starts people walking at a spawn point lands its maker in the
@@ -533,8 +548,12 @@ view's side is `scene.transfer`, editing only).
     the middle of the view) they land by the parts bin's rule: under the
     object hit, snapped to a connector whose tags take a lone object's tags
     (Alt, or Snap off: freely), turned to the connector's or that object's
-    heading; on the ground they keep the heading they had. Tilt, scale and
-    every transform below the top come as they were. Pasted, they go under
+    heading; on the ground they keep the heading they had. A lone
+    top-level object snapped to a connector is turned the carry's way
+    ("Landing", step 3): into a whole frame (its tilt replaced by the
+    frame's, face up or down as it was, a mirror kept), else to the yaw.
+    Scale and every transform below the top come as they were, and so does
+    the tilt of anything not going into a frame. Pasted, they go under
     the object at the middle of the view only when they snap to one of its
     connectors; else on the surface there, under nothing, and each repeat of
     one Copy steps sideways by the copy's width onto whatever is under that
@@ -548,7 +567,12 @@ view's side is `scene.transfer`, editing only).
     the objects' `hint.bounds` through the doc's transforms), so the copy
     rests on its base: a crate whose origin is its middle sits on the floor.
     A connector is made for an origin at the base, so a snapped copy isn't
-    raised.
+    raised and its origin goes to the connector (the parts bin's rule), with
+    one exception: a lone top-level carried piece (`scene.carry`) with a
+    load hint rests on the connector as the carry rests it, the middle of
+    its footprint over it and its underside at its height, whether the
+    connector has a frame or a yaw (a tile stood on edge in a rack's place
+    sits on the rack, as it would carried there).
   - **Every field but runtime state.** Not copied: `claims` and `saved` (the stage's), and
     any trait key an extension marks as runtime in `describes` (below). Pose
     holds and presence were never in the doc.
@@ -766,41 +790,86 @@ answered by looking in the plugin registry.
 
 | In the doc | Looked up as |
 |---|---|
-| an object's `providerId` (and the provider its render doc names) | the `scene:source` with that id |
+| an object's `providerId` (and the provider its render doc names) | every `scene:source` registered with that id (two packages may register one id, in an order that differs between viewers) |
 | a trait key on the scene or on an object | every `scene:extension` whose `traits` include it |
 
 `view.start` is no mark of its own: its body's package comes with its
-place's trait (above). A part or a
-template leaves no mark of its own (what it makes is objects and traits,
-found above), so the stage notes it when one is run in this view. Nothing
-else in a scene doc names a plugin: general extensions (the editor's own)
-run for whoever has them, whatever the doc says.
+place's trait (above). A part or a template leaves no mark of its own: what
+it makes is objects and traits, found above, and a part whose result calls
+for nothing of its package doesn't list it. Nothing else in a scene doc
+names a plugin: general extensions (the editor's own) and extensions of
+every doc (`traits: ["*"]`, walk's people) run for whoever has them,
+whatever the doc says, so no doc calls for them by having them; a package
+that wants a doc to bring it declares a trait the doc carries (walk's spawn
+point). References bound late by id (an `infoToolId`, a
+`<patchwork-view tool-id>`, a datatype) aren't needs either: they degrade
+to nothing where the tool isn't installed (CLAUDE.md), and a package
+listed only for one is taken off.
 
-**Reconcile: the list is true by construction.** After every doc change and
-every registry change the stage adds `{ url }` for each package that
-- a registered plugin answering one of those needs (or a part or template
-  run here) was registered from (its `importUrl`),
-- the URL rule gives a URL for, and
-- the list doesn't name.
+**Reconcile: the list is what the doc calls for.** After every doc change
+and every registry change the stage writes, in one change (`reconcileList`,
+`changeList`):
+- **Add** `{ url }` for each package that a registered plugin answering one
+  of those needs was registered from (its `importUrl`), that the URL rule
+  gives a URL for and that the list doesn't name (`packagesToList`).
+- **Prune**, once the registry has gone quiet (`PACKAGE_SETTLE_MS`), every
+  entry naming a listed package (twice, at heads) that
+  (`packagesToPrune`)
+  1. is registered here: one missing on this machine, still loading, failed
+     or declined answers nothing here, which says nothing about the doc, so
+     it stays;
+  2. answers none of the doc's needs (none of its registered plugins does);
+  3. isn't the scene package (the stage itself, and the doc's suggested
+     import);
+  4. while a render doc built here hasn't said yet which provider it names
+     (one hidden or veiled never loads), registers no `scene:source`: a
+     render doc may name any provider, its object's field notwithstanding;
+  and only while every need of the doc is answered here
+  (`unansweredNeeds` is empty). A need nothing here answers may be answered
+  elsewhere by any listed package (a newer version of one, say), so a
+  viewer who can't answer the whole doc takes nothing off.
 
 So whoever adds content has its plugin (they couldn't have added it
 otherwise), and their stage names its package: a scene can't call for a
 plugin whose package its list doesn't name, short of a doc written by hand
 or made with a plugin from a dev server. Only someone who has a plugin can
-say where it comes from; a viewer without it adds nothing. This includes the
-scene package itself (its `file-glb` shows most objects): it can't help load
-itself, but no rule is needed to leave it out, and the list is then the whole
-of what the scene is made of.
+say where it comes from; a viewer without it adds nothing and takes nothing
+off. This includes the scene package itself (its `file-glb` shows most
+objects): it can't help load itself, but no rule is needed to leave it out,
+and the list is then the whole of what the scene is made of. A trait taken
+away, or the last object a package's provider built, takes its package off.
+Each doc lists only its own packages (a linked doc lists its own; the
+view's one prompt covers every open doc's), so the doc's own needs are the
+whole question.
 
-- **Appends only.** Nothing is removed (a trait taken away leaves its
-  package listed), the list is never rewritten, and it is never made: a
-  scene without one is from before `packages` and is republished, not
-  patched (see "Shared maps").
-- **Concurrent adds.** Two peers who both have a package may both add it
+Both halves are a function of the doc and this viewer's registry, nothing
+the view remembers. At their fixed point the list is
+`answering ∪ (listed ∩ (unregistered ∪ {scene package} ∪ kept))`, where
+`kept` is everything listed while a need goes unanswered here, and the
+source packages while a render doc hasn't said; the next pass writes
+nothing.
+
+- **Two viewers who disagree.** Two viewers can answer differently with
+  the same package URL, when each has loaded a different version of it.
+  When the older lacks the plugin the doc calls for, the need goes
+  unanswered there and it takes nothing off. When another package answers
+  that need on both, the older takes the package off and the newer lists it
+  again, in turn, while both are open; that ends when their versions meet.
+  They do: a package is listed by its bare URL and loaded at its current
+  heads, an installed one following its folder as the module watcher does,
+  one a scene loaded on the next page load. (A question for the lead:
+  COMPOSITION, Decisions, packages pruned.)
+- **Never made, never rewritten.** An entry is added or removed whole, and
+  the list is never made: a scene without one is from before `packages`
+  and is republished, not patched (see "Shared maps").
+- **Concurrent writes.** Two peers who both have a package may both add it
   before either hears the other; the merge keeps both entries. Readers read
   each package once, each peer then finds it listed and writes nothing
-  more, so there is at most one entry per peer per package, once.
-- A read-only view (a scene at a version) is never written.
+  more, so there is at most one entry per peer per package, once. One peer
+  taking a package off while another adds what calls for it ends with it
+  listed: after the merge the need is there and the list doesn't name it,
+  so whoever has it adds it again.
+- A read-only view (a scene at a version, a pin, a mirror) is never written.
 
 **The scene package as the suggested import.** `@patchwork.suggestedImportUrl`
 is what Patchwork offers a viewer who has no tool for a doc; for a scene it
@@ -1015,8 +1084,8 @@ swallowed.
 **Double-clicks.** A `dblclick`'s `hit` and `widget` are those of the press
 that began it, resolved as that press was pressed, so the chain is decided
 at that one moment: a thing that moved between the clicks (a boat pitching
-on her sea) or a canvas that narrowed under the pointer (the inspector
-opening on the first click's selection) still has the double-click. Its
+on her sea) or a canvas that narrowed under the pointer (a drawer opening
+between the clicks) still has the double-click. Its
 `x`, `y`, `ndc` and `ray` are the dblclick's own, so `hit.point` was on the
 first press's ray, not on `ev.ray`, and a moving nested stage localises
 that world point with its frame now. This holds only within the router's
@@ -1029,7 +1098,7 @@ the dblclick casts a new ray like any other event. A first hit whose object
 the first click removed is kept: what it comes to is its consumer's. The
 500 ms gates time the clicks as they were made, by each event's own
 `timeStamp` (one clock for every pointer event), not as the page handled
-them: a page busy between the clicks (the inspector opening on the first
+them: a page busy between the clicks (a drawer opening on the first
 click's selection) still has the double-click the browser fired, and one
 catching up on queued events doesn't pass clicks made too far apart. The
 dblclick is timed as the release that made it (the `pointerup` after the
@@ -1184,7 +1253,8 @@ that extension.
 | `local` | `{ get, swap, watch(fn, select?) }` |
 | `pref(key, fallback)`, `setPref(key, value)` | read through local and then the doc, as above. Set writes local only |
 | `presence` | `{ set(key, value), get() → { [session]: { viewer, body, held, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `body` (`{ id, label }`) and `held` (`{ name }` or null) are what that peer's view says of its viewer on every channel it acts on (who's here: someone seated at a game linked elsewhere shows seated to a viewer of the game alone). `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its stage's `time.now()`: "Time"), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
-| `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
+| `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })`, unless the extension declares `type` among its `messages` (then it is told: "Telling") |
+| `tell(type, data)` | tell everyone something this view did that the doc bears out: `type` must be one of the instance's `messages` and `data` its `valid` (else nothing is said or sent). The stage says it here at once as "You" when `says` answers, and sends it; each peer's stage tells it once its doc bears it out. Nothing in a view that can't write the doc. See "Telling" |
 | `notify(text, kind?)` | |
 | `packages` | `{ load(urls?) → Promise, dismiss(urls?) }`: the viewer's answer to the packages prompt (see "Packages"). `load` is a yes: it loads what's asked about or failed (all, or those of `urls` among them) and remembers what loads. `dismiss` asks no more in this view |
 
@@ -1193,7 +1263,7 @@ that extension.
 | | |
 |---|---|
 | `nameOf(id)` | what this viewer sees, lenses applied |
-| `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test). Never change it, with one exception: **dressing**. An extension may move, scale or hide `root` and the nodes in it for objects that carry one of its own traits, each view for itself (a buoy bobbing on the waves, a sail lowered), and puts them back when it stops. Dressing is only a look: `box`, `worldOf`, picking and the shadow map go by the object's pose, not the dressed nodes, and nothing is sent |
+| `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors`, `snapRadius`, `legend`, and the scene's own. `connectors` are every node's, in the object's body frame, each `{ position, rotation, yaw, tags }`: `rotation` is the connector's whole frame (Euler XYZ, its node's rotation composed in, tilt and all; scale left out; a right-handed rotation even on a mirrored node), or null where the GLB gave only a yaw or nothing; `yaw` is where that frame turns +Z seen from above (derived from `rotation` when there is one, so the two never disagree; null pointing straight up or down), else the GLB's own yaw turned with its node (README, "connectors"). `root` is the live three.js node, for reading geometry (dimensions' on-surface test). Never change it, with one exception: **dressing**. An extension may move, scale or hide `root` and the nodes in it for objects that carry one of its own traits, each view for itself (a buoy bobbing on the waves, a sail lowered), and puts them back when it stops. Dressing is only a look: `box`, `worldOf`, picking and the shadow map go by the object's pose, not the dressed nodes, and nothing is sent |
 | `loadState(id)` | where its content was routed at sync, `content`: `"built"` (the render manager), `"file"` (the GLB queue) or `null` (nothing to load: its provider isn't here, phase `"no-provider"`), with a copy of what the manager or the queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…); null for a group or an unknown id. See README.md, "Content is routed at sync" |
 | `box(id, { hints, in })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null. `in`: an object's id, for the box in that object's displayed frame (from the object's own geometry, never a world box boxed again) |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
@@ -1204,7 +1274,7 @@ that extension.
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix an object at exactly what it shows now: a render-doc object at what its render was last built from; a live link at its doc's heads, with every doc reached through it in `deps`; else null (not built or open here yet, not loaded, a file, already fixed). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info, { edit? })` | offer a dropped doc to the extensions that lay out its datatype; with `edit`, the drop context's `change` and `addObject` are that edit's |
-| `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
+| `template(id, params?)` → `Promise<boolean>` | run a `scene:template` with `params` coerced to its metadata's ParamSpecs, unknown keys dropped (see "Templates"); true when it ran |
 | `part(id, at, { edit? })` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made; with `edit`, what it writes is that edit's |
 
 **Picking and camera**
@@ -1213,7 +1283,7 @@ that extension.
 |---|---|
 | `pick(x, y, { ground?, snapPx? })` | port-local px → hit (with vertex snap if asked) |
 | `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | a raycast hit is `{ id, point, normal, distance, back }`: `normal` faces the ray; `back` says the ray met the face from behind (from inside a closed solid) |
-| `camera` | `{ get() → { position, target, fov, up }, set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, tilt?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `touched()`: the camera has been placed for this viewer (moved by them, or restored as the view opened; to a general part, also carried across a focus move), so nothing frames it on its own. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held. Everything is in the stage's frame (`get().up`: the picture's up, rolled as the camera is, turned as directions are); the three.js camera is the view's, and no extension holds it |
+| `camera` | `{ get() → { position, target, fov, up }, set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, tilt?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `touched()`: the camera has been placed for this viewer (moved by them, or restored as the view opened; to a general part, also carried across a focus move), so nothing frames it on its own. `onEnd`: someone finished moving the camera (an orbit, a zoom, a Frame: `frame(box)`), never while it's held; a ride or a body's own `set` every frame isn't an end. `watch`: the fov changed (`set` with another `fov`). Everything is in the stage's frame (`get().up`: the picture's up, rolled as the camera is, turned as directions are); the three.js camera is the view's, and no extension holds it |
 
 **The view, links and surfaces** ("Views, stages and links" above)
 
@@ -1541,14 +1611,16 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
 | `ambient()` → `{ [name]: json \| null }` or null | the stage, every flush: the values a world has once (its atmosphere, its water) that this extension offers. Stacked per name in running order (a later value wins whole, `null` clears), copied into frozen plain JSON (a value that isn't is refused, with a warning); the outermost stage's are the view's. See "Ambients" below |
 | `input` | the stage |
-| `receive(type, data, from)` | the stage |
+| `messages` → `{ [type]: { valid(data) → boolean, says(data, who, scene) → string \| null } }` | the stage, for `api.tell` and what peers tell (see "Telling"). `who` is `{ viewer, name, mine }`: "You" for one's own, else their contact's name or "Someone"; `data` is always an object |
+| `receive(type, data, from)` | the stage, for a peer's `send` of a type the instance doesn't declare in `messages` |
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
 | `documents` | the inspector: a section each (below, "A document") |
 | `hud()` → `[{ text, state }]` | status surfaces |
-| `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the carry (`scene.carry`). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
+| `landing(id, worldPoint, hitId)` → `{ faceUp?, flat? }` | the carry (`scene.carry`), on every move while it carries, after F too (see "Landing"). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
 | `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
-| `carry(id, ev, opts)` → session | anything that wants to carry (`scene.carry` provides it; it carries only what has the trait) |
+| `landed(id, on)` | the carry, once, right after a put's write, on the carrier's client only (`on`: what it rests on, or null). An event, not a claim: nothing is ordered and nothing can refuse it (see "How a carry ends") |
+| `carry(id, ev, opts)` → session | anything that wants to carry (`scene.carry` provides it; it carries only what has the trait). The session's `ended` says how it ended (see "How a carry ends") |
 | `bodies` → `[{ id, label, keys, lock, reach, here?, enter(place) }]` | the stage's body stack ("Bodies"): the seat body from `seats`, the walk body from `walk`, sailing's aboard and station. Sitting down from walking pushes the seat body over the walk body; standing up pops it |
 | `dispose()` | the stage |
 
@@ -1625,7 +1697,10 @@ A **command**:
 - **The use prompt** (`scene.use`, general: it runs in every scene) shows
   attention's verbs where attention is (the crosshair when the look is the
   eye's, else the pointer): on the selection, or the first object along the look's chain
-  with a keyed command shown on `"use"`, at most three, each a button, its
+  with a keyed command shown on `"use"`, the first three in running order
+  and past them a "⋯ N more" that opens the prompt to all of them until
+  attention moves to another target or none, or a carry takes the prompt
+  down (TOOLS.md Decisions 19), each a button, its
   key the resolver's. It shows; the key map does. A button whose verb has
   a key is that key: a press presses it (the key `keyFor` says does that
   verb then) and the lift lets it up, so a held verb lasts as long as a
@@ -1722,6 +1797,140 @@ and selecting an object (or clicking on nothing) replaces the dimension.
 
 `api.collect(name)` returns `[{ id, value }]` from running extensions that
 have that field, in running order. The stage never reads the value.
+
+### Landing
+
+How a carried piece lies where it goes down is a pure function of three
+things (`landedPose`, src/parts/carry-math.js), and nothing else turns it:
+
+- **how it is held**: as picked up, with every Q/E turn and F since;
+- **the snap**: the connector it goes to (its whole frame, `rotation`, or
+  only its `yaw`), or none;
+- **the answer**: every running extension's `landing(id, worldPoint, hitId)`
+  merged, the last word winning per field. It is asked on every move, F or
+  no F (before this, F stopped it being asked), at the point where the
+  piece's origin would go down turned to the snap (on what it would rest on
+  there, `hitId`). The doc still has the piece where it was picked up (a
+  carry writes only where it ends), so a rule can ask where it came from.
+
+In order:
+
+1. `flat: true`: it lies on its broadest face (its thinnest body axis
+   upright, by the smallest turn about a level axis). Its length keeps the
+   way it pointed, seen from above, wherever it was level. A piece lying
+   flat already is left as it is; one face down stays face down; one on an
+   edge or an end goes face up.
+2. `faceUp: true`: turned over about its length if its face is down. Only
+   while the carry is the rule's to turn: picked up where no rule asked
+   it, and not turned over by F since. A piece on an edge or an end is left
+   alone.
+3. The snap (`intoSnap`, src/carry-rules.js). A connector with a whole
+   frame: its body axes become the frame's, face up or face down as 1 and 2
+   left it (the frame turned over about its own length for a face-down
+   piece; a mirrored piece stays mirrored, in X). A frame that stands a
+   piece on an edge or an end (a rack's place) says alone which way it
+   faces. A connector with only a yaw turns it about the vertical until its
+   length faces that way, tilt kept (a piece whose length is straight up
+   faces no way and isn't turned).
+
+"Face up", "face down" and "on an edge or an end" are one test, for a piece
+and a frame alike (`sideOf`): an axis lies up or down when it is the most
+upright of the three, else on an edge. So a rack leaning back 30° still
+stands a tile, and a tray tilted 30° still lays one flat; the line is at
+45°, never a hair off level.
+
+With no snap and no answer it is exactly as held. A snap's or a rule's turn
+lasts only while the piece is over that place; carried away again, it is as
+held. So Q / E over a connector turn how it is held, out of sight, and the
+turns show once it leaves (the connector's own turn wins while it is over
+it). F turns over what you see (after 1 and 2), and from then on it is
+yours: faceUp is no longer heeded, `flat` still is. A turn over is shown
+(the piece turns in the air) when what shows changes: F in a frame that
+stands the piece shows nothing until it leaves the frame, and then it turns.
+
+The parts bin and Paste use step 3: a part goes into a connector's frame as
+the frame gives it; a copy with one top-level object is turned by the same
+`intoSnap` (several take only the yaw). Where it goes is the parts bin's
+rule, its origin at the connector, except for a carried piece (`scene.carry`)
+copied alone with a load hint, which rests on the connector as the carry
+rests it: the middle of its footprint over it, its underside at the
+connector's height (the carry's rays find the surface there; a copy has
+none). So a piece lands where it would carried, whichever way it arrives.
+
+### How a carry ends
+
+Every carry session ends exactly once, and its `ended` (a promise, frozen
+when it settles) says how: `{ how, on }`.
+
+| `how` | when | written | `landed` |
+|---|---|---|---|
+| `"put"` | `end(ev)` found somewhere to go down, and wrote it | where it went down, once | `landed(id, on)` on every running extension, once each, after the write |
+| `"back"` | `cancel()` (Escape, another tool picked up), a newer carry, the carry's part stopping, never lifted, nowhere to land, the stage read-only at the put (or its write threw), or the object gone (at the stage's next `update`) | nothing | no |
+| `"yielded"` | a peer's hold ranks ahead of ours (both grabbed it at once): it gives way at the stage's next `update`, or at the first hold refused before that, never at the pointer's next move | nothing | no |
+| `"refused"` | a hold refused while no peer's ranks ahead: something here holds it ahead (a roll, a glide: holds.js) | nothing | no |
+
+`on` is what it rests on when put (a connector's object, or what the
+downward ray met), else null. It is told only on the carrier's client: a
+peer sees the write, not the event, so a rule that acts on a put (the bag
+taking what's put on it) acts once, where the hand was. `landed` hears only
+puts by a carry; a gizmo, a peer or Paste moving the piece is not a put.
+
+The outcome is the cause, not the path: a peer's hold refuses a `pose.hold`
+too (holds.js), so whichever hold is refused first, `heldBy` decides
+between "yielded" and "refused".
+
+So one's own hold is answered without a query of its own: `pose.hold`'s
+boolean says whether it stands now, and the session's `ended` says how it
+ended. `heldBy` stays what it is, the peer ahead of this view.
+
+### Telling
+
+What a package tells everyone ("Ana turned d20 to 7", "Ben drew from Token
+bag") is the stage's to hold to the doc and to say; the package keeps only
+its evidence. It declares what it tells, `messages`, each with the shape of
+its data (`valid`) and how it reads in this view (`says`), and calls
+`api.tell(type, data)` after the change that bears it out.
+
+- **Data.** What is told is an object (anything else is dropped before
+  `valid` sees it, so `valid` never checks that) and is copied when told:
+  changing it afterwards changes nothing told.
+- **Here.** `tell` drops a type the instance doesn't declare and data that
+  isn't `valid`; otherwise it sends it, and holds it to this stage's doc by
+  the same rule as a peer's (below), with `who` "You". Sends are never
+  echoed back, so one's own is told once, here.
+- **There.** A peer's message of a declared type is the stage's, never
+  `receive`'s. It is dropped unless `valid`. Otherwise `says` is asked at
+  once and again after every update of that stage (each flush, a content
+  arrival's included), until it answers text or `TELL_MS` (3000 ms, the
+  stage's own time: "Time") has passed since it arrived. It is told once (a
+  notice), or forgotten when that time runs out, whether or not anything
+  updated meanwhile; also when its extension stops, or the stage goes. A
+  message delivered twice is one message (presence de-duplicates by the
+  sender's session and number).
+- **`says` is the evidence.** It answers null until the doc bears the
+  message out (dice: the die moved lately to the face named; a cup: the
+  speaker's cup is down; a bag: once the bag is this scene's), and text
+  once it does. A `says` that answers at once vouches for the message
+  unchecked: tabletop's say counts only, never which card, so nothing in
+  them can be held to the doc. Answering text is the moment it is told, so a
+  package may spend there what bore it out (a die's move is told once).
+  An answer that throws drops the message.
+- **Who.** The stage names the speaker the same way for every package:
+  "You" for one's own, else their contact's name, else "Someone", asked
+  once per viewer (`who.name`). `who.viewer` is theirs, for evidence such
+  as "the speaker holds this cup"; `who.mine` is whether this view told it
+  (another tab of the same viewer is a peer). A package that knows a
+  better name may use it: the cup and tabletop call a peer what the
+  roster's `who(viewer)` does (seats), as their HUDs do. `says` isn't asked about someone whose name is still being looked
+  up until it comes or `NAME_MS` (1000 ms, the stage's time) passes, so the
+  first word from someone is told by name.
+- **Invariant.** Each message, one's own or a peer's, is told at most
+  once, only if valid, only within `TELL_MS` of its arrival (its telling,
+  for one's own), and only once `says` answers text; none waits longer. `stage/telling.js` is the whole rule; packages' fake
+  stages copy it to tell exactly as the stage does.
+
+`receive` stays for what isn't told: a tracer from a shot (arena), anything
+drawn rather than said.
 
 ### Audience
 
@@ -2015,6 +2224,7 @@ are the weather's to document: [weather/WEATHER.md](../weather/WEATHER.md),
 | `stage/bodies.js` | the stage's two bodies, Look and Edit; `editing(local)`, the one question the editor's chrome asks; `inBody`, the `edit: true` rule; the stack's model (`enterStep`, `leaveStep`) and where a doc starts people (`startBase`) (pure) |
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples, and the one order holds go in (`ranksAhead`) |
+| `stage/telling.js` | what extensions tell, held to the doc: `valid`, `says` asked until it answers or `TELL_MS`, the speaker's name asked once per viewer (see "Telling") |
 | `stage/holds.js` | this view's pose holds in that order: which extension's stands, and dropping ours when a peer's ranks ahead |
 | `stage/time.js` | the one source of time: the browser's (`realTime`) or one that moves only when stepped (`manualTime`) ("Time") |
 | `stage/clock.js` | the doc's world time: who computes it, processes, checkpoints and the `saved` stamp, following, pause and resume (pure parts exported) |

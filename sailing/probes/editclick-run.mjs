@@ -16,7 +16,10 @@
 //  2. A double-clicks a card of G's as presence-check does it (press,
 //     release, 90 ms of her sea, press, release; real CDP events), up to
 //     three tries: what each press hit, the two gaps by the events' own
-//     timeStamps, and whether it entered G;
+//     timeStamps, whether every press and the dblclick reached the canvas
+//     at the width the first press found (the inspector, shut, opens a
+//     beat after the first press's selection: scene/TOOLS.md Decisions 6)
+//     and whether it entered G;
 //  3. inside G, in Edit: a click on the boat's Card table, then one on her
 //     hull, each outside the focus: the body stays Edit, the focus and the
 //     selection are unchanged;
@@ -35,7 +38,13 @@
 //  6. the bar's Come aboard in Edit: there, and a real click on it comes
 //     aboard (the crew's body), the canvas's top and height where they were
 //     (the bar stays: B3, Come aboard is declared; Edit's drawer goes, so
-//     its width grows).
+//     its width grows);
+//  7. back at the boat, in Edit, nothing selected: a slow double-click at a
+//     card of G's, slow but one the router still takes (second press
+//     480 ms after the first, dblclick 170 ms after that, on the stage's
+//     clock): the canvas keeps its width to the dblclick (the inspector's
+//     beat starts again at the second press, so it can't end between the
+//     first click's selection and the dblclick).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +74,7 @@ const report = { checks: list.checks, details: list.details, numbers: {} };
 const LISTEN = `(() => {
   const host = document.getElementById("a"); const log = (window.__ev = []);
   const what = (e) => { const v = __p.A.view; const r = v.canvas.getBoundingClientRect(); const hit = v.viewport.pick(e.clientX - r.left, e.clientY - r.top);
-    return { type: e.type, stamp: +e.timeStamp.toFixed(1), x: Math.round(e.clientX), y: Math.round(e.clientY), on: e.target === v.canvas ? "canvas" : e.target.tagName.toLowerCase() + "." + String(e.target.className || ""),
+    return { type: e.type, stamp: +e.timeStamp.toFixed(1), x: Math.round(e.clientX), y: Math.round(e.clientY), on: e.target === v.canvas ? "canvas" : e.target.tagName.toLowerCase() + "." + String(e.target.className || ""), cw: Math.round(r.width),
       hit: hit?.id ? v.pathOfKey(hit.id) : null, body: __p.A.local.get().body?.id ?? null, focus: v.atom.get().focus, selected: v.atom.get().selected }; };
   host.addEventListener("pointerdown", (e) => log.push(what(e)), true);
   host.addEventListener("dblclick", (e) => log.push(what(e)), true);
@@ -120,15 +129,21 @@ try {
   // landed on G's card and whose dblclick reached the canvas enters, however the boat moved between the clicks
   const onG = (t) => t.events?.find((e) => e.type === "pointerdown")?.hit?.[0] === ids.link && t.events.find((e) => e.type === "dblclick")?.on === "canvas";
   check("2: every try whose first press landed on a card of G's and whose dblclick reached the canvas entered", tries.filter(onG).every((t) => t.entered), tries.map((t) => ({ onG: onG(t), entered: t.entered })));
+  // a first press's selection opens the shut inspector only a beat later (scene/TOOLS.md Decisions 6, "The inspector
+  // waits a beat"), so the canvas keeps its width under the second press: every press and the dblclick reach it
+  const onCanvas = (t) => t.events?.length >= 3 && t.events.every((e) => e.on === "canvas" && e.cw === t.events[0].cw);
+  check("2: every try's presses and dblclick reached the canvas at the width the first press found (no inspector opened under the second)", tries.filter((t) => t.aim).every(onCanvas), tries.map((t) => t.events?.map((e) => `${e.on} ${e.cw}`)));
   report.numbers.firstTry = tries[0] && { entered: tries[0].entered, gaps: tries[0].gaps, presses: tries[0].events?.map((e) => ({ type: e.type, on: e.on, hit: e.hit, selected: e.selected })) };
   check("2: entering leaves the body Edit", (await state()).body === "edit", await state());
 
   // ── 3: a click on the boat, outside the focus ──
-  // something else of hers in sight round the table (her deck, a bench, the coachroof): the boat's object nearest
-  // the canvas's middle that isn't the table or the link
-  const findOther = () => js(`(() => { const v = __p.A.view; const r = v.canvas.getBoundingClientRect(); let best = null;
+  // the boat's object nearest the canvas's middle, of those a click reaches on a 12 px grid: the table (its top
+  // round G's board: its origin is under the board, so no spiral from it finds it), or something else of hers
+  // round the table (her deck, a bench, the coachroof), not the table or the link
+  const find = (which) => js(`(() => { const v = __p.A.view; const r = v.canvas.getBoundingClientRect(); let best = null;
+    const want = (id) => ${which === "table" ? `id === ${J(ids.table)}` : `id !== ${J(ids.table)} && id !== ${J(ids.link)}`};
     for (let y = 8; y < r.height - 8; y += 12) for (let x = 8; x < r.width - 8; x += 12) { const h = v.viewport.pick(x, y); const p = h?.id ? v.pathOfKey(h.id) : null;
-      if (!p || p.length !== 1 || p[0] === ${J(ids.table)} || p[0] === ${J(ids.link)} || document.elementFromPoint(r.left + x, r.top + y) !== v.canvas) continue;
+      if (!p || p.length !== 1 || !want(p[0]) || document.elementFromPoint(r.left + x, r.top + y) !== v.canvas) continue;
       const d = Math.hypot(x - r.width / 2, y - r.height / 2); if (!best || d < best.d) best = { id: p[0], d, x: r.left + x, y: r.top + y }; } return best; })()`);
   for (const which of ["table", "other"]) {
     if (J(await P("focusPath('a')")) !== J([ids.link]) || (await state()).body !== "edit") {
@@ -137,12 +152,10 @@ try {
       await b.rest(300);
     }
     const before = await state();
-    const other = which === "other" ? await findOther() : null;
-    if (which === "other" && !other) { check("3: another part of her in sight", false, null); continue; }
-    const id = which === "table" ? ids.table : other.id;
     const name = which === "table" ? "the Card table" : "another part of her";
-    const at = which === "table" ? await P(`aimAt(${J(id)}, 'a')`) : other;
+    const at = await find(which);
     if (!at) { check(`3: ${name} in plain sight`, false, null); continue; }
+    const id = at.id;
     await b.move(at.x, at.y);
     await press(at.x, at.y, 1);
     await b.rest(600);
@@ -192,24 +205,21 @@ try {
   const want = { x: 40, y: 16 }; // canvas px: where the HUD's Come aboard button sat (top left, 12 px in)
   const gCards = await cards();
   const card = gCards[0];
-  // slide the camera (no turn) toward the card's middle projecting at `want` (the clock is the page's manual one, so nothing
-  // moves meanwhile); it needn't land exactly: what counts is that the view's pick at `want` is a card of G's
-  let at = null;
-  for (let i = 0; i < 16; i++) {
-    at = await js(`(() => { const v = __p.A.view.viewport; const c = v.getCamera(); const m = __p.worldOf(${J(card)}, "a"); if (!m) return null;
-      const p = v.project([m[12], m[13], m[14]]); const f = c.target.map((t, i) => t - c.position[i]); const d = Math.hypot(...f); const fw = f.map((x) => x / d);
+  // slide the camera (no turn) toward the card's middle projecting at `want`, all in one go on the page: no frame passes
+  // meanwhile, for she swings at anchor and the eye rides her level, so a frame between two steps moves the card on the
+  // screen; it needn't land exactly: what counts is that the view's pick at `want` is a card of G's
+  const at = await js(`(() => { const v = __p.A.view.viewport; const m = __p.worldOf(${J(card)}, "a"); if (!m) return null;
+    for (let i = 0; i < 32; i++) {
+      const c = v.getCamera(); const p = v.project([m[12], m[13], m[14]]); const f = c.target.map((t, i) => t - c.position[i]); const d = Math.hypot(...f); const fw = f.map((x) => x / d);
       const up = c.up, right = [fw[1] * up[2] - fw[2] * up[1], fw[2] * up[0] - fw[0] * up[2], fw[0] * up[1] - fw[1] * up[0]];
       const dist = Math.hypot(m[12] - c.position[0], m[13] - c.position[1], m[14] - c.position[2]);
       const k = (2 * dist * Math.tan((c.fov * Math.PI) / 360)) / v.size.h;
       const dx = ${want.x} - p.x, dy = ${want.y} - p.y;
-      if (Math.hypot(dx, dy) < 1.5) return { x: p.x, y: p.y, done: true };
+      if (Math.hypot(dx, dy) < 1.5) return { x: p.x, y: p.y, done: true, steps: i };
       const shift = right.map((r, i) => 0.7 * (-dx * k * r + dy * k * up[i])); // damped: the card isn't at the distance k assumes
       v.setCamera({ position: c.position.map((x, i) => x + shift[i]), target: c.target.map((x, i) => x + shift[i]) });
-      return { x: p.x, y: p.y, done: false }; })()`);
-    if (!at || at.done) break;
-    await b.rest(120);
-  }
-  await b.rest(300);
+    }
+    const p = v.project([m[12], m[13], m[14]]); return { x: p.x, y: p.y, done: false, steps: 32 }; })()`);
   const cr = await canvasRect();
   const onCard = await js(`(() => { const v = __p.A.view.viewport; const h = v.pick(${want.x}, ${want.y}); return h?.id ? __p.A.view.pathOfKey(h.id) : null; })()`);
   report.numbers.topEdge = { at, onCard, card, canvas: cr };
@@ -218,9 +228,11 @@ try {
   // the canvas is something else's (the HUD's own nodes are pointer-events: none)
   const band = await js(`(() => { const v = __p.A.view, r = v.canvas.getBoundingClientRect(), hud = document.querySelector("#a .sail-hud"); const takers = new Set();
     for (let y = 2; y < 48; y += 4) for (let x = 2; x < r.width - 2; x += 8) { const e = document.elementFromPoint(r.left + x, r.top + y); if (e && hud?.contains(e)) takers.add(e.className || e.tagName); }
-    return { hud: !!hud, state: hud?.dataset.state ?? null, seated: !!hud?.hasAttribute("data-seated"), buttons: hud ? hud.querySelectorAll("button").length : null, hint: hud?.querySelector('[data-k="hint"]')?.textContent ?? null, takers: [...takers] }; })()`);
+    return { hud: !!hud, state: hud?.dataset.state ?? null, buttons: hud ? hud.querySelectorAll("button").length : null, hint: hud?.querySelector('[data-k="hint"]')?.textContent ?? null, takers: [...takers] }; })()`);
   report.numbers.hudBand = band;
   check("5: in Edit on her, sailing's HUD holds no button and takes no press along the canvas's top edge", band.hud && band.buttons === 0 && band.takers.length === 0, band);
+  // nor does it say "Click her to come aboard" (N11 step 10): in Edit a click selects her, and the HUD can't know the base
+  check("5: in Edit on her, sailing's HUD says nothing before you're aboard (the way in is the bar's Come aboard)", band.state === "lobby" && band.hint === "", band);
   const x = cr.left + want.x, y = cr.top + want.y;
   await b.move(x, y);
   await press(x, y, 1);
@@ -250,6 +262,35 @@ try {
     check("6: a click on it comes aboard: the crew's body, Edit left", after6.body === "aboard" && after6.stack.includes("aboard") && !after6.stack.includes("edit"), after6);
     // (its width grows: Edit's side drawer goes with Edit)
     check("6: …and the canvas's top and height stay (the bar stays: Come aboard is declared)", cr6b.top === cr6.top && cr6b.height === cr6.height, { before: cr6, after: cr6b });
+  }
+
+  // ── 7: a slow double-click, at the boat ──
+  await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
+  await editOver();
+  // the inspector shut (steps 3 and 4 opened it), as the toolbar's Inspector shuts it
+  await js(`(() => { const t = document.getElementById("a").querySelector('.toolbar [data-command="inspector"]'); if (t?.getAttribute("aria-pressed") === "true") t.click(); return true; })()`);
+  await b.rest(300);
+  check("7: the inspector shut to start the slow double-click", await js(`!document.getElementById("a").querySelector('.stage-drawer [data-panel="inspector"]')`), null);
+  // aimed on the canvas at its full width: the view takes the wider canvas in (a ResizeObserver, on the page's
+  // own time) on a frame after it
+  await sleep(300);
+  await b.rest(100);
+  await events();
+  const slowAt = await P(`aimBest(${J(await cards())}, 'a')`);
+  if (!slowAt) check("7: a card of G's in plain sight for the slow double-click", false, null);
+  else {
+    await b.move(slowAt.x, slowAt.y);
+    await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 1 });
+    await b.advance(120);
+    await b.mouse("mouseReleased", slowAt.x, slowAt.y, { clickCount: 1 });
+    await b.advance(360);
+    await b.mouse("mousePressed", slowAt.x, slowAt.y, { clickCount: 2 });
+    await b.advance(170);
+    await b.mouse("mouseReleased", slowAt.x, slowAt.y, { clickCount: 2 });
+    await b.rest(400);
+    const ev = await events();
+    report.numbers.slowDouble = { at: slowAt, events: ev, after: await state(), entered: J((await state()).focus) === J([ids.link]) };
+    check("7: a slow double-click's presses and dblclick all reach the canvas at the width the first press found", ev.length >= 3 && ev.some((e) => e.type === "dblclick") && ev.every((e) => e.on === "canvas" && e.cw === ev[0].cw), ev.map((e) => `${e.type} ${e.on} ${e.cw}`));
   }
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));

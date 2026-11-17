@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { atFromBuilt, atKey, normalizeAt, builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
+import { atFromBuilt, atKey, normalizeAt, builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, paramsBySpec, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
 
@@ -205,6 +205,27 @@ describe("effectiveParams", () => {
   });
   it("passes through keys it has no spec for", () => {
     expect(effectiveParams(specs, { extra: { x: 1 } }).extra).toEqual({ x: 1 });
+  });
+});
+
+describe("paramsBySpec (a template's params)", () => {
+  const PLAYERS = { key: "players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 };
+  // spec {none, players} × value {untouched, 2, 3, 4, "3" (a form's), out of range, not an option, an extra key}
+  const VALUES = [undefined, { players: 2 }, { players: 3 }, { players: 4 }, { players: "3" }, { players: 5 }, { players: "many" }, { players: 4, seats: 9 }];
+  it("with no spec, nothing: every key is dropped", () => {
+    for (const v of VALUES) for (const specs of [undefined, []]) expect(paramsBySpec(specs, v)).toEqual({});
+  });
+  it("with one, exactly its key: coerced to an option, else the default", () => {
+    expect(VALUES.map((v) => paramsBySpec([PLAYERS], v))).toEqual([2, 2, 3, 4, 3, 2, 2, 4].map((players) => ({ players })));
+  });
+  it("a spec without a default and nothing usable leaves its key out; a key named like Object's own is still dropped", () => {
+    const bare = { key: "n", kind: "integer" };
+    expect(paramsBySpec([bare], {})).toEqual({});
+    expect(paramsBySpec([bare], { n: "x" })).toEqual({});
+    expect(paramsBySpec([bare], { n: 2.6 })).toEqual({ n: 3 });
+    expect(paramsBySpec([PLAYERS], { constructor: 1, toString: 2 })).toEqual({ players: 2 });
+    // a spec without a string key is no spec (the start screen's form doesn't draw it: templatesOf)
+    for (const key of [5, null, undefined, { toString: () => "5" }]) expect(paramsBySpec([{ key, kind: "integer", default: 1 }], { 5: 1 })).toEqual({});
   });
 });
 

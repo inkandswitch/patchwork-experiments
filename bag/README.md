@@ -40,10 +40,12 @@ any game's rule:
 | **Empty out** | menu or inspector (no key), anyone | everything is set down round the bag |
 | **Look inside** | menu or inspector on a bag | the bag's own panel docks in the stage's drawer (`api.dock`), under the bag's name; its tab's × closes it. This is the only way to see what is inside without drawing, **anyone can**, and the others are told that you looked |
 
-Everyone else is told what was done, with `api.send`: "*Ana* drew from *Token
-bag*", "put 2 things in", "poured … into …", "looked inside". Which bag and
-how many, never what. Received messages are checked for shape and for naming
-a bag of this scene; anything else is dropped.
+Everyone is told what was done, with `api.tell` (scene STAGE.md
+"Telling"): "*Ana* drew from *Token bag*" there and "You drew from *Token
+bag*" here, "put 2 things in", "poured … into …", "looked inside". Which
+bag and how many, never what. The stage drops a message of the wrong shape
+and names who sent it (their contact, else "Someone"); the bag says it once
+every bag it names is one of this scene's.
 
 What mustn't go in doesn't: the bag itself (through any object of the same
 bag doc), a bag that holds this one at any depth, what can't be picked up (no
@@ -256,12 +258,20 @@ container needs, this is what it does instead:
 
 | needed | the contract has | so the bag |
 |---|---|---|
-| "this was put down on me" | `landing`: a question the carry asks while it carries, not asked at all once the carrier has flipped the piece, and no event when it lets go | remembers which object this view's carry asked about, and when the doc then shows that object moved, looks at whether it lies on a bag. A drop is therefore two changes (the carry's put-down, then the bag's removal), not one |
 | carry something from a key press, or something that doesn't exist yet | `carry(id, ev, opts)` returns a session "to give back from their press" | holds the drawn piece as a tool (`api.hold`), feeds the pointer to the carry's session, and ends it on the next click |
-| "is my own carry still holding this?" | `heldBy(id)`: peers only | infers that the carry gave way from a peer's hold appearing |
 | put an object back as it was | `addObject` (a new id, a new render doc, asynchronous) and `remove`; no insert | writes `objects[id]` and `order` itself, in one change |
 | what a copy leaves behind (runtime traits) | the rule is in `scene/src/transfer.js`, not on `api` | keeps every trait (a move, not a copy), dropping only `claims` |
 | two docs changed together | nothing | the doc shape above |
+
+Two rows are retired, since the stage now has the word
+([STAGE.md](../scene/STAGE.md), "How a carry ends"). "This was put down on
+me" is `landed(id, on)`, which the carry tells after its put's write, F or
+no F; the bag puts in what lands on a bag, or on what is attached under
+one (its label: the nearest bag up `on`'s parent chain). "Is my own carry still holding
+this?" is the carry session's `ended`: a drawn piece's carry that ended
+`"yielded"` waits on what the peer does with it. A drop into a bag is still
+two changes (the carry's put, then the bag's removal); making it one is a
+question for the lead, tied to drop claims (N15).
 
 ## Files
 

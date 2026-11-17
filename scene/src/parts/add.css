@@ -42,6 +42,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: flex-start; /* a template with a form under it doesn't stretch its neighbours */
   gap: 8px;
 }
 
@@ -56,6 +57,32 @@
   padding: 8px 12px;
   text-align: left;
   white-space: normal;
+}
+
+/* a template that takes params: its button, and their form under it (param-form.js) */
+.scene-stage .add-empty .add-template-group:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.scene-stage .add-empty .add-template-params:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  font-size: 12px;
+  text-align: left;
+}
+
+.scene-stage .add-empty .add-template-params .param:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.scene-stage .add-empty .add-template-params .param-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
 }
 
 .scene-stage .add-empty .add-template-name:where(:not(.about-embed *), .about-embed .scene-tool *) {

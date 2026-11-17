@@ -7,9 +7,9 @@
 //     (an OBJ file doc, obj.js), each placed at `at`, turned by `rotation`;
 //   - as a document (`doc`): whatever `scene:source` draws that document's
 //     type draws it (a die, by the dice package), found by the caller.
-// Snap points become the scene's connectors (`extras.connectors`), with their
-// whole frames again under `extras["tabletop.slots"]` (table/slots.js reads
-// them), and a snap radius `extras.snapRadius`.
+// Snap points become the scene's connectors (`extras.connectors`), whole
+// frames and all (the scene keeps each one's rotation; table/slots.js reads
+// it back from content(id).extras), and a snap radius `extras.snapRadius`.
 //
 // Files are read through the caller (`read(url)` → the file doc, or null),
 // so nothing here knows a repo; images are decoded, cropped and encoded by an
@@ -29,6 +29,8 @@ import { outlineOf, slab } from "./slab.js";
 
 // bump when the way a look becomes a GLB changes, so every GLB is drawn again
 // 3: the format's looks (slabs, models, documents); rotation per part
+// (not bumped for dropping extras["tabletop.slots"]: a GLB that still has it
+// reads the same, from its connectors, and the key is ignored)
 export const LOOK_VERSION = 3;
 
 /** Everything a piece's GLB is drawn from, as one string: the same string, the same GLB. */
@@ -41,9 +43,6 @@ export function lookKey(piece) {
     snapRadius: piece?.snapRadius ?? null,
   });
 }
-
-/** The GLB extras key a piece's places are written under in full, frame and all (table/slots.js reads it back). */
-export const SLOTS_EXTRAS = "tabletop.slots";
 
 /**
  * A piece's snap points ({ position, rotation?, tags? }) as the scene's
@@ -61,13 +60,10 @@ export function connectorsOf(points) {
   });
 }
 
-/** The connectors, snap radius and slots a piece's GLB carries. */
+/** The connectors and snap radius a piece's GLB carries. */
 export function extrasOf(piece) {
   const extras = {};
-  if (Array.isArray(piece?.snapPoints) && piece.snapPoints.length) {
-    extras.connectors = connectorsOf(piece.snapPoints);
-    if (piece.snapPoints.some((p) => Array.isArray(p?.rotation))) extras[SLOTS_EXTRAS] = connectorsOf(piece.snapPoints);
-  }
+  if (Array.isArray(piece?.snapPoints) && piece.snapPoints.length) extras.connectors = connectorsOf(piece.snapPoints);
   if (Number(piece?.snapRadius) > 0) extras.snapRadius = Number(piece.snapRadius);
   return extras;
 }

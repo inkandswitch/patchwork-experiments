@@ -94,9 +94,88 @@ describe("scene.use, the pure side", () => {
     ]);
   });
 
-  it("shows at most three", () => {
-    const many = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
-    expect(promptEntries([{ id: "x", value: many }], { selected: "barrel" }, { scene, local: {} }).entries).toHaveLength(3);
+  // The cap: n verbs apply to the target (0..5) × which are held (none; the first, the last of them, or one that no
+  // longer applies; the first and the last) × the prompt as it is, or opened → what shows ("*" held) and how many
+  // more. Every verb that applies is shown or counted in more, in running order, and a held one always shows: in its
+  // place, or after the rest when it no longer applies. ("first", "last" need one verb, "both" two.)
+  it("shows the first three and counts the rest; opened, every one; a held one in its place among them", () => {
+    const verbs = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
+    const gone = { id: "vX", key: "x", state: () => ({}), run() {} };
+    const ctx = { scene, local: {} };
+    const show = (out) => (out ? [out.entries.map((e) => `${e.command.id}${e.state.held ? "*" : ""}`).join(" "), out.more] : null);
+    const heldOf = { none: () => [], first: (n) => [verbs[0]], last: (n) => [verbs[n - 1]], gone: () => [gone], both: (n) => [verbs[0], verbs[n - 1]] };
+    const need = { none: 0, first: 1, last: 1, gone: 0, both: 2 };
+    const want = {
+      "0 none 3": null,
+      "0 none ∞": null,
+      "0 gone 3": ["vX*", 0],
+      "0 gone ∞": ["vX*", 0],
+      "1 none 3": ["v0", 0],
+      "1 none ∞": ["v0", 0],
+      "1 first 3": ["v0*", 0],
+      "1 first ∞": ["v0*", 0],
+      "1 last 3": ["v0*", 0],
+      "1 last ∞": ["v0*", 0],
+      "1 gone 3": ["v0 vX*", 0],
+      "1 gone ∞": ["v0 vX*", 0],
+      "2 none 3": ["v0 v1", 0],
+      "2 none ∞": ["v0 v1", 0],
+      "2 first 3": ["v0* v1", 0],
+      "2 first ∞": ["v0* v1", 0],
+      "2 last 3": ["v0 v1*", 0],
+      "2 last ∞": ["v0 v1*", 0],
+      "2 gone 3": ["v0 v1 vX*", 0],
+      "2 gone ∞": ["v0 v1 vX*", 0],
+      "2 both 3": ["v0* v1*", 0],
+      "2 both ∞": ["v0* v1*", 0],
+      "3 none 3": ["v0 v1 v2", 0],
+      "3 none ∞": ["v0 v1 v2", 0],
+      "3 first 3": ["v0* v1 v2", 0],
+      "3 first ∞": ["v0* v1 v2", 0],
+      "3 last 3": ["v0 v1 v2*", 0],
+      "3 last ∞": ["v0 v1 v2*", 0],
+      "3 gone 3": ["v0 v1 vX*", 1],
+      "3 gone ∞": ["v0 v1 v2 vX*", 0],
+      "3 both 3": ["v0* v1 v2*", 0],
+      "3 both ∞": ["v0* v1 v2*", 0],
+      "4 none 3": ["v0 v1 v2", 1],
+      "4 none ∞": ["v0 v1 v2 v3", 0],
+      "4 first 3": ["v0* v1 v2", 1],
+      "4 first ∞": ["v0* v1 v2 v3", 0],
+      "4 last 3": ["v0 v1 v3*", 1],
+      "4 last ∞": ["v0 v1 v2 v3*", 0],
+      "4 gone 3": ["v0 v1 vX*", 2],
+      "4 gone ∞": ["v0 v1 v2 v3 vX*", 0],
+      "4 both 3": ["v0* v1 v3*", 1],
+      "4 both ∞": ["v0* v1 v2 v3*", 0],
+      "5 none 3": ["v0 v1 v2", 2],
+      "5 none ∞": ["v0 v1 v2 v3 v4", 0],
+      "5 first 3": ["v0* v1 v2", 2],
+      "5 first ∞": ["v0* v1 v2 v3 v4", 0],
+      "5 last 3": ["v0 v1 v4*", 2],
+      "5 last ∞": ["v0 v1 v2 v3 v4*", 0],
+      "5 gone 3": ["v0 v1 vX*", 3],
+      "5 gone ∞": ["v0 v1 v2 v3 v4 vX*", 0],
+      "5 both 3": ["v0* v1 v4*", 2],
+      "5 both ∞": ["v0* v1 v2 v3 v4*", 0],
+    };
+    const got = {};
+    const counted = [];
+    for (const n of [0, 1, 2, 3, 4, 5])
+      for (const which of Object.keys(heldOf))
+        for (const max of [3, Infinity]) {
+          if (n < need[which]) continue;
+          const collected = [{ id: "x", value: verbs.slice(0, n) }];
+          const held = heldOf[which](n).map((command) => ({ ext: "x", command, state: { held: true } }));
+          const out = which === "none" ? promptEntries(collected, { selected: "barrel" }, ctx, max) : heldEntries(collected, "barrel", held, ctx, max);
+          got[`${n} ${which} ${max === 3 ? 3 : "∞"}`] = show(out);
+          // the invariant, row by row: each that applies once, shown or in more; each held shown
+          const ids = (out?.entries ?? []).map((e) => e.command.id);
+          const live = verbs.slice(0, n).map((v) => v.id);
+          counted.push(ids.filter((id) => live.includes(id)).length + (out?.more ?? 0) === n && new Set(ids).size === ids.length && held.every((h) => ids.includes(h.command.id)));
+        }
+    expect(got).toEqual(want);
+    expect(counted.every(Boolean)).toBe(true);
   });
 
   it("while something's held: the target's verbs in their places, each held one as pressed (after the rest where it no longer applies), and as many others as fit", () => {
@@ -246,6 +325,119 @@ describe("scene.use", () => {
     // and the click on it runs the verb
     button.click();
     expect(log).toEqual([["helm", "helm", undefined]]);
+  });
+
+  // Held still where it is while the pointer is on it, until the viewer moves the eye (step 8 of lane/n11 and its
+  // fixes; COMPOSITION.md, "Decisions, the use prompt and the eye"): an orbit or a Frame ends, a body entered or
+  // left, a pointer lock taken or lost put it back under the pointer, so a press there reaches what is under it (a
+  // halo handle), never a button left there. An eye carried every frame (a ride) doesn't: it would never let the
+  // pointer catch the prompt. However the pointer came onto it, it holds where it is.
+  describe("the pointer on the prompt, and the eye", () => {
+    const LOOK = () => s.api("t.game").body.enter("look");
+    const EDIT = () => s.api("t.game").body.enter("edit");
+    const origin = () => s.port.getBoundingClientRect();
+    const px = (x, y) => [`${x - origin().left}px`, `${y - origin().top}px`];
+    const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
+    const verb = () => prompt().querySelector(".use-verb");
+    const mouse = (target, x, y) => target.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y }));
+    const tap = (target, x, y) => {
+      for (const type of ["pointerdown", "pointerup"]) target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch", button: 0, buttons: type === "pointerdown" ? 1 : 0, clientX: x, clientY: y }));
+      s.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+    };
+    // How the pointer comes onto the prompt (shown at 120, 90; its button at 125, 132)
+    const ARRIVALS = [
+      ["moved onto it from the world", async () => {
+        mouse(s.canvas, 120, 90);
+        await settle();
+        mouse(verb(), 125, 132);
+      }],
+      ["back into the view straight onto it", async () => {
+        mouse(s.canvas, 120, 90);
+        await settle();
+        s.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
+        mouse(verb(), 125, 132);
+      }],
+      ["a finger's tap on it", async () => {
+        tap(s.canvas, 120, 90);
+        await settle();
+        tap(verb(), 125, 132);
+      }],
+    ];
+    // What happens then, and whether it is the viewer moving the eye (true: back under the pointer)
+    const EVENTS = [
+      ["nothing", false, async () => {}],
+      ["an orbit or zoom ends", true, async () => s.debug.viewport.endCamera("orbit")],
+      ["a Frame (.)", true, async () => s.debug.viewport.endCamera("frame")],
+      ["a ride carries the eye, frame after frame", false, async () => {
+        for (let i = 1; i <= 5; i++) {
+          const cam = { position: [i * 0.01, 2, 5], target: [i * 0.01, 1, 0], fov: 50, up: [0, 1, 0] };
+          s.debug.viewport.getCamera = () => cam;
+          for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+          await settle(1);
+        }
+      }],
+      ["Edit entered (from Look)", true, async () => expect(EDIT()).toBe(true), LOOK],
+      ["Look entered (Edit left)", true, async () => expect(LOOK()).toBe(true)],
+      ["the selection changes", false, async () => s.api("t.game").view.select("capstan")],
+      ["a pointer lock taken and lost", true, async () => {
+        document.pointerLockElement = s.canvas;
+        document.dispatchEvent(new Event("pointerlockchange"));
+        await settle();
+        delete document.pointerLockElement;
+        document.dispatchEvent(new Event("pointerlockchange"));
+      }],
+    ];
+    for (const [arrival, arrive] of ARRIVALS)
+      for (const [event, moves, run, before] of EVENTS)
+        it(`${arrival}, then ${event}: ${moves ? "under the pointer" : "held where it was"}`, async () => {
+          await mount();
+          if (before) expect(before()).toBe(true);
+          await settle();
+          // the pointer is over the helm wherever it goes on the world (the view's pick)
+          s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
+          await arrive();
+          await settle();
+          expect(prompt().hidden).toBe(false);
+          expect(at()).toEqual(px(120, 90));
+          await run();
+          await settle();
+          expect(prompt().hidden).toBe(false);
+          expect(at()).toEqual(moves ? px(125, 132) : px(120, 90));
+        });
+
+    it("off the prompt onto the world, it follows the pointer again; onto it again, it holds where it is then", async () => {
+      await mount();
+      s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
+      mouse(s.canvas, 120, 90);
+      await settle();
+      mouse(verb(), 125, 132);
+      mouse(s.canvas, 60, 70);
+      expect(at()).toEqual(px(60, 70));
+      mouse(verb(), 65, 112);
+      expect(at()).toEqual(px(60, 70));
+      // let go by a Frame, then caught again: held at its new place through a carried eye
+      s.debug.viewport.endCamera("frame");
+      await settle();
+      expect(at()).toEqual(px(65, 112));
+      mouse(verb(), 70, 150);
+      expect(at()).toEqual(px(65, 112));
+      s.debug.viewport.getCamera = () => ({ position: [1, 2, 5], target: [1, 1, 0], fov: 50, up: [0, 1, 0] });
+      for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+      await settle();
+      expect(at()).toEqual(px(65, 112));
+    });
+
+    it("the pointer leaving while it's held lets go: back on the world, it follows", async () => {
+      await mount();
+      s.debug.viewport.pick = () => ({ id: "helm", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 });
+      mouse(s.canvas, 120, 90);
+      await settle();
+      mouse(verb(), 125, 132);
+      s.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
+      expect(at()).toEqual(px(120, 90));
+      mouse(s.canvas, 40, 30);
+      expect(at()).toEqual(px(40, 30));
+    });
   });
 
   it("looking at a part offers what it's attached to", async () => {
@@ -491,11 +683,17 @@ describe("scene.use: a button with a key is that key", () => {
           { id: "wave", name: "Wave", key: "w", state: on("flag"), run: () => log.push("wave") },
           { id: "heave", name: "Heave", key: "q", hold: true, state: on("anchor"), run: session("heave") },
           { id: "grab", name: "Grab", key: "g", state: (t) => (t === "chest" ? { disabled: true, title: "locked" } : null), run: () => log.push("grab") },
+          // five on the crate: three show, and the last, held, is past them
+          { id: "lid", name: "Lid", key: "h", state: on("crate"), run: () => log.push("lid") },
+          { id: "tip", name: "Tip", key: "j", state: on("crate"), run: () => log.push("tip") },
+          { id: "kick", name: "Kick", key: "k", state: on("crate"), run: () => log.push("kick") },
+          { id: "lash", name: "Lash", key: "l", state: on("crate"), run: () => log.push("lash") },
+          { id: "haul", name: "Haul", key: "n", hold: true, state: on("crate"), run: session("haul") },
         ],
       }),
     },
   };
-  const TARGETS = ["bell", "winch", "flag", "anchor", "chest"];
+  const TARGETS = ["bell", "winch", "flag", "anchor", "chest", "crate"];
   const DOC5 = { traits: { "t.level": {} }, objects: Object.fromEntries(TARGETS.map((id) => [id, object({ name: id })])), order: TARGETS };
 
   /** Mount, and attend `target`: a mouse hovering it in Look, or a finger walking with the eye on it. */
@@ -703,6 +901,68 @@ describe("scene.use: a button with a key is that key", () => {
         await settle();
         expect([log, sessions.length, walker.key.mock.calls.length]).toEqual([[], 0, 0]);
       });
+
+  // Past three verbs (the crate's five): the prompt's last button opens it to every one, so every verb on attention
+  // is reachable from the prompt, a finger's too (no keys), each its own button.
+  const more = () => prompt().querySelector(".use-more");
+  const press = (el, input) => {
+    const ev = (type) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 2, pointerType: input, button: 0, buttons: type === "pointerdown" ? 1 : 0 });
+    el.dispatchEvent(ev("pointerdown"));
+    el.dispatchEvent(ev("pointerup"));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+  };
+  it.each(BOTH)("past three verbs (%s): the first three and a more; pressed, all five in running order, the fifth held by its button as long as the finger", async (input) => {
+    const b = await at("crate", input);
+    expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
+    press(more(), input);
+    await settle();
+    expect([verbs(), more()]).toEqual([["HLid", "JTip", "KKick", "LLash", "holdNHaul"], null]);
+    expect(log).toEqual([]);
+    const haul = prompt().querySelector('[data-command="haul"]');
+    haul.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: input, button: 0, buttons: 1 }));
+    expect([log, sessions[0]?.end.mock.calls.length]).toEqual([["haul"], 0]);
+    haul.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 3, pointerType: input, button: 0 }));
+    await settle();
+    expect(sessions.map((x) => x.end.mock.calls.length)).toEqual([1]);
+    expect(b.button.isConnected).toBe(true);
+  });
+
+  // Opened on the crate, attention goes away (another target with verbs; one with none; nothing; a carry's gesture,
+  // which takes the prompt down) and comes back: three and a more again.
+  it.each([
+    ["another target", () => s.local.swap((m) => ({ ...m, hovered: "bell" })), ["RRing"]],
+    ["nothing", () => s.local.swap((m) => ({ ...m, hovered: null })), []],
+    ["a carry", () => s.local.swap((m) => ({ ...m, gesture: { owner: "scene.carry", keys: [{ code: "KeyF", label: "Flip" }] } })), []],
+  ])("attention on %s closes it: back on the crate, three and a more again", async (_, away, there) => {
+    await at("crate", "mouse");
+    press(more(), "mouse");
+    await settle();
+    expect(verbs()).toHaveLength(5);
+    away();
+    await settle();
+    expect(verbs()).toEqual(there);
+    s.local.swap((m) => ({ ...m, hovered: "crate", gesture: null }));
+    await settle();
+    expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
+  });
+
+  it("a click on more whose press was elsewhere on the view opens nothing", async () => {
+    await at("crate", "touch");
+    s.canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch", button: 0, buttons: 1 }));
+    more().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    await settle();
+    expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
+  });
+
+  it("a verb past three held by its key: shown in the third's place, held, and the more counts the two left", async () => {
+    await at("crate", "mouse");
+    s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "n", code: "KeyN" }));
+    await settle();
+    expect([log, verbs(), more()?.textContent]).toEqual([["haul"], ["HLid", "JTip", "holdNHaul"], "⋯ 2 more"]);
+    s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key: "n", code: "KeyN" }));
+    await settle();
+    expect([sessions[0].end.mock.calls.length, verbs()]).toEqual([1, ["HLid", "JTip", "KKick"]]);
+  });
 
   it("two fingers on a plain verb's button: one key, and neither lift's click runs it again", async () => {
     const b = await at("bell", "touch");
