@@ -133,6 +133,13 @@ try {
       return { min: min.map(r), max: max.map(r) };
     },
     racks: () => Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).length,
+    /** a point in a seat's rack (its own frame: a place's position, games/draw-dominoes-2.json), in the world, by A's snapshot */
+    rackSpot(seat, p) {
+      const s = dbg.a.scene();
+      const zid = Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat);
+      const m = zid ? s.world(zid) : null;
+      return m ? [0, 1, 2].map((k) => +(m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]).toFixed(6) + 0) : null;
+    },
     transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
     /** a tile's face direction (its +Y in the world), by A's snapshot, to 3 places */
     faceDir: (id) => { const m = dbg.a.scene().world(id); return [m[4], m[5], m[6]].map((v) => +v.toFixed(3) + 0); },
@@ -162,7 +169,7 @@ try {
         const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
         if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
         const hit = v.pick(x, y);
-        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id, point: hit.point ? [...hit.point] : null };
       }
       return null;
     },

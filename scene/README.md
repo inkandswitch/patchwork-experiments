@@ -230,7 +230,9 @@ STAGE.md, "Extract and bundle".
   has **connectors** (snap points, from its GLB, below) near that spot that
   take it, it goes to the nearest one (accent ring) — hold **Alt** to put it down exactly where you
   are, or untick **Snap** to turn snapping off for this scene. A snap point
-  with a yaw turns the piece to face that way. **Q** / **E** turn it 45°
+  with a whole frame takes the piece into it (a rack's place stands a tile
+  on edge), one with a yaw turns it to face that way; either turn lasts only
+  while it's over that point. **Q** / **E** turn it 45°
   while carried, **F** turns it over (about its own length, as a card goes
   face down, turning in the air rather than snapping); **Esc** puts it back.
   **F** over a piece that's lying there (or *Flip* in its right-click menu)
@@ -240,8 +242,12 @@ STAGE.md, "Extract and bundle".
   something without the trait or on a **locked** object orbits. There is no physics: nothing tips or slides, and only the
   final pose is written. While it's carried, other people see it move (over
   `handle.broadcast`, below). An extension can ask for the piece to go
-  down another way where it's put (tabletop turns a card face up in your
-  hand), or say it can't be picked up just now (dice: a die under a cup).
+  down another way where it's put (`landing`: face up, as tabletop turns a
+  card face up in your hand; flat, on its broadest face, as tabletop lays a
+  domino down wherever it's carried but a rack's place), or say it can't be
+  picked up just now (dice: a die under a cup). How it lands is a pure
+  function of how you hold it, the snap point and those answers
+  (`landedPose`, STAGE.md "Landing").
   A piece attached to something is carried in that thing's
   frame: a card on a table aboard a moving ship goes with the table, snaps
   to its slots and goes down square to it, however she heels and swings.
@@ -526,10 +532,14 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
   tilted; a node's scale, even an uneven one, never shears it, and a
   mirrored node mirrors where it faces without turning it inside out), with its yaw
   (where the frame turns +Z, seen from above; none pointing straight up)
-  derived from it. A carry turns whatever it puts there to face that yaw (so
-  a card in the far player's column reads right for them); a package that
-  needs the whole frame reads `rotation` (Tabletop's rack places stand a
-  tile on edge that way). A connector with
+  derived from it. A carry puts whatever it brings there into that frame:
+  its body axes become the connector's (so a card in the far player's column
+  reads right for them, and a rack's place stands a tile on edge, facing its
+  player), face up or face down as it was or as a `landing` rule asks, unless
+  the frame stands it on edge, which then says alone which way it faces. A
+  connector with only a yaw turns it about the vertical to face that way.
+  The parts bin and Paste use the same frame (a part, or one copied object,
+  goes into it). A connector with
   `tags` takes only objects whose `tags` share one (none: anything), as
   Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
   [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as

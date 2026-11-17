@@ -37,6 +37,7 @@ import { ROW_MIME, parseAutomergeUrl } from "./dnd.js";
 import { isGroup, resolveGroups } from "./groups.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "./transform.js";
+import { faceOf, intoFrame } from "./carry-rules.js";
 
 export { ROW_MIME };
 
@@ -391,10 +392,11 @@ const yawOf = (m) => Math.atan2(m[8], m[10]);
 
 /**
  * What a set of top-level objects is moved by: one object's own origin and
- * heading; several, the middle of their origins (at the lowest), heading 0.
+ * heading (and its world: `world`, which a connector's frame turns); several,
+ * the middle of their origins (at the lowest), heading 0.
  */
 export function referenceOf(worlds) {
-  if (worlds.length === 1) return { point: [worlds[0][12], worlds[0][13], worlds[0][14]], yaw: yawOf(worlds[0]) };
+  if (worlds.length === 1) return { point: [worlds[0][12], worlds[0][13], worlds[0][14]], yaw: yawOf(worlds[0]), world: worlds[0].slice() };
   if (!worlds.length) return { point: [0, 0, 0], yaw: 0 };
   const xs = worlds.map((m) => m[12]);
   const ys = worlds.map((m) => m[13]);
@@ -404,15 +406,55 @@ export function referenceOf(worlds) {
 
 /**
  * The rigid move that puts `ref` at `point`, turned about the vertical so its
- * heading becomes `yaw` (null: as it was). Column-major 4×4.
+ * heading becomes `yaw` (null: as it was). With a connector's whole frame
+ * (`rotation`, Euler XYZ, world) and one object (`ref.world`), turned into
+ * that frame instead, face up or down as it was (carry-rules intoFrame: the
+ * carry's rule); several objects take only the yaw. Column-major 4×4.
  */
-export function moveBy(ref, point, yaw = null) {
+export function moveBy(ref, point, yaw = null, rotation = null) {
+  if (Array.isArray(rotation) && ref.world) {
+    const into = intoFrame(ref.world, rotation, faceOf(ref.world));
+    const m = multiplyMatrices(into, invertMatrix(ref.world));
+    m[12] += point[0] - ref.point[0];
+    m[13] += point[1] - ref.point[1];
+    m[14] += point[2] - ref.point[2];
+    return m;
+  }
   const t = yaw == null ? 0 : yaw - ref.yaw;
   const c = Math.cos(t);
   const s = Math.sin(t);
   const [px, py, pz] = ref.point;
   // T(point) · Ry(t) · T(−ref)
   return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, point[0] - (c * px + s * pz), point[1] - py, point[2] - (-s * px + c * pz), 1];
+}
+
+/**
+ * A landing into a connector's frame (`land.rotation`), for one object with
+ * a load hint: moved so that the object as it will lie there rests the
+ * carry's and Draw's way, the middle of its footprint over the connector and
+ * its underside at the connector's height (a tile stood on edge in a rack's
+ * place sits on the rack, not half through it). Anything else: as it was
+ * (a snapped copy's origin goes to the connector). Pure.
+ */
+export function restInFrame(objects, roots, land) {
+  if (!land?.snapped || !Array.isArray(land.rotation) || roots.length !== 1) return land;
+  const b = objects?.[roots[0]]?.hint?.bounds;
+  if (!Array.isArray(b?.min) || !Array.isArray(b?.max) || isGroup(objects[roots[0]])) return land;
+  const w = worldMatrix(objects, roots[0], resolveParents(objects));
+  const W = multiplyMatrices(moveBy(referenceOf([w]), land.point, land.yaw ?? null, land.rotation), w);
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < 8; i++) {
+    const c = [i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]].map(Number);
+    for (let k = 0; k < 3; k++) {
+      const v = W[k] * c[0] + W[4 + k] * c[1] + W[8 + k] * c[2] + W[12 + k];
+      min[k] = Math.min(min[k], v);
+      max[k] = Math.max(max[k], v);
+    }
+  }
+  if (!min.every(Number.isFinite) || !max.every(Number.isFinite)) return land;
+  const d = [land.point[0] - (min[0] + max[0]) / 2, land.point[1] - min[1], land.point[2] - (min[2] + max[2]) / 2];
+  return { ...land, point: land.point.map((v, k) => v + d[k]) };
 }
 
 /** The copy's top-level objects: what isn't a group and isn't attached under something copied. Pure. */
@@ -476,7 +518,7 @@ export function localOf(parentWorld, world) {
  * @param {{
  *   objects: object, order?: string[], roots: string[],
  *   runtime?: Map,                                  // runtimeOf(describes)
- *   target: { land?: { point, yaw?, parent?, parentWorld?, group? }, // where it lands (a drop, a paste; `group`: the tree's, for the top)
+ *   target: { land?: { point, yaw?, rotation?, parent?, parentWorld?, group? }, // where it lands (a drop, a paste; `rotation`: a connector's frame; `group`: the tree's, for the top)
  *             beside?: { offset: number[] } },                     // a duplicate in its own scene
  * }} o
  * @returns {{ items: { from, group: boolean, data, top: boolean, parent, parentIn, groupOf, groupIn, transform, world }[], listed: string[], tops: string[] }}
@@ -492,7 +534,7 @@ export function planCopy({ objects, order = [], roots, runtime = new Map(), targ
   const tops = topsOf(objects, ids, parents);
   const worlds = new Map(tops.map((id) => [id, worldMatrix(objects, id, parents)]));
   let move = null;
-  if (target.land) move = moveBy(referenceOf([...worlds.values()]), target.land.point, target.land.yaw ?? null);
+  if (target.land) move = moveBy(referenceOf([...worlds.values()]), target.land.point, target.land.yaw ?? null, target.land.rotation ?? null);
   else if (target.beside) {
     const [dx = 0, dy = 0, dz = 0] = target.beside.offset ?? [];
     move = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, dy, dz, 1];
@@ -613,6 +655,7 @@ async function copyInto(api, payload, target, edit) {
     t.land = t.land(single ? strings(objects[roots[0]].tags) : []);
     if (!t.land) return null;
   }
+  t.land = restInFrame(objects, roots, t.land);
   if (t.land && !t.land.snapped) {
     const parents = resolveParents(objects);
     const lift = Number.isFinite(payload.lift)

@@ -531,8 +531,10 @@ view's side is `scene.transfer`, editing only).
     the middle of the view) they land by the parts bin's rule: under the
     object hit, snapped to a connector whose tags take a lone object's tags
     (Alt, or Snap off: freely), turned to the connector's or that object's
-    heading; on the ground they keep the heading they had. Tilt, scale and
-    every transform below the top come as they were. Pasted, they go under
+    heading; on the ground they keep the heading they had. A lone object
+    snapped to a connector with a whole frame goes into that frame, face up
+    or down as it was ("Landing"). Tilt, scale and every transform below the
+    top come as they were. Pasted, they go under
     the object at the middle of the view only when they snap to one of its
     connectors; else on the surface there, under nothing, and each repeat of
     one Copy steps sideways by the copy's width onto whatever is under that
@@ -546,7 +548,9 @@ view's side is `scene.transfer`, editing only).
     the objects' `hint.bounds` through the doc's transforms), so the copy
     rests on its base: a crate whose origin is its middle sits on the floor.
     A connector is made for an origin at the base, so a snapped copy isn't
-    raised.
+    raised; but one going into a connector's frame with a load hint rests on
+    it the carry's way (a tile stood on edge in a rack's place sits on the
+    rack, its origin no longer at its base).
   - **Every field but runtime state.** Not copied: `claims` and `saved` (the stage's), and
     any trait key an extension marks as runtime in `describes` (below). Pose
     holds and presence were never in the doc.
@@ -1576,7 +1580,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
 | `hud()` → `[{ text, state }]` | status surfaces |
-| `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the carry (`scene.carry`). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
+| `landing(id, worldPoint, hitId)` → `{ faceUp?, flat? }` | the carry (`scene.carry`), on every move while it carries, after F too (see "Landing"). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
 | `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
 | `carry(id, ev, opts)` → session | anything that wants to carry (`scene.carry` provides it; it carries only what has the trait) |
 | `bodies` → `[{ id, label, keys, lock, reach, here?, enter(place) }]` | the stage's body stack ("Bodies"): the seat body from `seats`, the walk body from `walk`, sailing's aboard and station. Sitting down from walking pushes the seat body over the walk body; standing up pops it |
@@ -1681,6 +1685,44 @@ and selecting an object (or clicking on nothing) replaces the dimension.
 
 `api.collect(name)` returns `[{ id, value }]` from running extensions that
 have that field, in running order. The stage never reads the value.
+
+### Landing
+
+How a carried piece lies where it goes down is a pure function of three
+things (`landedPose`, src/parts/carry-math.js), and nothing else turns it:
+
+- **how it is held**: as picked up, with every Q/E turn and F since;
+- **the snap**: the connector it goes to (its whole frame, `rotation`, or
+  only its `yaw`), or none;
+- **the answer**: every running extension's `landing(id, worldPoint, hitId)`
+  merged, the last word winning per field. It is asked on every move,
+  where the piece would go down turned to the snap, after F as before.
+
+In order:
+
+1. `flat: true`: it lies on its broadest face (its thinnest body axis
+   upright, by the smallest turn about a level axis). Face down stays face
+   down; standing on edge it goes face up. Its length keeps the way it
+   pointed, seen from above, wherever it was level. A piece lying flat
+   already is left as it is.
+2. `faceUp: true`: turned over about its length if its face is down. Only
+   while the carry is the rule's to turn: picked up where no rule asked
+   it, and not turned over by F since. A face that is level (standing) is
+   left alone.
+3. A connector with a whole frame: its body axes become the frame's, face
+   up or face down as 1 and 2 left it (the frame turned over about its own
+   length for a face-down piece). A frame whose face is level (a rack's
+   place, standing a tile on edge) says alone which way it faces. A
+   connector with only a yaw turns it about the vertical to face that way.
+
+With no snap and no answer it is exactly as held. A snap's or a rule's turn
+lasts only while the piece is over that place; carried away again, it is as
+held. F turns over what you see (after 1 and 2), and from then on it is
+yours: faceUp is no longer heeded, `flat` still is. The parts bin and Paste
+use step 3: a part goes into a connector's frame as the frame gives it, a
+single copied object face up or down as it was (several take only the yaw),
+and a copied object with a load hint rests on the connector the carry's way,
+the middle of its footprint over it and its underside at its height.
 
 ### Audience
 

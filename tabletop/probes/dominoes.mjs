@@ -19,14 +19,18 @@
 // - each draws 7 (D over a boneyard tile, in their own view): each tile
 //   stands on edge in its drawer's rack, facing them; each sees their own
 //   faces and the other's backs, never a veil;
-// - A lays a tile flat (U) and carries it onto the felt, then another,
-//   turned a quarter (Q twice while carried: a double, crosswise), and nudges
-//   that one by hand until it lies flush against the first (gap within
-//   1 mm), on the felt, not climbed onto it: both face up, and B sees their
-//   faces;
-// - B draws one more from the boneyard;
+// - A carries a tile standing in the rack straight onto the felt, and it
+//   goes down lying flat, face up, in one move (the table's `landing` asks
+//   flat; no U first); then another, turned a quarter (Q twice while
+//   carried: a double, crosswise), and nudges that one by hand until it lies
+//   flush against the first (gap within 1 mm), on the felt, not climbed onto
+//   it: both face up, and B sees their faces;
+// - B draws one more from the boneyard, and carries another from the
+//   boneyard into a free place of B's rack by hand: the place's frame stands
+//   it on edge, facing B, as Draw does;
 // - played without a rack: A carries a standing tile out of the rack onto
-//   the felt, still standing, facing A; B stands a boneyard tile up on the
+//   the felt turning it over on the way (F: it lies face down, hidden), and
+//   stands it up there with U, facing A; B stands a boneyard tile up on the
 //   table with U, facing B; each sees their own standing tile's face and the
 //   other's back, never a veil;
 // - nothing is duplicated or lost: both replicas have the same 28 tiles on
@@ -44,7 +48,7 @@
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -53,6 +57,8 @@ for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/in
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const PLAYERS = Number(arg("--players") ?? 2);
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-dominoes"));
+/** A rack's places, in its own frame (the game, as data). */
+const PLACES = JSON.parse(readFileSync(join(PKG, "games/draw-dominoes-2.json"), "utf8")).pieces.rack.snapPoints;
 
 const b = await browser({ root: ROOT, port: 4877, cdp: 9877, page: "/tabletop/probes/dominoes-probe.html", width: 1536, height: 610, show: process.argv.includes("--show"), timeout: 420_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -189,10 +195,7 @@ try {
       const f1 = await P(`footprint(${J(played[0])})`);
       spot = [+(f1.max[0] + 0.0125).toFixed(5), 0.003, +((f1.min[2] + f1.max[2]) / 2).toFixed(5)];
     }
-    check(`A hovers tile ${k + 1} in their rack, and the prompt offers Lay flat`, !!(await hover(id, "a")) && (await until("prompt('a').some((t) => /Lay flat/.test(t))", 3000)), await P("prompt('a')"));
-    await P("focus('a')");
-    await b.key("u");
-    check(`U lays it flat, face up, still in the rack (still A's alone)`, await until(`faceDir(${J(id)})[1] === 1 && __p.where().p1.includes(${J(id)})`, 5000), await P(`faceDir(${J(id)})`));
+    check(`A hovers tile ${k + 1}, standing in their rack`, !!(await hover(id, "a")) && (await P("where()")).p1.includes(id) && (await P(`faceDir(${J(id)})`))[1] === 0, { hovered: await P("hovered('a')"), dir: await P(`faceDir(${J(id)})`) });
     const from = await P(`aimAt(${J(id)}, 'a')`);
     const to = await P(`pointAt(${J(spot)}, 'a')`);
     const yaw0 = (await P(`transform(${J(id)})`)).rotation;
@@ -200,7 +203,7 @@ try {
     await b.drag([from.x, from.y], [to.x, to.y], { steps: 16, beforeRelease: k === 1 ? async () => { await b.key("q"); await b.key("q"); await b.rest(100); } : undefined, settle: 600 });
     const up = await until(`where().up.includes(${J(id)})`, 5000);
     const t = await P(`transform(${J(id)})`);
-    check(`tile ${k + 1} lies face up on the felt`, up, { t, where: await P("where()") });
+    check(`tile ${k + 1}, carried straight out of the rack, lies flat and face up on the felt: one move, no U`, up && (await P(`faceDir(${J(id)})`))[1] === 1, { t, where: await P("where()") });
     // nothing snapped it anywhere: it went down where the pointer let go (the felt has no places; a rack's take only tiles, 2 cm round)
     const off = Math.hypot(t.position[0] - spot[0], t.position[2] - spot[2]);
     check(`…where it was let go (${(off * 1000).toFixed(1)} mm from the pointer's spot): nothing snapped it`, off < 0.015, { at: t.position, spot });
@@ -210,7 +213,7 @@ try {
       const fz = (r) => [Math.sin(r[1]), Math.cos(r[0]) * Math.cos(r[1])];
       const [a0, a1] = [fz(yaw0), fz(t.rotation)];
       const turn = Math.abs(a0[0] * a1[0] + a0[1] * a1[1]);
-      check("…turned a quarter from how it came out of the rack, as Q twice asked", turn < 0.02, { before: yaw0, after: t.rotation, dot: turn, m0 });
+      check("…turned a quarter from how it stood in the rack (laid flat about its length, then Q twice)", turn < 0.02, { before: yaw0, after: t.rotation, dot: turn, m0 });
       // butted up flush: nudged by hand (as a player does), each nudge by what the last one missed by
       const f1 = await P(`footprint(${J(played[0])})`);
       const tries = [];
@@ -245,16 +248,49 @@ try {
   check("B draws one more from the boneyard (D)", !!bDraw && (await P("where()")).p2.length === 8 && (await P("where()")).down.length === 13, await P("where()"));
   check("…B sees its face, A its back", await until(`faces('b').includes(${J(bDraw)}) && __p.backs('a').includes(${J(bDraw)})`, 30_000), { a: await P(`backs('a').includes(${J(bDraw)})`), b: await P(`faces('b').includes(${J(bDraw)})`) });
 
+  // ── B carries a boneyard tile into a free place of the rack by hand: the place stands it ──
+  let intoRack = null;
+  {
+    const place = PLACES[8].position; // B's eight are in places 0–7 (Draw fills them in order)
+    const spot = await P(`rackSpot('p2', ${J(place)})`);
+    for (const id of (await P("where()")).down) {
+      if (!(await hover(id, "b"))) continue;
+      // aim so the tile's footprint (not the pointer) comes over the place: the carry keeps where it was grabbed
+      const f = await P(`footprint(${J(id)})`);
+      const p0 = await P(`aimAt(${J(id)}, 'b')`);
+      const grab = p0?.point;
+      const off = grab ? [(f.min[0] + f.max[0]) / 2 - grab[0], (f.min[2] + f.max[2]) / 2 - grab[2]] : [0, 0];
+      const p1 = await P(`pointAt(${J([spot[0] - off[0], spot[1], spot[2] - off[1]])}, 'b')`);
+      await b.drag([p0.x, p0.y], [p1.x, p1.y], { steps: 16, settle: 600 });
+      intoRack = id;
+      break;
+    }
+  }
+  const dIn = intoRack ? await P(`faceDir(${J(intoRack)})`) : null;
+  const fIn = intoRack ? await P(`footprint(${J(intoRack)})`) : null;
+  const spotIn = await P(`rackSpot('p2', ${J(PLACES[8].position)})`);
+  check(
+    "B carries a face-down boneyard tile into a free place of B's rack: it stands on edge there, facing B, its footprint on the place and its underside on the rack",
+    !!intoRack && (await until(`where().p2.includes(${J(intoRack)})`, 5000)) && J(dIn) === J([0, 0, -1]) && Math.hypot((fIn.min[0] + fIn.max[0]) / 2 - spotIn[0], (fIn.min[2] + fIn.max[2]) / 2 - spotIn[2]) < 1e-4 && Math.abs(fIn.min[1] - spotIn[1]) < 1e-4,
+    { id: intoRack, dir: dIn, footprint: fIn, spot: spotIn, where: await P("where()") },
+  );
+  check("…B sees its face, A its back", !!intoRack && (await until(`faces('b').includes(${J(intoRack)}) && __p.backs('a').includes(${J(intoRack)})`, 30_000)), { a: await P(`backs('a')`), b: await P(`faces('b')`) });
+
   // ── played without a rack: tiles standing on the table, facing their players ──
   const standA = racks.p1[2];
   check("A hovers a standing tile in their rack", !!(await hover(standA, "a")), await P("hovered('a')"));
   {
     const p0 = await P(`aimAt(${J(standA)}, 'a')`);
     const p1 = await P("pointAt([0.05, 0.003, 0.27], 'a')");
-    await b.drag([p0.x, p0.y], [p1.x, p1.y], { steps: 16, settle: 600 });
+    // F while carried turns it over as A sees it: laid flat (the table asks it), so face down
+    await b.drag([p0.x, p0.y], [p1.x, p1.y], { steps: 16, beforeRelease: async () => { await b.key("f"); await b.rest(400); }, settle: 600 });
   }
-  const dA = await P(`faceDir(${J(standA)})`);
-  check("A carries it out onto the felt in front of the rack: it goes down still standing, its face level and toward A", (await until(`where().stand.includes(${J(standA)})`, 5000)) && dA[1] === 0 && dA[2] > 0.9, { dir: dA, where: await P("where()"), at: await P(`transform(${J(standA)})`) });
+  check("A carries it out onto the felt in front of the rack, turning it over on the way (F): it lies flat, face down, its face hidden from both", (await until(`where().down.includes(${J(standA)})`, 5000)) && (await until(`backs('a').includes(${J(standA)}) && __p.backs('b').includes(${J(standA)})`, 20_000)), { dir: await P(`faceDir(${J(standA)})`), where: await P("where()") });
+  check("A hovers it there", !!(await hover(standA, "a")), await P("hovered('a')"));
+  await P("focus('a')");
+  await b.key("u");
+  const dA = (await until(`where().stand.includes(${J(standA)})`, 5000)) ? await P(`faceDir(${J(standA)})`) : null;
+  check("U stands it up on the felt where it lay, its face level and toward A", !!dA && dA[1] === 0 && dA[2] > 0.9, { dir: dA, where: await P("where()"), at: await P(`transform(${J(standA)})`) });
   check("…A still sees its face, B its back, no veil", await until(`faces('a').includes(${J(standA)}) && __p.backs('b').includes(${J(standA)}) && __p.veils('a').length === 0 && __p.veils('b').length === 0`, 20_000), { a: await P(`faces('a').includes(${J(standA)})`), b: await P(`backs('b').includes(${J(standA)})`), veilsA: await P("veils('a')"), veilsB: await P("veils('b')") });
   const standB = (await P("where()")).down[0];
   // the prompt shows three verbs (the stage's cap): carry's Flip holds the tile as nearly as
@@ -282,7 +318,7 @@ try {
   const where = await P("where()");
   // (the deck's public list of what there is never changes, so it proves nothing here: the 28 tiles' 28 different slots, and no face seen twice below, do)
   check("both replicas have the same 28 tiles, bound to 28 different slots", census.same && census.a.n === 28 && census.b.n === 28 && census.a.slots === 28 && census.b.slots === 28, census);
-  check("every tile is somewhere: 4 in A's rack, 8 in B's, 2 face up, 2 standing on the table, 12 face down", where.p1.length === 4 && where.p2.length === 8 && where.up.length === 2 && where.stand.length === 2 && where.down.length === 12 && !where.other.length, where);
+  check("every tile is somewhere: 4 in A's rack, 9 in B's, 2 face up, 2 standing on the table, 11 face down", where.p1.length === 4 && where.p2.length === 9 && where.up.length === 2 && where.stand.length === 2 && where.down.length === 11 && !where.other.length, where);
   const seenA = await P("seen('a')");
   const seenB = await P("seen('b')");
   const both = Object.keys(seenA).filter((id) => id in seenB);

@@ -19,6 +19,7 @@ import {
   readRowPayload,
   refsOf,
   referenceOf,
+  restInFrame,
   renderSeed,
   rowPayload,
   runtimeOf,
@@ -150,6 +151,46 @@ describe("where it goes", () => {
     const keep = decomposeMatrix(multiplyMatrices(moveBy({ point: [1, 0, 0], yaw: 0.25 }, [3, 0, 0], null), composeMatrix(T([1, 0, 0], [0, 0.25, 0]))));
     close(keep.rotation, [0, 0.25, 0]);
     close(keep.position, [3, 0, 0]);
+  });
+
+  // a rack's place: X up, Y (face) toward +Z, length along +X; a flat tray's: turned a quarter
+  const STAND = [Math.PI / 2, Math.PI / 2, 0];
+  const cols = (m) => [0, 1, 2].map((k) => [m[4 * k], m[4 * k + 1], m[4 * k + 2]].map((v) => +v.toFixed(9) + 0));
+  it("moveBy into a connector's frame: one object goes into it, face up or down as it was; several take only its yaw", () => {
+    const up = composeMatrix(T([1, 0, 0], [0, 0.3, 0], 2));
+    const down = composeMatrix(T([1, 0, 0], [0, 0.3, Math.PI], 2));
+    const into = (w, rotation) => multiplyMatrices(moveBy(referenceOf([w]), [5, 1, 5], null, rotation), w);
+    // standing: the frame alone says which way it faces
+    for (const w of [up, down]) {
+      const m = into(w, STAND);
+      expect(cols(m)).toEqual([[0, 2, 0], [0, 0, 2], [2, 0, 0]]);
+      close([m[12], m[13], m[14]], [5, 1, 5]);
+    }
+    // flat, turned a quarter: face up stays up, face down stays down (turned over about its length)
+    expect(cols(into(up, [0, Math.PI / 2, 0]))).toEqual([[0, 0, -2], [0, 2, 0], [2, 0, 0]]);
+    expect(cols(into(down, [0, Math.PI / 2, 0]))).toEqual([[0, 0, 2], [0, -2, 0], [2, 0, 0]]);
+    // several: the yaw only, as before
+    const two = [composeMatrix(T([0, 0, 0])), composeMatrix(T([2, 0, 0]))];
+    const m = moveBy(referenceOf(two), [5, 0, 5], Math.PI / 2, STAND);
+    close([m[4], m[5], m[6]], [0, 1, 0]);
+    expect(Math.atan2(m[8], m[10])).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it("restInFrame: one object with a load hint going into a frame rests on the connector the carry's way; anything else as it was", () => {
+    // a domino lying flat (origin at the middle of its back), stood up in a rack's place at (0.3, 0.003, 0.016)
+    const tile = obj("tile", { transform: T([1, 0, 1], [0, 0, 0]), hint: { bounds: { min: [-0.0125, 0, -0.025], max: [0.0125, 0.0095, 0.025] } } });
+    const land = { point: [0.3, 0.003, 0.016], yaw: Math.PI / 2, rotation: STAND, snapped: true };
+    const rested = restInFrame({ tile }, ["tile"], land);
+    const plan = planCopy({ objects: { tile }, roots: ["tile"], target: { land: rested } });
+    const W = plan.items[0].world;
+    // standing: across (X) is up, so its underside is at −0.0125 below its origin; its face's middle, 4.75 mm in
+    close([W[12], W[13], W[14]], [0.3, 0.003 + 0.0125, 0.016 - 0.00475]);
+    // not snapped, no frame, several objects, no hint: untouched
+    expect(restInFrame({ tile }, ["tile"], { ...land, snapped: false })).toEqual({ ...land, snapped: false });
+    expect(restInFrame({ tile }, ["tile"], { ...land, rotation: null })).toEqual({ ...land, rotation: null });
+    expect(restInFrame({ tile, b: tile }, ["tile", "b"], land)).toBe(land);
+    const bare = obj("bare", { transform: T([1, 0, 1]) });
+    expect(restInFrame({ bare }, ["bare"], land)).toBe(land);
   });
 
   // a mast (tilted, scaled) with a boom under it, on a hull in the source

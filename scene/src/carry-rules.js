@@ -139,6 +139,40 @@ export function placeConnector(c, m) {
   return { position, rotation: null, yaw: yawOfDirection(r[0] * fx + r[8] * fz, r[2] * fx + r[10] * fz), tags };
 }
 
+/**
+ * How near level a unit axis may be (the size of its vertical part) and still
+ * count as level, neither up nor down: a frame read from a GLB's 32-bit
+ * floats, or decomposed and composed again, comes out a few 1e-8 off.
+ */
+export const LEVEL = 1e-6;
+
+/** Which way its face (+Y) points: +1 up, −1 down, 0 level (within LEVEL). */
+export function faceOf(m) {
+  const v = m[5] / (Math.hypot(m[4], m[5], m[6]) || 1);
+  return v > LEVEL ? 1 : v < -LEVEL ? -1 : 0;
+}
+
+/**
+ * `W` turned into a connector's frame (`rotation`, Euler XYZ, in the frame
+ * W is in): its body axes become the frame's, its own scale and its origin
+ * kept. The frame as given, or the frame turned over about its own length
+ * (its +Z, as F turns a piece) when that keeps the face the way `face` asks
+ * (+1 up, −1 down, 0 either) and the frame's own face isn't level: a frame
+ * that stands a piece on edge says alone which way it faces. Pure.
+ */
+export function intoFrame(W, rotation, face = 0) {
+  const F = composeMatrix({ rotation });
+  const up = F[5] > LEVEL ? 1 : F[5] < -LEVEL ? -1 : 0;
+  const over = up !== 0 && face !== 0 && up !== face;
+  const out = W.slice();
+  for (let k = 0; k < 3; k++) {
+    const s = Math.hypot(W[4 * k], W[4 * k + 1], W[4 * k + 2]);
+    const sign = over && k < 2 ? -1 : 1; // turned over about its Z: X and Y reversed
+    for (let r = 0; r < 3; r++) out[4 * k + r] = F[4 * k + r] * s * sign;
+  }
+  return out;
+}
+
 /** Does a connector with these tags take an object with those? (No tags on the connector: anything.) */
 export function accepts(connectorTags, objectTags) {
   if (!connectorTags?.length) return true;

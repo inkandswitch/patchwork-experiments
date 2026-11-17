@@ -15,8 +15,11 @@
 // places freely. Q / E turn it 45°, F turns it over (in the air: it rises
 // and turns, rather than snapping); Escape puts it back. Every running
 // extension's `landing` may ask for it face up where it's going (a card
-// carried into your own hand). Put down, it rests on the highest surface
-// under its footprint, and only that final pose is written.
+// carried into your own hand) or lying flat (a domino out of its rack), and a
+// connector with a whole frame takes it into that frame (a rack's place
+// stands a tile on edge): how it lies is landedPose's (./carry-math.js,
+// STAGE.md "Landing"). Put down, it rests on the highest surface under its
+// footprint, and only that final pose is written.
 //
 // Flip (F over a piece, or the menu) is carry's verb: it turns one over where
 // it lies: it rises, turns over in the air and comes back down on whatever is

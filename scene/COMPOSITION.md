@@ -2405,8 +2405,8 @@ second time under the GLB's `extras["tabletop.slots"]`; that copy is gone.
    The table has a frame 5e-7 off straight up (no yaw) and one 2e-6 off (a
    yaw), and a GLB case whose float32 node leaves 6e-8 of noise.
 5. **The hand's candidates carry the frame** (`snapCandidates` gives
-   `rotation` in the carry's frame beside `world` and `yaw`). Nothing turns
-   a piece by it yet (step 4 of this lane). The candidate's yaw is the
+   `rotation` in the carry's frame beside `world` and `yaw`), and the carry
+   now lands a piece in it ("Decisions, landing" below). The candidate's yaw is the
    placed frame's: the same as before for every upright object, and
    correct, where the old sum wasn't, for a tilted one.
 6. **No LOOK_VERSION bump in Tabletop.** A table GLB already drawn still
@@ -2426,3 +2426,82 @@ second time under the GLB's `extras["tabletop.slots"]`; that copy is gone.
    probes' (dominoes.mjs, table.mjs).
    So Tabletop now needs a scene that keeps the frame: syncing one without
    the other leaves rack places yaw-only (a drawn tile would lie flat).
+
+## Decisions, landing (2026-11-16): decided unattended (2026-11-16, lane/n11), for the lead
+
+A carry lands a piece in a connector's frame, and `landing()` can lay it
+flat (STAGE.md "Landing"; `landedPose`, `layFlat`, `intoFrame` in
+`src/parts/carry-math.js` and `src/carry-rules.js`). This retires the
+stage gap "`landing()` can only say faceUp", Tabletop's README "Not yet"
+item 1 and the U-then-carry dance: a domino carried out of its rack goes
+down flat in one move, and one carried into a rack's place stands there.
+
+1. **The landed pose is a pure function** of how the piece is held (as
+   picked up, with every Q/E and F since: `own`), the snap (frame, yaw or
+   none) and the merged answer. The carry keeps `own` and derives what it
+   shows from it on every move. With no snap and no answer that is `own`
+   exactly, so every carry today that meets no snap and no rule is
+   unchanged. The 48-case table (start {flat up, flat down, standing facing
+   +Z, standing facing −X} × answer {none, faceUp, flat, both} × snap {none,
+   yaw-only, framed standing}) is worked out by hand and run twice, on
+   `landedPose` and through `createCarry`; the old carry fails 26 of the
+   carry rows, every one with a frame or an answer that changes the pose.
+2. **A snap's turn no longer sticks.** The old carry turned its own pose to
+   a connector's yaw and kept it after the pointer left (the face-up turn
+   it already undid). Now leaving a snap gives back the pose as held, as
+   the face-up rule always did, so what lands never depends on which snaps
+   the pointer crossed on the way. Q/E over a snap turns what is held,
+   seen once it leaves.
+3. **Order: flat, then faceUp, then the frame or the yaw.** The yaw and the
+   two body turns commute (both are about axes the vertical turn carries
+   along), so only flat-before-frame is a choice: it matters only for a
+   frame that lies face down, where a standing piece then goes in face up.
+   That keeps one rule with no case for frames.
+4. **A frame keeps the piece's face, unless it stands it.** Into a frame
+   whose face is up or down, the piece goes face up or face down as it is
+   (or as faceUp asks): the frame, or the frame turned over about its own
+   length. A frame whose face is level (within `LEVEL`, 1e-6: a rack's
+   place, read from 32-bit floats) says alone which way the piece faces;
+   F over such a place changes nothing until the piece leaves it. A flat
+   frame with a face-down card is exactly today's yaw turn.
+5. **faceUp turns over only a face that points down.** The old rule turned
+   over anything not face up, so a standing piece asked faceUp spun about
+   its length to face the other way. Now a level face is left alone (flat
+   lays it; a frame stands it).
+6. **`flat` means the broadest face down**: the thinnest body axis (box ×
+   the piece's scale) upright by the smallest turn about a level axis; of
+   axes equally thin, the most upright already, then Y, X, Z, so it is the
+   identity on a piece lying flat. The axis keeps up or down; level (a tile
+   on edge, within `LEVEL`) goes up, as Lay flat does. Its length keeps its
+   heading wherever it was level.
+7. **F turns over what you see.** `own` becomes the shown pose (after flat
+   and faceUp) turned over, so F over a tile laid flat by the rule leaves
+   it face down, and F over a card a hand turned face up leaves it face
+   down (the old carry did the same by turning `state.W`). After F, faceUp
+   is no longer heeded (unchanged) but `flat` still is: `landing` is asked
+   on every move now, not only while faceUp could matter, which also gives
+   the bag its answer after a flip.
+8. **Flips count what shows.** The turn-over animation runs when the
+   faceUp turn starts or stops showing, and on F; a faceUp turn hidden by
+   a standing frame isn't counted.
+9. **Paste and the parts bin take the frame** (step 3 only: flat and faceUp
+   are the carry's). A part goes into a connector's frame as the frame
+   gives it; one copied object goes in face up or down as it was
+   (`moveBy`); several copied objects take only the yaw, since a frame for
+   a handful has no meaning. A copied object going into a frame rests the
+   carry's way when it has a load hint (`restInFrame`: footprint over the
+   connector, underside at its height), since a connector is made for an
+   origin at the base only while the piece lies as drawn.
+10. **Tabletop answers `flat: true` for any card thick enough to stand**
+   (`canStand`: a domino, never a card), wherever it's carried, plus
+   faceUp in your own hand as before. A rack's place stands it by its
+   frame, so "anywhere but a rack slot" needs no knowledge of slots in
+   `landing`. A tile someone stood on the felt with U goes down flat when
+   carried; standing it again is U. Laying a tile flat out on the felt
+   shows its face to everyone, as playing it does; carrying it out with F
+   pressed lays it face down instead.
+11. **The answer shape is `{ faceUp?, flat? }`**, flat meaning "on the
+   broadest face". Standing comes from a connector's frame, not from
+   `landing`. A general `up` axis in the piece's body frame is the
+   alternative: a question for the lead.
+
