@@ -65,31 +65,7 @@ describe.each([
   }, 30_000);
 });
 
-test("a late joiner starts from the newest checkpoint and reaches the same state", async () => {
-  const net = new SimNet({ latency: WAN, loss: LOSSY });
-  const { peers, url } = await session(net, 2);
-  peers.forEach((p, i) => {
-    p.port = i;
-    p.host.sit(i);
-  });
-  await run(peers, 4000);
-  const d = peer(net, "d", SKEWS[3]);
-  const opening = open(d, url);
-  // The others keep playing while d loads.
-  let done = false;
-  opening.then(() => (done = true));
-  while (!done) await run(peers, FRAME);
-  peers.push(d);
-  expect(d.host.status.start).toBeGreaterThan(0);
-  expect(d.host.status.start % 35).toBe(0);
-  await run(peers, 2000);
-  d.port = 2;
-  d.host.sit(2);
-  await run(peers, 2000);
-  await settle(peers);
-}, 30_000);
-
-test("a late joiner on a time budget catches up over several frames, to the same state", async () => {
+test("a late joiner starts from the newest checkpoint and, on a time budget, catches up over several frames, to the same state", async () => {
   const net = new SimNet({ latency: WAN, loss: LOSSY });
   const { peers, url } = await session(net, 2);
   peers.forEach((p, i) => {
@@ -105,6 +81,9 @@ test("a late joiner on a time budget catches up over several frames, to the same
   let done = false;
   opening.then(() => (done = true));
   while (!done) await run(peers, FRAME);
+  // it starts from the newest checkpoint
+  expect(d.host.status.start).toBeGreaterThan(0);
+  expect(d.host.status.start % 35).toBe(0);
   const behind = d.host.target() - d.host.tick;
   expect(behind).toBeGreaterThan(10);
   const steps = [];

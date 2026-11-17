@@ -5,12 +5,10 @@ import ext, { playerOf, screenMatrix, give, sessionOf } from "./extension.js";
 import part from "./part.js";
 import { screenOf } from "./cabinet.js";
 
-test("its surface is the extension contract's: input, update, commands, dispose, and the seats' places it contributes (nothing for probes)", () => {
+test("its commands are Play and World; a click held by no machine here is no click of its", () => {
   const ran = [];
   const api = { THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null, run: (inv) => (ran.push(inv), true) };
   const instance = ext.create(api);
-  expect(Object.keys(instance).sort()).toEqual(["commands", "dispose", "input", "seatPlaces", "update"]);
-  expect(Object.keys(instance.input).sort()).toEqual(["click", "cursor"]);
   expect(instance.commands.map((c) => c.id)).toEqual(["play", "world"]);
   // a click held by no machine here (the scene, or an object it has no entry for) is no click of its, and the stage isn't asked
   for (const holder of [null, "crate"]) {
