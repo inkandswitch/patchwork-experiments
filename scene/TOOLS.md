@@ -1263,7 +1263,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   one on the strip adds nothing to the doc; Escape inside a doc pane is
   its own; fold while docked {docked, docked then ×, docked under another
   tool} (3 rows) with never two live views of one key; Show; the head's
-  payload is exactly the three types. Mutations: inline while docked (2
+  payload is exactly the three types (four since the review fixes below). Mutations: inline while docked (2
   fail), the strip's drop bubbling (7), no dispose with the view (1), no
   one-pane-per-key (1), toolId dropped by dnd (2). Full scene suite
   1672/1672 (115 files; one vitest "onTaskUpdate" RPC timeout under
@@ -1273,7 +1273,33 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   the pane, × closes it and unfolds the section) and editor-run 90/90. `sections-check.mjs`
   gains the drag to the strip (CDP), Dock, a selection and Look keeping
   the pane, × unfolding the section, and a doc from Patchwork's sidebar
-  docking; it waits for the synced build.
+  docking; it waits for the synced build. Review fixes (2026-11-17): a
+  section's head also carries `application/x-scene-section` (`dnd.js`
+  `ownDrag`, refused by the add and the tree as a row's drag is), so let
+  go anywhere in the stage but the strip it is nothing, the tree in its
+  own pane included; a pane is titled `<object> · <label>` and keeps the
+  title it was first docked with; a dock with nothing selected tells the
+  pointer router.
+- **Sidebar 4 (lane/sidebar, 2026-11-17): the sweep.** scene-stage (N6,
+  N8, N9) merged into the lane; its Decisions 11 to 15 keep their numbers
+  and the sidebar's become 16 to 18. A repo grep (outside agent/,
+  model-viewer/, patchwork-frame-tiling/) finds `scene.outline`, the
+  Objects toggle and `open-source`/`open-file`/`open-linked`/`open-about`
+  only in the docs saying they went and in tests and probes checking they
+  are gone; the dice, bag, tabletop, arena and doom probes already name
+  the inspector. DESIGN.md's general parts say inspector, not outline;
+  COMPOSITION.md's traversal names a section's Open. *Proves*:
+  `src/removed.test.js`, a static check over src/'s non-test sources for
+  the eight removed things (the extension, the toggle, the tab title, the
+  four buttons, the hand-made About, controls and Open file), each row
+  failing on the sources before step 1 (8 of 8). `pnpm build` passes.
+  Full scene suite 2047/2047 (119 files) on the merged tree. Local probes
+  (built tool): editor-run 90/90, xdnd-run 69/69, parts-run 20/20, and
+  dice's dice.mjs 60/60 (the inspector's tab and Edit die's panel side by
+  side). Not run: the real-Patchwork checks (realcheck-editbody,
+  grip-check, enter-check, sections-check, dice.mjs under publish/), which
+  need the integrator's build and pushwork sync of scene. No doc shape
+  changed: nothing republished, the folder untouched.
 
 ## What it costs
 
