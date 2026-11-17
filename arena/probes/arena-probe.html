@@ -154,7 +154,7 @@ try {
     drawn(w) {
       const out = { avatars: [], tracers: 0 };
       for (const g of dbgOf(w).viewport.layers.get("arena") ?? []) for (const c of g.children) if (c.isLine) out.tracers++;
-      for (const g of dbgOf(w).viewport.layers.get("walk") ?? []) for (const c of g.children) if (c.isGroup) out.avatars.push(c.position.toArray().map((v) => +v.toFixed(3)));
+      for (const g of dbgOf(w).viewport.layers.get("walk.people") ?? []) for (const c of g.children) if (c.isGroup) out.avatars.push(c.position.toArray().map((v) => +v.toFixed(3)));
       return out;
     },
     /** how many tracers (lines) the arena has ever drawn in a view: they live

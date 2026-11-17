@@ -5,7 +5,8 @@
 //
 //   group "<map>"            its About: what was made, what doesn't work here, the WAD's notice
 //   └ <map>                  { map, door: null }, locked
-//     ├ Door <sector> × n    { map, door: <sector> }, locked; a slide joint (joints.slide) that opens it
+//     ├ Door <sector> × n    { map, door: <sector> }, locked; a slide joint (joints.slide) that opens it,
+//     │                      and a moving part that blocks walkers where it's drawn (walk.moves { blocks })
 //     ├ Exit switch × n      { map, line: <line> }, locked; an exit (traversal.exit) leading nowhere yet
 //     └ Spawn point          arena's pad (the walk body's spawn), at the player 1 start (only when the map is the scene: below)
 //
@@ -24,7 +25,10 @@
 // something), and until it says, the switch offers nothing.
 //
 // The doom package depends on none of joints, traversal, arena and walk: it
-// writes the slide in the shape joints documents, the exit in the shape
+// writes the slide in the shape joints documents, its door a moving part in
+// the shape walk documents (a door slides by pose hold, so a walker must meet
+// it where it's drawn, not bake it shut: walk/DESIGN.md, "The bake, Input";
+// joints names no walk, doom, which uses both, does), the exit in the shape
 // traversal documents and the level trait in the shape arena documents, and
 // asks for arena's spawn part by id; without arena, there is no spawn (and
 // no level to spawn in), which is nothing lost. Walking is the walk body's
@@ -45,6 +49,9 @@ export const exitTrait = () => ({ verb: "Exit" });
 
 /** A Doom angle (degrees, 0 east, counter-clockwise) as a turn about +Y that faces an object's -z that way. */
 export const yawOf = (angle) => ((angle - 90) * Math.PI) / 180;
+
+/** The walk package's moving part: a door blocks walkers where it's drawn, and is never floor. */
+const MOVES = "walk.moves";
 
 /** The slide that opens a door: up its parent's +Y by its travel, at its speed, closing itself after its wait (joints.slide). */
 export function slideOf(door) {
@@ -141,7 +148,7 @@ export async function layOutMap(ctx, { url, doc, handle, group = null, at = null
       parent: root,
       render: render(door.sector),
       transform: { position: placeIn(origin0, anchorOf(model, door.sector)), rotation: [0, 0, 0], scale: 1 },
-      fields: { locked: true, traits: { "joints.slide": slideOf(door) } },
+      fields: { locked: true, traits: { "joints.slide": slideOf(door), [MOVES]: { blocks: true } } },
     });
   }
   for (const e of model.specials.exits) {
