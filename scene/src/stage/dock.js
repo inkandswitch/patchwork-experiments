@@ -28,7 +28,7 @@
 //
 // A document can be docked as well as an element (TOOLS.md §6, "Documents
 // in the drawer"): dockDocument({ url, toolId, title }) docks the host's view
-// of it (embed.js documentView) in a pane of the editor kind, keyed by
+// of it (embed.js documentView, in a documentBox) in a pane of the editor kind, keyed by
 // docKey(url, toolId), so docking one key again only shows (keeping its title)
 // its tab, and there is at most one pane per key. These panes are the view's
 // (api.view.dock), not an extension's: no extension stopping closes them,
@@ -41,7 +41,7 @@
 // below, the widths' `kindOf`, `widthFor`, `dragged` and `stepped`, and
 // createDrawer, which keeps an element per docked key.
 
-import { EMBED_ATTR, documentView } from "../embed.js";
+import { EMBED_ATTR, documentBox, documentView } from "../embed.js";
 import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 
 /** The owner of the documents docked in the drawer: the view's, so no extension's closeOwner reaches them. */
@@ -358,7 +358,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     // docked already: shown, under the title it was docked with
     const had = paneOf(key);
     if (had) return dock(DOCS, had, { doc: key });
-    const content = make("div", "stage-drawer-doc");
+    const content = documentBox("stage-drawer-doc");
     content.append(documentView({ url: u, toolId: tool, label: title }));
     return dock(DOCS, content, { title: title || "Document", embed: true, doc: key });
   }

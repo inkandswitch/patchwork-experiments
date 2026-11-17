@@ -31,9 +31,10 @@ const REMOVED = [
   ["the linked scene's Open button", /\bopen-linked\b/],
   ["About's own Open button (About is a section now)", /\bopen-about\b/],
   ["the inspector's hand-made About, controls and Open file", /\b(fillAbout|mountControls|openFile)\b/],
+  ["their classes (About's title, Build's head, the controls' embed), in markup or CSS", /\b(about-title|build-head|controls-embed)\b/],
 ];
 
-describe("nothing removed by the one pane and its sections is referred to in src/ (8 rows)", () => {
+describe("nothing removed by the one pane and its sections is referred to in src/ (9 rows)", () => {
   const files = sources();
   it("reads the package's own sources", () => {
     expect(files.map(([name]) => name)).toEqual(expect.arrayContaining(["index.js", "parts/inspector.js", "parts/outline.js", "controls-tool.js"]));

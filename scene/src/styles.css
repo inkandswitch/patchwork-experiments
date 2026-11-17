@@ -1002,14 +1002,6 @@
   word-break: break-word;
 }
 
-.scene-tool .controls-embed:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  min-height: 2rem;
-}
-
-.scene-tool .controls-embed > patchwork-view:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: block;
-}
-
 .scene-tool .status-line .notes:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: var(--scene-muted);
 }

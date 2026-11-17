@@ -361,7 +361,7 @@
   min-height: 0;
 }
 
-.scene-stage .stage-drawer-doc > .doc-placeholder:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .stage-drawer-doc > .doc-placeholder {
   margin: 8px;
 }
 

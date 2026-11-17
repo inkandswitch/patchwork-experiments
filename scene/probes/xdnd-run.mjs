@@ -450,6 +450,7 @@ async function main() {
     const strip = await P(`strip("a")`);
     const s0 = await P(`section("a", "source")`);
     check("sourceSectionInline", !!(await P(`sectionHead("a", "source")`)) && s0?.inline && !s0.docked, s0);
+    const lookInline = await P(`look("a", "inline")`);
     // let go on a row of the tree, in the same pane: nothing (the head's drag is the scene's own, never added)
     {
       const row = await P(`row("a", "crate")`);
@@ -470,6 +471,10 @@ async function main() {
     check("headDragCarriesADocument", ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain", "application/x-scene-section"].every((t) => (types ?? []).includes(t)), types);
     check("droppedOnStripDocks", sameJSON(d1?.docs, [`${files.stl}|`]) && d1.panes === 1 && d1.tabs.some((t) => t.endsWith(" · Source")) && d1.shown?.endsWith(" · Source") && d1.kind === "editor" && d1.embedded, d1);
     check("sectionFoldsWhileDocked", s1?.docked && !s1.inline && s1.away, s1);
+    // the scene's styles stop at a document's box, docked as inline: a `.label` in it isn't the scene's (absolute) label
+    const lookDocked = await P(`look("a", "docked")`);
+    report.detach.look = { inline: lookInline, docked: lookDocked };
+    check("dockedDocLooksAsInline", lookInline && lookInline.position !== "absolute" && sameJSON(lookDocked, lookInline), report.detach.look);
     check("stripDropAddsNothing", sameJSON(await P(`doc("a")`), before));
     await shot("8-source-docked");
     // the pane is the view's: another selection keeps it

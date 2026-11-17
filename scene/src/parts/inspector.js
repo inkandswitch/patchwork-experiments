@@ -36,8 +36,8 @@
 // object's Source, File or Linked scene, its Build controls, About:
 // inspector-model.js inspectorDocuments). Each is a section: a head with its label, a fold
 // (the viewer's pref), Dock and Open (patchwork:open-document, the main view),
-// and the doc in a <patchwork-view> inside the stage's embed marker, so its
-// keys are its own; where the host has no <patchwork-view> (a local
+// and the doc in a <patchwork-view> inside a documentBox (embed.js), so its
+// keys and its look are its own; where the host has no <patchwork-view> (a local
 // probe, a test), a placeholder names the doc (embed.js documentView). A
 // section stays mounted while it's shown, however the sections around it
 // come and go. Dock, or the head dragged (a Patchwork document) onto the
@@ -67,7 +67,7 @@ import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
-import { EMBED_ATTR, documentView } from "../embed.js";
+import { documentBox, documentView } from "../embed.js";
 import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
@@ -461,7 +461,7 @@ function create(api) {
 
   /**
    * One section: a head (its label, which folds it, Dock and Open) and, while
-   * it's open, the document (embed.js documentView, in the embed marker). Open
+   * it's open, the document (embed.js documentView, in a documentBox). Open
    * asks the host to show the document as the main view, in the section's
    * tool; Dock, or dragging the head onto the drawer's tab strip, puts it in a
    * drawer pane of its own (api.view.dock), and while it's docked there the
@@ -470,8 +470,9 @@ function create(api) {
    * (dnd.js), so anything that takes one (the tab strip, Patchwork's frame)
    * takes it, and as the scene's own (SECTION_MIME), so nothing in a scene
    * adds it: let go anywhere else in the stage, it's nothing. A pane is
-   * titled after what the section is of (`title`: "Built · Source"), so two
-   * objects' Sources are two tabs told apart.
+   * titled after what the section is of (`title`: "Built · Source"), and
+   * keeps its first title: one pane per docKey, not per object (TOOLS.md
+   * Decision 18 says where that falls short).
    */
   function sectionView(doc) {
     const fold = el("button", { type: "button", class: "section-fold", "aria-expanded": "false" });
@@ -482,7 +483,8 @@ function create(api) {
     const head = el("div", { class: "panel-head section-head", draggable: "true", title: "Drag to the drawer's tabs to dock it" }, fold, el("span", { class: "section-acts" }, dock, open));
     const show = el("button", { type: "button", class: "button link section-show", title: "Show its pane in the drawer" }, "Show");
     const away = el("p", { class: "hint section-docked", hidden: true }, "In the drawer · ", show);
-    const embed = el("div", { class: "about-embed section-embed", [EMBED_ATTR]: "", hidden: true });
+    const embed = documentBox("section-embed");
+    embed.hidden = true;
     const root = el("section", { class: "doc-section", dataset: { ext: doc.ext, section: doc.id } }, head, away, embed);
     let view = null;
     let shown = null;
@@ -538,7 +540,7 @@ function create(api) {
       update(target) {
         const list = documentsFor(api.collect("documents"), target, api.context(null), ID);
         const docked = new Set(api.view.get().drawer?.docs ?? []);
-        // a drawer pane is titled after the object (or the scene) as well as the section
+        // a drawer pane is titled after the object as well as the section (the scene's: the label alone)
         const of = target == null ? null : api.nameOf(target) || "Untitled";
         const paneTitle = (label) => (of ? `${of} · ${label}` : label);
         const next = new Map();

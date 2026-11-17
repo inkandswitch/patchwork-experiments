@@ -5,6 +5,11 @@ import { describe, it, expect, vi } from "vitest";
 import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, kindOf, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./dock.js";
 import { EMBED_ATTR } from "../embed.js";
 
+// Does a stage-scoped style rule reach `el`? Every one is `.scene-tool <x>:where(:not(.about-embed *),
+// .about-embed .scene-tool *)` (embed-css.test.js); spelled out, since happy-dom can't match a complex
+// selector inside :not
+const sceneStyled = (el) => el.matches(".scene-tool *") && (!el.parentElement.closest(".about-embed") || el.matches(".about-embed .scene-tool *"));
+
 const KEYS = ["a", "b", "c"];
 const ACTS = { docked, dockedBehind, shown, undocked };
 const STEPS = Object.keys(ACTS).flatMap((act) => KEYS.map((key) => [act, key]));
@@ -560,21 +565,25 @@ describe("documents docked in the drawer", () => {
 
   function mount() {
     const seen = [];
+    // inside the view's root, as the stage mounts it (view.js), so the scene's style rules could reach in
     const parent = document.createElement("div");
+    parent.className = "scene-tool scene-stage";
     document.body.append(parent);
     const drawer = createDrawer({ parent, onChange: (d) => seen.push(d) });
-    // the stage's own chrome, already there (the inspector)
-    drawer.dock("t.inspector", document.createElement("div"), { title: "Inspector", embed: false });
+    // the stage's own chrome, already there (the inspector): the scene's styles are its own
+    const chrome = document.createElement("div");
+    drawer.dock("t.inspector", chrome, { title: "Inspector", embed: false });
+    expect(sceneStyled(chrome)).toBe(true);
     return { drawer, seen, parent };
   }
   const tabNames = (d) => [...d.el.querySelectorAll(".stage-drawer-tab-name")].map((b) => b.textContent);
-  /** each docked document's pane: [its view's doc-url|tool-id, is it embedded?] */
+  /** each docked document's pane: [its view's doc-url|tool-id, is it embedded (its keys its own) and unstyled by the scene (its look its own)?] */
   const docPanes = (d) =>
     [...d.el.querySelectorAll(".stage-drawer-pane")]
       .filter((p) => p.querySelector(".stage-drawer-doc"))
       .map((p) => {
         const v = p.querySelector(".stage-drawer-doc > patchwork-view");
-        return [`${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`, p.hasAttribute(EMBED_ATTR)];
+        return [`${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`, p.hasAttribute(EMBED_ATTR) && !sceneStyled(v)];
       });
   const shownTab = (d) => d.el.querySelector('[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null;
 
@@ -597,7 +606,7 @@ describe("documents docked in the drawer", () => {
       expect([name, shownTab(drawer)]).toEqual([name, on]);
       // what the view publishes (view.drawer.docs) is what's docked, in docking order
       expect([name, seen.at(-1).docs]).toEqual([name, docs]);
-      // a pane each, each the host's view of its doc and tool, embedded (its keys its own)
+      // a pane each, each the host's view of its doc and tool, embedded: its keys and its look its own, as inline
       expect([name, docPanes(drawer)]).toEqual([name, docs.map((k) => [k, true])]);
     }
     // its pane is an editor's (the width it docks at)

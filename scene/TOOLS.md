@@ -1299,7 +1299,17 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   side). Not run: the real-Patchwork checks (realcheck-editbody,
   grip-check, enter-check, sections-check, dice.mjs under publish/), which
   need the integrator's build and pushwork sync of scene. No doc shape
-  changed: nothing republished, the folder untouched.
+  changed: nothing republished, the folder untouched. Review fixes
+  (2026-11-17): a docked doc's box was outside the style guard, so the
+  scene's `.label`, `.button` and the like restyled the docked tool; both
+  boxes are now `documentBox` (Decision 17). *Proves*: dock.test.js's
+  7-row sequence checks each docked view is unstyled by the scene (fails
+  without the fix); xdnd-run's `dockedDocLooksAsInline` compares a probe
+  `.label button`'s computed look docked and inline (without the fix,
+  docked is `position: absolute`, 69/70; with it 70/70). removed.test.js
+  gains the removed classes (a dead `.controls-embed` rule in styles.css
+  went). Full suite 2048/2048; editor-run 90/90. The real-Patchwork checks
+  are still owed (integrator's build and sync).
 
 ## What it costs
 
@@ -1992,10 +2002,14 @@ The project lead decided the five open questions on 2026-11-12.
       whole field list is rebuilt when the selected object becomes another
       kind of thing (its render doc, routing or link-ness changes), and
       its sections are remounted then.
-    - The sections' embed boxes keep the stage-wide CSS guard's class,
-      `.about-embed`, which some thirty stylesheets in eight packages name;
-      renaming it (to the `data-stage-embed` marker it duplicates) waits
-      for the parallel lanes to land.
+    - A document's box, inline or docked, is `embed.js` `documentBox`:
+      it carries both the `data-stage-embed` marker (its keys are its own)
+      and the stage-wide CSS guard's class, `.about-embed` (every
+      stage-scoped rule, in some thirty stylesheets in eight packages,
+      stops at it), so a document looks the same inline and docked. The
+      two aren't one marker: a docked extension panel (a die's, a bag's)
+      is `data-stage-embed` for its keys but keeps the scene's styles.
+      Renaming the class waits for the parallel lanes to land.
     Questions for the lead: which tool shows a Source (now its type's
     default; should a provider name one, a `sourceTool` in its
     `scene:source` metadata)? For an object fixed at a version, the Source
@@ -2048,11 +2062,17 @@ The project lead decided the five open questions on 2026-11-12.
       tree, in the same pane, used to add it). Adding a section's doc to
       the scene by dragging is the lead's to opt into (a question, below).
     - **A pane is titled after its object**: `<object> · <label>` ("Hull ·
-      Source"; the label alone for the scene's), so two objects' Sources
-      are two tabs, and the drawer's state (by title) tells them apart.
+      Source"; the label alone for the scene's), so two objects' Sources,
+      when they are different documents, are two tabs with two titles.
       Docking a doc that's docked shows it under the title it was first
-      docked with (a doc dropped as "My notes" stays that). Decided
-      unattended (2026-11-17, lane/sidebar), for the lead.
+      docked with (a doc dropped as "My notes" stays that). Its limits, as
+      built: a pane is one per `docKey(url, toolId)`, not per object, so
+      two objects sharing a source (two instances of one built object)
+      share one pane, titled after whichever docked it first; two objects
+      of one name give two tabs of one title, which `view.drawer.tabs` (by
+      title) can't tell apart (`view.drawer.docs`, by key, can); a renamed
+      object's pane keeps its old name. Decided unattended (2026-11-17,
+      lane/sidebar), for the lead.
     - **The drawer changing tells the pointer router**: any change of
       `view.drawer` (not only a selection) has the router look again, so a
       pane docked by a command in a pointer-locked body frees the pointer,

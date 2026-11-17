@@ -1065,7 +1065,10 @@ a selected dimension too, whatever order the two run in.
   tool, such as an inspector section) are that tool's. Whoever embeds marks
   the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
   `src/embed.js`); every pane of the drawer (`dock`, and a docked
-  document's, `view.dock`) is marked so.
+  document's, `view.dock`) is marked so. A document the stage shows,
+  inline or docked, sits in `documentBox`, which also carries the class
+  every stage-scoped style rule stops at (`.about-embed`), so it looks
+  the same in either place.
 - **One key order** (TOOLS.md §5; `src/keymap.js`): a focused field (the
   DOM's), the open gesture's declared keys (a carry's Q/E/F), the held
   tool's, the top body's, then the chain, where the key map (`scene.keys`)
@@ -1688,8 +1691,11 @@ target, which the inspector shows as sections):
   takes a Patchwork document takes it (the drawer's tab strip docks it, as
   Dock does), and nothing in a scene adds it: let go anywhere else in the
   stage (its pane, the tree, the view), it's nothing. Its pane is titled
-  after what the section is of, `<object> · <label>` ("Hull · Source"), so
-  two objects' sections are two tabs told apart. While its `docKey(url, toolId)` is
+  after what the section is of, `<object> · <label>` ("Hull · Source"),
+  and keeps the title it was first docked with; there's one pane per
+  `docKey(url, toolId)`, not per object (two objects sharing a source
+  share one; two of one name give two tabs of one title, told apart only
+  by `docs`). While its `docKey(url, toolId)` is
   in `view.drawer.docs`, an open section shows "In the drawer · Show"
   (Show docks it again, which shows its tab) instead of the doc: a doc and
   tool has one live view in the stage, never two.

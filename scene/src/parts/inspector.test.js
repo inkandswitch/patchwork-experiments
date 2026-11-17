@@ -8,7 +8,7 @@ import inspector, { sectionPref, startBodies } from "./inspector.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, commandsKey, documentsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
-import { EMBED_ATTR } from "../embed.js";
+import { EMBED_ATTR, EMBED_CLASS } from "../embed.js";
 import { SECTION_MIME } from "../dnd.js";
 import { LINK } from "../stage/links.js";
 import { emptyScene } from "../test/empty-scene.js";
@@ -463,8 +463,8 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", T
       [`${ME}/about`, "About Boat", true, [m.info.url, null]],
       ["t.notes/notes", "Notes", true, [m.info.url, "notes"]],
     ]);
-    // each view sits inside the stage's embed marker: its keys are its own
-    for (const v of body().querySelectorAll(".doc-section patchwork-view")) expect(v.closest(`[${EMBED_ATTR}]`)).not.toBeNull();
+    // each view sits inside the stage's embed marker and its style guard: its keys and its look are its own
+    for (const v of body().querySelectorAll(".doc-section patchwork-view")) expect([v.closest(`[${EMBED_ATTR}]`) != null, v.closest(`.${EMBED_CLASS}`) != null]).toEqual([true, true]);
     await select("file");
     expect(sections()).toEqual([[`${ME}/file`, "File", false, null]]);
     await select("link");
