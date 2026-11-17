@@ -109,8 +109,8 @@
 }
 
 /* what the keys do here, top middle (the bottom is the panel's, and the
-   notices' toasts); before coming aboard, a status hint top left (below);
-   the way in is the bar's Come aboard, never a HUD button */
+   notices' toasts), aboard only; the way in is the bar's Come aboard, never
+   a HUD button */
 .scene-stage .sail-hud .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   left: 50%;
@@ -154,7 +154,9 @@
 
 /* not aboard yet: the panel shrinks to its dial, top left, clear of what's
    played at the bottom of the view (a seated player's hand of cards at a
-   table aboard her) */
+   table aboard her), and nothing else shows: the hint line is empty (what a
+   click on her does is the base's), and the way in is the bar of tools'
+   Come aboard, outside the view */
 .scene-stage .sail-hud[data-state="lobby"] .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
   top: var(--sail-gap);
   bottom: auto;
@@ -168,18 +170,6 @@
   width: 52px;
   height: 52px;
 }
-/* not aboard yet (looking about, or seated at something aboard: the view
-   rides it): the hint (only "Click her to come aboard", while a click does)
-   sits beside the dial, top left, and the middle of the view is the place's
-   (or the table's: the far seat's name tag). The way in is the bar of tools'
-   Come aboard, outside the view: nothing here is a button */
-.scene-stage .sail-hud[data-state="lobby"] .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  left: calc(var(--sail-gap) + 68px);
-  top: calc(var(--sail-gap) + 17px);
-  transform: none;
-  justify-items: start;
-}
-
 /* a sail's row on a ship that flies her main and jib apart: coloured by its
    trim (trim.js), so a glance says which sail wants attention */
 .scene-stage .sail-hud .sail-read dd[data-trim]:where(:not(.about-embed *), .about-embed .scene-tool *) {

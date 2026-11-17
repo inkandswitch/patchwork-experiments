@@ -231,9 +231,11 @@ try {
   // the canvas is something else's (the HUD's own nodes are pointer-events: none)
   const band = await js(`(() => { const v = __p.A.view, r = v.canvas.getBoundingClientRect(), hud = document.querySelector("#a .sail-hud"); const takers = new Set();
     for (let y = 2; y < 48; y += 4) for (let x = 2; x < r.width - 2; x += 8) { const e = document.elementFromPoint(r.left + x, r.top + y); if (e && hud?.contains(e)) takers.add(e.className || e.tagName); }
-    return { hud: !!hud, state: hud?.dataset.state ?? null, seated: !!hud?.hasAttribute("data-seated"), buttons: hud ? hud.querySelectorAll("button").length : null, hint: hud?.querySelector('[data-k="hint"]')?.textContent ?? null, takers: [...takers] }; })()`);
+    return { hud: !!hud, state: hud?.dataset.state ?? null, buttons: hud ? hud.querySelectorAll("button").length : null, hint: hud?.querySelector('[data-k="hint"]')?.textContent ?? null, takers: [...takers] }; })()`);
   report.numbers.hudBand = band;
   check("5: in Edit on her, sailing's HUD holds no button and takes no press along the canvas's top edge", band.hud && band.buttons === 0 && band.takers.length === 0, band);
+  // nor does it say "Click her to come aboard" (N11 step 10): in Edit a click selects her, and the HUD can't know the base
+  check("5: in Edit on her, sailing's HUD says nothing before you're aboard (the way in is the bar's Come aboard)", band.state === "lobby" && band.hint === "", band);
   const x = cr.left + want.x, y = cr.top + want.y;
   await b.move(x, y);
   await press(x, y, 1);
