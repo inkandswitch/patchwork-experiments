@@ -18,6 +18,7 @@ import {
   movedByEditor,
   sameTransform,
   specFor,
+  specKey,
   transformOf,
 } from "./sim.js";
 import { ANCHOR, HELM, SAIL, SHIP, WHEEL_TURNS, stationValue } from "./traits.js";
@@ -183,6 +184,29 @@ describe("createSim on a stage", () => {
     // the same spec, frame after frame, while nothing about her changes
     w.tick(1 / 60, 2);
     expect(a.sim.specOf(ids.hull)).toBe(spec);
+  });
+
+  it("stepped is her last step as taken on the computing view (its spec's key, its controls, the state it went on from, the state unrounded); null before her first step, and on a follower", async () => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const a = play(w.join("A"));
+    const b = play(w.join("B"));
+    expect([a.sim.stepped(ids.hull), b.sim.stepped(ids.hull)]).toEqual([null, null]);
+    const seen = [];
+    w.view("A").api.clock.process({ step: (_dt, t) => seen.push([t, a.sim.stepped(ids.hull)]) });
+    w.tick(1 / 60, 3);
+    expect(b.sim.stepped(ids.hull)).toBeNull();
+    expect(seen.length).toBeGreaterThan(0);
+    for (const [t, st] of seen) {
+      // her state at the grid point just stepped, unrounded: what read() publishes rounds it
+      expect(st.state.t).toBeCloseTo(t, 9);
+      expect(st.key).toBe(specKey(a.sim.specOf(ids.hull)));
+      expect(Object.keys(st.controls)).toEqual(expect.arrayContaining(["rudder", "sail", "sheet", "anchor"]));
+    }
+    // each step went on from the one before it, the very state; the first from her start, cold from the doc at t 0
+    seen.forEach(([, st], i) => (i ? expect(st.from).toBe(seen[i - 1][1].state) : expect(st.from).toMatchObject({ t: 0, velocity: expect.any(Array) })));
+    const last = seen.at(-1)[1].state;
+    expect(last.velocity.map((v) => Math.round(v * 1e3) / 1e3 + 0)).toEqual(a.sim.read(ids.hull).velocity);
   });
 
   it("steps on the clock's grid but holds each pose once a frame: a frame of fifteen steps is one hold each, where fifteen frames of one step would leave her", async () => {

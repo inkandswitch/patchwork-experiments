@@ -64,7 +64,7 @@ modules share.
 | `navcheck.js` | yes | Checking a bake: the oracle on the raw triangles, the bake properties B1–B7, the static checks C1–C9 |
 | `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
 | `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
-| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions) |
+| `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions, each moving in whole steps of world time: `wholeSteps`, "Determinism") |
 | `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
 
@@ -79,7 +79,11 @@ the jib, and on some seas the anchor breaks out with her well off the
 wind, so the step reports itself not exercised. Which seas, and why that
 is an open defect in her physics rather than a property of the probe, is
 under "Leaving the anchor" (the probe records its anchoring timeline,
-`measured.anchoring`, which `src/test/breakout.js` replays in node). `probes/camber-run.mjs` takes a
+`measured.anchoring`, which `src/test/breakout.js` replays in node). With
+`--trace <file>` it also writes every step of world time the computing
+view took, as taken, and `probes/trace-diff.mjs` names the first step two
+runs differ at ("Determinism": runs of one seed and sea are identical, step
+for step, through the leave step). `probes/camber-run.mjs` takes a
 hull drawn in camber (its built plugins, borrowed at dev time) from a bare
 sea to sailing: the Ship trait with her frame from her GLB, the parts
 dragged from the bin onto her deck, floating, sailing bow first, stood on
@@ -668,6 +672,37 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   `/Users/pvh/.claude/projects/-Users-pvh-dev-patchwork-base/5cc6c087-e4f2-4927-93fb-4f98c0b7eab2/recovered/loose/n6-step4-candidate-set-anchor-windlass.patch` (a set anchor and a
   bounded windlass), `n6-step4-heave-hybrid.patch` and
   `n6-step4-heave-world-vertical.patch` (the two heave switches), beside it.
+- *Run-to-run divergence: three causes, two of them sailing's, fixed where
+  they were* ("Determinism"). (1) A held station moves in whole steps of
+  world time: `wholeSteps` turns each frame's dt into whole 1/60 s steps,
+  the rest carried, for every held verb and the wheel (the verbs integrated
+  the frame's dt, whose last bits depend on how far the page's clock had
+  run). What it costs: at a display faster than 60 Hz the wheel and the
+  trims move every step rather than every frame (the physics reads them
+  once a step anyway). (2) `ctx.sea.wind` is the wind ambient's as it is
+  when read, made again only when the ambient changed (it was refreshed in
+  the frame's tick, which comes after the frame's steps, so a step could
+  read the last value's wind). (3) The probe's: the runner waits, in
+  paused frames, until both views read the seeds it wrote before it
+  resumes the world, and its keys wait until the page has seen them. The
+  scene's flush budget (a doc change reaches the extensions a frame late
+  once a frame has had its passes) is left as it is: in play, an edit a
+  frame late is right; only a run that must repeat cares, and the probe
+  waits for what it needs.
+- *The trace and `ctx.sim.stepped`.* `stepped(id)` is a read of her last
+  step as taken (key, controls, the state it went on from, the unrounded
+  state it reached), on the computing view only, beside `specOf`; the probe
+  page records it from a kept process of its own, registered after
+  sailing's, so only the computer records and it reads each step just
+  taken. Marks carry the last step's t, so a trace is byte-comparable; a
+  step that doesn't go on from the last one recorded (a start) also records
+  where it started and the water and wind it read there, which is what
+  named causes (2) and (3).
+- *The runner closes the simulator on a fixed frame* (the handoff check:
+  `sampleFrames`' `close`), where it closed it from a call racing the
+  sampling's frames. The handoff's remaining difference (one run in three)
+  is recorded under "Determinism", open: it is past the leave step, in the
+  stage's two-peer playback.
 
 ## Trim feedback
 
@@ -1855,6 +1890,128 @@ then sailing-run's verdict on the leave step holds only for the sea it ran
 on, and `breakout.slow.test.js` holds the diagnosis: its OPEN rows fail as
 soon as any of this is changed, and are rewritten with this section then.
 
+## Determinism
+
+Runs of sailing-run with one `--seed` and `--sea`, the world held until
+both views have loaded (`?held`), are the same world: every step of world
+time the computing view takes has the same controls and reaches the same
+state, to the bit, through the leave step and on to the simulator's
+handoff. Measured 2026-11-16 on sea 1, three traced runs on the final
+build: identical to the end of the leave step (2633 rows: every step and
+the runner's marks), two of them identical to the end of the run (13499
+rows), and every check passing (86) in all three. Before, five runs in six
+took one world and one another, identical until about 11 s into leaving
+the anchor, after which a 0.01 m/s difference grew; on the way to the fix,
+three more worlds showed up, each a step or a frame different.
+
+**The trace.** `sailing-run.mjs --trace <file>` (the page's `?trace`) keeps
+one row per ship per step of world time, on the computing view, as the step
+was taken (`ctx.sim.stepped(id)`: her spec's key, the controls she stepped
+with, her state unrounded), and the runner's marks (`{ mark, t }`, t the
+last step's, so a mark is on the grid too). A step that doesn't go on from
+the last one recorded (her first on a view: a start, warm or cold) adds
+where it started and what it read there: the water's seed and height and
+the true wind. `probes/trace-diff.mjs a b [--until <mark>]` names the first
+row the two differ at, and every field that differs there.
+
+**Three causes, in the order the trace found them.**
+
+1. *A held verb integrated the frame's dt* (sailing's). The first
+   difference between two runs on the old build was row 1310, world time
+   21.733 s, just after the "hoist" mark: `controls.sail`
+   0.0041666666666860695 against 0.004166666666656965, the halyard's first
+   frame. A held verb moved its value by `rate × dt`, `dt` the frame's; the
+   page's clock reads `now()` as start + frames × frameMs (scene
+   `manualTime`), and a frame's dt is the difference of two readings over
+   1000, whose last bits depend on how far the clock has run: one of four
+   values for a 60 Hz frame, 1/60 s give or take 3e-13 (a real browser's
+   frames differ far more). How many frames the page ran before the world
+   resumed depends on the wall, so each run's held keys put in values that
+   differ in their last bits, and the physics grew those. Fixed in
+   sailing: a held station moves in whole steps of world time
+   (`stations.js` `wholeSteps`, `HELD_STEP` = 1/60 s, the world's grid,
+   the one her physics steps on). Each frame's dt is added to what's
+   carried and the whole steps it completes are given back as
+   n × HELD_STEP, the same double for the same n. On the grid it is exact
+   by construction: from nothing carried, a dt within 1e-9 s of n steps
+   gives n steps and carries nothing, so the page's four dts all give one
+   step. Every held station uses it: `heldTrim` (the halyard, the sheets,
+   the jib's sheet and furl), `heldWeigh` (the windlass) and the wheel.
+   Held: `stations.test.js` (a finite table of frames in and steps out,
+   and the halyard and windlass at the page clock's three offsets) and
+   `aboard.slow.test.js` (B's keys over the same world steps from three
+   offsets: every step the same, to the bit); both fail with the frame's
+   dt put back.
+2. *The world's first step read the template's sea, or the probe's*
+   (the probe's, against the scene's flush budget). The runner writes the
+   Sea's and the weather's seed into the doc and resumes the world in its
+   next call. A doc change reaches a stage's extensions at once (a
+   microtask) only while fewer than three passes have run since its last
+   frame (scene `stage.js` `requestFlush`, `UI_PASSES`); past that it waits
+   for the next frame, and how many passes loading's wall-timed arrivals
+   ran in the last frame is the wall's. The start rows showed it: most runs'
+   first step read the water of the template's own seed (696349617), some
+   seed 1's. Fixed in the probe: after writing the seeds, the runner steps
+   paused frames (no world time passes) until both views' water and wind
+   ambients carry them (a check of its own).
+3. *Then the first step read the right water and the last wind* (sailing's).
+   With the water right, runs still split at the first step: the start rows
+   read the same water and two winds, (−3.749, 4.779) and (−4.021, 5.200)
+   m/s at her origin at t 0, which are `createWind` at seed 696349617 and
+   at seed 1. `ctx.sea.wind` was made again only in the frame's tick
+   (play.js), which comes after the frame's steps, so a step after the
+   ambient changed read the last value's wind until the next tick. Fixed in
+   sailing: `ctx.sea.wind` is the ambient's as it is when read, made again
+   only when the ambient changed (the water package's reader already
+   refreshes at the read). Held: `sea-view.test.js` (five ambient values in
+   turn, read with no tick between: each the wind of its value), which
+   fails on the old getter.
+
+Each fix was proved the way the trace proves anything: the run with the
+fix applied equals, row for row, the odd run that had happened to read the
+right thing. With (2) applied, a run's trace equalled an earlier run whose
+first step had read seed 1's water and the last wind (18341 rows, to the
+end); with (3), it equals the run whose start row had read seed 1's water
+and wind, up to the handoff (13139 rows of 13499).
+
+**The keys.** After the leave step, two runs once differed at the
+helmsman's first wheel move (world time 45.667 s, the rudder −0.48 against
+−0.49: B's wheel a frame, 0.01, ahead in one). A key reaches the page as an
+input task of its own, which the dispatch's reply doesn't wait for, so a
+step sent straight after it can run first. The probe's keys
+(`probes/cdp.mjs`) now wait, on the wall and stepping no frames, until the
+page has captured them. Not seen again in the nine runs since; that the
+race was the cause is likely, not proved.
+
+**Ruled out by the trace.** `ctx.sea.clock` (it was `api.clock.t()`, and is
+gone); iteration order over maps keyed by ids (one ship; every row the
+same); B's station input reaching the computing view through presence or
+the doc (every control lands on the same step in every run through the
+leave step: the rows' controls are identical); a 0.25 s quantum in the
+verbs (there is none: 0.25 s is the most world time the ships catch up in
+one frame).
+
+**What's left.**
+- A view's own world time, `api.clock.t()`, is a sum of the frames' dt and
+  carries the same last-bit noise (the runner's clock reads at the same
+  moment of two runs: 1.016666666666628 s and 1.0166666666667448 s). The
+  physics never reads it (its steps are on the grid, at `k / 60`), but the
+  HUD, the crew, the looks and the runner's own waits compare it with
+  thresholds; a comparison within 1e-13 of its threshold could still split
+  two runs. None did in the runs measured. It is the scene's clock, not
+  sailing's.
+- At the simulator's handoff, past the leave step: one run in three
+  differs from the successor's first step (world time 218.63 s on the final
+  build): B's warm start, its pose a few 1e-5 m apart, the controls and the
+  step the same. B starts from what it last saw of A's hull (`api.worldOf`,
+  the stage's playback of a peer's holds) and A's last published motion;
+  which of the two, and why, is not traced (the stage's two-peer playback).
+  Open.
+- The per-sea table under "Leaving the anchor" was measured before causes
+  (2) and (3) were fixed, when the first step read the template's sea and
+  wind; sea 1's leave step is unchanged (past 45° in 5.85 s), the other six
+  seas were not run again.
+
 ## Parts
 
 `parts.js` gives the parts bin (STAGE.md, "Parts") sailing's parts, each
@@ -1991,7 +2148,7 @@ api.loop((dt) => {
 ```js
 // sea-view.js — createSeaView(api) → ctx.sea
 ctx.sea.oceanAt(p, not)  // the water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries (the water package's reader), null with none, tilted or the world's at another scale
-ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, or null
+ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, the ambient's as it is when read ("Determinism"), or null
 ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard
 ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads; answers api.clock.t()
 // ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the crew's swimmer, the HUD's wind, the looks) asks api.clock.t()
@@ -2000,6 +2157,7 @@ ctx.sea.tick()           // after every clock has ticked: the wind's time offset
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
 ctx.sim.read(shipId)     // what a sailor reads off her (published(): diagnostics, velocity, spin), as simulated or streamed, or null
 ctx.sim.specOf(shipId)   // the spec her physics steps with on this view (createShip's), or null following or before her first step
+ctx.sim.stepped(shipId)  // her last step as taken on this view: { key, controls, state } (the state unrounded), or null following or before her first step
 ctx.sim.stationsOf(shipId) → { helm, sail, anchor, mainsheet, jib, ladder, winches }   // object ids anywhere under her (a rig on a mast on the hull), null if missing; winches a list
 ctx.sim.value(stationId) // the station's live value: its trait fields, with its holder's input over them
 ctx.sim.input(stationId, partial)   // this view's live input at a station it holds (presence), e.g. { angle }

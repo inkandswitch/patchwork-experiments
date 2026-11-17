@@ -6,7 +6,7 @@
 // tag; and each station you
 // lock in to, with which of the sail's keys work there.
 import { describe, it, expect, vi } from "vitest";
-import { FAR, FURL_RATE, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within } from "./stations.js";
+import { FAR, FURL_RATE, HELD_STEP, RAISE_RATE, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, wholeSteps, within } from "./stations.js";
 import { REACH } from "./crew.js";
 
 describe("reach", () => {
@@ -70,6 +70,70 @@ describe("the wheel", () => {
     for (let i = 0; i < 60; i++) a = wheelStep(a, -1, 1 / 60);
     expect(a).toBeCloseTo(0.4);
     expect(approach(0.5, 0, 0.25, 4)).toBe(0);
+  });
+});
+
+// The probe page's clock (scene/src/stage/time.js manualTime: now() is start + frames × frameMs, start 1e6 ms,
+// frameMs 1000/60) and the dt a loop gets from it (viewport.js: two readings' difference over 1000), from its
+// k0-th frame on: its last bits depend on how far the clock has run, repeating every third frame here.
+const pageFrames = (k0, n) => Array.from({ length: n }, (_, i) => ((1e6 + (k0 + i + 1) * (1000 / 60)) - (1e6 + (k0 + i) * (1000 / 60))) / 1000);
+
+describe("a held station's clock: whole steps of world time (DESIGN.md, \"Determinism\")", () => {
+  const S = HELD_STEP;
+  // each row: the frames' dt in → the steps' time out, call by call (Object.is: the same doubles)
+  const ROWS = [
+    ["one frame on the grid", [1 / 60], [S]],
+    ["a frame from the page's clock, each of its three", [pageFrames(0, 1)[0], pageFrames(1, 1)[0], pageFrames(2, 1)[0]], [S, S, S]],
+    ["a 144 Hz display: nothing until a step is complete, the rest carried", [1 / 144, 1 / 144, 1 / 144], [0, 0, S]],
+    ["frames off the grid, the rest carried until it makes a step", [0.025, 0.025], [S, 2 * S]],
+    ["a stall: its whole steps at once", [0.1], [6 * S]],
+    ["no time, or none that's a time", [0, -1, NaN, undefined], [0, 0, 0, 0]],
+  ];
+  it.each(ROWS)("%s", (_, dts, out) => {
+    const steps = wholeSteps();
+    expect(dts.map((dt) => steps(dt))).toEqual(out); // (to the bit: toEqual compares numbers with Object.is)
+  });
+
+  it("on the page's clock, from any frame, every frame is exactly one step and nothing is carried", () => {
+    for (const k0 of [0, 1, 2, 1000, 123456]) {
+      const steps = wholeSteps();
+      for (const dt of pageFrames(k0, 600)) expect(Object.is(steps(dt), S)).toBe(true);
+    }
+  });
+
+  it("over any frames it gives back the time it was given, short by less than one step", () => {
+    for (const dts of [Array(600).fill(1 / 144), Array(97).fill(0.0237), [0.1, 0.001, 0.05, 0.016, 0.017]]) {
+      const steps = wholeSteps();
+      const given = dts.reduce((a, b) => a + b, 0);
+      const back = dts.reduce((a, dt) => a + steps(dt), 0);
+      expect(back).toBeLessThanOrEqual(given + 1e-9);
+      expect(given - back).toBeLessThan(S);
+    }
+  });
+
+  // one key held for the same frames, the page's clock at each of its three offsets: every value the verb puts in, to the bit
+  const sameEachOffset = (make) => {
+    const runs = [0, 1, 2].map((k0) => {
+      const seen = [];
+      const v = make(seen);
+      for (const dt of pageFrames(k0, 450)) if (v.open) v.update(dt);
+      return seen;
+    });
+    expect(new Set(runs.map((r) => JSON.stringify(r))).size).toBe(1);
+    return runs[0];
+  };
+  it("the halyard held for the same frames puts in the same values, whatever frame the page's clock had reached", () => {
+    const seen = sameEachOffset((seen) => heldTrim({ value: 0, goal: 1, rate: RAISE_RATE, input: (x) => seen.push(x), commit() {} }));
+    // each frame one step's worth, up all the way in 4 s: on the 241st frame, as 240 steps of 1/240 sum a hair short of 1
+    expect(seen.length).toBe(450);
+    expect(seen[0]).toBe(RAISE_RATE * S);
+    expect(seen.indexOf(1)).toBe(240);
+  });
+  it("the windlass held for the same frames puts in the same rode, whatever frame the page's clock had reached", () => {
+    const seen = sameEachOffset((seen) => heldWeigh({ rode: RODE, input: (f) => seen.push(f.rode), commit: (f) => seen.push(f) }));
+    // a full rode in six seconds: 360 frames of chain, and up on the 361st (360 steps leave a hair of it)
+    expect(seen.length).toBe(361);
+    expect(seen.at(-1)).toEqual({ down: false, rode: 0 });
   });
 });
 

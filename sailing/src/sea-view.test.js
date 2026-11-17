@@ -202,6 +202,29 @@ describe("createSeaView: a boat alone is her own world", () => {
     expect(s.world()).toBe(true);
   });
 
+  // A step reads the wind before the frame's tick (play.js ticks after the clock's steps): the wind it reads must be
+  // the ambient's as it is at that read, or a seed set just before the world runs is read a step late (DESIGN.md,
+  // "Determinism"). Each row: the ambient's value changes to the next, and the wind is read with no tick between.
+  it("its wind is the ambient's as it is when read, with no tick between: made again only when the ambient changed", () => {
+    const st = { value: { speed: 7, from: 45, seed: 696349617, gustiness: GUSTINESS }, frame: null };
+    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: true, frame: st.frame } : null), clock: { t: () => 0 } };
+    const s = createSeaView(api);
+    const ROWS = [
+      ["the template's seed", { speed: 7, from: 45, seed: 696349617, gustiness: GUSTINESS }],
+      ["the seed set before the world runs", { speed: 7, from: 45, seed: 1, gustiness: GUSTINESS }],
+      ["a stronger wind", { speed: 12, from: 45, seed: 1, gustiness: GUSTINESS }],
+      ["from elsewhere", { speed: 12, from: 250, seed: 1, gustiness: GUSTINESS }],
+      ["no wind", { speed: 0, from: 250, seed: 1, gustiness: GUSTINESS }],
+    ];
+    for (const [, value] of ROWS) {
+      st.value = value;
+      const want = createWind(value);
+      for (const [x, z, t] of [[0, 0, 0], [37.5, -100, 13.37]]) expect(s.wind.at(x, z, t)).toEqual(want.at(x, z, t));
+      // the same ambient (its value and frame the same objects): the same wind, not made again
+      expect(s.wind).toBe(s.wind);
+    }
+  });
+
   it("no water, no water: nothing sails, though the weather's wind still blows; her doc is still the world (her ride and HUD don't hang on water)", () => {
     const doc = scene();
     delete doc.objects.sea;
