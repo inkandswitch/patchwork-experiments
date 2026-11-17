@@ -16,8 +16,7 @@
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it
 //     (Sit as …, Stand up: model.js);
-//   - telling everyone when someone sits down (api.tell: the seat id only);
-//   - who the parties are, for undo (`parties`): the people seated.
+//   - telling everyone when someone sits down (api.tell: the seat id only).
 //
 // Seats have an owner (model.js): the doc's own are its table's, an object's
 // are that object's (a machine's ports), copied and removed with it. The
@@ -686,15 +685,6 @@ function create(api) {
       },
       sit: (ref) => sitFor(refArg(ref)),
     }),
-    // who has a stake in a thing at this table (scene/HISTORY.md, TOOLS Decisions 2):
-    // the people seated at it (the doc's own lasting seats), here or away;
-    // not those watching, nor whoever sits at an object's seats (a machine's
-    // ports). Asked when someone takes back an edit that showed or decided
-    // something here.
-    parties: (snap) => {
-      const seated = rosterOf(snap).map((s) => s.viewer).filter(Boolean);
-      return () => seated;
-    },
     // the seat body (body.js): entered by the picker and the seat's verb
     bodies: [body],
     commands: [

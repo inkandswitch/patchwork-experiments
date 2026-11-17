@@ -850,21 +850,6 @@ describe("the roster (pure in the snapshot)", () => {
     w.done();
   });
 
-  it("parties, for undo: whoever is seated, here or away, for every object at the table, by the snapshot it's given", async () => {
-    const w = fakes.fakeWorld(sceneOf(objects(), { [SEATS]: seats("ann", null) }));
-    const { x } = withSeats(w, "A", "ann");
-    for (const [s, want] of [
-      [snap(seats(null, null)), []],
-      [snap(seats("ann", null)), ["ann"]],
-      [snap(seats(null, "bob")), ["bob"]],
-      [snap(seats("ann", "bob")), ["ann", "bob"]],
-    ]) {
-      const of = x.parties(s);
-      for (const id of ["card", "anything", null]) expect(of(id)).toEqual(want);
-    }
-    w.done();
-  });
-
   it("reads the doc alone: claims and presence change nothing", () => {
     const base = snap(seats("ann", null));
     for (const claims of [undefined, { [KIND("p2")]: { viewer: "bob", session: "S" } }]) expect(rosterOf({ ...base, d: { claims } })).toEqual(rosterOf(base));
@@ -1097,7 +1082,7 @@ describe("an object's own seats (a machine's ports): its own, and held only whil
     t.w.done();
   });
 
-  it("sitting at the cabinet: its claim, on the cabinet; nothing written; the table's seat stays yours, and the table's roster and parties never count the cabinet", async () => {
+  it("sitting at the cabinet: its claim, on the cabinet; nothing written; the table's seat stays yours, and the table's roster never counts the cabinet", async () => {
     const t = await arcade();
     await t.attend("C", "board");
     await t.pick("C", "p1");
@@ -1122,7 +1107,6 @@ describe("an object's own seats (a machine's ports): its own, and held only whil
     const snap = t.w.scene();
     expect(r.seats(snap)).toEqual([{ id: "p1", name: "Player 1", viewer: "carol" }, { id: "p2", name: "Player 2", viewer: null }]);
     expect([r.viewers(snap), r.open(snap), r.nameOf(snap, "carol")]).toEqual([["carol"], ["Player 2"], "Player 1"]);
-    expect(t.x.C.parties(snap)("anything")).toEqual(["carol"]);
     // Dan, at the cabinet: P1 is taken, and stays Carol's while she's here
     await t.attend("D", "m");
     expect(t.options("D")).toEqual(["Watching", "Cab · P1 (taken)", "Cab · P2"]);
