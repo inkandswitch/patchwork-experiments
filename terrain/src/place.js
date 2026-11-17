@@ -110,7 +110,7 @@ export default {
       },
     };
     let sheltered = null; // { decoded, k, grid }
-    // the ground's grain: dressed once the place's GLB is here (a new GLB, a new root: dressed again), looked for at every update, flush and frame the water asks for the shore
+    // the ground's grain: dressed once the place's GLB is here (a new GLB, a new root: dressed again), looked for at every update (the stage's, when content changes: a dry place's only call) and every frame the water asks for the shore
     let dressed = null; // { root, undo }
     function dress() {
       const id = placeObject(api.doc());

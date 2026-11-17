@@ -80,6 +80,7 @@ describe("its skies: a weather preset each (the template's sky option)", () => {
     expect(scene.doc().traits).toStrictEqual({ weather: { ...UKEE_GREY_WEATHER(7), ...fields } });
   });
   it("there are exactly these three", () => expect(Object.keys(SKIES)).toEqual(["ukee-grey", "marine-layer", "clear-afternoon"]));
+  it.each(Object.keys(SKIES))("%s is the weather's four sky fields and nothing else", (k) => expect(Object.keys(SKIES[k])).toEqual(["cover", "clouds", "base", "visibility"]));
   it.each([["drizzle"], ["toString"], [""]])("a sky it hasn't (%j) is refused, and nothing is written", async (sky) => {
     const { ctx, scene } = sceneCtx({ sailing: true });
     const before = JSON.stringify(scene.doc());

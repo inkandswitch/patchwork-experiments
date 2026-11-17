@@ -1046,8 +1046,11 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     Cadboro Bay's and Ucluelet's templates write every field the place
     knows: `lat` and `lon` (the place's frame origin, which are this
     package's `PLACES` exactly, so the Place picker reads the place's
-    name), `date`, `hour` and `offset` (15:00 on 15 July 2026 on UTC−7,
-    inside the 13:00–18:00 PDT hours both wind climatologies are of),
+    name), `date`, `hour` and `offset` (15:00 on 15 July 2026 on the
+    place's own clock: each place's `OFFSET`, UTC−7 for both, inside the
+    13:00–18:00 PDT hours both wind climatologies are of; the afternoon
+    is the template's, the clock the place's, so `placeWeather` is no
+    British Columbian's),
     `wind`, `from` and `seed`, and `cover`, `clouds`, `base` and
     `visibility`. `gustiness` and `rain` are left to their defaults (0.3,
     the stock; 0): the places' climatologies say nothing of either. A
@@ -1067,7 +1070,9 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     climatology (ECCC's Amphitrite Point record for Ucluelet; art
     direction for Cadboro, whose Discovery Island record has wind and no
     sky), so they belong to the place, and the name `SKIES` is kept
-    because the template's option is still `sky`. The marine layer's base
+    because Ucluelet's template's option is still `sky` (Cadboro has one
+    sky and no option). Each is exactly the four sky fields: the names
+    they once carried were read by nothing, and went. The marine layer's base
     (100 m) is new: the old look had no deck, and the fog hides any deck
     at 1 km (haze 1). *Decided unattended (2026-11-16, lane/weather), for
     the lead.*
@@ -1092,9 +1097,14 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     before. Its `ambient()` went with the sky; it had also called the
     grain's `dress()` at every flush, and the stage already calls
     `update()` whenever content changes (a GLB arriving), so the grain is
-    still dressed (the Ucluelet probe's grain check). No back-compat: a
+    still dressed. For a dry place `update()` is the only path (with
+    water, its every-frame `profile()` dresses too, which is why the
+    Ucluelet probe's grain check can't tell them apart); place.test.js
+    walks a dry place through its GLB arriving, changing and being hidden
+    and checks each `update()` dresses exactly the loaded root. No back-compat: a
     doc with `terrain.sky` gives no shore and no grain until republished
-    (W8). *Decided unattended (2026-11-16, lane/weather), for the lead.*
+    (W8). *Decided unattended (2026-11-16, lane/weather), for the lead;
+    evidence corrected 2026-11-17 (step 7 fixes).*
 52. **A sky the template hasn't is refused before anything is written.**
     `layOut(ctx, url, { sky })` throws a `RangeError` naming the three
     skies for any other name, inherited ones (`toString`) included,

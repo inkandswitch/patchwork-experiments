@@ -14,7 +14,7 @@
 // place alone, and says so. Its sea and its stations are written as data
 // (sailing's trait vocabulary), as the inspector would.
 
-import { cadboroDoc, ORIGIN, WIND, SKY, HOME, GRID, OSM_DATE, EXPECTED } from "./cadboro.js";
+import { cadboroDoc, ORIGIN, OFFSET, WIND, SKY, HOME, GRID, OSM_DATE, EXPECTED } from "./cadboro.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
 
@@ -25,23 +25,23 @@ export const SEA = "sailing.sea", SAIL = "sailing.sail", JIB = "sailing.jib", AN
 /** The weather package's scene trait (its WEATHER.md, "The data"): the world's weather, flat plain data. */
 export const WEATHER = "weather";
 /**
- * When a place is shown: a summer afternoon, 15 July 2026 at 15:00 on
- * British Columbia's clock (UTC−7), inside the hours both places' wind
- * climatologies are of (13:00–18:00 PDT). The weather's `date`, `hour` and
- * `offset`: the sun is where it is then.
+ * When a place is shown: 15 July 2026 at 15:00 on the place's own clock
+ * (its `offset`). For both places here, a summer afternoon inside the hours
+ * their wind climatologies are of (13:00–18:00 PDT). The weather's `date`
+ * and `hour`: the sun is where it is then.
  */
-export const AFTERNOON = Object.freeze({ date: "2026-07-15", hour: 15, offset: -7 });
+export const AFTERNOON = Object.freeze({ date: "2026-07-15", hour: 15 });
 
 /**
  * A place's weather, the weather package's trait: where (the place's frame
- * origin, so the weather's Place picker knows it), when (AFTERNOON), the air
- * (its wind climatology's speed and direction; the gust seed) and the sky
- * (`sky`: cover, cloud kind, base, visibility). Nothing else: the
- * gustiness and the rain are the weather's defaults (a missing field is its
- * default). Pure.
+ * origin, so the weather's Place picker knows it), when (AFTERNOON on the
+ * place's clock, `offset` hours from UTC), the air (its wind climatology's
+ * speed and direction; the gust seed) and the sky (`sky`: cover, cloud
+ * kind, base, visibility). Nothing else: the gustiness and the rain are the
+ * weather's defaults (a missing field is its default). Pure.
  */
-export function placeWeather({ origin, wind, sky }, seed) {
-  return { lat: origin.lat, lon: origin.lon, ...AFTERNOON, wind: wind.speed, from: wind.from, seed, cover: sky.cover, clouds: sky.clouds, base: sky.base, visibility: sky.visibility };
+export function placeWeather({ origin, offset, wind, sky }, seed) {
+  return { lat: origin.lat, lon: origin.lon, ...AFTERNOON, offset, wind: wind.speed, from: wind.from, seed, cover: sky.cover, clouds: sky.clouds, base: sky.base, visibility: sky.visibility };
 }
 /** The water package's object trait (its WATER.md, "Water bodies"): this object is water, its origin the surface at rest; no size, open water (with a clip: the box it keeps where its world has none). */
 export const WATER = "water";
@@ -139,7 +139,7 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
   const sea = ctx.newId("o");
   ctx.change((d) => {
     // the world's weather (a fair summer afternoon), and the bay's water: open, at the chart's y = 0, with a sea on it
-    d.traits[WEATHER] = placeWeather({ origin: ORIGIN, wind: WIND, sky: SKY }, seed);
+    d.traits[WEATHER] = placeWeather({ origin: ORIGIN, offset: OFFSET, wind: WIND, sky: SKY }, seed);
     d.objects[sea] = bayWater(seed);
     d.order.push(sea);
     // people start in Look over the bay (no body named: view.start, TOOLS.md §2); a click on the sloop comes aboard

@@ -54,7 +54,7 @@ On an empty scene's start screen, **Cadboro Bay (RVYC)**:
    for navigation" at its foot, and the `terrain.place` trait (the place:
    the shore in the water, the water's shelter, the ground's grain);
 3. gives the world its weather (the weather package's `weather` trait:
-   Cadboro Bay at 15:00 on 15 July on UTC−7; a typical summer afternoon's
+   Cadboro Bay at 15:00 on 15 July on its clock, UTC−7 (`OFFSET`); a typical summer afternoon's
    4 m/s from 235°, WSW; a fair afternoon's sky, `SKY` in `cadboro.js`:
    cumulus over a third of it at 1200 m, 10 km visibility, which the
    weather draws as sailing's bright day exactly) and the bay's Sea at y = 0 (open water

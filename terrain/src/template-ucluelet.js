@@ -11,7 +11,7 @@
 // sailing's sloop at anchor off the new dock, if sailing is installed (found
 // by its part's id in the registry, never imported).
 
-import { uclueletDoc, WIND, HOME, GRID, OSM_DATE, EXPECTED, SKIES, ANCHORAGE, ORIGIN, WATER_COLOUR } from "./ucluelet.js";
+import { uclueletDoc, WIND, HOME, GRID, OSM_DATE, EXPECTED, SKIES, ANCHORAGE, ORIGIN, OFFSET, WATER_COLOUR } from "./ucluelet.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
 import { localFrame } from "./tmerc.js";
@@ -92,7 +92,7 @@ export async function newUclueletTerrain(repo) {
 export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() * 1e9), sky = "ukee-grey" } = {}) {
   // the sky is one of the place's (ucluelet.js SKIES), refused before anything is written
   if (!Object.hasOwn(SKIES, sky)) throw new RangeError(`Ucluelet has no sky ${JSON.stringify(sky)} (it has ${Object.keys(SKIES).join(", ")})`);
-  const weather = placeWeather({ origin: ORIGIN, wind: WIND, sky: SKIES[sky] }, seed);
+  const weather = placeWeather({ origin: ORIGIN, offset: OFFSET, wind: WIND, sky: SKIES[sky] }, seed);
   const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Ucluelet", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {}, [PLACE]: {} } } });
   const sea = ctx.newId("o");
   ctx.change((d) => {

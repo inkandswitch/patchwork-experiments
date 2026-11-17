@@ -15,6 +15,8 @@
  * haul-out pier's head is about 55 m east of it.
  */
 export const ORIGIN = Object.freeze({ lat: 48.95, lon: -125.558 });
+/** The place's clock in July, hours from UTC (the weather's `offset`): Pacific Daylight Time. */
+export const OFFSET = -7;
 
 /**
  * 1025 × 1025 nodes 20 m apart, 20.48 km a side: x −3440…17040, z
@@ -226,9 +228,9 @@ export const SWELL = Object.freeze({ hs: 1.2, tp: 8.3, from: 285, note: "not mod
  * clear afternoon is the weather's default, since it has no cloud.
  */
 export const SKIES = Object.freeze({
-  "ukee-grey": Object.freeze({ name: "Ukee grey (overcast, bright)", cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 }),
-  "marine-layer": Object.freeze({ name: "Marine layer (fog, 20% of afternoons)", cover: 1, clouds: "stratus", base: 100, visibility: 1000 }),
-  "clear-afternoon": Object.freeze({ name: "Clear afternoon", cover: 0, clouds: "cumulus", base: 1200, visibility: 20000 }),
+  "ukee-grey": Object.freeze({ cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000 }),
+  "marine-layer": Object.freeze({ cover: 1, clouds: "stratus", base: 100, visibility: 1000 }),
+  "clear-afternoon": Object.freeze({ cover: 0, clouds: "cumulus", base: 1200, visibility: 20000 }),
 });
 
 /** Named places (lat, lon from OSM unless noted). */

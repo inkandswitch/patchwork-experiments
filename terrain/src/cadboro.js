@@ -6,6 +6,8 @@
 
 /** The frame's origin: the club's mooring field (an estimate: OSM maps no moorings in the bay). */
 export const ORIGIN = Object.freeze({ lat: 48.454, lon: -123.2915 });
+/** The place's clock in July, hours from UTC (the weather's `offset`): Pacific Daylight Time. */
+export const OFFSET = -7;
 
 /**
  * The grid: 1025 × 1025 nodes 8 m apart, 8.192 km a side, node (i, j) at
@@ -55,7 +57,7 @@ export const WIND = Object.freeze({ speed: 4, from: 235, scale: 0.5, source: "EC
  * "anchors"). Art direction, not a measurement: Discovery Island reports
  * wind, not sky.
  */
-export const SKY = Object.freeze({ name: "Fair afternoon", cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 });
+export const SKY = Object.freeze({ cover: 0.35, clouds: "cumulus", base: 1200, visibility: 10000 });
 
 /**
  * OpenStreetMap as it was when this place was fetched and checked
