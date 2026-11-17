@@ -123,14 +123,16 @@ pieces, each published and checked in the real Patchwork:
 - **Mashups of published docs** (N7; Decisions, N7): docs linked
   unchanged into a new doc, with no stage code. *Games night* came first
   (the room and the Liar's dice table). *Arcade in the games room*
-  (automerge:3gvFRkHB8YbCm9B2bRmoVKPbNXyB) links the Quiet games room and
+  (automerge:2FEoL22wHa6XL9y54Dwg164wyXSG, republished by N6's
+  integration; Decisions, N7, 16) links the Quiet games room and
   the Arcade: people arrive Watching at Lost Cities two links deep, the
   cabinets' seats sit in the Arcade stage's roster beside the games' in
   theirs, and on a running world P on a cabinet in the link sits you at
   its port and your keys drive the engine while the room's game seats
   stay free (the published Arcade's world is paused, so there the
   picture holds still: Decisions, N7, 8 and 9). *Games night and the
-  Arcade* (automerge:48Szu3pnC7mVUupS2mSZUt7ZRJQt) puts the same Arcade,
+  Arcade* (automerge:2Vxh319RwLpNkbc2NegkFaBPLTfc, republished likewise)
+  puts the same Arcade,
   at the same pose, beside Games night: a mashup of a mashup, its games
   three links deep (Decisions, N7, 11). E1M1 on the Cadboro Bay shore
   was gated and not published (Decisions, N7, 1 and 2).
@@ -169,8 +171,8 @@ Still open:
   by N7's gate, 2026-11-16; Decisions, N7, 1; Questions for the lead);
 - the real Patchwork ran package versions days apart in one page, and a
   viewer with an older terrain provider rebuilt Cadboro Bay's published
-  render without its buildings and trees (Decisions, N7, 6; Questions for
-  the lead);
+  render without its buildings and trees (whole again since 20:54 UTC
+  2026-11-16; Decisions, N7, 6; Questions for the lead);
 - machine's "Lay out its world" never refuses a second world for a
   cabinet, and the published Arcade had come to hold two (republished;
   machine/HOST.md, phase 2b, Not done yet; Decisions, N7, 7; Questions for
@@ -278,7 +280,8 @@ Questions for the lead (not decided; each names what stands meanwhile):
   without its buildings and trees from 18:35 to 20:54 UTC on 2026-11-16,
   until a build that reads every layer made it whole again. Is a viewer
   whose provider is older than a render's allowed to rebuild it? Stands
-  meanwhile: Cadboro Bay as it is now (whole), and
+  meanwhile: Cadboro Bay as it is now (whole; the weather merge may
+  change its doc: Decisions, N7, 16), and
   no real-Patchwork checks from N7 of published docs with older renders
   until the lead says (checks of docs N7 made itself, and of docs with
   no render docs, go ahead, guarded, naming the versions they ran on:
@@ -302,7 +305,9 @@ Questions for the lead (not decided; each names what stands meanwhile):
   1:50 diorama in the Model room? Stands meanwhile: in the folder.
 - **A place as a mashup's ground** (Decisions, N7, 3 and 4): a linked world
   brings its things, not its weather (STAGE.md, "Ambients"), so Cadboro
-  Bay linked under E1M1 loses its sky and its wind. Should a doc be able
+  Bay linked under E1M1 loses its sky and its wind (since the weather
+  merge its sky is the weather's; to re-read after N7's merge:
+  Decisions, N7, 16). Should a doc be able
   to say "my world's ambients are link N's" (a stage capability), or is
   the answer that the place's own doc holds the level (not a mashup)? And
   E1M1 floats over the Gyro Park lawn by a median 4.8 m (p90 9.3, max
@@ -2762,13 +2767,21 @@ the finding; row 6 failed to a stale package, 6 below).
    - **reported, not decided:** E1M1's float over Gyro Park (3), and the
      Arcade's 3.5 cm over the games room's aisles (8).
 16. **Step 7, the re-run on the integrated tree, is the integrator's**
-   (2026-11-17, 04:40 UTC). It runs when the integrator asks, after N7's
-   merge and a sync. At this writing lane/n7 isn't merged (8 commits
-   ahead of scene-stage 20390028, 73 behind), and the lead's probe
-   policy of 2026-11-17 gives the one real-Patchwork sweep after a merge
-   to the integrator, so the lane ran none. N7 changes no package code
-   (its one code file is seats' test), so its merge needs no build or
-   sync of its own. Part of the re-run is already done: N6's integrator
+   (2026-11-17, 11:08 UTC). It runs when the integrator asks, after N7's
+   merge and a sync, on whatever scene-stage then holds. lane/n7 isn't
+   merged (at 11:30 UTC, 9 commits ahead of scene-stage 1eb3c344, 96
+   behind), and the lead's probe policy of 2026-11-17 gives the one
+   real-Patchwork sweep after a merge to the integrator, so the lane ran
+   none. N7 changes no package code (its one code file is seats' test),
+   so its merge needs no build; the integrator's sync after it still
+   takes in seats and machine, whose README, test and HOST.md pushwork
+   mirrors. The packages changed twice after N6's run: the sidebar's
+   sync (20390028) and the weather merge (1eb3c344), whose W6 (45d53bf9)
+   turns terrain's sky into the weather's: terrain's place gives no sky,
+   and Cadboro Bay's template writes a weather trait. Under no back-compat
+   that may change Cadboro Bay's published doc, so three items here may be
+   affected: Cadboro Bay standing as it is (6), the deferred `shore-check`,
+   and the ambients question (4: a linked place's sky). Part of the re-run is already done: N6's integrator
    republished both of N7's mashups with the same links and places
    (*Arcade in the games room* automerge:2FEoL22w…, *Games night and the
    Arcade* automerge:2Vxh319R…; 8 and 11 name the URLs they replace) and
@@ -2777,10 +2790,10 @@ the finding; row 6 failed to a stale package, 6 below).
    (automerge:Zty1huc3…). Owed, one at a time under the Chrome lock:
    - `arcade-check` on the Arcade (automerge:3T4KdCM2…, swapped into the
      folder by `swaps-n7.tsv`; the folder note still names gfLLzkhg…):
-     27/27 with play, then 10/10 with `--no-play`;
+     30/30 with play, then 14/14 with `--no-play` (7);
    - `arcade-room-check` on both mashups, 20/20 each, and `mashup-check`
-     on Games night, 5/5, if the packages changed after N6's run (the
-     sidebar's sync did, 20390028); a shell resolver timeout or row C's
+     on Games night, 5/5, again, since the packages changed after N6's
+     run; a shell resolver timeout or row C's
      log is noted, not counted, as for `ucluelet-check`;
    - `shore-check`: not run. It opens Cadboro Bay, and the older-provider
      half of 6 still waits for the lead; E1M1 at Cadboro Bay isn't
