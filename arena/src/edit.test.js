@@ -216,16 +216,26 @@ describe("standing targets up (reset.js)", () => {
   });
 });
 
-describe("what the arena runs", () => {
-  const byId = (id) => plugins.find((p) => p.id === id);
+describe("what the arena runs: its traits, as the inspector offers them (\"Add behaviour…\")", () => {
+  const arena = plugins.find((p) => p.id === "arena");
 
-  it("one extension, by its traits alone: the gun, the targets and Stand targets up, whoever is doing what", () => {
-    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["arena"]);
-    for (const k of ["activities", "requires", "always", "general"]) expect(k in byId("arena")).toBe(false);
+  it("describes every trait it runs on, and nothing else, as plain data", () => {
+    expect(Object.keys(arena.describes).sort()).toEqual([...arena.traits].sort());
+    expect(structuredClone(arena.describes)).toEqual(arena.describes);
   });
 
-  it("has no kits and no old build extension", () => {
-    expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
-    expect(byId("arena.build")).toBeUndefined();
+  it("the level is a scene trait whose look can be the arena's or a sky alone; targets and spawns go on objects", () => {
+    const d = arena.describes;
+    expect(d["arena.level"].on).toBe("scene");
+    const look = d["arena.level"].fields.find((f) => f.key === "look");
+    expect(look.kind).toBe("enum");
+    // play.js gives an atmosphere for each of these (LOOKS), and none for the scene's own
+    expect(look.options.map((o) => o.value)).toEqual(["", "arena", "sky"]);
+    expect(d["arena.target"].on).toBe("object");
+    // a spawn point is the walk package's trait: it describes it
+    expect(d["arena.spawn"]).toBeUndefined();
+    // a target's down and stand are not settings; who shot it is play state, which a copy leaves behind
+    expect(d["arena.target"].fields).toBeUndefined();
+    expect(d["arena.target"].runtime).toEqual(["down"]);
   });
 });
