@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { inside, itemKey, outside } from "./contents.js";
 import { newBag } from "./datatype.js";
-import extension, { CONTAINER, MESSAGES } from "./extension.js";
+import extension, { CONTAINER } from "./extension.js";
 import { SCENE_URL, fakeStage, snapshot, FakeRepo } from "./test/fake-stage.js";
 
 const BAG1 = "automerge:3AAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -76,8 +76,8 @@ async function table({ session = "s-me", rule = "top", carry = false, repo = new
       },
     ];
   }
-  instance = extension.create(stage.api);
-  const sync = () => instance.update(snapshot(stage.handle.doc()), stage.rec.local, null);
+  instance = stage.attach(extension.create(stage.api));
+  const sync = () => (instance.update(snapshot(stage.handle.doc()), stage.rec.local, null), stage.ask());
   // the bags' documents are found asynchronously
   await vi.waitFor(() => expect(stage.rec.labels.length).toBe(2));
   const cmd = (id) => instance.commands.find((c) => c.id === id);
@@ -462,15 +462,15 @@ describe("looking inside", () => {
 });
 
 describe("what peers may tell us", () => {
-  it("a well-formed message about a bag of this scene becomes a notice; anything else is dropped", async () => {
+  it("a well-formed message about a bag of this scene is told; anything else is dropped", async () => {
     const t = await table();
     const from = { session: "s-peer", viewer: "viewer:x" };
-    t.instance.receive("drew", { bag: BAG1, n: 1 }, from);
-    t.instance.receive("drew", { bag: BAG1, n: 3 }, from);
-    t.instance.receive("put", { bag: BAG2, n: 2 }, from);
-    t.instance.receive("poured", { from: BAG1, to: BAG2, n: 4 }, from);
-    t.instance.receive("emptied", { bag: BAG1, n: 5 }, from);
-    t.instance.receive("looked", { bag: BAG2 }, from);
+    t.hear("drew", { bag: BAG1, n: 1 }, from);
+    t.hear("drew", { bag: BAG1, n: 3 }, from);
+    t.hear("put", { bag: BAG2, n: 2 }, from);
+    t.hear("poured", { from: BAG1, to: BAG2, n: 4 }, from);
+    t.hear("emptied", { bag: BAG1, n: 5 }, from);
+    t.hear("looked", { bag: BAG2 }, from);
     await vi.waitFor(() => expect(t.rec.notices.length).toBe(6));
     expect(t.rec.notices).toEqual([
       "Someone drew from Red bag",
@@ -494,22 +494,22 @@ describe("what peers may tell us", () => {
       ["poured", { from: BAG1, to: "https://evil", n: 1 }],
       ["constructor", { bag: BAG1, n: 1 }],
       ["stole", { bag: BAG1, n: 1 }],
-    ]) t.instance.receive(type, data, from);
+    ]) t.hear(type, data, from);
     await new Promise((r) => setTimeout(r, 20));
     expect(t.rec.notices).toEqual([]);
-    expect(Object.keys(MESSAGES).sort()).toEqual(["drew", "emptied", "looked", "poured", "put"]);
+    expect(Object.keys(t.instance.messages).sort()).toEqual(["drew", "emptied", "looked", "poured", "put"]);
   });
 
   it("a peer is named by their contact", async () => {
     const repo = new FakeRepo();
     const ana = repo.add({ name: "Ana" });
     const t = await table({ repo });
-    // from the first thing they say: the notice waits for the name
-    t.instance.receive("looked", { bag: BAG1 }, { session: "s", viewer: ana.url });
-    t.instance.receive("drew", { bag: BAG1, n: 1 }, { session: "s", viewer: ana.url });
+    // from the first thing they say: the stage waits for the name
+    t.hear("looked", { bag: BAG1 }, { session: "s", viewer: ana.url });
+    t.hear("drew", { bag: BAG1, n: 1 }, { session: "s", viewer: ana.url });
     await vi.waitFor(() => expect(t.rec.notices).toEqual(["Ana looked inside Red bag", "Ana drew from Red bag"]));
     // someone whose contact can't be had is still heard, a moment later
-    t.instance.receive("drew", { bag: BAG1, n: 1 }, { session: "s2", viewer: "automerge:nobody" });
+    t.hear("drew", { bag: BAG1, n: 1 }, { session: "s2", viewer: "automerge:nobody" });
     await vi.waitFor(() => expect(t.rec.notices.at(-1)).toBe("Someone drew from Red bag"));
   });
 });

@@ -312,12 +312,15 @@ frame when it reads a GLB (`content(id).extras.connectors[].rotation`), and
 tags: a domino's are `["domino"]`, a card's `["card"]`, so each fits only its
 own places, and Draw looks for a free one for the piece being drawn.
 
-**Telling the others.** When someone shuffles or draws, everyone else
-gets a notice ("Ana shuffled “Lost Cities: Deck” (44)"), sent with the
-scene's `api.send`: only `shuffled { n, of }` (a count and the container's
-title), `drew { n, noun? }`, `washed { n, of?, noun? }` and `showed { n,
-noun? }` are heard, never which card is which (`noun` is the piece's public
-name, "domino", where it isn't "card"). (Sitting down is told by the seats'
+**Telling everyone.** When someone shuffles, draws, washes or lays their
+hand face up, they and everyone else get a notice ("You shuffled “Lost
+Cities: Deck” (44)" here, "Ana shuffled “Lost Cities: Deck” (44)" there),
+told with the scene's `api.tell` (scene STAGE.md "Telling": the stage
+checks the shape, names who did it by their contact, else "Someone", and
+says it): only `shuffled { n, of }` (a count and the container's title),
+`drew { n, noun? }`, `washed { n, of?, noun? }` and `showed { n, noun? }`
+are told, never which card is which (`noun` is the piece's public name,
+"domino", where it isn't "card"). (Sitting down is told by the seats'
 owner.)
 
 What peers have to trust: these are a peer's word, and none is checked: "Ana

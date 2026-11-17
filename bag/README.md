@@ -40,10 +40,12 @@ any game's rule:
 | **Empty out** | menu or inspector (no key), anyone | everything is set down round the bag |
 | **Look inside** | menu or inspector on a bag | the bag's own panel docks in the stage's drawer (`api.dock`), under the bag's name; its tab's × closes it. This is the only way to see what is inside without drawing, **anyone can**, and the others are told that you looked |
 
-Everyone else is told what was done, with `api.send`: "*Ana* drew from *Token
-bag*", "put 2 things in", "poured … into …", "looked inside". Which bag and
-how many, never what. Received messages are checked for shape and for naming
-a bag of this scene; anything else is dropped.
+Everyone is told what was done, with `api.tell` (scene STAGE.md
+"Telling"): "*Ana* drew from *Token bag*" there and "You drew from *Token
+bag*" here, "put 2 things in", "poured … into …", "looked inside". Which
+bag and how many, never what. The stage drops a message of the wrong shape
+and names who sent it (their contact, else "Someone"); the bag says it once
+every bag it names is one of this scene's.
 
 What mustn't go in doesn't: the bag itself (through any object of the same
 bag doc), a bag that holds this one at any depth, what can't be picked up (no

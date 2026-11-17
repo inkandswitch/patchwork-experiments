@@ -8,7 +8,7 @@
 // Carrying is the scene's (`carry`, collected): what can be picked up says so
 // with the `scene.carry` trait, and only that goes into a bag, so whatever
 // comes out of one can be carried again; a passing state is any running
-// extension's to veto (`carryable`); who drew is told with api.send.
+// extension's to veto (`carryable`); who drew is told with api.tell.
 // The contents live in the bag's own document (contents.js), never in the
 // scene doc: that is what "inside" means. The moves and why they merge
 // safely are moves.js and contents.js; this file is the stage side.
@@ -50,8 +50,6 @@ const CARRY_KEYS = Object.freeze([
 ]);
 /** The drawn piece in hand, held as a tool (scene/TOOLS.md §4): never picked up through a command, so held directly. */
 const DRAWN_PIECE = Object.freeze({ name: "Drawn piece", keys: CARRY_KEYS, pointer: true });
-/** How long a notice waits for its sender's name (ms). */
-const NAME_MS = 400;
 /** The most a single Draw several takes. */
 export const MAX_DRAW = 10;
 
@@ -151,52 +149,19 @@ export default {
       api.schedule(() => {});
     }
 
-    // ── telling the others: that something was done, never what it was ──
-    const names = new Map(); // viewer → a promise of their contact's name (null: none)
-    /** A viewer's contact name, once: asked the first time they're heard from, and not waited on for long. */
-    function contactName(who) {
-      if (typeof who !== "string" || !who) return Promise.resolve(null);
-      if (!names.has(who)) {
-        const asked = who.startsWith("automerge:")
-          ? Promise.resolve()
-              .then(() => repo?.find?.(who))
-              .then((h) => {
-                const n = h?.doc?.()?.name;
-                return typeof n === "string" && n.trim() ? n.trim() : null;
-              })
-              .catch(() => null)
-          : Promise.resolve(null);
-        // (a contact doc from the network: the wall's timeout, not the stage's time)
-        names.set(who, Promise.race([asked, new Promise((r) => setTimeout(() => r(null), NAME_MS))]));
-      }
-      return names.get(who);
-    }
+    // ── telling everyone: that something was done, never what it was (STAGE.md "Telling") ──
     const things = (n) => (n === 1 ? "something" : `${n} things`);
-    /** What a message says, from `who`; null if it's malformed, or about a bag that isn't in this scene. */
-    function told(type, data, who) {
-      if (!data || typeof data !== "object" || !Object.hasOwn(MESSAGES, type) || !MESSAGES[type](data)) return null;
-      const here = new Set(bagsIn().map((b) => b.url));
-      for (const k of ["bag", "from", "to"]) if (k in data && !here.has(data[k])) return null;
-      switch (type) {
-        case "drew":
-          return `${who} drew ${data.n === 1 ? "" : `${data.n} `}from ${titleOf(data.bag)}`;
-        case "put":
-          return `${who} put ${things(data.n)} in ${titleOf(data.bag)}`;
-        case "emptied":
-          return `${who} emptied ${titleOf(data.bag)} (${data.n})`;
-        case "poured":
-          return `${who} poured ${titleOf(data.from)} into ${titleOf(data.to)} (${data.n})`;
-        case "looked":
-          return `${who} looked inside ${titleOf(data.bag)}`;
-      }
-      return null;
-    }
-    /** Say it here (sends are never echoed back), then to every other peer. */
-    function announce(type, data) {
-      const text = told(type, data, "You");
-      if (text) api.notify(text);
-      api.send?.(type, data);
-    }
+    const here = (u) => bagsIn().some((b) => b.url === u);
+    /** Borne out at once by a bag of this scene (each one named); worded by this view, by the speaker's name the stage gives. */
+    const says = (urls, text) => (d, who) => (urls(d).every(here) ? text(d, who.name) : null);
+    const ofBag = (d) => [d.bag];
+    const messages = {
+      drew: { valid: VALID.drew, says: says(ofBag, (d, who) => `${who} drew ${d.n === 1 ? "" : `${d.n} `}from ${titleOf(d.bag)}`) },
+      put: { valid: VALID.put, says: says(ofBag, (d, who) => `${who} put ${things(d.n)} in ${titleOf(d.bag)}`) },
+      emptied: { valid: VALID.emptied, says: says(ofBag, (d, who) => `${who} emptied ${titleOf(d.bag)} (${d.n})`) },
+      poured: { valid: VALID.poured, says: says((d) => [d.from, d.to], (d, who) => `${who} poured ${titleOf(d.from)} into ${titleOf(d.to)} (${d.n})`) },
+      looked: { valid: VALID.looked, says: says(ofBag, (d, who) => `${who} looked inside ${titleOf(d.bag)}`) },
+    };
 
     // ── putting things in ──
     function vetoed(id) {
@@ -252,7 +217,7 @@ export default {
       const emptied = groups.filter((g) => (scene?.members?.get?.(g) ?? []).every((m) => isGroup(objects[m]) || went.has(m)));
       for (const p of [...pendings]) if (went.has(p.id)) retire(p, { quietly: true });
       putObjects({ objects, ids: ok, sceneUrl: api.url, remove: (gone) => api.remove([...gone, ...emptied]), bag: handle });
-      announce("put", { bag: bag.url, n: ok.length });
+      api.tell("put", { bag: bag.url, n: ok.length });
       return ok.length;
     }
 
@@ -365,7 +330,7 @@ export default {
         else track({ ...drawn, url: bag.url, bagId, carry: wantCarry });
       }
       if (!got) api.notify(`${titleOf(bag.url)} is empty.`);
-      else if (!again) announce(verb, { bag: bag.url, n: got });
+      else if (!again) api.tell(verb, { bag: bag.url, n: got });
       return got;
     }
 
@@ -552,7 +517,7 @@ export default {
         return void api.notify("A bag can't go inside itself.", "error");
       }
       const n = pour({ from: a, to: b, by: api.session, shadow: sh.get(from.url) });
-      if (n) announce("poured", { from: from.url, to: to.url, n });
+      if (n) api.tell("poured", { from: from.url, to: to.url, n });
       else api.notify(`${titleOf(from.url)} is empty.`);
     }
 
@@ -616,7 +581,7 @@ export default {
           d.unmount = Tool(handle, body, host);
         })
         .catch((err) => api.notify(`Couldn't open the bag: ${err?.message ?? err}`, "error"));
-      announce("looked", { bag: bag.url });
+      api.tell("looked", { bag: bag.url });
       api.schedule(() => {});
     }
 
@@ -641,14 +606,7 @@ export default {
         else dock?.refresh?.();
       },
       landed,
-      receive(type, data, from) {
-        // checked as it arrives; said once the sender's name is known (or isn't to be had)
-        if (!told(type, data, "Someone")) return;
-        contactName(from?.viewer).then((name) => {
-          const text = dead ? null : told(type, data, name || "Someone");
-          if (text) api.notify(text);
-        });
-      },
+      messages,
       commands: [
         {
           id: "draw",
@@ -748,18 +706,19 @@ export default {
   drop: (ctx, info) => dropBag(ctx, info),
 };
 
-/** What a peer may tell us, and the shape each must have: which bag and how many, never what. */
+/** The shape of each thing a bag tells: which bag and how many, never what. */
 const url = (u) => typeof u === "string" && u.length < 512 && u.startsWith("automerge:");
 const howMany = (n) => Number.isInteger(n) && n > 0 && n <= 100_000;
-const MESSAGES = {
-  drew: (d) => url(d.bag) && howMany(d.n),
-  put: (d) => url(d.bag) && howMany(d.n),
-  emptied: (d) => url(d.bag) && howMany(d.n),
-  poured: (d) => url(d.from) && url(d.to) && howMany(d.n),
-  looked: (d) => url(d.bag),
+const plain = (d) => !!d && typeof d === "object";
+const VALID = {
+  drew: (d) => plain(d) && url(d.bag) && howMany(d.n),
+  put: (d) => plain(d) && url(d.bag) && howMany(d.n),
+  emptied: (d) => plain(d) && url(d.bag) && howMany(d.n),
+  poured: (d) => plain(d) && url(d.from) && url(d.to) && howMany(d.n),
+  looked: (d) => plain(d) && url(d.bag),
 };
 
-export { CONTAINER, MESSAGES };
+export { CONTAINER };
 
 const STAGE_CSS = `
 .scene-stage .label.bag-count:where(:not(.about-embed *), .about-embed .scene-tool *) {

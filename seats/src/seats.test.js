@@ -313,8 +313,30 @@ describe("seats, held by claims", () => {
     await t.pick("A", "");
     expect(tags().map((x) => x.text)).toEqual(["Player 1 · free", "Player 2 · Ben (away)"]);
     // and what peers say comes from them by name
-    t.x.C.receive("sat", { seat: "p2" }, { session: "B", viewer: BEN });
+    t.w.hear("C", "sat", { seat: "p2" }, { session: "B", viewer: BEN });
+    for (let i = 0; i < 20; i++) await Promise.resolve(); // (the stage looks his contact up)
     expect(t.notices("C").at(-1)).toBe("Ben sat down as Player 2");
+    t.w.done();
+  });
+
+  it("a word of a seat the doc doesn't have yet is told once the doc has it, by the stage, within its while", async () => {
+    const t = await room(seats(), { views: [["A", ANA], ["C", "carol"]] });
+    const before = t.notices("C").length;
+    t.w.hear("C", "sat", { seat: "p3" }, { session: "B", viewer: BEN });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(t.notices("C").length).toBe(before);
+    t.w.change((d) => (d.traits[SEATS].p3 = { name: "Player 3", player: null }));
+    t.w.flush();
+    expect(t.notices("C").slice(before)).toEqual(["Ben sat down as Player 3"]);
+    // a word that isn't a seat's shape is dropped; one of a seat that never comes is forgotten
+    t.w.hear("C", "sat", { seat: 7 }, { session: "B", viewer: BEN });
+    t.w.hear("C", "sat", { seat: "p9" }, { session: "B", viewer: BEN });
+    expect(t.w.view("C").telling.waiting()).toBe(1);
+    t.w.tick(3.5, 1);
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.w.view("C").telling.waiting()).toBe(0);
+    expect(t.notices("C").slice(before)).toEqual(["Ben sat down as Player 3"]);
     t.w.done();
   });
 });
