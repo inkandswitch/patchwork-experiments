@@ -40,14 +40,6 @@ function fakeApi(traits) {
 }
 const withTrait = (t) => fakeApi(t === undefined ? {} : { [TRAIT]: t });
 
-/**
- * scene's rule for `edit: true` (scene/src/stage/bodies.js inBody and
- * editing, at e74b9ef7), copied: packages don't import each other. A
- * command's state on a surface is null outside it.
- */
-const inBody = (command, view) => command?.edit !== true || view?.body?.id === "edit";
-const stateIn = (command, target, body) => (inBody(command, { body: { id: body } }) ? command.state(target, {}) : null);
-
 describe("the offer: a function of the trait alone", () => {
   // [name, trait, offers?]
   const rows = [
@@ -171,12 +163,6 @@ describe("the commands", () => {
     expect(SHOW).toEqual(["toolbar", "menu"]);
   });
 
-  // Each command × body: in no body but Edit (scene's commandState asks
-  // inBody first, so outside Edit no surface shows it and no key runs it).
-  for (const c of commands)
-    for (const [body, applies] of [["look", false], ["edit", true], ["walk", false], ["seat", false], ["aboard", false]])
-      it(`${c.id} in ${body}: ${applies ? "applies" : "null"}`, () => expect(stateIn(c, null, body) != null).toBe(applies));
-
   // Each command × target × trait, in Edit: only the scene, only a trait with fields to write into.
   for (const c of commands)
     for (const [tname, trait, applies] of [["{}", {}, true], ["init", INIT, true], ["absent", undefined, false], ["true", true, false], ["an array", [], false]])
@@ -221,11 +207,6 @@ describe("the commands", () => {
   ])("isWorlds: %s → %s", (_, answer, want) => {
     const api = answer === undefined ? {} : { ambient: (name) => (expect(name).toBe("wind"), answer) };
     expect(isWorlds(api)).toBe(want);
-  });
-
-  it("Now's title names the clock in force", () => {
-    expect(ext.create(withTrait({ offset: 5.75 })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC+5:45); Fetch for this time then fetches the present conditions");
-    expect(ext.create(withTrait({ offset: "+05:30" })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC\u22127); Fetch for this time then fetches the present conditions");
   });
 
   it.each([

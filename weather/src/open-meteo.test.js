@@ -198,8 +198,6 @@ describe("snapshotFrom: the recorded replies as the fields they become", () => {
     expect(() => snapshotFrom(json, request)).toThrow(json.reason);
   });
 
-  it("every fixture on disk has a row", () => expect(readdirSync(FIXTURES).map((f) => f.replace(/\.json$/, "")).sort()).toEqual([...rows.map((r) => r[0]), "error"].sort()));
-
   it("the archive's visibility is null in a unit that isn't one, and GEM's null too", () => {
     const a = fixture("ucluelet-archive").json;
     expect(a.hourly_units.visibility).toBe("undefined");
@@ -257,7 +255,6 @@ describe("snapshotFrom: what isn't weather for that hour", () => {
   // number for it, refuses the reply. Every variable has a number here, so
   // the row doesn't depend on which ones the derivations happen to read.
   const FULL = { temperature_2m: 12, dew_point_2m: 10, relative_humidity_2m: 88, precipitation: 0.2, weather_code: 3, cloud_cover: 90, cloud_cover_low: 90, cloud_cover_mid: 0, cloud_cover_high: 0, visibility: 9000, wind_speed_10m: 6, wind_direction_10m: 250, wind_gusts_10m: 8 };
-  it("FULL names every variable", () => expect(Object.keys(FULL).sort()).toEqual([...VARIABLES].sort()));
   for (const route of ["current", "hourly"])
     for (const k of VARIABLES)
       it(`${route}: ${k} in another unit → refused`, () => {

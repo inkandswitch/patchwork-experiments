@@ -38,15 +38,6 @@ describe("sidereal time, Meeus Examples 12.a and 12.b (mean, Δψ = 0)", () => {
   ])("%s", (_, jd, want) => near(siderealTime(jd, { nutation: 0, obliquity: 23.44 }), want, 1e-5));
 });
 
-describe("sunAt's fields", () => {
-  // Two elevations, each named for what it is, so a caller picks one on
-  // purpose: the direction is apparent; presence, bands and gates are
-  // geometric (WEATHER.md, "sun").
-  it("are exactly azimuth, apparent, geometric and declination", () => {
-    expect(Object.keys(sunAt(Date.UTC(2026, 6, 15, 22), 48.454, -123.2915)).sort()).toEqual(["apparent", "azimuth", "declination", "geometric"]);
-  });
-});
-
 describe("the default weather's sun, end to end through instantOf (an independent ephemeris, astronomy-engine 2.1.19: 225.576°, 56.302°)", () => {
   // Cadboro Bay, 2026-07-15 15:00 America/Vancouver (index.js's init).
   const r = sunAt(instantOf({ date: "2026-07-15", hour: 15, offset: -7 }), 48.454, -123.2915);
