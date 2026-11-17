@@ -133,6 +133,16 @@ try {
     return { origin: apply(m, ORIGIN), stbd: cross(up, aft), up, aft, bow };
   };
   const inBody = (body, p) => { const d = sub(p, body.origin); return [dot(d, body.stbd), dot(d, body.up), dot(d, body.aft)]; };
+  // walk's frames (walk/DESIGN.md, "Words"): a support's frame is its drawn matrix with the scale divided out, and
+  // her hull is drawn at twelve times her GLB, so a point in her body frame is put in the world here and placed
+  // there (the stage's frame is the world's: her doc is the root), and walk's feet, local to her rigid frame, are
+  // read back through it
+  const placeBody = (body, [s, u, a], yaw, pitch) => {
+    const w = body.origin.map((o, i) => o + s * body.stbd[i] + u * body.up[i] + a * body.aft[i]);
+    const d = [0, 1, 2].map((i) => -Math.sin(yaw) * body.stbd[i] - Math.cos(yaw) * body.aft[i]);
+    return P(`place(null, ${JSON.stringify(w)}, ${Math.atan2(-d[0], -d[2])}, ${pitch})`);
+  };
+  const rigidApply = (m, p) => { const k = Math.hypot(m[0], m[1], m[2]); return [0, 1, 2].map((i) => m[12 + i] + (m[i] * p[0] + m[4 + i] * p[1] + m[8 + i] * p[2]) / k); };
 
   // rigging her is done with the world paused (the clock chip's Pause, anyone's: scene/TOOLS.md Decisions 5):
   // editing never stops her, so at sea she'd pitch and heel under the pointer between a part's aim and its drop
@@ -303,12 +313,12 @@ try {
     const body = bodyOfHull(m);
     const mw = await P(`worldOf('${mast}')`);
     const mastIn = inBody(body, [mw[12], mw[13], mw[14]]);
-    await P(`place('${hull}', [${mastIn[0] + 1.2}, ${mastIn[1] + 1}, ${mastIn[2] + 2}], 0.15, -0.1)`);
+    await placeBody(body, [mastIn[0] + 1.2, mastIn[1] + 1, mastIn[2] + 2], 0.15, -0.1);
     await b.rest(2000);
     const me = await P("me()");
     const m2 = await P(`worldOf('${hull}')`);
     const b2 = bodyOfHull(m2);
-    const feet = b2.origin.map((v, i) => v + me.position[0] * b2.stbd[i] + me.position[1] * b2.up[i] + me.position[2] * b2.aft[i]);
+    const feet = rigidApply(m2, me.position);
     // the deck under the feet: from just above them, past the rig
     const deck = await P(`down(${JSON.stringify(feet)}, ${JSON.stringify([mast, rig])}, 1)`);
     report.measured.standing = { me, feetWorld: r3(feet), deck: deck && { id: deck.id, y: n2(deck.point[1]) }, overDeck: deck ? n2(feet[1] - deck.point[1]) : null };
@@ -318,7 +328,7 @@ try {
     // the use prompt: just aft of the wheel, looking at it
     const ww = await P(`worldOf('${wheel}')`);
     const wIn = inBody(b2, [ww[12], ww[13], ww[14]]);
-    await P(`place('${hull}', [${wIn[0]}, ${wIn[1] - 0.6}, ${wIn[2] + 0.9}], 0, -0.45)`);
+    await placeBody(b2, [wIn[0], wIn[1] - 0.6, wIn[2] + 0.9], 0, -0.45);
     await b.rest(600);
     const aim = await P(`aimAt('${wheel}')`);
     // (a pixel off first: on a simulated clock the same look aims at the same pixel, and a move to where the
@@ -334,8 +344,8 @@ try {
     // reach is to what you look at: 3 m aft of the mast, the boom over her deck works the sail
     // though its gooseneck is out of reach (stepping off the helm: place leaves it)
     {
-      const spot = `[${mastIn[0]}, ${mastIn[1] + 1}, ${mastIn[2] + 3}]`;
-      await P(`place('${hull}', ${spot}, 0, 0.3)`);
+      const spot = [mastIn[0], mastIn[1] + 1, mastIn[2] + 3];
+      await placeBody(bodyOfHull(await P(`worldOf('${hull}')`)), spot, 0, 0.3);
       await b.rest(600);
       const bh = bodyOfHull(await P(`worldOf('${hull}')`));
       const mr = await P(`worldOf('${rig}')`);
@@ -346,7 +356,7 @@ try {
       const boom = [mr[12] + t * ax[0], mr[13] + t * ax[1], mr[14] + t * ax[2]];
       const d = sub(boom, eyeB);
       const [dx, dy, dz] = [dot(d, bh.stbd), dot(d, bh.up), dot(d, bh.aft)];
-      await P(`place('${hull}', ${spot}, ${Math.atan2(-dx, -dz)}, ${Math.atan2(dy, Math.hypot(dx, dz))})`);
+      await placeBody(bh, spot, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
       await b.rest(400);
       // she rolls under way, and the boom is thin: aim again, a few times, until the pointer's on it
       let aimB = null, verbsB = [], hoveredB = null;
@@ -371,7 +381,7 @@ try {
     // parts dragged onto her, through her frame, as the crew gathers them: the static checks
     const nav = await staticChecks(js, "x", hull, "camber");
     report.measured.navmesh = { cells: nav.cells, triangles: nav.triangles, links: nav.links, at: nav.at, bakeMs: nav.bakeMs, why: nav.why };
-    check("her navmesh is baked, with a link for spawn, each station and the ladder", nav.cells > 500 && ["spawn", "station", "ladder"].every((k) => nav.links?.some((l) => l.startsWith(k))), report.measured.navmesh);
+    check("her navmesh is baked, with a link for spawn, each stand spot and the ladder", nav.cells > 500 && ["spawn", "stand", "ladder"].every((k) => nav.links?.some((l) => l.startsWith(k))), report.measured.navmesh);
     for (const [name, c] of Object.entries(nav.checks ?? {})) check(`her navmesh, from camber's GLB and the parts on her: ${name}`, c.ok, c.detail);
   }
 
