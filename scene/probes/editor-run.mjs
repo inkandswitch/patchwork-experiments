@@ -443,6 +443,14 @@ try {
       // the build controls embedded in the inspector: the STL's unit param to cm
       const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.scene-render-controls select')`, 4000);
       check("inspectorEmbedsBuildControls", hasControls);
+      // the built object's documents, a section each (TOOLS.md §6): its Source, then its Build (the
+      // controls, open); no button anywhere opens the source but a section's Open
+      const docs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section')].map((s) => [s.dataset.section, s.querySelector('.section-label').textContent, !s.hasAttribute('data-folded'), !!s.querySelector('.scene-render-controls')])`);
+      check("sectionsSourceThenBuild", JSON.stringify(docs) === JSON.stringify([["source", "Source", true, false], ["build", "Build", true, true]]), docs);
+      // long fields (two sections) never squeeze the tree: it keeps its rows' height, up to its 40%
+      const sq = await A(`(() => { const t = p.hostA.querySelector('.inspector-tree'), pane = p.hostA.querySelector('.inspector-pane'), want = t.querySelector('.scene-outline').scrollHeight; return { tree: t.getBoundingClientRect().height, pane: pane.getBoundingClientRect().height, want, fieldsScroll: p.hostA.querySelector('.inspector-body').scrollHeight }; })()`);
+      check("treeNotSqueezedByLongFields", sq.tree >= Math.min(sq.want, 0.38 * sq.pane) && sq.fieldsScroll > sq.pane - sq.tree, sq);
+      check("noOpenSource", (await A(`p.hostA.querySelectorAll('.open-source, .open-file, .open-linked, .open-about').length`)) === 0);
       if (hasControls) {
         await A(`(() => { const s = p.hostA.querySelector('.scene-render-controls select'); s.value = "cm"; s.dispatchEvent(new Event("change")); return true; })()`);
         const rebuilt = await b.waitFor(`(() => { const l = __p.text('.bounds-label'); return l.length === 3 && l.every((t) => /^200(\\.0+)?\\s*mm$/.test(t)) && l; })()`, 20_000);

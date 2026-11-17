@@ -431,6 +431,21 @@ right-click Select still selects it (no handles, no inspector).*
   scroll under it. It opens by the inspector's rule (a selection in Edit, or the
   toolbar's Inspector), so the tree comes with it; there is no Objects tab
   or toggle.
+- **An object's documents are sections of the inspector** (Decisions 12):
+  every document that goes with the selection (or, with nothing selected,
+  the scene) is one kind of thing, a section: its label, a fold, **Open**
+  and the document itself inline, in its own tool. The inspector's own are
+  the object's **Source** (the doc it shows, in that doc's own tool: open
+  for a built object, folded as **File** for a GLB file and as **Linked
+  scene** for a link), its **Build** (the render doc in the build controls)
+  and **About** (its `infoUrl`, else its nearest group's); any package adds
+  its own by declaring `documents` (STAGE.md "A document"), with no
+  inspector code. Open asks Patchwork to show the document as the main view
+  (`patchwork:open-document`, its url and tool); nothing else in the
+  inspector or the build controls opens a document, so "Open source",
+  "Open file" and the link's Open are gone. Whether a section is open is
+  the viewer's (a pref per section, `inspector.open.<ext>/<id>`), and
+  nothing is written to the doc.
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -1063,6 +1078,27 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   again after × and the toolbar's Inspector), xdnd-run 60/60 (it failed
   `outlineDropCopies` with a sticky bar, which covered the row it dropped
   on), parts-run 20/20, hand-run 33/33.
+- **Sidebar 2 (lane/sidebar, 2026-11-16): an object's documents are
+  inspector sections** (Decisions 12). One contribution, `documents`
+  (STAGE.md "A document"), and one pure rule, `documentsFor`; the
+  inspector's own are Source, Build and About; "Open source" (the build
+  controls), "Open file" and the link's Open went. *Proves* (finite):
+  eight kinds of selection (built, a GLB file, a link, a plain group, a
+  group with an infoUrl, an object in one, an object with its own,
+  nothing) × the sections, their labels, folds, urls and tools, and five
+  contributions (null, a non-automerge url, a throw, a repeat of the
+  Source's url and tool, a doc on the scene) × kept or dropped
+  (`parts/inspector-model.test.js`); in the stage, the sections shown are
+  documentsFor's in its order, each view inside the embed marker; one live
+  view per open section, the same elements kept while nothing changes and
+  every one unmounted on a new selection; fold {no pref, true, false} ×
+  {folded entry, open entry} (6); the fold writes only the pref; Open on
+  Source, Build and About dispatches its own url and tool (3); no other
+  button in the pane (any selection) or the build controls dispatches an
+  open; a lens's sourceUrl is never shown (`parts/inspector.test.js`,
+  "documents"; `controls-tool.test.js`). On the code before, all 15 stage
+  tests fail; dropping the dedupe, the catch, the reuse, the pref or the
+  toolId each fails its rows.
 
 ## What it costs
 
@@ -1468,3 +1504,45 @@ The project lead decided the five open questions on 2026-11-12.
     pref, like the drawer's grip) or the tree foldable, rather than a fixed
     40%? Should the tree arrive with a selection (as now), or stay folded
     until asked?
+12. **An object's documents are inspector sections, one kind of thing**
+    (the lead, 2026-11-16: "the 'open source' is unnecessary! it should be
+    a kind of inspector and render inline"; the shape of it decided
+    unattended, 2026-11-16, lane/sidebar, for the lead). The rule is §6's
+    ("An object's documents are sections of the inspector"); what was
+    decided, and why:
+    - **A section is a document, `{ url, toolId }`, nothing else**: a
+      `<patchwork-view>` of it inline, and Open for the main view (the
+      drawer, next, is a third place for the same value). About, the build
+      controls, "Open file", the link's Open and the controls' "Open
+      source" were five shapes of one idea; now there is one. A section
+      that was a mount function couldn't be opened as the main view, so a
+      die's or a bag's panel, which needs this scene's context (it rolls as
+      this viewer), stays a command docking its own element.
+    - **A contribution, `documents`, beside `commands`**: read with
+      `api.collect`, worked out by one pure rule (`inspector-model.js`
+      `documentsFor`: the inspector's own first, then running order; a null,
+      a non-automerge url, a throw (warned) or a repeated url and tool is
+      dropped, the first kept). Unlike a command, a document may go with
+      the scene.
+    - **The Source is the doc's own `sourceUrl`**, in the source doc
+      type's default tool, never a lens's: a veiled card's face is never
+      offered. A file and a link start folded (what they show is already
+      in the scene); a built object's source starts open, beside its Build.
+      A source routed nowhere (its provider isn't here) is a folded Source.
+    - **Folding is the viewer's**: a pref per section (extension and id,
+      not per object), so folding Source folds it for every object, and
+      no fold is written to the doc.
+    - **The build controls open nothing**: opened on their own, they have
+      no way back to the source. Accepted: the inspector is where you meet
+      them, and their Source is the section beside them.
+    - The sections' embed boxes keep the stage-wide CSS guard's class,
+      `.about-embed`, which some thirty stylesheets in eight packages name;
+      renaming it (to the `data-stage-embed` marker it duplicates) waits
+      for the parallel lanes to land.
+    Questions for the lead: which tool shows a Source (now its type's
+    default; should a provider name one, a `sourceTool` in its
+    `scene:source` metadata)? For an object fixed at a version, the Source
+    shows the latest (the doc you'd edit) while the Version row says Fixed
+    at…: should it show the source at those heads, read-only? Should a
+    die's or a bag's panel become a section (its tool working as a plain
+    doc tool), or stay a docked panel?

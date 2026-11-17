@@ -199,11 +199,15 @@ STAGE.md, "Extract and bundle".
   group it's in, and **Ungroup** moves its contents up a level, as they look
   (a hidden group's contents stay hidden, a translucent one's keep its
   opacity), and removes it. Commands from extensions (*Shuffle pile* at a game
-  table, say) are buttons here too. **About** shows the object's `infoUrl` document (or its nearest
-  group's, labelled "About <group>") in an embedded `<patchwork-view>`, with
-  **Open**. Then, for objects that have a render doc, **Version** ("Latest", or
+  table, say) are buttons here too. Then, for objects that have a render doc, **Version** ("Latest", or
   "Fixed at <short heads> · built <time>") with **Fix at this version** and
-  **Follow latest**, and the embedded build controls.
+  **Follow latest**. Last, the selection's documents, each a section with its
+  label, a fold and **Open** (the main view), shown inline in its own tool:
+  **Source** (the doc it shows; folded as **File** for a GLB and **Linked
+  scene** for a link), **Build** (the build controls on its render doc) and
+  **About** (its `infoUrl` document, or its nearest group's, labelled
+  "About <group>"). A package adds its own by declaring `documents`
+  (STAGE.md "A document").
 - **Attaching**: pick an object under *Attached to* and this one moves with it
   from then on (a flow field attached to its hull, say). Attaching and
   detaching keep the object exactly where it is; only its stored transform

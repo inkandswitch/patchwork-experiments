@@ -833,7 +833,7 @@ ships alone and proves something.
    probe (135 GLBs open, 378 in all) fetches, subscribes, draws and times
    the same as before. Routes are recomputed when the registry changes,
    and `api.loadState(id).content` says which
-   (the inspector's "Open file" and status line read it). `"scene"` is
+   (the inspector's status line and its Source section read it). `"scene"` is
    not a kind yet: it arrives with the `scene.link` source at step 11,
    so no branch exists for a source nothing registers.
 5. **Seats to `seats/`**, with the seat body's home ready for step 6.

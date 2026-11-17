@@ -4,6 +4,7 @@
 import { groupChain, groupTargets, inheritedDisplay, isGroup, outlineParents } from "../groups.js";
 import { attachTargets, treeOrder } from "../hierarchy.js";
 import { parseAutomergeUrl } from "../dnd.js";
+import { docKey } from "../embed.js";
 
 export const DEG = 180 / Math.PI;
 const NBSP = " ";
@@ -197,4 +198,101 @@ export function commandsKey(list) {
       Array.isArray(state.options) ? state.options.map((c) => [c?.value ?? null, c?.label ?? ""]) : null,
     ]),
   );
+}
+
+// ─── documents: the inspector's sections ────────────────────────────────────
+
+/** The tool the inspector shows a render doc in: the build controls (src/controls-tool.js). */
+export const CONTROLS_TOOL = "scene-render-controls";
+
+/**
+ * The documents that go with `target`, one section each in the inspector
+ * (STAGE.md "A document"), as [{ ext, id, label, url, toolId, folded }]:
+ * `first`'s own first, then the rest in running order. Dropped: an entry
+ * that doesn't apply (state null or false), one whose url isn't an
+ * automerge URL, one whose state throws (with a warning), and a repeat of a
+ * url and tool already listed (the first one stays). Unlike a command, a
+ * document may go with the scene (target null).
+ * @param {{ id: string, value: any }[]} collected  api.collect("documents")
+ */
+export function documentsFor(collected, target, ctx, first = null) {
+  const mine = [];
+  const rest = [];
+  for (const { id: ext, value } of collected ?? []) {
+    let list;
+    try {
+      list = Array.isArray(value) ? value : value && typeof value[Symbol.iterator] === "function" ? [...value] : [];
+    } catch {
+      continue;
+    }
+    for (const entry of list) {
+      if (!entry || entry.id == null || typeof entry.state !== "function") continue;
+      let state;
+      try {
+        state = entry.state(target, ctx);
+      } catch (err) {
+        console.warn(`[scene] “${ext}” document “${entry.id}” failed`, err);
+        continue;
+      }
+      if (state == null || state === false || typeof state !== "object") continue;
+      const url = docUrl(state.url);
+      if (!url) continue;
+      const toolId = typeof state.toolId === "string" && state.toolId ? state.toolId : null;
+      const label = String(state.label ?? entry.name ?? entry.id);
+      (ext === first ? mine : rest).push({ ext, id: String(entry.id), label, url, toolId, folded: !!state.folded });
+    }
+  }
+  const seen = new Set();
+  return [...mine, ...rest].filter((d) => {
+    const k = docKey(d.url, d.toolId);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/**
+ * The inspector's own documents, which every related document of an object
+ * is shown as: its Source (the doc it shows, in that doc's own tool; a file
+ * or a linked scene folded, since what it shows is already in the scene),
+ * its Build (the render doc, in the build controls) and About (its infoUrl,
+ * else its nearest group's). The source is the doc's own `sourceUrl`, never
+ * what a lens shows instead, so nothing veiled is offered.
+ * @param {(id: string) => "file" | "built" | "scene" | null} contentOf  what the stage routed an object's content to
+ */
+export function inspectorDocuments(contentOf) {
+  const objectOf = (target, scene) => (target != null ? scene?.objects?.[target] ?? null : null);
+  return [
+    {
+      id: "source",
+      name: "Source",
+      state(target, { scene }) {
+        const o = objectOf(target, scene);
+        const url = !o || isGroup(o) ? null : docUrl(o.sourceUrl);
+        if (!url) return null;
+        const kind = contentOf(target);
+        if (kind === "file") return { url, label: "File", folded: true };
+        if (kind === "scene") return { url, label: "Linked scene", folded: true };
+        // built from it; or not routed here (its provider isn't installed): there, folded
+        return { url, label: "Source", folded: kind !== "built" };
+      },
+    },
+    {
+      id: "build",
+      name: "Build",
+      state(target, { scene }) {
+        const o = objectOf(target, scene);
+        const url = !o || isGroup(o) ? null : docUrl(o.renderUrl);
+        return url ? { url, toolId: CONTROLS_TOOL, label: "Build" } : null;
+      },
+    },
+    {
+      id: "about",
+      name: "About",
+      state(target, { scene }) {
+        const about = target != null ? aboutFor(scene, target) : null;
+        return about ? { url: about.url, toolId: about.toolId, label: about.label } : null;
+      },
+    },
+  ];
 }

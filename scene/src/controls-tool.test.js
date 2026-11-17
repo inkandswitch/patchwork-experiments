@@ -88,6 +88,17 @@ describe("scene-render-controls, standalone", () => {
     expect(element.querySelector(".status").textContent).toBe("Not built yet");
   });
 
+  it("opens nothing: no Open source (the inspector's Source section is where the source is), no open-document from any button", async () => {
+    const { element } = await mount();
+    expect(element.querySelector(".open-source")).toBeNull();
+    const opened = [];
+    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+    element.addEventListener(REBUILD_EVENT, (e) => e.preventDefault());
+    for (const b of element.querySelectorAll("button")) b.click();
+    await flush();
+    expect(opened).toEqual([]);
+  });
+
   it("marks itself standalone outside a scene", async () => {
     const { element } = await mount();
     expect(element.querySelector(".scene-render-controls").hasAttribute("data-standalone")).toBe(true);

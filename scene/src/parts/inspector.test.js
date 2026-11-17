@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
-import { FakeRepo } from "../test/fake-repo.js";
+import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
-import inspector, { startBodies } from "./inspector.js";
+import inspector, { sectionPref, startBodies } from "./inspector.js";
 import { openTabs } from "../test/tabs.js";
-import { aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
+import { aboutFor, attachOptions, commandsFor, commandsKey, documentsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
+import { EMBED_ATTR } from "../embed.js";
+import { LINK } from "../stage/links.js";
+import { emptyScene } from "../test/empty-scene.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { sanitizeLayers } from "../layers.js";
@@ -392,64 +397,183 @@ describe("scene.inspector: the panel", () => {
     expect($(".name-input").readOnly).toBe(false);
   });
 
-  it("About: the object's infoUrl, else the nearest group's, labelled; Open dispatches; hidden when there's none", async () => {
-    const repo = new FakeRepo();
-    const info = repo.add({ title: "hull notes" });
-    const vesselInfo = repo.add({ title: "the boat" });
-    const objects = {
-      vessel: group("Solander 38", null, { infoUrl: vesselInfo.url }),
-      body: group("BODY", "vessel"),
-      hull: object({ name: "HULL", group: "body", infoUrl: info.url }),
-      deck: object({ name: "DECK", group: "body" }),
-      loose: object({ name: "LOOSE" }),
-    };
-    await mount({ objects, repo });
-    await select("hull");
-    let views = body().querySelectorAll(".about .about-embed > patchwork-view");
-    expect(views.length).toBe(1);
-    expect(views[0].getAttribute("doc-url")).toBe(info.url);
-    expect($(".about-title").textContent).toBe("About");
-    const embed = $(".about-embed");
-    s.change((d) => (d.objects.hull.opacity = 0.4));
-    await settle();
-    expect($(".about-embed")).toBe(embed); // unchanged About: the same view stays mounted
-    await select("deck");
-    views = s.root.querySelectorAll("patchwork-view");
-    expect(views.length).toBe(1);
-    expect(views[0].getAttribute("doc-url")).toBe(vesselInfo.url);
-    expect($(".about-title").textContent).toBe("About Solander 38");
-    const opened = [];
-    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-    $(".open-about").click();
-    expect(opened).toEqual([{ url: vesselInfo.url }]);
-    await select("loose");
-    expect($(".about").hidden).toBe(true);
-  });
-
-  it("a GLB file object (content \"file\"): Open file, and its stats in the status line; no Build section", async () => {
+  it("a GLB file object (content \"file\"): its stats in the status line", async () => {
     const repo = new FakeRepo();
     const file = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb" });
     await mount({ repo, objects: { a: object({ name: "A", sourceUrl: file.url, visible: false, hint: { triangles: 434, bytes: 18492 } }) } });
     await select("a");
     expect($(".status-line").textContent).toBe("434 triangles · 18 KB · not loaded (hidden)");
-    expect($(".controls-embed")).toBeNull();
-    const opened = [];
-    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-    $(".open-file").click();
-    expect(opened).toEqual([{ url: file.url }]);
+  });
+});
+
+describe("scene.inspector: documents, a section each (STAGE.md \"A document\", TOOLS.md §6)", () => {
+  const ME = "scene.inspector";
+  /** the sections as shown: [ext/id, label, open?, the doc-url and tool-id of its view, or null while folded] */
+  const sections = () =>
+    [...body().querySelectorAll(".doc-section")].map((sec) => {
+      const v = sec.querySelector(".section-embed > patchwork-view");
+      return [`${sec.dataset.ext}/${sec.dataset.section}`, sec.querySelector(".section-label").textContent, !sec.hasAttribute("data-folded"), v ? [v.getAttribute("doc-url"), v.getAttribute("tool-id")] : null];
+    });
+  const section = (key) => [...body().querySelectorAll(".doc-section")].find((sec) => `${sec.dataset.ext}/${sec.dataset.section}` === key);
+  const views = () => s.root.querySelectorAll("patchwork-view").length;
+  const OTHER = (state) => ({ meta: { id: "t.notes" }, module: { create: () => ({ documents: [{ id: "notes", name: "Notes", state }] }) } });
+
+  /** a scene with a built object, a GLB file and a link, each in a group with an About */
+  async function mountKinds(extensions = []) {
+    const repo = new FakeRepo();
+    const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    const glb = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb" });
+    const linked = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
+    const info = repo.add({ title: "the boat" });
+    const objects = {
+      boat: group("Boat", null, { infoUrl: info.url }),
+      built: object({ name: "Built", group: "boat", sourceUrl: src.url, renderUrl: render.url, visible: false }),
+      file: object({ name: "File", sourceUrl: glb.url, visible: false }),
+      link: object({ name: "Link", sourceUrl: linked.url, providerId: LINK, renderUrl: null }),
+    };
+    await mount({ repo, objects, extensions });
+    return { repo, src, render, glb, linked, info };
+  }
+
+  it("shows exactly documentsFor's sections, in its order, and only the open ones have a view", async () => {
+    const extra = (t) => (t === "built" ? { url: m.info.url, toolId: "notes", label: "Notes" } : null);
+    const m = await mountKinds([OTHER(extra)]);
+    await select("built");
+    await settle();
+    const want = documentsFor(s.api(ME).collect("documents"), "built", s.api(ME).context(null), ME).map((d) => `${d.ext}/${d.id}`);
+    expect(want).toEqual([`${ME}/source`, `${ME}/build`, `${ME}/about`, "t.notes/notes"]);
+    expect(sections()).toEqual([
+      [`${ME}/source`, "Source", true, [m.src.url, null]],
+      [`${ME}/build`, "Build", true, [m.render.url, "scene-render-controls"]],
+      [`${ME}/about`, "About Boat", true, [m.info.url, null]],
+      ["t.notes/notes", "Notes", true, [m.info.url, "notes"]],
+    ]);
+    // each view sits inside the stage's embed marker: its keys are its own
+    for (const v of body().querySelectorAll(".doc-section patchwork-view")) expect(v.closest(`[${EMBED_ATTR}]`)).not.toBeNull();
+    await select("file");
+    expect(sections()).toEqual([[`${ME}/source`, "File", false, null]]);
+    await select("link");
+    expect(sections()).toEqual([[`${ME}/source`, "Linked scene", false, null]]);
+    // the link's text row stays, with no Open of its own
+    expect($(".link-row").textContent).toMatch(/^Linked scene/);
+    expect($(".link-row button")).toBeNull();
+    await select("boat");
+    expect(sections()).toEqual([[`${ME}/about`, "About", true, [m.info.url, null]]]);
+    await select(null);
+    expect(sections()).toEqual([]);
+    expect($(".doc-sections").hidden).toBe(true);
   });
 
-  it("a render-doc object embeds the build controls on its render doc", async () => {
-    const repo = new FakeRepo();
-    const file = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl" });
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: file.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
-    await mount({ repo, objects: { a: object({ name: "A", sourceUrl: file.url, renderUrl: render.url, visible: false }) } });
+  it("a scene's documents (target null) are sections of the scene", async () => {
+    const notes = fakeUrl();
+    await mount({ objects: { a: object({ name: "A" }) }, extensions: [OTHER((t) => (t == null ? { url: notes } : null))] });
+    expect($(".inspector").dataset.kind).toBe("scene");
+    expect(sections()).toEqual([["t.notes/notes", "Notes", true, [notes, null]]]);
     await select("a");
-    const v = $(".controls-embed > patchwork-view");
-    expect(v.getAttribute("doc-url")).toBe(render.url);
-    expect(v.getAttribute("tool-id")).toBe("scene-render-controls");
-    expect($(".build-head").textContent).toBe("Build");
-    expect($(".open-file")).toBeNull();
+    expect(sections()).toEqual([]);
+  });
+
+  it("one live view per open section: a new selection unmounts every old one; an unchanged section stays mounted", async () => {
+    const m = await mountKinds();
+    await select("built");
+    expect(views()).toBe(3);
+    const first = [...body().querySelectorAll(".doc-section patchwork-view")];
+    s.change((d) => (d.objects.built.opacity = 0.4));
+    await settle();
+    // the very same elements, still connected (not new ones like them)
+    const now = [...body().querySelectorAll(".doc-section patchwork-view")];
+    expect(now.length).toBe(first.length);
+    expect(now.every((v, i) => v === first[i] && v.isConnected)).toBe(true);
+    await select("boat");
+    expect(views()).toBe(1);
+    for (const v of first) expect(v.isConnected).toBe(false);
+    // the same About, a new selection: a view of its own
+    await select("built");
+    await select("boat");
+    expect(views()).toBe(1);
+    expect(body().querySelector(".doc-section patchwork-view").getAttribute("doc-url")).toBe(m.info.url);
+  });
+
+  // fold: the viewer's pref, else the entry's own `folded`: {no pref, true, false} × {entry folded, not}
+  const FOLD = [
+    ["no pref", undefined, "file", false],
+    ["no pref", undefined, "built", true],
+    ["pref true", true, "file", true],
+    ["pref true", true, "built", true],
+    ["pref false", false, "file", false],
+    ["pref false", false, "built", false],
+  ];
+  it.each(FOLD)("fold: %s (%s), %s's Source → open %s", async (_name, pref, target, open) => {
+    await mountKinds();
+    if (pref !== undefined) s.api(ME).setPref(sectionPref(ME, "source"), pref);
+    await select(target);
+    await settle();
+    const sec = section(`${ME}/source`);
+    expect(!sec.hasAttribute("data-folded")).toBe(open);
+    expect(sec.querySelector(".section-fold").getAttribute("aria-expanded")).toBe(String(open));
+    // a view exactly while it's open
+    expect(sec.querySelectorAll("patchwork-view").length).toBe(open ? 1 : 0);
+    expect(sec.querySelector(".section-embed").hidden).toBe(!open);
+  });
+
+  it("the fold toggles the viewer's pref, nothing in the doc, and mounts or unmounts the view", async () => {
+    await mountKinds();
+    await select("built");
+    const before = JSON.stringify(s.doc());
+    section(`${ME}/source`).querySelector(".section-fold").click();
+    await settle();
+    expect(s.api(ME).pref(sectionPref(ME, "source"), null)).toBe(false);
+    expect(section(`${ME}/source`).querySelectorAll("patchwork-view").length).toBe(0);
+    expect(views()).toBe(2);
+    section(`${ME}/source`).querySelector(".section-fold").click();
+    await settle();
+    expect(s.api(ME).pref(sectionPref(ME, "source"), null)).toBe(true);
+    expect(views()).toBe(3);
+    expect(JSON.stringify(s.doc())).toBe(before);
+  });
+
+  // Open per kind of section: its own url and tool, as patchwork:open-document's detail
+  const OPEN = [
+    ["Source", "built", `${"scene.inspector"}/source`, (m) => ({ url: m.src.url })],
+    ["Build", "built", `${"scene.inspector"}/build`, (m) => ({ url: m.render.url, toolId: "scene-render-controls" })],
+    ["About", "boat", `${"scene.inspector"}/about`, (m) => ({ url: m.info.url })],
+  ];
+  it.each(OPEN)("Open on %s dispatches its own url and tool", async (_name, target, key, detail) => {
+    const m = await mountKinds();
+    await select(target);
+    const opened = [];
+    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+    section(key).querySelector(".section-open").click();
+    expect(opened).toEqual([detail(m)]);
+  });
+
+  it("nothing else in the pane opens a document: every other button clicked, no open-document", async () => {
+    await mountKinds();
+    const opened = [];
+    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url));
+    for (const target of ["built", "file", "link", "boat", null]) {
+      await select(target);
+      // (the commands are other extensions' verbs, run through api.run, and are their own tests)
+      const others = [...body().querySelectorAll("button")].filter((b) => !b.closest(".commands") && !b.classList.contains("section-open"));
+      for (const b of others) if (b.isConnected && !b.disabled) b.click();
+      await settle();
+    }
+    expect(opened).toEqual([]);
+    // and in the source: the inspector dispatches it from one place, the controls tool from none
+    const src = (f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8");
+    expect(src("./inspector.js").match(/new CustomEvent\(OPEN_EVENT/g)).toHaveLength(1);
+    expect(src("../controls-tool.js")).not.toMatch(/open-document|open-source/);
+  });
+
+  it("the source shown is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {
+    const secret = fakeUrl();
+    const lens = { meta: { id: "t.lens" }, module: { create: () => ({ looks: () => new Map([["built", { sourceUrl: secret, name: "Ace" }]]) }) } };
+    const m = await mountKinds([lens]);
+    await select("built");
+    await settle();
+    expect(sections()[0]).toEqual([`${ME}/source`, "Source", true, [m.src.url, null]]);
+    expect([...s.root.querySelectorAll("patchwork-view")].some((v) => v.getAttribute("doc-url") === secret)).toBe(false);
   });
 });
 

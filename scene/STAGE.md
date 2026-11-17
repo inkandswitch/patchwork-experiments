@@ -1058,7 +1058,7 @@ a selected dimension too, whatever order the two run in.
   Focus that leaves an element in the stage for nowhere (a clicked button
   that was then removed) comes back to the root.
 - Keys, pastes and drops inside a document embedded in the stage (another
-  tool, such as the inspector's About) are that tool's. Whoever embeds marks
+  tool, such as an inspector section) are that tool's. Whoever embeds marks
   the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
   `src/embed.js`); every pane of the drawer (`dock`) is marked so.
 - **One key order** (TOOLS.md §5; `src/keymap.js`): a focused field (the
@@ -1528,6 +1528,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
+| `documents` | the inspector: a section each (below, "A document") |
 | `hud()` → `[{ text, state }]` | status surfaces |
 | `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the carry (`scene.carry`). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
 | `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
@@ -1620,6 +1621,33 @@ A **command**:
   longer applies from where you are) and that target's other verbs, whose
   keys run on it; the held key's auto-repeat is the key map's. Once the last
   key is up attention follows the look again.
+
+A **document** (an instance's `documents`: the documents that go with a
+target, which the inspector shows as sections):
+
+```js
+{ id, name,
+  state(target, ctx) → null | { url, toolId?, label?, folded? } }   // ctx: api.context(null)
+```
+
+- `state` null (or false) means it doesn't go with that target. Unlike a
+  command, a document may go with the scene (target null).
+- `url` is an automerge URL (any heads are dropped: a section is the doc
+  you'd edit); `toolId` names the tool it's shown in, absent its type's
+  default; `label` is the section's title, over `name`; `folded` is how it
+  starts when the viewer hasn't chosen.
+- The inspector (`scene.inspector`) shows `documentsFor(api.collect("documents"),
+  target, ctx, "scene.inspector")` (`src/parts/inspector-model.js`): its own
+  first (Source, Build, About), then the rest in running order. An entry
+  whose url isn't an automerge URL, whose `state` throws (warned), or whose
+  url and tool repeat one already listed (the first stays) is dropped.
+- Each is a section: its label (which folds it: the viewer's pref
+  `inspector.open.<ext>/<id>`, else `folded`), **Open**
+  (`patchwork:open-document` with its `url` and `toolId`, the main view),
+  and, while open, a `<patchwork-view>` of it inside the embed marker, so
+  its keys are its own. It's a document, not a mount: something that needs
+  this scene's context (a die's panel) is a command that docks its own
+  element (`api.dock`).
 
 **Targets and refs.** A target is a string, or null for the scene:
 - an **object or group id** names that object;

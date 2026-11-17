@@ -1,5 +1,5 @@
 // A document embedded in the stage (another tool mounted inside it, such as
-// the inspector's About) is marked with one attribute. Whatever starts inside
+// an inspector section) is marked with one attribute. Whatever starts inside
 // one (keys, pastes, drops) is that tool's, never the stage's or an
 // extension's. The stage defines the marker; whoever embeds sets it. Pure.
 
@@ -15,3 +15,10 @@ export function fromEmbed(e, root) {
   }
   return !!e.target?.closest?.(`[${EMBED_ATTR}]`);
 }
+
+/**
+ * One key for a document as something shows it: its URL and the tool it's
+ * shown in (none: its type's default). Two sections, or two drawer panes,
+ * with one key show the same thing.
+ */
+export const docKey = (url, toolId = null) => `${url}|${toolId ?? ""}`;
