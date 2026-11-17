@@ -1,10 +1,10 @@
 // Publish "Fitting out" to a real sync server, and print its Patchwork URLs:
-// pins and mirrors (scene/STAGE.md, "Views, stages and links"; worked example 2, and a part
-// repeated live). A sloop at anchor whose companionway is a fit-out F,
-// linked and fixed at a version, with F changed since (its hatch open: the
-// boat still shows it shut, until someone chooses Follow latest); and one
-// hatch W that closes itself, linked live twice on her cabin top (the first
-// acts, the second is its mirror: open one and both open).
+// pins (scene/STAGE.md, "Views, stages and links"). A sloop at anchor whose
+// companionway is a fit-out F, linked and fixed at a version, with F changed
+// since (its hatch open: the boat still shows it shut, until someone chooses
+// Follow latest); and one hatch W that closes itself, linked live twice on
+// her cabin top (the first acts; the second is closed, a repeat, drawn as its
+// hint).
 //
 //   (in scene/, sailing/, water/, weather/, joints/ and traversal/) pnpm build
 //   node probes/publish-fitout.mjs [--sync wss://…] [--settle 8000] [--dry-run] [--show] [--shots <dir>] [--title "…"]
@@ -20,8 +20,8 @@
 // its hatch opened by its verb. It checks:
 // - S holds the hull and the rig and none of F's or W's pieces; its link to
 //   F is fixed, with F's files in its deps; its two links to W are live;
-// - S's view opens F pinned (its hatch shut, as fixed) and W acting and
-//   mirrored; F alone shows its hatch open.
+// - S's view opens F pinned (its hatch shut, as fixed) and W acting at its
+//   first link, its second closed (a repeat); F alone shows its hatch open.
 // Then (unless --dry-run) it publishes: the files, W, F as it was when fixed,
 // then F's change (so F's history holds both, and the pin's heads are F's
 // heads on the server, not the probe's), then S, its link to F fixed at
@@ -31,7 +31,7 @@
 //
 // --dry-run makes and checks it all in the browser, but publishes nothing.
 // (probes/pins-run.mjs plays it: the pin drawn and never acted on, the
-// mirror following the acting hatch, Follow latest and Fix at this version.)
+// acting hatch, Follow latest and Fix at this version.)
 //
 // Simulated time: the page's stages run on its manual clock (window.__time).
 
@@ -111,10 +111,10 @@ try {
   check("made through the parts bin, the start screen and the inspector", ids && !ids.error && ids.fixed === true, ids);
   const s = await P("shape()");
   const fit = s.links.find((l) => l.id === ids.fitout);
-  const hatches = s.links.filter((l) => l.id === ids.acting || l.id === ids.mirror);
+  const hatches = s.links.filter((l) => l.id === ids.acting || l.id === ids.repeat);
   check("S holds the hull and the rig, none of F's or W's pieces; F fixed with its files in the deps; W linked live twice", s.hull && s.rig && s.boatSlides === 0 && s.boatExits === 0 && fit?.at && s.fAssets.every((u) => fit.at.deps.includes(u)) && hatches.length === 2 && hatches.every((l) => l.url === ids.w && !l.at), s);
   const links = await P("links()");
-  check("S's view opens F pinned, W acting and mirrored", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.mirror?.role === "mirror" && Object.values(links).every((l) => l.open), links);
+  check("S's view opens F pinned and W acting, its second link closed (a repeat)", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.fitout.open && links.acting.open && links.repeat?.role === "closed" && links.repeat.reason === "repeat", links);
   check("everything loads", await loads("loaded().loaded === __p.loaded().total", 120_000), await P("loaded()"));
   // each doc, open alone, calls for plugins of exactly its stated packages: the boat none of F's or W's
   // (joints, traversal), which they list themselves

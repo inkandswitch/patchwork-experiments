@@ -28,7 +28,7 @@
 //   - It draws the open surface where its doc is the world (around the
 //     camera, lit by the world's atmosphere and roughened by the world's
 //     wind), and a block over each bounded body (its top, skirt and floor)
-//     in every stage that draws its doc (acting, mirror, pin), and sets the
+//     in every stage that draws its doc (acting, pin), and sets the
 //     stage's extent to the union of what it draws, floors included.
 //   - While a Water object of its doc is selected, it draws a dashed outline
 //     of that object's box (its size, or its clip whether or not it is live
@@ -37,7 +37,7 @@
 // Waves are a function of time, so it registers a process with no state (a
 // reason for time to pass) where its doc is the world and its open water has
 // waves, or where any of its own bounded bodies has waves; the stage holds
-// it only where the stage acts for the doc (never in a mirror or a pin).
+// it only where the stage acts for the doc (never in a pin).
 
 import { createOceanSurface } from "./material.js";
 import { createTiming, latch, levelOf, readerFor, VERSION } from "./convert.js";

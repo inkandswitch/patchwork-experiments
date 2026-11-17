@@ -12,7 +12,8 @@
        D (Ana again, made by i6()) G open alone in a second view of Ana's
                 whose handle refuses writes, as a viewer who may only read
                 has it; and, by i6(), the room links G twice more, live (a
-                mirror) and fixed at this version (a pin).
+                repeat: closed, drawn as its hint) and fixed at this version
+                (a pin).
      All three views share G's one handle, as views in one page of one repo
      do, so the network carries nothing between them: only the stage's page
      bus does (scene/src/stage/presence.js). One manual clock (window.__time)
@@ -201,14 +202,14 @@ try {
     // what Ana sees now: the pin must go on showing exactly this
     const pinFaces = facesIn(gStage("a"));
     const base = JSON.parse(JSON.stringify(docs.room.doc().objects[ids.roomLink]));
-    ids.mirrorLink = `${ids.roomLink}~mirror`;
+    ids.repeatLink = `${ids.roomLink}~repeat`;
     ids.pinLink = `${ids.roomLink}~pin`;
     aapi.change((d) => {
       const place = (id, x, extra) => {
         d.objects[id] = { ...base, parent: null, transform: { position: [x, 0, 1.2], rotation: [0, 0, 0], scale: 1 }, ...extra };
         d.order.push(id);
       };
-      place(ids.mirrorLink, 0.8, {});
+      place(ids.repeatLink, 0.8, {});
       place(ids.pinLink, -0.8, { at: JSON.parse(JSON.stringify(point)) });
     });
     // D: G alone, for Ana, through a handle that refuses writes (Keyhive's "may only read", as the stage sees it)
@@ -216,9 +217,9 @@ try {
     const readOnly = new Proxy(g, { get: (t, p) => (p === "isReadOnly" ? () => true : typeof t[p] === "function" ? t[p].bind(t) : t[p]) });
     mount("d", readOnly);
     const up = (st) => st?.debug.host.instanceOf("tabletop") && st.debug.host.instanceOf("card-table") && st.debug.host.instanceOf("seats");
-    const ok = await loaded(() => up(stageAtLink("a", ids.mirrorLink)) && up(stageAtLink("a", ids.pinLink)) && up(gStage("d")), 60_000);
-    if (!ok) return { error: "the mirror, the pin and D never all ran G's extensions", stages: P.i6Stages() };
-    return { pinHand, pinFaces, deps: Object.keys(point.deps ?? {}).length, mirrorLink: ids.mirrorLink, pinLink: ids.pinLink };
+    const ok = await loaded(() => up(stageAtLink("a", ids.pinLink)) && up(gStage("d")) && apiOf("a").link(ids.repeatLink)?.role === "closed", 60_000);
+    if (!ok) return { error: "the pin and D never both ran G's extensions, or the repeat never closed", stages: P.i6Stages() };
+    return { pinHand, pinFaces, deps: Object.keys(point.deps ?? {}).length, repeatLink: ids.repeatLink, pinLink: ids.pinLink };
   }
   Object.assign(P, {
     /** view w's focus: the links entered ([]: its outermost doc) */
@@ -270,13 +271,13 @@ try {
     faces: (w) => facesIn(gStage(w)),
     /**
      * I6 with the real packages, mid-play (Ana seated at p1 in the room, Ben at p2 aboard, dealt): the
-     * room links G twice more, live (a mirror, Ana's own view seated in the acting stage) and fixed at
+     * room links G twice more, live (a repeat: closed, Ana's own view seated in the acting stage) and fixed at
      * this version (a pin: the room link's fixPoint); and Ana opens G alone in a second view (D) whose
      * handle refuses writes. Link ids sort after the room link's, so G still acts where Ana sits.
      */
     i6: () => pumping(i6),
-    /** the faces each I6 stage shows: Ana's acting stage in the room, the mirror, the pin, and D */
-    i6Faces: () => ({ acting: facesIn(gStage("a")), mirror: facesIn(stageAtLink("a", ids.mirrorLink)), pin: facesIn(stageAtLink("a", ids.pinLink)), d: facesIn(gStage("d")) }),
+    /** the faces each I6 stage shows: Ana's acting stage in the room, the pin, and D */
+    i6Faces: () => ({ acting: facesIn(gStage("a")), pin: facesIn(stageAtLink("a", ids.pinLink)), d: facesIn(gStage("d")) }),
     /** what the pin's keeper and audience say of a card of Ana's hand (for a failing check's details) */
     i6Why: (id) => {
       const st = stageAtLink("a", ids.pinLink);
@@ -287,7 +288,7 @@ try {
     },
     i6Stages: () => {
       const one = (st) => (st ? { role: st.role, writable: st.debug.host.record("tabletop")?.api.writable() ?? null, running: st.debug.host.running().map((r) => r.id) } : null);
-      return { acting: one(gStage("a")), mirror: one(stageAtLink("a", ids.mirrorLink)), pin: one(stageAtLink("a", ids.pinLink)), d: one(gStage("d")), aLinks: { mirror: apiOf("a").link(ids.mirrorLink), pin: apiOf("a").link(ids.pinLink), room: apiOf("a").link(ids.roomLink) } };
+      return { acting: one(gStage("a")), repeat: one(stageAtLink("a", ids.repeatLink)), pin: one(stageAtLink("a", ids.pinLink)), d: one(gStage("d")), aLinks: { repeat: apiOf("a").link(ids.repeatLink), pin: apiOf("a").link(ids.pinLink), room: apiOf("a").link(ids.roomLink) } };
     },
     where() { const out = { p1: [], p2: [], table: [] }; for (const id of hidden()) out[zoneOf(id) ?? "table"].push(id); return out; },
     /** the deck's pile, at its spot ([0.3, 0] in G's root frame), top first */
@@ -361,11 +362,11 @@ try {
         return { ...x, n: children.length, at: e ? [e[12], e[13], e[14]] : null };
       });
     },
-    /** where Cara's avatar should be drawn in view w now: her feet (G's frame, as she says them on G's channel) through G's root as w draws it (`mirror`: Ana's mirror of G) */
-    caraIn(w, mirror = false) {
+    /** where Cara's avatar should be drawn in view w now: her feet (G's frame, as she says them on G's channel) through G's root as w draws it */
+    caraIn(w) {
       const st = gStage(w);
       const feet = st?.debug.presence.get()[dbg.c.view.session]?.keys?.walk?.avatar?.feet;
-      const link = mirror ? keyOf(0, ids.mirrorLink) : w === "a" ? keyOf(0, ids.roomLink) : keyOf(0, ids.boatLink);
+      const link = w === "a" ? keyOf(0, ids.roomLink) : keyOf(0, ids.boatLink);
       const m = dbg[w].viewport.worldOf(link);
       return feet && m ? apply(m, feet) : null;
     },

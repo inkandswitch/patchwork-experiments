@@ -2,8 +2,8 @@
 <meta charset="utf-8">
 <title>pins probe</title>
 <!-- Driven by probes/pins-run.mjs (checks) and probes/publish-fitout.mjs
-     (publishing what it builds): pins and mirrors (scene/COMPOSITION.md §7,
-     worked example 2 and "a part repeated live"), on the BUILT scene,
+     (publishing what it builds): pins, and a live doc linked twice (its
+     second link closed, "repeat"; scene/STAGE.md, "Views, stages and links"), on the BUILT scene,
      sailing, joints and traversal plugins in a stub registry, on ONE
      in-memory repo, each doc made the way a person makes it, by the tools:
        W  "Hatch": a sliding hatch that closes itself (sailing's companionway
@@ -211,13 +211,13 @@ try {
     ids.port = await sapi.addObject(docs.w.url, { parent: place.parent, transform: fwd(0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (port)" });
     ids.starboard = await sapi.addObject(docs.w.url, { parent: place.parent, transform: fwd(-0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (starboard)" });
     if (!ids.fitout || !ids.port || !ids.starboard) return { error: "a link wasn't made", ids, errors };
-    // which acts is the doc's structure: the link that comes first in path order (the smaller id); the other mirrors it
-    [ids.acting, ids.mirror] = [ids.port, ids.starboard].sort();
+    // which acts is the doc's structure: the link that comes first in path order (the smaller id); the other is closed, "repeat"
+    [ids.acting, ids.repeat] = [ids.port, ids.starboard].sort();
     // starts people looking (no body named: Look), the world held still until the probe runs it
     sapi.change((d) => (d.view.start = {}));
     sapi.clock.pause();
     dbg.s.view.select(null);
-    await loaded(() => stageAt(ids.fitout)?.debug.host.instanceOf("joints") && stageAt(ids.port)?.debug.host.instanceOf("joints") && stageAt(ids.starboard)?.debug.host.instanceOf("joints"));
+    await loaded(() => stageAt(ids.fitout)?.debug.host.instanceOf("joints") && stageAt(ids.acting)?.debug.host.instanceOf("joints"));
     // F fixed where it is: the inspector's Fix at this version, in Edit, as a person does it
     sapi.body.enter("edit");
     const fixed = sapi.run({ ext: "scene.inspector", command: "fix-version", target: ids.fitout });
@@ -256,7 +256,7 @@ try {
     stages: () => dbg.s.view.stages().map(about),
     stage: (...path) => about(stageAt(...path)),
     link: linkOf,
-    links: () => ({ fitout: linkOf(ids.fitout), acting: linkOf(ids.acting), mirror: linkOf(ids.mirror) }),
+    links: () => ({ fitout: linkOf(ids.fitout), acting: linkOf(ids.acting), repeat: linkOf(ids.repeat) }),
     shape() {
       const o = objectsOf(docs.s);
       const links = Object.entries(o).filter(([, x]) => x.providerId === "scene.link").map(([id, x]) => ({ id, url: x.sourceUrl, parent: x.parent, at: x.at ? { heads: [...x.at.heads], deps: Object.keys(x.at.deps ?? {}) } : null }));
@@ -327,8 +327,8 @@ try {
     bodies: () => [...dbg.s.view.bodyDefs()].map(([id, x]) => ({ id, stage: x.stage.path.join("/") })),
     /** the commands view s's surfaces collect, with the stage each comes from */
     commandStages: () => dbg.s.view.collect("commands").map((c) => (c.stage == null ? null : dbg.s.view.stage(c.stage)?.path.join("/") ?? null)),
-    /** who computes W's clock, and does each W stage of view s */
-    computing: () => ({ claim: JSON.parse(JSON.stringify(docs.w.doc().claims?.clock ?? null)), acting: stageAt(ids.acting)?.debug.clock.computing() ?? null, mirror: stageAt(ids.mirror)?.debug.clock.computing() ?? null, session: dbg.s.view.session }),
+    /** who computes W's clock, and does view s's W stage */
+    computing: () => ({ claim: JSON.parse(JSON.stringify(docs.w.doc().claims?.clock ?? null)), acting: stageAt(ids.acting)?.debug.clock.computing() ?? null, session: dbg.s.view.session }),
     /** F changed live in its own view: its hatch opened, by its verb (view f's key map path: the command run in its stage), and a sign written */
     openF() {
       const fapi = apiOf("f");
@@ -345,10 +345,10 @@ try {
       return ran;
     },
     fixPoint: () => JSON.parse(JSON.stringify(apiOf("s").fixPoint(ids.fitout))),
-    /** try every write through the pinned and mirrored stages' apis (an extension's): each refused, nothing thrown */
+    /** try every write through the pinned stage's api (an extension's): each refused, nothing thrown */
     tryWrites() {
       const out = {};
-      for (const [name, path] of [["pinned", [ids.fitout]], ["mirror", [ids.mirror]]]) {
+      for (const [name, path] of [["pinned", [ids.fitout]]]) {
         const api = apiIn(stageAt(...path));
         const r = {};
         try { api.change((d) => (d.title = "written")); r.change = "quiet"; } catch (e) { r.change = `threw ${e.message}`; }
@@ -364,18 +364,18 @@ try {
     },
     resume() { apiOf("s").clock.resume(); return apiOf("s").clock.t(); },
     pause() { apiOf("s").clock.pause(); return apiOf("s").clock.t(); },
-    /** frame by frame for `ms` of the page's clock: how far the hull moved, and the fit-out and both hatches stay where the hull carries them */
+    /** frame by frame for `ms` of the page's clock: how far the hull moved, and the fit-out and the acting hatch stay where the hull carries them */
     async sampleRide(ms = 3000) {
       const vp = dbg.s.viewport;
       let moved = 0, off = 0;
       const h0 = vp.worldOf(ids.hull);
       const rel0 = {};
-      for (const [k, path, id] of [["fit", [ids.fitout], ids.fHatch], ["acting", [ids.acting], ids.wHatch], ["mirror", [ids.mirror], ids.wHatch]]) rel0[k] = mul(invert(h0), drawnIn(path, id));
+      for (const [k, path, id] of [["fit", [ids.fitout], ids.fHatch], ["acting", [ids.acting], ids.wHatch]]) rel0[k] = mul(invert(h0), drawnIn(path, id));
       for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
         await time.step(1, { draw: false });
         const h = vp.worldOf(ids.hull);
         moved = Math.max(moved, Math.hypot(h[12] - h0[12], h[13] - h0[13], h[14] - h0[14]), Math.hypot(h[4] - h0[4], h[6] - h0[6]));
-        for (const [k, path, id] of [["fit", [ids.fitout], ids.fHatch], ["acting", [ids.acting], ids.wHatch], ["mirror", [ids.mirror], ids.wHatch]]) {
+        for (const [k, path, id] of [["fit", [ids.fitout], ids.fHatch], ["acting", [ids.acting], ids.wHatch]]) {
           const rel = mul(invert(h), drawnIn(path, id));
           off = Math.max(off, ...rel.map((v, j) => Math.abs(v - rel0[k][j])));
         }

@@ -20,17 +20,17 @@
 //     G) and carries one onto an expedition column; Ben and Cara see both
 //     moves; Ben draws and plays one of his, and Ana and Cara see it;
 //  6. I6 with the real packages (scene/STAGE.md, Invariants): mid-play,
-//     Ana's room links G twice more, live (a mirror, Ana seated in the
-//     acting stage) and fixed at this version (a pin), and Ana opens G in a
-//     view of her own whose handle refuses writes (D). Each runs G's
-//     extensions, read-only; the mirror and D show Ana exactly her acting
-//     stage's faces (I4: the roster reaches a drawn stage), the pin what she
+//     Ana's room links G twice more, live (a repeat: closed, no stage, Ana
+//     seated in the acting stage) and fixed at this version (a pin), and Ana
+//     opens G in a view of her own whose handle refuses writes (D). The pin
+//     and D run G's extensions, read-only; D shows Ana exactly her acting
+//     stage's faces (I4: the roster reaches a read-only stage), the pin what she
 //     saw when it was fixed (her hand, and the cards played face up); Ana then plays a card face up (her keeper hands over
 //     its key) and draws, and all of it stays so, with nothing written
 //     through any of them: no warning, no error (7);
 //  6b. editing in context (STAGE.md build step 14): Ana, seated, enters
-//     G from her room by its mirror's link (Enter goes where G acts: the
-//     room's first link); her general parts move into her G stage and
+//     G from her room by its link (Enter on the repeat and on the pin is
+//     refused); her general parts move into her G stage and
 //     nothing else changes, for her (still seated, the same docs running
 //     the same parts) or for Ben and Cara (their focus and parts where they
 //     were); entered, she draws, and both see it; Escape leaves;
@@ -41,11 +41,10 @@
 //     boat's world running, Ben enters G: his clock chips are the focus
 //     path's, so the boat's chip stays, named; he leaves. Cara (G alone)
 //     selects a card: Ben (outside G) and Ana (outside G, in the room) see
-//     her box in their G stage and Ana's mirror of G, drawn by scene.others
-//     (a part of every doc), and Ana's pin of G draws none. Cara walks on G's
-//     table: Ben and Ana draw her, by walk.people (a part of every doc),
-//     where her feet are through G's frame in each (heeling aboard, level in
-//     the room, and again in Ana's mirror through its own link); the pin
+//     her box in their G stage, drawn by scene.others (a part of every
+//     doc), and Ana's pin of G draws none. Cara walks on G's table: Ben and
+//     Ana draw her, by walk.people (a part of every doc), where her feet are
+//     through G's frame in each (heeling aboard, level in the room); the pin
 //     draws nobody;
 //  8. no page errors, and no warnings (a refused write would warn).
 // Prints a JSON checklist; exits non-zero if any check fails.
@@ -185,35 +184,36 @@ try {
   await draw("b", "p2");
   await shot("played");
 
-  // 6. I6, pinned, unwritable and mirrored, mid-play
+  // 6. I6, pinned, unwritable and repeated, mid-play
   const i6 = await P("i6()", 300_000);
-  check("6. I6: mid-play, the room links G live again (a mirror) and fixed at this version (a pin, its deps the docs reached through it); Ana opens G read-only in a view of her own", !!i6 && !i6.error && i6.deps > 0, i6);
+  check("6. I6: mid-play, the room links G live again (a repeat) and fixed at this version (a pin, its deps the docs reached through it); Ana opens G read-only in a view of her own", !!i6 && !i6.error && i6.deps > 0, i6);
   const st6 = await P("i6Stages()");
   report.numbers.i6 = { stages: st6 };
   const runsG = (x) => !!x && ["tabletop", "card-table", "seats"].every((id) => x.running.includes(id));
-  check("6. the mirror and the pin are drawn stages of G and D a read-only one; each runs G's extensions, none may write; G still acts where Ana sits", st6.acting?.role === "acting" && st6.acting.writable === true && st6.mirror?.role === "mirror" && st6.pin?.role === "pinned" && st6.d?.role === "acting" && [st6.mirror, st6.pin, st6.d].every((x) => runsG(x) && x.writable === false) && st6.aLinks.mirror?.open && st6.aLinks.pin?.open && (await P("seats()")).p1?.player === (await P("people")).a, st6);
-  const sameFaces = (f) => J([...f.mirror].sort()) === J([...f.acting].sort()) && J([...f.d].sort()) === J([...f.acting].sort());
-  await holds("(() => { const f = __p.i6Faces(); return f.acting.length > 0 && JSON.stringify([...f.mirror].sort()) === JSON.stringify([...f.acting].sort()) && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
+  check("6. the repeat is closed with no stage; the pin is a drawn stage of G and D a read-only one; each runs G's extensions, neither may write; G still acts where Ana sits", st6.acting?.role === "acting" && st6.acting.writable === true && st6.repeat === null && st6.aLinks.repeat?.role === "closed" && st6.aLinks.repeat.reason === "repeat" && st6.pin?.role === "pinned" && st6.d?.role === "acting" && [st6.pin, st6.d].every((x) => runsG(x) && x.writable === false) && st6.aLinks.pin?.open && (await P("seats()")).p1?.player === (await P("people")).a, st6);
+  const sameFaces = (f) => J([...f.d].sort()) === J([...f.acting].sort());
+  await holds("(() => { const f = __p.i6Faces(); return f.acting.length > 0 && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
   const f6 = await P("i6Faces()");
-  check("6. the mirror and D show Ana exactly the faces her acting stage shows (her hand), the pin what she saw when it was fixed (her hand and the cards face up)", f6.acting.length > 0 && sameFaces(f6) && J([...f6.pin].sort()) === J([...i6.pinFaces].sort()) && i6.pinHand.every((id) => f6.pin.includes(id)), { faces: f6, pinFaces: i6.pinFaces, why: await P(`i6Why(${J(i6.pinHand[0])})`) });
+  check("6. D shows Ana exactly the faces her acting stage shows (her hand), the pin what she saw when it was fixed (her hand and the cards face up)", f6.acting.length > 0 && sameFaces(f6) && J([...f6.pin].sort()) === J([...i6.pinFaces].sort()) && i6.pinHand.every((id) => f6.pin.includes(id)), { faces: f6, pinFaces: i6.pinFaces, why: await P(`i6Why(${J(i6.pinHand[0])})`) });
   // Ana plays one face up (her keeper hands over its key in the open) and draws: the others take no part
   const hand6 = (await P("where()")).p1;
   if (hand6[0]) await play("a", hand6[0], -0.085, 1);
   await draw("a", "p1");
-  await holds("(() => { const f = __p.i6Faces(); return JSON.stringify([...f.mirror].sort()) === JSON.stringify([...f.acting].sort()) && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
+  await holds("(() => { const f = __p.i6Faces(); return JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
   const f6b = await P("i6Faces()");
-  check("6. after Ana's play and draw, the mirror and D still show what her acting stage shows, and the pin still shows what it was fixed at", sameFaces(f6b) && J([...f6b.pin].sort()) === J([...i6.pinFaces].sort()), { faces: f6b });
+  check("6. after Ana's play and draw, D still shows what her acting stage shows, and the pin still shows what it was fixed at", sameFaces(f6b) && J([...f6b.pin].sort()) === J([...i6.pinFaces].sort()), { faces: f6b });
   const warned = (await P("errors")).filter((e) => !EXPECTED.test(e));
-  check("6. nothing was written through the mirror, the pin or D: no warning, no error so far", warned.length === 0, warned.slice(0, 10));
+  check("6. nothing was written through the pin or D: no warning, no error so far", warned.length === 0, warned.slice(0, 10));
 
-  // 6b. Ana enters G from her room, by the mirror's link: where G acts
+  // 6b. Ana enters G from her room, by its link
   {
     const runsBefore = { a: await P("traitRuns('a')"), b: await P("traitRuns('b')"), c: await P("traitRuns('c')") };
     const seatsBefore = J(await P("seats()"));
     const pinRefused = await P(`enter('a', ${J(i6.pinLink)})`);
-    const ok = await P(`enter('a', ${J(i6.mirrorLink)})`);
+    const repeatRefused = await P(`enter('a', ${J(i6.repeatLink)})`);
+    const ok = await P(`enter('a', ${J(ids.roomLink)})`);
     const placed = await until(`runsIn('a', 'scene.menu').length === 1 && __p.runsIn('a', 'scene.menu')[0].length === 1`, 3000);
-    check("6b. Enter on the mirror's link goes inside G where it acts (the room's first link); Enter on the pin is refused", ok && !pinRefused && J(await P("focusPath('a')")) === J([ids.roomLink]) && placed, { focus: await P("focusPath('a')"), menu: await P("runsIn('a', 'scene.menu')"), pinRefused });
+    check("6b. Enter on the room's link goes inside G; Enter on the pin and on the repeat is refused", ok && !pinRefused && !repeatRefused && J(await P("focusPath('a')")) === J([ids.roomLink]) && placed, { focus: await P("focusPath('a')"), menu: await P("runsIn('a', 'scene.menu')"), pinRefused, repeatRefused });
     const runsAfter = { a: await P("traitRuns('a')"), b: await P("traitRuns('b')"), c: await P("traitRuns('c')") };
     check("6b. entering changes nothing else: every stage in every view runs what its doc calls for as before, Ben's and Cara's focus and general parts where they were, Ana still seated, the seats as they were", J(runsAfter) === J(runsBefore) && J(await P("focusPath('b')")) === "[]" && J(await P("focusPath('c')")) === "[]" && J(await P("runsIn('b', 'scene.menu')")) === "[[]]" && J(await P("runsIn('c', 'scene.menu')")) === "[[]]" && (await P("body('a')")).id === "seat" && J(await P("seats()")) === seatsBefore, { runsBefore, runsAfter, b: await P("runsIn('b', 'scene.menu')"), c: await P("runsIn('c', 'scene.menu')"), body: await P("body('a')") });
     // entered, she plays on: a draw through her key map (G's, the focus's)
@@ -246,21 +246,21 @@ try {
     const card = (await P("where()")).table[0] ?? (await P("where()")).p1[0];
     await P(`caraSelects(${J(card)})`);
     const box = `peer:${await P("session('c')")}`;
-    const seen = await until(`peerBoxes('b').some((x) => x.role === 'acting' && x.boxes.includes(${J(box)})) && __p.peerBoxes('a').filter((x) => x.role !== 'pinned' && x.boxes.includes(${J(box)})).length === 2`, 4000);
+    const seen = await until(`peerBoxes('b').some((x) => x.role === 'acting' && x.boxes.includes(${J(box)})) && __p.peerBoxes('a').filter((x) => x.role !== 'pinned' && x.boxes.includes(${J(box)})).length === 1`, 4000);
     const boxes = { a: await P("peerBoxes('a')"), b: await P("peerBoxes('b')") };
     report.numbers.peerBoxes = boxes;
-    check("7b. Cara selects a card in G: Ben and Ana, each outside G, see her box in their G stage, and Ana in her mirror of G too, drawn by scene.others, which runs in every stage of G; Ana's pin of G draws none", seen && J(boxes.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && [...boxes.a, ...boxes.b].every((x) => x.runs && J(x.boxes) === J(x.role === "pinned" ? [] : [box])), boxes);
+    check("7b. Cara selects a card in G: Ben and Ana, each outside G, see her box in their G stage, drawn by scene.others, which runs in every stage of G; Ana's pin of G draws none", seen && J(boxes.a.map((x) => x.role).sort()) === J(["acting", "pinned"]) && [...boxes.a, ...boxes.b].every((x) => x.runs && J(x.boxes) === J(x.role === "pinned" ? [] : [box])), boxes);
     await P("caraSelects(null)");
 
     const walks = await P("caraWalks()");
     await P("stepFrames(30)");
-    const drawnBoth = await until("avatars('b').some((x) => x.role === 'acting' && x.n === 1) && __p.avatars('a').filter((x) => x.role !== 'pinned' && x.n === 1).length === 2", 4000);
+    const drawnBoth = await until("avatars('b').some((x) => x.role === 'acting' && x.n === 1) && __p.avatars('a').filter((x) => x.role !== 'pinned' && x.n === 1).length === 1", 4000);
     await P("stepFrames(1)");
-    const av = { a: await P("avatars('a')"), b: await P("avatars('b')"), wantA: await P("caraIn('a')"), wantB: await P("caraIn('b')"), wantMirror: await P("caraIn('a', true)") };
+    const av = { a: await P("avatars('a')"), b: await P("avatars('b')"), wantA: await P("caraIn('a')"), wantB: await P("caraIn('b')") };
     report.numbers.avatars = av;
     const at = (w, role = "acting") => av[w].find((x) => x.role === role)?.at;
     const near = (p, q) => !!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6;
-    check("7b. Cara walks on G's table: Ben and Ana draw her by walk.people in their G stage, where her feet are through G's frame in each (heeling aboard, level in the room), and Ana again in her mirror through its link; the pin draws nobody", walks && drawnBoth && J(av.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && near(at("a"), av.wantA) && near(at("b"), av.wantB) && near(at("a", "mirror"), av.wantMirror) && [...av.a, ...av.b].every((x) => x.runs && x.n === (x.role === "pinned" ? 0 : 1)), av);
+    check("7b. Cara walks on G's table: Ben and Ana draw her by walk.people in their G stage, where her feet are through G's frame in each (heeling aboard, level in the room); the pin draws nobody", walks && drawnBoth && J(av.a.map((x) => x.role).sort()) === J(["acting", "pinned"]) && near(at("a"), av.wantA) && near(at("b"), av.wantB) && [...av.a, ...av.b].every((x) => x.runs && x.n === (x.role === "pinned" ? 0 : 1)), av);
     await shot("presence");
   }
 
