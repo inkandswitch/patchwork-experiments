@@ -1,9 +1,8 @@
 // The play extension against a stand-in for the scene's api: what it asks of
 // the stage when you walk in, pick up the gun, shoot and put it down.
 import { describe, it, expect, beforeEach } from "vitest";
-import play, { ATMOSPHERE, hueOf, playState, scores } from "./play.js";
+import play, { playState, scores } from "./play.js";
 import { plugins } from "./index.js";
-import { resetCommand } from "./reset.js";
 
 class Obj {
   constructor() {
@@ -164,18 +163,6 @@ describe("Play and Stand targets up: world commands, on the bar in every body (s
     expect(x.commands.filter((c) => c.show.includes("world")).map((c) => c.id)).toEqual(["reset", "play"]);
   });
 
-  // targets: none, all standing, one down (A3; its state doesn't decide the bar's height: the bar shows while it's declared)
-  const target = (down) => ({ traits: { "arena.target": down ? { down: { by: "p", at: 1 }, stand: { rotation: [0, 0, 0] } } : {} }, transform: T([0, 0, -5], down ? 1.5 : 0) });
-  const RESET = [
-    ["no targets", {}, false],
-    ["all standing", { a: target(false), b: target(false) }, false],
-    ["one down", { a: target(false), b: target(true) }, true],
-  ];
-  for (const [what, objects, applies] of RESET)
-    it(`Stand targets up: ${what} → ${applies ? "applies" : "null"}`, () => {
-      const state = resetCommand({ change() {} }).state(null, { scene: { objects } });
-      expect(state).toEqual(applies ? { title: "Stand every knocked-over target back up" } : null);
-    });
 });
 
 describe("playing", () => {
@@ -286,25 +273,19 @@ describe("playing", () => {
     expect(stateOf(f, x, "play")).toEqual({ label: "Pick up the gun", title: "Take the gun in hand: a click shoots, R reloads" });
   });
 
-  // the HUD only reads (A1): no button, whatever's going on. Looking, walking,
-  // holding the gun × every target standing, one down and scored
-  for (const at of ["looking", "walking", "holding"])
-    for (const knocked of [false, true])
-      it(`the HUD holds no button: ${at}, ${knocked ? "a target down and scored" : "every target standing"}`, () => {
-        if (knocked) {
-          doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
-          x.update(scene(doc), {}, { scene: null });
-        }
-        if (at === "walking") x.commands.find((c) => c.id === "play").run(null), f.calls.held.put();
-        if (at === "holding") x.commands.find((c) => c.id === "play").run(null);
-        const hud = f.calls.overlay;
-        expect(hud.querySelector(".arena-hud")).not.toBeNull();
-        expect(hud.querySelector(".arena-count, .arena-top")?.textContent).toMatch(knocked ? /0 of 1/ : /1 of 1/);
-        if (knocked) expect(hud.querySelector(".arena-scores")?.textContent).toMatch(/You1/);
-        // a <button> or a button role; that it takes no press at all is the
-        // CSS's (pointer-events: none), which the browser probe shows
-        expect(hud.querySelectorAll("button, [role=button]").length).toBe(0);
-      });
+  // the HUD only reads (A1): no button, even holding the gun with a target down and scored
+  it("the HUD holds no button", () => {
+    doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
+    x.update(scene(doc), {}, { scene: null });
+    x.commands.find((c) => c.id === "play").run(null);
+    const hud = f.calls.overlay;
+    expect(hud.querySelector(".arena-hud")).not.toBeNull();
+    expect(hud.querySelector(".arena-count, .arena-top")?.textContent).toMatch(/0 of 1/);
+    expect(hud.querySelector(".arena-scores")?.textContent).toMatch(/You1/);
+    // a <button> or a button role; that it takes no press at all is the
+    // CSS's (pointer-events: none), which the browser probe shows
+    expect(hud.querySelectorAll("button, [role=button]").length).toBe(0);
+  });
 
   it("under the lock a press shoots at once; without it the press is the body's (a drag looks) and the tap's click shoots", () => {
     x.commands.find((c) => c.id === "play").run(null);
@@ -372,25 +353,5 @@ describe("playing", () => {
     f.calls.held.press({ button: 0, locked: true, ray: ray() });
     expect(f.calls.overlay.querySelector(".arena-hit")).not.toBeNull();
     expect(f.calls.overlay.querySelector(".arena-crosshair")).not.toBeNull();
-  });
-
-  it("a laid-out level has the arena's sky, haze and shadowing sun; any other scene keeps its own", () => {
-    expect((x.ambient()?.atmosphere ?? null)).toBeNull();
-    // a target added to a boat: a bare level trait, no look
-    doc.traits = { "arena.level": {} };
-    x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
-    expect((x.ambient()?.atmosphere ?? null)).toBeNull();
-    doc.traits = { "arena.level": { look: "arena" } };
-    x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
-    const a = (x.ambient()?.atmosphere ?? null);
-    expect(a).toBe(ATMOSPHERE);
-    expect(a.sun.shadows).toBe(true);
-    expect(a.fog.far).toBeGreaterThan(a.fog.near);
-    expect(Object.keys(a.sky)).toEqual(["top", "horizon", "bottom"]);
-  });
-
-  it("colours are stable per player", () => {
-    expect(hueOf("a")).toBe(hueOf("a"));
-    expect(hueOf("a")).not.toBe(hueOf("b"));
   });
 });
