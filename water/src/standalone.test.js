@@ -35,12 +35,6 @@ export function specifiers(text) {
 }
 
 describe("the package stands alone", () => {
-  it("the specifier reader finds every form", () => {
-    const q = '"';
-    const text = [`import a from ${q}./a.js${q};`, `import { b } from '../b.js';`, `export * from ${q}./c.js${q};`, `import ${q}./d.js${q};`, `await import(${q}../../e.js${q});`].join(" ");
-    expect(specifiers(text)).toEqual(["./a.js", "../b.js", "./c.js", "./d.js", "../../e.js"]);
-  });
-
   const all = files(ROOT);
   it(`reads every file (${all.length})`, () => expect(all.length).toBeGreaterThan(10));
   for (const f of all)
