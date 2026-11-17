@@ -227,10 +227,10 @@ try {
     /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
     runsIn: (w, ext) => dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext)).map((s) => [...s.path]),
     /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
-    traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id)]),
+    traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().map((r) => r.id)]),
     /** Enter on a link of the focus stage's, as the menu runs it (scene.focus's command): false where it can't */
     enter(w, id) {
-      const c = dbg[w].view.focusStage()?.debug.host.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
+      const c = dbg[w].view.focusStage()?.debug.view.plugins.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
       const st = c?.state(id);
       if (!st || st.disabled) return false;
       c.run(id);

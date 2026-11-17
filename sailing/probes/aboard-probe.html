@@ -404,12 +404,12 @@ try {
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { label: e.querySelector(".menu-label")?.textContent.trim() ?? "", x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; }),
     // the halo is a general part: it runs in the focus stage (the boat's, until A enters G)
     /** what a view's halo is on, and the frame it's drawn in (its doc parent's) */
-    halo: (w) => { const h = fdbg(w).host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
+    halo: (w) => { const h = fdbg(w).view.plugins.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
     /** why a view's halo is or isn't on what it has selected */
-    haloWhy: (w) => { const d = fdbg(w); const l = d.local.get(); const o = d.scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: d.host.record("scene.halo")?.api?.writable?.() ?? null, dragging: d.host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
+    haloWhy: (w) => { const d = fdbg(w); const l = d.local.get(); const o = d.scene().objects[l.selected]; return { running: !!d.view.plugins.instanceOf("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: d.view.plugins.record("scene.halo")?.api?.focus()?.writable?.() ?? null, dragging: d.view.plugins.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
     /** a halo arrow's point (a third along it), and `along` frame units further, on a view's page */
     haloAt(w, axis, along = 0) {
-      const h = fdbg(w).host.instanceOf("scene.halo")?.debug;
+      const h = fdbg(w).view.plugins.instanceOf("scene.halo")?.debug;
       const x = h?.handles.find((k) => k.kind === "move" && k.axis === axis);
       if (!x) return null;
       const p = x.from.map((v, i) => v + (x.to[i] - v) / 3);
