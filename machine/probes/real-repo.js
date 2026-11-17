@@ -1,4 +1,4 @@
-// A copy of bag/probes/real-repo.js (packages don't import each other), plus a
+// A copy of tabletop/probes/real-repo.js (packages don't import each other), plus a
 // synchronous create(), which machine's host uses as automerge-repo's.
 // Two peers, for the probe page: each has its OWN replica of every document
 // (real Automerge docs), and a change made in one reaches the other only when

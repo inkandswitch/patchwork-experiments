@@ -4,7 +4,7 @@
 // prepareTable and writeTable as a built-in game, then the table extension and
 // the rule over the scene that makes. Shuffle, Draw, a private hand, a secure
 // deck, a bag and a die all act on traits the setup wrote, never on where the
-// game came from. Keepers, the bag maker and the seats' owner are stand-ins.
+// game came from. The seats' owner is a stand-in.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { tableLayout, writeTable } from "../setup.js";
 import { prepareTable } from "./made-with.js";
@@ -16,7 +16,7 @@ import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
 import { fakeRepo } from "../test/games.js";
 import tiny from "../../contract/v1/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
-import { BAG, SEATS, bagPlugin, keeperOf, keeperPlugin, keptIn, registries, roster, seatsPlugin, stageExtras } from "../test/stand-ins.js";
+import { BAG, SEATS, inBag, keeperOf, keptIn, registries, roster, seatsPlugin, stageExtras } from "../test/stand-ins.js";
 
 const game = () => structuredClone(tiny);
 const urlOf = (kind) => `automerge:${kind}`;
@@ -24,9 +24,9 @@ const kindOf = (url) => url.slice("automerge:".length);
 // every piece drawn the size of a card: only where things are matters here
 const fileOf = (kind) => ({ url: urlOf(kind), hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.0003, 0.04] } } });
 
-/** The imported game set up as a table, with the keepers, bag maker and seats' owner given; alice in the one seat. */
-async function setUp(g = game(), keepers = ["joint", "plain"]) {
-  const installed = async (t) => registries(...keepers.map(keeperPlugin), bagPlugin(), seatsPlugin())[t] ?? null;
+/** The imported game set up as a table, with the seats' owner given; alice in the one seat. */
+async function setUp(g = game()) {
+  const installed = async (t) => registries(seatsPlugin())[t] ?? null;
   const layout = tableLayout(g, { fileOf, rng: () => 0.5 });
   const repo = fakeRepo();
   const made = await prepareTable({ repo, registry: installed }, layout);
@@ -66,23 +66,21 @@ describe("an imported game, set up as any game is", () => {
     expect(new Set(cards.map((o) => kindOf(o.sourceUrl)))).toEqual(new Set(["p8h1dj21q8kpo3"]));
   });
 
-  it("a deck someone marks secure (the game page's tick) is kept by a keeper whose players shuffle between them; with none installed, by a plain one", async () => {
+  it("a deck someone marks secure (the game page's tick) is kept by the keeper whose players shuffle between them", async () => {
     const g = game();
     g.setup.find((t) => t.deck).deck.secure = true;
     const joint = await setUp(g);
     expect(Object.values(joint.made.kinds)).toEqual(["joint", "plain"]);
     const drawPile = Object.values(joint.scene.objects).filter((o) => keptIn(o)?.kind === "joint");
     expect(drawPile).toHaveLength(3);
-    const fallback = await setUp(g, ["plain"]);
-    expect(Object.values(fallback.made.kinds)).toEqual(["plain", "plain"]);
   });
 
   it("the bag holds what TTS had in it, in a bag document; the die is a die by its trait", async () => {
     const { scene, repo } = await setUp();
     const [pouch] = byName(scene, "Pouch");
     const doc = repo.docs.get(scene.objects[pouch].traits[BAG].doc);
-    expect(doc).toMatchObject({ "@patchwork": { type: "t-bag" }, rule: "random" });
-    expect(doc.items.map((i) => i.object.name)).toEqual(["Token in the bag", "Lost model"]);
+    expect(doc).toMatchObject({ "@patchwork": { type: "bag" }, rule: "random" });
+    expect(inBag(doc).map((o) => o.name)).toEqual(["Token in the bag", "Lost model"]);
     // never in the scene
     expect(byName(scene, "Token in the bag")).toEqual([]);
     const dice = Object.values(scene.objects).filter((o) => o.traits?.["dice.die"]);

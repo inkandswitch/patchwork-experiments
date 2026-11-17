@@ -11,7 +11,7 @@ import manifest from "../contract/v1/fixtures/manifest.json" with { type: "json"
 import { kindsUsed, tableLayout, writeTable, LOOSE } from "./setup.js";
 import { prepareTable } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
-import { BAG, bagPlugin, keeperPlugin, keptIn, registries, seatsPlugin } from "./test/stand-ins.js";
+import { BAG, inBag, keptIn, registries, seatsPlugin } from "./test/stand-ins.js";
 import { fakeRepo } from "./test/games.js";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -58,7 +58,7 @@ describe("the validator", () => {
 
 describe("the games this package ships", () => {
   const files = readdirSync(here("../games")).filter((n) => n.endsWith(".json"));
-  it("are five JSON files", () => expect(files.sort()).toEqual(["draw-dominoes-2.json", "draw-dominoes-3.json", "draw-dominoes-4.json", "lost-cities.json", "santorini.json"]));
+  it("are six JSON files", () => expect(files.sort()).toEqual(["draw-dominoes-2.json", "draw-dominoes-3.json", "draw-dominoes-4.json", "liars-dice.json", "lost-cities.json", "santorini.json"]));
   for (const n of files) it(`${n} is a valid tabletop-game`, () => expect(validate(read(`../games/${n}`))).toEqual({ ok: true, stage: null, errors: [] }));
 });
 
@@ -73,7 +73,7 @@ describe("a game with one of everything, laid out", () => {
   it("keeps every card, wherever it is: dealt, stacked, spread, loose or in a bag; and puts a bag's things in it", async () => {
     const layout = tableLayout(g, { fileOf, rng: () => 0.5 });
     const repo = fakeRepo();
-    const made = await prepareTable({ repo, registry: async (t) => registries(keeperPlugin("joint"), keeperPlugin("plain"), bagPlugin())[t] ?? null }, layout);
+    const made = await prepareTable({ repo, registry: async () => null }, layout);
     const scene = emptyScene({ title: "T" });
     writeTable(scene, layout, made);
     // the draw pile's 6, the jumble's 4 (one of another back), the loose card, and in the bag one more loose card and the bagged deck's 2
@@ -88,9 +88,9 @@ describe("a game with one of everything, laid out", () => {
     expect(onTable).toHaveLength(6 + 4 + 1);
     // each card shows its own back
     expect(new Set(onTable.map((o) => o.sourceUrl))).toEqual(new Set(["automerge:back", "automerge:back2"]));
-    const bagDoc = [...repo.docs.values()].find((d) => d["@patchwork"].type === "t-bag");
-    expect(bagDoc.items.map((i) => i.object.name)).toEqual(["Token 1", "Token 2", "Token 3", "Card", "Card", "Card"]);
-    expect(bagDoc.items.filter((i) => keptIn(i.object))).toHaveLength(3);
+    const bagDoc = inBag([...repo.docs.values()].find((d) => d["@patchwork"].type === "bag"));
+    expect(bagDoc.map((o) => o.name)).toEqual(["Token 1", "Token 2", "Token 3", "Card", "Card", "Card"]);
+    expect(bagDoc.filter((o) => keptIn(o))).toHaveLength(3);
     const bag = Object.values(scene.objects).find((o) => o.name === "Bag");
     expect(bag.traits[BAG].doc).toMatch(/^automerge:/);
     // the hands are their seats', the die is a die by its trait, the figure carries
@@ -109,8 +109,8 @@ describe("a game with one of everything, laid out", () => {
 });
 
 describe("every valid game lays out with no code of its own", () => {
-  // what a table is made with, as stand-ins found by their metadata: two keepers, a bag maker, whoever owns seats
-  const installed = async (t) => registries(keeperPlugin("joint"), keeperPlugin("plain"), bagPlugin(), seatsPlugin())[t] ?? null;
+  // whoever owns seats, a stand-in found by its metadata
+  const installed = async (t) => registries(seatsPlugin())[t] ?? null;
   const fileOf = (kind) => ({ url: `automerge:${kind}`, hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.001, 0.04] } } });
   for (const f of manifest.filter((x) => x.stage === "valid")) {
     it(`${f.file}: every card kept, every bag filled, every hand a seat's, the seats laid`, async () => {
@@ -123,7 +123,7 @@ describe("every valid game lays out with no code of its own", () => {
       expect(made.notes).toEqual([]);
       // every card in the game, wherever it is, is kept: in the scene by its keeper's trait, in a bag likewise
       const cards = (things) => things.reduce((n, t) => n + (t.deck ? t.deck.cards.length : g.pieces[t.piece]?.back ? Math.max(1, t.count ?? 1) : 0) + cards(t.contents ?? []), 0);
-      const bagged = [...repo.docs.values()].filter((d) => d["@patchwork"].type === "t-bag").flatMap((d) => d.items.map((i) => i.object));
+      const bagged = [...repo.docs.values()].filter((d) => d["@patchwork"].type === "bag").flatMap(inBag);
       const kept = [...Object.values(scene.objects), ...bagged].filter((o) => o.traits?.["tabletop.card"]);
       expect(kept).toHaveLength(cards(g.setup));
       for (const o of kept) expect(keptIn(o)).not.toBe(null);

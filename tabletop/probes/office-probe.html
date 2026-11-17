@@ -2,9 +2,9 @@
 <meta charset="utf-8">
 <title>games room probe</title>
 <!-- Driven by probes/publish-office.mjs. The BUILT scene tool (scene/dist)
-     with the BUILT seats, tabletop, keeper and walk plugins (seats/dist,
-     tabletop/dist, card-table/dist: the joint keeper; keep/dist; walk/dist:
-     the entrance mat is a spawn point) in a stub registry, each registered
+     with the BUILT seats, tabletop and walk plugins (seats/dist,
+     tabletop/dist: the table and its keepers; walk/dist: the entrance mat
+     is a spawn point) in a stub registry, each registered
      from its package's URL (?urls=), on an in-memory repo, on an EMPTY scene.
      Two views of one doc, A (Ana) and B (Ben), each view's broadcasts
      reaching only the other, a few ms late (?w=, ?h=: each view's size;
@@ -30,7 +30,7 @@
 <div id="a"></div><div id="b"></div>
 <script type="module">
 import { getRegistry, registerPlugins } from "@inkandswitch/patchwork-plugins";
-import { FakeRepo } from "./fake-repo.js";
+import { FakeRepo } from "../src/test/fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { PICKER, cardIds, kept, seatsOf, shownAs } from "./table-setup.js";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
@@ -101,7 +101,7 @@ function chairFor(cam, low = false) {
 
 try {
   const urls = JSON.parse(q.get("urls") || "{}");
-  for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["tabletop", "../dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["walk", "../../walk/dist/index.js"]]) {
+  for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["tabletop", "../dist/index.js"], ["walk", "../../walk/dist/index.js"]]) {
     registerPlugins((await import(path)).plugins, urls[dir]);
   }
   const repo = new FakeRepo();

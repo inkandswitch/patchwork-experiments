@@ -2,8 +2,8 @@
 <meta charset="utf-8">
 <title>tabletop table probe</title>
 <!-- Driven by probes/table.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT tabletop and keeper plugins (tabletop/dist, keep/dist,
-     card-table/dist) in a stub registry, on an in-memory repo, at a Lost
+     BUILT seats and tabletop plugins (tabletop/dist: the table and its
+     keepers) in a stub registry, on an in-memory repo, at a Lost
      Cities table whose deck is kept in the open (so a shuffle is a doc
      write, not a crypto round), written by the one table writer
      (src/setup.js). Two views of one doc, A (Ana) and B (Ben), both open
@@ -23,7 +23,7 @@
 <div id="a"></div><div id="b"></div>
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import { FakeRepo } from "./fake-repo.js";
+import { FakeRepo } from "../src/test/fake-repo.js";
 import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
@@ -52,7 +52,7 @@ function peer(handle) {
 }
 
 try {
-  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js"]);
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;

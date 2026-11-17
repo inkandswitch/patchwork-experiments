@@ -3,7 +3,8 @@
 // by the "bag-sack" source, carrying the trait that makes it a container.
 
 import { DEFAULT_TITLE, lookOf, newBag } from "./datatype.js";
-import { bagPatchwork } from "./own-package.js";
+import { BAG } from "./contents.js";
+import { importUrlOf, patchworkOf } from "../scene-package.js";
 import { roundBounds, sackGLB } from "./sack.js";
 
 /** The trait that makes an object a container: { doc: the bag document's URL }. */
@@ -46,7 +47,7 @@ export const tokenBag = {
   async create(ctx, at) {
     const objects = ctx.doc()?.objects ?? {};
     const titles = Object.values(objects).filter((o) => bagUrlOf(o)).map((o) => o.name);
-    const doc = newBag({ "@patchwork": await bagPatchwork(), title: freshTitle(titles) });
+    const doc = newBag({ "@patchwork": patchworkOf(BAG, await importUrlOf(BAG)), title: freshTitle(titles) });
     const handle = await ctx.repo.create2(doc);
     const parent = at?.parent && ctx.doc()?.objects?.[at.parent] ? at.parent : null;
     try {

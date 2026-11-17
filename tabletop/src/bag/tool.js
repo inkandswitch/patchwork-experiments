@@ -97,7 +97,7 @@ export default function BagTool(handle, element, host = null) {
     if (!repo?.create2) return;
     try {
       const { sackFile, sceneWithBag } = await import("./new-scene.js");
-      const { sceneImportUrl } = await import("./scene-package.js");
+      const { sceneImportUrl } = await import("../scene-package.js");
       const file = sackFile(doc());
       const fileUrl = (await repo.create2(file.doc)).url;
       const scene = await repo.create2(sceneWithBag({ bagUrl: handle.url, bagDoc: doc(), fileUrl, hint: file.hint, sceneImportUrl: await sceneImportUrl() }));

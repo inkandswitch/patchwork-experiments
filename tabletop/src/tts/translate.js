@@ -23,7 +23,7 @@
 // TTS's −Z, which is the format's +Z mirrored: every slab image here is
 // turned 180° (GAME-FORMAT.md §4).
 //
-// What becomes what (README, "What becomes what"):
+// What becomes what:
 //   Card            a card: a slab, its cell of the face sheet on top, its back
 //                   below; kept, wherever it is (shown as its back piece)
 //   Deck            a deck listing its cards, top first, lying as TTS has it
@@ -31,7 +31,7 @@
 //   Custom_Model    a model part: the OBJ through a matrix (scale, mirror, units)
 //   Bag, Infinite_  a bag holding what TTS had in it (an infinite bag hands out
 //   Bag             copies: rule "random-replace")
-//   Die_N, Custom_  a die drawn as a die document (the dice package draws it),
+//   Die_N, Custom_  a die drawn as a die document (dice/ draws it),
 //   Dice            with the trait that makes it a die
 //   Figurine        a standee: its image stood up on a base
 //   HandTrigger     a seat, and its hand: a tray with card slots, the seat's zone
@@ -42,7 +42,7 @@ import { cardFaces } from "./cards.js";
 import { applyMat3, colorHex, convertPosition, convertRotation, readTransform, ttsUp, unityRotation } from "./convert.js";
 import { deckEntry } from "./tts.js";
 
-/** Sizes at TTS scale 1, in TTS units, read off real mods (README, "Sizes"). */
+/** Sizes at TTS scale 1, in TTS units, read off real mods. */
 export const CARD = { w: 2.2, l: 3.1, t: 0.02 };
 export const BOARD_HALF = 9;
 const STAND_IN = "#a0a0a8b0"; // see-through grey: a stand-in reads as one
@@ -243,7 +243,7 @@ export function translate(save, { file = () => null, imageSize = () => null, uni
         const sides = custom ? [4, 6, 8, 10, 12, 20][Number(node.image?.CustomDice?.Type) || 0] ?? 6 : Number(/^Die_(\d+)/.exec(node.name)?.[1]) || 6;
         const size = r6(((S[0] + S[1] + S[2]) / 3) * u);
         if (custom && node.image?.ImageURL) approx(node);
-        // drawn as a die document by whatever draws dice (the dice package), numbered the usual way; a die by its trait
+        // drawn as a die document by whatever draws dice (dice/source.js), numbered the usual way; a die by its trait
         return { id: usePiece({ name: node.nickname || `d${sides}`, doc: { "@patchwork": { type: "die" }, shape: `d${sides}`, size, ...(color ? { body: color } : {}) }, traits: { "dice.die": {} }, ...common(node) }), die: true, size };
       }
       case "piece": {

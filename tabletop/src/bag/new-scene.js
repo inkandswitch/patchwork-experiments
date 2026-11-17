@@ -12,10 +12,10 @@
 // follows its look: part.js.)
 
 import { DEFAULT_TITLE, lookOf } from "./datatype.js";
-import { emptyScene } from "./empty-scene.js";
+import { emptyScene } from "../empty-scene.js";
 import { CARRY, CONTAINER } from "./part.js";
 import { roundBounds, sackGLB } from "./sack.js";
-import { scenePatchwork } from "./scene-package.js";
+import { scenePatchwork } from "../scene-package.js";
 
 export const BAG_OBJECT = "bag";
 

@@ -1,9 +1,9 @@
 // Draw (D), at a secure Lost Cities table, by two people in headless Chrome.
 //
-//   (in scene/, seats/, tabletop/ and card-table/) pnpm build
+//   (in scene/, seats/ and tabletop/) pnpm build
 //   node probes/draw.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool with the BUILT tabletop and card-table plugins
+// Mounts the BUILT scene tool with the BUILT tabletop plugins
 // on a Lost Cities table set up as the game page does, twice on one doc (A is
 // Ana in Player 1, B is Ben in Player 2; draw-probe.html). Once the players'
 // clients have shuffled and dealt, A hovers the deck and presses D:
@@ -26,7 +26,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-draw"));
 

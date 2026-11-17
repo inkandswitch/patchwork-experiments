@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseGLB } from "./glb.js";
+import { parseGLB } from "../kit/glb.js";
 import { poseBeside, spot, baseLift, halfWidth } from "./place.js";
 import { sackGLB, sackProfile } from "./sack.js";
 import source from "./source.js";

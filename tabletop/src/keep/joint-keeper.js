@@ -11,7 +11,7 @@
 // `slot` is the card's position in the deck. The binding is in the scene
 // doc, so moving or drawing a kept thing is one change there and none here.
 //
-// THREAT MODEL (README.md has it in full).
+// THREAT MODEL (README.md, "Keepers", in short).
 // - Someone who opens the documents sees what the deck holds (the multiset
 //   of items), which object is which position, how often each position has
 //   been shuffled, and who has been handed keys for which position. Never
@@ -28,8 +28,7 @@
 //   a card into their tray, turn it over): no disclosure without a change
 //   everyone can see. A key handed over stays handed over.
 //
-// For whatever sets a scene up, the module's `contain` (found through this
-// plugin's `keeper: "joint"` in the scene:extension registry):
+// For whatever sets a scene up (table/made-with.js), `contain`:
 //
 //   const { key, bind } = await contain({ repo }, { title, items });
 //   object.traits = { ...bind(slot) };
@@ -265,4 +264,4 @@ export function create(api, { secret } = {}) {
   };
 }
 
-export default { create, contain };
+export default { create };

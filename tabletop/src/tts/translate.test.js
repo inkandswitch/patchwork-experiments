@@ -5,8 +5,8 @@ import { describe, it, expect } from "vitest";
 import { translate, tableHeight } from "./translate.js";
 import { convertRotation, sceneRotationMatrix } from "./convert.js";
 import { imageSize } from "./image-size.js";
-import { encodePNG } from "./test/png.js";
-import { validate, errorText } from "./test/contract/validate.js";
+import { encodePNG } from "../test/png.js";
+import { validate, errorText } from "../../contract/v1/validate.js";
 
 const save = (objects, extra = {}) => ({ saveName: "S", gameMode: "", table: "", tableURL: "", note: "", rules: "", snapPoints: [], objects, ...extra });
 const node = (name, more = {}) => ({ path: "0", guid: "", name, kind: more.kind, nickname: "", description: "", transform: { posX: 0, posY: 1, posZ: 0, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, ...(more.transform ?? {}) }, color: null, locked: false, tags: [], mesh: null, image: null, customDeck: null, cardId: null, deckIds: null, pdf: null, number: 1, rotationValues: null, snapPoints: [], handColor: null, contents: [], states: [], children: [], ...more });

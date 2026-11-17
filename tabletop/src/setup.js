@@ -16,11 +16,10 @@
 //
 // The scene doc's shape is the scene package's (scene/README.md), with this
 // package's traits on it (src/table/visibility.js); this package only writes
-// it, it never imports the scene. What isn't this package's is written
-// through whoever owns it, found in the registry by metadata
-// (table/made-with.js): what a card really is (a keeper's container, and its
-// trait on the card), what a bag holds (a bag maker's document, and its
-// trait on the bag) and the seats (their owner's `lay`).
+// it, it never imports the scene. What a card really is (a keeper's
+// container, and its trait on the card) and what a bag holds (a bag doc, and
+// its trait on the bag) are made first (table/made-with.js); the seats are
+// written through their owner's `lay`, found in the registry by metadata.
 //
 // - A thing of several copies (`count`) is a group, so the outline stays
 //   short; a single thing sits at the top level. A deck is a group of its
@@ -337,7 +336,7 @@ const deckRef = (o) => {
 /**
  * An object as it is written: a card bound to its slot by its keeper's own
  * trait (`binds[key](slot)`), beside a bare tabletop.card; a bag given its
- * document by the bag maker's trait (`bags[id]`). A fresh copy. A card
+ * document by the bag's trait (`bags[id]`). A fresh copy. A card
  * whose container has no binding throws.
  */
 export function bound(oid, o, { binds = {}, bags = {} } = {}) {

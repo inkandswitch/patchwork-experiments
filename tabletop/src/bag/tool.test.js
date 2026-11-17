@@ -6,7 +6,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => ({ getRegistry: () => ({ filter
 import { inside, outside, putIn, takeOut } from "./contents.js";
 import { newBag } from "./datatype.js";
 import Tool, { drewText } from "./tool.js";
-import { FakeHandle, FakeRepo } from "./test/fake-repo.js";
+import { FakeHandle, FakeRepo } from "../test/fake-repo.js";
 
 const SCENE = "automerge:3yt6LbnDAzvNj9WDNDA4ew21R85G";
 const thing = (id, name) => ({ id, object: { name, sourceUrl: `automerge:glb-${name}`, providerId: "file-glb" }, scale: 1 });

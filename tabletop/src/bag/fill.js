@@ -1,7 +1,5 @@
-// A bag made already holding things: the `container: "bag"` convention, for
-// whatever sets a scene up with things in bags (tabletop's table writer,
-// from a game's setup; found by this package's plugin metadata, never by
-// name: scene/STAGE.md, "Keepers" is the same shape).
+// A bag made already holding things, for whatever sets a scene up with
+// things in bags (the table writer, table/made-with.js, from a game's setup).
 //
 //   const { url, traits } = await fill({ repo }, { title, rule, items: [{ id, object }] });
 //
@@ -13,11 +11,11 @@
 // naming the doc. The scene object itself (its look, where it stands) is the
 // caller's: this writes no scene.
 
-import { putIn } from "./contents.js";
+import { BAG, putIn } from "./contents.js";
 import { newBag } from "./datatype.js";
 import { ruleOf } from "./draw.js";
 import { recordOf, scaleOf } from "./object.js";
-import { bagPatchwork } from "./own-package.js";
+import { importUrlOf, patchworkOf } from "../scene-package.js";
 import { CONTAINER } from "./part.js";
 
 /**
@@ -26,7 +24,7 @@ import { CONTAINER } from "./part.js";
  * @returns {Promise<{ url: string, traits: object }>}
  */
 export async function fill({ repo }, { title, rule, items = [] } = {}) {
-  const doc = newBag({ "@patchwork": await bagPatchwork(), ...(title ? { title } : {}), rule: ruleOf({ rule }) });
+  const doc = newBag({ "@patchwork": patchworkOf(BAG, await importUrlOf(BAG)), ...(title ? { title } : {}), rule: ruleOf({ rule }) });
   putIn(
     doc,
     items.map(({ id, object }) => ({ id, object: recordOf(object), scale: scaleOf(object) })),

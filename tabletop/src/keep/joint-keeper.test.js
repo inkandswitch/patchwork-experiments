@@ -314,12 +314,10 @@ describe("contain", () => {
 });
 
 describe("the plugin", () => {
-  const p = plugins.find((x) => x.type === "scene:extension");
-  it("is an ordinary scene extension, found by `keeper`, run by its own trait; no private registry type", () => {
-    expect(p).toMatchObject({ id: "card-table", keeper: "joint", traits: [TRAIT] });
+  const p = plugins.find((x) => x.id === "card-table");
+  it("is an ordinary scene extension, found by `keeper`, run by its own trait", () => {
+    expect(p).toMatchObject({ type: "scene:extension", keeper: "joint", traits: [TRAIT] });
     for (const k of ["activities", "requires", "always", "general"]) expect(k in p).toBe(false);
-    expect([...new Set(plugins.map((x) => x.type))].sort()).toEqual(["patchwork:datatype", "patchwork:tool", "scene:extension"]);
-    for (const x of plugins) expect(() => structuredClone({ ...x, load: undefined })).not.toThrow();
   });
 });
 

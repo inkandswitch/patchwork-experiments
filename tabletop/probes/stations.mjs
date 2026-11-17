@@ -1,6 +1,6 @@
 // Seats as stations on the use prompt, by two people in headless Chrome.
 //
-//   (in scene/, seats/, tabletop/ and card-table/) pnpm build
+//   (in scene/, seats/ and tabletop/) pnpm build
 //   node probes/stations.mjs [--shots <dir>] [--show]
 //
 // stations-probe.html: a Lost Cities table from the template, two views A
@@ -35,7 +35,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-stations"));
 const PEER_TTL_MS = 15_000; // scene/src/stage/presence.js

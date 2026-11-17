@@ -1,14 +1,12 @@
-// Where the scene package comes from, for the scene docs this package makes
-// whole: every scene doc carries it as `@patchwork.suggestedImportUrl`, so a
-// viewer with nothing installed is offered the scene tool (scene/STAGE.md,
-// "Packages"). Read at runtime from the plugin registry: the registered
-// "scene" datatype's (else tool's) importUrl. No build-time tie to the scene
-// package; without it registered there is nothing to say, and the stage
-// fills the field in when someone who has it opens the doc.
-//
-// tabletop and bag each carry a copy of this file (packages don't import
-// each other); keep the copies the same. The URL rule is the scene's
-// own (scene/src/packages.js packageUrl).
+// Where a doc's package comes from, for the docs this package makes whole:
+// each carries it as `@patchwork.suggestedImportUrl`, so a viewer with
+// nothing installed is offered its tool (scene/STAGE.md, "Packages"). A
+// scene doc names the scene package; a die or a bag doc names this one.
+// Read at runtime from the plugin registry: the registered datatype's (else
+// tool's) importUrl. No build-time tie to the scene package; without it
+// registered there is nothing to say, and the stage fills the field in when
+// someone who has it opens the doc. The URL rule is the scene's own
+// (scene/src/packages.js packageUrl).
 
 /** A host only this machine or this network can reach. */
 function isLocalHost(hostname) {
@@ -53,21 +51,22 @@ export function shareableImportUrl(url) {
 }
 
 /**
- * A new scene doc's `@patchwork`: its type, and where the scene package
- * comes from when that can be shared.
- * @param {unknown} importUrl  the scene package's importUrl, as registered
+ * A new doc's `@patchwork`: its type, and where its package comes from when
+ * that can be shared.
+ * @param {string} type  @param {unknown} importUrl  its package's importUrl, as registered
  */
-export function scenePatchwork(importUrl) {
+export function patchworkOf(type, importUrl) {
   const url = shareableImportUrl(importUrl);
-  return url ? { type: "scene", suggestedImportUrl: url } : { type: "scene" };
+  return url ? { type, suggestedImportUrl: url } : { type };
 }
+export const scenePatchwork = (importUrl) => patchworkOf("scene", importUrl);
 
-/** The registered scene package's importUrl (its datatype's, else its tool's), or null. */
-export async function sceneImportUrl() {
+/** The importUrl of the package that registered datatype `id` (else tool `id`), or null. */
+export async function importUrlOf(id) {
   try {
     const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
     for (const type of ["patchwork:datatype", "patchwork:tool"]) {
-      const p = getRegistry(type)?.filter?.((x) => x?.id === "scene")?.[0];
+      const p = getRegistry(type)?.filter?.((x) => x?.id === id)?.[0];
       if (typeof p?.importUrl === "string") return p.importUrl;
     }
   } catch {
@@ -75,3 +74,4 @@ export async function sceneImportUrl() {
   }
   return null;
 }
+export const sceneImportUrl = () => importUrlOf("scene");

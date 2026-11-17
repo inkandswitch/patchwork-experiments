@@ -9,10 +9,7 @@
 // A game is found by its id among the registered `tabletop:game`s (this
 // package's own are JSON files in games/; another package may register its
 // own), and checked against the format (contract/v1/validate.js). Nothing
-// here knows any one game. Another package lays a game out the same way
-// through the `tables` convention: the `tabletop` scene:extension's
-// metadata says `tables: "tabletop-game"`, and its module's `setUp(ctx,
-// gameId, options)` is setUp below (the dice package's Liar's dice).
+// here knows any one game (Liar's dice, under dice/, is laid out the same way).
 //
 // What differs from the game page's tables:
 // - There is no game doc: nothing is the table's About.
@@ -20,15 +17,13 @@
 //   names what it's drawn from (files.js lookFileKey): new art gets a new
 //   key, and a table made with the old keeps its own. So the table stands
 //   alone, and doesn't redraw when the game's art changes.
-// - What a card really is goes to a keeper, found in the registry by kind
-//   (made-with.js): a `secure` deck to a joint keeper (the players shuffle
-//   it between them), else to a plain one, which plays the same but whose
-//   container anyone can read by opening it, and the maker is told so. A
-//   bag's things go to a bag maker. The seats are laid by whoever owns
-//   seats. What the maker is warned of comes with what the table is made
-//   with (made-with.js prepareTable), so the game page's status line says
-//   the same. With no keeper installed at all
-//   for a game with cards, nothing is laid out and the maker is told why.
+// - What a card really is goes to a keeper (made-with.js): a `secure` deck
+//   to the joint keeper (the players shuffle it between them), else to the
+//   plain one, which plays the same but whose container anyone can read by
+//   opening it. A bag's things go into a bag doc. The seats are laid by
+//   whoever owns seats. What the maker is warned of comes with what the
+//   table is made with (made-with.js prepareTable), so the game page's
+//   status line says the same.
 //
 // Order: the files, then the containers and bags, then one change that
 // writes the table (objects, seats, view: `view.start` in the seat body where
@@ -64,8 +59,7 @@ export async function loadGame(registry, gameId) {
  * @param {object} ctx      { repo, registry, newId, doc, change, file, notify }
  * @param {string | object} game  a registered game's id, or a game
  * @param {{ rng?: () => number, images?: object | null }} [o]
- * @returns {Promise<object | null>} the layout written (null when the game isn't there or isn't valid,
- *   or nothing keeps its cards)
+ * @returns {Promise<object | null>} the layout written (null when the game isn't there or isn't valid)
  */
 export async function setUp(ctx, game, { rng = Math.random, images = defaultImages() } = {}) {
   const g = typeof game === "string" ? await loadGame(ctx.registry, game) : game;
@@ -92,13 +86,7 @@ export async function setUp(ctx, game, { rng = Math.random, images = defaultImag
   const named = !current || current === UNTITLED;
 
   // the containers, bags and seats' owner first, so the scene never names one that isn't there
-  let made;
-  try {
-    made = await prepareTable({ repo: ctx.repo, registry: ctx.registry }, layout);
-  } catch (err) {
-    ctx.notify?.(String(err?.message ?? err), "error");
-    return null;
-  }
+  const made = await prepareTable({ repo: ctx.repo, registry: ctx.registry }, layout);
 
   ctx.change((d) => {
     writeTable(d, layout, made);

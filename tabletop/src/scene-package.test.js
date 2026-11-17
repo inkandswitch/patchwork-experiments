@@ -2,12 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 
 const registered = { "patchwork:datatype": [], "patchwork:tool": [] };
 vi.mock("@inkandswitch/patchwork-plugins", () => ({ getRegistry: (type) => ({ filter: (fn) => (registered[type] ?? []).filter(fn) }) }));
-import { sceneImportUrl, scenePatchwork, shareableImportUrl } from "./scene-package.js";
+import { importUrlOf, patchworkOf, sceneImportUrl, scenePatchwork, shareableImportUrl } from "./scene-package.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const HEAD = "H".repeat(48);
 
-describe("the scene package's URL on the scene docs made here", () => {
+describe("a package's URL on the docs made here (scene docs the scene's; die and bag docs this one's)", () => {
   it("an automerge URL goes on bare, whatever heads it was registered at; a public https URL as it is", () => {
     for (const [url, want] of [
       [A, A],
@@ -18,6 +18,7 @@ describe("the scene package's URL on the scene docs made here", () => {
     ]) {
       expect([url, shareableImportUrl(url)]).toEqual([url, want]);
       expect(scenePatchwork(url)).toEqual({ type: "scene", suggestedImportUrl: want });
+      expect(patchworkOf("die", url)).toEqual({ type: "die", suggestedImportUrl: want });
     }
   });
 
@@ -47,6 +48,7 @@ describe("the scene package's URL on the scene docs made here", () => {
     ]) {
       expect([url, shareableImportUrl(url)]).toEqual([url, null]);
       expect(scenePatchwork(url)).toEqual({ type: "scene" });
+      expect(patchworkOf("die", url)).toEqual({ type: "die" });
     }
   });
 
@@ -58,5 +60,7 @@ describe("the scene package's URL on the scene docs made here", () => {
     expect(await sceneImportUrl()).toBe("https://tools.example.com/scene/");
     registered["patchwork:datatype"] = [{ id: "scene" }]; // registered without one: the tool's
     expect(await sceneImportUrl()).toBe(`${A}#${HEAD}`);
+    registered["patchwork:datatype"] = [{ id: "die", importUrl: "https://tools.example.com/tabletop/" }];
+    expect(await importUrlOf("die")).toBe("https://tools.example.com/tabletop/");
   });
 });

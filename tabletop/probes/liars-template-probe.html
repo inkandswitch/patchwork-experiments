@@ -2,8 +2,8 @@
 <meta charset="utf-8">
 <title>liar's dice template probe</title>
 <!-- Driven by probes/publish-liars.mjs. The BUILT scene tool (scene/dist)
-     with the BUILT seats (seats/dist) and dice plugins (dist: cups, lots
-     and the template) in a
+     with the BUILT seats (seats/dist) and tabletop plugins (dist: dice,
+     cups, lots and the template) in a
      stub registry, on REAL Automerge documents: two peers, A (Ana) and B
      (Ben), each with its own replica of every doc (probes/real-repo.js), a
      change reaching the other 25 ms later by a real merge. Each view's
@@ -11,13 +11,12 @@
      datatype's init makes it) and starts it from the start screen's
      "Liar's dice"; B opens it after (a view joins where the doc says).
      The packages installed are exactly those the query names
-     (?scene=…&seats=…&dice=…, each its pushwork url: the ones the publisher
-     states), each plugin registered with its package's URL as the host's
-     registry keeps it, so the stage lists the scene's packages and its
-     suggested import itself, from what the doc calls for. Nothing of keep's
-     is installed: a liar's dice table has no deck, and the dice's draws are
-     the dice package's own (dice.lots); a table that needed a package not
-     named would call for something nothing here answers (unanswered()). -->
+     (?scene=…&seats=…&tabletop=…, each its pushwork url: the ones the
+     publisher states), each plugin registered with its package's URL as the
+     host's registry keeps it, so the stage lists the scene's packages and
+     its suggested import itself, from what the doc calls for. A table that
+     needed a package not named would call for something nothing here
+     answers (unanswered()). -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -33,7 +32,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
-import { emptyScene } from "../src/test/empty-scene.js";
+import { emptyScene } from "../src/empty-scene.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -57,11 +56,11 @@ const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect()
 
 try {
   // the packages installed here are exactly the ones named in the query
-  // (?scene=<url>&dice=<url>: a folder, and its pushwork url), each one's
+  // (?scene=<url>&tabletop=<url>: a folder, and its pushwork url), each one's
   // BUILT plugins registered as the host's registry keeps them, with the
   // URL it came from, so the stage lists the scene's packages itself
   const named = [...new URLSearchParams(location.search)];
-  if (!named.length) throw new Error("no packages named (?scene=<url>&dice=<url>)");
+  if (!named.length) throw new Error("no packages named (?scene=<url>&tabletop=<url>)");
   for (const [name, importUrl] of named) {
     if (!/^[a-z0-9-]+$/.test(name) || !/^automerge:[1-9A-HJ-NP-Za-km-z]+$/.test(importUrl)) throw new Error(`not a package and its url: ${name}=${importUrl}`);
     const { plugins } = await import(`../../${name}/dist/index.js`);

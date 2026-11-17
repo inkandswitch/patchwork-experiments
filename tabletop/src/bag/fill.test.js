@@ -1,4 +1,4 @@
-// A bag made already holding things (fill.js): what another package's setup
+// A bag made already holding things (fill.js): what a table's setup
 // gets, and that what it holds comes out as it went in.
 import { describe, it, expect } from "vitest";
 import { fill } from "./fill.js";

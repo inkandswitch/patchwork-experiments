@@ -9,14 +9,14 @@ import { lookFileKey } from "./files.js";
 import { kindsUsed } from "../setup.js";
 import { lookKey, shortHash } from "../look/look.js";
 import { fakeDrop } from "../test/fakes.js";
-import { SEATS, bagPlugin, keeperPlugin, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
+import { SEATS, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
 import { game as builtIn, gamePlugins } from "../test/games.js";
 import { emptyScene } from "../empty-scene.js";
 import { plugins } from "../index.js";
 import { CASES, cardsGame } from "../test/table-notes.js";
 
-/** What's installed where a table is usually made: whoever owns seats, a keeper of each kind (stand-ins), and the games. */
-const installed = (...more) => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins(), ...more);
+/** What's installed where a table is usually made: whoever owns seats (a stand-in), and the games. */
+const installed = (...more) => registries(seatsPlugin(), ...gamePlugins(), ...more);
 const lostCities = template("lost-cities");
 const santorini = template("santorini");
 const game = () => builtIn("lost-cities");
@@ -73,15 +73,15 @@ describe("the Lost Cities template", () => {
     expect(calls.changes).toBe(1);
     const at = calls.log.findIndex((e) => e.op === "change");
     expect(at).toBe(calls.log.length - 1);
-    expect(calls.log.filter((e) => e.op === "create" && e.type === "t-joint")).toHaveLength(1);
-    expect(calls.log.findIndex((e) => e.type === "t-joint")).toBeLessThan(at);
+    expect(calls.log.filter((e) => e.op === "create" && e.type === "secure-deck")).toHaveLength(1);
+    expect(calls.log.findIndex((e) => e.type === "secure-deck")).toBeLessThan(at);
   });
 
-  it("binds every card to a slot of the container it had made, by a keeper whose players shuffle where one is installed", async () => {
+  it("binds every card to a slot of the container it had made, by the keeper whose players shuffle", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
     await lostCities.create(ctx);
-    const i = calls.created.findIndex((d) => d["@patchwork"].type === "t-joint");
+    const i = calls.created.findIndex((d) => d["@patchwork"].type === "secure-deck");
     const deckUrl = `automerge:file${i + 1}`;
     const deck = calls.created[i];
     // titled by the game and its deck: never by the scene it's in
@@ -95,33 +95,11 @@ describe("the Lost Cities template", () => {
     expect(cards.map(([, o]) => keptIn(o).slot).sort((x, y) => x - y)).toEqual(Array.from({ length: 60 }, (_, k) => k));
     // what it holds are the scene's files
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
-    expect(deck.items).toHaveLength(60);
-    for (const f of deck.items) expect(urls.has(f.sourceUrl)).toBe(true);
+    expect(deck.faces).toHaveLength(60);
+    for (const f of deck.faces) expect(urls.has(f.sourceUrl)).toBe(true);
     expect(calls.notices.some((n) => n.kind === "warn")).toBe(false);
     // and the scene says nothing of which card is which: every card is its back
     expect(new Set(cards.map(([, o]) => o.sourceUrl)).size).toBe(1);
-  });
-
-  it("with only a plain keeper installed, the deck is kept in the open and the maker is told the hands aren't secret", async () => {
-    const doc = emptyScene();
-    const { ctx, calls } = fakeDrop(doc, { registries: registries(seatsPlugin(), keeperPlugin("plain"), ...gamePlugins()) });
-    await lostCities.create(ctx);
-    const decks = calls.created.filter((d) => d["@patchwork"].type !== "file");
-    expect(decks.map((d) => d["@patchwork"].type)).toEqual(["t-plain"]);
-    expect(decks[0].items).toHaveLength(60);
-    const warn = calls.notices.find((n) => n.kind === "warn");
-    expect(warn.text).toMatch(/kept in the open: anyone who opens it can read every hand/);
-  });
-
-  it("with no keeper installed at all, lays nothing out and says why: it never writes a card nothing keeps", async () => {
-    for (const reg of [registries(...gamePlugins()), registries(seatsPlugin(), ...gamePlugins())]) {
-      const doc = emptyScene();
-      const { ctx, calls } = fakeDrop(doc, { registries: reg });
-      await lostCities.create(ctx);
-      expect(calls.changes).toBe(0);
-      expect(doc.objects).toEqual({});
-      expect(calls.notices.at(-1)).toMatchObject({ kind: "error", text: expect.stringMatching(/nothing installed here keeps them/) });
-    }
   });
 
   it("starts people in the seat body, seated nowhere yet, and says to pick a seat; nothing is the table's About", async () => {
@@ -145,7 +123,7 @@ describe("the Lost Cities template", () => {
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
     await lostCities.create(ctx);
     expect(doc.title).toBe("Friday night");
-    expect(calls.created.find((d) => d["@patchwork"].type === "t-joint").title).toBe("Lost Cities: Deck");
+    expect(calls.created.find((d) => d["@patchwork"].type === "secure-deck").title).toBe("Lost Cities: Deck");
   });
 
   it("reuses the scene's files: a second table makes no new GLBs", async () => {
@@ -177,6 +155,18 @@ describe("the Santorini template", () => {
     expect(doc.view.start).toEqual({ body: "seat", home: expect.any(Object) });
     expect(calls.changes).toBe(1);
     expect(calls.notices.at(-1).text).toMatch(/Santorini is laid out/);
+  });
+});
+
+describe("the Liar's dice template (dice.liars-dice)", () => {
+  it("lays its game out by its id, the dice drawn by the die source: six cups, thirty dice, six seats", async () => {
+    const doc = emptyScene();
+    const { ctx, calls } = fakeDrop(doc, { registries: installed(...plugins.filter((p) => p.type === "scene:source")) });
+    await (await plugins.find((p) => p.id === "dice.liars-dice").load()).create(ctx);
+    const objects = Object.values(doc.objects);
+    expect([objects.filter((o) => o.traits?.["dice.cup"]).length, objects.filter((o) => o.traits?.["dice.die"]).length]).toEqual([6, 30]);
+    expect(Object.keys(doc.traits[SEATS])).toHaveLength(6);
+    expect(calls.notices.filter((n) => n.kind !== "info")).toEqual([]);
   });
 });
 
@@ -225,9 +215,9 @@ describe("the Draw Dominoes template", () => {
       expect(objects.filter((o) => o.traits?.["tabletop.zone"])).toHaveLength(n);
       expect(Object.keys(doc.traits[SEATS])).toHaveLength(n);
       expect(doc.view.start.body).toBe("seat");
-      const deck = calls.created.find((d) => d["@patchwork"].type === "t-joint");
-      expect(deck.items).toHaveLength(28);
-      expect(new Set(deck.items.map((i) => i.name)).size).toBe(28);
+      const deck = calls.created.find((d) => d["@patchwork"].type === "secure-deck");
+      expect(deck.faces).toHaveLength(28);
+      expect(new Set(deck.faces.map((i) => i.name)).size).toBe(28);
       // the scene itself names no tile: every tile shows the one back
       expect(new Set(tiles.map((o) => o.sourceUrl)).size).toBe(1);
     });
@@ -238,28 +228,12 @@ describe("what the maker is told (test/table-notes.js: the game page's status li
   for (const c of CASES)
     it(c.name, async () => {
       const doc = emptyScene();
-      const plugins = [...c.keepers.map((k) => keeperPlugin(k)), ...(c.owner ? [seatsPlugin()] : []), ...(c.bagMaker ? [bagPlugin()] : [])];
-      const { ctx, calls } = fakeDrop(doc, { registries: registries(...plugins) });
-      const laid = await setUp(ctx, cardsGame(c));
-      if (c.error) {
-        expect(laid).toBe(null);
-        expect(calls.changes).toBe(0);
-        expect(calls.notices).toEqual([{ kind: "error", text: c.error }]);
-        return;
-      }
-      expect(laid).not.toBe(null);
+      const { ctx, calls } = fakeDrop(doc, { registries: registries(...(c.owner ? [seatsPlugin()] : [])) });
+      expect(await setUp(ctx, cardsGame(c))).not.toBe(null);
       expect(calls.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual(c.expected);
-      // and the table is as warned: seats only where something owns them
+      // and the table is as warned: seats only where something owns them, the deck by the keeper it asks for
       expect(Object.keys(doc.traits[SEATS] ?? {})).toEqual(c.seats && c.owner ? ["p1"] : []);
+      const kinds = new Set(Object.values(doc.objects).map(keptIn).filter(Boolean).map((k) => k.kind));
+      expect(kinds).toEqual(new Set([c.secure ? "joint" : "plain"]));
     });
-
-  it("names every secure deck kept in the open, in one warning", async () => {
-    const g = cardsGame({ secure: true, seats: false });
-    g.setup.push({ deck: { name: "Other", cards: ["card"], secure: true } });
-    const { ctx, calls } = fakeDrop(emptyScene(), { registries: registries(keeperPlugin("plain")) });
-    await setUp(ctx, g);
-    expect(calls.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual([
-      "No keeper whose players shuffle is installed here, so “Three cards: Deck” and “Three cards: Other” are kept in the open: anyone who opens them can read every hand.",
-    ]);
-  });
 });

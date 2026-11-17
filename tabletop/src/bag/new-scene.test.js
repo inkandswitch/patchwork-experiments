@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { newBag } from "./datatype.js";
-import { emptyScene } from "./empty-scene.js";
+import { emptyScene } from "../empty-scene.js";
 import { BAG_OBJECT, sackFile, sceneWithBag } from "./new-scene.js";
 import { CONTAINER, bagUrlOf, freshTitle } from "./part.js";
 

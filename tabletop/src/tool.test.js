@@ -2,14 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import TabletopGameTool from "./tool.js";
 
 // A stand-in for the host's plugin registry, holding this package's plugins
-// and, as other packages would register them, whoever owns seats and a
-// keeper of each kind and the bag maker (test/stand-ins.js).
-// `absent` hides plugins by id, so a test can uninstall a keeper, the seats owner or the bag maker.
+// and, as the seats package would register it, whoever owns seats
+// (test/stand-ins.js). `absent` hides plugins by id, so a test can uninstall the seats owner.
 const installed = vi.hoisted(() => ({ absent: new Set() }));
 vi.mock("@inkandswitch/patchwork-plugins", async () => {
   const { plugins: own } = await import("./index.js");
-  const { bagPlugin, keeperPlugin, seatsPlugin } = await import("./test/stand-ins.js");
-  const plugins = [...own, seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), bagPlugin()];
+  const { seatsPlugin } = await import("./test/stand-ins.js");
+  const plugins = [...own, seatsPlugin()];
   const registries = new Map();
   const getRegistry = (type) => {
     if (!registries.has(type)) {
@@ -196,7 +195,7 @@ describe("the tabletop-game tool", () => {
     expect(new Set(cards.map((o) => keptIn(o).kind))).toEqual(new Set(["joint"]));
     const deck = (await repo.find([...urls][0])).doc();
     expect(deck.title).toBe("Lost Cities: Deck");
-    expect(deck.items).toHaveLength(60);
+    expect(deck.faces).toHaveLength(60);
     for (const o of cards) expect(o.name).toBe("Card");
     expect(Object.keys(scene.traits[SEATS])).toEqual(["p1", "p2"]);
     cleanup();
@@ -204,17 +203,12 @@ describe("the tabletop-game tool", () => {
 });
 
 describe("what the game page's status line tells the maker (test/table-notes.js: the template says the same)", () => {
-  // the rule is template.test.js's, over every case; here, that the page says it: an error, a line of
-  // several warnings, and a clean status
-  const PICKS = [CASES.find((c) => c.error), CASES.find((c) => !c.error && c.expected.length > 1), CASES.find((c) => !c.error && !c.expected.length)];
+  // the rule is template.test.js's, over every case; here, that the page says it: a warning, and a clean status
+  const PICKS = [CASES.find((c) => c.expected.length), CASES.find((c) => !c.expected.length)];
   for (const c of PICKS)
     it(c.name, async () => {
-      // the stand-ins' ids (test/stand-ins.js): t.keep-<kind>, t.seats, t.bag
-      installed.absent = new Set([
-        ...["joint", "plain"].filter((k) => !c.keepers.includes(k)).map((k) => `t.keep-${k}`),
-        ...(c.owner ? [] : ["t.seats"]),
-        ...(c.bagMaker ? [] : ["t.bag"]),
-      ]);
+      // the stand-in's id (test/stand-ins.js)
+      installed.absent = new Set(c.owner ? [] : ["t.seats"]);
       try {
         const repo = fakeRepo();
         const game = repo.add({ "@patchwork": { type: "tabletop-game" }, ...cardsGame(c) });
@@ -225,17 +219,10 @@ describe("what the game page's status line tells the maker (test/table-notes.js:
         const cleanup = TabletopGameTool(game, element);
         await until(() => button(element, "Set up a table") && !button(element, "Set up a table").disabled);
         button(element, "Set up a table").click();
-        await until(() => (c.error ? /^Couldn't/.test(element.querySelector(".status")?.textContent) : opened.length === 1) && button(element, "Set up a table"));
+        await until(() => opened.length === 1 && button(element, "Set up a table"));
         const status = element.querySelector(".status").textContent;
-        if (c.error) {
-          expect(status).toBe(`Couldn't set up a table: ${c.error}`);
-          expect(opened).toEqual([]);
-          expect(game.doc().tables ?? []).toEqual([]);
-        } else if (c.expected.length) {
-          // one line of whole sentences, each warning its own
-          expect(c.expected.every((n) => /\.$/.test(n))).toBe(true);
-          expect(status).toBe(c.expected.join(" "));
-        } else expect(status).toMatch(/^\d+ pieces of \d+ kinds\.$/);
+        if (c.expected.length) expect(status).toBe(c.expected.join(" "));
+        else expect(status).toMatch(/^\d+ pieces of \d+ kinds\.$/);
         cleanup();
       } finally {
         installed.absent = new Set();

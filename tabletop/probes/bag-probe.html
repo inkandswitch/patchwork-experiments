@@ -24,9 +24,9 @@ import * as Automerge from "@automerge/automerge";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
 import { emptyScene, DEFAULT_VIEW } from "../src/empty-scene.js";
-import { encodeGLB } from "../src/glb.js";
-import { inside, outside, shadowsFor } from "../src/contents.js";
-import { bagUrlOf } from "../src/part.js";
+import { encodeGLB } from "../src/kit/glb.js";
+import { inside, outside, shadowsFor } from "../src/bag/contents.js";
+import { bagUrlOf } from "../src/bag/part.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
 

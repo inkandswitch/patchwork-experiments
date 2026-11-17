@@ -1,4 +1,4 @@
-// Cup dice on a table: the parts, and the template that lays a game out.
+// Cup dice on a table: the parts.
 //
 // Parts (the editor's bin, under "Dice"): a dice cup with its five dice, and
 // a pool. Every GLB is the scene's own file (ctx.file, STAGE.md "Parts"),
@@ -13,9 +13,9 @@
 // dudo or cacho, as its real components: a round table, six seats, and for
 // each a cup and five standard six-sided dice in that set's own colour, the
 // cup lifted beside its dice; and a pool in the middle for dice a player has
-// lost). Its template asks whoever lays tabletop games out to lay it out
-// (`template` below): no code here lays a table. Who bids what, whose turn
-// it is, who loses a die and when is the players' business.
+// lost). Its template is the table writer's (table/template.js), as every
+// game's is. Who bids what, whose turn it is, who loses a die and when is
+// the players' business.
 
 import { CUP, LIFT_BACK, ringOf } from "./cup.js";
 import { cupGLB, poolGLB } from "./cup-glb.js";
@@ -76,44 +76,6 @@ export function setOut({ set, files: f, at, yaw, k = 1, n = DICE_EACH }) {
   );
   return { cup, dice };
 }
-
-// ── a game's table, laid out by whoever lays tabletop games out ──
-/** The module of the plugin whose metadata says `tables: "tabletop-game"` (the tabletop package's), or null. */
-async function tableLayer(registry) {
-  const reg = typeof registry === "function" ? await Promise.resolve(registry("scene:extension")).catch(() => null) : null;
-  let list = [];
-  try {
-    list = reg?.filter?.((p) => p?.tables === "tabletop-game" && typeof p.id === "string") ?? [];
-  } catch {
-    list = [];
-  }
-  for (const p of list) {
-    try {
-      const loaded = await reg.load(p.id);
-      const mod = loaded?.module?.default ?? loaded?.module ?? null;
-      if (typeof mod?.setUp === "function") return mod;
-    } catch (err) {
-      console.warn(`[dice] couldn't load “${p.id}”`, err);
-    }
-  }
-  return null;
-}
-
-/**
- * A template that lays a registered tabletop-game out by its id (Liar's
- * dice: games/liars-dice.json), through whoever lays tabletop games out.
- * Without one installed, it lays nothing and says what's missing.
- */
-export const template = (gameId) => ({
-  async create(ctx) {
-    const layer = await tableLayer(ctx.registry);
-    if (!layer) {
-      ctx.notify?.("This table is laid out by the tabletop package, which isn't installed here.", "error");
-      return null;
-    }
-    return layer.setUp(ctx, gameId);
-  },
-});
 
 /** Where a part goes: its parent, a transform squared to it, and that frame's scale. */
 function placeOf(ctx, at) {

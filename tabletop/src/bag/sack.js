@@ -3,7 +3,7 @@
 // middle of its base. Metres, at real size: `size` is how wide the sack is.
 // Pure: a look in, GLB bytes and bounds out.
 
-import { computeBounds, computeNormals, encodeGLB } from "./glb.js";
+import { computeBounds, computeNormals, encodeGLB } from "../kit/glb.js";
 
 const SEGMENTS = 28;
 

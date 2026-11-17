@@ -1,5 +1,4 @@
-// The one rule every keeper shows by. Pure. (Each keeper package carries a
-// copy: packages don't import each other.)
+// The one rule every keeper (and the dice cup) shows by. Pure.
 //
 // A kept object has a closed look, its own (a card's back): what the scene
 // doc says it is, and what anyone without this keeper sees. Per viewer it is

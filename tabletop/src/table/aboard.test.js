@@ -7,7 +7,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { CARD, ZONE } from "./visibility.js";
 import Extension from "./extension.js";
 import * as fakes from "../test/fakes.js";
-import { SEATS, keeperOf, keeperPlugin, keptIn, keptTrait, registries, roster, seatsPlugin } from "../test/stand-ins.js";
+import { SEATS, keeperOf, keptIn, keptTrait, registries, roster, seatsPlugin } from "../test/stand-ins.js";
 import { emptyScene } from "../empty-scene.js";
 import { apply, composeMatrix, multiply } from "./frame.js";
 import { tableLayout, writeTable } from "../setup.js";
@@ -118,8 +118,8 @@ describe("the Card table and Lost Cities parts", () => {
       order: ["ship"],
       view: { units: "m", start: { home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } } },
     });
-  // what's installed: whoever owns seats, and a keeper of each kind
-  const installed = () => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins());
+  // what's installed: whoever owns seats, and the games
+  const installed = () => registries(seatsPlugin(), ...gamePlugins());
 
   it("a Card table goes under what it's put on, square to it, locked, with a top that takes a game", async () => {
     const doc = emptyShip();
@@ -164,7 +164,7 @@ describe("the Card table and Lost Cities parts", () => {
     const cards = pieces.filter((o) => o.traits?.[CARD]);
     expect(cards).toHaveLength(60);
     expect(new Set(cards.map((o) => keptIn(o).kind))).toEqual(new Set(["joint"]));
-    const container = calls.created.find((d) => d?.["@patchwork"]?.type === "t-joint");
+    const container = calls.created.find((d) => d?.["@patchwork"]?.type === "secure-deck");
     expect(container.title).toBe("Lost Cities: Deck");
   });
 

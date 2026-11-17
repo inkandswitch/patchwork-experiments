@@ -16,7 +16,7 @@
 import { presetDoc, dieOf } from "./die.js";
 import { CARRY, DIE, PROVIDER } from "./ids.js";
 import { eulerMatrix } from "./m3.js";
-import { diePatchwork, ownImportUrl } from "./own-package.js";
+import { importUrlOf, patchworkOf } from "../scene-package.js";
 import { scaleOf } from "./roll.js";
 import { solid, standingBounds } from "./solids.js";
 
@@ -25,7 +25,7 @@ const IDENTITY = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
 /** A die doc, whole, from a preset. */
 export function newDieDoc(preset, importUrl = null) {
-  return { "@patchwork": diePatchwork(importUrl), ...presetDoc(preset) };
+  return { "@patchwork": patchworkOf("die", importUrl), ...presetDoc(preset) };
 }
 
 /** The box a die's doc will be built to (a placeholder until its GLB arrives): { min, max }, metres. */
@@ -52,7 +52,7 @@ export function squared(t) {
 
 /** Make a die doc and add it to the scene at `transform`; its object id. */
 async function addDie(ctx, preset, { parent, transform, group }) {
-  const doc = newDieDoc(preset, await ownImportUrl());
+  const doc = newDieDoc(preset, await importUrlOf("die"));
   const handle = await ctx.repo.create2(doc);
   return ctx.addObject(handle.url, {
     providerId: PROVIDER,

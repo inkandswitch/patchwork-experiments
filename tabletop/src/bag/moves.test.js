@@ -304,7 +304,7 @@ describe("every interleaving of two peers' moves, with real merges", () => {
     }, 3_600_000);
   }
 
-  it("visited a real search (the numbers the README quotes)", () => {
+  it("visited a real search", () => {
     console.log(`[bag] interleavings: ${total.pairs} program pairs, ${total.states} states, ${total.ends} end states, ${total.hands} settled by the hands${total.skipped ? ` (${total.skipped} larger pairs run with BAG_FULL=1)` : ""}`);
     if (!ONLY) expect(total.states).toBeGreaterThan(1000);
   });

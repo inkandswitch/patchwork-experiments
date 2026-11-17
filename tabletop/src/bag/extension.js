@@ -22,8 +22,7 @@
 // running extension what it put down and on what (`landed(id, on)`, after
 // its write), and the drawn piece's carry says how it ended (`ended`).
 //
-// What the stage doesn't give, and how this works round it (README.md,
-// "What the stage lacks"):
+// What the stage doesn't give, and how this works round it:
 // - `carry` wants a press to follow, and a draw starts from a key, with an
 //   object that doesn't exist until then: the drawn piece is carried under
 //   an arm of this extension's, which feeds the pointer to the hand's
@@ -36,7 +35,6 @@ import { drawOne, objectOf, pour, putObjects, settleDraw } from "./moves.js";
 import { isGroup } from "./object.js";
 import { CARRY, CONTAINER, bagUrlOf, dropBag } from "./part.js";
 import { poseBeside } from "./place.js";
-import { fill } from "./fill.js";
 
 /** How long a finished draw is still watched, to say so if a peer turns out to have drawn the same piece (ms). */
 const RECENT_MS = 30_000;
@@ -68,8 +66,6 @@ const el = (tag, props = {}, ...children) => {
 const poseKey = (t) => JSON.stringify([t?.position ?? null, t?.rotation ?? null]);
 
 export default {
-  // the `container: "bag"` convention (this plugin's metadata): a new bag doc already holding things (fill.js)
-  fill,
   create(api) {
     const { repo } = api;
     let dead = false;

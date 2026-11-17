@@ -17,13 +17,11 @@ own here.
 
 The layout is naval's rig contract's (a structural schema, a specification
 of the rules it can't express, valid and invalid fixtures each naming the
-stage and error code it fails with). Other packages keep copies of
-`schema.json` and `validate.js` for their tests (dice, tts-import), since
-packages never import each other. One fixture goes the other way:
-`valid/tts-tiny-mod.json` is what tts-import translates its tiny fixture mod
-into (its tests check the translation still is that file, kept beside its
-copies), and this package's tests set it up and play it
-(`src/table/imported.test.js`).
+stage and error code it fails with). Liar's dice and every game the TTS
+importer makes are checked against it too. `valid/tts-tiny-mod.json` is
+what the importer translates its tiny fixture mod (`fixtures/tiny-mod`)
+into (`src/tts/importer.test.js` checks the translation still is that
+file), and `src/table/imported.test.js` sets it up and plays it.
 
 ## Choices to revisit
 
@@ -35,9 +33,7 @@ might reasonably want it otherwise.
    in a keeper's container — dealt, stacked, spread, loose, face up, in a
    bag. A face-up card is then shown to everyone by the table's rule, not by
    its own look. So any card can go into a hand privately. The cost: a plain
-   keeper's container for the game's loose cards, and a keeper needed for
-   any game with cards (none installed: nothing is laid out, and the maker is
-   told).
+   keeper's container for the game's loose cards.
 2. **A deck lists its cards; a card doesn't name its deck.** The deck seam
    is fixed this way: `hidden`, `deck` and `count` on a card kind are gone; a
    deck is a thing in the setup with `cards: [kind, …]` (top first, repeats
@@ -47,10 +43,8 @@ might reasonably want it otherwise.
    at a real table. (The old format refused it.)
 4. **`secure` stays, as a deck's word**, meaning "nobody, not even whoever
    sets the table up, may know the order or a card they aren't shown". It
-   names no keeper; the table asks for one whose players shuffle between them
-   and falls back to a plain one, saying so (the template and the game page
-   alike: the warning comes with what the table is made with, `made-with.js`
-   `prepareTable`).
+   names no keeper; the table gives it to the one whose players shuffle
+   between them (`made-with.js` `prepareTable`).
 5. **Containers are titled by the game and the deck** ("Lost Cities: Deck"),
    never by the scene a table is set down in (host-titled decks are gone,
    HISTORY.md).
@@ -60,13 +54,13 @@ might reasonably want it otherwise.
    scene/STAGE.md, "Arriving"), where a press picks a piece up; one without starts
    them in Look (the orbit camera, not the editor). Every built-in game has
    seats.
-8. **Pieces drawn by another package are documents.** A die is `doc: { "@patchwork": { type: "die" }, … }`, drawn by whatever `scene:source`
-   supports that type; `traits` on a piece say what it does there
-   (`dice.die`). The format names another package's datatype and trait only
-   as data, the way a scene doc does.
-9. **Bags are a convention, as keepers are.** A piece with `bag` holds the
-   things its `contents` lists; the table writer hands them to whatever
-   `scene:extension` says `container: "bag"` (the bag package's `fill`).
+8. **Pieces drawn from a document are documents.** A die is `doc: { "@patchwork": { type: "die" }, … }`, drawn by whatever `scene:source`
+   supports that type (here, `src/dice/`'s); `traits` on a piece say what it
+   does there (`dice.die`). The format names a datatype and a trait only as
+   data, the way a scene doc does.
+9. **Bags hold things out of the scene.** A piece with `bag` holds the
+   things its `contents` lists; the table writer puts them in a bag
+   document (`src/bag/fill.js`).
 10. **Images are cropped cells, not UV maps**, and are drawn at a size set by
     the slab's longest side (512 px under 10 cm, 1024 under 30 cm, else
     2048), not by the game. A token's outline is `cutout`: the drawer decides
@@ -216,23 +210,21 @@ plugin's `roster: true`); nothing here reads who sits where. A seat's
 `src/setup.js` lays any game out (`tableLayout`, pure), then
 `table/made-with.js` makes what holds things and finds who seats people
 (`prepareTable`): a container per deck and one for loose cards, from a
-keeper found by `keeper: "joint"` (a `secure` deck, where one is installed;
-its players shuffle every card of it once every seat is taken, as
-card-table's first shuffle does, `card-table/src/deck.js`) or `"plain"`;
-then each bag, from whatever says `container: "bag"`; then whoever owns
-seats (`roster: true`), with what the maker is to be warned of; and
+keeper: the joint one for a `secure` deck (its players shuffle every card
+of it once every seat is taken, as its first shuffle does,
+`src/keep/deck.js`), else the plain one; then each bag
+(`src/bag/fill.js`); then whoever owns seats (`roster: true`), with what
+the maker is to be warned of; and
 `writeTable` writes the scene in one change, each card bound by its keeper's trait beside a bare
 `tabletop.card`, each bag given its document. Shuffle, Draw, Wash, Stand on
 edge, private hands and who may see what all act on those traits, never on
 any game.
 
-## 8. Laying a game out from another package
+## 8. Laying a game out in a scene
 
-The `tabletop` scene:extension's metadata says `tables: "tabletop-game"`;
-its module's `setUp(ctx, gameId, { parent?, transform?, view? })` lays a
-registered game (a `tabletop:game` plugin, which loads to the game) out in a
-drop context's scene. This package's templates and parts use it, and so does
-dice's Liar's dice template.
+`src/table/template.js` `setUp(ctx, gameId)` lays a registered game (a
+`tabletop:game` plugin, which loads to the game) out in a drop context's
+scene. Every template and game part here uses it, Liar's dice's too.
 
 ## 9. Rules the schema can't say
 

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import TtsImportTool from "./tool.js";
 import { TtsImportDatatype } from "./datatype.js";
 import { plugins } from "../index.js";
-import { FakeRepo } from "./test/fake-repo.js";
+import { FakeRepo } from "../test/fake-repo.js";
 
 function mount(seed = {}) {
   const repo = new FakeRepo();
@@ -26,7 +26,7 @@ describe("plugins", () => {
       for (const [k, v] of Object.entries(p)) if (k !== "load") expect(typeof v).not.toBe("function");
       expect(() => structuredClone({ ...p, load: undefined })).not.toThrow();
     }
-    expect(plugins.map((p) => `${p.type}:${p.id}`)).toEqual(["patchwork:datatype:tts-import", "patchwork:tool:tts-import"]);
+    expect(plugins.filter((p) => p.id === "tts-import").map((p) => p.type)).toEqual(["patchwork:datatype", "patchwork:tool"]);
   });
 });
 

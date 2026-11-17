@@ -1,12 +1,14 @@
 // Stand-ins, for tests, for what a table meets only through the stage and
-// the registry: whoever owns seats, and keepers. Each is made the way the
-// contract says (scene/STAGE.md, "Seats" and "Keepers") and names nothing
-// of any real package: the seats live under a trait of the stand-in's own,
-// and a keeper's trait is its own too. If a test passes with these, the
-// table depends on the conventions and not on who provides them.
+// the registry: whoever owns seats (the seats package), made the way the
+// contract says (scene/STAGE.md, "Seats"), under a trait of the stand-in's
+// own, and a running keeper's `keeper` contribution. If a test passes with
+// these, the table depends on the conventions and not on who provides them.
 
 import { fakeRegistry } from "./fakes.js";
 import { composeMatrix, decompose } from "../table/frame.js";
+import { CONTAINER } from "../bag/part.js";
+import { TRAIT as JOINT } from "../keep/joint-keeper.js";
+import { TRAIT as PLAIN } from "../keep/plain-keeper.js";
 
 /** The stand-in seats owner's trait: the table never reads it; only this file does. */
 export const SEATS = "t.seats";
@@ -59,54 +61,14 @@ export const roster = Object.freeze({
   },
 });
 
-/** A keeper's trait key, for a stand-in keeper of `kind`. */
-export const keptTrait = (kind) => `t.${kind}`;
+/** The trait of this package's keeper of `kind` ("joint", "plain"). */
+export const keptTrait = (kind) => (kind === "joint" ? JOINT : PLAIN);
 
-/**
- * A keeper, as a `scene:extension` plugin: found by `keeper: kind`, its
- * module's `contain({ repo }, { title, items })` making a container doc
- * ({ kind, title, items }) and binding objects by its own trait.
- */
-export function keeperPlugin(kind) {
-  const trait = keptTrait(kind);
-  return {
-    type: "scene:extension",
-    id: `t.keep-${kind}`,
-    keeper: kind,
-    traits: [trait],
-    load: async () => ({
-      create: () => ({}),
-      async contain({ repo }, { title, items }) {
-        const h = await repo.create2({ "@patchwork": { type: `t-${kind}` }, title, items: structuredClone(items) });
-        return { key: h.url, bind: (slot) => ({ [trait]: { by: h.url, slot } }) };
-      },
-    }),
-  };
-}
+/** The trait that makes an object a bag (bag/part.js CONTAINER). */
+export { CONTAINER as BAG };
 
-/** The stand-in bag maker's trait: what makes an object one of its bags. */
-export const BAG = "t.bag";
-
-/**
- * A bag maker, as a `scene:extension` plugin: found by `container: "bag"`,
- * its module's `fill({ repo }, { title, rule, items })` making a bag doc
- * ({ title, rule, items }) and returning the trait that makes an object it.
- */
-export function bagPlugin() {
-  return {
-    type: "scene:extension",
-    id: "t.bag",
-    container: "bag",
-    traits: [BAG],
-    load: async () => ({
-      create: () => ({}),
-      async fill({ repo }, { title, rule, items }) {
-        const h = await repo.create2({ "@patchwork": { type: "t-bag" }, title, rule, items: structuredClone(items) });
-        return { url: h.url, traits: { [BAG]: { doc: h.url } } };
-      },
-    }),
-  };
-}
+/** What a bag doc holds, in the order it was put in (bag/contents.js). */
+export const inBag = (d) => Object.values(d.items).sort((a, b) => a.n - b.n).map((p) => p.object);
 
 /** What draws documents of `type` in a scene, as a `scene:source` plugin: a GLB that says which doc it drew. */
 export function sourcePlugin(type, glb = (doc) => new TextEncoder().encode(`glb of ${JSON.stringify(doc)}`)) {
@@ -129,9 +91,12 @@ export function registries(...plugins) {
   return Object.fromEntries(Object.entries(byType).map(([t, list]) => [t, fakeRegistry(list)]));
 }
 
-/** Which container and slot an object is kept in, whichever stand-in keeper keeps it: { kind, by, slot } | null. */
+/** Which container and slot an object is kept in, and by which keeper: { kind, by, slot } | null. */
 export function keptIn(o) {
-  for (const [k, v] of Object.entries(o?.traits ?? {})) if (k.startsWith("t.") && k !== SEATS && v && typeof v.by === "string") return { kind: k.slice(2), by: v.by, slot: v.slot };
+  for (const kind of ["joint", "plain"]) {
+    const v = o?.traits?.[keptTrait(kind)];
+    if (v && typeof v.by === "string") return { kind, by: v.by, slot: v.slot };
+  }
   return null;
 }
 

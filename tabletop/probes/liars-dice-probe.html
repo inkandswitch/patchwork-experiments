@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>liar's dice probe</title>
 <!-- Driven by probes/liars-dice.mjs. The BUILT scene tool (scene/dist) with
-     the BUILT dice plugins (dist: lots included) in a stub registry, on REAL Automerge documents: two peers, A (Ana) and B (Ben),
+     the BUILT seats and tabletop plugins (dist: dice and lots included) in a stub registry, on REAL Automerge documents: two peers, A (Ana) and B (Ben),
      each with its own replica of every doc (probes/real-repo.js), a change
      reaching the other 25 ms later by a real merge. Each view's broadcasts
      (presence, poses, sends) reach only the other. Both start on an empty
@@ -22,8 +22,8 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
-import { emptyScene } from "../src/test/empty-scene.js";
-import { faceOfSeed, seedFor } from "../src/roll.js";
+import { emptyScene } from "../src/empty-scene.js";
+import { faceOfSeed, seedFor } from "../src/dice/roll.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
 
@@ -38,7 +38,7 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../tabletop/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

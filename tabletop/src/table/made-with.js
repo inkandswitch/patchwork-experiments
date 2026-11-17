@@ -1,15 +1,8 @@
-// What a table is made with, found in the registry by what a plugin's
-// metadata says it is, never by its package or id (packages don't know each
-// other; scene/STAGE.md, "Keepers" and "Seats"):
+// What a table is made with: its containers, by a keeper (a `secure` deck
+// by the joint keeper, whose players shuffle it between them; anything else
+// by the plain one), its bags (bag/fill.js), and, found in the registry by
+// what a plugin's metadata says it is (scene/STAGE.md, "Seats"):
 //
-//   - a keeper (`scene:extension`): the plugin whose `keeper` is the kind
-//     wanted ("joint", "plain"). Its module's `contain({ repo }, { title,
-//     items })` makes a container and returns { key, bind(slot) → traits }.
-//   - a bag maker (`scene:extension`): the plugin whose `container` is
-//     "bag" (the bag package's). Its module's `fill({ repo }, { title, rule,
-//     items: [{ id, object }] })` makes a bag document holding those scene
-//     objects and returns { url, traits }: the traits that make an object
-//     that bag.
 //   - the seats' owner (`scene:extension`): the plugin with `roster: true`.
 //     Its module's `lay(d, seats)` writes seats into a scene doc being set up.
 //   - whatever draws a document (`scene:source`): the plugin whose
@@ -22,6 +15,9 @@
 // isn't in a stage, reads the host's registry (hostRegistry).
 
 import { bound } from "../setup.js";
+import { fill } from "../bag/fill.js";
+import { contain as joint } from "../keep/joint-keeper.js";
+import { contain as plain } from "../keep/plain-keeper.js";
 
 /** Every plugin in a registry, in registry order. */
 const listOf = (reg) => {
@@ -41,25 +37,6 @@ async function moduleOf(reg, id) {
     console.warn(`[tabletop] couldn't load “${id}”`, err);
     return null;
   }
-}
-
-/**
- * The first keeper of one of these kinds that's installed, in the order
- * asked: { kind, contain } | null.
- * @param {(type: string) => Promise<object | null>} registry
- * @param {string[]} kinds  e.g. ["joint", "plain"]
- */
-export async function findKeeper(registry, kinds) {
-  const reg = typeof registry === "function" ? await Promise.resolve(registry("scene:extension")).catch(() => null) : null;
-  if (!reg) return null;
-  for (const kind of kinds) {
-    for (const p of listOf(reg)) {
-      if (p?.keeper !== kind || typeof p.id !== "string") continue;
-      const mod = await moduleOf(reg, p.id);
-      if (typeof mod?.contain === "function") return { kind, contain: mod.contain };
-    }
-  }
-  return null;
 }
 
 /** How to write seats into a scene doc (the seats owner's `lay(d, seats)`), or null where nothing owns seats. */
@@ -84,18 +61,6 @@ export async function hostRegistry(type) {
   }
 }
 
-/** The bag maker's `fill`, or null where nothing installed here holds a bag's contents. */
-export async function findBagMaker(registry) {
-  const reg = typeof registry === "function" ? await Promise.resolve(registry("scene:extension")).catch(() => null) : null;
-  if (!reg) return null;
-  for (const p of listOf(reg)) {
-    if (p?.container !== "bag" || typeof p.id !== "string") continue;
-    const mod = await moduleOf(reg, p.id);
-    if (typeof mod?.fill === "function") return mod.fill;
-  }
-  return null;
-}
-
 /** What draws documents of `type` in a scene (a scene:source's module, with build), or null. */
 export async function findSource(registry, type) {
   const reg = typeof registry === "function" ? await Promise.resolve(registry("scene:source")).catch(() => null) : null;
@@ -109,79 +74,38 @@ export async function findSource(registry, type) {
 }
 
 /**
- * A container for each of a layout's containers (setup.js tableLayout's
- * `containers`), made with the keeper each asks for: a `secure` one by a
- * joint keeper where one is installed, else, like any other, by a plain one.
- * @param {{ repo: object, registry: (type: string) => Promise<object | null> }} host
- * @param {{ [key]: { title: string, secure: boolean, items: any[] } }} containers
- * @returns {Promise<{ binds: { [key]: (slot: number) => object }, kinds: { [key]: string } }>}
- *   kinds: the keeper each got ("joint", "plain"). Throws when one has no keeper to go to.
- */
-export async function containDecks({ repo, registry }, containers) {
-  const binds = {};
-  const kinds = {};
-  const found = new Map(); // wanted kinds → keeper
-  for (const [key, c] of Object.entries(containers ?? {})) {
-    const want = c.secure ? ["joint", "plain"] : ["plain"];
-    const k = want.join("|");
-    if (!found.has(k)) found.set(k, await findKeeper(registry, want));
-    const keeper = found.get(k);
-    if (!keeper) throw new Error(`“${c.title}” has cards in it, and nothing installed here keeps them: add a keeper package`);
-    const made = await keeper.contain({ repo }, { title: c.title, items: c.items });
-    if (typeof made?.bind !== "function") throw new Error(`the ${keeper.kind} keeper made no container for “${c.title}”`);
-    binds[key] = made.bind;
-    kinds[key] = keeper.kind;
-  }
-  return { binds, kinds };
-}
-
-/**
  * Everything a table is made with, made or found before it's written, so the
- * scene never names a document that isn't there: its containers (by
- * keepers), then its bags (by the bag maker, the innermost first, each
- * holding its things already bound: a card in a bag is still kept), and
- * whoever owns seats where the game has any. With them, the warnings every
- * table writer owes the maker (the template's notices, the game page's
- * status line), in this order: bag contents not laid out (no bag maker); a
- * `secure` deck kept by a keeper that isn't joint; seats in the game that
- * nothing owns. One step, so a writer can't make the table and leave the
- * warnings out: they are a function of the layout and of what's installed.
+ * scene never names a document that isn't there: its containers (a `secure`
+ * deck's by the joint keeper, any other by the plain one), then its bags
+ * (the innermost first, each holding its things already bound: a card in a
+ * bag is still kept), and whoever owns seats where the game has any. With
+ * them, the warning every table writer owes the maker (the template's
+ * notices, the game page's status line): seats in the game that nothing
+ * owns. One step, so a writer can't make the table and leave it out.
  * @param {{ repo: object, registry: (type: string) => Promise<object | null> }} host
  * @param {ReturnType<import("../setup.js").tableLayout>} layout
  * @returns {Promise<{ binds, kinds, bags: { [oid]: object }, seats: Function | null, notes: string[] }>}
- *   seats: the seats owner's lay (writeTable lays the seats through it), null where there is none
- *   or the game has no seats. Throws when a container has no keeper to go to.
+ *   kinds: the keeper each container got ("joint", "plain"); seats: the seats owner's lay (writeTable
+ *   lays the seats through it), null where there is none or the game has no seats.
  */
 export async function prepareTable({ repo, registry }, layout) {
-  const { binds, kinds } = await containDecks({ repo, registry }, layout.containers);
+  const binds = {};
+  const kinds = {};
+  for (const [key, c] of Object.entries(layout.containers ?? {})) {
+    kinds[key] = c.secure ? "joint" : "plain";
+    binds[key] = (await (c.secure ? joint : plain)({ repo }, { title: c.title, items: c.items })).bind;
+  }
   const bags = {};
-  const notes = [];
-  const ids = Object.keys(layout.bags ?? {});
-  const fill = ids.length ? await findBagMaker(registry) : null;
-  if (ids.length && !fill) {
-    const n = ids.reduce((s, id) => s + layout.bags[id].items.length, 0);
-    if (n) notes.push(notLaidOut(n));
-  } else
-    for (const id of ids.reverse()) {
-      const bag = layout.bags[id];
-      const items = bag.items.map(({ id: oid, object }) => ({ id: oid, object: bound(oid, object, { binds, bags }) }));
-      const made = await fill({ repo }, { title: bag.title, rule: bag.rule, items });
-      if (made?.traits) bags[id] = made.traits;
-    }
-  const open = Object.entries(layout.containers ?? {}).filter(([key, c]) => c.secure && kinds[key] !== "joint");
-  if (open.length) notes.push(keptInTheOpen(open.map(([, c]) => c.title)));
+  for (const id of Object.keys(layout.bags ?? {}).reverse()) {
+    const bag = layout.bags[id];
+    const items = bag.items.map(({ id: oid, object }) => ({ id: oid, object: bound(oid, object, { binds, bags }) }));
+    bags[id] = (await fill({ repo }, { title: bag.title, rule: bag.rule, items })).traits;
+  }
   const seated = Object.keys(layout.seats ?? {}).length > 0;
   const seats = seated ? await findSeats(registry) : null;
-  if (seated && !seats) notes.push(NO_SEATS);
-  return { binds, kinds, bags, seats, notes };
+  return { binds, kinds, bags, seats, notes: seated && !seats ? [NO_SEATS] : [] };
 }
 
-/** What a table writer says when a bag maker is missing and bags had things in them. */
-export const notLaidOut = (n) => `${n} thing${n === 1 ? "" : "s"} in bags weren't laid out: nothing installed here holds a bag's contents.`;
-/** What a table writer says when `secure` decks (by their containers' titles) went to a keeper whose players don't shuffle. */
-export const keptInTheOpen = (titles) =>
-  `No keeper whose players shuffle is installed here, so ${andList(titles.map((t) => `“${t}”`))} ${titles.length === 1 ? "is" : "are"} kept in the open: anyone who opens ${titles.length === 1 ? "it" : "them"} can read every hand.`;
 /** What a table writer says when the game has seats and nothing installed owns seats. */
 export const NO_SEATS = "Nothing installed here owns seats, so this table has none.";
 
-const andList = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
