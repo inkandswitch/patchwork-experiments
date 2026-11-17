@@ -254,19 +254,15 @@ read means not read anywhere: the physics, and the contract sails' trim
 models the HUD, the looks and the jib station read (`sim.sailModels`), all
 go through the same gate (`body.js` `rigContractOf`, `contractOn`).
 
-**What sailing reads of v1: all of it that §7 gives its physics.**
-`frame`, `loading` (mass, CG, gyradii, crew, the righting curve),
-`appendages`, `sails`, `sailModel`, `sets`, `windage` (§3.13's elements,
-each pushed by its own air as §6.1 says: "Windage" below), `hull` (with
-`hull.sideForce`), `resistance`, `lumpedSail` (§6.8) and `source.hull`;
-each sail's CE swings to its sheet as §6.6's set CE does ("Sails" below);
-`predicted` only in the agreement test. Of fit-out's parts it reads
-`loading.crew.stations` and, for drawing the sheets, `hardpoints`; not
-`loads`, `rig.standing` or `rig.spreaders`. Before N6 (2026-11-16) the
-one part it didn't read was `windage`, with a rule of its own in its
-place; that rule is gone, and a ship without a contract has §3.13's
-elements stated from her box ("Windage"). The stock sloop's contract is
-on `sailing/rig@4` (parts.js `VERSIONS`), the first to state windage.
+**What sailing reads of v1: all of it that §7 gives its physics.** §7's
+list is the one list; two things differ from it. `windage` is read: §7
+still says "not yet" (written before N6), but since N6 (2026-11-16)
+sailing's rule of its own is gone, and §3.13's elements, each pushed by its
+own air as §6.1 says, are sailing's windage ("Windage" below; a ship
+without a contract has the elements stated from her box). And of fit-out's
+parts, which §7 says only `loading.crew.stations` of is read, sailing also
+reads `hardpoints`, to draw the sheets. The stock sloop's contract is on
+`sailing/rig@4` (parts.js `VERSIONS`), the first to state windage.
 
 The copies (`test/rig-contract/`: naval's schema, validator, `compose.js`
 and five valid fixtures; `windage.js`: naval's windage rules) are copies,
@@ -465,14 +461,17 @@ rewrite that table.
   - Each sail swings about its luff (tack to head: the head stays on the
     mast or the stay), and its CE with it: eased right out, the main's
     drive acts to leeward of the centreplane and turns her to windward.
-    Since naval's 01b9b8cb, §6.6 swings the set's CE the same way ("The
-    set's CE, swung": each sail by the set's trimmed sheeting angle,
-    area-weighted), so the fixtures' predicted rudders carry that moment;
-    sailing swings each sail by where its own air and sheet put it, the
-    agreement harness setting each sheet to the point's. Before the swing
-    was in §6.6 it was the Laser's yaw residual (1.08 tolerances on her
-    dead run at 16 kn, up to 1.6 at 20 kn); what is left is the dead-run
-    gap in KNOWN_GAPS (below).
+    Since naval's 01b9b8cb, §6.6 swings the set's CE too ("The set's CE,
+    swung"), but by a different rule: every sail by the set's trimmed
+    sheeting angle at |β_e| (`trimmed.sheetsDeg`), area-weighted, where
+    sailing swings each sail by where its own air and sheet put it (the
+    agreement harness setting each sheet to the point's). The two rules
+    disagree on the Laser's dead run, and by more than before §6.6 swung at
+    all: then sailing gave more weather helm than predicted (yaw 1.08
+    tolerances at 16 kn, up to 1.6 at 20 kn); now it gives 2.4–4.2° less,
+    all seven 180° points fail, worst yaw −2.93 tolerances at 20 kn
+    (KNOWN_GAPS laser-ilca7, below). Open: which rule's swung CE at 85° is
+    the boat's.
   - In irons, head to wind from rest in 12 kn, with the jib backed to
     starboard and the rudder over to bear her away to port, the sloop falls
     off past 60° in 12.5 s, the J/24 in 6.1 s, the Catalina in 7.5 s,
@@ -763,14 +762,16 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   "`ctx.sea.clock` is `api.clock.t`" (line 351). The lane works in sailing
   only, so each is listed in FOLLOWUPS for the integrator. Whether a lane
   may make a one-sentence edit to another package's docs is a question.
-- *Question for the lead: which examples are republished.* rig@4 is a new
-  rig GLB, and a published doc keeps the GLB it was made with, so every
-  example holding the stock sloop carries a contract without windage and
-  sails the plain path (one lumped sail, one Sail row) until it is made
-  again. The integrator republishes the ones that are about sailing her
-  (Ship at sea and at anchor, Lost Cities aboard and what links it,
-  Fitting out, the Harbour, the Model room, the basin mashup). Cadboro Bay
-  and Ucluelet hold her as scenery; republish those too?
+- *Every example holding the stock sloop is republished* (the lead's
+  standing no-back-compat rule decides it; nothing here is the lead's
+  taste). rig@4 is a new rig GLB, and a published doc keeps the GLB it was
+  made with, so each carries a contract without windage and sails the plain
+  path (one lumped sail, one Sail row) until it is made again: Ship at sea
+  and at anchor, Lost Cities aboard and what links it, Fitting out, the
+  Harbour, the Model room, the basin mashup, and Cadboro Bay and Ucluelet,
+  which hold her as scenery (ucluelet-check asserts "sloop floats").
+  Ucluelet's 45 MB GLB costs a long Chrome-lock hold; that is scheduling
+  for the integrator, not a question.
 
 ## Trim feedback
 

@@ -926,7 +926,7 @@ export function createCrew(api, ctx) {
       frameNo++;
       const d = Math.min(dt, 0.05);
       // the walker's step is capped for its own sake; the station's verbs (the wheel, a sheet, the
-      // furler, the halyard, the windlass) run in sea time, as far as the ships step this frame
+      // furler, the halyard, the windlass) run in world time, as far as the ships step this frame
       if (playing && !suspended) walk(d, Math.min(Math.max(dt, 0), MAX_SUBSTEPS * SUBSTEP));
       else if (!playing) follow();
       drawPeers(d);

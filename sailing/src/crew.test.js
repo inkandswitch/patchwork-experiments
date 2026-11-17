@@ -559,8 +559,8 @@ describe("the crew", { timeout: 60_000 }, () => {
     s.frames(10);
     expect(handlers.tick).toHaveBeenCalledTimes(10);
     expect(handlers.tick).toHaveBeenLastCalledWith(1 / 60);
-    // its verbs run in sea time, as far as the ships step a frame (MAX_SUBSTEPS·SUBSTEP, 0.25 s), not the
-    // walker's 0.05 s: at SwiftShader's 2–3 frames a second the jib still unrolls in its 4 s of sea time
+    // its verbs run in world time, as far as the ships step a frame (MAX_SUBSTEPS·SUBSTEP, 0.25 s), not the
+    // walker's 0.05 s: at SwiftShader's 2–3 frames a second the jib still unrolls in its 4 s of world time
     s.frames(1, 0.2);
     expect(handlers.tick).toHaveBeenLastCalledWith(0.2);
     s.frames(1, 0.43);
