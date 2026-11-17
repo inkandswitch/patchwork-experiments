@@ -11,9 +11,12 @@ Built only from the scene's extension contract (scene/STAGE.md).
 | `scene:extension` | `walk.spawn` | the spawn point's trait part: a doc with spawn points calls for this package by it (and lists it, as a `view.start` of `{ body: "walk", place: <a spawn point> }` needs); its verb, on a spawn point, is Walk from here (menu) |
 | trait | `walk.spawn` | on an object: where people start walking, facing the way it faces (`{}`). Written by whatever lays a level out: arena's spawn pad part, doom's layout through it |
 
-Next: [DESIGN.md](DESIGN.md), "Standing on supports" (designed, unbuilt): walk's
-walker becomes the navmesh walker on any support, the ground included, and
-sailing walks in walk.
+Next: [DESIGN.md](DESIGN.md), "Standing on supports": walk's walker becomes the
+navmesh walker on any support, the ground included, and sailing walks in walk.
+Step 3 is built: the walker, its bake and checks are in walk, pure
+(`walker.js`, `navmesh.js`, `navcheck.js`), tested on their own; the body
+below still walks by rays until step 4. `pnpm test` runs the fast tier,
+`pnpm test:slow` the walker's enumerated cases.
 
 ## The body
 

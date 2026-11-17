@@ -1,8 +1,8 @@
 # walk: standing on supports
 
-*Design, written 2026-11-17 in lane/n10 (step 2 of 6), unbuilt. Steps 3–5
-build it: step 3 moves the walker into walk (pure), step 4 gives walk's body
-supports, step 5 makes sailing walk in walk. Every decision here was made
+*Design, written 2026-11-17 in lane/n10 (step 2 of 6). Steps 3–5 build it:
+step 3 moves the walker into walk (pure; built, see "As built, step 3"),
+step 4 gives walk's body supports, step 5 makes sailing walk in walk. Every decision here was made
 without the lead and is marked so in "Decisions"; what is the lead's taste is
 asked in "Questions for the lead".*
 
@@ -273,10 +273,11 @@ env = {
   supports() → [id],          // the ground is id null
   frame(id) → M | null,       // rigid, metres; null: gone
   mesh(id) → NavMesh | null,  // null: not baked yet
-  water(x, z) → { surface: number } | null,  // ground-owned water (Words, Water), else null
-  blockers(id) → [box],       // in that support's frame
-  raster(id) → (col) → intervals | SOLID,   // each support's column intervals, kept from its bake (the clear test); SOLID: an unbaked tile
+  water(x, z) → number | null, // the surface's height there: ground-owned water (Words, Water), else null
+  blockers(id) → [box],       // in that support's frame (step 3: sailing's capsules still)
 }
+// the raster for the clear test is each mesh's own `intervals` (kept from its bake);
+// step 4 adds SOLID for an unbaked tile
 ```
 
 ### States
@@ -559,6 +560,48 @@ All finite and named, no random input. Each step of every case runs I.
   must be exactly today's 8,086 (the bilge stays dropped). Each with the
   old seed-only rule as the failing twin.
 
+**As built, step 3** (2026-11-17, lane/n10). In walk/src: `navmesh.js`,
+`walker.js`, `navcheck.js`, `frames.js` (only what they use) and
+`test/arena.js`, moved from sailing; sailing is untouched and keeps its copy
+until step 5. `BODY` (walk.js) is the one set of "One body", and the bake's
+`NAV` is read from it. Renames: ship → support (`on`), OVERBOARD → OFF,
+`env.surface` → `env.water(x, z) → height | null`, `boarding` → `waiting`
+(no `boardWait`: a support whose model never comes leaves you waiting),
+`__SAILING_ASSERT__` → `__WALK_ASSERT__`; `station`, `takeStation`,
+`leaveStation` and the `ladder` state are gone (`climb` walks you at the
+top). New: W3 (1)–(4), `falling` (F1–F5), P1 over every support
+(`placeAt`, with the lift), F4's `respawn`, I for swimming (a)–(c) and
+falling (clear). The clear test is exact box against box: the body's world
+box against each raster box (a column's square × one interval, through the
+support's frame) by separating axes, open by 1e-6, so a heeled support is
+not judged by the box round it. Tests (walk 21 → 119 fast, 6 slow):
+- `navmesh.test.js` (64) and `walker.test.js`'s 29 moved cases, assertions
+  unchanged but where the design changed them: 12's high wall 0.7 → 0.9
+  (the apex is 0.845 now), 7, 9 and 29 walk fewer frames (4.5 m/s, so they
+  stay on the 4 m floor), 19 climbs straight to walking, 20 (the station)
+  is gone, B1/G1 became WT1/WT2, and 26 lands airborne 0.3 over the lower
+  support, then walks (W3 (1));
+- five falling rows: F1 against a wall and under a ceiling, F3, F5 on a
+  post top, P1's lift out of a closed block;
+- `walker.cases.slow.test.js`: the 89 arenas and the rafted table, unchanged,
+  all green (KNOWN_GAPS ∅ since step 1);
+- `walker.supports.slow.test.js`: the support over the ground, 224 rows
+  (pose 4 × side 4 × (ground {0, 0.3, 1, 2.5 m} × water {none, at the
+  ground's top, 1 m under X} + nothing × water {none, 1 m under X})), each
+  row's W3 case and end asserted, I and `oracleAll` (both supports' raw
+  triangles) every step; a 0.6 m deep support heeled ±30° off ±X (12); W3
+  (4) beside a block, {still, turned 180°} × 4 sides, cut at the side (8).
+  Failing twins, run by reverting: sailing's W3 window (|dy| ≤ step) fails
+  52 rows, no (c) 16, no W3 (3) all, no F2 2, (4) leaving the state as it
+  was 8; no F5, no P1 lift and an unchecked F1 axis each fail their row.
+
+Not built in step 3, and owed by step 4 (they need the body's input, or
+were not in this step's brief): pruning without seeds (the graph and its
+roots; with no seeds the bake still keeps every component, which is what
+the ground slabs here are), W6, SW2 and SW1's clamp into the ground's gap
+(a swimmer's move whose push fails is not taken), blockers as boxes, tiles,
+and the sloop's fixture (step 5's export).
+
 **Step 4** (walk's body on supports):
 - enter {place, eye over floor, eye over nothing, support id} × {ground,
   moving deck};
@@ -660,6 +703,29 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 14. **`__WALK_ASSERT__`** replaces `__SAILING_ASSERT__`.
 15. **No verb on a support or a stand spot.** The writer offers entering at
     its support (sailing's Come aboard), so a hull has one verb for it.
+16. **SW1's push stays local** (decided unattended (2026-11-17, lane/n10),
+    for the lead). The ring search is driven by the moving supports' D_r
+    only, as sailing's; the point it finds is then asked (a) and (c), and
+    where they fail there is no swimming there (W3 goes on to (3)). Asking
+    (c) inside the search carried a swimmer metres sideways to the ground's
+    edge (2.5 m over a slab, water at its top). So `pushOut` is total no
+    more: it answers null, and every caller has a next rule.
+17. **`water(x, z)` answers a height, not `{ surface }`** (decided
+    unattended (2026-11-17, lane/n10), for the lead): one number is all the
+    walker reads; step 4's adapter makes it from water's `at`.
+18. **No carrying of W3's X out past a heeled side** (decided unattended
+    (2026-11-17, lane/n10), for the lead). A heeled, deep support's side
+    can stand within r of X (a 0.6 m hull at 30°: 0.025 m); a falling body
+    stops on it (F1) and F5 places it, so I holds, and the 12 deep-support
+    rows pass without it. Carrying X out until the body cleared the support
+    at every height was built and dropped as an appendage no row needed.
+    What stays open is a body standing still on the ground under a heeled
+    hull's overhang: another support's geometry is in no support's bake, so
+    I says nothing of it; that is W6's, step 4.
+19. **The support-over-ground table is 224 rows**, the brief's 96 (drop {0,
+    0.3, 1} × water {none, at the ground}) and this design's 160 (2.5 m and
+    nothing, water 1 m under X) as one table (decided unattended
+    (2026-11-17, lane/n10), for the lead).
 
 ## Questions for the lead
 
