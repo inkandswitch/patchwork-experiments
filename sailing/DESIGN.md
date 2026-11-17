@@ -1000,7 +1000,7 @@ untouched: it reads the fixtures.
     it (the first try, 0.3 m out on the far side of the sole, failed so in
     the browser). From the windward deck the eye's ray to the luff, ¼ and
     ½ up, misses the main's cloth and the mast close-hauled and on a beam
-    reach (`sloop-navmesh.test.js`). The old spot, 0.22 m out on its own
+    reach (`stand-spots.test.js`, over her drawing). The old spot, 0.22 m out on its own
     side, hid it even close-hauled.
     Locked in, the eye turns to the jib's luff halfway up (crew.js
     `take(…, { look })`, stations.js `jibLuffAt`: the Jib piece's cloth
@@ -1600,14 +1600,15 @@ Irons, re-measured with P1 and P2:
   contract hull without a winch connector (put by hand, they go where
   they're put, mirrored across her).
 
-**Walking.** Each winch seeds a stand spot from its trait (`walker.facing`:
-at `stand`, facing the winch; crew.js `navInput`); the jib is moving, so
-not baked (`bakedObjects`). On her static bake (`sloop-navmesh.test.js`,
-`test/sloop.js` gains the winches): C1–C9 hold with them; each stand lands
-on the side deck across the well from its winch, at (∓1.30, 1.22, 2.25)
-for the winch at (±0.95, 1.23, 2.25), facing it across the well (yaw
-±π/2), its drum's top within 3 m of the eye; the "plain deck within 2 cm"
-case skips the winches' bases.
+**Walking.** Each winch carries a `walk.stand` (ship.js `standSpot`),
+a seed of walk's bake; the jib is a moving part, so not baked. On her
+bake (walk's `deck-12m.test.js` over her fixture) C1–C9 hold with them
+and each spot's link stands where it was written. Each spot is on the
+side deck across the well from its winch, at (∓1.30, 1.22, 2.25) for the
+winch at (±0.95, 1.23, 2.25), its drum's top within 3 m of the eye
+(`stand-spots.test.js`, over her drawing); her floors claim (below, "Her
+checks") skips the winches' bases. A stand spot has no `facing` now: the
+station's look is the station's (stations.js), not the spot's.
 
 **Station** (`stations.js`): as the table in §2, plus quick hold Q / E at
 the working winch (the lazy one shows "Lazy sheet: the jib's to port",
@@ -2550,9 +2551,23 @@ triangles from `ship.js` and her seeds), a copy in walk's fixtures
 - **The bow**: the full bake reaches as far forward as a bake of her bare
   hull (within 0.1 m), and nothing forward of the windlass was dropped (C2
   only covers kept cells, so it can't see a region pruned whole).
-- **The mainsheet beside a card table**: baked with tabletop's table where
-  the aboard setup puts it, the mainsheet's stand spot doesn't move, and
-  the look from its eye to the block misses the table.
+- **Her claims of a right bake** (`claims` in her export, checked by
+  walk's `deck-12m.test.js` in walk's words, so walk names nothing of
+  hers): her floors (the sole and benches within 2 mm, her plain deck
+  within 2 cm where a cell stands, most of it walkable); her rises (the
+  sole aft of the wheel steps up to her deck to port, to starboard and
+  aft, 0.5–0.58: "The cockpit is a STEP"; the traveller is a STEP you
+  cross from forward and from aft, not a WALL); and the mainsheet's stand
+  spot stays within a cell with the Card table where the aboard setup puts
+  it (probes/cockpit-table.js, shared with aboard-probe.html).
+- **Her stand spots, over her drawing** (`stand-spots.test.js`, no
+  bake): each jib winch's across the well, inside her rail, its drum in
+  reach; from the working winch's, the jib's luff seen past the main and
+  the mast; the helm's (her spawn) on the sole aft of the wheel; the
+  mainsheet's aft of the traveller, forward of the wheel, its block within
+  2 m of the eye (walk's reach, Q9, under her station's 2.5), and the
+  table wholly forward of the block, so no look from the spot to it
+  crosses the table.
 
 In the browser, `probes/sailing-run.mjs` runs C1–C9 on the bake B's view
 made from her loaded GLBs and walks the cockpit's edges with real keys
@@ -2655,8 +2670,14 @@ sloop's rails).
   B1–B7, the move, the unit and enumerated cases, C1–C7 and C9) moved to
   walk's DESIGN, "Foundations", renamed; what is the stock sloop's (the
   cockpit's STEP, her mesh, C8, the bow, the mainsheet's two rows, her
-  fittings) stays here. The mainsheet's two rows, dropped with
-  `sloop-navmesh.test.js` in step 5, are back, in walk's
-  `deck-12m.test.js` over her fixture. No back-compat: her parts' traits
+  fittings) stays here. The rows `sloop-navmesh.test.js` held for her
+  alone, dropped with it in step 5, are back (step 6's fixes, after
+  review): those that need a bake as her export's `claims`, which walk's
+  `deck-12m.test.js` checks without naming her parts; those that don't
+  in `stand-spots.test.js`, over her drawing. Only the winch stands'
+  facing is gone (a stand spot has none). And in Cadboro Bay and
+  Ucluelet, whose ground walk's column cap refuses, Come aboard waited
+  forever (walk waited for every support's mesh); walk's Decision 43 now
+  walks her deck there, the ground absent until walk bakes in tiles. No back-compat: her parts' traits
   changed shape, so every example with her in it is republished and its
   link swapped in the examples folder (the integrator's).
