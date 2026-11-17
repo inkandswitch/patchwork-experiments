@@ -431,7 +431,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 | W4 | `open-meteo.js`: `routeOf` and `requestFor` (the routing at every boundary, the URL's keys the whitelist, no other field reaching it), `fetchWeather` (one GET, no credentials, no referrer), `snapshotFrom` (six recorded replies to their fields, the derivations' tables: LCL, layers, kinds, WMO codes, visibility, rain rate, `gustinessOf` with its rows from 07a3a291 and the plan's gust factors, clamping wind 45 and rain 80), Fetch for this time (gated by `isWorlds`; the provenance on Fetch for this time's label; disabled for a time with no weather; a failure a notice that writes nothing; Fetch does not set `offset`, Decision 35); the one `fetch` call shown to be the only one. Live: `probes/live-fetch.mjs`, both places now and on 2025-07-15 15:00 PDT, every field finite and on its slider. Local probe: Now then Fetch for this time on the real network in the built tool, and a refused Fetch for this time. Review fixes: the visibility field is the visibility in force, so a fetch writes the observed one (Decision 41); Fetch now dropped, Now then Fetch is it (Decision 42); the present conditions checked against the press, the point routing measures from, with `source.for` their own time (Decision 34); every variable's unit checked by one loop; the stage's signal shown to reach the fetch; a notice only when a fetch wrote, and no fetch or notice when the trait is gone at the press; snow showers are cumulus, as the doc's rule says. 79 of 79 probe checks pass | done |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes: sailing's `weather.js`, its extension and describes, and `ATMOSPHERE` deleted; `traits.js` names the weather's trait `weather` and the ambient `wind` (`WIND_AMBIENT`); parts and templates write `{ wind, from, seed }` (Decision 43); the Sea and Sloop parts bring `weather`; the `wind` convention documented here. Tables: the 48 weathers {wind 0/7/12 × from 0/90/235/300 × gust none/0.5 × seed 1/7} → the offer's fields (here, `weather.test.js`) and → `createWind` sampled exactly (sailing `sea-view.test.js`, through its stand-in, Decision 44), each field shown to reach her; no sailing extension, created on a stage, has an `ambient` (`index.test.js` for the sea's, `aboard.slow.test.js` for the ships'). Probes (`sailing-run`, `harbour-run`) with this package's build loaded: her wind is her weather's, alone, and the harbour's, linked (Decision 47). Publishers write `weather` and list this package (Decision 46) | done |
 | W6 | terrain: `terrain.sky` → `terrain.place` (`place.js`: the shore, shelter and grain, no ambient, no fields); `SKIES` (Ucluelet) and `SKY` (Cadboro) are this trait's sky fields; `placeWeather` writes each template's whole weather (place, 15:00 on 15 July on UTC−7, wind, sky); the template's `sky` option picks a preset, a sky it hasn't refused before anything is written. Tables: each template's trait literal, each Ucluelet sky, no terrain extension offering an ambient on either template's scene, the place object table; here, each template weather gives its old look exactly and Ucluelet's sun is within 1° of the old hand-set one (0.41°). Probes: publish-rvyc and publish-ucluelet `--dry-run` check the world's atmosphere and wind are the weather's, exactly the old looks, and the same for a viewer without terrain. Run 2026-11-17: publish-rvyc 50/50; publish-ucluelet 65 and 66 of 67 on two runs, every weather, sky, shore, grain and exposure check passing; its two failures are on scene-stage too (a control run there without this package: the same 1.44 stripe ratio at low-town and the home view over its 22.7 ms budget while other lanes ran suites), so not this step's | done |
-| W7 | end-to-end local probe: weather reaches sky, water and boat | |
+| W7 | end-to-end local probe `probes/world-probe.html` + `world-run.mjs`: the built scene, sailing, water, weather, joints and traversal plugins on a manual clock; a sloop made by sailing's "Ship at sea" template, her doc's `weather` dialled one change at a time, every expectation this package's own pure functions of the doc (Decision 53). (a) 6, 12, 18, 21 and 23 on 15 July at Cadboro Bay: the world's atmosphere is `atmosphereOf` exactly, the sun W1's to 1e-9 (and node's), the key light along it at intensity × exposure, the viewport's sky and the water's sun and sky the atmosphere's; at 23 (−13.6°) no sun, no key light, the water's sun at 0, exposure 0.15 of noon's. (b) noon cover 0 → 1: the sky's top changes in the atmosphere, viewport and water; uClouds (0, 0, 1, 1) → the clouds field; shadows off in the atmosphere and the key light, uScatterGain 1 → 0.35; a 300 m fog: no deck, the scene's fog the horizon's colour. (c) 10 m/s from 270, gustiness 0.3: her sea's wind is those numbers, and the true wind at her mast over 60 s of her clock (she sailed 218 m) averages 10.18 m/s from 267.2° (samples 8.8 to 11.3). (e) Ucluelet 15 July 2025 15:00, Fetch for this time on a fake fetch answering the committed archive fixture: one request (the fixture's URL), one change to the weather, `source` written, provenance fetched, a notice, the ambients the fetched weather's. (d) her doc linked live, turned 30°, into a harbour whose weather differs (5 m/s from 90, seed 7, 09:00, cover 0.6): the world's wind and sky are the harbour's, and her sea's wind turned back into the world is 5 from 90. Run 2026-11-17 (Chrome, one hold, 27 s): 76 of 76. Teeth: one run with water's `scatterGain` made 1 and the night band's exposure 0.5 in the built dists turned exactly (b)'s scatter check and hour 23's atmosphere and exposure checks red (72 of 76), the dists restored after. Screenshots (dawn, noon, afternoon, dusk, night, overcast, fog, fetched, harbour) are for the lead (Questions 8 and 16). | done |
 | W8 | republish every boating example with weather; swap links | |
 | W9 | real-Patchwork checks (sun, sky, wind at the boat, a fetch) | |
 
@@ -1111,6 +1111,25 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     before the terrain is added. The template itself always passes Ukee
     grey; the option is for publishers and tests. *Decided unattended
     (2026-11-16, lane/weather), for the lead.*
+53. **W7's probe: what it builds on and what it dials.** The world is a
+    sloop made by clicking sailing's "Ship at sea" template in an empty
+    scene, as a person makes one, so the probe checks the weather through
+    the same doc shape the examples have, not a hand-written one. Every
+    expectation is computed in the page from the doc by this package's
+    own source (`weatherParams`, `atmosphereOf`, `windOf`, `sunOf`,
+    `sunDirection`, `bandAt`), so the checks are exact (JSON equality, or
+    1e-9 for directions), and node's sun is compared to 1e-9 only (Decision
+    25: the last bits differ across engines). Three departures from the
+    plan's table: (a) adds 21:00, since 18:00 in July at 48.5° N is
+    afternoon (28.8° up) and the screenshots should show a dusk; (c)'s
+    "gust 13" is gustiness 0.3, the trait's own field since W0's review;
+    (e)'s fake fetch answers Open-Meteo's URLs (and only those) with the
+    committed `ucluelet-archive.json`, so the run never reaches the
+    network and the request is checked against a URL recorded from the
+    real API. The weather's commands are Edit's (Decision 28) and the
+    template leaves her in Look, so the probe enters Edit, as the menu
+    does, before Fetch. *Decided unattended (2026-11-17, lane/weather),
+    for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -1303,3 +1322,13 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     other package's traits); or the stage's D4 (whether a stage is the
     outermost without an offer), which fixes the HUD but not the wind.
     Default: accept it.
+16. "Ship at sea" greets with a notice, "A sloop on a reach, the wind from
+    the north-east" (sailing `template.js`). Once anyone dials or fetches
+    the weather, the boat is no longer on that reach and the words are
+    wrong: W7's screenshots show the notice over a westerly. Options:
+    drop the wind from the words ("A sloop under way"); have the
+    template say the wind its own weather starts with, which is still
+    only true until the first dial; or leave it, as a greeting that is
+    only read once. Default: drop the wind from the words, in sailing,
+    when the lead says (this lane doesn't touch sailing's template for
+    prose).
