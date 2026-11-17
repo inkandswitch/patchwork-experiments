@@ -105,7 +105,7 @@ try {
     loaded: (w, id) => !!dbg[w].viewport.contentOf(id)?.loaded,
     allLoaded: (w) => Object.keys(objectsOf(w)).every((id) => dbg[w].viewport.contentOf(id)?.loaded),
     /** pick up the editor or put it down in view w (a hand, not a body) */
-    edit: (w, on) => dbg[w].view.setEditing(on),
+    edit: (w, on) => dbg[w].view.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: on }),
     /** the seat picker */
     pick(w, sid) { const s = hosts[w].querySelector(".seats-pick"); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     seats: () => plain(scene.a.doc().traits?.seats),

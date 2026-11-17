@@ -102,7 +102,7 @@ try {
     tool: (id) => { const e = host.querySelector(`.toolbar [data-command="${id}"]`); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     body: () => dbg.local.get().body?.id ?? null,
     editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
-    ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
+    ring: () => dbg.view.plugins.instanceOf("scene.parts")?.debug?.ring() ?? null,
     selected: () => dbg.local.get().selected ?? null,
     camera: () => dbg.viewport.getCamera(),
   };

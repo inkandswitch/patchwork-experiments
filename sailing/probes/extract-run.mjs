@@ -58,7 +58,7 @@ const J = JSON.stringify;
 // stage, the boat's), each doc by url, where the game acts, and where its cards are drawn
 const HELPERS = `window.__ex = (() => {
   const dbg = () => window.__p.A;
-  const api = () => dbg().host.record("scene.transfer").api;
+  const api = () => dbg().view.plugins.record("scene.transfer").api;
   const plain = (v) => JSON.parse(JSON.stringify(v));
   const docAt = (url) => window.repo.handles.get(url)?.doc() ?? null;
   const links = (d) => Object.entries(d.objects ?? {}).filter(([, o]) => o.providerId === "scene.link").map(([id, o]) => ({ id, url: o.sourceUrl }));
@@ -72,7 +72,7 @@ const HELPERS = `window.__ex = (() => {
     selected: () => dbg().local.get().selected ?? null,
     edits: () => plain(dbg().local.get().edits),
     run: (command, target, value) => api().run({ ext: "scene.transfer", command, target, value }),
-    edit: () => dbg().view.setEditing(true),
+    edit: () => dbg().view.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: true }),
     body: () => dbg().local.get().body?.id ?? null,
     editing: () => (dbg().local.get().hands ?? []).some((h) => h.kind === "edit"),
     undo: () => api().undo(),

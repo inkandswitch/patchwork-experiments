@@ -135,10 +135,10 @@ try {
       return { x: r.left + p.x, y: r.top + p.y };
     },
     /** what A's halo is on, or null */
-    halo: (dbg = dbgA) => dbg.host.instanceOf("scene.halo")?.debug?.target ?? null,
+    halo: (dbg = dbgA) => dbg.view.plugins.instanceOf("scene.halo")?.debug?.target ?? null,
     /** page coords of a halo handle (a third along an arrow; a corner's point), `along` frame units further along an arrow's axis */
     haloAt(kind, axis, along = 0, dbg = dbgA) {
-      const h = dbg.host.instanceOf("scene.halo")?.debug;
+      const h = dbg.view.plugins.instanceOf("scene.halo")?.debug;
       const x = h?.handles.find((k) => k.kind === kind && (axis == null || k.axis === axis));
       if (!x) return null;
       const p = kind === "move" ? x.from.map((v, i) => v + (x.to[i] - v) / 3) : [...x.at];

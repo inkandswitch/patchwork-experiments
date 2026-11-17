@@ -106,7 +106,7 @@ try {
     get A() { return dbg.a; },
     get B() { return dbg.b; },
     /** the world's clock running again (api.clock.resume, as the clock chip's ▶ does): → its t */
-    resume() { const api = dbg.a.host.record("sailing")?.api ?? dbg.a.host.record("scene.use")?.api; api.clock.resume(); return api.clock.t(); },
+    resume() { const api = dbg.a.host.record("sailing")?.api ?? dbg.a.view.plugins.record("scene.use")?.api; api.clock.resume(); return api.clock.t(); },
     joinB() {
       if (dbg.b) return;
       cleanups.b = Tool(B, hostB);

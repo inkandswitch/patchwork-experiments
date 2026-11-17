@@ -201,10 +201,10 @@ try {
     carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().gesture != null,
     camera: () => vp.getCamera(),
     /** enter a body in a view, as the body chip does (api.body.enter): "look" */
-    enter: (who, id) => (who === "a" ? dbgA : dbgB).host.record("scene.body")?.api.body.enter(id, null) ?? false,
+    enter: (who, id) => (who === "a" ? dbgA : dbgB).view.plugins.record("scene.body")?.api.body.enter(id, null) ?? false,
     bodyOf: (who) => (who === "a" ? dbgA : dbgB).local.get().body?.id ?? null,
     /** pick up the editor or put it down in a view, as the body chip's Edit does (api.view.edit) */
-    edit: (who, on) => (who === "a" ? dbgA : dbgB).host.record("scene.body")?.api.view.edit(on) ?? false,
+    edit: (who, on) => (who === "a" ? dbgA : dbgB).view.plugins.record("scene.body")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: on }) ?? false,
     editingOf: (who) => ((who === "a" ? dbgA : dbgB).local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** open a drawer tab of the stage's own, as its toolbar toggle does (ext "scene.inspector", command "inspector") */
     openTab: (who, ext, command) => (who === "a" ? dbgA : dbgB).host.record(ext)?.api.run({ ext, command, value: true }) ?? false,
@@ -242,10 +242,10 @@ try {
     /** a row's name (scrolled into view: the tree scrolls inside the inspector's pane) */
     row: (id) => { const e = hostA.querySelector(`.object-row[data-id="${id}"] .row-main`) ?? hostA.querySelector(`.object-row[data-id="${id}"]`); e?.scrollIntoView({ block: "nearest" }); const r = e?.getBoundingClientRect(); return r && [r.x + Math.min(40, r.width / 2), r.y + r.height / 2]; },
     /** what A's halo is on, or null */
-    halo: () => dbgA.host.instanceOf("scene.halo")?.debug?.target ?? null,
+    halo: () => dbgA.view.plugins.instanceOf("scene.halo")?.debug?.target ?? null,
     /** page coords of one of A's halo handles: a third of the way along an arrow, the point of a corner; and of `along` frame units further along an arrow's axis */
     haloAt: (kind, axis, along = 0) => {
-      const h = dbgA.host.instanceOf("scene.halo")?.debug;
+      const h = dbgA.view.plugins.instanceOf("scene.halo")?.debug;
       const x = h?.handles.find((k) => k.kind === kind && (axis == null || k.axis === axis));
       if (!x) return null;
       const p = kind === "move" ? x.from.map((v, i) => v + (x.to[i] - v) / 3) : x.at;

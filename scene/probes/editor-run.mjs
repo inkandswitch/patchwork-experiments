@@ -691,7 +691,7 @@ try {
     check("gripArrowLeftWidens16", near1(rk.drawer.w, r1.drawer.w + 16) && near1(rk.prefs["drawer.chrome"], r1.drawer.w + 16) && (await selected()) === "b0", { before: r1.drawer.w, after: rk.drawer.w, prefs: rk.prefs });
     await shot("9-grip-wide");
     // an editor's pane: its own width (the editor default, 46% of the stage), set apart from the chrome's
-    await A(`(() => { const el = document.createElement("div"); el.textContent = "An editor"; el.className = "probe-editor"; p.closeEditor = p.A.host.record("scene.select").api.dock(el, { title: "Editor" }); return true; })()`);
+    await A(`(() => { const el = document.createElement("div"); el.textContent = "An editor"; el.className = "probe-editor"; p.closeEditor = p.A.view.plugins.record("scene.select").api.dock(el, { title: "Editor" }); return true; })()`);
     await b.rest(150);
     const re = await R();
     check("editorPaneHasItsOwnDefault", re.kind === "editor" && near1(re.drawer.w, 0.46 * re.stage.w), re);
@@ -747,17 +747,17 @@ try {
     const t0 = await T();
     check("tallTreeCappedAt40", t0.open && t0.tree.h <= 0.4 * t0.pane.h + 2 && t0.tree.h >= 0.38 * t0.pane.h && t0.fields.h >= 0.55 * t0.pane.h && t0.scrollH > t0.tree.h + 100, t0);
     // the last group, below the tree's fold, selected elsewhere (as a click in the view would): its rows scrolled to it, the bar still on top
-    await A(`(p.A.host.record("scene.inspector").api.view.select("tall69"), true)`);
+    await A(`(p.A.view.plugins.record("scene.inspector").api.focus().view.select("tall69"), true)`);
     await b.rest(300);
     const t1 = await T();
     check("tallTreeRevealsTheSelection", inView(t1) && t1.scrollTop > 0, t1);
     check("tallTreeBarStaysOnTop", !!t1.bar && Math.abs(t1.bar.y - t1.tree.y) <= 1, t1);
     // back up to the first row: scrolled into view below the bar, not under it
-    await A(`(p.A.host.record("scene.inspector").api.view.select("board"), true)`);
+    await A(`(p.A.view.plugins.record("scene.inspector").api.focus().view.select("board"), true)`);
     await b.rest(300);
     const tUp = await T("board");
     check("tallTreeRowUpTopIsBelowTheBar", inView(tUp) && tUp.scrollTop < t1.scrollTop, tUp);
-    await A(`(p.A.host.record("scene.inspector").api.view.select("tall69"), true)`);
+    await A(`(p.A.view.plugins.record("scene.inspector").api.focus().view.select("tall69"), true)`);
     await b.rest(300);
     // × and the toolbar's Inspector: the same selection, revealed again in the reopened pane
     await A(`(() => { [...p.hostA.querySelectorAll('.stage-drawer-tab')].find((t) => t.textContent.includes("Inspector"))?.querySelector('.stage-drawer-tab-close')?.click(); return true; })()`);

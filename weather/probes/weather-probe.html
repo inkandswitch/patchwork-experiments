@@ -100,7 +100,7 @@ try {
     },
     /** Enter a link of the outermost's, as the menu's Enter runs it (scene.focus): false where it can't */
     enter(id) {
-      const c = dbg.view.focusStage()?.debug.host.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
+      const c = dbg.view.focusStage()?.debug.view.plugins.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
       const st = c?.state(id);
       if (!st || st.disabled) return false;
       c.run(id);

@@ -135,7 +135,7 @@ try {
     editToggle: () => P.rectOf(".body-edit"),
     /** a toolbar command's button (the toolbar is Edit's) */
     tool: (id) => P.rectOf(`.toolbar [data-command="${id}"]`),
-    ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
+    ring: () => dbg.view.plugins.instanceOf("scene.parts")?.debug?.ring() ?? null,
     selected: () => dbg.local.get().selected ?? null,
     cam: () => v.getCamera(),
     setCam: (c) => v.setCamera(c),

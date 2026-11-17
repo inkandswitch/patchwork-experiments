@@ -310,9 +310,9 @@ try {
   // filter the outline, Enter to select (and reveal) the first match
   // the tree and the fields are the inspector's one pane, the editor's: pick up the editor, then the toolbar's Inspector
   P.openInspector = async () => {
-    dbg.host.record("scene.body")?.api.view.edit(true);
+    dbg.view.plugins.record("scene.body")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: true });
     await stable();
-    dbg.host.record("scene.inspector")?.api.run({ ext: "scene.inspector", command: "inspector", value: true });
+    dbg.view.plugins.record("scene.inspector")?.api.run({ ext: "scene.inspector", command: "inspector", value: true });
     await stable();
     return !!document.querySelector('.stage-drawer [data-panel="inspector"]');
   };
