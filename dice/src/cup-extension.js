@@ -60,8 +60,6 @@ import { lookFor } from "./rule.js";
 export const SHAKE_SECONDS = 0.6;
 /** How far a peek tilts the cup (radians). */
 const PEEK_TILT = (55 * Math.PI) / 180;
-/** How far apart a peer's word and the doc change that bears it out may arrive (ms). */
-const TRUST_MS = 3000;
 /** How long a shake's lots may stay other than it asked before every view says so (ms): its own round lands a few hundred ms after the shake. */
 export const ASTRAY_MS = 2000;
 
@@ -69,10 +67,10 @@ const str = (s) => typeof s === "string" && s.length > 0 && s.length < 128;
 const listOf = (vs) => (vs.length > 1 ? `${vs.slice(0, -1).join(", ")} and ${vs.at(-1)}` : vs[0] ?? "");
 const cap = (t) => t.replace(/^./, (x) => x.toUpperCase());
 const only = (d, keys) => Object.keys(d).every((k) => keys.includes(k));
-/** What a peer may tell us: which cup, and nothing else (nothing about what's under it). A shake is told from the doc: a new draw on a cup. */
-export const MESSAGES = {
-  peeked: (d) => only(d, ["cup"]) && str(d.cup),
-  lifted: (d) => only(d, ["cups"]) && Array.isArray(d.cups) && d.cups.length > 0 && d.cups.length <= 64 && d.cups.every(str),
+/** The shapes of what a cup tells: which cup, and nothing else (nothing about what's under it). A shake is told from the doc: a new draw on a cup. */
+const valid = {
+  peeked: (d) => !!d && typeof d === "object" && only(d, ["cup"]) && str(d.cup),
+  lifted: (d) => !!d && typeof d === "object" && only(d, ["cups"]) && Array.isArray(d.cups) && d.cups.length > 0 && d.cups.length <= 64 && d.cups.every(str),
 };
 
 const vec = (v) => [0, 1, 2].map((i) => Number(v?.[i]) || 0);
@@ -116,7 +114,6 @@ function create(api) {
   const written = new Set(); // draws this view has written turned up
   const shaking = new Map(); // cup id → { stop }
   let peek = null; // { cup, dir: [x, z] } this view's own
-  const waiting = new Set(); // { type, data, from, at }: said by a peer, not yet borne out by the doc
   const rollsSeen = new Map(); // cup id → the draw last seen on it (to tell a new one)
   const ownShakes = new Set(); // draws this view shook itself (told as it did)
   const asked = new Map(); // a draw this client asked for → the lots round that was on the cup when it last asked
@@ -418,33 +415,29 @@ function create(api) {
     if (!dead) drawLabels();
   });
 
-  // ── telling the others (ids only; each view words it from its own doc) ──
-  function borneOut(w) {
-    const c = state.cups.get(w.data.cup ?? w.data.cups?.[0]);
-    if (w.type === "peeked") return !!c && c.covering && c.cup.holder === w.from?.viewer;
-    if (w.type === "lifted") return w.data.cups.every((id) => state.cups.get(id) && !state.cups.get(id).covering);
-    return false;
-  }
-  function told(w) {
-    const name = who(w.from?.viewer);
-    if (w.type === "peeked") return `${name} peeked under their cup.`;
-    if (w.type === "lifted") {
-      const holders = w.data.cups.map((id) => state.cups.get(id)?.cup.holder).filter(Boolean);
-      return w.data.cups.length > 1 ? `${name} lifted every cup.` : `${name} lifted ${holders[0] === w.from?.viewer ? "their own" : holders[0] ? `${whose(holders[0])}` : "a"} cup.`;
-    }
-    return null;
-  }
-  function settleWaiting() {
-    const now = api.clock.now();
-    for (const w of [...waiting]) {
-      if (now - w.at > TRUST_MS) waiting.delete(w);
-      else if (borneOut(w)) {
-        waiting.delete(w);
-        const text = told(w);
-        if (text) api.notify?.(text);
-      }
-    }
-  }
+  // ── telling the others (ids only; each view words it from its own doc, once it bears it out: STAGE.md "Telling") ──
+  const messages = {
+    peeked: {
+      valid: valid.peeked,
+      /** Borne out when the cup is down and the speaker holds it. */
+      says(d, by, s) {
+        const c = cupAt(d.cup, s);
+        if (!c?.covering || c.cup.holder !== by.viewer) return null;
+        return by.viewer === viewer ? "You peeked under your cup." : `${by.name} peeked under their cup.`;
+      },
+    },
+    lifted: {
+      valid: valid.lifted,
+      /** Borne out when every cup named is up. */
+      says(d, by, s) {
+        const cs = d.cups.map((id) => cupAt(id, s));
+        if (!cs.every((c) => c && !c.covering)) return null;
+        if (d.cups.length > 1) return `${by.name} lifted every cup.`;
+        const holder = cs[0].cup.holder;
+        return `${by.name} lifted ${holder === by.viewer ? (by.viewer === viewer ? "your own" : "their own") : holder ? whose(holder) : "a"} cup.`;
+      },
+    },
+  };
 
   // ── the verbs ──
   const cupAt = (id, s = snap) => (id != null && s ? (s === snap ? state : cupsOf(s, kOf(s))).cups.get(id) ?? null : null);
@@ -558,7 +551,7 @@ function create(api) {
     }
     peek = { cup: id, dir };
     api.presence?.set?.("peek", id);
-    api.send?.("peeked", { cup: id });
+    api.tell("peeked", { cup: id });
     dressAll();
   }
   function peekRun(id) {
@@ -598,7 +591,7 @@ function create(api) {
         }
       }
     });
-    if (did.length) api.send?.("lifted", { cups: did });
+    if (did.length) api.tell("lifted", { cups: did });
   }
 
   const liftAllState = (target, ctx) => {
@@ -637,7 +630,6 @@ function create(api) {
       lens();
       dressAll();
       drawLabels();
-      settleWaiting();
       tellTurnedUp();
     },
     looks: () => looks,
@@ -646,11 +638,7 @@ function create(api) {
     // a die under a cup can't be picked up through it; a cup being shaken is in someone's hand; a cup down over
     // dice can't be slid off part of them (picking it up is lifting it: Lift, or Knock over)
     carryable: (id) => !(state.covered.has(id) || shaking.has(id) || state.cups.get(id)?.under.length > 0),
-    receive(type, data, from) {
-      if (!data || typeof data !== "object" || !Object.hasOwn(MESSAGES, type) || !MESSAGES[type](data)) return;
-      waiting.add({ type, data, from, at: api.clock.now() });
-      settleWaiting();
-    },
+    messages,
     hud() {
       const out = [];
       if (state.cups.size && !lotsApi()) out.push({ text: "Cups can't be shaken yet: rolls are drawn by lots, which aren't running here.", state: "warn" });

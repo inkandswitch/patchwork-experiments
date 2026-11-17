@@ -221,7 +221,7 @@ or identity closes, with what was opened under it, and opens again.
 | | Shared? | Lasts? | Read | Write |
 |---|---|---|---|---|
 | **Doc** | yes | yes | `api.doc()`, `api.scene()`, `api.claimedBy(id, kind)` | `api.change(fn)`, `api.claim(id, kind)` |
-| **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
+| **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)`, `api.tell(type, data)` |
 | **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, and the selection and hover as this stage's elements; never the focus) | `api.local.swap(fn)`; `api.view.select(target)`, `api.view.enter(link)`, `api.setPref`, `api.notify` |
 
 (There is no fourth, private place yet: what is one viewer's alone, lasting
@@ -1236,7 +1236,8 @@ that extension.
 | `local` | `{ get, swap, watch(fn, select?) }` |
 | `pref(key, fallback)`, `setPref(key, value)` | read through local and then the doc, as above. Set writes local only |
 | `presence` | `{ set(key, value), get() → { [session]: { viewer, body, held, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `body` (`{ id, label }`) and `held` (`{ name }` or null) are what that peer's view says of its viewer on every channel it acts on (who's here: someone seated at a game linked elsewhere shows seated to a viewer of the game alone). `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its stage's `time.now()`: "Time"), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
-| `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
+| `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })`, unless the extension declares `type` among its `messages` (then it is told: "Telling") |
+| `tell(type, data)` | tell everyone something this view did that the doc bears out: `type` must be one of the instance's `messages` and `data` its `valid` (else nothing is said or sent). The stage says it here at once as "You" when `says` answers, and sends it; each peer's stage tells it once its doc bears it out. Nothing in a view that can't write the doc. See "Telling" |
 | `notify(text, kind?)` | |
 | `packages` | `{ load(urls?) → Promise, dismiss(urls?) }`: the viewer's answer to the packages prompt (see "Packages"). `load` is a yes: it loads what's asked about or failed (all, or those of `urls` among them) and remembers what loads. `dismiss` asks no more in this view |
 
@@ -1593,7 +1594,8 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
 | `ambient()` → `{ [name]: json \| null }` or null | the stage, every flush: the values a world has once (its atmosphere, its water) that this extension offers. Stacked per name in running order (a later value wins whole, `null` clears), copied into frozen plain JSON (a value that isn't is refused, with a warning); the outermost stage's are the view's. See "Ambients" below |
 | `input` | the stage |
-| `receive(type, data, from)` | the stage |
+| `messages` → `{ [type]: { valid(data) → boolean, says(data, who, scene) → string \| null } }` | the stage, for `api.tell` and what peers tell (see "Telling"). `who` is `{ viewer, name }`: "You" for one's own, else their contact's name or "Someone" |
+| `receive(type, data, from)` | the stage, for a peer's `send` of a type the instance doesn't declare in `messages` |
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
 | `hud()` → `[{ text, state }]` | status surfaces |
@@ -1788,6 +1790,45 @@ between "yielded" and "refused".
 So one's own hold is answered without a query of its own: `pose.hold`'s
 boolean says whether it stands now, and the session's `ended` says how it
 ended. `heldBy` stays what it is, the peer ahead of this view.
+
+### Telling
+
+What a package tells everyone ("Ana turned d20 to 7", "Ben drew from Token
+bag") is the stage's to hold to the doc and to say; the package keeps only
+its evidence. It declares what it tells, `messages`, each with the shape of
+its data (`valid`) and how it reads in this view (`says`), and calls
+`api.tell(type, data)` after the change that bears it out.
+
+- **Here.** `tell` drops a type the instance doesn't declare and data that
+  isn't `valid`; otherwise it asks `says(data, { viewer, name: "You" },
+  scene)` and sends it. Sends are never echoed back, so one's own is told
+  once, here.
+- **There.** A peer's message of a declared type is the stage's, never
+  `receive`'s. It is dropped unless `valid`. Otherwise `says` is asked at
+  once and again after every update of that stage (each flush, a content
+  arrival's included), until it answers text or `TELL_MS` (3000 ms, the
+  stage's own time: "Time") has passed since it arrived; then it is told
+  once (a notice) and forgotten. A message delivered twice is one message
+  (presence de-duplicates by the sender's session and number).
+- **`says` is the evidence.** It answers null until the doc bears the
+  message out (dice: the die moved lately to the face named; a cup: the
+  speaker's cup is down; tabletop and bag: at once, a bag of this scene),
+  and text once it does. Answering text is the moment it is told, so a
+  package may spend there what bore it out (a die's move is told once).
+  An answer that throws drops the message.
+- **Who.** The stage names the speaker the same way for every package:
+  their contact's name, else "Someone", asked once per viewer (`who.name`;
+  `who.viewer` is theirs, for evidence such as "the speaker holds this
+  cup"). `says` isn't asked about someone whose name is still being looked
+  up until it comes or `NAME_MS` (1000 ms, the stage's time) passes, so the
+  first word from someone is told by name.
+- **Invariant.** Each received message is told at most once, only if
+  valid, only within `TELL_MS` of its arrival, and only once `says`
+  answers text. `stage/telling.js` is the whole rule; packages' fake
+  stages copy it to tell exactly as the stage does.
+
+`receive` stays for what isn't told: a tracer from a shot (arena), anything
+drawn rather than said.
 
 ### Audience
 
@@ -2080,6 +2121,7 @@ value and compass convention are sailing's to document:
 | `stage/bodies.js` | the stage's two bodies, Look and Edit; `editing(local)`, the one question the editor's chrome asks; `inBody`, the `edit: true` rule; the stack's model (`enterStep`, `leaveStep`) and where a doc starts people (`startBase`) (pure) |
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples, and the one order holds go in (`ranksAhead`) |
+| `stage/telling.js` | what extensions tell, held to the doc: `valid`, `says` asked until it answers or `TELL_MS`, the speaker's name asked once per viewer (see "Telling") |
 | `stage/holds.js` | this view's pose holds in that order: which extension's stands, and dropping ours when a peer's ranks ahead |
 | `stage/time.js` | the one source of time: the browser's (`realTime`) or one that moves only when stepped (`manualTime`) ("Time") |
 | `stage/clock.js` | the doc's world time: who computes it, processes, checkpoints and the `saved` stamp, following, pause and resume (pure parts exported) |

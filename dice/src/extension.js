@@ -56,10 +56,10 @@
 // frame, against its parent's +Y (roll.js), so on a table aboard a ship it
 // stays on the table and is read against the table.
 //
-// A turn is told by message, checked against the doc: a peer says which die
-// and which face; that is told here only when the doc moved that die, just
-// before or soon after (the message and the doc change travel apart), to a
-// pose showing that face as built here, once per move.
+// A turn is told (api.tell, STAGE.md "Telling"): which die and which face.
+// The stage holds the word to the doc by asking this package's `says`, which
+// answers only when the doc moved that die lately, to a pose showing that
+// face as built here, and spends that move: once per move.
 //
 // A selected die also offers its own panel (tool.js), "Edit die", docked in
 // the stage's drawer (api.dock), whose panes are embedded documents: the
@@ -70,8 +70,8 @@ import { endedWhy } from "./lots.js";
 import { CARRY, DIE, PROVIDER } from "./ids.js";
 import { AIR_SECONDS, LAND_SECONDS, ROLL_SKID, airborne, builtOf, faceOfSeed, faceUp, landing, rollPlan, scaleOf, seedFromLots, seedOfThrow, turnTo } from "./roll.js";
 
-/** How far apart a peer's word and the doc change that bears it out may arrive (ms). */
-export const TRUST_MS = 3000;
+/** How recently the doc must have moved a die (ms) for a word of its turn to be borne out: the move may arrive before the word. */
+export const MOVED_MS = 3000;
 /** The most dice one throw may take (lots.js MAX_OF). */
 export const MAX_THROWN = 64;
 /** How long a thrower's client keeps its dice in the air waiting for their draw before it gives up and says so (ms): past every deadline lots has. */
@@ -83,10 +83,8 @@ export const TOLD_MS = 6000;
 
 const str = (s) => typeof s === "string" && s.length > 0 && s.length < 128;
 const item = (d) => !!d && typeof d === "object" && str(d.die) && Number.isInteger(d.face) && d.face >= 0 && d.face < 100;
-/** What a peer may tell us, and the shape each must have: which die, which face. Never a label: each view reads its own. A roll is told from the doc. */
-export const MESSAGES = {
-  turned: (d) => item(d),
-};
+/** The shape of a turn's word: which die, which face. Never a label: each view reads its own. A roll is told from the doc, never by a word. */
+export const validTurn = (d) => item(d);
 
 /** Do two doc transforms say the same thing? */
 function sameTransform(a, b) {
@@ -156,7 +154,6 @@ function create(api) {
     }
     return null;
   }
-  const nameOf = (from) => contactName(from?.viewer) || "Someone";
   /** What to call a viewer at the start of a line: "You", their contact's name, or "Someone"; and in the middle of one. */
   const capWho = (v) => (v === api.viewer ? "You" : contactName(v) || "Someone");
   const whoOf = (v) => (v === api.viewer ? "you" : contactName(v) || "someone");
@@ -165,21 +162,6 @@ function create(api) {
     for (const p of Object.values(api.presence?.get?.() ?? {})) contactName(p?.viewer);
   }
 
-  /** What a message says, from `who`, by this view's own reading of the faces; null if it can't be said. */
-  function told(type, data, who) {
-    if (type === "turned") {
-      const label = builtFor(data.die)?.faces?.[data.face]?.label;
-      const name = scene?.objects?.[data.die]?.name || "a die";
-      return typeof label === "string" ? `${who} turned ${name} to ${label}` : null;
-    }
-    return null;
-  }
-  /** Say it here (sends are never echoed back), then to every other peer. */
-  function announce(type, data) {
-    const text = told(type, data, "You");
-    if (text) api.notify(text);
-    api.send?.(type, data);
-  }
 
   // ── rolling: one die or several, tossed at once, tumbling until their draw is known, landing as it says ──
   const rolling = new Map(); // die id → the throw it's in
@@ -538,13 +520,12 @@ function create(api) {
     // already lying that way: nothing to do, and nothing to tell
     if (sameTransform(to, from)) return;
     api.change(api.ops.setTransform(snap, id, to));
-    announce("turned", { die: id, face });
+    api.tell("turned", { die: id, face });
   }
 
-  // ── a peer's word, held to the doc ──
+  // ── a turn's word, held to the doc (the stage asks `says`: STAGE.md "Telling") ──
   const seenAt = new Map(); // die id → its doc transform as this view last saw it (a copy)
-  const moved = new Map(); // die id → when this view saw its doc transform change (ms), until something is told for it
-  const waiting = new Set(); // { type, data, from }: said, and not yet borne out by the doc
+  const moved = new Map(); // die id → when this view saw its doc transform change (ms), until a word of it is told
   const timers = new Set(); // cancels (the stage's time: api.clock.after)
   function later(fn, ms) {
     const t = api.clock.after(ms, () => {
@@ -553,47 +534,35 @@ function create(api) {
     });
     timers.add(t);
   }
-  const itemsOf = (type, data) => [data];
   /** Note a die whose doc transform this view hasn't seen yet as moved now. */
   function look(id, o) {
     const was = seenAt.get(id);
     seenAt.set(id, copyOf(o.transform));
     if (was !== undefined && !sameTransform(o.transform, was)) moved.set(id, api.clock.now());
   }
-  /** Tell it if the doc bears every die of it out: each moved lately, to the face named. Those moves are then spent. */
-  function tell(w) {
-    const s = api.scene();
-    const items = itemsOf(w.type, w.data);
-    for (const it of items) {
-      if (api.clock.now() - (moved.get(it.die) ?? -Infinity) > TRUST_MS) return false;
-      if (shows(it.die, s)?.face !== it.face) return false;
-    }
-    // (by name as it's known now: a contact's name may have arrived since they spoke)
-    const text = told(w.type, w.data, nameOf(w.from));
-    if (!text) return false;
-    for (const it of items) moved.delete(it.die);
-    api.notify(text);
-    return true;
-  }
-  /** In update(): note each die whose transform changed, and tell what was waiting for it. */
+  /** In update(): note each die whose transform changed. */
   function diceMoved(snap) {
     for (const [id, o] of Object.entries(snap.objects ?? {})) if (isDie(o)) look(id, o);
     for (const id of seenAt.keys()) if (!snap.objects?.[id]) seenAt.delete(id), moved.delete(id);
-    for (const w of [...waiting]) if (tell(w)) waiting.delete(w);
   }
-  function heard(type, data, from) {
-    if (!data || typeof data !== "object" || !Object.hasOwn(MESSAGES, type) || !MESSAGES[type](data)) return;
-    const s = api.scene();
-    const items = itemsOf(type, data);
-    // every die named must be a die here, and each only once
-    if (new Set(items.map((it) => it.die)).size !== items.length || !items.every((it) => isDie(s.objects?.[it.die]) && !kept(it.die, s))) return;
-    // the doc may have moved them already, since this view last looked
-    for (const it of items) look(it.die, s.objects[it.die]);
-    const w = { type, data, from };
-    if (tell(w)) return;
-    waiting.add(w);
-    later(() => waiting.delete(w), TRUST_MS);
-  }
+  const messages = {
+    turned: {
+      valid: validTurn,
+      /** Borne out when the doc moved that die lately, to the face named (as built here): told by this view's own label, and that move spent. */
+      says(data, who, s) {
+        const o = s?.objects?.[data.die];
+        if (!isDie(o) || kept(data.die, s)) return null;
+        // the doc may have moved it since this view last looked
+        look(data.die, o);
+        if (api.clock.now() - (moved.get(data.die) ?? -Infinity) > MOVED_MS) return null;
+        if (shows(data.die, s)?.face !== data.face) return null;
+        const label = builtFor(data.die)?.faces?.[data.face]?.label;
+        if (typeof label !== "string") return null;
+        moved.delete(data.die);
+        return `${who.name} turned ${o.name || "a die"} to ${label}`;
+      },
+    },
+  };
 
   // ── the die's own panel, in the stage's drawer ──
   let dock = null; // { id, close, unmount }
@@ -637,7 +606,6 @@ function create(api) {
       meetPeers();
       // content arriving (a die's GLB) comes as an update with the same scene: something may now be readable
       if (snapshot === prev?.scene) {
-        for (const w of [...waiting]) if (tell(w)) waiting.delete(w);
         watchThrows(snapshot, false);
         return;
       }
@@ -647,10 +615,7 @@ function create(api) {
       // the die whose panel is open has gone (or is no longer a die)
       if (dock && !isDie(snapshot.objects?.[dock.id])) closeDock();
     },
-    receive(type, data, from) {
-      contactName(from?.viewer);
-      heard(type, data, from);
-    },
+    messages,
     commands: [
       {
         id: "roll",
@@ -706,7 +671,6 @@ function create(api) {
       for (const toss of [...throws]) toss.end();
       for (const cancel of timers) cancel();
       timers.clear();
-      waiting.clear();
       closeDock();
     },
   };

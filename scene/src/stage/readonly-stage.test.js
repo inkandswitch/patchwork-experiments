@@ -178,6 +178,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("claim on the scene refuses", api.claim(null, "seat:p1") === null);
       ok("claim on an object refuses", api.claim("card", "carry") === null);
       api.send("t", { x: 1 });
+      api.tell("t", { x: 1 });
       ok("pose.hold refuses", api.pose.hold("card", { ...T, position: [1, 0, 0] }) === false);
       api.presence.set("here", role);
       api.presence.rate(30);

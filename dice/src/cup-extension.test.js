@@ -5,7 +5,7 @@
 // own in lots-ext.test.js and lots.test.js). What a die is comes from what
 // the stage says it built.
 import { describe, it, expect } from "vitest";
-import Cups, { ASTRAY_MS, MESSAGES, SHAKE_SECONDS, dressFor } from "./cup-extension.js";
+import Cups, { ASTRAY_MS, SHAKE_SECONDS, dressFor } from "./cup-extension.js";
 import { CUP, lifted, ringOf, sealersFor } from "./cup.js";
 import { KEPT } from "./lots.js";
 import { PRESETS, dieOf } from "./die.js";
@@ -137,7 +137,7 @@ describe("the cup's verbs and what the doc says", () => {
     }
     expect(t.notices("A")).toEqual(["You shook your cup."]);
     expect(t.w.sent.filter((m) => m.type === "shook")).toEqual([]);
-    expect(Object.keys(MESSAGES)).toEqual(["peeked", "lifted"]);
+    expect(Object.keys(t.views.A.x.messages)).toEqual(["peeked", "lifted"]);
     t.w.done();
   });
 
@@ -206,9 +206,10 @@ describe("the cup's verbs and what the doc says", () => {
     const labels = t.dice.map((d, i) => BUILT.faces[faceOfSeed(seedFor(seed, i), BUILT.faces.length)].label).join(", ");
     expect(t.notices("A")).toContain(`You rolled ${labels}: drawn by you and Bob.`);
     expect(t.notices("B")).toContain(`Alice rolled ${labels}: drawn by Alice and you.`);
-    expect(t.notices("B").some((n) => /lifted/.test(n))).toBe(false); // (his own lift isn't told back to him)
-    expect(t.notices("A")).toContain("Bob lifted your cup.");
-    expect(t.notices("S")).toContain("Bob lifted Alice's cup.");
+    // told by each as the doc bears it out; the speaker named by the stage (these viewers have no contact: "Someone")
+    expect(t.notices("B")).toContain("You lifted Alice's cup.");
+    expect(t.notices("A")).toContain("Someone lifted your cup.");
+    expect(t.notices("S")).toContain("Someone lifted Alice's cup.");
     t.w.done();
   });
 
@@ -534,22 +535,37 @@ describe("the cup's verbs and what the doc says", () => {
 
   it("a peek is told to the others when the doc bears it out (the holder's cup, down) within a while, never otherwise, and a message saying more than which cup is dropped", () => {
     const t = table();
-    t.views.B.x.receive("peeked", { cup: "cup" }, { viewer: "alice", session: "A" });
+    const alice = { viewer: "alice", session: "A" };
+    t.w.hear("B", "peeked", { cup: "cup" }, alice);
     t.w.flush();
     expect(t.notices("B")).toEqual([]); // her cup is lifted, nobody's: it doesn't bear it out
-    t.w.tick(3.5, 1); // longer than a word and its doc change can be apart: forgotten
+    t.w.tick(3.5, 1); // longer than the stage waits for the doc to bear a word out: forgotten
     t.shake();
     expect(t.notices("B").filter((n) => /peeked/.test(n))).toEqual([]);
-    t.views.B.x.receive("peeked", { cup: "cup" }, { viewer: "alice", session: "A" });
-    expect(t.notices("B")).toContain("Alice peeked under their cup.");
+    t.w.hear("B", "peeked", { cup: "cup" }, alice);
+    expect(t.notices("B")).toContain("Someone peeked under their cup.");
     // the shape is exact: which cup, and nothing about what's under it
-    t.views.B.x.receive("peeked", { cup: "cup", faces: [1, 2] }, { viewer: "alice", session: "A" });
-    t.views.B.x.receive("peeked", { nope: 1 }, { viewer: "alice", session: "A" });
+    t.w.hear("B", "peeked", { cup: "cup", faces: [1, 2] }, alice);
+    t.w.hear("B", "peeked", { nope: 1 }, alice);
     // and it's the holder's word or nobody's
-    t.views.B.x.receive("peeked", { cup: "cup" }, { viewer: "spec", session: "S" });
+    t.w.hear("B", "peeked", { cup: "cup" }, { viewer: "spec", session: "S" });
+    t.w.flush();
     expect(t.notices("B").filter((n) => /peeked/.test(n)).length).toBe(1);
-    expect(MESSAGES.peeked({ cup: "cup", faces: [1] })).toBe(false);
-    expect(MESSAGES.lifted({ cups: ["cup"], seed: "x" })).toBe(false);
+    const { messages } = t.views.B.x;
+    expect(messages.peeked.valid({ cup: "cup", faces: [1] })).toBe(false);
+    expect(messages.lifted.valid({ cups: ["cup"], seed: "x" })).toBe(false);
+    for (const d of [null, 7, { cups: [] }, { cups: ["x".repeat(128)] }]) expect(messages.lifted.valid(d)).toBe(false);
+    t.w.done();
+  });
+
+  it("her own peek is said to her as hers, and told to the others", () => {
+    const t = table();
+    t.shake();
+    t.run("A", "peek");
+    t.w.flush();
+    expect(t.notices("A")).toContain("You peeked under your cup.");
+    expect(t.notices("B")).toContain("Someone peeked under their cup.");
+    expect(t.notices("S")).toContain("Someone peeked under their cup.");
     t.w.done();
   });
 

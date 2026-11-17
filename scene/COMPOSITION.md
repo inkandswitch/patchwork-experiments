@@ -2625,3 +2625,62 @@ count)".
 6. No published example records which template made it (a template writes
    a table, not its own id), so none needs republishing; the Draw Dominoes
    (2 players) table in the examples folder is unchanged.
+
+## Decisions, telling is the stage's (2026-11-17): decided unattended (2026-11-17, lane/n11), for the lead
+
+An extension declares `messages: { [type]: { valid(data), says(data, who,
+scene) } }` and calls `api.tell(type, data)`; the stage says it here as
+"You", sends it, and on each peer drops it unless valid, asks `says` at once
+and after every update until it answers text or `TELL_MS` (3000 ms, stage
+time) has passed, tells it once and forgets it (STAGE.md "Telling",
+`stage/telling.js`). Dice (turned), the cup (peeked, lifted), tabletop
+(shuffled, drew, washed, showed), bag (drew, put, emptied, poured, looked)
+and seats (sat) tell this way; arena's shot is drawn, not said, and stays
+`receive`'s. Retired: dice's MESSAGES, heard, waiting and TRUST_MS, the
+cup's waiting, settleWaiting and TRUST_MS, tabletop's and bag's announce,
+told and shape checks, bag's contact lookup and NAME_MS, seats' told. This
+retires the stage gap "api.send is unverifiable: the bookkeeping is copied
+between packages".
+
+1. **`who` is `{ viewer, name }`, not a name alone** (the plan had a name).
+   The cup's evidence for "peeked" is that the speaker holds the cup down,
+   which needs who they are, not what they're called.
+2. **The speaker is named one way everywhere: their contact's name, else
+   "Someone".** Tabletop and the cup named a speaker through the roster
+   (seats: contact, else the name of the seat they sit in), so someone with
+   no contact name who sits as "North" was "North shuffled the deck" and is
+   now "Someone shuffled the deck". In Patchwork everyone has a contact, so
+   this shows only for accounts with no name. **Question for the lead:**
+   should a seat's name stand in for a missing contact name? That would be
+   a contribution the stage asks before "Someone" (a `name(viewer)` of
+   whoever knows), which is one more convention for one corner case; not
+   built.
+3. **`says` waits for the name**: not asked about a speaker whose contact
+   is still being looked up until it comes or `NAME_MS` (1000 ms) passes, so
+   the first word from someone is told by name (the bag waited the same
+   way; dice and tabletop said "Someone" until the name came).
+4. **One's own goes through the same rule**, asked at once and on this
+   stage's updates, so a local `says` that needs the doc to have caught up
+   (dice) waits for it as a peer's does. Every tell is said here too.
+   Changes: tabletop's "Shuffling 44 cards…" and "Washing 6 dominoes…" are
+   now "You shuffled “Deck” (44)" and "You washed “Deck” (6)"; the cup's
+   own peek and lift are said to their maker ("You peeked under your cup.",
+   "You lifted Alice's cup."), where before they were told only to the
+   others. **Question for the lead:** is a notice for your own peek noise?
+   `says` could answer null for one's own, but then null would mean "not
+   worth saying" as well as "not borne out", and the rule is simpler with
+   one meaning.
+5. **A die's evidence keeps its own clock** (`MOVED_MS`, 3000 ms: how
+   recently the doc must have moved the die), since the move may arrive
+   before the word, which the stage's window (from the word's arrival)
+   doesn't cover.
+6. **Tabletop's and bag's `says` answer at once** (the bag: once every bag
+   named is in this scene), as planned: their doc changes are in other
+   documents (a keeper's deck, a bag's contents) that the scene doesn't
+   carry, so there is nothing in the scene to wait for.
+7. **A view that can't write the doc tells nothing** (`tell` is a no-op
+   where `writable()` is false), as `send` reaches no one from a read-only
+   stage.
+8. **Packages' fake stages copy `telling.js` whole** (`test/telling.js` in
+   dice, tabletop, bag and seats), so their tests run the stage's own rule;
+   packages stand alone, so it is a copy, not an import.

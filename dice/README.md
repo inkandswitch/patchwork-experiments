@@ -275,10 +275,13 @@ watches the doc's throws:
   as "d20 came down on 20 (Ana says someone wrote its lots in their name:
   no fair roll)", or told again so if it was told before that came out.
 
-**A turn** goes by `api.send` (`turned { die, face }`: ids and a face index
-only), worded by each view with its own built labels and held to the doc:
-told only when the doc moved the die named, within three seconds either side
-of the message, to a pose showing the face named, once per move.
+**A turn** is told with `api.tell` (`turned { die, face }`: ids and a face
+index only; scene STAGE.md "Telling"), worded by each view with its own
+built labels. The stage holds it to the doc by asking the extension's
+`says`, which answers only when the doc moved the die named lately (within
+`MOVED_MS`, three seconds, so the move may come first), to a pose showing
+the face named, and spends that move: once per move. The stage asks for
+three seconds after the word arrives, and names who said it.
 
 **The seed** is always a draw's (`seedFromLots` in `src/roll.js`: its first
 32 bits). A die thrown alone lands by it, one of several by its own from it
@@ -321,7 +324,7 @@ These are its verbs, in play:
 |---|---|---|---|
 | Shake | S | use prompt, menu, inspector | shake it over the dice beside it (up to 7) and slam it down over them: a roll nobody chooses, only you may look at |
 | Shake blind | | menu, inspector | the same, but the result is nobody's while it's down, then the seated others' to see and never yours (the forehead rule). Not offered with nobody else seated and here |
-| Peek | hold P | use prompt (held), menu (toggles) | your own cup tilts toward you, in your view alone; the others are told you peeked ("Ana is peeking" over it), never what |
+| Peek | hold P | use prompt (held), menu (toggles) | your own cup tilts toward you, in your view alone; everyone is told you peeked (you as "You", the others by your name, and "Ana is peeking" over it), never what |
 | Lift | L | use prompt, menu, inspector | anyone: lift it; whatever was under it is shown to everyone. On a blind cup that's up, "Show Ana" / "Show me": show its holder too |
 | Lift all cups | | menu, toolbar | every cup at once, blind ones shown to their holders too (a convenience: people lift; nothing waits for anyone) |
 | Cover | | menu | put it back down over its dice without shaking |
@@ -908,7 +911,9 @@ checked over every case, never sampled at random (`pnpm test`):
   its HUD line when lifted; blind: Shake blind
   refused with nobody else here, a blind round drawn alone refused, lifted
   (veiled for the holder and the spectator), Show me; the carry veto; peeks
-  borne out by the doc, messages of the wrong shape dropped; knock over and
+  told when the doc bears them out (the stage's rule, `test/telling.js`
+  copied from scene), one's own said to oneself, messages of the wrong
+  shape dropped; knock over and
   stand up (`cup-extension.test.js`); the cup, table and pool GLBs wound the way their normals
   face, at real size (`cup-glb.test.js`); the table as laid out
   (`table.test.js`).

@@ -84,6 +84,7 @@ import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } 
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
+import { createTelling, declared } from "./telling.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins, withNotice } from "./view.js";
@@ -1055,9 +1056,21 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       ids.forEach(applyRemoteHold);
     }),
   );
+  // What extensions tell (telling.js): a declared message is the stage's to hold to the doc and
+  // say, by the speaker's name; anything else a peer sends is the extension's own `receive`.
+  const telling = createTelling({
+    now: time.now,
+    after: (ms, fn) => time.after(ms, fn),
+    scene: () => scene(),
+    notify: (text, ext) => notify(text, "info", ext),
+    find: (url) => view.repo?.find?.(url),
+    alive: (ext, instance) => !dead && host.instanceOf(ext) === instance,
+  });
+  cleanups.push(() => telling.dispose());
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
       const x = host.instanceOf(ext);
+      if (declared(x, kind)) return telling.hear(ext, x, kind, data, from);
       if (typeof x?.receive !== "function") return;
       try {
         x.receive(kind, data, from);
@@ -1415,6 +1428,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         console.warn(`[scene] extension “${r.id}”: update failed`, err);
       }
     }
+    // what was told and waits for the doc to bear it out: asked again now everyone has seen this flush
+    telling.ask();
     view.tryArrive();
     const work = scheduled;
     scheduled = [];
@@ -2259,6 +2274,20 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       send: (type, data) => {
         if (live()) presence.send(id, type, data);
       },
+      // say it here as "You" and send it; each peer's stage tells it once its doc bears it out (instance.messages)
+      // (a view that can't write the doc has done nothing it could bear out: it tells nothing)
+      tell: (type, data) => {
+        if (!live() || !writable()) return;
+        const x = host.instanceOf(id);
+        if (!declared(x, type)) return void console.warn(`[scene] extension “${id}”: tell(“${type}”) isn't among its messages`);
+        let copy;
+        try {
+          copy = structuredClone(data ?? null);
+        } catch {
+          return void console.warn(`[scene] extension “${id}”: tell(“${type}”) data isn't plain`);
+        }
+        if (telling.say(id, x, type, copy, viewer)) presence.send(id, type, copy);
+      },
       notify: (text, kind) => notify(text, kind, id),
       /**
        * the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask
@@ -2695,6 +2724,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     host,
     router,
     presence,
+    telling,
     perf,
     queue,
     manager,
