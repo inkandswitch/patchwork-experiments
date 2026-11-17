@@ -318,7 +318,8 @@ what offers verbs; presses have one, so the body comes last there.
 **A shown key works, by construction**: the prompt, halo and bar compute
 each hint with the resolver that dispatches keys. A verb whose key is
 reserved shows without one and is in the menu (walking, Draw is a button,
-not D). The prompt shows three verbs, the menu all; verbs are buttons, for
+not D). The prompt shows three verbs and, past three, a "⋯ N more" that
+opens it to all of them (Decisions 19); the menu shows all; verbs are buttons, for
 touch and for a mouse: the prompt keeps the look (`data-keeps-look`, the
 router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
@@ -901,7 +902,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   ahead of the game's verbs: on a boneyard domino the prompt's three are
   Flip, Draw and Wash, and Stand on edge is U's and the menu's. That is
   the queued three-verb cap; ordering generic holders after the others at
-  a tie is left to it.
+  a tie is left to it. (Decisions 7 settled the order; Decisions 19 put
+  the fourth on the prompt, behind its "⋯ 1 more".)
   The inspector and outline stayed sidebar panels of the editor's activity
   until step 8 made them drawer tabs that follow attention.
 - **6. Bodies and the held tool.** Stack and slot, four bodies, `from` and
@@ -1526,8 +1528,9 @@ The project lead decided the five open questions on 2026-11-12.
    generic is a priority list by another name, and SCOPE.md rejects
    declared priority because every new package would have to fit into
    it. Presses and verbs keep one order, so the prompt never offers first
-   what a press wouldn't reach first. What the cap costs stays: a fourth
-   verb is on its key and in the menu.
+   what a press wouldn't reach first. What the cap costs: a fourth verb
+   is on its key, in the menu, and one press away on the prompt, its
+   "⋯ 1 more" (Decisions 19; decided unattended, 2026-11-17, lane/n11).
 8. **Presence is drawn where it is; the clock chips are the focus path's**
    (decided unattended, 2026-11-14, presence lane). Other people (walk's
    avatars, others' selection boxes) are drawn in every stage that hears
@@ -2153,3 +2156,23 @@ The project lead decided the five open questions on 2026-11-12.
     Should a docked document leave with Edit, as the inspector does? And
     what should a docked doc's pane be called (now `<object> · <label>`;
     the doc's own title would need a load)?
+19. **Past three verbs, the prompt opens to all of them** (decided
+    unattended, 2026-11-17, lane/n11, for the lead). The prompt shows the
+    first three verbs that apply to attention's target, in running order
+    (Decisions 7), and past three a last button, "⋯ N more"; a press on it
+    opens the prompt to every one, until attention is on another target
+    (or none). *Invariant:* every verb that applies on "use" to the
+    prompt's target is on the prompt, shown or counted in its more, in
+    running order; a held verb always shows, in its place, and the more
+    counts the rest (`src/parts/use.test.js`: 0 to 5 verbs × none or one
+    held × closed or opened, 24 cases). The plan was for the more to open
+    the target's menu at the prompt; it opens the prompt instead, because
+    the menu lists what shows on "menu", not on "use" (a verb shown only on
+    "use" would not be there), and its rows are clicks, so a held verb
+    past three could not be held by a finger, which has no keys (N9's
+    touch). Opened, each verb is the same button the first three are: its
+    key, held as long as the finger. The more is a click of a press it
+    had, as a verb's is, so a lift landing on it after a verb ran on the
+    press opens nothing. *Questions for the lead:* raise the cap instead
+    (or none: the prompt grows with the target)? Should the opened prompt
+    close on an eye move too, not only on another target?

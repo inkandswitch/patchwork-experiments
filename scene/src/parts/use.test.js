@@ -94,9 +94,50 @@ describe("scene.use, the pure side", () => {
     ]);
   });
 
-  it("shows at most three", () => {
-    const many = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
-    expect(promptEntries([{ id: "x", value: many }], { selected: "barrel" }, { scene, local: {} }).entries).toHaveLength(3);
+  // The cap: n verbs apply to the target (0..5) × none held, or the last of them held (with none applying: one held
+  // that no longer does) × the prompt as it is, or opened → what shows ("*" held) and how many more. Every verb that
+  // applies is shown or counted in more, in running order, and a held one always shows.
+  it("shows the first three and counts the rest; opened, every one; a held one in its place among them", () => {
+    const verbs = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
+    const ctx = { scene, local: {} };
+    const show = (out) => (out ? [out.entries.map((e) => `${e.command.id}${e.state.held ? "*" : ""}`).join(" "), out.more] : null);
+    const want = {
+      "0 none 3": null,
+      "0 none ∞": null,
+      "1 none 3": ["v0", 0],
+      "1 none ∞": ["v0", 0],
+      "2 none 3": ["v0 v1", 0],
+      "2 none ∞": ["v0 v1", 0],
+      "3 none 3": ["v0 v1 v2", 0],
+      "3 none ∞": ["v0 v1 v2", 0],
+      "4 none 3": ["v0 v1 v2", 1],
+      "4 none ∞": ["v0 v1 v2 v3", 0],
+      "5 none 3": ["v0 v1 v2", 2],
+      "5 none ∞": ["v0 v1 v2 v3 v4", 0],
+      "0 one 3": ["v0*", 0],
+      "0 one ∞": ["v0*", 0],
+      "1 one 3": ["v0*", 0],
+      "1 one ∞": ["v0*", 0],
+      "2 one 3": ["v0 v1*", 0],
+      "2 one ∞": ["v0 v1*", 0],
+      "3 one 3": ["v0 v1 v2*", 0],
+      "3 one ∞": ["v0 v1 v2*", 0],
+      "4 one 3": ["v0 v1 v3*", 1],
+      "4 one ∞": ["v0 v1 v2 v3*", 0],
+      "5 one 3": ["v0 v1 v4*", 2],
+      "5 one ∞": ["v0 v1 v2 v3 v4*", 0],
+    };
+    const got = {};
+    for (const n of [0, 1, 2, 3, 4, 5])
+      for (const held of ["none", "one"])
+        for (const max of [3, Infinity]) {
+          const collected = [{ id: "x", value: verbs.slice(0, n) }];
+          // held: the last that applies (v0, no longer applying, when none does)
+          const h = { ext: "x", command: verbs[Math.max(0, n - 1)], state: { held: true } };
+          const out = held === "none" ? promptEntries(collected, { selected: "barrel" }, ctx, max) : heldEntries(collected, "barrel", [h], ctx, max);
+          got[`${n} ${held} ${max === 3 ? 3 : "∞"}`] = show(out);
+        }
+    expect(got).toEqual(want);
   });
 
   it("while something's held: the target's verbs in their places, each held one as pressed (after the rest where it no longer applies), and as many others as fit", () => {
@@ -604,11 +645,17 @@ describe("scene.use: a button with a key is that key", () => {
           { id: "wave", name: "Wave", key: "w", state: on("flag"), run: () => log.push("wave") },
           { id: "heave", name: "Heave", key: "q", hold: true, state: on("anchor"), run: session("heave") },
           { id: "grab", name: "Grab", key: "g", state: (t) => (t === "chest" ? { disabled: true, title: "locked" } : null), run: () => log.push("grab") },
+          // five on the crate: three show, and the last, held, is past them
+          { id: "lid", name: "Lid", key: "h", state: on("crate"), run: () => log.push("lid") },
+          { id: "tip", name: "Tip", key: "j", state: on("crate"), run: () => log.push("tip") },
+          { id: "kick", name: "Kick", key: "k", state: on("crate"), run: () => log.push("kick") },
+          { id: "lash", name: "Lash", key: "l", state: on("crate"), run: () => log.push("lash") },
+          { id: "haul", name: "Haul", key: "n", hold: true, state: on("crate"), run: session("haul") },
         ],
       }),
     },
   };
-  const TARGETS = ["bell", "winch", "flag", "anchor", "chest"];
+  const TARGETS = ["bell", "winch", "flag", "anchor", "chest", "crate"];
   const DOC5 = { traits: { "t.level": {} }, objects: Object.fromEntries(TARGETS.map((id) => [id, object({ name: id })])), order: TARGETS };
 
   /** Mount, and attend `target`: a mouse hovering it in Look, or a finger walking with the eye on it. */
@@ -816,6 +863,65 @@ describe("scene.use: a button with a key is that key", () => {
         await settle();
         expect([log, sessions.length, walker.key.mock.calls.length]).toEqual([[], 0, 0]);
       });
+
+  // Past three verbs (the crate's five): the prompt's last button opens it to every one, so every verb on attention
+  // is reachable from the prompt, a finger's too (no keys), each its own button.
+  const more = () => prompt().querySelector(".use-more");
+  const press = (el, input) => {
+    const ev = (type) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 2, pointerType: input, button: 0, buttons: type === "pointerdown" ? 1 : 0 });
+    el.dispatchEvent(ev("pointerdown"));
+    el.dispatchEvent(ev("pointerup"));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+  };
+  it.each(BOTH)("past three verbs (%s): the first three and a more; pressed, all five in running order, the fifth held by its button as long as the finger", async (input) => {
+    const b = await at("crate", input);
+    expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
+    press(more(), input);
+    await settle();
+    expect([verbs(), more()]).toEqual([["HLid", "JTip", "KKick", "LLash", "holdNHaul"], null]);
+    expect(log).toEqual([]);
+    const haul = prompt().querySelector('[data-command="haul"]');
+    haul.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: input, button: 0, buttons: 1 }));
+    expect([log, sessions[0]?.end.mock.calls.length]).toEqual([["haul"], 0]);
+    haul.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 3, pointerType: input, button: 0 }));
+    await settle();
+    expect(sessions.map((x) => x.end.mock.calls.length)).toEqual([1]);
+    expect(b.button.isConnected).toBe(true);
+  });
+
+  it("attention on another target closes it: back on the crate, three and a more again", async () => {
+    await at("crate", "mouse");
+    press(more(), "mouse");
+    await settle();
+    expect(verbs()).toHaveLength(5);
+    for (const [hovered, want] of [
+      ["bell", ["RRing"]],
+      ["crate", ["HLid", "JTip", "KKick"]],
+    ]) {
+      s.local.swap((m) => ({ ...m, hovered }));
+      await settle();
+      expect([hovered, verbs()]).toEqual([hovered, want]);
+    }
+    expect(more().textContent).toBe("⋯ 2 more");
+  });
+
+  it("a click on more whose press was elsewhere on the view opens nothing", async () => {
+    await at("crate", "touch");
+    s.canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch", button: 0, buttons: 1 }));
+    more().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    await settle();
+    expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
+  });
+
+  it("a verb past three held by its key: shown in the third's place, held, and the more counts the two left", async () => {
+    await at("crate", "mouse");
+    s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "n", code: "KeyN" }));
+    await settle();
+    expect([log, verbs(), more()?.textContent]).toEqual([["haul"], ["HLid", "JTip", "holdNHaul"], "⋯ 2 more"]);
+    s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key: "n", code: "KeyN" }));
+    await settle();
+    expect([sessions[0].end.mock.calls.length, verbs()]).toEqual([1, ["HLid", "JTip", "KKick"]]);
+  });
 
   it("two fingers on a plain verb's button: one key, and neither lift's click runs it again", async () => {
     const b = await at("bell", "touch");

@@ -1697,7 +1697,9 @@ A **command**:
 - **The use prompt** (`scene.use`, general: it runs in every scene) shows
   attention's verbs where attention is (the crosshair when the look is the
   eye's, else the pointer): on the selection, or the first object along the look's chain
-  with a keyed command shown on `"use"`, at most three, each a button, its
+  with a keyed command shown on `"use"`, the first three in running order
+  and past them a "⋯ N more" that opens the prompt to all of them until
+  attention moves to another target (TOOLS.md Decisions 19), each a button, its
   key the resolver's. It shows; the key map does. A button whose verb has
   a key is that key: a press presses it (the key `keyFor` says does that
   verb then) and the lift lets it up, so a held verb lasts as long as a

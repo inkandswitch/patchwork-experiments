@@ -17,9 +17,13 @@
 // prompt is on the selection, or the first object along the look's chain
 // (../keymap.js attentionPath) with any verbs for it (looking at a spoke of
 // the wheel offers the helm's). Its verbs are the keyed commands that apply
-// to it, unless their `show` leaves "use" out, at most three, in the context every
-// surface passes (from, reach, hit), so a verb beyond the body's reach shows
-// disabled, "too far". Each verb's key is the resolver's (hintFor): shown
+// to it, unless their `show` leaves "use" out, in running order, in the
+// context every surface passes (from, reach, hit), so a verb beyond the
+// body's reach shows disabled, "too far". It shows the first three; past
+// three, a last button, "⋯ 2 more", opens the prompt to every one of them,
+// until attention moves to another target. So every verb on attention is
+// on the prompt, shown or one press away, and each is its own button: on
+// its key, held as long as the finger, as the first three are. Each verb's key is the resolver's (hintFor): shown
 // only when pressing it does that, so a verb whose key the body reserves
 // (walking, D) shows without one.
 //
@@ -49,7 +53,7 @@ import { samePath } from "../stage/paths.js";
 import { looksFromEye } from "../stage/pointer.js";
 import { arrange, holdKey } from "../hold-key.js";
 
-/** How many verbs the prompt shows. */
+/** How many verbs the prompt shows before its "more". */
 export const MAX_VERBS = 3;
 
 /**
@@ -66,38 +70,40 @@ export const MAX_VERBS = 3;
  * @param {string} target  the held verbs' target
  * @param {{ ext, command, state }[]} held  as they were when pressed
  * @param {object} ctx  the command context now
- * @returns {{ target: string, entries: { ext, command, state }[] }}
+ * @returns {{ target: string, entries: { ext, command, state }[], more: number }}
+ *   `more`: how many of the target's verbs that apply now aren't shown
  */
 export function heldEntries(collected, target, held, ctx, max = MAX_VERBS) {
-  const live = ctx.scene?.objects?.[target] ? verbsOf(collected, target, ctx, Infinity) : [];
+  const live = ctx.scene?.objects?.[target] ? verbsOf(collected, target, ctx) : [];
   const same = (a, b) => a.ext === b.ext && a.command.id === b.command.id;
   const heldAs = (e) => held.find((h) => same(h, e));
   let room = max - held.length;
   const shown = live.map((e) => heldAs(e) ?? e).filter((e) => held.includes(e) || room-- > 0);
   const away = held.filter((h) => !live.some((e) => same(h, e)));
-  return { target, entries: [...shown, ...away] };
+  return { target, entries: [...shown, ...away], more: live.length - shown.length };
 }
 
 /**
  * The prompt's verbs for attention: the first target along its path with
- * keyed commands shown on "use", and up to `max` of them. Pure (given the collected commands).
+ * keyed commands shown on "use", the first `max` of them, and how many more
+ * there are. Pure (given the collected commands).
  * @param {{ id, value }[]} collected
  * @param {{ selected?, hit? }} attention
  * @param {object} ctx  the command context
- * @returns {{ target: string, entries: { ext, command, state }[] } | null}
+ * @returns {{ target: string, entries: { ext, command, state }[], more: number } | null}
  */
 export function promptEntries(collected, attention, ctx, max = MAX_VERBS) {
   for (const target of attentionPath(attention, ctx?.scene?.parents)) {
     if (attention?.selected == null && !ctx?.scene?.objects?.[target]) continue;
-    const entries = verbsOf(collected, target, ctx, max);
-    if (entries.length) return { target, entries };
+    const all = verbsOf(collected, target, ctx);
+    if (all.length) return { target, entries: all.slice(0, max), more: Math.max(0, all.length - max) };
   }
   return null;
 }
 
-function verbsOf(collected, target, ctx, max) {
+function verbsOf(collected, target, ctx) {
   const flat = flatCommands(collected).filter(({ command }) => keysOf(command).length);
-  return applicable(flat, target, ctx, "use").slice(0, max);
+  return applicable(flat, target, ctx, "use");
 }
 
 const verbName = ({ command, state }) => String(state.label ?? command.name ?? command.id);
@@ -125,6 +131,10 @@ function create(api) {
   let held = null;
   let offLoop = null;
   let offWatch = null;
+  // The target whose every verb shows (its "more" pressed): JSON [stage, target], or null. Attention on any
+  // other target (or none) closes it.
+  let opened = null;
+  const whereOf = (stage, target) => JSON.stringify([stage ?? null, target]);
 
   const keymap = () => api.collect("keymap").map((r) => r.value).find((v) => v && typeof v.pinned === "function") ?? null;
   // the look is the eye's (the crosshair's): under lock, or a lock body under touch
@@ -140,19 +150,23 @@ function create(api) {
     // the verbs of the nearest thing that has any: attention's path, a stage at a time, innermost first
     let found = null;
     let seg = null;
+    const entriesIn = (s, max) => (pinned !== undefined ? heldEntries(s.collected, pinned.at(-1), km.entries(pinned), s.ctx, max) : promptEntries(s.collected, s.attention, s.ctx, max));
     if (!gesture)
       for (const s of segmentsOf(keys)) {
         // (a held verb's target is in its own stage: the one whose path its path goes on from)
         if (pinned !== undefined && Array.isArray(s.reader?.path) && !samePath(s.reader.path, pinned.slice(0, -1))) continue;
-        found = pinned !== undefined ? heldEntries(s.collected, pinned.at(-1), km.entries(pinned), s.ctx) : promptEntries(s.collected, s.attention, s.ctx);
+        found = entriesIn(s, MAX_VERBS);
         if (found?.entries.length) {
           seg = s;
+          // opened: the same target, every verb (which target doesn't hang on how many show)
+          if (whereOf(s.stage, found.target) === opened) found = entriesIn(s, Infinity);
           break;
         }
         found = null;
       }
+    if (!found || whereOf(seg.stage, found.target) !== opened) opened = null;
     if (found) {
-      current = { target: found.target, hit: seg.ctx.hit, stage: seg.stage, reader: seg.reader ?? null, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target, stage: seg.stage }, keys) })) };
+      current = { target: found.target, hit: seg.ctx.hit, stage: seg.stage, reader: seg.reader ?? null, more: found.more, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target, stage: seg.stage }, keys) })) };
     } else current = null;
     render();
   }
@@ -175,7 +189,8 @@ function create(api) {
   function render() {
     const km = keymap();
     const entries = current?.entries ?? [];
-    const key = JSON.stringify(entries.map((e) => [e.ext, e.command.id, verbName(e), e.key, !!e.command.hold, !!e.state.disabled, e.state.title ?? null, !!km?.holding(e.ext, e.command.id)]));
+    const more = current?.more ?? 0;
+    const key = JSON.stringify([more, entries.map((e) => [e.ext, e.command.id, verbName(e), e.key, !!e.command.hold, !!e.state.disabled, e.state.title ?? null, !!km?.holding(e.ext, e.command.id)])]);
     if (key !== shownKey) {
       shownKey = key;
       const ids = new Set(entries.map(idOf));
@@ -184,7 +199,8 @@ function create(api) {
         if (!shown.has(idOf(e))) shown.set(idOf(e), make());
         fill(shown.get(idOf(e)), e, km);
       }
-      arrange(prompt, entries.map((e) => shown.get(idOf(e)).el));
+      moreEl.textContent = `⋯ ${more} more`;
+      arrange(prompt, [...entries.map((e) => shown.get(idOf(e)).el), ...(more ? [moreEl] : [])]);
       prompt.hidden = !entries.length;
     }
     place();
@@ -244,6 +260,26 @@ function create(api) {
     });
     return b;
   }
+
+  // The last button past three verbs: a click (of a press it had, as a verb's) opens the prompt to them all.
+  const moreEl = document.createElement("button");
+  moreEl.type = "button";
+  moreEl.className = "use-more";
+  moreEl.tabIndex = -1;
+  moreEl.addEventListener("pointerdown", (e) => {
+    if (!(e.button > 0)) pressed = { el: moreEl, keyed: false };
+  });
+  moreEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.detail > 0) {
+      const p = pressed;
+      pressed = null;
+      if (p?.el !== moreEl) return;
+    }
+    if (current) opened = whereOf(current.stage, current.target);
+    refresh();
+    api.root.focus?.({ preventScroll: true });
+  });
 
   // What a verb's button shows: the key in a keycap (after "hold" for a
   // held one), then its name.

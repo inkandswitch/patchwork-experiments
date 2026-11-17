@@ -309,10 +309,15 @@ try {
   check("A carries it 4 cm along the felt: it goes down still standing, facing A (taken from no hand, nothing lays it flat)", !!dMoved && dMoved[1] === 0 && dMoved[2] > 0.9, { dir: dMoved, where: await P("where()"), at: await P(`transform(${J(standA)})`) });
   check("…B still sees only its back", await until(`faces('a').includes(${J(standA)}) && __p.backs('b').includes(${J(standA)})`, 20_000), { a: await P(`faces('a').includes(${J(standA)})`), b: await P(`backs('b').includes(${J(standA)})`) });
   const standB = (await P("where()")).down[0];
-  // the prompt shows three verbs (the stage's cap): carry's Flip holds the tile as nearly as
-  // the table does and runs first, so Flip, Draw and Wash; Stand on edge is U's, and the menu's
-  // (scene/TOOLS.md build step 3: a generic verb ahead of a game's is the queued three-verb cap)
-  check("B hovers a boneyard tile, and the prompt offers its first three verbs, Flip among them", !!(await hover(standB, "b")) && (await until("prompt('b').length === 3 && __p.prompt('b').some((t) => /Flip/.test(t))", 3000)), await P("prompt('b')"));
+  // the prompt shows three verbs and a more (the stage's cap): carry's Flip holds the tile as nearly as
+  // the table does and runs first, so Flip, Draw and Wash; Stand on edge is U's, the menu's, and one press
+  // on the prompt's "⋯ 1 more" away (scene/TOOLS.md Decisions 7, 19)
+  check("B hovers a boneyard tile, and the prompt offers its first three verbs, Flip among them, and one more", !!(await hover(standB, "b")) && (await until("prompt('b').length === 3 && __p.prompt('b').some((t) => /Flip/.test(t)) && __p.more('b')?.text === '⋯ 1 more'", 3000)), { prompt: await P("prompt('b')"), more: await P("more('b')") });
+  {
+    const m = await P("more('b')");
+    if (m) await b.click(m.x, m.y);
+    check("…a click on the more opens the prompt to all four, Stand on edge last", await until("prompt('b').length === 4 && /Stand on edge/.test(__p.prompt('b')[3]) && __p.more('b') === null", 3000), { prompt: await P("prompt('b')"), more: await P("more('b')") });
+  }
   {
     const at = await P(`aimAt(${J(standB)}, 'b')`);
     await b.click(at.x, at.y, { button: "right" });
