@@ -274,12 +274,11 @@ Questions for the lead (not decided; each names what stands meanwhile):
   silently starts the walker at the camera, and E1M1 on the Cadboro Bay
   shore isn't published (Decisions, N7, 2).
 - **Package versions in one page, and a render an old provider can
-  overwrite** (Decisions, N7, 6): Cadboro Bay's terrain render has drawn
-  without its buildings and trees since 18:35 UTC on 2026-11-16, its
-  previous GLB still in its history. Write that build back (a script is
-  kept with the lane's report, not run), or re-render with the current
-  terrain? And is a viewer whose provider is older than a render's
-  allowed to rebuild it? Stands meanwhile: Cadboro Bay as it is now, and
+  overwrite** (Decisions, N7, 6): Cadboro Bay's terrain render drew
+  without its buildings and trees from 18:35 to 20:54 UTC on 2026-11-16,
+  until a build that reads every layer made it whole again. Is a viewer
+  whose provider is older than a render's allowed to rebuild it? Stands
+  meanwhile: Cadboro Bay as it is now (whole), and
   no real-Patchwork checks from N7 of published docs with older renders
   until the lead says (checks of docs N7 made itself, and of docs with
   no render docs, go ahead, guarded, naming the versions they ran on:
@@ -2452,7 +2451,8 @@ the finding; row 6 failed to a stale package, 6 below).
      (automerge:38pgCBi4…) was rebuilt by a viewer at 18:35:16 UTC with a
      terrain provider from before 2026-11-15 (its build reads no `look`
      file): the new GLB has no Buildings, Trees, Forest canopy or Moored
-     boats, and the published Cadboro Bay now draws without them. The
+     boats, and the published Cadboro Bay drew without them (whole again
+     since 20:54 UTC; see below). The
      lane's Chrome held the lock then, so it was very likely that run's
      page. The previous GLB is still on the server (the render doc's
      history); the lane didn't write it back.
@@ -2473,6 +2473,18 @@ the finding; row 6 failed to a stale package, 6 below).
    built before (Cadboro Bay) still wait for the lead. The Quiet games
    room and Games night have no render docs at all, so checks may open
    them, guarded the same way (10).
+
+   Read again node-side at 04:21 UTC on 2026-11-17 (step 7): Cadboro
+   Bay's render has been whole since 20:54:34 UTC on 2026-11-16. A build
+   that reads every layer (params buildings, forest, boats true; the
+   fingerprint `d3b9f2e636cc0` and three deps of the build before the
+   damage) wrote a new GLB (automerge:48dzaSpx…), and `shore-place.mjs
+   --check`'s clubhouse control, which had failed while the render was
+   damaged, passes again (Buildings ×118 and Trees ×34 drawn there;
+   18/18). Who rebuilt it isn't recorded. So the write-back half of the
+   question is moot; whether an older provider may rebuild a newer
+   render still stands, and shore-check still waits, since opening
+   Cadboro Bay is what risked it.
 7. **The Arcade republished with one Doom world.** The published Arcade
    (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) had come to hold two objects
    carrying `machine.world` for the Doom cabinet, `world` and `okg5pjo09`,
@@ -2749,3 +2761,30 @@ the finding; row 6 failed to a stale package, 6 below).
      `package.json` failing with HTTP 557 for 10 minutes.
    - **reported, not decided:** E1M1's float over Gyro Park (3), and the
      Arcade's 3.5 cm over the games room's aisles (8).
+16. **Step 7, the re-run on the integrated tree, is the integrator's**
+   (2026-11-17, 04:40 UTC). It runs when the integrator asks, after N7's
+   merge and a sync. At this writing lane/n7 isn't merged (8 commits
+   ahead of scene-stage 20390028, 73 behind), and the lead's probe
+   policy of 2026-11-17 gives the one real-Patchwork sweep after a merge
+   to the integrator, so the lane ran none. N7 changes no package code
+   (its one code file is seats' test), so its merge needs no build or
+   sync of its own. Part of the re-run is already done: N6's integrator
+   republished both of N7's mashups with the same links and places
+   (*Arcade in the games room* automerge:2FEoL22w…, *Games night and the
+   Arcade* automerge:2Vxh319R…; 8 and 11 name the URLs they replace) and
+   scored `arcade-room-check` 19/20 ×2 (row C, the shell's "scene package
+   unavailable" log) and `mashup-check` 5/5 on Games night
+   (automerge:Zty1huc3…). Owed, one at a time under the Chrome lock:
+   - `arcade-check` on the Arcade (automerge:3T4KdCM2…, swapped into the
+     folder by `swaps-n7.tsv`; the folder note still names gfLLzkhg…):
+     27/27 with play, then 10/10 with `--no-play`;
+   - `arcade-room-check` on both mashups, 20/20 each, and `mashup-check`
+     on Games night, 5/5, if the packages changed after N6's run (the
+     sidebar's sync did, 20390028); a shell resolver timeout or row C's
+     log is noted, not counted, as for `ucluelet-check`;
+   - `shore-check`: not run. It opens Cadboro Bay, and the older-provider
+     half of 6 still waits for the lead; E1M1 at Cadboro Bay isn't
+     published (2).
+   Merging N7 meets one conflict, in this file's list of what is still
+   open (N7's five items against lane/n8's "entering a link moves the
+   canvas"): keep both.
