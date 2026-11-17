@@ -1,6 +1,10 @@
-import { getHeads, load, type Heads } from "@automerge/automerge"
+import * as Automerge from "@automerge/automerge"
+import { getHeads, load, type Doc, type Heads } from "@automerge/automerge"
+import type { DocHandle } from "@automerge/automerge-repo"
 import { subscribe } from "@inkandswitch/patchwork-providers"
-import type { Baseline } from "../extension/src/bridge"
+import { ancestorHolds, commonAncestor } from "../extension/src/ancestor"
+import type { Baseline, Comparison } from "../extension/src/bridge"
+import type { NotebookDoc } from "../extension/src/model"
 
 // The compare view the panel showing the notebook answers with, as this reads it.
 type CompareView = {
@@ -8,63 +12,157 @@ type CompareView = {
   options: unknown
   other: Uint8Array | null
   missing: boolean
+  collapsed: boolean
+  names: { ours: string; theirs: string } | null
 }
 
-const MODES = ["inline", "changes-only"]
+/** The modes that mark anything: the panel lays out the first two, the notebook draws "inline". */
+const MARKS: Record<string, Comparison["marks"]> = {
+  "side-by-side": "changes",
+  stacked: "changes",
+  inline: "drafts",
+}
+
+/** Long enough to coalesce a burst of typing before checking where the drafts forked again. */
+const RECHECK_DELAY_MS = 150
 
 /**
- * What the notebook is diffed against, in the "inline" and "changes only"
- * compare modes: the heads of the other draft's version, which the
- * notebook's history has when that draft's changes are all in this one, or
- * none at all when that draft doesn't have the notebook. Null in any other
- * mode, and outside anything answering `compare:view`.
+ * How the notebook in `handle` is compared with the other draft's version
+ * of it, from the panel's `compare:view`: both are diffed against where they
+ * forked, worked out again as either changes. Null in modes that mark
+ * nothing (onion skin, swipe), and outside anything answering `compare:view`.
  */
-export function compareBaseline(element: HTMLElement): Baseline & { dispose(): void } {
+export function compareBaseline(
+  element: HTMLElement,
+  handle: DocHandle<NotebookDoc>,
+): Baseline & { dispose(): void } {
   const listeners = new Set<() => void>()
-  let heads: Heads | null = null
-  let collapsed = false
+  let view: CompareView | null = null
+  let otherBytes: Uint8Array | null = null
+  let other: Doc<NotebookDoc> | null = null
+  let ancestor: { heads: Heads; ours: Heads } | null = null
+  let comparison: Comparison | null = null
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const update = (recheck: boolean) => {
+    const marks = view?.mode ? MARKS[view.mode] : undefined
+    const ours = handle.doc()
+    let next: Comparison | null = null
+    if (view && marks && ours) {
+      if (view.missing) {
+        ancestor = null
+        next = compared(view, marks, [], null)
+      } else if (other) {
+        if (recheck || !ancestor || !ancestorHolds(Automerge, ours, other, ancestor.ours)) {
+          ancestor = { heads: commonAncestor(Automerge, ours, other), ours: getHeads(ours) }
+        } else {
+          ancestor.ours = getHeads(ours)
+        }
+        next = compared(view, marks, ancestor.heads, other)
+      }
+    }
+    if (sameComparison(comparison, next)) return
+    comparison = next
+    for (const listener of listeners) listener()
+  }
+
+  const compared = (
+    view: CompareView,
+    marks: Comparison["marks"],
+    heads: Heads,
+    other: Doc<NotebookDoc> | null,
+  ): Comparison => ({
+    marks,
+    ancestor: heads,
+    other,
+    collapsed: !!view.collapsed,
+    names: view.names ?? null,
+    colors: draftColors(element),
+  })
 
   const unsubscribe = subscribe(
     element,
-    { type: "compare:view", modes: { inline: true, "changes-only": true }, prefers: "inline" },
+    {
+      type: "compare:view",
+      modes: { inline: true, "side-by-side": true, stacked: true, "onion-skin": true, swipe: true },
+      collapses: ["inline", "side-by-side", "stacked"],
+      prefers: "inline",
+    },
     value => {
-      const view = value as unknown as CompareView
-      const shown = !!view.mode && MODES.includes(view.mode)
-      const next = shown ? otherHeads(view) : null
-      const fold = shown && view.mode === "changes-only"
-      if (sameHeads(heads, next) && fold === collapsed) return
-      heads = next
-      collapsed = fold
-      for (const listener of listeners) listener()
-    }
+      view = value as unknown as CompareView
+      const bytes = view.mode && !view.missing ? view.other : null
+      const changed = bytes !== otherBytes
+      if (changed) {
+        otherBytes = bytes
+        other = loadOther(bytes)
+      }
+      try {
+        update(changed)
+      } catch (error) {
+        console.warn("[jupyter] couldn't work out where the drafts forked", error)
+      }
+    },
   )
 
+  const onChange = () => {
+    if (!comparison) return
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      try {
+        update(false)
+      } catch (error) {
+        console.warn("[jupyter] couldn't work out where the drafts forked", error)
+      }
+    }, RECHECK_DELAY_MS)
+  }
+  handle.on("change", onChange)
+
   return {
-    current: () => heads,
-    collapsed: () => collapsed,
+    current: () => comparison,
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
     dispose() {
+      clearTimeout(timer)
+      handle.off("change", onChange)
       unsubscribe()
       listeners.clear()
     },
   }
 }
 
-function otherHeads(view: CompareView): Heads | null {
-  if (view.missing) return []
-  if (!view.other) return null
+function loadOther(bytes: Uint8Array | null): Doc<NotebookDoc> | null {
+  if (!bytes) return null
   try {
-    return getHeads(load(view.other))
+    return load<NotebookDoc>(bytes)
   } catch (error) {
     console.warn("[jupyter] couldn't read the version compared with", error)
     return null
   }
 }
 
-function sameHeads(a: Heads | null, b: Heads | null): boolean {
+/** The page around the tool sets the drafts' colours, which the notebook's iframe doesn't inherit. */
+function draftColors(element: HTMLElement): Comparison["colors"] {
+  const style = getComputedStyle(element)
+  const color = (name: string) => style.getPropertyValue(name).trim() || undefined
+  return { ours: color("--compare-ours"), theirs: color("--compare-theirs") }
+}
+
+function sameComparison(a: Comparison | null, b: Comparison | null): boolean {
   if (a === null || b === null) return a === b
+  return (
+    a.marks === b.marks &&
+    a.other === b.other &&
+    a.collapsed === b.collapsed &&
+    sameHeads(a.ancestor, b.ancestor) &&
+    a.names?.ours === b.names?.ours &&
+    a.names?.theirs === b.names?.theirs &&
+    a.colors.ours === b.colors.ours &&
+    a.colors.theirs === b.colors.theirs
+  )
+}
+
+function sameHeads(a: Heads, b: Heads): boolean {
   return a.length === b.length && a.every(head => b.includes(head))
 }

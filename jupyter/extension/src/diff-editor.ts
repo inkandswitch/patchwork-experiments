@@ -4,7 +4,7 @@ import type { SourceChange } from './diff';
 import type { DiffTracker } from './diff-view';
 import type { AutomergeCell } from './model';
 
-/** Highlight text added to the cell's source since the diff baseline, and mark where text was deleted. */
+/** Highlight text added to the cell's source since the drafts forked, and mark where text was deleted. */
 export function sourceDiff(cell: AutomergeCell, diffs: DiffTracker): Extension {
   return [
     sourceChanges,
@@ -88,13 +88,14 @@ class DeletionMarker extends WidgetType {
 }
 
 const theme = EditorView.baseTheme({
+  // The colours are the notebook's, see style/index.css.
   '.pw-diff-insertion': {
-    backgroundColor: 'rgb(34 197 94 / 18%)',
-    borderBottom: '2px solid rgb(34 197 94)'
+    backgroundColor: 'color-mix(in srgb, var(--pw-diff-added, rgb(34 197 94)) 18%, transparent)',
+    borderBottom: '2px solid var(--pw-diff-added, rgb(34 197 94))'
   },
   '.pw-diff-deletion': {
-    color: 'rgb(239 68 68)',
-    backgroundColor: 'rgb(239 68 68 / 12%)',
+    color: 'var(--pw-diff-deleted, rgb(239 68 68))',
+    backgroundColor: 'color-mix(in srgb, var(--pw-diff-deleted, rgb(239 68 68)) 12%, transparent)',
     borderRadius: '3px',
     padding: '0 3px',
     margin: '0 2px',

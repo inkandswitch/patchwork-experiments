@@ -1,4 +1,4 @@
-import type { Heads } from '@automerge/automerge';
+import type { Doc, Heads } from '@automerge/automerge';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import type { Automerge } from './model/automerge';
 import type { NotebookDoc } from './model';
@@ -21,16 +21,36 @@ export type PatchworkBridge = {
    * checked-out draft or history position.
    */
   handle?: DocHandle<NotebookDoc>;
-  /** What `handle` is diffed against, such as where the checked-out draft forked off. */
+  /** What `handle` is diffed against while its draft is compared with another. */
   baseline?: Baseline;
 };
 
 export type Baseline = {
-  /** Heads in `handle`'s history, or null when there is nothing to compare. */
-  current(): Heads | null;
-  /** Whether cells that didn't change are folded away. */
-  collapsed(): boolean;
+  /** Null when nothing is marked: nothing is compared, or the mode marks nothing. */
+  current(): Comparison | null;
   subscribe(listener: () => void): () => void;
+};
+
+/**
+ * How `handle`'s notebook is compared with the other draft's version of it.
+ * Both are diffed against where they forked, so neither is the "before".
+ */
+export type Comparison = {
+  /**
+   * `changes`: this notebook's own changes, as added, changed and deleted.
+   * `drafts`: both drafts' changes, each in its draft's colour.
+   */
+  marks: 'changes' | 'drafts';
+  /** Heads in both histories where the two versions forked, possibly redundant. */
+  ancestor: Heads;
+  /** The other draft's version, with its history; null when it doesn't have the notebook. */
+  other: Doc<NotebookDoc> | null;
+  /** Whether cells neither draft changed are folded away. */
+  collapsed: boolean;
+  /** The drafts' names, ours being the one `handle` shows. */
+  names: { ours: string; theirs: string } | null;
+  /** The drafts' colours from the page around the tool, when it sets them. */
+  colors: { ours?: string; theirs?: string };
 };
 
 export type KernelBridge = {

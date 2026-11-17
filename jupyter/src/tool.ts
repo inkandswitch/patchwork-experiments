@@ -21,7 +21,7 @@ export default function JupyterTool(handle: DocHandle<NotebookDoc>, element: HTM
   const token = crypto.randomUUID()
   const bridges = (window.__patchworkJupyter ??= new Map())
   const user = { name: "Anonymous", color: colorFor(token) }
-  const baseline = compareBaseline(element)
+  const baseline = compareBaseline(element, handle)
   bridges.set(token, {
     Automerge,
     repo: window.repo,
@@ -29,7 +29,7 @@ export default function JupyterTool(handle: DocHandle<NotebookDoc>, element: HTM
     baseline,
     user,
     kernel: handle.isReadOnly() ? undefined : kernelConfig(window.repo),
-    onCreate: url =>
+    onCreate: (url: string) =>
       element.dispatchEvent(
         new CustomEvent("patchwork:open-document", { detail: { url }, bubbles: true, composed: true }),
       ),

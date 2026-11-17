@@ -102,7 +102,7 @@ const presencePlugin: JupyterFrontEndPlugin<void> = {
 
 const diffPlugin: JupyterFrontEndPlugin<void> = {
   id: '@patchwork/jupyter-extension:diff',
-  description: 'Shows what the checked-out Patchwork draft changed in the notebook.',
+  description: 'Shows what the compared Patchwork drafts changed in the notebook since they forked.',
   autoStart: true,
   requires: [INotebookTracker, IEditorExtensionRegistry],
   activate: (_: JupyterFrontEnd, tracker: INotebookTracker, extensions: IEditorExtensionRegistry) => {

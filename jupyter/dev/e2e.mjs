@@ -150,27 +150,43 @@ try {
     expect(await iframe.evaluate(node => node.isConnected), "the iframe was replaced")
   })
 
-  await step("shows what the checked-out draft changed", async () => {
+  await step("marks what each draft changed since they forked", async () => {
     await page.evaluate(() => {
-      const { A, repo, handle, shown, selectDraft } = window.harness
-      const clonedAt = handle.heads()
+      const { A, repo, handle, shown, compare } = window.harness
+      const cell = (id, source) => ({ id, cell_type: "code", source, metadata: {}, outputs: [], execution_count: null })
+      handle.change(doc => {
+        doc.cells.insertAt(1, cell("quiet", "unchanged"))
+        doc.cells.push(cell("spare", "spare"))
+      })
+      // cells: the first, quiet, the Python one, spare
       const draft = repo.clone(handle)
       draft.change(doc => {
         A.splice(doc, ["cells", 0, "source"], 0, 0, "# drafted\n")
         A.splice(doc, ["cells", 0, "source"], "# drafted\nafter ".length, "the ".length)
-        doc.cells.deleteAt(doc.cells.length - 1)
-        doc.cells.push({ id: "drafted-cell", cell_type: "code", source: "print('new')", metadata: {}, outputs: [], execution_count: null })
+        doc.cells.deleteAt(2)
+        doc.cells.push(cell("drafted-cell", "print('new')"))
       })
-      const draftDoc = repo.create({ "@patchwork": { type: "draft" }, clones: { [handle.url]: { clonedAt, cloneUrl: draft.url } } })
+      // Main moves on too, so neither version is the other's ancestor.
+      handle.change(doc => {
+        A.splice(doc, ["cells", 0, "source"], doc.cells[0].source.length, 0, " # on main")
+        doc.cells.deleteAt(doc.cells.length - 1)
+        doc.cells.insertAt(0, cell("main-cell", "print('main')"))
+      })
       window.harness.draft = draft
+      window.harness.other = { other: A.save(handle.doc()), names: { ours: "Draft", theirs: "Main" } }
       shown.swap(draft)
-      selectDraft(draftDoc.url)
+      compare({ mode: "side-by-side", ...window.harness.other })
     })
     await frame.waitForSelector(".jp-Cell.pw-diff-added .cm-content:has-text(\"print('new')\")", { timeout: 5_000 })
     await frame.waitForSelector(".jp-Cell.pw-diff-changed .pw-diff-insertion:has-text('# drafted')", { timeout: 5_000 })
     await frame.waitForSelector(".jp-Cell.pw-diff-changed .pw-diff-deletion[title='the ']", { timeout: 5_000 })
     await frame.click(".pw-diff-deleted summary:has-text('1 deleted cell')", { timeout: 5_000 })
     await frame.waitForSelector(".pw-diff-deleted[open] pre", { timeout: 5_000 })
+    expect(
+      (await frame.locator(".jp-Notebook.pw-diff-drafts, .pw-diff-by-theirs, [class*='pw-diff-theirs']").count()) === 0,
+      "side by side showed the other draft's changes",
+    )
+    expect(!(await frame.textContent(".jp-Cell .cm-content")).includes("on main"), "the draft shows main's text")
     await page.screenshot({ path: join(ROOT, ".cache/e2e-diff.png") })
 
     await frame.click(".jp-Cell.pw-diff-changed .cm-content")
@@ -179,11 +195,36 @@ try {
     await frame.waitForSelector(".pw-diff-insertion:has-text('# more')", { timeout: 5_000 })
     expect(await frame.locator(".pw-diff-deleted[open]").count() === 1, "the deleted cells closed while typing")
 
+    await page.evaluate(() => window.harness.compare({ mode: "inline", ...window.harness.other }))
+    await frame.waitForSelector(".jp-Notebook.pw-diff-drafts", { timeout: 5_000 })
+    await frame.waitForSelector(".jp-Cell.pw-diff-changed.pw-diff-theirs-changed .pw-diff-insertion:has-text('# drafted')", { timeout: 5_000 })
+    await frame.waitForSelector(".pw-diff-added.pw-diff-by-theirs summary:has-text('1 cell added in Main')", { timeout: 5_000 })
+    await frame.waitForSelector(".pw-diff-deleted.pw-diff-by-ours summary:has-text('1 cell deleted in Draft')", { timeout: 5_000 })
+    await frame.waitForSelector(".jp-Cell.pw-diff-theirs-deleted .pw-diff-removed:has-text('Deleted in Main')", { timeout: 5_000 })
+    const colors = await frame.evaluate(() => {
+      const added = document.querySelector(".jp-Cell.pw-diff-added")
+      const ghost = document.querySelector(".pw-diff-added.pw-diff-by-theirs")
+      return [getComputedStyle(added).boxShadow, getComputedStyle(ghost).borderRightColor]
+    })
+    expect(colors[0].includes("rgb(59, 125, 216)"), `ours was marked ${colors[0]}`)
+    expect(colors[1] === "rgb(155, 93, 229)", `theirs was marked ${colors[1]}`)
+    await page.screenshot({ path: join(ROOT, ".cache/e2e-combined.png") })
+
+    await page.evaluate(() => window.harness.compare({ mode: "inline", collapsed: true, ...window.harness.other }))
+    await frame.waitForSelector(".jp-Cell.pw-diff-folded .cm-content:has-text('unchanged')", { state: "attached", timeout: 5_000 })
+    const folded = await frame.locator(".jp-Cell.pw-diff-folded:is(.pw-diff-added, .pw-diff-changed, .pw-diff-theirs-changed, .pw-diff-theirs-deleted, :has(.pw-diff-badge))").count()
+    expect(folded === 0, `folded ${folded} changed cells`)
+
+    await page.evaluate(() => window.harness.compare({ mode: "onion-skin", ...window.harness.other }))
+    await frame.waitForFunction(() => !document.querySelector("[class*='pw-diff-']"), null, { timeout: 5_000 })
+
+    await page.evaluate(() => window.harness.compare({ mode: "stacked", ...window.harness.other }))
+    await frame.waitForSelector(".jp-Cell.pw-diff-added", { timeout: 5_000 })
     await page.evaluate(() => {
       window.harness.shown.swap(window.harness.handle)
-      window.harness.selectDraft(null)
+      window.harness.compare(null)
     })
-    await frame.waitForFunction(() => !document.querySelector(".pw-diff-added, .pw-diff-changed, .pw-diff-deleted, .pw-diff-insertion"), null, { timeout: 5_000 })
+    await frame.waitForFunction(() => !document.querySelector("[class*='pw-diff-']"), null, { timeout: 5_000 })
   })
 
   await step("shows an earlier version read-only", async () => {

@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import type { SharedCell } from '@jupyter/ydoc';
-import { notebookDiff } from '../src/diff';
+import { commonAncestor } from '../src/ancestor';
+import { notebookDiff, theirChanges } from '../src/diff';
 import { AutomergeNotebook, MemoryBackend, setAutomerge, type NotebookDoc } from '../src/model';
 
 setAutomerge(Automerge);
@@ -116,6 +117,59 @@ describe('notebookDiff', () => {
     expect(notebookDiff(notebook.backend.doc(), ['00'.repeat(32)])).toBeNull();
   });
 });
+
+describe('theirChanges', () => {
+  test("places the other draft's changes in this notebook, against where the two forked", () => {
+    const base = notebookOf([code('a', 'one'), code('b', 'two'), code('c', 'three'), code('d', 'four')]);
+    const ours = clone(base);
+    const theirs = clone(base);
+    ours.cells[0].updateSource(3, 3, '!');
+    ours.deleteCell(3);
+    theirs.cells[1].updateSource(0, 0, '#');
+    theirs.deleteCell(2);
+    theirs.insertCells(1, [code('t1', 'theirs')]);
+    theirs.insertCells(theirs.cells.length, [code('t2', 'at the end')]);
+    const oursDoc = ours.backend.doc();
+    const theirsDoc = theirs.backend.doc();
+    const ancestor = commonAncestor(Automerge, oursDoc, theirsDoc);
+    expect(ancestor).toEqual(Automerge.getHeads(base.backend.doc()));
+
+    const own = notebookDiff(oursDoc, ancestor)!;
+    expect([...own.cells.keys()]).toEqual(['a']);
+    expect(own.deleted.map(cell => cell.id)).toEqual(['d']);
+
+    const other = theirChanges(oursDoc, theirsDoc, notebookDiff(theirsDoc, ancestor)!);
+    expect(other.changed).toEqual(new Map([['b', { input: true, outputs: false }]]));
+    expect(other.deleted).toEqual(new Set(['c']));
+    expect(other.added).toEqual([
+      { id: 't1', cellType: 'code', source: 'theirs', before: 'b' },
+      // 'd' is gone from ours, so the cell theirs added after it goes at the end.
+      { id: 't2', cellType: 'code', source: 'at the end', before: null }
+    ]);
+  });
+
+  test('leaves out cells both drafts deleted', () => {
+    const base = notebookOf([code('a', 'one'), code('b', 'two')]);
+    const ours = clone(base);
+    const theirs = clone(base);
+    ours.deleteCell(1);
+    theirs.deleteCell(1);
+    const ancestor = commonAncestor(Automerge, ours.backend.doc(), theirs.backend.doc());
+    const other = theirChanges(ours.backend.doc(), theirs.backend.doc(), notebookDiff(theirs.backend.doc(), ancestor)!);
+    expect(other).toEqual({ changed: new Map(), deleted: new Set(), added: [] });
+  });
+});
+
+function notebookOf(cells: SharedCell.Cell[]): AutomergeNotebook {
+  return AutomergeNotebook.create({ backend: new MemoryBackend<NotebookDoc>({}), data: notebookData(cells) });
+}
+
+/** A fork of `notebook`, like a draft cloned off it. */
+function clone(notebook: AutomergeNotebook): AutomergeNotebook {
+  const backend = new MemoryBackend<NotebookDoc>({});
+  (backend as any)._doc = Automerge.clone(notebook.backend.doc());
+  return new AutomergeNotebook({ backend });
+}
 
 function code(id: string, source: string): SharedCell.Cell {
   return { id, cell_type: 'code', source, metadata: {}, outputs: [], execution_count: null } as SharedCell.Cell;

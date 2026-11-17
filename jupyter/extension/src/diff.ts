@@ -141,3 +141,39 @@ function deletedCells(before: CellDoc[], after: CellDoc[]): DeletedCell[] {
   }
   return deleted;
 }
+
+/**
+ * What the other draft changed, placed in this notebook, which has none of
+ * those changes. Cells it added show as ghosts where it put them, in front
+ * of the next cell this notebook also has.
+ */
+export type TheirChanges = {
+  /** Cells this notebook has that the other draft changed. */
+  changed: Map<string, { input: boolean; outputs: boolean }>;
+  /** Cells this notebook still has that the other draft deleted. */
+  deleted: Set<string>;
+  added: DeletedCell[];
+};
+
+/** `diff` is the other draft's notebook `theirs` diffed against where the two forked. */
+export function theirChanges(ours: Doc<NotebookDoc>, theirs: Doc<NotebookDoc>, diff: NotebookDiff): TheirChanges {
+  const here = new Set((ours.cells ?? []).map(cell => readString(cell.id)));
+  const changed = new Map<string, { input: boolean; outputs: boolean }>();
+  for (const [id, change] of diff.cells) {
+    if (change.type === 'changed' && here.has(id)) changed.set(id, { input: change.input, outputs: change.outputs });
+  }
+  const deleted = new Set(diff.deleted.map(cell => cell.id).filter(id => here.has(id)));
+  const added: DeletedCell[] = [];
+  let next: string | null = null;
+  const cells = theirs.cells ?? [];
+  for (let index = cells.length - 1; index >= 0; index--) {
+    const cell = cells[index];
+    const id = readString(cell.id);
+    if (here.has(id)) {
+      next = id;
+    } else if (diff.cells.get(id)?.type === 'added') {
+      added.unshift({ id, cellType: readString(cell.cell_type), source: readString(cell.source), before: next });
+    }
+  }
+  return { changed, deleted, added };
+}

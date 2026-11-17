@@ -33,26 +33,51 @@ async function main() {
   }
   const heads = new URLSearchParams(location.search).get("heads")
   const shown = overlay(heads ? handle.view(heads.split(",") as any) : handle)
-  const selectDraft = draftSelection(document.body)
-  Object.assign(window, { harness: { A, repo, handle, shown, selectDraft } })
+  const compare = compareView(document.body)
+  Object.assign(window, { harness: { A, repo, handle, shown, compare } })
   JupyterTool(shown, document.getElementById("app")!)
 }
 
-/** Like the drafts package's provider: answers `draft:selection` with whatever was last selected. */
-function draftSelection(element: HTMLElement): (draft: AutomergeUrl | null) => void {
-  let selection = { checkedOut: null as AutomergeUrl | null, at: null }
-  const subscribers = new Set<(value: typeof selection) => void>()
+type CompareView = {
+  mode: string | null
+  options: unknown
+  other: Uint8Array | null
+  missing: boolean
+  collapsed: boolean
+  editable: boolean
+  names: { ours: string; theirs: string } | null
+  merging: boolean
+}
+
+const NOT_COMPARED: CompareView = {
+  mode: null,
+  options: null,
+  other: null,
+  missing: false,
+  collapsed: false,
+  editable: false,
+  names: null,
+  merging: false,
+}
+
+/**
+ * Like the panel of the projects package: answers `compare:view` with the
+ * mode and the other draft's version, as last set. Null stops comparing.
+ */
+function compareView(element: HTMLElement): (view: Partial<CompareView> | null) => void {
+  let current = NOT_COMPARED
+  const subscribers = new Set<(value: CompareView) => void>()
   element.addEventListener("patchwork:subscribe", event => {
-    if (event.detail.selector.type !== "draft:selection") return
-    accept<typeof selection>(event, respond => {
-      respond(selection)
+    if (event.detail.selector.type !== "compare:view") return
+    accept<CompareView>(event, respond => {
+      respond(current)
       subscribers.add(respond)
       return () => subscribers.delete(respond)
     })
   })
-  return draft => {
-    selection = { checkedOut: draft, at: null }
-    for (const respond of subscribers) respond(selection)
+  return view => {
+    current = view ? { ...NOT_COMPARED, ...view } : NOT_COMPARED
+    for (const respond of subscribers) respond(current)
   }
 }
 
