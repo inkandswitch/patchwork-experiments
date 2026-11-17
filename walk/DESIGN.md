@@ -735,12 +735,14 @@ rebuilt in place rebaking.
 
 **Integrated (2026-11-17, scene-stage merge cbdb53e2; lane/n10 took
 scene-stage first in cedfb178).** Suites: walk 225, sailing 1201 (slow
-70/80: the 10 red are the OPEN leave-the-anchor rows, red on scene-stage
-too), scene 2425, water 1121, doom 87, arena 56, terrain 447, seats 88,
+70/80 then: the 10 red were breakout.slow's leave-the-anchor rows, red on
+scene-stage too, a stale read of the weather trait in sailing's replay
+harness, fixed 2026-11-17 by the final fixer; 80/80 since), scene 2425, water 1121, doom 87, arena 56, terrain 447, seats 88,
 tabletop 628, weather 906; scripts/check-fixtures.mjs ok. Local probes (one
 Chrome hold each): aboard-run 72/72, sailing-run seas 1, 3, 4 89/89 and
-2, 5 86/89 (the three red rows are N6's leave-the-anchor rows; sea 5's
-ladder row passes), touch 11, harbour 26, model-room 18, basin 15, links
+2, 5 86/89 (the three red rows were the leave step, run on seas where
+she breaks out off the wind; the lead accepted that, so the step now runs
+only where she is head to wind; sea 5's ladder row passes), touch 11, harbour 26, model-room 18, basin 15, links
 37, pins 27, editclick 24, extract 25, weather-run 79, world-run 80,
 publish-fitout/aboard/e1m1 --dry-run 16/21/12, publish-ship (both) dry,
 doom.mjs 33 (E1M1's ground bake 10.5 s, 4.22M columns, 649 MB), arena-run
@@ -754,13 +756,15 @@ reads a swept part's drawn nodes (the wheel turned 36% at the helm) while
 the key reads only the doc: the wheel's swept solid changes, the key
 doesn't, and two peers can bake her differently. Owed: a swept part's
 triangles at its rest pose (or its turn in the key). **Not synced, not
-republished, no real-Patchwork check yet**: walk, sailing, water and doom
-sync together, after W8's checks are done (sailing is held for W8; walk
-alone would walk the published E1M1 through its shut doors until it is
-republished with the door tag, Decision 27; water's list `not` is compatible, but W8's checks are
-running on today's packages), then E1M1 and every boat
-are republished in the order the lane's step 6 gives (FOLLOWUPS, "N10
-integrated").
+republished, no real-Patchwork check yet: held to the end of the queue**
+(the lead's standing rule, 2026-11-17, recovered/lanes/lead-answers.md 6).
+walk, sailing, water, doom and terrain sync together only then, in the
+main session (the live examples are W8's, on pre-N10 sailing; walk alone
+would walk the published E1M1 through its shut doors until it is
+republished with the door tag, Decision 27), and E1M1 and every boat are
+republished in the order the lane's step 6 gives (FOLLOWUPS, "N10
+integrated"), with one check pass. Walking on Cadboro Bay's and Ucluelet's
+ground is deferred by the lead (6b; Decision 31): N10 ships without it.
 
 **Step 5** (sailing walks in walk):
 - part kind → walk trait, for the stock sloop and a camber hull;
@@ -972,7 +976,12 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     could be 5 GB on E1M1. The cap admits E1M1 (4.22M, 10–11 s once) and
     refuses Cadboro Bay and Ucluelet until tiles land; whether to hold walk
     instead until tiles land is the lead's (Q4). A refused support doesn't
-    hold the walk back (Decision 43).
+    hold the walk back (Decision 43). *The lead (2026-11-17): "we don't
+    need to walk in ucluelet or cadboro bay right now, so we can defer
+    thinking about those."* The cap's refusal of their ground is accepted
+    for now and does not hold back walk's sync or the republish; tiles stay
+    owed, unscheduled (Q4). E1M1's 10–11 s first walk is a separate case
+    and stays open.
 
 32. **The `walk` part runs in every stage** (`traits: ["*"]`, decided
     unattended (2026-11-17, lane/n10), for the lead). A general part runs
@@ -1075,7 +1084,9 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
     still loading is still waited for: it lands, and a walker already
     round it would break I. Readiness per support (waiting only for the
     one entered) is the alternative; it needs I to survive a support
-    landing round a walker, which nothing here gives yet.
+    landing round a walker, which nothing here gives yet. *Accepted for
+    now (the lead, 2026-11-17, Decision 31): nobody needs to walk Cadboro
+    Bay's or Ucluelet's ground yet.*
 
 ## Questions for the lead
 
@@ -1123,6 +1134,17 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
   second number in the one body? On terrain, should the ground's heights
   come from terrain itself (a heightfield it answers, the bake taking only
   the structures on it) rather than from its kilometres of triangles?
+  *Deferred by the lead (2026-11-17): "we don't need to walk in ucluelet
+  or cadboro bay right now, so we can defer thinking about those."* The
+  column cap stands (Decisions 31, 43); tiles stay owed but unscheduled;
+  E1M1's first-walk freeze stays open on its own. The direction raised for
+  when this is picked up: games keep the player off the navmesh, with one
+  kinematic controller that stands in its support's frame (Unreal's
+  movement base) and each surface answering ground queries its own way:
+  terrain a height lookup from its elevation grid, meshes such as E1M1
+  capsule or ray sweeps through a spatial index, the sloop's deck keeping
+  the bake as a cache. "One walker" would then mean one controller and one
+  support rule, not one bake.
 - **Q5. Up.** Is "a support's up is its object's +Y" acceptable, with an
   upright group for models that aren't? Or should `walk.support` carry an
   `up`?
