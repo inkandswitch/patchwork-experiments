@@ -1,0 +1,301 @@
+{
+  "format": "tabletop-game",
+  "version": 1,
+  "title": "Tiny Test Mod",
+  "about": "Imported from Tabletop Simulator: “Tiny Test Mod”. Its components as they start, and nothing scripted: the rules are the players'.",
+  "pieces": {
+    "p6jeu9g1jkradu": {
+      "name": "Table",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.8128,0.4572],
+          "thickness": 0.0127,
+          "at": [0,-0.0127,0],
+          "color": "#4d6b56",
+          "side": "#5a4535",
+          "top": {"file":"automerge:ZDtZEuaFvbGwcHxdKyeKzfL1gM2h","turn":180}
+        }
+      ],
+      "locked": true,
+      "snapPoints": [
+        {"position":[-0.1524,0,0.1778]},
+        {"position":[-0.1016,0,0.1778],"rotation":[0,-1.570796,0]}
+      ]
+    },
+    "pndrxay15hwdym": {
+      "name": "Board",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.3048,0.1524],
+          "thickness": 0.00508,
+          "color": "#ffffff",
+          "side": "#4d4033",
+          "top": {"file":"automerge:fJxdJyeKzfL1gM2hR4iP4jQ5kR6m","turn":180},
+          "bottom": {"file":"automerge:fJxdJyeKzfL1gM2hR4iP4jQ5kR6m","turn":180}
+        }
+      ],
+      "locked": true,
+      "snapPoints": [
+        {"position":[-0.03048,0.00254,0.03048],"rotation":[0,0,0]},
+        {"position":[0.03048,0.00254,0.03048]},
+        {"position":[-0.03048,0.00254,-0.03048]},
+        {"position":[0.03048,0.00254,-0.03048]}
+      ]
+    },
+    "p8h1dj21q8kpo3": {
+      "name": "Card",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.05588,0.07874],
+          "thickness": 0.000508,
+          "at": [0,-0.000254,0],
+          "color": "#8a8478",
+          "top": {"file":"automerge:mP3hN3iP4jQ5kR6mX9oT8oU9pVAq","turn":180},
+          "bottom": {"file":"automerge:mP3hN3iP4jQ5kR6mX9oT8oU9pVAq","turn":180}
+        }
+      ],
+      "tags": ["card"]
+    },
+    "p12uzl2pyzc1xh": {
+      "name": "Red One",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.05588,0.07874],
+          "thickness": 0.000508,
+          "at": [0,-0.000254,0],
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:sU7mS7nT8oU9pVAqdEsXCsYDtZEu","rect":[0,0,0.5,0.5],"turn":180},
+          "bottom": {"file":"automerge:mP3hN3iP4jQ5kR6mX9oT8oU9pVAq","turn":180}
+        }
+      ],
+      "back": "p8h1dj21q8kpo3"
+    },
+    "pj5wjlc1aqtqyp": {
+      "name": "Green Two",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.05588,0.07874],
+          "thickness": 0.000508,
+          "at": [0,-0.000254,0],
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:sU7mS7nT8oU9pVAqdEsXCsYDtZEu","rect":[0.5,0,0.5,0.5],"turn":180},
+          "bottom": {"file":"automerge:mP3hN3iP4jQ5kR6mX9oT8oU9pVAq","turn":180}
+        }
+      ],
+      "back": "p8h1dj21q8kpo3"
+    },
+    "p165b0mopdjvtp": {
+      "name": "Blue Three",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.05588,0.07874],
+          "thickness": 0.000508,
+          "at": [0,-0.000254,0],
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:sU7mS7nT8oU9pVAqdEsXCsYDtZEu","rect":[0,0.5,0.5,0.5],"turn":180},
+          "bottom": {"file":"automerge:mP3hN3iP4jQ5kR6mX9oT8oU9pVAq","turn":180}
+        }
+      ],
+      "back": "p8h1dj21q8kpo3"
+    },
+    "p1mmzgjx1889ihu": {
+      "name": "Yellow Four",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.05588,0.07874],
+          "thickness": 0.000508,
+          "at": [0,-0.000254,0],
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:sU7mS7nT8oU9pVAqdEsXCsYDtZEu","rect":[0.5,0.5,0.5,0.5],"turn":180},
+          "bottom": {"file":"automerge:mP3hN3iP4jQ5kR6mX9oT8oU9pVAq","turn":180}
+        }
+      ],
+      "back": "p8h1dj21q8kpo3"
+    },
+    "p5fvm6hjxmowp": {
+      "name": "Round token",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "cutout",
+          "size": [0.0254,0.0254],
+          "thickness": 0.00508,
+          "at": [0,-0.00254,0],
+          "color": "#ffffff",
+          "side": "#ffffff",
+          "top": {"file":"automerge:yZCrWBrXCsYDtZEujKxcGwcHxdJy","turn":180},
+          "bottom": {"file":"automerge:yZCrWBrXCsYDtZEujKxcGwcHxdJy","turn":180}
+        }
+      ]
+    },
+    "p17m9u69vfjx5k": {
+      "name": "Crate",
+      "parts": [
+        {
+          "shape": "model",
+          "file": "automerge:5eGvaFvbGwcHxdJyqQ2gL1gM2hN3",
+          "color": "#ffffff",
+          "matrix": [-0.0254,0,0,0,0.0254,0,0,0,-0.0254],
+          "roughness": 0.75,
+          "metalness": 0
+        }
+      ]
+    },
+    "puw7a5g16xt1bf": {
+      "name": "Pouch",
+      "parts": [
+        {"shape":"model","file":"automerge:BjMzeKzfL1gM2hN3wV7kQ5kR6mS7","color":"#664d99","matrix":[-0.0254,0,0,0,0.0254,0,0,0,-0.0254],"roughness":0.9,"metalness":0}
+      ],
+      "bag": {"rule":"random"}
+    },
+    "ph06q0l13s8n5v": {
+      "name": "Token in the bag",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "cutout",
+          "size": [0.0508,0.0508],
+          "thickness": 0.00508,
+          "at": [0,-0.00254,0],
+          "color": "#ffffff",
+          "side": "#ffffff",
+          "top": {"file":"automerge:yZCrWBrXCsYDtZEujKxcGwcHxdJy","turn":180},
+          "bottom": {"file":"automerge:yZCrWBrXCsYDtZEujKxcGwcHxdJy","turn":180}
+        }
+      ]
+    },
+    "pocihbu1x0ljlc": {
+      "name": "Lost model",
+      "parts": [
+        {"shape":"box","size":[0.0254,0.0254,0.0254],"at":[0,-0.0127,0],"color":"#a0a0a8b0"}
+      ]
+    },
+    "pfoviwt1fk9u5z": {
+      "name": "Die",
+      "doc": {
+        "@patchwork": {"type":"die"},
+        "shape": "d6",
+        "size": 0.0254,
+        "body": "#e61a1a"
+      },
+      "traits": {
+        "dice.die": {}
+      }
+    },
+    "py5gv17i0r746": {
+      "name": "Coins",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "circle",
+          "size": [0.02032,0.02032],
+          "thickness": 0.00254,
+          "color": "#ffffff",
+          "side": "#ccb333",
+          "top": {"file":"automerge:yZCrWBrXCsYDtZEujKxcGwcHxdJy","turn":180},
+          "bottom": {"file":"automerge:yZCrWBrXCsYDtZEujKxcGwcHxdJy","turn":180}
+        }
+      ]
+    },
+    "piu3zg4uvlw86": {
+      "name": "Rules",
+      "parts": [
+        {"shape":"slab","outline":"rect","size":[0.056134,0.072644],"thickness":0.001016,"at":[0,-0.000508,0],"color":"#fbfaf6","side":"#d8d4c8"}
+      ]
+    },
+    "p18scfhiambkim": {
+      "name": "White hand",
+      "parts": [
+        {"shape":"box","size":[0.254,0.002,0.0762],"color":"#8c8c8c"}
+      ],
+      "locked": true,
+      "zone": {"min":[-0.127,0,-0.0381],"max":[0.127,0.1016,0.0381]},
+      "snapPoints": [
+        {"position":[-0.09525,0.002,0],"rotation":[0,0,0],"tags":["card"]},
+        {"position":[-0.03175,0.002,0],"rotation":[0,0,0],"tags":["card"]},
+        {"position":[0.03175,0.002,0],"rotation":[0,0,0],"tags":["card"]},
+        {"position":[0.09525,0.002,0],"rotation":[0,0,0],"tags":["card"]}
+      ],
+      "snapRadius": 0.03175
+    }
+  },
+  "setup": [
+    {
+      "piece": "p6jeu9g1jkradu",
+      "at": {"position":[-0.0508,0,-0.0254]}
+    },
+    {
+      "piece": "pndrxay15hwdym",
+      "at": {"position":[0,0,-0.1016],"rotation":[0,3.141593,0]}
+    },
+    {
+      "deck": {"name":"Draw pile","cards":["p12uzl2pyzc1xh","pj5wjlc1aqtqyp","p165b0mopdjvtp"],"faceDown":true},
+      "at": {"position":[-0.1524,0.000254,0.0508],"rotation":[0,3.141593,0]}
+    },
+    {
+      "piece": "p1mmzgjx1889ihu",
+      "at": {"position":[-0.0635,0.000508,0.0508],"rotation":[0,3.141593,0]}
+    },
+    {
+      "piece": "p5fvm6hjxmowp",
+      "at": {"position":[0.0635,0.001016,0.0508],"rotation":[0,3.141593,0]}
+    },
+    {
+      "piece": "p17m9u69vfjx5k",
+      "at": {"position":[0.127,0,0.0508],"rotation":[0,3.141593,0]}
+    },
+    {
+      "piece": "puw7a5g16xt1bf",
+      "at": {"position":[0.2032,0,0.0508]},
+      "contents": [
+        {"piece":"ph06q0l13s8n5v"},
+        {"piece":"pocihbu1x0ljlc"}
+      ]
+    },
+    {
+      "piece": "pfoviwt1fk9u5z",
+      "at": {"position":[-0.0762,0.001016,-0.0762]}
+    },
+    {
+      "piece": "py5gv17i0r746",
+      "at": {"position":[-0.2286,0,-0.0762],"rotation":[0,3.141593,0]},
+      "count": 3,
+      "grid": {"cols":1,"across":[0,0,0],"down":[0,0.00254,0]}
+    },
+    {
+      "piece": "piu3zg4uvlw86",
+      "at": {"position":[-0.3048,0,0.0508],"rotation":[0,3.141593,0]}
+    },
+    {
+      "id": "hand-white",
+      "piece": "p18scfhiambkim",
+      "name": "White's hand",
+      "seat": "white",
+      "at": {"position":[0,0,0.3048],"rotation":[0,0.15264932839526518,0]}
+    }
+  ],
+  "seats": {
+    "white": {
+      "name": "White",
+      "camera": {"position":[0.023174,0.7112,0.455428],"target":[-0.054072,0,-0.046665]}
+    }
+  },
+  "camera": {"position":[-0.0508,0.44704,0.381],"target":[-0.0508,0,-0.0254]},
+  "origin": {
+    "tts": {"saveName":"Tiny Test Mod","fileName":"Workshop/1234567890.json","workshopId":"1234567890"}
+  }
+}

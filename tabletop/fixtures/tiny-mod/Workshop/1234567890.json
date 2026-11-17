@@ -1,0 +1,517 @@
+{
+ "SaveName": "Tiny Test Mod",
+ "GameMode": "Tiny Test Mod",
+ "Table": "Table_Custom",
+ "TableURL": "https://i.imgur.com/tinyTable.png",
+ "LuaScript": "-- ignored",
+ "XmlUI": "<Panel/>",
+ "SnapPoints": [
+  {
+   "Position": {
+    "x": -8,
+    "y": 0.96,
+    "z": -6
+   }
+  },
+  {
+   "Position": {
+    "x": -6,
+    "y": 0.96,
+    "z": -6
+   },
+   "Rotation": {
+    "x": 0,
+    "y": 90,
+    "z": 0
+   }
+  }
+ ],
+ "ObjectStates": [
+  {
+   "GUID": "b00001",
+   "Name": "Custom_Tile",
+   "Nickname": "Board",
+   "Transform": {
+    "posX": 0,
+    "posY": 0.96,
+    "posZ": 4,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 3,
+    "scaleY": 1,
+    "scaleZ": 3
+   },
+   "ColorDiffuse": {
+    "r": 0.3,
+    "g": 0.25,
+    "b": 0.2
+   },
+   "Locked": true,
+   "CustomImage": {
+    "ImageURL": "https://i.imgur.com/tinyBoard.png",
+    "ImageSecondaryURL": "",
+    "ImageScalar": 1,
+    "WidthScale": 0,
+    "CustomTile": {
+     "Type": 0,
+     "Thickness": 0.2,
+     "Stackable": false,
+     "Stretch": true
+    }
+   },
+   "AttachedSnapPoints": [
+    {
+     "Position": {
+      "x": -0.4,
+      "y": 0.1,
+      "z": -0.4
+     },
+     "Rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+     }
+    },
+    {
+     "Position": {
+      "x": 0.4,
+      "y": 0.1,
+      "z": -0.4
+     }
+    },
+    {
+     "Position": {
+      "x": -0.4,
+      "y": 0.1,
+      "z": 0.4
+     }
+    },
+    {
+     "Position": {
+      "x": 0.4,
+      "y": 0.1,
+      "z": 0.4
+     }
+    }
+   ]
+  },
+  {
+   "GUID": "d00001",
+   "Name": "DeckCustom",
+   "Nickname": "Draw pile",
+   "Transform": {
+    "posX": -6,
+    "posY": 1,
+    "posZ": -2,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 180,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "CustomDeck": {
+    "11": {
+     "FaceURL": "https://steamusercontent-a.akamaihd.net/ugc/1111/AAAA1111/",
+     "BackURL": "http://cloud-3.steamusercontent.com/ugc/2222/BBBB2222/",
+     "NumWidth": 2,
+     "NumHeight": 2,
+     "BackIsHidden": true,
+     "UniqueBack": false,
+     "Type": 0
+    }
+   },
+   "DeckIDs": [
+    1100,
+    1101,
+    1102
+   ],
+   "ContainedObjects": [
+    {
+     "GUID": "c1100",
+     "Name": "CardCustom",
+     "Nickname": "Red One",
+     "Transform": {
+      "posX": 0,
+      "posY": 0,
+      "posZ": 0,
+      "rotX": 0,
+      "rotY": 180,
+      "rotZ": 0,
+      "scaleX": 1,
+      "scaleY": 1,
+      "scaleZ": 1
+     },
+     "CardID": 1100,
+     "CustomDeck": {
+      "11": {
+       "FaceURL": "https://steamusercontent-a.akamaihd.net/ugc/1111/AAAA1111/",
+       "BackURL": "http://cloud-3.steamusercontent.com/ugc/2222/BBBB2222/",
+       "NumWidth": 2,
+       "NumHeight": 2,
+       "BackIsHidden": true,
+       "UniqueBack": false,
+       "Type": 0
+      }
+     },
+     "LuaScript": "print('never read')"
+    },
+    {
+     "GUID": "c1101",
+     "Name": "CardCustom",
+     "Nickname": "Green Two",
+     "Transform": {
+      "posX": 0,
+      "posY": 0,
+      "posZ": 0,
+      "rotX": 0,
+      "rotY": 180,
+      "rotZ": 0,
+      "scaleX": 1,
+      "scaleY": 1,
+      "scaleZ": 1
+     },
+     "CardID": 1101,
+     "CustomDeck": {
+      "11": {
+       "FaceURL": "https://steamusercontent-a.akamaihd.net/ugc/1111/AAAA1111/",
+       "BackURL": "http://cloud-3.steamusercontent.com/ugc/2222/BBBB2222/",
+       "NumWidth": 2,
+       "NumHeight": 2,
+       "BackIsHidden": true,
+       "UniqueBack": false,
+       "Type": 0
+      }
+     },
+     "LuaScript": "print('never read')"
+    },
+    {
+     "GUID": "c1102",
+     "Name": "CardCustom",
+     "Nickname": "Blue Three",
+     "Transform": {
+      "posX": 0,
+      "posY": 0,
+      "posZ": 0,
+      "rotX": 0,
+      "rotY": 180,
+      "rotZ": 0,
+      "scaleX": 1,
+      "scaleY": 1,
+      "scaleZ": 1
+     },
+     "CardID": 1102,
+     "CustomDeck": {
+      "11": {
+       "FaceURL": "https://steamusercontent-a.akamaihd.net/ugc/1111/AAAA1111/",
+       "BackURL": "http://cloud-3.steamusercontent.com/ugc/2222/BBBB2222/",
+       "NumWidth": 2,
+       "NumHeight": 2,
+       "BackIsHidden": true,
+       "UniqueBack": false,
+       "Type": 0
+      }
+     },
+     "LuaScript": "print('never read')"
+    }
+   ]
+  },
+  {
+   "GUID": "c1103",
+   "Name": "CardCustom",
+   "Nickname": "Yellow Four",
+   "Transform": {
+    "posX": -2.5,
+    "posY": 0.98,
+    "posZ": -2,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "CardID": 1103,
+   "CustomDeck": {
+    "11": {
+     "FaceURL": "https://steamusercontent-a.akamaihd.net/ugc/1111/AAAA1111/",
+     "BackURL": "http://cloud-3.steamusercontent.com/ugc/2222/BBBB2222/",
+     "NumWidth": 2,
+     "NumHeight": 2,
+     "BackIsHidden": true,
+     "UniqueBack": false,
+     "Type": 0
+    }
+   },
+   "LuaScript": "print('never read')"
+  },
+  {
+   "GUID": "t00001",
+   "Name": "Custom_Token",
+   "Nickname": "Round token",
+   "Transform": {
+    "posX": 2.5,
+    "posY": 1,
+    "posZ": -2,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 0.5,
+    "scaleY": 1,
+    "scaleZ": 0.5
+   },
+   "ColorDiffuse": {
+    "r": 1,
+    "g": 1,
+    "b": 1
+   },
+   "CustomImage": {
+    "ImageURL": "https://i.imgur.com/tinyToken.png",
+    "ImageSecondaryURL": "",
+    "ImageScalar": 1,
+    "WidthScale": 0,
+    "CustomToken": {
+     "Thickness": 0.2,
+     "MergeDistancePixels": 15,
+     "StandUp": false,
+     "Stackable": true
+    }
+   }
+  },
+  {
+   "GUID": "m00001",
+   "Name": "Custom_Model",
+   "Nickname": "Crate",
+   "Transform": {
+    "posX": 5,
+    "posY": 0.96,
+    "posZ": -2,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "ColorDiffuse": {
+    "r": 1,
+    "g": 1,
+    "b": 1
+   },
+   "CustomMesh": {
+    "MeshURL": "https://steamusercontent-a.akamaihd.net/ugc/3333/CCCC3333/",
+    "DiffuseURL": "https://steamusercontent-a.akamaihd.net/ugc/4444/DDDD4444/",
+    "NormalURL": "",
+    "ColliderURL": "",
+    "Convex": true,
+    "MaterialIndex": 1,
+    "TypeIndex": 0,
+    "CastShadows": true
+   }
+  },
+  {
+   "GUID": "g00001",
+   "Name": "Custom_Model_Bag",
+   "Nickname": "Pouch",
+   "Transform": {
+    "posX": 8,
+    "posY": 0.96,
+    "posZ": -2,
+    "rotX": 0,
+    "rotY": 0,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "ColorDiffuse": {
+    "r": 0.4,
+    "g": 0.3,
+    "b": 0.6
+   },
+   "CustomMesh": {
+    "MeshURL": "https://steamusercontent-a.akamaihd.net/ugc/5555/EEEE5555/",
+    "DiffuseURL": "",
+    "NormalURL": "",
+    "ColliderURL": "",
+    "Convex": true,
+    "MaterialIndex": 3,
+    "TypeIndex": 6,
+    "CastShadows": true
+   },
+   "ContainedObjects": [
+    {
+     "GUID": "t00002",
+     "Name": "Custom_Token",
+     "Nickname": "Token in the bag",
+     "Transform": {
+      "posX": 0,
+      "posY": 0,
+      "posZ": 0,
+      "rotX": 0,
+      "rotY": 180,
+      "rotZ": 0,
+      "scaleX": 1,
+      "scaleY": 1,
+      "scaleZ": 1
+     },
+     "ColorDiffuse": {
+      "r": 1,
+      "g": 1,
+      "b": 1
+     },
+     "CustomImage": {
+      "ImageURL": "https://i.imgur.com/tinyToken.png",
+      "CustomToken": {
+       "Thickness": 0.2
+      }
+     }
+    },
+    {
+     "GUID": "m00002",
+     "Name": "Custom_Model",
+     "Nickname": "Lost model",
+     "Transform": {
+      "posX": 0,
+      "posY": 0,
+      "posZ": 0,
+      "rotX": 0,
+      "rotY": 180,
+      "rotZ": 0,
+      "scaleX": 1,
+      "scaleY": 1,
+      "scaleZ": 1
+     },
+     "CustomMesh": {
+      "MeshURL": "https://example.invalid/missing-model.obj",
+      "DiffuseURL": "",
+      "MaterialIndex": 0,
+      "TypeIndex": 0
+     }
+    }
+   ]
+  },
+  {
+   "GUID": "x00001",
+   "Name": "Die_6",
+   "Nickname": "Die",
+   "Transform": {
+    "posX": -3,
+    "posY": 1.5,
+    "posZ": 3,
+    "rotX": 0,
+    "rotY": 0,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "ColorDiffuse": {
+    "r": 0.9,
+    "g": 0.1,
+    "b": 0.1
+   }
+  },
+  {
+   "GUID": "s00001",
+   "Name": "Custom_Tile_Stack",
+   "Nickname": "Coins",
+   "Transform": {
+    "posX": -9,
+    "posY": 0.96,
+    "posZ": 3,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 0.4,
+    "scaleY": 1,
+    "scaleZ": 0.4
+   },
+   "Number": 3,
+   "ColorDiffuse": {
+    "r": 0.8,
+    "g": 0.7,
+    "b": 0.2
+   },
+   "CustomImage": {
+    "ImageURL": "https://i.imgur.com/tinyToken.png",
+    "CustomTile": {
+     "Type": 2,
+     "Thickness": 0.1,
+     "Stretch": true
+    }
+   }
+  },
+  {
+   "GUID": "p00001",
+   "Name": "Custom_PDF",
+   "Nickname": "Rules",
+   "Transform": {
+    "posX": -12,
+    "posY": 0.96,
+    "posZ": -2,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "CustomPDF": {
+    "PDFUrl": "https://example.invalid/rules.pdf",
+    "PDFPassword": "",
+    "PDFPage": 0
+   }
+  },
+  {
+   "GUID": "h00001",
+   "Name": "HandTrigger",
+   "FogColor": "White",
+   "Transform": {
+    "posX": 0,
+    "posY": 3,
+    "posZ": -12,
+    "rotX": 0,
+    "rotY": 0,
+    "rotZ": 0,
+    "scaleX": 10,
+    "scaleY": 4,
+    "scaleZ": 3
+   }
+  },
+  {
+   "GUID": "z00001",
+   "Name": "3DText",
+   "Transform": {
+    "posX": 0,
+    "posY": 1,
+    "posZ": 0,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   },
+   "Text": {
+    "Text": "hello"
+   }
+  },
+  {
+   "GUID": "z00002",
+   "Name": "ScriptingTrigger",
+   "Transform": {
+    "posX": 0,
+    "posY": 1,
+    "posZ": 0,
+    "rotX": 0,
+    "rotY": 180,
+    "rotZ": 0,
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1
+   }
+  }
+ ]
+}
