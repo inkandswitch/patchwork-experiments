@@ -402,10 +402,13 @@ export function fakeWorld(doc, { content = {} } = {}) {
     return memoOf(`water:${JSON.stringify(waves)}`, () => Object.freeze({ ...createSurface(waves.components), body: null, level: 0, seed: waves.look.seed, stats: waves.look.stats }));
   }
   const contribution = Object.freeze({ at: () => waterReader() });
+  let offered = null; // { version, value }: the ambients as of a version of the doc (a stage's are flushed, not made at each ask)
   function ambients() {
+    if (offered?.version === version) return offered.value;
     const out = { ...(weatherOffer(doc.traits?.["sailing.weather"]) ?? {}) };
     if (openWater()) out.water = { v: 2, level: 0, components: waterReader().components };
     for (const k of Object.keys(out)) out[k] = memoOf(`ambient:${k}:${JSON.stringify(out[k])}`, () => structuredClone(out[k]));
+    offered = { version, value: out };
     return out;
   }
 

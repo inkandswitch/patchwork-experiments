@@ -14,7 +14,9 @@
 //     here (wind.js) and read the same way: mapped by this stage's frame, at
 //     the world's time for this stage's t, the offset latched once a frame
 //     after every clock has ticked (the water package's rule, copied: tick()).
-//     Its speed and from are in this stage's frame too.
+//     Its speed and from are in this stage's frame too. It is the ambient's
+//     as it is when read: made again at the read the ambient changed, not at
+//     the next tick, which comes after the frame's steps.
 //   - world(): is her doc the world (the outermost: a boat alone)? Read from
 //     the wind ambient's `mine`, which her own sea offers wherever she is the
 //     world, so it holds whatever packages are installed; elsewhere the wind
@@ -113,7 +115,7 @@ const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
 export function createSeaView(api) {
   const timing = { mine: false, delta: 0, running: true, worldT: 0 };
   let wind = null;
-  let windFrom = null; // { value, key, mine }
+  let windFrom = null; // { value, matrix, key, mine }: the ambient the wind was made from
   let scaled = false; // said once: at another scale, she doesn't sail
 
   function latch(clock) {
@@ -129,13 +131,15 @@ export function createSeaView(api) {
       windFrom = null;
       return null;
     }
+    const matrix = a.frame?.matrix ?? null;
+    if (windFrom && windFrom.value === a.value && windFrom.matrix === matrix && windFrom.mine === a.mine) return a;
     const key = frameKey(a.frame);
     if (!windFrom || windFrom.value !== a.value || windFrom.key !== key || windFrom.mine !== a.mine) {
       timing.mine = a.mine;
       if (!a.mine && !windFrom) latch(a.clock);
       wind = windFor(a.value, a.frame, timing);
-      windFrom = { value: a.value, key, mine: a.mine };
     }
+    windFrom = { value: a.value, matrix, key, mine: a.mine };
     return a;
   }
 
@@ -164,8 +168,14 @@ export function createSeaView(api) {
       if (!r) return null;
       return r.body == null && !sameScale() ? null : r;
     },
+    /**
+     * The world's wind as it is now: made again whenever the ambient's value
+     * changed, at the read, not at the next frame's tick (which comes after
+     * the frame's steps), so a step never reads the last value's wind
+     * (DESIGN.md, "Determinism"), as the water package's reader is.
+     */
     get wind() {
-      if (!windFrom) refreshWind();
+      refreshWind();
       return wind;
     },
     /** is this boat's doc the world (the outermost: a boat alone)? Her camera ride and her HUD show only then, or while you're aboard */

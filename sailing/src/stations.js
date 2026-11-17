@@ -163,6 +163,34 @@ export function walkTo(kind, stations = {}, near = {}) {
 /** Whether the sheet can be trimmed at the mast: only on a ship with neither a helm nor a mainsheet to trim it at. */
 export const sheetAtMast = (stations = {}) => !stations.helm && !stations.mainsheet;
 
+/** A held station's step of world time (s): the world's grid (scene's STEP_S), the one her physics steps on. */
+export const HELD_STEP = 1 / 60;
+
+/**
+ * A held station's clock: each call takes a frame's dt and gives back the
+ * whole steps of world time it completes, n·`step` (the same double for the
+ * same n), carrying the rest to the next frame. A held key moves its value
+ * by the steps it was held, not by the frames' dt: a frame's dt is the
+ * difference of two readings of the page's clock, whose last bits depend on
+ * how far that clock had run (four values for one 60 Hz frame), so the same
+ * key held over the same world steps would leave values that differ in their
+ * last bits from run to run, and the physics grows them (DESIGN.md,
+ * "Determinism"). Exact on the grid: from nothing carried, a dt within 1e-9
+ * s of n steps gives n steps and carries nothing.
+ * @param {number} [step]
+ * @returns {(dt: number) => number}
+ */
+export function wholeSteps(step = HELD_STEP) {
+  let carried = 0;
+  return (dt) => {
+    carried += Math.max(0, Number(dt) || 0);
+    const n = Math.floor(carried / step + 1e-6);
+    carried -= n * step;
+    if (carried < 1e-9) carried = 0;
+    return n * step;
+  };
+}
+
 /** `v` moved toward `goal` by at most `rate·dt`. */
 export function approach(v, goal, rate, dt) {
   const d = goal - v;
@@ -174,8 +202,8 @@ export function approach(v, goal, rate, dt) {
 export const wheelStep = (angle, dir, dt, rate = WHEEL_RATE) => (dir ? approach(angle, Math.sign(dir), rate, dt) : angle);
 
 /**
- * A held verb that moves one number toward a goal while the key is down.
- * Pure but for what it's handed: `input` for each live value, `commit` once
+ * A held verb that moves one number toward a goal while the key is down,
+ * in whole steps of world time (wholeSteps). Pure but for what it's handed: `input` for each live value, `commit` once
  * at the end (let go or cancelled: wherever it got to), `alive()` false when
  * the station's gone or the claim was lost (then it stops, writing nothing),
  * `done` when it's over either way.
@@ -185,6 +213,7 @@ export const wheelStep = (angle, dir, dt, rate = WHEEL_RATE) => (dir ? approach(
 export function heldTrim({ value, goal, rate, input, commit, alive = () => true, done = () => {} }) {
   let v = value;
   let open = true;
+  const steps = wholeSteps();
   const close = (write) => {
     if (!open) return;
     open = false;
@@ -195,7 +224,7 @@ export function heldTrim({ value, goal, rate, input, commit, alive = () => true,
     update(dt) {
       if (!open) return;
       if (!alive()) return close(false);
-      v = approach(v, goal, rate, dt);
+      v = approach(v, goal, rate, steps(dt));
       input(v);
     },
     end: () => close(alive()),
@@ -211,7 +240,8 @@ export function heldTrim({ value, goal, rate, input, commit, alive = () => true,
 
 /**
  * Winding the anchor up while the key is down: the chain comes in at
- * WINCH_RATE, and an anchor down short still takes a moment to break out.
+ * WINCH_RATE, in whole steps of world time (wholeSteps), and an anchor down
+ * short still takes a moment to break out.
  * Up, it commits { down: false, rode: 0 } at once; let go before that, the
  * rode where it got to.
  * @param {{ rode: number, input(fields), commit(fields), alive?(): boolean, done?() }} o
@@ -220,6 +250,7 @@ export function heldWeigh({ rode, input, commit, alive = () => true, done = () =
   const start = Math.max(0, Number(rode) || 0);
   let left = Math.max(start, BREAKOUT); // metres of winding still to do
   let open = true;
+  const steps = wholeSteps();
   const out = () => Math.max(0, Math.min(start, left));
   const close = (fields) => {
     if (!open) return;
@@ -231,7 +262,7 @@ export function heldWeigh({ rode, input, commit, alive = () => true, done = () =
     update(dt) {
       if (!open) return;
       if (!alive()) return close(null);
-      left -= WINCH_RATE * dt;
+      left -= WINCH_RATE * steps(dt);
       if (left <= 0) return close({ down: false, rode: 0 });
       input({ rode: out() });
     },
@@ -745,6 +776,7 @@ export function stationCommands(api, ctx) {
     const sailId = st.sail ?? null;
     const keys = sailKeys(sailId, { sheet: true, halyard: true });
     const jib = jibKeys(st.jib ?? null, { from: id, wheel: () => angle });
+    const steps = wholeSteps(); // the wheel turns in whole steps of world time, as the trims do
     let closed = false;
     const steering = (code) => code === "KeyA" || code === "ArrowLeft" || code === "KeyD" || code === "ArrowRight";
     const showWheel = () => {
@@ -789,7 +821,7 @@ export function stationCommands(api, ctx) {
         keys.tick(dt);
         jib.tick(dt);
         const dir = (held.has("KeyD") || held.has("ArrowRight") ? 1 : 0) - (held.has("KeyA") || held.has("ArrowLeft") ? 1 : 0);
-        const next = wheelStep(angle, dir, dt);
+        const next = wheelStep(angle, dir, steps(dt));
         if (next !== angle) {
           angle = next;
           ctx.sim.input(id, { angle });

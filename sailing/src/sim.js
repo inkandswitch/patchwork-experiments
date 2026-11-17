@@ -521,7 +521,7 @@ export function createSim(api, ctx) {
       s.state = finiteState(next) ? next : { ...s.good, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0, boom: undefined };
       s.good = s.state;
       s.read = published(s.model.read(s.state, controls, env), s.state);
-      s.drawn = { p, controls };
+      s.drawn = { p, controls, from };
     }
     for (const id of ships.keys()) if (!ids.includes(id)) ships.delete(id);
   }
@@ -642,6 +642,17 @@ export function createSim(api, ctx) {
     },
     /** The spec her physics steps with here (createShip's own); null on a view that isn't computing, or before her first step. */
     specOf: (id) => ships.get(id)?.model?.spec ?? null,
+    /**
+     * Her last step on this view, as it was taken: the spec's key, the
+     * controls it stepped with, the state it stepped from and the state it
+     * reached (the physics' own, unrounded); null on a view that isn't
+     * computing, or before her first step. For a trace
+     * (probes/sailing-probe.html ?trace): what two runs are compared on.
+     */
+    stepped(id) {
+      const s = ships.get(id);
+      return s?.drawn ? { key: s.key, controls: s.drawn.controls, from: s.drawn.from, state: s.state } : null;
+    },
     stationsOf(id) {
       const { helm, sail, anchor, mainsheet, jib, ladder, winches } = parts(api.scene(), id);
       return { helm, sail, anchor, mainsheet, jib, ladder, winches };

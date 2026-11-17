@@ -206,4 +206,64 @@ describe("aboard, together", () => {
     expect(avatars(a).length).toBe(1);
     expect(avatars(b).length).toBe(1);
   });
+
+  // The probe page's clock (scene/src/stage/time.js manualTime: now() is start + frames × frameMs, start
+  // MANUAL_EPOCH 1e6 ms, frameMs 1000/60) and the dt a loop gets from it (viewport.js: the difference of two
+  // readings, over 1000), from its k0-th frame on. Copied, as packages don't import each other. Its last bits
+  // depend on how far the clock has run (four values for one 60 Hz frame), so a page that took one frame more
+  // to load hands every frame after a different dt.
+  const pageFrames = (k0, n) => Array.from({ length: n }, (_, i) => ((1e6 + (k0 + i + 1) * (1000 / 60)) - (1e6 + (k0 + i) * (1000 / 60))) / 1000);
+
+  it("the same keys held over the same world steps sail her the same, whatever frame the page's clock had reached: every step bit for bit (DESIGN.md, \"Determinism\")", async () => {
+    // B at the helm: the wheel to starboard (D), the halyard (R: the main comes part way down), the
+    // sheet hauled (Q), each held for a whole number of frames; A computes, and every step her physics
+    // takes is kept as taken (sim.stepped: the controls and the state, unrounded)
+    const KEYS = [["KeyD", "d", 60], ["KeyR", "r", 90], ["KeyQ", "q", 75]];
+    const sail = async (k0) => {
+      const { doc, ids, content } = await sloop();
+      w = fakeWorld(doc, { content });
+      const frames = pageFrames(k0, 2000);
+      let f = 0;
+      const tick = (n) => { for (let i = 0; i < n; i++) w.tick(frames[f++], 1); };
+      const a = join(w, "A", ids.hull);
+      const b = join(w, "B", ids.hull);
+      for (const v of [a, b]) v.instance.update(w.scene(), {}, { scene: null, local: null });
+      const steps = [];
+      w.view("A").api.clock.process({ step: (_dt, t) => { const st = a.instance.debug.sim.stepped(ids.hull); if (st) steps.push(JSON.stringify([t, st.controls, st.state])); } });
+      tick(30);
+      a.command("aboard").run(null);
+      b.instance.input.click({});
+      tick(30);
+      b.command("helm").run(ids.wheel);
+      for (const [code, key, n] of KEYS) {
+        b.top().key({ code, key });
+        tick(n);
+        b.top().keyup({ code, key });
+        tick(20);
+      }
+      tick(120);
+      const out = { steps, frames: frames.slice(0, f), doc: structuredClone(doc.objects) };
+      w.done();
+      w = null;
+      return { ...out, ids };
+    };
+    const runs = [];
+    // (the page's dt repeat every third frame here: these three offsets are its three different runs)
+    for (const k0 of [0, 1, 2]) runs.push(await sail(k0));
+    // the frames' dt differ from run to run (the case this is about) ...
+    expect(new Set(runs.map((r) => r.frames.join())).size).toBe(3);
+    // ... and each key moved what it works: the wheel over, the main part way down, the sheet in
+    const { ids } = runs[0];
+    const left = runs[0].doc;
+    expect(left[ids.wheel].traits["sailing.helm"].angle).toBeCloseTo(60 / 60 * 0.6, 12);
+    expect(left[ids.rig].traits["sailing.sail"].raised).toBeCloseTo(1 - 90 / 60 / 4, 12);
+    expect(left[ids.rig].traits["sailing.sail"].sheet).toBeLessThan(0.5);
+    // every step the same, to the bit
+    expect(runs[0].steps.length).toBeGreaterThan(400);
+    for (const r of runs.slice(1)) {
+      expect(r.steps.length).toBe(runs[0].steps.length);
+      const first = r.steps.findIndex((s, i) => s !== runs[0].steps[i]);
+      expect(first, first < 0 ? "" : `step ${first}: ${r.steps[first]} vs ${runs[0].steps[first]}`).toBe(-1);
+    }
+  });
 });

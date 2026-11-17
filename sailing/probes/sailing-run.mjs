@@ -1,7 +1,7 @@
 // Sailing, crewed by two people in headless Chrome.
 //
 //   (in scene/ and sailing/) pnpm build
-//   node probes/sailing-run.mjs [--shots <dir>] [--show] [--swiftshader] [--seed N] [--sea N]
+//   node probes/sailing-run.mjs [--shots <dir>] [--show] [--swiftshader] [--seed N] [--sea N] [--trace <file>]
 //
 // It renders on the machine's GPU: under SwiftShader two views of the ocean
 // shader run at a few frames a second, too few to see whether the hull moves
@@ -46,7 +46,7 @@
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
 import { staticChecks, walkReport, watchWalk } from "./navprobe.mjs";
 
@@ -57,7 +57,8 @@ const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? pro
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-shots"));
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
 
-// The page seeds Math.random (--seed): runs repeat, but for real time. The sea (its waves and its
+// The page seeds Math.random (--seed) and holds the world until both views have loaded, so runs of one --seed
+// and --sea repeat, step for step, through the leave step (sailing/DESIGN.md, "Determinism"). The sea (its waves and its
 // gusts) is pinned apart from that: the template draws the sea's seed from Math.random, which every
 // new id draws from too, so a package more or an object more before it would hand the same --seed
 // another sea. The probe writes the sea's own seed into the doc before the world first runs: --sea N,
@@ -66,7 +67,11 @@ const UNTIL = arg("--until"); // stop after this section (for working on the pro
 // the anchor", which lists the seas and the open defect).
 const SEED = Number(arg("--seed") ?? 1);
 const SEA = Number(arg("--sea") ?? SEED);
-const b = await browser({ root: ROOT, port: 4760, cdp: 9760, page: `/sailing/probes/sailing-probe.html?held&seed=${SEED}`, width: 1616, height: 530, show: process.argv.includes("--show"), gpu: !process.argv.includes("--swiftshader"), timeout: 900_000 });
+// --trace <file>: every step of world time the computing view takes (the page's ?trace: the controls her physics
+// stepped with and the state it reached, unrounded), with the run's marks, written as JSON lines. Two runs of one
+// --seed and --sea are compared with probes/trace-diff.mjs.
+const TRACE = arg("--trace");
+const b = await browser({ root: ROOT, port: 4760, cdp: 9760, page: `/sailing/probes/sailing-probe.html?held&seed=${SEED}${TRACE ? "&trace" : ""}`, width: 1616, height: 530, show: process.argv.includes("--show"), gpu: !process.argv.includes("--swiftshader"), timeout: 900_000 });
 // every page call has a deadline, so a hang says where it was
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
@@ -100,7 +105,8 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const mean = (a) => a.reduce((s, v) => s + v, 0) / (a.length || 1);
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] ?? 0; };
 const T0 = Date.now();
-const section = (name) => { report.measured.lastSection = name; console.error(`---- ${name} done at ${((Date.now() - T0) / 1000).toFixed(0)} s`); return UNTIL && name === UNTIL; };
+const traceMark = async (name) => { if (TRACE) await P(`trace.mark(${JSON.stringify(name)})`); };
+const section = (name) => { report.measured.lastSection = name; if (TRACE) void traceMark(`section ${name}`); console.error(`---- ${name} done at ${((Date.now() - T0) / 1000).toFixed(0)} s`); return UNTIL && name === UNTIL; };
 class Done extends Error {}
 
 // the ship's frame: a point local to the hull, through a displayed world matrix
@@ -211,10 +217,18 @@ try {
   const allLoaded = await loads("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 10 && a.loaded === a.total && b.loaded === b.total; })()", 40_000);
   check("every part loads in both views", allLoaded, { a: await P("loaded('a')"), b: await P("loaded('b')") });
   await loads("!!window.__p.ctx('a') && !!window.__p.ctx('b')", 10_000);
+  if (TRACE) await P("trace.start()");
   // loaded: the world, held paused while loading took the wall's time, runs from here (the same moment every run)
   // (one seed for the waves and the gusts, as the template draws them: the Sea object's and the weather's)
   await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits["sailing.weather"].seed = ${SEA}; })`);
+  // and both views read it before the world runs: a doc change reaches a stage's extensions at once only while
+  // few passes have run since its last frame (scene stage.js requestFlush, UI_PASSES), and how many loading's
+  // wall-timed arrivals ran is the wall's, so the first step could read the template's sea or this one
+  // (sailing/DESIGN.md, "Determinism"). Paused, these frames pass no world time.
+  const seaRead = await b.soon(`["a", "b"].every((w) => window.__p.api(w)?.ambient("wind")?.value?.seed === ${SEA} && window.__p.ctx(w)?.sea.oceanAt([0, 0, 0])?.seed === ${SEA})`, { frames: 120 });
+  check("both views read the sea's and the wind's seed before the world runs", !!seaRead);
   report.measured.resumedAt = await P("resume()");
+  await traceMark("resumed");
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
   const { hull, wheel, rig, windlass, ladder } = ids;
@@ -254,7 +268,7 @@ try {
     const rd = await P(`read('${hull}', '${SIM}')`);
     return { t: await P(`clock('${SIM}')`), at: [+m[12].toFixed(3), +m[14].toFixed(3)], compass: +((compassOf(m) * 180) / Math.PI).toFixed(2), speed: rd ? +rd.speed.toFixed(3) : null, awa: rd ? +((rd.apparentWind.angle * 180) / Math.PI).toFixed(2) : null };
   };
-  const mark = async (name, extra = {}) => { anchoring.marks[name] = { ...(await poseNow()), ...extra }; };
+  const mark = async (name, extra = {}) => { anchoring.marks[name] = { ...(await poseNow()), ...extra }; await traceMark(name); };
   // the clock: how fast sea time runs against the wall, and the follower's lag
   const c0 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
   await b.advance(3000);
@@ -519,6 +533,7 @@ try {
   await press("b"); // and let it fly
   await b.rest(300);
   leave.let = (await P("doc()")).objects[jibId]?.traits["sailing.jib"].held ?? null;
+  await traceMark("left");
   report.measured.leave = leave;
   // the hint names her bow's way; the jib is held on the other side (stations.js helmBackSide: the side it backs)
   leave.bow = /bow to port/.test(leave.hint ?? "") ? "port" : /bow to starboard/.test(leave.hint ?? "") ? "starboard" : null;
@@ -891,10 +906,8 @@ try {
   // ─── handoff: the simulator leaves ───────────────────────────────────────
   if (section("doc")) throw new Done();
   const before = await P(`read('${hull}', '${FOL}')`);
-  const sampling = js(`window.__p.sampleFrames('${hull}', '${FOL}', 4000)`);
-  await b.rest(1000);
-  await P(`close('${SIM}')`);
-  const across = await sampling;
+  // the simulator closes a second in, on that frame of the page's clock every run (the sampling closes it)
+  const across = await js(`window.__p.sampleFrames('${hull}', '${FOL}', 4000, { view: '${SIM}', after: 1000 })`);
   // each frame's step past what her speed carries her in that frame's time: a long frame (the page
   // busy as the other view closes) is a stall, not a jump
   const stepsH = across.slice(1).map((f, i) => Math.max(0, Math.hypot(f[1] - across[i][1], f[3] - across[i][3]) - (Math.abs(before.speed) * Math.max(0, f[0] - across[i][0])) / 1000));
@@ -914,6 +927,18 @@ try {
   if (!(err instanceof Done)) {
     check("ran", false, String(err?.stack || err));
     try { await shot("failure"); } catch {}
+  }
+}
+if (TRACE) {
+  // in pieces: a long run's trace is megabytes
+  try {
+    const n = await P("trace.size()");
+    const lines = [];
+    for (let i = 0; i < n; i += 2000) for (const row of JSON.parse(await P(`trace.take(${i}, 2000)`))) lines.push(JSON.stringify(row));
+    writeFileSync(resolve(TRACE), lines.join("\n") + "\n");
+    report.measured.trace = { file: resolve(TRACE), rows: n };
+  } catch (err) {
+    check("trace written", false, String(err?.stack || err));
   }
 }
 report.logs = b.logs.filter((l) => !/^(debug|log)/.test(l) && !EXPECTED.test(l)).slice(0, 40);
