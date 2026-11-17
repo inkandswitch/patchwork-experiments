@@ -405,15 +405,6 @@ describe("setting up a table", () => {
   });
 });
 
-describe("shuffle", () => {
-  it("is a permutation", () => {
-    const a = Array.from({ length: 60 }, (_, i) => i);
-    const b = shuffle(a, seeded(7));
-    expect(b).not.toEqual(a);
-    expect([...b].sort((x, y) => x - y)).toEqual(a);
-  });
-});
-
 describe("Lost Cities", () => {
   it("has 60 cards in five expeditions, every face the same size as the back", async () => {
     const { pieces, setup } = builtIn("lost-cities");

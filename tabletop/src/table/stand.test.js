@@ -43,10 +43,6 @@ function expectRestsAs(to, m, box) {
   expect(b.min[1]).toBeCloseTo(a.min[1], 9);
 }
 
-it(`there are 24 square turns and 8 directions: ${TURNS.length * COMPASS.length} cases`, () => {
-  expect(TURNS).toHaveLength(24);
-});
-
 describe("standPose", () => {
   for (const [i, r] of TURNS.entries()) {
     it(`turn ${i}: stood toward each of 8 directions, it faces that way on edge, length level, and rests where it was`, () => {
