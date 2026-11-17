@@ -307,6 +307,9 @@ try {
     walking: (w) => ["walk", "station"].includes(dbg[w]?.local.get().body?.id),
     /** the body on top of view w's stack, and the stack */
     body: (w) => ({ ...dbg[w].local.get().body, stack: dbg[w].router.bodies().map((x) => x.id) }),
+    /** the Edit toggle beside the chip, to click, and whether view w holds the editor (a hand, not a body) */
+    editToggle: (w) => { const e = hosts[w].querySelector(".body-edit"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    editing: (w) => (dbg[w]?.local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** the body chip's rect, and its menu's item starting `label`, to click */
     chip: (w) => { const e = hosts[w].querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent }; },
     chipItem: (w, label) => { const e = [...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },

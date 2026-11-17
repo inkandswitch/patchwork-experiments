@@ -178,6 +178,9 @@ try {
     /** the world's clock running again, as the clock chip's ▶ does → its t */
     resume() { api().clock.resume(); return api().clock.t(); },
     body: () => dbg.local.get().body?.id ?? null,
+    /** does the view hold the editor, and the Edit toggle beside the chip (a hand, not a body) */
+    editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
+    editToggle: () => centre(host.querySelector(".body-edit")),
     /** the body chip and its menu's items, where they're drawn (centres), for the runner's clicks */
     chip: () => centre(host.querySelector(".body-chip")),
     menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
@@ -251,7 +254,7 @@ try {
     },
     /** the harbour: a weather of its own, water and a Sea, and her linked in live */
     harbour: () => pumping(async () => {
-      const H = emptyScene({ title: "Harbour", traits: { weather: { ...structuredClone(docs.boat.doc().traits.weather), ...HARBOUR_WEATHER } }, view: { grid: false, axes: false, start: { body: "edit", home: { position: [0, 30, 60], target: [0, 0, 0] } } } });
+      const H = emptyScene({ title: "Harbour", traits: { weather: { ...structuredClone(docs.boat.doc().traits.weather), ...HARBOUR_WEATHER } }, view: { grid: false, axes: false, start: { edit: true, home: { position: [0, 30, 60], target: [0, 0, 0] } } } });
       delete H.traits.weather.source;
       const base = { sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false };
       H.objects = {

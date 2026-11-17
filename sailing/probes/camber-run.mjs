@@ -103,8 +103,8 @@ async function dragPart(part, to) {
 
 try {
   check("page set up", (await loads("window.__ready === true", 30_000)) && (await P("errors")).length === 0, await P("errors"));
-  // the parts bin is a drawer tab opened from the toolbar, which is Edit's: the scene starts people in Edit
-  check("the scene starts people in Edit", (await loads("window.__p.body() === 'edit'", 10_000)), await P("body()"));
+  // the parts bin is a drawer tab opened from the toolbar, which is the editor's: the scene starts people holding it
+  check("the scene starts people holding the editor", (await loads("window.__p.editing()", 10_000)), await P("body()"));
   const partsBtn = (await loads("!!window.__p.tool('parts')", 10_000)) && (await P("tool('parts')"));
   if (partsBtn) await b.click(partsBtn.x, partsBtn.y);
   await loads("window.__p.bin().includes('sailing.mast')", 10_000);
@@ -296,16 +296,13 @@ try {
 
   // ─── aboard: on her deck, and the wheel ──────────────────────────────────
   {
-    // rigged: out of Edit (where a click selects her: scene/HISTORY.md, TOOLS Decisions 6) into Look, where a click comes aboard
-    const chip = await P("chip()");
-    if (chip) await b.click(chip.x, chip.y);
-    const lookItem = (await loads("!!window.__p.chipItem('Look')", 5000)) && (await P("chipItem('Look')"));
-    if (lookItem) await b.click(lookItem.x, lookItem.y);
-    check("done rigging, Look on the body chip", (await loads("window.__p.body() === 'look'", 5000)), await P("body()"));
-    // the last part dragged is still selected (a selection outlives the body: HISTORY.md, TOOLS Decisions 6), and attention is
-    // the selection if any (scene.use): Esc lets it go, so the look, not the mast, is what the use prompt follows
-    await b.key("Escape");
-    check("Esc lets the last part go: nothing selected", await until("window.__p.selected() == null", 1000), await P("selected()"));
+    // rigged: the editor put down (holding it, a click selects her: scene/HISTORY.md, Kernel step 1), so a click in Look comes aboard
+    const toggle = await P("editToggle()");
+    if (toggle) await b.click(toggle.x, toggle.y);
+    check("done rigging, the editor put down (Edit, beside the body chip), in Look", (await loads("!window.__p.editing() && window.__p.body() === 'look'", 5000)), await P("body()"));
+    // putting the editor down puts the last part dragged down too: attention is the selection if any (scene.use), so the
+    // look, not the mast, is what the use prompt follows
+    check("…and the last part with it: nothing selected", await until("window.__p.selected() == null", 1000), await P("selected()"));
     await b.click(...Object.values(await P("canvasCentre()")));
     check("a click comes aboard: on her deck, playing", await until(`window.__p.me()?.playing === true && window.__p.me()?.on === '${hull}'`, 5000), await P("me()"));
     // stand amidships, to starboard of the mast, looking forward

@@ -9,7 +9,7 @@
 // the look lands on, when it lands on the thing or something under it, else
 // its box) against the body's reach (the crew's: 2.5 m). So the boom over
 // the cockpit is in reach when it's over your head, however far its
-// gooseneck is; in Look or Edit (the orbit camera) everything is. Looked at from further off than the
+// gooseneck is; in Look (the orbit camera) everything is. Looked at from further off than the
 // body reaches (up to FAR), a station still
 // answers, greyed, with where to go to work it ("Sail · walk to the cockpit"),
 // or, when you're already at one of the sail's stations, which to take

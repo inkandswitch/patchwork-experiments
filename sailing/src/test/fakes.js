@@ -41,7 +41,7 @@ export function emptyScene() {
     assets: {},
     packages: [],
     clock: { running: true, t: 0 },
-    view: { units: "m", grid: true, axes: true, bounds: false, snap: true, start: { body: "edit" } },
+    view: { units: "m", grid: true, axes: true, bounds: false, snap: true, start: { edit: true } },
   };
 }
 

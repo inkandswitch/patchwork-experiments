@@ -66,7 +66,7 @@ try {
   const setup = await P("errors");
   c.check("the page mounts with no errors", setup.length === 0, setup);
   c.check("the weather extension runs", (await P("running()")).includes("weather"), await P("running()"));
-  c.check("the scene opens in Edit", (await P("body()")) === "edit", await P("body()"));
+  c.check("the scene opens holding the editor", (await P("editing()")) === true, await P("body()"));
 
   /** The view's ambients against the pure functions of the doc's trait, and the key light against the sun. */
   async function agree(label) {

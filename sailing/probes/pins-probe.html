@@ -218,10 +218,10 @@ try {
     sapi.clock.pause();
     dbg.s.view.select(null);
     await loaded(() => stageAt(ids.fitout)?.debug.host.instanceOf("joints") && stageAt(ids.acting)?.debug.host.instanceOf("joints"));
-    // F fixed where it is: the inspector's Fix at this version, in Edit, as a person does it
-    sapi.body.enter("edit");
+    // F fixed where it is: the inspector's Fix at this version, holding the editor, as a person does it
+    sapi.view.edit(true);
     const fixed = sapi.run({ ext: "scene.inspector", command: "fix-version", target: ids.fitout });
-    sapi.body.enter("look");
+    sapi.view.edit(false);
     await loaded(() => stageAt(ids.fitout)?.role === "pinned" && stageAt(ids.fitout)?.debug.host.instanceOf("joints"));
     ids.f = docs.f.url;
     ids.w = docs.w.url;
@@ -336,12 +336,12 @@ try {
       return ran;
     },
     renameF: (name) => apiOf("f").change((d) => (d.objects[ids.fCompanionway].name = name)),
-    /** the inspector's Follow latest / Fix at this version on the fit-out, in Edit, then back to Look */
+    /** the inspector's Follow latest / Fix at this version on the fit-out, holding the editor, then put down */
     version(command) {
       const sapi = apiOf("s");
-      sapi.body.enter("edit");
+      sapi.view.edit(true);
       const ran = sapi.run({ ext: "scene.inspector", command, target: ids.fitout });
-      sapi.body.enter("look");
+      sapi.view.edit(false);
       return ran;
     },
     fixPoint: () => JSON.parse(JSON.stringify(apiOf("s").fixPoint(ids.fitout))),

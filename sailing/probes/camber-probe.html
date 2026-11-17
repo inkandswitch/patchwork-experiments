@@ -130,6 +130,9 @@ try {
     chip: () => P.rectOf(".body-chip"),
     chipItem: (label) => P.rectOf([...host.querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)) ?? null),
     body: () => dbg.local.get().body?.id ?? null,
+    /** does the view hold the editor, and the Edit toggle beside the chip to click (a hand, not a body) */
+    editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
+    editToggle: () => P.rectOf(".body-edit"),
     /** a toolbar command's button (the toolbar is Edit's) */
     tool: (id) => P.rectOf(`.toolbar [data-command="${id}"]`),
     ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
