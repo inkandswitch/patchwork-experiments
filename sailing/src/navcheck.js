@@ -113,7 +113,7 @@ export function meets(index, q, y0, y1, r) {
 
 /**
  * Is there a triangle with a point over the open square (x0, x1) × (z0, z1) at a height in [ya, yb]?
- * (Open by the bake's 1e-9, as its `meetsOpen`: a triangle lying along the square's boundary, a
+ * (Open by the bake's 1e-9, as its `openPart`: a triangle lying along the square's boundary, a
  * wall or a top on a column line, holds nothing up inside it.)
  */
 export function supported(index, [x0, z0, x1, z1], ya, yb) {

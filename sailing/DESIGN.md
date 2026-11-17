@@ -2574,35 +2574,40 @@ triangles from:
 **Steps**:
 1. **Rasterise.** For each triangle and each column its plan bounds touch:
    - clip the triangle to the column's closed square (Sutherland–Hodgman);
-   - record the clipped polygon's `[ymin, ymax]`, and its kind: walkable
-     (`|n_y| ≥ cos slope`, either winding) or steep where the polygon meets
-     the column's *open* square, EDGE where it only touches the square's
-     boundary (a wall, or a box's top, lying on a column line). "Open" is
-     the square shrunk by the clip's own 1e-9, so a piece on a line is on
-     the boundary of both columns and inside neither.
+   - record the clipped polygon's `[ymin, ymax]`, and the same of its part
+     in the column's *open* square: the square shrunk by the clip's own
+     1e-9, so a piece lying on a column line (a wall, or a box's top) is on
+     the boundary of both columns and has no part inside either. Call such
+     a piece EDGE.
 
-   Then merge overlapping intervals per column, every kind alike. A wall
-   on a column line lands in both columns, conservatively: an EDGE piece is
-   an obstacle like any other.
-2. **Floors**, judged on the pieces that meet the open square alone. Let
-   `own` be the highest of their tops in the interval (none: no floor).
-   `own` is a floor if either:
-   - (a) a walkable triangle reaches `own`; the floor's plane is that
-     triangle's (the highest at the centre);
-   - (b) a walkable triangle's top lies within `step` below `own`: steep
-     stuff standing on a floor (a curb, a toe rail, a leaning cabin side
-     straddling a column). The floor is flat at `own`.
+   Then merge overlapping intervals per column on the closed ranges, every
+   piece alike. A wall on a column line lands in both columns,
+   conservatively: an EDGE piece is an obstacle like any other.
+2. **Floors**, judged on the pieces' open parts alone. Let `own` be the
+   highest open part's top in the interval (none: no floor). `own` is a
+   floor if either:
+   - (a) a walkable triangle's open part reaches `own`; the floor's plane
+     is that triangle's (the highest at the centre), clamped to its open
+     part's range;
+   - (b) a walkable triangle's open part tops out within `step` below
+     `own`: steep stuff standing on a floor (a curb, a toe rail, a leaning
+     cabin side straddling a column). The floor is flat at `own`.
 
-   So every floor is held up by a triangle that meets its open square, at
-   its height: the invariant B1 checks (navcheck's `supported` asks of the
-   open square). An EDGE piece's top is never a floor, which is what kept a
-   box whose side lay on a column line from making a cell at its height
-   in the column outside it. When an EDGE piece rises above `own` (the
-   column beside a lip, a crate or a wall on the line), the floor stays at
-   `own` and its `top` stays the interval's top: erosion (step 5) measures
-   a step against that, so the floor goes if the EDGE stuff rises more than
-   a step over it (a wall) and stays if not (a lip, a crate), exactly as
-   beside the same box 3 mm off the line.
+   Either way some open part reaches the floor at its height, so every
+   floor is held up by a triangle that meets its open square there, by
+   construction: the invariant B1 checks (navcheck's `supported` asks of
+   the open square). It holds however thin the part is: a wall on a line
+   whose foot leans 1e-8 into the column outside makes its floor (rule b)
+   at the sliver's top, 10% under the top only the line reaches. An EDGE
+   piece's top is never a floor, which is what kept a box whose side lay
+   on a column line from making a cell at its height in the column outside
+   it. When an EDGE piece rises above `own` (the column beside a lip, a
+   crate or a wall on the line), the floor stays at `own` and its `top`
+   stays the interval's top: erosion (step 5) measures a step against
+   that, so the floor goes if the EDGE stuff rises more than a step over
+   it and stays if not. Beside a box that is the box's own columns' doing
+   too; beside a zero-thickness fence on the line, with no columns of its
+   own, it is the floor's `top` alone that keeps the body a radius off it.
 
    Rule (b) is Recast's merge rule. It is what joins the side deck to the
    cabin top across her 4.7 cm of leaning wall. A stanchion (0.62 tall) or
@@ -2964,11 +2969,18 @@ bake's (step 2: a floor only where its triangle meets the column's open
 square), and every case passes; with the oracle's support check asked of
 the open square too, the old bake fails seven of them (the lip, stair,
 crate and the 30° ramp each way). `navmesh.test.js` pins the rule on its
-own: a box side on a 10 cm line or 3 mm off it × {1 cm lip, 15 cm stair,
-45 cm crate, 120 cm wall} × each side (32), and a 30° ramp's high end on
-the line or off it × each facing (8). In each, no kept cell outside the
-footprint is above the ground; the top is the off-line twin's, and beside
-a side a step high or less so is the ground.
+own, from both sides of the line: a box side on a 10 cm line or 3 mm out
+over it × {1 cm lip, 15 cm stair, 45 cm crate, 120 cm wall} × each side
+(32), and a 30° ramp's high end on the line or 3 mm out × each facing (8),
+each against its twin 3 mm in. On the line, no kept cell outside the
+footprint is above the ground and the top is the in-twin's (beside a side
+a step high or less, the ground too); 3 mm out, the row of columns the
+side reaches into holds a floor at its top where that is a step, and
+nothing else outside is raised. Then a zero-thickness fence on a line or
+3 mm off it × {lip, crate, wall} (6), a cage of 1.2 m fences on every line
+(nothing kept inside: erosion's fast path must not take a fenced column as
+plain), and a wall on a line leaning 1e-8 or 1e-6 into the column outside
+(its floor at the sliver's top, B1).
 
 **Static checks** on each baked hull. They run on the stock sloop in vitest
 (`sloop-navmesh.test.js`, triangles from `ship.js`), and on the camber hull
@@ -3062,7 +3074,12 @@ marathons.
   wide round it, unlike the same box 3 mm off the line. Question for the
   lead: is "the open square shrunk by 1e-9" the definition you want, or
   should "on the line" carry a coarser tolerance (say 1 µm) for meshes
-  authored in single precision?
+  authored in single precision? B1 holds either way (the floor is at the
+  open part's top, however thin), so this is about intent only: GLB
+  vertices sit ~1e-8 off a line at sloop scale, and at 1e-9 a sliver that
+  thin of a 30 cm wall or a crate's side holds up a floor in the column
+  outside, at its height there (a wall whose foot leans 1e-8 over the line:
+  0.27 m, under its 0.30 top).
 
 ### As built
 
@@ -3082,10 +3099,11 @@ it measured.
   range in the column** (`cells.lo`, `cells.hi`). So there is always a
   point of the triangle, in the feet's column, at the feet's height. That
   is what the oracle's support check tests: the feet within h + 2 mm above
-  a triangle *in their 5 cm column's open square* (a triangle touching it
-  only along a column line holds nothing up there: step 2). Coplanar triangles that tie for a
-  column's floor share the plane and join their ranges, so triangle order
-  can't matter (C9). Gradients are stored without −0.
+  a triangle *in their 5 cm column's open square* (one touching it only
+  along a column line holds nothing up there: step 2). The range is the
+  triangle's open part's, so that point is inside the open square. Coplanar
+  triangles that tie for a column's floor share the plane and join their
+  ranges, so triangle order can't matter (C9). Gradients are stored without −0.
 - **Sides carry `top`**: the highest a vault's feet may rise and keep its
   band clear. The march checks the band at the final rise in every column
   before the stop (else `to` is NONE), and the vault clamps `h` to
@@ -3112,7 +3130,8 @@ it measured.
   - A disc column with no alive floor fails f; per-row prefix sums answer
     that in 2K + 1 looks.
   - In a square window of "plain" columns, f passes outright. Plain means:
-    one alive floor with no EDGE piece above it (its `top` its own),
+    one alive floor with no EDGE piece above it (`edged` false: its `top`
+    its own),
     open sky, all four neighbours connected to it within
     δ = (step − slope·c√2)/(4K + 2) of its height.
 
