@@ -432,7 +432,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 | W5 | sailing reads the weather's wind; `sailing.weather` goes: sailing's `weather.js`, its extension and describes, and `ATMOSPHERE` deleted; `traits.js` names the weather's trait `weather` and the ambient `wind` (`WIND_AMBIENT`); parts and templates write `{ wind, from, seed }` (Decision 43); the Sea and Sloop parts bring `weather`; the `wind` convention documented here. Tables: the 48 weathers {wind 0/7/12 × from 0/90/235/300 × gust none/0.5 × seed 1/7} → the offer's fields (here, `weather.test.js`) and → `createWind` sampled exactly (sailing `sea-view.test.js`, through its stand-in, Decision 44), each field shown to reach her; no sailing extension, created on a stage, has an `ambient` (`index.test.js` for the sea's, `aboard.slow.test.js` for the ships'). Probes (`sailing-run`, `harbour-run`) with this package's build loaded: her wind is her weather's, alone, and the harbour's, linked (Decision 47). Publishers write `weather` and list this package (Decision 46) | done |
 | W6 | terrain: `terrain.sky` → `terrain.place` (`place.js`: the shore, shelter and grain, no ambient, no fields); `SKIES` (Ucluelet) and `SKY` (Cadboro) are this trait's sky fields; `placeWeather` writes each template's whole weather (place, 15:00 on 15 July on UTC−7, wind, sky); the template's `sky` option picks a preset, a sky it hasn't refused before anything is written. Tables: each template's trait literal, each Ucluelet sky, no terrain extension offering an ambient on either template's scene, the place object table; here, each template weather gives its old look exactly and Ucluelet's sun is within 1° of the old hand-set one (0.41°). Probes: publish-rvyc and publish-ucluelet `--dry-run` check the world's atmosphere and wind are the weather's, exactly the old looks, and the same for a viewer without terrain. Run 2026-11-17: publish-rvyc 50/50; publish-ucluelet 65 and 66 of 67 on two runs, every weather, sky, shore, grain and exposure check passing; its two failures are on scene-stage too (a control run there without this package: the same 1.44 stripe ratio at low-town and the home view over its 22.7 ms budget while other lanes ran suites), so not this step's | done |
 | W7 | end-to-end local probe `probes/world-probe.html` + `world-run.mjs`: the built scene, sailing, water, weather, joints and traversal plugins on a manual clock; a sloop made by sailing's "Ship at sea" template, her doc's `weather` dialled one change at a time, every expectation this package's own pure functions of the doc (Decision 53). (a) 6, 12, 18, 21 and 23 on 15 July at Cadboro Bay: the world's atmosphere is `atmosphereOf` exactly, the sun W1's to 1e-9 (and node's), the key light along it at intensity × exposure, the viewport's sky and the water's sun and sky the atmosphere's; at 23 (−13.6°) no sun, no key light, the water's sun at 0, the exposure the night band's (the wiring: `BANDS`' value is W2's tables', Decision 53). (b) noon cover 0 → 1: the sky's top changes in the atmosphere, viewport and water; uClouds (0, 0, 1, 1) → the clouds field; shadows off in the atmosphere and the key light, uScatterGain 1 → 0.35; a 300 m fog: no deck, the scene's fog the horizon's colour. (c) 10 m/s from 270, gustiness 0.4 (not the shared 0.3 default): her stage's wind ambient is the weather's, seed included, and her sea's wind is those numbers; held at t = 0 on seed 4242 until here, she sails 60 s of her clock (220.1 m) and the true wind at her mast, sampled on physics' grid, averages 10.18 m/s from 269.2° (samples 9.26 to 11.73), the same in every run (her track to the last digit, the means to 1e-9). (e) Ucluelet 15 July 2025 15:00, Fetch for this time on a fake fetch answering the committed archive fixture: one request (the fixture's URL), one change to the weather, `source` written, provenance fetched, a notice, the ambients the fetched weather's. (d) her doc linked live, turned 30°, into a harbour whose weather differs in every field of the wind (5 m/s from 90, seed 7, gustiness 0.6) and the sky (09:00, cover 0.6): the world's wind and sky are the harbour's, her linked stage's sailing reads the harbour's whole wind ambient (not its own), and her sea's wind turned back into the world is 5 from 90, gustiness 0.6. Edit is entered by the body chip's menu, Fetch by its toolbar button. Run 2026-11-17 on scene-stage with N6 merged (Chrome, one hold each): 80 of 80, three times. Teeth: one run with three mutations of the built dists (water's `scatterGain` made 1, the night band's exposure 0.5, sailing's sea ignoring the ambient's gustiness) turned exactly six checks red (74 of 80): (b)'s scatter check, hour 23's settle, atmosphere and exposure checks, and (c)'s and (d)'s gustiness checks ((c)'s passes that mutation at the plan's gustiness 0.3, the default); the dists restored after. Screenshots (dawn, noon, afternoon, dusk, night, overcast, fog, fetched, harbour) are for the lead (Questions 8 and 16). | done |
-| W8 | republish every boating example with weather; swap links | |
+| W8 | republish every boating example with weather; swap links. The lane's part is done: every boating publisher lists this package and writes `weather` where its doc has one, and the dry rooms none (Decision 54's table). The last gap was Fitting out: its boat, made by the start screen's "Ship at anchor", carries the template's weather, and `publish-fitout` didn't list this package, so its dry run refused to publish ("the boat calls for plugins of exactly its stated packages": the weather's plugin answered with no package). It now lists `weather` and checks S's weather is the template's air and F and W have none. Dry run 2026-11-17 on lane/weather (package URLs from the main checkout's syncs, a stand-in URL for this package): 13 of 14 before, 15 of 15 after. The sync, the republish in Decision 54's order and the swap are the integrator's, on scene-stage once N11 and N7 have merged (Decision 54). | lane part done; publish waits |
 | W9 | real-Patchwork checks (sun, sky, wind at the boat, a fetch) | |
 
 ## Decisions
@@ -1017,12 +1017,12 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     (`publish-aboard`) and the Harbour (`publish-harbour`) list `weather`
     with the rest; the Breezy pavilion (`publish-model-room --weather`)
     lists `weather` instead of `sailing`, which it listed only for the
-    weather extension. They cannot run until W8 syncs this package (its
-    pushwork URL), and W8 runs them. `publish-fitout` writes a weather
-    through sailing's template, but lane/n11 is changing it, so W8 adds
-    `weather` to its list after n11 merges. The harbour still turns each
-    boat by her weather's `from` less its own (WATER Decision 22), now
-    read as `weather.from`. *Decided unattended (2026-11-16, lane/weather),
+    weather extension. `publish-fitout` writes a weather through sailing's
+    template too, and lists `weather` since W8 (Decision 54). None can
+    publish until this package is synced (its pushwork URL); the
+    integrator syncs it and runs them (Decision 54). The harbour still
+    turns each boat by her weather's `from` less its own (WATER Decision
+    22), now read as `weather.from`. *Decided unattended (2026-11-16, lane/weather),
     for the lead.*
 47. **The probes load this package's build and check the boat's wind is
     its offer.** Every sailing probe page that loads water's build loads
@@ -1142,6 +1142,32 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     her in Look, so the probe goes into Edit as a person does, by the
     body chip's menu, before Fetch. *Decided unattended (2026-11-17,
     lane/weather), for the lead.*
+54. **Which examples carry a weather, and when they are republished.**
+    Every boating publisher writes `weather` where its doc has one and
+    lists this package there; the dry rooms carry none (the plan's rule:
+    indoors, and a linked world brings its things, not its weather).
+    Fitting out was the gap: its boat, made by the start screen's Ship at
+    anchor, carries the template's weather, so `publish-fitout` now lists
+    `weather` and checks that S's is the template's air and F's and W's
+    none.
+
+    | Example | Publisher | `weather` | Lists `weather` |
+    |---|---|---|---|
+    | Ship at sea, Ship at anchor | `publish-ship` (`--anchor`) | the template's air: Cadboro Bay by the defaults | yes |
+    | Lost Cities aboard | `publish-aboard` | the same | yes |
+    | Fitting out | `publish-fitout` | the same, on S; F and W none | S yes |
+    | Cadboro Bay | `publish-rvyc` | the template's fair afternoon, 4 from 235 | yes |
+    | Ucluelet | `publish-ucluelet` | Ukee grey, 5 from 300 | yes |
+    | Harbour | `publish-harbour` | `{ wind, from, seed }`: Cadboro Bay | yes |
+    | Model room, Model basin, the basin mashup | `publish-model-room`, `publish-basin`, `publish-links` | none (the basin publisher refuses a trait; the room writes `weather` only with `--weather`, the optional Breezy pavilion) | no |
+
+    They are published once, by the integrator (who alone syncs), after
+    N11 and N7 have merged into scene-stage: both change what is
+    republished. Cadboro Bay and Ucluelet wait as well for the lead's
+    answer to N7's open question (COMPOSITION.md, Decisions N7 6): a
+    republish renders the terrain afresh, which would answer it. The run
+    itself is in the lane's handoff, not here. *Decided unattended
+    (2026-11-17, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -1345,3 +1371,11 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     only read once. Default: drop the wind from the words, in sailing,
     when the lead says (this lane doesn't touch sailing's template for
     prose).
+17. `publish-aboard` always makes a new games doc G, so republishing Lost
+    Cities aboard drags four more docs after it: the Quiet games room
+    (`publish-office --game G`), Games night, and N7's two mashups of the
+    room, each republished and swapped. A `--game G` on `publish-aboard`
+    (link an existing G instead of making one), like `publish-office`'s,
+    would end the cascade. It isn't added here: lane/n11 rewrites that
+    publisher, and the two already conflict. Default: add it in sailing
+    after N11 merges, before W8's republish.
