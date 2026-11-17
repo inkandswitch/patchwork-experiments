@@ -2,7 +2,7 @@
 // Two ways, the two ways a table is made:
 //
 //   node probes/publish-table.mjs [--sync wss://…] [--settle 8000] [--dry-run]
-//   node probes/publish-table.mjs --template lost-cities|santorini|dominoes-2 [--sync …] [--dry-run] [--show] [--shots <dir>]
+//   node probes/publish-table.mjs --template lost-cities|santorini|dominoes [--players 2|3|4] [--sync …] [--dry-run] [--show] [--shots <dir>]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -40,12 +40,16 @@
 // - nothing failed to load (in either view, once B is there), and the page
 //   logged no errors.
 // What differs between games is data (TABLES, below), not branches. Draw
-// Dominoes for two (dominoes-2) deals nothing (each player draws), so for it:
-// - the table lays 2 seats, and the boneyard's 28 tiles are kept by the
-//   joint keeper on 28 slots of one container;
-// - with A and B seated, the first joint shuffle reaches every tile (each
-//   shuffled exactly once, nothing under way) and nothing is dealt: no
-//   tile in a rack, no face to either player;
+// Dominoes is one template whose form says how many play (--players, 2 by
+// default: the start screen's form is set to it before the click). It
+// deals nothing (each player draws), so for it:
+// - the table lays a seat per player, and the boneyard's 28 tiles are kept
+//   by the joint keeper on 28 slots of one container;
+// - for two, with A and B seated, the first joint shuffle reaches every
+//   tile (each shuffled exactly once, nothing under way) and nothing is
+//   dealt: no tile in a rack, no face to either player; for more, with
+//   only A and B seated the deck waits for every seat (by its own state:
+//   both joined, still waiting), so nothing is shuffled or dealt;
 // - neither view veils a tile: all 28 are backs to both.
 // Then (unless --dry-run) it publishes the table as the template left it
 // (before anyone sat): its files, its deck and the scene, each made anew on
@@ -55,9 +59,11 @@
 // the joint keeper's (a `secure-deck`, the card-table package's). Setting up
 // writes it as plain data, waiting for players: the encrypted shuffle
 // happens later, in the seated players' own browsers, so nothing here needs
-// WebCrypto. The published scene lists the four packages it is made of:
-// the scene's, the seats', tabletop's (hands and cards) and card-table's
-// (the keeper). A table with no deck (Santorini) lists no keeper.
+// WebCrypto. The published scene lists the packages it is made of, exactly
+// (the stage takes off a listed package nothing in it calls for): the
+// scene's, the seats' when it has seats, and with a deck tabletop's (hands
+// and cards) and card-table's (the keeper). A table with no deck
+// (Santorini) lists neither.
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -82,18 +88,19 @@ import { packageProblems, pushworkUrl, scenePackages, scenePatchwork, withPackag
 
 // A published table names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the seats (where anyone sits at it), the table's own, and the
-// keeper's. In the browser the stage works these out from the registry;
-// here they're stated.
-const packagesOf = ({ seated }) => ["scene", ...(seated ? ["seats"] : []), "tabletop", "card-table"];
-const PACKAGES = packagesOf({ seated: true });
+// the scene, the seats (where anyone sits at it), and with a deck the
+// table's own and the keeper's. In the browser the stage works these out
+// from the registry; here they're stated, and --template checks them
+// against the stage's.
+const packagesOf = ({ seats = 0, deck = null }) => ["scene", ...(seats > 0 ? ["seats"] : []), ...(deck ? ["tabletop", "card-table"] : [])];
+const PACKAGES = packagesOf({ seats: 2, deck: "deck" });
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
 );
 // It publishes by default, so a flag it doesn't know (--help, a typo of
 // --dry-run) stops it here, before any repo exists, with the usage above.
-const KNOWN = new Set(["sync", "settle", "dry-run", "template", "show", "shots"]);
+const KNOWN = new Set(["sync", "settle", "dry-run", "template", "players", "show", "shots"]);
 const unknown = Object.keys(args).filter((k) => !KNOWN.has(k));
 const stray = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--") && args[all[i - 1].slice(2)] === a));
 if (unknown.length || stray.length) {
@@ -107,6 +114,7 @@ const DRY = !!args["dry-run"];
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 
 const TEMPLATE = typeof args.template === "string" ? args.template : null;
+const PLAYERS = Number(args.players ?? 2);
 
 // What each template's table must be, for --template's checks:
 //   seats  how many seats it lays (A and B sit in the first two)
@@ -117,13 +125,18 @@ const TEMPLATE = typeof args.template === "string" ? args.template : null;
 //          neither view may veil one
 //   hand   how many faces reach each player once both sit (0: nothing is
 //          dealt, and no piece lies in a hand)
+//   params what the template's form is set to before the click
 const TABLES = {
   "lost-cities": { seats: 2, deck: "deck", piece: "card", count: null, hand: 8 },
   santorini: { seats: 3 },
-  "dominoes-2": { seats: 2, deck: "boneyard", piece: "tile", count: 28, hand: 0 },
+  dominoes: { seats: PLAYERS, deck: "boneyard", piece: "tile", count: 28, hand: 0, params: { players: PLAYERS } },
 };
 if (TEMPLATE && !TABLES[TEMPLATE]) {
   console.error(`no template ${JSON.stringify(TEMPLATE)}: one of ${Object.keys(TABLES).join(", ")}`);
+  process.exit(2);
+}
+if (args.players != null && (TEMPLATE !== "dominoes" || ![2, 3, 4].includes(PLAYERS))) {
+  console.error("--players is Draw Dominoes' (--template dominoes): 2, 3 or 4");
   process.exit(2);
 }
 
@@ -192,11 +205,11 @@ const registry = async (type) => {
 };
 // the decks' containers and the seats' owner first, so the scene never names one that isn't there;
 // a published example is made with everything, so any warning is a failure
-const made = await prepareTable({ repo, registry }, layout);
-const { binds, kinds } = made;
-if (made.notes.length) throw new Error(`the table was made short: ${made.notes.join(" ")}`);
+const prepared = await prepareTable({ repo, registry }, layout);
+const { binds, kinds } = prepared;
+if (prepared.notes.length) throw new Error(`the table was made short: ${prepared.notes.join(" ")}`);
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
-writeTable(table, layout, made);
+writeTable(table, layout, prepared);
 // each deck's container, as its cards name it
 const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
 const deckUrls = Object.fromEntries(Object.keys(decks).map((deckId) => [deckId, binds[deckId](0)]).map(([deckId, t]) => [deckId, Object.values(t)[0].by]));
@@ -260,7 +273,7 @@ async function fromTemplate(gameId) {
   const ROOT = resolve(PKG, "..");
   for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
   // the packages this template's table is made of: the seats' only where anyone sits at it
-  const PACKAGES = packagesOf({ seated: TABLES[gameId].seats > 0 });
+  const PACKAGES = packagesOf(TABLES[gameId]);
   const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-template"));
   const id = `tabletop.${gameId}`;
   // where each built package is published (its pushwork URL), so the page
@@ -275,7 +288,7 @@ async function fromTemplate(gameId) {
     }
   }
   const folderOf = (url) => Object.keys(urls).find((dir) => urls[dir] === url) ?? url;
-  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}&urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
+  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}&params=${encodeURIComponent(JSON.stringify(TABLES[gameId].params ?? {}))}&urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
   // b.stop() exits the process; this keeps it alive until the publish is done
   const done = (code) => b.stop(code);
   const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -306,16 +319,17 @@ async function fromTemplate(gameId) {
     check(`every piece not fixed to the table carries scene.carry (${d.loose})`, d.loose > 0 && d.carried === d.loose, { loose: d.loose, carried: d.carried });
     check(`A lands ${lands === "Look" ? "in Look" : "watching from a seat"}`, await until(`bodyLabel('a') === ${JSON.stringify(lands)}`, 20_000), await P("bodyLabel('a')"));
     // What the table needs is the stage's to say, not this script's: A's stage
-    // lists the package of every plugin the scene calls for (and of the
-    // template it ran) and names the scene package as the suggested import.
-    // Each must be one this script states, or the published table would ask
-    // for a package nobody said it uses.
+    // lists the package of every plugin the scene calls for and names the
+    // scene package as the suggested import. They must be exactly what this
+    // script states: one more and the published table would ask for a
+    // package nobody uses (and lose it on the first writable visit), one
+    // fewer and it wouldn't ask for one it needs.
     const stated = PACKAGES.map((dir) => urls[dir]);
     const listedAll = await until("packages('a') && ((k) => k.suggested !== null && k.answering.length > 0 && k.answering.every((p) => p.importUrl && k.listed.includes(p.importUrl)))(__p.packages('a'))", 10_000);
     const pk = await P("packages('a')");
     check(
-      `A's stage lists the package of every plugin the table calls for, each one of ${PACKAGES.join(", ")}, and names the scene package as its suggested import`,
-      listedAll && pk.listed.every((u) => stated.includes(u)) && pk.suggested === urls.scene,
+      `A's stage lists the package of every plugin the table calls for, exactly ${PACKAGES.join(", ")}, and names the scene package as its suggested import`,
+      listedAll && pk.listed.every((u) => stated.includes(u)) && new Set(pk.answering.map((p) => p.importUrl)).size === stated.length && stated.every((u) => pk.answering.some((p) => p.importUrl === u)) && pk.suggested === urls.scene,
       { answering: pk.answering.map((p) => `${p.id} ← ${p.importUrl ? folderOf(p.importUrl) : "nowhere"}`), listed: pk.listed.map(folderOf), suggested: folderOf(pk.suggested), stated: PACKAGES }
     );
     snapshot = await P("snapshot()");
@@ -339,8 +353,20 @@ async function fromTemplate(gameId) {
       await P(`pick('b', ${JSON.stringify(seated[1])})`);
       const viewers = await P("viewers");
       check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
+      // a table whose players shuffle between them, with seats left empty: the shuffle waits for every seat
+      if (deck && seats > 2) {
+        // the deck's own state, not an absence: A and B have joined it (so each
+        // one's keeper has stepped with the open seats in view) and it is waiting,
+        // nothing shuffled; and it still is, a while after both joined
+        const waiting = `shuffle() !== null && ((s) => s.phase === 'waiting' && s.participants === 2 && s.op === null && s.epochs.length === 0)(__p.shuffle())`;
+        const joined = await until(waiting, 60_000);
+        await b.rest(3000);
+        const where = await P("where()");
+        const inHands = Object.entries(where).filter(([at]) => at !== "table").reduce((n, [, ids]) => n + ids.length, 0);
+        check(`with 2 of ${seats} seated the deck waits for every seat: A and B joined, nothing shuffled or dealt, no face to either player`, joined && (await P(waiting)) && inHands === 0 && (await P("faces('a')")).length === 0 && (await P("faces('b')")).length === 0, { shuffle: await P("shuffle()"), inHands });
+      }
       // a table with a deck: its first shuffle, and what reaches each hand
-      if (deck) {
+      else if (deck) {
         // the first shuffle, done: every counted piece shuffled exactly once, by every seat, nothing under way
         const shuffled = count == null ? "true" : `((s) => !!s && s.phase === 'playing' && s.op === null && s.queue === 0 && s.participants === ${seats} && s.epochs.length === ${count} && s.epochs.every((e) => e === 1))(__p.shuffle())`;
         const playing = await until(`phase() === 'playing' && ${shuffled} && __p.faces('a').length === ${hand} && __p.faces('b').length === ${hand}`, 120_000);

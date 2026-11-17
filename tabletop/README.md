@@ -30,8 +30,8 @@ from **Lost Cities**, **Santorini** or **Draw Dominoes** on its start screen
   a rack for each player where a tile stands on edge facing them: they see
   its face, everyone else its back (as one stood up on the table in front of
   them does: U, playing without a rack). Wash the boneyard (W), draw from it
-  (D) as often as you like, lay a tile flat (U) and carry it into the line face
-  up, Q / E to turn it (a double crosswise; the line turns at the felt's
+  (D) as often as you like, carry a tile out of your rack into the line (it
+  goes down flat, face up, in one move), Q / E to turn it (a double crosswise; the line turns at the felt's
   edge by hand), and at the end lay your hand face up for everyone
   (right-click). Nothing deals: 7 tiles each, or 6 with four, is the
   players' to draw. The art (ivory tiles, black pips, a bar with a brass
@@ -48,7 +48,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `tabletop-game` | a game (listed) |
 | `patchwork:tool` | `tabletop-game` | its page: about, pieces, set up a table, the tables set up so far, the game as JSON (checked against the format before it's kept) |
 | `tabletop:game` | `santorini`, `lost-cities`, `draw-dominoes-2`, `-3`, `-4` | the games, as data (`games/*.json`): each loads to the game itself |
-| `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes-2`, `-3`, `-4` | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
+| `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes` (params: `players` 2, 3 or 4) | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
 | `scene:extension` | `tabletop` | what a table's pieces do: hands (private zones), cards, Shuffle, Draw, Wash, Stand on edge / Lay flat, Lay my hand face up, and who may see what, as the stage's `audience` policy: hands and face-up cards (Tables, below). Its metadata says `tables: "tabletop-game"`: its module's `setUp(ctx, gameId, options)` lays a registered game out from any package's template or part |
 | `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.table`, `tabletop.lost-cities`, `tabletop.dominoes-2`, `-3`, `-4` | the editor's parts bin, under "Tabletop" (Parts, below) |
 
@@ -79,7 +79,7 @@ registered as a `tabletop:game` plugin, from this package or any other:
 
 The game page lists every registered game; starting from one copies it into
 the doc, and from then on the doc is the game: editing it edits this copy
-only. A template or part for it is `template.js`'s `template(id)` or
+only. A template or part for it is `template.js`'s `template(id)` (or `template(params => id)`, a game picked by the template's params) or
 `parts.js`'s `gamePart(id)` here, or, from another package, the `tables`
 convention (GAME-FORMAT.md §8). Or paste a game into any game page's
 Definition: it is checked against the format (`contract/v1/validate.js`)
@@ -280,8 +280,18 @@ Over one standing anywhere (yours, someone else's, or one knocked over on
 the table) it's **Lay flat**: face up, resting where it was; anyone can knock
 a tile over, and one in someone's hand stays in it, so stays theirs. A
 rack's places hold tiles standing (below), so a
-tile drawn with D arrives standing; one carried into your rack by hand turns
-face up as it arrives, as a card does, and U stands it.
+tile drawn with D arrives standing, and so does one carried into a free
+place of a rack by hand: the place's connector has a whole frame, and the
+scene's carry puts a piece into it (scene/STAGE.md "Landing"). A tile taken
+out of a hand (your rack) is being played: carried anywhere but a place
+that stands it, it goes down lying flat. The table's `landing` answers
+`flat: true` for a piece thick enough to stand that the doc still has in a
+hand (a carry writes only where it ends), and face up in your own hand as
+for a card. So a tile carried out of your rack onto the felt is played face
+up in one move, and one carried with F pressed on the way goes down face
+down. A tile taken from anywhere else goes down as it is carried: one stood
+on the felt in front of you with U (no rack) stays standing, and yours
+alone, however you move it.
 
 **Lay my hand face up** (the menu and inspector only, over your hand or
 anything in it, or a tile standing facing it: no key, so a slip doesn't show
@@ -296,19 +306,22 @@ whole frame (`snapPoints: [{ position, rotation: [x, y, z], tags }]`, Euler
 XYZ) holds what's drawn into it in that frame: a domino rack's places are
 a quarter turn about Y and then about X (face toward the rack's +Z, length
 along it). Draw puts the piece's footprint middle on the place and its
-underside on it, whatever its frame. The scene keeps only a connector's yaw
-when it reads a GLB (its hand needs no more to snap), so pieces.js writes the
-whole frames again under the GLB's extras `"tabletop.slots"`, and
-`src/table/slots.js` reads those where they are. A slot takes a piece by its
+underside on it, whatever its frame. The scene keeps a connector's whole
+frame when it reads a GLB (`content(id).extras.connectors[].rotation`), and
+`src/table/slots.js` reads it from there. A slot takes a piece by its
 tags: a domino's are `["domino"]`, a card's `["card"]`, so each fits only its
 own places, and Draw looks for a free one for the piece being drawn.
 
-**Telling the others.** When someone shuffles or draws, everyone else
-gets a notice ("Ana shuffled “Lost Cities: Deck” (44)"), sent with the
-scene's `api.send`: only `shuffled { n, of }` (a count and the container's
-title), `drew { n, noun? }`, `washed { n, of?, noun? }` and `showed { n,
-noun? }` are heard, never which card is which (`noun` is the piece's public
-name, "domino", where it isn't "card"). (Sitting down is told by the seats'
+**Telling everyone.** When someone shuffles, draws, washes or lays their
+hand face up, they and everyone else get a notice ("You shuffled “Lost
+Cities: Deck” (44)" here, "Ana shuffled “Lost Cities: Deck” (44)" there),
+told with the scene's `api.tell` (scene STAGE.md "Telling": the stage
+checks the shape and says it; the table names a peer as the roster does,
+their contact, else their seat, else "Someone"). They are told on arrival,
+unchecked: the counts name no card in the doc to wait for. Only `shuffled { n, of }` (a count and the container's title),
+`drew { n, noun? }`, `washed { n, of?, noun? }` and `showed { n, noun? }`
+are told, never which card is which (`noun` is the piece's public name,
+"domino", where it isn't "card"). (Sitting down is told by the seats'
 owner.)
 
 What peers have to trust: these are a peer's word, and none is checked: "Ana
@@ -429,9 +442,12 @@ nothing (Edit, from the body chip, is where a click selects).
 ### Templates
 
 An empty scene's start screen offers **Lost Cities**, **Santorini** and
-**Draw Dominoes** for 2, 3 or 4 (`src/table/template.js`). How many play is
-chosen there, since a table whose players shuffle between them (the joint
-keeper) waits for every seat to be taken. One click loads the game by its id
+**Draw Dominoes** (`src/table/template.js`). How many play (2, 3 or 4) is
+chosen there, in the Players field under its button (the template's
+`params`, scene STAGE.md "Templates"), since a table whose players shuffle
+between them (the joint keeper) waits for every seat to be taken. It is one
+template; each count is its own game, as data (`draw-dominoes-N`), and the
+template's `game` picks it from `players`. One click loads the game by its id
 from the registry, checks it against the format, files each kind's GLB with
 `ctx.file` (above), makes the containers and bags, and then one change
 writes the table; the stage then starts its maker where the doc says (play,
@@ -525,8 +541,8 @@ are none.
 | `probes/privacy.mjs`, `probes/privacy-probe.html` | what a kept card looks like to each of two people (`--part secure` or `plain`): its back face down or in the other's hand, its face when it's theirs, the stage's veil while a card turned toward them has its keys on their way; that nothing is made or written to hide anything; the plain keeper's HUD line |
 | `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in walking body (`probe-walk`): Sit as Player 1 (the seat body over it), Stand up (popped: walking on from the seat's eye), Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
 | `probes/table.mjs`, `probes/table-probe.html` | two players arriving at a Lost Cities table (watching from a seat: view.start) whose deck a plain keeper keeps, then seated: the use prompt over the pile (Flip, Shuffle) and S shuffling the container and telling B; a card squaring onto a tray slot and a pawn not; seated still, the Parts tab from the toolbar, a pawn dragged out of the bin |
-| `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`, or `dominoes-2`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, that its stage lists the package of every plugin the table calls for (the page registers each built package from its pushwork URL, as a host does) and each is one the script states, play, seats and the jointly kept deck reaching play (Lost Cities: 8 faces each; Draw Dominoes: all 28 tiles shuffled once, none dealt, no veil), and publish the table it made. What each game's table must be is data (`TABLES`) |
-| `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen, both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A lays two flat (U) and carries them into the line (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again; A carries a standing tile out of the rack onto the felt and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |
+| `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`, or `dominoes`, with `--players 2|3|4`: the form is set to it before the click; for 3 or 4 the shuffle is checked to wait, since only A and B sit), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, that its stage lists the package of every plugin the table calls for (the page registers each built package from its pushwork URL, as a host does) and each is one the script states, play, seats and the jointly kept deck reaching play (Lost Cities: 8 faces each; Draw Dominoes: all 28 tiles shuffled once, none dealt, no veil), and publish the table it made. What each game's table must be is data (`TABLES`) |
+| `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen (its Players field set to `--players`, then its button), both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A carries two standing tiles straight out of the rack into the line, each going down flat and face up in one move (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again, and carries a boneyard tile into a free place of B's rack, where it stands facing B; A carries a standing tile out onto the felt with F on the way (face down), stands it with U and carries it 4 cm on, where it goes down still standing, and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |
 | `probes/chrome-guard.mjs`, `probes/chrome-guard-check.mjs` | Chrome never outlives the probe driver that started it (a watchdog; copied, the same in every package), and a finite check of it |
 | `probes/scene-packages.mjs` | for the publish script: the suggested import and `packages` of a published scene, from each package's pushwork URL (copied, the same in every package) |
 | `src/test/stand-ins.js` | for tests: stand-ins for whoever owns seats and for keepers, made the way the conventions say and naming no real package |
@@ -536,10 +552,6 @@ are none.
 
 ## Not yet
 
-- A tile carried out of your rack standing goes down standing: the scene's
-  `landing` can ask only for face up, so laying it flat to play it is U and
-  then a carry (or a carry and then U). A stage-level "lay flat as it lands"
-  would make it one move.
 - Scoring, turns, who sets the first double, matching ends: the players'.
 
 - `shows` and `screens` as separate switches on a hand (a screen that hides

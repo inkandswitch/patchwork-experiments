@@ -12,6 +12,7 @@ import { fakeDrop } from "../test/fakes.js";
 import { SEATS, bagPlugin, keeperPlugin, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
 import { game as builtIn, gamePlugins } from "../test/games.js";
 import { emptyScene } from "../empty-scene.js";
+import { plugins } from "../index.js";
 import { CASES, cardsGame } from "../test/table-notes.js";
 
 /** What's installed where a table is usually made: whoever owns seats, a keeper of each kind (stand-ins), and the games. */
@@ -209,12 +210,14 @@ describe("in a real automerge change", () => {
   });
 });
 
-describe("the Draw Dominoes templates", () => {
+describe("the Draw Dominoes template", () => {
+  // the one registered template, run with each count its form offers (the stage hands create its coerced params)
+  const dominoes = plugins.find((p) => p.type === "scene:template" && p.id === "tabletop.dominoes");
   for (const n of [2, 3, 4]) {
-    it(`(${n} players) lay the felt, ${n} racks, ${n} seats and the 28 tiles face down, kept by a keeper whose players shuffle, in one change, in play`, async () => {
+    it(`(players: ${n}) lays the felt, ${n} racks, ${n} seats and the 28 tiles face down, kept by a keeper whose players shuffle, in one change, in play`, async () => {
       const doc = emptyScene();
       const { ctx, calls } = fakeDrop(doc, { registries: installed() });
-      await template(`draw-dominoes-${n}`).create(ctx);
+      await (await dominoes.load()).create(ctx, { players: n });
       expect(calls.changes).toBe(1);
       // one file per look: the racks are one kind, and the art is the same whatever the count
       const two = builtIn("draw-dominoes-2");

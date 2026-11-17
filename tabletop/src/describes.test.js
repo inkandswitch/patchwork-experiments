@@ -63,8 +63,8 @@ describe("tabletop: describes its traits", () => {
 describe("tabletop: templates", () => {
   const templates = plugins.filter((p) => p.type === "scene:template");
 
-  it("offers Lost Cities, Santorini and Draw Dominoes for 2, 3 and 4, as metadata the start screen can list without loading anything", () => {
-    expect(templates.map((t) => t.id)).toEqual(["tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]);
+  it("offers Lost Cities, Santorini and Draw Dominoes, as metadata the start screen can list without loading anything", () => {
+    expect(templates.map((t) => t.id)).toEqual(["tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes"]);
     for (const t of templates) {
       const { load, ...meta } = t;
       expect(typeof load).toBe("function");
@@ -73,7 +73,13 @@ describe("tabletop: templates", () => {
     }
   });
 
-  it("each loads a module with create(ctx)", async () => {
+  it("only Draw Dominoes takes params: how many play, 2, 3 or 4 (2 untouched), each a registered game's count", () => {
+    const games = new Set(plugins.filter((p) => p.type === "tabletop:game").map((g) => g.id));
+    expect(templates.map((t) => t.params ?? null)).toEqual([null, null, [{ key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 }]]);
+    for (const { value } of templates[2].params[0].options) expect(games.has(`draw-dominoes-${value}`)).toBe(true);
+  });
+
+  it("each loads a module with create(ctx, params)", async () => {
     for (const t of templates) expect(typeof (await t.load()).create).toBe("function");
   });
 });
