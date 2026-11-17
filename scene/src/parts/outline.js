@@ -48,7 +48,6 @@ import { enterState } from "./focus.js";
 export function linkMark(link) {
   if (!link) return null;
   if (link.role === "acting") return { text: "linked", title: "Another scene, placed here live: Enter to select and edit what's in it" };
-  if (link.role === "mirror") return { text: "shown again", title: "The same live scene, shown a second time: Enter goes inside where it's live" };
   if (link.role === "pinned") return { text: "fixed", title: "Another scene, fixed at a version: Follow latest (the inspector) to go inside" };
   return { text: "closed", title: `Another scene that isn't open here (${link.reason ?? "closed"})` };
 }

@@ -1,7 +1,7 @@
 // One world's ambients (W2), and the atmosphere through them (W9): every
 // stage's api.ambient(name) is the outermost stage's stacked value or null,
 // `mine` exactly at the outermost, whatever the links' shape (alone, linked,
-// mirrored, pinned, two deep), whatever each doc offers (nothing, one
+// linked twice, pinned, two deep), whatever each doc offers (nothing, one
 // extension, two extensions in their running order), wherever the focus is
 // and whatever the viewer's body. Nothing a linked doc offers reaches its
 // host or a sibling; the viewport's atmosphere is the outermost's.
@@ -65,7 +65,7 @@ function expected(world) {
 }
 
 describe("one world's ambients (W2): the outermost's, everywhere in the view", () => {
-  const SHAPES = ["alone", "linked", "mirrored", "pinned", "two deep"];
+  const SHAPES = ["alone", "linked", "linked twice", "pinned", "two deep"];
   for (const shape of SHAPES)
     for (const [hostOffers, hostTraits] of Object.entries(OFFERS))
       it(`${shape}, the outermost offering ${hostOffers}; every linked doc offering both`, async () => {
@@ -83,7 +83,7 @@ describe("one world's ambients (W2): the outermost's, everywhere in the view", (
               ? {}
               : shape === "linked"
                 ? { objects: { L: link(G.url) }, order: ["L"] }
-                : shape === "mirrored"
+                : shape === "linked twice"
                   ? { objects: { L: link(G.url), M: link(G.url, { transform: { position: [5, 0, 0], rotation: [0, 0.4, 0], scale: 1 } }) }, order: ["L", "M"] }
                   : shape === "pinned"
                     ? { objects: { P: link(G.url, { at: { heads: G.heads() } }) }, order: ["P"] }
@@ -91,7 +91,8 @@ describe("one world's ambients (W2): the outermost's, everywhere in the view", (
           }),
         );
         const v = await view(repo, H);
-        const want = shape === "alone" ? 1 : shape === "linked" || shape === "pinned" ? 2 : 3;
+        // (linked twice: the second link is closed, a repeat, with no stage)
+        const want = shape === "alone" ? 1 : shape === "linked" || shape === "pinned" || shape === "linked twice" ? 2 : 3;
         const ready = (st) => !Object.keys(st.doc().traits ?? {}).length || st.debug.host.running().some((r) => r.id === "t.a" || r.id === "t.b");
         await until(() => v.stages().length === want && v.stages().every(ready), 4000);
         await settle();

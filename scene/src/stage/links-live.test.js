@@ -295,17 +295,17 @@ describe("arriving through a link", () => {
     });
   }
 
-  it("a start placed on a pinned link, a mirror or a closed one arrives nowhere: Look, nothing entered", async () => {
+  it("a start placed on a pinned link, a repeat or a closed one arrives nowhere: Look, nothing entered", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    for (const kind of ["pinned", "mirror", "closed"]) {
+    for (const kind of ["pinned", "repeat", "closed"]) {
       const entered = [];
       const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => (entered.push(1), { input: {} }) }] }) } };
       const repo = new FakeRepo();
       const g = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit" } } }));
       const link = (extra = {}) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, ...extra });
       const objects =
-        kind === "pinned" ? { m: link({ at: { heads: g.heads() } }) } : kind === "mirror" ? { a: link(), m: link() } : { m: link({ sourceUrl: "automerge:2j9knnaaaaaaaaaaaaaaaaaaaaaa" }) };
-      // (in the mirror's case, link "a" comes first in path order: the doc acts there, and "m" shows it again)
+        kind === "pinned" ? { m: link({ at: { heads: g.heads() } }) } : kind === "repeat" ? { a: link(), m: link() } : { m: link({ sourceUrl: "automerge:2j9knnaaaaaaaaaaaaaaaaaaaaaa" }) };
+      // (in the repeat's case, link "a" comes first in path order: the doc acts there, and "m" is closed, a repeat)
       s = await mountStage({ repo, extensions: [SEATISH], doc: { objects, order: Object.keys(objects), view: { start: { body: "t.sit", place: "m" } } } });
       await settle();
       await settle();
@@ -400,7 +400,7 @@ describe("startArrival: where a start leads, over every chain of up to two links
   // a stage per depth, each doc's start placed on nothing, an object, or its link to the next;
   // the link's stage there, not yet, or nobody arrives through it
   const link = (url) => ({ providerId: LINK, sourceUrl: url });
-  it("ends at the first start not placed on a link; undefined while a link's stage is on its way; null through a pin, a mirror or a closed link", () => {
+  it("ends at the first start not placed on a link; undefined while a link's stage is on its way; null through a pin or a closed link", () => {
     const places = ["none", "object", "link"];
     const nexts = ["stage", "pending", "refused"];
     let n = 0;

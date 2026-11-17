@@ -2,7 +2,7 @@
 // Invariants), checked over every link graph of a few finite families and
 // every order its docs arrive in: it terminates, no identity repeats on a
 // path, each live doc has exactly one acting occurrence (the first in path
-// order) and the rest are mirrors, the closed reasons are exact, and the
+// order) and the rest are closed repeats, the closed reasons are exact, and the
 // final expansion doesn't depend on the arrival order.
 
 import { describe, expect, it } from "vitest";
@@ -65,6 +65,7 @@ function check(out, docOf) {
       if (o.reason === "cycle" && !ids.includes(ident)) fail("a cycle with no repeat", o);
       if (o.reason === "unavailable" && docOf(o.url, o.heads) !== null) fail("unavailable, but it opens", o);
       if (o.reason !== "cycle" && o.reason !== "unpinned" && ids.includes(ident)) fail("a repeat not closed as a cycle", o);
+      if (o.reason !== "cycle" && o.reason !== "unpinned" && (o.reason === "repeat") !== (!o.heads && live.has(o.url))) fail("repeat, exactly: a live doc already open in the view", o);
       return;
     }
     if (ids.includes(ident)) fail("an identity repeats on a path", o);
@@ -81,10 +82,10 @@ function check(out, docOf) {
     const want = doc ? linksOf(doc).map((l) => l.id) : [];
     if (JSON.stringify(kids) !== JSON.stringify(want)) fail("children aren't its links", { o, kids, want });
   });
-  // each live doc acts once, at its first occurrence; the rest mirror
+  // each live doc is open once, acting, at its first occurrence (the rest are closed repeats, above)
   for (const occs of live.values()) {
     if (occs[0].role !== "acting") fail("the first live occurrence doesn't act", occs[0]);
-    for (const x of occs.slice(1)) if (x.role !== "mirror") fail("a second live occurrence that isn't a mirror", x);
+    if (occs.length > 1) fail("a live doc open twice", occs[1]);
   }
 }
 
@@ -149,8 +150,9 @@ describe("links: what a link is", () => {
       ["L0", "acting"],
       ["L1", "acting"],
       ["L0/L0", "acting"],
-      ["L1/L0", "mirror"],
+      ["L1/L0", "closed"],
     ]);
+    expect(out.at(-1).reason).toBe("repeat");
     const self = expand({ url: URL(0) }, docOfGraph([docWith([{ to: 0, kind: "live" }, { to: 0, kind: "pinned", deps: {} }])]));
     expect(self.map((o) => [o.path.join("/"), o.role, o.reason ?? null])).toEqual([
       ["", "acting", null],

@@ -1,12 +1,11 @@
-// Pins and mirrors (STAGE.md, "Views, stages and links", build step 13): every occurrence of
-// a linked doc that isn't closed is opened. A live doc acts at one
-// occurrence (the first in path order) and is a mirror at the others: a
-// read-only stage on the same live handle, drawn at its own placement,
-// hearing the acting stage over the page bus, never acted on and never
-// computing. A pinned link is a read-only stage on its doc at the pinned
-// heads; fixing a link holds the heads of every doc reached through it, so a
-// pin is whole. Checked here without WebGL (frames from the docs' transforms,
-// hits stubbed as the viewport would key them).
+// Pins, and a live doc linked twice (STAGE.md, "Views, stages and links", build step 13):
+// every occurrence of a linked doc that isn't closed is opened. A live doc
+// acts at one occurrence (the first in path order); every other live
+// occurrence of it is closed, "repeat", with no stage, drawn as its hint. A
+// pinned link is a read-only stage on its doc at the pinned heads; fixing a
+// link holds the heads of every doc reached through it, so a pin is whole.
+// Checked here without WebGL (frames from the docs' transforms, hits stubbed
+// as the viewport would key them).
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -64,72 +63,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("a live doc linked twice: one acting, one mirror", () => {
-  it("both are open and drawn; the first in path order acts, the other mirrors; each runs G's extensions, and only the acting one computes", async () => {
+describe("a live doc linked twice: one acting, one closed", () => {
+  it("the first in path order acts; the other is closed, a repeat, with no stage of its own; only the acting one computes", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
     s = m.s;
-    await until(() => running(stageAt(s, "L1")) && running(stageAt(s, "L2")));
+    await until(() => running(stageAt(s, "L1")) && s.api("t.host").link("L2")?.role === "closed");
     const host = s.api("t.host");
     expect(host.link("L1")).toEqual({ role: "acting", open: true });
-    expect(host.link("L2")).toEqual({ role: "mirror", open: true });
+    expect(host.link("L2")).toEqual({ role: "closed", open: false, reason: "repeat" });
     expect(stageAt(s, "L1").role).toBe("acting");
-    expect(stageAt(s, "L2").role).toBe("mirror");
-    // the same doc, at two placements
-    expect(stageAt(s, "L2").url).toBe(m.game.url);
-    expect(stageAt(s, "L2").frame().pointOut([0, 0, 0])).toEqual([5, 0, 0]);
+    expect(stageAt(s, "L2")).toBe(null);
+    expect(s.debug.view.stages().length).toBe(2);
     await settle();
     expect(m.log.filter((e) => e.startsWith("start"))).toEqual(["start writable"]);
   });
 
-  it("an edit to G shows in both; a carry held in the acting stage shows in the mirror, over the page bus", async () => {
+  it("a press on the repeat reaches the host as the link, never G; on the acting one, G first", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
     s = m.s;
-    await until(() => running(stageAt(s, "L1")) && running(stageAt(s, "L2")));
-    const acting = stageAt(s, "L1").debug.host.record("t.card").api;
-    const mirror = stageAt(s, "L2").debug.host.record("t.card").api;
-    acting.change((d) => (d.objects.card.name = "Red 7"));
-    await settle();
-    expect(mirror.scene().objects.card.name).toBe("Red 7");
-    expect(acting.pose.hold("card", at(0.25))).toBe(true);
-    await until(() => mirror.worldOf("card")?.[12] === 0.25);
-    // drawn at its own placement: G's frame, so the same local pose
-    expect(stageAt(s, "L2").frame().pointOut(mirror.worldOf("card").slice(12, 15))).toEqual([5.25, 0, 0]);
-    acting.pose.release("card");
-    await until(() => mirror.worldOf("card")?.[12] === 0);
-  });
-
-  it("a press on the mirrored card reaches the host as the link, never G; on the acting one, G first", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
-    s = m.s;
-    await until(() => running(stageAt(s, "L1")) && running(stageAt(s, "L2")));
-    const press = async (st) => {
+    await until(() => running(stageAt(s, "L1")) && s.api("t.host").link("L2")?.role === "closed");
+    const press = async (key) => {
       m.log.length = 0;
-      s.debug.viewport.pick = () => ({ id: keyOf(st.n, "card"), point: [5, 0, 0], normal: [0, 1, 0], distance: 3 });
+      s.debug.viewport.pick = () => ({ id: key, point: [5, 0, 0], normal: [0, 1, 0], distance: 3 });
       s.pointer("pointerdown", 20, 20);
       s.pointer("pointerup", 20, 20);
       await settle();
       return [...m.log];
     };
-    expect(await press(stageAt(s, "L2"))).toEqual(["host L2"]);
-    expect(await press(stageAt(s, "L1"))).toEqual(["press writable card", "host L1"]);
+    expect(await press(keyOf(0, "L2"))).toEqual(["host L2"]);
+    expect(await press(keyOf(stageAt(s, "L1").n, "card"))).toEqual(["press writable card", "host L1"]);
   });
 
-  it("the acting link removed: the mirror's occurrence acts, in a stage of its own", async () => {
+  it("the acting link removed: the repeat's occurrence opens and acts, in a stage of its own", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
     s = m.s;
-    await until(() => running(stageAt(s, "L1")) && running(stageAt(s, "L2")));
-    const mirrorStage = stageAt(s, "L2");
+    await until(() => running(stageAt(s, "L1")) && s.api("t.host").link("L2")?.role === "closed");
     s.change((d) => {
       delete d.objects.L1;
       d.order.splice(d.order.indexOf("L1"), 1);
     });
     await until(() => stageAt(s, "L2")?.role === "acting" && running(stageAt(s, "L2")));
-    expect(stageAt(s, "L2")).not.toBe(mirrorStage);
     expect(s.api("t.host").link("L2")).toEqual({ role: "acting", open: true });
+    expect(stageAt(s, "L2").frame().pointOut([0, 0, 0])).toEqual([5, 0, 0]);
     expect(s.debug.view.stages().length).toBe(2);
   });
 });
@@ -310,14 +288,14 @@ describe("fixing a link at a version, and following latest again", () => {
 });
 
 // I4, placement independence, over the drawn stages: a stage's audience and
-// looks are functions of its doc and the registry, never of whether it acts,
-// mirrors or is pinned. A game G in the shape of Lost Cities' (seats owned by
+// looks are functions of its doc and the registry, never of whether it acts
+// or is pinned. A game G in the shape of Lost Cities' (seats owned by
 // one extension, which contributes the roster; a table whose audience reads
 // the roster, as tabletop's does; a lens showing this viewer what its
-// audience lets it see, as a keeper does), linked live twice and pinned at
-// its heads now, × seats {none, p1, p1 + p2}: every card's audience, shown
-// and look agree across the three stages.
-describe("placement independence (I4) in a mirror and a pin", () => {
+// audience lets it see, as a keeper does), linked live and pinned at its
+// heads now, × seats {none, p1, p1 + p2}: every card's audience, shown and
+// look agree across the two stages.
+describe("placement independence (I4) in a pin", () => {
   const ME = "automerge:ana";
   const BEN = "automerge:ben";
   const game = [
@@ -362,23 +340,22 @@ describe("placement independence (I4) in a mirror and a pin", () => {
   const card = (seat) => object({ name: "Card", traits: { "t.card": {}, ...(seat ? { "t.hand": { seat } } : {}) } });
 
   for (const [name, seats] of [["none", {}], ["p1", { p1: ME }], ["p1 + p2", { p1: ME, p2: BEN }]]) {
-    it(`seats ${name}: the acting stage, the mirror and the pin agree on every card's audience, shown and look`, async () => {
+    it(`seats ${name}: the acting stage and the pin agree on every card's audience, shown and look`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const repo = new FakeRepo();
       const g = repo.add(emptyScene({ title: "G", objects: { h1: card("p1"), h2: card("p2"), t: card(null) }, order: ["h1", "h2", "t"], traits: { "t.game": { seats } } }));
       const heads = g.heads();
-      const objects = { L1: link(g.url, { parent: null, transform: at(0) }), L2: link(g.url, { parent: null, transform: at(5) }), P: link(g.url, { parent: null, transform: at(-5), at: { heads } }) };
+      const objects = { L1: link(g.url, { parent: null, transform: at(0) }), P: link(g.url, { parent: null, transform: at(-5), at: { heads } }) };
       s = await mountStage({ repo, viewerId: ME, extensions: game, doc: { objects, order: Object.keys(objects) } });
       const ready = (st) => st?.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.looks().size === 3;
-      await until(() => ["L1", "L2", "P"].every((k) => ready(stageAt(s, k))));
+      await until(() => ["L1", "P"].every((k) => ready(stageAt(s, k))));
       const seen = (k) => {
         const st = stageAt(s, k);
         const api = st.debug.host.record("t.table").api;
         return ["h1", "h2", "t"].map((id) => [id, api.audience(id), api.shown(id), JSON.stringify(st.debug.looks().get(id))]);
       };
-      expect(["L1", "L2", "P"].map((k) => stageAt(s, k).role)).toEqual(["acting", "mirror", "pinned"]);
+      expect(["L1", "P"].map((k) => stageAt(s, k).role)).toEqual(["acting", "pinned"]);
       const acting = seen("L1");
-      expect(seen("L2")).toEqual(acting);
       expect(seen("P")).toEqual(acting);
       // and what that is: my hand's face is mine when I sit at p1; an empty seat's hand is nobody's
       const mine = acting.find(([id]) => id === "h1");

@@ -515,3 +515,9 @@ The stage has no `dblclick` event: the router's first-press resolution, its
 DOUBLE_MS/DOUBLE_PX gates and stamp handling, and `input.dblclick` went.
 Enter stays on the menu, the inspector and the tree's link rows; Frame on `.`
 and the toolbar. The inspector no longer waits a beat to open.
+
+### 2026-11-17 — Mirrors removed
+A live doc linked more than once in one view acts at its first occurrence;
+every other is closed, reason `"repeat"`, drawn as its hint. The `mirror` role,
+Enter's go-where-it's-live case and a listener hearing its own session went;
+the page bus between views of one doc in a page stays.

@@ -597,8 +597,7 @@ describe("without a usable handle", () => {
 
 // A presence that only listens (a read-only stage's: STAGE.md, "Views, stages and links"): over
 // every call that would speak and over time, it says nothing; it hears the
-// channel, its own session included (how a mirror hears its view's acting
-// stage of the same doc).
+// channel, never its own session.
 describe("listening only", () => {
   const SPEAKS = {
     hello: (p) => p,
@@ -624,9 +623,10 @@ describe("listening only", () => {
     });
   }
 
-  it("hears the channel, its own session too: presence, sends and holds", () => {
+  it("hears the channel: presence, sends and holds; never its own session", () => {
     const hl = bus.makeHandle("L");
-    const l = createPresence({ handle: hl, viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    const l = createPresence({ handle: hl, viewer: "alice", session: "sl", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    const self = createPresence({ handle: bus.makeHandle("M"), viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
     const got = [];
     l.onReceive((ext, kind, data, from) => got.push([ext, kind, from.session]));
     a.set("x", "k", 2);
@@ -638,8 +638,11 @@ describe("listening only", () => {
     expect(Object.keys(l.get()).sort()).toEqual(["sa", "sb"]);
     expect(got).toEqual([["x", "kind", "sa"], ["x", "kind", "sb"]]);
     expect(l.remoteHolds().get("o1")?.session).toBe("sa");
-    // and a speaking presence of the same session still never hears itself
+    // a listener of the speaker's own session hears none of it, and nor does the speaker
+    expect(self.get().sa).toBeUndefined();
+    expect(self.remoteHolds().get("o1")).toBeUndefined();
     expect(a.get().sa).toBeUndefined();
+    self.dispose();
     l.dispose();
   });
 });

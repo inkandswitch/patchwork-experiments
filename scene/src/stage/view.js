@@ -373,7 +373,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const focusStage = () => stageAt(atom.get().focus) ?? outermost();
   /**
    * The stages that act, outermost first, then by path: a doc's structure,
-   * not the order its links' docs arrived in. A pin or a mirror is drawn and
+   * not the order its links' docs arrived in. A pin is drawn and
    * never acts (STAGE.md, "Views, stages and links"), so it is never among them.
    */
   const acting = () => [...stages.values()].filter((s) => s.acts).sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
@@ -440,12 +440,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // The expansion (links.js) is a pure function of the link graph as the view
   // has it: worked out again whenever a stage's doc changes or a linked doc
   // arrives. Every occurrence that isn't closed gets a stage of its own, keyed
-  // by its path: a live doc acts at one of them, and is a mirror (a read-only
-  // stage on the same live handle) at the rest; a pinned value is a read-only
-  // stage on its doc at those heads. A stage whose occurrence changes role or
-  // identity closes, with everything opened under it, and opens again. A
-  // closed link, or one whose doc (or version) hasn't arrived, is drawn as
-  // its hint.
+  // by its path: a live doc acts at the first of them (the rest are closed,
+  // "repeat"); a pinned value is a read-only stage on its doc at those heads.
+  // A stage whose occurrence changes role or identity closes, with
+  // everything opened under it, and opens again. A closed link, or one whose
+  // doc (or version) hasn't arrived, is drawn as its hint.
   const docs = new Map(); // url → { handle, state: "loading" | "ready" | "unavailable" }
   const pins = new Map(); // identity (links.js identityOf) → the doc's handle at those heads
   const opened = new Map(); // path key → { stage, key: role and identity }
@@ -513,7 +512,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const root = outermost();
     if (!root) return;
     expansion = expand({ url: root.url }, docOf, { budget: LINK_BUDGET });
-    // the linked docs shown live (acting or mirrored; a pin keeps its own version) are announced, and only those
+    // the linked docs shown live (a pin keeps its own version) are announced, and only those
     const live = new Set();
     for (const o of expansion) if (o.depth > 0 && o.role !== "closed" && !o.heads) live.add(o.url);
     for (const u of live) if (!announcedLinks.has(u)) announcer.hold(u);
@@ -557,7 +556,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const was = linkStates;
     linkStates = states;
     if (JSON.stringify([...was]) !== JSON.stringify([...states])) for (const s of stages.values()) s.linksChanged();
-    // the focus is a stage that acts: one whose link went, closed, or now mirrors or pins its doc is left
+    // the focus is a stage that acts: one whose link went, closed, or now pins its doc is left
     const focus = atom.get().focus;
     let keep = focus;
     while (keep.length && !stageAt(keep)) keep = keep.slice(0, -1);
@@ -581,7 +580,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     for (const d of docs.values()) if (d.state === "loading") return true;
     return expansion.some((o) => o.role === "acting" && o.depth > 0 && !opened.has(pathKey(o.path)));
   }
-  /** A link's state as the view has it ({ role: "acting" | "mirror" | "pinned" | "closed", open, reason? }: open, its doc is drawn, else its hint), by its path; null if it isn't one. */
+  /** A link's state as the view has it ({ role: "acting" | "pinned" | "closed", open, reason? }: open, its doc is drawn, else its hint), by its path; null if it isn't one. */
   const linkState = (p) => linkStates.get(pathKey(p)) ?? null;
   /**
    * Where fixing the link at path `p` would fix it (STAGE.md, "Views, stages and links", "a pin
@@ -683,18 +682,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   /**
    * Where Enter on the link at path `p` goes: there, if its doc acts there;
-   * if it's a mirror, where that doc acts (a mirror is the same live doc,
-   * drawn again: it's edited where it's live); else null (a pin is a value,
-   * a closed link has no stage).
+   * else null (a pin is a value, a closed link has no stage).
    */
   function enterable(p) {
     const st = linkState(p);
-    if (!st?.open) return null;
-    if (st.role === "acting") return stageAt(p) ? pathOf(p) : null;
-    if (st.role !== "mirror") return null;
-    const url = expansion.find((o) => o.depth > 0 && samePath(o.path, p))?.url;
-    const at = expansion.find((o) => o.role === "acting" && o.depth > 0 && o.url === url);
-    return at && stageAt(at.path) ? pathOf(at.path) : null;
+    if (!st?.open || st.role !== "acting") return null;
+    return stageAt(p) ? pathOf(p) : null;
   }
   /** Move the focus to path `p`: out to where it and `p` part, then in a link at a time (as far as each acts), as one change. @returns did it get there */
   function focusOn(p) {
@@ -749,7 +742,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // stage, acting or drawn (a pin's content needs its providers too), as
   // view.packages, which only the general parts see (projectView). A yes or
   // a not now goes to every stage that asked; a not now is kept here, for the
-  // view's life, so a doc opened after it (a link added, a relink, a mirror
+  // view's life, so a doc opened after it (a link added, a relink, a repeat
   // that comes to act) isn't asked about those packages either.
   const declinedPackages = new Set();
   const stagesInOrder = () => [...stages.values()].sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
@@ -1016,8 +1009,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /**
    * Where the start leads (startArrival): `{ stage, body, place, through }`
    * (`through`: reached through a link), undefined while a link on the way
-   * is still on its way, null when it can't be arrived through (a pin, a
-   * mirror or a closed link: nobody arrives in a value or a copy).
+   * is still on its way, null when it can't be arrived through (a pin or a
+   * closed link: nobody arrives in a value or a link with no stage).
    */
   function arrivalAt() {
     return startArrival(outermost(), {
@@ -1227,7 +1220,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const order = [...first, ...acting().map((s) => s.n).filter((x) => !first.includes(x))];
     return order.flatMap((x) => stages.get(x)?.reader.collect(name) ?? []);
   }
-  /** The stages that act on a path, innermost first, out to the outermost (a pin or a mirror on it is passed over: it is drawn, never acted on). */
+  /** The stages that act on a path, innermost first, out to the outermost (a pin on it is passed over: it is drawn, never acted on). */
   function onPath(path) {
     const out = [];
     for (const s of stages.values()) if (s.acts && path.length > s.path.length && s.path.every((x, i) => x === path[i])) out.push(s);

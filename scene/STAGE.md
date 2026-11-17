@@ -14,7 +14,7 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | **Stage** | The core, one per open doc: the doc, content, presence, claims, holds, the world clock, lenses, the audience, its extensions and their apis. No UI. |
 | **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, held-tool slot, drawer, selection and hover (as paths), notices, prefs, one presence session. |
 | **Link** | An object whose source is a scene doc (`providerId: "scene.link"`). The view opens a stage for that doc in the link's frame. Live without `at`; pinned with it. |
-| **Mirror**, **pin** | Stages that are drawn and never act: a live doc at a placement other than where it acts; a doc at fixed heads. Both read-only. |
+| **Pin** | A stage that is drawn and never acts: a doc at fixed heads. Read-only. |
 | **Closed link** | A link the view opens no stage for, drawn as its hint. |
 | **Focus** | The path of links the viewer has entered (`[]` until **Enter**; **Leave** goes out one). The view's alone. |
 | **Body** | Where a viewer is and how they move and look. One stack per view, Look or Edit (the stage's, both the orbit camera) at the bottom. |
@@ -42,13 +42,13 @@ A `scene:source` declares `content: "file"`, `"built"` or `"scene"` (a child
 stage). Dropping a scene doc makes a live link.
 
 **Expansion** (`stage/links.js`, pure; I3). A live doc **acts** at one
-occurrence per view (shallowest, then smallest link id) and is a **mirror**
-elsewhere. A link with `at` is **pinned**. Closed reasons are exactly `"cycle"`,
-`"unavailable"` and `"unpinned"`. At most `LINK_BUDGET` stages open.
-`api.link(id)` → `{ role, open, reason? }`, `role` being `"acting"`, `"mirror"`,
-`"pinned"` or `"closed"`.
+occurrence per view (shallowest, then smallest link id); every other live
+occurrence of it is closed, `"repeat"`. A link with `at` is **pinned**. Closed
+reasons are exactly `"cycle"`, `"repeat"`, `"unavailable"` and `"unpinned"`. At
+most `LINK_BUDGET` stages open. `api.link(id)` → `{ role, open, reason? }`,
+`role` being `"acting"`, `"pinned"` or `"closed"`.
 
-**Acting and drawn.** A pin or mirror is drawn: its extensions run and draw into
+**Acting and drawn.** A pin is drawn: its extensions run and draw into
 the world, nothing more. No segment, body, tool, command, widget, chrome,
 camera, selection, notice or process (`drawnApi`). There is no `api.role`, only
 `api.writable()`.
@@ -94,8 +94,8 @@ clock }`); `{ focus: true }` gives the focus path, `{ pointer: true }` the
 pointer's. It is general parts' only (I4).
 
 **Channels** (I5). Presence, claims and holds are each doc's, in its ids, under
-the view's one session. The page bus carries broadcasts between stages of one
-doc in a page. A mirror listens and says nothing.
+the view's one session. The page bus carries broadcasts between views of one
+doc in a page. A read-only stage listens and says nothing.
 
 **The outermost doc** gives the view its ambients, `view.start` and the camera's
 home.
@@ -207,7 +207,7 @@ traits and `view.start`, and this viewer then arrives as the doc says.
 Look (`startBase`); a new scene says `"edit"`. Any other body is entered over
 Look at `place` once offered and loaded, or `ARRIVE_WAIT_MS` after the offer. A
 place that is a link arrives **through** it, as that doc starts people
-(`startArrival`); through a pin, mirror or closed link nobody arrives.
+(`startArrival`); through a pin or a closed link nobody arrives.
 
 ### Parts
 
@@ -395,7 +395,7 @@ extension's.
 |---|---|
 | `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal` | `session`: what claims and holds name |
 | `doc()`, `change(fn)`, `newId(prefix)`, `registry(type)` | |
-| `writable()` | false in a pin, a mirror, or on a refusing handle |
+| `writable()` | false in a pin or on a refusing handle |
 | `scene()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }` |
 | `ops` | pure planners (`src/ops.js`) → a change function or null |
 | `remove(ids, { edit? })` | one change, after every `beforeRemove` |
@@ -661,11 +661,11 @@ One atmosphere wins whole. None is the stage's own look. Ask a flush with
 | I5 | An object's claims, holds and sends travel on its doc's channel. |
 | I6 | A read-only stage writes nothing, through its api or its repo. |
 | I7 | Points map by the frame's similarity, directions by its rotation, distances by its scale; boxes are the stage's own. |
-| I8 | Inner segments first, out to the outermost; each (stage, extension) once; nothing from a mirror; the ride is the current body's, else the latest base ride. |
+| I8 | Inner segments first, out to the outermost; each (stage, extension) once; nothing from a pin; the ride is the current body's, else the latest base ride. |
 | I9 | Extract and bundle are each one host change; `bundle(extract(S, K), K)` restores every non-runtime field when S has no edge outside. |
 | I10 | Each stage sees its own element of selection and hover or null; keys visit attention's path innermost first; one resolver computes every hint. |
 | I11 | Runtime state has at most one writable holder among reachable docs. |
-| I12 | Every acting or mirroring stage draws its doc's people in its frame; a pin draws nobody; nobody draws this view. |
+| I12 | Every acting stage draws its doc's people in its frame; a pin draws nobody; nobody draws this view. |
 | I13 | Every `api.ambient(name)` is the outermost's stacked value, one frozen object, `mine` only at the outermost; non-plain offers are refused. |
 
 ## Inside the stage

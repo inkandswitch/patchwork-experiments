@@ -1,14 +1,14 @@
 // I4, placement independence (STAGE.md, "Views, stages and links", Invariants): a stage's
 // snapshot, running set, audience, looks and shown are functions of its doc
 // and the registry, never of its host, the focus, the viewer's body or held
-// tool, or whether it acts or mirrors. Checked over the finite case the
+// tool. Checked over the finite case the
 // invariant names: a synthetic game G in the shape of Lost Cities' (two
 // extensions: seats, which contributes the roster and a seat body; a table
 // whose audience reads the roster, and a lens showing this viewer what its
 // audience lets it see) × seats {none, p1, p1 + p2} × clock {running,
 // paused} × card state {dealt, p2's card played to the table}, open
 //   - alone,
-//   - linked into a host X at 0°, and mirrored there at 20° of heel,
+//   - linked into a host X at 0°,
 //   - linked into a host X' at 20° of heel,
 //   - linked into Y through X (two links deep),
 // four views of one page on one repo, and in each view × body {look, edit,
@@ -132,14 +132,14 @@ function ambientSeen(st, world) {
   return { value: a.value, mine: a.mine, frame: a.frame?.matrix ?? null, running: a.clock.running, want: { value: world.ambients()["t.x"], mine: world === st, frame: st.frame()?.matrix ?? null, running: world.worldTime().running } };
 }
 
-describe("placement independence (I4): G alone, linked, heeled, mirrored, two links deep", () => {
+describe("placement independence (I4): G alone, linked, heeled, two links deep", () => {
   for (const [name, seats] of [["none", {}], ["p1", { p1: ME }], ["p1 + p2", { p1: ME, p2: BEN }]]) {
     it(`seats ${name}: every stage of G agrees with G alone, × clock × card state × body × held tool × focus`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const repo = new FakeRepo();
       const G = repo.add(emptyScene({ title: "G", objects: { h1: card("p1"), h2: card("p2"), t: card(null) }, order: ["h1", "h2", "t"], traits: { "t.game": { seats } } }));
       const host = { "t.host": {} };
-      const X = repo.add(emptyScene({ title: "X", traits: host, objects: { L: link(G.url, { transform: FLAT }), M: link(G.url, { transform: HEEL }) }, order: ["L", "M"] }));
+      const X = repo.add(emptyScene({ title: "X", traits: host, objects: { L: link(G.url, { transform: FLAT }) }, order: ["L"] }));
       const X2 = repo.add(emptyScene({ title: "X'", traits: host, objects: { L: link(G.url, { transform: HEEL }) }, order: ["L"] }));
       const Y = repo.add(emptyScene({ title: "Y", traits: host, objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
       // the first view registers the extensions (the harness's), on G itself
@@ -153,9 +153,8 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
       };
       const gStages = (v) => v.stages().filter((st) => st.url === G.url);
       const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.looks().size === 3;
-      await until(() => Object.values(views).every(({ v }) => gStages(v).length >= 1 && gStages(v).every(ready)) && gStages(views.X.v).length === 2, 4000);
-      expect(gStages(views.X.v).map((st) => st.role).sort()).toEqual(["acting", "mirror"]);
-      expect(gStages(views.Y.v).map((st) => st.role).sort()).toEqual(["acting", "mirror"]);
+      await until(() => Object.values(views).every(({ v }) => gStages(v).length === 1 && gStages(v).every(ready)), 4000);
+      for (const { v } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual(["acting"]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)
       for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.seats"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
 
@@ -210,8 +209,8 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
             await settle();
           }
       }
-      // (alone: 1 stage, outside only; X, Y: acting + mirror; X': 1 — each × 2 foci) × 4 bodies × 2 held × 2 clock × 2 card states
-      expect(checked).toBe((1 + 2 * 2 + 1 * 2 + 2 * 2) * 4 * 2 * 2 * 2);
+      // (alone: 1 stage, outside only; X, X', Y: 1 stage each × 2 foci) × 4 bodies × 2 held × 2 clock × 2 card states
+      expect(checked).toBe((1 + 3 * 2) * 4 * 2 * 2 * 2);
     }, 90_000);
   }
 });

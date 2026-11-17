@@ -11,9 +11,7 @@
 // as that doc's own part, whatever the focus: someone walking a boat's deck
 // is seen from inside the game on her table, in the boat's frame
 // (scene/STAGE.md, "Views, stages and links", "Presence where it is"). A pin has no channel,
-// so it draws nobody; a mirror hears its doc's, so it draws them again, as
-// it draws everything else of its doc. This view is never drawn: its walker
-// is the camera.
+// so it draws nobody. This view is never drawn: its walker is the camera.
 //
 // Someone under a body of their own at a stand spot says no avatar; they
 // are drawn standing at the spot whose `walk.stand` names the claim they

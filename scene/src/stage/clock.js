@@ -10,8 +10,8 @@
 // (STAGE.md, "Claims"), and steps every process; the others follow. Nobody
 // present, no time passes.
 //
-// - **Eligible.** A view may compute when its stage acts (not a pin or a
-//   mirror), its doc is writable, its tab is visible, everything the doc
+// - **Eligible.** A view may compute when its stage acts (not a pin), its
+//   doc is writable, its tab is visible, everything the doc
 //   calls for is running (settled, every listed package here) and it has a
 //   process. The first eligible view to find the claim free takes it.
 // - **Computing.** The computer's t runs on with the wall clock, at most

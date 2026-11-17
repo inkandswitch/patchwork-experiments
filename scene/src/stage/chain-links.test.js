@@ -3,13 +3,13 @@
 // on the hit's path, innermost first, out to the outermost, each its own
 // segment (its holders nearest first, then its root's), then the general
 // parts of the focus stage, whatever the focus; each (stage, extension)
-// once; nothing from a mirror. Checked over every object of every stage
+// once; nothing from a pin. Checked over every object of every stage
 // (and nothing) × every focus × a widget winning or not, against those
 // rules read off the view's stages.
 //
 //   Y: deck ⟶ A (link to X), S (link to H)
 //   X: table ⟶ B (link to G: G acts here, first in path order)
-//   H: h1, MG (link to G: G mirrored)
+//   H: h1, PG (link to G fixed at its heads: G pinned)
 //   G: box ⟶ card
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -45,11 +45,11 @@ afterEach(() => {
 });
 
 describe("the chain across links (I8)", () => {
-  it("every hit × every focus × a widget or not: inner segments first, out to the outermost, each once, none from a mirror, then the focus's general parts", async () => {
+  it("every hit × every focus × a widget or not: inner segments first, out to the outermost, each once, none from a pin, then the focus's general parts", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
     const G = repo.add(emptyScene({ title: "G", traits: { "t.g": {} }, objects: { box: thing("t.box"), card: thing("t.card", { parent: "box" }) }, order: ["box", "card"] }));
-    const H = repo.add(emptyScene({ title: "H", traits: { "t.h": {} }, objects: { h1: thing(null), MG: link(G.url) }, order: ["h1", "MG"] }));
+    const H = repo.add(emptyScene({ title: "H", traits: { "t.h": {} }, objects: { h1: thing(null), PG: link(G.url, { at: { heads: G.heads() } }) }, order: ["h1", "PG"] }));
     const X = repo.add(emptyScene({ title: "X", traits: { "t.x": {} }, objects: { table: thing("t.table"), B: link(G.url, { parent: "table" }) }, order: ["table", "B"] }));
     s = await mountStage({
       repo,
@@ -58,8 +58,8 @@ describe("the chain across links (I8)", () => {
     });
     const view = s.debug.view;
     const stageAtPath = (p) => view.stages().find((st) => JSON.stringify(st.path) === JSON.stringify(p)) ?? null;
-    await until(() => [["A"], ["A", "B"], ["S"], ["S", "MG"]].every((p) => stageAtPath(p)?.debug.host.running().length) && stageAtPath(["A", "B"]).debug.host.instanceOf("t.card"), 3000);
-    expect(stageAtPath(["S", "MG"]).role).toBe("mirror");
+    await until(() => [["A"], ["A", "B"], ["S"], ["S", "PG"]].every((p) => stageAtPath(p)?.debug.host.running().length) && stageAtPath(["A", "B"]).debug.host.instanceOf("t.card"), 3000);
+    expect(stageAtPath(["S", "PG"]).role).toBe("pinned");
 
     // every object of every stage, as the viewport keys it, and nothing
     const hits = [null];
@@ -87,7 +87,7 @@ describe("the chain across links (I8)", () => {
           // (the widget's owner, first, comes again nowhere)
           const segs = rest.slice(0, -generals.length);
           if (widget) expect(segs.includes(WIDGET.owner), where).toBe(false);
-          // the stages on the hit's path that act, innermost first (the outermost alone for nothing, or a mirror's)
+          // the stages on the hit's path that act, innermost first (the outermost alone for nothing)
           const hitStage = hitKey == null ? null : view.stage(parseKey(hitKey).n);
           const path = hitStage ? [...hitStage.path, parseKey(hitKey).id] : null;
           const want = path ? view.stages().filter((st) => st.acts && path.length > st.path.length && st.path.every((x, i) => x === path[i])).sort((a, b) => b.path.length - a.path.length) : [];
@@ -98,7 +98,7 @@ describe("the chain across links (I8)", () => {
             if (seen.at(-1) !== n) seen.push(n);
           }
           expect(seen, where).toEqual(stagesWanted.map((st) => st.n));
-          // nothing from a mirror, nor from a stage off the hit's path
+          // nothing from a pin, nor from a stage off the hit's path
           expect(segs.every((k) => view.stage(parseKey(k).n).acts), where).toBe(true);
           // within a stage: its holders nearest first, then its root's
           if (!widget && hitStage === stageAtPath(["A", "B"]) && parseKey(hitKey).id === "card") {
@@ -114,12 +114,12 @@ describe("the chain across links (I8)", () => {
 });
 
 // I8, the camera: the applied ride is the current body's, in its own
-// stage's frame, whatever the focus; a mirror rides nothing. Every stack of
+// stage's frame, whatever the focus; a pin rides nothing. Every stack of
 // up to three bodies, one from each acting stage of the composition (the
 // outermost, a link deep, two deep), in every order × every focus; and the
-// mirror's extension asking to ride its card, ignored, while Look holds.
+// pin's extension asking to ride its card, ignored, while Look holds.
 describe("the camera across links (I8)", () => {
-  it("every body stack ≤3 × every focus: the top body's ride applies; a mirror's ride never does", async () => {
+  it("every body stack ≤3 × every focus: the top body's ride applies; a pin's ride never does", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const rider = (id, traits, body, on) => ({
       meta: { id, traits },
@@ -127,7 +127,7 @@ describe("the camera across links (I8)", () => {
     });
     const repo = new FakeRepo();
     const G = repo.add(emptyScene({ title: "G", objects: { card: thing("t.card") }, order: ["card"] }));
-    const H = repo.add(emptyScene({ title: "H", objects: { MG: link(G.url) }, order: ["MG"] }));
+    const H = repo.add(emptyScene({ title: "H", objects: { PG: link(G.url, { at: { heads: G.heads() } }) }, order: ["PG"] }));
     const X = repo.add(emptyScene({ title: "X", objects: { table: thing("t.table"), B: link(G.url, { parent: "table" }) }, order: ["table", "B"] }));
     s = await mountStage({
       repo,
@@ -136,12 +136,12 @@ describe("the camera across links (I8)", () => {
     });
     const view = s.debug.view;
     const at = (p) => view.stages().find((st) => JSON.stringify(st.path) === JSON.stringify(p)) ?? null;
-    await until(() => at(["A", "B"])?.debug.host.instanceOf("t.card") && at(["S", "MG"])?.debug.host.instanceOf("t.card"), 3000);
-    expect(at(["S", "MG"]).role).toBe("mirror");
+    await until(() => at(["A", "B"])?.debug.host.instanceOf("t.card") && at(["S", "PG"])?.debug.host.instanceOf("t.card"), 3000);
+    expect(at(["S", "PG"]).role).toBe("pinned");
     const rideKey = { "b-y": keyOf(0, "deck"), "b-x": keyOf(at(["A"]).n, "table"), "b-g": keyOf(at(["A", "B"]).n, "card") };
     const current = () => view.viewport.rides.current()?.id ?? null;
-    // the mirror's extension asks to ride its card: a drawn stage moves no camera
-    at(["S", "MG"]).debug.host.instanceOf("t.card").rideMine();
+    // the pin's extension asks to ride its card: a drawn stage moves no camera
+    at(["S", "PG"]).debug.host.instanceOf("t.card").rideMine();
     expect(current()).toBe(null);
     const BODIES = Object.keys(rideKey);
     const stacks = [[]];

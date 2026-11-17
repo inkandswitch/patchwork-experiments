@@ -87,7 +87,7 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 | claims; pose holds and playback; world clock and processes; telling | **claims**, **poses** (playback a `display` override), **clock** (on `use("claims")`, `channel`, `settled()`), **telling**: each a doc plugin of every doc (`"*"`) |
 | commands, attention, keymap, menu, use prompt, toolbar, touch | **verbs** (view); attention = the editor's selection, else the look |
 | selection, hover, focus, Enter/Leave, the trail, `scene.others`; templates, parts, drops, assets | **editor** |
-| link roles, expansion, pins, mirrors, `fixPoint`, ambients | **links** (view), calling `open(…)`; ambients become `collect(name, { world: true })` |
+| link roles, expansion, pins, `fixPoint`, ambients | **links** (view), calling `open(…)`; ambients become `collect(name, { world: true })` |
 | arriving (`view.start`); packages list and prompt | **arrive**, **packages** (view) |
 | drawer, notices, prefs | **drawer**, **notices**, **prefs** (view services) |
 | carry, landing, `landed` | **carry** (doc) |
@@ -208,9 +208,7 @@ key names on touch; does arena's gun fire on a tap?
   in two scenes is the mechanism, its harness checking one. (COMPOSITION §8.)
 - **The private layer** (COMP 2026-11-11, 4): accepted, not built.
 - **Who's here per doc on the focus path**, like the chips, when asked
-  (COMP presence where it is, 7). **A mirror in its acting stage's view**
-  could skip the playback delay (COMP final fixer after the next phase, 2).
-  **Pausing a host doesn't pause a linked doc's processes** (TOOLS).
+  (COMP presence where it is, 7). **Pausing a host doesn't pause a linked doc's processes** (TOOLS).
 
 ### Packages, carrying, telling, templates
 - **Packages pruned** (COMP packages pruned): two viewers on different

@@ -16,8 +16,7 @@
 // A stage acts, or it is drawn (STAGE.md, "Views, stages and links"). One that acts is where
 // its doc is played: its extensions hear input, offer bodies, tools and
 // commands, compute its clock and speak on its channel. A pin (its doc at
-// fixed heads) and a mirror (a live doc acting at another placement in this
-// view) are drawn: their extensions run, so they look as the doc does, and
+// fixed heads) is drawn: its extensions run, so it looks as the doc does, and
 // they draw into the world (layers, labels, looks, lenses), but nothing
 // more: no input, bodies, tools, commands or DOM chrome, no camera, no
 // processes, and they hear their doc's channel without speaking on it (a
@@ -266,12 +265,12 @@ export default function Stage(handle, element) {
  *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
  *   under?: string | null,             // the viewport key its root hangs under (the link's)
  *   general?: boolean,                 // does it start out running the general extensions (the focus does; the view moves them)
- *   role?: "acting" | "mirror" | "pinned",  // does it act, or is it drawn (links.js expand)
+ *   role?: "acting" | "pinned",       // does it act, or is it drawn (links.js expand)
  *   deps?: object | null,              // a pin's: the heads of the docs reached through it ({ url: heads })
  * }} o
  */
 export function createStage({ handle: given, view, n, path = [], frame = () => null, under = null, general = true, role = "acting", deps = null }) {
-  // does it act (STAGE.md, "Views, stages and links"): a pin or a mirror is drawn, never acted on
+  // does it act (STAGE.md, "Views, stages and links"): a pin is drawn, never acted on
   const acts = role === "acting";
   // read-only: its doc, and every doc it reaches, refuse writes (I6)
   const readOnly = !acts || handleReadOnly(given);
@@ -2099,7 +2098,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       signal,
       doc,
       change,
-      /** may this view write the doc? (not in a pin or a mirror, nor where the handle refuses: Keyhive's to answer, in time) */
+      /** may this view write the doc? (not in a pin, nor where the handle refuses: Keyhive's to answer, in time) */
       writable,
       newId,
       scene,
@@ -2152,7 +2151,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
-        /** move the focus into this stage's link `target` (where its doc acts: a mirror's, where it's live): false if it can't be entered */
+        /** move the focus into this stage's link `target`: false if it can't be entered */
         enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
         /**
          * dock a document in the drawer ({ url, toolId?, title }): the view's, not this extension's, so it
@@ -2215,7 +2214,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         applyDoc(derive());
       },
       providersFor,
-      /** a link of this doc's, as the view has it: { role: "acting" | "mirror" | "pinned" | "closed", open, reason? } (open: its doc is drawn, else its hint), or null (not a link, or not expanded yet) */
+      /** a link of this doc's, as the view has it: { role: "acting" | "pinned" | "closed", open, reason? } (open: its doc is drawn, else its hint), or null (not a link, or not expanded yet) */
       link: (oid) => view.linkState([...path, oid]),
       addObject,
       fixPoint,
@@ -2416,7 +2415,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       path: general ? (o) => view.inputPath(o) : undefined,
       audience: audienceOf,
       shown: shownTo,
-      // (in another stage only if it acts: a pin or a mirror is never acted on)
+      // (in another stage only if it acts: a pin is never acted on)
       run: (inv) => (inv?.stage != null && inv.stage !== n ? (view.acting().find((s) => s.n === inv.stage)?.reader.run(inv) ?? false) : run(inv)),
     };
 
@@ -2463,7 +2462,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   /**
    * A drawn stage's api (STAGE.md, "Views, stages and links"): the acting api less everything
-   * that acts, all in this one place. A pin's or a mirror's extensions run
+   * that acts, all in this one place. A pin's extensions run
    * and draw into the world (layers, labels, looks, styles) and read all
    * they like; what would take input, put chrome in the view, move the
    * viewer's camera, select, notify, set a pref, enter a body, hold a tool,
@@ -2649,7 +2648,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     tickPoses,
     /** the doc's clock here (clock.js): t, status, tick(at), check() */
     clock,
-    /** does it act ("acting"), or is it drawn ("mirror", "pinned")? */
+    /** does it act ("acting"), or is it drawn ("pinned")? */
     role,
     /** the claims this view holds: [{ id, kind, ext }] */
     claims: () => [...claims.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),

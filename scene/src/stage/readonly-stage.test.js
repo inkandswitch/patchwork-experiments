@@ -1,6 +1,6 @@
 // I6, a read-only stage writes nothing, through its api or its repo
 // (STAGE.md, Invariants), checked over every read-only stage there is
-// (a pin, a mirror, and a live doc acting where its handle refuses writes)
+// (a pin, and a live doc acting where its handle refuses writes)
 // × every way an extension can write or speak: the api's writes, sends,
 // holds, claims, processes, the stage's own edits, parts, templates and
 // drops, the handle and the repo it is handed, and, for the stages that are
@@ -98,11 +98,9 @@ afterEach(() => {
 
 /**
  * Mount a host with G linked as `role`: "pinned" (G at an older version),
- * "mirror" (G linked live twice: the second link's stage), "readonly" (G
- * linked once, live, its handle refusing writes as a viewer who may only
- * read would have it), "mirror of a reader" (both: G linked live twice, its
- * handle refusing writes, so its acting stage is silent too and anything on
- * G's handle would be the mirror's). → the stage under test and what's logged.
+ * "readonly" (G linked once, live, its handle refusing writes as a viewer
+ * who may only read would have it). → the stage under test and what's
+ * logged.
  */
 async function mount(role) {
   tried.length = 0;
@@ -114,8 +112,7 @@ async function mount(role) {
   const log = [];
   const arm = { on: false };
   armed(g, log, arm);
-  if (role === "readonly" || role === "mirror of a reader") g.isReadOnly = () => true;
-  const twice = role === "mirror" || role === "mirror of a reader";
+  if (role === "readonly") g.isReadOnly = () => true;
   // a pin's handle is G's view at those heads: it refuses as G does
   const view = g.view.bind(g);
   g.view = (heads) => {
@@ -131,10 +128,9 @@ async function mount(role) {
     return v;
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
-  const objects =
-    role === "pinned" ? { P: link({ at: { heads: then } }) } : twice ? { L1: link(), L2: link({ transform: { ...T, position: [3, 0, 0] } }) } : { L1: link() };
+  const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
   s = await mountStage({ repo, time, extensions: [PROBE, OWN, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
-  const want = role === "pinned" ? ["P"] : twice ? ["L2"] : ["L1"];
+  const want = role === "pinned" ? ["P"] : ["L1"];
   for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle(1);
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
   return { repo, time, g, then, log, arm, stage, api: stage.debug.host.record("t.probe").api, ownApi: stage.debug.host.record("t.own").api };
@@ -148,8 +144,8 @@ function watchConsole() {
   return said;
 }
 
-const ROLES = ["pinned", "mirror", "readonly", "mirror of a reader"];
-const ROLE = { pinned: "pinned", mirror: "mirror", readonly: "acting", "mirror of a reader": "mirror" };
+const ROLES = ["pinned", "readonly"];
+const ROLE = { pinned: "pinned", readonly: "acting" };
 
 describe("I6: a read-only stage writes nothing", () => {
   for (const role of ROLES) {
@@ -208,9 +204,6 @@ describe("I6: a read-only stage writes nothing", () => {
       else ok("a claim by a session not heard from counts for the grace", api.claimedBy(null, "held")?.session === "s-old");
 
       // over time: claims rechecked, the clock ticked past a checkpoint, heartbeats, a pose's keepalive
-      // (a mirror shares G's handle with G's acting stage, which speaks on it when it may write: the
-      // mirror's own output is what it tries on its read-only handle, `tried`)
-      if (role === "mirror") m.arm.on = false;
       await m.time.advance(CHECKPOINT_MS + HEARTBEAT_MS + 1000 / CLOCK_HZ, { draw: false });
       await settle();
       ok("the process is never started or stepped", started === 0 && stepped === 0);
@@ -223,18 +216,16 @@ describe("I6: a read-only stage writes nothing", () => {
       expect(JSON.stringify(api.doc())).toBe(docBefore);
       expect(g.heads().join()).toBe(gBefore);
       expect(JSON.stringify(s.doc())).toBe(hostBefore);
-      // nothing it did reached G's handle, nor tried to: beside a writable acting stage, G's handle carries
-      // that stage's presence alone; beside a silent one, nothing at all
+      // nothing it did reached G's handle, nor tried to
       expect(tried).toEqual([]);
-      const acting = (e) => role === "mirror" && /^broadcast \S+ scene:presence /.test(e);
-      expect(m.log.filter((e) => !acting(e))).toEqual([]);
+      expect(m.log).toEqual([]);
       // and the stage never reached its own refusal: nothing warned or threw on its way
       expect(said).toEqual([]);
       expect(m.time.errors()).toEqual([]);
     });
   }
 
-  for (const role of ["pinned", "mirror"]) {
+  for (const role of ["pinned"]) {
     it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, camera, selection, notice or pref; its extensions still collect from it`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       vi.spyOn(console, "error").mockImplementation(() => {});

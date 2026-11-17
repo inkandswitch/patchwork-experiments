@@ -1,5 +1,5 @@
-// Pins and mirrors (scene/STAGE.md, "Views, stages and links": worked example 2, and a part
-// repeated live), in one headless Chrome, one page, one repo
+// Pins, and a live doc linked twice (scene/STAGE.md, "Views, stages and links"), in one
+// headless Chrome, one page, one repo
 // (pins-probe.html): the BUILT scene, sailing, joints and traversal plugins.
 // S is a sloop at anchor whose companionway is a fit-out F, linked and fixed
 // at a version (the inspector's Fix at this version); and a hatch W that
@@ -12,25 +12,25 @@
 //  1. the docs: S holds the hull and the rig, none of F's or W's pieces, a
 //     link to F fixed at F's heads with the docs reached through it (F's
 //     files) in its deps, and two live links to the same W;
-//  2. S's view opens a stage for each: F pinned, W acting at the first link
-//     and a mirror at the second; each runs its doc's extensions (joints);
-//     every linked object is drawn;
+//  2. S's view opens a stage for F (pinned) and for W at the first link
+//     (acting); the second link to W is closed ("repeat") and has none;
+//     each stage runs its doc's extensions (joints); every linked object is
+//     drawn;
 //  3. F changed live, in a view of its own (its hatch opened by its verb):
 //     F alone shows it open; S's pinned F still shows it shut, as fixed, and
 //     nothing wrote through the pin;
 //  4. looking at the pinned F's hatch in S, the prompt offers nothing and F
 //     does nothing: a pin is drawn, never acted on;
 //  5. W: looking at the acting hatch S offers Open (W's verb, from W's
-//     stage) and F opens it; the mirrored hatch shows it opening and open,
-//     at its own placement; looking at the mirror, nothing is offered;
-//  6. W's clock is computed by the acting stage alone: the mirror never
-//     computes; two seconds on, the hatch closes itself in both copies;
-//  7. every write tried through the pinned and the mirrored stage is
-//     refused, and nothing throws;
+//     stage) and F opens it;
+//  6. W's clock is computed by the acting stage; two seconds on, the hatch
+//     closes itself;
+//  7. every write tried through the pinned stage is refused, and nothing
+//     throws;
 //  8. Follow latest makes F live (acting: its hatch open, as F is now); Fix
 //     at this version pins it again at F's heads now;
-//  9. with her world running, the fit-out and both hatches ride the hull
-//     exactly;
+//  9. with her world running, the fit-out and the acting hatch ride the
+//     hull exactly;
 // 10. no page errors.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -81,7 +81,7 @@ try {
   const shape = await P("shape()");
   report.numbers.shape = shape;
   const fit = shape.links.find((l) => l.id === ids.fitout);
-  const hatches = shape.links.filter((l) => l.id === ids.acting || l.id === ids.mirror);
+  const hatches = shape.links.filter((l) => l.id === ids.acting || l.id === ids.repeat);
   check("1. S holds the hull and the rig and none of F's or W's pieces (her own companionway out)", shape.hull && shape.rig && shape.boatSlides === 0 && shape.boatExits === 0, shape);
   check("1. S's link to F is fixed at F's heads then, its deps the docs reached through it (F's files)", fit && fit.url === ids.f && fit.at?.heads.length > 0 && shape.fAssets.length > 0 && shape.fAssets.every((u) => fit.at.deps.includes(u)), { fit, fAssets: shape.fAssets });
   check("1. S links the same W live twice", hatches.length === 2 && hatches.every((l) => l.url === ids.w && !l.at), hatches);
@@ -90,10 +90,10 @@ try {
   const st = await P("stages()");
   report.numbers.stages = st;
   const roleAt = (id) => st.find((x) => J(x.path) === J([id]));
-  check("2. F's stage is pinned; W acts at the first link and is a mirror at the second", roleAt(ids.fitout)?.role === "pinned" && roleAt(ids.acting)?.role === "acting" && roleAt(ids.mirror)?.role === "mirror" && roleAt(ids.acting).url === ids.w && roleAt(ids.mirror).url === ids.w, st.map((x) => [x.path, x.role]));
-  check("2. each runs its doc's extensions (joints), the pin and the mirror too", [ids.fitout, ids.acting, ids.mirror].every((id) => roleAt(id)?.running.includes("joints")), st.map((x) => [x.path, x.running]));
+  check("2. F's stage is pinned; W acts at the first link, and the second has no stage", roleAt(ids.fitout)?.role === "pinned" && roleAt(ids.acting)?.role === "acting" && roleAt(ids.acting).url === ids.w && !roleAt(ids.repeat), st.map((x) => [x.path, x.role]));
+  check("2. each runs its doc's extensions (joints), the pin too", [ids.fitout, ids.acting].every((id) => roleAt(id)?.running.includes("joints")), st.map((x) => [x.path, x.running]));
   const links = await P("links()");
-  check("2. S's links say so: the fit-out pinned, the hatches acting and mirror, all open (drawn as their docs)", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.mirror?.role === "mirror" && Object.values(links).every((l) => l.open), links);
+  check("2. S's links say so: the fit-out pinned and the first hatch acting, both open (drawn as their docs); the second hatch closed, a repeat (drawn as its hint)", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.fitout.open && links.acting.open && links.repeat?.role === "closed" && links.repeat.reason === "repeat" && !links.repeat.open, links);
   check("2. every linked object is drawn", await loads("loaded().loaded === __p.loaded().total", 120_000), await P("loaded()"));
   await P("frame()");
   await b.step(2);
@@ -116,32 +116,28 @@ try {
   await b.step(30);
   check("4. F there does nothing: F stays open live, the pin shut", (await P("slideOf('f')"))?.at === "open" && (await P("pinnedSlide()"))?.at === "closed", { live: await P("slideOf('f')"), pinned: await P("pinnedSlide()") });
 
-  // 5. the hatch, acting and mirrored
-  const closedLocal = await P(`localIn([${J(ids.mirror)}], ${J(ids.wHatch)})`);
+  // 5. the hatch
+  const closedLocal = await P(`localIn([${J(ids.acting)}], ${J(ids.wHatch)})`);
   const actPrompt = await lookAt([ids.acting], ids.wHatch);
   check("5. looking at the acting hatch, S offers W's Open", !!actPrompt?.some((t) => /^Open/.test(t)), { prompt: actPrompt });
   await b.key("f");
   const opened = await until("slideOf('w')?.at === 'open'", 4000);
   const openActing = await P(`localIn([${J(ids.acting)}], ${J(ids.wHatch)})`);
-  const openMirror = await P(`localIn([${J(ids.mirror)}], ${J(ids.wHatch)})`);
-  check("5. F opens it; the mirrored hatch shows it open, at its own placement, exactly as the acting one", opened && !near(openMirror, closedLocal, 0.05) && near(openActing, openMirror), { opened, closedLocal, openActing, openMirror });
+  check("5. F opens it", opened && !near(openActing, closedLocal, 0.05), { opened, closedLocal, openActing });
   await shot("hatch-open");
-  const mirPrompt = await lookAt([ids.mirror], ids.wHatch);
-  check("5. looking at the mirrored hatch, S offers nothing of W's", mirPrompt !== null && !mirPrompt.some((t) => /Open|Close/.test(t)), { prompt: mirPrompt });
-  check("5. no body and no command comes from the pin or the mirror", !(await P("bodies()")).some((x) => x.stage === ids.fitout || x.stage === ids.mirror) && !(await P("commandStages()")).some((x) => x === ids.fitout || x === ids.mirror), { bodies: await P("bodies()") });
+  check("5. no body and no command comes from the pin", !(await P("bodies()")).some((x) => x.stage === ids.fitout) && !(await P("commandStages()")).some((x) => x === ids.fitout), { bodies: await P("bodies()") });
 
   // 6. W's clock
   const comp = await P("computing()");
-  check("6. W's clock is computed by S's acting W stage, never the mirror", comp.acting === true && comp.mirror === false && comp.claim?.session === comp.session, comp);
+  check("6. W's clock is computed by S's acting W stage", comp.acting === true && comp.claim?.session === comp.session, comp);
   const shut = await until("slideOf('w')?.at === 'closed'", 6000);
   await b.step(30);
   const shutActing = await P(`localIn([${J(ids.acting)}], ${J(ids.wHatch)})`);
-  const shutMirror = await P(`localIn([${J(ids.mirror)}], ${J(ids.wHatch)})`);
-  check("6. two seconds on, the hatch closes itself, in both copies", shut && near(shutActing, closedLocal) && near(shutMirror, closedLocal), { shut, shutActing, shutMirror, closedLocal });
+  check("6. two seconds on, the hatch closes itself", shut && near(shutActing, closedLocal), { shut, shutActing, closedLocal });
 
-  // 7. writes through the drawn stages
+  // 7. writes through the drawn stage
   const tried = await P("tryWrites()");
-  check("7. every write tried through the pin and the mirror is refused, quietly", ["pinned", "mirror"].every((k) => tried[k].change === "quiet" && tried[k].claim === null && tried[k].hold === false && tried[k].run === false && tried[k].writable === false) && tried.pinned.role === "pinned" && tried.mirror.role === "mirror" && !tried.pinned.hasRole && !tried.mirror.hasRole, tried);
+  check("7. every write tried through the pin is refused, quietly", ["pinned"].every((k) => tried[k].change === "quiet" && tried[k].claim === null && tried[k].hold === false && tried[k].run === false && tried[k].writable === false) && tried.pinned.role === "pinned" && !tried.pinned.hasRole, tried);
   check("7. and none of it reached a doc", (await P("writes")).pin === 0 && (await P("slideOf('f')"))?.at === "open" && (await P("pinnedSlide()"))?.at === "closed", await P("writes"));
 
   // 8. Follow latest, Fix at this version
@@ -158,7 +154,7 @@ try {
   await P("resume()");
   const ride = await P("sampleRide(4000)", 120_000);
   report.numbers.ride = ride;
-  check("9. with her world running the fit-out and both hatches ride the hull exactly", ride.moved > 1e-3 && ride.off < 1e-6, ride);
+  check("9. with her world running the fit-out and the acting hatch ride the hull exactly", ride.moved > 1e-3 && ride.off < 1e-6, ride);
   await shot("riding");
 
   // 10.

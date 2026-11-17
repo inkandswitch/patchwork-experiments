@@ -9,9 +9,9 @@
 // - "Enter" is a verb on a link (menu, inspector; the tree's link rows too),
 //   everyone's in every body: the selection is everyone's, so is where it is
 //   scoped.
-// - A link enters where its doc acts: a live link there, a mirror (the same
-//   live doc drawn again) where it's live. A pin is a value and a closed link
-//   has no stage, so neither is entered; Enter says why.
+// - A live link is entered where it is. A pin is a value and a closed link
+//   (a cycle, or a doc linked here already) has no stage, so neither is
+//   entered; Enter says why.
 // - Leaving is the view's (stage/view.js): Escape's last rung, the trail's
 //   crumbs and its Leave.
 
@@ -19,7 +19,6 @@
 export function enterState(link) {
   if (!link) return null;
   if (link.role === "acting") return link.open ? { title: "Go inside: select and edit what's in it" } : { disabled: true, title: "Not open here yet" };
-  if (link.role === "mirror") return link.open ? { title: "Go inside where it's live (this is the same scene, shown again)" } : { disabled: true, title: "Not open here yet" };
   if (link.role === "pinned") return { disabled: true, title: "Fixed at a version: Follow latest to go inside" };
   return { disabled: true, title: `Not open here (${link.reason ?? "closed"})` };
 }

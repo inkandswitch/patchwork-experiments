@@ -1,16 +1,14 @@
 // I5, channels (STAGE.md, "Views, stages and links", Invariants): an object's claims, holds
 // and sends travel on its doc's channel, wherever the doc is open. Three
 // views of one game G on a manual clock, in two pages: G alone and G linked
-// into X (and mirrored there) in one page, on one repo, where the page bus
-// carries between them; G linked into Y through X (and mirrored there, by
-// X's own link) in a second page, on a repo of its own joined to the first
+// into X in one page, on one repo, where the page bus carries between them;
+// G linked into Y through X in a second page, on a repo of its own joined to the first
 // by an in-memory network (fake-repo's connect), so what crosses pages goes
 // by its handle's broadcast, as in real Patchwork.
 // Every sequence of up to two claims and releases of one seat by the three
 // views, then every holder × every view leaving: `claimedBy` agrees in
 // every stage of G once delivered, as a first-come model says; a hold (a
-// carry) taken in any view shows as that view's in every other and in both
-// mirrors.
+// carry) taken in any view shows as that view's in every other.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -36,7 +34,7 @@ async function world() {
   const time = manualTime();
   const repo = new FakeRepo();
   const G = repo.add(emptyScene({ title: "G", objects: { c: object({ name: "Card" }) }, order: ["c"], traits: { "t.game": {} } }));
-  const X = repo.add(emptyScene({ title: "X", objects: { L: link(G.url), M: link(G.url, { transform: { position: [4, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }, order: ["L", "M"] }));
+  const X = repo.add(emptyScene({ title: "X", objects: { L: link(G.url) }, order: ["L"] }));
   const Y = repo.add(emptyScene({ title: "Y", objects: { LX: link(X.url) }, order: ["LX"] }));
   // the second page's repo: the same three docs, and the network between
   const far = new FakeRepo();
@@ -67,7 +65,7 @@ async function world() {
   const views = [open(G, "ana"), open(X, "ben"), open(far.handles.get(Y.url), "cara", far)];
   const gStages = (i) => views[i].v.stages().filter((st) => st.url === G.url);
   const api = (st) => st.debug.host.record("t.card")?.api ?? null;
-  await time.until(() => views.every((_, i) => gStages(i).length === (i === 0 ? 1 : 2) && gStages(i).every((st) => api(st))), { frames: 600, what: "every stage of G" });
+  await time.until(() => views.every((_, i) => gStages(i).length === 1 && gStages(i).every((st) => api(st))), { frames: 600, what: "every stage of G" });
   const acting = (i) => api(gStages(i).find((st) => st.acts));
   /** every stage of G that is still open, with whose view it is */
   const everywhere = () => views.flatMap((x, i) => (x.v.dead ? [] : gStages(i).map((st) => ({ i, role: st.role, api: api(st) }))));
@@ -115,11 +113,11 @@ describe("channels (I5): claims and holds on G's channel, wherever G is open", (
       releases.fill(null);
       await w.deliver();
     }
-    // 6 + 72 ops, each checked in 5 stages
-    expect(checked).toBe((6 + 2 * 36) * 5);
+    // 6 + 72 ops, each checked in 3 stages
+    expect(checked).toBe((6 + 2 * 36) * 3);
   }, 60_000);
 
-  it("a hold (a carry) taken in any view shows as that view's in every other stage of G, mirrors too", async () => {
+  it("a hold (a carry) taken in any view shows as that view's in every other stage of G", async () => {
     const w = await world();
     for (let i = 0; i < 3; i++) {
       expect(w.acting(i).pose.hold("c", { position: [i, 0, 0], rotation: [0, 0, 0], scale: 1 })).toBe(true);

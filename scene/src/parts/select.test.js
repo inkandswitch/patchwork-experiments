@@ -410,21 +410,20 @@ describe("select-peers", () => {
 });
 
 describe("scene.others: wherever its doc is", () => {
-  // A host with a live link L to G, a mirror R of it and a pin P of it. A
-  // peer on G's channel selects G's card. scene.others is a part of every
-  // doc, so whatever the focus, the card's peer box is drawn wherever G is
-  // drawn with its channel: L and R, never P (a pin has no channel), never
-  // the host (the peer is not in it), never twice. This view's own selection
-  // is scene.select's, only ever in the focus doc; a mirror hears this view's
-  // own session on G's channel, and draws no box for it.
-  it("every focus × a selection of mine or none: the peer's box in L and R, mine only where the focus is, and the parts of every doc never restart", async () => {
+  // A host with a live link L to G and a pin P of it. A peer on G's channel
+  // selects G's card. scene.others is a part of every doc, so whatever the
+  // focus, the card's peer box is drawn wherever G is drawn with its channel:
+  // L, never P (a pin has no channel), never the host (the peer is not in
+  // it), never twice. This view's own selection is scene.select's, only ever
+  // in the focus doc.
+  it("every focus × a selection of mine or none: the peer's box in L, mine only where the focus is, and the parts of every doc never restart", async () => {
     const repo = new FakeRepo();
     const g = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }), die: object({ name: "Die" }) }, order: ["card", "die"] }));
     const link = (name, extra = {}) => object({ name, sourceUrl: g.url, providerId: LINK, renderUrl: null, ...extra });
-    s = await mountStage({ repo, extensions: [SELECT, OTHERS], doc: { objects: { table: object({ name: "Table" }), L: link("G"), R: link("G again"), P: link("G fixed", { at: { heads: g.heads() } }) }, order: ["table", "L", "R", "P"] } });
+    s = await mountStage({ repo, extensions: [SELECT, OTHERS], doc: { objects: { table: object({ name: "Table" }), L: link("G"), P: link("G fixed", { at: { heads: g.heads() } }) }, order: ["table", "L", "P"] } });
     const view = s.debug.view;
     const stageAt = (p) => view.stages().find((x) => x.path.join("/") === p);
-    await until(() => stageAt("L") && stageAt("R") && stageAt("P"), 2000);
+    await until(() => stageAt("L") && stageAt("P"), 2000);
     const { THREE } = s.api("scene.select");
     // (no WebGL here: every object has one box, and every link's frame is the host's)
     view.viewport.objectBox = () => new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1));
@@ -449,9 +448,9 @@ describe("scene.others: wherever its doc is", () => {
         await until(() => view.focusStage().debug.host.instanceOf("scene.select"), 2000);
         if (mine) view.select([...focus, focus.length ? mine : "table"]);
         else view.select(null);
-        const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), R: ["peer:p1"], P: [] };
+        const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), P: [] };
         await until(() => JSON.stringify(drawn()) === JSON.stringify(want), 2000).catch(() => expect([focus, mine, drawn()]).toEqual([focus, mine, want]));
-        // (and still, once this view has said what it selected on G's channel, which the mirror hears)
+        // (and still, once this view has said what it selected on G's channel)
         await settle();
         expect([focus, mine, drawn()]).toEqual([focus, mine, want]);
         expect(instances()).toEqual(first);

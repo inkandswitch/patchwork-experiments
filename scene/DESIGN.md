@@ -55,10 +55,9 @@ on a ship, and the ship never reads into the game.
 An extension sees one doc, its stage's. Docs compose through space and
 frames only (rays, hits, rides, the input path), never by reference.
 
-A link is live, a **mirror** (the same live doc placed again: drawn, never
-acting), a **pin** (a doc at fixed heads, with everything it reaches), or
-closed (a cycle, or a doc that can't open). Mirrors and pins can't write any
-doc. **Enter** moves the viewer's focus into a link to edit it in place, the
+A link is live, a **pin** (a doc at fixed heads, with everything it
+reaches), or closed (a cycle, the same live doc placed again in one view, or
+a doc that can't open). Pins can't write any doc. **Enter** moves the viewer's focus into a link to edit it in place, the
 world around still live; **Leave** comes back out. **Extract** and
 **Bundle** are one copy rule in two directions: a selection out into its own
 linked doc, or a linked doc back in.

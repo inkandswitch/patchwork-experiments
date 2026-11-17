@@ -17,10 +17,10 @@
 //   version of a doc is a different identity, so a doc may hold its own past.
 // - A live doc acts at one occurrence per view: the first in path order
 //   (shallowest, then the smallest link id where two paths first differ).
-//   Every other live occurrence of it is a mirror.
+//   Every other live occurrence of it is closed "repeat", drawn as its hint.
 // - A doc the view can't open (docOf says null) is closed "unavailable". One
 //   that hasn't arrived (undefined) is open, with nothing under it yet.
-// - Closed reasons are exactly "unavailable", "cycle" and "unpinned".
+// - Closed reasons are exactly "unavailable", "cycle", "repeat" and "unpinned".
 // - The budget is the view's: at most `budget` occurrences are opened,
 //   nearest first; expansion terminates without it (paths can't repeat an
 //   identity, and there are finitely many), but a diamond of pins is
@@ -30,7 +30,7 @@
 export const LINK = "scene.link";
 
 /** The closed reasons, exactly. */
-export const CLOSED = Object.freeze(["unavailable", "cycle", "unpinned"]);
+export const CLOSED = Object.freeze(["unavailable", "cycle", "repeat", "unpinned"]);
 
 /** A link's `at` as heads (a non-empty list of strings) and deps, or null (live). Pure. */
 export function atOf(o) {
@@ -61,7 +61,7 @@ export const identityOf = (url, heads) => (heads ? `${url}#${[...heads].sort().j
  * @param {(url: string, heads: string[] | null) => object | null | undefined} docOf
  *   a doc as the view has it: null if it can't be opened, undefined if it hasn't arrived
  * @param {{ budget?: number }} [o]
- * @returns {{ path: string[], url: string, heads: string[] | null, deps: object | null, role: "acting" | "mirror" | "pinned" | "closed", reason?: string, depth: number, parent: number | null, link: string | null }[]}
+ * @returns {{ path: string[], url: string, heads: string[] | null, deps: object | null, role: "acting" | "pinned" | "closed", reason?: string, depth: number, parent: number | null, link: string | null }[]}
  */
 export function expand(root, docOf, { budget = Infinity } = {}) {
   const out = [];
@@ -84,19 +84,17 @@ export function expand(root, docOf, { budget = Infinity } = {}) {
         out.push({ ...base, role: "closed", reason: "cycle" });
         continue;
       }
+      if (!occ.heads && acting.has(occ.url)) {
+        out.push({ ...base, role: "closed", reason: "repeat" });
+        continue;
+      }
       const doc = docOf(occ.url, occ.heads);
       if (doc === null) {
         out.push({ ...base, role: "closed", reason: "unavailable" });
         continue;
       }
-      let role;
-      if (occ.heads) role = "pinned";
-      else if (acting.has(occ.url)) role = "mirror";
-      else {
-        acting.add(occ.url);
-        role = "acting";
-      }
-      out.push({ ...base, role });
+      if (!occ.heads) acting.add(occ.url);
+      out.push({ ...base, role: occ.heads ? "pinned" : "acting" });
       if (doc === undefined) continue; // not here yet: nothing under it
       const ids = [...occ.ids, ident];
       for (const l of linksOf(doc)) {

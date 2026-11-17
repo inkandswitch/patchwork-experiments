@@ -52,11 +52,11 @@ function holders(started) {
 }
 
 /**
- * Host A: a table, L and R both live links to B (L acts, R mirrors it: the
- * first in path order acts), P a pin of B, X a link to a doc that can't be
- * opened. B: a card and M, a live link to C. C: a piece. So the stages are
- * A [], B [L], C [L, M], B again [R] and C again [R, M] (mirrors), and B
- * pinned [P] (its M closed: unpinned, the pin holds no C).
+ * Host A: a table, L and R both live links to B (L acts, the first in path
+ * order; R is closed, a repeat), P a pin of B, X a link to a doc that can't
+ * be opened. B: a card and M, a live link to C. C: a piece. So the stages
+ * are A [], B [L], C [L, M], and B pinned [P] (its M closed: unpinned, the
+ * pin holds no C).
  */
 async function mountNested({ repo = new FakeRepo(), log = [], extra = [], time = null } = {}) {
   const c = repo.add(emptyScene({ title: "C", objects: { piece: object({ name: "Piece", traits: { "t.card": {} } }) }, order: ["piece"] }));
@@ -70,16 +70,16 @@ async function mountNested({ repo = new FakeRepo(), log = [], extra = [], time =
   };
   const s = await mountStage({ repo, time, extensions: [...extensions(log), ...extra], doc: { title: "A", objects, order: Object.keys(objects) } });
   const view = s.debug.view;
-  await until(() => ["L", "L/M", "R", "R/M", "P"].every((p) => stageOf(view, p)?.debug.host.instanceOf("t.card")) && s.api("t.host")?.link("X")?.role === "closed", 3000);
+  await until(() => ["L", "L/M", "P"].every((p) => stageOf(view, p)?.debug.host.instanceOf("t.card")) && s.api("t.host")?.link("X")?.role === "closed" && s.api("t.host")?.link("R")?.reason === "repeat", 3000);
   return { s, view, repo, b, c, log };
 }
 
 const stageOf = (view, p) => view.stages().find((x) => x.path.join("/") === p) ?? null;
 // the stages, by path, and what each holds
-const STAGES = { "": ["table", "L", "R", "P", "X"], L: ["card", "M"], "L/M": ["piece"], R: ["card", "M"], "R/M": ["piece"], P: ["card", "M"] };
+const STAGES = { "": ["table", "L", "R", "P", "X"], L: ["card", "M"], "L/M": ["piece"], P: ["card", "M"] };
 const ACTING = new Set(["", "L", "L/M"]);
-// where Enter on a link goes: where its doc acts (a mirror's: where it's live); a pin and a closed link nowhere
-const ENTERS = { L: ["L"], R: ["L"], "L/M": ["L", "M"], "R/M": ["L", "M"] };
+// where Enter on a link goes: where its doc acts; a pin and a closed link (a repeat among them) nowhere
+const ENTERS = { L: ["L"], "L/M": ["L", "M"] };
 const pathOf = (p) => (p === "" ? [] : p.split("/"));
 
 /** Every event, as [name, model step, do it]. */
@@ -182,7 +182,7 @@ afterEach(() => {
 });
 
 describe("H10 across docs: the selection is always an element of the focus stage", () => {
-  it("every reachable focus and selection × every press, Select, Enter, Leave and Escape, over nested links, mirrors, a pin and a closed link: as the model says, and nothing written", async () => {
+  it("every reachable focus and selection × every press, Select, Enter, Leave and Escape, over nested links, a repeat, a pin and a closed link: as the model says, and nothing written", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
@@ -222,14 +222,14 @@ describe("H10 across docs: the selection is always an element of the focus stage
     // every focus and every selection at it was reached: 6 at A (nothing, or one of its 5), 3 in B, 2 in C
     expect(seen.size).toBe(11);
     expect(transitions).toBe(11 * evs.length);
-    expect(evs.length).toBe(37); // 13 presses, 13 Selects, 7 Enters, press nothing, select nothing, Leave, Escape
+    expect(evs.length).toBe(30); // 10 presses, 10 Selects, 6 Enters, press nothing, select nothing, Leave, Escape
     // focus and selection are the viewer's: no doc was written
     expect(writes.map((w) => w())).toEqual([[], [], []]);
   }, 60_000);
 });
 
 describe("Enter and Leave", () => {
-  it("Enter moves the general parts into the linked doc's stage; Leave moves them back; a mirror enters where it's live; a pin and a closed link don't", async () => {
+  it("Enter moves the general parts into the linked doc's stage; Leave moves them back; a repeat, a pin and a closed link don't", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
@@ -240,16 +240,16 @@ describe("Enter and Leave", () => {
     const enterOf = (id) => view.stage(0).debug.host.instanceOf("scene.focus").commands[0].state(id);
     expect(enterOf("table")).toBe(null);
     expect(enterOf("L").disabled).toBeFalsy();
-    expect(enterOf("R").disabled).toBeFalsy();
+    expect(enterOf("R")).toMatchObject({ disabled: true, title: expect.stringMatching(/repeat/) });
     expect(enterOf("P")).toMatchObject({ disabled: true, title: expect.stringMatching(/Follow latest/) });
     expect(enterOf("X")).toMatchObject({ disabled: true, title: expect.stringMatching(/unavailable/) });
+    expect(host.view.enter("R")).toBe(false);
     expect(host.view.enter("P")).toBe(false);
     expect(host.view.enter("X")).toBe(false);
     expect(host.view.enter("table")).toBe(false);
     // nobody has placed the camera yet: something may frame it on opening (scene.autoframe)
     expect(host.camera.touched()).toBe(false);
-    // the mirror R enters B where it acts, at L
-    expect(host.view.enter("R")).toBe(true);
+    expect(host.view.enter("L")).toBe(true);
     expect(view.atom.get().focus).toEqual(["L"]);
     await placed(view);
     expect(generalsAt(view)).toEqual(["L"]);
@@ -322,7 +322,7 @@ describe("Enter and Leave", () => {
       ["A's L removed, entered at B", ["L"], (m) => m.s.change((d) => void delete d.objects.L), []],
       ["A's L pinned, entered at B", ["L"], (m) => m.s.change((d) => void (d.objects.L.at = { heads: m.b.heads() })), []],
       ["B's M pinned, entered at C", ["L", "M"], (m) => m.b.change((d) => void (d.objects.M.at = { heads: m.c.heads() })), ["L"]],
-      // a link ahead of L in path order: B acts there now, and L is a mirror
+      // a link ahead of L in path order: B acts there now, and L is a repeat
       ["B linked again ahead of L, entered at B", ["L"], (m) => m.s.change((d) => void (d.objects.A0 = link(m.b.url, { name: "B first" }))), []],
       // L pointed at another doc: a new occurrence at the same path is the link going. C is open in this
       // view already (at L/M), so its stage opens at [L] in the same relink; a doc not yet found opens later
@@ -674,10 +674,10 @@ describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION D
   // link a click on the host (the boat round a game linked aboard her) can't select, and it used to go down
   // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
   // her moving table (presence-check.nopause, 2026-11-16). Every base body × every focus × a selection or
-  // none × every thing a click can land on (each stage's objects, mirrors', a pin's and a closed link's, and
+  // none × every thing a click can land on (each stage's objects, a pin's and a closed link's, and
   // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly in Look,
   // or in Edit on nothing (or a stale hit) with nothing selected; the selection is selectionStep's (outside the
-  // focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 22 = 264 cases.
+  // focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 17 = 204 cases.
   const FOCI = [[], ["L"], ["L", "M"]];
   const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
   // a hit is { key: (view) => the viewport's key, path: the hit's path, or null for nothing }. Stale hits: an id
@@ -719,7 +719,7 @@ describe("in Edit a click is Edit's wherever it lands (HISTORY.md, COMPOSITION D
             cases++;
           }
     }
-    expect(cases).toBe(264);
+    expect(cases).toBe(204);
   }, 60_000);
 
   // The symptom, with a click verb that changes the body as the boat's does: a part holding the host's table

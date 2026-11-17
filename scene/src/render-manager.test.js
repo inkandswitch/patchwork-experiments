@@ -38,7 +38,7 @@ function setup({ params = [{ key: "size", kind: "number", default: 1, cost: "che
 }
 
 describe("render manager", () => {
-  // A pinned or mirrored stage's (STAGE.md, "Views, stages and links"): it shows what is built,
+  // A pinned or refusing stage's (STAGE.md, "Views, stages and links"): it shows what is built,
   // and over every reason a render could be rebuilt it builds nothing and
   // writes no render doc.
   for (const why of ["never built", "params", "source", "a build that failed", "stuck building", "rebuild()"]) {

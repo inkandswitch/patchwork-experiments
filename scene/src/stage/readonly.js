@@ -1,7 +1,6 @@
 // What a stage holds of its doc, and of every doc it reaches (STAGE.md
 // §7, invariant I6). A stage is read-only when its handle is, or when it
-// doesn't act: a pin (a value: its doc at fixed heads) or a mirror (a live
-// doc acting at another placement in the same view). A read-only stage is
+// doesn't act: a pin (a value: its doc at fixed heads). A read-only stage is
 // given its doc and its repo through these wrappers, so nothing it runs can
 // write any doc, whatever it calls: the refusal is the handle's, not each
 // caller's. The stage checks `writable()` before it writes, so it never

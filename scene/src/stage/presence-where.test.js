@@ -10,13 +10,12 @@
 // it: every focus (each acting stage, depth ≤3) × where the viewer's body is
 // held (nowhere, or in each acting stage) × before and after the body is let
 // go, on one view of a tree with every stage role: acting at depths 0–3, a
-// sibling acting off the focus path, a mirror (and its links, mirrors too)
-// and a pin (its link closed). Each doc has one other person present in it,
-// each from a view of their own on that doc alone (the page bus carries
-// between them), so who is drawn where is exact: in each stage that acts or
-// mirrors, the one person of its doc, at the point they said, in a layer of
-// that stage's (hung under its root, so in its frame: I7); nobody in a pin
-// (it has no channel); never this view (a mirror hears its own session); and
+// sibling acting off the focus path, and a pin (its link closed). Each doc
+// has one other person present in it, each from a view of their own on that
+// doc alone (the page bus carries between them), so who is drawn where is
+// exact: in each stage that acts, the one person of its doc, at the point
+// they said, in a layer of that stage's (hung under its root, so in its
+// frame: I7); nobody in a pin (it has no channel); never this view; and
 // nobody twice.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -91,10 +90,10 @@ const PROC = { meta: { id: "t.proc", traits: ["t.proc"] }, module: { create: (ap
 const CHIP = { meta: { id: "scene.clock" }, module: clockPart };
 
 /**
- * A: L and R live links to B (L acts, R mirrors it), P a pin of B, S a live
+ * A: L a live link to B, P a pin of B, S a live
  * link to E (a sibling of L, off any focus inside L). B: M, live, to C. C: N,
  * live, to D. So the stages are A [], B [L], C [L/M], D [L/M/N] (three
- * deep), E [S], the mirrors [R], [R/M], [R/M/N], and the pin [P] (its M
+ * deep), E [S], and the pin [P] (its M
  * closed: the pin holds no C). A, B and D have a process. Each link is
  * placed off its host's origin, so every stage's frame is its own.
  */
@@ -106,7 +105,6 @@ async function mountTree() {
   const e = repo.add(emptyScene({ title: "E", objects: { thing: object({ name: "Thing" }) }, order: ["thing"] }));
   const objects = {
     L: link(b.url, "B", { transform: at(100, 0, 0) }),
-    R: link(b.url, "B again", { transform: at(-100, 0, 0) }),
     P: link(b.url, "B fixed", { transform: at(0, 0, -100), at: { heads: b.heads() } }),
     S: link(e.url, "E", { transform: at(0, -50, 0) }),
   };
@@ -123,9 +121,6 @@ const ROLE = {
   "L/M": ["acting", "C"],
   "L/M/N": ["acting", "D"],
   S: ["acting", "E"],
-  R: ["mirror", "B"],
-  "R/M": ["mirror", "C"],
-  "R/M/N": ["mirror", "D"],
   P: ["pinned", "B"],
 };
 const ACTING = Object.keys(ROLE).filter((p) => ROLE[p][0] === "acting");

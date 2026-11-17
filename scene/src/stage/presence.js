@@ -27,11 +27,9 @@
 // without one are ignored, as are our own, and so is a hold without its
 // `since` stamp.
 //
-// A presence that only listens (`listen: true`: a read-only stage's, a pin's
-// or a mirror's, STAGE.md, "Views, stages and links") hears its doc's channel and says nothing
-// on it: no hello, no heartbeat, no keys, sends or holds, no bye. It hears
-// its own session too, since it never speaks: that is how a mirror hears its
-// own view's acting stage of the same doc (one session per view).
+// A presence that only listens (`listen: true`: a read-only stage's,
+// STAGE.md, "Views, stages and links") hears its doc's channel and says
+// nothing on it: no hello, no heartbeat, no keys, sends or holds, no bye.
 //
 // Nothing here knows what a key means or what a transform looks like: the
 // stage shows poses and extensions read keys. Time comes in through now /
@@ -648,7 +646,7 @@ export function createPresence({
   const onMessage = (payload) => {
     if (dead) return;
     const msg = payload?.message;
-    if (!isObj(msg) || !isStr(msg.session) || (msg.session === session && !listen)) return;
+    if (!isObj(msg) || !isStr(msg.session) || msg.session === session) return;
     if (msg.type === PRESENCE) onPresence(msg);
     else if (msg.type === SEND) onSend(msg);
     else if (msg.type === POSE) onPose(msg);

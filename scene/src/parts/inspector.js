@@ -154,9 +154,8 @@ export function linkText(link) {
   if (!link) return "";
   const state = link.open ? "" : " · not open here yet";
   if (link.role === "acting") return `Live${state}`;
-  if (link.role === "mirror") return `Live, shown again (Enter goes inside where it's linked first)${state}`;
   if (link.role === "pinned") return `Fixed at a version${state}`;
-  const why = { unavailable: "it can't be opened here", cycle: "it would hold itself", unpinned: "inside a fixed version that doesn't hold it" }[link.reason] ?? link.reason ?? "closed";
+  const why = { unavailable: "it can't be opened here", cycle: "it would hold itself", repeat: "it's linked here already, and open there", unpinned: "inside a fixed version that doesn't hold it" }[link.reason] ?? link.reason ?? "closed";
   return `Closed: ${why}`;
 }
 

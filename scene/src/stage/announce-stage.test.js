@@ -1,9 +1,9 @@
 // A view tells the host which linked docs it shows live (./announce.js), so
 // the providers around it treat them as its own: a draft clones them and a
 // history checkpoint pins them with the scene. Over every shape of link —
-// alone, linked, mirrored, pinned, two deep — exactly the docs shown live are
-// announced (a mirror's doc once; a pin's not at all, it keeps its own
-// version), a link taken away retracts its doc, and unmounting retracts all.
+// alone, linked, linked twice, pinned, two deep — exactly the docs shown live
+// are announced (a doc linked twice once; a pin's not at all, it keeps its
+// own version), a link taken away retracts its doc, and unmounting retracts all.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -55,7 +55,7 @@ async function view(repo, handle) {
 }
 
 describe("a view announces the linked docs it shows live", () => {
-  for (const shape of ["alone", "linked", "mirrored", "pinned", "two deep"])
+  for (const shape of ["alone", "linked", "linked twice", "pinned", "two deep"])
     it(shape, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const repo = new FakeRepo();
@@ -69,14 +69,15 @@ describe("a view announces the linked docs it shows live", () => {
           ? {}
           : shape === "linked"
             ? { L: link(G.url) }
-            : shape === "mirrored"
+            : shape === "linked twice"
               ? { L: link(G.url), M: link(G.url, { transform: { position: [5, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }
               : shape === "pinned"
                 ? { P: link(G.url, { at: { heads: G.heads() } }) }
                 : { LX: link(X.url) };
       const H = repo.add(emptyScene({ title: "H", objects, order: Object.keys(objects) }));
       const { v, announced, events, stop } = await view(repo, H);
-      const stages = shape === "alone" ? 1 : shape === "linked" || shape === "pinned" ? 2 : 3;
+      // (linked twice: the second link is closed, a repeat, with no stage)
+      const stages = shape === "alone" ? 1 : shape === "linked" || shape === "pinned" || shape === "linked twice" ? 2 : 3;
       await until(() => v.stages().length === stages, 4000);
       await settle();
 
