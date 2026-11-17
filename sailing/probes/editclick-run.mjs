@@ -137,11 +137,13 @@ try {
   check("2: entering leaves the body Edit", (await state()).body === "edit", await state());
 
   // ── 3: a click on the boat, outside the focus ──
-  // something else of hers in sight round the table (her deck, a bench, the coachroof): the boat's object nearest
-  // the canvas's middle that isn't the table or the link
-  const findOther = () => js(`(() => { const v = __p.A.view; const r = v.canvas.getBoundingClientRect(); let best = null;
+  // the boat's object nearest the canvas's middle, of those a click reaches on a 12 px grid: the table (its top
+  // round G's board: its origin is under the board, so no spiral from it finds it), or something else of hers
+  // round the table (her deck, a bench, the coachroof), not the table or the link
+  const find = (which) => js(`(() => { const v = __p.A.view; const r = v.canvas.getBoundingClientRect(); let best = null;
+    const want = (id) => ${which === "table" ? `id === ${J(ids.table)}` : `id !== ${J(ids.table)} && id !== ${J(ids.link)}`};
     for (let y = 8; y < r.height - 8; y += 12) for (let x = 8; x < r.width - 8; x += 12) { const h = v.viewport.pick(x, y); const p = h?.id ? v.pathOfKey(h.id) : null;
-      if (!p || p.length !== 1 || p[0] === ${J(ids.table)} || p[0] === ${J(ids.link)} || document.elementFromPoint(r.left + x, r.top + y) !== v.canvas) continue;
+      if (!p || p.length !== 1 || !want(p[0]) || document.elementFromPoint(r.left + x, r.top + y) !== v.canvas) continue;
       const d = Math.hypot(x - r.width / 2, y - r.height / 2); if (!best || d < best.d) best = { id: p[0], d, x: r.left + x, y: r.top + y }; } return best; })()`);
   for (const which of ["table", "other"]) {
     if (J(await P("focusPath('a')")) !== J([ids.link]) || (await state()).body !== "edit") {
@@ -150,12 +152,10 @@ try {
       await b.rest(300);
     }
     const before = await state();
-    const other = which === "other" ? await findOther() : null;
-    if (which === "other" && !other) { check("3: another part of her in sight", false, null); continue; }
-    const id = which === "table" ? ids.table : other.id;
     const name = which === "table" ? "the Card table" : "another part of her";
-    const at = which === "table" ? await P(`aimAt(${J(id)}, 'a')`) : other;
+    const at = await find(which);
     if (!at) { check(`3: ${name} in plain sight`, false, null); continue; }
+    const id = at.id;
     await b.move(at.x, at.y);
     await press(at.x, at.y, 1);
     await b.rest(600);
@@ -205,24 +205,21 @@ try {
   const want = { x: 40, y: 16 }; // canvas px: where the HUD's Come aboard button sat (top left, 12 px in)
   const gCards = await cards();
   const card = gCards[0];
-  // slide the camera (no turn) toward the card's middle projecting at `want` (the clock is the page's manual one, so nothing
-  // moves meanwhile); it needn't land exactly: what counts is that the view's pick at `want` is a card of G's
-  let at = null;
-  for (let i = 0; i < 16; i++) {
-    at = await js(`(() => { const v = __p.A.view.viewport; const c = v.getCamera(); const m = __p.worldOf(${J(card)}, "a"); if (!m) return null;
-      const p = v.project([m[12], m[13], m[14]]); const f = c.target.map((t, i) => t - c.position[i]); const d = Math.hypot(...f); const fw = f.map((x) => x / d);
+  // slide the camera (no turn) toward the card's middle projecting at `want`, all in one go on the page: no frame passes
+  // meanwhile, for she swings at anchor and the eye rides her level, so a frame between two steps moves the card on the
+  // screen; it needn't land exactly: what counts is that the view's pick at `want` is a card of G's
+  const at = await js(`(() => { const v = __p.A.view.viewport; const m = __p.worldOf(${J(card)}, "a"); if (!m) return null;
+    for (let i = 0; i < 32; i++) {
+      const c = v.getCamera(); const p = v.project([m[12], m[13], m[14]]); const f = c.target.map((t, i) => t - c.position[i]); const d = Math.hypot(...f); const fw = f.map((x) => x / d);
       const up = c.up, right = [fw[1] * up[2] - fw[2] * up[1], fw[2] * up[0] - fw[0] * up[2], fw[0] * up[1] - fw[1] * up[0]];
       const dist = Math.hypot(m[12] - c.position[0], m[13] - c.position[1], m[14] - c.position[2]);
       const k = (2 * dist * Math.tan((c.fov * Math.PI) / 360)) / v.size.h;
       const dx = ${want.x} - p.x, dy = ${want.y} - p.y;
-      if (Math.hypot(dx, dy) < 1.5) return { x: p.x, y: p.y, done: true };
+      if (Math.hypot(dx, dy) < 1.5) return { x: p.x, y: p.y, done: true, steps: i };
       const shift = right.map((r, i) => 0.7 * (-dx * k * r + dy * k * up[i])); // damped: the card isn't at the distance k assumes
       v.setCamera({ position: c.position.map((x, i) => x + shift[i]), target: c.target.map((x, i) => x + shift[i]) });
-      return { x: p.x, y: p.y, done: false }; })()`);
-    if (!at || at.done) break;
-    await b.rest(120);
-  }
-  await b.rest(300);
+    }
+    const p = v.project([m[12], m[13], m[14]]); return { x: p.x, y: p.y, done: false, steps: 32 }; })()`);
   const cr = await canvasRect();
   const onCard = await js(`(() => { const v = __p.A.view.viewport; const h = v.pick(${want.x}, ${want.y}); return h?.id ? __p.A.view.pathOfKey(h.id) : null; })()`);
   report.numbers.topEdge = { at, onCard, card, canvas: cr };

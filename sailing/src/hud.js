@@ -176,7 +176,6 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
   const pct = (v, d) => `${Math.round((Number.isFinite(Number(v)) ? Number(v) : d) * 100)}%`;
   const c = read ? compass(read.heading) : null;
   let hint;
-  let keys = "";
   if (state === "lobby") hint = "";
   else if (state === "paused") hint = "Click to carry on";
   else if (me.hint) hint = me.hint;
@@ -197,7 +196,6 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
   return {
     state,
     hint,
-    keys,
     advice: state !== "aboard" ? "" : inIrons(read, sail) ? (backs ? IRONS_JIB : IRONS) : luffing(read, sail, anchor) ? (backs ? LUFFING_JIB : LUFFING) : sailDownNudge(stations, sail, anchor, jib),
     // walking her deck (not at a station, not in the water): where her stations are
     guide: state === "aboard" && !me.station && !me.swimming ? stationGuide(stations) : "",
@@ -272,10 +270,9 @@ export function createHud(api, ctx) {
   panel.hidden = true;
 
   const hint = el("div", { "data-k": "hint", role: "status" });
-  const keys = el("div", { "data-k": "keys" });
   const advice = el("div", { "data-k": "advice" });
   const guide = el("div", { "data-k": "guide" });
-  const hints = el("div", { class: "sail-hint" }, hint, keys, guide, advice);
+  const hints = el("div", { class: "sail-hint" }, hint, guide, advice);
   root.append(el("div", { class: "sail-crosshair" }), panel, hints);
   overlay.append(root);
 
@@ -322,7 +319,6 @@ export function createHud(api, ctx) {
     // harbour of two boats, each one's HUD stays away until you come aboard her (WATER.md)
     put("shown", !!me.playing || (!!ctx.sea?.world?.() && !!ship), (v) => (root.style.display = v ? "" : "none"));
     put("hint", model.hint, text(hint));
-    put("keys", model.keys, text(keys));
     put("advice", model.advice, text(advice));
     put("guide", model.guide, (v) => ((guide.textContent = v), (guide.hidden = !v)));
     put("panel", model.panel, (v) => (panel.hidden = !v));
