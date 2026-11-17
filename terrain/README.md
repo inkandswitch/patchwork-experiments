@@ -986,6 +986,9 @@ node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu] 
 #   off the yard glassy, no horizontal stripes in the harbour's mirror (low-town's ratio
 #   sits at 1.23–1.32 against 1.3 from run to run, as the water moves: rerun before
 #   reading a failure there as a regression), the yard's ground varied by 8%
+#   (each of these pixel strips is carried to the stage canvas the page has, as a fraction of
+#   its height: since scene's bar of tools (N8) the canvas starts lower, and at fixed rows
+#   low-town's strip took in the shore itself, 1.44; carried, 1.30; integrator of lane/n6, 2026-11-17)
 #   Published 2026-11-16 (merge 07053407, lane/ukee): Ucluelet automerge:3uqC18J1FtGJPAAvucN2HP7thFm6
 #   (home 16.9 ms, the worst views lighthouse-sea 22.7 and overview 27.0, GLB 45.7 MB),
 #   Cadboro Bay automerge:JjZVTNDWJnvw9Gp5nZ936e7KRZ4 (its terrain carries terrain.sky now)

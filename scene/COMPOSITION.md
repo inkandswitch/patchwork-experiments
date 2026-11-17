@@ -79,8 +79,8 @@ pieces, each published and checked in the real Patchwork:
 - **One sea for a world** ([water/WATER.md](../water/WATER.md)): a world's
   ambients are its outermost doc's, and a new `water` package draws and
   evaluates the world's water. The *Harbour*
-  (automerge:wWT7oXqy2avFoaA12RELnJag6Yi, republished 2026-11-16 with
-  clipped open water) links Lost Cities aboard and Fitting out, both at anchor on its
+  (automerge:2wvYRaAWRU8xCKBmrtF2qf4ErRcR, republished 2026-11-16 with
+  clipped open water and 2026-11-17 with the stock sloop on rig@4, N6) links Lost Cities aboard and Fitting out, both at anchor on its
   one sea. It rests on Decision 1's
   amended sentence, which the lead accepted on 2026-11-15.
 - **Water bodies** (WATER.md, "Water bodies", built in `lane/water`, merged
@@ -90,7 +90,7 @@ pieces, each published and checked in the real Patchwork:
   sea and a current are behaviours put on it, and the weather is a scene
   trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
   sloop in a box of water, floats in a dry room beside Ship at anchor
-  (*Model basin and Ship at anchor*, automerge:3YCHXSNChAC1zLeC16hXcoVKAgTR,
+  (*Model basin and Ship at anchor*, automerge:T5cwhWMcGzvPXMyqHD6VmmDqMFX, republished 2026-11-17, N6,
   a doc of two links, laid out so her block clears the basin by 10 m or
   more, WATER.md Decisions 121 and 123, its home fitted to frame both in a
   640 px pane, Decision 122; it linked Ship at sea until the lead chose
@@ -109,10 +109,10 @@ pieces, each published and checked in the real Patchwork:
   box is the guest's (the lead's Q1), liveness is global (Q2), and the
   stage is unchanged: the path rule a fixer committed unaware of the
   lead's choice is reverted (Decision 90). The *Model room*
-  (automerge:4RbKJ9A83XkEX6u1GBNoPYDE3xto, its home fitted, WATER.md
+  (automerge:TCPsebdYmzQnK8JCsGQFHMZH6VS, its home fitted, republished 2026-11-17, N6; WATER.md
   Decision 122) lays boats out as 1:25
   dioramas on its floor, among them *Ship at anchor*
-  (automerge:3NkHf9D3oWisX4E4BCRk3FM1xQNA, now published on her own,
+  (automerge:4QoRjMjsP8PHqh6mAHsJFQcrKv9T, now published on her own,
   Decision 120).
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a

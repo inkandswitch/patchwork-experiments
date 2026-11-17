@@ -231,8 +231,15 @@ try {
   const grain = await P("grain()");
   check("the ground carries its grain and the place dresses it (every ground mesh's material, a program compiled with it)", grain.meshes > 0 && grain.dressed === grain.meshes && grain.grainPrograms > 0, grain);
   check("no view's top is black (the sky drawn at every eye)", Object.values(topPixels).every((c) => Math.max(...c) > 24), topPixels);
+  // The pixel rows below were read off shots whose stage canvas was 733 px tall from row 27 (2026-11-16). The canvas
+  // moves and shrinks as the page's chrome does (scene's bar of tools since N8 starts it lower), and a perspective
+  // camera puts a thing at the same FRACTION of the canvas's height whatever that height is (its fov is vertical), so
+  // each row is carried to the canvas the page has now: the same view, not the same pixel row.
+  const canvas = await js("(() => { const c = [...document.querySelectorAll('canvas')].sort((a, z) => z.clientWidth * z.clientHeight - a.clientWidth * a.clientHeight)[0]; const r = c.getBoundingClientRect(); return { top: r.top, height: r.height }; })()");
+  const row = (y) => Math.round(canvas.top + ((y - 27) * canvas.height) / 733);
+  report.numbers.canvas = canvas;
   // calm overcast water is a glassy mirror, not a camouflage of dark blobs: off the yard, the water's pixels (the frame's lower third) darker than half their median luminance are under 8% of them
-  const waterLum = pngRegion(join(SHOTS, "ucluelet-low-yard.png"), 0, 470, 1280, 720).map(([r, g, bl]) => 0.2126 * r + 0.7152 * g + 0.0722 * bl).sort((a, z) => a - z);
+  const waterLum = pngRegion(join(SHOTS, "ucluelet-low-yard.png"), 0, row(470), 1280, row(720)).map(([r, g, bl]) => 0.2126 * r + 0.7152 * g + 0.0722 * bl).sort((a, z) => a - z);
   const waterMedian = waterLum[waterLum.length >> 1];
   const darkShare = (f) => waterLum.filter((l) => l < f * waterMedian).length / waterLum.length;
   report.numbers.lowYardWater = { median: +waterMedian.toFixed(1), darkerThanHalf: +darkShare(0.5).toFixed(4), darkerThan08: +darkShare(0.8).toFixed(4) };
@@ -249,7 +256,7 @@ try {
     }
     return { horizontal: +(gx / c).toFixed(3), vertical: +(gy / c).toFixed(3), ratio: +(gy / Math.max(gx, 1e-6)).toFixed(3) };
   };
-  report.numbers.stripes = { "low-town": gradients("ucluelet-low-town.png", 418, 468), ozzard: gradients("ucluelet-ozzard.png", 525, 575) };
+  report.numbers.stripes = { "low-town": gradients("ucluelet-low-town.png", row(418), row(468)), ozzard: gradients("ucluelet-ozzard.png", row(525), row(575)) };
   check("no horizontal stripes in the harbour's mirror: vertical gradient at most 1.3 times the horizontal under the shore (low-town, ozzard)", Object.values(report.numbers.stripes).every((g) => g.ratio <= 1.3), report.numbers.stripes);
   // the yard's ground worked and wet, not a featureless plane: the ground strip's luminance standard deviation over its mean at least 8% (courtyard, hangar-doors);
   // the courtyard's strip the yard within about 30 m of its standing eye (rows 460–740, under the yard's horizon at about 430: rows 620–740 alone are only 4.6–7 m of ground there, a puddle or two)
@@ -258,7 +265,7 @@ try {
     const m = l.reduce((a, b) => a + b, 0) / l.length;
     return +(Math.sqrt(l.reduce((a, b) => a + (b - m) ** 2, 0) / l.length) / m).toFixed(4);
   };
-  report.numbers.yardGround = { courtyard: spread("ucluelet-courtyard.png", 460, 740), "hangar-doors": spread("ucluelet-hangar-doors.png", 620, 740) };
+  report.numbers.yardGround = { courtyard: spread("ucluelet-courtyard.png", row(460), row(740)), "hangar-doors": spread("ucluelet-hangar-doors.png", row(620), row(740)) };
   check("the yard's ground varies by at least 8% (courtyard, hangar-doors: the ground strip's standard deviation over its mean)", Object.values(report.numbers.yardGround).every((v) => v >= 0.08), report.numbers.yardGround);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);
