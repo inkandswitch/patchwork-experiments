@@ -137,10 +137,10 @@ async function hover(w, p) {
 async function clickAt({ x, y }) {
   await b.click(Math.round(x), Math.round(y));
 }
-/** Play in view w: press ▶ Play (the arena's, which runs wherever the level is: no mode to switch to). */
+/** Play in view w: press Play on the bar of tools (the arena's world command, which runs wherever the level is: no mode to switch to). */
 async function play(w) {
-  await b.waitFor(`window.__p.running("${w}").includes("arena") && !!window.__p.rect(".arena-play", "${w}")`, 8000);
-  await clickAt(await P(`rect(".arena-play", "${w}")`));
+  await b.waitFor(`window.__p.running("${w}").includes("arena") && !!window.__p.rect('.toolbar [data-command="play"]', "${w}")`, 8000);
+  await clickAt(await P(`rect('.toolbar [data-command="play"]', "${w}")`));
   await b.rest(600);
 }
 /** The door's height as view w draws it, above where it rests shut. */
@@ -304,17 +304,21 @@ try {
   if (leaveItem) await clickAt(leaveItem);
   await b.rest(300);
   check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (Look again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "look", { chip: chipA, body: await P(`body("a")`) });
-  // the outline is a drawer tab A opens from the toolbar, which is Edit's: A chooses Edit on the body chip first
+  // the tree is the top of the inspector's pane, which A opens from the toolbar, which is Edit's: A chooses Edit on the body chip first
   const chipLook = await P(`chip("a")`);
   if (chipLook) await clickAt(chipLook);
   await b.soon(`!!window.__p.chipItem("a", "Edit")`, { frames: 180 });
   const editItem = await P(`chipItem("a", "Edit")`);
   if (editItem) await clickAt(editItem);
   await b.rest(300);
-  check("A chooses Edit on the body chip (the toolbar, the outline and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
-  const objectsButton = await P(`buttonRect("a", "Objects")`);
-  if (objectsButton) await clickAt(objectsButton);
-  await b.rest(500);
+  check("A chooses Edit on the body chip (the toolbar, the inspector and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
+  // the toolbar's Inspector is a toggle: pressed only if a selection hasn't opened the pane already
+  if (!(await P(`panelOpen("a", "inspector")`))) {
+    const inspectorButton = await P(`buttonRect("a", "Inspector")`);
+    if (inspectorButton) await clickAt(inspectorButton);
+    await b.rest(500);
+  }
+  check("A's inspector pane is open (the tree in it, for the door's row below)", await P(`panelOpen("a", "inspector")`), { tabs: await P(`text(".stage-drawer-tab-name", "a")`) });
   await P(`setCamera("a", { position: [0, 95, 30], target: [0, 0, 0], fov: 60 })`);
   await b.rest(400);
   report.numbers.wholeMap = await P(`timeFrames("a")`);
@@ -326,10 +330,10 @@ try {
   const row = await P(`rowRect("a", ${JSON.stringify(doorId)})`);
   if (row) await clickAt(row);
   await b.rest(300);
-  // (inside a folded row it isn't shown: then select it as the outline would)
+  // (inside a folded row it isn't shown: then select it as the tree would)
   if ((await P(`selected("a")`)) !== doorId) await P(`select("a", ${JSON.stringify(doorId)})`), (details.selectedBy = "local.selected");
   await P(`focus("a")`);
-  check("the door selected in A's outline", (await P(`selected("a")`)) === doorId, { row, selected: await P(`selected("a")`) });
+  check("the door selected in A's tree", (await P(`selected("a")`)) === doorId, { row, selected: await P(`selected("a")`) });
   await cmdKey("c", "copy");
   const d = await P(`canvasRect("d")`);
   await b.click(Math.round(d.x + d.w / 2), Math.round(d.y + d.h * 0.8));

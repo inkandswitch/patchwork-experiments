@@ -189,7 +189,7 @@ try {
     },
     viewRect(w) { const r = hostOf(w).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
     resize(w, width, height) { const h = hostOf(w); h.style.width = `${width}px`; h.style.height = `${height}px`; },
-    /** is a drawer tab of the stage's own open in view w (its panel id: "parts", "inspector", "objects") */
+    /** is a drawer tab of the stage's own open in view w (its panel id: "parts", "inspector") */
     tab: (w, id) => !!hostOf(w).querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     /** what the inspector's "Add behaviour…" offers */
     behaviours: (w) => [...(hostOf(w).querySelector(".behaviour-add")?.options ?? [])].map((o) => o.value).filter(Boolean),

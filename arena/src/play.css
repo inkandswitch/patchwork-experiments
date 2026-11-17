@@ -6,19 +6,12 @@
   color: #fff;
 }
 /* an overlay's children catch the pointer by default; the HUD covers the
-   whole view, so it doesn't (only its buttons do) */
+   whole view and only reads, so no part of it does (Play and Stand targets
+   up are buttons on the stage's bar of tools, not here) */
 .scene-stage .arena-hud:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-.scene-stage .arena button:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  pointer-events: auto;
-  font: inherit;
-  border: 0;
-  border-radius: 999px;
-  padding: 6px 14px;
-  cursor: pointer;
 }
 .scene-stage .arena-lobby:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
@@ -29,30 +22,11 @@
   justify-items: center;
   gap: 8px;
 }
-.scene-stage .arena-start:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px 8px;
-  align-items: center;
-  padding: 4px;
-  border-radius: 20px;
-  background: rgb(20 22 28 / 0.72);
-  pointer-events: auto;
-}
-.scene-stage .arena-play:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  background: var(--scene-accent-css, #2bb39a);
-  color: #06120f;
-  font-weight: 600;
-}
-.scene-stage .arena-reset:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  background: rgb(255 255 255 / 0.14);
-  color: #fff;
-}
 .scene-stage .arena-count:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  padding: 0 10px 0 4px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(20 22 28 / 0.72);
   text-align: center;
-  opacity: 0.85;
 }
 /* four ticks round a gap, and a dot: readable on sky and on sand */
 .scene-stage .arena-crosshair:where(:not(.about-embed *), .about-embed .scene-tool *) {
@@ -115,7 +89,7 @@
   gap: 2px;
   min-width: 140px;
 }
-.scene-stage .arena-start + .arena-scores:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .arena-lobby .arena-scores:where(:not(.about-embed *), .about-embed .scene-tool *) {
   padding: 6px 12px;
   border-radius: 10px;
   background: rgb(20 22 28 / 0.6);
@@ -157,15 +131,6 @@
   text-align: center;
   color: rgb(255 255 255 / 0.85);
   text-shadow: 0 1px 2px #000;
-}
-.scene-stage .arena-resume:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  position: absolute;
-  left: 50%;
-  top: 58%;
-  transform: translateX(-50%);
-  background: rgb(20 22 28 / 0.85);
-  color: #fff;
-  padding: 10px 18px;
 }
 .scene-stage .label.arena-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: #fff;
