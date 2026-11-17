@@ -19,4 +19,14 @@ export const plugins = [
       return (await import("./tool")).default;
     },
   },
+  {
+    // names and draws a comment thread's target cells in the comments sidebar
+    type: "patchwork:ref-view",
+    id: "attestation-graph-ref",
+    name: "Attestation graph ref",
+    supportedDatatypes: ["attestation-graph"],
+    async load() {
+      return (await import("./ref-view")).default;
+    },
+  },
 ];

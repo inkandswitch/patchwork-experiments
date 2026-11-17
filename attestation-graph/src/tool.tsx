@@ -1,5 +1,6 @@
 import {
   For,
+  type JSX,
   Show,
   batch,
   createEffect,
@@ -10,7 +11,12 @@ import {
   onMount,
 } from "solid-js";
 import { render } from "solid-js/web";
+import { type Compare, useCompare } from "./compare";
+import { type CellRef, cellIdsOn, cellRefUrl, cellsTargeted, threadsByCell, urlsKey } from "./comments";
+import { useComments } from "./use-comments";
 import { DEFAULT_TITLE } from "./datatype";
+import { type Change, type CellDiff, type Mark, attribute, diffCells, diffPages } from "./diff";
+import { wordDiff } from "./worddiff";
 import { parseDrawio, serializeDrawio } from "./drawio";
 import {
   type BlockKind,
@@ -21,6 +27,7 @@ import {
   type Pt,
   type Rect,
   type VNode,
+  type View,
   type ViewState,
   ancestors,
   boundsOf,
@@ -58,6 +65,9 @@ type Handle = {
   change(fn: (doc: GraphDoc) => void): void;
   on(event: "change", fn: () => void): void;
   off(event: "change", fn: () => void): void;
+  /** a handle on a path inside the doc (automerge-repo 2.6+); refs for comments */
+  sub?(...segments: unknown[]): { url: string };
+  isReadOnly?(): boolean;
 };
 
 const EMPTY_VIEW: ViewState = { collapsed: [], zoom: [] };
@@ -66,6 +76,7 @@ const snap = (v: number) => Math.round(v / GRID) * GRID;
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v));
 const plain = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+const NO_IDS: { nodes: string[]; edges: string[] } = { nodes: [], edges: [] };
 
 // ------------------------------------------------------------- sanitizing
 // Cell labels are HTML (draw.io's html=1) and may come from imported files,
@@ -149,13 +160,367 @@ function readClip(text: string | undefined): Clip | null {
   }
 }
 
+// ------------------------------------------------------------------ nodes
+
+const fontStyleOf = (n: VNode) => Number(styleGet(n.style, "fontStyle") ?? 0) || 0;
+
+/** A node's box, and the text settings its draw.io style gives it. */
+function nodeStyle(n: VNode, rect: Rect): JSX.CSSProperties {
+  const st = (key: string) => styleGet(n.style, key);
+  const fontStyle = fontStyleOf(n);
+  return {
+    left: `${rect.x}px`,
+    top: `${rect.y}px`,
+    width: `${rect.w}px`,
+    height: `${rect.h}px`,
+    "font-size": `${n.collapsed ? 12 : Number(st("fontSize") ?? 12) || 12}px`,
+    "font-weight": !n.collapsed && fontStyle & 1 ? "700" : undefined,
+    "font-style": !n.collapsed && fontStyle & 2 ? "italic" : undefined,
+    "text-decoration": !n.collapsed && fontStyle & 4 ? "underline" : undefined,
+    "text-align": n.collapsed
+      ? "center"
+      : ((st("align") ?? "center") as "left" | "center" | "right"),
+    // the same, for what hugs the text: a marked label's highlight
+    "--attg-align": n.collapsed
+      ? "center"
+      : st("align") === "left"
+        ? "flex-start"
+        : st("align") === "right"
+          ? "flex-end"
+          : "center",
+  };
+}
+
+function nodeLooks(n: VNode) {
+  const st = (key: string) => styleGet(n.style, key);
+  return {
+    dim: !!st("fontColor"),
+    shaded:
+      n.kind === "box" &&
+      (st("fillColor") ?? "#ffffff").toLowerCase() !== "#ffffff",
+    mono: /courier|mono/i.test(st("fontFamily") ?? ""),
+  };
+}
+
+/**
+ * What's inside a node: its shape, caption and text, or the heading and
+ * title of a collapsed one. `editor` stands in for the text while editing.
+ */
+function NodeBody(p: {
+  n: VNode;
+  editing?: boolean;
+  editor?: (html: string) => JSX.Element;
+  /** the label with what changed in it marked word by word, in place of its own */
+  marked?: string;
+}) {
+  const st = (key: string) => styleGet(p.n.style, key);
+  const shown = () => p.marked ?? sanitize(p.n.html);
+  // the editor is made once when editing starts (Show runs it untracked), so
+  // changes arriving meanwhile don't replace what's being typed
+  const text = (html: () => string, fallback: JSX.Element) => (
+    <Show when={p.editing && p.editor} fallback={fallback}>
+      {(editor) => editor()(html())}
+    </Show>
+  );
+  return (
+    <>
+      <Show when={p.n.kind === "or" && !p.n.collapsed}>
+        <svg class="ag-diamond" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polygon
+            points="50,0 100,50 50,100 0,50"
+            vector-effect="non-scaling-stroke"
+          />
+        </svg>
+      </Show>
+      <Show when={p.n.caption}>
+        <div class="ag-caption" innerHTML={sanitize(p.n.caption)} />
+      </Show>
+      <div
+        class="ag-content"
+        style={{
+          "justify-content":
+            st("verticalAlign") === "top"
+              ? "flex-start"
+              : st("verticalAlign") === "bottom"
+                ? "flex-end"
+                : "center",
+          "white-space":
+            p.n.collapsed || st("whiteSpace") === "wrap" ? "normal" : "nowrap",
+          "padding-left": st("spacingLeft")
+            ? `${Number(st("spacingLeft")) + 2}px`
+            : undefined,
+          "padding-right": st("spacingRight")
+            ? `${Number(st("spacingRight")) + 2}px`
+            : undefined,
+          "padding-top": st("spacingTop")
+            ? `${Number(st("spacingTop")) + 2}px`
+            : undefined,
+        }}
+      >
+        <Show
+          when={p.n.collapsed}
+          fallback={text(
+            () => p.n.html,
+            <div class="ag-html" innerHTML={shown()} />,
+          )}
+        >
+          <div class="ag-heading">{p.n.heading}</div>
+          {text(
+            () => escapeHtml(p.n.title),
+            <div
+              class="ag-title"
+              data-title
+              data-untitled={p.n.title ? undefined : ""}
+              title="Double-click to rename"
+            >
+              {p.n.title || "Untitled"}
+            </div>,
+          )}
+        </Show>
+      </div>
+    </>
+  );
+}
+
+/** The path an edge takes between two node boxes, as SVG. */
+function edgeD(src: Rect, dst: Rect, style: string, points: Pt[]): string {
+  return routeEdge(src, dst, style, points)
+    .map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`)
+    .join(" ");
+}
+
+/** An arrowhead marker, drawn with `.ag-arrow`. */
+function ArrowMarker(p: { id: string; size: number; path?: boolean }) {
+  return (
+    <marker
+      id={p.id}
+      viewBox="0 0 10 10"
+      refX="9.5"
+      refY="5"
+      markerWidth={p.size}
+      markerHeight={p.size}
+      orient="auto"
+      markerUnits="userSpaceOnUse"
+    >
+      <path
+        class="ag-arrow"
+        data-path={p.path ? "" : undefined}
+        d="M0 0.5 L10 5 L0 9.5 L2.5 5 z"
+      />
+    </marker>
+  );
+}
+
+/**
+ * Another version of the graph, read-only, laid out in the same world
+ * coordinates as the one being edited so the two line up under one
+ * viewport. `only` limits it to some cells; `mark` says how each differs.
+ */
+function StaticGraph(p: {
+  view: View;
+  only?: { nodes: string[]; edges: string[] };
+  mark?: (id: string) => Mark | undefined;
+}) {
+  const markerId = uid("ag-arrow-");
+  const nodeIds = () => p.only?.nodes ?? p.view.nodes.map((n) => n.id);
+  const edgeIds = () => p.only?.edges ?? p.view.edges.map((e) => e.id);
+  const edgePath = (id: string) => {
+    const e = p.view.edgeById.get(id);
+    const a = e && p.view.nodeById.get(e.source);
+    const b = e && p.view.nodeById.get(e.target);
+    return e && a && b ? edgeD(a.rect, b.rect, e.style, e.points) : "";
+  };
+  return (
+    <>
+      <svg class="ag-edges">
+        <defs>
+          <ArrowMarker id={markerId} size={9} />
+          <ArrowMarker id={`${markerId}-path`} size={13} path />
+        </defs>
+        <For each={edgeIds()}>
+          {(id) => (
+            <g
+              class="ag-edge"
+              data-edge-id={id}
+              data-virtual={p.view.edgeById.get(id)?.virtual ? "" : undefined}
+              data-path={p.view.pathEdges.has(id) ? "" : undefined}
+              data-diff={p.mark?.(id)?.change}
+              data-by={p.mark?.(id)?.by}
+            >
+              <path
+                class="ag-edge-line"
+                d={edgePath(id)}
+                marker-end={`url(#${markerId}${p.view.pathEdges.has(id) ? "-path" : ""})`}
+              />
+            </g>
+          )}
+        </For>
+      </svg>
+      <For each={nodeIds()}>
+        {(id) => (
+          <Show when={p.view.nodeById.get(id)}>
+            {(n) => (
+              <div
+                class="ag-node"
+                data-node-id={id}
+                data-kind={n().kind}
+                data-collapsed={n().collapsed ? "" : undefined}
+                data-holds={n().collapsed && n().holds ? "" : undefined}
+                data-virtual={n().virtual ? "" : undefined}
+                data-path={n().onPath ? "" : undefined}
+                data-diff={p.mark?.(id)?.change}
+                data-by={p.mark?.(id)?.by}
+                data-dim={nodeLooks(n()).dim ? "" : undefined}
+                data-shaded={nodeLooks(n()).shaded ? "" : undefined}
+                data-mono={nodeLooks(n()).mono ? "" : undefined}
+                style={nodeStyle(n(), n().rect)}
+              >
+                <NodeBody n={n()} />
+              </div>
+            )}
+          </Show>
+        )}
+      </For>
+    </>
+  );
+}
+
+/**
+ * The version compared with, beside the one being edited: read-only, but
+ * panned and zoomed like it, so both move as one.
+ */
+function OtherPane(p: {
+  view: View;
+  transform: string;
+  /** the draft it shows */
+  name: string;
+  /** a merge is looked over: it shows the target before it */
+  before: boolean;
+  /** the other draft doesn't have this graph */
+  missing: boolean;
+  /** it has the graph, but not this page */
+  absent: boolean;
+  focus: boolean;
+  mark: (id: string) => Mark | undefined;
+  /** what it deleted since the common ancestor, drawn faintly from that */
+  ghosts: { view: View; only: { nodes: string[]; edges: string[] } } | null;
+  onWheel: (pane: () => HTMLElement) => (e: WheelEvent) => void;
+  pan: () => (dx: number, dy: number) => void;
+}) {
+  let el!: HTMLDivElement;
+  let drag: { sx: number; sy: number; to: (dx: number, dy: number) => void } | null = null;
+  const [panning, setPanning] = createSignal(false);
+  onMount(() => {
+    const onWheel = p.onWheel(() => el);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    onCleanup(() => el.removeEventListener("wheel", onWheel));
+  });
+  const end = (e: PointerEvent) => {
+    drag = null;
+    setPanning(false);
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  };
+  return (
+    <div
+      class="ag-canvas ag-other"
+      ref={el}
+      data-gesture={panning() ? "pan" : undefined}
+      data-focus={p.focus ? "" : undefined}
+      onPointerDown={(e) => {
+        if (e.button !== 0 && e.button !== 1) return;
+        el.setPointerCapture(e.pointerId);
+        drag = { sx: e.clientX, sy: e.clientY, to: p.pan() };
+        setPanning(true);
+      }}
+      onPointerMove={(e) => drag?.to(e.clientX - drag.sx, e.clientY - drag.sy)}
+      onPointerUp={end}
+      onPointerCancel={end}
+    >
+      <div class="ag-world" style={{ transform: p.transform }}>
+        <Show when={p.ghosts?.only.nodes.length || p.ghosts?.only.edges.length ? p.ghosts : null}>
+          {(g) => (
+            <div class="ag-ghosts">
+              <StaticGraph view={g().view} only={g().only} mark={() => ({ change: "deleted" })} />
+            </div>
+          )}
+        </Show>
+        <StaticGraph view={p.view} mark={p.mark} />
+      </div>
+      <Show when={p.missing || p.absent}>
+        <div class="ag-empty">
+          <strong>
+            {p.missing ? `Not in ${draftName(p.name)}` : `This page isn’t in ${draftName(p.name)}`}
+          </strong>
+        </div>
+      </Show>
+      <div class="ag-versions">
+        <Show when={p.before} fallback={<VersionTag side="theirs" name={p.name} />}>
+          <span class="ag-version">Before</span>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+/** The swipe line: the other version shows to its right. */
+function SwipeDivider(p: { at: number; onMove: (at: number) => void }) {
+  let el!: HTMLDivElement;
+  const moveTo = (clientX: number) => {
+    const box = el.parentElement!.getBoundingClientRect();
+    if (box.width) p.onMove(clamp((clientX - box.left) / box.width, 0, 1));
+  };
+  return (
+    <div
+      ref={el}
+      class="ag-swipe"
+      role="slider"
+      aria-label="Swipe between this version and the one compared with"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={Math.round(p.at * 100)}
+      tabindex="0"
+      style={{ left: `${p.at * 100}%` }}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        el.setPointerCapture(e.pointerId);
+        moveTo(e.clientX);
+      }}
+      onPointerMove={(e) => {
+        if (el.hasPointerCapture(e.pointerId)) moveTo(e.clientX);
+      }}
+      onKeyDown={(e) => {
+        const step =
+          e.key === "ArrowLeft" ? -0.05 : e.key === "ArrowRight" ? 0.05 : 0;
+        if (!step) return;
+        e.preventDefault();
+        e.stopPropagation();
+        p.onMove(clamp(p.at + step, 0, 1));
+      }}
+    />
+  );
+}
+
+/** Which draft a pane shows: its colour, as the panel shows it, and its name if it has one. */
+function VersionTag(p: { side: "ours" | "theirs"; name: string }) {
+  const fallback = () => (p.side === "ours" ? "this draft" : "the compared draft");
+  return (
+    <span class="ag-version" data-side={p.side} title={p.name || fallback()}>
+      <span class="ag-version-dot" aria-label={p.name ? undefined : fallback()} />
+      {p.name}
+    </span>
+  );
+}
+
+/** The compared draft's name in a sentence. */
+const draftName = (name: string | undefined) => name || "the compared draft";
+
 // ------------------------------------------------------------------ tool
 
 export default function AttestationGraphTool(
   handle: Handle,
   element: HTMLElement,
 ) {
-  return render(() => <App handle={handle} />, element);
+  return render(() => <App handle={handle} element={element} />, element);
 }
 
 type Gesture =
@@ -181,7 +546,7 @@ type Gesture =
   | { type: "edge"; id: string }
   | { type: "connect"; from: string };
 
-function App(props: { handle: Handle }) {
+function App(props: { handle: Handle; element: HTMLElement }) {
   const handle = props.handle;
   const markerId = uid("ag-arrow-");
 
@@ -195,12 +560,89 @@ function App(props: { handle: Handle }) {
 
   const diagrams = () => doc()?.diagrams ?? [];
   const [pageId, setPageId] = createSignal<string | null>(null);
-  const diagram = createMemo<Diagram | undefined>(
-    () => diagrams().find((d) => d.id === pageId()) ?? diagrams()[0],
-  );
 
-  /** Run an edit against the current page inside one change. */
-  const mutate = (fn: (dg: Diagram, d: GraphDoc) => void) => {
+  // ---- the version compared with, when the panel compares drafts
+  const compare = useCompare(props.element, handle);
+  const otherPages = () => compare()?.other.diagrams ?? [];
+  const basePages = () => compare()?.base.diagrams ?? [];
+  /** a page this version hasn't: one the other added, or this one deleted, picked to see what was there */
+  const isGhostPage = (id: string | null) =>
+    !!id &&
+    !!compare() &&
+    !diagrams().some((d) => d.id === id) &&
+    (otherPages().some((d) => d.id === id) || basePages().some((d) => d.id === id));
+
+  const diagram = createMemo<Diagram | undefined>(() => {
+    const id = pageId();
+    return (
+      diagrams().find((d) => d.id === id) ??
+      (isGhostPage(id) ? undefined : diagrams()[0])
+    );
+  });
+  const onGhostPage = () => !diagram() && isGhostPage(pageId());
+  /** the other version's copy of the page shown, if it has one */
+  const otherDiagram = createMemo<Diagram | undefined>(() => {
+    const id = diagram()?.id ?? pageId();
+    return otherPages().find((d) => d.id === id);
+  });
+  /** the common ancestor's copy of the page shown, if it had one */
+  const baseDiagram = createMemo<Diagram | undefined>(() => {
+    const id = diagram()?.id ?? pageId();
+    return basePages().find((d) => d.id === id);
+  });
+  /** what each version did to the pages since the common ancestor */
+  const pageDiffs = createMemo(() => {
+    const c = compare();
+    return {
+      ours: c ? diffPages(doc(), c.base) : new Map<string, Change>(),
+      theirs: c ? diffPages(c.other, c.base) : new Map<string, Change>(),
+    };
+  });
+  /**
+   * A page tab's mark: what either version did to the page since the
+   * ancestor; combined, by which draft too.
+   */
+  const pageMark = (id: string): Mark | undefined => {
+    if (!compare()) return undefined;
+    const { ours, theirs } = pageDiffs();
+    const mark = attribute(ours.get(id), theirs.get(id));
+    return mark && (mode() === "inline" ? mark : { change: mark.change });
+  };
+  /** tabs for the pages this version hasn't: added by the other, or deleted here */
+  const ghostPages = () => {
+    const seen = new Set(diagrams().map((d) => d.id));
+    const out: Diagram[] = [];
+    for (const d of [...otherPages(), ...basePages()])
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        out.push(d);
+      }
+    return out;
+  };
+  /** what a page this version hasn't is */
+  const ghostPageNote = (id: string | null) =>
+    otherPages().some((d) => d.id === id)
+      ? `Only in ${draftName(compare()?.theirs)}`
+      : "Deleted in this draft";
+  /** what each version did to the page shown since the common ancestor */
+  const cellDiffs = createMemo<{ ours: CellDiff; theirs: CellDiff } | null>(() => {
+    if (!compare()) return null;
+    const base = baseDiagram()?.cells ?? [];
+    return {
+      ours: diffCells(diagram()?.cells ?? [], base),
+      theirs: diffCells(otherDiagram()?.cells ?? [], base),
+    };
+  });
+
+  /** Run an edit against the current page inside one change; false if there's no page to edit. */
+  const mutate = (fn: (dg: Diagram, d: GraphDoc) => void): boolean => {
+    if (onGhostPage()) {
+      setStatus({
+        text: `${ghostPageNote(pageId())}: there’s nothing here to edit.`,
+        tone: "error",
+      });
+      return false;
+    }
     const id = diagram()?.id;
     handle.change((d) => {
       if (!d.diagrams) d.diagrams = [];
@@ -211,6 +653,7 @@ function App(props: { handle: Handle }) {
       }
       fn(dg, d);
     });
+    return true;
   };
 
   // ---- view state (collapse / zoom): per viewer, remembered locally
@@ -272,6 +715,103 @@ function App(props: { handle: Handle }) {
   });
   const nodeIds = createMemo(() => view().nodes.map((n) => n.id));
   const edgeIds = createMemo(() => view().edges.map((e) => e.id));
+
+  /** The other version, laid out with this one's collapse, zoom and path. */
+  const otherView = createMemo<View | null>(() => {
+    if (!compare()) return null;
+    const p = preview();
+    return computeView(
+      otherDiagram()?.cells ?? [],
+      p ? { ...viewState(), chosen: p } : viewState(),
+    );
+  });
+  /** The common ancestor, laid out the same: where what was deleted is drawn from. */
+  const baseView = createMemo<View | null>(() => {
+    if (!compare()) return null;
+    const p = preview();
+    return computeView(
+      baseDiagram()?.cells ?? [],
+      p ? { ...viewState(), chosen: p } : viewState(),
+    );
+  });
+  const mode = () => compare()?.mode;
+  /** marks on this version: inline and next to the other one */
+  const marking = () =>
+    mode() === "inline" || mode() === "side-by-side" || mode() === "stacked";
+  const beside = () => mode() === "side-by-side" || mode() === "stacked";
+  const overlaid = () => mode() === "onion-skin" || mode() === "swipe";
+
+  /**
+   * How a node or edge drawn in `shown` changed since the common ancestor,
+   * in the draft `diff` is of. A collapsed node that looks the same but
+   * hides a change says so with "inside".
+   */
+  const markIn = (
+    diff: CellDiff,
+    shown: View | null | undefined,
+    id: string,
+  ): Change | "inside" | undefined => {
+    const own = diff.get(id);
+    if (own) return own;
+    const hidden = [
+      ...(shown?.hiddenIn.get(id) ?? []),
+      ...(baseView()?.hiddenIn.get(id) ?? []),
+    ];
+    return hidden.some((h) => diff.has(h)) ? "inside" : undefined;
+  };
+  /**
+   * A mark on this version. Side by side: what this draft did since the
+   * ancestor. Combined: what either did, and which.
+   */
+  const markHere = (id: string): Mark | undefined => {
+    const d = cellDiffs();
+    if (!marking() || !d) return undefined;
+    const ours = markIn(d.ours, view(), id);
+    if (beside()) return ours && { change: ours };
+    return attribute(ours, markIn(d.theirs, view(), id));
+  };
+  /** A mark on the other version, beside this one: what it did since the ancestor. */
+  const markThere = (id: string): Mark | undefined => {
+    const d = cellDiffs();
+    if (!beside() || !d) return undefined;
+    const theirs = markIn(d.theirs, otherView(), id);
+    return theirs && { change: theirs };
+  };
+  /** The real cells in `v` that `diff` says are `change`, to draw faintly. */
+  const ghostsOf = (v: View | null, diff: CellDiff | undefined, change: Change) => {
+    if (!v || !diff) return NO_IDS;
+    const is = (id: string) => diff.get(id) === change;
+    return {
+      nodes: v.nodes.filter((n) => !n.virtual && is(n.id)).map((n) => n.id),
+      edges: v.edges.filter((e) => !e.virtual && is(e.id)).map((e) => e.id),
+    };
+  };
+  /** what this draft deleted since the ancestor, drawn faintly from it, where it was */
+  const deletedHere = createMemo(() =>
+    marking() ? ghostsOf(baseView(), cellDiffs()?.ours, "deleted") : NO_IDS,
+  );
+  /** side by side: what the other draft deleted, drawn faintly in its pane */
+  const deletedThere = createMemo(() =>
+    beside() ? ghostsOf(baseView(), cellDiffs()?.theirs, "deleted") : NO_IDS,
+  );
+  /** combined: what only the other draft added, drawn faintly from it */
+  const addedThere = createMemo(() =>
+    mode() === "inline" ? ghostsOf(otherView(), cellDiffs()?.theirs, "added") : NO_IDS,
+  );
+  /** a faint cell's mark: side by side, deleted; combined, by which draft */
+  const markGhost = (id: string): Mark | undefined => {
+    const d = cellDiffs();
+    if (!d) return undefined;
+    return beside() ? { change: "deleted" } : attribute(d.ours.get(id), d.theirs.get(id));
+  };
+  // the swipe divider: starts where the panel says, then follows the pointer
+  const [swipeAt, setSwipeAt] = createSignal(0.5);
+  createEffect(
+    on(
+      () => compare()?.mode === "swipe" && compare()!.at,
+      (at) => typeof at === "number" && setSwipeAt(at),
+    ),
+  );
 
   // ---- interaction state
   let rootEl!: HTMLDivElement;
@@ -336,7 +876,12 @@ function App(props: { handle: Handle }) {
   const fit = () => {
     if (!canvasEl) return;
     const r = canvasEl.getBoundingClientRect();
-    const b = boundsOf(view().nodes.map((n) => n.rect));
+    // comparing, both versions share the viewport: frame them both
+    const b = boundsOf([
+      ...view().nodes.map((n) => n.rect),
+      ...(otherView()?.nodes.map((n) => n.rect) ?? []),
+      ...(baseView()?.nodes.map((n) => n.rect) ?? []),
+    ]);
     if (!b || !r.width || !r.height) {
       setVp({ x: 40, y: 40, k: 1 });
       return;
@@ -353,8 +898,14 @@ function App(props: { handle: Handle }) {
       y: (r.height - b.h * k) / 2 - b.y * k,
     });
   };
-  const zoomAt = (factor: number, clientX?: number, clientY?: number) => {
-    const r = canvasEl.getBoundingClientRect();
+  /** zoom about a point, in the canvas or the pane beside it (same size) */
+  const zoomAt = (
+    factor: number,
+    clientX?: number,
+    clientY?: number,
+    pane: HTMLElement = canvasEl,
+  ) => {
+    const r = pane.getBoundingClientRect();
     const cx = (clientX ?? r.left + r.width / 2) - r.left;
     const cy = (clientY ?? r.top + r.height / 2) - r.top;
     const v = vp();
@@ -385,20 +936,32 @@ function App(props: { handle: Handle }) {
   };
 
   let fitted = false;
+  const worldTransform = () => {
+    const v = vp();
+    return `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+  };
+  /** a drag that pans, from wherever the viewport is when it starts */
+  const panFrom = () => {
+    const { x, y } = vp();
+    return (dx: number, dy: number) => setVp((v) => ({ ...v, x: x + dx, y: y + dy }));
+  };
+  /** scroll pans, pinch or ⌘/Ctrl-scroll zooms, in whichever pane it's over */
+  const wheelIn = (pane: () => HTMLElement) => (e: WheelEvent) => {
+    if ((e.target as Element).closest(".ag-zoomctl")) return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey)
+      zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY, pane());
+    else setVp((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+  };
   onMount(() => {
-    const onWheel = (e: WheelEvent) => {
-      if ((e.target as Element).closest(".ag-zoomctl")) return;
-      e.preventDefault();
-      if (e.ctrlKey || e.metaKey)
-        zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
-      else setVp((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
-    };
+    const onWheel = wheelIn(() => canvasEl);
     canvasEl.addEventListener("wheel", onWheel, { passive: false });
     // the host may lay us out after mount: fit once we have a real size
     const ro = new ResizeObserver(() => {
       if (!fitted && canvasEl.clientWidth > 0 && canvasEl.clientHeight > 0) {
         fitted = true;
         fit();
+        flushReveal();
       }
     });
     ro.observe(canvasEl);
@@ -407,13 +970,18 @@ function App(props: { handle: Handle }) {
       ro.disconnect();
     });
   });
-  // refit whenever what is shown changes wholesale: another page, or a zoom
+  // refit whenever what is shown changes wholesale: another page, a zoom, or
+  // starting or stopping a compare. A memo, so an edit, which recomputes the
+  // key to the same string, doesn't refit.
+  const shown = createMemo(
+    () =>
+      `${diagram()?.id ?? pageId()}|${view()
+        .crumbs.map((c) => c.id)
+        .join("/")}|${!!compare()}|${beside()}`,
+  );
   createEffect(
     on(
-      () =>
-        `${diagram()?.id}|${view()
-          .crumbs.map((c) => c.id)
-          .join("/")}`,
+      shown,
       () => {
         const raf = requestAnimationFrame(fit);
         onCleanup(() => cancelAnimationFrame(raf));
@@ -422,6 +990,163 @@ function App(props: { handle: Handle }) {
     ),
   );
 
+  // ---- comments: threads on cells, and the sidebar's focus (see comments.ts)
+  const comments = useComments(props.element, handle);
+  const readOnly = () => !!handle.isReadOnly?.();
+  const cellUrl = (diagramId: string, cellId: string) =>
+    comments.subUrl(
+      cellRefUrl(handle.url, diagramId, cellId),
+      "diagrams",
+      { id: diagramId },
+      "cells",
+      { id: cellId },
+    );
+  /** the selected cells that are in the document (not a zoomed view's stand-ins) */
+  const selectedCells = createMemo(() => {
+    const v = view();
+    return selection().filter((id) => {
+      const n = v.nodeById.get(id) ?? v.edgeById.get(id);
+      return !!n && !n.virtual;
+    });
+  });
+  const selectionRefs = createMemo(
+    () => {
+      const d = diagram();
+      return d ? selectedCells().map((id) => cellUrl(d.id, id)) : [];
+    },
+    [],
+    { equals: (a, b) => urlsKey(a) === urlsKey(b) },
+  );
+  // a selection the tool changed to itself while revealing: not written back
+  let adopt: string | null = null;
+  createEffect(
+    on(
+      selectionRefs,
+      (refs) => {
+        if (adopt !== null && urlsKey(refs) === adopt) comments.adopt(refs);
+        else comments.writeSelection(refs);
+        adopt = null;
+      },
+      { defer: true },
+    ),
+  );
+
+  /** the cells on this page the sidebar has focused */
+  const emphasised = createMemo(() => {
+    const d = diagram();
+    return d ? cellIdsOn(comments.emphasised(), handle.url, d.id) : new Set<string>();
+  });
+  /** a cell is emphasised itself, or something collapsed inside it is */
+  const isEmphasised = (id: string) =>
+    emphasised().has(id) || !!view().hiddenIn.get(id)?.some((h) => emphasised().has(h));
+
+  /** the cells on this page with unresolved threads (collapsed: or inside), outlined in yellow */
+  const commentedCells = createMemo(() => {
+    const d = diagram();
+    if (!d) return [];
+    const byCell = threadsByCell(comments.entries(), handle.url, d.id);
+    if (!byCell.size) return [];
+    const v = view();
+    const out: { id: string; n: number; threads: string[] }[] = [];
+    for (const n of v.nodes) {
+      if (n.virtual) continue;
+      const threads = new Set(byCell.get(n.id));
+      for (const h of v.hiddenIn.get(n.id) ?? [])
+        for (const t of byCell.get(h) ?? []) threads.add(t);
+      if (threads.size) out.push({ id: n.id, n: threads.size, threads: [...threads] });
+    }
+    for (const e of v.edges) {
+      const threads = e.virtual ? undefined : byCell.get(e.id);
+      if (threads?.size) out.push({ id: e.id, n: threads.size, threads: [...threads] });
+    }
+    return out;
+  });
+  const commented = createMemo(() => new Set(commentedCells().map((c) => c.id)));
+  const edgeRoute = (id: string): Pt[] => {
+    const edge = view().edgeById.get(id);
+    const a = edge && nodeRect(edge.source);
+    const b = edge && nodeRect(edge.target);
+    return edge && a && b ? routeEdge(a, b, edge.style, edge.points) : [];
+  };
+  // reveal: when someone else (the sidebar) focuses cells of this graph, go
+  // to their page and pan them into view; the selection is left alone
+  let pendingReveal: CellRef[] | null = null;
+  /** the on-screen box of these cells on this page (a hidden one: what it's collapsed into) */
+  const cellsBox = (ids: Set<string>): Rect | null => {
+    const v = view();
+    const rects: Rect[] = [];
+    for (const id of ids) {
+      const r = nodeRect(id);
+      if (r) rects.push(r);
+      else if (v.edgeById.has(id)) {
+        const b = boundsOf(edgeRoute(id).map((p) => ({ ...p, w: 0, h: 0 })));
+        if (b) rects.push(b);
+      } else
+        for (const [holder, hidden] of v.hiddenIn)
+          if (hidden.includes(id)) {
+            const hr = nodeRect(holder);
+            if (hr) rects.push(hr);
+          }
+    }
+    return boundsOf(rects);
+  };
+  const panTo = (ids: Set<string>, retry = true) => {
+    const box = cellsBox(ids);
+    if (box) {
+      const pad = 24;
+      reveal({ x: box.x - pad, y: box.y - pad, w: box.w + 2 * pad, h: box.h + 2 * pad });
+    } else if (retry && view().zoomRoot) {
+      // zoomed into a part of the graph they aren't in: back out to all of it
+      updateViewState((s) => ({ ...s, zoom: [] }));
+      requestAnimationFrame(() => requestAnimationFrame(() => panTo(ids, false)));
+    }
+  };
+  const revealCells = (targets: CellRef[]) => {
+    const here = diagram()?.id;
+    const page =
+      diagrams().find((d) => d.id === here && targets.some((t) => t.diagramId === d.id)) ??
+      diagrams().find((d) => targets.some((t) => t.diagramId === d.id));
+    if (!page) return;
+    const ids = new Set(targets.filter((t) => t.diagramId === page.id).map((t) => t.cellId));
+    if (page.id !== here) {
+      if (selectionRefs().length) adopt = "";
+      batch(() => {
+        setPageId(page.id);
+        setSelection([]);
+      });
+    }
+    if (!fitted) {
+      pendingReveal = targets;
+      return;
+    }
+    // a page switch refits a frame later: pan after that
+    if (page.id !== here) requestAnimationFrame(() => requestAnimationFrame(() => panTo(ids)));
+    else panTo(ids);
+  };
+  const flushReveal = () => {
+    const targets = pendingReveal;
+    pendingReveal = null;
+    if (targets) revealCells(targets);
+  };
+  comments.onForeignSelection((urls) => {
+    const targets = cellsTargeted(urls, handle.url);
+    if (targets.length) revealCells(targets);
+  });
+
+  /** why the Comment button can't be used, if it can't */
+  const commentBlocker = (): string | null =>
+    readOnly()
+      ? "This graph is read-only"
+      : !comments.contact()
+        ? "Commenting needs a signed-in contact"
+        : !selectedCells().length
+          ? "Select one or more nodes or edges to comment on them"
+          : null;
+  const commentOnSelection = async () => {
+    if (commentBlocker()) return;
+    const threadUrl = await comments.createThread(selectionRefs());
+    if (!threadUrl) setStatus({ text: "Couldn’t start a comment thread.", tone: "error" });
+  };
   // ---- collapse / zoom
   const setCollapsed = (ids: string[], collapsed: boolean) =>
     updateViewState((s) => {
@@ -485,9 +1210,10 @@ function App(props: { handle: Handle }) {
       else if (view().zoomRoot) target = view().zoomRoot!;
     }
     let id = "";
-    mutate((dg) => {
+    const added = mutate((dg) => {
       id = addBlock(dg, kind, viewportCenter(), target);
     });
+    if (!added) return;
     setSelection([id]);
     const r = view().nodeById.get(id)?.rect;
     if (r) reveal(r);
@@ -499,13 +1225,14 @@ function App(props: { handle: Handle }) {
   const addNewLabel = () => {
     const sel = selNode();
     let id = "";
-    mutate((dg) => {
+    const added = mutate((dg) => {
       id = addLabel(
         dg,
         viewportCenter(),
         sel && sel.logic ? sel.id : undefined,
       );
     });
+    if (!added) return;
     setSelection([id]);
     const r = view().nodeById.get(id)?.rect;
     if (r) reveal(r);
@@ -860,7 +1587,12 @@ function App(props: { handle: Handle }) {
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.button !== 1) return;
     const t = e.target as Element;
-    if (t.closest("[contenteditable]") || t.closest(".ag-zoomctl")) return;
+    if (
+      t.closest("[contenteditable]") ||
+      t.closest(".ag-zoomctl") ||
+      t.closest(".ag-swipe")
+    )
+      return;
     rootEl.focus({ preventScroll: true });
     const portEl = t.closest("[data-port]");
     const nodeEl = t.closest<HTMLElement>("[data-node-id]");
@@ -1086,9 +1818,7 @@ function App(props: { handle: Handle }) {
     const d = drag();
     // while an end is being dragged its old waypoints no longer apply
     const stale = !!d && (d.ids.has(edge.source) || d.ids.has(edge.target));
-    return routeEdge(a, b, edge.style, stale ? [] : edge.points)
-      .map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`)
-      .join(" ");
+    return edgeD(a, b, edge.style, stale ? [] : edge.points);
   };
   const wirePath = () => {
     const w = wire();
@@ -1103,10 +1833,25 @@ function App(props: { handle: Handle }) {
       <Show when={node()}>
         {(n) => {
           const rect = () => nodeRect(p.id) ?? n().rect;
-          const st = (key: string) => styleGet(n().style, key);
-          const fontStyle = () => Number(st("fontStyle") ?? 0) || 0;
-          const align = () => st("align") ?? "center";
           const isEditing = () => editing() === p.id;
+          // combined: what each draft did to the label, word by word
+          const marked = () => {
+            const mark = markHere(p.id);
+            if (mode() !== "inline" || n().collapsed || mark?.change !== "changed") return undefined;
+            const label = (v: View | null) => {
+              const m = v?.nodeById.get(p.id);
+              return m && !m.collapsed ? sanitize(m.html) : undefined;
+            };
+            const ours = sanitize(n().html);
+            const theirs = label(otherView());
+            const base = label(baseView()) ?? "";
+            if (mark.by === "ours") return wordDiff(ours, base, "ours") ?? undefined;
+            if (mark.by === "theirs")
+              return theirs === undefined ? undefined : (wordDiff(theirs, base, "theirs") ?? undefined);
+            // both: each one's words against the other's, or, said alike, against the ancestor
+            if (theirs === undefined || theirs === ours) return wordDiff(ours, base, "both") ?? undefined;
+            return wordDiff(ours, theirs) ?? undefined;
+          };
           return (
             <div
               class="ag-node"
@@ -1116,19 +1861,16 @@ function App(props: { handle: Handle }) {
               data-holds={n().collapsed && n().holds ? "" : undefined}
               data-virtual={n().virtual ? "" : undefined}
               data-path={n().onPath ? "" : undefined}
+              data-diff={markHere(p.id)?.change}
+              data-by={markHere(p.id)?.by}
               data-selected={selected().has(p.id) ? "" : undefined}
+              data-comment-focus={isEmphasised(p.id) ? "" : undefined}
+              data-commented={commented().has(p.id) ? "" : undefined}
               data-dragging={drag()?.ids.has(p.id) ? "" : undefined}
               data-drop-target={wire()?.over === p.id ? "" : undefined}
-              data-dim={st("fontColor") ? "" : undefined}
-              data-shaded={
-                n().kind === "box" &&
-                (st("fillColor") ?? "#ffffff").toLowerCase() !== "#ffffff"
-                  ? ""
-                  : undefined
-              }
-              data-mono={
-                /courier|mono/i.test(st("fontFamily") ?? "") ? "" : undefined
-              }
+              data-dim={nodeLooks(n()).dim ? "" : undefined}
+              data-shaded={nodeLooks(n()).shaded ? "" : undefined}
+              data-mono={nodeLooks(n()).mono ? "" : undefined}
               title={
                 n().choosable
                   ? n().chosen
@@ -1136,93 +1878,14 @@ function App(props: { handle: Handle }) {
                     : "Click to choose this path at the OR"
                   : undefined
               }
-              style={{
-                left: `${rect().x}px`,
-                top: `${rect().y}px`,
-                width: `${rect().w}px`,
-                height: `${rect().h}px`,
-                "font-size": `${n().collapsed ? 12 : Number(st("fontSize") ?? 12) || 12}px`,
-                "font-weight":
-                  !n().collapsed && fontStyle() & 1 ? "700" : undefined,
-                "font-style":
-                  !n().collapsed && fontStyle() & 2 ? "italic" : undefined,
-                "text-decoration":
-                  !n().collapsed && fontStyle() & 4 ? "underline" : undefined,
-                "text-align": n().collapsed
-                  ? "center"
-                  : (align() as "left" | "center" | "right"),
-              }}
+              style={nodeStyle(n(), rect())}
             >
-              <Show when={n().kind === "or" && !n().collapsed}>
-                <svg
-                  class="ag-diamond"
-                  viewBox="0 0 100 100"
-                  preserveAspectRatio="none"
-                >
-                  <polygon
-                    points="50,0 100,50 50,100 0,50"
-                    vector-effect="non-scaling-stroke"
-                  />
-                </svg>
-              </Show>
-              <Show when={n().caption}>
-                <div class="ag-caption" innerHTML={sanitize(n().caption)} />
-              </Show>
-              <div
-                class="ag-content"
-                style={{
-                  "justify-content":
-                    st("verticalAlign") === "top"
-                      ? "flex-start"
-                      : st("verticalAlign") === "bottom"
-                        ? "flex-end"
-                        : "center",
-                  "white-space":
-                    n().collapsed || st("whiteSpace") === "wrap"
-                      ? "normal"
-                      : "nowrap",
-                  "padding-left": st("spacingLeft")
-                    ? `${Number(st("spacingLeft")) + 2}px`
-                    : undefined,
-                  "padding-right": st("spacingRight")
-                    ? `${Number(st("spacingRight")) + 2}px`
-                    : undefined,
-                  "padding-top": st("spacingTop")
-                    ? `${Number(st("spacingTop")) + 2}px`
-                    : undefined,
-                }}
-              >
-                <Show
-                  when={n().collapsed}
-                  fallback={
-                    <Show
-                      when={isEditing()}
-                      fallback={
-                        <div class="ag-html" innerHTML={sanitize(n().html)} />
-                      }
-                    >
-                      <Editor id={p.id} html={n().html} />
-                    </Show>
-                  }
-                >
-                  <div class="ag-heading">{n().heading}</div>
-                  <Show
-                    when={isEditing()}
-                    fallback={
-                      <div
-                        class="ag-title"
-                        data-title
-                        data-untitled={n().title ? undefined : ""}
-                        title="Double-click to rename"
-                      >
-                        {n().title || "Untitled"}
-                      </div>
-                    }
-                  >
-                    <Editor id={p.id} html={escapeHtml(n().title)} />
-                  </Show>
-                </Show>
-              </div>
+              <NodeBody
+                n={n()}
+                editing={isEditing()}
+                editor={(html) => <Editor id={p.id} html={html} />}
+                marked={marked()}
+              />
               <Show when={n().foldable && !isEditing()}>
                 <div
                   class="ag-fold"
@@ -1309,6 +1972,7 @@ function App(props: { handle: Handle }) {
   return (
     <div
       class="attestation-graph"
+      data-compare={mode()}
       tabindex="0"
       ref={rootEl}
       onKeyDown={onKeyDown}
@@ -1397,6 +2061,22 @@ function App(props: { handle: Handle }) {
           </button>
         </div>
         <div class="ag-spacer" />
+        <div class="ag-group">
+          <button
+            class="ag-btn ag-comment-btn"
+            disabled={!!commentBlocker()}
+            title={
+              commentBlocker() ??
+              `Comment on the selected ${selectedCells().length === 1 ? "cell" : `${selectedCells().length} cells`}`
+            }
+            onClick={commentOnSelection}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+            </svg>
+            Comment
+          </button>
+        </div>
         <div class="ag-group">
           <button
             class="ag-btn"
@@ -1523,10 +2203,16 @@ function App(props: { handle: Handle }) {
       </Show>
 
       <div
+        class="ag-stage"
+        data-layout={beside() ? mode() : undefined}
+        data-merging={beside() && compare()?.merging ? "" : undefined}
+      >
+      <div
         class="ag-canvas"
         ref={canvasEl}
         data-gesture={gestureName() ?? undefined}
         data-dropping={dropping() ? "" : undefined}
+        data-focus={compare()?.collapsed && marking() ? "" : undefined}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -1547,42 +2233,21 @@ function App(props: { handle: Handle }) {
           }
         }}
       >
-        <div
-          class="ag-world"
-          style={{
-            transform: `translate(${vp().x}px, ${vp().y}px) scale(${vp().k})`,
-          }}
-        >
+        <div class="ag-world" style={{ transform: worldTransform() }}>
+          <Show when={deletedHere().nodes.length || deletedHere().edges.length || addedThere().nodes.length || addedThere().edges.length}>
+            <div class="ag-ghosts">
+              <Show when={baseView()}>
+                {(v) => <StaticGraph view={v()} only={deletedHere()} mark={markGhost} />}
+              </Show>
+              <Show when={otherView()}>
+                {(v) => <StaticGraph view={v()} only={addedThere()} mark={markGhost} />}
+              </Show>
+            </div>
+          </Show>
           <svg class="ag-edges">
             <defs>
-              <marker
-                id={markerId}
-                viewBox="0 0 10 10"
-                refX="9.5"
-                refY="5"
-                markerWidth="9"
-                markerHeight="9"
-                orient="auto"
-                markerUnits="userSpaceOnUse"
-              >
-                <path class="ag-arrow" d="M0 0.5 L10 5 L0 9.5 L2.5 5 z" />
-              </marker>
-              <marker
-                id={`${markerId}-path`}
-                viewBox="0 0 10 10"
-                refX="9.5"
-                refY="5"
-                markerWidth="13"
-                markerHeight="13"
-                orient="auto"
-                markerUnits="userSpaceOnUse"
-              >
-                <path
-                  class="ag-arrow"
-                  data-path
-                  d="M0 0.5 L10 5 L0 9.5 L2.5 5 z"
-                />
-              </marker>
+              <ArrowMarker id={markerId} size={9} />
+              <ArrowMarker id={`${markerId}-path`} size={13} path />
             </defs>
             <For each={edgeIds()}>
               {(id) => (
@@ -1590,10 +2255,14 @@ function App(props: { handle: Handle }) {
                   class="ag-edge"
                   data-edge-id={id}
                   data-selected={selected().has(id) ? "" : undefined}
+                  data-comment-focus={emphasised().has(id) ? "" : undefined}
+                  data-commented={commented().has(id) ? "" : undefined}
                   data-virtual={
                     view().edgeById.get(id)?.virtual ? "" : undefined
                   }
                   data-path={view().pathEdges.has(id) ? "" : undefined}
+                  data-diff={markHere(id)?.change}
+                  data-by={markHere(id)?.by}
                 >
                   <path class="ag-edge-hit" d={edgePath(id)} />
                   <path
@@ -1611,14 +2280,67 @@ function App(props: { handle: Handle }) {
           <For each={nodeIds()}>{(id) => <NodeView id={id} />}</For>
         </div>
 
-        <Show when={!view().nodes.length}>
+        <Show when={!view().nodes.length && !deletedHere().nodes.length && !addedThere().nodes.length}>
           <div class="ag-empty">
-            <strong>This page is empty</strong>
-            <span>
-              Add blocks from the toolbar, or import a draw.io file (you can
-              also drop one here).
-            </span>
+            <Show
+              when={onGhostPage()}
+              fallback={
+                <>
+                  <strong>This page is empty</strong>
+                  <span>
+                    Add blocks from the toolbar, or import a draw.io file (you
+                    can also drop one here).
+                  </span>
+                </>
+              }
+            >
+              <strong>{ghostPageNote(pageId())}</strong>
+            </Show>
           </div>
+        </Show>
+
+        <Show when={overlaid() && otherView()}>
+          <div
+            class="ag-overlay"
+            style={{
+              opacity:
+                mode() === "onion-skin" ? String(compare()!.mix) : undefined,
+              "clip-path":
+                mode() === "swipe"
+                  ? `inset(0 0 0 ${swipeAt() * 100}%)`
+                  : undefined,
+            }}
+          >
+            <div class="ag-world" style={{ transform: worldTransform() }}>
+              <StaticGraph view={otherView()!} />
+            </div>
+          </div>
+        </Show>
+        <Show when={mode() === "swipe" && otherView()}>
+          <SwipeDivider at={swipeAt()} onMove={setSwipeAt} />
+        </Show>
+        {/* which version is which: not combined, where the marks say it */}
+        <Show when={compare()?.mode !== "inline" && compare()}>
+          {(c) => (
+            <>
+              <div class="ag-versions">
+                <Show
+                  when={beside() && c().merging}
+                  fallback={<VersionTag side="ours" name={c().ours} />}
+                >
+                  <span class="ag-version">After</span>
+                </Show>
+                <Show when={!beside() && mode() !== "swipe"}>
+                  <VersionTag side="theirs" name={c().theirs} />
+                </Show>
+              </div>
+              <Show when={mode() === "swipe"}>
+                <div class="ag-versions" data-at="right">
+                  <VersionTag side="theirs" name={c().theirs} />
+                </div>
+              </Show>
+            </>
+          )}
         </Show>
 
         <div class="ag-zoomctl">
@@ -1637,6 +2359,22 @@ function App(props: { handle: Handle }) {
             Fit
           </button>
         </div>
+      </div>
+      <Show when={beside() && otherView()}>
+        <OtherPane
+          view={otherView()!}
+          transform={worldTransform()}
+          name={compare()!.theirs}
+          before={compare()!.merging}
+          missing={!!compare()?.missing}
+          absent={!otherDiagram() && !compare()?.missing}
+          focus={!!compare()?.collapsed}
+          mark={markThere}
+          ghosts={baseView() && { view: baseView()!, only: deletedThere() }}
+          onWheel={wheelIn}
+          pan={panFrom}
+        />
+      </Show>
       </div>
 
       <Show when={bundlesOpen()}>
@@ -1735,8 +2473,10 @@ function App(props: { handle: Handle }) {
               when={renaming() === d.id}
               fallback={
                 <button
-                  class="ag-btn"
+                  class="ag-btn ag-page"
                   data-active={diagram()?.id === d.id ? "" : undefined}
+                  data-diff={pageMark(d.id)?.change}
+                  data-by={pageMark(d.id)?.by}
                   title="Double-click to rename"
                   onClick={() => {
                     if (diagram()?.id !== d.id) {
@@ -1769,6 +2509,24 @@ function App(props: { handle: Handle }) {
                 }}
               />
             </Show>
+          )}
+        </For>
+        <For each={ghostPages()}>
+          {(d) => (
+            <button
+              class="ag-btn ag-page"
+              data-active={pageId() === d.id && onGhostPage() ? "" : undefined}
+              data-ghost=""
+              data-diff={pageMark(d.id)?.change}
+              data-by={pageMark(d.id)?.by}
+              title={ghostPageNote(d.id)}
+              onClick={() => {
+                setPageId(d.id);
+                setSelection([]);
+              }}
+            >
+              {d.name}
+            </button>
           )}
         </For>
         <button class="ag-btn" title="Add a page" onClick={addPage}>

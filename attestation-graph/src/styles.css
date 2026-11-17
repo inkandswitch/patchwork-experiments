@@ -10,14 +10,20 @@
     --attg-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 10%);
     --attg-accent: var(--studio-primary, #35f7ca);
     --attg-accent-fg: var(--studio-primary-line, black);
-    --attg-accent-soft: color-mix(in oklch, var(--studio-primary, #35f7ca), var(--editor-fill, white) 70%);
+    /* mixed in oklab, not oklch: a tinted paper would drag the hue (green to olive) */
+    /* comments: the ring on cells the sidebar focuses, and the thread count badges */
+    --ag-comment-accent: var(--comment-mark, #f2c94c);
+    --ag-comment-fill: var(--comment-highlight, color-mix(in oklch, #ffd84d 45%, var(--editor-fill, white)));
+    --ag-comment-accent-fg: var(--comment-ink, #4d3a00);
+    --attg-accent-soft: color-mix(in oklab, var(--studio-primary, #35f7ca), var(--editor-fill, white) 70%);
     --attg-path: var(--editor-link-text, var(--studio-link, #2563eb));
     --attg-danger: var(--editor-danger-text, var(--studio-danger, #d33));
-    --attg-trusted-fill: color-mix(in oklch, var(--studio-added, #4caf50), var(--editor-fill, white) 76%);
-    --attg-trusted-line: color-mix(in oklch, var(--studio-added, #4caf50), var(--editor-line, black) 25%);
+    --attg-trusted-fill: color-mix(in oklab, var(--studio-added, #4caf50), var(--editor-fill, white) 76%);
+    --attg-trusted-line: color-mix(in oklab, var(--studio-added, #4caf50), var(--editor-line, black) 25%);
     --attg-untrusted-fill: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 7%);
     --attg-untrusted-line: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 40%);
-    --attg-family: var(--editor-family-sans, system-ui, sans-serif);
+    /* the UI's font: a theme's editor font can be a serif, for prose */
+    --attg-family: var(--studio-family-ui, var(--studio-family-sans, system-ui, sans-serif));
     --attg-family-code: var(--editor-family-code, ui-monospace, monospace);
   }
 }
@@ -696,3 +702,319 @@
   border-left-color: var(--attg-path);
   font-weight: 600;
 }
+
+/* ---- comparing with another version (see compare.ts) ----
+ * The panel showing the graph names the colours: each draft's own, added
+ * and removed, and changed. Each draft is diffed against the two drafts'
+ * common ancestor. Side by side (and stacked), each pane marks what its
+ * draft did since: added, removed (drawn faintly from the ancestor), changed.
+ * A merge's ancestor is its target, so only the after pane is marked.
+ * Combined, every mark takes the colour of the draft that made it
+ * (data-by); what both drafts changed takes the changed colour. */
+
+.attestation-graph {
+  --attg-ours: var(--compare-ours, var(--compare-inserted, #7f77dd));
+  --attg-theirs: var(--compare-theirs, var(--compare-deleted, #d85a30));
+  --attg-added: var(--compare-added, #3b8f4f);
+  --attg-removed: var(--compare-removed, #c4473a);
+  --attg-changed: var(--compare-changed, #e0a100);
+}
+
+.attestation-graph .ag-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.attestation-graph .ag-stage[data-layout="side-by-side"] {
+  flex-direction: row;
+}
+
+/* both panes the same size, so one viewport lines them up */
+.attestation-graph .ag-stage[data-layout] > .ag-canvas {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.attestation-graph .ag-stage[data-layout="side-by-side"] > .ag-other {
+  border-left: 1px solid var(--attg-border);
+}
+
+.attestation-graph .ag-stage[data-layout="stacked"] > .ag-other {
+  border-top: 1px solid var(--attg-border);
+}
+
+/* looking over a merge: before, then after */
+.attestation-graph .ag-stage[data-merging] > .ag-other {
+  order: -1;
+}
+
+.attestation-graph .ag-stage[data-merging][data-layout="side-by-side"] > .ag-other {
+  border-left: none;
+  border-right: 1px solid var(--attg-border);
+}
+
+.attestation-graph .ag-stage[data-merging][data-layout="stacked"] > .ag-other {
+  border-top: none;
+  border-bottom: 1px solid var(--attg-border);
+}
+
+.attestation-graph .ag-other .ag-node {
+  cursor: inherit;
+}
+
+.attestation-graph .ag-versions {
+  position: absolute;
+  left: var(--studio-space-sm, 10px);
+  top: var(--studio-space-sm, 10px);
+  display: flex;
+  gap: var(--studio-space-md, 14px);
+  pointer-events: none;
+}
+
+.attestation-graph .ag-versions[data-at="right"] {
+  left: auto;
+  right: var(--studio-space-sm, 10px);
+}
+
+.attestation-graph .ag-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--attg-fg);
+  /* legible over the graph without a box around it */
+  text-shadow:
+    0 0 3px var(--attg-bg),
+    0 0 3px var(--attg-bg);
+}
+
+.attestation-graph .ag-version-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--attg-ours);
+}
+
+.attestation-graph .ag-version[data-side="theirs"] .ag-version-dot {
+  background: var(--attg-theirs);
+}
+
+/* what a draft deleted (drawn from the ancestor) or, combined, what only the
+   other draft added (drawn from it): faint, where it is or was */
+.attestation-graph .ag-ghosts {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.attestation-graph .ag-ghosts .ag-node {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+/* onion skin and swipe: the other version laid over this one */
+.attestation-graph .ag-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--attg-bg);
+  pointer-events: none;
+}
+
+.attestation-graph .ag-swipe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  margin-left: -8px;
+  z-index: 2;
+  cursor: ew-resize;
+  touch-action: none;
+  background: linear-gradient(
+    to right,
+    transparent 7px,
+    var(--attg-fg) 7px,
+    var(--attg-fg) 9px,
+    transparent 9px
+  );
+}
+
+.attestation-graph .ag-swipe:focus-visible {
+  outline: 2px solid var(--attg-accent);
+}
+
+/* marks: a box only one version has is outlined; one both have, however
+   it differs, isn't (combined shows how its words differ) */
+.attestation-graph .ag-node:is([data-diff="added"], [data-diff="deleted"]) {
+  outline: 2.5px solid var(--attg-diff);
+  outline-offset: 3px;
+}
+
+.attestation-graph [data-diff="added"] {
+  --attg-diff: var(--attg-added);
+}
+
+.attestation-graph [data-diff="deleted"] {
+  --attg-diff: var(--attg-removed);
+}
+
+.attestation-graph [data-diff="changed"],
+.attestation-graph [data-diff="moved"],
+.attestation-graph [data-diff="inside"] {
+  --attg-diff: var(--attg-changed);
+}
+
+/* combined: the colour of the draft that made the change */
+.attestation-graph [data-diff][data-by="ours"] {
+  --attg-diff: var(--attg-ours);
+}
+
+.attestation-graph [data-diff][data-by="theirs"] {
+  --attg-diff: var(--attg-theirs);
+}
+
+.attestation-graph [data-diff][data-by="both"] {
+  --attg-diff: var(--attg-changed);
+}
+
+/* a label isn't a box: its text is highlighted instead */
+.attestation-graph .ag-node[data-kind="text"][data-diff] {
+  outline: none;
+}
+
+.attestation-graph .ag-node[data-kind="text"]:is([data-diff="added"], [data-diff="deleted"]) .ag-html {
+  align-self: var(--attg-align, center);
+  max-width: 100%;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--attg-diff) 24%, transparent);
+  color: color-mix(in oklch, var(--attg-diff) 55%, var(--attg-fg));
+}
+
+/* a collapsed node hiding a change: a dot, not an outline */
+.attestation-graph .ag-node[data-diff="inside"] {
+  outline: none;
+}
+
+.attestation-graph .ag-node[data-diff="inside"]::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--attg-diff);
+  box-shadow: 0 0 0 2px var(--attg-bg);
+}
+
+.attestation-graph .ag-edge:is([data-diff="added"], [data-diff="deleted"]) .ag-edge-line {
+  stroke: var(--attg-diff);
+  stroke-width: 2.5;
+}
+
+.attestation-graph .ag-edge[data-diff="deleted"] .ag-edge-line {
+  stroke-dasharray: 6 4;
+}
+
+/* with the panel's collapse on: what didn't change fades back */
+.attestation-graph .ag-canvas[data-focus] .ag-node:not([data-diff]):not([data-selected]),
+.attestation-graph .ag-canvas[data-focus] .ag-edge:not([data-diff]):not([data-selected]) {
+  opacity: 0.25;
+}
+
+/* page tabs */
+.attestation-graph .ag-page[data-diff]::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--attg-diff);
+  vertical-align: 1px;
+}
+
+.attestation-graph .ag-page[data-diff="deleted"] {
+  text-decoration: line-through;
+}
+
+/* a page this version hasn't */
+.attestation-graph .ag-page[data-ghost] {
+  color: var(--attg-muted);
+}
+
+/* combined: what a draft did to a label since the ancestor, word by word,
+   in its colour, what it took out struck through; changed by both
+   differently, each one's words in its colour */
+.attestation-graph .ag-html mark[data-side] {
+  padding: 0 1px;
+  border-radius: 2px;
+  color: inherit;
+  background: color-mix(in oklch, var(--attg-ours) 24%, transparent);
+}
+
+.attestation-graph .ag-html mark[data-side="theirs"] {
+  background: color-mix(in oklch, var(--attg-theirs) 24%, transparent);
+}
+
+.attestation-graph .ag-html mark[data-side="both"] {
+  background: color-mix(in oklch, var(--attg-changed) 24%, transparent);
+}
+
+.attestation-graph .ag-html mark[data-op="removed"] {
+  text-decoration: line-through;
+}
+
+.attestation-graph .ag-html mark[data-side] + mark[data-side] {
+  margin-left: 0.25em;
+}
+
+/* the selection still shows on a marked node */
+.attestation-graph .ag-node[data-selected][data-diff] {
+  outline: 2.5px solid var(--attg-accent);
+}
+
+.attestation-graph .ag-edge[data-selected][data-diff] .ag-edge-line {
+  stroke: var(--attg-accent);
+}
+
+/* ---- comments (see comments.ts) ----
+ * A ring on the cells the comments sidebar has focused (the selection wins
+ * where they're the same), and a count of open threads on a cell. */
+
+.attestation-graph .ag-comment-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+
+/* has comments: a yellow line around it */
+.attestation-graph .ag-node[data-commented]:not([data-selected]) {
+  outline: 2px solid var(--ag-comment-accent);
+  outline-offset: 3px;
+}
+
+.attestation-graph .ag-edge[data-commented]:not([data-selected]) .ag-edge-line {
+  stroke: var(--ag-comment-accent);
+  stroke-width: 2.5;
+}
+
+.attestation-graph .ag-node[data-comment-focus]:not([data-selected]) {
+  outline: 3px solid var(--ag-comment-accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 9px color-mix(in oklch, var(--ag-comment-fill) 70%, transparent);
+}
+
+.attestation-graph .ag-edge[data-comment-focus]:not([data-selected]) .ag-edge-line {
+  stroke: var(--ag-comment-accent);
+  stroke-width: 3;
+}
+
+

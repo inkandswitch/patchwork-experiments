@@ -382,6 +382,29 @@ describe("tool UI", () => {
     t.dispose();
   });
 
+  it("keeps the view where it is when the graph is edited", async () => {
+    vi.useFakeTimers();
+    const t = await mount("cmb");
+    await vi.runAllTimersAsync();
+    const world = () => t.el.querySelector<HTMLElement>(".ag-world")!.style.transform;
+    const canvas = t.el.querySelector(".ag-canvas")!;
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaX: 25, deltaY: 40, bubbles: true, cancelable: true }),
+    );
+    const panned = world();
+    const n = t.node("cmb_Wrf")!;
+    pointer(n, "pointerdown", 100, 100);
+    pointer(n, "pointermove", 130, 142);
+    pointer(n, "pointerup", 130, 142);
+    t.handle.change((d) => {
+      d.diagrams[0].cells.find((c) => c.id === "cmb_Wh")!.value = "edited elsewhere";
+    });
+    await vi.runAllTimersAsync();
+    expect(world()).toBe(panned);
+    t.dispose();
+    vi.useRealTimers();
+  });
+
   it("moves, toggles trust, edits, adds, connects and deletes", async () => {
     vi.useFakeTimers();
     const t = await mount("cmb");
