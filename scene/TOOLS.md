@@ -236,30 +236,45 @@ takes it after a confirm. The ops under the commands already take sets
 plans: COMPOSITION Decisions, step 15, 2: "when one does, nothing below
 the command changes"). Only the selection and the command layer hold one.
 
-- **(A) The selection is a list at the focus; a command opts in with
-  `several: true`.** Shift-click in Edit (and Shift- or ⌘-click on a tree
-  row) adds or removes. A plain click, Select, Esc, Enter and Leave act on
-  the whole list as they act on the one today. A `several: true` command
-  always gets a non-empty array (one member when one is selected, or the
-  look), so it has one shape; every other command gets one target, as
-  today. Remove, Group (`ops.newGroup` taking `around` as a list), Copy
-  and Extract become `several: true`. `api.view.get().selected` stays the
-  one target, and the list is a new `selection` beside it, derived from
-  the same value. A menu opened on a member is the selection's; on
-  anything else it is that thing's, as today. Two ways to treat the
-  commands that don't opt in while several are selected:
-  - **(A1) attention is the last one picked.** The prompt, keys, halo and
-    inspector act on it; the rest are only outlined. This is how most
-    editors behave, but it puts a trap in "what is shown is what keys
-    do": with three dice outlined, R rolls one.
-  - **(A2) nothing acts on part of the selection.** Attention is the
-    list. A command applies to it only if it is `several: true` or the
-    list has one member. With several selected, the prompt shows only
-    `several` verbs (usually none), keys reach only those, the inspector
-    lists the members over the `several` commands, and the halo is not
-    drawn (Group first, then the halo moves the group). No primary is
-    needed: the selection is a set, and the order it was picked in only
-    orders the inspector's list.
+- **(A) The selection is a set at the focus, kept to its tops.**
+  Shift-click in Edit (and on a tree row) adds or removes. A plain click,
+  Select, Esc, Enter and Leave act on the whole set as they act on the one
+  today. *Tops:* no member is inside another, by group (filed in it, at
+  any depth) or by parent (attached under it, at any depth); every
+  selection step ends by dropping a member that has an ancestor in the
+  set. Adding something inside a member is then a no-op, adding its
+  ancestor drops it, and the halo, Remove, Group's `around` and Copy never
+  see a thing twice (as `subtreeOf` and `topsOf` already reduce Copy's
+  roots). The view value has one field for it: `selection`, a set of
+  paths (empty for none) that replaces `selected`; water's outline and
+  seats' picker, its only package readers, read it. The inspector lists
+  the members in the doc's order (`doc.order`), not the order they were
+  picked. A menu opened on a member is the set's; on anything else it is
+  that thing's, as today. Three ways for commands to meet a set:
+  - **(A1) attention is the last one picked; `several: true` commands get
+    the set.** The prompt, keys, halo and inspector act on the last one;
+    the rest are only outlined. This is how most editors behave, but it
+    puts a trap in "what is shown is what keys do": with three dice
+    outlined, R rolls one. It also makes pick order part of the value.
+  - **(A2) nothing acts on part of the selection; `several: true` commands
+    get the set.** Attention is the set. A command applies to it only if
+    it is `several: true` (it always gets a non-empty array: the set, or
+    the one look) or the set has one member (it gets that member). With
+    several selected, the prompt shows only `several` verbs (usually
+    none), keys reach only those, the inspector lists the members over
+    the `several` commands, and the halo is not drawn (Group first, then
+    the halo moves the group). Remove, Group (`ops.newGroup` taking
+    `around` as a list), Copy and Extract become `several: true`. Every
+    command then has one of two contracts, a target or a non-empty array.
+  - **(A3) every command takes a non-empty array.** No flag: `state(list)`
+    and `run(list)` everywhere, and `state` returns null when the command
+    can't act on that many. With one selected, or the look, the list has
+    one member. This is A2 with the adapter moved out of the stage: A2's
+    stage wraps a plain command as `list.length === 1 ? state(list[0]) :
+    null`, and A3 asks each package to write that line where it means it.
+    One contract, and a package can roll three dice as one throw without
+    a flag; the cost is a change to every package's commands (no
+    back-compat, so all of them at once).
 - **(B) A transient selection group:** the stage wraps the handful in a
   group that packages see as a group, so every group-aware verb works
   unchanged. Rejected: a stage-made object would sit in the snapshot that
@@ -267,32 +282,62 @@ the command changes"). Only the selection and the command layer hold one.
   and it is a second kind of group to tell from the real one.
 - **(C) The stage fans `run` out per member.** Rejected: "throw a handful
   together" is one act, not N. Roll run three times is three throws and
-  three tells; Remove run three times is three undo steps and three
-  confirms.
+  three tells; Remove run three times is three undo steps.
 - **(D) No multi-select.** Group makes a handful and packages act on
   groups. The cost is a Group and a filing per handful, and a group left
   in the doc that nobody wanted (Ungroup takes it out). Nothing changes.
+
+*H3 under A2 or A3.* The table is H3's own (command × body × held tool ×
+gesture × attention × reach), with command gaining {plain, several} (A2;
+A3 has one kind, whose `state` decides) and attention becoming
+{selection: none, one, two; look; null}. Look and selection don't
+combine: `attention()` sets `hit` to null while anything is selected
+(`src/stage/stage.js`), so look appears only with selection none, as
+today. "Two, one inside the other" (by group; by parent) is not a further
+row: the tops step makes it one, which its own selection-step cases
+check. Three things carry the claim:
+1. *Per stage.* The resolver asks each stage on the input path at its own
+   element of attention (`src/parts/resolver.js`). At the focus that
+   element is the set; in an outer stage every member's element is the
+   same focus link, so the set collapses to that one element and the
+   outer stage's plain verbs apply exactly as today. `targetFor(command,
+   element)` (A2: the list if `several`, its one member if it has one,
+   else not applicable; A3: the list, and `state` answers) is asked per
+   stage, at that stage's element, never on the raw set.
+2. *One function.* The hint (prompt, menu, inspector) and the dispatch
+   both reach a command through `targetFor`, so what is shown is what the
+   key reaches.
+3. *Held verbs.* A held verb pins attention (`attentionNow` in
+   `src/parts/keys.js`, `keyAttention` in the resolver). The pin becomes
+   the set of paths the verb started on, each stage taking its element of
+   each as above, so a held `several` verb keeps its whole set however
+   the selection moves, and is let go (as a target is today) when any
+   member is gone: the set it started on is no longer there.
 
 *Checked against the invariants:*
 
 | | H3 a shown key works | H4 Escape | H10 selection at the focus | Packages see |
 |---|---|---|---|---|
-| A1 | holds (one target per command), but a key acts on one of several outlined | the selection rung clears the whole list | every member at the focus: `selectionStep` gains `toggle { path }`, model-checked as today over ≤3 of press, toggle, Select, Enter, Leave, Esc | one target, unless `several` |
-| A2 | holds by one function, `targetFor(command, attention)` (the list if `several`, its one member if it has one, else not applicable), asked by the hint and the dispatch alike; a finite table over command {plain, several} × selection {none, one, two} × attention {selection, look} | as A1 | as A1 | as A1; water's outline and seats' picker read `selected`, null while several are selected |
+| A1 | holds (one target per command), but a key acts on one of several outlined | the selection rung clears the whole set | every member at the focus, kept to its tops: `selectionStep` gains `toggle { path }`, model-checked as today over ≤3 of press, toggle, Select, Enter, Leave, Esc, on a scene with a group, a member filed in it, a child attached under another, and a loose object | one target, unless `several`; `selection` for `selected` |
+| A2 | holds, by the three points above; finite: H3's table with command {plain, several} and attention {selection none, one, two; look; null} | as A1 | as A1 | as A1 |
+| A3 | as A2, command one kind | as A1 | as A1 | a non-empty array, always; `selection` for `selected` |
 | B | holds | as today | breaks: the group is written, and isn't what the viewer picked | a group nobody made |
 | C | breaks "one act": one key shown, N runs | as today | as A | N calls |
 | D | as today | as today | as today | as today |
 
-*Recommendation: A2, minimal*, if the lead wants multi-select at all:
-Shift-click in Edit and in the tree; Remove, Group, Copy and Extract take
-the list; only `several: true` commands see more than one target, and
-nothing runs on part of the selection. The selection outline draws every
-member, and presence shares the list (`src/peers.js`). It is not small:
-`selection.js` and its H10 model, `view.js` (the value and presence), the
-key resolver and `commandState`, the halo, the outline, the inspector's
-header, the menu, transfer, `ops.newGroup`, and STAGE.md's command and
-view rows. It also touches Decisions 3 (no modifier key), so it is not
-built here. D stands meanwhile.
+*Recommendation: nothing runs on part of the selection (A2 or A3)*, if
+the lead wants multi-select at all: Shift-click in Edit and in the tree;
+Remove, Group, Copy and Extract take the set. A2 or A3 is the lead's
+call: A2 keeps every package's commands as they are and puts one adapter
+in the stage; A3 has one contract and no flag, and changes every package.
+The selection outline draws every member, and presence shares the set
+(`src/peers.js`). It is not small: `selection.js` and its H10 model,
+`view.js` (the value and presence), water and seats, the key resolver,
+the held-verb pin and `commandState`, the halo, the outline, the
+inspector's header, the menu, transfer, `ops.newGroup`, and STAGE.md's
+command and view rows (A3: every package's commands too). It also touches
+Decisions 3 (no modifier key), so it is not built here. D stands
+meanwhile.
 
 ## 4. The body and the held tool
 
@@ -2267,14 +2312,20 @@ The project lead decided the five open questions on 2026-11-12.
     list at the focus, with `several: true` commands), B (a transient
     group, rejected because it leaks into the doc), C (the stage fans
     `run` out, rejected because a handful is one act) and D, each checked
-    against H3, H4 and H10. It recommends A2: nothing runs on part of the
-    selection. The plan's draft was A1, where attention stays on the last
-    one picked. A2 is recommended instead because A1 lets a key act on
-    one of several outlined things. *Questions for the lead:* multi-select
-    at all, or is D (Group, then file) enough? If A, A1 or A2? Shift-click
+    against H3, H4 and H10. A's selection is one set-valued `selection`
+    in the view value (replacing `selected`), kept to its tops so no
+    member is inside another. It recommends that nothing runs on part of
+    the selection (A2 or A3). The plan's draft was A1, where attention
+    stays on the last one picked; it is not recommended because A1 lets a
+    key act on one of several outlined things. *Questions for the lead:*
+    multi-select at all, or is D (Group, then file) enough? If A: A1, or
+    nothing on part of it, and then A2 (a `several: true` flag, plain
+    commands kept, one adapter in the stage) or A3 (every command takes a
+    non-empty list, one contract, every package changed)? Shift-click
     is a modifier key, which Decisions 3 ruled out for games: is it
     Edit's alone (Edit's click already is), or should every body's menu
     offer "Also select", since Select is everyone's there? With several
     selected, should the halo move them all (one edit step, the same
-    world move for each member in its own parent's frame), or stay off
+    world move for each member in its own parent's frame; the tops keep
+    any from moving twice), or stay off
     until they are grouped?
