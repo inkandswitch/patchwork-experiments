@@ -16,7 +16,6 @@ import {
   contentExtras,
   declutter,
   depthRange,
-  intersectLimits,
   lighting,
   nearestScreenVertex,
   ladderRadius,
@@ -182,23 +181,6 @@ describe("nearestScreenVertex", () => {
     const r = nearestScreenVertex(pts, { count: 2 }, identity, identity, { width: 100, height: 100, x: 76, y: 24, maxPx: 5, eye: [0, 0, 5] });
     expect(r.index).toBe(1);
     expect(r.world).toEqual([0.5, 0.5, 0]);
-  });
-});
-
-describe("camera limits", () => {
-  it("intersect: the tightest of each bound, defaults where none is given", () => {
-    expect(intersectLimits([])).toEqual({ minPolar: 0, maxPolar: Math.PI, minDistance: 0, maxDistance: Infinity });
-    expect(intersectLimits([{ maxPolar: 1.4 }, { maxPolar: 1.2, minDistance: 2 }, { minDistance: 1, maxDistance: 10 }, null])).toEqual({
-      minPolar: 0,
-      maxPolar: 1.2,
-      minDistance: 2,
-      maxDistance: 10,
-    });
-  });
-  it("collapse onto the larger minimum when they can't all hold, and stay in range", () => {
-    expect(intersectLimits([{ minPolar: 1 }, { maxPolar: 0.5 }])).toMatchObject({ minPolar: 1, maxPolar: 1 });
-    expect(intersectLimits([{ minDistance: 5 }, { maxDistance: 3 }])).toMatchObject({ minDistance: 5, maxDistance: 5 });
-    expect(intersectLimits([{ minPolar: -1, maxPolar: 9, minDistance: -2, maxDistance: "x" }])).toEqual({ minPolar: 0, maxPolar: Math.PI, minDistance: 0, maxDistance: Infinity });
   });
 });
 
@@ -409,8 +391,6 @@ describe("Viewport without WebGL", () => {
     expect(vp.worldOf("a")).toBe(null);
     const release = vp.hold();
     expect(() => release()).not.toThrow();
-    const off = vp.limit({ maxPolar: 1 });
-    expect(() => off()).not.toThrow();
     // labels still take a sync
     vp.labels.sync("x", [{ key: "a", text: "a", position: [0, 0, 0] }]);
     expect(port.querySelectorAll(".label")).toHaveLength(1);
@@ -488,20 +468,6 @@ describe("the camera rig", () => {
     vp.frame(new Box3(new Vector3(-1, -1, -1), new Vector3(1, 1, 1)));
     release();
     expect(r6(vp.controls.target.toArray())).toEqual([0, 0, 0]);
-  });
-
-  it("limits intersect onto the orbit and off recomputes", () => {
-    const vp = headless();
-    const a = vp.limit({ maxPolar: 1.4, minDistance: 1 });
-    const b = vp.limit({ maxPolar: 1.2, maxDistance: 20 });
-    expect(vp.controls.maxPolarAngle).toBe(1.2);
-    expect(vp.controls.minDistance).toBe(1);
-    expect(vp.controls.maxDistance).toBe(20);
-    b();
-    expect(vp.controls.maxPolarAngle).toBe(1.4);
-    expect(vp.controls.maxDistance).toBe(Infinity);
-    a();
-    expect(vp.controls.maxPolarAngle).toBe(Math.PI);
   });
 
   it("reports the end of an orbit (never while held), and whether anyone touched it", () => {

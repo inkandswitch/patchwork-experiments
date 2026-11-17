@@ -47,7 +47,6 @@
 
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
-import { Counter } from "@automerge/automerge";
 import { createAtom, assoc } from "./atom.js";
 import { createHost } from "./host.js";
 import { HEARTBEAT_MS, createPresence } from "./presence.js";
@@ -625,7 +624,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // each object's new parent is already in place when it's attached to it.
   function applyDoc(m) {
     const { d, objects, parents, attachOrder, inherited } = m;
-    scope.setMaterialRules(d.materialRules);
     scope.setGroups(m.members);
     const tracked = new Set(manager.ids());
     let rerouted = false;
@@ -806,9 +804,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // before its first change and after its last:
   //   shows  the objects it revealed (who may see what one is grew, by the
   //          running extensions' audience policies on each side; unknown on
-  //          either side counts as grown) or decided (a running extension's
-  //          `decided(before, after)` names them: their outcome came from
-  //          shared randomness or hidden state);
+  //          either side counts as grown);
   //   kept   the names of the objects it removed whose contents a keeper
   //          holds: bound by the trait of an extension whose plugin says
   //          `keeper` (STAGE.md, "Keepers").
@@ -875,26 +871,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // a listed package missing, or an extension not started: whose policies are missing can't be told,
     // so every object counts as shown (a hand's `only` among them would hide a reveal); said so on refusal
     const unknown = !packages.complete() || !host.settled();
-    const askAudience = unknown || host.instances().some((r) => typeof r.instance.audience === "function");
-    const askDecided = host.instances().some((r) => typeof r.instance.decided === "function");
-    if (askAudience || askDecided) {
-      const b = snapOf(before);
-      const a = snapOf(after);
-      if (askAudience) {
-        const ab = audiencesIn(b);
-        const aa = audiencesIn(a);
-        for (const id of Object.keys(now)) if (was[id] && grew(ab(id), aa(id))) shows.add(id);
-      }
-      for (const r of host.instances()) {
-        if (typeof r.instance.decided !== "function") continue;
-        let ids = [];
-        try {
-          ids = r.instance.decided(b, a);
-        } catch (err) {
-          console.warn(`[scene] extension “${r.id}”: decided failed`, err);
-        }
-        for (const id of Array.isArray(ids) ? ids : []) if (typeof id === "string" && (was[id] || now[id])) shows.add(id);
-      }
+    if (unknown || host.instances().some((r) => typeof r.instance.audience === "function")) {
+      const ab = audiencesIn(snapOf(before));
+      const aa = audiencesIn(snapOf(after));
+      for (const id of Object.keys(now)) if (was[id] && grew(ab(id), aa(id))) shows.add(id);
     }
     const kept = [];
     const gone = Object.keys(was).filter((id) => !now[id]);
@@ -2143,7 +2123,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       claims: new Set(), // the claims it holds (entries in `claims`)
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
-      offs: new Set(), // listeners, watchers, limits
+      offs: new Set(), // listeners, watchers, rides
       els: new Set(), // overlays, edges, styles
     };
     owned.set(id, own);
@@ -2198,7 +2178,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         return presence.session;
       },
       signal,
-      Counter,
       doc,
       change,
       /** may this view write the doc? (not in a pin or a mirror, nor where the handle refuses: Keyhive's to answer, in time) */
@@ -2277,7 +2256,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         rate: (hz) => {
           if (live()) presence.rate(id, hz);
         },
-        shownAt: (session) => presence.shownAt(session),
       }),
       send: (type, data) => {
         if (live()) presence.send(id, type, data);
@@ -2321,7 +2299,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** a link of this doc's, as the view has it: { role: "acting" | "mirror" | "pinned" | "closed", open, reason? } (open: its doc is drawn, else its hint), or null (not a link, or not expanded yet) */
       link: (oid) => view.linkState([...path, oid]),
       addObject,
-      rebuild,
       fixPoint,
       drop: (info, opts) => (writable() ? host.drop(info, opts) : Promise.resolve(false)),
       template: (templateId, params) => applyTemplate(templateId, params),
@@ -2363,7 +2340,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         hold: () => acquire(own.cameraHolds, () => viewport.hold()),
         /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
         ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
-        limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? To a general part, the view's own, also: carried across a focus move */
         touched: () => viewport.touched() || view.cameraPlaced || (general && view.cameraCarried),
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
@@ -2591,7 +2567,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       dock: () => noop,
       popover: () => noop,
       cursor: noop,
-      camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop, limit: () => noop }),
+      camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
       clock: facet(api.clock, { process: () => noop }),
       body: facet(api.body, { enter: () => false, leave: () => false }),
       hold: () => noop,

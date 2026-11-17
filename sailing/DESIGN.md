@@ -2335,7 +2335,7 @@ traits mark, put back when it stops).
 
 `play.js` joins six modules through one context object. Each is
 `create…(api, ctx) → part`, where a part may have `tick(…)`, `update(scene,
-local, prev)`, `receive(type, data, from)` and `dispose()`, and fills in
+local, prev)` and `dispose()`, and fills in
 what the others read. No part calls `api.loop`: play.js runs one loop and
 ticks them in the order a frame needs, and no part imports another
 (what they share of the doc is traits.js, of the maths frames.js). Nothing of the ship's can be carried:

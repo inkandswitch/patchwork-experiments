@@ -11,14 +11,11 @@
 //   material the file authored keeps its colour, named or not.
 // - Meshes that reuse one (geometry, material) pair inside a GLB collapse into
 //   one InstancedMesh: one draw call instead of one per node.
-// - Scene material rules (material-rules.js) are applied on top of the GLB's
-//   values, and can be re-applied when they change.
 
 import { Box3, BufferAttribute, DoubleSide, InstancedMesh, Matrix4 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { toArrayBuffer } from "./file-content.js";
-import { resolveMaterialSet } from "./material-rules.js";
 import { placeConnector, sanitizeConnectors } from "./carry-rules.js";
 import { nodeLayer, sanitizeLayers } from "./layers.js";
 
@@ -139,11 +136,10 @@ export function prepareMaterials(root, parser) {
 }
 
 /**
- * Put back the GLB's values and apply the scene's rules on top; leaves the
- * results in userData.base* for applyDisplay (which layers the object's own
- * colour and opacity over them).
+ * Put back the GLB's values; leaves them in userData.base* for applyDisplay
+ * (which layers the object's own colour and opacity over them).
  */
-export function applyMaterialRules(materials, rules) {
+export function applyGLBValues(materials) {
   for (const m of materials) {
     const g = m.userData.gltf;
     if (!g) continue;
@@ -154,14 +150,7 @@ export function applyMaterialRules(materials, rules) {
     if (g.roughness !== undefined) m.roughness = g.roughness;
     const beforeTransmission = m.transmission;
     if (g.transmission !== undefined) m.transmission = g.transmission;
-    let opacity = g.opacity ?? 1;
-    const set = m.userData.useThemeColor || !rules?.length ? {} : resolveMaterialSet(m.name ?? "", rules);
-    if (set.color && m.color) m.color.set(set.color);
-    if (set.emissive && m.emissive) m.emissive.set(set.emissive);
-    if (set.metalness !== undefined && "metalness" in m) m.metalness = set.metalness;
-    if (set.roughness !== undefined && "roughness" in m) m.roughness = set.roughness;
-    if (set.transmission !== undefined && "transmission" in m) m.transmission = set.transmission;
-    if (set.opacity !== undefined) opacity = set.opacity;
+    const opacity = g.opacity ?? 1;
     // transmission 0 ↔ >0 switches shader programs
     if ("transmission" in m && (beforeTransmission > 0) !== (m.transmission > 0)) needsUpdate = true;
     m.userData.baseColor = m.color ? m.color.clone() : null;
@@ -317,14 +306,14 @@ export function localParts(root) {
  * @returns {Promise<{ content, materials: object[], legend: object | null, extras: object, layers: ReturnType<typeof sanitizeLayers>, box: Box3 | null, parts: { box, matrix, layer }[],
  *   stats: { drawCalls: number, nodes: number, instanced: number, triangles: number, dequantized: number } }>}
  */
-export async function prepareGLB(bytes, rules = []) {
+export async function prepareGLB(bytes) {
   const gltf = await loadGLTF(bytes);
   const content = gltf.scene;
   // the scene's own extras (GLTFLoader puts them in userData), copied before anything below touches the graph
   const extras = { ...(content.userData ?? {}) };
   const dequantized = dequantizePositions(content);
   const materials = prepareMaterials(content, gltf.parser);
-  applyMaterialRules(materials, rules);
+  applyGLBValues(materials);
   const snap = findSnapPoints(content);
   stampLayers(content);
   const inst = collapseInstances(content);

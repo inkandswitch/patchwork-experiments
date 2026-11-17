@@ -144,7 +144,7 @@ export function statusParts(o, { status = null, load = null, content = null, sho
   return out;
 }
 
-// ─── what extensions contribute: commands and documents ─────────────────────
+// ─── what extensions contribute: commands ───────────────────────────────────
 
 /**
  * Walk what api.collect gathered, `first`'s own first, then the rest in
@@ -226,41 +226,30 @@ export function commandsKey(list) {
 export const CONTROLS_TOOL = "scene-render-controls";
 
 /**
- * The documents that go with `target`, one section each in the inspector
- * (STAGE.md "A document"), as [{ ext, id, label, url, toolId, folded }]:
- * `first`'s own first, then the rest in running order. Dropped: an entry
- * that doesn't apply (state null or false), one whose url isn't an
- * automerge URL, one whose state throws (with a warning), a second entry
- * with an extension's id already listed (with a warning: a section is its
- * extension and id), and a repeat of a url and tool already listed (the
- * first one stays). Unlike a command, a document may go with the scene
- * (target null).
- * @param {{ id: string, value: any }[]} collected  api.collect("documents")
+ * The inspector's documents that go with `target`, one section each
+ * (STAGE.md, "The interface"), as [{ ext, id, label, url, toolId, folded }],
+ * in `entries`' order, `ext` being the inspector's id. Dropped: an entry that
+ * doesn't apply (state null or false), one whose url isn't an automerge URL,
+ * one whose state throws (with a warning), and a repeat of a url and tool
+ * already listed (the first one stays). Unlike a command, a document may go
+ * with the scene (target null).
+ * @param {{ id: string, name?: string, state: Function }[]} entries  inspectorDocuments(…)
  */
-export function documentsFor(collected, target, ctx, first = null) {
-  const sections = new Set();
+export function documentsFor(entries, target, ctx, ext) {
   const shown = new Set();
-  return contributed(collected, first, (ext, entry) => {
-    if (entry.id == null || typeof entry.state !== "function") return null;
+  const out = [];
+  for (const entry of entries) {
     const state = stateOf(ext, "document", entry, target, ctx);
-    if (state == null || state === false || typeof state !== "object") return null;
+    if (state == null || state === false || typeof state !== "object") continue;
     const url = docUrl(state.url);
-    if (!url) return null;
+    if (!url) continue;
     const toolId = typeof state.toolId === "string" && state.toolId ? state.toolId : null;
-    const id = String(entry.id);
-    return { ext, id, label: String(state.label ?? entry.name ?? entry.id), url, toolId, folded: !!state.folded };
-  }).filter((d) => {
-    const section = `${d.ext}/${d.id}`;
-    if (sections.has(section)) {
-      console.warn(`[scene] “${d.ext}” has two documents “${d.id}” for one selection; the first is shown`);
-      return false;
-    }
-    sections.add(section);
-    const k = docKey(d.url, d.toolId);
-    if (shown.has(k)) return false;
+    const k = docKey(url, toolId);
+    if (shown.has(k)) continue;
     shown.add(k);
-    return true;
-  });
+    out.push({ ext, id: String(entry.id), label: String(state.label ?? entry.name ?? entry.id), url, toolId, folded: !!state.folded });
+  }
+  return out;
 }
 
 /**

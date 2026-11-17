@@ -83,7 +83,7 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 | Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
 | "general" scope, `api.path`, `reopened`, general-only packages/clocks | **view plugins**; the ~25 `general` branches go |
 | `own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading | **editor**, recording from `change → patches` |
-| `judgeEdit`, `audience`/`parties`/`decided` in undo | one `revert-veto` convention answered by **hidden** and **seats**; `decided` goes (nothing implements it) |
+| `judgeEdit`, `audience`/`parties` in undo | one `revert-veto` convention answered by **hidden** and **seats** |
 | audience, shown, veil, keepers' looks | **hidden** (doc, `"*"`); the veil a `display` override |
 | claims; pose holds and playback; world clock and processes; telling | **claims**, **poses** (playback a `display` override), **clock** (on `use("claims")`, `channel`, `settled()`), **telling**: each a doc plugin of every doc (`"*"`) |
 | commands, attention, keymap, menu, use prompt, toolbar, touch | **verbs** (view); attention = the editor's selection, else the look |
@@ -137,10 +137,9 @@ Each names where it came from (in git at d80a2bfa for the removed notes).
 "TOOLS D" is TOOLS Decisions; "COMP" is COMPOSITION Decisions.
 
 ### Editing, selection and undo
-- **Undo's take-back protocol** for changes that revealed or decided
-  something: ask, agree or decline, how it shows, an absent party. Not
-  designed; such undos are refused meanwhile. Nothing answers `decided`
-  yet. (TOOLS D2; STAGE "Undo".)
+- **Undo's take-back protocol** for changes that revealed something: ask,
+  agree or decline, how it shows, an absent party. Not designed; such undos
+  are refused meanwhile. (TOOLS D2; STAGE "Undo".)
 - **A modifier key for selecting in games**, if play-testing asks. (TOOLS D3.)
 - **Multi-select**: at all, or Group is enough? If so A2 (`several: true`)
   or A3 (every command takes a list); Shift-click Edit's alone or "Also

@@ -331,7 +331,6 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
           return out;
         },
         rate() {},
-        shownAt: (s) => (present(s) ? Date.now() : null),
         watch(fn) {
           view.watchers.push(fn);
           return () => {

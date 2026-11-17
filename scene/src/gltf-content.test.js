@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodeGLB, computeNormals, parseGLB, MODE } from "./glb.js";
-import { applyMaterialRules, authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials, sharedLoader } from "./gltf-content.js";
+import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials, sharedLoader } from "./gltf-content.js";
 import { Box3, Euler, Matrix4, Group } from "three";
-import { sanitizeRules } from "./material-rules.js";
 import { nearestScreenVertex } from "./stage/viewport.js";
 import { composeMatrix } from "./transform.js";
 import { yawOfEuler } from "./carry-rules.js";
@@ -237,32 +236,6 @@ describe("gltf content", () => {
     expect(out.stats.triangles).toBeGreaterThan(0);
     expect(out.box).toBeTruthy();
     expect(out.legend).toBeNull();
-  });
-
-  it("applies material rules over the GLB values, and re-applies from scratch when they change", async () => {
-    const glb = encodeGLB({
-      meshes: [
-        { name: "a", positions: tri, normals: computeNormals(tri), color: "#808080", materialName: "Aluminum 6061" },
-        { name: "b", positions: tri, normals: computeNormals(tri) },
-      ],
-    });
-    const gltf = await loadGLTF(glb);
-    const mats = prepareMaterials(gltf.scene, gltf.parser);
-    const alu = mats.find((m) => !m.userData.useThemeColor);
-    const def = mats.find((m) => m.userData.useThemeColor);
-    alu.name = "Aluminum 6061"; // (in case the encoder doesn't name materials)
-    const rough0 = alu.roughness;
-    applyMaterialRules(mats, sanitizeRules([{ match: { nameIncludes: "Alum" }, set: { metalness: 1, roughness: 0.2, opacity: 0.5 } }, { match: { unnamed: true }, set: { color: "#00ff00" } }]));
-    expect(alu.metalness).toBe(1);
-    expect(alu.roughness).toBeCloseTo(0.2);
-    expect(alu.userData.baseOpacity).toBe(0.5);
-    expect(alu.userData.baseTransparent).toBe(true);
-    // the default material is "no material": rules never touch it
-    expect(def.color.getHexString()).toBe("ffffff");
-    applyMaterialRules(mats, []);
-    expect(alu.roughness).toBeCloseTo(rough0);
-    expect(alu.userData.baseOpacity).toBe(1);
-    expect(alu.userData.baseTransparent).toBe(false);
   });
 });
 

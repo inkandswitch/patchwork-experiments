@@ -354,7 +354,6 @@ describe("the stage, mounted", () => {
     expect(running(m)).toEqual(["t.always:general"]);
     // after the abort, acquiring is a no-op
     expect(r.api.overlay().isConnected).toBe(false);
-    expect(typeof r.api.camera.limit({ minPolar: 0 })).toBe("function");
   });
 
   it("docks an extension's element in the drawer, outermost at the right; its stopping closes its panes without onClose, and docking after is a no-op", async () => {

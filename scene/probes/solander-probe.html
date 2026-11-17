@@ -287,19 +287,6 @@ try {
       if (id) { d.objects[id].color = on ? "#f0f8ff" : null; d.objects[id].opacity = on ? 0.18 : 1; }
     }
   });
-  // the same view with transmission traded for opacity by a scene material rule
-  P.noTransmission = async () => {
-    await stable();
-    const before = renderStats();
-    const rules = JSON.parse(JSON.stringify(scene.doc().materialRules ?? []));
-    const names = before.transmissiveMaterials;
-    scene.change((d) => { d.materialRules = [...rules, ...names.map((n) => ({ match: { nameEquals: n === "(unnamed)" ? "" : n }, set: { transmission: 0, opacity: 0.4 } }))]; });
-    await stable();
-    const after = renderStats();
-    scene.change((d) => { d.materialRules = rules; });
-    await stable();
-    return { rulesAdded: names.length, before, after, restored: renderStats() };
-  };
   // ── phase 2: battery shown ───────────────────────────────────────────────
   P.showBattery = async () => {
     const t0 = performance.now(); const gets0 = net.gets; const bytes0 = net.bytes;

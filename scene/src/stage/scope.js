@@ -176,7 +176,6 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     },
     setPose: (id, t) => vp.setPose(key(id), t),
     setGroups: (members) => vp.setGroups(new Map([...members].map(([g, ids]) => [key(g), ids.map(key)])), n),
-    setMaterialRules: (rules) => vp.setMaterialRules(rules, n),
     worldOf: (id) => {
       const w = vp.worldOf(key(id));
       return w ? f().matrixIn(w) : null;

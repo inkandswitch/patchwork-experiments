@@ -498,3 +498,9 @@ with history removed; this file holds the history and PLANS.md what is
 deferred. TOOLS.md, COMPOSITION.md and SCOPE.md were removed (reversing
 COMPOSITION Decisions, step 9, 2); they are in git at d80a2bfa. KERNEL.md,
 never committed, was folded into PLANS.md and removed.
+
+### 2026-11-17 — Dead api and hooks removed
+Nothing implemented or called them, so they went: the `decided` instance
+hook, the `documents` contribution (the inspector keeps its own sections),
+`doc.materialRules`, `api.camera.limit`, `api.Counter`, `api.rebuild`,
+`api.presence.shownAt` (the clock still uses it inside), and sailing's `receive`.

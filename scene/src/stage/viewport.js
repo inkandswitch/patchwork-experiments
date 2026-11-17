@@ -37,8 +37,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { applyMaterialRules, prepareGLB } from "../gltf-content.js";
-import { rulesKey, sanitizeRules } from "../material-rules.js";
+import { prepareGLB } from "../gltf-content.js";
 import { layerShown, layerStates } from "../layers.js";
 import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
 import { defaultSnapRadius } from "../carry-rules.js";
@@ -446,35 +445,6 @@ export function contentExtras(prepared) {
   const points = prepared?.snap?.points ?? [];
   const radius = prepared?.snap?.radius ?? (points.length ? defaultSnapRadius(points) : null);
   return Object.freeze({ ...(prepared?.extras ?? {}), connectors: points, snapRadius: radius ?? null, legend: prepared?.legend ?? null, layers: prepared?.layers ?? [] });
-}
-
-/**
- * Every live camera limit intersected into one, in OrbitControls' terms.
- * Missing fields don't limit. When two limits can't both hold (one's minimum
- * past another's maximum), the larger minimum wins: the range collapses onto
- * it rather than going empty.
- * @param {Iterable<{ minPolar?, maxPolar?, minDistance?, maxDistance? }>} specs
- * @returns {{ minPolar: number, maxPolar: number, minDistance: number, maxDistance: number }}
- */
-export function intersectLimits(specs) {
-  const num = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v)) ? Number(v) : null);
-  let minPolar = 0;
-  let maxPolar = Math.PI;
-  let minDistance = 0;
-  let maxDistance = Infinity;
-  for (const s of specs ?? []) {
-    if (!s) continue;
-    const a = num(s.minPolar), b = num(s.maxPolar), c = num(s.minDistance), d = num(s.maxDistance);
-    if (a != null) minPolar = Math.max(minPolar, a);
-    if (b != null) maxPolar = Math.min(maxPolar, b);
-    if (c != null) minDistance = Math.max(minDistance, c);
-    if (d != null) maxDistance = Math.min(maxDistance, d);
-  }
-  minPolar = Math.min(Math.max(minPolar, 0), Math.PI);
-  maxPolar = Math.max(Math.min(maxPolar, Math.PI), minPolar);
-  minDistance = Math.max(minDistance, 0);
-  maxDistance = Math.max(maxDistance, minDistance);
-  return { minPolar, maxPolar, minDistance, maxDistance };
 }
 
 /**
@@ -1000,8 +970,6 @@ export class Viewport {
     this.themeListeners = new Set();
     this.cameraWatchers = new Set();
     this.cameraEndListeners = new Set();
-    /** live camera limits (limit()) */
-    this.limits = new Set();
     /** how many hold() calls are outstanding */
     this.holds = 0;
     /** how far ahead the orbit target was when the camera was taken (or set while held) */
@@ -1015,8 +983,6 @@ export class Viewport {
     this.depthDirty = true;
     this.depthBox = null;
     this.sceneRadius = 1;
-    // each stage's material rules (stage number → { rules, key }), applied to its own objects
-    this.materialRules = new Map();
     /** the extensions' atmosphere, cleaned (setAtmosphere); null: the stage's own look */
     this.atmosphere = null;
     this.atmosphereKey = "null";
@@ -1746,7 +1712,6 @@ export class Viewport {
       disposeObject(prepared.content);
       return;
     }
-    applyMaterialRules(prepared.materials, this.rulesOf(id));
     // Compile its shaders before it's drawn, off the main thread where the
     // browser can (KHR_parallel_shader_compile), so a new material doesn't
     // stall the first frame it appears in. While it waits it's in
@@ -1810,30 +1775,6 @@ export class Viewport {
       }
       this.scheduleBVH();
     });
-  }
-
-  /**
-   * The scene's material rules (README.md, "`scene` — the composition"), applied to every
-   * loaded material now and to every GLB that loads later.
-   */
-  /** Stage `n`'s material rules, onto its own objects (paths.js keys say whose an object is). */
-  setMaterialRules(rules, n = 0) {
-    const clean = sanitizeRules(rules);
-    const key = rulesKey(clean);
-    if (key === (this.materialRules.get(n)?.key ?? "[]")) return;
-    this.materialRules.set(n, { rules: clean, key });
-    if (!this.ok) return;
-    for (const [id, entry] of this.objects) {
-      if (!entry.materials.length || (parseKey(id)?.n ?? 0) !== n) continue;
-      applyMaterialRules(entry.materials, clean);
-      this.applyMaterials(entry);
-    }
-    this.invalidate();
-  }
-
-  /** The material rules of the stage an object's key is in. */
-  rulesOf(id) {
-    return this.materialRules.get(parseKey(id)?.n ?? 0)?.rules ?? [];
   }
 
   /**
@@ -2205,33 +2146,6 @@ export class Viewport {
     return this.holds > 0;
   }
 
-  /**
-   * Limit the orbit ({ minPolar, maxPolar } radians from +Y, { minDistance,
-   * maxDistance } from the target). Every live limit applies at once.
-   * @returns {() => void} off
-   */
-  limit(spec) {
-    const s = { ...spec };
-    this.limits.add(s);
-    this.applyLimits();
-    return () => {
-      if (this.limits.delete(s)) this.applyLimits();
-    };
-  }
-
-  applyLimits() {
-    if (!this.controls) return;
-    const l = intersectLimits(this.limits);
-    const c = this.controls;
-    c.minPolarAngle = l.minPolar;
-    c.maxPolarAngle = l.maxPolar;
-    c.minDistance = l.minDistance;
-    c.maxDistance = l.maxDistance;
-    // into the new limits now (the orbit clamps on update), unless someone else has the camera
-    if (this.holds === 0 && this.ok) c.update();
-    this.invalidate();
-  }
-
   /** Call fn(camera) when setCamera changes the projection (its fov). @returns {() => void} off */
   watchCamera(fn) {
     this.cameraWatchers.add(fn);
@@ -2575,6 +2489,5 @@ export class Viewport {
     this.themeListeners.clear();
     this.cameraWatchers.clear();
     this.cameraEndListeners.clear();
-    this.limits.clear();
   }
 }

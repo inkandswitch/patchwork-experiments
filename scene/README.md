@@ -120,8 +120,7 @@ unbuilt render gives `glb: null`: say so in `meta.notes`.
 { title, objects: { [id]: Object | Group }, order: string[],
   dimensions: { [id]: { a: Anchor, b: Anchor, label } },
   view: { units, grid, axes, bounds, snap?, start?: { body?, place?, home? } },
-  traits, assets: { [key]: { url, hint? } }, packages: { url }[], clock: { running, t },
-  materialRules?: MaterialRule[] }
+  traits, assets: { [key]: { url, hint? } }, packages: { url }[], clock: { running, t } }
 Object = { kind?: "object", name, sourceUrl, providerId, renderUrl /* null: not built */,
   visible, color, opacity, wireframe, transform: { position, rotation /* Euler XYZ rad */, scale },
   parent?, group?, infoUrl?, infoToolId?, locked?, tags?, layers?, traits?,
@@ -134,8 +133,8 @@ Anchor = { objectId, local, world }  // a point in its object's frame: follows i
   concurrent edits break the same way on every peer.
 - `renderUrl` is written once; null for `"file"` content and links.
   `hint.bounds` is drawn until content loads.
-- `materialRules` restyle materials by name; `packages` lists where the
-  contents come from, kept true by the stage. Only this shape is read.
+- `packages` lists where the contents come from, kept true by the stage.
+  Only this shape is read.
 
 ### Content is routed at sync
 

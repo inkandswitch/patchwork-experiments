@@ -197,7 +197,7 @@
   word-break: break-word;
 }
 
-/* its documents (STAGE.md "A document"): a section each, its head (the
+/* its documents (STAGE.md, "The interface"): a section each, its head (the
    label, which folds it, Dock and Open; dragged to the drawer's tabs) and
    the document, height-capped, or "In the drawer · Show" while it's docked */
 .scene-stage .inspector .doc-sections:where(:not(.about-embed *), .about-embed .scene-tool *) {

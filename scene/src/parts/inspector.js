@@ -35,10 +35,9 @@
 // named), Edit or one of the bodies on offer here; each viewer can still
 // change body for themselves.
 //
-// Last, for either, its documents (STAGE.md "A document"): every running
-// extension's `documents` that go with it, this extension's own first (the
-// object's Source, File or Linked scene, its Build controls, About:
-// inspector-model.js inspectorDocuments). Each is a section: a head with its label, a fold
+// Last, for either, its documents: the object's Source, File or Linked
+// scene, its Build controls, About (inspector-model.js inspectorDocuments).
+// Each is a section: a head with its label, a fold
 // (the viewer's pref), Dock and Open (patchwork:open-document, the main view),
 // and the doc in a <patchwork-view> inside a documentBox (embed.js), so its
 // keys and its look are its own; where the host has no <patchwork-view> (a local
@@ -187,6 +186,8 @@ function create(api) {
   const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status, edits: local?.edits, running: local?.running }))));
   const now = () => seen(api.local.get(), api.view.get());
   const units = () => api.pref("units", "m");
+  // the sections that go with a selection (or the scene): its Source, File or Linked scene, Build, About
+  const documents = inspectorDocuments((id) => contentKind(api.loadState?.(id)));
 
   // ─── doc writes, through the planners ──────────────────────────────────────
 
@@ -543,7 +544,7 @@ function create(api) {
     return {
       section,
       update(target) {
-        const list = documentsFor(api.collect("documents"), target, api.context(null), ID);
+        const list = documentsFor(documents, target, api.context(null), ID);
         const docked = new Set(api.view.get().drawer?.docs ?? []);
         // a drawer pane is titled after the object as well as the section (the scene's: the label alone)
         const of = target == null ? null : api.nameOf(target) || "Untitled";
@@ -1160,7 +1161,6 @@ function create(api) {
 
   return {
     commands,
-    documents: inspectorDocuments((id) => contentKind(api.loadState?.(id))),
     update(scene, local, prev, view) {
       tree.note(prev, view);
       follow(scene, seen(local, view));

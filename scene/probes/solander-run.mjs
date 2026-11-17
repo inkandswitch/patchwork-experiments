@@ -140,7 +140,6 @@ try {
   await sleep(500);
   report.screens.xray = await c.shot("default-xray.png");
   await c.evaluate("window.__probe.setXray(false)");
-  report.noTransmission = await c.evaluate("window.__probe.noTransmission()");
   report.battery = await c.evaluate("window.__probe.showBattery()");
   report.screens.battery = await c.shot("battery.png");
   await c.evaluate("window.__probe.frameAll()");

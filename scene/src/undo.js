@@ -177,7 +177,7 @@ export const DEPTH = 100;
 /**
  * One viewer's stacks, per focus doc: { [docUrl]: { undo: step[], redo: step[] } }.
  * A step is { label, parts: [{ handle, leaves }], shows?: string[],
- * unknown?: true, kept?: string[] }: the objects it revealed or decided
+ * unknown?: true, kept?: string[] }: the objects it revealed
  * (unknown: counted so because who could see them couldn't be told), and
  * the names of the kept things it removed (`judge`). Pure updates.
  */
@@ -229,7 +229,7 @@ export function needsAgreement(step, parties) {
  *
  * `judge({ handle, before, after })` says what a step did to one doc (the doc
  * before its first change and after its last): { shows?: id[] (objects it
- * revealed or decided), unknown?: true (shows counts objects whose audience
+ * revealed), unknown?: true (shows counts objects whose audience
  * couldn't be told), kept?: name[] (kept things it removed) }.
  * `parties(ids)` says who, other than this viewer, has a stake in those
  * objects now ([]: nobody; null: can't tell).
@@ -304,7 +304,7 @@ export function createEdits({ handle, focus = () => handle.url, writable = () =>
      * Undo ("undo") or redo ("redo") the last step in the focus doc: false
      * when there's none, the doc isn't writable, something it wrote has
      * been written since (then it's dropped, whole, and said), or it
-     * revealed or decided something others have a stake in (then it stays,
+     * revealed something others have a stake in (then it stays,
      * and that's said).
      */
     take(which) {

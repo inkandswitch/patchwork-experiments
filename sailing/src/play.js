@@ -69,9 +69,6 @@ export default {
       input: ctx.crew.input,
       // the crew's body (scene/STAGE.md, "Bodies"): standing at a station, over walk (walking her deck is walk's)
       bodies: ctx.crew.bodies,
-      receive(type, data, from) {
-        for (const p of parts) p.receive?.(type, data, from);
-      },
       dispose() {
         off?.();
         for (const p of [...parts].reverse()) p.dispose?.();

@@ -9,7 +9,7 @@ import { worldMatrix } from "../hierarchy.js";
 import inspector, { sectionPref, startBodies } from "./inspector.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
-import { aboutFor, attachOptions, commandsFor, commandsKey, documentsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
+import { aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { EMBED_ATTR, EMBED_CLASS } from "../embed.js";
 import { SECTION_MIME } from "../dnd.js";
 import { LINK } from "../stage/links.js";
@@ -422,7 +422,7 @@ describe("scene.inspector: the panel", () => {
   });
 });
 
-describe("scene.inspector: documents, a section each (STAGE.md \"A document\", STAGE.md, “The interface”)", () => {
+describe("scene.inspector: documents, a section each (STAGE.md, “The interface”)", () => {
   const ME = "scene.inspector";
   /** the sections as shown: [ext/id, label, open?, the doc-url and tool-id of its view, or null while folded] */
   const sections = () =>
@@ -432,10 +432,9 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", S
     });
   const section = (key) => [...body().querySelectorAll(".doc-section")].find((sec) => `${sec.dataset.ext}/${sec.dataset.section}` === key);
   const views = () => s.root.querySelectorAll("patchwork-view").length;
-  const OTHER = (state) => ({ meta: { id: "t.notes" }, module: { create: () => ({ documents: [{ id: "notes", name: "Notes", state }] }) } });
 
   /** a scene with a built object, a GLB file and a link, each in a group with an About */
-  async function mountKinds(extensions = []) {
+  async function mountKinds() {
     const repo = new FakeRepo();
     const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
@@ -448,22 +447,18 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", S
       file: object({ name: "File", sourceUrl: glb.url, visible: false }),
       link: object({ name: "Link", sourceUrl: linked.url, providerId: LINK, renderUrl: null }),
     };
-    await mount({ repo, objects, extensions });
+    await mount({ repo, objects });
     return { repo, src, render, glb, linked, info };
   }
 
-  it("shows exactly documentsFor's sections, in its order, and only the open ones have a view", async () => {
-    const extra = (t) => (t === "built" ? { url: m.info.url, toolId: "notes", label: "Notes" } : null);
-    const m = await mountKinds([OTHER(extra)]);
+  it("shows the selection's sections, in order, and only the open ones have a view", async () => {
+    const m = await mountKinds();
     await select("built");
     await settle();
-    const want = documentsFor(s.api(ME).collect("documents"), "built", s.api(ME).context(null), ME).map((d) => `${d.ext}/${d.id}`);
-    expect(want).toEqual([`${ME}/source`, `${ME}/build`, `${ME}/about`, "t.notes/notes"]);
     expect(sections()).toEqual([
       [`${ME}/source`, "Source", true, [m.src.url, null]],
       [`${ME}/build`, "Build", true, [m.render.url, "scene-render-controls"]],
       [`${ME}/about`, "About Boat", true, [m.info.url, null]],
-      ["t.notes/notes", "Notes", true, [m.info.url, "notes"]],
     ]);
     // each view sits inside the stage's embed marker and its style guard: its keys and its look are its own
     for (const v of body().querySelectorAll(".doc-section patchwork-view")) expect([v.closest(`[${EMBED_ATTR}]`) != null, v.closest(`.${EMBED_CLASS}`) != null]).toEqual([true, true]);
@@ -479,15 +474,6 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", S
     await select(null);
     expect(sections()).toEqual([]);
     expect($(".doc-sections").hidden).toBe(true);
-  });
-
-  it("a scene's documents (target null) are sections of the scene", async () => {
-    const notes = fakeUrl();
-    await mount({ objects: { a: object({ name: "A" }) }, extensions: [OTHER((t) => (t == null ? { url: notes } : null))] });
-    expect($(".inspector").dataset.kind).toBe("scene");
-    expect(sections()).toEqual([["t.notes/notes", "Notes", true, [notes, null]]]);
-    await select("a");
-    expect(sections()).toEqual([]);
   });
 
   it("one live view per open section: a new selection unmounts every old one; an unchanged section stays mounted", async () => {
@@ -515,19 +501,14 @@ describe("scene.inspector: documents, a section each (STAGE.md \"A document\", S
   const AROUND = [
     ["About goes (built leaves its group)", (d) => (d.objects.built.group = null), (m) => [["unmount", m.info.url]]],
     ["About comes (built back in Boat)", (d) => (d.objects.built.group = "boat"), (m) => [["mount", m.info.url]]],
-    ["another extension's comes (after About)", (d, flag) => ((flag.on = true), (d.objects.built.opacity = 0.5)), (m) => [["mount", m.glb.url]]],
-    ["another extension's goes", (d, flag) => ((flag.on = false), (d.objects.built.opacity = 0.6)), (m) => [["unmount", m.glb.url]]],
   ];
   it("a section coming or going leaves every other open section mounted (no tool remounted)", async () => {
-    const flag = { on: false };
-    let glb = null;
-    const m = await mountKinds([OTHER((t) => (t === "built" && flag.on ? { url: glb } : null))]);
-    glb = m.glb.url;
+    const m = await mountKinds();
     await select("built");
     expect(views()).toBe(3);
     for (const [name, change, want] of AROUND) {
       embedLog.length = 0;
-      s.change((d) => change(d, flag));
+      s.change(change);
       await settle();
       expect(embedLog, name).toEqual(want(m));
     }

@@ -14,7 +14,6 @@ export function fakeCamera({ touched = false } = {}) {
       cam.position = cam.target.map((v) => v + 3);
     },
     hold: () => () => {},
-    limit: () => () => {},
     touched: () => touched,
     watch: () => () => {},
   };

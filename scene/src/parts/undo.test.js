@@ -240,21 +240,6 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
     }
   });
 
-  it("a package's `decided` marks a step as deciding: refused while others have a stake, whatever the audience did", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const DECIDES = {
-      meta: { id: "t.decides", traits: ["t.card"] },
-      module: { create: () => ({ decided: (before, after) => (before.objects.card?.name !== after.objects.card?.name ? ["card"] : []) }) },
-    };
-    s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE, DECIDES], doc: cardDoc(["ann", "bob"]) });
-    await settle();
-    const edit = s.api("scene.undo");
-    edit.edit((d) => (d.objects.card.name = "Drawn"), { label: "Rename" });
-    expect(edit.undo()).toBe(false);
-    edit.edit((d) => (d.objects.card.transform.position = [1, 0, 0]), { label: "Move" });
-    expect(edit.undo()).toBe(true);
-  });
-
   it("deleting something a keeper holds the contents of: undo puts the doc's part back and says the kept part is as its keeper has it now", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const KEEPER = { meta: { id: "t.keeper", keeper: "plain", traits: ["t.kept"] }, module: { create: () => ({}) } };

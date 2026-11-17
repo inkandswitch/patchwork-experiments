@@ -379,10 +379,13 @@ commands: the editor's (`show` `"toolbar"` or absent) only in Edit, the world's
 `here` not false, and Leave. The **clock chip** (`scene.clock`) shows each
 focus-path doc's clock. The **drawer** holds panes (`api.dock`) and documents
 (`api.view.dock`, the view's until their ×). The **inspector**
-(`scene.inspector`) is one pane: tree, fields and document sections. The **use
-prompt** (`scene.use`) shows attention's `"use"` verbs; a button with a key
-presses that key. The **menu** (`scene.menu`) shows what applies to what was
-pressed, Select first.
+(`scene.inspector`) is one pane: tree, fields and document sections (the
+selection's Source, File or Linked scene, Build and About, each shown in its
+tool with **Dock** and **Open**, its fold the pref
+`inspector.open.scene.inspector/<id>`; `documentsFor`,
+`src/parts/inspector-model.js`). The **use prompt** (`scene.use`) shows
+attention's `"use"` verbs; a button with a key presses that key. The **menu**
+(`scene.menu`) shows what applies to what was pressed, Select first.
 
 ## `api`
 
@@ -391,7 +394,7 @@ extension's.
 
 | Member | |
 |---|---|
-| `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal`, `Counter` | `session`: what claims and holds name |
+| `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal` | `session`: what claims and holds name |
 | `doc()`, `change(fn)`, `newId(prefix)`, `registry(type)` | |
 | `writable()` | false in a pin, a mirror, or on a refusing handle |
 | `scene()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }` |
@@ -401,7 +404,7 @@ extension's.
 | `claim`, `claimedBy`, `tell`, `notify(text, kind?)`, `audience`, `shown`, `drop`, `template`, `part`, `pose`, `heldBy`, `ambient`, `clock` | see "Claims", "Telling", "Audience", "Drops", "Templates", "Parts", "Holding a pose", "Ambients", "Time", "World time" |
 | `port`, `root` | the canvas's element; the stage's root |
 | `local`, `pref(key, fallback)`, `setPref` | see "Three places for state" |
-| `presence` | `{ set, get, watch, rate(hz), shownAt(session) }`; `get()` → `{ [session]: { viewer, body, held, at, keys } }`; `shownAt` is the peer's moment drawn now |
+| `presence` | `{ set, get, watch, rate(hz) }`; `get()` → `{ [session]: { viewer, body, held, at, keys } }` |
 | `send(type, data)` | once to the same extension on every peer, to `receive` unless `type` is in `messages` |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer |
 | `nameOf(id)` | the name this viewer sees |
@@ -409,7 +412,7 @@ extension's.
 | `loadState(id)` | where content was routed and what its loader said |
 | `box(id, { hints, in })`, `groupBox`, `sceneBox` | `{ min, max }` or null |
 | `worldOf(id)` | the drawn matrix, holds included; `scene().world(id)` is the doc's |
-| `focus(ids)`, `rebuild(id)` | load first; rebuild |
+| `focus(ids)` | load first |
 | `providersFor(url, doc)`, `addObject(url, opts)` | `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }` |
 | `fixPoint(id)` | the `at` fixing an object at what it shows now |
 | `view` | `{ get, watch, select, enter, dock({ url, toolId?, title }) → close }` |
@@ -430,14 +433,14 @@ only a look: boxes, picking and shadows go by the pose.
 
 `pick(x, y, { ground?, snapPx? })`, `ray(x, y)`, `raycast(origin, dir, { far?,
 skip? })` (hit `{ id, point, normal, distance, back }`) and `project(p)`.
-`camera` is `{ get, set, frame(box), hold, ride, limit, touched, watch, onEnd
-}`, in the stage's frame.
+`camera` is `{ get, set, frame(box), hold, ride, touched, watch, onEnd }`, in
+the stage's frame.
 
 **Hold**: orbit off, nothing saved. **Riding**: `ride(id, { turn, rise, tilt, at
 })` carries the orbit camera with an object (`id` null: the stage's root); one
 ride applies, the top body's, else the latest base ride (`src/stage/ride.js`).
-**Limits** intersect. **Saving**: the camera is the viewer's (`localStorage`
-`scene-camera:<url>`), else `view.start.home`.
+**Saving**: the camera is the viewer's (`localStorage` `scene-camera:<url>`),
+else `view.start.home`.
 
 ### Holding a pose
 
@@ -494,9 +497,9 @@ t`. Anyone who may write pauses and resumes. One clock per doc.
 Undo covers the stage's own edits, per person and per focus doc (`src/undo.js`);
 a package verb, clock act or process save is never one. A step restores only if
 the doc still holds everything it wrote, else it is dropped and said. A step
-that showed or decided something can't be undone while another party (`parties`)
-has a stake; an unknown audience counts as showing everything. Kept objects come
-back as their keeper has them now.
+that showed something can't be undone while another party (`parties`) has a
+stake; an unknown audience counts as showing everything. Kept objects come back
+as their keeper has them now.
 
 ## `instance`
 
@@ -504,8 +507,8 @@ back as their keeper has them now.
 |---|---|
 | `update(scene, local, prev, view)` | the stage, once per flush when doc, local, view or what's shown changed |
 | `looks()`, `audience(scene)`, `ambient()` | see "Lenses", "Audience", "Ambients" |
-| `parties(scene)` → `(id) → viewer[] \| null`, `decided(before, after)` → id[] | undo: who has a stake; what a change settled by chance or secret |
-| `input`, `bodies`, `commands`, `documents` | see "The input chain", "Bodies", "A command", "A document" |
+| `parties(scene)` → `(id) → viewer[] \| null` | undo: who has a stake |
+| `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
 | `messages`, `receive(type, data, from)` | see "Telling"; `receive` gets undeclared sends |
 | `beforeRemove(draft, ids)`, `dispose()` | the stage |
 | `hud()` → `[{ text, state }]` | status surfaces |
@@ -534,18 +537,6 @@ names the verb for this target; `title` is the tooltip, and the reason when
 true`: beyond reach it is "too far" and runs nowhere (H9). `edit: true`: only in
 Edit (`inBody`). **Held verbs**: `run` returns `{ end(), cancel(), update?(dt)
 }`, kept while the key is down.
-
-### A document
-
-```js
-{ id, name, state(target, ctx) → null | { url, toolId?, label?, folded? } }
-```
-
-A document goes with a target (the scene too) and is an inspector section
-showing that doc in its tool, with **Dock** and **Open**. One `id` is one
-section; its fold is the pref `inspector.open.<ext>/<id>`. Heads are dropped.
-The inspector's own come first, then the rest in running order (`documentsFor`,
-`src/parts/inspector-model.js`).
 
 ### Targets and refs
 

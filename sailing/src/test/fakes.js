@@ -2,7 +2,7 @@
 // shared doc and presence, and an api per view (session) that reads and
 // writes them as STAGE.md says. Time is Date.now (vitest's fake timers) and
 // each view's loops run when the test ticks the world. A peer's held pose
-// shows at once (no playout delay: shownAt is now), which is all these
+// shows at once (no playout delay), which is all these
 // tests need. scene().parents is a Map, resolved as the stage resolves it (a
 // missing parent, or a group, is none).
 //
@@ -463,7 +463,6 @@ export function fakeWorld(doc, { content = {} } = {}) {
         rate(hz) {
           view.rate = hz;
         },
-        shownAt: (s) => (present(s) ? Date.now() : null),
         watch: () => () => {},
       },
       clock: {
