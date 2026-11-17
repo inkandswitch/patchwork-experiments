@@ -264,7 +264,8 @@ container needs, this is what it does instead:
 Two rows are retired, since the stage now has the word
 ([STAGE.md](../scene/STAGE.md), "How a carry ends"). "This was put down on
 me" is `landed(id, on)`, which the carry tells after its put's write, F or
-no F; the bag puts in what lands on a bag. "Is my own carry still holding
+no F; the bag puts in what lands on a bag, or on what is attached under
+one (its label: the nearest bag up `on`'s parent chain). "Is my own carry still holding
 this?" is the carry session's `ended`: a drawn piece's carry that ended
 `"yielded"` waits on what the peer does with it. A drop into a bag is still
 two changes (the carry's put, then the bag's removal); making it one is a

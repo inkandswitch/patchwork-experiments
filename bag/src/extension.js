@@ -257,10 +257,12 @@ export default {
     }
 
     // A piece this view's hand put down on a bag goes in (the carry's
-    // `landed`, after it wrote where it went down: `on` is what it rests on).
+    // `landed`, after it wrote where it went down: `on` is what it rests on),
+    // and so does one put down on what is attached under a bag (its label,
+    // a strap): the nearest bag up `on`'s chain, never the piece itself.
     // Only this view's hand: a peer's put is theirs to put in.
     function landed(id, on) {
-      if (on != null && on !== id && bagAt(on)) putInto(on, [id]);
+      for (let x = on; x != null && x !== id; x = scene?.parents?.get(x) ?? null) if (bagAt(x)) return void putInto(x, [id]);
     }
 
     // ── drawing ──

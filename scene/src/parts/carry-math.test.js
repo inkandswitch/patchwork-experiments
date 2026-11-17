@@ -148,7 +148,7 @@ describe("carry maths", () => {
     const land = c.move(down(1, 0));
     expect(c.state.W[13]).toBeCloseTo(land.lift);
     expect(c.state.W[12]).toBeCloseTo(1);
-    const W = c.put();
+    const { W } = c.put();
     expect(close(W.slice(12, 15), [1, 0, 0])).toBe(true);
   });
 
@@ -281,7 +281,9 @@ describe("under a boom: the rays start just above the piece, not the top of the 
     const land = c.move(pointer(0.1, 0));
     expect(land.on).toBe("table");
     expect(land.rest).toBeCloseTo(TABLE);
-    expect(c.put()[13]).toBeCloseTo(TABLE);
+    const put = c.put();
+    expect(put.on).toBe("table");
+    expect(put.W[13]).toBeCloseTo(TABLE);
   });
 
   it("Flip turns it over onto the table, not onto the boom", () => {

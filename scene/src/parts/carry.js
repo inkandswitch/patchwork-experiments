@@ -32,9 +32,10 @@
 //
 // Every session ends once, and says how (`session.ended`, a promise of
 // { how, on }): "put" (written where it went down, `on` what it rests on),
-// "back" (put back: Escape, a newer carry, never lifted, nowhere to land, or
-// gone meanwhile), "yielded" (a peer's hold ranks ahead: theirs) or
-// "refused" (something here holds it ahead). After a put's write, every
+// "back" (put back: Escape, a newer carry, never lifted, nowhere to land,
+// read-only at the put, or gone meanwhile), "yielded" (a peer's hold ranks
+// ahead: theirs, however it was seen) or "refused" (something here holds it
+// ahead). After a put's write, every
 // running extension's `landed(id, on)` hears it once, on this client only:
 // an event, not a claim, so nothing is ordered and nothing can refuse it
 // (STAGE.md "Landing", "How a carry ends").
@@ -299,11 +300,13 @@ export default {
         showRing(l, frame);
       }
 
-      // Something here holds it ahead of the carry (another extension's act,
-      // a roll or a glide: not a process, which gives way): the hold is
-      // refused, so it was never in our hands. It goes back, nothing written.
+      // The hold was refused. A peer's that ranks ahead refuses it too
+      // (holds.js), and that is theirs: yielded. Otherwise something here
+      // holds it ahead of the carry (another extension's act, a roll or a
+      // glide: not a process, which gives way), so it was never in our
+      // hands. It goes back, nothing written.
       function refused() {
-        if (done) return;
+        if (done || yieldIfTaken()) return;
         giveBack("refused");
         api.notify("Something else is moving that.", "info");
       }
@@ -350,11 +353,18 @@ export default {
         end(ev) {
           if (done) return;
           if (yieldIfTaken()) return;
-          const W = c && doc().objects?.[id] ? c.put(frame.rayIn(rayOf(ev)), ev ? !!ev.alt : null) : null;
-          if (!W) return giveBack("back");
-          const on = c.state.land?.on ?? null;
+          // a stage gone read-only (or pinned) meanwhile writes nothing: so it went back
+          const put = c && doc().objects?.[id] && api.writable() ? c.put(frame.rayIn(rayOf(ev)), ev ? !!ev.alt : null) : null;
+          if (!put) return giveBack("back");
+          const { on } = put;
           finish();
-          api.change(api.ops.setTransform(api.scene(), id, frame.pose(W)));
+          try {
+            api.change(api.ops.setTransform(api.scene(), id, frame.pose(put.W)));
+          } catch (err) {
+            api.pose.release(id);
+            endedAs(Object.freeze({ how: "back", on: null }));
+            throw err;
+          }
           api.pose.release(id, { landed: true });
           tellLanded(id, on);
           endedAs(Object.freeze({ how: "put", on }));
@@ -382,8 +392,14 @@ export default {
           return true;
         },
       };
-      // a peer's hold appearing (the stage's update) gives it way at once, not at the next move
-      open = { session, check: yieldIfTaken };
+      // At the stage's update: a peer's hold appearing gives it way at once,
+      // and the object removed puts it back, neither waiting for the pointer.
+      function check() {
+        if (done) return;
+        if (!doc().objects?.[id]) giveBack("back");
+        else yieldIfTaken();
+      }
+      open = { session, check };
       if (opts.now && ev) session.move(ev);
       return session;
     }
@@ -461,7 +477,8 @@ export default {
       commands,
       carry,
       // a peer's hold that ranks ahead drops ours and shows theirs (a display
-      // change): the open carry gives way then, not at the pointer's next move
+      // change), and a removal is a doc change: the open carry ends then, not
+      // at the pointer's next move
       update() {
         open?.check();
       },

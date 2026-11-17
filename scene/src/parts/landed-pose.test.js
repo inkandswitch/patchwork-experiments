@@ -194,7 +194,7 @@ describe("the carry lands each case as landedPose says", () => {
     const landing = (id, p) => (p[0] > 0.5 ? ANSWERS[answer] : null);
     const c = createCarry({ id: "tile", W: frame(...STARTS[start]), box: TILE, snaps, raycast: ground, landing });
     c.move(down(1, 0));
-    const W = c.put();
+    const { W } = c.put();
     const [want, turned = false] = EXPECTED[start][answer][snap];
     expect(near(axes(W), want)).toBe(true);
     expect(c.state.flips).toBe(turned ? 1 : 0);
@@ -363,7 +363,7 @@ describe("the carry: where the rules are asked, and turns over that show", () =>
     };
     const c = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground, landing });
     c.move(down(1, 0));
-    const W = c.put();
+    const { W } = c.put();
     const last = asked.at(-1);
     expect(last.on).toBe("rack");
     expect(last.p.map((v) => +v.toFixed(12))).toEqual([W[12], W[13], W[14]].map((v) => +v.toFixed(12)));

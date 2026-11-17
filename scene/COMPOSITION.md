@@ -2561,7 +2561,10 @@ and "is my own carry still holding this?".
    ends it (end, cancel, a newer carry, the part stopping, a peer's hold,
    a refused hold, the object gone). A promise rather than a callback in
    `opts`, so whoever holds the session can ask, and a session already over
-   answers at once.
+   answers on the next microtask. The outcome names the cause, not the code
+   path that ended it: a refused hold with a peer's ahead (`heldBy`) is
+   "yielded", wherever it was refused (fixed in review). "put" means
+   written: a stage read-only at the put ends it "back".
 2. **`landed(id, on)` is an event, not a claim**: after the put's write,
    once per running extension, on the carrier's client only. Nothing is
    ordered and nothing can refuse it; who may refuse a drop is drop claims,
@@ -2569,7 +2572,13 @@ and "is my own carry still holding this?".
 3. **A peer's hold gives the carry way at the stage's `update`**, the flush
    that shows the hold, not the pointer's next move, so `ended` says
    "yielded" while the pointer is still. The bag stopped watching for that
-   hold itself.
+   hold itself. The object removed ends it "back" at the same `update`.
+   **Question for the lead:** the carry learns of the loss twice (it polls
+   `heldBy` at each `update`, and its next `pose.hold` is refused), though
+   the stage knows the moment it drops a hold (holds.js `lost`, used only
+   for bookkeeping). Should holds tell their holder (a refusal that says its
+   cause, or a `lost` the holder hears)? That would retire the poll and the
+   `update` hook; it changes the scene contract, so it waits for you.
 4. **No new query for one's own hold.** `pose.hold`'s boolean says whether
    it stands, `ended` how it ended; `heldBy` stays "the peer ahead of this
    view".

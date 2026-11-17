@@ -423,14 +423,13 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
       shows(state.over);
       return null;
     },
-    /** Put it down (re-landed from this pointer, else the last): its world matrix, or null if it never had a landing. */
+    /** Put it down (re-landed from this pointer, else the last): `{ W, on }` (its world matrix and what it rests on), or null if it never had a landing. */
     put(ray = null, alt = null) {
       if (!state.land) return null;
       const r = ray ?? state.last?.ray;
       const land = (r ? settle(r, alt ?? state.last?.alt ?? false) : null) ?? state.land;
-      state.land = land; // where it went down (its `on`: what it rests on)
       state.W = translate(state.W, land.delta);
-      return state.W;
+      return { W: state.W, on: land.on ?? null };
     },
   };
 }

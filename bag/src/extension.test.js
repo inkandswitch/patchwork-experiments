@@ -164,6 +164,11 @@ describe("a bag in a scene", () => {
       { what: "on a bag", id: "cube", on: "bag1", bag1: ["cube"], told: [["put", { bag: BAG1, n: 1 }]] },
       { what: "on the other bag", id: "disc", on: "bag2", bag2: ["disc"], told: [["put", { bag: BAG2, n: 1 }]] },
       { what: "on another object", id: "cube", on: "disc" },
+      // attached under (scene's parent chain): the nearest bag up it
+      { what: "on what is attached to a bag (its label)", id: "cube", on: "label", bag1: ["cube"], told: [["put", { bag: BAG1, n: 1 }]] },
+      { what: "on what is attached to that (two deep)", id: "cube", on: "tag", bag1: ["cube"], told: [["put", { bag: BAG1, n: 1 }]] },
+      { what: "on what is attached to another object", id: "cube", on: "sticker" },
+      { what: "on what is attached to a bag attached to a bag: the nearer", id: "cube", on: "inner", bag2: ["cube"], told: [["put", { bag: BAG2, n: 1 }]], nest: true },
       { what: "on nothing (the ground)", id: "cube", on: null },
       { what: "a bag on itself (the carry never says so; nothing to refuse)", id: "bag1", on: "bag1" },
       { what: "a bag on another bag", id: "bag2", on: "bag1", bag1: ["bag2"], told: [["put", { bag: BAG1, n: 1 }]] },
@@ -172,6 +177,17 @@ describe("a bag in a scene", () => {
     ];
     for (const row of rows) {
       const t = await table();
+      // attached things: a label on bag1 with a tag on it, a sticker on the disc; bag2 attached under bag1 (`nest`)
+      t.handle.change((d) => {
+        d.objects.label = token("Label", 0, { parent: "bag1" });
+        d.objects.tag = token("Tag", 0, { parent: "label" });
+        d.objects.sticker = token("Sticker", 0.6, { parent: "disc" });
+        if (row.nest) {
+          d.objects.bag2.parent = "bag1";
+          d.objects.inner = token("Inner", 1, { parent: "bag2" });
+        }
+      });
+      t.sync();
       t.handle.change((d) => (d.objects[row.id].transform.position = [0.02, 0.2, 0.03]));
       if (row.on !== undefined) t.instance.landed(row.id, row.on);
       t.sync();

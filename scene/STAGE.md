@@ -1758,16 +1758,20 @@ when it settles) says how: `{ how, on }`.
 
 | `how` | when | written | `landed` |
 |---|---|---|---|
-| `"put"` | `end(ev)` found somewhere to go down | where it went down, once | `landed(id, on)` on every running extension, once each, after the write |
-| `"back"` | `cancel()` (Escape, another tool picked up), a newer carry, the carry's part stopping, never lifted, nowhere to land, or the object gone meanwhile | nothing | no |
-| `"yielded"` | a peer's hold ranks ahead of ours (both grabbed it at once): it gives way at the stage's next `update`, not at the pointer's next move | nothing | no |
-| `"refused"` | something here holds it ahead (a roll, a glide: holds.js) | nothing | no |
+| `"put"` | `end(ev)` found somewhere to go down, and wrote it | where it went down, once | `landed(id, on)` on every running extension, once each, after the write |
+| `"back"` | `cancel()` (Escape, another tool picked up), a newer carry, the carry's part stopping, never lifted, nowhere to land, the stage read-only at the put (or its write threw), or the object gone (at the stage's next `update`) | nothing | no |
+| `"yielded"` | a peer's hold ranks ahead of ours (both grabbed it at once): it gives way at the stage's next `update`, or at the first hold refused before that, never at the pointer's next move | nothing | no |
+| `"refused"` | a hold refused while no peer's ranks ahead: something here holds it ahead (a roll, a glide: holds.js) | nothing | no |
 
 `on` is what it rests on when put (a connector's object, or what the
 downward ray met), else null. It is told only on the carrier's client: a
 peer sees the write, not the event, so a rule that acts on a put (the bag
 taking what's put on it) acts once, where the hand was. `landed` hears only
 puts by a carry; a gizmo, a peer or Paste moving the piece is not a put.
+
+The outcome is the cause, not the path: a peer's hold refuses a `pose.hold`
+too (holds.js), so whichever hold is refused first, `heldBy` decides
+between "yielded" and "refused".
 
 So one's own hold is answered without a query of its own: `pose.hold`'s
 boolean says whether it stands now, and the session's `ended` says how it

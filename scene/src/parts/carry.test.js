@@ -58,8 +58,9 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
   api.box = (id) => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   api.heldBy = () => null;
   api.pose = {
-    // `stub.refuse`: something here holds it ahead of the carry (holds.js), so the hold doesn't stand
-    hold: (id, t) => (holds.push([id, t]), !stub.refuse),
+    // as holds.js: a peer's hold that ranks ahead (`heldBy`) refuses it, and so
+    // does `stub.refuse`, something here that holds it ahead of the carry
+    hold: (id, t) => (holds.push([id, t]), !stub.refuse && api.heldBy(id) == null),
     release: (id, opts) => releases.push([id, opts ?? {}]),
   };
   // frame loops, run by hand: stub.tick(dt)
@@ -724,7 +725,29 @@ describe("How a carry ends: `ended` and `landed`", () => {
       s.change((d) => delete d.objects.a);
       session.end(move(2, 2));
     },
+    // A peer's hold that ranks ahead, seen first as a refused hold (before
+    // the stage's update shows it): it is theirs whichever hold says so.
+    // Not lifted, the move lifts it, and its first hold is refused.
+    "a peer's hold, then a move": (session, { api }) => {
+      api.heldBy = () => "peer";
+      session.move(move(2.1, 2));
+      session.end(move(2, 2));
+    },
+    "a peer's hold, then a key (Q)": (session, { api }) => {
+      api.heldBy = () => "peer";
+      session.key({ key: "q" });
+      session.end(move(2, 2));
+    },
+    // turned over with F, then a peer's hold while the turn shows: the turn's next hold
+    "a peer's hold mid-turn": (session, { api, stub }) => {
+      session.key({ key: "f" });
+      api.heldBy = () => "peer";
+      stub.tick();
+      session.end(move(2, 2));
+    },
   };
+  // the paths that lift it themselves when it wasn't yet
+  const LIFTS = new Set(["a peer's hold, then a move"]);
   const WANT = {
     "end with a landing": [{ how: "back" }, { how: "put", on: "b" }],
     "end with none": [{ how: "back" }, { how: "back" }],
@@ -732,9 +755,12 @@ describe("How a carry ends: `ended` and `landed`", () => {
     "a peer took it first": [{ how: "back" }, { how: "yielded" }],
     "hold refused": [{ how: "back" }, { how: "refused" }],
     "removed meanwhile": [{ how: "back" }, { how: "back" }],
+    "a peer's hold, then a move": [{ how: "yielded" }, { how: "yielded" }],
+    "a peer's hold, then a key (Q)": [{ how: "back" }, { how: "yielded" }],
+    "a peer's hold mid-turn": [{ how: "back" }, { how: "yielded" }],
   };
 
-  it("every session ends exactly once with one outcome, and landed fires iff it was put, after its write, with what it rests on (12 cases)", async () => {
+  it("every session ends exactly once with one outcome, and landed fires iff it was put, after its write, with what it rests on (18 cases)", async () => {
     let cases = 0;
     for (const [path, run] of Object.entries(PATHS)) {
       for (const lifted of [false, true]) {
@@ -768,14 +794,14 @@ describe("How a carry ends: `ended` and `landed`", () => {
         expect(calls.length, label).toBe(put ? 1 : 0);
         expect(writes.length, label).toBe(put ? 1 : 0);
         // a lifted carry let go of its hold exactly once (landed only when put); one never lifted held nothing
-        expect(m.stub.releases, label).toEqual(lifted ? [["a", put ? { landed: true } : {}]] : []);
+        expect(m.stub.releases, label).toEqual(lifted || LIFTS.has(path) ? [["a", put ? { landed: true } : {}]] : []);
         s.unmount();
         s = null;
         cases++;
       }
     }
-    expect(cases).toBe(12);
-  });
+    expect(cases).toBe(18);
+  }, 30000);
 
   it("on {nothing, the block} × turned over with F first or not: always told, with what it rests on (F never stops a put being heard)", async () => {
     for (const on of [null, "b"]) {
@@ -812,6 +838,51 @@ describe("How a carry ends: `ended` and `landed`", () => {
     x().update();
     expect(await now(session.ended)).toEqual({ how: "yielded", on: null });
     expect(stub.releases).toEqual([["a", {}]]);
+  });
+
+  it("the stage's update ends it without the pointer: {a peer's hold, the object removed} × {lifted or not} (4 cases)", async () => {
+    // not lifted, it holds nothing a peer could take: it waits for its first move (which yields, the end table)
+    const ROWS = [
+      { what: "a peer's hold", lifted: false, run: ({ api }) => (api.heldBy = () => "peer"), want: "pending", releases: [] },
+      { what: "a peer's hold", lifted: true, run: ({ api }) => (api.heldBy = () => "peer"), want: { how: "yielded", on: null }, releases: [["a", {}]] },
+      { what: "removed", lifted: false, run: () => s.change((d) => delete d.objects.a), want: { how: "back", on: null }, releases: [] },
+      { what: "removed", lifted: true, run: () => s.change((d) => delete d.objects.a), want: { how: "back", on: null }, releases: [["a", {}]] },
+    ];
+    for (const row of ROWS) {
+      const label = `${row.what}, ${row.lifted ? "lifted" : "not lifted"}`;
+      const m = await mount();
+      const session = m.x().input.press(press("a"));
+      if (row.lifted) session.move(move(1, 1));
+      row.run(m);
+      m.x().update();
+      expect(await now(session.ended), label).toEqual(row.want);
+      expect(m.stub.releases, label).toEqual(row.releases);
+      s.unmount();
+      s = null;
+    }
+  });
+
+  it("put means written: a stage gone read-only meanwhile, or a write that throws, ends it back, and nothing is told", async () => {
+    for (const how of ["read-only", "throws"]) {
+      const calls = [];
+      const { api, x, stub } = await mount({ extensions: [ear(calls)] });
+      const session = x().input.press(press("a"));
+      session.move(move(1, 1));
+      const before = JSON.stringify(transformOf("a"));
+      if (how === "read-only") api.writable = () => false;
+      else
+        api.change = () => {
+          throw new Error("no");
+        };
+      if (how === "throws") expect(() => session.end(move(1, 1)), how).toThrow("no");
+      else session.end(move(1, 1));
+      expect(await now(session.ended), how).toEqual({ how: "back", on: null });
+      expect(JSON.stringify(transformOf("a")), how).toBe(before);
+      expect(calls, how).toEqual([]);
+      expect(stub.releases, how).toEqual([["a", {}]]);
+      s.unmount();
+      s = null;
+    }
   });
 
   it("a newer carry, or the part stopping, puts an open one back", async () => {
