@@ -227,6 +227,10 @@ key names on touch; does arena's gun fire on a tap?
   lookup, not two; is a notice for your own peek noise; should tabletop's
   drew, washed and showed wait for the doc?
 
+### Types
+
+- Type the kernel api and cross-package trait shapes with JSDoc + `checkJs` (each package carrying a copy of the api types, with a check that copies match). Would catch fake/api drift and trait shape changes (the `weather.wind.from` replay break) at compile time and make the contract checkable. The lead, 2026-11-17: "not right now".
+
 ### Elsewhere, found by the scene's work
 - machine: "Lay out its world" never refuses a second world (COMP N7, 7).
 - seats: stacked seat bodies told apart by id alone, pinned by
