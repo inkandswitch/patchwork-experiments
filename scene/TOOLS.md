@@ -1097,8 +1097,16 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   button in the pane (any selection) or the build controls dispatches an
   open; a lens's sourceUrl is never shown (`parts/inspector.test.js`,
   "documents"; `controls-tool.test.js`). On the code before, all 15 stage
-  tests fail; dropping the dedupe, the catch, the reuse, the pref or the
-  toolId each fails its rows.
+  tests, the controls test and the model file fail; dropping the dedupe,
+  the url check or the own-first order each fails two model rows. Full
+  scene suite 1629/1629 (113 files). Local probes (built tool):
+  editor-run 89/89 (`sectionsSourceThenBuild`, `noOpenSource`, the inline
+  Build controls still rebuild at 200 mm in cm); solander-run shows the
+  hull's group About as a section ("About BODY", its stand-in view
+  rendered). The real-Patchwork check, `recovered/publish/sections-check.mjs
+  <showcase url> <shots>` (Source inline in its own tool, Build's
+  controls, the fold is the pref, Open sets doc= to the source, the doc
+  unchanged), waits for the build to be synced after the merge.
 
 ## What it costs
 
