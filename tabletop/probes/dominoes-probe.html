@@ -156,6 +156,9 @@ try {
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    /** the use prompt's verbs and where each is, and what is under (x, y): a verb's text, or its tag */
+    verbsAt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => ({ text: e.textContent.trim(), ...rect(e) })),
+    under: (x, y) => { const e = document.elementFromPoint(x, y); return e?.closest(".use-verb")?.textContent.trim() ?? e?.tagName ?? null; },
     /** the use prompt's "⋯ N more" past three verbs, and where it is, or null */
     more: (w) => { const e = hosts[w].querySelector(".use-prompt:not([hidden]) .use-more"); return e ? { text: e.textContent.trim(), ...rect(e) } : null; },
     /** the right-click menu's items in a view, and where each is */
