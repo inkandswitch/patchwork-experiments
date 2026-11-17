@@ -21,8 +21,10 @@
 // domino in your rack, or out on the table, facing you) and Lay my hand face
 // up (everything in your hand, and anything standing facing it, out in front
 // of it for everyone) as verbs on the use prompt and the menu; a card
-// carried into your own hand turning face up (carrying is the scene's, by
-// the `scene.carry` trait the table writes); where each seat's hands are,
+// carried into your own hand turning face up, and a domino carried anywhere
+// lying down flat unless a rack's place stands it (carrying is the scene's,
+// by the `scene.carry` trait the table writes; `landing` here only answers);
+// where each seat's hands are,
 // for whoever shows seats (`seatPlaces`);
 // and telling the others what happened (shuffled, drew) with api.send, as
 // counts only, never which card: `announce` here, `receive` there.
@@ -596,11 +598,14 @@ export default {
       ],
       // a card carried into your own hand turns face up for you
       // (the point is where it's seen: against the trays as drawn, which aboard a moving ship is
-      // not where the doc last saved them; who may see it is still the doc's, visibility.js)
+      // not where the doc last saved them; who may see it is still the doc's, visibility.js);
+      // a piece thick enough to stand (a domino) goes down lying flat, wherever it's carried: a
+      // place that stands it (a rack's, its connector's frame) stands it there, the stage's rule
       landing(id, world) {
         if (!scene || !isCard(scene.objects[id])) return null;
+        const flat = canStand(bodyBox(scene, id)) ? { flat: true } : null;
         const mine = seatOf(seatsFrom(api, scene), viewer);
-        if (!mine) return null;
+        if (!mine) return flat;
         regions ??= zones(scene);
         const drawn = {
           toLocal: (zid, p) => {
@@ -608,7 +613,7 @@ export default {
             return m ? apply(invert(m), p) : scene.toLocal(zid, p);
           },
         };
-        return seatAt(drawn, regions, world) === mine ? { faceUp: true } : null;
+        return seatAt(drawn, regions, world) === mine ? { ...flat, faceUp: true } : flat;
       },
       dispose() {
         // (the stage puts back any card still on its way: its holds are released as it stops)

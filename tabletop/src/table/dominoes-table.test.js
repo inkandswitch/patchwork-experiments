@@ -302,6 +302,44 @@ describe("standing a tile on edge, and laying it flat", () => {
   });
 });
 
+// What the table answers the scene's carry (`landing`): a domino goes down
+// lying flat wherever it's carried (a rack's place, a connector with a
+// standing frame, stands it: the stage's rule, scene landedPose); a card or a
+// domino carried into your own hand turns face up for you. Every case:
+// piece {domino, card} × where {your rack, the other rack, the table} ×
+// you {seated, not}.
+describe("what the table answers a carry (landing)", () => {
+  afterEach(() => vi.useRealTimers());
+  const WHERE = { "your rack": [0, 0.01, OUT], "the other rack": [0, 0.01, -OUT], "the table": [0, 0.004, 0] };
+  const EXPECTED = {
+    domino: { seated: { "your rack": { flat: true, faceUp: true }, "the other rack": { flat: true }, "the table": { flat: true } } },
+    card: { seated: { "your rack": { faceUp: true }, "the other rack": null, "the table": null } },
+  };
+  for (const piece of ["domino", "card"]) {
+    for (const you of ["seated", "not seated"]) {
+      for (const where of Object.keys(WHERE)) {
+        it(`${piece}, ${where}, ${you}`, () => {
+          const t = table({ seated: you === "seated" ? seats() : seats("carol", "dave") });
+          const id = piece === "domino" ? "b0" : "card";
+          const want = you === "seated" ? EXPECTED[piece].seated[where] : piece === "domino" ? { flat: true } : null;
+          expect(t.A.x.landing(id, WHERE[where])).toEqual(want);
+          t.w.done();
+        });
+      }
+    }
+  }
+  it("a domino standing in your rack is asked the same: flat, face up (it stands again only in a place that stands it)", async () => {
+    const t = table();
+    await vi.advanceTimersByTimeAsync(10);
+    t.cmd(t.A, "draw").run("b0");
+    t.w.tick(1 / 60, 40);
+    expect(col(worldOf(t, "b0"), 1)).toEqual([0, 0, 1]); // standing, facing Alice
+    expect(t.A.x.landing("b0", [0.3, 0.004, 0.2])).toEqual({ flat: true });
+    expect(t.A.x.landing("b0", [0, 0.01, OUT])).toEqual({ flat: true, faceUp: true });
+    t.w.done();
+  });
+});
+
 describe("the verbs have no mode", () => {
   afterEach(() => vi.useRealTimers());
 
