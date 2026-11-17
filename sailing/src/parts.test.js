@@ -409,7 +409,7 @@ describe("the ship finds what's aboard her anywhere under her", () => {
     doc.order.push("pedestal");
     const wheel = await parts.wheel.create(ctx, { parent: "pedestal", transform: { position: [0, 0.2, 0] } });
     w = fakeWorld(doc);
-    const sim = createSim(w.join("A"), { sea: { clock: () => 0 } });
+    const sim = createSim(w.join("A"), {});
     const st = sim.stationsOf("hull");
     expect(st.sail).toBe(children(doc, mast)[0]);
     expect(st.helm).toBe(wheel);

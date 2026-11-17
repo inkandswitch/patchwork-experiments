@@ -5,6 +5,9 @@
 // two flushes, compared by value), and how a boat reads her water and wind,
 // alone (exactly her own sea: W1) and through a link's frame (the wind's half
 // of W5), on a fake stage (test/fakes.js) whose doc is its own world.
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./test/ocean.js";
 import { GUSTINESS, createWind } from "./wind.js";
@@ -199,6 +202,54 @@ describe("createSeaView: a boat alone is her own world", () => {
     expect(s.world()).toBe(true);
   });
 
+  // A step reads the wind before the frame's tick (play.js ticks after the clock's steps): the wind it reads must be
+  // the ambient's as it is at that read, or a seed set just before the world runs is read a step late (DESIGN.md,
+  // "Determinism"). Each row: the ambient's value changes to the next, and the wind is read with no tick between.
+  it("its wind is the ambient's as it is when read, with no tick between: made again only when the ambient changed", () => {
+    const st = { value: { speed: 7, from: 45, seed: 696349617, gustiness: GUSTINESS }, frame: null };
+    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: true, frame: st.frame } : null), clock: { t: () => 0 } };
+    const s = createSeaView(api);
+    const ROWS = [
+      ["the template's seed", { speed: 7, from: 45, seed: 696349617, gustiness: GUSTINESS }],
+      ["the seed set before the world runs", { speed: 7, from: 45, seed: 1, gustiness: GUSTINESS }],
+      ["a stronger wind", { speed: 12, from: 45, seed: 1, gustiness: GUSTINESS }],
+      ["from elsewhere", { speed: 12, from: 250, seed: 1, gustiness: GUSTINESS }],
+      ["no wind", { speed: 0, from: 250, seed: 1, gustiness: GUSTINESS }],
+    ];
+    for (const [, value] of ROWS) {
+      st.value = value;
+      const want = createWind(value);
+      for (const [x, z, t] of [[0, 0, 0], [37.5, -100, 13.37]]) expect(s.wind.at(x, z, t)).toEqual(want.at(x, z, t));
+      // the same ambient (its value and frame the same objects): the same wind, not made again
+      expect(s.wind).toBe(s.wind);
+    }
+  });
+
+  // Inside an outer world the stage hands the frame as a new matrix at every ask (scene scope.frame → frameOf). Each
+  // row: the matrix's numbers at the next read (a fresh array every time) → is the wind made again?
+  it("in a frame handed afresh at every read, the wind is made again only when the frame's numbers or the value changed", () => {
+    const M = (tx) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, 0, 0, 1];
+    const st = { value: { speed: 7, from: 45, seed: 1, gustiness: GUSTINESS }, matrix: M(0) };
+    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: false, frame: { matrix: [...st.matrix] }, clock: { t: 0, running: true } } : null), clock: { t: () => 0 } };
+    const s = createSeaView(api);
+    const ROWS = [
+      ["the same numbers", () => {}, false],
+      ["the same numbers again", () => {}, false],
+      ["moved", () => (st.matrix = M(5)), true],
+      ["the same numbers as moved", () => {}, false],
+      ["a new value", () => (st.value = { ...st.value, speed: 9 }), true],
+      ["the same value", () => {}, false],
+    ];
+    let last = s.wind;
+    expect(last).not.toBeNull();
+    for (const [label, change, remade] of ROWS) {
+      change();
+      const now = s.wind;
+      expect(now !== last, label).toBe(remade);
+      last = now;
+    }
+  });
+
   it("no water, no water: nothing sails, though the weather's wind still blows; her doc is still the world (her ride and HUD don't hang on water)", () => {
     const doc = scene();
     delete doc.objects.sea;
@@ -235,19 +286,23 @@ describe("createSeaView: a boat alone is her own world", () => {
       }
   });
 
-  it("its time is the doc's world time, the same on every view; paused, it stands still", () => {
+  it("is the water, the wind, whether she's the world, and its frame's tick: no clock of its own (the sea's time is api.clock.t())", () => {
     w = fakeWorld(scene());
-    const a = w.join("A");
-    const sa = createSeaView(a);
-    const sb = createSeaView(w.join("B"));
-    a.clock.process({ step() {} });
-    a.loop(() => sa.tick());
-    w.tick(1 / 60, 60);
-    expect(sa.clock()).toBeCloseTo(1, 6);
-    expect(sb.clock()).toBe(sa.clock());
-    w.join("C").clock.pause();
-    w.tick(1 / 60, 60);
-    expect(sa.clock()).toBeCloseTo(1, 6);
+    const sea = createSeaView(w.join("A"));
+    expect(Object.keys(sea).sort()).toEqual(["oceanAt", "tick", "wind", "world"]);
+  });
+
+  it("its tick answers the doc's world time, at every t of the table", () => {
+    for (const t of [0, 1.5, 30]) {
+      w?.done();
+      w = fakeWorld({ ...scene(), clock: { running: false, t } });
+      const api = w.join("A");
+      const sea = createSeaView(api);
+      let seen = null;
+      api.loop(() => (seen = sea.tick()));
+      w.tick(1 / 60, 1);
+      expect([t, api.clock.t(), seen]).toEqual([t, t, t]);
+    }
   });
 });
 
@@ -322,5 +377,56 @@ describe("the world's wind through a link (windFor): mapped by the frame, at the
   it("a paused world's wind is frozen at its latched time", () => {
     const wf = windFor(value, { matrix: place(0.3, [5, 0, 5]) }, { mine: false, delta: 9, running: false, worldT: 42 });
     expect(wf.at(1, 2, 0)).toEqual(wf.at(1, 2, 100));
+  });
+});
+
+// The sea's time is the doc's world time and nothing else: ctx.sea has no
+// clock, and nothing in the package (source, tests, probes) reads one off
+// it or spells a default for a missing one. Every .js, .mjs and .html file
+// is read, as standalone.test.js reads them: the whole package, this file
+// too, nothing sampled. The only lines passed over are the pattern table's
+// two, which name the forms on purpose and carry NAMED; a test holds that
+// to exactly those two. The patterns are a net for spellings; the readers'
+// own tables (crew, HUD, looks, on test/fakes.js brokenClocks) are what
+// show each has no fallback, whatever its spelling.
+describe("the sea's time is api.clock.t(), read the one way", () => {
+  const SELF = fileURLToPath(import.meta.url);
+  const ROOT = resolve(dirname(SELF), "..");
+  const SKIP = new Set(["node_modules", "dist", ".pushwork", ".git"]);
+  const NAMED = "// the forms, named on purpose";
+  const files = (dir, out = []) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP.has(e.name)) continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) files(p, out);
+      else if (/\.(m?js|html)$/.test(e.name)) out.push(p);
+    }
+    return out;
+  };
+  /** a clock read off the sea: a member (.clock, ?.clock, ["clock"]) or destructured ({ clock } = ….sea) */
+  const SEA_CLOCK = /\bsea\??\.clock\b|\bsea(?:\?\.)?\[\s*["'`]clock["'`]\s*\]|\{[^}]*\bclock\b[^}]*\}\s*=\s*[\w$.?]*\bsea\s*(?:[;,)]|$)/;
+  /** the stage's clock (api.clock, its t()) spelled as if it might be missing or its t() not a time; a doc's stored clock field (doc.clock?.t) may be */
+  const DEFAULTED = /\bapi\??\.clock\?\.|\bclock\.t\?\.\(|\bclock\.t\(\)\s*(?:\?\?|\|\|)/;
+
+  it("the patterns find every form they name, and nothing else", () => {
+    const hits = (re) => (line) => re.test(line);
+    expect(["ctx.sea.clock()", "s.sea?.clock?.()", "ctx.sea.clock", 'ctx.sea["clock"]()', "sea?.['clock']", "const { clock } = ctx.sea;", "const { wind, clock: c } = sea", "x.sea.clockwise", "x.overseas.clock", "const { clock } = api;", "const { clock } = seaView;", "{ clock, sea } = s"].map(hits(SEA_CLOCK))).toEqual([true, true, true, true, true, true, true, false, false, false, false, false]); // the forms, named on purpose
+    expect(["api.clock?.t()", "api.clock.t?.()", "api.clock.t() ?? 0", "api.clock.t() || 0", "a.api?.clock?.t()", "api.clock.t()", "doc.clock?.running", "doc.clock?.t", "api ? api.clock.t() : null"].map(hits(DEFAULTED))).toEqual([true, true, true, true, true, false, false, false, false]); // the forms, named on purpose
+  });
+
+  const all = files(ROOT);
+  const lines = all.flatMap((f) => readFileSync(f, "utf8").split("\n").map((line, i) => ({ at: `${relative(ROOT, f)}:${i + 1}`, f, line })));
+  it(`reads every file (${all.length}), this one too`, () => {
+    expect(all.length).toBeGreaterThan(10);
+    expect(all).toContain(SELF);
+  });
+  it("passes over only the pattern table's two lines", () => {
+    const named = lines.filter((l) => l.line.trimEnd().endsWith(NAMED));
+    expect(named.map((l) => l.f)).toEqual([SELF, SELF]);
+    expect(named.map((l) => l.line.trim().slice(0, 7))).toEqual(["expect(", "expect("]);
+  });
+  it("no file reads a clock off the sea, or spells a default for a missing clock", () => {
+    const found = lines.filter(({ line }) => !line.trimEnd().endsWith(NAMED) && (SEA_CLOCK.test(line) || DEFAULTED.test(line))).map((l) => `${l.at}: ${l.line.trim()}`);
+    expect(found).toEqual([]);
   });
 });

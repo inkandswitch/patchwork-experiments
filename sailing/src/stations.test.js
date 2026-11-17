@@ -6,7 +6,7 @@
 // tag; and each station you
 // lock in to, with which of the sail's keys work there.
 import { describe, it, expect, vi } from "vitest";
-import { FAR, FURL_RATE, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within } from "./stations.js";
+import { FAR, FURL_RATE, RAISE_RATE, RODE, STEP_S, WINCH_RATE, approach, gridIndex, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within, worldSteps } from "./stations.js";
 import { REACH } from "./crew.js";
 
 describe("reach", () => {
@@ -73,18 +73,111 @@ describe("the wheel", () => {
   });
 });
 
+// A view's world time on the probe page, as scene's clock makes it: t goes on by each frame's dt, and the page's
+// clock (scene/src/stage/time.js manualTime) reads now() as start + frames × frameMs (start 1e6 ms, frameMs
+// 1000/60), a frame's dt the difference of two readings over 1000. Its last bits depend on how many frames the
+// clock had run before (k0): a handful of different dts, unevenly. Readings from world time t0, one a frame.
+const worldReadings = (t0, k0, n) => {
+  const out = [t0];
+  for (let i = 0; i < n; i++) out.push(out[i] + ((1e6 + (k0 + i + 1) * (1000 / 60)) - (1e6 + (k0 + i) * (1000 / 60))) / 1000);
+  return out;
+};
+/** A clock that reads each of `ts` in turn, the first where it's made: [clock, next frame]. */
+const readings = (ts) => {
+  let i = 0;
+  return [() => ts[i], () => i++];
+};
+
+describe("a held station's clock: world time in whole steps of the world's grid (DESIGN.md, \"Determinism\")", () => {
+  const S = STEP_S;
+  // each row: this view's world time where the hold begins, then at each frame → the steps' time out, frame by frame
+  // (to the bit: toEqual compares numbers with Object.is)
+  const ROWS = [
+    ["one frame on the grid", [0, S], [S]],
+    ["frames off the grid (a follower's t): a step as t crosses a grid point", [0.005, 0.02, 0.03, 0.04], [S, 0, S]],
+    ["a 144 Hz display: a step when t has crossed a grid point, none between", [0, 1 / 144, 2 / 144, 3 / 144, 4 / 144, 5 / 144], [0, 0, S, 0, S]],
+    ["a grid point read a hair short is crossed (scene's gridIndex)", [0, 60 * S - 1e-13], [60 * S]],
+    ["a stall, or a follower's jump: its whole steps at once", [0, 0.1, 0.85], [6 * S, 45 * S]],
+    ["the world paused: t stands, and so does the hold", [2, 2, 2], [0, 0]],
+  ];
+  it.each(ROWS)("%s", (_, ts, out) => {
+    const [clock, frame] = readings(ts);
+    const steps = worldSteps(clock);
+    expect(out.map(() => (frame(), steps()))).toEqual(out);
+  });
+
+  it("over any frames, the steps are the grid points t crossed: whole steps, every one counted once", () => {
+    for (const ts of [worldReadings(0, 0, 600), worldReadings(21.7, 123456, 600), Array.from({ length: 300 }, (_, i) => 3.001 + i / 144), Array.from({ length: 99 }, (_, i) => 0.0237 * i)]) {
+      const [clock, frame] = readings(ts);
+      const steps = worldSteps(clock);
+      let n = 0;
+      for (let i = 1; i < ts.length; i++) {
+        frame();
+        const out = steps();
+        const k = Math.round(out / S);
+        expect(out).toBe(k * S);
+        n += k;
+      }
+      expect(n).toBe(gridIndex(ts.at(-1)) - gridIndex(ts[0]));
+    }
+  });
+
+  // one key held for the same frames from the same world time, the page's clock having run on different numbers of
+  // frames before (so the readings differ in their last bits): every value the verb puts in, to the bit
+  const sameEachOffset = (make) => {
+    const runs = [0, 1, 2, 1000, 123456].map((k0) => {
+      const [clock, frame] = readings(worldReadings(21.7, k0, 450));
+      const seen = [];
+      const v = make(seen, clock);
+      for (let i = 0; i < 450 && v.open; i++) frame(), v.update();
+      return seen;
+    });
+    expect(new Set(runs.map((r) => JSON.stringify(r))).size).toBe(1);
+    return runs[0];
+  };
+  it("the readings differ from run to run in their last bits (what the rows above are for)", () => {
+    const ends = [0, 1, 2, 1000, 123456].map((k0) => worldReadings(21.7, k0, 450).at(-1));
+    expect(new Set(ends).size).toBeGreaterThan(1);
+  });
+  it("the halyard held for the same frames puts in the same values, whatever frame the page's clock had reached", () => {
+    const seen = sameEachOffset((seen, clock) => heldTrim({ value: 0, goal: 1, rate: RAISE_RATE, clock, input: (x) => seen.push(x), commit() {} }));
+    // each frame one step's worth, up all the way in 4 s of world time: on the 241st frame, as 240 steps of 1/240 sum a hair short of 1
+    expect(seen.length).toBe(450);
+    expect(seen[0]).toBe(RAISE_RATE * S);
+    expect(seen.indexOf(1)).toBe(240);
+  });
+  it("the windlass held for the same frames puts in the same rode, whatever frame the page's clock had reached", () => {
+    const seen = sameEachOffset((seen, clock) => heldWeigh({ rode: RODE, clock, input: (f) => seen.push(f.rode), commit: (f) => seen.push(f) }));
+    // a full rode in six seconds of world time: 360 frames of chain, and up on the 361st (360 steps leave a hair of it)
+    expect(seen.length).toBe(361);
+    expect(seen.at(-1)).toEqual({ down: false, rode: 0 });
+  });
+  it("held while the world is paused, a verb puts in nothing new; it goes on when the world does", () => {
+    let t = 5;
+    const seen = [];
+    const v = heldTrim({ value: 0, goal: 1, rate: RAISE_RATE, clock: () => t, input: (x) => seen.push(x), commit() {} });
+    for (let i = 0; i < 30; i++) v.update();
+    expect(new Set(seen)).toEqual(new Set([0]));
+    t += 1;
+    v.update();
+    expect(seen.at(-1)).toBe(RAISE_RATE * 60 * S);
+  });
+});
+
 describe("held verbs", () => {
   it("a trim moves toward its goal while held, live, and commits once where it got to", () => {
     const input = vi.fn();
     const commit = vi.fn();
     const done = vi.fn();
-    const s = heldTrim({ value: 1, goal: 0, rate: 0.25, input, commit, done });
-    for (let i = 0; i < 60; i++) s.update(1 / 60);
+    let t = 0;
+    const s = heldTrim({ value: 1, goal: 0, rate: 0.25, clock: () => t, input, commit, done });
+    for (let i = 0; i < 60; i++) (t += 1 / 60), s.update();
     expect(s.value).toBeCloseTo(0.75);
     expect(input).toHaveBeenLastCalledWith(s.value);
     s.end();
     s.cancel();
-    s.update(1);
+    t += 1;
+    s.update();
     expect(commit).toHaveBeenCalledTimes(1);
     expect(commit.mock.calls[0][0]).toBeCloseTo(0.75);
     expect(done).toHaveBeenCalledTimes(1);
@@ -92,17 +185,22 @@ describe("held verbs", () => {
 
   it("a cancelled trim commits where it got to; one whose claim is lost stops and writes nothing", () => {
     const commit = vi.fn();
-    const c = heldTrim({ value: 0.5, goal: 1, rate: 0.25, input() {}, commit });
-    c.update(1);
+    let t = 0;
+    const clock = () => t;
+    const c = heldTrim({ value: 0.5, goal: 1, rate: 0.25, clock, input() {}, commit });
+    t += 1;
+    c.update();
     c.cancel();
     expect(commit).toHaveBeenCalledWith(0.75);
     let alive = true;
     const commit2 = vi.fn();
     const done = vi.fn();
-    const l = heldTrim({ value: 0.5, goal: 1, rate: 0.25, input() {}, commit: commit2, alive: () => alive, done });
-    l.update(1);
+    const l = heldTrim({ value: 0.5, goal: 1, rate: 0.25, clock, input() {}, commit: commit2, alive: () => alive, done });
+    t += 1;
+    l.update();
     alive = false;
-    l.update(1);
+    t += 1;
+    l.update();
     expect(l.open).toBe(false);
     l.end();
     expect(commit2).not.toHaveBeenCalled();
@@ -112,11 +210,11 @@ describe("held verbs", () => {
   it("weighing a full rode takes about six seconds, and up it commits at once", () => {
     const commit = vi.fn();
     const input = vi.fn();
-    const s = heldWeigh({ rode: RODE, input, commit });
     let t = 0;
+    const s = heldWeigh({ rode: RODE, clock: () => t, input, commit });
     while (s.open && t < 20) {
-      s.update(1 / 60);
       t += 1 / 60;
+      s.update();
     }
     expect(t).toBeCloseTo(6, 1);
     expect(commit).toHaveBeenCalledTimes(1);
@@ -127,14 +225,19 @@ describe("held verbs", () => {
 
   it("let go part way, the rode is where it got to; an anchor down short still takes a moment", () => {
     const commit = vi.fn();
-    const s = heldWeigh({ rode: 20, input() {}, commit });
-    s.update(1);
+    let t = 0;
+    const clock = () => t;
+    const s = heldWeigh({ rode: 20, clock, input() {}, commit });
+    t += 1;
+    s.update();
     s.end();
     expect(commit).toHaveBeenCalledWith({ rode: 20 - WINCH_RATE });
-    const short = heldWeigh({ rode: 0, input() {}, commit: vi.fn() });
-    short.update(0.5);
+    const short = heldWeigh({ rode: 0, clock, input() {}, commit: vi.fn() });
+    t += 0.5;
+    short.update();
     expect(short.open).toBe(true);
-    short.update(1);
+    t += 1;
+    short.update();
     expect(short.open).toBe(false);
   });
 });
@@ -182,12 +285,16 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
     taken: null,
     holds: {}, // id → transform
     released: [], // [id, opts]
+    t: 0, // the world's time (api.clock.t()): a station's tick(dt) is a frame of the world running dt (take, below)
   };
+  /** the world runs on by dt (s) */
+  s.pass = (dt) => (s.t += dt);
   const worlds = { hull: at(0, 0, 0), wheel: at(0, 1.6, 4), rig: at(0, 2.8, -1.5), sheet: at(0, 0.72, 3.3), windlass: at(0, 1.5, -3.8), ladder: at(1.8, 1.2, 0.4), mast: at(0, 1.4, -1.6), table: at(0, 0.7, -0.6), board: at(0, 1.4, -0.6), jib: at(0, 1.74, -6.12), winchP: at(-0.95, 1.23, 2.25), winchS: at(0.95, 1.23, 2.25) };
   s.worlds = worlds;
   // claims by id, each kind apart ("station" under the bare id, as the tests read it)
   const slot = (id, kind) => (kind === "station" ? id : `${id}:${kind}`);
   s.api = {
+    clock: { t: () => s.t },
     scene: () => s.scene,
     worldOf: (id) => worlds[id] ?? null,
     content: (id) => (id === "hull" ? { box: { min: [-2, -2, -6.2], max: [2, 15, 6] } } : null),
@@ -207,7 +314,6 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
     },
   };
   s.ctx = {
-    sea: { clock: () => 0, ocean: { heightAt: () => 0 } },
     sim: {
       value: (id) => s.values[id],
       input: (id, f) => s.inputs.push([id, f]),
@@ -218,7 +324,9 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
     },
     crew: {
       me: () => s.me,
-      take(id, handlers) {
+      take(id, held) {
+        // each frame the stage ticks it, the world having run on by that frame's dt
+        const handlers = { ...held, tick: (dt) => (s.pass(dt), held.tick(dt)) };
         s.taken = { id, handlers };
         s.me.station = id;
         const leave = () => {
@@ -318,6 +426,26 @@ describe("the commands", () => {
     expect(s.claims.wheel?.mine).toBe(true); // still at the helm
   });
 
+  // Every held key at the helm moves by world time, not by frames: each row a key held for 30 frames with the world
+  // paused (frames pass, world time doesn't), then for one second of it running (DESIGN.md, "Determinism")
+  it.each([
+    ["the wheel (D)", "KeyD", "d", "wheel", "angle", 0.2, 0.2 + 0.6],
+    ["the sheet led aft (Q)", "KeyQ", "q", "rig", "sheet", 0.5, 0.25],
+    ["the halyard led aft (R)", "KeyR", "r", "rig", "raised", 1, 0.75],
+  ])("the helm, %s: held while the world is paused, nothing moves; it moves once the world runs", (_, code, key, id, field, from, to) => {
+    const s = stage();
+    s.cmd("helm").run("wheel");
+    const h = s.taken.handlers;
+    s.pass(0.004); // off the grid, as a follower's t is
+    const n = s.inputs.length;
+    h.key({ code, key });
+    for (let i = 0; i < 30; i++) h.tick(0);
+    const moved = s.inputs.slice(n).filter(([i, f]) => i === id && f && f[field] !== from);
+    expect(moved).toEqual([]);
+    for (let i = 0; i < 60; i++) h.tick(1 / 60);
+    expect(s.inputs.filter(([i, f]) => i === id && f && field in f).at(-1)[1][field]).toBeCloseTo(to, 9);
+  });
+
   it("the helm: someone else there shows it, disabled; taking it then does nothing", () => {
     const s = stage();
     s.claims.wheel = { mine: false };
@@ -413,7 +541,8 @@ describe("the commands", () => {
       ["ease", null, true],
     ]);
     const session = s.cmd("haul").run("sheet");
-    session.update(1);
+    s.pass(1);
+    session.update();
     session.end();
     expect(s.commits.at(-1)).toEqual(["rig", { sheet: 0.25 }]);
   });
@@ -647,7 +776,8 @@ describe("the commands", () => {
     ]);
     expect(s.offered("winchP", s.at("winchP", 3))[0]).toEqual(["far", "Jib winch · walk to the cockpit", true]);
     const session = s.cmd("jibHaul").run("winchP");
-    session.update(1);
+    s.pass(1);
+    session.update();
     session.end();
     expect(s.commits.at(-1)).toEqual(["jib", { sheet: 0.25 }]);
     expect(s.claims.jib).toBe(undefined);
@@ -842,10 +972,11 @@ describe("the commands", () => {
     const s = stage();
     const haul = s.cmd("haul").run("sheet");
     const ease = s.cmd("ease").run("sheet");
-    haul.update(1);
+    s.pass(1); // both held the same second
+    haul.update();
     haul.end();
     expect(s.claims.rig?.mine).toBe(true);
-    ease.update(1);
+    ease.update();
     ease.end();
     expect(s.claims.rig).toBe(undefined);
     expect(s.commits[0]).toEqual(["rig", { sheet: 0.25 }]);
@@ -866,7 +997,7 @@ describe("the commands", () => {
     expect(s.cmd("weigh").state("windlass", near)).toEqual({ label: "Raise anchor · 25 m of chain out" });
     expect(s.cmd("drop").state("windlass", near)).toBe(null);
     const session = s.cmd("weigh").run("windlass");
-    for (let i = 0; i < 7 * 60; i++) session.update(1 / 60);
+    for (let i = 0; i < 7 * 60; i++) s.pass(1 / 60), session.update();
     expect(s.commits).toEqual([["windlass", { down: false, rode: 0 }]]);
     expect(s.claims.windlass).toBe(undefined);
     session.end();

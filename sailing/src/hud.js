@@ -318,7 +318,7 @@ export function createHud(api, ctx) {
     const st = ship ? ctx.sim.stationsOf?.(ship) : null;
     let wind = null;
     const m = ship ? bodyOf(api, ship) : null;
-    if (m && ctx.sea?.wind) wind = ctx.sea.wind.at(m[12], m[14], ctx.sea.clock?.() ?? 0);
+    if (m && ctx.sea?.wind) wind = ctx.sea.wind.at(m[12], m[14], api.clock.t());
     const read = ship ? ctx.sim.read(ship) : null;
     const model = hudModel({
       me,
