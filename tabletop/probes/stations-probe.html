@@ -64,6 +64,7 @@ const walker = {
   type: "scene:extension",
   id: "probe-walker",
   name: "Probe walker",
+  traits: ["*"], // every doc: a walk package (scene/STAGE.md, "Activation")
   async load() {
     return {
       create(api) {
