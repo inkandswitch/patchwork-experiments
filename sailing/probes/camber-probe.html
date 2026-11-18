@@ -82,8 +82,7 @@ try {
     errors, scene, repo, host, dbg, hullUrl: hullDoc.url, example: EXAMPLE,
     doc: () => scene.doc(),
     change: (fn) => scene.change(fn),
-    /** a running extension's stage api (the bin's, while editing: part, addObject) */
-    api: (ext = "scene.parts") => dbg.host.record(ext)?.api ?? null,
+    api: (ext = "scene.claims") => dbg.host.record(ext)?.api ?? null, // a running extension's stage api (scene.claims runs in every doc): addObject
     running: () => dbg.local.get().running.map((r) => r.id),
     content: (id) => { const c = v.contentOf(id); return c && { loaded: c.loaded, box: c.box, ship: c.extras?.ship ?? null, connectors: c.extras?.connectors?.length ?? 0 }; },
     worldOf: (id) => { const m = v.worldOf(id); return m ? [...m] : null; },
