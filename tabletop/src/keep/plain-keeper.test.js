@@ -106,6 +106,24 @@ describe("the plain keeper", () => {
     expect(x.keeper.shuffle(["b"])).toBe(0);
   });
 
+  it("a container's line learned after the update (it loaded, or failed to) is told to the notices, so the HUD shows it", async () => {
+    const repo = fakeRepo();
+    const told = [];
+    let x = null;
+    // scene.notices: what it would draw when told the lines changed (it reads every hud then)
+    const notices = { notify() {}, changed: () => told.push(x.hud().map((h) => h.state)) };
+    const api = { repo, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), use: (n) => (n === "audience" ? { audience: () => "all", shown: () => "all", veil: () => () => {} } : n === "notices" ? notices : null), display: () => () => {} };
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    x = Keeper.create(api);
+    const gone = "automerge:2GoneGoneGoneGoneGoneGone1";
+    x.update({ objects: { a: { traits: { [TRAIT]: { by: gone, slot: 0 } } } } });
+    expect(x.hud()).toEqual([]);
+    await settle();
+    // no update since: only changed() lets the HUD know
+    expect(x.hud().map((h) => h.state)).toEqual(["error"]);
+    expect(told.at(-1)).toEqual(["error"]);
+  });
+
   it("two objects naming one slot: the lower id keeps it, the other stays closed and is flagged", async () => {
     const t = await mount();
     t.objects.c9 = { traits: { [TRAIT]: { by: t.deck.url, slot: 0 } } };
