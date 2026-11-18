@@ -69,7 +69,7 @@ export default {
         for (const id of seas) {
           if (objects[id].traits[WATER_TRAIT] || said.has(id)) continue;
           said.add(id);
-          api.notify?.(`A sea needs water: add Water to “${objects[id].name ?? id}”`, "info");
+          api.use("notices")?.notify(`A sea needs water: add Water to “${objects[id].name ?? id}”`, "info");
         }
         const k = JSON.stringify([wk, seas.map((id) => [id, seaParams(objects[id].traits[SEA]), !!objects[id].traits[WATER_TRAIT]])]);
         if (k !== key) {

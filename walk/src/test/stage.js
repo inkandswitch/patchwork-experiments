@@ -55,7 +55,7 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
       timers.push(t);
       return () => (timers = timers.filter((x) => x !== t));
     },
-    use: (name) => (name === "clock" ? { t: () => now / 1000 } : null),
+    use: (name) => (name === "clock" ? { t: () => now / 1000 } : name === "notices" ? { notify: (text) => calls.notices.push(text) } : null),
     scene,
     worldOf,
     content(id) {
@@ -68,7 +68,6 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
     link: (id) => (links.includes(id) ? { role: "acting", open: true } : null),
     local: { get: () => ({ status }) },
     nameOf: (id) => objects[id]?.name ?? id,
-    notify: (text) => calls.notices.push(text),
     collect: (name) =>
       name === "water" && water != null
         ? [{ id: "water", value: { at: (p, { not } = {}) => (calls.waterNot.push(not), { heightAt: () => water }) } }]

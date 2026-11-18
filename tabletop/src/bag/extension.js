@@ -1,7 +1,7 @@
 // The bag's scene extension (`scene:extension` "bag"): what makes an object a
 // container in a scene. Things dropped on it go in, Draw takes one out into
 // the drawer's hand, a label says how many it holds, and its 2D panel docks
-// in the stage's drawer (api.dock). A bag is a physical thing, not a rule: it knows nothing
+// in the stage's drawer (its "drawer"). A bag is a physical thing, not a rule: it knows nothing
 // of turns, hands, seats or limits.
 //
 // It is built only from the scene's extension contract (scene/STAGE.md).
@@ -190,7 +190,7 @@ export default {
       const bag = bagAt(bagId);
       const handle = bag ? handleOf(bag.url) : null;
       if (!bag) return 0;
-      if (!isBagDoc(handle?.doc?.())) return void api.notify(handle ? "That object's contents aren't a bag document." : "The bag is still loading.", "error");
+      if (!isBagDoc(handle?.doc?.())) return void api.use("notices")?.notify(handle ? "That object's contents aren't a bag document." : "The bag is still loading.", "error");
       const objects = objectsNow();
       const groups = [];
       const ids = [];
@@ -207,7 +207,7 @@ export default {
         if (r) why ??= r;
         else ok.push(id);
       }
-      if (why && !quiet) api.notify(why, ok.length ? "info" : "error");
+      if (why && !quiet) api.use("notices")?.notify(why, ok.length ? "info" : "error");
       if (!ok.length) return 0;
       // a group whose every member went in goes too (it would be an empty row)
       const went = new Set(ok);
@@ -315,7 +315,7 @@ export default {
       const bag = bagAt(bagId);
       const handle = bag ? handleOf(bag.url) : null;
       if (!bag) return 0;
-      if (!isBagDoc(handle?.doc?.())) return void api.notify(handle ? "That object's contents aren't a bag document." : "The bag is still loading.", "error");
+      if (!isBagDoc(handle?.doc?.())) return void api.use("notices")?.notify(handle ? "That object's contents aren't a bag document." : "The bag is still loading.", "error");
       const by = api.channel.session;
       const how = rule ?? ruleOf(handle.doc());
       const copies = [];
@@ -325,10 +325,10 @@ export default {
         if (!drawn) break;
         got++;
         const wantCarry = carry && i === n - 1;
-        if (drawn.copy) copies.at(-1)?.then((id) => !dead && id && track({ ...drawn, id, url: bag.url, bagId, carry: wantCarry }), (err) => api.notify(`Couldn't make a copy: ${err?.message ?? err}`, "error"));
+        if (drawn.copy) copies.at(-1)?.then((id) => !dead && id && track({ ...drawn, id, url: bag.url, bagId, carry: wantCarry }), (err) => api.use("notices")?.notify(`Couldn't make a copy: ${err?.message ?? err}`, "error"));
         else track({ ...drawn, url: bag.url, bagId, carry: wantCarry });
       }
-      if (!got) api.notify(`${titleOf(bag.url)} is empty.`);
+      if (!got) api.use("notices")?.notify(`${titleOf(bag.url)} is empty.`);
       else if (!again) teller.tell(verb, { bag: bag.url, n: got });
       return got;
     }
@@ -469,7 +469,7 @@ export default {
     function lose(p) {
       retire(p, { quietly: true });
       if (p.fresh && !p.copy && has(p.id)) api.change(api.remove([p.id]));
-      api.notify("Someone else drew that one at the same moment: drawing another.");
+      api.use("notices")?.notify("Someone else drew that one at the same moment: drawing another.");
       if (bagAt(p.bagId)) draw(p.bagId, 1, { carry: p.carry, again: true });
     }
     let settling = false;
@@ -494,7 +494,7 @@ export default {
         });
         for (const r of lost) {
           if (r.fresh && has(r.id)) api.change(api.remove([r.id]));
-          api.notify(`Someone else drew the same piece from ${titleOf(r.url)} at the same moment, and it is theirs: drawing another.`);
+          api.use("notices")?.notify(`Someone else drew the same piece from ${titleOf(r.url)} at the same moment, and it is theirs: drawing another.`);
           if (bagAt(r.bagId)) draw(r.bagId, 1, { carry: false, again: true });
         }
       } finally {
@@ -509,15 +509,15 @@ export default {
       if (!from || !to || from.url === to.url) return;
       const a = handleOf(from.url);
       const b = handleOf(to.url);
-      if (!isBagDoc(a?.doc?.()) || !isBagDoc(b?.doc?.())) return void api.notify("The bags are still loading.", "error");
+      if (!isBagDoc(a?.doc?.()) || !isBagDoc(b?.doc?.())) return void api.use("notices")?.notify("The bags are still loading.", "error");
       // a bag inside the one being poured mustn't end up inside itself
       const sh = shadows();
       if (insideOf(from.url, sh).some(({ entry }) => bagUrlOf(entry.object) === to.url || (bagUrlOf(entry.object) && bagsWithin(bagUrlOf(entry.object)).has(to.url)))) {
-        return void api.notify("A bag can't go inside itself.", "error");
+        return void api.use("notices")?.notify("A bag can't go inside itself.", "error");
       }
       const n = pour({ from: a, to: b, by: api.channel.session, shadow: sh.get(from.url) });
       if (n) teller.tell("poured", { from: from.url, to: to.url, n });
-      else api.notify(`${titleOf(from.url)} is empty.`);
+      else api.use("notices")?.notify(`${titleOf(from.url)} is empty.`);
     }
 
     // ── the count on each bag ──
@@ -565,7 +565,7 @@ export default {
       const d = { bagId, url: bag.url, close: null, unmount: null, refresh: null };
       dock = d;
       // its × is someone closing it
-      d.close = api.dock(body, { title: titleOf(bag.url), onClose: () => dock === d && closeDock() });
+      d.close = api.use("drawer")?.dock(body, { title: titleOf(bag.url), onClose: () => dock === d && closeDock() }) ?? (() => {});
       // the panel is this package's own tool, on the bag's document; in a
       // scene it reads by the scene's rule and its Draw sets pieces down here
       const host = {
@@ -579,7 +579,7 @@ export default {
           if (dead || dock !== d) return;
           d.unmount = Tool(handle, body, host);
         })
-        .catch((err) => api.notify(`Couldn't open the bag: ${err?.message ?? err}`, "error"));
+        .catch((err) => api.use("notices")?.notify(`Couldn't open the bag: ${err?.message ?? err}`, "error"));
       teller.tell("looked", { bag: bag.url });
       api.schedule(() => {});
     }

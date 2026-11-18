@@ -315,7 +315,7 @@ function create(api) {
     sitting,
     seatsOf: (id) => seatsOfMachine(id),
     prefer: (e) => playerOf(e.kind, traitOf(e.id)?.player, e.ports),
-    notify: (text) => api.notify(text),
+    notify: (text) => api.use("notices")?.notify(text),
     roster: () => rosterIn(api),
   });
 
@@ -514,7 +514,7 @@ function create(api) {
         run: (target) => {
           const e = machines.get(target);
           const state = worldCommand(e, mapSource());
-          if (state && !state.disabled) layOut(e).catch((err) => api.notify(`Couldn't lay out its world: ${err?.message ?? err}`, "error"));
+          if (state && !state.disabled) layOut(e).catch((err) => api.use("notices")?.notify(`Couldn't lay out its world: ${err?.message ?? err}`, "error"));
         },
       },
     ],

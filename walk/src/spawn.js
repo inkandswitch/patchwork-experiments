@@ -56,7 +56,7 @@ export default {
           show: ["menu"],
           state: (target, ctx) => walkFromState(target, ctx),
           run: (target) => {
-            if (!api.body.enter("walk", target)) api.notify("Couldn't walk from there.");
+            if (!api.body.enter("walk", target)) api.use("notices")?.notify("Couldn't walk from there.");
           },
         },
         {
@@ -68,7 +68,7 @@ export default {
           run: (target) => {
             const w = walkerOf(api.channel.session ?? null, api.url ?? null);
             const ladder = ladderFor(target, api.scene(), w);
-            if (!ladder || !w.climb(ladder)) api.notify("Couldn't climb there.");
+            if (!ladder || !w.climb(ladder)) api.use("notices")?.notify("Couldn't climb there.");
           },
         },
       ],

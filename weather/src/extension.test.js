@@ -27,7 +27,7 @@ function fakeApi(traits) {
     world: "mine",
     notices: [],
     doc: () => api.d,
-    notify: (text, kind = "info") => void api.notices.push([kind, text]),
+    use: (n) => (n === "notices" ? { notify: (text, kind = "info") => void api.notices.push([kind, text]) } : null),
     ambient: (name) => (api.world === "none" ? null : { value: { name }, mine: api.world === "mine" }),
     change(fn) {
       const draft = structuredClone(api.d);

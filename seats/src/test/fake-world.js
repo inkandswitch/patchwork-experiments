@@ -301,7 +301,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       sent.push({ session, viewer, type, data: structuredClone(data) });
       deliver(type, data);
     }
-    const services = { claims: { claim, claimedBy }, tell: { tell } };
+    const services = { claims: { claim, claimedBy }, tell: { tell }, notices: { notify: (text, kind) => view.notices.push({ text, kind }) } };
     const api = {
       id: ext,
       repo,
@@ -385,7 +385,6 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       },
       // the native services (scene/src/native), as the stage's
       use: (name) => services[name] ?? null,
-      notify: (text, kind) => view.notices.push({ text, kind }),
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
       style() {},

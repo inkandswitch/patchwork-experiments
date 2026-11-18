@@ -62,7 +62,7 @@
 // face as built here, and spends that move: once per move.
 //
 // A selected die also offers its own panel (tool.js), "Edit die", docked in
-// the stage's drawer (api.dock), whose panes are embedded documents: the
+// the stage's drawer (api.use("drawer").dock), whose panes are embedded documents: the
 // keys typed in it are its own (STAGE.md, "Keys").
 
 import { cupsOf } from "./cup.js";
@@ -232,7 +232,7 @@ function create(api) {
   function throwDice(ids) {
     const snap = api.scene();
     const why = ids.map(busy).find(Boolean);
-    if (why) return ids.some((id) => rolling.has(id)) ? undefined : api.notify(why);
+    if (why) return ids.some((id) => rolling.has(id)) ? undefined : api.use("notices")?.notify(why);
     const lots = lotsApi();
     // each die's place in the throw, and in what's told, is its place in the scene's own order
     // (a percentile pair reads tens first, as it was put down), then by id
@@ -242,7 +242,7 @@ function create(api) {
     // the draw lives on the first die, and is of every die in order: bound into each commit, so no one can
     // add, drop or reorder dice once anyone has committed
     const draw = lots.draw(lead, { sealers: [], of: order });
-    if (!draw) return api.notify("Couldn't start the roll");
+    if (!draw) return api.use("notices")?.notify("Couldn't start the roll");
     const dice = thrown(order, snap);
     noteThrow({ draw, lead, of: order, by: api.channel.viewer }, snap, true);
     const toss = { draw, lead, dice, stop: null };
@@ -268,7 +268,7 @@ function create(api) {
       end();
       const w = seenThrows.get(draw);
       if (w && final) w.done = true;
-      if (text) api.notify(text, "warn");
+      if (text) api.use("notices")?.notify(text, "warn");
     };
     toss.end = end;
     // A hold refused (something else here or a peer has hold of the die: a carry, the halo, someone's
@@ -377,14 +377,14 @@ function create(api) {
       // told before anyone said it was forged: said again
       if (w.told && !w.forgedTold && st.forged?.length) {
         w.forgedTold = true;
-        api.notify(`${forgedLine(st.forged)}: the roll of ${namesOf(w.of, snap)} told before is no fair roll.`, "warn");
+        api.use("notices")?.notify(`${forgedLine(st.forged)}: the roll of ${namesOf(w.of, snap)} told before is no fair roll.`, "warn");
       }
       // given up before it was drawn (lots.js GONE): nothing was rolled, which every view says once (its thrower's said
       // why). Not done: an opening that crossed the `gone` can still draw it, and then it lands and is told
       if (!w.done && !w.ended && st.phase === "ended") {
         w.ended = true;
         // (one somebody says was forged is said so already)
-        if (w.by !== api.channel.viewer && !st.forged?.length) api.notify(`${whose(w.by).replace(/^./, (c) => c.toUpperCase())} throw of ${namesOf(w.of, snap)} was given up before it was drawn: ${st.gone.includes(w.by) ? "their part of its lots was lost" : `${whoOf(w.by)} had left`}. Nothing was rolled.`, "warn");
+        if (w.by !== api.channel.viewer && !st.forged?.length) api.use("notices")?.notify(`${whose(w.by).replace(/^./, (c) => c.toUpperCase())} throw of ${namesOf(w.of, snap)} was given up before it was drawn: ${st.gone.includes(w.by) ? "their part of its lots was lost" : `${whoOf(w.by)} had left`}. Nothing was rolled.`, "warn");
       }
       if (!w.done && st.public && w.publicAt == null) {
         w.publicAt = now;
@@ -488,8 +488,8 @@ function create(api) {
     else if (w.late) notes.push("drawn after all, after you were told it didn't land");
     if (st.forged?.length) w.forgedTold = true;
     const text = `${parts.join("; ")}${notes.length ? ` (${notes.join("; ")})` : ""}`;
-    if (astray.length || st.forged?.length || left.length) api.notify(text, "warn");
-    else api.notify(text);
+    if (astray.length || st.forged?.length || left.length) api.use("notices")?.notify(text, "warn");
+    else api.use("notices")?.notify(text);
   }
 
   // ── turning a die to a face by hand ──
@@ -512,7 +512,7 @@ function create(api) {
     const snap = api.scene();
     const st = turnState(id, snap);
     if (!st) return;
-    if (st.disabled) return api.notify(st.title);
+    if (st.disabled) return api.use("notices")?.notify(st.title);
     const built = builtFor(id);
     const n = built.faces.length;
     const face = Number.isInteger(value) && value >= 0 && value < n ? value : (st.value + 1) % n;
@@ -590,14 +590,14 @@ function create(api) {
     body.repo = api.repo;
     const mine = (dock = { id, close: null, unmount: null });
     // its × is someone closing it
-    mine.close = api.dock(body, { title: o.name || "Die", onClose: () => dock === mine && closeDock() });
+    mine.close = api.use("drawer")?.dock(body, { title: o.name || "Die", onClose: () => dock === mine && closeDock() }) ?? (() => {});
     try {
       const [handle, tool] = await Promise.all([api.repo.find(o.sourceUrl), import("./tool.js")]);
       if (dock !== mine || dead) return;
       mine.unmount = tool.default(handle, body);
     } catch (err) {
       if (dock === mine) closeDock();
-      api.notify(`Couldn't open that die: ${err?.message ?? err}`, "error");
+      api.use("notices")?.notify(`Couldn't open that die: ${err?.message ?? err}`, "error");
     }
     api.schedule?.(() => {});
   }

@@ -219,7 +219,7 @@ export default {
         worldHere = f ? { level: ((Number(a.value.level) || 0) - f.ty) / f.s, A: amplitudeBound(a.value.components) / f.s } : null;
         if (!world && !refused) {
           refused = true;
-          api.notify?.(a.value?.v !== VERSION ? "This world's water is from another version of the water package: nothing floats here" : "Tilted: no water here", "info");
+          api.use("notices")?.notify(a.value?.v !== VERSION ? "This world's water is from another version of the water package: nothing floats here" : "Tilted: no water here", "info");
         } else if (world) refused = false;
       }
       return a;
@@ -232,7 +232,7 @@ export default {
     const sayOnce = (key, text) => {
       if (said.has(key)) return;
       said.add(key);
-      api.notify?.(text, "info");
+      api.use("notices")?.notify(text, "info");
     };
 
     // the first-flush guard (WATER Decision 107): a clip is never live before this

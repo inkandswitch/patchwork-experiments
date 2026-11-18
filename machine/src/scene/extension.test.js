@@ -192,8 +192,7 @@ test("a click on a cabinet goes through the stage as Play, on that cabinet with 
       THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => scene, loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null,
       repo: { find: async () => ({ doc: () => ({ title: "Empty" }) }) }, // no game yet: it never starts
       after: () => () => {},
-      use: () => null,
-      notify: (t) => notices.push(t),
+      use: (n) => (n === "notices" ? { notify: (t) => notices.push(t) } : null),
       run: (inv) => (ran.push(inv), answer),
     };
     const instance = ext.create(api);

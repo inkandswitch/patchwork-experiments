@@ -109,7 +109,7 @@ describe("the sea on a water body", () => {
       // a fresh object every call: the sea must compare the wind by value
       ambient: (name) => (name === WIND_AMBIENT && st.wind ? { value: { ...st.wind }, mine: !frame, frame: { matrix: st.frame } } : null),
       schedule: () => st.scheduled++,
-      notify: (t) => st.notices.push(t),
+      use: (n) => (n === "notices" ? { notify: (t) => st.notices.push(t) } : null),
     };
     return st;
   }
@@ -160,7 +160,7 @@ describe("the sea on a water body", () => {
           doc: () => doc,
           ambient: (name) => (ambients[name] ? { value: JSON.parse(JSON.stringify(ambients[name])), mine: true, frame: { matrix: null } } : null),
           schedule: () => (scheduled = true),
-          notify: () => {},
+          use: () => null,
         };
         const s = sea.create(api);
         const flush = () => {
@@ -296,8 +296,7 @@ describe("createSeaView: a boat alone is her own world", () => {
       const api = {
         collect: (name) => (name === "water" ? [{ id: "water", value: { at: (p, o) => (asked.push([p, o]), answer) } }] : []),
         ambient: (name) => (name === "water" ? { value: {}, mine: false, frame: { matrix: place(0, [0, 0, 0], scale) }, use: () => CLOCK0 } : null),
-        use: () => CLOCK0,
-        notify: () => {},
+        use: (n) => (n === "clock" ? CLOCK0 : null),
       };
       expect(createSeaView(api).oceanAt([1, 2, 3], "hull")).toBe(want);
       expect(asked.at(-1)).toEqual([[1, 2, 3], { not: "hull" }]);

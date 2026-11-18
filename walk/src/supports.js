@@ -413,7 +413,7 @@ export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {})
   const what = (id) => (id == null ? "The ground" : `“${api.nameOf?.(id) ?? id}”`);
   function refuse(id, e, key, why) {
     e.failed = key;
-    api.notify?.(`${what(id)} can't be walked on: ${why}.`);
+    api.use("notices")?.notify(`${what(id)} can't be walked on: ${why}.`);
   }
   function land(id, e) {
     e.timer = null;
