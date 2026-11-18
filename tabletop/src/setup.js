@@ -51,6 +51,7 @@
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 import { jumble } from "./table/wash.js";
+import { boxUnder } from "./table/stand.js";
 
 /** The trait of a card: two-sided, piled, shuffled and drawn (table/visibility.js CARD). */
 const CARD = "tabletop.card";
@@ -58,6 +59,8 @@ const CARD = "tabletop.card";
 const ZONE = "tabletop.zone";
 /** The scene's trait for what can be picked up (scene/STAGE.md, "Activation"). */
 const CARRY = "scene.carry";
+/** The scene's trait for a table's start steps, resolved to its objects (table/start.js). */
+export const START = "tabletop.start";
 /** The container the game's loose cards (those in no deck) are kept in. */
 export const LOOSE = "cards";
 
@@ -275,6 +278,7 @@ export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.ran
   };
 
   let decks = 0;
+  const decked = new Map(); // a deck thing's id → { cards: its objects top first (those not dealt), backs }
   const layDeck = (t, into) => {
     const deck = t.deck;
     const key = `deck${decks++}`;
@@ -301,6 +305,8 @@ export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.ran
       dealt.set(deal.to, used + i);
     }
     const rest = list.slice(next);
+    const cards = []; // the rest's objects, top first
+    if (t.id != null) decked.set(t.id, { cards, kinds: rest, backs });
     if (deck.spread) {
       // spread out where it lies, as washing leaves tiles: a jumble of cells round `at`, each at a turn of its own
       const reach = Math.max(
@@ -310,18 +316,19 @@ export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.ran
         }),
       );
       const spots = jumble(rest.length, { centre: [0, 0], cols: deck.spread.cols, cell: Number(deck.spread.cell) || 0, reach, rng });
-      rest.forEach((k, i) => card(k, composePose(at, { position: [spots[i].x, deck.faceDown ? h : 0, spots[i].z], rotation: [0, spots[i].yaw, flip] }), key, where));
+      rest.forEach((k, i) => cards.push(card(k, composePose(at, { position: [spots[i].x, deck.faceDown ? h : 0, spots[i].z], rotation: [0, spots[i].yaw, flip] }), key, where)));
       return;
     }
     // the rest in a stack, the top card highest, made bottom first; face down is a half turn about the card's length
     for (let j = rest.length - 1; j >= 0; j--) {
       const level = rest.length - 1 - j;
-      card(rest[j], composePose(at, { position: [0, tidy(level * h + (deck.faceDown ? h : 0)), 0], rotation: [0, 0, flip] }), key, where);
+      cards[j] = card(rest[j], composePose(at, { position: [0, tidy(level * h + (deck.faceDown ? h : 0)), 0], rotation: [0, 0, flip] }), key, where);
     }
   };
 
   for (const t of game?.setup ?? []) layThing(t, {});
   for (const k of Object.keys(containers)) if (!containers[k].items.length) delete containers[k];
+  const start = game?.recipe?.start?.length ? startPlan(game, { decked, poses: thingPose, drawn }) : null;
 
   const seats = {};
   for (const [sid, s] of Object.entries(game?.seats ?? {})) seats[sid] = { name: s?.name || sid, ...(s?.camera ? { camera: copy(s.camera) } : {}) };
@@ -347,7 +354,84 @@ export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.ran
       },
     },
     origin: game?.origin ? copy(game.origin) : null,
+    start,
   };
+}
+
+/**
+ * A laid-out game's start steps (its recipe's `start`, GAME-FORMAT.md §6) as
+ * what Start game does to this table's objects (table/start.js): which
+ * objects a shuffle asks their keeper to mix, and where each card a deal or
+ * a draw moves goes. Worked out here, from the game and the layout, so it is
+ * pure: a deal takes a deck's top cards (the objects, whatever they turn out
+ * to be: a keeper says that) into each seat's hands' card slots, in seat
+ * order, each lying in its slot as Draw lays one (face up, the slot's way,
+ * resting on it); a draw takes them face up onto a thing's snap points. A
+ * deck is the game's (`from`), or each seat's own from its kit
+ * (`<from>.<seat>`). What doesn't fit is left where it is (the validator
+ * refuses a game where it wouldn't).
+ */
+function startPlan(game, { decked, poses, drawn }) {
+  const pieces = game.pieces ?? {};
+  const seats = Object.keys(game.seats ?? {});
+  const cursor = new Map(); // a deck's id → how many of its cards have gone
+  const used = new Map(); // a thing's id (or its index) → how many of its slots are taken
+  const deckFor = (from, sid) => (decked.has(from) ? from : decked.has(`${from}.${sid}`) ? `${from}.${sid}` : null);
+  /** A deck's next n cards: [object id, the back it shows]. */
+  const takeFrom = (id, n) => {
+    const d = decked.get(id);
+    const at = cursor.get(id) ?? 0;
+    const out = d.cards.slice(at, at + n).map((oid, k) => [oid, pieces[d.kinds[at + k]].back]);
+    cursor.set(id, at + out.length);
+    return out;
+  };
+  const tagsOf = (id) => pieces[decked.get(id).backs[0]]?.tags ?? [];
+  /** A card in a slot of a thing: in the slot's frame, its footprint's middle on the slot, resting on it. */
+  const inSlot = (thingPose, slot, oid, backKind) => {
+    const rotation = slot.rotation ?? [0, 0, 0];
+    const box = drawn(backKind).bounds;
+    const b = box ? boxUnder(composeMatrix({ rotation }), box) : null;
+    const off = b ? [-(b.min[0] + b.max[0]) / 2, -b.min[1], -(b.min[2] + b.max[2]) / 2] : [0, 0, 0];
+    return [oid, composePose(thingPose, { position: slot.position.map((v, k) => tidy(v + off[k])), rotation })];
+  };
+  /** Free slots of a thing taking cards with `tags` (cardOnly: tagged slots alone, as a hand's are). */
+  const slotsOf = (key, thing, pose, tags, cardOnly) => {
+    const all = (pieces[thing.piece]?.snapPoints ?? []).filter((sp) => (cardOnly ? sp.tags?.length && sp.tags.some((x) => tags.includes(x)) : !sp.tags?.length || sp.tags.some((x) => tags.includes(x))));
+    return all.slice(used.get(key) ?? 0).map((sp) => ({ pose, slot: sp, key }));
+  };
+  const steps = [];
+  for (const s of game.recipe.start ?? []) {
+    if (s.shuffle != null) {
+      const ids = [...new Set(seats.length ? seats.map((sid) => deckFor(s.shuffle, sid)) : [deckFor(s.shuffle, null)])].filter(Boolean);
+      for (const id of ids) steps.push({ shuffle: decked.get(id).cards.slice(cursor.get(id) ?? 0) });
+    } else if (s.deal != null) {
+      const moves = [];
+      for (const sid of seats) {
+        const id = deckFor(s.deal, sid);
+        if (!id) continue;
+        const free = (game.setup ?? []).flatMap((t, i) => (t.seat === sid && pieces[t.piece]?.zone ? slotsOf(`#${i}`, t, poses.get(t.id)?.pose ?? copyPose(t, 0), tagsOf(id), true) : []));
+        for (const [k, [oid, backKind]] of takeFrom(id, Math.min(s.count, free.length)).entries()) {
+          const f = free[k];
+          used.set(f.key, (used.get(f.key) ?? 0) + 1);
+          moves.push(inSlot(f.pose, f.slot, oid, backKind));
+        }
+      }
+      steps.push({ deal: s.count, moves });
+    } else if (s.draw != null) {
+      const moves = [];
+      const target = poses.get(s.to);
+      for (const id of [...new Set(seats.length ? seats.map((sid) => deckFor(s.draw, sid)) : [deckFor(s.draw, null)])].filter(Boolean)) {
+        if (!target) continue;
+        const free = slotsOf(s.to, target.thing, target.pose, tagsOf(id), false);
+        for (const [k, [oid, backKind]] of takeFrom(id, Math.min(s.count, free.length)).entries()) {
+          used.set(s.to, (used.get(s.to) ?? 0) + 1);
+          moves.push(inSlot(free[k].pose, free[k].slot, oid, backKind));
+        }
+      }
+      steps.push({ draw: s.count, moves });
+    } else if (s.first) steps.push({ first: true });
+  }
+  return { steps };
 }
 
 /** The container and slot a card names before its container exists ({ deck, slot } under tabletop.card), or null. */
@@ -394,4 +478,6 @@ export function writeTable(d, layout, made = {}) {
   if (typeof made.seats === "function") made.seats(d, copy(layout.seats ?? {}));
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? copy(v) : v;
   if (layout.origin) d.origin = copy(layout.origin);
+  // what Start game does (table/start.js), until it's done
+  if (layout.start) d.traits[START] = { steps: copy(layout.start.steps), started: null };
 }

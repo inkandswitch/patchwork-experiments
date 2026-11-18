@@ -7,6 +7,7 @@ import { gamesIn, sessionsIn } from "./model.js";
 import { addBuiltIns, foldersFor, forkSession, importGame, startSession } from "./actions.js";
 import { hostRegistry } from "../table/made-with.js";
 import { DEFAULT_SETTINGS } from "../tts/settings.js";
+import { optionsForm } from "../options-form.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const FOLDER_TOOL = "folder-viewer";
@@ -34,7 +35,8 @@ export default function GameLibraryTool(handle, element) {
   let busy = null; // what's being done now, for the status line (one thing at a time)
   let status = null; // the last thing done or failed, until the next
   let fetchNow = DEFAULT_SETTINGS.fetchNow;
-  const variants = new Map(); // a game's url → the variant chosen for it (an index)
+  const chosen = new Map(); // a game's url → the options chosen for its next session (GAME-FORMAT.md §6)
+  const choicesFor = (url) => (chosen.has(url) ? chosen.get(url) : chosen.set(url, {}).get(url));
 
   const open = (url, toolId) => element.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url, toolId }, bubbles: true, composed: true }));
 
@@ -95,7 +97,7 @@ export default function GameLibraryTool(handle, element) {
   const newGame = (link, d) =>
     act(`Setting up ${d?.title ?? link.name}…`, async () => {
       const game = await repo.find(link.url);
-      const { url, notes } = await startSession({ repo, registry: hostRegistry, library: handle, game, variant: variants.get(link.url) ?? null, phase });
+      const { url, notes } = await startSession({ repo, registry: hostRegistry, library: handle, game, options: { ...choicesFor(link.url) }, phase });
       open(url, "scene");
       return notes.length ? notes.join(" ") : null;
     });
@@ -129,10 +131,7 @@ export default function GameLibraryTool(handle, element) {
   // ─── view ─────────────────────────────────────────────────────────────────
   function gameRow(link) {
     const d = docOf(link.url);
-    const vs = Array.isArray(d?.variants) ? d.variants : [];
-    const pick = vs.length
-      ? el("select", { class: "variant", "aria-label": `${link.name}: set up for`, onchange: (e) => variants.set(link.url, Number(e.target.value)) }, vs.map((v, i) => el("option", { value: String(i), selected: i === (variants.get(link.url) ?? 0) }, v.name)))
-      : null;
+    const pick = d ? optionsForm(d, choicesFor(link.url), (k, v) => (choicesFor(link.url)[k] = v), link.name) : null;
     return el(
       "li",
       { class: "game" },

@@ -165,6 +165,7 @@
     },
     {
       "piece": "grey",
+      "tags": ["grey"],
       "at": {"position":[0.34,0,0.24]},
       "count": 2,
       "grid": {"cols":2,"across":[0.04,0,0],"down":[0,0,0]}
@@ -183,5 +184,14 @@
       "name": "Grey",
       "camera": {"position":[0.85,0.55,0],"target":[0.08,0.03,0]}
     }
+  },
+  "recipe": {
+    "options": [
+      {"key":"players","label":"Players","kind":"integer","min":2,"max":3,"default":3}
+    ],
+    "layout": [
+      {"remove":{"seat":"p3"},"unless":"players >= 3"},
+      {"remove":{"tag":"grey"},"unless":"players >= 3"}
+    ]
   }
 }

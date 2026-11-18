@@ -92,10 +92,11 @@ const steps = {
   async builtIns() {
     buttons("Add the built-in games")[0].click();
     await until(() => rows("games-list").length === 4);
-    await until(() => toolHost.querySelector("select.variant"));
+    const players = () => toolHost.querySelector('select.option[aria-label="Draw Dominoes: Players"]');
+    await until(players);
     return {
       games: rows("games-list").map((r) => r.querySelector("strong")?.textContent),
-      variants: [...(toolHost.querySelector("select.variant")?.options ?? [])].map((o) => o.textContent),
+      variants: [...(players()?.options ?? [])].map((o) => o.textContent),
       status: status(),
     };
   },

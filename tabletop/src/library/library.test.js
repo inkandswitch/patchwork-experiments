@@ -235,14 +235,14 @@ describe("the launcher's actions", () => {
     expect(sessionsIn(a.doc()).map((l) => l.url).sort()).toEqual(["automerge:a", "automerge:b"]);
   });
 
-  it("New game: a description rendered into a fresh scene, as its variant, linked in Sessions by game and date; the description lists it", async () => {
+  it("New game: a description rendered into a fresh scene, as its options lay it out, linked in Sessions by game, options and date; the description lists it", async () => {
     const { repo, lib } = library();
     const registry = installed();
     await addBuiltIns({ repo, registry, library: lib });
     const { games, sessions } = await foldersFor(repo, lib);
     const dominoes = repo.handleFor(gamesIn(games.doc()).find((l) => l.name === "Draw Dominoes").url);
     const now = () => new Date(2026, 10, 18, 21, 30);
-    const { url, name } = await startSession({ repo, registry, library: lib, game: dominoes, variant: 1, now });
+    const { url, name } = await startSession({ repo, registry, library: lib, game: dominoes, options: { players: 3 }, now });
     expect(name).toBe("Draw Dominoes (3 players), 2026-11-18 21:30");
     expect(sessionsIn(sessions.doc())).toEqual([{ name, type: "scene", url }]);
     const scene = repo.docs.get(url);
@@ -251,25 +251,27 @@ describe("the launcher's actions", () => {
     expect(dominoes.doc().tables).toEqual([url]);
     // what the table lays out is drawn into the description, which every session of it shares
     expect(Object.keys(dominoes.doc().drawn).sort()).toEqual(["back", "rack", "table"]);
-    // a game without variants is named without one
+    // its options' defaults where none are given; a game that asks nothing is named without any
     const santorini = repo.handleFor(gamesIn(games.doc()).find((l) => l.name === "Santorini").url);
-    expect((await startSession({ repo, registry, library: lib, game: santorini, now })).name).toBe("Santorini, 2026-11-18 21:30");
-    expect(sessionsIn(sessions.doc()).map((l) => l.name)).toEqual(["Santorini, 2026-11-18 21:30", name]);
-    await expect(startSession({ repo, registry, library: lib, game: dominoes, variant: "9 players", now })).rejects.toThrow(/no variant/);
+    expect((await startSession({ repo, registry, library: lib, game: santorini, now })).name).toBe("Santorini (3 players), 2026-11-18 21:30");
+    const lost = repo.handleFor(gamesIn(games.doc()).find((l) => l.name === "Lost Cities").url);
+    expect((await startSession({ repo, registry, library: lib, game: lost, now })).name).toBe("Lost Cities, 2026-11-18 21:30");
+    expect(sessionsIn(sessions.doc()).map((l) => l.name)).toEqual(["Lost Cities, 2026-11-18 21:30", "Santorini (3 players), 2026-11-18 21:30", name]);
+    await expect(startSession({ repo, registry, library: lib, game: dominoes, options: { players: 9 }, now })).rejects.toThrow(/9 is no value of “Players”/);
   }, 30_000);
 
-  for (const [id, variant] of [["lost-cities", null], ["santorini", null], ["draw-dominoes", "4 players"]])
-    it(`New game lays ${id}${variant ? ` (${variant})` : ""} out as the start screen's template does: the same things, in the same places, kept the same way`, async () => {
+  for (const [id, options] of [["lost-cities", {}], ["santorini", { players: 2 }], ["draw-dominoes", { players: 4 }]])
+    it(`New game lays ${id} ${JSON.stringify(options)} out as the start screen's template does: the same things, in the same places, kept the same way`, async () => {
       const registry = installed();
       // the template's table, in a scene of its own (its art the scene's files)
       const doc = emptyScene();
       const reg = registries(seatsPlugin(), ...gamePlugins());
       const { ctx, calls } = fakeDrop(doc, { registries: reg });
-      await setUp(ctx, id, { variant, rng: seeded(7) });
+      await setUp(ctx, id, { options, rng: seeded(7) });
       // the session's, from a description (its art the description's)
       const repo = fakeRepo();
       const game = repo.handleFor(repo.create(descriptionDoc(builtIn(id), { builtIn: id })).url);
-      const { url } = await newSession({ repo, registry, handle: game, variant, rng: seeded(7) });
+      const { url } = await newSession({ repo, registry, handle: game, options, rng: seeded(7) });
       const session = repo.docs.get(url);
       // objects in the same order, each the same but for its ids, its file and its About
       const norm = (d) => {

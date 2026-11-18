@@ -93,7 +93,7 @@ const isCard = (pieces, k) => typeof pieces?.[k]?.back === "string";
  * The cards whose faces are drawn, fetched and recorded together: kind → its
  * group (sorted). Two cards are in one group when they may lie in one
  * container (a deck's cards; every loose card, setup.js's LOOSE), in the
- * game's setup or any variant's, or are cut from one sheet, closed over both. What a container holds is public (each
+ * game's setup or a kit of its recipe's, or are cut from one sheet, closed over both. What a container holds is public (each
  * kept card names its container), so recording a whole group says nothing
  * about which of its cards was shown. Pure.
  */
@@ -121,9 +121,10 @@ export function groupsOf(game) {
       walk(t?.contents);
     }
   };
-  // every way the game is set up (its variants, GAME-FORMAT.md §3): a group is never smaller than any one of them makes it
+  // everything any way of laying it out can lay (its setup, and its recipe's kits, GAME-FORMAT.md §6): a recipe
+  // only takes things away, moves them or adds a kit's, so a group is never smaller than any table makes it
   walk(game?.setup);
-  for (const v of Array.isArray(game?.variants) ? game.variants : []) walk(v?.setup);
+  for (const step of Array.isArray(game?.recipe?.layout) ? game.recipe.layout : []) walk(step?.kit);
   const by = new Map();
   for (const k of [...up.keys()].sort()) {
     const r = root(k);
@@ -156,11 +157,11 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
   const waiting = new Map(); // kind → its face on its way
   const keeping = new Map(); // kind → its GLB doc on its way (its group being written)
 
-  let grouped = { pieces: undefined, setup: undefined, variants: undefined, of: new Map() };
-  /** A card's group (groupsOf), as the game is now (its variants too: a group is never smaller than any makes it). */
+  let grouped = { pieces: undefined, setup: undefined, recipe: undefined, of: new Map() };
+  /** A card's group (groupsOf), as the game is now (its kits too: a group is never smaller than any table makes it). */
   const groupOf = (kind) => {
     const d = doc();
-    if (grouped.pieces !== d.pieces || grouped.setup !== d.setup || grouped.variants !== d.variants) grouped = { pieces: d.pieces, setup: d.setup, variants: d.variants, of: groupsOf(d) };
+    if (grouped.pieces !== d.pieces || grouped.setup !== d.setup || grouped.recipe !== d.recipe) grouped = { pieces: d.pieces, setup: d.setup, recipe: d.recipe, of: groupsOf(d) };
     return grouped.of.get(kind) ?? [kind];
   };
 

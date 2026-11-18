@@ -1,5 +1,5 @@
 // A session: a game description (a tabletop-game doc) rendered into a fresh
-// scene doc, as one of its variants sets it up. The game page's "Set up a
+// scene doc, laid out as its recipe says for the options chosen. The game page's "Set up a
 // table" and the launcher's New game are this, so they can't drift apart.
 //
 // Each kind shows the description's own GLB (`drawn`, pieces.js): what the
@@ -19,25 +19,26 @@ import { emptyScene } from "../empty-scene.js";
 import { gameOf } from "../game.js";
 import { pieceDrawer } from "../pieces.js";
 import { defaultImages } from "../look/images.js";
-import { applyVariant, errorText, validate } from "../../contract/v2/validate.js";
+import { errorText, validate } from "../../contract/v2/validate.js";
+import { applyRecipe, optionsProblem } from "../../contract/v2/recipe.js";
 
 /**
  * Set up a session of the game a doc holds.
  * @param {{
  *   repo: object, registry: (type: string) => Promise<object | null>, handle: object,
- *   variant?: string | number | null, title?: string | null,
+ *   options?: object, title?: string | null,
  *   draw?: (kinds: string[]) => Promise<unknown>, phase?: (text: string) => void, rng?: () => number,
- * }} o  handle: the game doc's; variant: which of its variants (GAME-FORMAT.md §3), null for the game as it is;
+ * }} o  handle: the game doc's; options: its recipe's options' values (GAME-FORMAT.md §6; a default for each not given);
  *   title: the scene's (by default "<game> table <n>"); draw: draws these kinds into the game's `drawn`, throwing
  *   when it can't (by default a pieceDrawer of the game's own); phase: what it's doing now, for a status line
  * @returns {Promise<{ url: string, notes: string[], layout: object }>}  the scene's url; what the maker is to be warned of
  */
-export async function newSession({ repo, registry, handle, variant = null, title = null, draw = null, phase = () => {}, rng = Math.random }) {
+export async function newSession({ repo, registry, handle, options = {}, title = null, draw = null, phase = () => {}, rng = Math.random }) {
   const game = gameOf(handle.doc());
   const checked = validate(game);
   if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
-  const g = applyVariant(game, variant);
-  if (!g) throw new Error(`the game has no variant “${variant}”`);
+  const g = applyRecipe(game, options);
+  if (!g) throw new Error(optionsProblem(game, options));
   // what the table lays out; a card's face is drawn when it's first shown
   const kinds = kindsLaid(g);
   if (draw) await draw(kinds);

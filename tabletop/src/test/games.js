@@ -5,14 +5,14 @@ import { plugins } from "../index.js";
 import lostCities from "../../games/lost-cities.json" with { type: "json" };
 import santorini from "../../games/santorini.json" with { type: "json" };
 import dominoes from "../../games/draw-dominoes.json" with { type: "json" };
-import { applyVariant } from "../../contract/v2/validate.js";
+import { applyRecipe } from "../../contract/v2/recipe.js";
 
-/** The games, and Draw Dominoes as each of its variants sets it up (`draw-dominoes-2` …: the game for that many). */
+/** The games, and Draw Dominoes as its recipe lays it out for each count (`draw-dominoes-2` …: the game for that many). */
 export const GAMES = Object.freeze({
   "lost-cities": lostCities,
   santorini,
   "draw-dominoes": dominoes,
-  ...Object.fromEntries([2, 3, 4].map((n) => [`draw-dominoes-${n}`, applyVariant(dominoes, `${n} players`)])),
+  ...Object.fromEntries([2, 3, 4].map((n) => [`draw-dominoes-${n}`, applyRecipe(dominoes, { players: n })])),
 });
 
 /** A fresh copy of a built-in game. */

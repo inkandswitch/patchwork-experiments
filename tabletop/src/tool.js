@@ -1,6 +1,6 @@
 // patchwork:tool "tabletop-game" — the game's page: what it is, its pieces,
 // and "Set up a table", which draws what a table lays out and lays the game
-// out in a new scene, as the variant chosen beside it (how many play), and
+// out in a new scene, as the options chosen beside it say (how many play: its recipe), and
 // opens it (table/session.js; a card's face is drawn when it's first shown,
 // pieces.js). While open it redraws each GLB already drawn when its
 // piece changes. An
@@ -15,6 +15,7 @@ import { newSession } from "./table/session.js";
 import { gameOf, writeGame } from "./game.js";
 import { defaultImages } from "./look/images.js";
 import { errorText, validate } from "../contract/v2/validate.js";
+import { optionsForm } from "./options-form.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const DRAW_DEBOUNCE_MS = 400;
@@ -150,7 +151,7 @@ export default function TabletopGameTool(handle, element) {
 
   // ─── setting up a table ───────────────────────────────────────────────────
   let settingUp = false;
-  let variant = 0; // which of the game's variants a table is set up as (GAME-FORMAT.md §3), when it has any
+  const options = {}; // the recipe's options chosen for the next table (GAME-FORMAT.md §6); a default for each not chosen
   let setupPhase = null; // what setting up is doing now, for the status line
   const phase = (text) => {
     setupPhase = text;
@@ -163,12 +164,11 @@ export default function TabletopGameTool(handle, element) {
     render();
     try {
       clearTimeout(drawTimer);
-      const variants = doc().variants ?? [];
       const { url, notes } = await newSession({
         repo,
         registry: hostRegistry,
         handle,
-        variant: variants.length ? (variants[variant] ? variant : 0) : null,
+        options: { ...options },
         draw: async (kinds) => {
           await draw(kinds);
           if (drawError) throw new Error(drawError);
@@ -327,11 +327,8 @@ export default function TabletopGameTool(handle, element) {
 
     const title = el("input", { type: "text", class: "title", value: d.title ?? "", "aria-label": "Title", onchange: (e) => handle.change((g) => (g.title = e.target.value)) });
     const setUp = el("button", { type: "button", class: "button primary", disabled: settingUp || !(d.setup ?? []).length, onclick: setUpTable }, settingUp ? "Setting up…" : "Set up a table");
-    // which way to set it up, for a game with variants (how many play)
-    const variants = Array.isArray(d.variants) ? d.variants : [];
-    const choose = variants.length
-      ? el("select", { class: "variant", "aria-label": "Set up for", onchange: (e) => (variant = Number(e.target.value)) }, variants.map((v, i) => el("option", { value: String(i), selected: i === variant }, v.name)))
-      : null;
+    // how to set it up, for a game whose recipe asks (how many play)
+    const choose = optionsForm(d, options, (k, v) => (options[k] = v), "Set up for");
     const about = el("textarea", { class: "about", rows: "8", placeholder: "What the game is, and how it's played…", onchange: (e) => handle.change((g) => (g.about = e.target.value)) });
     about.value = d.about ?? "";
 

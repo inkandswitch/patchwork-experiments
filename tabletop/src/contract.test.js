@@ -5,7 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { applyVariant, validate, everyThing } from "../contract/v2/validate.js";
+import { validate, everyThing } from "../contract/v2/validate.js";
+import { applyRecipe, combinations, conditionProblem, describeOptions, holds, parseCondition } from "../contract/v2/recipe.js";
 import schema from "../contract/v2/schema.json" with { type: "json" };
 import manifest from "../contract/v2/fixtures/manifest.json" with { type: "json" };
 import { kindsUsed, tableLayout, writeTable, LOOSE } from "./setup.js";
@@ -62,46 +63,84 @@ describe("the games this package ships", () => {
   for (const n of files) it(`${n} is a valid tabletop-game`, () => expect(validate(read(`../games/${n}`))).toEqual({ ok: true, stage: null, errors: [] }));
 });
 
-describe("variants (GAME-FORMAT.md §3)", () => {
-  const g = read("../contract/v2/fixtures/valid/variants.json");
+describe("recipes (GAME-FORMAT.md §6)", () => {
+  const g = read("../contract/v2/fixtures/valid/recipe.json");
 
-  it("a variant is the game with its fields in place of the game's own, and no variants; by index or name", () => {
-    const { variants, ...base } = g;
-    expect(applyVariant(g)).toEqual(base);
-    expect(applyVariant(g, 0)).toEqual({ ...base, players: "2" });
-    expect(applyVariant(g, "3 players")).toEqual({ ...base, players: "3", setup: variants[1].setup, seats: variants[1].seats, camera: variants[1].camera });
-    expect(applyVariant(g, "5 players")).toBe(null);
-    expect(applyVariant(g, 2)).toBe(null);
-    expect(g.variants).toBe(variants); // the game is left as it was
+  it("lays the game out for the values given, a default for each not given, leaving the game as it was", () => {
+    const before = structuredClone(g);
+    const two = applyRecipe(g);
+    expect(g).toEqual(before);
+    expect(Object.keys(two.seats)).toEqual(["a", "b"]);
+    expect(two.setup.map((t) => t.id ?? t.name ?? t.piece)).toEqual(["board", "market", "deck", "extras", "tray.a", "A's pawn", "tray.b", "B's pawn"]);
+    // nothing left to choose: its start steps that apply, unconditional
+    expect(two.recipe).toEqual({ start: [{ shuffle: "deck" }, { deal: "deck", count: 2 }, { deal: "deck", count: 1 }, { draw: "deck", count: 3, to: "market" }, { first: true }] });
+    expect(applyRecipe(g, { players: 2, extras: false })).toEqual(two);
+    expect(applyRecipe(g, { players: "2" })).toEqual(two); // as a form gives it
+    expect(applyRecipe(g, { players: 4 })).toBe(null);
+    expect(applyRecipe(g, { extras: "maybe" })).toBe(null);
   });
 
-  it("an error in a field the variant gives is at the variant's path; the game's own errors are said once", () => {
-    const bad = read("../contract/v2/fixtures/invalid/variant-seat.json");
-    expect(validate(bad).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.variants[1].setup[3].seat"]]);
-    // a game's own error, which every variant that keeps its setup would repeat
-    const broken = structuredClone(g);
-    broken.setup[1].seat = "z";
-    expect(validate(broken).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[1].seat"]]);
-    // the same error in a setup the variant gives is the variant's too
-    broken.variants[1].setup[1].seat = "z";
-    expect(validate(broken).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[1].seat"], ["unknown-seat", "$.variants[1].setup[1].seat"]]);
-    // one the variant's seats cause in the game's setup: the game's path, naming the variant
-    const seats = structuredClone(g);
-    seats.variants[0].seats = { a: { name: "A" } };
-    const errors = validate(seats).errors;
-    expect(errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[2].seat"]]);
-    expect(errors[0].message).toMatch(/as variant "2 players" sets it up/);
+  it("for three: the third seat and its pawn kept, B's seat moved to its spot with everything that's its, a kit at each seat", () => {
+    const three = applyRecipe(g, { players: 3, extras: true });
+    expect(Object.keys(three.seats)).toEqual(["a", "b", "c"]);
+    expect(three.seats.b.at).toEqual(g.recipe.spots.west);
+    expect(three.setup.find((t) => t.id === "third")).toBeTruthy();
+    // out of its bag onto the table, at its spot; the bag holds nothing now
+    expect(three.setup.find((t) => t.id === "spare").at).toEqual(g.recipe.spots.spare);
+    expect(three.setup.find((t) => t.id === "extras").contents).toEqual([]);
+    // each kit in its seat's frame: the tray on the seat's area, the pawn 6 cm toward the table
+    expect(three.setup.find((t) => t.id === "tray.c")).toEqual({ id: "tray.c", piece: "tray", name: "C's tray", seat: "c", at: g.seats.c.at });
+    expect(three.setup.find((t) => t.name === "C's pawn").at.position).toEqual([0.14, 0.01, 0]);
+    expect(three.recipe.start.map((x) => Object.keys(x)[0])).toEqual(["shuffle", "deal", "draw", "first"]);
   });
 
-  it("Draw Dominoes is one game, a variant for each count, each the table it was as a game of its own", () => {
+  it("a seat that moves takes its hands and its camera with it, rigidly", () => {
     const d = read("../games/draw-dominoes.json");
-    expect(d.variants.map((v) => v.name)).toEqual(["2 players", "3 players", "4 players"]);
+    // Player 2 sits west for three and four; north for two, as the two-player table always had them
+    const two = applyRecipe(d, { players: 2 });
+    expect(two.seats.p2).toEqual({ name: "Player 2", at: { position: [0, 0, -0.42], rotation: [0, Math.PI, 0] }, camera: { position: [0, 0.5, -0.86], target: [0, 0, -0.18] } });
+    const moved = structuredClone(d);
+    moved.setup.push({ piece: "rack", seat: "p2", at: { position: [-0.33, 0, 0.1], rotation: [0, -Math.PI / 2, 0] } });
+    moved.recipe.layout = moved.recipe.layout.filter((s) => !s.kit);
+    expect(applyRecipe(moved, { players: 2 }).setup.at(-1).at).toEqual({ position: [-0.1, 0, -0.42], rotation: [0, Math.PI, 0] });
+  });
+
+  it("conditions: one comparison on an option, with a value of its", () => {
+    const options = g.recipe.options;
+    expect(parseCondition("players >= 3")).toEqual({ key: "players", op: ">=", literal: "3" });
+    expect(parseCondition("layout == 'c9b6a8'")).toEqual({ key: "layout", op: "==", literal: "c9b6a8" });
+    expect(parseCondition("extras")).toEqual({ key: "extras", op: null, literal: null });
+    for (const bad of ["", "players >", "players >= 3 and extras", "3 <= players"]) expect(conditionProblem(bad, options)).toMatch(/isn't a condition/);
+    expect(conditionProblem("players", options)).toMatch(/isn't a boolean option/);
+    expect(conditionProblem("extras < true", options)).toMatch(/only an integer option is ordered/);
+    expect(conditionProblem("extras == maybe", options)).toMatch(/is no value/);
+    expect(conditionProblem("players >= 9", options)).toBe(null); // past its range, an order still says something
+    const cases = { "players == 2": [true, false], "players != 2": [false, true], "players < 3": [true, false], "players <= 2": [true, false], "players > 2": [false, true], "players >= 3": [false, true], extras: [false, false], "extras == false": [true, true] };
+    for (const [c, want] of Object.entries(cases)) expect([2, 3].map((players) => holds(c, { players, extras: false }, options)), c).toEqual(want);
+  });
+
+  it("checks every way the options can be set, and says which one an error is in", () => {
+    expect(combinations(g)).toEqual([
+      { players: 2, extras: false },
+      { players: 2, extras: true },
+      { players: 3, extras: false },
+      { players: 3, extras: true },
+    ]);
+    const errors = validate(read("../contract/v2/fixtures/invalid/laid-unknown-thing.json")).errors;
+    expect(errors.map((e) => e.code)).toEqual(["unknown-thing"]);
+    expect(errors[0].message).toMatch(/laid out with players = 2, extras = false/);
+  });
+
+  it("Draw Dominoes is one game: a seat, a rack and a deal for each who plays", () => {
+    const d = read("../games/draw-dominoes.json");
+    expect(d.recipe.options).toEqual([{ key: "players", label: "Players", kind: "integer", min: 2, max: 4, default: 2 }]);
     for (const n of [2, 3, 4]) {
-      const v = applyVariant(d, `${n} players`);
-      expect(v.players).toBe(String(n));
+      const v = applyRecipe(d, { players: n });
       expect(Object.keys(v.seats)).toHaveLength(n);
       expect(v.setup.filter((t) => t.seat)).toHaveLength(n);
+      expect(v.recipe.start).toEqual([{ deal: "boneyard", count: n === 4 ? 6 : 7 }]);
       expect(validate(v).ok).toBe(true);
+      expect(describeOptions(d, { players: n })).toBe(`${n} players`);
     }
   });
 });

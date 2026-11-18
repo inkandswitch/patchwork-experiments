@@ -10,7 +10,7 @@
     "stage": "valid",
     "about": "tts-import's tiny fixture mod, as it translates it: a deck, loose cards, tiles, a token, models, a bag with things in it, a die document, a stack, a seat's hand, the table's snap points"
   },
-  {"file":"valid/variants.json","stage":"valid","about":"a game set up for two (as it is) or for three (a variant with its own setup, seats and camera)"},
+  {"file":"valid/recipe.json","stage":"valid","about":"a recipe: how many play and whether the extras are out (options), a seat taken away and one moved to a spot, things taken away by tag, a thing taken out of its bag, a kit for each seat; and its start: a shuffle, deals into the hands, a draw onto a market, who goes first"},
   {"file":"invalid/wrong-format.json","stage":"structural","code":"schema","about":"format must be tabletop-game"},
   {"file":"invalid/unsupported-version.json","stage":"structural","code":"schema","about":"only version 2"},
   {"file":"invalid/missing-setup.json","stage":"structural","code":"schema","about":"setup is required"},
@@ -23,7 +23,7 @@
   {"file":"invalid/bad-turn.json","stage":"structural","code":"schema","about":"an image turns in quarter turns"},
   {"file":"invalid/bad-kind-id.json","stage":"structural","code":"schema","about":"a kind's id is plain"},
   {"file":"invalid/thing-shape.json","stage":"structural","code":"schema","about":"a thing is a piece or a deck"},
-  {"file":"invalid/variant-field.json","stage":"structural","code":"schema","about":"a variant gives only players, setup, seats and camera: the pieces are the game's"},
+  {"file":"invalid/recipe-step.json","stage":"structural","code":"schema","about":"a layout step is one the recipe has: remove, place, seats or kit"},
   {"file":"invalid/both-looks.json","stage":"semantic","code":"look","about":"a piece is drawn from parts or as a document, not both"},
   {"file":"invalid/no-look.json","stage":"semantic","code":"look","about":"a piece is drawn somehow"},
   {"file":"invalid/unknown-piece.json","stage":"semantic","code":"unknown-piece","about":"a thing names a piece the game has"},
@@ -47,6 +47,14 @@
   {"file":"invalid/deal-count.json","stage":"semantic","code":"deal-count","about":"a deck deals no more cards than it has"},
   {"file":"invalid/deal-spread.json","stage":"semantic","code":"deal-spread","about":"a spread deck deals nothing"},
   {"file":"invalid/camera.json","stage":"semantic","code":"camera","about":"a camera doesn't look at itself"},
-  {"file":"invalid/variant-name.json","stage":"semantic","code":"variant-name","about":"each variant has a name of its own"},
-  {"file":"invalid/variant-seat.json","stage":"semantic","code":"unknown-seat","about":"a game as a variant sets it up passes every rule: here a hand for a seat that variant hasn't"}
+  {"file":"invalid/option-default.json","stage":"semantic","code":"option","about":"an option's default is one of its values"},
+  {"file":"invalid/condition-option.json","stage":"semantic","code":"condition","about":"a condition names one of the game's options"},
+  {"file":"invalid/condition-order.json","stage":"semantic","code":"condition","about":"only an integer option is ordered"},
+  {"file":"invalid/options-many.json","stage":"semantic","code":"options-many","about":"a game's options can be set at most 512 ways, each laid out and checked"},
+  {"file":"invalid/unknown-tag.json","stage":"semantic","code":"unknown-tag","about":"what a step takes away by tag, some thing has"},
+  {"file":"invalid/unknown-spot.json","stage":"semantic","code":"unknown-spot","about":"a spot a step names is one of the recipe's"},
+  {"file":"invalid/seat-area.json","stage":"semantic","code":"seat-area","about":"a game with a kit gives every seat an area to lay it at"},
+  {"file":"invalid/start-deck.json","stage":"semantic","code":"start-deck","about":"a start step shuffles, deals or draws from a deck on the table"},
+  {"file":"invalid/deal-hand.json","stage":"semantic","code":"deal-hand","about":"a deal fits every seat's hands, however the options lay the table out"},
+  {"file":"invalid/laid-unknown-thing.json","stage":"semantic","code":"unknown-thing","about":"every way the options lay the table out passes every rule: here a deal onto a thing two players' layout takes away"}
 ]

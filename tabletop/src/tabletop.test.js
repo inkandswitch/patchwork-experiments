@@ -271,7 +271,7 @@ describe("piece GLBs", () => {
     game.change((d) => (d.pieces.blue.name = "Azure worker"));
     expect((await ensurePieceGLBs(repo, game)).drawn).toBe(0);
     // the game itself is untouched by drawing: drawn is beside it
-    expect(Object.keys(gameOf(game.doc())).sort()).toEqual(["about", "assets", "format", "pieces", "players", "seats", "setup", "title", "version"]);
+    expect(Object.keys(gameOf(game.doc())).sort()).toEqual(["about", "assets", "format", "pieces", "players", "recipe", "seats", "setup", "title", "version"]);
   });
 
   it("a game of many kinds is drawn in a few changes to the game, not one a kind, saying how far it has got", async () => {
@@ -491,12 +491,12 @@ describe("drawn on demand", () => {
     expect(new Set(cards.map((k) => lcOf.get(k))).size).toBe(1);
   });
 
-  it("a card's group is never smaller than any of the game's variants makes it", () => {
+  it("a card's group is never smaller than any way the game's recipe lays a table out makes it", () => {
     const g = cardGame();
     const alone = groupsOf(g).get("c1");
     expect(alone).toEqual(["c1"]);
-    // a variant that decks c1 with a1: the group a face is drawn with is the same whichever way the table was set up
-    g.variants = [{ name: "joined", setup: [{ deck: { name: "All", cards: ["a1", "c1"] } }] }];
+    // a kit that decks c1 with a1: the group a face is drawn with is the same whichever way the table was set up
+    g.recipe = { layout: [{ kit: [{ deck: { name: "All", cards: ["a1", "c1"] } }] }] };
     expect(groupsOf(g).get("c1")).toEqual(groupsOf(g).get("a1"));
     expect(groupsOf(g).get("c1")).toContain("a2");
   });
