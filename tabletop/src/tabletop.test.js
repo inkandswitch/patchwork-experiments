@@ -718,6 +718,33 @@ describe("drawn on demand", () => {
     expect([JSON.stringify(game.doc()), repo.docs.size]).toEqual([before, docs]);
   });
 
+  it("a sheet over maxStoredBytes is made smaller where it can be, stored and drawn from so; where it can't, drawn from as it is and not stored", async () => {
+    const limit = png(4, 2).byteLength - 1; // every sheet here is over it
+    for (const shrinks of [true, false]) {
+      const repo = fakeRepo();
+      const game = await newCardGame(repo);
+      const w = web();
+      const asked = [];
+      const small = png(2, 1);
+      const shrink = async (bytes, o) => (asked.push(o), shrinks ? { bytes: small, mimeType: "image/png", extension: "png", width: 2, height: 1 } : null);
+      const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: w.fetch, maxStoredBytes: limit, shrink });
+      expect((await pd.face("a1")).glb, `shrinks ${shrinks}`).toBeInstanceOf(Uint8Array);
+      await settled(() => DECK.every((k) => game.doc().drawn?.[k]));
+      expect(asked.map((o) => o.limit)).toEqual([limit, limit]);
+      if (shrinks) {
+        // each sheet stored at its smaller size, under its URL, saying where it came from
+        const a = repo.docs.get(game.doc().assets[`${WEB}a.png`].file);
+        expect(a).toMatchObject({ "@patchwork": { type: "file" }, extension: "png", mimeType: "image/png", origin: { urls: [`${WEB}a.png`] } });
+        expect([...a.content]).toEqual([...small]);
+        expect(Object.keys(game.doc().assets).sort()).toEqual([`${WEB}a.png`, `${WEB}b.png`]);
+      } else {
+        expect(game.doc().assets ?? {}).toEqual({});
+      }
+      // either way the faces are drawn with their pictures, nothing missing
+      expect(DECK.map((k) => game.doc().drawn[k].missing ?? [])).toEqual([[], [], []]);
+    }
+  });
+
   it("a slab as wide as its image says is measured when it's drawn", async () => {
     const repo = fakeRepo();
     const sheet = await repo.create2({ "@patchwork": { type: "file" }, extension: "png", mimeType: "image/png", content: png(8, 2) });
