@@ -36,6 +36,12 @@ export function fakeRepo() {
   });
   return {
     docs,
+    // (as the Repo's: create at once, create2 as a promise; neither calls the other, so a test may wrap either)
+    create(init) {
+      const url = `automerge:doc${n++}`;
+      docs.set(url, structuredClone(init));
+      return handleFor(url);
+    },
     async create2(init) {
       const url = `automerge:doc${n++}`;
       docs.set(url, structuredClone(init));

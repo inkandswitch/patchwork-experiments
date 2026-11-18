@@ -67,6 +67,11 @@ export class FakeRepo {
     this.created.push(h);
     return h;
   }
+  create(doc) {
+    const h = this.add(doc);
+    this.created.push(h);
+    return h;
+  }
   async find(url) {
     const h = this.handles.get(url);
     if (!h) throw new Error(`unavailable: ${url}`);
