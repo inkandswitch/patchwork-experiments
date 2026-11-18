@@ -296,10 +296,15 @@ something is first drawn from them. A tile or token is as wide as its
 picture says (`aspect: "image"`), measured when it's drawn. No scene: a
 table is set up from the game as from any other. Cards and decks
 (never `secure`: tick it on the game page), tiles, tokens (cut out), boards,
-`*_Stack`s, models, bags, dice (a die doc), standees, hand triggers (a seat
-and its tray), snap points, tags and `Locked` come across
-(`src/tts/translate.js`); Lua, XML UI, other `States`, 3D text and notecards
-never. What the mod's data says of its setup becomes the game's recipe:
+`*_Stack`s, models, bags, dice (a die doc; a custom d6's faces cut from its
+image, each named by its RotationValue), standees, hand triggers (a seat
+and its tray), snap points, tags, `Locked` and other `States` (the piece's
+states, each named by its Nickname; a thing saved in another state is laid
+out in it) come across (`src/tts/translate.js`); Lua, XML UI, a card's
+States, 3D text and notecards never. A custom d6's image is read as three
+cells across and two down, the k-th the side TTS's k-th default
+RotationValue turns up: TTS's template as read here, not yet checked
+against a real die's image (none is in this machine's cache). What the mod's data says of its setup becomes the game's recipe:
 how many play (a seat per hand, the last in TTS's colour order left out for
 fewer, as few as its PlayerCounts says); each **memory bag** (a bag whose
 script state saved where each thing in it goes, MrStump's and its copies:
@@ -354,4 +359,5 @@ check). `chrome-guard.mjs` makes sure Chrome never outlives its driver.
   place in the stage.
 - A fair, jointly drawn value for a bag's draw (`draw.js drawIndex`).
 - From TTS: Lua and XML UI (by design), asset bundles, normal maps, custom
-  dice images, card shapes other than rectangles.
+  dice other than d6 (numbered plainly), a card's States, card shapes other
+  than rectangles.
