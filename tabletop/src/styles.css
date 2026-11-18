@@ -73,6 +73,7 @@
 }
 
 .tabletop-game textarea,
+.tabletop-game select,
 .tabletop-game input[type="text"],
 .tabletop-game input[type="number"] {
   box-sizing: border-box;
