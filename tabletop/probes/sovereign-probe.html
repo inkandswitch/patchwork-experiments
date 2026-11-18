@@ -171,6 +171,47 @@ function tally(w) {
   }
   return out;
 }
+/**
+ * What view w really draws for card `id`: the GLB it shows (its displayed content, else the
+ * object's own: the card's back), as a kind of the game (by the doc the game keeps it in), so
+ * "face" (a card's own kind), "back" (a kind some card has as its back), "bytes" (a face drawn
+ * here, its doc not kept yet), "veil", or "unknown"; the image on its top (the side up, when
+ * it lies face up), and whether that is a back's image; whether its GLB has loaded here, with
+ * a texture; and whether it lies face up (its top toward the sky, where the seats look from).
+ */
+function rendered(w, id) {
+  const dbg = views[w].dbg;
+  const d = gameDoc();
+  const byUrl = new Map(Object.entries(d.drawn ?? {}).map(([k, e]) => [e.url, k]));
+  const topOf = (k) => (d.pieces[k]?.parts ?? []).map((p) => p?.top?.file).find(Boolean) ?? null;
+  const backImages = new Set(Object.values(d.pieces).filter((p) => typeof p.back === "string").map((p) => topOf(p.back)).filter(Boolean));
+  const shown = dbg.displayed().get(id);
+  const c = shown?.content;
+  const url = c instanceof Uint8Array ? null : (c ?? objects()[id]?.sourceUrl ?? null);
+  const kind = url ? (byUrl.get(url) ?? null) : null;
+  const as = c instanceof Uint8Array ? (shown.name ? "bytes" : "veil") : kind == null ? "unknown" : typeof d.pieces[kind]?.back === "string" ? "face" : "back";
+  const top = kind ? topOf(kind) : null;
+  const m = dbg.scene().world(id);
+  return {
+    id,
+    as,
+    kind,
+    image: top ? top.replace(/\/+$/, "").split("/").at(-1).slice(0, 8) : null,
+    imageIsABack: top ? backImages.has(top) : null,
+    loaded: !!dbg.viewport.contentOf(id)?.loaded,
+    textured: textured(dbg, id),
+    faceUp: m[5] > 0,
+  };
+}
+/** The cards in seat s's hand, left to right as its seat sees them. */
+const handOf = (s) => {
+  const zid = hands()[s];
+  const sc = views[0].dbg.scene();
+  return cardIds().filter((id) => seatOfCard(id) === s).sort((a, b) => sc.toLocal(zid, sc.world(a).slice(12, 15))[0] - sc.toLocal(zid, sc.world(b).slice(12, 15))[0]);
+};
+const turned = new Map(); // k → the ids of the pile turnDown({ k }) turned face down
+/** The pile turnDown({ k }) turned (by its cards: drawing from it changes its size, so its place in piles()), else piles()[k]. */
+const pileOf = (k) => (turned.has(k) ? piles().find((p) => p.ids.some((id) => turned.get(k).has(id))) : piles()[k]);
 const command = (w, ext, cmd) => views[w].dbg.host.instanceOf(ext)?.commands?.find((x) => x.id === cmd) ?? null;
 
 const steps = {
@@ -242,11 +283,15 @@ const steps = {
     const t0 = performance.now();
     const loaded = await until(() => loadedAll(v.dbg), 300_000);
     const ms = Math.round(performance.now() - t0);
-    // the faces shown to everyone (the face-up cards) kept: none shown from bytes drawn here any more
-    // (a face drawn here is bytes with its name until its group is written; the veil, bytes without)
-    const fromBytes = () => [...v.dbg.displayed().values()].filter((o) => o.content instanceof Uint8Array && o.name).length;
+    // the faces shown to everyone (the face-up cards) kept: none waiting for its face or shown from bytes
+    // drawn here any more (a face on its way is its name alone; drawn here, bytes with its name until its
+    // group is written; the veil, bytes without), and every face-up card out on the table shown by its
+    // kept doc: else this can pass before the keepers have asked for a face at all, and the next view
+    // draws (and fetches) the same faces again
+    const fromBytes = () => [...v.dbg.displayed().values()].filter((o) => o.name && (o.content == null || o.content instanceof Uint8Array)).length;
+    const faceUp = () => cardIds().filter((id) => v.dbg.scene().world(id)[5] > 0 && !seatOfCard(id));
     const shownBefore = fromBytes();
-    const kept = await until(() => fromBytes() === 0 && loadedAll(v.dbg), 900_000);
+    const kept = await until(() => fromBytes() === 0 && faceUp().every((id) => typeof v.dbg.displayed().get(id)?.content === "string") && loadedAll(v.dbg), 900_000);
     const keptMs = Math.round(performance.now() - t0);
     const ids = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
     return {
@@ -301,15 +346,17 @@ const steps = {
         d.objects[id].transform = { position: [t.position[0], lo + hi - t.position[1], t.position[2]], rotation: out.rotation, scale: t.scale ?? 1 };
       }
     });
-    return { n: p.ids.length, faceUp: s.world(p.ids[0])[5] > 0 };
+    turned.set(k, new Set(p.ids));
+    return { n: p.ids.length, top: p.ids[0], faceUp: s.world(p.ids[0])[5] > 0 };
   },
-  /** View w draws n cards from pile k (D, its Draw to my hand), one after another as each lands. */
+  /** View w draws n cards from the pile turnDown({ k }) turned (D, its Draw to my hand), one after another as each lands. */
   async drawFrom({ w, k, n }) {
     const sid = scene().doc().traits.seats ? Object.entries(scene().doc().traits.seats).find(([, s]) => s.player === views[w].viewer)?.[0] : null;
     const drawn = [];
     const offered = [];
     for (let i = 0; i < n; i++) {
-      const top = piles()[k].ids[0];
+      const top = pileOf(k)?.ids[0];
+      if (top == null) break;
       const c = command(w, "tabletop", "draw");
       offered.push(c?.state?.(top) ?? null);
       const before = new Set(cardIds().filter((id) => seatOfCard(id) === sid));
@@ -319,19 +366,24 @@ const steps = {
       drawn.push(cardIds().find((id) => !before.has(id) && seatOfCard(id) === sid));
       await sleep(300);
     }
-    return { seat: sid, drawn, offered: offered.slice(0, 2) };
+    return { seat: sid, drawn, fromTurned: !!turned.get(k) && drawn.every((id) => turned.get(k).has(id)), offered: offered.slice(0, 2) };
   },
-  /** What every view shows of every seat's hand, once the faces have come: { view: { seat: { face, veil, back } } }. */
-  async privacy({ wait = 60_000 } = {}) {
+  /**
+   * What every view shows of every seat's hand, once the faces have come: { view: { seat: { face, veil, back } } },
+   * and what each view really draws for each card of every hand (rendered): settled when each view
+   * draws its own hand's faces from their kept docs, loaded, and every other hand's cards as backs.
+   */
+  async privacy({ wait = 120_000 } = {}) {
     const mine = (w) => Object.entries(scene().doc().traits.seats).find(([, s]) => s.player === views[w].viewer)?.[0];
-    const settled = () => views.every((v, w) => {
-      const t = tally(w)[mine(w)];
-      return t && t.face > 0 && !t.veil && !t.back;
-    });
+    const seats = Object.keys(hands());
+    const look = () => views.map((_, w) => Object.fromEntries(seats.map((s) => [s, handOf(s).map((id) => rendered(w, id))])));
+    const settled = () => {
+      if (!views.every((v) => loadedAll(v.dbg))) return false;
+      return look().every((byseat, w) => seats.every((s) => byseat[s].every((r) => (s === mine(w) ? r.as === "face" && r.loaded : r.as === "back"))));
+    };
     const ok = await until(settled, wait);
-    await until(() => views.every((v) => loadedAll(v.dbg)), 120_000);
     await sleep(1500);
-    return { settled: ok, seats: views.map((_, w) => mine(w)), tallies: views.map((_, w) => tally(w)) };
+    return { settled: ok, seats: views.map((_, w) => mine(w)), tallies: views.map((_, w) => tally(w)), rendered: look() };
   },
   /** Look from seat k's place (the game's camera for it) in view w. */
   async lookFromSeat({ w, k }) {
