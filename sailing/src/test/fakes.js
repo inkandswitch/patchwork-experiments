@@ -6,7 +6,7 @@
 // tests need. scene().parents is a Map, resolved as the stage resolves it (a
 // missing parent, or a group, is none).
 //
-// The doc's clock (the "clock" service, scene/STAGE.md, "World time") as the stage keeps it: the
+// The doc's clock (the "clock" service, scene/STAGE.md, "Native services") as the stage keeps it: the
 // first view here, drawing and with a process computes it (the doc's
 // "clock" claim) and steps its processes on a grid of 1/60 s of world time;
 // every view reads the same t (a follower's lag is the stage's business);
@@ -51,7 +51,7 @@ export const CLOCK_FAULT = new Error("the clock's t() failed");
 /**
  * A stage's clock (the "clock" service, here api.clock) broken each way a reader could paper over:
  * none, one without t, and a t that throws CLOCK_FAULT. The stage always
- * has a clock with t (scene STAGE.md, "World time"), so a reader of the world time has
+ * has a clock with t (scene STAGE.md, "Native services"), so a reader of the world time has
  * no fallback: with each row in place of `clock` the read throws (`throws`:
  * an Error class, or the fault itself) and asks the sea at no time at all.
  * Whatever a fallback's spelling, it shows as a read that didn't throw or a

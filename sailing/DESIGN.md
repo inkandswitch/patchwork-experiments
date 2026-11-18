@@ -2305,7 +2305,7 @@ moved).
 Who is at a station is a **claim** in the doc (`claims: { station | halyard:
 { viewer, session } }` on the object), lapsing when the holder's session
 leaves presence; who computes the sea and the ships is the doc's clock's
-claim, the stage's (`claims.clock`, scene STAGE.md, "World time"). `halyard`, on the sail
+claim, the stage's (`claims.clock`, scene STAGE.md, "Native services"). `halyard`, on the sail
 station, is who stands at the mast; the sail's own `station` claim is held
 only while a key works it, from wherever, so someone at the mast doesn't
 stop the helmsman trimming. The ship's motion is a
@@ -2435,7 +2435,7 @@ parts through it.
 
 **The sea's time is the world's.** The sea, the wind's gusts, the ships'
 physics and the floats' bob all read one time, the doc's world time
-(`use("clock").t()`, scene STAGE.md, "World time"). The view computing it runs it at the
+(`use("clock").t()`, scene STAGE.md, "Native services"). The view computing it runs it at the
 wall's rate, at most a quarter second a frame (a longer stall is skipped;
 the physics skips with it, `catchUp`), and steps the ships' process on a
 fixed grid of it. A follower's is the computer's at the moment whose held

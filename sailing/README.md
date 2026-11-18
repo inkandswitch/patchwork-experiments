@@ -5,7 +5,7 @@ wind and waves, a 12 m sloop that floats and sails by the forces on it, and
 first-person play where everyone in the scene walks her deck, takes the
 helm, trims the sail, works the windlass, falls overboard and climbs back up
 the ladder. The sea and the ships run on the scene's world clock (scene
-STAGE.md, "World time"): one view computes it, everyone else sees the same ship, played
+STAGE.md, "Native services"): one view computes it, everyone else sees the same ship, played
 back smoothly, and takes over if that view goes. Anyone may pause the world
 (the clock chip); nobody present, no time passes.
 
