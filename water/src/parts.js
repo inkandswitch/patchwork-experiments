@@ -1,4 +1,4 @@
-// Water's parts (scene:part, STAGE.md "Parts"): open water, and a pond. Each
+// Water's parts (scene:part, EDITOR.md "Parts"): open water, and a pond. Each
 // is one object with no source: its shape is the `water` trait's data, and
 // the extension draws it. The object's origin is the surface at rest, where
 // the part was put; the pond is level whatever it was put on. A doc has one

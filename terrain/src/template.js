@@ -128,7 +128,7 @@ export async function newCadboroTerrain(repo) {
 
 /**
  * Lay the scene out (after the data is in a Terrain doc).
- * @param {object} ctx  the drop context (STAGE.md, "Drops")
+ * @param {object} ctx  the drop context (EDITOR.md, "Drops")
  * @param {string} terrainUrl
  * @returns {Promise<{ terrain: string, sea: string, hull: string | null }>} the object ids
  */

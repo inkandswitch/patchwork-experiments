@@ -325,7 +325,7 @@ export function createCrew(api, ctx) {
       // "aboard", and so does its button on the bar of tools). It reaches her only through
       // something of hers, her hull, a fitting or what's aboard her, nearer
       // takers (a card's carry, a game linked onto her table) first (scene
-      // STAGE.md, "Input"). Seated at a table aboard (another extension's
+      // STAGE.md, "The input chain"). Seated at a table aboard (another extension's
       // body), a click on her is a stray one round the table, and doesn't
       // throw you out of the game: the bar's Come aboard or Enter does.
       click() {

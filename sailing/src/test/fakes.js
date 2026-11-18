@@ -6,7 +6,7 @@
 // tests need. scene().parents is a Map, resolved as the stage resolves it (a
 // missing parent, or a group, is none).
 //
-// The doc's clock (the "clock" service, scene/STAGE.md, "Native services") as the stage keeps it: the
+// The doc's clock (the "clock" service, scene/NATIVE.md, "Native services") as the stage keeps it: the
 // first view here, drawing and with a process computes it (the doc's
 // "clock" claim) and steps its processes on a grid of 1/60 s of world time;
 // every view reads the same t (a follower's lag is the stage's business);
@@ -51,7 +51,7 @@ export const CLOCK_FAULT = new Error("the clock's t() failed");
 /**
  * A stage's clock (the "clock" service, here api.clock) broken each way a reader could paper over:
  * none, one without t, and a t that throws CLOCK_FAULT. The stage always
- * has a clock with t (scene STAGE.md, "Native services"), so a reader of the world time has
+ * has a clock with t (scene NATIVE.md, "Native services"), so a reader of the world time has
  * no fallback: with each row in place of `clock` the read throws (`throws`:
  * an Error class, or the fault itself) and asks the sea at no time at all.
  * Whatever a fallback's spelling, it shows as a read that didn't throw or a
@@ -630,7 +630,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
 }
 
 /**
- * A drop context (STAGE.md, "Drops" and "Parts"), as a template or a part
+ * A drop context (EDITOR.md, "Drops" and "Parts"), as a template or a part
  * gets one: the doc, its snapshot (parents resolved), change, newId, a repo
  * that makes file docs, ctx.file (the scene's one doc per key, remembered at
  * doc.assets[key]) and notify. What it made is in `calls`.

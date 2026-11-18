@@ -1,7 +1,7 @@
 // The verbs aboard (DESIGN.md, "Play"): what the use prompt offers when you
 // look at the helm, the mainsheet, the mast and sail or the windlass from
 // within reach (her ladder's Climb is walk's: walk.ladder), and what its keys do. Commands over the stage's
-// contract (STAGE.md, "A command"); held verbs are sessions the prompt keeps
+// contract (EDITOR.md, "A command"); held verbs are sessions the prompt keeps
 // open while the key is down.
 //
 // Reach is the stage's (scene/STAGE.md, "Bodies"): each verb says `reach: true`,
@@ -1063,7 +1063,7 @@ export function stationCommands(api, ctx) {
 
   // the way in, for the scene (the null target), until you're aboard: Enter,
   // and a button on the stage's bar of tools in every body (show "world":
-  // scene/STAGE.md, "A command"). The HUD draws no button of its own. Its
+  // scene/EDITOR.md, "A command"). The HUD draws no button of its own. Its
   // title names no key: the bar adds the key's hint itself ("… (Enter)").
   const aboard = {
     id: "aboard",

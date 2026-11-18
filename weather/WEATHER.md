@@ -3,7 +3,7 @@
 A world's weather as physical data. One scene trait, `weather`, says where and
 when the world is and what the air and sky are doing. One extension offers it
 as the world's two existing ambient conventions, `wind` and `atmosphere`
-(scene STAGE.md, "Ambients" and "Atmosphere"). Everything that already reads
+(scene STAGE.md, "Ambients", and CONVENTIONS.md, "Atmosphere"). Everything that already reads
 those (the viewport's sky, sun and fog, water's tint, reflection and roughness,
 sailing's sea and every boat's physics) follows the weather without knowing
 this package exists.
@@ -38,7 +38,7 @@ again): the check pass runs once more on the final docs.
 
 The trait is flat: one field per inspector slider, so two peers dialling
 different fields at once both keep their edit (writes are field by field,
-STAGE.md "Describing traits"). A missing field is its default, and `init` is
+EDITOR.md "Describing traits"). A missing field is its default, and `init` is
 the defaults.
 
 Each row is the field exactly as `index.js` describes it: `index.test.js`
@@ -97,7 +97,7 @@ existing conventions and adds no new ambient:
 
 - **`wind`** = `{ speed: wind, from, seed, gustiness }`: the trait's own
   fields, passed through. This is the convention's documentation (it moved
-  here from sailing/DESIGN.md in W5; scene STAGE.md, "Conventions", points
+  here from sailing/DESIGN.md in W5; scene CONVENTIONS.md, "Conventions", points
   here). How the world's air moves, one copy: nothing else carries it.
   - `speed`: m/s at 10 m.
   - `from`: the compass bearing it blows *from*, in degrees, measured from
@@ -114,7 +114,7 @@ existing conventions and adds no new ambient:
     frame (`sea-view.js`); sailing's seas, whose waves are its spectrum
     (`sea.js`); and the water package's surface, whose fine waves,
     roughness and foam follow it.
-- **`atmosphere`** = `atmosphereOf(trait)` (STAGE.md's shape):
+- **`atmosphere`** = `atmosphereOf(trait)` (CONVENTIONS.md's shape):
   - **sun**: the direction comes from `solar.js`'s `sunAt` at
     `instantOf({ date, hour, offset })` (`time.js`) and `lat`/`lon`: Meeus's
     low-accuracy algorithm, whose solar coordinates NOAA's calculator also
@@ -333,7 +333,7 @@ Both ways are in Edit, in view, with no menu diving.
   fetch the weather: …") and writes nothing (Decision 38).
 
 The commands' writes are a package's (`api.change`), so they are not on the
-undo stack; only the editor records its writes (STAGE.md, "Undo"; Question
+undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
 6). A slider's write through the inspector is the stage's, and is.
 
 ## Fetch

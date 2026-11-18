@@ -913,7 +913,7 @@ function rigMeshes() {
   return [
     { name: "Boom and sail", primitives: parts },
     // a one-sided sheet seen from both sides casts but takes no shadows (the stage's
-    // normal bias can't be right for both sides: STAGE.md, "Atmosphere")
+    // normal bias can't be right for both sides: CONVENTIONS.md, "Atmosphere")
     { name: "Sail", primitives: sail, extras: { receiveShadow: false } },
     { name: "Bunt", primitives: [prim(bunt, PAINT.sail, { roughness: 0.9 })] },
   ];

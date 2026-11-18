@@ -37,7 +37,7 @@
 //  7. with the boat's world running, a card leans with her in Ben's view
 //     and stays upright in Ana's and Cara's; Ben's seat view rolls with the
 //     table (the camera's up is the table's), Ana's keeps the world's;
-//  7b. presence where it is (scene/STAGE.md, "Views, stages and links", STAGE.md, "The interface"): with the
+//  7b. presence where it is (scene/STAGE.md, "Views, stages and links", EDITOR.md, "The interface"): with the
 //     boat's world running, Ben enters G: his clock chips are the focus
 //     path's, so the boat's chip stays, named; he leaves. Cara (G alone)
 //     selects a card: Ben (outside G) and Ana (outside G, in the room) see
