@@ -58,7 +58,7 @@ export default {
       looks.tick(dt);
       hud.tick(dt);
       const hz = rateFor({ simulating: ctx.sim.simulating(), playing: ctx.crew.me().playing });
-      if (hz !== rate) api.presence.rate((rate = hz));
+      if (hz !== rate) api.channel.rate((rate = hz));
     });
 
     return {

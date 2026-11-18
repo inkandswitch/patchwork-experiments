@@ -32,7 +32,7 @@ let time = null; // the page's manual clock (scene's manualTime): window.__time
 globalThis.__WALK_ASSERT__ = true;
 // walk's live sessions (walk/src/body.js): a view's walker, to read and to place
 globalThis.__WALK_LIVE__ = new Map();
-const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.session ?? ""} ${api.url ?? ""}`) ?? null : null);
+const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.channel?.session ?? ""} ${api.url ?? ""}`) ?? null : null);
 const mapply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
 /** Put view api's walker at a point local to `on` (her hull's frame), else the stage's, facing yaw (to her heading): walk's P1 there. */
 const placeWalker = (api, on, position, yaw = 0, pitch = 0) => {
@@ -145,9 +145,9 @@ try {
     me: () => P.ctx()?.crew.me() ?? null,
     read: (id) => P.ctx()?.sim.read(id) ?? null,
     /** the doc's world time, the sea's, as the sailing extension's stage api reads it */
-    clock: () => { const api = P.api("sailing"); return api ? api.clock.t() : null; },
+    clock: () => { const api = P.api("sailing"); return api ? api.use("clock").t() : null; },
     /** the height of the water at (x, z), asked from above (the water package's reader through sailing's oceanAt) */
-    seaAt: (x, z) => { const s = P.ctx()?.sea; const r = s?.oceanAt([x, null, z]); return r ? r.heightAt(x, z, P.api("sailing").clock.t()) : null; },
+    seaAt: (x, z) => { const s = P.ctx()?.sea; const r = s?.oceanAt([x, null, z]); return r ? r.heightAt(x, z, P.api("sailing").use("clock").t()) : null; },
     simulating: () => !!P.ctx()?.sim.simulating(),
     stations: (ship) => P.ctx()?.sim.stationsOf(ship) ?? null,
     place: (on, position, yaw, pitch) => placeWalker(dbg.host.record("sailing")?.api, on, position, yaw, pitch),

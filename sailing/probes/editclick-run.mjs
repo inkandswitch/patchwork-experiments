@@ -88,7 +88,7 @@ try {
   await loads("loaded('a').loaded === __p.loaded('a').total", 120_000);
   await P("resume()");
   await b.advance(1500);
-  check("1: her world runs", await js("__p.A.view.stages().find((s) => s.path.length === 0).reader.clock.status().running"), null);
+  check("1: her world runs", await js("__p.A.view.stages().find((s) => s.path.length === 0).reader.use("clock").status().running"), null);
   await js(LISTEN);
   await editOver();
   check("1: A in Edit, over the table, the focus on the boat", inEdit(await state()) && J(await P("focusPath('a')")) === "[]", await state());

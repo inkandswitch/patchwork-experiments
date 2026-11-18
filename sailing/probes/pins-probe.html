@@ -215,7 +215,7 @@ try {
     [ids.acting, ids.repeat] = [ids.port, ids.starboard].sort();
     // starts people looking (no body named: Look), the world held still until the probe runs it
     sapi.change((d) => (d.view.start = {}));
-    sapi.clock.pause();
+    sapi.use("clock").pause();
     dbg.s.view.select(null);
     await loaded(() => stageAt(ids.fitout)?.debug.host.instanceOf("joints") && stageAt(ids.acting)?.debug.host.instanceOf("joints"));
     // F fixed where it is: the inspector's Fix at this version, holding the editor, as a person does it
@@ -328,7 +328,7 @@ try {
     /** the commands view s's surfaces collect, with the stage each comes from */
     commandStages: () => dbg.s.view.collect("commands").map((c) => (c.stage == null ? null : dbg.s.view.stage(c.stage)?.path.join("/") ?? null)),
     /** who computes W's clock, and does view s's W stage */
-    computing: () => ({ claim: JSON.parse(JSON.stringify(docs.w.doc().claims?.clock ?? null)), acting: stageAt(ids.acting)?.debug.clock.computing() ?? null, session: dbg.s.view.session }),
+    computing: () => ({ claim: JSON.parse(JSON.stringify(docs.w.doc().claims?.clock ?? null)), acting: stageAt(ids.acting)?.reader.use("clock").computer()?.mine ?? null, session: dbg.s.view.session }),
     /** F changed live in its own view: its hatch opened, by its verb (view f's key map path: the command run in its stage), and a sign written */
     openF() {
       const fapi = apiOf("f");
@@ -352,7 +352,7 @@ try {
         const api = apiIn(stageAt(...path));
         const r = {};
         try { api.change((d) => (d.title = "written")); r.change = "quiet"; } catch (e) { r.change = `threw ${e.message}`; }
-        r.claim = api.claim(null, "seat:p1");
+        r.claim = api.use("claims").claim(null, "seat:p1");
         r.hold = api.pose.hold(name === "pinned" ? ids.fHatch : ids.wHatch, { position: [0, 9, 0], rotation: [0, 0, 0], scale: 1 });
         r.run = api.run({ ext: "joints", command: "slide", target: name === "pinned" ? ids.fHatch : ids.wHatch });
         r.writable = api.writable();
@@ -362,8 +362,8 @@ try {
       }
       return out;
     },
-    resume() { apiOf("s").clock.resume(); return apiOf("s").clock.t(); },
-    pause() { apiOf("s").clock.pause(); return apiOf("s").clock.t(); },
+    resume() { apiOf("s").use("clock").resume(); return apiOf("s").use("clock").t(); },
+    pause() { apiOf("s").use("clock").pause(); return apiOf("s").use("clock").t(); },
     /** frame by frame for `ms` of the page's clock: how far the hull moved, and the fit-out and the acting hatch stay where the hull carries them */
     async sampleRide(ms = 3000) {
       const vp = dbg.s.viewport;

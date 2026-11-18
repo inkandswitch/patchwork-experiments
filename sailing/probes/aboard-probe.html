@@ -50,7 +50,7 @@ import { emptyScene } from "./empty-scene.js";
 globalThis.__WALK_ASSERT__ = true;
 // walk's live sessions (walk/src/body.js): a view's walker, to read and to place
 globalThis.__WALK_LIVE__ = new Map();
-const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.session ?? ""} ${api.url ?? ""}`) ?? null : null);
+const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.channel?.session ?? ""} ${api.url ?? ""}`) ?? null : null);
 const mapply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
 /** Put view api's walker at a point local to `on` (her hull's frame), else the stage's, facing yaw (to her heading): walk's P1 there. */
 const placeWalker = (api, on, position, yaw = 0, pitch = 0) => {
@@ -263,8 +263,8 @@ try {
       return { ...ids };
   }
   Object.assign(P, {
-    /** the world's clock running again (api.clock.resume, as the clock chip's ▶ does): → its t */
-    resume() { apiOf("a").clock.resume(); return apiOf("a").clock.t(); },
+    /** the world's clock running again (the clock service's resume, as the clock chip's ▶ does): → its t */
+    resume() { apiOf("a").use("clock").resume(); return apiOf("a").use("clock").t(); },
     openB() { if (!dbg.b) { Tool(B, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
 
     /** the doc's shape, for the checks */

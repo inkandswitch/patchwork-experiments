@@ -52,7 +52,7 @@ modules share.
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame). It has no clock: its time is the doc's world time, `api.clock.t()`, which each reader asks itself. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
+| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame). It has no clock: its time is the doc's world time, `use("clock").t()`, which each reader asks itself. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
@@ -682,10 +682,10 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   Σfh·z needs no reading of compose's internals; both moments are then
   taken to her CG. Sailing's (`sailingWindage`) is her wrench in the
   point's wind less in air moving with her, sails stowed.
-- *`ctx.sea` has no clock.* It had `clock: () => api.clock.t()`, the same
+- *`ctx.sea` has no clock.* It had `clock: () => use("clock").t()`, the same
   function under a second name: a seam, not a source of run-to-run
   divergence. Every reader (the crew's swimmer, the HUD's wind, the looks'
-  bobbing and flutter) asks `api.clock.t()` itself, with no fallback for a
+  bobbing and flutter) asks `use("clock").t()` itself, with no fallback for a
   missing clock (the HUD's and the crew's `?? 0` are gone: a stage always
   has one). `ctx.sea` is exactly `{ oceanAt, wind, world, tick }`. That
   no reader has a fallback is shown by behaviour, whatever its spelling:
@@ -694,12 +694,12 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   read throws and the sea or wind is asked at no time. A test also reads
   every .js/.mjs/.html file of the package (source, tests, probes, itself
   but for its two pattern lines) for a clock read off the sea (`.clock`,
-  `["clock"]`, destructured) and the spelled defaults `api.clock?.`,
+  `["clock"]`, destructured) and the spelled defaults `the "clock" service?.`,
   `clock.t?.(`, `clock.t() ??` and `clock.t() ||` (sea-view.test.js, "the
-  sea's time is api.clock.t()"): a net for spellings, so a fake can't
+  sea's time is use("clock").t()"): a net for spellings, so a fake can't
   bring the seam back. The probe pages' `clock(w)` reads the sailing
-  extension's own `api.clock.t()`. water/WATER.md's "`ctx.sea.clock` is
-  `api.clock.t`" (line 351) and its list of ctx.sea's members with `clock`
+  extension's own `use("clock").t()`. water/WATER.md's "`ctx.sea.clock` is
+  `use("clock").t`" (line 351) and its list of ctx.sea's members with `clock`
   (line 106) were stale; the integrator corrected both (2026-11-17, merge
   of lane/n6).
 - *Leaving the anchor: diagnosed, not fixed; accepted as it is (the lead,
@@ -720,7 +720,7 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   `n6-step4-heave-world-vertical.patch` (the two heave switches), beside it.
 - *Run-to-run divergence: three causes, two of them sailing's, fixed where
   they were* ("Determinism"). (1) A held station moves by the world time
-  it's held, `api.clock.t()`, counted in whole steps of the world's grid
+  it's held, `use("clock").t()`, counted in whole steps of the world's grid
   (`worldSteps`: the grid points t crossed since the last frame, each
   STEP_S; scene's STEP_S and gridIndex copied, as a package stands alone),
   for every held verb and the wheel. They integrated the frame's dt, whose
@@ -792,7 +792,7 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   395 and 36 N of windage surge, sailing's old settle speeds) describe the
   rule N6 deleted and pass on their own constants; and water/WATER.md,
   whose list of `ctx.sea`'s members has `clock` (line 106) and which says
-  "`ctx.sea.clock` is `api.clock.t`" (line 351). The lane works in sailing
+  "`ctx.sea.clock` is `use("clock").t`" (line 351). The lane works in sailing
   only, so each is listed in FOLLOWUPS for the integrator. Whether a lane
   may make a one-sentence edit to another package's docs was a question;
   the lead (2026-11-17): yes, a lane may.
@@ -846,7 +846,7 @@ the deck. The cloth is one camber, scaled. This section makes every one of
 those cues a **pure function of the physics' own state**: the fields
 `riggedSails` already computes, read out by `read()`. Nothing is animated
 on its own clock, so nothing can disagree with the forces. The one time
-input is the doc's world time, which every view shares (`api.clock.t()`).
+input is the doc's world time, which every view shares (`use("clock").t()`).
 It only sets the phase of a flutter whose amplitude the physics gives.
 
 It covers five things, each below:
@@ -1285,7 +1285,7 @@ the neutral colour.
 | **Mainsheet**: boom → traveller | `controls.sheet` (through `limit`), the boom as drawn (θ_shown: the rig object's held pose, which is `read().boom` played back) | B(θ) = `hardpoints.mainsheet.boomM` swung by θ about the main's luff (`swungCE`'s rotation, on a point). C = the traveller's car, fixed at the track's middle as drawn (the physics has no traveller control). Rope length L = \|B(±limit) − C\| on θ's side; d = \|B(θ_shown) − C\|; slack s = max(0, L − d). Drawn as `sheetCurve` (below) from B to C. d is strictly increasing in \|θ\| on [0, 85°], so s > 0 exactly when \|θ\| < limit (eased past where the sail is), and s = 0 when it's pinned |
 | **Jib sheets**: clew → lead → winch | `jibSheet` / backed / wing (through `limit`), `furl`, the jib as drawn (its held pose: `read().jib`) | The clew is `furledClew(sail, furl)` swung by θ. The lead is `hardpoints.jibLeads[side]` interpolated at `furl` (clamped to the track's ends). The **working sheet** is the one on the clew's side (sign θ). L = \|clew(side·limit) − lead\|, s = max(0, L − \|clew(θ) − lead\|). The **lazy sheet** is the other. Its length is the largest distance from its lead to the clew over the jib's whole travel (\|θ\| ≤ max(maxDeg, wing.hi), at that furl), so its s ≥ 0 by construction. Lead → winch is always taut (it's on the drum). The clew end is the cloth's clew vertex as displaced (below), so the sheet never leaves the sail |
 | `sheetCurve(out, a, b, s, down, n)` | s, the ends, gravity in her body frame (−Y turned by her drawn quaternion) | A parabola in the vertical plane through a–b, sagging toward `down`: p(u) = a + u(b − a) + 4h·u(1 − u)·down⊥. The sag is h = √(3·d·s/8), the parabola's arc length ≈ d + 8h²/(3d) = d + s, capped at (d + s)/2. 16 points. s = 0 is a straight line |
-| **Cloth** (main and jib) | `angle`, belly, flog, σ, `area` (reef or furl), `controls.flat`, the world time t (`api.clock.t()`), `q` | `clothVertices(out, sail, cloth, trim, t)`. Rows run parallel to the foot from the luff to the leech (the stock main's rows already are: `lerp(clew, head, h) + roach`, `lerp(tack, head, h)`). The camber depth is cloth.depth·chord·flat·belly·max(FLAT, 1 − flog), deepest at cloth.draft. The twist is cloth.twist·(1 − ½σ): a stalled sail's leech closes. The luff's bubble pushes the front BUBBLE.width (0.3) of each row back to windward by 0.8·luff of the camber, breathing ±25%. A flutter is added (cosmetic constants below) |
+| **Cloth** (main and jib) | `angle`, belly, flog, σ, `area` (reef or furl), `controls.flat`, the world time t (`use("clock").t()`), `q` | `clothVertices(out, sail, cloth, trim, t)`. Rows run parallel to the foot from the luff to the leech (the stock main's rows already are: `lerp(clew, head, h) + roach`, `lerp(tack, head, h)`). The camber depth is cloth.depth·chord·flat·belly·max(FLAT, 1 − flog), deepest at cloth.draft. The twist is cloth.twist·(1 − ½σ): a stalled sail's leech closes. The luff's bubble pushes the front BUBBLE.width (0.3) of each row back to windward by 0.8·luff of the camber, breathing ±25%. A flutter is added (cosmetic constants below) |
 | **Reef** (main) | `controls.sail` (raised r; reef f = 1 − r) | Row h maps to the cloth's h′ = f + (1 − f)·h, moved down by f·(head − tack): §6.3's rule, the same as `rig-sails.reefed`. A bunt along the boom has radius 0.02 + 0.08·√f. At f = 1 the cloth is hidden |
 | **Furl** (jib) | `furl` | The cloth's clew column moves to `furledClew(sail, furl)`, each row's leech point along with it (the rows keep their luff point). The roll on the luff has radius 0.02 + 0.06·√furl. At furl = 1 only the roll shows |
 | **Flutter** | flog, `q`, s, t | The displacement along the cloth's normal is flog·A·u^1.5·sin(2π(f·t − 1.5u) + 3h), u along the chord. A = min(0.08·foot, ½·s + 0.02) m: the clew can't move further than the slack sheet lets it. f = clamp(√(2q/ρ) / (2·foot), 0.5, 4) Hz. flog = 0 means no displacement at any t |
@@ -1863,7 +1863,7 @@ turns her bow to port first, for some seconds, until the backed jib wins.
 On the probe's default sea (`--sea 1`) she breaks out in irons, going
 astern, and passes 45° in 5.85 s; on sea 383967344 she breaks out luffing
 and takes 21 s (2026-11-17, step 5's final build; 18.9 s on 62756a05). The station's verbs (the wheel, sheets, furler, halyard,
-windlass) run in world time, `api.clock.t()`, in whole steps of its grid
+windlass) run in world time, `use("clock").t()`, in whole steps of its grid
 (`worldSteps`, "Determinism"), so at a few frames a second the jib still
 unrolls in its 4 s of world time.
 
@@ -2091,7 +2091,7 @@ row the two differ at, and every field that differs there.
    differ in their last bits, and the physics grew those. Fixed in
    sailing: a held station moves by the world time it's held, counted on
    the world's grid (`stations.js` `worldSteps`). Made where the hold
-   begins with the view's world clock (`api.clock.t()`), each frame it
+   begins with the view's world clock (`use("clock").t()`), each frame it
    gives back the grid points t has crossed since the last, n × STEP_S
    (scene's STEP_S, 1/60 s, and its `gridIndex`, copied: the grid her
    physics steps on), the same double for the same n. A view's t carries
@@ -2159,7 +2159,7 @@ rather than a silent go-on. Not seen again in the runs since; that this
 race was the cause is likely, not proved: the input path below has two
 other ways to put a control a step off.
 
-**Ruled out.** `ctx.sea.clock` (it was `api.clock.t()`, and is gone);
+**Ruled out.** `ctx.sea.clock` (it was `use("clock").t()`, and is gone);
 iteration order over maps keyed by ids (one ship; every row the same); a
 0.25 s quantum in the verbs (there is none: 0.25 s is the most world time
 the ships catch up in one frame).
@@ -2184,7 +2184,7 @@ can put a control a step off, and neither is tested:
 Both are open (FOLLOWUPS, N6 step 5).
 
 **What's left.**
-- A view's own world time, `api.clock.t()`, is a sum of the frames' dt and
+- A view's own world time, `use("clock").t()`, is a sum of the frames' dt and
   carries the same last-bit noise (the runner's clock reads at the same
   moment of two runs: 1.016666666666628 s and 1.0166666666667448 s). The
   physics never reads it (its steps are on the grid, at `k / 60`), but the
@@ -2313,12 +2313,12 @@ stop the helmsman trimming. The ship's motion is a
 shows interpolated; it is written to the doc only at the clock's
 checkpoints (every 30 s, on pause, on letting go).
 
-The stage's names: `api.claim(id, kind, { onLost })` → release | null,
-`api.claimedBy(id, kind)` → `{ viewer, session, mine } | null` (STAGE.md,
+The stage's names: `use("claims").claim(id, kind, { onLost })` → release | null,
+`use("claims").claimedBy(id, kind)` → `{ viewer, session, mine } | null` (STAGE.md,
 "Claims"). A lapse is a presence change, not a doc change, so whoever waits
 to take over checks `claimedBy` in its loop. There is no `continuous` flag:
 every peer's hold is played back interpolated (about 1.5 send intervals
-behind), and `api.presence.rate(hz)` raises the pose rate too.
+behind), and `api.channel.rate(hz)` raises the pose rate too.
 
 Presence keys under "sailing": `ships: { [id]: published diagnostics +
 { velocity, spin } }` from the computing view at 5 Hz, `input: { [stationId]:
@@ -2365,8 +2365,8 @@ api.loop((dt) => {
 ctx.sea.oceanAt(p, not)  // the water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries (the water package's reader), null with none, tilted or the world's at another scale
 ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, the ambient's as it is when read ("Determinism"), or null
 ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard
-ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads; answers api.clock.t()
-// ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the HUD's wind, the looks) asks api.clock.t()
+ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads; answers use("clock").t()
+// ctx.sea has no clock: the sea's time is the doc's world time, and every reader (the HUD's wind, the looks) asks use("clock").t()
 
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
@@ -2435,7 +2435,7 @@ parts through it.
 
 **The sea's time is the world's.** The sea, the wind's gusts, the ships'
 physics and the floats' bob all read one time, the doc's world time
-(`api.clock.t()`, scene STAGE.md, "World time"). The view computing it runs it at the
+(`use("clock").t()`, scene STAGE.md, "World time"). The view computing it runs it at the
 wall's rate, at most a quarter second a frame (a longer stall is skipped;
 the physics skips with it, `catchUp`), and steps the ships' process on a
 fixed grid of it. A follower's is the computer's at the moment whose held
@@ -2446,7 +2446,7 @@ extension, so she sails on (scene STAGE.md step 8). Nobody present, no time
 passes.
 
 **Who computes.** The ships are a process of the doc's clock
-(`api.clock.process({ start, step, save, stop })`): the view holding the
+(`use("clock").process({ start, step, save, stop })`): the view holding the
 doc's `"clock"` claim, the stage's, steps their physics on the clock's
 grid. Once a frame (`ctx.sim.tick`), not at every step, it holds each
 hull's pose and its moving parts' poses (rig, jib, wheel, anchor) where

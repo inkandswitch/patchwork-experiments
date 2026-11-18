@@ -244,7 +244,7 @@ describe("aboard, together", () => {
       const b = join(w, "B", ids.hull);
       for (const v of [a, b]) v.instance.update(w.scene(), {}, { scene: null, local: null });
       const steps = [];
-      w.view("A").api.clock.process({ step: (_dt, t) => { const st = a.instance.debug.sim.stepped(ids.hull); if (st) steps.push(JSON.stringify([t, st.controls, st.state])); } });
+      w.view("A").api.use("clock").process({ step: (_dt, t) => { const st = a.instance.debug.sim.stepped(ids.hull); if (st) steps.push(JSON.stringify([t, st.controls, st.state])); } });
       tick(30);
       a.command("aboard").run(null);
       b.instance.input.click({});

@@ -17,6 +17,8 @@ import { windOffer } from "./test/weather.js";
 import { createSeaView, levelOf, meanWindHere, windFor } from "./sea-view.js";
 import { FLOAT, SEA, WEATHER, WIND_AMBIENT } from "./traits.js";
 import { emptyScene, fakeWorld } from "./test/fakes.js";
+/** A "clock" service standing at 0, as a stand-in stage's use("clock") and an ambient's use give it. */
+const CLOCK0 = Object.freeze({ t: () => 0, running: () => true });
 
 const object = (extra) => ({ name: "Object", parent: null, group: null, visible: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, ...extra });
 const place = (yaw, t, s = 1) => [Math.cos(yaw) * s, 0, -Math.sin(yaw) * s, 0, 0, s, 0, 0, Math.sin(yaw) * s, 0, Math.cos(yaw) * s, 0, t[0], t[1], t[2], 1];
@@ -27,7 +29,7 @@ describe("the wind a boat's physics reads is the weather's offer", () => {
   const rows = WINDS.flatMap((wind) => FROMS.flatMap((from) => GUSTS.flatMap((gustiness) => SEEDS.map((seed) => ({ wind, from, seed, ...(gustiness === undefined ? {} : { gustiness }) })))));
   const POINTS = [[0, 0, 0], [37.5, -100, 13.37], [1000, 5, 1e4], [-250, 40, 3600]];
   /** A boat alone (her doc the world) whose world offers `value` as its wind. */
-  const alone = (value) => ({ ambient: (name) => (name === WIND_AMBIENT && value ? { value, mine: true, frame: { matrix: null }, clock: { t: 0, running: true } } : null), collect: () => [], clock: { t: () => 0 } });
+  const alone = (value) => ({ ambient: (name) => (name === WIND_AMBIENT && value ? { value, mine: true, frame: { matrix: null }, use: () => CLOCK0 } : null), collect: () => [], use: () => CLOCK0 });
 
   it("the names: the weather package's trait and the ambient it offers, as the weather documents them; sailing offers neither", () => {
     expect([WEATHER, WIND_AMBIENT]).toEqual(["weather", "wind"]);
@@ -232,7 +234,7 @@ describe("createSeaView: a boat alone is her own world", () => {
   // "Determinism"). Each row: the ambient's value changes to the next, and the wind is read with no tick between.
   it("its wind is the ambient's as it is when read, with no tick between: made again only when the ambient changed", () => {
     const st = { value: { speed: 7, from: 45, seed: 696349617, gustiness: GUSTINESS }, frame: null };
-    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: true, frame: st.frame } : null), clock: { t: () => 0 } };
+    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: true, frame: st.frame } : null), use: () => CLOCK0 };
     const s = createSeaView(api);
     const ROWS = [
       ["the template's seed", { speed: 7, from: 45, seed: 696349617, gustiness: GUSTINESS }],
@@ -255,7 +257,7 @@ describe("createSeaView: a boat alone is her own world", () => {
   it("in a frame handed afresh at every read, the wind is made again only when the frame's numbers or the value changed", () => {
     const M = (tx) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, 0, 0, 1];
     const st = { value: { speed: 7, from: 45, seed: 1, gustiness: GUSTINESS }, matrix: M(0) };
-    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: false, frame: { matrix: [...st.matrix] }, clock: { t: 0, running: true } } : null), clock: { t: () => 0 } };
+    const api = { ambient: (name) => (name === WIND_AMBIENT ? { value: st.value, mine: false, frame: { matrix: [...st.matrix] }, use: () => CLOCK0 } : null), use: () => CLOCK0 };
     const s = createSeaView(api);
     const ROWS = [
       ["the same numbers", () => {}, false],
@@ -293,8 +295,8 @@ describe("createSeaView: a boat alone is her own world", () => {
     for (const [scale, answer, want] of [[1, open, open], [1, tank, tank], [2, open, null], [2, tank, tank], [1, null, null]]) {
       const api = {
         collect: (name) => (name === "water" ? [{ id: "water", value: { at: (p, o) => (asked.push([p, o]), answer) } }] : []),
-        ambient: (name) => (name === "water" ? { value: {}, mine: false, frame: { matrix: place(0, [0, 0, 0], scale) }, clock: { t: 0, running: true } } : null),
-        clock: { t: () => 0 },
+        ambient: (name) => (name === "water" ? { value: {}, mine: false, frame: { matrix: place(0, [0, 0, 0], scale) }, use: () => CLOCK0 } : null),
+        use: () => CLOCK0,
         notify: () => {},
       };
       expect(createSeaView(api).oceanAt([1, 2, 3], "hull")).toBe(want);
@@ -306,7 +308,7 @@ describe("createSeaView: a boat alone is her own world", () => {
     for (const water of [null, false, true])
       for (const wind of [null, false, true]) {
         const amb = { water, wind };
-        const api = { ambient: (name) => (amb[name] == null ? null : { value: {}, mine: amb[name], frame: { matrix: null }, clock: { t: 0, running: true } }), collect: () => [], clock: { t: () => 0 } };
+        const api = { ambient: (name) => (amb[name] == null ? null : { value: {}, mine: amb[name], frame: { matrix: null }, use: () => CLOCK0 }), collect: () => [], use: () => CLOCK0 };
         expect([water, wind, createSeaView(api).world()]).toEqual([water, wind, wind === true]);
       }
   });
@@ -320,7 +322,7 @@ describe("createSeaView: a boat alone is her own world", () => {
       let seen = null;
       api.loop(() => (seen = sea.tick()));
       w.tick(1 / 60, 1);
-      expect([t, api.clock.t(), seen]).toEqual([t, t, t]);
+      expect([t, api.use("clock").t(), seen]).toEqual([t, t, t]);
     }
   });
 });
@@ -406,7 +408,7 @@ describe("the world's wind through a link (windFor): mapped by the frame, at the
 // too, nothing sampled. The patterns are a net for spellings; the readers'
 // own tables (crew, HUD, looks, on test/fakes.js brokenClocks) are what
 // show each has no fallback, whatever its spelling.
-describe("the sea's time is api.clock.t(), read the one way", () => {
+describe("the sea's time is the clock service's t(), read the one way", () => {
   const SELF = fileURLToPath(import.meta.url);
   const ROOT = resolve(dirname(SELF), "..");
   const SKIP = new Set(["node_modules", "dist", ".pushwork", ".git"]);

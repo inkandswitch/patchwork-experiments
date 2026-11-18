@@ -214,7 +214,7 @@ try {
       const sea = inst(st, "sailing").debug.sea;
       const r = sea.oceanAt([m[12], m[13], m[14]], hull);
       const doc = st.doc().objects[hull].transform;
-      return { y: m[13], x: m[12], z: m[14], h: r ? r.heightAt(m[12], m[14], st.worldTime().t) : null, body: r ? r.body : "none", doc: doc.position, simulating: !!inst(st, "sailing").debug.sim.simulating?.(), world: !!sea.world?.(), frameScale: st.frame()?.matrix ? Math.hypot(st.frame().matrix[0], st.frame().matrix[1], st.frame().matrix[2]) : 1 };
+      return { y: m[13], x: m[12], z: m[14], h: r ? r.heightAt(m[12], m[14], st.reader.use("clock").t()) : null, body: r ? r.body : "none", doc: doc.position, simulating: !!inst(st, "sailing").debug.sim.simulating?.(), world: !!sea.world?.(), frameScale: st.frame()?.matrix ? Math.hypot(st.frame().matrix[0], st.frame().matrix[1], st.frame().matrix[2]) : 1 };
     },
     /** her Sea's clip: shrunk to a box away from her (her water gone from under her), or given back */
     setClip: (k, clip) => {
