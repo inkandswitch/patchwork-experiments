@@ -10,6 +10,7 @@
     "stage": "valid",
     "about": "tts-import's tiny fixture mod, as it translates it: a deck, loose cards, tiles, a token, models, a bag with things in it, a die document, a stack, a seat's hand, the table's snap points"
   },
+  {"file":"valid/variants.json","stage":"valid","about":"a game set up for two (as it is) or for three (a variant with its own setup, seats and camera)"},
   {"file":"invalid/wrong-format.json","stage":"structural","code":"schema","about":"format must be tabletop-game"},
   {"file":"invalid/unsupported-version.json","stage":"structural","code":"schema","about":"only version 2"},
   {"file":"invalid/missing-setup.json","stage":"structural","code":"schema","about":"setup is required"},
@@ -22,6 +23,7 @@
   {"file":"invalid/bad-turn.json","stage":"structural","code":"schema","about":"an image turns in quarter turns"},
   {"file":"invalid/bad-kind-id.json","stage":"structural","code":"schema","about":"a kind's id is plain"},
   {"file":"invalid/thing-shape.json","stage":"structural","code":"schema","about":"a thing is a piece or a deck"},
+  {"file":"invalid/variant-field.json","stage":"structural","code":"schema","about":"a variant gives only players, setup, seats and camera: the pieces are the game's"},
   {"file":"invalid/both-looks.json","stage":"semantic","code":"look","about":"a piece is drawn from parts or as a document, not both"},
   {"file":"invalid/no-look.json","stage":"semantic","code":"look","about":"a piece is drawn somehow"},
   {"file":"invalid/unknown-piece.json","stage":"semantic","code":"unknown-piece","about":"a thing names a piece the game has"},
@@ -44,5 +46,7 @@
   {"file":"invalid/deal-into-deck.json","stage":"semantic","code":"deal-target","about":"a deal goes onto a piece on the table"},
   {"file":"invalid/deal-count.json","stage":"semantic","code":"deal-count","about":"a deck deals no more cards than it has"},
   {"file":"invalid/deal-spread.json","stage":"semantic","code":"deal-spread","about":"a spread deck deals nothing"},
-  {"file":"invalid/camera.json","stage":"semantic","code":"camera","about":"a camera doesn't look at itself"}
+  {"file":"invalid/camera.json","stage":"semantic","code":"camera","about":"a camera doesn't look at itself"},
+  {"file":"invalid/variant-name.json","stage":"semantic","code":"variant-name","about":"each variant has a name of its own"},
+  {"file":"invalid/variant-seat.json","stage":"semantic","code":"unknown-seat","about":"a game as a variant sets it up passes every rule: here a hand for a seat that variant hasn't"}
 ]

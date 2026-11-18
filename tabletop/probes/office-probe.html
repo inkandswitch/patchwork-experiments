@@ -37,7 +37,9 @@ import { emptyScene } from "../src/empty-scene.js";
 import { PICKER, cardIds, kept, seatsOf, shownAs } from "./table-setup.js";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
 import santorini from "../games/santorini.json" with { type: "json" };
-import dominoes2 from "../games/draw-dominoes-2.json" with { type: "json" };
+import dominoes from "../games/draw-dominoes.json" with { type: "json" };
+import { applyVariant } from "../contract/v2/validate.js";
+const dominoes2 = applyVariant(dominoes, "2 players");
 import { ENTRANCE, LOW_TABLE, MAT_TOP, ROOM, SPOTS, chairMeshes, cushionMeshes, entranceMat, lowTableMeshes, pieceGLB, roomPieces, setTables } from "./office/room.js";
 
 const q = new URLSearchParams(location.search);

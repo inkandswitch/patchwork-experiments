@@ -7,7 +7,8 @@
 //               exclusiveMinimum, anyOf, $ref to #/$defs). A number must be
 //               finite.
 //   semantic:   the cross-field rules of GAME-FORMAT.md §9, each with the
-//               error code the fixtures' manifest names.
+//               error code the fixtures' manifest names, for the game and
+//               for each of its variants (applyVariant).
 //
 // validate(game) → { ok, stage: null | "structural" | "semantic", errors: [{ code, path, message }] }
 // Semantic rules run only once the structure is sound. No imports but the
@@ -213,11 +214,56 @@ export function validateSemantics(g) {
   return errors;
 }
 
+// ───────────────────────────────── variants (GAME-FORMAT.md §3)
+
+/** The fields a variant may give in place of the game's own. */
+export const VARIANT_FIELDS = Object.freeze(["players", "setup", "seats", "camera"]);
+
+/**
+ * The game as one of its variants sets it up: that variant's fields in place
+ * of the game's own, and no `variants`. `which` is a variant's index or name;
+ * null (or a game without variants) is the game as it is, without `variants`.
+ * An unknown variant is null. Pure: the game isn't changed.
+ */
+export function applyVariant(g, which = null) {
+  const { variants, ...base } = g ?? {};
+  if (which == null || !Array.isArray(variants)) return base;
+  const v = typeof which === "number" ? variants[which] : variants.find((x) => x?.name === which);
+  if (!v) return null;
+  const out = { ...base };
+  for (const k of VARIANT_FIELDS) if (v[k] !== undefined) out[k] = v[k];
+  return out;
+}
+
+/**
+ * The semantic rules for each variant: its name unique (`variant-name`), and
+ * the game as it sets it up passing every rule above. An error the game
+ * itself has is said once, as the game's; one in a field the variant gives
+ * is at the variant's path; any other is the game's path, naming the variant.
+ */
+function variantErrors(g, own) {
+  const errors = [];
+  const seen = new Set(own.map((e) => `${e.code} ${e.path} ${e.message}`));
+  const names = new Set();
+  g.variants.forEach((v, i) => {
+    const at = `$.variants[${i}]`;
+    if (names.has(v.name)) errors.push({ code: "variant-name", path: `${at}.name`, message: `"${v.name}" names another variant too` });
+    names.add(v.name);
+    for (const e of validateSemantics(applyVariant(g, i))) {
+      if (seen.has(`${e.code} ${e.path} ${e.message}`)) continue;
+      const field = VARIANT_FIELDS.find((k) => v[k] !== undefined && (e.path === `$.${k}` || e.path.startsWith(`$.${k}.`) || e.path.startsWith(`$.${k}[`)));
+      errors.push(field ? { ...e, path: `${at}${e.path.slice(1)}` } : { ...e, message: `${e.message} (as variant "${v.name}" sets it up)` });
+    }
+  });
+  return errors;
+}
+
 /** Both stages. */
 export function validate(g) {
   const s = validateStructure(g);
   if (s.length) return { ok: false, stage: "structural", errors: s };
-  const m = validateSemantics(g);
+  const own = validateSemantics(g);
+  const m = Array.isArray(g.variants) ? [...own, ...variantErrors(g, own)] : own;
   if (m.length) return { ok: false, stage: "semantic", errors: m };
   return { ok: true, stage: null, errors: [] };
 }

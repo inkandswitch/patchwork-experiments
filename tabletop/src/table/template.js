@@ -36,7 +36,7 @@ import { kindsUsed, tableLayout, writeTable } from "../setup.js";
 import { findSource, prepareTable } from "./made-with.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
-import { errorText, validate } from "../../contract/v2/validate.js";
+import { applyVariant, errorText, validate } from "../../contract/v2/validate.js";
 
 const UNTITLED = "Untitled scene"; // the scene datatype's init title
 
@@ -58,18 +58,23 @@ export async function loadGame(registry, gameId) {
  * context, EDITOR.md "Drops", or docContext's for a game doc of its own).
  * @param {object} ctx      { repo, registry, newId, doc, change, file, notify }
  * @param {string | object} game  a registered game's id, or a game
- * @param {{ rng?: () => number, images?: object | null }} [o]
+ * @param {{ variant?: string | number | null, rng?: () => number, images?: object | null }} [o]  variant: which of the game's (GAME-FORMAT.md §3)
  * @returns {Promise<object | null>} the layout written (null when the game isn't there or isn't valid)
  */
-export async function setUp(ctx, game, { rng = Math.random, images = defaultImages() } = {}) {
-  const g = typeof game === "string" ? await loadGame(ctx.registry, game) : game;
-  if (!g) {
+export async function setUp(ctx, game, { variant = null, rng = Math.random, images = defaultImages() } = {}) {
+  const found = typeof game === "string" ? await loadGame(ctx.registry, game) : game;
+  if (!found) {
     ctx.notify?.(`There's no game “${game}” installed here.`, "error");
     return null;
   }
-  const checked = validate(g);
+  const checked = validate(found);
   if (!checked.ok) {
-    ctx.notify?.(`“${g.title ?? game}” isn't a game this can lay out: ${errorText(checked)}`, "error");
+    ctx.notify?.(`“${found.title ?? game}” isn't a game this can lay out: ${errorText(checked)}`, "error");
+    return null;
+  }
+  const g = applyVariant(found, variant);
+  if (!g) {
+    ctx.notify?.(`“${found.title}” has no variant “${variant}”.`, "error");
     return null;
   }
 
@@ -143,12 +148,14 @@ export function docContext(ctx, handle) {
 
 /**
  * A template that lays a registered game's table out in an empty scene: the
- * game's id, or a function of the template's params to it (the stage hands
- * create exactly the params its metadata declares, coerced: EDITOR.md "Templates").
- * @param {string | ((params: object) => string)} game
+ * game's id, or a function of the template's params to `{ id, variant }`
+ * (the stage hands create exactly the params its metadata declares, coerced:
+ * EDITOR.md "Templates").
+ * @param {string | ((params: object) => { id: string, variant?: string })} game
  */
 export const template = (game) => ({
   async create(ctx, params = {}) {
-    await setUp(ctx, typeof game === "function" ? game(params) : game);
+    const { id, variant = null } = typeof game === "function" ? game(params) : { id: game };
+    await setUp(ctx, id, { variant });
   },
 });

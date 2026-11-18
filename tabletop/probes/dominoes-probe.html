@@ -136,7 +136,7 @@ try {
       return { min: min.map(r), max: max.map(r) };
     },
     racks: () => Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).length,
-    /** a point in a seat's rack (its own frame: a place's position, games/draw-dominoes-2.json), in the world, by A's snapshot */
+    /** a point in a seat's rack (its own frame: a place's position, games/draw-dominoes.json), in the world, by A's snapshot */
     rackSpot(seat, p) {
       const s = dbg.a.scene();
       const zid = Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat);

@@ -92,8 +92,8 @@ const isCard = (pieces, k) => typeof pieces?.[k]?.back === "string";
 /**
  * The cards whose faces are drawn, fetched and recorded together: kind → its
  * group (sorted). Two cards are in one group when they may lie in one
- * container (a deck's cards; every loose card, setup.js's LOOSE) or are cut
- * from one sheet, closed over both. What a container holds is public (each
+ * container (a deck's cards; every loose card, setup.js's LOOSE), in the
+ * game's setup or any variant's, or are cut from one sheet, closed over both. What a container holds is public (each
  * kept card names its container), so recording a whole group says nothing
  * about which of its cards was shown. Pure.
  */
@@ -121,7 +121,9 @@ export function groupsOf(game) {
       walk(t?.contents);
     }
   };
+  // every way the game is set up (its variants, GAME-FORMAT.md §3): a group is never smaller than any one of them makes it
   walk(game?.setup);
+  for (const v of Array.isArray(game?.variants) ? game.variants : []) walk(v?.setup);
   const by = new Map();
   for (const k of [...up.keys()].sort()) {
     const r = root(k);

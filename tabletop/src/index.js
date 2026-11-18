@@ -89,20 +89,14 @@ export const plugins = [
       return (await import("./tool.js")).default;
     },
   },
-  // the games, as data (games/*.json): each loads to the game itself
+  // the games, as data (games/*.json): each loads to the game itself. Draw
+  // Dominoes is one game with a variant for each count that plays (a table
+  // whose players shuffle between them waits for every seat, so the count is
+  // chosen when it's set up: GAME-FORMAT.md §3, `variants`)
   ...[
     { id: "santorini", name: "Santorini", icon: "Castle", players: "2–3", blurb: "Build towers on an island and climb them. Everything is in plain sight.", load: () => import("../games/santorini.json", { with: { type: "json" } }) },
     { id: "lost-cities", name: "Lost Cities", icon: "Map", players: "2", blurb: "Fund five expeditions with cards. Your hand is yours alone, and the deck is face down.", load: () => import("../games/lost-cities.json", { with: { type: "json" } }) },
-    // Draw Dominoes, laid for as many as play: a table whose players shuffle
-    // between them waits for every seat, so the count is chosen when it's set up
-    ...[2, 3, 4].map((n) => ({
-      id: `draw-dominoes-${n}`,
-      name: `Draw Dominoes (${n} players)`,
-      icon: "Grid2x2",
-      players: String(n),
-      blurb: "A double-six set face down on the table: wash it, draw your tiles into your rack, play them face up in a line.",
-      load: () => (n === 2 ? import("../games/draw-dominoes-2.json", { with: { type: "json" } }) : n === 3 ? import("../games/draw-dominoes-3.json", { with: { type: "json" } }) : import("../games/draw-dominoes-4.json", { with: { type: "json" } })),
-    })),
+    { id: "draw-dominoes", name: "Draw Dominoes", icon: "Grid2x2", players: "2–4", blurb: "A double-six set face down on the table: wash it, draw your tiles into your rack, play them face up in a line.", load: () => import("../games/draw-dominoes.json", { with: { type: "json" } }) },
   ].map(({ load, ...g }) => ({
     type: "tabletop:game",
     ...g,
@@ -113,9 +107,9 @@ export const plugins = [
   // the games' tables on an empty scene's start screen: one click lays the
   // table out in that scene, with its own art (src/table/template.js).
   // `game` is the game the table is of: the template's id for a fixed one,
-  // a function of its params for one that takes them. Draw Dominoes is one
-  // template, how many play chosen under its button (EDITOR.md "Templates"),
-  // each count its own game as data (above)
+  // a function of its params to { id, variant } for one that takes them. Draw
+  // Dominoes is one template, how many play chosen under its button
+  // (EDITOR.md "Templates"), each count a variant of the game (above)
   ...[
     { id: "lost-cities", name: "Lost Cities", icon: "Map", description: "A two-player card table: five expeditions, a face-down deck and a private hand each" },
     { id: "santorini", name: "Santorini", icon: "Castle", description: "An island board with workers, building blocks and domes, everything in plain sight" },
@@ -125,7 +119,7 @@ export const plugins = [
       icon: "Grid2x2",
       description: "A double-six set face down on a felt, and a rack for each player where your tiles stand facing you",
       params: [{ key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 }],
-      game: ({ players }) => `draw-dominoes-${players}`,
+      game: ({ players }) => ({ id: "draw-dominoes", variant: `${players} players` }),
     },
   ].map(({ id, game = id, ...t }) => ({
     type: "scene:template",
@@ -163,21 +157,22 @@ export const plugins = [
     ...[2, 3, 4].map((n) => ({
       id: `dominoes${n}`,
       part: `dominoes-${n}`,
-      game: `draw-dominoes-${n}`,
+      game: "draw-dominoes",
+      variant: `${n} players`,
       name: `Draw Dominoes, ${n} players`,
       icon: "Grid2x2",
       description: `The whole table for ${n}, set down where you put it: the felt, the boneyard face down, a rack each, and a seat for each player`,
       tags: ["tabletop.game"],
       traits: ["tabletop.zone", "tabletop.card"],
     })),
-  ].map(({ id, part, game, ...p }) => ({
+  ].map(({ id, part, game, variant, ...p }) => ({
     type: "scene:part",
     id: `tabletop.${part ?? id}`,
     category: "Tabletop",
     ...p,
     async load() {
       const parts = await import("./table/parts.js");
-      return game ? parts.gamePart(game) : parts[id];
+      return game ? parts.gamePart(game, variant) : parts[id];
     },
   })),
   // ── dice (src/dice/) ──

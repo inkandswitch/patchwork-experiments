@@ -4,11 +4,16 @@
 import { plugins } from "../index.js";
 import lostCities from "../../games/lost-cities.json" with { type: "json" };
 import santorini from "../../games/santorini.json" with { type: "json" };
-import dominoes2 from "../../games/draw-dominoes-2.json" with { type: "json" };
-import dominoes3 from "../../games/draw-dominoes-3.json" with { type: "json" };
-import dominoes4 from "../../games/draw-dominoes-4.json" with { type: "json" };
+import dominoes from "../../games/draw-dominoes.json" with { type: "json" };
+import { applyVariant } from "../../contract/v2/validate.js";
 
-export const GAMES = Object.freeze({ "lost-cities": lostCities, santorini, "draw-dominoes-2": dominoes2, "draw-dominoes-3": dominoes3, "draw-dominoes-4": dominoes4 });
+/** The games, and Draw Dominoes as each of its variants sets it up (`draw-dominoes-2` …: the game for that many). */
+export const GAMES = Object.freeze({
+  "lost-cities": lostCities,
+  santorini,
+  "draw-dominoes": dominoes,
+  ...Object.fromEntries([2, 3, 4].map((n) => [`draw-dominoes-${n}`, applyVariant(dominoes, `${n} players`)])),
+});
 
 /** A fresh copy of a built-in game. */
 export const game = (id) => structuredClone(GAMES[id]);
