@@ -218,7 +218,8 @@ game.change((d) => {
 });
 
 // ─── checks ─────────────────────────────────────────────────────────────────
-const glbs = Object.keys(game.doc().pieces).map((k) => game.doc().drawn?.[k]?.url);
+// what the table lays out (a card as its back): each drawn now, the faces left to be drawn when first shown
+const glbs = kindsLaid(gameOf(game.doc())).map((k) => game.doc().drawn?.[k]?.url);
 const s = scene.doc();
 const problems = [];
 if (drawn !== glbs.length || glbs.some((u) => !u)) problems.push(`${drawn} of ${glbs.length} piece GLBs drawn`);
@@ -243,7 +244,7 @@ if (problems.length) {
   for (const p of problems) console.error(`  ${p}`);
   process.exit(1);
 }
-console.log(`game ${game.url}: ${glbs.length} pieces, each its own GLB`);
+console.log(`game ${game.url}: ${glbs.length} kinds laid out, each its own GLB (card faces drawn when first shown)`);
 console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts people ${JSON.stringify(s.view.start?.body ?? "look")}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
 const made = [game.url, scene.url, ...Object.values(deckUrls), ...glbs];
 
