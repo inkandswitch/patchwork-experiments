@@ -321,7 +321,7 @@ describe("the inspector's tree: dragging rows", () => {
     e.dataTransfer = { types: [ROW_MIME], files: [], getData: (t) => (t === ROW_MIME ? payload : "") };
     return e;
   };
-  const notices = () => (s.local.get().notices ?? []).map((n) => n.text).join("\n");
+  const notices = () => s.notices().map((n) => n.text).join("\n");
   const leafAt = (name, { parent = null, group = null, x = 0 } = {}) => leaf(name, { parent, group, visible: false, transform: { position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 } });
 
   it("the drag starts from the name, carrying this scene and the id", async () => {
@@ -513,7 +513,7 @@ describe("the inspector's tree: dropping documents on rows", () => {
     await mount({ objects: { g1: grp("G") }, order: ["g1"] }, { repo });
     atRow("g1", 0.5, docDrop(todo.url));
     await settle();
-    expect((s.local.get().notices ?? []).map((n) => n.text).join()).toMatch(/No scene provider/);
+    expect(s.notices().map((n) => n.text).join()).toMatch(/No scene provider/);
   });
 });
 

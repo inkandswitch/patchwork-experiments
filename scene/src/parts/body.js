@@ -141,7 +141,7 @@ function create(api) {
       box.append(
         item(b.label, () => {
           if (on) return;
-          if (!api.body.enter(b.id, null)) api.notify(`Couldn't ${b.label.toLowerCase()} here.`);
+          if (!api.body.enter(b.id, null)) api.use("notices")?.notify(`Couldn't ${b.label.toLowerCase()} here.`);
         }, { checked: on }),
       );
     }

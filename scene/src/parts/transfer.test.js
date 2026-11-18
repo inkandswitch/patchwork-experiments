@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
-const notices = () => (s.local.get().notices ?? []).map((n) => `${n.kind}: ${n.text}`);
+const notices = () => s.notices().map((n) => `${n.kind}: ${n.text}`);
 const byName = (name) => {
   const objs = s.doc().objects;
   const id = Object.keys(objs).find((k) => objs[k].name === name);

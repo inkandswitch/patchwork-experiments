@@ -238,7 +238,7 @@ function create(api) {
 
   // ── adding ───────────────────────────────────────────────────────────────
   const fail = (text) => {
-    api.notify(text, "error");
+    api.use("notices")?.notify(text, "error");
     return null;
   };
 

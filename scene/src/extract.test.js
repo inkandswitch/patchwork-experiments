@@ -111,7 +111,7 @@ function fakeApi(repo, handle) {
     registry: async () => ({ filter: () => [META] }),
     change: (fn) => handle.change(fn),
     local: { get: () => ({}), swap() {} },
-    notify: (text, kind) => notices.push(`${kind}: ${text}`),
+    use: (name) => (name === "notices" ? { notify: (text, kind) => notices.push(`${kind}: ${text}`) } : null),
     view: { select: (id) => (selected = id) },
     box: () => null,
   };

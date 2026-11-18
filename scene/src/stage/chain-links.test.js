@@ -72,7 +72,7 @@ describe("the chain across links (I8)", () => {
       // (the view plugins, in the focus stage's keys; the editor's hand, scene.edit, is one)
       const f = view.focusStage();
       const generals = view.plugins.running().map((p) => keyOf(f.n, p.id));
-      expect(generals).toEqual(["t.view-1", "t.view-2", "scene.edit"].map((ext) => keyOf(f.n, ext)));
+      expect(generals.filter((k) => !NATIVES.includes(parseKey(k).id))).toEqual(["t.view-1", "t.view-2", "scene.edit"].map((ext) => keyOf(f.n, ext)));
       for (const hitKey of hits)
         for (const widget of [null, WIDGET]) {
           const { order } = view.chainFor({ hit: hitKey == null ? null : { id: hitKey, point: [0, 0, 0], distance: 1 }, widget });

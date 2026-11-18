@@ -14,7 +14,7 @@
 // order the view plugins run in.
 // The editor's hand (scene.edit) is registered after them unless one of
 // them is it or `editor: false` (s.edit(on) picks it up or puts it down), and
-// the native services (claims, clock, telling) last unless `natives: false`. The
+// the native services (claims, clock, telling, notices) last unless `natives: false`. The
 // scene's own datatypes and sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
 // scene:part plugins.
@@ -70,15 +70,16 @@ async function asRegistered(meta) {
   const own = plugins.find((p) => p.id === meta.id && (p.type === "scene:view" || p.type === "scene:extension"));
   const type = meta.type ?? own?.type ?? "scene:extension";
   const traits = type === "scene:extension" && !(Array.isArray(meta.traits) && meta.traits.length) ? ["*"] : meta.traits;
-  return [type, { ...meta, ...(traits ? { traits } : {}) }];
+  const { load: _load, ...declared } = own ?? {}; // (what it provides and uses, as src/index.js declares)
+  return [type, { ...declared, ...meta, ...(traits ? { traits } : {}) }];
 }
 
 // the view's keys (stage/view.js), and those of them that are paths
-const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
+const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "drawer", "prefs", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
 /** The native services' ids (src/index.js): registered last unless `natives: false`. */
-export const NATIVES = ["scene.claims", "scene.clock", "scene.telling"];
+export const NATIVES = ["scene.claims", "scene.clock", "scene.telling", "scene.notices"];
 
 export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true, natives = true } = {}) {
   repo ??= new FakeRepo();
@@ -145,6 +146,8 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     /** the api an extension of the outermost stage, or a view plugin, got */
     api: (id) => debug.host.record(id)?.api ?? debug.view.plugins.record(id)?.api ?? null,
     instance: (id) => debug.host.instanceOf(id) ?? debug.view.plugins.instanceOf(id),
+    /** what scene.notices shows: [{ id, text, kind, at, from }] */
+    notices: () => debug.view.plugins.instanceOf("scene.notices")?.notices ?? [],
     /** a view plugin's facet of the focus stage (its api.focus()) */
     facet: (id) => debug.view.plugins.record(id)?.api?.focus() ?? null,
     /** pick up the editor (scene.edit's Edit hand) or put it down; → whether the viewer is editing now */

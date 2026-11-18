@@ -85,15 +85,15 @@ describe("a stage on a manual clock", () => {
     expect(seen.frame).toBe(MANUAL_EPOCH + time.frameMs);
     expect(seen.timer).toBe(MANUAL_EPOCH + 500);
     // a notice lives NOTICE_MS of the stage's time
-    seen.api.notify("hello");
+    seen.api.use("notices").notify("hello");
     await s.settle();
-    expect(s.local.get().notices.map((n) => n.text)).toEqual(["hello"]);
-    expect(s.local.get().notices[0].at).toBe(time.now());
+    expect(s.notices().map((n) => n.text)).toEqual(["hello"]);
+    expect(s.notices()[0].at).toBe(time.now());
     await time.advance(5_900);
-    expect(s.local.get().notices.length).toBe(1);
+    expect(s.notices().length).toBe(1);
     await time.advance(200);
     await s.settle();
-    expect(s.local.get().notices.length).toBe(0);
+    expect(s.notices().length).toBe(0);
     expect(calls).toEqual([]);
   });
 });

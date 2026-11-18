@@ -131,7 +131,7 @@ describe("a live link opens a stage for its doc", () => {
     const ids = (st) => st.debug.host.running().map((r) => r.id).filter((id) => !NATIVES.includes(id)).sort();
     expect(ids(m.g)).toEqual(["t.card", "t.game"]);
     expect(ids(s.debug.view.stage(0))).toEqual(["t.host"]);
-    const at = (st) => s.debug.view.pluginsAt(st).map((p) => p.id);
+    const at = (st) => s.debug.view.pluginsAt(st).map((p) => p.id).filter((id) => !NATIVES.includes(id));
     expect([at(s.debug.view.stage(0)), at(m.g)]).toEqual([["t.view", "scene.keys", "scene.edit"], []]);
     expect(m.g.path).toEqual(["L"]);
     expect(m.g.url).toBe(m.game.url);

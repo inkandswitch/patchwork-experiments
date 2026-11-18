@@ -253,7 +253,7 @@ describe("I6: a read-only stage writes nothing", () => {
       const edge = api.edge("right");
       ok("overlay and edge stay out of the DOM", !el.isConnected && !edge.isConnected);
       ok("dock refuses", api.dock(document.createElement("div"), { title: "x" }) && view.drawer.state().order.length === 0);
-      ok("notify refuses", api.notify("Pick a seat") === null);
+      ok("no notices", api.use("notices") === null);
       api.view.select("card");
       api.setPref("units", "ft");
       api.cursor("grab");

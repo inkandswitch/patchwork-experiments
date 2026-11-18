@@ -21,7 +21,7 @@ function pasteEvent(text) {
   return e;
 }
 
-const notices = (s) => (s.local.get().notices ?? []).map((n) => `${n.kind}: ${n.text}`);
+const notices = (s) => s.notices().map((n) => `${n.kind}: ${n.text}`);
 const objectsOf = (s) => Object.values(s.doc().objects ?? {});
 
 describe("scene.add", () => {
@@ -119,7 +119,7 @@ describe("scene.add", () => {
     // its maker lands in the game, in the body it starts people in; nothing stops
     expect(s.local.get().body.id).toBe("t.sit");
     expect(s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["t.game"]);
-    expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.add", "scene.edit"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.add", "scene.edit"]);
   });
 
   // templates {no params, with params} × {click it as offered, choose in its form then click} → what create gets

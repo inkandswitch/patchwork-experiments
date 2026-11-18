@@ -560,13 +560,13 @@ function tell(api, describes, { lost = [], entries = [] }) {
     const key = `e|${e.trait}.${e.key}`;
     if (told.has(key)) continue;
     told.add(key);
-    api.notify(entryText({ name: nameOf(describes, e.trait), label: e.label, ofName: nameOf(describes, e.of) }), "warn");
+    api.use("notices")?.notify(entryText({ name: nameOf(describes, e.trait), label: e.label, ofName: nameOf(describes, e.of) }), "warn");
   }
   for (const l of lost) {
     const key = `l|${l.trait}.${l.key}`;
     if (told.has(key)) continue;
     told.add(key);
-    api.notify(lostText({ name: nameOf(describes, l.trait), label: l.label }), "warn");
+    api.use("notices")?.notify(lostText({ name: nameOf(describes, l.trait), label: l.label }), "warn");
   }
 }
 
@@ -583,7 +583,7 @@ export async function extractObjects(api, roots, traits = []) {
   const before = api.doc();
   const plan = extractPlan(before, roots, { traits, runtime, refs, box: (id, frame) => api.box?.(id, { in: frame }) ?? null });
   if (!plan.ok) {
-    api.notify(plan.reason, "error");
+    api.use("notices")?.notify(plan.reason, "error");
     return null;
   }
   const renders = await copyRenders(api, before.objects, plan.built);
@@ -596,7 +596,7 @@ export async function extractObjects(api, roots, traits = []) {
   const link = api.newId("o");
   const host = extractHost(api.doc(), plan, { link, url: handle.url, refs });
   if (!host) {
-    api.notify("It changed while it was being extracted: nothing was changed here. Try again.", "error");
+    api.use("notices")?.notify("It changed while it was being extracted: nothing was changed here. Try again.", "error");
     return null;
   }
   editor(api).edit(host.change, { label: "Extract" });
@@ -616,7 +616,7 @@ export async function bundleLink(api, linkId, traits = []) {
   const live = () => !api.signal?.aborted;
   const L = api.doc().objects?.[linkId];
   if (!isLink(L)) {
-    api.notify("That isn't a linked scene.", "error");
+    api.use("notices")?.notify("That isn't a linked scene.", "error");
     return null;
   }
   const at = atOf(L);
@@ -625,7 +625,7 @@ export async function bundleLink(api, linkId, traits = []) {
     const h = await api.repo.find(L.sourceUrl);
     linked = at ? (h.view?.(at.heads)?.doc?.() ?? null) : h.doc();
   } catch (err) {
-    api.notify(`Couldn't open that scene: ${err?.message ?? err}`, "error");
+    api.use("notices")?.notify(`Couldn't open that scene: ${err?.message ?? err}`, "error");
     return null;
   }
   if (!live()) return null;
@@ -633,7 +633,7 @@ export async function bundleLink(api, linkId, traits = []) {
   if (!live()) return null;
   const check = bundlePlan(api.doc(), linkId, linked, { traits, runtime, refs, describes, newId: api.newId, deps: at?.deps ?? null });
   if (!check.ok) {
-    api.notify(check.reason, "error");
+    api.use("notices")?.notify(check.reason, "error");
     return null;
   }
   const renders = await copyRenders(api, linked.objects, orderedIds(linked), at?.deps ?? null);
@@ -641,7 +641,7 @@ export async function bundleLink(api, linkId, traits = []) {
   // planned again against the host as it is now (the copies above took a moment)
   const plan = bundlePlan(api.doc(), linkId, linked, { traits, runtime, refs, describes, newId: api.newId, renders, deps: at?.deps ?? null });
   if (!plan.ok) {
-    api.notify(plan.reason, "error");
+    api.use("notices")?.notify(plan.reason, "error");
     return null;
   }
   editor(api).edit(plan.change, { label: "Bundle" });

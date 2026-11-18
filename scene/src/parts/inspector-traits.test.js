@@ -166,14 +166,14 @@ describe("scene.inspector: Behaviours on an object", () => {
     expect(min.value).toBe("[0,0,0]");
     await fire(min, "[1, 2");
     expect(s.doc().objects.a.traits["t.zone"].min).toEqual([0, 0, 0]);
-    expect(s.local.get().notices.at(-1).text).toMatch(/Min isn't valid JSON/);
+    expect(s.notices().at(-1).text).toMatch(/Min isn't valid JSON/);
     await fire(field(behaviour("t.zone"), "Min"), "[-0.2, 0, -0.1]");
     expect(s.doc().objects.a.traits["t.zone"].min).toEqual([-0.2, 0, -0.1]);
 
     const by = field(behaviour("t.hidden"), "Deck");
     await fire(by, "a deck");
     expect(s.doc().objects.a.traits["t.hidden"]).toEqual({});
-    expect(s.local.get().notices.at(-1).text).toMatch(/Deck needs a document link/);
+    expect(s.notices().at(-1).text).toMatch(/Deck needs a document link/);
     await fire(field(behaviour("t.hidden"), "Deck"), DECK);
     expect(s.doc().objects.a.traits["t.hidden"].by).toBe(DECK);
     await fire(field(behaviour("t.hidden"), "Deck"), "");

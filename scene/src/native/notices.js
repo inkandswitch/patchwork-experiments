@@ -1,14 +1,18 @@
-// scene.notices: what the scene has to say, over the view.
-//   - toasts (bottom centre): local.notices, which api.notify() adds and the
-//     stage expires; a notice that goes fades out.
+// scene.notices (native, a view plugin): what the scene has to say, over the
+// view, provided as "notices" (STAGE.md, "Native services").
+//   - toasts (bottom centre): `use("notices").notify(text, kind?)` adds one
+//     for 6 s; one saying what one still showing says replaces it; a notice
+//     that goes fades out.
 //   - HUD pills (top left): the load summary from local.status ("Loading 40
 //     of 74…", "Building 2…", "3 errors"),
 //     then every running extension's hud(scene, local) in running order.
 
 import css from "./notices.css?inline";
-import { localChanged } from "./toolbar-commands.js";
+import { localChanged } from "../parts/toolbar-commands.js";
 
 const FADE_MS = 250;
+/** How long a notice shows. */
+const NOTICE_MS = 6_000;
 const MAX_TOASTS = 4;
 
 /**
@@ -47,6 +51,16 @@ export function loadSummary(objects, status) {
   return out;
 }
 
+/**
+ * The notices after one more: a notice saying what one still showing says
+ * (the same text and kind) replaces it, so it shows once (three tables laid
+ * at once each saying "Pick a seat" is one prompt), timed from now. Pure.
+ * @param {readonly object[] | undefined} list  @param {{ text: string, kind: string }} n
+ */
+export function withNotice(list, n) {
+  return Object.freeze([...(list ?? []).filter((x) => x.text !== n.text || x.kind !== n.kind), n]);
+}
+
 const STATES = new Set(["loading", "building", "error", "warn", "info", "stale"]);
 
 function create(api) {
@@ -64,19 +78,27 @@ function create(api) {
   const shown = new Map(); // notice id → element
   const timers = new Set();
   let hudKey = "";
+  let notices = Object.freeze([]);
+  let seq = 0;
+  const later = (ms, fn) => {
+    const t = api.after(ms, () => (timers.delete(t), fn()));
+    timers.add(t);
+  };
+  function notify(text, kind, from) {
+    const n = Object.freeze({ id: `n${++seq}`, text: String(text ?? ""), kind: kind ?? "info", at: api.now(), from });
+    renderToasts((notices = withNotice(notices, n)));
+    later(NOTICE_MS, () => notices.includes(n) && renderToasts((notices = Object.freeze(notices.filter((x) => x !== n)))));
+    return n.id;
+  }
 
-  function renderToasts(notices) {
-    const list = Array.isArray(notices) ? notices.slice(-MAX_TOASTS) : [];
+  function renderToasts(all) {
+    const list = all.slice(-MAX_TOASTS);
     const ids = new Set(list.map((n) => n.id));
     for (const [id, el] of [...shown]) {
       if (ids.has(id)) continue;
       shown.delete(id);
       el.dataset.leaving = "";
-      const t = api.after(FADE_MS, () => {
-        timers.delete(t);
-        el.remove();
-      });
-      timers.add(t);
+      later(FADE_MS, () => el.remove());
     }
     for (const n of list) {
       if (shown.has(n.id)) continue;
@@ -133,8 +155,13 @@ function create(api) {
   }
 
   return {
+    // (`from`: another extension of the caller's stage it speaks for, as telling does)
+    provides: { notices: ({ id, signal, runs }) => Object.freeze({ notify: (text, kind, o) => (signal.aborted ? null : notify(text, kind, o?.from != null && runs?.(o.from) ? o.from : id)) }) },
+    /** what shows, oldest first: { id, text, kind, at, from } (for tests and probes) */
+    get notices() {
+      return notices;
+    },
     update(scene, local, prev, view) {
-      if (view.notices !== prev?.view?.notices) renderToasts(view.notices);
       // a hover alone changes no pill
       if (prev?.scene !== scene || localChanged(prev?.local, local) || localChanged(prev?.view, view)) renderHud(scene, local, view);
     },

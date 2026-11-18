@@ -2,8 +2,8 @@
 // it opens. It holds what is the viewer's, not any doc's: the DOM and its
 // edges, the viewport, the router, the camera and its saving, labels, the
 // body stack and the hands, the view's atom (the body, the hands, the held
-// tool, the pointer, the selection and hover, theme, notices, prefs, the
-// drawer, the focus), the session every stage's channel names, and the stages
+// tool, the pointer, the selection and hover, theme, prefs, the drawer, the
+// focus), the session every stage's channel names, and the stages
 // themselves. A stage (./stage.js) is one per open doc and holds what is
 // the doc's.
 //
@@ -51,8 +51,6 @@ export const LINK_BUDGET = 64;
 
 /** How long after the orbit stops the camera is saved. */
 const CAMERA_SAVE_MS = 500;
-/** How long a notice stays in view.notices. */
-const NOTICE_MS = 6_000;
 /** How long, once view.start's body is on offer, arriving waits for the content before entering it anyway (ms). */
 export const ARRIVE_WAIT_MS = 20_000;
 const EDGES = ["top", "right", "bottom", "left"];
@@ -121,16 +119,6 @@ export function startArrival(s, { doc, next }) {
  */
 export function initialCamera({ stored = null, doc = null } = {}) {
   return cleanCamera(stored) ?? startOf(doc).home ?? null;
-}
-
-/**
- * The notices after one more: a notice saying what one still showing says
- * (the same text and kind) replaces it, so it shows once (three tables laid
- * at once each saying "Pick a seat" is one prompt), timed from now. Pure.
- * @param {readonly object[] | undefined} list  @param {{ text: string, kind: string }} n
- */
-export function withNotice(list, n) {
-  return Object.freeze([...(list ?? []).filter((x) => x.text !== n.text || x.kind !== n.kind), n]);
 }
 
 const NO_ESCAPE = Object.freeze({ layer: null, hint: "" });
@@ -318,7 +306,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
     escape: Object.freeze({ layer: null, hint: "" }),
     theme: null,
-    notices: Object.freeze([]),
     // the drawer's tabs by title, the one shown, and the documents docked in it (dock.js), by docKey
     drawer: Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
@@ -643,18 +630,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     for (const s of stages.values()) s.requestFlush();
   };
 
-  // ─── notices and prefs ────────────────────────────────────────────────────
+  // ─── prefs ────────────────────────────────────────────────────────────────
 
-  let noticeSeq = 0;
-  function notify(text, kind = "info", from = null) {
-    if (dead) return null;
-    const n = Object.freeze({ id: `n${++noticeSeq}`, text: String(text ?? ""), kind: kind ?? "info", at: time.now(), from });
-    atom.swap((m) => ({ ...m, notices: withNotice(m.notices, n) }));
-    later(() => {
-      if (!dead) atom.swap((m) => (m.notices?.includes(n) ? { ...m, notices: Object.freeze(m.notices.filter((x) => x !== n)) } : m));
-    }, NOTICE_MS);
-    return n.id;
-  }
   function setPref(key, value) {
     if (typeof key !== "string") return;
     atom.swap((m) => {
@@ -1508,7 +1485,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       setPref: (k, value) => {
         if (live()) setPref(k, value);
       },
-      notify: (text, kind) => (live() ? notify(text, kind, id) : null),
       /** every open doc's missing packages (view.packages): load them (a yes), or don't ask again in this view */
       packages,
       ...viewParts({ id, key, own, live }),
@@ -1568,8 +1544,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       path: (o) => inputPath(o),
       /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
-      /** a service (STAGE.md, "Native services"): the focus stage's provider's, else a view plugin's */
-      use: (name) => (live() ? (api.focus()?.use(name) ?? plugins.use(name, { id, signal })) : null),
+      /** a service (STAGE.md, "Native services"): a view plugin's, else the focus stage's provider's */
+      use: (name) => (live() ? (plugins.use(name, { id, signal }) ?? api.focus()?.use(name)) : null),
     };
 
     function release() {
@@ -1686,7 +1662,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     pickWidget,
     requestFlush,
     // the viewer's
-    notify,
     setPref,
     select,
     selectStep,

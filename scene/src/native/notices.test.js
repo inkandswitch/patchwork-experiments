@@ -1,9 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
-import notices, { loadSummary } from "./notices.js";
+import notices, { loadSummary, withNotice } from "./notices.js";
 
-describe("loadSummary (pure)", () => {
+describe("pure", () => {
+  it("withNotice: one saying what one still showing says replaces it (shown once, timed from now); others pile up", () => {
+    const n = (id, text, kind = "info") => ({ id, text, kind });
+    const pick = "Pick a seat (top right) to play.";
+    // three tables laid at once, each saying the same: one prompt, the last
+    let list = [];
+    for (const id of ["n1", "n2", "n3"]) list = withNotice(list, n(id, pick));
+    expect(list.map((x) => x.id)).toEqual(["n3"]);
+    // a different text, or the same text as another kind, is another notice
+    list = withNotice(list, n("n4", "Deck shuffled"));
+    list = withNotice(list, n("n5", pick, "warn"));
+    expect(list.map((x) => x.id)).toEqual(["n3", "n4", "n5"]);
+    list = withNotice(list, n("n6", pick));
+    expect(list.map((x) => x.id)).toEqual(["n4", "n5", "n6"]);
+    expect(withNotice(undefined, n("a", "x")).map((x) => x.id)).toEqual(["a"]);
+  });
+
   const objs = {
     a: object({ sourceUrl: "automerge:x" }),
     b: object({ sourceUrl: "automerge:y" }),
@@ -77,7 +93,7 @@ describe("scene.notices", () => {
   it("shows a notice as a toast, and fades it out when it goes", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      s.api("t.talker").notify("Couldn't open that document", "error");
+      s.api("t.talker").use("notices").notify("Couldn't open that document", "error");
       await Promise.resolve();
       await Promise.resolve();
       const toast = s.root.querySelector(".notices-layer .toast");

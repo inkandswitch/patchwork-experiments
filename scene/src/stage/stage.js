@@ -79,7 +79,7 @@ import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
 // the view's pure parts, where they have always been imported from
-export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins, withNotice } from "./view.js";
+export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins } from "./view.js";
 
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
@@ -1155,7 +1155,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const setPref = (key, value) => view.setPref(key, value);
   /** A pref: the viewer's, else this doc's suggestion (STAGE.md, "Views, stages and links"), else the fallback. */
   const pref = (key, fallback) => view.atom.get().prefs?.[key] ?? doc().view?.[key] ?? fallback;
-  const notify = (text, kind = "info", from = null) => (dead ? null : view.notify(text, kind, from));
 
   /**
    * Removing `ids` as a change function (ops.removeObjects's plan) that
@@ -1623,15 +1622,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         visible: () => globalThis.document?.visibilityState !== "hidden",
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
-      /** a service (STAGE.md, "Native services"): the first running provider's facet, made for this extension, or null */
-      use: (name) => (live() ? host.use(name, { id, signal }) : null),
+      /** a service (STAGE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
+      use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x) }) : null)) : null),
       /** has everything the doc calls for started (or failed), and is every listed package here (`missing`: those that aren't)? */
       settled: () => {
         const p = local.get().packages;
         const missing = Object.freeze([...p.ask, ...p.loading, ...p.failed].map((e) => e.url));
         return Object.freeze({ ready: !host.starting() && packages.complete(), missing });
       },
-      notify: (text, kind) => notify(text, kind, id),
       /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
       packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
@@ -1809,7 +1807,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return facet(api, {
       view: facet(api.view, { select: noop, enter: () => false }),
       setPref: noop,
-      notify: () => null,
       overlay: () => loose("stage-overlay"),
       edge: () => loose("stage-edge-part"),
       dock: () => noop,

@@ -608,7 +608,7 @@ async function extensionMetas(api) {
 
 /**
  * Copy objects from a scene (another, or this one) into this one.
- * @param {object} api  the focus's (a view plugin's api.focus()): repo, url, doc, scene, change, newId, addObject, notify, registry, local
+ * @param {object} api  the focus's (a view plugin's api.focus()): repo, url, doc, scene, change, newId, addObject, use, registry, local
  * @param {{ scene: string, ids: string[] }} payload
  * @param {{ land?: object | ((tags: string[]) => object | null), beside?: object | ((roots: string[]) => object), before?: string | null }} target
  *   as planCopy's; `land` may be a function of the copied top's tags (a
@@ -641,7 +641,7 @@ async function copyInto(api, payload, target, change) {
     try {
       source = (await api.repo.find(sceneUrl))?.doc?.();
     } catch (err) {
-      api.notify(`Couldn't open that scene: ${err?.message ?? err}`, "error");
+      api.use("notices")?.notify(`Couldn't open that scene: ${err?.message ?? err}`, "error");
       return null;
     }
   }
@@ -649,7 +649,7 @@ async function copyInto(api, payload, target, change) {
   const objects = source?.objects ?? {};
   const roots = payload.ids.filter((id) => objects[id]);
   if (!roots.length) {
-    api.notify("Those objects are no longer in that scene.", "error");
+    api.use("notices")?.notify("Those objects are no longer in that scene.", "error");
     return null;
   }
   const describes = describesOf(await extensionMetas(api));
@@ -787,7 +787,7 @@ async function copyInto(api, payload, target, change) {
     });
   }
 
-  for (const f of failed) api.notify(`Couldn't copy ${f}`, "error");
+  for (const f of failed) api.use("notices")?.notify(`Couldn't copy ${f}`, "error");
   // a field naming an entry of a scene trait: the trait is missing, or it's
   // here without that entry
   const told = new Set();
@@ -799,13 +799,13 @@ async function copyInto(api, payload, target, change) {
       const has = sceneTraits[e.of] != null || api.doc()?.traits?.[e.of] != null;
       if (has ? told.has(key) : told.has(e.of)) continue;
       told.add(has ? key : e.of);
-      api.notify(has ? entryText({ name: nameOf(e.trait), label: e.label, ofName: nameOf(e.of) }) : needsText({ name: nameOf(e.trait), needName: nameOf(e.of) }), "warn");
+      api.use("notices")?.notify(has ? entryText({ name: nameOf(e.trait), label: e.label, ofName: nameOf(e.of) }) : needsText({ name: nameOf(e.trait), needName: nameOf(e.of) }), "warn");
     }
     for (const l of f.lost) {
       const key = `${l.trait}.${l.key}`;
       if (told.has(key)) continue;
       told.add(key);
-      api.notify(lostText({ name: nameOf(l.trait), label: l.label }), "warn");
+      api.use("notices")?.notify(lostText({ name: nameOf(l.trait), label: l.label }), "warn");
     }
   }
 

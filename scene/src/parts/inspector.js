@@ -56,7 +56,7 @@
 //
 // Every write goes through the focus doc's ops (or, for traits and Starts in, a field-level
 // write), each as an edit (its edit()), so undo takes it back; a refusal
-// (plan.ok === false) is said with api.notify and the field shows the doc
+// (plan.ok === false) is said through "notices" and the field shows the doc
 // again. Fields being typed in are never overwritten.
 //
 // A selection that isn't a scene object (a ref such as a dimension: its owner
@@ -85,7 +85,7 @@ const ID = "scene.inspector";
 let startsGroups = 0;
 const OPEN_EVENT = "patchwork:open-document";
 // local keys whose change can't change what the inspector shows
-const IGNORED_LOCAL = new Set(["hovered", "notices", "pointer", "escape", "gesture"]);
+const IGNORED_LOCAL = new Set(["hovered", "pointer", "escape", "gesture"]);
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -193,7 +193,7 @@ function create(api) {
       return null;
     }
     if (plan.ok === false) {
-      api.notify(plan.reason, "error");
+      api.use("notices")?.notify(plan.reason, "error");
       refreshNow(true);
       return null;
     }
@@ -218,7 +218,7 @@ function create(api) {
   /** Fix an object at exactly what it shows now: its render's build, or a link's doc and every doc reached through it. */
   function fixVersion(id) {
     const point = fixPointOf(id);
-    if (!point) return void api.notify("There's no version of it here to fix yet.", "error");
+    if (!point) return void api.use("notices")?.notify("There's no version of it here to fix yet.", "error");
     apply(here.ops.setField(here.scene(), id, "at", point), "Fix at this version");
   }
 
@@ -290,7 +290,7 @@ function create(api) {
   function writeTraitField(id, key, entry, field, formValue) {
     const w = fieldWrite(field, formValue);
     if (w.error) {
-      api.notify(w.error, "error");
+      api.use("notices")?.notify(w.error, "error");
       last = null;
       refreshNow(true);
       return;

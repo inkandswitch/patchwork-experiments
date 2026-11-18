@@ -267,7 +267,7 @@ function haloAt(api, view) {
       // a peer took hold of something here before we did: theirs, so ours goes back
       if ([...poses.keys()].some((id) => api.heldBy(id) != null)) {
         session.cancel();
-        view.notify("Someone else is moving that.", "info");
+        view.use("notices")?.notify("Someone else is moving that.", "info");
         return;
       }
       drag.poses = poses;
@@ -276,7 +276,7 @@ function haloAt(api, view) {
       for (const [id, t] of poses) if (!api.pose.hold(id, t)) refused = true;
       if (refused) {
         session.cancel();
-        view.notify("Something else is moving that.", "info");
+        view.use("notices")?.notify("Something else is moving that.", "info");
         return;
       }
       api.invalidate();
@@ -329,7 +329,7 @@ function haloAt(api, view) {
       // under it is pressed), but it doesn't move
       const ids = roots();
       if (ids.some((id) => api.heldBy(id) != null)) {
-        view.notify("Someone else is moving that.", "info");
+        view.use("notices")?.notify("Someone else is moving that.", "info");
         return { tap: () => true, move() {}, end() {}, cancel() {} };
       }
       const ray0 = frame.rayIn(rayOf(ev));

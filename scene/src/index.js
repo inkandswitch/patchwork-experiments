@@ -109,13 +109,14 @@ export const plugins = [
     },
   },
   // ─── the parts the scene editor is made of ───
-  // The native services (STAGE.md, "Native services"): parts of every doc,
-  // started before what doesn't provide (their `provides`, and the clock's `uses`).
+  // The native services (STAGE.md, "Native services"): parts of every doc, or
+  // view plugins, started before what doesn't provide (their `provides`, and `uses`).
   ...[
     ["claims", "Claims", { provides: ["claims"] }, () => import("./native/claims.js")],
     ["clock", "World time", { provides: ["clock"], uses: ["claims"] }, () => import("./native/clock.js")],
     ["telling", "Telling", { provides: ["tell"] }, () => import("./native/telling.js")],
-  ].map(([n, name, services, load]) => ({ type: "scene:extension", id: `scene.${n}`, name, traits: ["*"], ...services, load: async () => (await load()).default })),
+    ["notices", "Notices", { provides: ["notices"] }, () => import("./native/notices.js"), "scene:view"],
+  ].map(([n, name, services, load, type = "scene:extension"]) => ({ type, id: `scene.${n}`, name, ...(type === "scene:view" ? {} : { traits: ["*"] }), ...services, load: async () => (await load()).default })),
   // All but carry and others are view plugins (STAGE.md, "View plugins"):
   // each runs once per view, for its whole life, and works on the focus
   // stage through api.focus() (the outermost doc until Enter moves the focus
@@ -136,14 +137,6 @@ export const plugins = [
     name: "Toolbar",
     async load() {
       return (await import("./parts/toolbar.js")).default;
-    },
-  },
-  {
-    type: "scene:view",
-    id: "scene.notices",
-    name: "Notices",
-    async load() {
-      return (await import("./parts/notices.js")).default;
     },
   },
   // the packages this scene lists and this viewer doesn't have: one prompt to

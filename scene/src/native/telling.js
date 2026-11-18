@@ -148,7 +148,7 @@ function create(api) {
     now: api.now,
     after: api.after,
     scene: api.scene,
-    notify: (text) => api.notify(text, "info"),
+    notify: (text, ext) => api.use("notices")?.notify(text, "info", { from: ext }),
     find: (url) => api.repo?.find?.(url),
     alive: (ext, messages) => messagesOf(ext) === messages,
   });

@@ -189,7 +189,7 @@ function measureAt(api, view, hint) {
     hover = null;
     draw();
     if (!saved) {
-      view.notify("Dimensions aren't on here, so the measurement wasn't saved.", "error");
+      view.use("notices")?.notify("Dimensions aren't on here, so the measurement wasn't saved.", "error");
       return null;
     }
     return dimId;

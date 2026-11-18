@@ -261,7 +261,7 @@ describe("scene.use", () => {
   it("runs in every view: a view plugin, as the key map is", async () => {
     await mount();
     expect(s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["t.game"]);
-    expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.use", "scene.keys", "scene.edit"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.use", "scene.keys", "scene.edit"]);
   });
 
   it("hovering something with verbs shows them; its key (the key map's) runs the verb on it", async () => {

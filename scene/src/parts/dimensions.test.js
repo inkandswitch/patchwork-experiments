@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as THREE from "three";
-import { mountStage, object, until, settle } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, until, settle } from "../test/stage-harness.js";
 import dimensions, { detachEnds, dimensionIdOf, dimensionList, dimensionRef, resolveEnd, surfaceGapper } from "./dimensions.js";
 import measure from "./measure.js";
 import select from "./select.js";
@@ -278,7 +278,7 @@ describe("scene.dimensions", () => {
       dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } },
       before: [SELECT],
     });
-    expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.select", "scene.dimensions", "scene.edit"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.select", "scene.dimensions", "scene.edit"]);
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     const l = label("d1");

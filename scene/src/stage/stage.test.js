@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { wallAt } from "../test/stage-harness.js";
-import { bestWidget, hitChain, initialCamera, mergeLooks, sameTransform, startOf, statusOf, widgetWins, withNotice } from "./stage.js";
+import { bestWidget, hitChain, initialCamera, mergeLooks, sameTransform, startOf, statusOf, widgetWins } from "./stage.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const registries = new Map();
@@ -54,8 +54,11 @@ const { default: Stage } = await import("./stage.js");
 const { add, drop, editor, part, template: runTemplate } = await import("../parts/editor.js");
 // the drop context (STAGE.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
-// (and the editor's hand, a view plugin: view.start.edit picks it up)
-for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || p.id === "scene.edit") getRegistry(p.type).register(p);
+// (and the editor's hand, a view plugin: view.start.edit picks it up; and the view's native services)
+const VIEWS = ["scene.edit", "scene.notices"];
+for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || VIEWS.includes(p.id)) getRegistry(p.type).register(p);
+/** what scene.notices shows */
+const noticesOf = (m) => m.debug.view.plugins.instanceOf("scene.notices").notices;
 
 // ─── test extensions ────────────────────────────────────────────────────────
 //
@@ -229,21 +232,6 @@ describe("the stage's pure helpers", () => {
     expect(startOf({ view: { activity: "play" } })).toEqual({ body: null, place: null, home: null, edit: false });
     expect(startOf(null)).toEqual({ body: null, place: null, home: null, edit: false });
   });
-  it("notices: one saying what one still showing says replaces it (shown once, timed from now); others pile up", () => {
-    const n = (id, text, kind = "info") => ({ id, text, kind });
-    const pick = "Pick a seat (top right) to play.";
-    // three tables laid at once, each saying the same: one prompt, the last
-    let list = [];
-    for (const id of ["n1", "n2", "n3"]) list = withNotice(list, n(id, pick));
-    expect(list.map((x) => x.id)).toEqual(["n3"]);
-    // a different text, or the same text as another kind, is another notice
-    list = withNotice(list, n("n4", "Deck shuffled"));
-    list = withNotice(list, n("n5", pick, "warn"));
-    expect(list.map((x) => x.id)).toEqual(["n3", "n4", "n5"]);
-    list = withNotice(list, n("n6", pick));
-    expect(list.map((x) => x.id)).toEqual(["n4", "n5", "n6"]);
-    expect(withNotice(undefined, n("a", "x")).map((x) => x.id)).toEqual(["a"]);
-  });
   it("status: what's loading, building or broken", () => {
     expect(statusOf(card(), null)).toBeNull();
     expect(statusOf(card(), { content: "file", phase: "finding" }).state).toBe("loading");
@@ -347,13 +335,13 @@ describe("the stage, mounted", () => {
     const m = mount(newScene());
     await settle();
     const r = exts["t.edit"];
-    expect(m.root.querySelector(".stage-overlay").textContent).toBe("edit overlay");
+    expect(m.root.querySelector('.stage-overlay[data-owner="t.edit"]').textContent).toBe("edit overlay");
     expect(m.root.querySelector('[data-edge="left"]').textContent).toBe("edit edge");
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(1);
     uninstall("t.edit");
     expect(r.disposed).toBe(1);
     expect(r.api.signal.aborted).toBe(true);
-    expect(m.root.querySelector(".stage-overlay")).toBeNull();
+    expect(m.root.querySelector('.stage-overlay[data-owner="t.edit"]')).toBeNull();
     expect(m.root.querySelector('[data-edge="left"]').children).toHaveLength(0);
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(0);
     expect(running(m)).toEqual(["t.always:scene"]);
@@ -592,7 +580,7 @@ describe("the stage, mounted", () => {
         throw new Error("no room");
       };
       expect(await runTemplate(api, "t.template")).toBe(false);
-      expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
+      expect(noticesOf(m).at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
     } finally {
       template = null;
     }
@@ -660,7 +648,7 @@ describe("the stage, mounted", () => {
         throw new Error("no room");
       };
       expect(await part(api, "t.part", null)).toBe(null);
-      expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That part failed: no room", kind: "error" });
+      expect(noticesOf(m).at(-1)).toMatchObject({ text: "That part failed: no room", kind: "error" });
     } finally {
       partCreate = null;
     }
@@ -756,8 +744,8 @@ describe("the stage, mounted", () => {
     await expect(add(api, txt.url)).rejects.toThrow(/No scene provider/);
   });
 
-  it("schedule(fn) runs in the next flush; notify() reaches local.notices", async () => {
-    mount(newScene());
+  it("schedule(fn) runs in the next flush; a notice is the notifier's", async () => {
+    const m = mount(newScene());
     await settle();
     const api = exts["t.always"].api;
     const fn = vi.fn();
@@ -765,8 +753,9 @@ describe("the stage, mounted", () => {
     expect(fn).not.toHaveBeenCalled();
     await settle(1);
     expect(fn).toHaveBeenCalledTimes(1);
-    api.notify("Hello", "error");
-    expect(api.view.get().notices.at(-1)).toMatchObject({ text: "Hello", kind: "error", from: "t.always" });
+    api.use("notices").notify("Hello", "error", { from: "t.edit" });
+    api.use("notices").notify("Hi", "info", { from: "t.nobody" });
+    expect(noticesOf(m).slice(-2)).toMatchObject([{ text: "Hello", kind: "error", from: "t.edit" }, { text: "Hi", from: "t.always" }]);
   });
 
   it("offers the holders nearest first, the scene last of them, every doc's part among the scene's (STAGE.md, “The input chain”)", async () => {

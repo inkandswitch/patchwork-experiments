@@ -272,7 +272,7 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   // every write here is an edit (./editor.js), so undo takes it back
   function write(plan, label = "Edit") {
-    if (plan && plan.ok === false) api.notify(plan.reason, "error");
+    if (plan && plan.ok === false) api.use("notices")?.notify(plan.reason, "error");
     else if (plan) editor(here).edit(plan, { label });
     return plan;
   }
@@ -320,7 +320,7 @@ export function createOutline(api, { shown = () => true } = {}) {
   function moveRow(id, place) {
     const plan = here.ops.moveRow(here.scene(), id, place);
     if (!plan) return select(id);
-    if (plan.ok === false) return api.notify(plan.reason, "error");
+    if (plan.ok === false) return api.use("notices")?.notify(plan.reason, "error");
     editor(here).edit(plan, { label: "Move in the tree" });
     if (plan.parent) setExpanded(plan.parent, true);
     select(id);
@@ -356,7 +356,7 @@ export function createOutline(api, { shown = () => true } = {}) {
       select(id);
       flushReveal();
     } catch (err) {
-      api.notify(err?.message ?? String(err), "error");
+      api.use("notices")?.notify(err?.message ?? String(err), "error");
     }
   }
 
@@ -520,7 +520,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         if (!drag) return;
         // another scene's row: a copy of it (and what's under it) goes here in the tree, put down as the view would
         if (drag.scene !== here.url) return void copyRows(drag, place, e.altKey);
-        if (!m.objects[drag.id]) return api.notify("That object is no longer in this scene.", "error");
+        if (!m.objects[drag.id]) return api.use("notices")?.notify("That object is no longer in this scene.", "error");
         // Released on its own row: a click that wobbled, whichever band it hit.
         if (drag.id === target.id) return select(drag.id);
         return moveRow(drag.id, place);

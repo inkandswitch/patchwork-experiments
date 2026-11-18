@@ -17,7 +17,7 @@
 // So a caller reads:
 //
 //   const plan = ops.fileIn(api.doc(), id, group);
-//   if (plan && !plan.ok) api.notify(plan.reason, "error");
+//   if (plan && !plan.ok) api.use("notices")?.notify(plan.reason, "error");
 //   else if (plan) api.change(plan);
 //
 // Planners never select, expand, toast or confirm: that's for whoever called.

@@ -270,7 +270,7 @@ describe("scene.inspector: the panel", () => {
     fire(gsel, "body");
     expect(s.doc().objects.vessel.group).toBeNull();
     expect(gsel.value).toBe("");
-    expect(s.local.get().notices.at(-1)).toMatchObject({ text: "A group can't go inside itself.", kind: "error" });
+    expect(s.notices().at(-1)).toMatchObject({ text: "A group can't go inside itself.", kind: "error" });
   });
 
   it("a group shows name, visible, opacity and its group, no attach or transform; Ungroup keeps members where they are", async () => {
@@ -729,7 +729,7 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
     expect([over.defaultPrevented, drop.defaultPrevented]).toEqual([docks, docks]);
     expect(s.debug.view.atom.get().drawer.docs).toEqual(docks ? [`${m.src.url}|`] : []);
     expect(JSON.stringify(s.doc().objects)).toBe(objects);
-    expect(s.debug.view.atom.get().notices).toEqual([]);
+    expect(s.notices()).toEqual([]);
   });
 
   it("two objects' Sources dock as two tabs, each titled after its object; Show keeps a pane's title", async () => {

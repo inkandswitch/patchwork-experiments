@@ -308,7 +308,7 @@ export default {
       function refused() {
         if (done || yieldIfTaken()) return;
         giveBack("refused");
-        api.notify("Something else is moving that.", "info");
+        api.use("notices")?.notify("Something else is moving that.", "info");
       }
 
       // A peer picked it up before we did (both grabbed it at once): theirs
@@ -316,7 +316,7 @@ export default {
       function yieldIfTaken() {
         if (done || !c || api.heldBy(id) == null) return false;
         giveBack("yielded");
-        api.notify("Someone else picked that up first.", "info");
+        api.use("notices")?.notify("Someone else picked that up first.", "info");
         return true;
       }
 

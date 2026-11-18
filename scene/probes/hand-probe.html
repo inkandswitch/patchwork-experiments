@@ -145,7 +145,7 @@ try {
                 secrets.push(secrets.shift());
                 pile.forEach((x, i) => (d.objects[x].traits["probe.secret"] = secrets[i]));
               });
-              api.notify(`Shuffling ${pile.length} cards…`);
+              api.use("notices")?.notify(`Shuffling ${pile.length} cards…`);
             },
           }],
           // its own panel, docked in the drawer (api.dock) when asked: an extension's editor, as Camber's Shape is

@@ -50,12 +50,12 @@ function judge(reg, { before, after }) {
  * since); labels() names them.
  */
 export function editor(f) {
-  const { url, doc, change, local, notify } = f;
+  const { url, doc, change, local } = f;
   const e = createEdits({
     handle: { url, doc, change },
     store: { get: () => local.get().edits ?? EMPTY, swap: (fn) => local.swap((m) => ({ ...m, edits: fn(m.edits ?? EMPTY) })) },
     writable: f.writable,
-    notify: (text) => notify(text),
+    notify: (text) => f.use("notices")?.notify(text),
     judge: (part) => judge(f.registry("scene:extension"), part),
   });
   const edits = (label) => {
@@ -145,7 +145,7 @@ async function inStep(f, id, label, create) {
         registry: f.registry,
         local: Object.freeze({ get: f.local.get, swap: f.local.swap }),
         select: (oid) => f.view.select(oid),
-        notify: f.notify,
+        notify: (text, kind) => f.use("notices")?.notify(text, kind),
       }),
     );
   } finally {
@@ -159,11 +159,11 @@ async function loadModule(f, type, id, what) {
     const p = await (await f.registry(type))?.load(id);
     return p ? { mod: p.module?.default ?? p.module, params: Array.isArray(p.params) ? p.params : [] } : null;
   } catch (err) {
-    f.notify(`Couldn't load that ${what}: ${err?.message ?? err}`, "error");
+    f.use("notices")?.notify(`Couldn't load that ${what}: ${err?.message ?? err}`, "error");
     return null;
   }
 }
-const failed = (f, what, err, out) => (f.notify(`That ${what} failed: ${err?.message ?? err}`, "error"), out);
+const failed = (f, what, err, out) => (f.use("notices")?.notify(`That ${what} failed: ${err?.message ?? err}`, "error"), out);
 
 /** May this extension lay out a dropped doc of this datatype (`drops`; "*": any)? */
 const takesDrop = (meta, type) => !!meta?.id && Array.isArray(meta.drops) && (meta.drops.includes("*") || (!!type && meta.drops.includes(type)));

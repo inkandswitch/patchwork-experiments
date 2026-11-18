@@ -78,7 +78,7 @@ describe("scene.undo", () => {
     expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: "Delete" });
     press("z", { metaKey: true, shiftKey: true });
     expect(s.doc().objects.die.transform.position).toEqual([4, 0, 4]);
-    expect(s.local.get().notices.at(-1).text).toBe("Nothing to redo: “Delete” has been changed since.");
+    expect(s.notices().at(-1).text).toBe("Nothing to redo: “Delete” has been changed since.");
     expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: null });
   });
 
@@ -167,11 +167,11 @@ describe("undo over reveals, and the keeper rule", () => {
     expect(s.doc().objects.c1).toBeUndefined();
     expect(editor(s.facet("scene.undo")).undo()).toBe(true);
     expect(s.doc().objects.c1.traits["t.kept"]).toEqual({ by: "automerge:box", slot: 3 });
-    expect(s.local.get().notices.at(-1).text).toBe("Undid “Delete”: what is kept for “Card” comes back as its keeper has it now, not as it was.");
+    expect(s.notices().at(-1).text).toBe("Undid “Delete”: what is kept for “Card” comes back as its keeper has it now, not as it was.");
     // something no keeper holds: undone without a word
-    const before = s.local.get().notices.length;
+    const before = s.notices().length;
     run("remove", "d");
     expect(editor(s.facet("scene.undo")).undo()).toBe(true);
-    expect(s.local.get().notices.length).toBe(before);
+    expect(s.notices().length).toBe(before);
   });
 });

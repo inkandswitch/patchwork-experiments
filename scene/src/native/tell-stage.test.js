@@ -66,7 +66,7 @@ async function setup({ repo = new FakeRepo(), viewerId = "viewer:bob" } = {}) {
     s.change((d) => (d.objects.a.transform.position = [x, 0, 0]));
     await time.step(1);
   };
-  const told = () => s.local.get().notices.map((n) => ({ text: n.text, at: n.at }));
+  const told = () => s.notices().map((n) => ({ text: n.text, at: n.at }));
   return { s, time, seen, wire, moveTo, told };
 }
 
@@ -207,7 +207,7 @@ describe("one's own tell, and what is still receive's", () => {
     cleanups.push(() => (off(), el.remove()));
     await time.until(() => B.seen.api, { what: "B's extension" });
     await time.step(2);
-    const notices = (s) => s.atom.get().notices.map((n) => n.text);
+    const notices = (v) => v.plugins.instanceOf("scene.notices").notices.map((n) => n.text);
     const bView = () => el.querySelector(".scene-stage").__sceneDebug.view;
     return { time, a, A, B, aNotices: () => notices(a.debug.view), bNotices: () => notices(bView()) };
   }
