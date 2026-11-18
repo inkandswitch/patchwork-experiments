@@ -2,7 +2,7 @@
 
 **Everything in this file is deferred until further notice, except section 1,
 which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
-deferred; steps 1–3 and 4a are done, HISTORY.md "Kernel step 1", "Kernel step 2", "Kernel step 3", "Kernel step 4a").** Nothing else here is to be started without the lead asking.
+deferred; steps 1–3 and 4a are done, HISTORY.md "Kernel step 1", "Kernel step 2", "Kernel step 3", "Kernel step 4a").** Section 3 (tabletop) is queued to start after it. Nothing else here is to be started without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
