@@ -89,6 +89,27 @@ export const plugins = [
       return (await import("./tool.js")).default;
     },
   },
+  // a game library: a folder-shaped doc holding Games (descriptions) and
+  // Sessions (scenes), and the launcher, its default tool (src/library/)
+  {
+    type: "patchwork:datatype",
+    id: "game-library",
+    name: "Game library",
+    icon: "Library",
+    async load() {
+      return (await import("./library/datatype.js")).GameLibraryDatatype;
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "game-library",
+    name: "Game library",
+    icon: "Library",
+    supportedDatatypes: ["game-library"],
+    async load() {
+      return (await import("./library/tool.js")).default;
+    },
+  },
   // the games, as data (games/*.json): each loads to the game itself. Draw
   // Dominoes is one game with a variant for each count that plays (a table
   // whose players shuffle between them waits for every seat, so the count is

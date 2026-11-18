@@ -20,6 +20,8 @@ export function seatsPlugin() {
     id: "t.seats",
     roster: true,
     traits: [SEATS],
+    // as the seats package describes its trait: an entry's fresh state is nobody in it
+    describes: { [SEATS]: { name: "Seats", on: ["scene", "object"], entries: { label: "Seats", noun: "seat", fields: [{ key: "name", kind: "string" }], init: { player: null } } } },
     load: async () => ({
       create: () => ({}),
       // adds them; an id already there is written as <id>-2, -3, … (another table's); says where each went
