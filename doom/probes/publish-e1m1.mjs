@@ -109,7 +109,7 @@ const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels|pointe
 let snapshot = null;
 try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await P("errors").catch(() => null));
-  check("the empty scene takes pastes (editing's Add)", await b.waitFor(`window.__p.running().includes("scene.add")`, 30_000));
+  check("the empty scene takes pastes (editing's Add)", await b.waitFor(`window.__p.views().includes("scene.add")`, 30_000));
   await P("paste()");
   const all = await b.waitFor(`(() => { const l = window.__p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 120_000);
   check("pasted, the map is laid out, built and loaded", all, { loaded: await P("loaded()"), status: await P("status()") });
