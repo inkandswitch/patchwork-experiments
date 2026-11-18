@@ -88,6 +88,13 @@ try {
   const hosts = { h: document.getElementById("h"), a: document.getElementById("a") };
   for (const w of Object.keys(hosts)) Object.assign(hosts[w], { repo, viewerId: me.url, time });
   const dbg = { h: null, a: null };
+  // every notice either view showed, gathered each frame (a toast lasts 6 s of the page's clock: scene/NATIVE.md, "Notices")
+  const told = { h: [], a: [] };
+  const collect = () => {
+    time.frame(collect);
+    for (const w of ["h", "a"]) for (const n of dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  };
+  time.frame(collect);
   const unmounts = { h: null, a: null };
   const docs = { A: null, B: null, R: null, H: null };
   const ids = {};
@@ -224,7 +231,7 @@ try {
       return docs[k].doc().objects[ids[`sea${k}`]].traits.water.clip;
     },
     huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),
-    notices: (w) => (dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text ?? String(n)),
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
   });
   window.__ready = true;
 } catch (err) {
