@@ -1,0 +1,272 @@
+{
+  "format": "tabletop-game",
+  "version": 2,
+  "title": "Every feature",
+  "about": "Not a game: one of each thing the format says.",
+  "players": "2",
+  "pieces": {
+    "mat": {
+      "name": "Mat",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.6,0.4],
+          "thickness": 0.003,
+          "color": "#2f4a3a",
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet"}
+        }
+      ],
+      "locked": true,
+      "snapPoints": [
+        {"position":[0,0.003,0],"rotation":[0,0,0],"tags":["card"]}
+      ],
+      "snapRadius": 0.03
+    },
+    "tray": {
+      "name": "Tray",
+      "parts": [
+        {"shape":"box","size":[0.4,0.002,0.1],"color":"#224422"}
+      ],
+      "locked": true,
+      "zone": {"min":[-0.2,0,-0.05],"max":[0.2,0.1,0.05]},
+      "snapPoints": [
+        {"position":[-0.15,0.002,0],"rotation":[0,0,0],"tags":["card"]},
+        {"position":[-0.04999999999999999,0.002,0],"rotation":[0,0,0],"tags":["card"]},
+        {"position":[0.05000000000000002,0.002,0],"rotation":[0,0,0],"tags":["card"]},
+        {"position":[0.15000000000000005,0.002,0],"rotation":[0,0,0],"tags":["card"]}
+      ]
+    },
+    "back": {
+      "name": "Card",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rounded",
+          "size": [0.056,0.079],
+          "thickness": 0.0005,
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:3Backs3Backs3Backs3Backs3Backs","turn":180},
+          "bottom": {"file":"automerge:3Backs3Backs3Backs3Backs3Backs","turn":180}
+        }
+      ],
+      "tags": ["card"]
+    },
+    "c1": {
+      "name": "Card 1",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rounded",
+          "size": [0.056,0.079],
+          "thickness": 0.0005,
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet","rect":[0,0,0.1,0.14285714285714285],"turn":180},
+          "bottom": {"file":"automerge:3Backs3Backs3Backs3Backs3Backs","turn":180}
+        }
+      ],
+      "back": "back"
+    },
+    "c2": {
+      "name": "Card 2",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rounded",
+          "size": [0.056,0.079],
+          "thickness": 0.0005,
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet","rect":[0.1,0,0.1,0.14285714285714285],"turn":180},
+          "bottom": {"file":"automerge:3Backs3Backs3Backs3Backs3Backs","turn":180}
+        }
+      ],
+      "back": "back"
+    },
+    "c3": {
+      "name": "Card 3",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rounded",
+          "size": [0.056,0.079],
+          "thickness": 0.0005,
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet","rect":[0.2,0,0.1,0.14285714285714285],"turn":180},
+          "bottom": {"file":"automerge:3Backs3Backs3Backs3Backs3Backs","turn":180}
+        }
+      ],
+      "back": "back"
+    },
+    "back2": {
+      "name": "Card",
+      "parts": [
+        {"shape":"slab","outline":"rounded","size":[0.056,0.079],"thickness":0.0005,"color":"#203040"}
+      ],
+      "tags": ["card"]
+    },
+    "c4": {
+      "name": "Card 4",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rounded",
+          "size": [0.056,0.079],
+          "thickness": 0.0005,
+          "color": "#f2f0ea",
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet","rect":[0.3,0,0.1,0.14285714285714285],"turn":180},
+          "bottom": {"file":"automerge:3Backs3Backs3Backs3Backs3Backs","turn":180}
+        }
+      ],
+      "back": "back2"
+    },
+    "token": {
+      "name": "Token",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "cutout",
+          "size": [0.02,0.02],
+          "thickness": 0.002,
+          "color": "#ffffff",
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet","rect":[0.9,0.857143,0.1,0.142857]}
+        }
+      ]
+    },
+    "figure": {
+      "name": "Figure",
+      "parts": [
+        {
+          "shape": "model",
+          "file": "automerge:2Mesh2Mesh2Mesh2Mesh2Mesh2Mesh",
+          "texture": "automerge:5Skin5Skin5Skin5Skin5Skin5Skin",
+          "color": "#ffffff",
+          "matrix": [-0.0254,0,0,0,0.0254,0,0,0,-0.0254],
+          "roughness": 0.75
+        }
+      ]
+    },
+    "die": {
+      "name": "Die",
+      "doc": {
+        "@patchwork": {"type":"die"},
+        "shape": "d6",
+        "size": 0.016,
+        "body": "#f4efe2"
+      },
+      "traits": {
+        "dice.die": {}
+      }
+    },
+    "bag": {
+      "name": "Bag",
+      "parts": [
+        {"shape":"lathe","profile":[[0,0],[0.05,0],[0.06,0.03],[0.03,0.07],[0,0.07]],"color":"#6b4a2e"}
+      ],
+      "bag": {"rule":"random"}
+    },
+    "standee": {
+      "name": "Standee",
+      "parts": [
+        {
+          "shape": "slab",
+          "outline": "rect",
+          "size": [0.03,0.05],
+          "thickness": 0.001,
+          "color": "#ffffff",
+          "rotation": [-1.5707963267948966,0,0],
+          "at": [0,0.03,0],
+          "top": {"file":"automerge:4Sheet4Sheet4Sheet4Sheet4Sheet"}
+        },
+        {"shape":"lathe","profile":[[0,0],[0.012,0],[0.012,0.004],[0,0.004]],"color":"#2b2b2b"}
+      ]
+    }
+  },
+  "setup": [
+    {
+      "piece": "mat",
+      "at": {"position":[0,0,0]}
+    },
+    {
+      "id": "trayA",
+      "piece": "tray",
+      "seat": "a",
+      "name": "A's tray",
+      "at": {"position":[0,0,0.3]}
+    },
+    {
+      "id": "trayB",
+      "piece": "tray",
+      "seat": "b",
+      "name": "B's tray",
+      "at": {"position":[0,0,-0.3],"rotation":[0,3.141592653589793,0]}
+    },
+    {
+      "deck": {
+        "name": "Draw pile",
+        "cards": ["c1","c2","c3"],
+        "faceDown": true,
+        "shuffle": true,
+        "secure": true,
+        "deal": [
+          {"to":"trayA","count":2},
+          {"to":"trayB","count":2}
+        ]
+      },
+      "at": {"position":[0.2,0.003,0]}
+    },
+    {
+      "deck": {
+        "name": "Jumble",
+        "cards": ["c1","c2","c3","c4"],
+        "faceDown": true,
+        "shuffle": true,
+        "spread": {"cols":3,"cell":0.1}
+      },
+      "at": {"position":[-0.2,0.003,0]}
+    },
+    {
+      "piece": "c3",
+      "at": {"position":[0,0.003,0]}
+    },
+    {
+      "piece": "token",
+      "count": 4,
+      "at": {"position":[0.25,0,0.15]},
+      "grid": {"cols":1,"across":[0,0,0],"down":[0,0.002,0]}
+    },
+    {
+      "piece": "figure",
+      "at": {"position":[-0.25,0,0.15],"rotation":[0,0.5,0]}
+    },
+    {
+      "piece": "die",
+      "count": 2,
+      "at": {"position":[0.1,0,0.15]},
+      "grid": {"cols":2,"across":[0.03,0,0],"down":[0,0,0]}
+    },
+    {
+      "piece": "standee",
+      "at": {"position":[-0.1,0,0.15]}
+    },
+    {
+      "piece": "bag",
+      "at": {"position":[0.25,0,-0.15]},
+      "contents": [
+        {"piece":"token","count":3},
+        {"piece":"c1"},
+        {
+          "deck": {"name":"Bagged","cards":["c2","c3"]}
+        }
+      ]
+    }
+  ],
+  "seats": {
+    "a": {
+      "name": "Player A",
+      "camera": {"position":[0,0.5,0.8],"target":[0,0,0.1]}
+    },
+    "b": {"name":"Player B"}
+  },
+  "camera": {"position":[0,0.9,0.7],"target":[0,0,0]},
+  "origin": {"urls":["https://example.org/every.json"],"note":"made up"}
+}

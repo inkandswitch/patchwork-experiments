@@ -6,13 +6,15 @@
 // tabletop package's, for any game, so an imported game works the way a
 // built-in one does.
 //
-//   translate(save, { file, imageSize, unit, flipObjX, includeContents, maxObjects })
+//   translate(save, { file, unit, flipObjX, includeContents, maxObjects })
 //     → { game, counts, skipped, approximated, warnings }
 //
-// `file(url)` is the automerge URL of the file doc holding the mod's asset at
-// `url` (stored by the importer, with that URL as its origin), or null when
-// it couldn't be had: a piece is then drawn without it. `imageSize(url)` is
-// that image's { width, height } (for a tile cut to its picture), or null.
+// `file(url)` is what a piece names the mod's asset at `url` by: the URL
+// itself (fetched when it's first drawn, and cached in the game's `assets`),
+// a file doc the importer stored it in, or null when it can't be had (a
+// piece is then drawn without it). No asset is read here: a tile or token
+// as wide as its picture says so (`aspect: "image"`), and the drawer measures
+// the picture when it draws it.
 //
 // The frame (convert.js): TTS is left-handed, Y up, in "about an inch"; the
 // format is the scene's, right-handed, Y up, metres. Positions mirror z;
@@ -60,6 +62,7 @@ const MATERIALS = [
 const r6 = (v) => +(+v).toFixed(6) + 0;
 const v3 = (a) => a.map(r6);
 const url = (v) => String(v ?? "").trim();
+const isWeb = (u) => /^https?:\/\//i.test(u);
 const scaleOf = (node) => {
   const t = node.transform ?? {};
   return [t.scaleX, t.scaleY, t.scaleZ].map((v) => (Number.isFinite(Number(v)) && Number(v) !== 0 ? Math.abs(Number(v)) : 1));
@@ -99,10 +102,9 @@ export function pieceLook(name) {
 
 /**
  * @param {ReturnType<import("./tts.js").readSave>} save
- * @param {{ file?: (url: string) => string | null, imageSize?: (url: string) => { width: number, height: number } | null,
- *           unit?: number, flipObjX?: boolean, includeContents?: boolean, maxObjects?: number }} [o]
+ * @param {{ file?: (url: string) => string | null, unit?: number, flipObjX?: boolean, includeContents?: boolean, maxObjects?: number }} [o]
  */
-export function translate(save, { file = () => null, imageSize = () => null, unit = 0.0254, flipObjX = true, includeContents = true, maxObjects = 5000 } = {}) {
+export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.0254, flipObjX = true, includeContents = true, maxObjects = 5000 } = {}) {
   const u = unit;
   const pieces = {};
   const counts = { things: 0, cards: 0, decks: 0, bags: 0, dice: 0, seats: 0 };
@@ -130,21 +132,18 @@ export function translate(save, { file = () => null, imageSize = () => null, uni
     const full = !rect || (rect.x === 0 && rect.y === 0 && rect.w === 1 && rect.h === 1);
     return { file: f, ...(full ? {} : { rect: [rect.x, rect.y, rect.w, rect.h].map(r6) }), turn: 180 };
   };
-  const aspectOf = (u0) => {
-    const s = u0 ? imageSize(u0) : null;
-    return s && s.width > 0 && s.height > 0 ? s.width / s.height : null;
-  };
   /** A TTS snap point in an object's frame → the format's: baked into its piece's frame. */
   const snap = (s, S, xFactor = 1) => ({
     position: v3([s.position[0] * xFactor * S[0] * u, s.position[1] * S[1] * u, -s.position[2] * S[2] * u]),
     ...(s.rotation ? { rotation: convertRotation(s.rotation) } : {}),
     ...(s.tags?.length ? { tags: [...s.tags] } : {}),
   });
-  const slab = ({ outline = "rect", w, d, t, y = 0, color = PAPER, side, top, bottom }) => ({
+  const slab = ({ outline = "rect", w, d, t, y = 0, color = PAPER, side, top, bottom, aspect = false }) => ({
     shape: "slab",
     outline,
     size: v3([w, d]),
     thickness: r6(t),
+    ...(aspect && top ? { aspect: "image" } : {}),
     ...(y ? { at: [0, r6(y), 0] } : {}),
     color,
     ...(side ? { side } : {}),
@@ -186,12 +185,12 @@ export function translate(save, { file = () => null, imageSize = () => null, uni
         const spec = (node.kind === "tile" ? im.CustomTile : im.CustomToken) ?? {};
         const t = (Number(spec.Thickness) > 0 ? Number(spec.Thickness) : 0.2) * S[1] * u;
         const stretch = node.kind === "token" || spec.Stretch !== false;
-        const hx = stretch ? aspectOf(url(im.ImageURL)) ?? 1 : 1;
         const outline = node.kind === "token" ? "cutout" : ["rect", "hex", "circle", "rounded"][Number(spec.Type) || 0] ?? "rect";
         const top = image(url(im.ImageURL));
         const bottom = image(url(im.ImageSecondaryURL)) ?? top;
         // a tile's origin is its bottom face (a tile on the table has posY = the table top); a token's its middle
-        const part = slab({ outline: outline === "cutout" && !top ? "rect" : outline, w: 2 * hx * S[0] * u, d: 2 * S[2] * u, t, y: node.kind === "token" ? -t / 2 : 0, color: "#ffffff", side: color ?? "#ffffff", top, bottom });
+        // stretched to its picture: as wide as the image says, measured when it's drawn
+        const part = slab({ outline: outline === "cutout" && !top ? "rect" : outline, w: 2 * S[0] * u, d: 2 * S[2] * u, t, y: node.kind === "token" ? -t / 2 : 0, color: "#ffffff", side: color ?? "#ffffff", top, bottom, aspect: stretch });
         const snaps = node.snapPoints.map((s) => snap(s, S));
         return { id: usePiece({ name: node.nickname || (node.kind === "tile" ? "Tile" : "Token"), parts: [part], ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}) }) };
       }
@@ -206,13 +205,12 @@ export function translate(save, { file = () => null, imageSize = () => null, uni
       case "figurine": {
         const front = image(url(im.ImageURL));
         const back = image(url(im.ImageSecondaryURL)) ?? front;
-        const aspect = aspectOf(url(im.ImageURL)) ?? 0.6;
         const h = 2 * (Number(im.ImageScalar) > 0 ? Number(im.ImageScalar) : 1);
-        const hw = (h * aspect) / 2;
+        const hw = h / 2; // a square picture's: the stand is as wide as its image says
         const base = 0.12;
         const r = Math.max(0.4, hw * 0.8);
         // the image stood up facing +z (the near seats), its top up: a slab turned a quarter about x, on a round base
-        const stand = { ...slab({ w: 2 * hw * S[0] * u, d: h * S[1] * u, t: 0.03 * S[2] * u, color: PAPER, top: front && { ...front, turn: 0 }, bottom: back && { ...back, turn: 0 } }), at: v3([0, (base + h / 2) * S[1] * u, (-0.03 / 2) * S[2] * u]), rotation: [Math.PI / 2, 0, 0] };
+        const stand = { ...slab({ w: 2 * hw * S[0] * u, d: h * S[1] * u, t: 0.03 * S[2] * u, color: PAPER, top: front && { ...front, turn: 0 }, bottom: back && { ...back, turn: 0 }, aspect: true }), at: v3([0, (base + h / 2) * S[1] * u, (-0.03 / 2) * S[2] * u]), rotation: [Math.PI / 2, 0, 0] };
         const foot = slab({ outline: "circle", w: 2 * r * S[0] * u, d: 2 * r * S[2] * u, t: base * S[1] * u, color: "#2b2b2b" });
         return { id: usePiece({ name: node.nickname || "Figurine", parts: [stand, foot], ...common(node) }) };
       }
@@ -431,7 +429,7 @@ export function translate(save, { file = () => null, imageSize = () => null, uni
   const about = [`Imported from Tabletop Simulator: “${save.saveName}”. Its components as they start, and nothing scripted: the rules are the players'.`, save.rules, save.note].filter((x) => typeof x === "string" && x.trim()).join("\n\n");
   const game = {
     format: "tabletop-game",
-    version: 1,
+    version: 2,
     title: save.saveName,
     about,
     pieces,

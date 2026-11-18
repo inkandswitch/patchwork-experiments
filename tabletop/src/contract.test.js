@@ -5,9 +5,9 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { validate, everyThing } from "../contract/v1/validate.js";
-import schema from "../contract/v1/schema.json" with { type: "json" };
-import manifest from "../contract/v1/fixtures/manifest.json" with { type: "json" };
+import { validate, everyThing } from "../contract/v2/validate.js";
+import schema from "../contract/v2/schema.json" with { type: "json" };
+import manifest from "../contract/v2/fixtures/manifest.json" with { type: "json" };
 import { kindsUsed, tableLayout, writeTable, LOOSE } from "./setup.js";
 import { prepareTable } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
@@ -35,7 +35,7 @@ describe("the validator", () => {
 
   for (const f of manifest) {
     it(`${f.file}: ${f.stage === "valid" ? "valid" : `fails ${f.stage}, ${f.code}`} (${f.about})`, () => {
-      const r = validate(read(`../contract/v1/fixtures/${f.file}`));
+      const r = validate(read(`../contract/v2/fixtures/${f.file}`));
       if (f.stage === "valid") expect(r).toEqual({ ok: true, stage: null, errors: [] });
       else {
         expect(r.stage).toBe(f.stage);
@@ -47,12 +47,12 @@ describe("the validator", () => {
   }
 
   it("every fixture on disk is in the manifest, once", () => {
-    const files = ["valid", "invalid"].flatMap((d) => readdirSync(here(`../contract/v1/fixtures/${d}`)).map((n) => `${d}/${n}`));
+    const files = ["valid", "invalid"].flatMap((d) => readdirSync(here(`../contract/v2/fixtures/${d}`)).map((n) => `${d}/${n}`));
     expect(files.sort()).toEqual(manifest.map((f) => f.file).sort());
   });
 
   it("the example is the minimal valid fixture", () => {
-    expect(read("../contract/v1/examples/minimal.json")).toEqual(read("../contract/v1/fixtures/valid/minimal.json"));
+    expect(read("../contract/v2/examples/minimal.json")).toEqual(read("../contract/v2/fixtures/valid/minimal.json"));
   });
 });
 
@@ -63,7 +63,7 @@ describe("the games this package ships", () => {
 });
 
 describe("a game with one of everything, laid out", () => {
-  const g = read("../contract/v1/fixtures/valid/every-feature.json");
+  const g = read("../contract/v2/fixtures/valid/every-feature.json");
   const fileOf = (kind) => ({ url: `automerge:${kind}`, hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.0005, 0.04] } } });
 
   it("asks for every kind its setup uses, and nothing else", () => {
@@ -114,7 +114,7 @@ describe("every valid game lays out with no code of its own", () => {
   const fileOf = (kind) => ({ url: `automerge:${kind}`, hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.001, 0.04] } } });
   for (const f of manifest.filter((x) => x.stage === "valid")) {
     it(`${f.file}: every card kept, every bag filled, every hand a seat's, the seats laid`, async () => {
-      const g = read(`../contract/v1/fixtures/${f.file}`);
+      const g = read(`../contract/v2/fixtures/${f.file}`);
       const layout = tableLayout(g, { fileOf, rng: () => 0.5 });
       const repo = fakeRepo();
       const made = await prepareTable({ repo, registry: installed }, layout);

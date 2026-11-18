@@ -6,7 +6,7 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { emptyScene } from "../src/empty-scene.js";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
-import { ensurePieceGLBs } from "../src/pieces.js";
+import { pieceDrawer } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
 import { prepareTable } from "../src/table/made-with.js";
 import { TabletopGameDatatype } from "../src/datatype.js";
@@ -38,7 +38,7 @@ export async function lostCitiesTable(repo, { title = "Probe table", secure = tr
     if (!secure) delete d.setup.find((t) => t.deck).deck.secure;
     edit?.(d);
   });
-  await ensurePieceGLBs(repo, game);
+  await pieceDrawer({ repo, handle: game }).ensure(Object.keys(game.doc().pieces));
   const g = game.doc();
   const fileOf = (k) => (g.drawn?.[k]?.url ? { url: g.drawn[k].url, hint: g.drawn[k].bounds ? { bounds: g.drawn[k].bounds } : null } : null);
   const layout = tableLayout(gameOf(g), { fileOf, gameUrl: game.url });

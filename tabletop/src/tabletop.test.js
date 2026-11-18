@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { partGeometry } from "./shapes.js";
 import { boundsOf, connectorsOf, drawer, lookKey } from "./look/look.js";
 import { turned } from "./look/slab.js";
-import { ensurePieceGLBs } from "./pieces.js";
+import { pieceDrawer, readFile as readFileOf, RETRY_MS } from "./pieces.js";
 import { composePose, copyPose, isCard, kindsUsed, LOOSE, shuffle, tableLayout, writeTable } from "./setup.js";
 import { prepareTable } from "./table/made-with.js";
 import { composeMatrix, multiply } from "./table/frame.js";
@@ -11,6 +11,7 @@ import { TabletopGameDatatype } from "./datatype.js";
 import { gameOf, writeGame } from "./game.js";
 import { emptyScene } from "./empty-scene.js";
 import { parseGLB } from "./glb.js";
+import * as Automerge from "@automerge/automerge";
 import { encodePNG } from "./test/png.js";
 import { nodeImages } from "./test/node-images.js";
 import { BAG, SEATS, inBag, keptIn, registries, seatsPlugin, sourcePlugin } from "./test/stand-ins.js";
@@ -51,6 +52,9 @@ function setUp(game, fileOf, o = {}) {
   writeTable(scene, layout, { binds, seats: lay });
   return { layout, scene, containers: layout.containers, binds };
 }
+
+/** Draw every kind of a game now (setting up a table draws what it lays out; a face is drawn when it's shown). */
+const ensurePieceGLBs = (repo, game, o = {}) => pieceDrawer({ repo, handle: game, ...o }).ensure(Object.keys(game.doc().pieces ?? {}), o);
 
 const loadGLB = (glb) => new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength), "");
 const draw = (piece, io) => drawer(io).draw(piece);
@@ -317,6 +321,183 @@ describe("piece GLBs", () => {
     await ensurePieceGLBs(repo, g, { images: nodeImages() });
     expect(repo.docs.get(g.doc().drawn.tile.url).origin).toEqual({ urls: ["https://example.org/s.png"] });
     expect(repo.docs.get(g.doc().drawn.plain.url).origin).toBeUndefined();
+  });
+});
+
+describe("drawn on demand", () => {
+  const WEB = "https://example.org/";
+  const png = (w, h) => encodePNG(w, h, new Uint8Array(w * h * 4).fill(200));
+  const card = (file, rect) => ({ shape: "slab", outline: "rounded", size: [0.05, 0.07], thickness: 0.0005, color: "#ffffff", top: { file, ...(rect ? { rect } : {}) } });
+  /** A board, a back, and three faces off two sheets (a1 and a2 cut from one), each image on the web. */
+  const cardGame = () => ({
+    pieces: {
+      board: { name: "Board", parts: [{ shape: "slab", outline: "rect", size: [0.2, 0.2], thickness: 0.004, color: "#ffffff", top: { file: `${WEB}board.png` } }], locked: true },
+      back: { name: "Back", parts: [card(`${WEB}back.png`)], tags: ["card"] },
+      a1: { name: "A1", parts: [card(`${WEB}a.png`, [0, 0, 0.5, 1])], back: "back" },
+      a2: { name: "A2", parts: [card(`${WEB}a.png`, [0.5, 0, 0.5, 1])], back: "back" },
+      b1: { name: "B1", parts: [card(`${WEB}b.png`)], back: "back" },
+    },
+    setup: [{ piece: "board" }, { deck: { name: "Deck", cards: ["a1", "a2", "b1"], faceDown: true } }],
+  });
+  /** A web of PNGs that counts what's fetched; `down` lists URLs it refuses (a host without CORS). */
+  function web({ down = new Set() } = {}) {
+    const fetched = [];
+    const fetch = async (url) => {
+      fetched.push(url);
+      if (down.has(url.replace(/^http:/, "https:"))) throw new TypeError("Failed to fetch");
+      return { ok: true, status: 200, arrayBuffer: async () => png(4, 2).slice().buffer };
+    };
+    return { fetch, fetched, down };
+  }
+  async function newCardGame(repo) {
+    const h = await repo.create2({});
+    h.change((d) => {
+      TabletopGameDatatype.init(d);
+      Object.assign(d, cardGame());
+    });
+    return h;
+  }
+  const settled = async (cond) => {
+    for (let i = 0; i < 1000 && !cond(); i++) await new Promise((r) => setTimeout(r, 0));
+    expect(cond()).toBe(true);
+  };
+
+  it("a table's kinds drawn now; a face drawn the first time it's asked for, with its sheet, and kept for everyone", async () => {
+    const repo = fakeRepo();
+    const game = await newCardGame(repo);
+    const w = web();
+    let changes = 0;
+    const change = game.change;
+    game.change = (fn) => (changes++, change(fn));
+    const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: w.fetch });
+    await pd.ensure(["back", "board"]);
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(["back", "board"]);
+    expect(w.fetched.sort()).toEqual([`${WEB}back.png`, `${WEB}board.png`]);
+    // what was fetched is cached in the game, under its URL
+    expect(Object.keys(game.doc().assets).sort()).toEqual([`${WEB}back.png`, `${WEB}board.png`]);
+    expect(repo.docs.get(game.doc().assets[`${WEB}board.png`].file)).toMatchObject({ "@patchwork": { type: "file" }, mimeType: "image/png", origin: { urls: [`${WEB}board.png`] } });
+    expect(changes).toBe(1);
+
+    // a1 shown: drawn here and shown from its bytes at once; its sheet (a2) drawn with it, and both recorded in one change
+    const shown = await pd.face("a1");
+    expect(shown.glb).toBeInstanceOf(Uint8Array);
+    await settled(() => !!game.doc().drawn.a2);
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(["a1", "a2", "back", "board"]);
+    expect(w.fetched.filter((u) => u.endsWith("a.png"))).toHaveLength(1);
+    expect(game.doc().assets[`${WEB}a.png`].file).toBeTruthy();
+    expect(changes).toBe(2);
+    // the next face of that sheet is its doc: nothing drawn, fetched or written
+    const docs = repo.docs.size;
+    expect(await pd.face("a2")).toEqual({ url: game.doc().drawn.a2.url });
+    expect(await pd.face("a1")).toEqual({ url: game.doc().drawn.a1.url });
+    // another viewer (another drawer, a fresh fetch) finds them in the game
+    const other = web();
+    const them = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: other.fetch });
+    expect(await them.face("a1")).toEqual({ url: game.doc().drawn.a1.url });
+    expect([repo.docs.size, changes, other.fetched]).toEqual([docs, 2, []]);
+    // b1, another sheet, when it's shown, read from the cache the game has (a sheet cached, not fetched again)
+    game.change((d) => (d.assets[`${WEB}b.png`] = { file: game.doc().assets[`${WEB}a.png`].file }));
+    expect((await them.face("b1")).glb).toBeInstanceOf(Uint8Array);
+    await settled(() => !!game.doc().drawn.b1);
+    expect(other.fetched).toEqual([]);
+  });
+
+  it("what's recorded names a sheet, never the face asked for: its docs made, and its entries written, in kind order", async () => {
+    const repo = fakeRepo();
+    const game = await newCardGame(repo);
+    const made = [];
+    const create2 = repo.create2;
+    repo.create2 = async (doc) => (doc.extension === "glb" && made.push(doc.name), create2(doc));
+    const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: web().fetch });
+    await pd.face("a2");
+    await settled(() => !!game.doc().drawn?.a1);
+    expect(made).toEqual(["A1.glb", "A2.glb"]);
+    expect(Object.keys(game.doc().drawn)).toEqual(["a1", "a2"]);
+  });
+
+  it("two viewers drawing the same sheet at once: one entry wins, and each shows what it drew", async () => {
+    // the game as two peers have it, each drawing a1 before either has heard from the other
+    const repo = fakeRepo();
+    const init = {};
+    TabletopGameDatatype.init(init);
+    Object.assign(init, cardGame());
+    const base = Automerge.from(init, { actor: "aa" });
+    const peer = (actor) => {
+      let d = Automerge.clone(base, { actor });
+      return { url: "automerge:game", doc: () => d, change: (fn) => (d = Automerge.change(d, fn)), set: (x) => (d = x) };
+    };
+    const [p, q] = [peer("bb"), peer("cc")];
+    const [dp, dq] = [p, q].map((h) => pieceDrawer({ repo, handle: h, images: nodeImages(), fetch: web().fetch }));
+    const [sp, sq] = await Promise.all([dp.face("a1"), dq.face("a1")]);
+    expect(sp.glb).toBeInstanceOf(Uint8Array);
+    expect(sq.glb).toBeInstanceOf(Uint8Array);
+    await settled(() => !!p.doc().drawn?.a2 && !!q.doc().drawn?.a2);
+    // each made its own docs, the sheet's and the faces'
+    expect(p.doc().drawn.a1.url).not.toBe(q.doc().drawn.a1.url);
+    expect(p.doc().assets[`${WEB}a.png`].file).not.toBe(q.doc().assets[`${WEB}a.png`].file);
+    // they hear from each other: one entry for each, the same on both
+    const merged = Automerge.merge(Automerge.clone(p.doc()), q.doc());
+    p.set(Automerge.merge(p.doc(), q.doc()));
+    q.set(Automerge.merge(q.doc(), merged));
+    for (const k of ["a1", "a2"]) {
+      expect(p.doc().drawn[k]).toEqual(q.doc().drawn[k]);
+      expect(repo.docs.has(p.doc().drawn[k].url)).toBe(true);
+    }
+    expect(p.doc().assets).toEqual(q.doc().assets);
+    // and either now shows the one that won
+    expect(await dq.face("a1")).toEqual({ url: q.doc().drawn.a1.url });
+  });
+
+  it("a host that refuses: the face is drawn without its image, its URL noted, and fetched again only after a while", async () => {
+    const repo = fakeRepo();
+    const game = await newCardGame(repo);
+    const w = web({ down: new Set([`${WEB}a.png`]) });
+    let t = 1000;
+    const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: w.fetch, now: () => t });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect((await pd.face("a1")).glb).toBeInstanceOf(Uint8Array);
+    await settled(() => !!game.doc().drawn?.a2);
+    expect(game.doc().drawn.a1.missing).toEqual([`${WEB}a.png`]);
+    expect(game.doc().assets?.[`${WEB}a.png`]).toBeUndefined();
+    const url = game.doc().drawn.a1.url;
+    // shown again and again: its doc, nothing fetched
+    for (let i = 0; i < 5; i++) expect(await pd.face(i % 2 ? "a1" : "a2")).toEqual({ url: game.doc().drawn[i % 2 ? "a1" : "a2"].url });
+    expect(w.fetched).toEqual([`${WEB}a.png`, `http://example.org/a.png`]); // (and its http twin: look/web.js)
+    // a while later, the host answers: shown as it was, drawn again behind it, in place
+    t += RETRY_MS + 1;
+    w.down.clear();
+    expect(await pd.face("a1")).toEqual({ url });
+    await settled(() => !game.doc().drawn.a1.missing && !game.doc().drawn.a2.missing);
+    expect(game.doc().drawn.a1.url).toBe(url);
+    expect(w.fetched).toEqual([`${WEB}a.png`, `http://example.org/a.png`, `${WEB}a.png`]);
+    expect(game.doc().assets[`${WEB}a.png`].file).toBeTruthy();
+  });
+
+  it("a viewer who can't write the game draws for themselves, and writes nothing", async () => {
+    const repo = fakeRepo();
+    const game = await newCardGame(repo);
+    const before = JSON.stringify(game.doc());
+    const ro = { ...game, url: game.url, doc: game.doc, isReadOnly: () => true, change: () => { throw new Error("read-only"); } };
+    const w = web();
+    const docs = repo.docs.size;
+    const pd = pieceDrawer({ repo, handle: ro, images: nodeImages(), fetch: w.fetch });
+    const shown = await pd.face("a1");
+    expect(shown.glb).toBeInstanceOf(Uint8Array);
+    // the rest of the sheet drawn too, kept here: a2 is shown from what was drawn, not drawn again
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await pd.face("a2")).glb).toBeInstanceOf(Uint8Array);
+    expect(w.fetched).toEqual([`${WEB}a.png`]);
+    expect([JSON.stringify(game.doc()), repo.docs.size]).toEqual([before, docs]);
+  });
+
+  it("a slab as wide as its image says is measured when it's drawn", async () => {
+    const repo = fakeRepo();
+    const sheet = await repo.create2({ "@patchwork": { type: "file" }, extension: "png", mimeType: "image/png", content: png(8, 2) });
+    const tile = { name: "Tile", parts: [{ shape: "slab", outline: "rect", size: [0.05, 0.05], thickness: 0.004, aspect: "image", color: "#ffffff", top: { file: sheet.url } }] };
+    const io = { read: (u) => readFileOf(repo, u), images: nodeImages() };
+    expect((await draw(tile, io)).bounds.max[0]).toBeCloseTo(0.1, 6); // 4:1, half of 0.05 × 4
+    expect((await draw({ ...tile, parts: [{ ...tile.parts[0], top: { file: sheet.url, rect: [0, 0, 0.25, 1] } }] }, io)).bounds.max[0]).toBeCloseTo(0.025, 6); // its cell is square
+    expect((await draw({ ...tile, parts: [{ ...tile.parts[0], top: { file: sheet.url, turn: 90 } }] }, io)).bounds.max[0]).toBeCloseTo(0.00625, 6); // turned on its face
   });
 });
 
@@ -619,7 +800,7 @@ describe("cards anywhere, and bags", () => {
   /** A small game: a back, two cards, a bag, a pawn, a hand. */
   const small = () => ({
     format: "tabletop-game",
-    version: 1,
+    version: 2,
     title: "Small",
     about: "",
     pieces: {

@@ -7,7 +7,7 @@ import { cupsOf, policy } from "./cup.js";
 import { DICE_EACH, SETS, cupPart } from "./table.js";
 import { emptyScene } from "../empty-scene.js";
 import { plugins } from "../index.js";
-import { validate } from "../../contract/v1/validate.js";
+import { validate } from "../../contract/v2/validate.js";
 import game from "../../games/liars-dice.json" with { type: "json" };
 
 /** The game's things as a scene would hold them: each where its setup says, with its piece's traits (every thing here is one copy). */

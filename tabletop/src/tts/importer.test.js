@@ -11,8 +11,8 @@ import { runImport, source } from "./importer.js";
 import { sourcesFromZip } from "./inputs.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { FIXTURE, fixtureSources } from "./test/fixture.js";
-import { validate, errorText } from "../../contract/v1/validate.js";
-import tinyGame from "../../contract/v1/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
+import { validate, errorText } from "../../contract/v2/validate.js";
+import tinyGame from "../../contract/v2/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
 
 const U = 0.0254;
 const notFound = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
@@ -31,22 +31,29 @@ describe("runImport on the tiny fixture", () => {
   it("finds the save and the assets the game uses (through the cloud-3 rewrite), and reports what's missing", async () => {
     const { report, phases } = await importFixture();
     expect(report.mod).toMatchObject({ saveName: "Tiny Test Mod", fileName: "Workshop/1234567890.json", objects: 17 });
-    // the PDF isn't one: a sheet is drawn for it, and its file is left where it was
-    expect(report.counts.assets).toMatchObject({ needed: 8, cache: 7, fetched: 0, missing: 1, referenced: 10 });
+    // the PDF isn't one: a sheet is drawn for it, and its file is left where it was; a model's texture is asked
+    // for as its model is (it once wasn't: a dry translation never asked); what wasn't dropped is
+    // fetched when something is first drawn from it (pieces.js), not now
+    expect(report.counts.assets).toMatchObject({ needed: 9, cache: 8, fetched: 0, web: 1, missing: 0, referenced: 10 });
     const back = Object.values(report.assets).find((a) => a.url.includes("cloud-3"));
     expect(back).toMatchObject({ source: "cache", mimeType: "image/png" });
-    const missing = Object.values(report.assets).filter((a) => !a.source);
+    expect(Object.values(report.assets).filter((a) => a.source === "web").map((a) => a.usedBy[0])).toEqual(["Lost model"]);
+    // fetching everything now (for playing offline), what the web won't give is missing
+    const now = (await importFixture({ settings: { fetchNow: true } })).report;
+    expect(now.counts.assets).toMatchObject({ needed: 9, cache: 8, fetched: 0, web: 0, missing: 1 });
+    const missing = Object.values(now.assets).filter((a) => !a.source);
     expect(missing.map((a) => [a.usedBy[0], a.error])).toEqual([["Lost model", "not in the dropped files; fetching failed: HTTP 404"]]);
-    expect(phases).toEqual(["Reading the mod", "Finding assets", ...Array(8).fill("Finding assets"), "Storing assets", ...Array(7).fill("Storing assets"), "Translating the game", "Done"]);
+    expect(phases).toEqual(["Reading the mod", "Finding assets", ...Array(9).fill("Finding assets"), "Storing assets", ...Array(8).fill("Storing assets"), "Translating the game", "Done"]);
     expect(report.counts.skipped).toEqual({ "3DText": 1, ScriptingTrigger: 1 });
-    expect(report.counts.approximated).toEqual({ Custom_Model: 1 });
+    // nothing is a stand-in for want of an asset here: one that can't be had is when it's drawn
+    expect(report.counts.approximated).toEqual({});
     expect(report.counts).toMatchObject({ cards: 4, decks: 1, bags: 1, dice: 1, seats: 1, pieces: 16 });
   });
 
   it("stores each asset as a file doc saying which of the mod's URLs it came from, OBJ as text", async () => {
     const { report, doc } = await importFixture();
     const stored = Object.values(report.assets).filter((a) => a.fileUrl);
-    expect(stored).toHaveLength(7);
+    expect(stored).toHaveLength(8);
     for (const a of stored) expect(doc(a.fileUrl).origin).toEqual({ urls: [a.url] });
     const obj = stored.find((a) => a.role === "model");
     expect(doc(obj.fileUrl)).toMatchObject({ "@patchwork": { type: "file" }, extension: "obj", mimeType: "model/obj" });
@@ -91,7 +98,7 @@ describe("runImport on the tiny fixture", () => {
     expect(types.filter((t) => t !== "file")).toEqual(["tabletop-game"]);
   });
 
-  it("is, whole, the format's own fixture of it (contract/v1's valid/tts-tiny-mod.json), up to the names the repo gave it", async () => {
+  it("is, whole, the format's own fixture of it (contract/v2's valid/tts-tiny-mod.json), up to the names the repo gave it", async () => {
     // file docs' URLs are whatever the repo made, and a kind's id is a hash of its look, URLs and all:
     // name both by the order they're first met
     const named = (g) => {
@@ -108,13 +115,14 @@ describe("runImport on the tiny fixture", () => {
     expect(rekeyed(game)).toEqual(rekeyed(tinyGame));
   });
 
-  it("every image and model a piece names is one of the stored file docs", async () => {
+  it("every image and model a piece names is the mod's own URL, cached in the game's assets when it was dropped", async () => {
     const { game, report } = await importFixture();
-    const stored = new Set(Object.values(report.assets).map((a) => a.fileUrl).filter(Boolean));
-    const named = [];
-    for (const p of Object.values(game.pieces)) for (const part of p.parts ?? []) for (const u of [part.top?.file, part.bottom?.file, part.file, part.texture]) if (u) named.push(u);
-    expect(named.length).toBeGreaterThan(0);
-    for (const u of named) expect(stored.has(u)).toBe(true);
+    const named = new Set();
+    for (const p of Object.values(game.pieces)) for (const part of p.parts ?? []) for (const u of [part.top?.file, part.bottom?.file, part.file, part.texture]) if (u) named.add(u);
+    const stored = Object.values(report.assets).filter((a) => a.fileUrl);
+    expect(game.assets).toEqual(Object.fromEntries(stored.map((a) => [a.url, { file: a.fileUrl }])));
+    // the lost model's too: it's fetched when it's first drawn (and drawn as a stand-in if it can't be)
+    expect([...named].sort()).toEqual([...stored.map((a) => a.url), Object.values(report.assets).find((a) => a.source === "web").url].sort());
   });
 
   it("puts everything where TTS had it: the board locked at (0, ~0, −4u) a half turn round, its snap points scaled", async () => {
@@ -161,8 +169,8 @@ describe("runImport on the tiny fixture", () => {
     const { byName, thingOf, game } = await importFixture();
     expect(byName("Pouch")[1].bag).toEqual({ rule: "random" });
     expect(thingOf("Pouch").contents.map((t) => game.pieces[t.piece].name)).toEqual(["Token in the bag", "Lost model"]);
-    // the lost model, its OBJ missing, is a see-through stand-in
-    expect(byName("Lost model")[1].parts[0]).toMatchObject({ shape: "box", color: "#a0a0a8b0" });
+    // the lost model, its OBJ not dropped, names it (look.js draws a see-through stand-in while it can't be had)
+    expect(byName("Lost model")[1].parts[0]).toMatchObject({ shape: "model", file: "https://example.invalid/missing-model.obj" });
     const none = await importFixture({ settings: { includeContents: false } });
     expect(none.thingOf("Pouch").contents).toBeUndefined();
   });
@@ -206,7 +214,7 @@ describe("runImport on the tiny fixture", () => {
     const sources = await sourcesFromZip(zipSync(files), "tiny.zip");
     expect(sources.length).toBe(Object.keys(files).length);
     const out = await runImport({ sources, repo: new FakeRepo(), fetch: notFound });
-    expect(out.report.counts.assets.cache).toBe(7);
+    expect(out.report.counts.assets.cache).toBe(8);
     await expect(runImport({ sources: [source("a.png", 1, async () => new Uint8Array(1))], repo: new FakeRepo() })).rejects.toThrow(/No Tabletop Simulator save/);
   });
 

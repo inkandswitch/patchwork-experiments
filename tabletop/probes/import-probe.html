@@ -43,7 +43,7 @@ try {
   const Datatype = (await getRegistry("patchwork:datatype").load("tts-import")).module;
   const seed = { "@patchwork": { type: "tts-import" } };
   Datatype.init(seed);
-  seed.settings.fetchMissing = params.get("fetch") === "1";
+  seed.settings.fetchNow = params.get("fetch") === "1";
   if (params.get("contents") === "0") seed.settings.includeContents = false;
   const importDoc = repo.add(seed);
   const toolHost = document.getElementById("tool");

@@ -8,7 +8,7 @@
 //
 // A game is found by its id among the registered `tabletop:game`s (this
 // package's own are JSON files in games/; another package may register its
-// own), and checked against the format (contract/v1/validate.js). Nothing
+// own), and checked against the format (contract/v2/validate.js). Nothing
 // here knows any one game (Liar's dice, under dice/, is laid out the same way).
 //
 // What differs from the game page's tables:
@@ -36,7 +36,7 @@ import { kindsUsed, tableLayout, writeTable } from "../setup.js";
 import { findSource, prepareTable } from "./made-with.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
-import { errorText, validate } from "../../contract/v1/validate.js";
+import { errorText, validate } from "../../contract/v2/validate.js";
 
 const UNTITLED = "Untitled scene"; // the scene datatype's init title
 

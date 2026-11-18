@@ -15,7 +15,7 @@ import { audienceOf, faceUpIn } from "./visibility.js";
 import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
 import { fakeRepo } from "../test/games.js";
-import tiny from "../../contract/v1/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
+import tiny from "../../contract/v2/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
 import { BAG, SEATS, inBag, keeperOf, keptIn, registries, roster, seatsPlugin, stageExtras } from "../test/stand-ins.js";
 
 const game = () => structuredClone(tiny);
@@ -53,7 +53,7 @@ describe("an imported game, set up as any game is", () => {
   });
 
   it("every card is kept: the deck's three in a container titled by the game and deck, the loose one in the game's", async () => {
-    const { layout, made, scene } = await setUp();
+    const { g, layout, made, scene } = await setUp();
     expect(Object.values(layout.containers).map((c) => [c.title, c.secure, c.items.length])).toEqual([
       ["Tiny Test Mod: Draw pile", false, 3],
       ["Tiny Test Mod: Cards", false, 1],
@@ -63,7 +63,7 @@ describe("an imported game, set up as any game is", () => {
     expect(cards).toHaveLength(4);
     for (const o of cards) expect(keptIn(o)).toMatchObject({ kind: "plain" });
     // each drawn as its back: what it is, is its keeper's
-    expect(new Set(cards.map((o) => kindOf(o.sourceUrl)))).toEqual(new Set(["p8h1dj21q8kpo3"]));
+    expect(new Set(cards.map((o) => kindOf(o.sourceUrl)))).toEqual(new Set(Object.values(g.pieces).map((p) => p.back).filter(Boolean)));
   });
 
   it("a deck someone marks secure (the game page's tick) is kept by the keeper whose players shuffle between them", async () => {

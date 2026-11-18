@@ -175,7 +175,7 @@ export default function TtsImportTool(handle, element) {
         { class: "grid" },
         el("label", { class: "field" }, el("span", {}, "One TTS unit is"), el("input", { type: "number", step: "0.0001", min: "0.001", value: String(s.metresPerUnit), disabled: busy, onchange: (e) => Number(e.target.value) > 0 && set("metresPerUnit", Number(e.target.value)) }), el("small", {}, "metres (0.0254: an inch)")),
         check("includeContents", "Bring in what's in bags", "each bag holds what it held in TTS"),
-        check("fetchMissing", "Fetch what wasn't dropped", "from the web; many hosts refuse (CORS)"),
+        check("fetchNow", "Fetch every asset now", "for playing offline; otherwise each is fetched when it's first drawn (many hosts refuse: CORS)"),
         check("flipObjX", "Mirror OBJ models in x", "as TTS (Unity) does when it loads them"),
       ),
     );
@@ -232,6 +232,7 @@ export default function TtsImportTool(handle, element) {
         stat(c.dice, "dice"),
         stat(a.cache, "assets from the cache"),
         stat(a.fetched, "fetched"),
+        stat(a.web, "fetched when first drawn"),
         stat(a.missing, "missing"),
         stat(c.seats, "seats"),
       ),

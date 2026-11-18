@@ -22,7 +22,7 @@ const slab = (color) => [{ shape: "slab", outline: "rect", size: [0.06, 0.09], t
 export function cardsGame({ secure, seats, bag = false }) {
   return {
     format: "tabletop-game",
-    version: 1,
+    version: 2,
     title: "Three cards",
     about: "",
     pieces: {
