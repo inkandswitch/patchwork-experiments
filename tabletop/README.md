@@ -80,27 +80,28 @@ The launcher (`tool.js`, every step in `actions.js`, the data in `model.js`):
   2026-11-18 21:30") and opens it. The description draws what the table lays
   out (`drawn`) and caches web assets (`assets`), so every session of it
   shares both.
-- **Continue** opens a session; Sessions lists the newest first.
+- **Continue** opens a session; Sessions lists the newest first (each link
+  a list insert: two people starting games at once both appear).
 - **Fork** copies a session into a new scene doc by the scene's copy rule
   (`copy-rule.js`, a copy of scene/src/transfer.js's): every object under its
   id; the stage's runtime fields, runtime traits (a keeper's binding: a card
   is a bare back) and `copy: "drop"` fields left behind; each `entries`
-  trait's entries set back to its `init` (the seats emptied); a render made
-  again where it's opened. Each bag's doc is copied too. It is linked as
-  "<name> (copy)" and says `forkedFrom: { url, heads }`. Its cards name the
-  same description, so it draws from the same `drawn` and `assets`.
+  trait's entries set back to its `init` (the seats emptied). A built
+  object's render doc is copied, as paste copies it, and each bag's doc (a
+  plain bag's with what is inside it as the session reads it). The copy is
+  linked as "<name> (copy)", says `forkedFrom: { url, heads }` and opens;
+  it draws from the same description's `drawn` and `assets`.
 - **Import a TTS mod…** takes the mod's `.json` with any cached assets (or a
   `.zip`) through the importer at its default (assets by URL, fetched when
   first drawn; **Fetch every asset now** for offline play) into Games.
 - **Add the built-in games** makes a description of each registered
-  `tabletop:game` the library hasn't one of (`origin.builtIn` says which), so
-  pressing it again adds nothing.
+  `tabletop:game` the library hasn't one of (`origin.builtIn` says which),
+  then takes out each link after the first to the same game: idempotent,
+  even pressed on two peers at once.
 
-The start screen's per-game `scene:template`s stay: an empty scene has no
-description to start from, and a template's params are fixed in its
-metadata, so one generic template would have to offer every game and every
-game's options in one form, without each game's button, icon and blurb.
-They are metadata only (`template(id)`); no game has code of its own.
+The start screen keeps a `scene:template` per game (metadata only,
+`template(id)`): an empty scene has no description to start from, and a
+template's params are fixed in its metadata.
 
 ## A table
 

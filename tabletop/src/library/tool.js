@@ -1,10 +1,6 @@
-// patchwork:tool "game-library" — the launcher: a library's Games (game
-// descriptions) and Sessions (scenes, newest first), and what to do with
-// them (actions.js): New game (a description, as the variant chosen beside
-// it, rendered into a fresh scene, then opened), Continue (open a session),
-// Fork (a session copied by the scene's copy rule), Import (a TTS mod's
-// files → a description), Add the built-in games, and Open as folder (the
-// library in the folder tool, which reads it as any folder).
+// patchwork:tool "game-library" — the launcher's page: a library's Games
+// and Sessions (newest first), and New game, Continue, Fork, Import, Add the
+// built-in games and Open as folder (actions.js; README.md, "The library").
 
 import css from "../styles.css?inline";
 import { gamesIn, sessionsIn } from "./model.js";
@@ -105,7 +101,8 @@ export default function GameLibraryTool(handle, element) {
     });
   const fork = (link) =>
     act(`Forking ${link.name}…`, async () => {
-      const { name } = await forkSession({ repo, registry: hostRegistry, library: handle, session: link });
+      const { url, name } = await forkSession({ repo, registry: hostRegistry, library: handle, session: link });
+      open(url, "scene");
       return `Forked as “${name}”.`;
     });
   const builtIns = () =>
