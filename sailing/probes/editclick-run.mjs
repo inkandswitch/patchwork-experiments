@@ -115,6 +115,12 @@ try {
       await js(`__p.A.view.focusOn(${J([ids.link])})`);
       await b.rest(300);
     }
+    // over the table again where she is now: her ride doesn't rise with her (crew.js, rise: false), so a heave
+    // since the last aim can bring the felt up to the lens
+    else {
+      await P("setCam('a', __p.overTable('a'))");
+      await b.rest(300);
+    }
     const before = await state();
     const name = which === "table" ? "the Card table" : "another part of her";
     const at = await find(which);
