@@ -1,8 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>pins probe</title>
-<!-- Driven by probes/pins-run.mjs (checks) and probes/publish-fitout.mjs
-     (publishing what it builds): pins, and a live doc linked twice (its
+<!-- Driven by probes/pins-run.mjs: pins, and a live doc linked twice (its
      second link closed, "repeat"; scene/STAGE.md, "Views, stages and links"), on the BUILT scene,
      sailing, joints and traversal plugins in a stub registry, on ONE
      in-memory repo, each doc made the way a person makes it, by the tools:
@@ -55,15 +54,6 @@ const origWarn = console.warn, origError = console.error;
 console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
 console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
 
-const portable = (doc) =>
-  JSON.parse(JSON.stringify(doc, (k, v) => {
-    if (v instanceof Uint8Array) {
-      let s = "";
-      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
-      return { $bytes: btoa(s) };
-    }
-    return v;
-  }));
 const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
 const invert = (m) => {
   // a rigid-or-similar 4×4 (column-major): the inverse of its 3×3 by cofactors, then the translation
@@ -101,11 +91,8 @@ async function pumping(fn) {
 }
 
 try {
-  // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
-  // the stages can say which package each plugin comes from (publish-fitout checks what each doc lists)
-  const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["sailing", "../dist/index.js"], ["walk", "../../walk/dist/index.js"], ["water", "../../water/dist/index.js"], ["weather", "../../weather/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
-    registerPlugins((await import(url)).plugins, urls[dir]);
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+    registerPlugins((await import(url)).plugins);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
@@ -155,10 +142,11 @@ try {
 
   const P = (window.__p = {
     errors, ids, writes, people: Object.fromEntries(Object.entries(people).map(([w, h]) => [w, h.url])),
-    build: (o) => pumping(() => build(o ?? {})),
+    build: () => pumping(build),
   });
 
-  async function build({ title = "Fitting out" } = {}) {
+  async function build() {
+    const title = "Pins";
     // W: the hatch, in a view of its own
     docs.w = repo.add(emptyScene({ title: "Hatch" }));
     mount("w", docs.w);
@@ -254,11 +242,6 @@ try {
     return l.slice(12, 15).map((v) => +v.toFixed(4));
   };
   Object.assign(P, {
-    /** what view w's own doc calls for and who answers, and what it lists */
-    packages(w) {
-      const i = dbg[w]?.packages.inspect();
-      return i ? { answering: i.answering.map((p) => ({ id: p.id, importUrl: p.importUrl })), listed: i.listed } : null;
-    },
     stages: () => dbg.s.view.stages().map(about),
     stage: (...path) => about(stageAt(...path)),
     link: linkOf,
@@ -387,18 +370,6 @@ try {
         }
       }
       return { moved, off };
-    },
-    /** the docs to publish: the boat, F (as fixed, and as it is now), W, and their files */
-    snapshot() {
-      const at = objectsOf(docs.s)[ids.fitout]?.at;
-      const fThen = at ? docs.f.view([...at.heads]).doc() : null;
-      const urls = [docs.s.url, docs.f.url, docs.w.url, ...[docs.s, docs.f, docs.w].flatMap((h) => Object.values(h.doc().assets ?? {}).map((a) => a.url))];
-      return {
-        scene: docs.s.url, f: docs.f.url, w: docs.w.url, fitout: ids.fitout,
-        fThen: fThen ? portable(fThen) : null,
-        deps: at?.deps ? Object.keys(at.deps) : [],
-        docs: Object.fromEntries([...new Set(urls)].map((u) => [u, portable(repo.handles.get(u).doc())])),
-      };
     },
   });
   window.__ready = true;
