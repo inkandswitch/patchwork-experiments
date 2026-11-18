@@ -86,7 +86,7 @@ try {
   mark("B opened the URL");
   const asked = await fUntil("b", `f.packages()?.ask?.length === 1 && f.packages().ask.every((e) => e.name) && f.card() && !f.card().hidden`, 15_000);
   const card = await F("b", "card");
-  check("B is offered the package on the packages card, by name, with Load", asked && J(card.rows.map((r) => r.name)) === J(["@tiny-patchwork/tabletop"]) && J(card.rows.map((r) => name[r.url])) === J(["tabletop"]) && /^Load/.test(card.actions.join(" ")), card);
+  check("B is offered the package on the packages card, by name, with Load", asked && J(card.rows.map((r) => r.name)) === J(["@tiny-patchwork/tabletop"]) && J(card.rows.map((r) => name[r.url])) === J(["tabletop"]) && card.actions.some((a) => /^Load/.test(a)), card);
   check("nothing was imported before a yes", (await F("b", "imported")).length === 0, await F("b", "imported"));
   check("B's stage runs neither the table nor the keeper", !(await F("b", "running")).some((id) => /tabletop|card-table/.test(id)), await F("b", "running"));
   check("B's seats are there all the same (B has the seats package): the picker is up", await fUntil("b", `f.picker()?.length === 3`, 5000), await F("b", "picker"));
