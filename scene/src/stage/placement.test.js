@@ -29,7 +29,7 @@ import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
 import { keyOf } from "./paths.js";
-import { readClock } from "./clock.js";
+import { readClock } from "../native/clock.js";
 
 const ME = "automerge:ana";
 const BEN = "automerge:ben";
@@ -68,7 +68,7 @@ const EXTENSIONS = [
             for (const id of Object.keys(api.scene().objects)) {
               if (!api.scene().objects[id].traits?.["t.card"]) continue;
               const a = api.audience(id);
-              out.set(id, a === "all" || (Array.isArray(a) && a.includes(api.viewer)) ? { name: `face ${id}` } : { veil: true });
+              out.set(id, a === "all" || (Array.isArray(a) && a.includes(api.channel.viewer)) ? { name: `face ${id}` } : { veil: true });
             }
             return out;
           },
@@ -118,7 +118,7 @@ function seen(st) {
     traits: snap.traits,
     running: st.debug.host.running().map((r) => r.id).sort(),
     // the doc's clock, and the stage's own reading of it (its t moves with each view's frames, so only whether it runs)
-    clock: { doc: readClock(st.doc()).running, api: api.clock.running() },
+    clock: { doc: readClock(st.doc()).running, api: api.use("clock").running() },
     cards: ["h1", "h2", "t"].map((id) => [id, api.audience(id), api.shown(id), st.debug.looks().get(id) ?? null]),
   });
 }
@@ -127,12 +127,12 @@ function seen(st) {
  * The reads that do depend on placement, and only as I4 says (W7): what
  * api.ambient gives one of G's stages. Its value is the world's (G's own
  * alone, its outermost host's when linked, whatever G offers), `mine` holds
- * exactly where G is the world, its frame is the stage's own and its clock
- * the outermost's world time.
+ * exactly where G is the world, its frame is the stage's own and its `use`
+ * the outermost's services (its world time).
  */
 function ambientSeen(st, world) {
   const a = st.debug.host.record("t.table").api.ambient("t.x");
-  return { value: a.value, mine: a.mine, frame: a.frame?.matrix ?? null, running: a.clock.running, want: { value: world.ambients()["t.x"], mine: world === st, frame: st.frame()?.matrix ?? null, running: world.worldTime().running } };
+  return { value: a.value, mine: a.mine, frame: a.frame?.matrix ?? null, running: a.use("clock").running(), want: { value: world.ambients()["t.x"], mine: world === st, frame: st.frame()?.matrix ?? null, running: world.reader.use("clock").running() } };
 }
 
 describe("placement independence (I4): G alone, linked, heeled, two links deep", () => {
@@ -168,7 +168,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       for (const paused of [false, true])
         for (const played of [false, true]) {
           if (paused && !played) {
-            gStages(views.alone.v)[0].debug.host.record("t.table").api.clock.pause();
+            gStages(views.alone.v)[0].debug.host.record("t.table").api.use("clock").pause();
             await settle();
           }
           // p2's card played to the table (its hand trait gone), or back in p2's hand

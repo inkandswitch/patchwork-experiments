@@ -1,4 +1,4 @@
-// Telling the others what the doc bears out (telling.js; STAGE.md "Telling"):
+// Telling the others what the doc bears out (scene.telling; STAGE.md "Telling"):
 // a mounted stage on a manual clock, an extension that declares one message,
 // and a peer's sends put on the wire as presence carries them. Every case of
 // valid × when `says` first answers × how often the same send arrives, each
@@ -8,8 +8,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { manualTime } from "./time.js";
-import { SEND } from "./presence.js";
+import { manualTime } from "../stage/time.js";
+import { SEND } from "../stage/presence.js";
 import { NAME_MS, TELL_MS } from "./telling.js";
 
 let cleanups = [];
@@ -31,12 +31,13 @@ function teller() {
     module: {
       create(api) {
         seen.api = api;
+        seen.say = api.use("tell").tell;
         return {
           messages: {
             moved: {
               valid: (d) => !!d && typeof d === "object" && Number.isFinite(d.to),
               says(d, who, scene) {
-                seen.asked.push({ who, at: api.clock.now() });
+                seen.asked.push({ who, at: api.now() });
                 return (scene.objects.a?.transform?.position?.[0] ?? 0) >= d.to ? `${who.name} moved a to ${d.to}` : null;
               },
             },
@@ -59,7 +60,7 @@ async function setup({ repo = new FakeRepo(), viewerId = "viewer:bob" } = {}) {
   await time.step(2);
   /** a peer's send, as presence carries it (`n`: its number in that peer's sends) */
   const wire = (data, { n = 1, kind = "moved", viewer = "viewer:zed", session = "peer-1" } = {}) =>
-    s.handle.emit("ephemeral-message", { message: { type: SEND, session, viewer, ext: "t.teller", kind, n, data } });
+    s.handle.emit("ephemeral-message", { message: { type: SEND, session, viewer, ext: "scene.telling", kind: "told", n, data: { ext: "t.teller", type: kind, data } } });
   /** the doc moves a to x: an update of the stage */
   const moveTo = async (x) => {
     s.change((d) => (d.objects.a.transform.position = [x, 0, 0]));
@@ -109,7 +110,7 @@ describe("a peer's word, held to the doc", () => {
     else for (const a of t.seen.asked) expect(a.at - t0).toBeLessThanOrEqual(TELL_MS);
     // a told word never reaches receive, and nothing waits once it's told or its time is up
     expect(t.seen.received).toEqual([]);
-    expect(t.s.debug.telling.waiting()).toBe(0);
+    expect(t.s.instance("scene.telling").waiting()).toBe(0);
   });
 });
 
@@ -196,7 +197,7 @@ describe("one's own tell, and what is still receive's", () => {
     cleanups.push(() => a.unmount());
     await time.until(() => A.seen.api, { what: "A's extension" });
     which = B;
-    const { default: Stage } = await import("./stage.js");
+    const { default: Stage } = await import("../stage/stage.js");
     const el = document.createElement("div");
     el.repo = a.repo;
     el.viewerId = "viewer:bob";
@@ -215,7 +216,7 @@ describe("one's own tell, and what is still receive's", () => {
     const t = await two();
     t.a.change((d) => (d.objects.a.transform.position = [5, 0, 0]));
     await t.time.step(2);
-    t.A.seen.api.tell("moved", { to: 5 });
+    t.A.seen.say("moved", { to: 5 });
     expect(t.aNotices()).toEqual(["You moved a to 5"]);
     await t.time.step(3);
     expect(t.bNotices()).toEqual(["Someone moved a to 5"]);
@@ -232,7 +233,7 @@ describe("one's own tell, and what is still receive's", () => {
   it("what is told is a copy: changing one's data after telling it changes nothing told, here or there", async () => {
     const t = await two();
     const d = { to: 1 };
-    t.A.seen.api.tell("moved", d);
+    t.A.seen.say("moved", d);
     d.to = 99;
     t.a.change((doc) => (doc.objects.a.transform.position = [1, 0, 0]));
     await t.time.step(3);
@@ -242,7 +243,7 @@ describe("one's own tell, and what is still receive's", () => {
 
   it("one's own waits for the doc too, on this stage's updates", async () => {
     const t = await two();
-    t.A.seen.api.tell("moved", { to: 1 });
+    t.A.seen.say("moved", { to: 1 });
     expect(t.aNotices()).toEqual([]);
     t.a.change((d) => (d.objects.a.transform.position = [1, 0, 0]));
     await t.time.step(3);
@@ -253,13 +254,13 @@ describe("one's own tell, and what is still receive's", () => {
   it("an invalid tell, or one of a type it doesn't declare, is neither said nor sent; a plain send is still receive's", async () => {
     const t = await two();
     const sent = vi.spyOn(t.a.debug.presence, "send");
-    t.A.seen.api.tell("moved", { to: "5" });
-    t.A.seen.api.tell("waved", { to: 0 });
+    t.A.seen.say("moved", { to: "5" });
+    t.A.seen.say("waved", { to: 0 });
     await t.time.step(3);
     expect(sent).not.toHaveBeenCalled();
     expect(t.aNotices()).toEqual([]);
     expect(t.bNotices()).toEqual([]);
-    t.A.seen.api.send("waved", { hi: 1 });
+    t.A.seen.api.channel.send("waved", { hi: 1 });
     await t.time.step(3);
     expect(t.B.seen.received.map((r) => [r.type, r.data])).toEqual([["waved", { hi: 1 }]]);
     expect(t.B.seen.asked).toEqual([]);

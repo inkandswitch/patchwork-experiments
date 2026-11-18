@@ -72,7 +72,7 @@ function create(api) {
       if (ids.has(id)) continue;
       shown.delete(id);
       el.dataset.leaving = "";
-      const t = api.clock.after(FADE_MS, () => {
+      const t = api.after(FADE_MS, () => {
         timers.delete(t);
         el.remove();
       });

@@ -1412,6 +1412,22 @@ export class Viewport {
     if (first) this.loops = new Set([fn, ...this.loops]);
     else this.loops.add(fn);
     this.invalidate();
+    // without WebGL there are no frames to join: the loops get their own while there are any
+    if (!this.ok && !this.raf) {
+      let last = null;
+      const run = (now) => {
+        this.raf = this.loops.size ? this.time.frame(run) : null;
+        const dt = last == null ? 0 : Math.min(0.1, Math.max(0, (now - last) / 1000));
+        last = now;
+        for (const f of [...this.loops])
+          try {
+            f(dt, now);
+          } catch (err) {
+            console.error("scene: a frame loop failed", err);
+          }
+      };
+      this.raf = this.time.frame(run);
+    }
     return () => this.loops.delete(fn);
   }
 
@@ -2454,6 +2470,8 @@ export class Viewport {
 
   dispose() {
     if (!this.ok) {
+      this.raf?.();
+      this.loops.clear();
       this.labels?.dispose();
       return;
     }

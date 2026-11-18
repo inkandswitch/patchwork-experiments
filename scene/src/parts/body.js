@@ -41,7 +41,7 @@ export const heldName = (view) => (Array.isArray(view?.hands) ? (view.hands.filt
  * Who's here, from presence: [{ session, viewer, body, held, you }], this
  * view first, the others in session order; a person whose view hasn't said
  * its body yet is in Look. Pure.
- * @param {object} presence  api.presence.get() (each peer's `body` and `held`, as its view says them)
+ * @param {object} presence  api.channel.peers() (each peer's `body` and `held`, as its view says them)
  * @param {string | null} self  this view's session
  * @param {{ body?: { id, label }, hands?: { kind, name }[] }} mine  this view's
  */
@@ -159,13 +159,13 @@ function create(api) {
 
   // who's here is the focus doc's presence: heard again wherever the focus goes
   const presence = perFocus(api, (f) => {
-    f.presence.watch(() => api.schedule(render));
-    return f.presence;
+    f.channel.watch(() => api.schedule(render));
+    return f.channel;
   });
   let shown = "";
   function render() {
     const local = api.view.get();
-    const list = whoIsHere(presence()?.get() ?? {}, api.session ?? null, local);
+    const list = whoIsHere(presence()?.peers() ?? {}, api.session ?? null, local);
     const touch = !!local.pointer?.touch;
     const rung = local.escape?.hint ?? "";
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : !rung ? "" : touch ? rung[0].toUpperCase() + rung.slice(1) : `Esc: ${rung}`;

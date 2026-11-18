@@ -270,8 +270,8 @@ describe("the stage, mounted", () => {
     expect(m.element.querySelector("style")).toBeTruthy(); // stage.css (vitest inlines CSS as "")
   });
 
-  it("runs what the doc's traits call for (every doc's among them), in running order", async () => {
-    // the scene extension loads last
+  it("runs what the doc's traits call for (every doc's among them), made in running order", async () => {
+    // the scene extension loads last: nothing after it is made before it
     let release;
     const slow = new Promise((r) => (release = r));
     const scene = exts["t.scene"].module;
@@ -284,7 +284,7 @@ describe("the stage, mounted", () => {
       const h = newScene({ traits: { "t.scene": {} }, objects: { a: card({ traits: { "t.obj": {} } }) }, order: ["a"] });
       const m = mount(h);
       await settle();
-      expect(running(m)).toEqual(["t.edit:scene", "t.always:scene", "t.obj:objects"]);
+      expect(running(m)).toEqual([]);
       release();
       await settle();
       expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene", "t.obj:objects"]);
@@ -403,7 +403,7 @@ describe("the stage, mounted", () => {
     const m = mount(h);
     await settle();
     const r = exts["t.scene"];
-    const first = r.updates.at(-1);
+    const first = r.updates[0];
     expect(first.prev).toEqual({ scene: null, local: null, view: null });
     expect(first.scene.objects.a.name).toBe("Card");
     expect(first.scene.world("a")[0]).toBe(1);
@@ -466,7 +466,7 @@ describe("the stage, mounted", () => {
     const a = exts["t.edit"].api.ambient("atmosphere");
     expect(a.value).toBe(m.debug.ambients().atmosphere);
     expect(a.mine).toBe(true);
-    expect(a.clock).toEqual({ t: expect.any(Number), running: expect.any(Boolean) });
+    expect(a.use("none")).toBeNull(); // (and the world's services: none here)
     expect(exts["t.edit"].api.ambient("t.weather")).toBeNull();
     uninstall("t.always");
     await settle();
@@ -876,8 +876,8 @@ describe("the stage, mounted", () => {
         () => api.run({ ext: "t.edit", command: "gun" }),
         () => m.local.swap((v) => ({ ...v, selected: "a" })),
         () => api.setPref("grid", false),
-        () => api.clock.pause(),
-        () => api.clock.resume(),
+        () => api.use("clock")?.pause(),
+        () => api.use("clock")?.resume(),
         () => api.run({ ext: "t.edit", command: "gun" }),
         () => api.body.leave(),
         () => m.local.swap((v) => ({ ...v, selected: null })),
@@ -1035,12 +1035,12 @@ describe("two stages on one scene", () => {
     const apiB = recB.api;
     expect(apiB).not.toBe(apiA);
 
-    apiA.presence.set("pointer", { x: 1 });
-    await until(() => Object.values(apiB.presence.get()).some((p) => p.keys["t.scene"]?.pointer?.x === 1));
-    const peer = Object.entries(apiB.presence.get()).find(([, p]) => p.viewer === "viewer:alice");
+    apiA.channel.set("pointer", { x: 1 });
+    await until(() => Object.values(apiB.channel.peers()).some((p) => p.keys["t.scene"]?.pointer?.x === 1));
+    const peer = Object.entries(apiB.channel.peers()).find(([, p]) => p.viewer === "viewer:alice");
     expect(peer[1].keys).toEqual({ "t.scene": { pointer: { x: 1 } } });
 
-    apiA.send("ping", { n: 1 });
+    apiA.channel.send("ping", { n: 1 });
     expect(recB.received).toEqual([{ type: "ping", data: { n: 1 }, from: { session: A.debug.presence.session, viewer: "viewer:alice" } }]);
     expect(recA.received).toEqual([]);
 
@@ -1060,7 +1060,7 @@ describe("two stages on one scene", () => {
     // stopping A's extension clears its keys on B
     A.cleanup();
     mounted.splice(mounted.indexOf(A), 1);
-    await until(() => !Object.values(apiB.presence.get()).some((p) => p.viewer === "viewer:alice"));
+    await until(() => !Object.values(apiB.channel.peers()).some((p) => p.viewer === "viewer:alice"));
   });
 
   it("a hold dropped by the extension stopping is put back on the peer", async () => {

@@ -164,11 +164,14 @@ export function createHost({
 
   // ─── starting ─────────────────────────────────────────────────────────────
 
-  function start(w) {
+  // Created in running order: each once every one before it has started or failed, so a
+  // provider is up before what comes after it asks for its service (api.use).
+  function start(w, before) {
     const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
-    (async () => {
+    rec.started = (async () => {
       const loaded = await reg?.load?.(w.id);
+      await Promise.all(before.map((r) => r.started));
       const mod = loaded?.module?.default ?? loaded?.module;
       if (dead || rec.state !== "loading") return;
       if (typeof mod?.create !== "function") throw new Error("its module has no create()");
@@ -191,6 +194,21 @@ export function createHost({
       if (rec.state === "loading") rec.state = "failed";
       console.warn(`[scene] extension “${w.id}” failed to start`, err);
     });
+  }
+
+  /** The facet of the first running provider of `name` (STAGE.md, "Services") made for `caller` ({ id, signal }), or null. */
+  function use(name, caller) {
+    for (const r of running()) {
+      const make = r.instance?.provides?.[name];
+      if (typeof make !== "function") continue;
+      try {
+        return make(caller) ?? null;
+      } catch (err) {
+        console.warn(`[scene] “${r.id}”: providing ${name} failed`, err);
+        return null;
+      }
+    }
+    return null;
   }
 
   // ─── stopping ─────────────────────────────────────────────────────────────
@@ -277,9 +295,9 @@ export function createHost({
     const set = wanted(metas, d);
     const registered = new Set(metas.map((m) => m?.id));
     const want = new Map(set.map((w) => [w.id, w]));
-    for (const w of set) {
+    for (const [i, w] of set.entries()) {
       const rec = recs.get(w.id);
-      if (!rec) start(w);
+      if (!rec) start(w, set.slice(0, i).flatMap((x) => (recs.get(x.id)?.state === "loading" ? [recs.get(x.id)] : [])));
       else {
         rec.meta = w.meta;
         rec.scope = w.scope;
@@ -399,6 +417,7 @@ export function createHost({
     instances,
     instanceOf,
     collect,
+    use,
     inputOf,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,

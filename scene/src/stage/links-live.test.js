@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, fakeHead } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
@@ -48,9 +48,9 @@ const WRITER = {
           api.change((d) => {
             d.objects.a.name = "written";
           });
-          api.claim("a", "t.hold");
-          api.send("t.ping", { n: 1 });
-          api.presence.set("here", true);
+          api.use("claims").claim("a", "t.hold");
+          api.channel.send("t.ping", { n: 1 });
+          api.channel.set("here", true);
           api.pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
           api.pose.release("a");
           api.change(api.remove(["b"]));
@@ -128,7 +128,7 @@ describe("a live link opens a stage for its doc", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();
     s = m.s;
-    const ids = (st) => st.debug.host.running().map((r) => r.id).sort();
+    const ids = (st) => st.debug.host.running().map((r) => r.id).filter((id) => !NATIVES.includes(id)).sort();
     expect(ids(m.g)).toEqual(["t.card", "t.game"]);
     expect(ids(s.debug.view.stage(0))).toEqual(["t.host"]);
     const at = (st) => s.debug.view.pluginsAt(st).map((p) => p.id);

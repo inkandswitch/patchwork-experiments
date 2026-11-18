@@ -1,4 +1,4 @@
-// Claims (STAGE.md, "Claims"): doc fields naming who holds what, counted only
+// Claims (scene.claims; STAGE.md, "Claims"): doc fields naming who holds what, counted only
 // while their holder's session is in presence, settled by Automerge when two
 // views take one at once. Mounted with the stage harness, two views at a time:
 // on one shared handle (one doc, broadcasts delivered to both), or on two real
@@ -7,11 +7,15 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as Automerge from "@automerge/automerge";
 import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
-import { CLAIM_GRACE_MS } from "./stage.js";
+import { CLAIM_GRACE_MS } from "./claims.js";
 
 const CREW = { meta: { id: "t.crew" }, module: { create: () => ({}) } };
 const OTHER = { meta: { id: "t.other" }, module: { create: () => ({}) } };
 const EXTENSIONS = [CREW, OTHER];
+
+/** An extension's "claims" service, with its session. */
+const claimsOf = (api) => Object.create(api.use("claims"), { session: { get: () => api.channel.session } });
+const held = (S) => S.instance("scene.claims").held();
 
 const mounted = [];
 afterEach(() => {
@@ -34,7 +38,7 @@ async function twoViews(doc = {}, { time = null } = {}) {
   const B = await mountStage({ handle: A.handle, repo: A.repo, viewerId: "viewer:bob", time });
   mounted.push(B);
   await met(A, B);
-  return { A, B, a: A.api("t.crew"), b: B.api("t.crew") };
+  return { A, B, a: claimsOf(A.api("t.crew")), b: claimsOf(B.api("t.crew")) };
 }
 
 // A stand-in DocHandle over a real Automerge doc. Two of them start from one
@@ -92,7 +96,7 @@ async function twoPeers(doc = {}) {
   const B = await mountStage({ handle: pair.b, repo, viewerId: "viewer:bob" });
   mounted.push(B);
   await met(A, B);
-  return { A, B, a: A.api("t.crew"), b: B.api("t.crew"), pair };
+  return { A, B, a: claimsOf(A.api("t.crew")), b: claimsOf(B.api("t.crew")), pair };
 }
 
 describe("claims on one view", () => {
@@ -104,7 +108,7 @@ describe("claims on one view", () => {
     expect(A.doc().objects.helm.claims.station).toEqual({ viewer: "viewer:alice", session: a.session });
     expect(a.claimedBy("helm", "station")).toEqual({ viewer: "viewer:alice", session: a.session, mine: true });
     // every extension of this view reads it as this view's
-    expect(A.api("t.other").claimedBy("helm", "station").mine).toBe(true);
+    expect(claimsOf(A.api("t.other")).claimedBy("helm", "station").mine).toBe(true);
     release();
     expect(A.doc().objects.helm.claims.station).toBeUndefined();
     expect(a.claimedBy("helm", "station")).toBeNull();
@@ -127,7 +131,7 @@ describe("claims on one view", () => {
     const held = a.claim("helm", "held");
     expect(Object.keys(A.doc().objects.helm.claims).sort()).toEqual(["held", "station"]);
     expect(a.claim("helm", "station")).toBe(station);
-    expect(A.api("t.other").claim("helm", "station")).toBeNull();
+    expect(claimsOf(A.api("t.other")).claim("helm", "station")).toBeNull();
     held();
     expect(Object.keys(A.doc().objects.helm.claims)).toEqual(["station"]);
   });
@@ -163,7 +167,7 @@ describe("claims on one view", () => {
     });
     await settle();
     expect(onLost).toHaveBeenCalledTimes(1);
-    expect(A.debug.claims()).toEqual([]);
+    expect(held(A)).toEqual([]);
   });
 
   it("let go on pagehide, and taken back as the new session on return", async () => {
@@ -183,7 +187,7 @@ describe("claims on one view", () => {
     expect(A.doc().objects.helm.claims.station).toEqual({ viewer: "viewer:alice", session: a.session });
     expect(b.claimedBy("helm", "station")).toMatchObject({ session: a.session, mine: false });
     expect(onLost).not.toHaveBeenCalled();
-    expect(B.debug.claims()).toEqual([]);
+    expect(held(B)).toEqual([]);
   });
 });
 
@@ -202,7 +206,7 @@ describe("claims between views", () => {
     expect(A.doc().objects.helm.claims.station.session).toBe(b.session);
     await settle();
     expect(onLost).toHaveBeenCalledTimes(1);
-    expect(A.debug.claims()).toEqual([]);
+    expect(held(A)).toEqual([]);
     // the old holder letting go now leaves the new one's claim alone
     a.claim("helm", "station"); // refused: b is here
     expect(A.doc().objects.helm.claims.station.session).toBe(b.session);
@@ -251,7 +255,7 @@ describe("concurrent claims, settled by Automerge", () => {
     expect(wonFn).not.toHaveBeenCalled();
     expect(won.claimedBy("helm", "station").mine).toBe(true);
     expect(lost.claimedBy("helm", "station")).toMatchObject({ session: winner, mine: false });
-    expect(loser.debug.claims()).toEqual([]);
+    expect(held(loser)).toEqual([]);
     // nothing more to settle: another round changes nothing
     pair.sync();
     await settle();

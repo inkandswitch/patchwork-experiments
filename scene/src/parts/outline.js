@@ -630,7 +630,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         hasChildren: (id) => (kids.get(id)?.length ?? 0) > 0,
         shown: found?.shown ?? null,
       });
-      const peers = peerMarks(presence()?.get() ?? {}, theme?.remote, objects);
+      const peers = peerMarks(presence()?.peers() ?? {}, theme?.remote, objects);
       for (const id of [...rows.keys()]) if (!objects[id]) rows.delete(id);
       const mixed = mixedOf(m);
       hoverShown = loc.hovered ?? null;
@@ -760,11 +760,11 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   // peers' selections and hovers: the focus doc's presence, heard again wherever the focus goes
   const presence = perFocus(api, (f) => {
-    f.presence.watch(() => {
+    f.channel.watch(() => {
       presenceSeq++;
       api.schedule(renderAll);
     });
-    return f.presence;
+    return f.channel;
   });
 
   return {

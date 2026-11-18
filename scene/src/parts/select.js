@@ -73,10 +73,10 @@ export function create(api) {
     const was = prev?.view;
     if (!was || sel !== (was.selected ?? null)) {
       // peers are told any target; their surfaces mark only what they know
-      f.presence.set("selected", sel ?? undefined);
+      f.channel.set("selected", sel ?? undefined);
       f.focus(sel != null && scene.objects?.[sel] ? [sel] : []);
     }
-    if (!was || view.hovered !== was.hovered) f.presence.set("hovered", view.hovered ?? undefined);
+    if (!was || view.hovered !== was.hovered) f.channel.set("hovered", view.hovered ?? undefined);
     // only the hover (or something else of no concern here) changed
     if (was && scene === prev.scene && (local !== prev.local || view !== was) && sel === (was.selected ?? null) && view.theme === was.theme) return;
     // the doc, the selection or the theme changed, or content loaded (same scene and local)

@@ -129,7 +129,7 @@ async function inStep(f, id, label, create) {
         repo: f.repo,
         handle: f.handle,
         url: f.url,
-        viewer: f.viewer,
+        viewer: f.channel.viewer,
         doc: f.doc,
         scene: f.scene,
         newId: f.newId,

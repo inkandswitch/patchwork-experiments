@@ -200,7 +200,7 @@ function measureAt(api, view, hint) {
       if (ev.locked || ev.buttons) return; // orbiting: keep the preview where it was
       pending = { x: ev.x, y: ev.y };
       if (frame) return;
-      frame = api.clock.frame(() => {
+      frame = api.frame(() => {
         frame = null;
         const p = pending;
         pending = null;

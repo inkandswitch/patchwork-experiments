@@ -64,7 +64,11 @@ async function world() {
   };
   const views = [open(G, "ana"), open(X, "ben"), open(far.handles.get(Y.url), "cara", far)];
   const gStages = (i) => views[i].v.stages().filter((st) => st.url === G.url);
-  const api = (st) => st.debug.host.record("t.card")?.api ?? null;
+  // t.card's api, with its "claims" service's claim and claimedBy
+  const api = (st) => {
+    const a = st.debug.host.record("t.card")?.api;
+    return a ? Object.assign(Object.create(a), a.use("claims")) : null;
+  };
   await time.until(() => views.every((_, i) => gStages(i).length === 1 && gStages(i).every((st) => api(st))), { frames: 600, what: "every stage of G" });
   const acting = (i) => api(gStages(i).find((st) => st.acts));
   /** every stage of G that is still open, with whose view it is */
@@ -140,7 +144,7 @@ describe("channels (I5): claims and holds on G's channel, wherever G is open", (
     await w.deliver();
     expect(Object.values(gAlone.debug.presence.get()).some((p) => p.keys?.["t.host"])).toBe(false);
     // while G's own channel carries between them
-    w.acting(1).presence.set("here", true);
+    w.acting(1).channel.set("here", true);
     await w.deliver();
     expect(Object.values(gAlone.debug.presence.get()).some((p) => p.keys?.["t.card"])).toBe(true);
   }, 20_000);

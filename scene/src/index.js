@@ -109,6 +109,13 @@ export const plugins = [
     },
   },
   // ─── the parts the scene editor is made of ───
+  // The native services first, so they're up before what asks for them
+  // (STAGE.md, "Native services"): parts of every doc.
+  ...[
+    ["claims", "Claims", () => import("./native/claims.js")],
+    ["clock", "World time", () => import("./native/clock.js")],
+    ["telling", "Telling", () => import("./native/telling.js")],
+  ].map(([n, name, load]) => ({ type: "scene:extension", id: `scene.${n}`, name, traits: ["*"], load: async () => (await load()).default })),
   // All but carry and others are view plugins (STAGE.md, "View plugins"):
   // each runs once per view, for its whole life, and works on the focus
   // stage through api.focus() (the outermost doc until Enter moves the focus
@@ -395,7 +402,7 @@ export const plugins = [
   // the doc's world time: ▶ or ⏸, who paused it, a stall (only for a doc with a process)
   {
     type: "scene:view",
-    id: "scene.clock",
+    id: "scene.clock-chip",
     name: "Clock",
     async load() {
       return (await import("./parts/clock.js")).default;

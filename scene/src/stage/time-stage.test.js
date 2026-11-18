@@ -5,7 +5,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import { manualTime, MANUAL_EPOCH } from "./time.js";
-import { STEP_S } from "./clock.js";
+import { STEP_S } from "../native/clock.js";
 
 const mounted = [];
 afterEach(() => {
@@ -21,10 +21,10 @@ function mover() {
     module: {
       create(api) {
         seen.api = api;
-        api.clock.process({ step: (dt, t) => seen.steps.push(+t.toFixed(9)) });
-        api.clock.after(500, () => (seen.timer = api.clock.now()));
-        api.clock.frame((now) => (seen.frame = now));
-        api.presence.set("here", true);
+        api.use("clock").process({ step: (dt, t) => seen.steps.push(+t.toFixed(9)) });
+        api.after(500, () => (seen.timer = api.now()));
+        api.frame((now) => (seen.frame = now));
+        api.channel.set("here", true);
         return {};
       },
     },
@@ -60,7 +60,7 @@ describe("a stage on a manual clock", () => {
     const { ext, seen } = mover();
     const s = await mountStage({ extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] }, viewerId: "viewer:ana", time });
     mounted.push(s);
-    await time.until(() => s.api("t.mover") && s.debug.clock.computing(), { frames: 10, what: "computing" });
+    await time.until(() => s.api("t.mover")?.use("clock").computer()?.mine, { frames: 10, what: "computing" });
     const calls = spyOnTheWall();
     const t0 = time.now();
     const steps0 = seen.steps.length;
@@ -72,15 +72,15 @@ describe("a stage on a manual clock", () => {
     // 60 frames: one second of world time, on the process's grid
     // (the clock's first frame passes no time: there's no frame before it to measure from)
     await time.step(1);
-    const w0 = s.debug.clock.t();
+    const w0 = s.api("t.mover").use("clock").t();
     const n0 = seen.steps.length;
     await time.step(60);
     expect(time.now()).toBe(MANUAL_EPOCH + (k0 + 61) * time.frameMs);
-    expect(s.debug.clock.t() - w0).toBeCloseTo(1, 9);
+    expect(s.api("t.mover").use("clock").t() - w0).toBeCloseTo(1, 9);
     const stepped = seen.steps.slice(n0);
     expect(stepped.length).toBe(60);
     for (let i = 1; i < stepped.length; i++) expect(stepped[i] - stepped[i - 1]).toBeCloseTo(STEP_S, 8);
-    expect(s.debug.clock.t()).toBeCloseTo(stepped.at(-1), 9);
+    expect(s.api("t.mover").use("clock").t()).toBeCloseTo(stepped.at(-1), 9);
     // the extension's frame came at the first frame, its timer at 500 ms of the stage's time
     expect(seen.frame).toBe(MANUAL_EPOCH + time.frameMs);
     expect(seen.timer).toBe(MANUAL_EPOCH + 500);

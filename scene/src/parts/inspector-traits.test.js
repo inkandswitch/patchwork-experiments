@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle } from "../test/stage-harness.js";
 import inspector from "./inspector.js";
 import { editing } from "../stage/bodies.js";
 import { openTabs } from "../test/tabs.js";
@@ -72,7 +72,7 @@ const picker = () => $(".behaviour-add");
 const offered = () => [...picker().options].slice(1).map((o) => o.textContent);
 /** A param-form row's control, by its label. */
 const field = (root, label) => [...root.querySelectorAll(".param")].find((r) => r.querySelector(".param-label")?.textContent === label)?.querySelector("input, select");
-const running = () => s.local.get().running.map((r) => r.id);
+const running = () => s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id));
 async function select(id) {
   s.local.swap((m) => ({ ...m, selected: id }));
   await settle();

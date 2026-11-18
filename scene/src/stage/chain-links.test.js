@@ -14,7 +14,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, until } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
@@ -102,7 +102,7 @@ describe("the chain across links (I8)", () => {
           // within a stage: its holders nearest first, then its root's
           if (!widget && hitStage === stageAtPath(["A", "B"]) && parseKey(hitKey).id === "card") {
             const n = hitStage.n;
-            const own = segs.filter((k) => parseKey(k).n === n).map((k) => parseKey(k).id);
+            const own = segs.filter((k) => parseKey(k).n === n).map((k) => parseKey(k).id).filter((id) => !NATIVES.includes(id));
             expect(own, where).toEqual(["t.card", "t.box", "t.root-g"]);
           }
           checked++;

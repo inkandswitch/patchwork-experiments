@@ -1,8 +1,7 @@
 // patchwork:tool "scene": a view (./view.js) and the stages it opens, one per
 // open doc (STAGE.md, "Views, stages and links"). This file is the stage: the doc, loading and
-// building object content, lenses and veils, the audience, presence and
-// claims on its doc's channel, its clock, its extensions and the api each
-// gets. It has no UI of its own and no opinion about what a click means:
+// building object content, lenses and veils, the audience, presence on its
+// doc's channel, its extensions and the api each gets. It has no UI of its own and no opinion about what a click means:
 // everything a person sees or does beyond a rendered scene and an orbiting
 // camera comes from a `scene:extension`, which gets an api (makeApi below)
 // and is started and stopped by the host (host.js). The view holds what is
@@ -15,7 +14,7 @@
 //
 // A stage acts, or it is drawn (STAGE.md, "Views, stages and links"). One that acts is where
 // its doc is played: its extensions hear input, offer bodies, tools and
-// commands, compute its clock and speak on its channel. A pin (its doc at
+// commands and speak on its channel. A pin (its doc at
 // fixed heads) is drawn: its extensions run, so it looks as the doc does, and
 // they draw into the world (layers, labels, looks, lenses), but nothing
 // more: no input, bodies, tools, commands or DOM chrome, no camera, no
@@ -25,17 +24,14 @@
 // nothing whatever it calls (invariant I6).
 //
 // The parts, in the order they're wired:
-//   - local state (atom.js): the stage's own (running, status, clock, packages,
+//   - local state (atom.js): the stage's own (running, status, packages,
 //     and extensions' keys); the view's is `api.view`.
 //   - content, routed at sync by the kind its provider makes (providers.js
 //     routeOf): the render manager for "built", the GLB queue for "file";
 //     their state → local.status.
 //   - presence on its doc's channel, and other views' pose holds shown on the
 //     viewport, played back smoothly (smooth.js); this view's holds in the one
-//     order (holds.js); claims, which are doc fields that count only while
-//     their holder's session is in presence.
-//   - the doc's world time (clock.js): the "clock" claim, processes,
-//     checkpoints, following; what the chip shows → local.clock.
+//     order (holds.js).
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
 //   - the view's plugins' facets (api.focus() while it is the focus): this
@@ -51,9 +47,8 @@ import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { createAtom, assoc } from "./atom.js";
 import { createHost, updateAll } from "./host.js";
-import { HEARTBEAT_MS, createPresence } from "./presence.js";
+import { createPresence } from "./presence.js";
 import { createHolds } from "./holds.js";
-import { CLOCK, PRESENCE_KEY, PRESENCE_NS, createClock, eligibility } from "./clock.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
@@ -82,21 +77,12 @@ import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } 
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
-import { createTelling, declared } from "./telling.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins, withNotice } from "./view.js";
 
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
-/**
- * How long a claim whose holder isn't in presence still counts, from when
- * this view first read it so. A peer that has just joined writes its claim
- * as its hello goes out, and the doc may get here first; and a view that has
- * just opened hasn't heard anyone's hello yet. A heartbeat and a second
- * covers a hello that went missing.
- */
-export const CLAIM_GRACE_MS = HEARTBEAT_MS + 1_000;
 // Doc and local changes reach the extensions at once while that has cost
 // little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
 // single remote edit answers immediately; past that, the rest of a burst is
@@ -252,8 +238,8 @@ export default function Stage(handle, element) {
 
 /**
  * One open doc's stage (STAGE.md, "Views, stages and links"): its handle, derive and snapshot,
- * content, lenses and veils, the audience, its extensions, claims, its
- * channel, packages and clock, and its own atom (`api.local`). It sees only
+ * content, lenses and veils, the audience, its extensions, its channel,
+ * packages, and its own atom (`api.local`). It sees only
  * its doc, in its own root frame; the view (./view.js) is everything it
  * shares with the others.
  * @param {{
@@ -282,6 +268,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const perf = { sync: timings(), flush: timings() };
   const raf = (f) => time.frame(f);
   const caf = (cancel) => cancel?.();
+  const life = new AbortController(); // aborted as it closes: what the view asks of its services goes then
   const { root, port, drawer } = view;
   const vp = view.viewport;
   /** An extension of this stage, as the view and the router name it. */
@@ -298,8 +285,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const local = createAtom({
     running: Object.freeze([]),
     status: Object.freeze({}),
-    // the doc's clock as the chip shows it (clock.js status), once known
-    clock: null,
     // the listed packages this viewer doesn't have (STAGE.md, "Packages")
     packages: Object.freeze({ ask: Object.freeze([]), loading: Object.freeze([]), failed: Object.freeze([]), missing: true }),
   });
@@ -852,23 +837,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (!playing.size) stopPoseLoop();
   }
 
-  // The playback loop runs only while something is playing, so a still
-  // scene isn't redrawn every frame. Without WebGL there are no frames to
-  // join, so it keeps its own (what's shown still moves for worldOf).
+  // The playback loop runs only while something is playing, so a still scene isn't redrawn every frame.
   function startPoseLoop() {
-    if (poseLoopOff || dead) return;
-    if (viewport.ok) {
-      poseLoopOff = viewport.addLoop(() => tickPoses(), { first: true });
-      return;
-    }
-    let frame = null;
-    const off = () => caf(frame);
-    const step = () => {
-      tickPoses();
-      if (poseLoopOff === off) frame = raf(step);
-    };
-    frame = raf(step);
-    poseLoopOff = off;
+    if (!poseLoopOff && !dead) poseLoopOff = viewport.addLoop(() => tickPoses(), { first: true });
   }
   function stopPoseLoop() {
     const off = poseLoopOff;
@@ -903,21 +874,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       ids.forEach(applyRemoteHold);
     }),
   );
-  // What extensions tell (telling.js): a declared message is the stage's to hold to the doc and
-  // say, by the speaker's name; anything else a peer sends is the extension's own `receive`.
-  const telling = createTelling({
-    now: time.now,
-    after: (ms, fn) => time.after(ms, fn),
-    scene: () => scene(),
-    notify: (text, ext) => notify(text, "info", ext),
-    find: (url) => view.repo?.find?.(url),
-    alive: (ext, instance) => !dead && host.instanceOf(ext) === instance,
-  });
-  cleanups.push(() => telling.dispose());
+  // what a peer sends an extension here is its `receive`'s
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
       const x = host.instanceOf(ext);
-      if (declared(x, kind)) return telling.hear(ext, x, kind, data, from);
       if (typeof x?.receive !== "function") return;
       try {
         x.receive(kind, data, from);
@@ -963,246 +923,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (holds.release(extId, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined)) own.holds.delete(id);
   }
 
-  // ─── claims ───────────────────────────────────────────────────────────────
-  //
-  // A claim is a fact about the shared world (who is at the helm, who
-  // simulates the ship, whose hands a bucket is in), so it's a doc field on
-  // what's claimed: objects[id].claims[kind] = { viewer, session }, or
-  // doc.claims[kind] for the scene. Taking one writes it, letting go deletes
-  // it. Concurrent takers are Automerge's to settle: both writes succeed
-  // here, the merge keeps one on every peer, and the view whose claim isn't
-  // there any more is told (onLost). A claim counts only while its session
-  // is in presence (or is this view's), so a tab that died holding one
-  // doesn't hold it forever and nothing has to clean up after it: the next
-  // taker writes over it.
-
-  const claims = new Map(); // claimKey → { id, kind, ext, onLost, release }: the claims this view holds
-  const claimSeen = new Map(); // claimKey + session → when this view first read that claim with its holder absent
-  const CLAIM_SEEN_MAX = 512;
-  // Sessions this view has heard in presence. One that has gone (a bye, or
-  // silent past the TTL) lapses at once; only one never heard gets the grace.
-  const metSessions = new Set();
-  const MET_MAX = 1024;
-  cleanups.push(
-    presence.watch((peers) => {
-      for (const s of Object.keys(peers)) {
-        if (metSessions.has(s)) continue;
-        metSessions.add(s);
-        if (metSessions.size > MET_MAX) metSessions.delete(metSessions.values().next().value);
-      }
-    }),
-  );
-  let away = false; // said goodbye on pagehide: claims are let go, and taken back on return
-  const claimKey = (oid, kind) => `${oid ?? ""}\u0000${kind}`;
-  const isKind = (kind) => typeof kind === "string" && kind.length > 0;
-
-  /** The doc's claim of this kind on an object (null: the scene), as stored, or null. */
-  function claimField(d, oid, kind) {
-    const holder = oid == null ? d : d.objects?.[oid];
-    const c = holder?.claims?.[kind];
-    return c && typeof c === "object" && typeof c.session === "string" ? c : null;
-  }
-
-  /**
-   * Who holds a claim: { viewer, session, mine }, or null when nobody does or
-   * the holder's session has left presence. A claim by a session this view
-   * has never heard from still counts for CLAIM_GRACE_MS from when it first
-   * read it: its holder may have just joined, or this view may have.
-   */
-  function claimedBy(oid, kind) {
-    // a claim counts only while its holder is on the doc's channel, and a pin has none
-    if (!isKind(kind) || !channel) return null;
-    const c = claimField(doc(), oid, kind);
-    if (!c) return null;
-    const viewerOf = typeof c.viewer === "string" ? c.viewer : null;
-    if (c.session === presence.session) return Object.freeze({ viewer: viewerOf, session: c.session, mine: true });
-    if (!Object.hasOwn(presence.get(), c.session)) {
-      if (metSessions.has(c.session)) return null; // it was here, and has gone
-      const key = `${claimKey(oid, kind)}\u0000${c.session}`;
-      let first = claimSeen.get(key);
-      if (first == null) {
-        claimSeen.set(key, (first = time.now()));
-        if (claimSeen.size > CLAIM_SEEN_MAX) claimSeen.delete(claimSeen.values().next().value);
-      }
-      if (time.now() - first >= CLAIM_GRACE_MS) return null; // lapsed
-    }
-    return Object.freeze({ viewer: viewerOf, session: c.session, mine: false });
-  }
-
-  /** Write this view's claims (a fresh map per object only when it has none). */
-  function writeClaims(list) {
-    if (!list.length) return;
-    try {
-      handle.change((d) => {
-        for (const { id: oid, kind } of list) {
-          const holder = oid == null ? d : d.objects?.[oid];
-          if (!holder) continue;
-          if (!holder.claims) holder.claims = {};
-          holder.claims[kind] = { viewer, session: presence.session };
-        }
-      });
-    } catch (err) {
-      console.warn("[scene] couldn't write a claim", err);
-    }
-  }
-
-  /** Delete these claims from the doc where they're still this view's. */
-  function eraseClaims(list) {
-    const d = doc();
-    const mine = list.filter((e) => claimField(d, e.id, e.kind)?.session === presence.session);
-    if (!mine.length) return;
-    try {
-      handle.change((draft) => {
-        for (const { id: oid, kind } of mine) {
-          const holder = oid == null ? draft : draft.objects?.[oid];
-          if (holder?.claims?.[kind]?.session === presence.session) delete holder.claims[kind];
-        }
-      });
-    } catch (err) {
-      console.warn("[scene] couldn't let go of a claim", err);
-    }
-  }
-
-  /**
-   * Take a claim for an extension. Its release function, or null when
-   * someone else (another view, or another extension here) holds it.
-   * Taking it again from the same extension gives the same release.
-   */
-  function takeClaim(extId, own, oid, kind, onLost) {
-    if (!isKind(kind) || dead || !writable()) return null;
-    if (oid != null && !doc().objects?.[oid]) return null;
-    const key = claimKey(oid, kind);
-    const held = claims.get(key);
-    if (held) {
-      if (held.ext !== extId) return null;
-      if (typeof onLost === "function") held.onLost = onLost;
-      return held.release;
-    }
-    const now = claimedBy(oid, kind);
-    if (now && !now.mine) return null;
-    const entry = { id: oid, kind, ext: extId, onLost: typeof onLost === "function" ? onLost : null, release: null };
-    entry.release = () => releaseClaim(entry);
-    claims.set(key, entry);
-    own.claims.add(entry);
-    if (!away) writeClaims([entry]);
-    return entry.release;
-  }
-
-  function releaseClaim(entry) {
-    const key = claimKey(entry.id, entry.kind);
-    if (claims.get(key) !== entry) return;
-    claims.delete(key);
-    owned.get(entry.ext)?.claims.delete(entry);
-    eraseClaims([entry]);
-  }
-
-  // After a doc change (or coming back from the back-forward cache), look
-  // at the claims this view holds. One whose field names someone else lost
-  // the merge (or lapsed here and was taken): it's let go, and its taker is
-  // told once. One whose field is missing lost no contest: two views each
-  // giving an object its first claims map at once keep only one map, and
-  // it may not be ours; that, or the goodbye on pagehide, is the only way a
-  // field we hold goes missing, so it's written again. One whose object has
-  // gone is lost. Done in a microtask, out of the doc's change event.
-  let recheckQueued = false;
-  function recheckClaims() {
-    if (recheckQueued || dead || !claims.size) return;
-    recheckQueued = true;
-    queueMicrotask(() => {
-      recheckQueued = false;
-      if (dead || away) return;
-      const d = doc();
-      const lost = [];
-      const rewrite = [];
-      for (const e of claims.values()) {
-        if (e.id != null && !d.objects?.[e.id]) lost.push(e);
-        else {
-          const c = claimField(d, e.id, e.kind);
-          if (!c) rewrite.push(e);
-          else if (c.session !== presence.session) lost.push(e);
-        }
-      }
-      writeClaims(rewrite);
-      for (const e of lost) {
-        claims.delete(claimKey(e.id, e.kind));
-        owned.get(e.ext)?.claims.delete(e);
-        try {
-          e.onLost?.();
-        } catch (err) {
-          console.warn(`[scene] extension “${e.ext}”: onLost failed`, err);
-        }
-      }
-    });
-  }
-
-  // ─── the clock ────────────────────────────────────────────────────────────
-  //
-  // World time for this doc (clock.js; STAGE.md, "World time"): one "clock" claim, held
-  // by the view that computes it and steps every process; the others
-  // follow. The stage holds the claim itself, under the usual rules. What
-  // the chip shows is local.clock.
-
-  const clockOwn = { claims: new Set() };
-  let hostMade = false; // (the host is made below, once makeApi exists)
-  const visible = () => globalThis.document?.visibilityState !== "hidden";
-  const clock = createClock({
-    doc,
-    change: (fn) => handle.change(fn),
-    claim: {
-      take: (onLost) => (away || dead ? null : takeClaim("scene:clock", clockOwn, null, CLOCK, onLost)),
-      holder: () => claimedBy(null, CLOCK),
-    },
-    presence: {
-      set: (sample) => presence.set(PRESENCE_NS, PRESENCE_KEY, sample),
-      sample: (s) => presence.get()[s]?.keys?.[PRESENCE_NS]?.[PRESENCE_KEY] ?? null,
-      shownAt: (s) => presence.shownAt(s),
-      rate: (hz) => presence.rate(PRESENCE_NS, hz),
-    },
-    eligible: () => eligibility({ acts, writable: writable(), visible: visible(), settled: hostMade && host.settled(), complete: packages.complete() }),
-    writable,
-    viewer,
-    now: time.now,
-    onStatus: (status) => {
-      if (dead) return;
-      local.swap(assoc("clock", status));
-      // (the view puts the focus path's together for the clock chip: view.clocks)
-      view.clocksChanged();
-    },
-  });
-
-  // Frames while anything moves: this view has a process, or someone computes.
-  let clockLoopOff = null;
-  function clockFrames() {
-    if (dead) return;
-    const want = clock.live();
-    if (want && !clockLoopOff) {
-      if (viewport.ok) clockLoopOff = viewport.addLoop(() => clock.tick(time.now()), { first: true });
-      else {
-        let frame = null;
-        const off = () => caf(frame);
-        const step = () => {
-          clock.tick(time.now());
-          if (clockLoopOff === off) frame = raf(step);
-        };
-        frame = raf(step);
-        clockLoopOff = off;
-      }
-    } else if (!want && clockLoopOff) {
-      const off = clockLoopOff;
-      clockLoopOff = null;
-      off();
-    }
-  }
-  /** Something the clock depends on changed: take, keep or let go now, and run frames if wanted. */
-  function clockCheck() {
-    if (dead) return;
-    clock.check();
-    clockFrames();
-  }
-  cleanups.push(presence.watch(() => clockCheck()));
-  const onVisibility = () => clockCheck();
+  // ─── the page (STAGE.md, "api.page") ──────────────────────────────────────
+  // The view's pagehide and pageshow (pageHide, pageShow below) and the tab's visibility, as api.page's events.
+  const pageFns = { hide: new Set(), show: new Set(), visible: new Set() };
+  const pageSay = (type) => [...pageFns[type]].forEach((fn) => fn());
+  const onVisibility = () => pageSay("visible");
   globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
   cleanups.push(() => globalThis.document?.removeEventListener?.("visibilitychange", onVisibility));
+  let away = false; // said goodbye on pagehide
 
   // ─── the update flush ─────────────────────────────────────────────────────
 
@@ -1260,8 +988,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     updateAll(running, seen, now, content);
     // (the view's plugins are told what its focus stage shows: view.js)
     view.flushed?.(stage, now, content);
-    // what was told and waits for the doc to bear it out: asked again now everyone has seen this flush
-    telling.ask();
     view.tryArrive();
     const work = scheduled;
     scheduled = [];
@@ -1782,8 +1508,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       tool: null, // put(): the held tool is its
       sessions: 0, // open press sessions
       holds: new Set(), // object ids whose pose it holds
-      processes: new Set(), // its processes' removals (api.clock.process)
-      claims: new Set(), // the claims it holds (entries in `claims`)
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
       offs: new Set(), // listeners, watchers, rides
@@ -1805,11 +1529,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       repo,
       handle,
       url: handle.url,
-      viewer,
-      /** this view's presence session: what its claims and holds name (it changes on coming back from the back-forward cache) */
-      get session() {
-        return presence.session;
-      },
       signal,
       doc,
       change,
@@ -1830,7 +1549,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         return Object.freeze({ ...s, content: routes.get(oid) ?? null });
       },
 
-      // local, prefs, presence
+      // local, prefs, the channel
       local: Object.freeze({
         get: local.get,
         swap: (fn) => local.swap(fn),
@@ -1881,32 +1600,36 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }),
       pref,
       setPref,
-      presence: Object.freeze({
-        set: (key, value) => {
-          if (live()) presence.set(id, key, value);
+      /**
+       * The doc's ephemeral side (STAGE.md, "api.channel"): this view's
+       * session (null in a pin: it has none), every peer, and this
+       * extension's own keys and sends; cleared when it stops.
+       */
+      channel: Object.freeze({
+        viewer,
+        get session() {
+          return channel ? presence.session : null;
         },
-        get: () => presence.get(),
+        peers: () => presence.get(),
+        get: () => Object.fromEntries(Object.entries(presence.get()).flatMap(([s, p]) => (p.keys?.[id] ? [[s, p.keys[id]]] : []))),
+        set: (key, value) => void (live() && presence.set(id, key, value)),
         watch: (fn) => acquire(own.offs, () => presence.watch(fn)),
-        rate: (hz) => {
-          if (live()) presence.rate(id, hz);
-        },
+        send: (type, data) => void (live() && presence.send(id, type, data)),
+        rate: (hz) => void (live() && presence.rate(id, hz)),
+        /** the moment (now()) whose poses of that peer this view draws */
+        shownAt: (session) => presence.shownAt(session),
       }),
-      send: (type, data) => {
-        if (live()) presence.send(id, type, data);
-      },
-      // say it here as "You" and send it; each peer's stage tells it once its doc bears it out (instance.messages)
-      // (a view that can't write the doc has done nothing it could bear out: it tells nothing)
-      tell: (type, data) => {
-        if (!live() || !writable()) return;
-        const x = host.instanceOf(id);
-        if (!declared(x, type)) return void console.warn(`[scene] extension “${id}”: tell(“${type}”) isn't among its messages`);
-        let copy;
-        try {
-          copy = structuredClone(data ?? null);
-        } catch {
-          return void console.warn(`[scene] extension “${id}”: tell(“${type}”) data isn't plain`);
-        }
-        if (telling.say(id, x, type, copy, viewer)) presence.send(id, type, copy);
+      page: Object.freeze({
+        visible: () => globalThis.document?.visibilityState !== "hidden",
+        on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
+      }),
+      /** a service (STAGE.md, "Services"): the first running provider's facet, made for this extension, or null */
+      use: (name) => (live() ? host.use(name, { id, signal }) : null),
+      /** has everything the doc calls for started (or failed), and is every listed package here (`missing`: those that aren't)? */
+      settled: () => {
+        const p = local.get().packages;
+        const missing = Object.freeze([...p.ask, ...p.loading, ...p.failed].map((e) => e.url));
+        return Object.freeze({ ready: !host.starting() && packages.complete(), missing });
       },
       notify: (text, kind) => notify(text, kind, id),
       /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
@@ -1972,8 +1695,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         release: (oid, { landed = false } = {}) => releasePose(id, own, oid, landed),
       }),
       heldBy: (oid, opts) => presence.heldBy(oid, opts),
-      claim: (oid, kind, { onLost } = {}) => (live() ? takeClaim(id, own, oid ?? null, kind, onLost) : null),
-      claimedBy: (oid, kind) => claimedBy(oid ?? null, kind),
       extent: (box) => {
         if (live()) scope.setExtent(id, box ?? null);
       },
@@ -1981,37 +1702,15 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * One of the world's ambients (STAGE.md, "Ambients"): the outermost
        * doc's value under `name` (frozen plain JSON, the same object until it
        * changes), with `mine` (this is the outermost stage), this stage's
-       * frame (scope.js: the world is the outermost's root) and the
-       * outermost's world time as of now; null when it offers none.
+       * frame (scope.js: the world is the outermost's root) and `use`: the
+       * outermost's services (its world time); null when it offers none.
        */
       ambient: (name) => {
         const value = view.ambient(name);
         if (value === undefined) return null;
         const world = view.outermost();
-        return Object.freeze({ value, mine: world === stage, frame: scope.frame(), clock: Object.freeze(world.worldTime()) });
+        return Object.freeze({ value, mine: world === stage, frame: scope.frame(), use: (s) => (live() ? world.use(s, { id, signal }) : null) });
       },
-      /**
-       * World time (STAGE.md, "World time"): this view's t (s), running, pause and
-       * resume (anyone who may write), and process({ start?, step, save?,
-       * stop?, replicated? }) → remove. And the stage's own time (time.js),
-       * which acts and liveness run on: now() (ms), after(ms, fn) → cancel,
-       * frame(fn) → cancel (fn(now) once, at the next frame); what they set
-       * is cancelled when the extension stops.
-       */
-      clock: Object.freeze({
-        ...lent.clock,
-        t: () => clock.t(),
-        running: () => clock.running(),
-        /** who computes this doc's world time: { viewer, session, mine }, or null (nobody: no time passes) */
-        computer: () => claimedBy(null, CLOCK),
-        pause: () => clock.pause(),
-        resume: () => clock.resume(),
-        process: (spec) => {
-          const off = acquire(own.processes, () => clock.process(spec));
-          clockFrames();
-          return off;
-        },
-      }),
       schedule: (fn) => {
         if (!live() || typeof fn !== "function") return;
         scheduled.push({ rec, fn });
@@ -2064,13 +1763,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
-      // 3: its processes (saved first, where this view computes them), its
-      // pose holds, put back, and its claims, let go
-      for (const give of [...own.processes]) give();
-      own.processes.clear();
-      clockFrames();
+      // 3: its pose holds, put back (what services gave it went as its signal aborted)
       for (const oid of [...own.holds]) releasePose(id, own, oid, false);
-      for (const e of [...own.claims]) releaseClaim(e);
       // 4: its presence keys (and its rate)
       presence.clear(id);
       // 5: loops, afterRender hooks, scheduled work
@@ -2122,7 +1816,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       popover: () => noop,
       cursor: noop,
       camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
-      clock: facet(api.clock, { process: () => noop }),
       body: facet(api.body, { enter: () => false, leave: () => false }),
       hold: () => noop,
       run: () => false,
@@ -2152,7 +1845,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
   });
-  hostMade = true;
 
   // ─── the view's plugins' facets (STAGE.md, "View plugins") ─────────────────
   // A view plugin's api.focus(), while this stage is the focus: this stage's
@@ -2230,15 +1922,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   cleanups.push(local.watch(() => requestFlush()));
 
   // ─── leaving the page (the view's pagehide and pageshow) ──────────────────
-  // It lets go of its claims and says bye at once; restored from the
-  // back-forward cache, it comes back as the view's new session and takes its
-  // claims back (unless someone else has taken one meanwhile: then that
-  // extension is told it lost it).
+  // It says bye at once (api.page's "hide" first, so services let go of what they hold);
+  // restored from the back-forward cache, it comes back as the view's new session.
   function pageHide() {
     if (away) return;
-    // world time stops here first: a checkpoint, and the clock let go
-    clock.letGo();
-    eraseClaims([...claims.values()]);
+    pageSay("hide");
     away = true;
     presence.goodbye();
   }
@@ -2246,8 +1934,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (!away) return;
     away = false;
     presence.hello(session);
-    recheckClaims();
-    clockCheck();
+    pageSay("show");
   }
 
   // ─── the doc loop ─────────────────────────────────────────────────────────
@@ -2262,9 +1949,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // other views' holds: a landed one the doc has caught up with goes, and a
     // hold whose parent the doc changed is shown (or not) again
     for (const id of [...presence.remoteHolds().keys()]) applyRemoteHold(id);
-    recheckClaims();
     packages.check();
-    clockCheck();
     requestFlush();
     // its links may have changed: the view works out what it opens again
     view.relink();
@@ -2287,7 +1972,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     host,
     router,
     presence,
-    telling,
     perf,
     queue,
     manager,
@@ -2307,14 +1991,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     busy,
     /** one frame of remote pose playback at `t` (ms, this stage's time.now()), for tests */
     tickPoses,
-    /** the doc's clock here (clock.js): t, status, tick(at), check() */
-    clock,
     /** does it act ("acting"), or is it drawn ("pinned")? */
     role,
     /** the view plugins with a facet here (api.focus()) */
     facets: () => [...facets.keys()],
-    /** the claims this view holds: [{ id, kind, ext }] */
-    claims: () => [...claims.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),
     stats: () => ({
       render: { ...viewport.stats },
       queue: queue.stats(),
@@ -2326,13 +2006,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   function dispose() {
     if (dead) return;
-    // world time stops first (one checkpoint, with every process's save), then
     // the view's plugins' facets and the extensions, while everything they hold is still there to give back
-    clock.dispose();
     dropFacets();
     host.dispose();
-    clockLoopOff?.();
-    clockLoopOff = null;
+    life.abort();
     stopPoseLoop();
     dead = true;
     presence.dispose();
@@ -2373,8 +2050,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     packages: () => local.get().packages,
     /** may this view write its doc? */
     writable: () => writable(),
-    /** its doc's world time: what its chip shows (local.clock: ./clock.js status, null with no process), and pause or resume it by name (anyone who may write) */
-    clock: Object.freeze({ status: () => local.get().clock, pause: () => clock.pause(), resume: () => clock.resume() }),
+    /** a service of its (STAGE.md, "Services"), for the view's plugins: what it gives lasts while the stage is open */
+    use: (name) => host.use(name, { id: "scene:view", signal: life.signal }),
   });
 
   stage = Object.freeze({
@@ -2388,8 +2065,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     url: handle.url ?? null,
     /** what its extensions offer as ambients (./ambients.js): the world's, read through api.ambient, when it's the outermost */
     ambients: () => ambients,
-    /** its doc's world time now: { t, running } (what api.ambient's clock says of the outermost) */
-    worldTime: () => ({ t: clock.t(), running: clock.running() }),
+    /** a service of its, for `caller` ({ id, signal }): what api.ambient's `use` asks the outermost */
+    use: (name, caller) => host.use(name, caller),
     handle,
     doc,
     scene,

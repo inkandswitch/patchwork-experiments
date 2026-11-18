@@ -163,8 +163,8 @@ export function projectView(v, n, prefix) {
     return p && p.n === n ? p.id : key;
   };
   // (where the focus is is the view's: a stage never learns where the viewer has entered;
-  // nor every open doc's packages, the focus path's clocks, or how it arrived: the view plugins')
-  const { focus: _focus, packages: _packages, clocks: _clocks, arrived: _arrived, ...rest } = v;
+  // nor every open doc's packages or how it arrived: the view plugins')
+  const { focus: _focus, packages: _packages, arrived: _arrived, ...rest } = v;
   return Object.freeze({
     ...rest,
     ...(v.escape?.layer === "focus" ? { escape: outermostEscape(v.hands) } : {}),
@@ -325,8 +325,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     focus: Object.freeze([]),
     // every open doc's packages this viewer doesn't have (unionPackages): the packages prompt's
     packages: unionPackages([]),
-    // the focus path's clocks, outermost first: the clock chip's (clocksChanged)
-    clocks: Object.freeze([]),
     // how this viewer last arrived (arrive()): the outermost doc's start (startOf) as read, and a count
     // (a template's arriving again says so even when the start is the same); null before the first
     arrived: null,
@@ -398,7 +396,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     s.start();
     s.announce(announced());
     packagesChanged();
-    clocksChanged();
     return s;
   }
   // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and top hand are the
@@ -419,7 +416,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function removeStage(s) {
     if (stages.get(s.n) === s) stages.delete(s.n);
     packagesChanged();
-    clocksChanged();
     ambientsChanged();
     for (const [k, rec] of opened) if (rec.stage === s) opened.delete(k);
     // what it held of the view goes with it: its bodies, its tool, its sessions
@@ -756,28 +752,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const next = unionPackages(stagesInOrder().map((s) => s.reader.packages()));
     atom.swap((m) => (JSON.stringify(m.packages) === JSON.stringify(next) ? m : { ...m, packages: next }));
   }
-  // ─── clocks: the focus path's (STAGE.md, "The interface"'s clock chip) ───────────────────
-  // Each stage computes its doc's world time and says what its chip would
-  // show (local.clock: ./clock.js). The chip is a view plugin, so the view
-  // puts the focus path's together, as view.clocks, which only the view's
-  // plugins see (projectView): one entry per stage on the path
-  // with a clock to show, outermost first, { stage, name, status }: a plain
-  // value, so the chip hears a change on any of them; `name` is the trail's
-  // for that doc. Pause and Resume are each stage's (its reader's `clock`).
-  const NO_CLOCKS = Object.freeze([]);
-  function clocksChanged() {
-    if (dead) return;
-    const f = atom.get().focus;
-    const out = [];
-    for (let i = 0; i <= f.length; i++) {
-      const s = stageAt(f.slice(0, i)) ?? (i === 0 ? outermost() : null);
-      const status = s?.reader.clock.status() ?? null;
-      if (status) out.push(Object.freeze({ stage: s.n, name: nameAt(f.slice(0, i)), status }));
-    }
-    const next = out.length ? Object.freeze(out) : NO_CLOCKS;
-    atom.swap((m) => (JSON.stringify(m.clocks) === JSON.stringify(next) ? m : { ...m, clocks: next }));
-  }
-
   const packages = Object.freeze({
     load: (urls) => Promise.all(stagesInOrder().map((s) => s.packages.load(urls))).then(() => {}),
     dismiss: (urls) => {
@@ -799,14 +773,15 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     return String(stageAt(p.slice(0, -1))?.reader.nameOf(p.at(-1)) || "Linked scene");
   }
   function showTrail() {
-    // (the chips name their docs as the trail does: whenever the trail looks again, so do they)
-    clocksChanged();
     const focus = atom.get().focus;
     const names = [];
     for (let i = 0; i <= focus.length; i++) names.push(nameAt(focus.slice(0, i)));
     const key = focus.length ? JSON.stringify(names) : "";
     if (key === trailKey) return;
     trailKey = key;
+    // (the view's plugins hear it: the clock chips name their docs as the trail does)
+    told = new WeakMap();
+    requestFlush();
     if (!focus.length) {
       trail.remove();
       trail.replaceChildren();
@@ -1473,14 +1448,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). → release, for when it closes itself */
       popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(key, close)) : noop),
       invalidate: () => viewport.invalidate(),
-      loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
+      /** fn(dt, now) every frame; `first`: before the others (what moves what they read) */
+      loop: (fn, { first = false } = {}) => acquire(own.frame, () => viewport.addLoop(fn, { first })),
       afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
-      /** the view's time (./time.js): now() (ms), after(ms, fn) → cancel, frame(fn) → cancel */
-      clock: Object.freeze({
-        now: () => time.now(),
-        after: (ms, fn) => timed((cb) => time.after(ms, cb), fn),
-        frame: (fn) => timed((cb) => time.frame(cb), fn),
-      }),
+      /** the view's one time (./time.js): now() (ms), after(ms, fn) → cancel, frame(fn) → cancel */
+      now: () => time.now(),
+      after: (ms, fn) => timed((cb) => time.after(ms, cb), fn),
+      frame: (fn) => timed((cb) => time.frame(cb), fn),
     };
   }
 
@@ -1593,6 +1567,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       path: (o) => inputPath(o),
       /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
+      /** a service (STAGE.md, "Services"): the focus stage's provider's, else a view plugin's */
+      use: (name) => (live() ? (api.focus()?.use(name) ?? plugins.use(name, { id, signal })) : null),
     };
 
     function release() {
@@ -1682,8 +1658,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     dockDocument,
     packages,
     packagesChanged,
-    /** a stage's clock said something new (local.clock): the focus path's clocks again */
-    clocksChanged,
     /** "Not now"'s packages, the view's: every stage's packages module shares it */
     declinedPackages,
     /** the view's plugins (./host.js); those at a stage (the focus: all), the focus stage's flush told them, what the view lends an extension or one of them */

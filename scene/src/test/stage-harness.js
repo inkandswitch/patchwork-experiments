@@ -12,7 +12,8 @@
 // no traits is a part of every doc (traits ["*"]), unless its meta says
 // `type: "scene:view"`. They are registered in that order, which is the
 // order the view plugins run in.
-// The editor's hand (scene.edit) is registered after them unless one of
+// The native services (claims, clock, telling) are registered before them
+// unless `natives: false`. The editor's hand (scene.edit) is registered after them unless one of
 // them is it or `editor: false` (s.edit(on) picks it up or puts it down). The
 // scene's own datatypes and sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
@@ -76,12 +77,17 @@ async function asRegistered(meta) {
 const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
-export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true } = {}) {
+/** The native services' ids (src/index.js): registered first unless `natives: false`. */
+export const NATIVES = ["scene.claims", "scene.clock", "scene.telling"];
+
+export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true, natives = true } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
     resetRegistries();
     const { plugins } = await import("../index.js");
     for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
+    // the native services (claims, clock, telling) first, as src/index.js has them
+    for (const p of plugins) if (natives && NATIVES.includes(p.id) && !extensions.some((x) => x.meta.id === p.id)) getRegistry(p.type).register(p);
     const all = editor && !extensions.some((x) => x.meta.id === "scene.edit") ? [...extensions, { meta: { id: "scene.edit" }, module: (await import("../parts/edit.js")).default }] : extensions;
     for (const { meta: m, module } of all) {
       const [type, meta] = await asRegistered(m);

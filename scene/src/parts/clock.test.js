@@ -1,4 +1,4 @@
-// scene.clock: the chip's words (pure), and the chip on a mounted stage with
+// scene.clock-chip: the chip's words (pure), and the chip on a mounted stage with
 // a process, paused and resumed through it.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -39,20 +39,21 @@ describe("the chip on a stage", () => {
       meta: { id: "t.proc" },
       module: {
         create(api) {
-          api.clock.process({ step: (dt, t) => steps.push(t), save: () => {} });
+          api.use("clock").process({ step: (dt, t) => steps.push(t), save: () => {} });
           return {};
         },
       },
     };
-    const CHIP = { meta: { id: "scene.clock" }, module: clockPart };
+    const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
     const s = await mountStage({ extensions: [PROC, CHIP], viewerId: "me" });
     mounted.push(s);
-    await until(() => s.local.get().clock?.computer?.mine);
+    const clock = () => s.api("t.proc").use("clock");
+    await until(() => clock().computer()?.mine);
     const chip = s.root.querySelector(".clock-chip");
     expect(s.root.querySelector(".clock-bar").hidden).toBe(false);
     expect(chip.closest(".stage-edge").dataset.edge).toBe("top"); // beside the view, not over it
     expect(chip.querySelector(".clock-text").textContent).toBe("▶ Running");
-    expect(s.doc().claims.clock.session).toBe(s.api("t.proc").session);
+    expect(s.doc().claims.clock.session).toBe(s.api("t.proc").channel.session);
     // frames pass: the process is stepped on its grid
     await until(() => steps.length > 3);
     chip.querySelector(".clock-toggle").click();
@@ -61,24 +62,24 @@ describe("the chip on a stage", () => {
     expect(s.doc().claims.clock).toBeUndefined();
     expect(chip.querySelector(".clock-text").textContent).toBe("⏸ Paused by you");
     const n = steps.length;
-    const t = s.api("t.proc").clock.t();
+    const t = clock().t();
     expect(t).toBe(s.doc().clock.t);
     await new Promise((r) => setTimeout(r, 100));
     expect(steps.length).toBe(n); // no time passes paused
-    expect(s.api("t.proc").clock.t()).toBe(t);
+    expect(clock().t()).toBe(t);
     chip.querySelector(".clock-toggle").click();
-    await until(() => s.local.get().clock?.computer?.mine);
+    await until(() => clock().computer()?.mine);
     expect(s.doc().clock.running).toBe(true);
     await until(() => steps.length > n);
     expect(steps[n]).toBeGreaterThan(t);
   });
 
   it("no process, no chip", async () => {
-    const CHIP = { meta: { id: "scene.clock" }, module: clockPart };
+    const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
     const s = await mountStage({ extensions: [CHIP] });
     mounted.push(s);
     await settle();
-    expect(s.local.get().clock).toBeNull();
+    expect(s.api("scene.clock-chip").use("clock").status()).toBeNull();
     expect(s.root.querySelector(".clock-bar").hidden).toBe(true);
   });
 
@@ -89,18 +90,19 @@ describe("the chip on a stage", () => {
       meta: { id: "t.proc" },
       module: {
         create(api) {
-          remove = api.clock.process({ step() {}, save: (d) => saves.push(typeof d.objects) });
+          remove = api.use("clock").process({ step() {}, save: (d) => saves.push(typeof d.objects) });
           return {};
         },
       },
     };
     const s = await mountStage({ extensions: [PROC] });
     mounted.push(s);
-    await until(() => s.debug.clock.computing());
+    const computing = () => !!s.api("t.proc").use("clock").computer()?.mine;
+    await until(computing);
     remove();
     expect(saves).toEqual(["object"]);
     await settle();
-    expect(s.debug.clock.computing()).toBe(false);
+    expect(computing()).toBe(false);
     expect(s.doc().claims?.clock).toBeUndefined();
     expect(s.doc().clock.t).toBeGreaterThan(0);
   });

@@ -48,7 +48,7 @@ const WALK = {
           if (!f || said.has(f)) return;
           said.add(f);
           const title = f.doc().title;
-          if (POINT[title]) f.presence.set("here", POINT[title]);
+          if (POINT[title]) f.channel.set("here", POINT[title]);
         },
       };
     },
@@ -67,9 +67,9 @@ const PEOPLE = {
       const marks = new Map(); // session → Object3D
       function draw() {
         const seen = new Set();
-        for (const [session, p] of Object.entries(api.presence.get() ?? {})) {
+        for (const [session, p] of Object.entries(api.channel.peers())) {
           const here = p?.keys?.["t.walk"]?.here;
-          if (session === api.session || !Array.isArray(here)) continue;
+          if (session === api.channel.session || !Array.isArray(here)) continue;
           seen.add(session);
           let m = marks.get(session);
           if (!m) {
@@ -82,7 +82,7 @@ const PEOPLE = {
         }
         for (const [session, m] of marks) if (!seen.has(session)) (m.removeFromParent(), marks.delete(session));
       }
-      api.presence.watch(draw);
+      api.channel.watch(draw);
       draw();
       return {
         /** who it draws, where in its layer, and what its layer hangs under (the viewport's key of its stage's root: null, the outermost's) */
@@ -94,8 +94,8 @@ const PEOPLE = {
   },
 };
 /** A process, where the doc says (a scene trait): so the doc has a clock to show. */
-const PROC = { meta: { id: "t.proc", traits: ["t.proc"] }, module: { create: (api) => (api.clock.process({ step() {}, save() {} }), {}) } };
-const CHIP = { meta: { id: "scene.clock" }, module: clockPart };
+const PROC = { meta: { id: "t.proc", traits: ["t.proc"] }, module: { create: (api) => (api.use("clock").process({ step() {}, save() {} }), {}) } };
+const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
 
 /**
  * A: L a live link to B, P a pin of B, S a live
@@ -247,9 +247,10 @@ describe("presence where it is", () => {
         expect([label, peopleOf(view)]).toEqual([label, first]);
         // the clocks: the focus path's, outermost first, each named inside a link
         const want = expectedClocks(f);
-        const clocksAt = () => view.atom.get().clocks.map((c) => view.stage(c.stage)?.path.join("/"));
+        const chipStages = () => [...s.root.querySelectorAll(".clock-chip")].map((el) => view.stage(Number(el.dataset.stage)));
+        const clocksAt = () => chipStages().map((st) => st?.path.join("/"));
         await until(() => J(clocksAt()) === J(want), 4000).catch(() => expect([label, clocksAt()]).toEqual([label, want]));
-        for (const c of view.atom.get().clocks) expect(view.stage(c.stage).acts, label).toBe(true);
+        for (const st of chipStages()) expect(st.acts, label).toBe(true);
         await until(() => [...s.root.querySelectorAll(".clock-chip")].length === want.length, 4000);
         const names = [...s.root.querySelectorAll(".clock-chip .clock-doc")].map((el) => (el.hidden ? "" : el.textContent));
         expect([label, names]).toEqual([label, want.map((p) => (f === "" ? "" : NAME[p]))]);
@@ -288,7 +289,7 @@ describe("presence where it is", () => {
     }
   });
 
-  it("a chip names its doc as the trail does, at once when a link is renamed; and only view plugins see the clocks", async () => {
+  it("a chip names its doc as the trail does, at once when a link is renamed", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { s, view, docs } = await mountTree();
     cleanups.push(() => s.unmount());
@@ -305,9 +306,5 @@ describe("presence where it is", () => {
       await until(() => J(names()) === J(want), 4000).catch(() => expect([name, names()]).toEqual([name, want]));
       expect(trail()).toEqual(host === "A" ? ["A", "Boat", "C", "D"] : ["A", "Boat", "C", "Table"]);
     }
-    // the clocks are the view's, for its plugins: a part of a doc never sees them
-    expect("clocks" in stageOf(view, "").debug.host.record("t.proc").api.view.get()).toBe(false);
-    expect("clocks" in stageOf(view, "L").debug.host.record("t.people").api.view.get()).toBe(false);
-    expect(s.api("scene.clock").view.get().clocks.length).toBe(3);
   });
 });

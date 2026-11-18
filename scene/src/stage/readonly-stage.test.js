@@ -42,7 +42,7 @@ import { FakeRepo, FakeHandle } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
 import { drop, editor, part, template } from "../parts/editor.js";
 import { manualTime } from "./time.js";
-import { CLOCK_HZ, CHECKPOINT_MS } from "./clock.js";
+import { CLOCK_HZ, CHECKPOINT_MS } from "../native/clock.js";
 import { HEARTBEAT_MS } from "./presence.js";
 import { readOnlyHandle, stageRepo, REFUSED } from "./readonly.js";
 
@@ -169,18 +169,20 @@ describe("I6: a read-only stage writes nothing", () => {
       api.change((d) => (d.title = "written"));
       ok("change writes nothing", api.doc().title !== "written");
       ok("remove refuses", api.remove(["card"]) === null);
-      ok("claim on the scene refuses", api.claim(null, "seat:p1") === null);
-      ok("claim on an object refuses", api.claim("card", "carry") === null);
-      api.send("t", { x: 1 });
-      api.tell("t", { x: 1 });
+      const claims = api.use("claims");
+      const clock = api.use("clock");
+      ok("claim on the scene refuses", claims.claim(null, "seat:p1") === null);
+      ok("claim on an object refuses", claims.claim("card", "carry") === null);
+      api.channel.send("t", { x: 1 });
+      api.use("tell").tell("t", { x: 1 });
       ok("pose.hold refuses", api.pose.hold("card", { ...T, position: [1, 0, 0] }) === false);
-      api.presence.set("here", role);
-      api.presence.rate(30);
+      api.channel.set("here", role);
+      api.channel.rate(30);
       let started = 0;
       let stepped = 0;
-      const off = api.clock.process({ start: () => started++, step: () => stepped++, save: (d) => (d.title = "saved") });
-      api.clock.pause();
-      api.clock.resume();
+      const off = clock.process({ start: () => started++, step: () => stepped++, save: (d) => (d.title = "saved") });
+      clock.pause();
+      clock.resume();
       editor(api).edit((d) => (d.title = "edited"), { label: "Edit" });
       const step = editor(api).edits("Several");
       step.change((d) => (d.title = "edited twice"));
@@ -198,15 +200,15 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("a handle the repo gives out refuses", (() => { try { found.change((d) => (d.title = "through the repo")); return false; } catch (e) { return /read-only/.test(e.message); } })());
       ok("the repo makes no doc", await api.repo.create2({}).then(() => false, (e) => /read-only/.test(e.message)));
       // a pin has no channel: no claim counts there; elsewhere one by a session long gone counts only for the grace
-      if (role === "pinned") ok("a pin's claims count for nobody", api.claimedBy(null, "held") === null);
-      else ok("a claim by a session not heard from counts for the grace", api.claimedBy(null, "held")?.session === "s-old");
+      if (role === "pinned") ok("a pin's claims count for nobody", claims.claimedBy(null, "held") === null);
+      else ok("a claim by a session not heard from counts for the grace", claims.claimedBy(null, "held")?.session === "s-old");
 
       // over time: claims rechecked, the clock ticked past a checkpoint, heartbeats, a pose's keepalive
       await m.time.advance(CHECKPOINT_MS + HEARTBEAT_MS + 1000 / CLOCK_HZ, { draw: false });
       await settle();
       ok("the process is never started or stepped", started === 0 && stepped === 0);
       off();
-      ok("a claim by a session long gone has lapsed", api.claimedBy(null, "held") === null);
+      ok("a claim by a session long gone has lapsed", claims.claimedBy(null, "held") === null);
 
       m.arm.on = false;
       const failed = steps.filter(([, v]) => !v).map(([w]) => w);

@@ -2,7 +2,7 @@
 // against the real one, over finite cases.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { FRAME_MS, MANUAL_EPOCH, manualTime, realTime } from "./time.js";
-import { STEP_S, createClock } from "./clock.js";
+import { STEP_S, createClock } from "../native/clock.js";
 
 const now0 = () => Promise.resolve(); // step()'s yield, without the event loop
 

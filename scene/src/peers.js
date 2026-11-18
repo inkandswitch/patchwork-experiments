@@ -65,7 +65,7 @@ export function peerCss(remote, who) {
 }
 
 /**
- * What each peer has selected, from api.presence.get(): [{ session, viewer,
+ * What each peer has selected, from api.channel.peers(): [{ session, viewer,
  * selected, hovered }], peers that have something to show, by session.
  * References to objects that aren't in `objects` are dropped.
  * @param {object} peers  presence.get()

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { LINK } from "../stage/links.js";
@@ -260,7 +260,7 @@ describe("scene.use", () => {
 
   it("runs in every view: a view plugin, as the key map is", async () => {
     await mount();
-    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game"]);
+    expect(s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["t.game"]);
     expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.use", "scene.keys", "scene.edit"]);
   });
 

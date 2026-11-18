@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import add, { accepts, baseName, mimeOf, templatesOf, ROW_MIME } from "./add.js";
 import { SECTION_MIME } from "../dnd.js";
@@ -118,7 +118,7 @@ describe("scene.add", () => {
     expect(s.doc().view.start).toEqual({ body: "t.sit" });
     // its maker lands in the game, in the body it starts people in; nothing stops
     expect(s.local.get().body.id).toBe("t.sit");
-    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game"]);
+    expect(s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["t.game"]);
     expect(s.debug.view.plugins.running().map((r) => r.id)).toEqual(["scene.add", "scene.edit"]);
   });
 

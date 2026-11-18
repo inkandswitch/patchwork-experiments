@@ -19,13 +19,13 @@ const SELECT = "scene.select";
 
 function create(api) {
   const drawn = boxes(api, (objects, theme) =>
-    peerSelections(api.presence.get(), SELECT, objects)
+    peerSelections(api.channel.peers(), SELECT, objects)
       // (never this view's own: that one is scene.select's)
-      .filter((p) => p.selected && p.session !== api.session)
+      .filter((p) => p.selected && p.session !== api.channel.session)
       .map((p) => ({ key: `peer:${p.session}`, id: p.selected, rgb: peerColor(theme.remote ?? REMOTE, p.viewer ?? p.session) })),
   );
   // others' selections come and go without a doc change
-  api.presence.watch(() => api.schedule(drawn.refresh));
+  api.channel.watch(() => api.schedule(drawn.refresh));
   drawn.refresh();
   return {
     update(scene, local, prev, view) {

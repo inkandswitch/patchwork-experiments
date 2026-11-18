@@ -16,12 +16,10 @@ function rig({ says } = {}) {
   const told = [];
   const handed = []; // what `valid` was handed
   let running = true;
-  const instance = {
-    messages: {
-      moved: {
-        valid: (d) => (handed.push(d), typeof d.to === "number"),
-        says: says ?? ((d, who, s) => (s.ok ? `${who.name} moved to ${d.to}` : null)),
-      },
+  const messages = {
+    moved: {
+      valid: (d) => (handed.push(d), typeof d.to === "number"),
+      says: says ?? ((d, who, s) => (s.ok ? `${who.name} moved to ${d.to}` : null)),
     },
   };
   const telling = createTelling({
@@ -33,13 +31,13 @@ function rig({ says } = {}) {
     },
     scene: () => scene,
     notify: (text) => told.push(text),
-    alive: (_ext, x) => running && x === instance,
+    alive: (_ext, x) => running && x === messages,
   });
   const advance = (ms) => {
     t += ms;
     for (const timer of [...timers]) if (timer.at <= t && timers.delete(timer)) timer.fn();
   };
-  const hear = (data) => telling.hear("t", instance, "moved", data, { session: "s", viewer: null });
+  const hear = (data) => telling.hear("t", messages, "moved", data, { session: "s", viewer: null });
   return { telling, scene, told, handed, timers, advance, hear, stop: () => (running = false) };
 }
 

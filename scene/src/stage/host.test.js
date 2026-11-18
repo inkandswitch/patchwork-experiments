@@ -118,20 +118,19 @@ describe("the host", () => {
   const doc = (extra = {}) => ({ objects: {}, view: {}, ...extra });
   const ids = () => local.get().running.map((r) => `${r.id}:${r.scope}`);
 
-  it("publishes local.running in running order, never in the order they finished loading", async () => {
+  it("makes them in running order, never in the order they finished loading, and publishes local.running so", async () => {
     let release;
     const slow = new Promise((r) => (release = r));
     const { host } = make({ delays: { seats: slow } });
     host.sync(doc({ traits: { seats: {} }, objects: { c: { traits: { zone: {} } } } }));
     await flush();
-    // seats is still loading: everything else is running, in its place
-    expect(ids()).toEqual(["select:scene", "outline:scene", "inspector:scene", "clock:scene", "zones:objects"]);
+    // seats is still loading: nothing after it is made yet (a provider is up before what asks for it)
+    expect(ids()).toEqual([]);
     release();
     await flush();
     expect(ids()).toEqual(["seats:scene", "select:scene", "outline:scene", "inspector:scene", "clock:scene", "zones:objects"]);
     expect(host.instances().map((r) => r.id)).toEqual(["seats", "select", "outline", "inspector", "clock", "zones"]);
-    // started out of order
-    expect(log.filter((l) => l.startsWith("create")).at(-1)).toBe("create:seats");
+    expect(log.filter((l) => l.startsWith("create"))).toEqual(["seats", "select", "outline", "inspector", "clock", "zones"].map((id) => `create:${id}`));
   });
 
   it("collects a field from every running extension, in running order", async () => {

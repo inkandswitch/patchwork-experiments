@@ -1,14 +1,13 @@
-// scene.clock (always on): the clock chips (STAGE.md, "The interface"). One chip for
-// each doc on the focus path that has a clock to show, outermost first: its
-// world time as its stage publishes it (the clock's status:
-// src/stage/clock.js), put together by the view as view.clocks, which a
-// view plugin sees. A doc shows a chip only with a process: ▶ while it
-// runs, ⏸ "Paused by Ana" while it doesn't, and its one button pauses or
-// resumes that doc (anyone who may write it: the lead's decision 5), through
-// its stage's reader. Who computes is shown only when it's news: on a stall
+// scene.clock-chip (always on): the clock chips (STAGE.md, "The interface").
+// One chip for each doc on the focus path that has a clock to show,
+// outermost first: its world time as its stage's "clock" service says it
+// (its status: src/native/clock.js), heard through each stage's reader. A doc
+// shows a chip only with a process: ▶ while it runs, ⏸ "Paused by Ana"
+// while it doesn't, and its one button pauses or resumes that doc (anyone
+// who may write it: the lead's decision 5). Who computes is shown only when it's news: on a stall
 // ("waiting for Ben's machine") or when nobody here can ("nobody here can run
 // it: view only"). While the focus is inside a link each chip names its doc
-// (the trail's name for it, in view.clocks); at the outermost there is one
+// (the trail's name for it); at the outermost there is one
 // doc and no name. Notices
 // are aria-live. No keys.
 //
@@ -58,7 +57,7 @@ function create(api) {
             if (dead || typeof n !== "string" || !n.trim()) return;
             names.set(viewer, n.trim());
             shown = null;
-            render(api.view.get().clocks);
+            render();
           })
           .catch(() => {});
     }
@@ -82,9 +81,9 @@ function create(api) {
     button.className = "button clock-toggle";
     el.append(doc, text, button);
     button.addEventListener("click", () => {
-      const r = readerOf(stage);
-      if (button.dataset.action === "pause") r?.clock.pause();
-      else r?.clock.resume();
+      const c = readerOf(stage)?.use("clock");
+      if (button.dataset.action === "pause") c?.pause();
+      else c?.resume();
     });
     chips.set(stage, (c = { el, doc, text, button }));
     return c;
@@ -94,15 +93,20 @@ function create(api) {
   const path = () => api.path({ focus: true });
   const readerOf = (stage) => path().find((r) => r.stage === stage) ?? null;
 
-  function render(clocks) {
+  const heard = new Set(); // the stages whose clocks it hears (each stage's lasts while it's open)
+  /** What the trail calls the doc of reader `r` (`readers` the focus path, innermost first): the outermost's title, else its host's name for the link. */
+  const docName = (r, readers) => (r.path.length ? readers.find((x) => x.path.length === r.path.length - 1)?.nameOf(r.path.at(-1)) || "Linked scene" : String(r.scene().d?.title || "Scene"));
+
+  function render() {
     const readers = path();
     // (inside a link there is more than one doc on the path: each chip says whose)
     const named = readers.length > 1;
     const items = [];
-    for (const { stage, name: doc, status } of clocks ?? []) {
-      const r = readers.find((x) => x.stage === stage);
-      const c = r ? chipOf(status, name) : null;
-      if (c) items.push({ stage, chip: c, doc: named ? doc : "", writable: !!r.writable() });
+    for (const r of [...readers].reverse()) {
+      const clock = r.use("clock");
+      if (clock && !heard.has(r.stage)) heard.add(r.stage) && clock.watch(render);
+      const c = clock ? chipOf(clock.status(), name) : null;
+      if (c) items.push({ stage: r.stage, chip: c, doc: named ? docName(r, readers) : "", writable: !!r.writable() });
     }
     const key = JSON.stringify(items);
     if (key === shown) return;
@@ -124,12 +128,10 @@ function create(api) {
     bar.replaceChildren(...els);
   }
 
-  render(api.view.get().clocks);
+  render();
 
   return {
-    update() {
-      render(api.view.get().clocks);
-    },
+    update: render,
     dispose() {
       dead = true;
     },

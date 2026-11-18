@@ -1,8 +1,9 @@
-// Telling the others what the doc bears out (STAGE.md, "Telling").
+// scene.telling (native, every doc): telling the others what the doc bears
+// out, provided as "tell" (STAGE.md, "Telling").
 //
 // An extension declares what it tells, `messages: { [type]: { valid(data),
-// says(data, who, scene) } }`, and calls `api.tell(type, data)`. The stage
-// says it here as "You" and sends it; every peer's stage, on receipt, drops
+// says(data, who, scene) } }`, and calls `api.use("tell").tell(type, data)`.
+// It is said here as "You" and sent; every peer, on receipt, drops
 // it unless its data is an object and `valid`, then asks `says` at once and
 // again on every update of that stage until it answers text or TELL_MS of the
 // stage's time has passed since it arrived: told once, or forgotten when that
@@ -14,24 +15,24 @@
 // once it does. Answering text is the moment the stage tells it, so a
 // package may spend what bore it out there.
 //
-// The speaker is named by the stage, the same way for every package: their
+// The speaker is named here, the same way for every package: their
 // contact's name, else "Someone", asked once per viewer; `who.mine` is
 // whether this view told it (another tab of the same viewer is a peer). `says` is not asked
 // until their name has come or NAME_MS has passed, so the first word from
 // someone is told by name.
 //
-// Nothing here knows a stage: it is handed time, the scene, notify, a way to
-// find a contact's doc and whether an extension's instance still runs.
-// (Packages' fake stages copy this file whole: they stand alone.)
+// createTelling knows no stage: it is handed time, the scene, notify, a way
+// to find a contact's doc and whether an extension's messages still run; the
+// plugin at the end hands it them from the public api. (Packages' fake
+// stages copy createTelling whole: they stand alone.)
 
 /** How long after it arrives a message may still be borne out and told (ms, the stage's time). */
 export const TELL_MS = 3000;
 /** How long `says` waits for a speaker's contact name before they're "Someone" (ms, the stage's time). */
 export const NAME_MS = 1000;
 
-/** What an instance declares it tells of `type`: { valid, says }; null when it doesn't (then it's `receive`'s). */
-export function declared(instance, type) {
-  const m = instance?.messages;
+/** What an extension's `messages` declare it tells of `type`: { valid, says }; null when they don't. */
+export function declared(m, type) {
   if (!m || typeof m !== "object" || typeof type !== "string" || !Object.hasOwn(m, type)) return null;
   return m[type] ?? {};
 }
@@ -43,12 +44,12 @@ export function declared(instance, type) {
  *   scene: () => any,
  *   notify: (text: string, ext: string) => void,
  *   find?: (url: string) => any,
- *   alive: (ext: string, instance: object) => boolean,
+ *   alive: (ext: string, messages: object) => boolean,
  * }} o
  */
 export function createTelling({ now, after, scene, notify, find, alive }) {
   let dead = false;
-  const pending = new Set(); // { ext, instance, spec, data, viewer, mine, at, cancel }
+  const pending = new Set(); // { ext, messages, spec, data, viewer, mine, at, cancel }
   const names = new Map(); // viewer → { name: string | null, settled: boolean }
   const cancels = new Set();
 
@@ -90,7 +91,7 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
   }
   /** Ask one waiting message whether the doc bears it out yet: told and forgotten, or kept. */
   function askOne(p) {
-    if (dead || !alive(p.ext, p.instance) || now() - p.at >= TELL_MS) return forget(p);
+    if (dead || !alive(p.ext, p.messages) || now() - p.at >= TELL_MS) return forget(p);
     const name = p.mine ? "You" : nameOf(p.viewer);
     if (name === undefined) return;
     let text;
@@ -110,9 +111,9 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
   }
 
   /** Take a message in: dropped unless declared, an object and valid (false), else asked now and kept until told or out of time. */
-  function take(ext, instance, type, data, viewer, mine) {
+  function take(ext, messages, type, data, viewer, mine) {
     if (dead || data === null || typeof data !== "object") return false;
-    const spec = declared(instance, type);
+    const spec = declared(messages, type);
     if (typeof spec?.valid !== "function" || typeof spec.says !== "function") return false;
     let ok = false;
     try {
@@ -121,7 +122,7 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
       ok = false;
     }
     if (!ok) return false;
-    const p = { ext, instance, type, spec, data, viewer, mine, at: now(), cancel: null };
+    const p = { ext, messages, type, spec, data, viewer, mine, at: now(), cancel: null };
     // out of time, it is forgotten then, not when something next asks (a quiet doc asks nothing)
     p.cancel = after(TELL_MS, () => pending.has(p) && forget(p));
     cancels.add(p.cancel);
@@ -132,9 +133,9 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
 
   return Object.freeze({
     /** This view tells it: said here as "You"; false if it isn't valid (then it isn't sent either). */
-    say: (ext, instance, type, data, viewer) => take(ext, instance, type, data, viewer, true),
+    say: (ext, messages, type, data, viewer) => take(ext, messages, type, data, viewer, true),
     /** A peer told it (`from`: { session, viewer }). */
-    hear: (ext, instance, type, data, from) => void take(ext, instance, type, data, from?.viewer ?? null, false),
+    hear: (ext, messages, type, data, from) => void take(ext, messages, type, data, from?.viewer ?? null, false),
     ask,
     /** for tests and probes: how many messages wait */
     waiting: () => pending.size,
@@ -146,3 +147,50 @@ export function createTelling({ now, after, scene, notify, find, alive }) {
     },
   });
 }
+
+// ─── the plugin ─────────────────────────────────────────────────────────────
+
+/** What goes on the channel: { ext, type, data }. */
+const TOLD = "told";
+
+function create(api) {
+  const messagesOf = (ext) => api.collect("messages").find((x) => x.id === ext)?.value ?? null;
+  const telling = createTelling({
+    now: api.now,
+    after: api.after,
+    scene: api.scene,
+    notify: (text) => api.notify(text, "info"),
+    find: (url) => api.repo?.find?.(url),
+    alive: (ext, messages) => messagesOf(ext) === messages,
+  });
+  return {
+    provides: {
+      tell: (caller) =>
+        Object.freeze({
+          /** say it here as "You" and send it, after the change that bears it out (a view that can't write tells nothing) */
+          tell(type, data) {
+            if (caller.signal.aborted || !api.writable()) return;
+            const m = messagesOf(caller.id);
+            if (!declared(m, type)) return void console.warn(`[scene] extension “${caller.id}”: tell(“${type}”) isn't among its messages`);
+            let copy;
+            try {
+              copy = structuredClone(data ?? null);
+            } catch {
+              return void console.warn(`[scene] extension “${caller.id}”: tell(“${type}”) data isn't plain`);
+            }
+            if (telling.say(caller.id, m, type, copy, api.channel.viewer)) api.channel.send(TOLD, { ext: caller.id, type, data: copy });
+          },
+        }),
+    },
+    receive(type, d, from) {
+      if (type === TOLD && typeof d?.ext === "string") telling.hear(d.ext, messagesOf(d.ext), d.type, d.data, from);
+    },
+    // asked again once every extension has seen this flush (a package's evidence may be in its update)
+    update: () => void (telling.waiting() && api.schedule(telling.ask)),
+    /** for tests and probes: how many messages wait */
+    waiting: () => telling.waiting(),
+    dispose: () => telling.dispose(),
+  };
+}
+
+export default { create };

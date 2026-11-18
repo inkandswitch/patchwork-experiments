@@ -1,4 +1,5 @@
-// World time for one doc (STAGE.md, "World time", "World time and processes").
+// scene.clock (native, every doc): world time for one doc, provided as
+// "clock" (STAGE.md, "World time").
 //
 // A doc has one clock, `doc.clock = { running, t, by? }` (absent: running
 // from 0), made with the doc (the scene datatype's init, STAGE.md "Shared
@@ -49,8 +50,11 @@
 //   `clock.t`, which catches a follower up to the pause point everyone has.
 //
 // t per view never decreases. createClock is the whole of it against an env
-// the stage provides (claims, presence, the doc, eligibility, the wall
-// clock), so tests drive it with in-memory docs and frames of their choosing.
+// (claims, the channel, the doc, eligibility, the stage's time), so tests
+// drive it with in-memory docs and frames of their choosing; the plugin at
+// the end gives it that env from the public api.
+
+import { tie } from "./tie.js";
 
 /** The claim kind the computer holds, on the doc (id null). */
 export const CLOCK = "clock";
@@ -70,9 +74,8 @@ export const STALL_MS = 1000;
 export const SLEW_S = 1;
 /** Further behind than this (s), a follower jumps forward instead of slewing. */
 export const RESYNC_S = 0.5;
-/** The presence namespace and key the computer's t goes out under. */
-export const PRESENCE_NS = "scene";
-export const PRESENCE_KEY = "clock";
+/** The channel key the computer's t goes out under (scene.clock's own). */
+export const PRESENCE_KEY = "t";
 
 const fin = (v) => typeof v === "number" && Number.isFinite(v);
 
@@ -477,3 +480,79 @@ export function createClock(env) {
     },
   };
 }
+
+// ─── the plugin ─────────────────────────────────────────────────────────────
+
+function create(api) {
+  const ch = api.channel;
+  const claims = api.use("claims");
+  const watchers = new Set();
+  let away = false; // let go on pagehide, until pageshow
+  const clock = createClock({
+    doc: api.doc,
+    change: (fn) => api.change(fn),
+    claim: {
+      take: (onLost) => (away ? null : (claims?.claim(null, CLOCK, { onLost }) ?? null)),
+      holder: () => claims?.claimedBy(null, CLOCK) ?? null,
+    },
+    presence: {
+      set: (sample) => ch.set(PRESENCE_KEY, sample),
+      sample: (s) => ch.peers()[s]?.keys?.[api.id]?.[PRESENCE_KEY] ?? null,
+      shownAt: (s) => ch.shownAt(s),
+      rate: (hz) => ch.rate(hz),
+    },
+    eligible: () => {
+      const s = api.settled();
+      return eligibility({ acts: !!ch.session, writable: api.writable(), visible: api.page.visible(), settled: s.ready, complete: !s.missing.length });
+    },
+    writable: api.writable,
+    viewer: ch.viewer,
+    now: api.now,
+    onStatus: () => [...watchers].forEach((fn) => fn()),
+  });
+  // frames while anything moves (this view has a process, or someone computes), ahead of every other loop
+  let frames = null;
+  function check() {
+    clock.check();
+    if (clock.live() && !frames) frames = api.loop((_dt, now) => clock.tick(now), { first: true });
+    else if (!clock.live() && frames) frames = void frames();
+  }
+  ch.watch(check);
+  api.page.on("visible", check);
+  api.page.on("hide", () => {
+    clock.letGo();
+    away = true;
+  });
+  api.page.on("show", () => {
+    away = false;
+    check();
+  });
+
+  return {
+    provides: {
+      clock: (caller) =>
+        Object.freeze({
+          t: () => clock.t(),
+          running: () => clock.running(),
+          /** who computes: { viewer, session, mine }, or null (nobody: no time passes) */
+          computer: () => claims?.claimedBy(null, CLOCK) ?? null,
+          /** what a chip shows (null: nothing to show), and fn() whenever it changes → off */
+          status: () => clock.status(),
+          watch: (fn) => (watchers.add(fn), tie(caller.signal, () => watchers.delete(fn))),
+          pause: () => clock.pause(),
+          resume: () => clock.resume(),
+          process(spec) {
+            // (a pin has no channel, and no processes)
+            if (!ch.session || caller.signal.aborted) return () => {};
+            const remove = clock.process(spec);
+            check();
+            return tie(caller.signal, () => (remove(), check()));
+          },
+        }),
+    },
+    update: check,
+    dispose: () => clock.dispose(),
+  };
+}
+
+export default { create };

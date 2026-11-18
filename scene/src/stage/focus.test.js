@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
@@ -260,7 +260,7 @@ describe("Enter and Leave", () => {
     const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), s.facet("scene.focus").camera.touched()];
     expect(touched()).toEqual([false, false, false]);
     // what the doc runs is untouched (H1): only the view plugins' facets moved
-    const traitRun = (p) => stageOf(view, p).debug.host.running().map((r) => r.id);
+    const traitRun = (p) => stageOf(view, p).debug.host.running().map((r) => r.id).filter((id) => !NATIVES.includes(id));
     expect(traitRun("")).toEqual(["t.host"]);
     expect(traitRun("L")).toEqual(["t.card"]);
     // deeper, then the trail's way out, then Leave

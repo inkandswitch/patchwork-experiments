@@ -32,7 +32,7 @@ function extensions(log) {
         create: (api) => {
           // (an extension can't tell where it is placed: it can tell whether it may write)
           const as = () => (api.writable() ? "writable" : "read-only");
-          api.clock.process({ start: () => log.push(`start ${as()}`), step: () => {} });
+          api.use("clock").process({ start: () => log.push(`start ${as()}`), step: () => {} });
           const box = api.scene().traits["t.game"]?.box;
           if (box) api.repo.find(box).then((h) => log.push(`box ${as()} ${h.doc().n}`));
           return { input: { press: (ev) => (log.push(`press ${as()} ${ev.hit?.id}`), null) } };
