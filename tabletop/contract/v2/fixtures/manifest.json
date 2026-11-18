@@ -17,6 +17,7 @@
   {"file":"invalid/bad-color.json","stage":"structural","code":"schema","about":"colours are #rrggbb or #rrggbbaa"},
   {"file":"invalid/bad-file.json","stage":"structural","code":"schema","about":"an image names a file doc by automerge URL, or the web by http(s)"},
   {"file":"invalid/bad-asset.json","stage":"structural","code":"schema","about":"an asset is cached in a file doc"},
+  {"file":"invalid/asset-key.json","stage":"structural","code":"schema","about":"assets are cached under their web URL, never a file doc's"},
   {"file":"invalid/unknown-part.json","stage":"structural","code":"schema","about":"a part's shape is one the format draws"},
   {"file":"invalid/bad-turn.json","stage":"structural","code":"schema","about":"an image turns in quarter turns"},
   {"file":"invalid/bad-kind-id.json","stage":"structural","code":"schema","about":"a kind's id is plain"},

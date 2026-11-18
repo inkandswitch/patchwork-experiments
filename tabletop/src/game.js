@@ -15,12 +15,21 @@ export function gameOf(doc) {
   return g;
 }
 
-/** Write a game into a doc (inside a change): every game field replaced, `drawn` and `tables` kept. */
+/**
+ * Write a game into a doc (inside a change): every game field replaced, `drawn` and `tables` kept.
+ * `assets` is written entry by entry into the map the doc has (never a new map), so what a viewer
+ * caches while the game is edited isn't lost in the merge.
+ */
 export function writeGame(d, game) {
   for (const k of GAME_FIELDS) {
+    if (k === "assets") continue;
     if (game?.[k] !== undefined) d[k] = plain(game[k]);
     else if (k in d) delete d[k];
   }
+  const assets = game?.assets ?? {};
+  if (!d.assets) d.assets = {};
+  for (const u of Object.keys(d.assets)) if (!(u in assets)) delete d.assets[u];
+  for (const [u, a] of Object.entries(assets)) if (d.assets[u]?.file !== a?.file) d.assets[u] = plain(a);
   if (!d.drawn) d.drawn = {};
   if (!d.tables) d.tables = [];
 }

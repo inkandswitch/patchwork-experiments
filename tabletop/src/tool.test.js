@@ -160,7 +160,7 @@ describe("the tabletop-game tool", () => {
     const area = element.querySelector(".json");
     const def = JSON.parse(area.value);
     // the definition is the game, and only the game: GAME-FORMAT.md
-    expect(Object.keys(def).sort()).toEqual(["about", "format", "pieces", "players", "seats", "setup", "title", "version"]);
+    expect(Object.keys(def).sort()).toEqual(["about", "assets", "format", "pieces", "players", "seats", "setup", "title", "version"]);
     def.setup.find((t) => t.piece === "dome").count = 20;
     area.value = JSON.stringify(def);
     button(element, "Apply").click();

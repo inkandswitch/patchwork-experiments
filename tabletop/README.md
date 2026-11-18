@@ -79,9 +79,12 @@ and the scene package as its suggested import (`src/scene-package.js`).
   table" draws only what the table lays out (`kindsLaid`: its things, a
   card as its back, what's in a bag); a card's face is named in its
   container by the game and its kind, and drawn the first time a keeper is
-  to show it to someone (`src/table/faces.js`): with every face cut from
-  its sheet, created and recorded in kind order, so the game says only that
-  a card of that sheet was seen, never which. The viewer who draws it sees
+  to show it to someone (`src/table/faces.js`): with every face of its
+  group (`groupsOf`: the cards it may share a container with, and those cut
+  from the same sheets, closed over both), its sheets fetched in URL order,
+  its docs created and recorded in kind order in one change, so the game
+  says only that a card of that group was seen, which its container already
+  says, never which. The viewer who draws it sees
   it at once (its bytes), then its doc. An asset named by its web URL is
   read from the file doc the game's `assets` caches it in, else fetched,
   stored and cached there; two viewers doing either at once each write

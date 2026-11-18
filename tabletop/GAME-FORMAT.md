@@ -279,8 +279,10 @@ a GLB drawn from files carries their `origin.urls`, and `missing` lists the
 files it had to do without (tried again when next needed, after a while).
 Setting up a table draws what it lays out (its things, a card's back,
 what's in its bags); a card's face is drawn when a keeper first shows it
-to someone, with every face cut from its sheet, made and recorded in kind
-order, so `drawn` says which sheets have been seen, never which card. Only
+to someone, with every card it may share a container with (its deck's, or
+the loose cards) and every card cut from the same sheets, closed over both,
+made and recorded in kind order in one change, so `drawn` and `assets` say
+which containers' cards have been seen, never which card. Only
 a viewer who can write the game writes `drawn` or `assets`; two writing one
 entry at once each write theirs only where nothing is yet, and the merge
 keeps one.

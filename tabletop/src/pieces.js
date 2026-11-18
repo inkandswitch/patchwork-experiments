@@ -9,11 +9,14 @@
 //   - setting up a table: what a table lays out (its things, a card's back,
 //     what's in a bag), all at once (`ensure`);
 //   - a card's face, when a keeper is to show it to someone (`face`, through
-//     table/faces.js): with every other face cut from its sheet, so what the
-//     game records (which GLBs exist) says only that a card of that sheet was
-//     seen, never which, as at a real table. Its docs are made, and recorded,
-//     in kind order once the sheet is drawn; the face asked for is drawn
-//     first and shown from its bytes meanwhile.
+//     table/faces.js): with every face of its group (`groupsOf`: every card
+//     it could share a container with — its deck's, or the loose cards — and
+//     every card cut from the same sheets, closed over both), so what the
+//     game records (which GLBs exist, which sheets are cached) says only that
+//     a card of that group was seen, never which: no more than its container,
+//     which everyone sees, already says. Its docs are made, and recorded, in
+//     kind order, in one change, once the group is drawn; the face asked for
+//     is drawn first and shown from its bytes meanwhile.
 //
 // A web asset (an http(s) URL, GAME-FORMAT.md §4) is read from the file doc
 // the game's `assets` names for it; else fetched (look/web.js), stored as a
@@ -66,6 +69,50 @@ const sheetOf = (p) => (p?.parts ?? []).map((x) => x?.top?.file).find(Boolean) ?
 const isCard = (pieces, k) => typeof pieces?.[k]?.back === "string";
 
 /**
+ * The cards whose faces are drawn, fetched and recorded together: kind → its
+ * group (sorted). Two cards are in one group when they may lie in one
+ * container (a deck's cards; every loose card, setup.js's LOOSE) or are cut
+ * from one sheet, closed over both. What a container holds is public (each
+ * kept card names its container), so recording a whole group says nothing
+ * about which of its cards was shown. Pure.
+ */
+export function groupsOf(game) {
+  const pieces = game?.pieces ?? {};
+  const up = new Map();
+  const root = (k) => {
+    while (up.get(k) !== k) {
+      up.set(k, up.get(up.get(k)));
+      k = up.get(k);
+    }
+    return k;
+  };
+  const join = (a, b) => up.set(root(a), root(b));
+  for (const k of Object.keys(pieces)) if (isCard(pieces, k)) up.set(k, k);
+  const first = new Map(); // a sheet, or a container → its first card
+  const meet = (key, k) => (first.has(key) ? join(first.get(key), k) : first.set(key, k));
+  // (the faces with no image are one "sheet": cheap to draw, and so never told apart)
+  for (const k of up.keys()) meet(`sheet ${sheetOf(pieces[k])}`, k);
+  let decks = 0;
+  const walk = (things) => {
+    for (const t of Array.isArray(things) ? things : []) {
+      const key = t?.deck ? `deck ${decks++}` : "loose";
+      for (const k of t?.deck ? (t.deck.cards ?? []) : [t?.piece]) if (up.has(k)) meet(key, k);
+      walk(t?.contents);
+    }
+  };
+  walk(game?.setup);
+  const by = new Map();
+  for (const k of [...up.keys()].sort()) {
+    const r = root(k);
+    if (!by.has(r)) by.set(r, []);
+    by.get(r).push(k);
+  }
+  const out = new Map();
+  for (const g of by.values()) for (const k of g) out.set(k, g);
+  return out;
+}
+
+/**
  * What draws a game's pieces, and remembers what it drew and couldn't fetch.
  * @param {{
  *   repo: object, handle: object,
@@ -83,7 +130,15 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
   const held = new Map(); // a web asset fetched but not stored (this viewer can't write, or it's too big) → its file, the last few
   const local = new Map(); // kind → what was drawn for this viewer alone ({ key, glb, missing })
   const waiting = new Map(); // kind → its face on its way
-  const keeping = new Map(); // kind → its GLB doc on its way (its sheet being written)
+  const keeping = new Map(); // kind → its GLB doc on its way (its group being written)
+
+  let grouped = { pieces: undefined, setup: undefined, of: new Map() };
+  /** A card's group (groupsOf), as the game is now. */
+  const groupOf = (kind) => {
+    const d = doc();
+    if (grouped.pieces !== d.pieces || grouped.setup !== d.setup) grouped = { pieces: d.pieces, setup: d.setup, of: groupsOf(d) };
+    return grouped.of.get(kind) ?? [kind];
+  };
 
   const recent = (u) => failed.has(u) && now() - failed.get(u) < retryMs;
   /** Something missing from this drawing is worth trying again. */
@@ -135,9 +190,12 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
     return fetching.get(url);
   }
 
-  /** Fetch these web assets, a few at a time (a host that hangs holds up one lane, not every piece). */
+  /**
+   * Fetch these web assets, a few at a time (a host that hangs holds up one lane, not every piece),
+   * in the order of their URLs: what's fetched and stored first never says which face was asked for.
+   */
   async function prefetch(urls) {
-    const todo = [...new Set(urls)].filter((u) => isWeb(u) && !doc().assets?.[u]?.file && !cached.has(u) && !held.has(u) && !recent(u));
+    const todo = [...new Set(urls)].sort().filter((u) => isWeb(u) && !doc().assets?.[u]?.file && !cached.has(u) && !held.has(u) && !recent(u));
     const lane = async () => {
       while (todo.length) await webFile(todo.shift());
     };
@@ -196,7 +254,7 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
 
   /** Write drawn entries, and the web assets cached since the last write, in one change. */
   function record(entries) {
-    const assets = [...cached].filter(([u]) => !doc().assets?.[u]?.file);
+    const assets = [...cached].filter(([u]) => !doc().assets?.[u]?.file).sort(([a], [b]) => (a < b ? -1 : 1));
     if (!entries.length && !assets.length) return;
     handle.change((g) => {
       if (assets.length && !g.assets) g.assets = {};
@@ -253,14 +311,12 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
     return { drawn, notes };
   }
 
-  /** Draw the faces of `kind`'s sheet that need it, `kind` first; each kind's waiter resolves as it's drawn. */
-  function drawSheet(kind) {
+  /** Draw these faces (`kind`'s group's that need it), `kind` first; each kind's waiter resolves as it's drawn. */
+  function drawGroup(kind, members) {
     const pieces = doc().pieces ?? {};
-    const sheet = sheetOf(pieces[kind]);
-    const rest = Object.keys(pieces)
-      .filter((k) => k !== kind && isCard(pieces, k) && sheetOf(pieces[k]) === sheet && !waiting.has(k) && !current(k))
-      .sort();
-    const order = [kind, ...rest];
+    // the face asked for first; the rest a sheet at a time (each read once)
+    const rest = members.filter((k) => k !== kind).sort((a, b) => sheetOf(pieces[a]).localeCompare(sheetOf(pieces[b])) || (a < b ? -1 : 1));
+    const order = members.includes(kind) ? [kind, ...rest] : rest;
     const deferred = () => {
       let settle;
       const p = new Promise((resolve, reject) => (settle = { resolve, reject }));
@@ -268,7 +324,7 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
       return { p, ...settle };
     };
     const waiters = new Map();
-    const kept = new Map(); // kind → its doc, once the sheet is written ({ url }, or null: shown from its bytes only)
+    const kept = new Map(); // kind → its doc, once the group is written ({ url }, or null: shown from its bytes only)
     for (const k of order) {
       waiters.set(k, deferred());
       waiting.set(k, waiters.get(k).p);
@@ -289,15 +345,16 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
           waiters.get(k).resolve(e ? { glb: e.glb, kept: kept.get(k).p } : null);
         }
         if (writer()) {
-          // in kind order, all at once: what's recorded names the sheet, never the card asked for
+          // in kind order, all at once: what's recorded names the group, never the card asked for
           const entries = [];
           try {
             for (const [k, e] of drawn.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) entries.push([k, await store(k, e)]);
+            record(entries);
           } catch (err) {
+            // none of it is recorded (a part of the group would say which part was asked for): shown here only
             refused = true;
             console.warn("[tabletop] couldn't keep the faces drawn: shown here only", err);
           }
-          record(entries);
           for (const [k] of entries) kept.get(k).resolve(doc().drawn?.[k]?.url ? { url: doc().drawn[k].url } : null);
         }
       } catch (err) {
@@ -309,23 +366,25 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
         for (const [k, d] of kept) if (keeping.get(k) === d.p) keeping.delete(k);
       }
     })();
-    return waiters.get(kind).p;
+    return waiters.get(order[0])?.p ?? Promise.resolve(null);
   }
 
   /**
    * A card's face, to show: { url } (its GLB doc) or { glb, kept } (bytes
-   * drawn here, and its doc once its sheet is written: { url }, or null when
-   * it isn't), drawn with its sheet the first time; null if there's no such kind.
-   * One drawn but missing an asset worth trying again is shown as it is, and
-   * drawn again behind it (its doc is rewritten in place).
+   * drawn here, and its doc once its group is written: { url }, or null when
+   * it isn't), drawn with its group the first time; null if there's no such kind.
+   * Whether anything is drawn (and written) is decided by the group, never by
+   * the face: any of the group's faces not drawn, or missing an asset worth
+   * trying again, is drawn behind whichever face is shown (its doc rewritten
+   * in place), and a face already drawn is shown as it is meanwhile.
    */
   async function face(kind) {
     if (!doc().pieces?.[kind]) return null;
     if (waiting.has(kind)) return waiting.get(kind);
     const k = known(kind);
-    if (k && !due(k.entry)) return k.show;
-    const drawing = drawSheet(kind);
-    return k ? k.show : drawing;
+    const stale = groupOf(kind).filter((m) => doc().pieces?.[m] && !waiting.has(m) && !current(m));
+    const drawing = stale.length ? drawGroup(kind, stale) : null;
+    return k ? k.show : (drawing ?? null);
   }
 
   return { ensure, face, current };
