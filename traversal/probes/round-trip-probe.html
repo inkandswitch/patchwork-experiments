@@ -30,6 +30,8 @@
 </style>
 <div id="view"></div>
 <script type="module">
+// a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
+import { part as putPart } from "../../scene/src/parts/editor.js";
 // ?seed=N (default 1): Math.random seeded (mulberry32), so the template's sea and wind, and
 // whatever else draws on it (ids, sessions), are the same every run
 {
@@ -178,9 +180,9 @@ try {
       const hull = withTrait("sailing.ship");
       if (!hull) return { error: "no ship" };
       const api = apiOf();
-      const table = await api.part("tabletop.table", { parent: hull, transform: COCKPIT_TABLE });
+      const table = await putPart(api, "tabletop.table", { parent: hull, transform: COCKPIT_TABLE });
       if (!table) return { error: "no Card table", notices: P.notices() };
-      const board = await api.part("tabletop.lost-cities", { parent: table, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
+      const board = await putPart(api, "tabletop.lost-cities", { parent: table, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
       if (!board) return { error: "no Lost Cities", notices: P.notices() };
       const m = dbg().scene().world(hull);
       api.change((d) => {

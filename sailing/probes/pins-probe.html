@@ -32,6 +32,8 @@
 </style>
 <div id="s"></div><div id="f"></div><div id="w"></div>
 <script type="module">
+// a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
+import { part as putPart } from "../../scene/src/parts/editor.js";
 {
   let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
   Math.random = () => {
@@ -162,7 +164,7 @@ try {
     mount("w", docs.w);
     await loaded(() => apiOf("w"));
     const wapi = apiOf("w");
-    const wc = await wapi.part("sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    const wc = await putPart(wapi, "sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     if (!wc) return { error: "no companionway part in W", errors };
     ids.wHatch = withTrait(docs.w, SLIDE);
     ids.wFrame = wc;
@@ -183,7 +185,7 @@ try {
     mount("f", docs.f);
     await loaded(() => apiOf("f"));
     const fapi = apiOf("f");
-    ids.fCompanionway = await fapi.part("sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    ids.fCompanionway = await putPart(fapi, "sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     if (!ids.fCompanionway) return { error: "no companionway part in F", errors };
     ids.fHatch = withTrait(docs.f, SLIDE);
     await loaded(() => fapi.sceneBox());

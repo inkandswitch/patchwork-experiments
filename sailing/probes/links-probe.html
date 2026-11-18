@@ -32,6 +32,8 @@
 </style>
 <div id="a"></div><div id="b"></div><div id="c"></div><div id="d"></div>
 <script type="module">
+// a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
+import { part as putPart } from "../../scene/src/parts/editor.js";
 {
   let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
   Math.random = () => {
@@ -166,9 +168,9 @@ try {
     ids.hull = withTrait(docs.boat, "sailing.ship");
     const bapi = apiOf("b");
     bapi.change((d) => { d.title = "Lost Cities aboard"; });
-    ids.boatTable = await bapi.part("tabletop.table", { parent: ids.hull, transform: COCKPIT_TABLE });
+    ids.boatTable = await putPart(bapi, "tabletop.table", { parent: ids.hull, transform: COCKPIT_TABLE });
     if (!ids.boatTable) return { error: "no Card table aboard", notices: P.notices("b") };
-    ids.boatLink = await bapi.part("tabletop.lost-cities", { parent: ids.boatTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
+    ids.boatLink = await putPart(bapi, "tabletop.lost-cities", { parent: ids.boatTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
     if (!ids.boatLink) return { error: "no Lost Cities aboard", notices: P.notices("b") };
     const link = docs.boat.doc().objects[ids.boatLink];
     docs.game = await repo.find(link.sourceUrl);
@@ -178,7 +180,7 @@ try {
     mount("a", docs.room);
     await loaded(() => apiOf("a"));
     const aapi = apiOf("a");
-    ids.roomTable = await aapi.part("tabletop.table", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    ids.roomTable = await putPart(aapi, "tabletop.table", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     ids.roomLink = await aapi.addObject(docs.game.url, { parent: ids.roomTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 }, hint: link.hint, fields: { locked: true } });
     // a part selects what it makes: let go, so attention is the look
     dbg.a.view.select(null);
@@ -225,7 +227,8 @@ try {
     /** view w's focus: the links entered ([]: its outermost doc) */
     focusPath: (w) => dbg[w].view.atom.get().focus,
     /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
-    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext)).map((s) => [...s.path]),
+    // (an extension runs in a stage; a view plugin has its facet at the focus stage: scene/STAGE.md, "View plugins")
+    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => (s.debug.host.instanceOf(ext) || s.debug.facets().includes(ext))).map((s) => [...s.path]),
     /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
     traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().map((r) => r.id)]),
     /** Enter on a link of the focus stage's, as the menu runs it (scene.focus's command): false where it can't */
@@ -266,7 +269,8 @@ try {
     presence: (w) => { const s = gStage(w); return s ? { mine: s.debug.presence.session, peers: Object.keys(s.debug.presence.get()) } : null; },
     /** does each view's G stage hear the other two views' sessions? */
     hearsAll: () => ["a", "b", "c"].every((w) => { const p = P.presence(w); return p && ["a", "b", "c"].filter((x) => x !== w).every((x) => p.peers.includes(P.presence(x)?.mine)); }),
-    claims: (w) => gStage(w)?.debug.claims().map((c) => c.kind) ?? [],
+    // (the claims service's, scene.claims: scene/NATIVE.md, "Claims")
+    claims: (w) => gStage(w)?.debug.host.instanceOf("scene.claims")?.held().map((c) => c.kind) ?? [],
     claimedBy: (w, sid) => gStage(w)?.debug.host.record("seats")?.api.use("claims").claimedBy(null, `seat:${sid}`) ?? null,
     faces: (w) => facesIn(gStage(w)),
     /**

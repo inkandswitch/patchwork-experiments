@@ -639,7 +639,8 @@ try {
       await until(`selectionPath('a')?.length === 1`, 3000);
       await b.soon(`window.__p.A.view.canvas.getBoundingClientRect().width < ${wide}`, { frames: 300, draw: true });
       await b.rest(300);
-      const enterAt = await js(`(() => { const e = document.querySelector('#a .inspector [data-ext="scene.links"][data-command="enter"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; })()`);
+      // (the pane holds the tree above the fields: its Enter may be below the fold of a short window, scrolled to as a person would)
+      const enterAt = await js(`(() => { const e = document.querySelector('#a .inspector [data-ext="scene.links"][data-command="enter"]'); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; })()`);
       check("13: with the link selected, the inspector offers Enter", !!enterAt && !enterAt.disabled, enterAt);
       if (enterAt) await b.click(enterAt.x, enterAt.y);
       await b.rest(400);
@@ -648,7 +649,8 @@ try {
       if (atD) target = atD.id;
       const entered = await until(`focusPath('a').length === 1`, 3000);
       check("13: the inspector's Enter on the game's link enters it: the focus is the link, the trail says where", entered && J(await P("focusPath('a')")) === J([ids.link]) && J(await P("trail('a')")) === J([await P("boatTitle()"), await P("linkName()")]), { focus: await P("focusPath('a')"), trail: await P("trail('a')") });
-      check("13: the general parts moved into G's stage (the halo runs there, and not in the boat's)", J(await P("runsIn('a', 'scene.halo')")) === J([[ids.link]]) && J(await P("runsIn('a', 'scene.menu')")) === J([[ids.link]]), { halo: await P("runsIn('a', 'scene.halo')"), menu: await P("runsIn('a', 'scene.menu')") });
+      // (the halo's facet; the menu is the view's, wherever the focus is)
+      check("13: the general parts moved into G's stage (the halo runs there, and not in the boat's)", J(await P("runsIn('a', 'scene.halo')")) === J([[ids.link]]), { halo: await P("runsIn('a', 'scene.halo')"), menu: await P("runsIn('a', 'scene.menu')") });
       // a click on the card selects it, now that the focus is in its doc (Edit's click, ahead of carrying)
       const at2 = await until(`aimAt(${J(target)}, 'a')`, 5000);
       if (at2) await b.click(at2.x, at2.y);
