@@ -22,6 +22,8 @@ describe("the doc's clock", () => {
     expect(eligibility({ ...yes, writable: false }).why).toBe("view only");
     expect(eligibility({ ...yes, complete: false }).why).toBe("missing a package");
     expect(eligibility({ ...yes, settled: false }).why).toBe("starting");
+    // started, but one extension failed to start: not ready for the clock (its processes would stand still)
+    expect(eligibility({ ...yes, failed: true }).why).toBe("an extension failed");
     expect(eligibility({ ...yes, visible: false }).why).toBe("hidden");
   });
 });

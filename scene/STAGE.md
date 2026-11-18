@@ -93,7 +93,7 @@ Each extension's own; what it acquires through it goes when it stops.
 | `id`, `repo`, `handle`, `url`, `signal`, `registry(type)` | the registry at once |
 | `doc()`, `scene()`, `change(fn)`, `newId(prefix)`, `writable()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }`; `change` → its patches (`[]`: none) |
 | `ops`, `remove(ids)` | pure planners (`src/ops.js`) → a change function or null; `remove` runs every `beforeRemove` first |
-| `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed }` |
+| `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty) |
 | `now()`, `after(ms, fn)`, `frame(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame` |
 | `local` | `get`, `swap(fn)`, `watch(fn, select?)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
 | `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, pointer, serial }]`), `held`, `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |

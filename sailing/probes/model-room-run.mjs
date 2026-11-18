@@ -107,8 +107,12 @@ try {
   const wOceans = await P("oceans('h')"), wPatches = await P("patches('h')"), wDrawers = await P("drawers('h')");
   check("in a wet world the blocks go: one open surface, the harbour's, and no block (W29)", wOceans === 1 && wPatches === 0 && wDrawers.filter((d) => d.open).map((d) => d.path.length).join() === "0" && wDrawers.every((d) => d.clip === null), { wOceans, wPatches, wDrawers });
   const hA = await sample("h", ["LR", "LA"], ids.hullA, 2), hB = await sample("h", ["LR", "LB"], ids.hullB, 2);
-  // the harbour's sea reaches them, but at 1:25: a boat doesn't sail at another scale than the water she's on (gravity doesn't scale), so they rest
-  check("the harbour's open water is the water there, at another scale: sailing refuses it, so both rest, and says so", hA.every((u) => u.body === "none" && !u.simulating) && hB.every((u) => u.body === "none") && (await P("notices('h')")).some((n) => /another scale/.test(n)), { A: hA.map((u) => u.body), B: hB.map((u) => u.body), notices: await P("notices('h')") });
+  // the harbour's sea reaches them, but at 1:25: a boat doesn't sail at another scale than the water she's on (gravity doesn't scale), so they rest.
+  // Resting is not being stepped with no water under her, not her doc's clock standing still: that may run (it
+  // used to wait out the room view's claim, left behind as it closed, which is what an earlier `!simulating` here read).
+  const still = (s) => Math.max(...s.map((u) => Math.hypot(u.x - s[0].x, u.y - s[0].y, u.z - s[0].z)));
+  report.numbers.wet = { A: { body: hA.map((u) => u.body), moved: still(hA) }, B: { body: hB.map((u) => u.body), moved: still(hB) } };
+  check("the harbour's open water is the water there, at another scale: sailing refuses it, so both rest (still), and says so", hA.every((u) => u.body === "none") && hB.every((u) => u.body === "none") && still(hA) < 1e-6 && still(hB) < 1e-6 && (await P("notices('h')")).some((n) => /another scale/.test(n)), { ...report.numbers.wet, notices: await P("notices('h')") });
   await shot("wet");
   const errs = (await P("errors")).filter((e) => !EXPECTED.test(e));
   check("no errors or warnings", errs.length === 0, errs.slice(0, 10));

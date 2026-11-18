@@ -45,7 +45,10 @@ remove }`, on `doc.clock = { running, t, by? }` (absent: running from 0),
 written field by field.
 
 - **Computing** (H7). The view holding the scene's `"clock"` claim computes: it
-  acts, may write, is visible and `settled()`, and has a process. Nobody
+  acts, may write, is visible, has a process, and everything the doc calls for
+  is running and every listed package here (`settled()` ready, nothing
+  `missing`, nothing `failed`: a failed extension's processes would stand
+  still while time passed; the chip says "an extension failed"). Nobody
   present, no time passes. t runs with the stage's time, at most 0.25 s a
   frame; processes step on a 1/60 s grid (`STEP_S`), a replicated one in every
   view that runs it, so two views stepping one from the same t step it alike.

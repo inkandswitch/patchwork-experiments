@@ -107,6 +107,27 @@ describe("the chip on a stage", () => {
     expect(s.doc().clock.t).toBeGreaterThan(0);
   });
 
+  it("an extension that failed to start keeps this view from computing, and the chip says so", async () => {
+    // (the old rule, again: the clock computes only when everything the doc calls for is running; the failed one's processes would stand still while time passed)
+    const steps = [];
+    const PROC = { meta: { id: "t.proc" }, module: { create: (api) => (api.use("clock").process({ step: (dt, t) => steps.push(t), save: () => {} }), {}) } };
+    const BROKEN = { meta: { id: "t.broken" }, module: { create: () => { throw new Error("boom"); } } };
+    const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const s = await mountStage({ extensions: [PROC, BROKEN, CHIP] });
+    mounted.push(s);
+    const api = s.api("t.proc");
+    await until(() => api.settled().failed.includes("t.broken"));
+    expect(api.settled()).toMatchObject({ ready: true, missing: [] }); // nothing else is on its way: only the failure stops it
+    await until(() => api.use("clock").status()?.why === "an extension failed");
+    await new Promise((r) => setTimeout(r, 100)); // frames pass
+    expect(api.use("clock").computer()).toBeNull();
+    expect(s.doc().claims?.clock).toBeUndefined();
+    expect(steps).toEqual([]);
+    expect(s.root.querySelector(".clock-text").textContent).toContain("Nobody here can run it (an extension failed)");
+    warn.mockRestore();
+  });
+
   it("a closing stage checkpoints every process in one change, before its claim goes", async () => {
     const saves = []; // each save's draft, while the claim is still in it
     const proc = (id) => ({ meta: { id }, module: { create: (api) => (api.use("clock").process({ step() {}, save: (d) => saves.push(d.claims?.clock && d) }), {}) } });

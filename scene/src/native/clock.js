@@ -7,8 +7,11 @@
 // doc's "clock" claim and stepping every process; the others follow. Nobody
 // present, no time passes.
 //
-// - **Eligible**: its stage acts, it may write, its tab is visible, the doc is
-//   settled, and it has a process. The first to find the claim free takes it.
+// - **Eligible**: its stage acts, it may write, its tab is visible, everything
+//   the doc calls for is running (one that failed to start counts against it:
+//   its processes would stand still while time passed) and every listed
+//   package is here, and it has a process. The first to find the claim free
+//   takes it.
 // - **Computing**: t runs on with the stage's time, at most MAX_FRAME_S a
 //   frame; processes step on a grid STEP_S apart, so two views stepping one
 //   from the same t step it alike. Kept processes start at t (`start(t)`); it
@@ -72,10 +75,11 @@ export function readClock(d) {
  * Why this view may or may not compute, but for having a process (the
  * clock's own to know): `{ ok, why }`, `why` null when it may, else what
  * stops it. Pure.
- * @param {{ acts: boolean, writable: boolean, visible: boolean, settled: boolean, complete: boolean }} v
+ * @param {{ acts: boolean, writable: boolean, visible: boolean, settled: boolean, complete: boolean, failed?: boolean }} v
+ *   settled: nothing the doc calls for is still on its way; failed: something it calls for failed to start
  */
-export function eligibility({ acts, writable, visible, settled, complete }) {
-  const why = !acts ? "drawn" : !writable ? "view only" : !complete ? "missing a package" : !settled ? "starting" : !visible ? "hidden" : null;
+export function eligibility({ acts, writable, visible, settled, complete, failed = false }) {
+  const why = !acts ? "drawn" : !writable ? "view only" : !complete ? "missing a package" : failed ? "an extension failed" : !settled ? "starting" : !visible ? "hidden" : null;
   return { ok: why === null, why };
 }
 
@@ -482,7 +486,7 @@ function create(api) {
     },
     eligible: () => {
       const s = api.settled();
-      return eligibility({ acts: !!ch.session, writable: api.writable(), visible: api.page.visible(), settled: s.ready, complete: !s.missing.length });
+      return eligibility({ acts: !!ch.session, writable: api.writable(), visible: api.page.visible(), settled: s.ready, complete: !s.missing.length, failed: s.failed.length > 0 });
     },
     writable: api.writable,
     viewer: ch.viewer,
