@@ -3,7 +3,7 @@
 // "all", with the item known here or not, and the keeper ready or not; and
 // the slot rule over every small arrangement. No sampling.
 import { describe, it, expect } from "vitest";
-import { bindings, docUrl, itemLook, lookFor } from "./rule.js";
+import { bindings, docUrl, itemLook, lookFor, showLooks } from "./rule.js";
 
 const ME = "me";
 const SETS = { unknown: null, nobody: [], "others only": ["you"], me: [ME], "me and others": [ME, "you"], all: "all" };
@@ -87,5 +87,17 @@ describe("which object is which slot", () => {
     expect(b.clashes).toEqual([]);
     expect(docUrl(`${A}#x`)).toBe(A);
     expect(docUrl(7)).toBeNull();
+  });
+});
+
+describe("showLooks", () => {
+  it("shows each look once (the veil as the audience's), again only when it changes, and puts back what goes", () => {
+    const log = [];
+    const shown = showLooks({ display: (id, o) => (log.push(["show", id, o.name]), () => log.push(["back", id])) }, { veil: (id) => (log.push(["veil", id]), () => log.push(["unveil", id])) });
+    shown.set(new Map([["a", { veil: true }], ["b", { name: "B" }]]));
+    shown.set(new Map([["a", { veil: true }], ["b", { name: "B2" }]]));
+    shown.set(new Map([["b", { name: "B2" }]]));
+    expect(log).toEqual([["veil", "a"], ["show", "b", "B"], ["back", "b"], ["show", "b", "B2"], ["unveil", "a"]]);
+    expect([...shown.get()]).toEqual([["b", { name: "B2" }]]);
   });
 });

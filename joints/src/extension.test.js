@@ -19,8 +19,6 @@ function fakeApi() {
       calls.changes++;
       fn(doc);
     },
-    pose: { hold: (id, t, o) => (calls.holds.push([id, t, o ?? null]), true), release: (id, o) => calls.releases.push([id, o ?? null]) },
-    heldBy: () => null,
     // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
     now: () => Date.now(),
     after(ms, fn) {
@@ -28,13 +26,16 @@ function fakeApi() {
       return () => clearTimeout(h);
     },
     use: (name) =>
-      name === "clock" && {
-        t: () => clock.now,
-        process(spec) {
-          calls.processes.push(spec);
-          return () => (calls.processes = calls.processes.filter((p) => p !== spec));
+      ({
+        clock: {
+          t: () => clock.now,
+          process(spec) {
+            calls.processes.push(spec);
+            return () => (calls.processes = calls.processes.filter((p) => p !== spec));
+          },
         },
-      },
+        poses: { hold: (id, t, o) => (calls.holds.push([id, t, o ?? null]), true), release: (id, o) => calls.releases.push([id, o ?? null]), heldBy: () => null },
+      })[name] ?? null,
     loop(fn) {
       calls.loops.push(fn);
       return () => (calls.loops = calls.loops.filter((f) => f !== fn));

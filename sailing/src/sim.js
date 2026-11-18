@@ -352,6 +352,7 @@ export function published(diag, state) {
 export function createSim(api, ctx) {
   const clock = api.use("clock");
   const claims = api.use("claims");
+  const poses = api.use("poses");
   let computing = false; // between the process's start and stop
   let savedSinceStep = false; // a checkpoint wrote the ships since the last step: let go of them landed
   const ships = new Map(); // id → { model, key, state, good, read, seen, at, frame }
@@ -438,7 +439,7 @@ export function createSim(api, ctx) {
   /** It doesn't any more (paused, hidden, gone, or someone else computes): let go of what it holds, landed where a checkpoint just wrote it. */
   function stop() {
     computing = false;
-    for (const id of holding) api.pose.release(id, savedSinceStep ? { landed: true } : undefined);
+    for (const id of holding) poses?.release(id, savedSinceStep ? { landed: true } : undefined);
     holding.clear();
     taken.clear();
     ships.clear();
@@ -536,7 +537,7 @@ export function createSim(api, ctx) {
     const sc = api.scene();
     const held = new Set();
     const hold = (id, transform, yields = true) => {
-      if (api.pose.hold(id, transform, { yields })) held.add(id);
+      if (poses?.hold(id, transform, { yields })) held.add(id);
     };
     // (what the steps saw may have gone since: only what's still in the doc is held)
     for (const [id, s] of ships) {
@@ -547,7 +548,7 @@ export function createSim(api, ctx) {
       const hull = toObject(s.state, s.frame ?? IDENTITY, doc.scale);
       // her hull yields to a person (someone may carry it) unless someone is at the helm: then she's driven
       const steered = !!(p.helm && claims.claimedBy(p.helm, STATION));
-      if (api.pose.hold(id, transformOf(hull, doc.scale), { yields: !steered })) {
+      if (poses?.hold(id, transformOf(hull, doc.scale), { yields: !steered })) {
         held.add(id);
         taken.delete(id);
       } else taken.add(id);
@@ -567,7 +568,7 @@ export function createSim(api, ctx) {
         hold(p.hook, { position: apply(back, controls.anchor.at), rotation: eulerFromQuat(poseOfMatrix(back).quaternion), scale });
       }
     }
-    for (const id of holding) if (!held.has(id)) api.pose.release(id);
+    for (const id of holding) if (!held.has(id)) poses?.release(id);
     holding.clear();
     for (const id of held) holding.add(id);
 
@@ -695,7 +696,7 @@ export function createSim(api, ctx) {
       const latest = c ? api.channel.get()[c]?.ships : null;
       if (latest) streamed = latest;
       // where the computer last held each hull (its hold, or a person's ahead of it): a successor starts there, not at the last save
-      for (const id of shipsOf(sc)) if (api.heldBy?.(id, { yields: true })) shown.set(id, api.worldOf(id));
+      for (const id of shipsOf(sc)) if (poses?.heldBy(id, { yields: true })) shown.set(id, api.worldOf(id));
     },
     dispose() {
       removeProcess?.();

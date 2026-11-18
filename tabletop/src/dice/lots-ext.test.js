@@ -33,7 +33,7 @@ function world({ seated, present: arrived, running = arrived }) {
         fn(doc);
         queueMicrotask(flush);
       },
-      audience: (id) => audience(id, v),
+      use: (n) => (n === "audience" ? { audience: (id) => audience(id, v) } : null),
       settled: () => ({ ready: true, missing: [] }),
       // everyone here, each saying whether their client runs lots (the extension's presence key)
       channel: { viewer: v, peers: () => Object.fromEntries(present.filter((p) => p !== v).map((p) => [`s-${p}`, { viewer: p, keys: running.includes(p) ? { [ID]: { here: true } } : {} }])), set() {} },

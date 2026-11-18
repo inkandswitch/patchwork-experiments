@@ -161,8 +161,8 @@ try {
     /** what each die of a cup's last shake must show, from a seed */
     expected: (seed, n = 6, count = 5) => Array.from({ length: count }, (_, k) => faceOfSeed(seedFor(parseInt(seed.slice(0, 8), 16) >>> 0, k), n)),
     drawnFace, drawn,
-    veiled: (w, id) => dbg[w].veils().has(id),
-    audience: (w, id) => plain(dbg[w].audience(id)),
+    veiled: (w, id) => new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.veil === true,
+    audience: (w, id) => plain(dbg[w].host.use("audience", { id: "probe", signal: new AbortController().signal }).audience(id)),
     /** the cup's content root turned from plain (a peek, in that view alone) */
     tilted: (w, id) => { const r = dbg[w].viewport.contentOf(id)?.root; return !!r && Math.abs(r.quaternion.w) < 0.999; },
     notices: (w) => [...told[w]],
@@ -173,7 +173,7 @@ try {
     cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.()),
     /** the cup extension's own account of what it dressed in view w (cup-extension.js debug) */
     cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.() ?? null),
-    whyNotDrawn(w, id) { const c = dbg[w].viewport.contentOf(id); return { loaded: c?.loaded ?? null, extras: c?.extras ? Object.keys(c.extras) : null, veiled: dbg[w].veils().has(id), look: plain(dbg[w].looks().get?.(id) ?? null) }; },
+    whyNotDrawn(w, id) { const c = dbg[w].viewport.contentOf(id); return { loaded: c?.loaded ?? null, extras: c?.extras ? Object.keys(c.extras) : null, veiled: new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.veil === true, look: plain(new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id) ?? null) }; },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rectOf(e) })),

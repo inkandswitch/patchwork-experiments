@@ -71,7 +71,7 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
    */
   t.secrets = {};
   t.join = (viewer, { roster: has = true, writable = true, at = null } = {}) => {
-    const c = { unknown: false, scheduled: 0, refused: 0 };
+    const c = { unknown: false, refused: 0 };
     const readOnlyDeck = {
       // (a pin's handle is the deck at fixed heads: its url names them)
       url: at ? `${deck.url}#${at}` : deck.url,
@@ -89,15 +89,14 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
       channel: { viewer },
       settled: () => ({ ready: true, missing: [] }),
       collect: (name) => (name === "roster" && has ? [{ id: "seats", value: roster }] : []),
-      audience: (id) => (c.unknown ? null : audienceOf(id).audience),
-      shown: (id) => (c.unknown ? null : audienceOf(id).shown),
-      schedule: () => c.scheduled++,
+      use: (n) => (n === "audience" ? { audience: (id) => (c.unknown ? null : audienceOf(id).audience), shown: (id) => (c.unknown ? null : audienceOf(id).shown), veil: () => () => {} } : null),
+      display: () => () => {},
       notify() {},
     };
     const secret = (t.secrets[viewer] ??= newSecret());
     c.x = create(api, { secret: () => secret });
     c.update = () => c.x.update({ objects });
-    c.looks = () => Object.fromEntries([...c.x.looks()].map(([id, l]) => [id, l.veil ? "veil" : l.name]));
+    c.looks = () => Object.fromEntries([...c.x.showing()].map(([id, l]) => [id, l.veil ? "veil" : l.name]));
     c.status = () => c.x.hud().map((h) => h.text);
     t.clients[viewer] = c;
     c.update();
@@ -239,12 +238,12 @@ describe("the joint keeper", () => {
 
   it("a deck that can't be found, or isn't one: closed, and the HUD says so", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const api = { repo: { find: async () => ({ doc: () => ({ title: "Not a deck" }) }) }, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), collect: () => [], audience: () => "all", shown: () => "all", schedule() {}, notify() {} };
+    const api = { repo: { find: async () => ({ doc: () => ({ title: "Not a deck" }) }) }, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), collect: () => [], use: (n) => (n === "audience" ? { audience: () => "all", shown: () => "all", veil: () => () => {} } : null), display: () => () => {}, notify() {} };
     const x = create(api, { secret: () => newSecret() });
     x.update({ objects: { a: { traits: { [TRAIT]: { by: DECK, slot: 0 } } } } });
     await until(() => x.hud().length === 1);
     expect(x.hud()[0]).toMatchObject({ state: "error" });
-    expect(x.looks().size).toBe(0);
+    expect(x.showing().size).toBe(0);
     x.dispose();
   });
 

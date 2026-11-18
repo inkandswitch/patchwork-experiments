@@ -93,10 +93,11 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
       return Object.assign(add, { id });
     },
     channel: { viewer: "automerge:viewerMe", session, send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]) },
-    // the services: "tell", said here (and recorded as sent) when declared and valid; "notices"; "drawer", every
+    // the services: "poses" (heldBy: rec.held), "tell", said here (and recorded as sent) when declared and valid; "notices"; "drawer", every
     // dock() in order, each { el, title, open, x() } (x() is its ×: it closes and calls onClose)
     use: (name) =>
       ({
+        poses: { heldBy: (id) => rec.held.get(id) ?? null },
         tell: { tell: (type, data, copy = JSON.parse(JSON.stringify(data))) => declared(instance, type) && telling.say("bag", instance, type, copy, api.channel.viewer) && rec.sends.push([type, copy]) },
         notices: { notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text) },
         drawer: {
@@ -118,7 +119,6 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     box: boxOf,
     content: (id) => (half[id] != null && handle.doc().objects[id] ? { loaded: true, box: { min: [-half[id], 0, -half[id]], max: [half[id], 2 * half[id], half[id]] } } : null),
     worldOf: (id) => (handle.doc().objects[id] ? snapshot(handle.doc()).world(id) : null),
-    heldBy: (id) => rec.held.get(id) ?? null,
     labels: () => ({ set: (items) => (rec.labels = items) }),
     style: () => {},
     // the held tool (scene/STAGE.md, "Bodies"): one slot; holding again puts the last down

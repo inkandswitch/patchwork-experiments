@@ -171,7 +171,7 @@ describe("washing the boneyard", () => {
     t.w.flush();
     expect(t.state(t.A, "wash", "mine")).toBeNull();
     expect(t.state(t.A, "wash", "far")).toBeNull();
-    t.B.api.pose.hold("b4", T([0, 0.05, -0.14]));
+    t.B.api.use("poses").hold("b4", T([0, 0.05, -0.14]));
     expect(t.state(t.A, "wash", "b0")).toMatchObject({ label: "Wash (5)" });
     t.w.done();
   });

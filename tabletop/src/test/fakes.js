@@ -309,7 +309,28 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         return d.close;
       },
     };
-    const services = { claims: { claim, claimedBy }, tell: { tell }, notices, drawer };
+    // scene.poses: refused while another extension here has it (view.heldHere); a peer's hold is the test's
+    const poses = {
+      hold(id, transform) {
+        if (view.heldHere?.has(id)) return false;
+        holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });
+        return true;
+      },
+      release(id, { landed = false } = {}) {
+        released.push({ session, id, landed });
+        const h = holds.get(id);
+        if (h?.session !== session) return;
+        if (landed) h.landed = true;
+        else holds.delete(id);
+      },
+      heldBy(id) {
+        const h = holds.get(id);
+        return h && !h.landed && h.session !== session ? h.session : null;
+      },
+    };
+    // scene.audience: what the test says (view.audience, view.shown: id → "all" | viewer[] | null)
+    const audience = { audience: (id) => view.audience?.(id) ?? null, shown: (id) => view.shown?.(id) ?? null, veil: () => () => {} };
+    const services = { claims: { claim, claimedBy }, tell: { tell }, notices, drawer, poses, audience };
     const api = {
       id: ext,
       repo,
@@ -392,26 +413,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         },
         object: { position: { x: 0, y: 1, z: 1 } },
       },
-      pose: {
-        // as the stage's: true when the hold stands; refused while another extension here has the object
-        // (view.heldHere: a carry, the halo). A peer's hold is left to the test (heldBy says who has it).
-        hold(id, transform) {
-          if (view.heldHere?.has(id)) return false;
-          holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });
-          return true;
-        },
-        release(id, { landed = false } = {}) {
-          released.push({ session, id, landed });
-          const h = holds.get(id);
-          if (h?.session !== session) return;
-          if (landed) h.landed = true;
-          else holds.delete(id);
-        },
-      },
-      heldBy(id) {
-        const h = holds.get(id);
-        return h && !h.landed && h.session !== session ? h.session : null;
-      },
+      display: () => () => {},
       listen(target, type, fn) {
         view.listeners.push({ target, type, fn });
       },

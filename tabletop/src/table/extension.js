@@ -59,6 +59,7 @@ export function keptBy(api, id) {
 export default {
   create(api) {
     const { viewer } = api.channel;
+    const poses = api.use("poses");
     const teller = api.use("tell");
     let scene = null;
     let regions = null;
@@ -211,7 +212,7 @@ export default {
      * ship) glides in that thing's frame.
      */
     function canDraw(s, regions, x) {
-      if (!s.objects?.[x] || drawing.has(x) || api.heldBy?.(x) != null) return false;
+      if (!s.objects?.[x] || drawing.has(x) || poses?.heldBy(x) != null) return false;
       const w = s.world(x);
       return !seatAt(s, regions, [w[12], w[13], w[14]]);
     }
@@ -282,18 +283,18 @@ export default {
       };
       entry.stop = api.loop((dt) => {
         const now = api.scene().objects?.[id];
-        if (!now || api.heldBy(id) != null || !sameTransform(now.transform, from)) {
-          if (now) api.pose.release(id);
+        if (!now || poses?.heldBy(id) != null || !sameTransform(now.transform, from)) {
+          if (now) poses?.release(id);
           return theirs();
         }
         t = Math.min(1, t + (Number(dt) || 0) / DRAW_SECONDS);
-        if (t < 1) return void (api.pose.hold(id, between(from, to, t)) || theirs());
+        if (t < 1) return void (poses?.hold(id, between(from, to, t)) || theirs());
         stop();
         api.change(api.ops.setTransform(api.scene(), id, to));
-        api.pose.release(id, { landed: true });
+        poses?.release(id, { landed: true });
         teller.tell("drew", { n: 1, ...nounOf(api.scene(), id) });
       });
-      if (!api.pose.hold(id, from)) theirs();
+      if (!poses?.hold(id, from)) theirs();
     }
 
 
@@ -349,7 +350,7 @@ export default {
       const parent = parentOf(snap, id);
       const loose = (x) => {
         const w = snap.world(x);
-        return upness(localOf(snap, x)) < -Math.SQRT1_2 && !seatAt(snap, regions, [w[12], w[13], w[14]]) && api.heldBy?.(x) == null && !drawing.has(x);
+        return upness(localOf(snap, x)) < -Math.SQRT1_2 && !seatAt(snap, regions, [w[12], w[13], w[14]]) && poses?.heldBy(x) == null && !drawing.has(x);
       };
       if (!loose(id) || stackOf(id).length > 1) return null;
       const boxes = {};
@@ -404,7 +405,7 @@ export default {
      */
     function standPlan(id, snap = scene) {
       const o = snap?.objects?.[id];
-      if (!isCard(o) || o.locked || !canStand(bodyBox(snap, id)) || api.heldBy?.(id) != null || drawing.has(id)) return null;
+      if (!isCard(o) || o.locked || !canStand(bodyBox(snap, id)) || poses?.heldBy(id) != null || drawing.has(id)) return null;
       if (isStanding(localOf(snap, id))) return { lay: true };
       const w = snap.world(id);
       const hands = myHands(snap);
@@ -470,7 +471,7 @@ export default {
       if (!hand) return null;
       const across = (x) => snap.toLocal(hand.id, snap.world(x).slice(12, 15))[0];
       const ids = Object.keys(snap.objects)
-        .filter((x) => isCard(snap.objects[x]) && !snap.objects[x].locked && api.heldBy?.(x) == null && !drawing.has(x) && (inHand(snap, hand, snap.world(x)) || out(x) === hand.id))
+        .filter((x) => isCard(snap.objects[x]) && !snap.objects[x].locked && poses?.heldBy(x) == null && !drawing.has(x) && (inHand(snap, hand, snap.world(x)) || out(x) === hand.id))
         .sort((p, q) => across(p) - across(q));
       return ids.length ? { hand, ids } : null;
     }

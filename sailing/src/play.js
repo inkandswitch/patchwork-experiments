@@ -43,6 +43,7 @@ export const rateFor = ({ simulating, playing }) => (simulating ? RATE : playing
 export default {
   create(api) {
     const ctx = {};
+    const poses = api.use("poses");
     ctx.sea = createSeaView(api);
     ctx.sim = createSim(api, ctx);
     ctx.crew = createCrew(api, ctx);
@@ -58,7 +59,7 @@ export default {
       looks.tick(dt);
       hud.tick(dt);
       const hz = rateFor({ simulating: ctx.sim.simulating(), playing: ctx.crew.me().playing });
-      if (hz !== rate) api.channel.rate((rate = hz));
+      if (hz !== rate) api.channel.rate((rate = hz)), poses?.rate(hz || null);
     });
 
     return {

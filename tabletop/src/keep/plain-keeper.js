@@ -1,9 +1,9 @@
 // The plain keeper (`scene:extension` "keep.plain"): what an object really
 // is, kept in a container document (plain.js) and shown only to whoever the
 // scene says may see it. Built only from the stage's contract
-// (scene/STAGE.md): it reads api.audience and api.shown, contributes
-// looks() by the one rule (rule.js) and a HUD line, and offers the `keeper`
-// convention to whatever handles kept things (a table's Shuffle).
+// (scene/STAGE.md): it reads scene.audience's audience and shown, shows
+// each object by the one rule (rule.js), says a HUD line, and offers the
+// `keeper` convention to whatever handles kept things (a table's Shuffle).
 //
 // An object is kept by its trait:  "keep.plain": { by: <container url>, slot: n }
 // The binding is in the scene doc, so moving or drawing a kept thing is one
@@ -21,7 +21,7 @@
 //   const { key, bind } = await contain({ repo }, { title, items });
 //   object.traits = { ...bind(slot) };     // slot k holds items[k] to begin with
 
-import { bindings, itemLook, lookFor } from "./rule.js";
+import { bindings, itemLook, lookFor, showLooks } from "./rule.js";
 import { itemAt, newPlain, shuffleSlots, wellFormed } from "./plain.js";
 
 export const TRAIT = "keep.plain";
@@ -48,15 +48,12 @@ function create(api) {
   let settled = null; // what api.settled() said at the last update that looked
   const containers = new Map(); // url → { handle, problem, off }
   let bound = bindings({}, TRAIT);
-  let looks = new Map();
+  const aud = api.use("audience");
+  const looks = showLooks(api, aud);
   let dead = false;
 
-  // a container changed (a shuffle), or arrived: look again, and have the stage read the lens
-  const refresh = () => {
-    if (dead) return;
-    lens();
-    api.schedule(() => {});
-  };
+  // a container changed (a shuffle), or arrived: look again
+  const refresh = () => dead || lens();
 
   function watch(urls) {
     for (const [url, c] of containers) {
@@ -96,14 +93,14 @@ function create(api) {
       const ok = ready(key);
       const look = lookFor({
         ready: ok,
-        audience: api.audience(id),
-        shown: api.shown(id),
+        audience: aud?.audience(id) ?? null,
+        shown: aud?.shown(id) ?? null,
         viewer,
         look: ok ? itemLook(itemAt(containers.get(key).handle.doc(), slot)) : null,
       });
       if (look) next.set(id, look);
     }
-    looks = next;
+    looks.set(next);
   }
 
   const titleOf = (key) => containers.get(key)?.handle?.doc?.()?.title ?? null;
@@ -120,7 +117,8 @@ function create(api) {
       watch(new Set(bound.slots.keys()));
       lens();
     },
-    looks: () => looks,
+    /** what it shows each object as (tests, probes) */
+    showing: () => looks.get(),
     hud() {
       const out = [];
       const open = [];

@@ -302,6 +302,7 @@ export function heldWeigh({ rode, clock, input, commit, alive = () => true, done
  */
 export function stationCommands(api, ctx) {
   const clock = api.use("clock");
+  const poses = api.use("poses");
   const claiming = api.use("claims");
   const objectOf = (sc, id) => sc?.objects?.[id] ?? null;
   const traitOf = (sc, id, key) => objectOf(sc, id)?.traits?.[key] ?? null;
@@ -803,7 +804,7 @@ export function stationCommands(api, ctx) {
     const steering = (code) => code === "KeyA" || code === "ArrowLeft" || code === "KeyD" || code === "ArrowRight";
     const showWheel = () => {
       const o = api.scene().objects?.[id];
-      if (o) api.pose.hold(id, wheelTransform(o.transform, angle));
+      if (o) poses?.hold(id, wheelTransform(o.transform, angle));
     };
     const close = () => {
       if (closed) return;
@@ -813,7 +814,7 @@ export function stationCommands(api, ctx) {
       if (!lost && exists(id)) ctx.sim.commit(id, { angle });
       ctx.sim.input(id, null);
       // the simulator draws it from here (and peers keep this pose until it does)
-      api.pose.release(id, { landed: true });
+      poses?.release(id, { landed: true });
       release();
     };
     ctx.sim.input(id, { angle });

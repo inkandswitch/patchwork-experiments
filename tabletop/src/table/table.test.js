@@ -605,7 +605,7 @@ describe("drawing to your hand", () => {
 
   it("skips a top card a peer is holding, for the one under it", async () => {
     const t = await table();
-    t.b.pose.hold("top", T([0.3, 0.05, 0]));
+    t.b.use("poses").hold("top", T([0.3, 0.05, 0]));
     t.draw("top");
     t.w.tick(1 / 60, 30);
     near(t.w.doc.objects.mid.transform.position, [-0.21, 0.002, 0.5]);
@@ -618,11 +618,11 @@ describe("drawing to your hand", () => {
     const t = await table();
     t.draw("top");
     t.w.tick(1 / 60, 5);
-    t.b.pose.hold("top", T([0.3, 0.05, 0])); // took hold first, as heldBy tells this view
+    t.b.use("poses").hold("top", T([0.3, 0.05, 0])); // took hold first, as heldBy tells this view
     t.w.tick(1 / 60, 5);
     expect(t.w.released).toEqual([{ session: "A", id: "top", landed: false }]);
     expect(t.w.holds.get("mid")).toMatchObject({ session: "A" });
-    t.b.pose.hold("mid", T([0.3, 0.05, 0]));
+    t.b.use("poses").hold("mid", T([0.3, 0.05, 0]));
     t.w.tick(1 / 60, 30);
     expect(t.writes).toEqual([]);
     expect(t.w.sent).toEqual([]);

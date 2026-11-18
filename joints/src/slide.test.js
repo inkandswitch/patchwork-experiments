@@ -285,7 +285,7 @@ describe("the bound is real", () => {
   });
 });
 
-describe("taken here (a person's hold in the opener's own view: api.pose.hold refuses the motion's)", () => {
+describe("taken here (a person's hold in the opener's own view: scene.poses' hold refuses the motion's)", () => {
   // one view, its doc and its holds; the hold stands for the first `stands` calls, then a person has it
   function one(stands) {
     let T = 0;

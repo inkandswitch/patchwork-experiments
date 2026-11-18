@@ -75,8 +75,8 @@ function table({ present = ["A", "B", "S"] } = {}) {
     const api = w.join(session, { viewer });
     w.view(session).collected = { "dice.lots": lots.value, roster: { viewers: () => SEATED, who: name } };
     let x = null;
-    api.audience = (id) => audienceOf(x.audience(api.scene())(id)).audience;
-    api.shown = (id) => audienceOf(x.audience(api.scene())(id)).shown;
+    w.view(session).audience = (id) => audienceOf(x.audience(api.scene())(id)).audience;
+    w.view(session).shown = (id) => audienceOf(x.audience(api.scene())(id)).shown;
     x = w.attach(session, Cups.create(api));
     views[session] = { api, x };
   }
@@ -181,9 +181,9 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.change(() => {});
     t.w.flush();
     // the audience: Alice alone
-    for (const s of ["A", "B", "S"]) for (const d of t.dice) expect(t.views[s].api.audience(d)).toEqual(["alice"]);
+    for (const s of ["A", "B", "S"]) for (const d of t.dice) expect(t.views[s].api.use("audience").audience(d)).toEqual(["alice"]);
     // no veil anywhere: Alice knows them, the others aren't shown them
-    for (const s of ["A", "B", "S"]) expect(t.views[s].x.looks().size).toBe(0);
+    for (const s of ["A", "B", "S"]) expect(t.views[s].x.showing().size).toBe(0);
     t.w.done();
   });
 
@@ -236,7 +236,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.flush();
     expect(t.cup().roll.done).toBe(false);
     // Bob's view: the dice are face up to all, and nobody knows them: veiled, not his "seed"
-    for (const d of t.dice) expect(t.views.B.x.looks().get(d)).toEqual({ veil: true });
+    for (const d of t.dice) expect(t.views.B.x.showing().get(d)).toEqual({ veil: true });
     expect(t.hud("B")).toEqual([]);
     t.w.tick(ASTRAY_MS / 1000 + 0.1, 1);
     expect(t.hud("B")).toEqual(["Alice's dice can't be turned up: the lots on that cup aren't the ones its shake asked for (two shakes at once, or someone wrote over them). Alice's client asks again."]);
@@ -251,7 +251,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.change(() => {});
     t.w.flush();
     expect(t.cup().roll.done).toBe(false);
-    for (const d of t.dice) expect(t.views.B.x.looks().get(d)).toEqual({ veil: true });
+    for (const d of t.dice) expect(t.views.B.x.showing().get(d)).toEqual({ veil: true });
     expect(t.lots.draws.length).toBe(4);
     t.w.done();
   });
@@ -456,20 +456,20 @@ describe("the cup's verbs and what the doc says", () => {
     t.lots.states.set("cup", lotsState({ draw, by: "alice", asked: ["alice", "bob"], sealers: ["alice", "bob"], phase: "sealed", seed: null, waiting: ["alice", "bob"] }));
     t.w.change(() => {});
     t.w.flush();
-    for (const d of t.dice) for (const s of ["A", "B", "S"]) expect(t.views[s].api.audience(d)).toEqual([]);
+    for (const d of t.dice) for (const s of ["A", "B", "S"]) expect(t.views[s].api.use("audience").audience(d)).toEqual([]);
     expect(t.state("A", "lift")).toMatchObject({ label: "Lift", title: "Lift it: everyone but you may see what's under it (L)" });
     t.run("A", "lift");
     t.w.flush();
-    for (const d of t.dice) expect(t.views.A.api.audience(d)).toEqual(["bob"]);
+    for (const d of t.dice) expect(t.views.A.api.use("audience").audience(d)).toEqual(["bob"]);
     // Bob knows it now (Alice's part sealed to him)
     t.lots.states.set("cup", lotsState({ draw, by: "alice", asked: ["alice", "bob"], sealers: ["alice", "bob"] }));
     t.w.change(() => {});
     t.w.flush();
     // (lots' state is one object here, as every view's: Alice's view still mustn't show it, for she isn't in the audience)
     for (const d of t.dice) {
-      expect(t.views.A.x.looks().get(d)).toEqual({ veil: true });
-      expect(t.views.B.x.looks().get(d)).toBeUndefined();
-      expect(t.views.S.x.looks().get(d)).toEqual({ veil: true }); // face up to the table, kept from the spectator too (cup.js policy)
+      expect(t.views.A.x.showing().get(d)).toEqual({ veil: true });
+      expect(t.views.B.x.showing().get(d)).toBeUndefined();
+      expect(t.views.S.x.showing().get(d)).toEqual({ veil: true }); // face up to the table, kept from the spectator too (cup.js policy)
     }
     expect(t.w.view("A").labels.map((l) => l.text)).toContain("Blind: hidden from you");
     expect(t.w.view("B").labels.map((l) => l.text)).toContain("Blind: hidden from Alice");
@@ -479,7 +479,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.flush();
     expect(t.cup().blind).toBe(false);
     expect(t.cup().roll.blind).toBe(true); // how it was shaken stays: the round is still its own
-    for (const d of t.dice) expect(t.views.A.api.audience(d)).toBe("all");
+    for (const d of t.dice) expect(t.views.A.api.use("audience").audience(d)).toBe("all");
     t.lots.states.set("cup", lotsState({ draw, by: "alice", asked: ["alice", "bob"], sealers: ["alice", "bob"], phase: "open", public: true }));
     t.w.change(() => {});
     t.w.flush();
@@ -593,7 +593,7 @@ describe("the cup's verbs and what the doc says", () => {
     expect(t.state("B", "knock")).toMatchObject({ title: expect.any(String) });
     t.run("B", "knock");
     t.w.flush();
-    for (const d of t.dice) expect(t.views.B.api.audience(d)).toBe("all");
+    for (const d of t.dice) expect(t.views.B.api.use("audience").audience(d)).toBe("all");
     expect(t.state("B", "stand")).toMatchObject({ title: expect.any(String) });
     t.run("B", "stand");
     t.w.flush();

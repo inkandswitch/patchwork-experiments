@@ -13,21 +13,21 @@
 //              a screen), or theirs to see and not known here yet (keys on
 //              their way).
 //
-// `audience` is who may see what it is (api.audience: the union of every
-// policy's `show`, cut by every `only`); `shown` is who it is turned toward
-// (api.shown: the union alone). audience ⊆ shown, always.
+// `audience` is who may see what it is (scene.audience's audience(id): the
+// union of every policy's `show`, cut by every `only`); `shown` is who it is
+// turned toward (its shown(id): the union alone). audience ⊆ shown, always.
 
 const includes = (set, viewer) => set === "all" || (Array.isArray(set) && typeof viewer === "string" && set.includes(viewer));
 
 /**
  * @param {{
  *   ready: boolean,                       // the keeper can answer for this object (its container is loaded, dealt)
- *   audience: "all" | string[] | null,    // api.audience(id); null: unknown
- *   shown: "all" | string[] | null,       // api.shown(id); null: unknown
+ *   audience: "all" | string[] | null,    // audience(id); null: unknown
+ *   shown: "all" | string[] | null,       // shown(id); null: unknown
  *   viewer: string | null,
  *   look: object | null | undefined,      // the item's look, when this client knows the item
  * }} o
- * @returns {object | null} a look for the stage's lens, or null for the object's own
+ * @returns {object | null} a look to show (showLooks), or null for the object's own
  */
 export function lookFor({ ready, audience, shown, viewer, look }) {
   if (!ready || audience == null || shown == null) return null;
@@ -36,7 +36,7 @@ export function lookFor({ ready, audience, shown, viewer, look }) {
   return null;
 }
 
-/** An item's look: what of it the stage's lens takes ({ sourceUrl?, name? }), or null when it isn't known. */
+/** An item's look: what of it is shown ({ sourceUrl?, name? }), or null when it isn't known. */
 export function itemLook(item) {
   if (item === undefined || item === null) return null;
   const out = {};
@@ -45,6 +45,25 @@ export function itemLook(item) {
     if (typeof item.name === "string" && item.name) out.name = item.name;
   }
   return out;
+}
+
+/**
+ * Shows each object as its look says (scene/STAGE.md, "Display"): `{ veil:
+ * true }` as scene.audience's veil, an item's as its name and file.
+ * set(looks) shows id → look and puts back what it no longer names.
+ */
+export function showLooks(api, audience) {
+  let now = new Map(); // id → { key, look, off }
+  const show = (id, look) => (look.veil ? (audience?.veil(id) ?? (() => {})) : api.display(id, { name: look.name, content: look.sourceUrl }));
+  return {
+    set(looks) {
+      const next = new Map([...looks].map(([id, look]) => [id, { key: JSON.stringify(look), look }]));
+      for (const [id, was] of now) if (was.key !== next.get(id)?.key) was.off();
+      for (const [id, v] of next) v.off = now.get(id)?.key === v.key ? now.get(id).off : show(id, v.look);
+      now = next;
+    },
+    get: () => new Map([...now].map(([id, v]) => [id, v.look])),
+  };
 }
 
 const ID = /automerge:([1-9A-HJ-NP-Za-km-z]{20,60})/;

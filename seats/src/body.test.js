@@ -116,7 +116,7 @@ describe("the seat body, entered and left", () => {
     const { w, api, view, body } = world(cam, "identity");
     // someone else is moving the table: the view goes where it's drawn, not where the doc last had it
     const other = w.join("B", { viewer: "ben", ext: "seats" });
-    other.pose.hold("tbl", FRAMES.turned);
+    other.use("poses").hold("tbl", FRAMES.turned);
     body.enter("p1");
     near(view.camera.position, applyMatrix(fakes.composeMatrix(FRAMES.turned), cam.position));
     expect(api.worldOf("tbl")).toEqual(fakes.composeMatrix(FRAMES.turned));

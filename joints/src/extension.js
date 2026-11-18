@@ -20,20 +20,21 @@
 //
 // The motion's holds yield (a process's, giving way to a person's): someone
 // carrying the door, in this view or another, stops it, and the act lets go
-// without writing (api.pose.hold says the hold no longer stands).
+// without writing (scene.poses' hold says the hold no longer stands).
 
 import { KEY, createSlides, selfClosing } from "./slide.js";
 
 function create(api) {
   const clock = api.use("clock");
+  const poses = api.use("poses");
   const slides = createSlides({
     now: () => api.now(), // the stage's time: the motion is an act (STAGE.md "Native services")
     t: () => clock.t(),
     doc: () => api.doc(),
     change: (fn) => api.change(fn),
-    hold: (id, t) => api.pose.hold(id, t, { yields: true }), // false: taken (a person's hold, here or there)
-    release: (id, o) => api.pose.release(id, o),
-    heldBy: (id) => api.heldBy(id, { yields: true }),
+    hold: (id, t) => poses?.hold(id, t, { yields: true }) ?? false, // false: taken (a person's hold, here or there)
+    release: (id, o) => poses?.release(id, o),
+    heldBy: (id) => poses?.heldBy(id, { yields: true }) ?? null,
   });
 
   // the closing: a process while anything here closes itself
