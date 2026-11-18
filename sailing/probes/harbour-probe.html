@@ -237,7 +237,7 @@ try {
     camera: (w) => dbg[w].viewport.getCamera?.() ?? null,
     /** each HUD in view w: is it shown? */
     huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),
-    links: (w) => ["LA", "LB"].map((id) => dbg[w].view.linkState([id])),
+    links: (w) => ["LA", "LB"].map((id) => dbg[w].view.plugins.instanceOf("scene.links").provides.links({ path: [] }).role(id)),
     sky: (w) => dbg[w].viewport.atmosphere?.sky?.top ?? null,
     clocks: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], t: s.reader.use("clock").t(), running: s.reader.use("clock").running(), computer: s.reader.use("clock").computer() })),
     notices: (w) => (dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text ?? String(n)),
