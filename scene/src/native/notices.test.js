@@ -90,6 +90,18 @@ describe("scene.notices", () => {
     ]);
   });
 
+  it("reads the HUDs again when an extension says its lines changed, with nothing else changing", async () => {
+    await s.settle();
+    expect(pills()).toEqual([["Waiting for Bob", "loading"]]);
+    // a line learned later (a keeper's deck step): the doc, local and view are as they were
+    says.items = [{ text: "Waiting for Ana", state: "info" }];
+    await s.settle();
+    expect(pills()).toEqual([["Waiting for Bob", "loading"]]);
+    s.api("t.talker").use("notices").changed();
+    await Promise.resolve();
+    expect(pills()).toEqual([["Waiting for Ana", "info"]]);
+  });
+
   it("shows a notice as a toast, and fades it out when it goes", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {

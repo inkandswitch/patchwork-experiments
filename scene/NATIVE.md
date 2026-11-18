@@ -109,7 +109,9 @@ largest faces, both sides alike, so nothing of what it hides reaches it.
 running extension of the caller's stage, else the caller); one saying what one
 still showing says replaces it. Its HUD pills: the load summary from
 `local.status`, then every running extension's `hud(scene, local, view)` → `[{
-text, state, title? }]`, in running order.
+text, state, title? }]`, in running order, read again when the scene, local or
+view state changes, or after `changed()`: an extension whose lines change with
+nothing the stage sees changing (a status learned later) says so.
 
 ## The drawer
 

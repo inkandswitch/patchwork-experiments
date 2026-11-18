@@ -5,7 +5,10 @@
 //     that goes fades out.
 //   - HUD pills (top left): the load summary from local.status ("Loading 40
 //     of 74…", "Building 2…", "3 errors"),
-//     then every running extension's hud(scene, local) in running order.
+//     then every running extension's hud(scene, local) in running order;
+//     read again when the scene, local or view state changes, or when an
+//     extension says its lines changed (`use("notices").changed()`: a status
+//     learned later, as a keeper's deck step, changes nothing the stage sees).
 
 import css from "./notices.css?inline";
 import { localChanged } from "../parts/toolbar-commands.js";
@@ -78,6 +81,8 @@ function create(api) {
   const shown = new Map(); // notice id → element
   const timers = new Set();
   let hudKey = "";
+  let told = null; // the last { scene, local, view } update gave: what changed() draws the pills from
+  let redraw = false;
   let notices = Object.freeze([]);
   let seq = 0;
   const later = (ms, fn) => {
@@ -154,18 +159,36 @@ function create(api) {
     );
   }
 
+  // an extension's lines changed: read every hud again, once, after what's calling now is done
+  function changed() {
+    if (redraw || !told) return;
+    redraw = true;
+    queueMicrotask(() => {
+      redraw = false;
+      if (told) renderHud(told.scene, told.local, told.view);
+    });
+  }
+
   return {
     // (`from`: another extension of the caller's stage it speaks for, as telling does)
-    provides: { notices: ({ id, signal, runs }) => Object.freeze({ notify: (text, kind, o) => (signal.aborted ? null : notify(text, kind, o?.from != null && runs?.(o.from) ? o.from : id)) }) },
+    provides: {
+      notices: ({ id, signal, runs }) =>
+        Object.freeze({
+          notify: (text, kind, o) => (signal.aborted ? null : notify(text, kind, o?.from != null && runs?.(o.from) ? o.from : id)),
+          changed: () => void (signal.aborted || changed()),
+        }),
+    },
     /** what shows, oldest first: { id, text, kind, at, from } (for tests and probes) */
     get notices() {
       return notices;
     },
     update(scene, local, prev, view) {
+      told = { scene, local, view };
       // a hover alone changes no pill
       if (prev?.scene !== scene || localChanged(prev?.local, local) || localChanged(prev?.view, view)) renderHud(scene, local, view);
     },
     dispose() {
+      told = null;
       for (const cancel of timers) cancel();
       timers.clear();
     },
