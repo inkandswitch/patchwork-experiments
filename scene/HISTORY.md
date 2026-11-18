@@ -922,3 +922,8 @@ cached): New game for four, a ship turned to Damaged and back (drawn on
 demand, one entry more in `drawn`), a die rolled showing its pictured
 face: 16 checks pass. rank-mods.mjs marks a mod down only for States left
 out: two grades (if fetched) rise, Arcs and Root Accessories, B to A.
+
+### 2026-11-18 — Tabletop published
+
+Synced tabletop alone (at d30ee986; scene and sailing changed only docs and probes, so not synced): its published tree matches the checkout.
+Republished the 12 examples a tabletop table reaches (Lost Cities, its table, Santorini, Draw Dominoes for 2, Liar's dice, Lost Cities aboard with E1M1's exit re-set, the Quiet games room, Games night, both Arcade mashups, the Harbour, the Model room); each checked in real Patchwork and swapped in the Scene examples folder in one change.
