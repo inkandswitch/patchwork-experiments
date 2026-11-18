@@ -2,8 +2,7 @@
 // it opens. It holds what is the viewer's, not any doc's: the DOM and its
 // edges, the viewport, the router, the camera and its saving, labels, the
 // body stack and the hands, the view's atom (the body, the hands, the held
-// tool, the pointer, the selection and hover, theme, prefs, the drawer, the
-// focus), the session every stage's channel names, and the stages
+// tool, the pointer, the selection and hover, theme, prefs, the focus), the session every stage's channel names, and the stages
 // themselves. A stage (./stage.js) is one per open doc and holds what is
 // the doc's.
 //
@@ -33,7 +32,6 @@ import { createAtom, assoc } from "./atom.js";
 import { createRouter } from "./router.js";
 import { offer } from "./chain.js";
 import { looksFromEye } from "./pointer.js";
-import { createDrawer } from "./dock.js";
 import { escapeHint, restLayer } from "./ladder.js";
 import { LOOK } from "./bodies.js";
 import { collectFrom, createHost, updateAll } from "./host.js";
@@ -276,18 +274,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const style = document.createElement("style");
   style.textContent = css;
   element.append(style, root);
-  const drawer = createDrawer({
-    parent: edges.right,
-    onChange: (d) => {
-      if (dead) return;
-      atom.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown, docs: Object.freeze([...d.docs]) }) }));
-    },
-    // its widths are this viewer's prefs, like the grid and the units (dock.js)
-    prefs: () => atom.get().prefs,
-    setPref: (key, px) => {
-      if (!dead) setPref(key, px);
-    },
-  });
 
   // ─── the view's atom ──────────────────────────────────────────────────────
 
@@ -306,8 +292,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
     escape: Object.freeze({ layer: null, hint: "" }),
     theme: null,
-    // the drawer's tabs by title, the one shown, and the documents docked in it (dock.js), by docKey
-    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (STAGE.md, "The input chain"): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
@@ -1192,7 +1176,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       if (dead) return;
       atom.swap((m) => ({ ...m, ...viewOfRouter(st, m) }));
     },
-    pointerWanted: () => atom.get().selected != null || drawer.state().order.length > 0,
+    pointerWanted: () => atom.get().selected != null || pointerWants.size > 0,
     restLayer: restNow,
     escapeRest,
   });
@@ -1238,13 +1222,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   cleanups.push(
     atom.watch((next, prev) => {
-      if (next.prefs !== prev.prefs) {
-        writeJSON(prefsKey, next.prefs);
-        drawer.refreshWidth();
-      }
+      if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
       if (next.body !== prev.body || next.hands !== prev.hands) announce();
-      // (an open drawer wants the pointer: a document docked or closed in it changes that)
-      if (next.selected !== prev.selected || next.drawer !== prev.drawer) router?.refresh();
+      if (next.selected !== prev.selected) router?.refresh();
       requestFlush();
     }),
   );
@@ -1305,8 +1285,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // the view's plugins first (their facets go with them), then the stages, innermost first
     plugins.dispose();
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
-    // the documents docked in the drawer are the view's: they go with it
-    drawer.dispose();
     for (const d of docs.values()) d.off?.();
     announcer.dispose();
     dead = true;
@@ -1350,12 +1328,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       },
     });
   const getRegistry = (type) => patchworkPlugins.getRegistry(type) ?? null;
-  /**
-   * Dock a document in the drawer (api.view.dock): the view's, so it stays
-   * across selections, bodies, focus moves and plugins stopping, until its ×
-   * or close(). One pane per docKey(url, toolId). → close
-   */
-  const dockDocument = (doc) => (dead ? noop : drawer.dockDocument(doc ?? {}));
+  /** What wants the pointer free (api.wantPointer: an open drawer). */
+  const pointerWants = new Set();
   /** Acquire something while `live()`: `take` gives a give-back, kept in `bag`; → off, giving it back once. */
   const acquirer = (live) => (bag, take) => {
     if (!live()) return noop;
@@ -1368,7 +1342,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   };
   /**
    * What the view lends an extension or a view plugin (`id`, its router key
-   * `key`): overlays, edge parts, styles, docked elements, listeners, its
+   * `key`): overlays, edge parts, styles, listeners, its
    * cursor, popovers, frame hooks and timers. What it acquires goes in
    * `own` (`els`, `offs`, `frame`), given back as it stops; `stage` marks its
    * elements with the stage it is of.
@@ -1394,26 +1368,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       if (stage != null) el.dataset.stage = String(stage);
       if (!live()) return el;
       own.els.add(el);
-      // (the drawer stays outermost: an edge part started while it's open goes inside it)
-      if (drawer.el.parentNode === parent) parent.insertBefore(el, drawer.el);
-      else parent.append(el);
+      parent.append(el);
       return el;
     };
     const div = (className) => Object.assign(document.createElement("div"), { className });
     return {
       overlay: () => add(div("stage-overlay"), port),
       edge: (side) => add(div("stage-edge-part"), edges[EDGES.includes(side) ? side : "right"]),
-      /** dock an element in the drawer, under a tab: closed by close(), its × (which calls onClose), or its owner stopping */
-      dock: (el, { title, onClose, embed = true, show = true } = {}) => {
-        if (!live() || !el) return noop;
-        // an open drawer wants the pointer (./pointer.js)
-        const close = acquire(own.offs, () => {
-          const off = drawer.dock(key, el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
-          return () => (off?.(), router?.refresh());
-        });
-        router?.refresh();
-        return close;
-      },
       style: (text) => add(Object.assign(document.createElement("style"), { textContent: String(text ?? "") }), root),
       listen: (target, type, fn, opts) =>
         acquire(own.offs, () => {
@@ -1464,7 +1425,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** the element the canvas fills, and the view's root (for DOM listeners: drops, paste, keys) */
       port,
       root,
-      /** the viewer's value, whole (the selection, hover and focus as paths); step(ev): a selection step (../selection.js) but enter; dock(doc): a document in the drawer */
+      /** the view's url: the outermost doc's */
+      url,
+      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; set(value): this plugin's own, view[id] */
       view: Object.freeze({
         get: () => atom.get(),
         watch: (fn, select) =>
@@ -1478,7 +1441,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
             }),
           ),
         step: (ev) => (live() && ev?.type !== "enter" ? selectStep(ev) : false),
-        dock: (doc) => (live() ? dockDocument(doc) : noop),
+        set: (value) => void (live() && atom.swap((m) => (m[id] === value ? m : { ...m, [id]: value }))),
       }),
       /** a pref: the viewer's, else the focus doc's suggestion, else the fallback */
       pref: (k, fallback) => atom.get().prefs?.[k] ?? focusStage()?.doc().view?.[k] ?? fallback,
@@ -1488,6 +1451,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** every open doc's missing packages (view.packages): load them (a yes), or don't ask again in this view */
       packages,
       ...viewParts({ id, key, own, live }),
+      /** the pointer wanted free (no lock) until release(): an open drawer. → release */
+      wantPointer: () => acquire(own.offs, (t = {}) => (pointerWants.add(t), router.refresh(), () => (pointerWants.delete(t), router.refresh()))),
       /** run fn after the focus stage's next update flush (through its facet) */
       schedule: (fn) => api.focus()?.schedule(fn),
       // the camera and picking, in the world (the outermost's frame); a hit's `path` is where it is
@@ -1554,7 +1519,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         for (const give of [...bag]) give();
         bag.clear();
       }
-      drawer.closeOwner(key);
+      atom.swap((m) => (id in m ? (({ [id]: _, ...rest }) => rest)(m) : m));
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
@@ -1623,7 +1588,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     root,
     port,
     edges,
-    drawer,
     canvas,
     viewport,
     atom,
@@ -1632,7 +1596,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       return cameraPlaced;
     },
     restoreCamera,
-    dockDocument,
     packages,
     packagesChanged,
     /** "Not now"'s packages, the view's: every stage's packages module shares it */

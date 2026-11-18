@@ -1,8 +1,8 @@
-// The drawer (dock.js): the pure model over every sequence of up to five
+// The drawer (drawer.js): the pure model over every sequence of up to five
 // acts on three keys, and the DOM that follows it; its width, as finite
 // tables and every sequence of up to three acts on two kinds of pane.
 import { describe, it, expect, vi } from "vitest";
-import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./dock.js";
+import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./drawer.js";
 import { EMBED_ATTR } from "../embed.js";
 
 // Does a stage-scoped style rule reach `el`? Every one is `.scene-tool <x>:where(:not(.about-embed *),

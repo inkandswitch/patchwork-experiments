@@ -31,7 +31,7 @@ export function keyOf(n, id) {
 }
 
 /**
- * The key of view plugin `id` at the router, the drawer and the cursor: no
+ * The key of view plugin `id` at the router and the cursor: no
  * stage's (parseKey answers null), so nothing a stage owns is ever its.
  */
 export const viewKey = (id) => `${SEP}view${SEP}${String(id)}`;

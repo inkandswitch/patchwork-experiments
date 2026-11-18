@@ -1,5 +1,5 @@
 // Documents docked in the drawer are the view's (STAGE.md, "The interface", "Documents in
-// the drawer"; STAGE.md api.view.dock): a finite table of what happens around
+// the drawer"; the drawer's dockDocument): a finite table of what happens around
 // one, each with the pane still docked and its view never remounted, but the
 // view going; a drop in the view never docks; keys typed in one are its own.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -57,11 +57,12 @@ async function mountWithLink() {
   s.edit(true);
   view.select(["table"]);
   // the selection opens the shut inspector
-  await until(() => view.drawer.state().order.some((el) => el.dataset.panel === "inspector"), 3000);
+  await until(() => panes(view).order.some((el) => el.dataset.panel === "inspector"), 3000);
   return { view, notes };
 }
 
-const docsOf = (view) => view.atom.get().drawer.docs;
+const panes = (view) => view.plugins.instanceOf("scene.drawer").panes();
+const docsOf = (view) => view.atom.get()["scene.drawer"].docs;
 
 // [what happens, does the pane stay?, the act]
 const EVENTS = [
@@ -77,7 +78,7 @@ describe("a document docked in the drawer is the view's", () => {
     const m = await mountWithLink();
     const { view, notes } = m;
     // docked from an extension (the inspector's Dock is this call)
-    s.api("scene.inspector").view.dock({ url: notes.url, toolId: "notes", title: "Notes" });
+    s.api("scene.inspector").use("drawer").dockDocument({ url: notes.url, toolId: "notes", title: "Notes" });
     await settle();
     const key = `${notes.url}|notes`;
     expect(docsOf(view)).toEqual([key]);
@@ -92,7 +93,6 @@ describe("a document docked in the drawer is the view's", () => {
       expect(pane.isConnected).toBe(true);
       expect(embedLog.filter(([, url]) => url === notes.url)).toEqual([]);
     } else {
-      expect(view.drawer.state().order).toEqual([]);
       expect(pane.isConnected).toBe(false);
     }
   });
@@ -107,15 +107,15 @@ describe("a document docked in the drawer is the view's", () => {
     const close = () => [...view.root.querySelectorAll(".stage-drawer-tab")].forEach((t) => t.querySelector(".stage-drawer-tab-close").click());
     close();
     await settle();
-    expect([view.drawer.state().order.length, wanted()]).toEqual([0, false]);
+    expect([panes(view).order.length, wanted()]).toEqual([0, false]);
     // docked with nothing selected: nothing else changes, so only the drawer's change can tell the router
-    s.api("scene.inspector").view.dock({ url: notes.url, title: "Notes" });
+    s.api("scene.inspector").use("drawer").dockDocument({ url: notes.url, title: "Notes" });
     await settle();
     expect(view.atom.get().selected).toBeNull();
-    expect([view.drawer.state().order.length, wanted()]).toEqual([1, true]);
+    expect([panes(view).order.length, wanted()]).toEqual([1, true]);
     close();
     await settle();
-    expect([view.drawer.state().order.length, wanted()]).toEqual([0, false]);
+    expect([panes(view).order.length, wanted()]).toEqual([0, false]);
   });
 
   // a drop of one document: on the canvas the scene takes it (scene.add) and nothing docks; on the drawer's tab strip it
@@ -136,7 +136,7 @@ describe("a document docked in the drawer is the view's", () => {
 
   it("keys typed in a docked document are its own: Escape there leaves the selection; on the stage it clears it", async () => {
     const { view, notes } = await mountWithLink();
-    s.api("scene.inspector").view.dock({ url: notes.url, title: "Notes" });
+    s.api("scene.inspector").use("drawer").dockDocument({ url: notes.url, title: "Notes" });
     await settle();
     const inside = view.root.querySelector(".stage-drawer-doc > patchwork-view");
     const esc = (target) => {

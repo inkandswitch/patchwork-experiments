@@ -148,12 +148,12 @@ try {
               api.use("notices")?.notify(`Shuffling ${pile.length} cards…`);
             },
           }],
-          // its own panel, docked in the drawer (api.dock) when asked: an extension's editor, as Camber's Shape is
+          // its own panel, docked in the drawer ("drawer") when asked: an extension's editor, as Camber's Shape is
           probePanel: (() => {
             const el = document.createElement("div");
             el.className = "probe-panel";
             el.textContent = "probe panel";
-            (window.__probeDock ??= {})[api.channel.viewer] = () => ((window.__probeClose ??= {})[api.channel.viewer] = api.dock(el, { title: "Probe" }));
+            (window.__probeDock ??= {})[api.channel.viewer] = () => ((window.__probeClose ??= {})[api.channel.viewer] = api.use("drawer").dock(el, { title: "Probe" }));
             return el;
           })(),
         };

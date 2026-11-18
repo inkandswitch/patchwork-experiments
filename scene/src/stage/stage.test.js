@@ -55,7 +55,7 @@ const { add, drop, editor, part, template: runTemplate } = await import("../part
 // the drop context (STAGE.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: view.start.edit picks it up; and the view's native services)
-const VIEWS = ["scene.edit", "scene.notices"];
+const VIEWS = ["scene.edit", "scene.notices", "scene.drawer"];
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || VIEWS.includes(p.id)) getRegistry(p.type).register(p);
 /** what scene.notices shows */
 const noticesOf = (m) => m.debug.view.plugins.instanceOf("scene.notices").notices;
@@ -349,39 +349,29 @@ describe("the stage, mounted", () => {
     expect(r.api.overlay().isConnected).toBe(false);
   });
 
-  it("docks an extension's element in the drawer, outermost at the right; its stopping closes its panes without onClose, and docking after is a no-op", async () => {
+  it("an extension docks in the view's drawer (\"drawer\"), at the right; its stopping closes its panes without onClose, and it has no drawer after", async () => {
     const closed = [];
-    exts["t.edit"] = recorder("t.edit", (api) => {
-      api.edge("right").textContent = "edit edge";
-      const el = document.createElement("div");
-      el.className = "edit-panel";
-      api.dock(el, { title: "Edit panel", onClose: () => closed.push("edit") });
-      return {};
-    });
-    exts["t.always"] = recorder("t.always");
     const m = mount(newScene());
     await settle();
+    const panes = () => m.debug.view.plugins.instanceOf("scene.drawer").panes();
+    const el = document.createElement("div");
+    el.className = "edit-panel";
+    exts["t.edit"].api.use("drawer").dock(el, { title: "Edit panel", onClose: () => closed.push("edit") });
     const right = m.root.querySelector('[data-edge="right"]');
     const drawer = right.querySelector(".stage-drawer");
     expect(drawer.querySelector(".stage-drawer-tab-name").textContent).toBe("Edit panel");
     expect(drawer.querySelector(".stage-drawer-pane").hasAttribute("data-stage-embed")).toBe(true);
-    // an edge part made while the drawer is open goes inside it
-    const late = exts["t.always"].api.edge("right");
-    expect(right.lastElementChild).toBe(drawer);
-    expect(late.nextElementSibling).toBe(drawer);
     // a second dock, by the other extension: a second tab, shown
     const mine = document.createElement("div");
-    const close = exts["t.always"].api.dock(mine, { title: "Mine" });
-    expect(m.debug.drawer().order.map((el) => el.className)).toEqual(["edit-panel", ""]);
-    expect(m.debug.drawer().shown).toBe(mine);
+    const close = exts["t.always"].api.use("drawer").dock(mine, { title: "Mine" });
+    expect(panes().order.map((el) => el.className)).toEqual(["edit-panel", ""]);
+    expect(panes().shown).toBe(mine);
     // the edit extension stops: its pane goes, without onClose, and the other's shows
     uninstall("t.edit");
     expect(closed).toEqual([]);
     expect(m.root.querySelector(".edit-panel")).toBeNull();
-    expect(m.debug.drawer().order).toEqual([mine]);
-    // its api docks nothing now
-    expect(typeof exts["t.edit"].api.dock(document.createElement("div"), { title: "Late" })).toBe("function");
-    expect(m.debug.drawer().order).toEqual([mine]);
+    expect(panes().order).toEqual([mine]);
+    expect(exts["t.edit"].api.use("drawer")).toBeNull();
     close();
     expect(right.querySelector(".stage-drawer")).toBeNull();
   });

@@ -73,7 +73,7 @@ describe("the inspector's tree", () => {
     await mount(vessel(), { extra: [] });
     const tab = s.instance("scene.inspector").tab;
     expect(tab.isOpen()).toBe(true);
-    expect(s.debug.drawer().order).toEqual([tab.body]);
+    expect(s.drawer().order).toEqual([tab.body]);
     expect(tab.body.dataset.panel).toBe("inspector");
     // the tree, then the fields, in the one tab
     expect([...tab.body.children].map((c) => c.className)).toEqual(["inspector-tree", "inspector-body"]);
@@ -82,7 +82,7 @@ describe("the inspector's tree", () => {
     expect(toggles).toEqual(["scene.inspector:inspector"]);
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
     expect(tab.isOpen()).toBe(false);
-    expect(s.debug.drawer().order).toEqual([]);
+    expect(s.drawer().order).toEqual([]);
   });
 
   it("roots open, deeper groups closed, per-viewer state in localStorage; ←/→ on a focused row", async () => {

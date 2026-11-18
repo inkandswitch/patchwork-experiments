@@ -641,9 +641,9 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
   const FOLD_DOCKED = [
     ["Source docked (its Dock)", "source", async () => section(`${ME}/source`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.src.url}|`]],
     ["Source docked, then its × closed", "source", async () => (section(`${ME}/source`).querySelector(".section-dock").click(), await settle(), docTab("Built · Source").querySelector(".stage-drawer-tab-close").click()), (m) => [false, m.src.url, false], () => []],
-    ["Source's doc docked under another tool", "source", async (m) => s.api(ME).view.dock({ url: m.src.url, toolId: "other", title: "Other" }), (m) => [false, m.src.url, false], (m) => [`${m.src.url}|other`]],
+    ["Source's doc docked under another tool", "source", async (m) => s.api(ME).use("drawer").dockDocument({ url: m.src.url, toolId: "other", title: "Other" }), (m) => [false, m.src.url, false], (m) => [`${m.src.url}|other`]],
     ["Build docked (its Dock)", "build", async () => section(`${ME}/build`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.render.url}|scene-render-controls`]],
-    ["Build's doc docked with no tool", "build", async (m) => s.api(ME).view.dock({ url: m.render.url, title: "Render" }), (m) => [false, m.render.url, false], (m) => [`${m.render.url}|`]],
+    ["Build's doc docked with no tool", "build", async (m) => s.api(ME).use("drawer").dockDocument({ url: m.render.url, title: "Render" }), (m) => [false, m.render.url, false], (m) => [`${m.render.url}|`]],
   ];
   it.each(FOLD_DOCKED)("folded while docked: %s", async (_name, id, act, want, inDrawer) => {
     const m = await mountKinds();
@@ -727,7 +727,7 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
     await settle();
     await settle();
     expect([over.defaultPrevented, drop.defaultPrevented]).toEqual([docks, docks]);
-    expect(s.debug.view.atom.get().drawer.docs).toEqual(docks ? [`${m.src.url}|`] : []);
+    expect(s.debug.view.atom.get()["scene.drawer"].docs).toEqual(docks ? [`${m.src.url}|`] : []);
     expect(JSON.stringify(s.doc().objects)).toBe(objects);
     expect(s.notices()).toEqual([]);
   });
@@ -743,7 +743,7 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
       deck: object({ name: "Deck", sourceUrl: notes.url, renderUrl: render(notes.url).url, visible: false }),
     };
     await mount({ repo, objects });
-    const tabs = () => s.debug.view.atom.get().drawer.tabs;
+    const tabs = () => s.debug.view.atom.get()["scene.drawer"].tabs;
     for (const id of ["hull", "mast"]) {
       await select(id);
       section(`${ME}/source`).querySelector(".section-dock").click();
@@ -751,14 +751,14 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
     }
     expect(tabs()).toEqual(["Inspector", "Hull · Source", "Mast · Source"]);
     // a document docked under a name of its own keeps it when a section shows it
-    s.api(ME).view.dock({ url: notes.url, title: "My notes" });
+    s.api(ME).use("drawer").dockDocument({ url: notes.url, title: "My notes" });
     await select("deck");
     docTab("Inspector").querySelector(".stage-drawer-tab-name").click();
     await settle();
     section(`${ME}/source`).querySelector(".section-show").click();
     await settle();
     expect(tabs()).toEqual(["Inspector", "Hull · Source", "Mast · Source", "My notes"]);
-    expect(s.debug.view.atom.get().drawer.shown).toBe("My notes");
+    expect(s.debug.view.atom.get()["scene.drawer"].shown).toBe("My notes");
   });
 
   it("the source shown is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {
@@ -893,7 +893,7 @@ describe("scene.inspector: one pane, the tree and the fields together (STAGE.md,
     // one value: the row marked is the fields' object (none for the scene or a ref)
     expect(marked()).toEqual(fields.startsWith("object ") || fields.startsWith("group ") ? [fields.split(" ")[1]] : []);
     // one pane: one tab, one tree, one set of fields
-    expect(s.debug.drawer().order).toEqual([tab().body]);
+    expect(s.drawer().order).toEqual([tab().body]);
     expect(tab().body.querySelectorAll(".scene-outline").length).toBe(1);
     expect(tab().body.querySelectorAll(".inspector-body").length).toBe(1);
   });
@@ -1057,7 +1057,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     expect(tab().isOpen()).toBe(false);
     await pick("a");
     expect(tab().isOpen()).toBe(true);
-    expect(s.debug.drawer().shown).toBe(tab().body);
+    expect(s.drawer().shown).toBe(tab().body);
     // the viewer closes it (its ×): it stays shut while "a" is selected
     s.root.querySelector(".stage-drawer-tab-close").click();
     await still();
@@ -1139,7 +1139,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     const view = s.debug.view;
     await time.until(() => view.enterable(["L"]), { what: "L to open" });
     // open: the inspector's pane is docked in the view's drawer, whichever stage the focus (and so the inspector) is in
-    const open = () => view.drawer.state().order.some((el) => el.dataset.panel === "inspector");
+    const open = () => s.drawer().order.some((el) => el.dataset.panel === "inspector");
     const inspectorApi = () => s.api("scene.inspector");
     const apply = async (e) => {
       const sel = SEL[e];
@@ -1182,12 +1182,12 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
 
   it("following the selection, it comes in behind a pane already shown (the parts bin), a tab to pick; alone, it shows", async () => {
     const pane = document.createElement("div");
-    const other = { meta: { id: "t.bin" }, module: { create: (api) => (api.dock(pane, { title: "Bin" }), {}) } };
+    const other = { meta: { id: "t.bin", type: "scene:view" }, module: { create: (api) => (api.use("drawer").dock(pane, { title: "Bin" }), {}) } };
     await bare({ a: object({ name: "A" }) }, [other]);
-    expect(s.debug.drawer().shown).toBe(pane);
+    expect(s.drawer().shown).toBe(pane);
     await pick("a");
     expect(tab().isOpen()).toBe(true);
-    expect(s.debug.drawer()).toEqual({ order: [pane, tab().body], shown: pane });
+    expect(s.drawer()).toEqual({ order: [pane, tab().body], shown: pane });
   });
 
   it("the toolbar's Inspector says whether its tab is open, in the flush after it shuts (local.drawer)", async () => {

@@ -1,4 +1,4 @@
-// The drawer's grip in a mounted stage (dock.js, STAGE.md, "The interface"): its widths
+// The drawer's grip in a mounted stage (native/drawer.js, STAGE.md, "The interface"): its widths
 // are this viewer's prefs, kept per scene, and its presses and keys are the
 // drawer's own (I5): in each base body, with something selected, a drag, a
 // click, a double-click and the grip's keys reach no part of the scene, so
@@ -9,7 +9,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { openTabs } from "../test/tabs.js";
 import select from "../parts/select.js";
 import inspector from "../parts/inspector.js";
-import { MAX_PX, prefKey } from "./dock.js";
+import { MAX_PX, prefKey } from "../native/drawer.js";
 import { editing } from "./bodies.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
@@ -41,7 +41,7 @@ function recorder(seen) {
           click: note("click"),
           dblclick: note("dblclick"),
         },
-        dockPanel: () => api.dock(document.createElement("div"), { title: "Panel" }),
+        dockPanel: () => api.use("drawer").dock(document.createElement("div"), { title: "Panel" }),
       }),
     },
   };

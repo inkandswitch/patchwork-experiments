@@ -269,7 +269,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const raf = (f) => time.frame(f);
   const caf = (cancel) => cancel?.();
   const life = new AbortController(); // aborted as it closes: what the view asks of its services goes then
-  const { root, port, drawer } = view;
+  const { root, port } = view;
   const vp = view.viewport;
   /** An extension of this stage, as the view and the router name it. */
   const ownerKey = (ext) => keyOf(n, ext);
@@ -1565,7 +1565,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }),
       /**
        * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
-       * the hands and the held tool, the pointer, theme, notices, prefs, the drawer, and
+       * the hands and the held tool, the pointer, theme, prefs, and
        * the selection and hover as this stage's elements of their paths.
        * select(target) selects this stage's target (null: nothing).
        */
@@ -1586,11 +1586,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         },
         /** move the focus into this stage's link `target`: false if it can't be entered */
         enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
-        /**
-         * dock a document in the drawer ({ url, toolId?, title }): the view's, not this extension's, so it
-         * stays until its × or close(); docking one url and tool again shows its tab (dock.js). → close
-         */
-        dock: (doc) => (live() ? view.dockDocument(doc) : noop),
         /** arrive again where the outermost doc's view.start now says (a template's maker): only from the outermost */
         arrive: () => {
           if (live() && n === 0) view.arrive();
@@ -1771,9 +1766,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       scope.removeLayers(id);
-      // 7: labels, overlays, edges, docked panes, styles, listeners and watchers, cursor, extent, focus
+      // 7: labels, overlays, edges, styles, listeners and watchers, cursor, extent, focus
       for (const key of own.labelKeys ?? []) scope.labels.clear(key);
-      drawer.closeOwner(ownerKey(id));
       router.refresh();
       for (const el of own.els) el.remove();
       own.els.clear();
@@ -1809,7 +1803,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       setPref: noop,
       overlay: () => loose("stage-overlay"),
       edge: () => loose("stage-edge-part"),
-      dock: () => noop,
       popover: () => noop,
       cursor: noop,
       camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
@@ -1982,8 +1975,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     shown: shownTo,
     /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,
-    /** the drawer: the docked elements in tab order, and the one shown */
-    drawer: () => drawer.state(),
     /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */
     busy,
     /** one frame of remote pose playback at `t` (ms, this stage's time.now()), for tests */

@@ -691,7 +691,7 @@ try {
     check("gripArrowLeftWidens16", near1(rk.drawer.w, r1.drawer.w + 16) && near1(rk.prefs["drawer.chrome"], r1.drawer.w + 16) && (await selected()) === "b0", { before: r1.drawer.w, after: rk.drawer.w, prefs: rk.prefs });
     await shot("9-grip-wide");
     // an editor's pane: its own width (the editor default, 46% of the stage), set apart from the chrome's
-    await A(`(() => { const el = document.createElement("div"); el.textContent = "An editor"; el.className = "probe-editor"; p.closeEditor = p.A.view.plugins.record("scene.select").api.dock(el, { title: "Editor" }); return true; })()`);
+    await A(`(() => { const el = document.createElement("div"); el.textContent = "An editor"; el.className = "probe-editor"; p.closeEditor = p.A.view.plugins.record("scene.select").api.use("drawer").dock(el, { title: "Editor" }); return true; })()`);
     await b.rest(150);
     const re = await R();
     check("editorPaneHasItsOwnDefault", re.kind === "editor" && near1(re.drawer.w, 0.46 * re.stage.w), re);

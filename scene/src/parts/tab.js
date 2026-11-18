@@ -1,4 +1,4 @@
-// A part's tab in the drawer (STAGE.md, "The interface"): its panel, docked with api.dock
+// A part's tab in the drawer (STAGE.md, "Native services"): its panel, docked with "drawer"
 // while it's open. Chrome follows attention, never the doc: whoever owns the
 // tab says when it opens (the inspector on a selection, staying open after;
 // dimensions and parts when the viewer asks), and the tab's × is
@@ -39,7 +39,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
         console.warn(`[scene] the ${title} tab failed to mount`, err);
       }
     }
-    close = api.dock(body, {
+    close = api.use("drawer")?.dock(body, {
       title,
       show,
       // the stage's own chrome: its keys are the stage's (the ladder's Escape, the tree's arrows)
@@ -48,7 +48,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
         close = null;
         onClosed?.();
       },
-    });
+    }) ?? null;
     try {
       view?.opened?.();
       const f = api.focus();

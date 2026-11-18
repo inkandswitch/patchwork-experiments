@@ -42,7 +42,7 @@
 // section stays mounted while it's shown, however the sections around it
 // come and go. Dock, or the head dragged (a Patchwork document) onto the
 // drawer's tab strip, puts the doc in a drawer pane of its own, the view's
-// (api.view.dock); while it's there the section says "In the drawer · Show"
+// (the drawer's dockDocument); while it's there the section says "In the drawer · Show"
 // rather than show it twice. Nothing else here opens a document.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
@@ -476,7 +476,7 @@ function create(api) {
    * it's open, the document (embed.js documentView, in a documentBox). Open
    * asks the host to show the document as the main view, in the section's
    * tool; Dock, or dragging the head onto the drawer's tab strip, puts it in a
-   * drawer pane of its own (api.view.dock), and while it's docked there the
+   * drawer pane of its own (the drawer's dockDocument), and while it's docked there the
    * section shows "In the drawer · Show" instead, so one doc never has two
    * live views in the stage. The head is dragged as a Patchwork document
    * (dnd.js), so anything that takes one (the tab strip, Patchwork's frame)
@@ -502,7 +502,7 @@ function create(api) {
     let shown = null;
     fold.addEventListener("click", () => api.setPref(sectionPref(doc.ext, doc.id), !shown.open));
     open.addEventListener("click", () => root.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url: doc.url, ...(doc.toolId ? { toolId: doc.toolId } : {}) }, bubbles: true, composed: true })));
-    const toDrawer = () => api.view.dock({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.title ?? doc.label });
+    const toDrawer = () => api.use("drawer")?.dockDocument({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.title ?? doc.label });
     dock.addEventListener("click", toDrawer);
     show.addEventListener("click", toDrawer);
     head.addEventListener("dragstart", (e) => {
@@ -551,7 +551,7 @@ function create(api) {
       section,
       update(target) {
         const list = documentsFor(documents, target, here.context(null), ID);
-        const docked = new Set(here.view.get().drawer?.docs ?? []);
+        const docked = new Set(api.use("drawer")?.state().docs ?? []);
         // a drawer pane is titled after the object as well as the section (the scene's: the label alone)
         const of = target == null ? null : here.nameOf(target) || "Untitled";
         const paneTitle = (label) => (of ? `${of} · ${label}` : label);

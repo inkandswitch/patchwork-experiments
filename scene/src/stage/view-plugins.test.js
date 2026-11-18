@@ -87,7 +87,7 @@ describe("view plugins", () => {
     const { view, counts, api } = await mountHost({
       create: (a) => {
         a.overlay().className += " t-overlay";
-        a.dock(panel, { title: "T" });
+        a.use("drawer").dock(panel, { title: "T" });
         return {};
       },
     });
@@ -103,7 +103,7 @@ describe("view plugins", () => {
     expect([layersAt(A), layersAt(B)]).toEqual([0, 1]);
     // the view's: its overlay, its tab, the editor in hand
     expect(view.root.querySelectorAll(".t-overlay").length).toBe(1);
-    expect(view.drawer.state().order.length).toBe(1);
+    expect(view.plugins.instanceOf("scene.drawer").panes().order.length).toBe(1);
     expect(editing(view.atom.get())).toBe(true);
     expect(view.leave()).toBe(true);
     expect([layersAt(A), layersAt(B), editing(view.atom.get())]).toEqual([0, 0, true]);
@@ -111,7 +111,7 @@ describe("view plugins", () => {
     await s.uninstall("t.view");
     expect(counts).toEqual({ creates: 1, disposes: 1 });
     expect(view.root.querySelectorAll(".t-overlay").length).toBe(0);
-    expect(view.drawer.state().order.length).toBe(0);
+    expect(view.plugins.instanceOf("scene.drawer").panes().order.length).toBe(0);
     expect(A.debug.facets()).toEqual([]);
   });
 });

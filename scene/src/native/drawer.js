@@ -1,6 +1,7 @@
-// The drawer: one panel at the stage's right with a tab for each docked
-// element (STAGE.md, "The interface"). An extension docks an element of its own with
-// api.dock(el, { title, onClose }) and gets back close(); the element then
+// scene.drawer (native, a view plugin): one panel at the view's right with a
+// tab for each docked element, provided as "drawer" (STAGE.md, "Native
+// services"). An extension docks an element of its own with
+// use("drawer").dock(el, { title, onClose }) and gets back close(); the element then
 // sits in a pane of the drawer, under a tab with its title and a ×, until
 // its caller closes it, the × does, or its extension stops. The × is a
 // person closing it, so only the × calls onClose: the caller hears of the
@@ -14,9 +15,9 @@
 // selection doesn't cover the parts bin the viewer is using); closing the
 // one shown shows the one shown before it; the tabs stay in the order they
 // were docked. With nothing docked, the drawer leaves the edge, which then
-// takes no room.
+// takes no room, and wants the pointer no more.
 //
-// The drawer is as wide as the kind of pane it shows (STAGE.md, "The interface"): the
+// The drawer is as wide as the kind of pane it shows: the
 // stage's own chrome (embed: false) a side panel's width, anything else a
 // docked editor's room. A grip on its left edge sets the shown kind's width,
 // the viewer's own (view prefs `drawer.chrome`, `drawer.editor`): drag it,
@@ -26,12 +27,11 @@
 // panes of one kind never moves it, and a window resize never rewrites a
 // pref (the CSS clamps what it shows, so the scene keeps its share).
 //
-// A document can be docked as well as an element (STAGE.md, "The interface", "Documents
-// in the drawer"): dockDocument({ url, toolId, title }) docks the host's view
+// A document can be docked as well as an element: dockDocument({ url, toolId, title }) docks the host's view
 // of it (embed.js documentView, in a documentBox) in a pane of the editor kind, keyed by
 // docKey(url, toolId), so docking one key again only shows (keeping its title)
-// its tab, and there is at most one pane per key. These panes are the view's
-// (api.view.dock), not an extension's: no extension stopping closes them,
+// its tab, and there is at most one pane per key. These panes are the view's,
+// not an extension's: no extension stopping closes them,
 // only their ×, their close(), or the view going. The tab strip takes a drop
 // of any Patchwork document (dnd.js: a sidebar's, an outline row's, an
 // inspector section's header) and docks each one; a drag over the strip is
@@ -41,6 +41,7 @@
 // below, the widths' `kindOf`, `widthFor`, `dragged` and `stepped`, and
 // createDrawer, which keeps an element per docked key.
 
+import css from "./drawer.css?inline";
 import { EMBED_ATTR, documentBox, documentView } from "../embed.js";
 import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 
@@ -345,7 +346,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   }
 
   /**
-   * Dock a document (the view's: STAGE.md, "The interface"): its view in an editor pane,
+   * Dock a document (the view's): its view in an editor pane,
    * one per docKey(url, toolId); docking a key that's docked shows its tab,
    * under the title it was first docked with. → close. A url that isn't a document's docks
    * nothing (a version's heads are dropped: a pane follows the latest).
@@ -404,3 +405,43 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     state: () => ({ order: [...model.order], shown: shownOf(model) }),
   };
 }
+
+// ─── the plugin ─────────────────────────────────────────────────────────────
+
+const NONE = Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) });
+
+function create(api) {
+  let now = NONE;
+  let wanting = null; // while anything is docked, the pointer is wanted free (STAGE.md, "Bodies")
+  api.style(css);
+  const drawer = createDrawer({
+    parent: api.edge("right"),
+    onChange(d) {
+      if (JSON.stringify(d) !== JSON.stringify(now)) api.view.set((now = Object.freeze({ tabs: Object.freeze(d.tabs), shown: d.shown, docs: Object.freeze(d.docs) })));
+      if (!d.tabs.length) wanting = (wanting?.(), null);
+      else wanting ??= api.wantPointer();
+    },
+    prefs: () => api.view.get().prefs,
+    setPref: (key, px) => api.setPref(key, px),
+  });
+  api.view.watch(() => drawer.refreshWidth(), (v) => v.prefs);
+  api.view.set(now);
+  return {
+    provides: {
+      drawer: ({ signal }) => {
+        const owner = {}; // what this caller docked, closed (without onClose) as it stops
+        signal.addEventListener("abort", () => drawer.closeOwner(owner), { once: true });
+        return Object.freeze({
+          dock: (el, o) => (signal.aborted || !el ? () => {} : drawer.dock(owner, el, o)),
+          dockDocument: (doc) => drawer.dockDocument(doc ?? {}),
+          state: () => now,
+        });
+      },
+    },
+    /** the docked elements in tab order, and the one shown (for tests and probes) */
+    panes: () => drawer.state(),
+    dispose: () => drawer.dispose(),
+  };
+}
+
+export default { create };
