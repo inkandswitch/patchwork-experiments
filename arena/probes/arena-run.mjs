@@ -561,6 +561,11 @@ try {
   await hold("Escape", 50);
   await rest(200);
   check("hybrid: Esc deselects (Edit, nothing held)", (await P("A.local.get().selected")) == null, await P("A.local.get().selected"));
+  // the editor put down to play, as in the level (the scene was made new, so A arrived holding it; holding it,
+  // a walk looks by drag and never asks for the lock)
+  const hUntoggle = await P("editToggle('a')");
+  if (hUntoggle) await click(hUntoggle);
+  check("hybrid: A puts the editor down to play", !!hUntoggle && (await until("!window.__p.editing('a')", 3000)), await P("editing('a')"));
   await js("Math.random = () => 0");
   await until(`!!window.__p.hostA.querySelector('${PLAY}')`);
   // look at the deck from above it: with no spawn point, walking starts at the eye (scene/STAGE.md, "Bodies")
