@@ -71,7 +71,11 @@ try {
     body: () => dbg.local.get().body?.id ?? null,
     enter: (id) => dbg.view.plugins.record("scene.body")?.api.body.enter(id, null) ?? false,
     /** pick up the editor or put it down, as the body chip's Edit does (api.view.edit) */
-    edit: (on) => dbg.view.plugins.record("scene.body")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: on }) ?? false,
+    /** → whether the viewer now is as asked */
+    edit: (on) => {
+      dbg.view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: on });
+      return (dbg.local.get().hands ?? []).some((h) => h.kind === "edit") === !!on;
+    },
     editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
     unplay: () => dbg.local.swap((m) => ({ ...m, playing: false })),
     width: (px) => { host.style.width = `${px}px`; },

@@ -51,7 +51,7 @@ const ctl = (bar, id) => bar?.controls.find((c) => c.id === id) ?? null;
 const oneHeight = (bar) => !!bar && bar.control > 0 && bar.controls.every((c) => Math.abs(c.h - bar.control) <= 0.5) && Math.abs(bar.worldRect.h - bar.control) <= 0.5;
 // "edit": pick up the editor (a hand, not a body); a body: enter it, the editor put down
 const enter = async (id) => {
-  const ok = id === "edit" ? await P("edit(true)") : (await P(`enter(${JSON.stringify(id)})`)) && (await P("edit(false)")) === false;
+  const ok = id === "edit" ? await P("edit(true)") : (await P(`enter(${JSON.stringify(id)})`)) !== false && (await P("edit(false)"));
   await b.rest(200);
   return ok && (id === "edit" ? await P("editing()") : (await P("body()")) === id && !(await P("editing()")));
 };
