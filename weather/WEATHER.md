@@ -1027,8 +1027,7 @@ undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
     (`publish-aboard`) and the Harbour (`publish-harbour`) list `weather`
     with the rest; the Breezy pavilion (`publish-model-room --weather`)
     lists `weather` instead of `sailing`, which it listed only for the
-    weather extension. `publish-fitout` writes a weather through sailing's
-    template too, and lists `weather` since W8 (Decision 54). None can
+    weather extension. None can
     publish until this package is synced (its pushwork URL); the
     integrator syncs it and runs them (Decision 54). The harbour still
     turns each boat by her weather's `from` less its own (WATER Decision
@@ -1156,16 +1155,11 @@ undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
     Every boating publisher writes `weather` where its doc has one and
     lists this package there; the dry rooms carry none (the plan's rule:
     indoors, and a linked world brings its things, not its weather).
-    Fitting out was the gap: its boat, made by the start screen's Ship at
-    anchor, carries the template's weather, so `publish-fitout` now lists
-    `weather` and checks that S's is the template's air and F's and W's
-    none.
 
     | Example | Publisher | `weather` | Lists `weather` |
     |---|---|---|---|
     | Ship at sea, Ship at anchor | `publish-ship` (`--anchor`) | the template's air: Cadboro Bay by the defaults | yes |
     | Lost Cities aboard | `publish-aboard` | the same | yes |
-    | Fitting out | `publish-fitout` | the same, on S; F and W none | S yes |
     | Cadboro Bay | `publish-rvyc` | the template's fair afternoon, 4 from 235 | yes |
     | Ucluelet | `publish-ucluelet` | Ukee grey, 5 from 300 | yes |
     | Harbour | `publish-harbour` | `{ wind, from, seed }`: Cadboro Bay | yes |

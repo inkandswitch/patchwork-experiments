@@ -1159,7 +1159,7 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
   across one. The published examples composed of links, where it could
   show: Games night, Games night and the Arcade, Arcade in the games room,
   the Quiet games room's game link, the Model room, Model basin and Ship at
-  anchor, Harbour and Fitting out. Step 4 checks each (Verification)
+  anchor, and the Harbour. Step 4 checks each (Verification)
   before the ray walker goes. Is the regression acceptable, or should the
   stage offer a host's triangles near a point (a scene change)?
 

@@ -129,8 +129,8 @@ key names on touch; does arena's gun fire on a tap?
 
 ### Packages, carrying, telling, templates
 - **Packages pruned** (COMP packages pruned): two viewers on different
-  versions take turns listing a package; settle it? Lost Cities aboard, the
-  Quiet games room and Fitting out wait for W8's republish (10).
+  versions take turns listing a package; settle it? Lost Cities aboard and
+  the Quiet games room wait for W8's republish (10).
 - **Landing** (COMP landing): confirm that a snap's turn no longer sticks
   and faceUp turns over only a face pointing down; tabletop's domino rule
   (a, b or c); a general `up` axis; drop yaw-only connectors (a GLB

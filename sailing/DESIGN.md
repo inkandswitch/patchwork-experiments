@@ -806,7 +806,7 @@ Decided unattended (2026-11-17, lane/n6), for the lead:
   taste). rig@4 is a new rig GLB, and a published doc keeps the GLB it was
   made with, so each carries a contract without windage and sails the plain
   path (one lumped sail, one Sail row) until it is made again: Ship at sea
-  and at anchor, Lost Cities aboard and what links it, Fitting out, the
+  and at anchor, Lost Cities aboard and what links it, the
   Harbour, the Model room, the basin mashup, and Cadboro Bay and Ucluelet,
   which hold her as scenery (ucluelet-check asserts "sloop floats").
   Ucluelet's 45 MB GLB costs a long Chrome-lock hold; that is scheduling

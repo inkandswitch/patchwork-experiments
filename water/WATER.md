@@ -453,15 +453,14 @@ water and the sea move onto a Sea object, the wind onto `sailing.weather`.*
 1. `scene`: S1 (ambients; arena and sailing move their atmosphere onto
    it in the same series, since nothing is kept for old code), with W2–W4,
    W7 and W9, and the doc edits below.
-2. `scene`: S2, with W8. Re-run fitout-check, whose mirror lag (N11e) may
-   move.
+2. `scene`: S2, with W8.
 3. `water/`: the package, W1's golden file, W4–W6.
 4. `sailing`: split the sea part, the adapter, the provider half, ride and
    HUD only while involved, templates and parts. W1 and W10.
 5. `terrain`: its template writes `water` (Cadboro Bay's y = 0 is mean
    water level).
 6. Republish Ship at sea, Ship at anchor, Lost Cities aboard (and E1M1's
-   exit back to it), Fitting out, the Catalina 30 scene and Cadboro Bay;
+   exit back to it), the Catalina 30 scene and Cadboro Bay;
    swap their links in the shared examples folder, never a new folder.
 7. Publish the Harbour; harbour-run in Chrome under the lock, then in the
    real Patchwork (W12).
@@ -911,9 +910,6 @@ In every doc, today's sea values move:
     relink an existing G (check first), so the Quiet games room and Games
     night need no republish;
   - E1M1's exit is set to the new boat.
-- **Fitting out:** S is Ship at sea's shape, plus F linked pinned at its
-  current heads and the hatch W linked live twice. F and W hold no water
-  and keep their URLs.
 - **Harbour:**
   - traits: `{ "sailing.weather": { wind: { speed: 5, from: 250 }, seed: 7 } }`;
   - objects: a Sea object with `sailing.sea: { seed: 7, scale: 0.5 }`, and
@@ -1111,7 +1107,7 @@ pin. W2, W4 to W7, W9 and W14 are untouched.
 5. **Words in `scene/`**, as listed under "Scene: no change".
 6. **Republish** in this order:
    1. Ship at sea, Ship at anchor, the Catalina 30 scene, Lost Cities
-      aboard (and E1M1's exit), Fitting out's S and Cadboro Bay;
+      aboard (and E1M1's exit) and Cadboro Bay;
    2. then the Harbour;
    3. then the Model basin and its mashup.
 
@@ -1802,8 +1798,8 @@ it chose this, each with its reason.
     the lead's answers.
 72. **Republishing is dry runs only** in the lane (the lane's instructions):
     `publish-ship.mjs` (and `--anchor`), `publish-harbour.mjs --offline`
-    and `publish-basin.mjs` pass in node; `publish-aboard.mjs`,
-    `publish-fitout.mjs` and `publish-rvyc.mjs` make their docs in Chrome
+    and `publish-basin.mjs` pass in node; `publish-aboard.mjs` and
+    `publish-rvyc.mjs` make their docs in Chrome
     and check the new shapes. The Model basin's mashup is
     `scene/probes/publish-links.mjs`, which reads its links from the
     server, so it runs after the basin is published (the command is in

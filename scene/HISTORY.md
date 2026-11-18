@@ -774,3 +774,7 @@ found behind the code and fixed: `hud(scene, local, view)` (not `hud()`); a
 hold ranks a still one ahead of a landed one; a `scene:view` may declare
 `provides` and `uses`; the kernel reads ten instance members, not the draft's
 four.
+
+### 2026-11-17 — "Fitting out" retired
+
+The lead found it uninteresting; its hatch was linked twice, which mirrors' removal left as a placeholder.
