@@ -461,7 +461,7 @@ try {
 
   // ── the context menu ────────────────────────────────────────────────────
   {
-    await b.key("Escape");
+    // (no Escape here: nothing is selected, so it would put the editor down; STAGE.md H4)
     const p = await scr("b1", [0, 0.016, 0]);
     await b.click(p.x, p.y, { button: "right" });
     await b.rest(150);
@@ -637,7 +637,7 @@ try {
       await b.rest(300);
       await shot("18-behaviour-added");
       // the game runs beside the editor: nothing went from either view, and the doc still starts people holding the editor (a behaviour doesn't move its start)
-      const both = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), select: p.running().includes("scene.select"), peerToolbar: !!p.hostB.querySelector('.toolbar'), peerEditor: p.running(p.B).includes("scene.inspector"), start: window.sceneHandle.doc().view?.start ?? null })`);
+      const both = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), select: !!p.A.view.plugins.instanceOf("scene.select"), peerToolbar: !!p.hostB.querySelector('.toolbar'), peerEditor: !!p.B.view.plugins.instanceOf("scene.inspector"), start: window.sceneHandle.doc().view?.start ?? null })`);
       check("theGameRunsBesideTheEditor", both.toolbar && both.select && both.peerToolbar && both.peerEditor && both.start?.edit === true, both);
       await shot("19-game-and-editor");
 
