@@ -198,7 +198,7 @@ try {
   check("A shuts Parts again", await until("tab('a', 'parts') === false", 6000), { at: partsButton, tab: await P("tab('a', 'parts')") });
   // the editor put down to play again (Edit, beside the chip)
   await click(await P(`rect('.body-edit', 'a')`));
-  check("A puts the editor down", await until("!__p.editing('a')", 3000), { editing: await P("editing('a')") });
+  check("A puts the editor down", await until("editing('a') === false", 3000), { editing: await P("editing('a')") });
   // (the chip doesn't offer the seat body, which needs a seat: the picker sits A down again, in its own seat)
   await P("pick('a', 'p1')");
   check("A sits back down in Player 1 from the seat picker", await until("body('a') === 'Seated'", 3000), { body: await P("body('a')"), seats: await P("seats()") });

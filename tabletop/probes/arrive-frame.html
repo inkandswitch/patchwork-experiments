@@ -52,7 +52,7 @@ try {
   // every notice, collected every frame (a notice lives 6 s of the page's clock)
   const collect = () => {
     shared.time.frame(collect); // first: a pass that throws doesn't end the loop
-    for (const n of dbg?.local.get().notices ?? []) if (!told.includes(n)) told.push(n);
+    for (const n of dbg?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told.includes(n)) told.push(n);
   };
   shared.time.frame(collect);
   const objects = () => scene?.doc().objects ?? {};

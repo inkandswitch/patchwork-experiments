@@ -120,7 +120,7 @@ try {
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
   const told = { a: [], b: [] };
   setInterval(() => {
-    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   }, 20);
   const objects = () => scene.doc().objects ?? {};
   // Each game is a doc of its own, linked onto its table (scene/COMPOSITION.md): table i's game doc,

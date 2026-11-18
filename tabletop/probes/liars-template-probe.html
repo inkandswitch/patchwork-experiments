@@ -83,7 +83,7 @@ try {
   const told = { a: [], b: [] };
   const seen = { a: new Set(), b: new Set() };
   setInterval(() => {
-    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!seen[w].has(n.id)) { seen[w].add(n.id); told[w].push(n.text ?? String(n)); }
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!seen[w].has(n.id)) { seen[w].add(n.id); told[w].push(n.text ?? String(n)); }
   }, 20);
   const objectsOf = (w) => scene[w].doc().objects ?? {};
   const pieces = (w) => Object.entries(objectsOf(w)).filter(([, o]) => o.kind !== "group");

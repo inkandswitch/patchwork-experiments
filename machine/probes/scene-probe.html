@@ -340,7 +340,7 @@ try {
     // the view's selection (api.view, what extensions read as attention), through an extension's api
     select: (w, id) => machineApi(w).view.select(id),
     selected: (w) => machineApi(w).view.get().selected ?? null,
-    notices: (w) => (dbg[w].local.get().notices ?? []).map((n) => n.text),
+    notices: (w) => (dbg[w].view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text),
     labels: (w) => [...hosts[w].querySelectorAll(".machine-note")].map((e) => e.textContent),
     loaded(w) {
       const os = Object.entries(docOf(w).objects ?? {});

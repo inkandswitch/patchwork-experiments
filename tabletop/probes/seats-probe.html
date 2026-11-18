@@ -80,7 +80,7 @@ try {
   const told = { a: [], b: [] };
   const collect = () => {
     time.frame(collect); // first: a pass that throws doesn't end the loop
-    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   };
   time.frame(collect);
   // the seat picker asks with confirm(): answered here, and each question kept

@@ -64,7 +64,7 @@ try {
   const root = host.querySelector(".scene-stage");
   const objects = () => scene.doc().objects ?? {};
   const told = [];
-  setInterval(() => { for (const n of dbg.local.get().notices ?? []) if (!told.includes(n.text ?? String(n))) told.push(n.text ?? String(n)); }, 20);
+  setInterval(() => { for (const n of dbg.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told.includes(n.text ?? String(n))) told.push(n.text ?? String(n)); }, 20);
 
   window.__p = {
     errors, wadUrl: wad.url, sceneUrl: scene.url,

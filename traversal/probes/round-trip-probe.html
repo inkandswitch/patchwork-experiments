@@ -127,7 +127,7 @@ try {
   // every notice the shown scene says, collected every frame (a notice lives 6 s of the page's clock)
   const collect = () => {
     time.frame(collect); // first: a pass that throws doesn't end the loop
-    for (const n of dbg()?.local.get().notices ?? []) {
+    for (const n of dbg()?.view.plugins.instanceOf("scene.notices")?.notices ?? []) {
       const t = n.text ?? String(n);
       if (current && !current.told.includes(t)) current.told.push(t);
     }

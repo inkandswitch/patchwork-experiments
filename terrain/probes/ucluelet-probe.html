@@ -132,7 +132,7 @@ try {
   const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
   const terrainId = () => Object.entries(objects()).find(([, o]) => o.providerId === "terrain-mesh")?.[0] ?? null;
   const told = [];
-  setInterval(() => { for (const n of dbg.local.get().notices ?? []) if (!told.includes(n)) told.push(n); }, 20);
+  setInterval(() => { for (const n of dbg.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told.includes(n)) told.push(n); }, 20);
 
   const P = (window.__p = {
     errors, fetched, terrainWrites,

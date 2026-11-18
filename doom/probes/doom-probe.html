@@ -200,7 +200,7 @@ try {
     },
     selected: (w) => dbg[w].local.get().selected ?? null,
     select: (w, id) => dbg[w].local.swap((m) => ({ ...m, selected: id })),
-    notices: (w) => (dbg[w].local.get().notices ?? []).map((n) => n.text),
+    notices: (w) => (dbg[w].view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text),
     project: (w, p) => { const q = dbg[w].viewport.project(p); const r = dbg[w].viewport.canvas.getBoundingClientRect(); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible }; },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     stats: (w) => ({ ...dbg[w].viewport.stats }),
