@@ -51,14 +51,6 @@ const TRAITS = {
     on: "object",
     blurb: "Two-sided: lying face up outside every hand it is shown to everyone, face down to nobody. In a pile it can be shuffled (S) and drawn (D). What it really is, is its keeper's",
   },
-  // the scene's, written by the table writer and read by the extension (which its cards and hands run)
-  "tabletop.start": {
-    name: "Start game",
-    on: "scene",
-    blurb: "What Start game does once every seat is taken (shuffle, deal, who goes first), as the table was laid out from its game's recipe. Made by the table, not by hand",
-    // whether it has started (and who goes first) is play: a copy starts unstarted
-    runtime: ["started"],
-  },
 };
 
 export const plugins = [
@@ -69,8 +61,6 @@ export const plugins = [
     type: "scene:extension",
     id: "tabletop",
     name: "Tabletop",
-    // (not "tabletop.start": a table's start is read where its cards and hands already run it, and a
-    // scene trait would run it before the scene's carry, putting its verbs ahead of Flip on the use prompt)
     traits: ["tabletop.zone", "tabletop.card"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
@@ -78,6 +68,26 @@ export const plugins = [
     describes: TRAITS,
     async load() {
       return (await import("./table/extension.js")).default;
+    },
+  },
+  {
+    // Start game (src/table/start.js): the table's, so by the scene's trait, an extension of its own (the cards'
+    // runs for object traits, its verbs in their place on the use prompt; this one's only verb is the scene's)
+    type: "scene:extension",
+    id: "tabletop.start",
+    name: "Start game",
+    traits: ["tabletop.start"],
+    describes: {
+      "tabletop.start": {
+        name: "Start game",
+        on: "scene",
+        blurb: "What Start game does once every seat is taken (shuffle, deal, who goes first), as the table was laid out from its game's recipe. Made by the table, not by hand",
+        // whether it has started, and the lots for who goes first, are play: a copy starts unstarted
+        runtime: ["started", "round"],
+      },
+    },
+    async load() {
+      return (await import("./table/start.js")).default;
     },
   },
   {
@@ -287,12 +297,12 @@ export const plugins = [
   },
   {
     // every roll's draw, by lots between the clients of those present (src/lots-ext.js): it runs wherever there is
-    // a die or a cup, and keeps its rounds in their traits (it describes none of its own), so a member's client
-    // commits and opens whatever its viewer is doing
+    // a die, a cup or a table's start (who goes first), and keeps its rounds in their traits (it describes none of
+    // its own), so a member's client commits and opens whatever its viewer is doing
     type: "scene:extension",
     id: "dice.lots",
     name: "Dice lots",
-    traits: ["dice.die", "dice.cup"],
+    traits: ["dice.die", "dice.cup", "tabletop.start"],
     async load() {
       return (await import("./dice/lots-ext.js")).default;
     },

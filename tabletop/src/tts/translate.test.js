@@ -167,6 +167,28 @@ describe("a setup recipe from what a mod's data says (GAME-FORMAT.md §6)", () =
     expect(laid.setup.find((t) => t.contents?.length === 1).contents[0].id).toBeUndefined();
   });
 
+  it("memory bags in bags, and GUIDs missing or repeated: laid out from wherever they are; what has no saved place, or a repeat of one laid, stays in its bag; a bag with no GUID is a choice all the same", () => {
+    const inner = memoryBag("", "Inner", 0, [["t5", 20, 0]]); // no GUID of its own
+    inner.contents.push(token("t5", 0, 0)); // the same GUID again: laid once
+    const outer = memoryBag("", "Outer", 0, [["t6", 20.2, 0]]); // over the inner's spot, also no GUID
+    outer.contents.push(inner, token("", 0, 0)); // a bag inside a bag, and a token with no GUID at all
+    outer.memory.ghost = { position: [50, 1, 50], rotation: [0, 0, 0] }; // saved for something that isn't in it: nothing to lay
+    const box = node("Custom_Model_Bag", { kind: "bag", guid: "box", nickname: "Box", transform: T(-10, 20), contents: [outer] });
+    const { game } = translate(save([box]), { file: files });
+    expect(validate(game).ok, errorText(validate(game))).toBe(true);
+    expect(game.recipe.options).toEqual([{ key: "layout", label: "Lay out", kind: "enum", options: [{ value: "none", label: "Nothing" }, { value: "bag", label: "Inner" }, { value: "bag-2", label: "Outer" }], default: "none" }]);
+    expect(game.recipe.layout.map((x) => [Object.keys(x.place), x.when])).toEqual([[["tts-t5"], "layout == bag"], [["tts-t6"], "layout == bag-2"]]);
+    // laid out as Inner: its one token out of two bags onto the table, the repeat still in it
+    const laid = applyRecipe(game, { layout: "bag" });
+    expect(laid.setup.filter((t) => t.id === "tts-t5")).toHaveLength(1);
+    expect(laid.setup.find((t) => t.id === "tts-t5").at.position[0]).toBeCloseTo(20 * 0.0254, 6);
+    const all = (things) => things.flatMap((t) => [t, ...all(t.contents ?? [])]);
+    const outerBag = all(laid.setup).find((t) => t.contents?.some((c) => c.id === "tts-t6"));
+    expect(outerBag.contents.map((t) => t.id ?? (t.contents ? "bag" : "unnamed"))).toEqual(["tts-t6", "bag", "unnamed"]);
+    expect(outerBag.contents[1].contents.map((t) => t.id ?? "unnamed")).toEqual(["unnamed"]);
+    expect(validate(laid).ok).toBe(true);
+  });
+
   it("face-down decks: shuffled when the game starts if whoever starts it chooses, never otherwise", () => {
     const down = node("Deck", { kind: "deck", guid: "d1", contents: [card(100), card(101)], customDeck: DECK, transform: { rotZ: 180 } });
     const up = node("Deck", { kind: "deck", guid: "d2", contents: [card(102), card(103)], customDeck: DECK, transform: { posX: 5 } });

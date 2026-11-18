@@ -19,9 +19,16 @@ const fresh = (desc) => {
 
 describe("tabletop: what runs", () => {
   it("one extension, by its traits alone: the verbs and the policy run wherever there's a hand or a card, whatever anyone is doing", () => {
-    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop", "dice", "dice.cup", "dice.lots", "bag", "keep.plain", "card-table"]);
+    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop", "tabletop.start", "dice", "dice.cup", "dice.lots", "bag", "keep.plain", "card-table"]);
     expect(table.traits).toEqual([ZONE, CARD]);
     for (const k of ["activities", "requires", "always", "general"]) expect(k in table).toBe(false);
+  });
+
+  it("Start game by the scene's trait it reads, an extension of its own (the cards' stays object-scoped), with the lots that draw who goes first", () => {
+    const start = plugins.find((p) => p.id === "tabletop.start");
+    expect(start.traits).toEqual([START]);
+    expect(start.describes[START]).toMatchObject({ on: "scene", runtime: ["started", "round"] });
+    expect(plugins.find((p) => p.id === "dice.lots").traits).toContain(START);
   });
 
   it("names nobody else's traits: seats and keepers are met through the stage", () => {
@@ -32,9 +39,8 @@ describe("tabletop: what runs", () => {
 });
 
 describe("tabletop: describes its traits", () => {
-  it("describes every trait it runs on, and the scene's start it reads (not one it runs for: its cards and hands run it), as plain data", () => {
-    expect(Object.keys(d).sort()).toEqual([...table.traits, START].sort());
-    expect(d[START]).toMatchObject({ on: "scene", runtime: ["started"] });
+  it("describes every trait it runs on, as plain data", () => {
+    expect(Object.keys(d).sort()).toEqual([...table.traits].sort());
     expect(structuredClone(d)).toEqual(d);
     expect(d[ZONE].on).toBe("object");
     expect(d[CARD].on).toBe("object");
@@ -99,7 +105,6 @@ describe("tabletop: parts", () => {
 
   it("says what each brings by a trait the table describes", () => {
     for (const p of parts) for (const t of p.traits ?? []) expect(d[t]).toBeDefined();
-    expect(table.traits).toEqual(["tabletop.zone", "tabletop.card"]);
-    expect(Object.keys(d)).toEqual([...table.traits, "tabletop.start"]);
+    expect(Object.keys(d)).toEqual(table.traits);
   });
 });

@@ -5,15 +5,17 @@
 // sealed). Built only from the stage's contract (scene/STAGE.md): it reads
 // the doc, presence, the `roster` convention and scene.audience.
 //
-// It runs wherever there is a die or a cup (its `traits` are theirs; it
-// describes none), whatever its viewer is doing: a member's client must
-// commit and open.
+// It runs wherever there is a die, a cup or a table's start (its `traits`
+// are theirs; it describes none), whatever its viewer is doing: a member's
+// client must commit and open.
 //
 // WHERE A ROUND LIVES: in the trait of the thing it's drawn for, under
 // `round`: a cup's (`"dice.cup": { …, round }`), else a die's (`"dice.die":
 // { round }`, on the first die of a throw). So there is no trait of its own
 // to put on anything, and a round goes wherever the thing goes (a copy
-// starts without one: both traits list `round` as runtime).
+// starts without one: both traits list `round` as runtime). One scene trait
+// holds one too: a table's start (`"tabletop.start": { …, round }`, who goes
+// first: table/start.js), known to the runner as "scene:tabletop.start".
 //
 // WHO TAKES PART: the asker, and every seated viewer (with no seats,
 // everyone) who is here and runs this extension: each client says so in
@@ -42,6 +44,9 @@ export const DIE = "dice.die";
 /** This extension's id: its presence key's namespace, and the name of what it contributes. */
 export const ID = "dice.lots";
 
+/** The scene traits a round may live in, by the id the runner knows each as. */
+export const SCENE_ROUNDS = Object.freeze({ "scene:tabletop.start": "tabletop.start" });
+
 /** The map that holds a thing's round: its cup trait, else its die trait; null when it's neither. */
 export function holderOf(o) {
   const t = o?.traits;
@@ -64,16 +69,18 @@ function create(api) {
     ready: () => !!api.scene(),
     rounds() {
       const out = [];
-      for (const [id, o] of Object.entries(api.scene()?.objects ?? {})) {
+      const snap = api.scene();
+      for (const [id, o] of Object.entries(snap?.objects ?? {})) {
         const round = holderOf(o)?.round;
         if (round) out.push({ id, round });
       }
+      for (const [id, k] of Object.entries(SCENE_ROUNDS)) if (snap?.traits?.[k]?.round) out.push({ id, round: snap.traits[k].round });
       return out;
     },
     write(id, fn) {
       api.change((d) => {
-        const h = holderOf(d.objects?.[id]);
-        if (h) fn(h);
+        const h = SCENE_ROUNDS[id] ? d.traits?.[SCENE_ROUNDS[id]] : holderOf(d.objects?.[id]);
+        if (h && typeof h === "object") fn(h);
       });
     },
     present() {
@@ -96,7 +103,7 @@ function create(api) {
         return "someone";
       }
     },
-    what: (id) => api.nameOf?.(id) || api.scene()?.objects?.[id]?.name || "this",
+    what: (id) => (SCENE_ROUNDS[id] ? "who goes first" : api.nameOf?.(id) || api.scene()?.objects?.[id]?.name || "this"),
     // the stage's time (scene NATIVE.md "Native services"): a round's waits and stamps move with the scene's frames
     now: () => api.now(),
     after: (ms, fn) => api.after(ms, fn),

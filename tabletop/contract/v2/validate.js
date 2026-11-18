@@ -16,7 +16,7 @@
 // schema and the recipe, so a consumer can copy this folder whole.
 
 import schema from "./schema.json" with { type: "json" };
-import { applyRecipe, coerce, combinationCount, combinations, conditionProblem } from "./recipe.js";
+import { applyRecipe, coerce, combinationCount, combinations, conditionProblem, layoutCost } from "./recipe.js";
 
 const typeOk = (t, v) => {
   switch (t) {
@@ -165,6 +165,8 @@ export function validateSemantics(g) {
 
   // things: ids unique; pieces, seats and targets exist
   const all = everyThing(g.setup);
+  const byId = new Map();
+  for (const a of all) if (a.thing.id != null && !byId.has(a.thing.id)) byId.set(a.thing.id, a);
   const ids = new Map();
   for (const { thing: t, path } of all) {
     if (t.id == null) continue;
@@ -196,7 +198,7 @@ export function validateSemantics(g) {
       let dealt = 0;
       (d.deal ?? []).forEach((x, i) => {
         const dp = `${path}.deck.deal[${i}]`;
-        const target = all.find((a) => a.thing.id === x.to);
+        const target = byId.get(x.to);
         if (!target) return void err("unknown-thing", `${dp}.to`, `no thing "${x.to}"`);
         const slots = pieces[target.thing.piece]?.snapPoints?.length ?? 0;
         const asked = (d.deal ?? []).filter((y) => y.to === x.to).reduce((n, y) => n + y.count, 0);
@@ -222,6 +224,8 @@ export function validateSemantics(g) {
 const RECIPE_CODES = new Set(["option", "condition", "options-many", "seat-area"]);
 /** How many ways a game's options may be set: each is laid out and checked. */
 export const MAX_COMBINATIONS = 512;
+/** How much laying out every one of them may cost in all (recipe.js layoutCost, times how many): a validation stays in seconds. */
+export const MAX_LAYOUT_COST = 20_000_000;
 
 /** Is a recipe laid out already (applyRecipe's): nothing to choose, its start steps unconditional? */
 const laid = (r) => !r.options?.length && !r.layout?.length && !r.spots && (r.start ?? []).every((s) => s.when == null && s.unless == null);
@@ -251,6 +255,7 @@ function recipeErrors(g, err) {
   });
   const n = combinationCount(g);
   if (n > MAX_COMBINATIONS) err("options-many", "$.recipe.options", `its options can be set ${n} ways: at most ${MAX_COMBINATIONS}, each laid out and checked`);
+  else if (n * layoutCost(g) > MAX_LAYOUT_COST) err("options-many", "$.recipe.options", `its options can be set ${n} ways, each laying out ${layoutCost(g)} things' worth: at most ${MAX_LAYOUT_COST} in all, each laid out and checked`);
   // condition: one comparison on an option, with one of its values
   for (const list of ["layout", "start"])
     (r[list] ?? []).forEach((s, i) => {
@@ -317,6 +322,12 @@ function startErrors(g, err) {
     taken.set(deck.id, now);
     if (now > deck.deck.cards.length) err("deal-count", path, `takes ${now} of the ${deck.deck.cards.length} cards of "${deck.id}"`);
   };
+  const rooms = new Map(); // a seat and a deck's tags → its hands' card slots that take them
+  const roomFor = (sid, tags) => {
+    const k = JSON.stringify([sid, tags]);
+    if (!rooms.has(k)) rooms.set(k, g.setup.filter((t) => t.seat === sid && pieces[t.piece]?.zone).reduce((n, t) => n + (pieces[t.piece].snapPoints ?? []).filter((sp) => sp.tags?.length && takes(sp.tags, tags)).length, 0));
+    return rooms.get(k);
+  };
   const dealt = new Map(); // a seat → cards dealt into its hands
   const onto = new Map(); // a thing → cards drawn onto it
   (g.recipe.start ?? []).forEach((s, i) => {
@@ -325,10 +336,11 @@ function startErrors(g, err) {
     if (s.deal != null) {
       const decks = decksOf(s.deal, `${p}.deal`);
       if (!decks) return;
+      const bySeat = new Map(decks);
       for (const sid of seats) {
-        const deck = decks.length === 1 && decks[0][0] == null ? decks[0][1] : decks.find(([x]) => x === sid)[1];
+        const deck = decks.length === 1 && decks[0][0] == null ? decks[0][1] : bySeat.get(sid);
         take(deck, s.count, `${p}.count`);
-        const room = g.setup.filter((t) => t.seat === sid && pieces[t.piece]?.zone).reduce((n, t) => n + (pieces[t.piece].snapPoints ?? []).filter((sp) => sp.tags?.length && takes(sp.tags, tagsOf(deck.deck))).length, 0);
+        const room = roomFor(sid, tagsOf(deck.deck));
         const now = (dealt.get(sid) ?? 0) + s.count;
         dealt.set(sid, now);
         if (now > room) err("deal-hand", `${p}.count`, `seat "${sid}" has room for ${room} cards in its hands, and ${now} are dealt there`);

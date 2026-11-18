@@ -868,7 +868,7 @@ run by **Start game**, a world verb (`table/start.js`) enabled once every
 seat is taken: the keeper shuffles, the moves are one change with
 `started`; pressed again, or on two peers, it deals once. A condition is
 one comparison on an option. The validator lays out and checks every way
-the options can be set (at most 512). `variants` (that morning's) are gone:
+the options can be set (at most 512, and a bounded cost). `variants` (that morning's) are gone:
 one mechanism. Draw Dominoes is one setup with a `players` option, seats
 placed at spots, its rack a kit, and Start deals 7 (6 with four); Santorini
 asks 2 or 3. Lost Cities' deal stays its deck's `deal` (it was never code;
@@ -876,10 +876,11 @@ moving it would make five probes press Start). The TTS importer reads a
 memory bag's saved layout (the `ml` of its script state: data, never
 code) into `place` steps, bags laying out one spot being one choice
 (Earthborne's six ranger bags), seats into a `players` option, face-down
-decks into a shuffle-at-start option (off unless chosen). The trait isn't
-one the table extension runs for: a scene trait would run it before
-carry, putting Draw and Wash ahead of Flip on the use prompt (dominoes.mjs
-caught it). Tests: every built-in game every way its options set it (every
+decks into a shuffle-at-start option (off unless chosen). Start is an
+extension of its own (`tabletop.start`, by that scene trait): declared on
+the cards' extension it ran it scene-scoped, before carry, putting Draw and
+Wash ahead of Flip on the use prompt (dominoes.mjs caught it). Who goes
+first is drawn by lots between the seated players' clients. Tests: every built-in game every way its options set it (every
 component once, a hand per seat, nothing on anything but the table, no
 hands overlapping, deals to their own seats), Start against the plain
 keeper and real joint-keeper clients. probes/setup-run.mjs imports

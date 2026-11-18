@@ -74,8 +74,33 @@ export function valuesOf(option) {
   return [];
 }
 
+/** How many values an option can take, counted, never listed (an integer's range may be any size before it's checked). */
+const countOf = (o) => (o?.kind === "integer" ? Math.max(0, o.max - o.min + 1) : o?.kind === "enum" ? (o.options ?? []).length : o?.kind === "boolean" ? 2 : 0);
+
 /** How many sets of values the options can take. */
-export const combinationCount = (game) => optionsOf(game).reduce((n, o) => n * valuesOf(o).length, 1);
+export const combinationCount = (game) => optionsOf(game).reduce((n, o) => n * countOf(o), 1);
+
+/**
+ * What laying out and checking one set of values costs, an upper bound in
+ * things handled: every thing the setup holds (bags' contents and decks'
+ * cards too), every seat and its kits, once for each layout and start step
+ * and once more; every name a step lists; and the game copied whole (a
+ * thing for every 4 characters of it: its pieces, its assets). The validator
+ * lays out and checks every set, so it bounds this times combinationCount.
+ */
+export function layoutCost(game) {
+  const r = game?.recipe ?? {};
+  let things = 0;
+  for (const list of lists(Array.isArray(game?.setup) ? game.setup : [])) for (const t of list) things += 1 + (Array.isArray(t?.deck?.cards) ? t.deck.cards.length : 0);
+  let kits = 0;
+  let named = 0;
+  for (const s of r.layout ?? []) {
+    if (Array.isArray(s?.kit)) kits += s.kit.length;
+    named += Object.keys(s?.place ?? {}).length + Object.keys(s?.seats ?? {}).length;
+  }
+  const seats = Math.max(1, Object.keys(game?.seats ?? {}).length);
+  return (things + (kits + 1) * seats) * ((r.layout?.length ?? 0) + (r.start?.length ?? 0) + 1) + named + Math.ceil(JSON.stringify(game ?? null).length / 4);
+}
 
 /** Every set of values the options can take, the first option slowest. */
 export function combinations(game) {
@@ -209,14 +234,6 @@ function* lists(things) {
   yield things;
   for (const t of things) if (Array.isArray(t?.contents)) yield* lists(t.contents);
 }
-/** Where the thing with this id is: { list, i, top } (top: in the setup itself, not a bag), or null. */
-function find(setup, id) {
-  for (const list of lists(setup)) {
-    const i = list.findIndex((t) => t?.id === id);
-    if (i >= 0) return { list, i, top: list === setup };
-  }
-  return null;
-}
 /** Take out of a setup every thing (contents too) that `drop` says. */
 function removeWhere(setup, drop) {
   for (const list of lists(setup)) for (let i = list.length - 1; i >= 0; i--) if (drop(list[i])) list.splice(i, 1);
@@ -254,16 +271,18 @@ export function applyRecipe(game, given = {}) {
       } else if (r.id != null) removeWhere(setup, (t) => t?.id === r.id);
       else if (r.tag != null) removeWhere(setup, (t) => Array.isArray(t?.tags) && t.tags.includes(r.tag));
     } else if (step.place) {
-      for (const [id, at] of Object.entries(step.place)) {
-        const hit = find(setup, id);
-        const to = placeOf(at, recipe.spots);
-        if (!hit || !to) continue;
-        const [thing] = hit.list.splice(hit.i, 1);
-        thing.at = to;
-        // out of its bag onto the table, or where it was in the setup's order
-        if (hit.top) setup.splice(hit.i, 0, thing);
-        else setup.push(thing);
+      // one walk, whatever the step names: each thing there is laid where it says, where it was in the setup's
+      // order, or out of its bag onto the table (after the rest, in the step's order)
+      const to = new Map(Object.entries(step.place).map(([id, at]) => [id, placeOf(at, recipe.spots)]).filter(([, p]) => p));
+      const hits = [];
+      for (const list of lists(setup)) list.forEach((t, i) => to.has(t?.id) && hits.push([list, i, t]));
+      const out = new Map();
+      // (each list's last first, so a splice leaves the indices before it as they were)
+      for (const [list, i, t] of hits.reverse()) {
+        t.at = to.get(t.id);
+        if (list !== setup) out.set(t.id, list.splice(i, 1)[0]);
       }
+      for (const id of to.keys()) if (out.has(id)) setup.push(out.get(id));
     } else if (step.seats) {
       for (const [sid, at] of Object.entries(step.seats)) {
         const seat = seats[sid];

@@ -174,9 +174,11 @@ Draw Dominoes deals each rack 7 tiles, 6 with four). It is disabled, saying
 whose seat is empty, until every seat is taken; then it asks the cards'
 keeper to shuffle, moves the dealt cards into each seat's card slots (and
 drawn ones face up onto their thing) in one change, and records that it
-started (and who goes first, which the HUD says). Once started it says so
-and does nothing again (`start.js`); it's told as "Ann started the game,
-dealing 7 to each seat". Like the other verbs it isn't the editor's undo.
+started. Who goes first is drawn by lots between the seated players'
+clients (as a die's roll is: nobody chooses it, whoever pressed Start
+included), and the HUD says it. Once started it says so and does nothing
+again (`start.js`, an extension of its own); it's told as "Ann started the
+game, dealing 7 to each seat". Like the other verbs it isn't the editor's undo.
 
 A copied card leaves its keeper's binding behind (the trait is `runtime`): a
 bare back. A copied hand keeps its seat's id.

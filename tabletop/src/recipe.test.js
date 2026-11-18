@@ -48,6 +48,11 @@ describe("every built-in game, laid out every way its options can be set", () =>
       const snap = testScene(Object.fromEntries(objects));
       const hands = zones(snap);
 
+      it("is pure: laid out again from a frozen copy of the game with the same seed, it is the same table", () => {
+        const freeze = (v) => (v && typeof v === "object" ? Object.freeze(Object.values(v).forEach(freeze) ?? v) : v);
+        expect(tableLayout(applyRecipe(freeze(structuredClone(c.game)), c.values), { fileOf, rng: seeded(11) })).toEqual(layout);
+      });
+
       it("is a valid game with nothing left to choose", () => {
         expect(validate(g)).toEqual({ ok: true, stage: null, errors: [] });
         expect(optionsOf(g)).toEqual([]);

@@ -276,10 +276,10 @@ describe("the table extension", () => {
     return { w, api, keeper, x, toasts: () => w.view("A").notices.map((n) => [n.text, n.kind]) };
   }
 
-  it("contributes no looks, and no HUD but who goes first once started: what a card is, is its keeper's; who may see it, its own audience", () => {
+  it("contributes no looks, and no HUD (who goes first is Start's: start.js): what a card is, is its keeper's; who may see it, its own audience", () => {
     const m = mount();
     expect(m.x.looks).toBeUndefined();
-    expect(m.x.hud()).toEqual([]);
+    expect(m.x.hud).toBeUndefined();
     expect(typeof m.x.audience).toBe("function");
     expect(Extension.drop).toBeUndefined();
     m.w.done();
@@ -419,7 +419,7 @@ describe("telling the others", () => {
     t.w.hear("B", "washed", { n: 6, noun: "domino" }, from("alice"));
     t.w.hear("B", "showed", { n: 3 }, from("alice"));
     expect(t.notices("B")).toEqual(["<alice> drew a card", "Someone drew 2 cards", "<alice> shuffled the deck (44)", "<alice> shuffled “Wagers” (3)", "<alice> washed the dominoes (6)", "<alice> laid 3 cards face up"]);
-    expect(Object.keys(t.xb.messages)).toEqual(["shuffled", "drew", "washed", "showed", "started"]);
+    expect(Object.keys(t.xb.messages)).toEqual(["shuffled", "drew", "washed", "showed"]);
     // her other tab is a peer: named, never "You"
     t.w.hear("A", "drew", { n: 1 }, { session: "s-alice-2", viewer: "alice" });
     expect(t.notices("A").at(-1)).toBe("<alice> drew a card");
