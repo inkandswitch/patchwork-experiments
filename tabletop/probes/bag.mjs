@@ -75,7 +75,7 @@ try {
   const toggleEdit = async (w, on) => {
     const t = await until(`editToggle('${w}')`, 5000);
     if (t) await b.click(t.x, t.y);
-    return !!t && (await until(on ? `editing('${w}')` : `!__p.editing('${w}')`, 3000));
+    return !!t && (await until(on ? `editing('${w}')` : `editing('${w}') === false`, 3000));
   };
   check("A picks up the editor (Edit, beside the body chip)", await toggleEdit("a", true), await P("editing('a')"));
   const partsBtn = await until("tool('a', 'parts')", 5000);
