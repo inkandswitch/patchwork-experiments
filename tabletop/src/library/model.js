@@ -1,11 +1,7 @@
-// The game library, as data (pure). A library doc is folder-shaped,
-// `{ title, docs: DocLink[] }` with DocLink = `{ name, type, url, icon? }`,
-// so the sidebar and the folder tool read it as a folder; it holds two
-// plain folder docs, linked with `type: "folder"`: Games (game
-// descriptions: tabletop-game docs, built in or imported) and Sessions
-// (scene docs, each a description rendered as one of its variants, or a
-// fork of another session). The launcher (tool.js) reads and writes it
-// through these.
+// The game library, as data (pure): a folder-shaped doc, `{ title, docs:
+// DocLink[] }` with DocLink = `{ name, type, url, icon? }`, holding the
+// folders Games and Sessions (README.md, "The library"). The launcher
+// (tool.js, actions.js) reads and writes it through these.
 
 import { cleanObject, cleanTraits } from "./copy-rule.js";
 
@@ -59,11 +55,24 @@ export const forkName = (name) => `${name || "Session"} (copy)`;
  * The registered games a library hasn't a description of yet: those whose
  * id no description's `origin.builtIn` names, in registry order.
  * @param {{ id: string }[]} plugins  the `tabletop:game` plugins
- * @param {object[]} descriptions  the docs in Games
+ * @param {Iterable<unknown>} builtIns  the `origin.builtIn` of each doc in Games
  */
-export function missingBuiltIns(plugins, descriptions) {
-  const have = new Set(descriptions.map((d) => d?.origin?.builtIn).filter((id) => typeof id === "string"));
+export function missingBuiltIns(plugins, builtIns) {
+  const have = new Set(builtIns);
   return plugins.filter((p) => typeof p?.id === "string" && !have.has(p.id));
+}
+
+/**
+ * The links in Games to take out so each built-in game is described once:
+ * every one after the first naming the same game (the folder's order, the
+ * same on every peer once merged). Pure.
+ * @param {{ url: string }[]} links  @param {Map<string, unknown>} builtInOf  a link's url → its description's `origin.builtIn`
+ * @returns {string[]} their urls
+ */
+export function extraBuiltIns(links, builtInOf) {
+  const seen = new Set();
+  const extra = (id) => typeof id === "string" && (seen.has(id) || (seen.add(id), false));
+  return links.map((l) => l.url).filter((url) => extra(builtInOf.get(url)));
 }
 
 /**
@@ -79,29 +88,20 @@ export function descriptionDoc(game, { builtIn, patchwork = { type: GAME_TYPE } 
 
 /**
  * A session forked: the scene doc whole, by the scene's copy rule
- * (copy-rule.js): every object with its id; the stage's runtime fields,
- * runtime traits and fields (a keeper's binding: a card is a bare back) and
- * `copy: "drop"` fields left behind; every entries trait fresh (its seats
- * empty); a built object's render made again where it's opened (as a table
- * is written: `renderUrl: null`). Files are shared (immutable), and so is
- * the game a card's face is named by, so the copy draws from the same
- * description and its `assets` cache. A bag's things are the bag doc's, not
- * the scene's: `bags` lists each bag object's doc, which the caller copies
- * and names in the copy (`withBags`). It says where it came from:
- * `forkedFrom: { url, heads }`.
+ * (copy-rule.js; README.md, "The library"), a built object naming its render
+ * doc's copy (`renders`: old url → new, the caller's), else none. Files and
+ * the game a card's face is named by are shared, so the copy draws from the
+ * same description and `assets`. `bags` lists each bag object's doc, for the
+ * caller to copy and name in the copy (`withBags`). It says where it came
+ * from: `forkedFrom: { url, heads }`.
  * @param {object} doc  the session's scene doc
- * @param {{ rules: object, url: string, heads: string[] | null, title?: string }} o  rules: copy-rule.js copyRules
+ * @param {{ rules: object, url: string, heads: string[] | null, title?: string, renders?: Map<string, string> }} o  rules: copy-rule.js copyRules
  * @returns {{ doc: object, bags: { id: string, url: string }[] }}
  */
-export function forkScene(doc, { rules, url, heads, title = null }) {
+export function forkScene(doc, { rules, url, heads, title = null, renders = new Map() }) {
   const out = plain(doc);
-  const objects = {};
-  for (const [id, o] of Object.entries(out.objects ?? {})) {
-    const c = cleanObject(o, rules);
-    if (typeof c.renderUrl === "string") c.renderUrl = null;
-    objects[id] = c;
-  }
-  out.objects = objects;
+  const objects = (out.objects = Object.fromEntries(Object.entries(out.objects ?? {}).map(([id, o]) => [id, cleanObject(o, rules)])));
+  for (const o of Object.values(objects)) if (typeof o.renderUrl === "string") o.renderUrl = renders.get(o.renderUrl) ?? null;
   out.traits = cleanTraits(out.traits ?? {}, rules);
   out.title = title ?? forkName(str(doc?.title));
   out.forkedFrom = { url, heads: Array.isArray(heads) ? [...heads] : null };

@@ -4,13 +4,14 @@
 // built-in games (twice: idempotent), start a session (and that it is the
 // table the start screen's template lays out), fork it, import a TTS mod.
 import { describe, it, expect } from "vitest";
+import * as Automerge from "@automerge/automerge";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { GameLibraryDatatype } from "./datatype.js";
 import { BAG_TRAIT, descriptionDoc, foldersOf, forkName, forkScene, gamesIn, linksOf, missingBuiltIns, sessionName, sessionsIn, withBags } from "./model.js";
 import { cleanObject, copyRules, describesOf } from "./copy-rule.js";
-import { addBuiltIns, foldersFor, forkSession, importGame, startSession } from "./actions.js";
+import { addBuiltIns, foldersFor, forkSession, importGame, linkIn, startSession } from "./actions.js";
 import { newSession } from "../table/session.js";
 import { setUp } from "../table/template.js";
 import { tableLayout, writeTable } from "../setup.js";
@@ -19,7 +20,7 @@ import { emptyScene } from "../empty-scene.js";
 import { fakeRepo, gamePlugins, game as builtIn, seeded } from "../test/games.js";
 import { fakeDrop } from "../test/fakes.js";
 import { SEATS, inBag, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
-import { inside } from "../bag/contents.js";
+import { inside, putIn } from "../bag/contents.js";
 import { plugins } from "../index.js";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -31,6 +32,12 @@ const installed = () => {
   return async (t) => reg[t] ?? null;
 };
 const RULES = copyRules(describesOf([...extensions, seatsPlugin()]));
+/** A handle on a real Automerge doc, one peer's; `merge` takes in another peer's. */
+const peer = (doc) => ({ doc: () => doc, change: (fn) => void (doc = Automerge.change(doc, fn)), merge: (o) => void (doc = Automerge.merge(doc, Automerge.clone(o.doc()))) });
+const twoPeers = (init) => {
+  const a = Automerge.from(init);
+  return [peer(a), peer(Automerge.clone(a))];
+};
 
 /** A library in a fake repo, as the host makes one (init inside the new doc's first change, with the repo). */
 function library(repo = fakeRepo()) {
@@ -88,11 +95,11 @@ describe("the launcher's model", () => {
     const subsets = [...Array(8).keys()].map((m) => ids.filter((_, i) => m & (1 << i)));
     for (const reg of subsets)
       for (const have of subsets) {
-        const descriptions = [...have.map((id) => ({ origin: { builtIn: id } })), { origin: { tts: {} } }, {}];
-        const missing = missingBuiltIns(reg.map((id) => ({ id })), descriptions);
+        const builtIns = [...have, undefined]; // an imported game says none
+        const missing = missingBuiltIns(reg.map((id) => ({ id })), builtIns);
         expect(missing.map((p) => p.id)).toEqual(reg.filter((id) => !have.includes(id)));
         // adding them leaves none missing: idempotent
-        expect(missingBuiltIns(reg.map((id) => ({ id })), [...descriptions, ...missing.map((p) => ({ origin: { builtIn: p.id } }))])).toEqual([]);
+        expect(missingBuiltIns(reg.map((id) => ({ id })), [...builtIns, ...missing.map((p) => p.id)])).toEqual([]);
       }
   });
 
@@ -134,7 +141,7 @@ describe("a fork's copy (model.js forkScene, by the scene's copy rule)", () => {
   it("keeps every object under its id, all but what is about now; empties every seat; lists the bags; says where it came from", () => {
     const src = scene();
     const before = structuredClone(src);
-    const { doc, bags } = forkScene(src, { rules: RULES, url: "automerge:src", heads: ["h1", "h2"] });
+    const { doc, bags } = forkScene(src, { rules: RULES, url: "automerge:src", heads: ["h1", "h2"], renders: new Map([["automerge:render", "automerge:render2"]]) });
     expect(src).toEqual(before); // the session is never written
     expect(doc.order).toEqual(src.order);
     expect(Object.keys(doc.objects)).toEqual(Object.keys(src.objects));
@@ -149,8 +156,8 @@ describe("a fork's copy (model.js forkScene, by the scene's copy rule)", () => {
       expect(o.traits["tabletop.card"]).toEqual({});
       // a die's draw is about now; what it shows is kept
       if (was.traits["dice.die"]) expect(o.traits["dice.die"]).toEqual({ face: 3 });
-      expect(o.renderUrl ?? null).toBe(null);
-      if (was.renderUrl) expect(o.providerId).toBe("die");
+      // a built object names its render doc's copy
+      expect(o.renderUrl ?? null).toBe(was.renderUrl ? "automerge:render2" : null);
       // everything else as it was
       const rest = (x) => {
         const { claims, saved, renderUrl, traits, ...r } = structuredClone(x);
@@ -171,6 +178,7 @@ describe("a fork's copy (model.js forkScene, by the scene's copy rule)", () => {
 
   it("a fork of a fork says the fork it came from, and names each bag's copy where it's told", () => {
     const one = forkScene(scene(), { rules: RULES, url: "automerge:src", heads: null }).doc;
+    expect(one.objects.o32.renderUrl).toBe(null); // a render doc nobody copied: made again where it's opened
     const two = forkScene(one, { rules: RULES, url: "automerge:one", heads: ["h"] }).doc;
     expect(two.forkedFrom).toEqual({ url: "automerge:one", heads: ["h"] });
     const named = withBags(two, { o64: "automerge:copy", o0: "automerge:not-a-bag" });
@@ -196,6 +204,35 @@ describe("the launcher's actions", () => {
     }
     expect(await addBuiltIns({ repo, registry, library: lib })).toEqual([]);
     expect(gamesIn(games.doc())).toHaveLength(4);
+    // pressed twice at once: each game once
+    const two = library();
+    const both = await Promise.all([1, 2].map(() => addBuiltIns({ repo: two.repo, registry, library: two.lib })));
+    expect(both.flat()).toHaveLength(4);
+    expect(gamesIn((await foldersFor(two.repo, two.lib)).games.doc())).toHaveLength(4);
+  });
+
+  it("Add the built-in games on two peers at once: merged, the next add keeps the first of each, the same one on each peer", async () => {
+    const { repo, lib } = library();
+    const registry = installed();
+    const url = foldersOf(lib.doc()).games;
+    const [a, b] = twoPeers(repo.docs.get(url));
+    const on = (h) => ({ ...repo, find: async (u) => (u === url ? h : repo.find(u)) });
+    for (const h of [a, b]) expect(await addBuiltIns({ repo: on(h), registry, library: lib })).toHaveLength(4);
+    a.merge(b);
+    b.merge(a);
+    expect(gamesIn(a.doc())).toHaveLength(8);
+    for (const h of [a, b]) expect(await addBuiltIns({ repo: on(h), registry, library: lib })).toEqual([]);
+    a.merge(b);
+    expect(gamesIn(a.doc()).map((l) => l.name)).toEqual(["Santorini", "Lost Cities", "Draw Dominoes", "Liar's dice"]);
+    expect(gamesIn(a.doc())).toEqual(gamesIn(b.doc()));
+  });
+
+  it("a link two people add to one folder at once: both are there once merged (a list insert, never a replaced list)", () => {
+    const [a, b] = twoPeers({ title: "Sessions", docs: [] });
+    linkIn(a, { name: "A's", type: "scene", url: "automerge:a" });
+    linkIn(b, { name: "B's", type: "scene", url: "automerge:b" });
+    a.merge(b);
+    expect(sessionsIn(a.doc()).map((l) => l.url).sort()).toEqual(["automerge:a", "automerge:b"]);
   });
 
   it("New game: a description rendered into a fresh scene, as its variant, linked in Sessions by game and date; the description lists it", async () => {
@@ -266,7 +303,14 @@ describe("the launcher's actions", () => {
     writeTable(table, layout, made);
     const sid = Object.keys(table.traits[SEATS])[0];
     table.traits[SEATS][sid].player = "viewer:a";
+    // a built object (its render doc tuned), and a stray: an item listed in a bag while its object is in the scene
+    const [built, strayId] = Object.keys(table.objects);
+    const render = await repo.create2({ "@patchwork": { type: "scene-render" }, params: { sides: 8 }, glbUrl: "automerge:glb", status: "building", error: null });
+    table.objects[built].renderUrl = render.url;
     const src = repo.create(table);
+    const bagOf = (d, id) => d.objects[id].traits[BAG_TRAIT].doc;
+    const firstBag = repo.handleFor(bagOf(table, Object.keys(table.objects).find((id) => table.objects[id].traits?.[BAG_TRAIT])));
+    firstBag.change((d) => putIn(d, [{ id: strayId, from: src.url, object: { name: "stray" } }]));
     const { sessions } = await foldersFor(repo, lib);
     sessions.change((d) => d.docs.push({ name: table.title, type: "scene", url: src.url }));
     const before = structuredClone(src.doc());
@@ -278,6 +322,9 @@ describe("the launcher's actions", () => {
     expect(src.doc()).toEqual(before);
     const fork = repo.docs.get(url);
     expect(fork.forkedFrom).toEqual({ url: src.url, heads: null });
+    // the built object's render doc is its own copy, with its params and build
+    expect(fork.objects[built].renderUrl).not.toBe(render.url);
+    expect(repo.docs.get(fork.objects[built].renderUrl)).toMatchObject({ params: { sides: 8 }, glbUrl: "automerge:glb", status: "idle" });
     expect(Object.keys(fork.objects)).toEqual(Object.keys(before.objects));
     expect(Object.values(fork.objects).filter((o) => keptIn(o))).toEqual([]);
     expect(Object.values(fork.traits[SEATS]).map((s) => s.player)).toEqual(Object.values(before.traits[SEATS]).map(() => null));
@@ -288,13 +335,16 @@ describe("the launcher's actions", () => {
       const was = repo.docs.get(before.objects[id].traits[BAG_TRAIT].doc);
       const now = repo.docs.get(fork.objects[id].traits[BAG_TRAIT].doc);
       expect(fork.objects[id].traits[BAG_TRAIT].doc).not.toBe(before.objects[id].traits[BAG_TRAIT].doc);
-      expect(inBag(now).map((o) => o.name)).toEqual(inBag(was).map((o) => o.name));
+      expect(inBag(now).map((o) => o.name)).toEqual(inBag(was).filter((o) => o.name !== "stray").map((o) => o.name));
       expect(inBag(now).filter((o) => keptIn(o))).toEqual([]);
       expect(inBag(was).some((o) => keptIn(o))).toBe(true);
-      expect(inside(now).map((x) => x.entry.object)).toEqual(inside(was).map((x) => cleanObject(x.entry.object, RULES)));
+      // what is inside as the session reads it: a stray stays the scene's
+      const real = inside(was).filter((x) => !(x.entry.from === src.url && before.objects[x.entry.id]));
+      expect(inside(now).map((x) => [x.key, x.entry.object])).toEqual(real.map((x) => [x.key, cleanObject(x.entry.object, RULES)]));
+      expect(inside(now).some((x) => x.entry.object.name === "stray")).toBe(false);
     }
-    // the fork, and a doc for each bag: nothing else
-    expect(repo.docs.size - docsBefore).toBe(1 + bagIds.length);
+    // the fork, a doc for each bag and the render's copy: nothing else
+    expect(repo.docs.size - docsBefore).toBe(2 + bagIds.length);
   });
 
   it("Import: a TTS mod's files → the importer (assets with the mod stored, the rest by URL) → a game in Games", async () => {

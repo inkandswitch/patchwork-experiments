@@ -250,9 +250,9 @@ function variantErrors(g, own) {
     if (names.has(v.name)) errors.push({ code: "variant-name", path: `${at}.name`, message: `"${v.name}" names another variant too` });
     names.add(v.name);
     for (const e of validateSemantics(applyVariant(g, i))) {
-      if (seen.has(`${e.code} ${e.path} ${e.message}`)) continue;
       const field = VARIANT_FIELDS.find((k) => v[k] !== undefined && (e.path === `$.${k}` || e.path.startsWith(`$.${k}.`) || e.path.startsWith(`$.${k}[`)));
-      errors.push(field ? { ...e, path: `${at}${e.path.slice(1)}` } : { ...e, message: `${e.message} (as variant "${v.name}" sets it up)` });
+      if (field) errors.push({ ...e, path: `${at}${e.path.slice(1)}` });
+      else if (!seen.has(`${e.code} ${e.path} ${e.message}`)) errors.push({ ...e, message: `${e.message} (as variant "${v.name}" sets it up)` });
     }
   });
   return errors;

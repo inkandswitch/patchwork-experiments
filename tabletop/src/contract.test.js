@@ -82,6 +82,9 @@ describe("variants (GAME-FORMAT.md §3)", () => {
     const broken = structuredClone(g);
     broken.setup[1].seat = "z";
     expect(validate(broken).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[1].seat"]]);
+    // the same error in a setup the variant gives is the variant's too
+    broken.variants[1].setup[1].seat = "z";
+    expect(validate(broken).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[1].seat"], ["unknown-seat", "$.variants[1].setup[1].seat"]]);
     // one the variant's seats cause in the game's setup: the game's path, naming the variant
     const seats = structuredClone(g);
     seats.variants[0].seats = { a: { name: "A" } };

@@ -57,6 +57,8 @@ describe("the launcher (game-library tool)", () => {
     await until(() => element.querySelectorAll(".sessions-list li").length === 2);
     await until(() => /forked from Lost Cities/.test(element.querySelector(".sessions-list li").textContent));
     expect(element.querySelector(".sessions-list li").textContent).toMatch(/\(copy\)/);
+    // and opens the copy
+    expect(opened.at(-1)).toEqual({ url: linksOf(sessions.doc()).at(-1).url, toolId: "scene" });
     // Continue opens a session
     buttons(element, "Continue")[1].click();
     expect(opened.at(-1)).toEqual({ url: opened[0].url, toolId: "scene" });

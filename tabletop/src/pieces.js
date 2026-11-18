@@ -156,11 +156,11 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
   const waiting = new Map(); // kind → its face on its way
   const keeping = new Map(); // kind → its GLB doc on its way (its group being written)
 
-  let grouped = { pieces: undefined, setup: undefined, of: new Map() };
-  /** A card's group (groupsOf), as the game is now. */
+  let grouped = { pieces: undefined, setup: undefined, variants: undefined, of: new Map() };
+  /** A card's group (groupsOf), as the game is now (its variants too: a group is never smaller than any makes it). */
   const groupOf = (kind) => {
     const d = doc();
-    if (grouped.pieces !== d.pieces || grouped.setup !== d.setup) grouped = { pieces: d.pieces, setup: d.setup, of: groupsOf(d) };
+    if (grouped.pieces !== d.pieces || grouped.setup !== d.setup || grouped.variants !== d.variants) grouped = { pieces: d.pieces, setup: d.setup, variants: d.variants, of: groupsOf(d) };
     return grouped.of.get(kind) ?? [kind];
   };
 

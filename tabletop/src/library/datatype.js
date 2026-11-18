@@ -1,9 +1,7 @@
-// The game-library datatype: a folder-shaped doc, `{ title, docs }`, made
-// holding two plain folder docs, Games and Sessions, linked as folders
-// (`type: "folder"`), so the sidebar shows them as folders and the folder
-// tool can show the library itself (model.js has the shape). The host calls
-// init inside the new doc's first change, with its repo: the two folders are
-// made there, before anyone can know of the library.
+// The game-library datatype (model.js has the shape): made holding two plain
+// folder docs, Games and Sessions, linked as folders (`type: "folder"`), so
+// the sidebar shows them as folders. The host calls init inside the new
+// doc's first change, with its repo: the folders are made once, by its maker.
 
 import { FOLDER_TYPE, GAMES, SESSIONS } from "./model.js";
 

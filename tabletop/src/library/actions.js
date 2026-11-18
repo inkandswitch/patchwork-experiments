@@ -3,11 +3,11 @@
 // one change of that folder. Everything the host provides is passed in
 // (`repo`, `registry`: made-with.js's shape), so it runs in vitest too.
 
-import { GAME_TYPE, SCENE_TYPE, descriptionDoc, foldersOf, forkName, forkScene, gamesIn, missingBuiltIns, sessionName, withBags } from "./model.js";
+import { GAME_TYPE, SCENE_TYPE, descriptionDoc, extraBuiltIns, foldersOf, forkName, forkScene, gamesIn, missingBuiltIns, sessionName, withBags } from "./model.js";
 import { copyRules, describesOf, cleanObject } from "./copy-rule.js";
 import { newSession } from "../table/session.js";
 import { importUrlOf, patchworkOf } from "../scene-package.js";
-import { inside, putIn } from "../bag/contents.js";
+import { BAG, inside, putIn, shadowsFor } from "../bag/contents.js";
 import { newBag } from "../bag/datatype.js";
 import { errorText, validate } from "../../contract/v2/validate.js";
 
@@ -24,16 +24,19 @@ async function pluginsOf(registry, type) {
 /** The library's two folders' handles: { games, sessions } (null where it hasn't the folder, or it can't be had). */
 export async function foldersFor(repo, library) {
   const { games, sessions } = foldersOf(library.doc());
-  const find = async (url) => (url ? await Promise.resolve(repo.find(url)).catch(() => null) : null);
-  const [g, s] = await Promise.all([find(games), find(sessions)]);
+  const [g, s] = await Promise.all([games, sessions].map((url) => (url ? handleAt(repo, url) : null)));
   return { games: g, sessions: s };
 }
 
-/** Link a doc in a folder, at its end. */
-const linkIn = (folder, link) =>
+const plain = (v) => JSON.parse(JSON.stringify(v));
+const handleAt = (repo, url) => Promise.resolve(repo.find(url)).catch(() => null);
+const docAt = async (repo, url) => (await handleAt(repo, url))?.doc?.() ?? null;
+
+/** Link docs in a folder, at its end: list inserts, so links two people add at once are both kept. */
+export const linkIn = (folder, ...links) =>
   folder.change((d) => {
     if (!Array.isArray(d.docs)) d.docs = [];
-    d.docs.push(link);
+    d.docs.push(...links);
   });
 
 async function need(repo, library, which) {
@@ -44,14 +47,15 @@ async function need(repo, library, which) {
 
 /**
  * Add a description of every registered game (`tabletop:game`) the library
- * hasn't one of yet (model.js missingBuiltIns): idempotent.
- * @returns {Promise<string[]>} the descriptions made, in registry order
+ * hasn't one of yet, then take out each link after the first to the same
+ * game (model.js): idempotent, and two adds at once, here or merged from two
+ * peers, settle on the same one of each by the next add at the latest.
+ * @returns {Promise<string[]>} the descriptions made and kept, in registry order
  */
 export async function addBuiltIns({ repo, registry, library }) {
   const games = await need(repo, library, "games");
-  const have = await Promise.all(gamesIn(games.doc()).map(async (l) => (await Promise.resolve(repo.find(l.url)).catch(() => null))?.doc?.() ?? null));
-  const missing = missingBuiltIns(await pluginsOf(registry, "tabletop:game"), have);
-  if (!missing.length) return [];
+  const builtInsNow = async () => new Map(await Promise.all(gamesIn(games.doc()).map(async (l) => [l.url, (await docAt(repo, l.url))?.origin?.builtIn])));
+  const missing = missingBuiltIns(await pluginsOf(registry, "tabletop:game"), (await builtInsNow()).values());
   const reg = await Promise.resolve(registry("tabletop:game"));
   const patchwork = patchworkOf(GAME_TYPE, await importUrlOf(GAME_TYPE));
   const made = [];
@@ -63,14 +67,13 @@ export async function addBuiltIns({ repo, registry, library }) {
     const h = await repo.create2(descriptionDoc(game, { builtIn: p.id, patchwork }));
     made.push({ name: game.title, type: GAME_TYPE, url: h.url });
   }
-  // checked again as the folder is now: a library open twice adds each once (two at once may still both add)
-  const now = await Promise.all(gamesIn(games.doc()).map(async (l) => (await Promise.resolve(repo.find(l.url)).catch(() => null))?.doc?.()?.origin?.builtIn));
-  const fresh = made.filter((_, i) => !now.includes(missing[i].id));
-  games.change((d) => {
-    if (!Array.isArray(d.docs)) d.docs = [];
-    d.docs.push(...fresh);
-  });
-  return fresh.map((l) => l.url);
+  if (made.length) linkIn(games, ...made);
+  const extra = new Set(extraBuiltIns(gamesIn(games.doc()), await builtInsNow()));
+  if (extra.size)
+    games.change((d) => {
+      for (let i = d.docs.length - 1; i >= 0; i--) if (extra.has(String(d.docs[i]?.url))) d.docs.splice(i, 1);
+    });
+  return made.map((l) => l.url).filter((u) => !extra.has(u));
 }
 
 /**
@@ -82,21 +85,18 @@ export async function startSession({ repo, registry, library, game, variant = nu
   const sessions = await need(repo, library, "sessions");
   const d = game.doc();
   const variants = Array.isArray(d?.variants) ? d.variants : [];
-  // a game with variants is set up as one of them, the first unless told
+  // a game with variants is set up as one of them, the first unless told (newSession refuses one it hasn't)
   const which = variants.length ? (variant ?? 0) : null;
-  const v = which == null ? null : typeof which === "number" ? variants[which] : variants.find((x) => x?.name === which);
-  if (which != null && !v) throw new Error(`“${d?.title}” has no variant “${which}”`);
-  const name = sessionName(d?.title, now(), variants.length > 1 ? v.name : null);
+  const name = sessionName(d?.title, now(), variants.length > 1 ? (typeof which === "number" ? variants[which]?.name : which) : null);
   const { url, notes } = await newSession({ repo, registry, handle: game, variant: which, title: name, phase, draw });
   linkIn(sessions, { name, type: SCENE_TYPE, url });
   return { url, name, notes };
 }
 
 /**
- * Fork: a session copied into a new scene doc by the scene's copy rule
- * (model.js forkScene), each bag's doc copied too (its things as they are,
- * by the same rule: a card in a bag is a bare back), linked in Sessions as
- * "<name> (copy)".
+ * Fork: a session copied into a new scene doc (model.js forkScene), with a
+ * copy of each built object's render doc and of each bag's doc (README.md,
+ * "The library"), linked in Sessions as "<name> (copy)".
  * @param {{ name: string, url: string }} session  its link in Sessions
  * @returns {Promise<{ url: string, name: string }>}
  */
@@ -106,17 +106,21 @@ export async function forkSession({ repo, registry, library, session }) {
   const rules = copyRules(describesOf(await pluginsOf(registry, "scene:extension")));
   const name = forkName(session.name);
   const heads = typeof source.heads === "function" ? source.heads() : null;
-  const plan = forkScene(source.doc(), { rules, url: session.url, heads, title: name });
+  const src = source.doc();
+  const renders = new Map();
+  for (const u of new Set(Object.values(src.objects ?? {}).map((o) => o?.renderUrl).filter((u) => typeof u === "string"))) {
+    const r = await docAt(repo, u);
+    if (r) renders.set(u, (await repo.create2({ ...plain(r), status: "idle", error: null })).url);
+  }
+  const plan = forkScene(src, { rules, url: session.url, heads, title: name, renders });
+  // every bag gets a doc of its own; only a plain bag's contents are data anyone may read, and so copied
+  const bags = await Promise.all(plan.bags.map(async (b) => ({ ...b, doc: await docAt(repo, b.url) })));
+  const isPlain = (d) => d?.["@patchwork"]?.type === BAG;
+  const shadows = shadowsFor(bags.filter((b) => isPlain(b.doc)), { sceneUrl: session.url, has: (id) => !!src.objects?.[id] });
   const copies = {};
-  for (const { id, url } of plan.bags) {
-    const bag = (await Promise.resolve(repo.find(url)).catch(() => null))?.doc?.();
-    if (!bag) continue;
-    const doc = newBag({ "@patchwork": JSON.parse(JSON.stringify(bag["@patchwork"] ?? { type: "bag" })), title: bag.title, look: JSON.parse(JSON.stringify(bag.look ?? {})), rule: bag.rule });
-    // put in from no scene, as a table's setup fills one (bag/fill.js)
-    putIn(
-      doc,
-      inside(bag).map(({ entry }) => ({ id: entry.id, object: cleanObject(entry.object, rules), scale: entry.scale })),
-    );
+  for (const { id, url, doc: bag } of bags) {
+    const doc = newBag(isPlain(bag) ? { "@patchwork": plain(bag["@patchwork"]), title: bag.title, look: plain(bag.look ?? {}), rule: bag.rule } : {});
+    if (isPlain(bag)) putIn(doc, inside(bag, shadows.get(url)).map(({ entry }) => ({ id: entry.id, from: entry.from, object: cleanObject(entry.object, rules), scale: entry.scale })));
     copies[id] = (await repo.create2(doc)).url;
   }
   const h = await repo.create2(withBags(plan.doc, copies));
