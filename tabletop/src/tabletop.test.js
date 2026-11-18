@@ -324,6 +324,84 @@ describe("piece GLBs", () => {
   });
 });
 
+describe("drawing many pieces at once", () => {
+  /**
+   * An image backend that takes its time (seeded), and counts: decodes running at once, images
+   * decoded and not yet closed, and any use of one that's been closed (a crop on a closed bitmap
+   * draws nothing in a browser: the piece would be drawn without its image).
+   */
+  function slowImages(seed) {
+    const rng = seeded(seed);
+    const wait = () => new Promise((r) => setTimeout(r, Math.floor(rng() * 4)));
+    const n = { decoding: 0, maxDecoding: 0, live: 0, maxLive: 0, opened: 0, closed: 0, usedClosed: 0 };
+    const use = async (h) => {
+      await wait();
+      if (h.closed) n.usedClosed++;
+    };
+    return {
+      n,
+      async open(bytes) {
+        n.decoding++;
+        n.maxDecoding = Math.max(n.maxDecoding, n.decoding);
+        await wait();
+        n.decoding--;
+        n.opened++;
+        n.live++;
+        n.maxLive = Math.max(n.maxLive, n.live);
+        return { width: 400, height: 200, closed: false, id: bytes[0] };
+      },
+      async crop(h) {
+        await use(h);
+        return { bytes: new Uint8Array([h.id]), mimeType: "image/png", width: 8, height: 8, hasAlpha: false };
+      },
+      async shape(h) {
+        await use(h);
+        return "opaque";
+      },
+      close(h) {
+        if (h.closed) throw new Error("closed twice");
+        h.closed = true;
+        n.live--;
+        n.closed++;
+      },
+    };
+  }
+  // 40 pieces off 12 images, each with the one back: measured (aspect), cut out (shape) and cropped
+  const files = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`automerge:img${i}`, { content: new Uint8Array([i]), mimeType: "image/png" }]));
+  const pieces = Array.from({ length: 40 }, (_, i) => ({
+    name: `P${i}`,
+    parts: [{ shape: "slab", outline: i % 5 ? "rect" : "cutout", size: [0.05, 0.05], thickness: 0.002, color: "#ffffff", ...(i % 3 ? {} : { aspect: "image" }), top: { file: `automerge:img${(i * 7) % 12}` }, bottom: { file: "automerge:img12" } }],
+  }));
+
+  for (const seed of [1, 2, 3, 4, 5]) {
+    it(`never decodes more than it may at once, never holds more decoded than it may, and never closes one in use (seed ${seed})`, async () => {
+      const images = slowImages(seed);
+      const d = drawer({ read: async (u) => files[u] ?? null, images, decodes: 4, held: 6 });
+      const out = await Promise.all(pieces.map((p) => d.draw(p)));
+      // every piece drawn with its images
+      expect(out.flatMap((o) => o.notes)).toEqual([]);
+      expect(images.n.usedClosed).toBe(0);
+      expect(images.n.maxDecoding).toBeLessThanOrEqual(4);
+      expect(images.n.maxDecoding).toBeGreaterThan(1);
+      expect(images.n.maxLive).toBeLessThanOrEqual(6);
+      // and once it's closed, every image it decoded is closed, once
+      d.close();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(images.n.closed).toBe(images.n.opened);
+      expect(images.n.live).toBe(0);
+    });
+  }
+
+  it("one at a time: one decode at a time, and a sheet decoded once for every piece cut from it", async () => {
+    const images = slowImages(9);
+    const d = drawer({ read: async (u) => files[u] ?? null, images, decodes: 1, held: 2 });
+    for (const p of pieces.filter((x) => x.parts[0].top.file === "automerge:img0")) await d.draw(p);
+    expect(images.n.maxDecoding).toBe(1);
+    expect(images.n.opened).toBe(2); // the sheet and the back
+    d.close();
+  });
+});
+
 describe("drawn on demand", () => {
   const WEB = "https://example.org/";
   const png = (w, h) => encodePNG(w, h, new Uint8Array(w * h * 4).fill(200));
