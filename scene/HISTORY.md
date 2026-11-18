@@ -814,4 +814,8 @@ cards it may share a container with, and those cut from the same sheets,
 closed over both); its sheets are fetched in URL order and the group is
 recorded whole or not at all; the game has its `assets` map from the start
 (two viewers making it at once lost one's entries), and editing the game
-writes it entry by entry.
+writes it entry by entry. Then images are decoded four at a time (look.js's
+drawer holds at most six decoded, counted out and back, so its eviction
+never closes one a draw is still using, as its FIFO could): drawing what
+TM's table lays out in headless Chrome (probes/decode-bench.mjs, 305 real
+TTS-cache PNGs) went from 6.3–8.2 s to 2.8–4.3 s.

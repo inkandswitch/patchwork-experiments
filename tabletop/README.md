@@ -252,7 +252,10 @@ without this package: fail closed, then Load), `dice.mjs`, `liars-dice.mjs`,
 `bag.mjs`, `import-run.mjs`. `setup-bench.mjs` (Node, offline: a real
 Automerge repo with no network) times importing a big mod, setting up a
 table from it and showing a card's face, phase by phase, with stand-in
-assets, counting the docs, changes, fetches and decodes each makes. `publish-table.mjs`, `publish-office.mjs` and
+assets, counting the docs, changes, fetches and decodes each makes;
+`decode-bench.mjs` (headless Chrome, the source unbuilt) times drawing what
+that table lays out with the browser's own image backend, one decode at a
+time against several. `publish-table.mjs`, `publish-office.mjs` and
 `publish-liars.mjs` publish examples to a sync server (`--dry-run` to only
 check). `chrome-guard.mjs` makes sure Chrome never outlives its driver.
 

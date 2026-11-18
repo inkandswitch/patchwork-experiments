@@ -48,6 +48,27 @@ const LANES = 6;
 /** How many web assets a viewer who can't store them keeps in memory (a sheet is a few MB). */
 const HELD = 8;
 
+/**
+ * fn(item, i) for each item, `n` at a time, in order: the first failure stops
+ * anything more being started, and is thrown once what's running has finished.
+ */
+async function inLanes(items, n, fn) {
+  let next = 0;
+  let failure = null;
+  const lane = async () => {
+    while (!failure && next < items.length) {
+      const i = next++;
+      try {
+        await fn(items[i], i);
+      } catch (err) {
+        failure ??= { err };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(n, items.length)) }, lane));
+  if (failure) throw failure.err;
+}
+
 /** A file doc as look.js reads it: { content, mimeType, extension, origin } | null. */
 export async function readFile(repo, url) {
   try {
@@ -117,10 +138,11 @@ export function groupsOf(game) {
  * @param {{
  *   repo: object, handle: object,
  *   images?: object | null, source?: (type: string) => Promise<object | null>,
- *   fetch?: typeof fetch | null, now?: () => number, retryMs?: number, batch?: number, maxStoredBytes?: number,
- * }} o  handle: the game doc's; images, source: look.js's drawer's; batch: kinds to a change (`ensure`)
+ *   fetch?: typeof fetch | null, now?: () => number, retryMs?: number, batch?: number, maxStoredBytes?: number, draws?: number,
+ * }} o  handle: the game doc's; images, source: look.js's drawer's; batch: kinds to a change (`ensure`);
+ *   draws: pieces drawn at once (and images decoded at once: look.js)
  */
-export function pieceDrawer({ repo, handle, images = null, source = async () => null, fetch = globalThis.fetch?.bind(globalThis) ?? null, now = () => Date.now(), retryMs = RETRY_MS, batch = 50, maxStoredBytes = 32e6 }) {
+export function pieceDrawer({ repo, handle, images = null, source = async () => null, fetch = globalThis.fetch?.bind(globalThis) ?? null, now = () => Date.now(), retryMs = RETRY_MS, batch = 50, maxStoredBytes = 32e6, draws = 4 }) {
   const doc = () => handle.doc() ?? {};
   let refused = false; // a write was refused: this viewer draws for themselves from now on
   const writer = () => !refused && !(typeof handle.isReadOnly === "function" && handle.isReadOnly());
@@ -213,7 +235,7 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
       }
       return f;
     };
-    const d = drawer({ read, images, source });
+    const d = drawer({ read, images, source, decodes: draws });
     return {
       /** Draw a kind as it is now: { key, glb, bounds, origins, missing, notes, name }, or null if it's gone. */
       async draw(kind) {
@@ -289,26 +311,28 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
     onProgress(0, todo.length);
     await prefetch(todo.flatMap((k) => filesOf(pieces[k])));
     const s = session();
-    const notes = [];
+    const notes = []; // each kind's, in todo's order
     let drawn = 0;
+    let done = 0;
     const pending = [];
     try {
-      for (const [i, kind] of todo.entries()) {
+      // a few at once: decoding (a browser's cost) is done `draws` images at a time
+      await inLanes(todo, draws, async (kind, i) => {
         const e = await s.draw(kind);
         if (e) {
-          notes.push(...e.notes);
+          notes[i] = e.notes;
           if (writer()) pending.push([kind, await store(kind, e)]);
           else local.set(kind, e);
           drawn++;
           if (pending.length >= batch) record(pending.splice(0));
         }
-        onProgress(i + 1, todo.length);
-      }
+        onProgress(++done, todo.length);
+      });
     } finally {
       s.close();
       record(pending);
     }
-    return { drawn, notes };
+    return { drawn, notes: notes.flat().filter(Boolean) };
   }
 
   /** Draw these faces (`kind`'s group's that need it), `kind` first; each kind's waiter resolves as it's drawn. */
@@ -336,14 +360,17 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
       const drawn = [];
       try {
         await prefetch(order.flatMap((k) => filesOf(pieces[k])));
-        for (const k of order) {
+        const one = async (k) => {
           const e = await s.draw(k);
           if (e) {
             drawn.push([k, e]);
             local.set(k, e);
           }
           waiters.get(k).resolve(e ? { glb: e.glb, kept: kept.get(k).p } : null);
-        }
+        };
+        // the face asked for first, alone; the rest a few at once
+        await one(order[0]);
+        await inLanes(order.slice(1), draws, one);
         if (writer()) {
           // in kind order, all at once: what's recorded names the group, never the card asked for
           const entries = [];

@@ -19,7 +19,15 @@
 // note says what was missing.
 //
 // `drawer(io)` keeps what it has decoded between pieces (a card sheet is read
-// once for its seventy cards), a few images at a time.
+// once for its seventy cards), a few images at a time, and may draw several
+// pieces at once: it decodes up to `decodes` images at a time (decoding is
+// most of what drawing costs a browser: ~40 ms a token, ~100 ms a sheet),
+// and holds at most `held` decoded at once, in use or kept for the next
+// piece (a 4096 × 2880 sheet is ~47 MB decoded), so its memory is bounded
+// however many draw. An image is held for each use (a crop, a measure) and
+// let go after; only one no draw is using is ever closed, the least recently
+// used first, and a use that finds every image in use waits for one to be
+// let go (a use holds one image, and never waits holding it).
 
 import { computeNormals, encodeGLB } from "../glb.js";
 import { partGeometry } from "../shapes.js";
@@ -125,10 +133,8 @@ const unitBox = () => partGeometry({ shape: "box", size: [1, 1, 1], at: [0, -0.5
  *   source?: (type: string) => Promise<{ build({ doc }): Promise<{ kind: string, glb: Uint8Array, meta?: { bounds? } }> } | null>,
  * }} io
  */
-export function drawer({ read = async () => null, images = null, source = async () => null } = {}) {
+export function drawer({ read = async () => null, images = null, source = async () => null, decodes = 4, held = 6 } = {}) {
   const files = new Map(); // url → Promise<file doc | null>
-  const opened = new Map(); // url → Promise<image handle | null>, a few at a time (sheets are big)
-  const openOrder = [];
   const crops = new Map(); // url|rect|max → Promise<crop | null>
   const meshes = new Map(); // url → Promise<parsed OBJ | null>
 
@@ -137,38 +143,85 @@ export function drawer({ read = async () => null, images = null, source = async 
     return files.get(url);
   };
   const bytesOf = (f) => (f?.content instanceof Uint8Array ? f.content : typeof f?.content === "string" ? new TextEncoder().encode(f.content) : null);
-  const open = (url) => {
-    if (!images) return Promise.resolve(null);
-    if (!opened.has(url)) {
-      opened.set(
-        url,
-        file(url).then((f) => {
-          const bytes = bytesOf(f);
-          return bytes ? images.open(bytes, f.mimeType).catch(() => null) : null;
-        }),
-      );
-      openOrder.push(url);
-      while (openOrder.length > 6) {
-        const old = openOrder.shift();
-        opened.get(old)?.then((h) => h && images.close?.(h));
-        opened.delete(old);
-      }
+  // ── decoded images: held for each use and let go after, at most `held` at once, `decodes` decoding at once ──
+  const opened = new Map(); // url → { p: Promise<image handle | null>, uses, last }
+  const room = []; // uses waiting for an image to be let go
+  let tick = 0;
+  let decoding = 0;
+  const lanes = []; // decodes waiting for a lane
+  let closed = false;
+  const shut = (url, e) => {
+    opened.delete(url);
+    e.p.then((h) => h && images.close?.(h));
+  };
+  /** Close the least recently used image no draw is using: false if every one is in use. */
+  const evict = () => {
+    let old = null;
+    for (const [u, e] of opened) if (e.uses === 0 && (!old || e.last < old[1].last)) old = [u, e];
+    if (old) shut(...old);
+    return !!old;
+  };
+  const decode = async (url) => {
+    const f = await file(url);
+    const bytes = bytesOf(f);
+    if (!bytes) return null;
+    if (decoding >= decodes) await new Promise((r) => lanes.push(r));
+    decoding++;
+    try {
+      return await images.open(bytes, f.mimeType);
+    } catch {
+      return null;
+    } finally {
+      decoding--;
+      lanes.shift()?.();
     }
-    return opened.get(url);
+  };
+  /** Hold an image (decoding it if nothing has it): its entry, to let go of after. */
+  const hold = async (url) => {
+    for (;;) {
+      const e = opened.get(url);
+      if (e) {
+        e.uses++;
+        e.last = ++tick;
+        return e;
+      }
+      if (opened.size < held || evict()) break;
+      await new Promise((r) => room.push(r));
+    }
+    const e = { p: decode(url), uses: 1, last: ++tick };
+    opened.set(url, e);
+    return e;
+  };
+  const letGo = (url, e) => {
+    if (--e.uses > 0) return;
+    if (closed && opened.get(url) === e) shut(url, e);
+    // every use waiting looks again (one may find its image held by another, and leave this one for the next)
+    for (const r of room.splice(0)) r();
+  };
+  /** fn(the image, decoded) with it held throughout; null if there's no image. */
+  const using = async (url, fn) => {
+    if (!images) return null;
+    const e = await hold(url);
+    try {
+      const h = await e.p;
+      return h ? await fn(h) : null;
+    } finally {
+      letGo(url, e);
+    }
   };
   const crop = (image, max) => {
     const r = image.rect ?? [0, 0, 1, 1];
     const key = `${image.file}|${r.join(",")}|${max}`;
-    if (!crops.has(key)) crops.set(key, open(image.file).then((h) => (h ? images.crop(h, { x: r[0], y: r[1], w: r[2], h: r[3] }, { maxSize: max }) : null)).catch(() => null));
+    if (!crops.has(key)) crops.set(key, using(image.file, (h) => images.crop(h, { x: r[0], y: r[1], w: r[2], h: r[3] }, { maxSize: max })).catch(() => null));
     return crops.get(key);
   };
   const shapeOf = (image) => {
     const r = image.rect ?? [0, 0, 1, 1];
-    return open(image.file).then((h) => (h ? images.shape(h, { x: r[0], y: r[1], w: r[2], h: r[3] }) : null)).catch(() => null);
+    return using(image.file, (h) => images.shape(h, { x: r[0], y: r[1], w: r[2], h: r[3] })).catch(() => null);
   };
   /** An image's width over its height, as it lies on its face (its cell of the sheet, turned), or null. */
   const aspectOf = async (image) => {
-    const h = await open(image.file).catch(() => null);
+    const h = await using(image.file, (x) => ({ width: x.width, height: x.height })).catch(() => null);
     if (!h?.width || !h?.height) return null;
     const r = image.rect ?? [0, 0, 1, 1];
     const a = (h.width * r[2]) / (h.height * r[3]);
@@ -299,9 +352,10 @@ export function drawer({ read = async () => null, images = null, source = async 
     return finish(piece, prims, imgs, notes, origins);
   }
 
+  /** Let go of every image: those no draw is using now, those still in use when they're let go. */
   function close() {
-    for (const h of opened.values()) h?.then((x) => x && images?.close?.(x));
-    opened.clear();
+    closed = true;
+    for (const [u, e] of [...opened]) if (e.uses === 0) shut(u, e);
   }
 
   return { draw, close };
