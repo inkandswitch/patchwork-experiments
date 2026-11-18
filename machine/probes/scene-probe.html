@@ -137,7 +137,7 @@ try {
         out[id] = { tick: null, running: false, shown: null };
         continue;
       }
-      const clock = worldClock(h, { t: () => dbg[w].clock.t(), running: () => docOf(w).clock?.running !== false });
+      const clock = worldClock(h, { t: () => dbg[w].view.outermost().reader.use("clock").t(), running: () => docOf(w).clock?.running !== false });
       const tick = tickAt(clock, s.engine.hz);
       const mesh = screenMesh(w, id);
       const img = mesh?.material?.map?.image;
@@ -335,7 +335,7 @@ try {
     shows,
     placement,
     session: async (url) => { const h = await net.a.find(url); const d = h.doc(); return { clock: JSON.parse(JSON.stringify(d.clock)), seats: JSON.parse(JSON.stringify(d.seats ?? {})), checkpoints: Object.keys(d.checkpoints ?? {}).length }; },
-    clock: (w) => ({ t: dbg[w].clock.t(), computing: dbg[w].clock.computing(), doc: JSON.parse(JSON.stringify(docOf(w).clock ?? null)) }),
+    clock: (w) => ({ t: dbg[w].view.outermost().reader.use("clock").t(), computing: !!dbg[w].view.outermost().reader.use("clock").computer()?.mine, doc: JSON.parse(JSON.stringify(docOf(w).clock ?? null)) }),
     held: (w) => dbg[w].local.get().held ?? null,
     // the view's selection (api.view, what extensions read as attention), through an extension's api
     select: (w, id) => machineApi(w).view.select(id),

@@ -87,6 +87,7 @@ export function hueOf(key) {
 
 /** The others walking in this api's doc, drawn in its frame. */
 function create(api) {
+  const claims = api.use?.("claims");
   const THREE = api.THREE;
   const world = api.world();
   const labels = api.labels();
@@ -138,13 +139,13 @@ function create(api) {
   let stopLoop = null;
 
   function drawPeers() {
-    const now = api.clock?.now?.() ?? 0;
+    const now = api.now?.() ?? 0;
     const dt = last == null ? 0 : (now - last) / 1000;
     last = now;
     const seen = new Set();
     const items = [];
-    for (const [session, p] of Object.entries(api.presence.get() ?? {})) {
-      if (session === api.session) continue;
+    for (const [session, p] of Object.entries(api.channel.peers())) {
+      if (session === api.channel.session) continue;
       const rec = p?.keys?.[WALK]?.avatar;
       if (!okRecord(rec)) continue;
       const a = avatarFor(session, hueOf(p.viewer ?? session));
@@ -158,8 +159,8 @@ function create(api) {
     }
     // and whoever stands at a stand spot under a body of their own, by its claim
     const scale = (on) => (on == null ? 1 : scaleOf(api.worldOf?.(on) ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
-    for (const { session, viewer, rec } of standing(api.scene?.(), (id, kind) => api.claimedBy?.(id, kind) ?? null, scale)) {
-      if (seen.has(session) || session === api.session) continue;
+    for (const { session, viewer, rec } of standing(api.scene?.(), (id, kind) => claims?.claimedBy(id, kind) ?? null, scale)) {
+      if (seen.has(session) || session === api.channel.session) continue;
       const a = avatarFor(session, hueOf(viewer ?? session));
       a.eased = ease(a.eased, rec, dt);
       const at = placeOf(a.eased, (id) => frameOf(api, id));
@@ -186,7 +187,7 @@ function create(api) {
   }
 
   // the others move between doc changes
-  api.presence.watch(() => drawPeers());
+  api.channel.watch(() => drawPeers());
 
   return {
     update: () => drawPeers(),

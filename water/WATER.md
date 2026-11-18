@@ -103,7 +103,7 @@ scale) and the doc's world time: `ocean.js` turns the trait into at most 32
 Gerstner components, and both the shader and the physics use them, so what
 floats is what is drawn. Every read of the sea goes through one seam,
 `ctx.sea` (`ocean.heightAt/sampleAt/normalAt/velocityAt/displaced`,
-`wind.at`; no clock since sailing's N6: each reader asks `api.clock.t()`), read by `physics.js`, `crew.js`, `looks.js` and
+`wind.at`; no clock since sailing's N6: each reader asks `use("clock").t()`), read by `physics.js`, `crew.js`, `looks.js` and
 `hud.js`.
 
 Link two boats into a harbour and each boat's sailing draws her own sea, in
@@ -295,7 +295,7 @@ and links here, and the wind they are roughened by is sailing's
   the reader are built from the same components array, so what floats is
   what is drawn, across docs. Its fine detail, roughness and foam read the
   world's `wind` ambient (Decisions 29); none is calm.
-- **A process with no state**, `api.clock.process({ step() {} })`, held only
+- **A process with no state**, `use("clock").process({ step() {} })`, held only
   where the doc is the world (`mine`) and its water has waves (Decisions
   32). Waves are a function of the world's time, so the world needs someone
   computing its clock; a harbour holding only water and links would
@@ -322,7 +322,7 @@ to sail at scale ≠ 1 (gravity doesn't scale), with its own notice.
 The reader evaluates the world's water at τ, the world's time at the
 moment the caller's clock shows t. In its loop each frame (after every
 stage's clock has ticked) the water extension latches
-Δ = `clock.t − api.clock.t()` and `running` from `ambient("water")`, and
+Δ = `clock.t − use("clock").t()` and `running` from `ambient("water")`, and
 the next frame's reads use them:
 
 - world running: τ(t) = t + Δ, and velocities are as evaluated;
@@ -348,9 +348,9 @@ one frame of wave motion.
   `water` reader, `ctx.sea.wind` is sailing's own wind built from
   `ambient("wind")` converted by the same frame and timing (a few lines;
   sailing cannot import water's; its at(), speed and from all in the
-  stage's frame, Decisions 34), `ctx.sea.clock` is `api.clock.t` (later gone: since
+  stage's frame, Decisions 34), `ctx.sea.clock` is `use("clock").t` (later gone: since
   sailing's N6, `ctx.sea` has no clock and each reader asks
-  `api.clock.t()`). Its
+  `use("clock").t()`). Its
   drawing goes to water/. `physics.js`, `looks.js` and `stations.js` don't
   change.
 - **Ride and HUD only where her doc is the world, or while someone is

@@ -137,7 +137,7 @@ describe("createLooks", () => {
     const rock = fakeNode();
     w = fakeWorld(doc, { content: { buoy: { loaded: true, root }, rock: { loaded: true, root: rock } } });
     const api = w.join("A");
-    api.clock.process({ step() {} }); // a view with a process: the doc's clock runs
+    api.use("clock").process({ step() {} }); // a view with a process: the doc's clock runs
     const sea = createSeaView(api);
     const looks = createLooks(api, { sea, sim: { ships: () => [] } });
     api.loop((dt, now) => {
@@ -146,7 +146,7 @@ describe("createLooks", () => {
     });
     w.tick(1 / 60, 45);
     const m = api.worldOf("buoy");
-    const expected = floatPose(sea.oceanAt([m[12], m[13], m[14]], "buoy"), m, api.clock.t());
+    const expected = floatPose(sea.oceanAt([m[12], m[13], m[14]], "buoy"), m, api.use("clock").t());
     expect(root.position.y).toBeCloseTo(expected.offset[1], 9);
     expect(root.rotation.x).toBeCloseTo(expected.tilt[0], 9);
     expect(root.position.y).not.toBe(0);
@@ -156,7 +156,7 @@ describe("createLooks", () => {
     expect(root.rotation.x).toBe(0);
   });
 
-  it("bobs it at the doc's world time, api.clock.t(), at every t of the table (the clock held there)", () => {
+  it("bobs it at the doc's world time, the clock's t(), at every t of the table (the clock held there)", () => {
     for (const t of [0, 1.5, 30]) {
       w?.done();
       const doc = {
@@ -176,7 +176,7 @@ describe("createLooks", () => {
         looks.tick();
       });
       w.tick(1 / 60, 2);
-      expect(api.clock.t()).toBe(t);
+      expect(api.use("clock").t()).toBe(t);
       const m = api.worldOf("buoy");
       const water = sea.oceanAt([m[12], m[13], m[14]], "buoy");
       const at = floatPose(water, m, t);
@@ -290,6 +290,8 @@ function stockStage({ burgee = false } = {}) {
     worldOf: (id) => worlds[id] ?? null,
     world: () => world,
     clock: { t: () => clock },
+    // (the "clock" service through api.clock, which the table swaps)
+    use: (n) => n === "clock" && { t: () => api.clock.t() },
   };
   let clock = 0;
   const windAsked = []; // the times the wind was read at

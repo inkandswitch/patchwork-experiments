@@ -86,7 +86,8 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
     const api = {
       repo: { find: async (url) => (url === DECK ? (writable ? deck : readOnlyDeck) : Promise.reject(new Error("unavailable"))) },
       writable: () => writable,
-      viewer,
+      channel: { viewer },
+      settled: () => ({ ready: true, missing: [] }),
       collect: (name) => (name === "roster" && has ? [{ id: "seats", value: roster }] : []),
       audience: (id) => (c.unknown ? null : audienceOf(id).audience),
       shown: (id) => (c.unknown ? null : audienceOf(id).shown),
@@ -238,7 +239,7 @@ describe("the joint keeper", () => {
 
   it("a deck that can't be found, or isn't one: closed, and the HUD says so", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const api = { repo: { find: async () => ({ doc: () => ({ title: "Not a deck" }) }) }, viewer: "me", collect: () => [], audience: () => "all", shown: () => "all", schedule() {}, notify() {} };
+    const api = { repo: { find: async () => ({ doc: () => ({ title: "Not a deck" }) }) }, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), collect: () => [], audience: () => "all", shown: () => "all", schedule() {}, notify() {} };
     const x = create(api, { secret: () => newSecret() });
     x.update({ objects: { a: { traits: { [TRAIT]: { by: DECK, slot: 0 } } } } });
     await until(() => x.hud().length === 1);

@@ -2,12 +2,12 @@
 //
 // Everything in a stage that moves with time takes it from here: the frame
 // loop (and with it every extension's `api.loop`, the bodies' walking and
-// looking, a ride, remote poses' playback), world time (`api.clock`: it
+// looking, a ride, remote poses' playback), world time (the `"clock"` service: it
 // ticks once a frame at this source's now), the timers that wait (a hold's
 // keepalive, an extension's linger, arrival's polling and its content wait,
 // a notice's life, a die's tumble) and the wall reads that stamp or measure
 // (presence samples, a claim's grace, a seat's confirm). An extension gets
-// it as `api.clock.now()` and `api.clock.after(ms, fn)`.
+// it as `api.now()` and `api.after(ms, fn)`.
 //
 // - **Real** (`realTime()`, the default): `now()` is `Date.now()`, the epoch
 //   in ms that peers' stamps are compared on (presence samples, a round's

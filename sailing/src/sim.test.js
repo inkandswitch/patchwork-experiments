@@ -193,7 +193,7 @@ describe("createSim on a stage", () => {
     const b = play(w.join("B"));
     expect([a.sim.stepped(ids.hull), b.sim.stepped(ids.hull)]).toEqual([null, null]);
     const seen = [];
-    w.view("A").api.clock.process({ step: (_dt, t) => seen.push([t, a.sim.stepped(ids.hull)]) });
+    w.view("A").api.use("clock").process({ step: (_dt, t) => seen.push([t, a.sim.stepped(ids.hull)]) });
     w.tick(1 / 60, 3);
     expect(b.sim.stepped(ids.hull)).toBeNull();
     expect(seen.length).toBeGreaterThan(0);
@@ -423,7 +423,7 @@ describe("createSim on a stage", () => {
     w.tick(1 / 60, 4 * 60);
     const shown = heldAt(w, ids.hull);
     const speed = a.sim.read(ids.hull).speed;
-    bApi.clock.pause(); // anyone may pause; the computer hears of it and lets go
+    bApi.use("clock").pause(); // anyone may pause; the computer hears of it and lets go
     w.tick(1 / 60, 1);
     expect(doc.clock).toMatchObject({ running: false, by: "viewer-B" });
     expect(a.sim.simulating()).toBe(false);
@@ -431,9 +431,9 @@ describe("createSim on a stage", () => {
     expect(w.released.filter((r) => r.session === "A" && r.id === ids.hull).at(-1)?.landed).toBe(true);
     const t = doc.clock.t;
     w.tick(1 / 60, 3 * 60);
-    expect(bApi.clock.t()).toBe(t); // no time passes
+    expect(bApi.use("clock").t()).toBe(t); // no time passes
     expect(a.sim.simulating() || b.sim.simulating()).toBe(false);
-    bApi.clock.resume();
+    bApi.use("clock").resume();
     w.tick(1 / 60, 1);
     expect(a.sim.simulating()).toBe(true); // (the first here takes it again)
     const p = heldAt(w, ids.hull).position;
@@ -499,7 +499,7 @@ describe("createSim on a stage", () => {
     const bApi = w.join("B");
     play(bApi);
     w.tick(1 / 60, 30);
-    bApi.claim(ids.wheel, "station");
+    bApi.use("claims").claim(ids.wheel, "station");
     w.tick(1 / 60, 2);
     expect(w.holds.get(ids.hull)).toMatchObject({ session: "A", yields: false });
     expect(bApi.heldBy(ids.hull)).toBe("A");
@@ -518,7 +518,7 @@ describe("createSim on a stage", () => {
     w.change(() => {});
     w.tick(1 / 60, 1);
     expect(heldAt(w, ids.wheel).rotation[2]).toBeCloseTo(-0.4 * WHEEL_TURNS * 2 * Math.PI);
-    bApi.claim(ids.wheel, "station");
+    bApi.use("claims").claim(ids.wheel, "station");
     w.tick(1 / 60, 2);
     expect(w.holds.get(ids.wheel)?.session).not.toBe("A");
   });

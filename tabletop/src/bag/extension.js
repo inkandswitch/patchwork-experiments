@@ -8,7 +8,7 @@
 // Carrying is the scene's (`carry`, collected): what can be picked up says so
 // with the `scene.carry` trait, and only that goes into a bag, so whatever
 // comes out of one can be carried again; a passing state is any running
-// extension's to veto (`carryable`); who drew is told with api.tell.
+// extension's to veto (`carryable`); who drew is told with the "tell" service.
 // The contents live in the bag's own document (contents.js), never in the
 // scene doc: that is what "inside" means. The moves and why they merge
 // safely are moves.js and contents.js; this file is the stage side.
@@ -68,6 +68,7 @@ const poseKey = (t) => JSON.stringify([t?.position ?? null, t?.rotation ?? null]
 export default {
   create(api) {
     const { repo } = api;
+    const teller = api.use("tell");
     let dead = false;
     let scene = api.scene();
     const docs = new Map(); // bag url → { handle | null, off }
@@ -213,7 +214,7 @@ export default {
       const emptied = groups.filter((g) => (scene?.members?.get?.(g) ?? []).every((m) => isGroup(objects[m]) || went.has(m)));
       for (const p of [...pendings]) if (went.has(p.id)) retire(p, { quietly: true });
       putObjects({ objects, ids: ok, sceneUrl: api.url, remove: (gone) => api.change(api.remove([...gone, ...emptied])), bag: handle });
-      api.tell("put", { bag: bag.url, n: ok.length });
+      teller.tell("put", { bag: bag.url, n: ok.length });
       return ok.length;
     }
 
@@ -315,7 +316,7 @@ export default {
       const handle = bag ? handleOf(bag.url) : null;
       if (!bag) return 0;
       if (!isBagDoc(handle?.doc?.())) return void api.notify(handle ? "That object's contents aren't a bag document." : "The bag is still loading.", "error");
-      const by = api.session;
+      const by = api.channel.session;
       const how = rule ?? ruleOf(handle.doc());
       const copies = [];
       let got = 0;
@@ -328,7 +329,7 @@ export default {
         else track({ ...drawn, url: bag.url, bagId, carry: wantCarry });
       }
       if (!got) api.notify(`${titleOf(bag.url)} is empty.`);
-      else if (!again) api.tell(verb, { bag: bag.url, n: got });
+      else if (!again) teller.tell(verb, { bag: bag.url, n: got });
       return got;
     }
 
@@ -371,7 +372,7 @@ export default {
       p.putDown?.();
       p.putDown = null;
       pendings = pendings.filter((x) => x !== p);
-      if (!quietly && !p.copy) recent.push({ key: p.key, take: p.take, id: p.id, fresh: p.fresh, copy: false, url: p.url, bagId: p.bagId, until: api.clock.now() + RECENT_MS });
+      if (!quietly && !p.copy) recent.push({ key: p.key, take: p.take, id: p.id, fresh: p.fresh, copy: false, url: p.url, bagId: p.bagId, until: api.now() + RECENT_MS });
       if (!pendings.some((x) => x.carry) && stopLoop) {
         stopLoop();
         stopLoop = null;
@@ -478,16 +479,16 @@ export default {
       try {
         for (const p of [...pendings]) {
           const doc = docOf(p.url);
-          if (!doc || settleDraw(doc, p, api.session, has) !== "lost") continue;
+          if (!doc || settleDraw(doc, p, api.channel.session, has) !== "lost") continue;
           lose(p);
         }
         // one already put down: the same, and the one drawn instead is set down beside the bag
-        const now = api.clock.now();
+        const now = api.now();
         const lost = [];
         recent = recent.filter((r) => {
           if (r.until < now) return false;
           const doc = docOf(r.url);
-          if (!doc || settleDraw(doc, r, api.session) !== "lost") return true;
+          if (!doc || settleDraw(doc, r, api.channel.session) !== "lost") return true;
           lost.push(r);
           return false;
         });
@@ -514,8 +515,8 @@ export default {
       if (insideOf(from.url, sh).some(({ entry }) => bagUrlOf(entry.object) === to.url || (bagUrlOf(entry.object) && bagsWithin(bagUrlOf(entry.object)).has(to.url)))) {
         return void api.notify("A bag can't go inside itself.", "error");
       }
-      const n = pour({ from: a, to: b, by: api.session, shadow: sh.get(from.url) });
-      if (n) api.tell("poured", { from: from.url, to: to.url, n });
+      const n = pour({ from: a, to: b, by: api.channel.session, shadow: sh.get(from.url) });
+      if (n) teller.tell("poured", { from: from.url, to: to.url, n });
       else api.notify(`${titleOf(from.url)} is empty.`);
     }
 
@@ -579,7 +580,7 @@ export default {
           d.unmount = Tool(handle, body, host);
         })
         .catch((err) => api.notify(`Couldn't open the bag: ${err?.message ?? err}`, "error"));
-      api.tell("looked", { bag: bag.url });
+      teller.tell("looked", { bag: bag.url });
       api.schedule(() => {});
     }
 

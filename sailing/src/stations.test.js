@@ -286,7 +286,7 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
     taken: null,
     holds: {}, // id → transform
     released: [], // [id, opts]
-    t: 0, // the world's time (api.clock.t()): a station's tick(dt) is a frame of the world running dt (take, below)
+    t: 0, // the world's time (api.use("clock").t()): a station's tick(dt) is a frame of the world running dt (take, below)
   };
   /** the world runs on by dt (s) */
   s.pass = (dt) => (s.t += dt);
@@ -294,21 +294,26 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
   s.worlds = worlds;
   // claims by id, each kind apart ("station" under the bare id, as the tests read it)
   const slot = (id, kind) => (kind === "station" ? id : `${id}:${kind}`);
-  s.api = {
+  const services = {
     clock: { t: () => s.t },
+    claims: {
+      claim(id, kind, { onLost } = {}) {
+        const k = slot(id, kind);
+        const c = s.claims[k];
+        if (c && !c.mine) return null;
+        s.claims[k] = { mine: true, onLost };
+        return () => {
+          if (s.claims[k]?.mine) delete s.claims[k];
+        };
+      },
+      claimedBy: (id, kind) => (s.claims[slot(id, kind)] ? { viewer: "v", session: "x", mine: s.claims[slot(id, kind)].mine } : null),
+    },
+  };
+  s.api = {
+    use: (name) => services[name] ?? null,
     scene: () => s.scene,
     worldOf: (id) => worlds[id] ?? null,
     content: (id) => (id === "hull" ? { box: { min: [-2, -2, -6.2], max: [2, 15, 6] } } : null),
-    claim(id, kind, { onLost } = {}) {
-      const k = slot(id, kind);
-      const c = s.claims[k];
-      if (c && !c.mine) return null;
-      s.claims[k] = { mine: true, onLost };
-      return () => {
-        if (s.claims[k]?.mine) delete s.claims[k];
-      };
-    },
-    claimedBy: (id, kind) => (s.claims[slot(id, kind)] ? { viewer: "v", session: "x", mine: s.claims[slot(id, kind)].mine } : null),
     pose: {
       hold: (id, t) => (s.holds[id] = t),
       release: (id, o) => (s.released.push([id, o]), delete s.holds[id]),
@@ -704,9 +709,9 @@ describe("the commands", () => {
       expect(s.taken?.id).toBe(holder);
       const kind = STAND_CLAIM[verb];
       expect(typeof kind).toBe("string");
-      expect(s.api.claimedBy(holder, kind)?.mine).toBe(true);
+      expect(s.api.use("claims").claimedBy(holder, kind)?.mine).toBe(true);
       s.leave();
-      expect(s.api.claimedBy(holder, kind)).toBe(null);
+      expect(s.api.use("claims").claimedBy(holder, kind)).toBe(null);
     });
 
   it("the rig rehung under the hull beside the mast: only the mast's tag (the bin's) makes it the mast; a table never is", () => {

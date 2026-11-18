@@ -118,7 +118,7 @@ try {
         let looks = new Map();
         const scene = () => api.scene();
         const inTray = (p) => { const l = scene().toLocal("tray", p); return !!l && l.every((v, k) => v >= TRAY.min[k] - 1e-9 && v <= TRAY.max[k] + 1e-9); };
-        const seated = () => scene()?.traits?.["probe.seat"] === api.viewer;
+        const seated = () => scene()?.traits?.["probe.seat"] === api.channel.viewer;
         const secretOf = (id) => scene()?.objects[id]?.traits?.["probe.secret"];
         return {
           update(s) {
@@ -153,7 +153,7 @@ try {
             const el = document.createElement("div");
             el.className = "probe-panel";
             el.textContent = "probe panel";
-            (window.__probeDock ??= {})[api.viewer] = () => ((window.__probeClose ??= {})[api.viewer] = api.dock(el, { title: "Probe" }));
+            (window.__probeDock ??= {})[api.channel.viewer] = () => ((window.__probeClose ??= {})[api.channel.viewer] = api.dock(el, { title: "Probe" }));
             return el;
           })(),
         };

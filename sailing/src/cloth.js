@@ -124,7 +124,7 @@ export function furledClewOf(out, cloth, furl) {
  * - flog (0..1), luff (0..1), sigma (0..1): trimOf's
  * - reef (0..1, the main: 1 − raised), furl (0..1, a headsail)
  * - flat (controls.flat, ≤ 1)
- * - amp (m), freq (Hz): the flutter's (trim.js flutterOf), at the world time `t` (api.clock.t())
+ * - amp (m), freq (Hz): the flutter's (trim.js flutterOf), at the world time `t` (the "clock" service's t())
  * Rows are the luff's and the leech's at the same height; the reef takes
  * the rows above its level cut (reefCut) and lowers them by f·(head −
  * tack); the furl moves

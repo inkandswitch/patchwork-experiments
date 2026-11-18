@@ -124,6 +124,8 @@ const made = async (repo, value) => (repo.create2 ? await repo.create2(value) : 
 
 function create(api) {
   const { THREE } = api;
+  const clock = api.use("clock");
+  const claims = api.use("claims");
   const layer = api.world();
   layer.name = "machine.screens";
   layer.userData.noPick = true;
@@ -163,7 +165,7 @@ function create(api) {
     machines.set(id, e);
     e.stop = retrying({
       attempt: () => open(e),
-      after: (ms, fn) => api.clock.after(ms, fn),
+      after: (ms, fn) => api.after(ms, fn),
       every: RETRY_MS,
       failed: (err) => void (e.gone || (e.note = `Couldn't start it yet: ${err?.message ?? err}. Trying again`)),
     });
@@ -196,10 +198,10 @@ function create(api) {
       wasm,
       content,
       ports: e.ports,
-      world: api.clock,
-      now: () => api.clock.now(),
+      world: clock,
+      now: () => api.now(),
       writable: () => api.writable(),
-      by: api.viewer ?? null,
+      by: api.channel.viewer ?? null,
       input: () => e.pad.sample(),
     });
     if (e.gone) return m.close(), true;
@@ -244,7 +246,7 @@ function create(api) {
     let lay = null;
     const current = () => sessionOf(api.scene().objects?.[e.id]) !== null;
     return {
-      claim: () => api.claim(e.id, "machine.session"),
+      claim: () => claims.claim(e.id, "machine.session"),
       has: () => e.gone || current(),
       content: async () => {
         const b = (await api.repo.find(doc.content)).doc()?.bytes;
@@ -253,7 +255,7 @@ function create(api) {
       create: async (content) => {
         lay = await findLay(api.registry);
         seats = seatsFor(e.id, { title: e.title, ports: portsOf(e.kind, content), screen: screenOf(e.kind) });
-        return (await newSession(api.repo, { kind: e.kind, wasm: await bytes(WASM[e.kind]), content, wall: api.clock.t() * 1000 })).url;
+        return (await newSession(api.repo, { kind: e.kind, wasm: await bytes(WASM[e.kind]), content, wall: clock.t() * 1000 })).url;
       },
       write: (url) =>
         api.change((d) => {
@@ -335,7 +337,7 @@ function create(api) {
     if (!box) return;
     const h = pads.held();
     const e = h ? machines.get(h.id) : null;
-    const p = controlsAt(e ? { id: e.id, kind: e.kind, title: e.title, port: e.m?.host.seat?.port ?? null } : null, api.clock.now()); // the stage's own time, which never pauses
+    const p = controlsAt(e ? { id: e.id, kind: e.kind, title: e.title, port: e.m?.host.seat?.port ?? null } : null, api.now()); // the stage's own time, which never pauses
     const key = p?.key ?? null;
     if (key === panelKey) return;
     panelKey = key;
@@ -394,7 +396,7 @@ function create(api) {
           e.sound.out.feed(e.m.host);
         } else e.m.host.output(); // taken either way, so it never piles up
       }
-      const note = e.note ?? stoppedNote({ started: !!e.m, running: !!e.m?.clock.running(), world: api.clock.running(), holders: e.m?.holders() ?? [] });
+      const note = e.note ?? stoppedNote({ started: !!e.m, running: !!e.m?.clock.running(), world: clock.running(), holders: e.m?.holders() ?? [] });
       if (note && centre) items.push({ key: `machine:${e.id}`, text: note, position: [centre.x, centre.y - (screen.height / 2) - 0.08, centre.z], className: "machine-note" });
     }
     for (const w of worlds.values()) show(w);

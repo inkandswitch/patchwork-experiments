@@ -267,7 +267,7 @@ try {
     /** does each view's G stage hear the other two views' sessions? */
     hearsAll: () => ["a", "b", "c"].every((w) => { const p = P.presence(w); return p && ["a", "b", "c"].filter((x) => x !== w).every((x) => p.peers.includes(P.presence(x)?.mine)); }),
     claims: (w) => gStage(w)?.debug.claims().map((c) => c.kind) ?? [],
-    claimedBy: (w, sid) => gStage(w)?.debug.host.record("seats")?.api.claimedBy(null, `seat:${sid}`) ?? null,
+    claimedBy: (w, sid) => gStage(w)?.debug.host.record("seats")?.api.use("claims").claimedBy(null, `seat:${sid}`) ?? null,
     faces: (w) => facesIn(gStage(w)),
     /**
      * I6 with the real packages, mid-play (Ana seated at p1 in the room, Ben at p2 aboard, dealt): the
@@ -332,7 +332,7 @@ try {
       }
       return null;
     },
-    resume() { apiOf("b").clock.resume(); return apiOf("b").clock.t(); },
+    resume() { apiOf("b").use("clock").resume(); return apiOf("b").use("clock").t(); },
     // ─── presence where it is (scene/COMPOSITION.md §3; TOOLS.md §6) ───
     /** view w's clock chips, outermost first: { doc, text } (doc: the name it shows, "" at the outermost) */
     chips: (w) => [...hosts[w].querySelectorAll(".clock-chip")].map((c) => ({ doc: c.querySelector(".clock-doc").hidden ? "" : c.querySelector(".clock-doc").textContent, text: c.querySelector(".clock-text").textContent })),

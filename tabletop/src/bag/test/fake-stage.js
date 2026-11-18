@@ -66,8 +66,6 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     repo,
     handle,
     url: SCENE_URL,
-    viewer: "automerge:viewerMe",
-    session,
     signal: { aborted: false },
     doc: () => handle.doc(),
     change: (fn) => handle.change(fn),
@@ -95,19 +93,20 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
       return Object.assign(add, { id });
     },
     notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text),
-    send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]),
-    // said here (and recorded as sent) when declared and valid
-    tell(type, data) {
-      const copy = JSON.parse(JSON.stringify(data));
-      if (declared(instance, type) && telling.say("bag", instance, type, copy, api.viewer)) rec.sends.push([type, copy]);
-    },
-    // the stage's time (scene/src/stage/time.js): the event loop's wall, here
-    clock: {
-      now: () => Date.now(),
-      after(ms, fn) {
-        const h = setTimeout(fn, ms);
-        return () => clearTimeout(h);
+    channel: { viewer: "automerge:viewerMe", session, send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]) },
+    // the "tell" service: said here (and recorded as sent) when declared and valid
+    use: (name) =>
+      name === "tell" && {
+        tell(type, data) {
+          const copy = JSON.parse(JSON.stringify(data));
+          if (declared(instance, type) && telling.say("bag", instance, type, copy, api.channel.viewer)) rec.sends.push([type, copy]);
+        },
       },
+    // the stage's time (scene/src/stage/time.js): the event loop's wall, here
+    now: () => Date.now(),
+    after(ms, fn) {
+      const h = setTimeout(fn, ms);
+      return () => clearTimeout(h);
     },
     collect: (name) => (rec.contributions[name] ?? []).map((value, i) => ({ id: `other${i}`, value })),
     box: boxOf,

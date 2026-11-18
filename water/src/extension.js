@@ -188,9 +188,15 @@ export function isUnder(scene, id, root) {
 
 /** A frame's identity for rebuilding a reader: its matrix's numbers. */
 const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
+/** The world's time as an ambient's `use` gives it (its outermost's "clock"), as latch() reads it. */
+function worldTime(a) {
+  const c = a.use?.("clock");
+  return { t: c ? c.t() : 0, running: c ? c.running() : true };
+}
 
 export default {
   create(api) {
+    const clock = api.use("clock");
     // ─── the world's open water, as this stage reads it ───
     const timing = createTiming(false);
     let world = null; // the reader (convert.js), or null
@@ -209,7 +215,7 @@ export default {
       const key = frameKey(a.frame);
       if (!worldFrom || worldFrom.value !== a.value || worldFrom.key !== key || worldFrom.mine !== a.mine) {
         timing.mine = a.mine;
-        if (!a.mine && !timing.latched) latch(timing, a.clock, api.clock.t());
+        if (!a.mine && !timing.latched) latch(timing, worldTime(a), clock.t());
         world = readerFor(a.value, a.frame, timing);
         worldFrom = { value: a.value, key, mine: a.mine };
         const f = world ? levelOf(a.frame) : null;
@@ -262,7 +268,7 @@ export default {
         }
       }
       const waves = list.length ? wavesByBody(api.collect(WAVES)) : {};
-      const t = api.clock.t();
+      const t = clock.t();
       const seen = new Set();
       order = [];
       for (const { id, size } of list) {
@@ -334,7 +340,7 @@ export default {
     function needTime(a) {
       let want = !!a?.mine && a.value.components?.length > 0;
       for (const b of bodies.values()) want ||= b.components.length > 0;
-      if (want && !process) process = api.clock.process({ step() {} }) ?? (() => {});
+      if (want && !process) process = clock.process({ step() {} }) ?? (() => {});
       else if (!want && process) {
         process();
         process = null;
@@ -400,7 +406,7 @@ export default {
       const colour = colourOf(open ? scene.objects[open]?.traits?.[TRAIT] : null);
       surface.setColour(colour);
       const cam = api.camera.get()?.position;
-      if (cam) surface.update(a.clock.t, cam, atm ? (atm.sun ?? null) : undefined, skyOf(atm));
+      if (cam) surface.update(worldTime(a).t, cam, atm ? (atm.sun ?? null) : undefined, skyOf(atm));
       surface.setShore(...shoreFor(cam, colour));
       surface.setExposure(exposureFor(wind));
       // around the camera, at the world's level
@@ -418,7 +424,7 @@ export default {
     }
 
     function drawPatches(wind, atm) {
-      const t = api.clock.t();
+      const t = clock.t();
       const out = [];
       for (const id of order) {
         const b = bodies.get(id);
@@ -508,7 +514,7 @@ export default {
       refresh();
       const a = api.ambient(TRAIT);
       // after every clock has ticked: the offset the next frame's reads use (convert.js)
-      if (a && !a.mine) latch(timing, a.clock, api.clock.t());
+      if (a && !a.mine) latch(timing, worldTime(a), clock.t());
       needTime(a);
       const wind = api.ambient(WIND)?.value ?? null;
       const atm = api.ambient("atmosphere")?.value ?? null;

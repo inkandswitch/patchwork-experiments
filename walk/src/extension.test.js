@@ -59,17 +59,16 @@ function fakeApi(presence, id, on = null) {
   return {
     api: {
       id,
-      session: "me",
       THREE,
       world: () => world,
       labels: () => ({ set: (items) => (labelled = items) }),
-      presence: { get: () => presence, watch: (fn) => watchers.push(fn), set() {}, rate() {} },
+      channel: { session: "me", peers: () => presence, watch: (fn) => watchers.push(fn), set() {}, rate() {} },
       repo: null,
       invalidate() {},
       // (what the body reads; never entered here)
       body: { current: () => null },
       camera: {},
-      clock: { now: () => 0 },
+      now: () => 0,
       scene: on ? on.scene : () => ({ objects: {} }),
       worldOf: on ? on.worldOf : () => null,
     },

@@ -19,7 +19,7 @@
  * Runs `attempt` until it returns true, again `every` ms after each try that
  * returned false or threw (`failed` hears the error). Returns a cancel.
  * @param o.attempt  async () => boolean: done for good?
- * @param o.after    (ms, fn) => cancel: the stage's time (api.clock.after)
+ * @param o.after    (ms, fn) => cancel: the stage's time (api.after)
  */
 export function retrying({ attempt, after, every = 2000, failed = () => {} }) {
   let cancel = null;

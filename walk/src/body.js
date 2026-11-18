@@ -226,12 +226,12 @@ export function walkBody(api, supports = createSupports(api)) {
         api.camera.set({ position: e, target: [e[0] + d[0], e[1] + d[1], e[2] + d[2]], fov: FOV, near: 0.05, far: 800 });
       }
       function publish(now = false) {
-        const ms = api.clock.now();
+        const ms = api.now();
         if (!st || (!now && ms - lastSent < SEND_MS)) return;
         const a = avatarOf(st, env, yaw, pitch);
         if (!a) return;
         lastSent = ms;
-        api.presence.set("avatar", a);
+        api.channel.set("avatar", a);
       }
       const wanted = () => ({
         forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
@@ -272,7 +272,7 @@ export function walkBody(api, supports = createSupports(api)) {
       function on() {
         if (gone || stopLoop) return;
         releaseCamera = api.camera.hold();
-        api.presence.rate(20);
+        api.channel.rate(20);
         stopLoop = api.loop(tick);
         if (st || start()) placeCamera(), publish(true);
       }
@@ -305,7 +305,7 @@ export function walkBody(api, supports = createSupports(api)) {
       const live = {
         url: api.url ?? null,
         get session() {
-          return api.session ?? null;
+          return api.channel.session ?? null;
         },
         state: () => st,
         env,
@@ -364,7 +364,7 @@ export function walkBody(api, supports = createSupports(api)) {
       };
       LIVE.add(live);
       current = live;
-      globalThis.__WALK_LIVE__?.set?.(`${api.session ?? ""} ${api.url ?? ""}`, live);
+      globalThis.__WALK_LIVE__?.set?.(`${api.channel.session ?? ""} ${api.url ?? ""}`, live);
       on();
       return {
         keys: WALK_KEYS,
@@ -386,7 +386,7 @@ export function walkBody(api, supports = createSupports(api)) {
           // another body on top (a seat, a station): wait under it, withdrawn
           suspended() {
             off();
-            api.presence.set("avatar", undefined);
+            api.channel.set("avatar", undefined);
           },
           // that body went: P1 of its eye lowered by BODY.eye along the up of
           // the support this walker stood on (beside a seat; at a stand spot,
@@ -420,9 +420,9 @@ export function walkBody(api, supports = createSupports(api)) {
           gone = true;
           LIVE.delete(live);
           if (current === live) current = null;
-          if (globalThis.__WALK_LIVE__?.get?.(`${api.session ?? ""} ${api.url ?? ""}`) === live) globalThis.__WALK_LIVE__.delete(`${api.session ?? ""} ${api.url ?? ""}`);
-          api.presence.set("avatar", undefined);
-          api.presence.rate(0);
+          if (globalThis.__WALK_LIVE__?.get?.(`${api.channel.session ?? ""} ${api.url ?? ""}`) === live) globalThis.__WALK_LIVE__.delete(`${api.channel.session ?? ""} ${api.url ?? ""}`);
+          api.channel.set("avatar", undefined);
+          api.channel.rate(0);
         },
         // for tests and probes
         get state() {

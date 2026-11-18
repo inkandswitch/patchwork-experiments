@@ -173,10 +173,10 @@ try {
       });
       return { ...ids, weather: doc.doc().traits?.weather ?? null, running: stageOf().debug.host.running().map((r) => r.id), body: dbg.local.get().body?.id ?? null, clock: P.clock() };
     }),
-    /** the world's clock (her sailing's api.clock, as the clock chip reads it): { t, running } */
-    clock: () => ({ t: api().clock.t(), running: api().clock.running() }),
+    /** the world's clock (her sailing's the "clock" service, as the clock chip reads it): { t, running } */
+    clock: () => ({ t: api().use("clock").t(), running: api().use("clock").running() }),
     /** the world's clock running again, as the clock chip's ▶ does → its t */
-    resume() { api().clock.resume(); return api().clock.t(); },
+    resume() { api().use("clock").resume(); return api().use("clock").t(); },
     body: () => dbg.local.get().body?.id ?? null,
     /** does the view hold the editor, and the Edit toggle beside the chip (a hand, not a body) */
     editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
@@ -223,7 +223,7 @@ try {
     /**
      * The true wind at her mast now, as the stage she sails in reads it
      * (its sailing extension's sea.wind, at the mast's world point mapped
-     * into her frame, at api.clock.t() as physics and the HUD ask it),
+     * into her frame, at api.use("clock").t() as physics and the HUD ask it),
      * turned back into the world; her mean wind (that sea's own speed, from
      * and gustiness), from turned back into the world; and the `wind`
      * ambient that stage's sailing reads ({ value, mine }), which its sea
@@ -241,7 +241,7 @@ try {
       const a = api(st);
       // at the grid instant physics stepped her at (scene's STEP_S, 1/60 s): the clock's t can sit up to a
       // microsecond past it (the doc keeps t rounded up to 1e-6, scene stage/clock.js), and when it does is the wall's
-      const t = Math.round(a.clock.t() * 60) / 60;
+      const t = Math.round(a.use("clock").t() * 60) / 60;
       const [vx, vz] = sea.wind.at(lx, lz, t);
       const r = deg(sea.wind.from), ux = -Math.sin(r), uz = Math.cos(r);
       const wx = F[0] * ux + F[8] * uz, wz = F[2] * ux + F[10] * uz;

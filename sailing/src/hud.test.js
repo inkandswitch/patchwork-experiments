@@ -255,6 +255,8 @@ describe("the HUD", () => {
       loop: (fn) => (loops.push(fn), () => {}),
       worldOf: () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
       clock: { t: () => clock.t },
+      // (the "clock" service through api.clock, which the table below swaps)
+      use: (n) => n === "clock" && { t: () => api.clock.t() },
     };
     const ctx = {
       // a boat alone: her doc is the world
@@ -271,7 +273,7 @@ describe("the HUD", () => {
     return { overlay, loops, api, ctx, hud, clock, root: overlay.querySelector(".sail-hud"), tick: () => hud.tick(0.2) }; // play.js ticks it each frame
   }
 
-  it("reads the wind at the doc's world time, api.clock.t(), at every t of the table", () => {
+  it("reads the wind at the doc's world time, the clock's t(), at every t of the table", () => {
     const s = stage({ current: { playing: true, on: "hull" } });
     for (const t of [0, 1.5, 30]) {
       s.clock.t = t;

@@ -27,7 +27,7 @@
 // where each seat's hands are,
 // for whoever shows seats (`seatPlaces`);
 // and telling everyone what happened (shuffled, drew, washed, laid face up)
-// with api.tell, as counts only, never which card: the stage says it, here as
+// with the "tell" service, as counts only, never which card: the stage says it, here as
 // "You" and to the others by name (`messages`; scene/STAGE.md "Telling").
 //
 // Component physics, not rules: nothing here knows a game, a turn or a
@@ -58,7 +58,8 @@ export function keptBy(api, id) {
 
 export default {
   create(api) {
-    const { viewer } = api;
+    const { viewer } = api.channel;
+    const teller = api.use("tell");
     let scene = null;
     let regions = null;
 
@@ -97,7 +98,7 @@ export default {
       if (typeof kept?.keeper?.shuffle !== "function") return api.notify(kept ? "This pile can't be shuffled." : "Only cards something keeps can be shuffled: these are what they look like.", "error");
       const n = kept.keeper.shuffle(stackOf(id));
       if (!n) return api.notify("There's nothing here to shuffle with it.", "error");
-      api.tell("shuffled", { n, ...(titleOf(kept) ? { of: titleOf(kept) } : {}) });
+      teller.tell("shuffled", { n, ...(titleOf(kept) ? { of: titleOf(kept) } : {}) });
     }
     /** A kept card's container's name, for a notice (public: the container's title). */
     function titleOf(kept) {
@@ -290,7 +291,7 @@ export default {
         stop();
         api.change(api.ops.setTransform(api.scene(), id, to));
         api.pose.release(id, { landed: true });
-        api.tell("drew", { n: 1, ...nounOf(api.scene(), id) });
+        teller.tell("drew", { n: 1, ...nounOf(api.scene(), id) });
       });
       if (!api.pose.hold(id, from)) theirs();
     }
@@ -385,7 +386,7 @@ export default {
         })
         .filter(Boolean);
       if (writes.length) api.change((d) => writes.forEach((w) => w(d)));
-      api.tell("washed", { n, ...nounOf(snap, id), ...(titleOf(plan.kept) ? { of: titleOf(plan.kept) } : {}) });
+      teller.tell("washed", { n, ...nounOf(snap, id), ...(titleOf(plan.kept) ? { of: titleOf(plan.kept) } : {}) });
     }
 
     // ── standing a piece on edge, and laying it flat ──
@@ -499,7 +500,7 @@ export default {
         })
         .filter(Boolean);
       if (writes.length) api.change((d) => writes.forEach((w) => w(d)));
-      api.tell("showed", { n: ids.length, ...nounOf(snap, ids[0]) });
+      teller.tell("showed", { n: ids.length, ...nounOf(snap, ids[0]) });
     }
 
     return {

@@ -64,9 +64,9 @@ export default {
           name: "Climb",
           key: "f",
           show: ["use", "menu"],
-          state: (target, ctx) => climbState(target, ctx?.scene ?? api.scene(), walkerOf(api.session ?? null, api.url ?? null)),
+          state: (target, ctx) => climbState(target, ctx?.scene ?? api.scene(), walkerOf(api.channel.session ?? null, api.url ?? null)),
           run: (target) => {
-            const w = walkerOf(api.session ?? null, api.url ?? null);
+            const w = walkerOf(api.channel.session ?? null, api.url ?? null);
             const ladder = ladderFor(target, api.scene(), w);
             if (!ladder || !w.climb(ladder)) api.notify("Couldn't climb there.");
           },

@@ -2,7 +2,7 @@
 // processes, the poses everyone sees, and the stations' controls. ctx.sim is
 // what the other parts read.
 //
-// The ships are a process on the doc's clock (api.clock, scene STAGE.md, "World time"):
+// The ships are a process on the doc's clock (the "clock" service, scene STAGE.md, "World time"):
 // the view that computes the clock starts it (`start`: warm from the poses
 // it last saw held and the motion last published, else cold from the doc),
 // steps every ship's physics in world time, and once a frame holds each
@@ -226,7 +226,7 @@ export function controlsOf(v, at, spec) {
 /**
  * A state ready to step to world time `t`: when it's further behind than one
  * step catches up (MAX_SUBSTEPS: a stall, or frames too slow), the rest is
- * skipped, as the doc's clock (api.clock.t()) skips it, so she stays on the waves drawn.
+ * skipped, as the doc's clock (clock.t()) skips it, so she stays on the waves drawn.
  * @returns {[object, number]}  the state, and the dt to step it by
  */
 export function catchUp(state, t) {
@@ -343,13 +343,15 @@ export function published(diag, state) {
 
 /**
  * ctx.sim. Reads ctx.sea (oceanAt per ship, wind) at every step; the doc's clock steps
- * it (api.clock.process); play.js ticks it each frame for what every view
+ * it (the "clock" service's process); play.js ticks it each frame for what every view
  * does (inputs, following) and, computing, to hold the poses the steps
  * reached.
  * @param {any} api
  * @param {{ sea: { oceanAt, wind } }} ctx
  */
 export function createSim(api, ctx) {
+  const clock = api.use("clock");
+  const claims = api.use("claims");
   let computing = false; // between the process's start and stop
   let savedSinceStep = false; // a checkpoint wrote the ships since the last step: let go of them landed
   const ships = new Map(); // id → { model, key, state, good, read, seen, at, frame }
@@ -372,10 +374,10 @@ export function createSim(api, ctx) {
 
   /** The live input over a station, from whoever holds it. */
   function liveInput(id) {
-    const c = api.claimedBy(id, STATION);
+    const c = claims.claimedBy(id, STATION);
     if (!c) return null;
     if (c.mine) return inputs[id] ?? null;
-    return api.presence.get()?.[c.session]?.keys?.[api.id]?.input?.[id] ?? null;
+    return api.channel.get()[c.session]?.input?.[id] ?? null;
   }
 
   function value(id, sc = api.scene()) {
@@ -398,12 +400,12 @@ export function createSim(api, ctx) {
 
   function setInputs(next) {
     inputs = next;
-    api.presence.set("input", Object.keys(next).length ? next : undefined);
+    api.channel.set("input", Object.keys(next).length ? next : undefined);
   }
 
   /** The session computing the doc's clock, if it's someone else. */
   function simulator() {
-    const c = api.clock.computer();
+    const c = clock.computer();
     return c && !c.mine ? c.session : null;
   }
 
@@ -440,7 +442,7 @@ export function createSim(api, ctx) {
     holding.clear();
     taken.clear();
     ships.clear();
-    api.presence.set("ships", undefined);
+    api.channel.set("ships", undefined);
   }
 
   /**
@@ -544,7 +546,7 @@ export function createSim(api, ctx) {
       const doc = plainTransform(o.transform);
       const hull = toObject(s.state, s.frame ?? IDENTITY, doc.scale);
       // her hull yields to a person (someone may carry it) unless someone is at the helm: then she's driven
-      const steered = !!(p.helm && api.claimedBy(p.helm, STATION));
+      const steered = !!(p.helm && claims.claimedBy(p.helm, STATION));
       if (api.pose.hold(id, transformOf(hull, doc.scale), { yields: !steered })) {
         held.add(id);
         taken.delete(id);
@@ -554,7 +556,7 @@ export function createSim(api, ctx) {
       // the jib swung about its luff from where it was put, when her physics flies one
       if (p.jib && sc.objects[p.jib] && Number.isFinite(s.read.jib)) hold(p.jib, jibTransform(plainTransform(sc.objects[p.jib].transform), s.read.jib));
       // the wheel is its helmsman's to hold (stations.js, a person's hold), so it turns as their key does; else ours
-      const at = p.helm && api.claimedBy(p.helm, STATION);
+      const at = p.helm && claims.claimedBy(p.helm, STATION);
       if (p.helm && sc.objects[p.helm] && (!at || at.mine)) hold(p.helm, wheelTransform(plainTransform(sc.objects[p.helm].transform), controls.rudder), !at);
       // the anchor lies on the bottom while it's down, and hangs at the bow (the doc's place) when it's up
       if (p.hook && sc.objects[p.hook] && controls.anchor) {
@@ -569,13 +571,13 @@ export function createSim(api, ctx) {
     holding.clear();
     for (const id of held) holding.add(id);
 
-    const now = api.clock.now();
+    const now = api.now();
     if (now - publishedAt >= PUBLISH_EVERY_MS) {
       publishedAt = now;
       const out = {};
       for (const [id, s] of ships) if (s.read) out[id] = s.read;
       streamed = out;
-      api.presence.set("ships", out);
+      api.channel.set("ships", out);
     }
   }
 
@@ -620,7 +622,7 @@ export function createSim(api, ctx) {
     savedSinceStep = true;
   }
 
-  const removeProcess = api.clock.process({ start, step, save, stop });
+  const removeProcess = clock.process({ start, step, save, stop });
 
   return {
     ships: () => shipsOf(api.scene()),
@@ -686,11 +688,11 @@ export function createSim(api, ctx) {
     tick() {
       const sc = api.scene();
       // what this view put in for stations it no longer holds goes
-      const stale = Object.keys(inputs).filter((id) => !api.claimedBy(id, STATION)?.mine);
+      const stale = Object.keys(inputs).filter((id) => !claims.claimedBy(id, STATION)?.mine);
       if (stale.length) setInputs(Object.fromEntries(Object.entries(inputs).filter(([id]) => !stale.includes(id))));
       if (computing) return pose();
       const c = simulator();
-      const latest = c ? api.presence.get()?.[c]?.keys?.[api.id]?.ships : null;
+      const latest = c ? api.channel.get()[c]?.ships : null;
       if (latest) streamed = latest;
       // where the computer last held each hull (its hold, or a person's ahead of it): a successor starts there, not at the last save
       for (const id of shipsOf(sc)) if (api.heldBy?.(id, { yields: true })) shown.set(id, api.worldOf(id));

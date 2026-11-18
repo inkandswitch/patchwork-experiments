@@ -53,7 +53,8 @@ async function mount({ viewer = "me", doc = newPlain({ title: "Deck", items: FAC
   const scheduled = [];
   const api = {
     repo,
-    viewer,
+    channel: { viewer },
+    settled: () => ({ ready: true, missing: [] }),
     audience: (id) => (id in said.audience ? said.audience[id] : []),
     shown: (id) => (id in said.shown ? said.shown[id] : (said.audience[id] ?? [])),
     schedule: (fn) => scheduled.push(fn),
@@ -91,7 +92,7 @@ describe("the plain keeper", () => {
 
   it("before its container has loaded, and for one it can't read: closed, and the HUD says why", async () => {
     const repo = fakeRepo();
-    const api = { repo, viewer: "me", audience: () => "all", shown: () => "all", schedule() {}, notify() {} };
+    const api = { repo, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), audience: () => "all", shown: () => "all", schedule() {}, notify() {} };
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const x = Keeper.create(api);
     const gone = "automerge:2GoneGoneGoneGoneGoneGone1";

@@ -109,7 +109,7 @@ const same = (a, b) => [0, 1, 2].every((i) => Math.abs(num(a?.[i], 0) - num(b?.[
 /**
  * @typedef {object} SlideEnv
  * @property {() => number} now          ms, the wall clock (acts and liveness)
- * @property {() => number} t            s, the doc's world time as this view has it (api.clock.t)
+ * @property {() => number} t            s, the doc's world time as this view has it (the "clock" service's t)
  * @property {() => { objects: object }} doc     the scene doc as this view has it
  * @property {(fn: (d: object) => void) => void} change
  * @property {(id: string, transform: object) => boolean} hold   true when the hold stands (false: someone ahead of it holds the part)

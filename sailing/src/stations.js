@@ -189,7 +189,7 @@ export const gridIndex = (t) => Math.floor(t / STEP_S + 1e-9);
 
 /**
  * A held station's clock: world time in whole steps of the world's grid.
- * Made with `clock` (this view's world time, `api.clock.t()`) where the
+ * Made with `clock` (this view's world time, `clock.t()`) where the
  * hold begins; each call gives back the grid steps t has crossed since the
  * last, n·STEP_S (the same double for the same n). A held key moves its
  * value by the world time it was held, never by the frames' dt: the dt's
@@ -301,6 +301,8 @@ export function heldWeigh({ rode, clock, input, commit, alive = () => true, done
  * @param {{ sea, sim, crew }} ctx
  */
 export function stationCommands(api, ctx) {
+  const clock = api.use("clock");
+  const claiming = api.use("claims");
   const objectOf = (sc, id) => sc?.objects?.[id] ?? null;
   const traitOf = (sc, id, key) => objectOf(sc, id)?.traits?.[key] ?? null;
   const originOf = (id) => {
@@ -312,7 +314,7 @@ export function stationCommands(api, ctx) {
   const reachOf = (c) => (typeof c?.reach === "number" ? c.reach : Infinity);
   const value = (id) => ctx.sim.value(id) ?? {};
   const someoneElse = (id, kind = STATION) => {
-    const by = api.claimedBy(id, kind);
+    const by = claiming.claimedBy(id, kind);
     return !!by && !by.mine;
   };
   const exists = (id) => !!api.scene().objects?.[id];
@@ -334,7 +336,7 @@ export function stationCommands(api, ctx) {
     let h = claims.get(id);
     if (!h || h.lost) {
       const entry = { release: null, lost: false, n: 0 };
-      entry.release = api.claim(id, STATION, { onLost: () => (entry.lost = true) });
+      entry.release = claiming.claim(id, STATION, { onLost: () => (entry.lost = true) });
       if (!entry.release) return null;
       claims.set(id, (h = entry));
     }
@@ -362,7 +364,7 @@ export function stationCommands(api, ctx) {
       value: Number.isFinite(v) ? v : fallback,
       goal,
       rate,
-      clock: () => api.clock.t(),
+      clock: () => clock.t(),
       input: (x) => ctx.sim.input(id, { [field]: x }),
       commit: (x) => ctx.sim.commit(id, { [field]: x }),
       alive: () => !c.lost() && exists(id),
@@ -474,7 +476,7 @@ export function stationCommands(api, ctx) {
   function takePost(stationId, { claimOn, kind, sailId, sheet, halyard }) {
     let lost = false;
     let leave = null;
-    const release = api.claim(claimOn, kind, {
+    const release = claiming.claim(claimOn, kind, {
       onLost: () => {
         lost = true;
         leave?.();
@@ -695,7 +697,7 @@ export function stationCommands(api, ctx) {
   function takeWinch(id) {
     let lost = false;
     let leave = null;
-    const release = api.claim(id, STATION, {
+    const release = claiming.claim(id, STATION, {
       onLost: () => {
         lost = true;
         leave?.();
@@ -782,7 +784,7 @@ export function stationCommands(api, ctx) {
   function takeHelm(id) {
     let lost = false;
     let leave = null;
-    const release = api.claim(id, STATION, {
+    const release = claiming.claim(id, STATION, {
       onLost: () => {
         lost = true;
         leave?.();
@@ -796,7 +798,7 @@ export function stationCommands(api, ctx) {
     const sailId = st.sail ?? null;
     const keys = sailKeys(sailId, { sheet: true, halyard: true });
     const jib = jibKeys(st.jib ?? null, { from: id, wheel: () => angle });
-    const steps = worldSteps(() => api.clock.t()); // the wheel turns by world time, as the trims do
+    const steps = worldSteps(() => clock.t()); // the wheel turns by world time, as the trims do
     let closed = false;
     const steering = (code) => code === "KeyA" || code === "ArrowLeft" || code === "KeyD" || code === "ArrowRight";
     const showWheel = () => {
@@ -993,7 +995,7 @@ export function stationCommands(api, ctx) {
       if (!c) return undefined;
       return heldWeigh({
         rode: value(target).rode,
-        clock: () => api.clock.t(),
+        clock: () => clock.t(),
         input: (f) => ctx.sim.input(target, f),
         commit: (f) => ctx.sim.commit(target, f),
         alive: () => !c.lost() && exists(target),

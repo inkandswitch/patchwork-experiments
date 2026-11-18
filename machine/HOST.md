@@ -22,7 +22,7 @@ Live play runs ahead of the documents:
 |---|---|
 | `timeline.js` | the rollback core: belief about inputs, snapshots, the frontier; no I/O |
 | `session.js` | the documents' shape, and pure functions over them: seating, chunks |
-| `clock.js` | ticks from a clock; the session's stand-in for `api.clock`; a shared wall time |
+| `clock.js` | ticks from a clock; the session's stand-in for the `"clock"` service; a shared wall time |
 | `host.js` | `createSession`, `Host.open(repo, url, …)`: the frame loop, seats, messages, durable writes, checkpoints, late join |
 | `simnet.js` | an in-memory automerge-repo network with fixed latency and loss tables |
 | `harness.js` | test support: peers in virtual time, and replaying a session's documents from scratch |
@@ -385,7 +385,7 @@ Built before the scene's clock and bodies exist; none of it needs them. The
 clock stays injectable: `Host.open(…, { clock })` takes any
 `{ t(), running(), pause?(), resume?() }`, and `RemoteHost` reads such a
 clock on the page each frame and hands the worker its `t` and `running`.
-When `api.clock` lands it is passed as is (if its `t` is a property rather
+When the `"clock"` service lands it is passed as is (if its `t` is a property rather
 than a method, a one-line adapter).
 
 The surface, the same for a host on the page and one in a worker:
@@ -723,7 +723,7 @@ All finite, no randomness.
   automerge-repo peer.
 - **Playing the output** (an AudioWorklet fed by the PCM, Doom's lumps at
   their origins) is the scene extension's.
-- **`api.clock`** landed, and is not passed as `clock` as is: a machine in
+- **the `"clock"` service** landed, and is not passed as `clock` as is: a machine in
   a scene keeps its session clock, over world time (Phase 2b, Decision 1).
   `SyncedWall` stays for the Machine tool, which has no world.
 
@@ -737,8 +737,8 @@ contract (scene/STAGE.md) and a replicated process (STAGE.md, "World time").
 
 ```js
 // one machine on one view (running.js), what extension.js does for each object:
-const m = await runMachine({ repo, url: session, wasm, content, ports, world: api.clock,
-                             now: () => api.clock.now(), writable: () => api.writable(), by, input });
+const m = await runMachine({ repo, url: session, wasm, content, ports, world: the "clock" service,
+                             now: () => api.now(), writable: () => api.writable(), by, input });
 m.frame();                       // every frame: the host steps to the world's t; the process while it runs
 screen.show(viewOf(m.host, { player })());
 m.play(port); m.leave();         // a port, and the clock started; the last to leave stops it
@@ -746,12 +746,12 @@ m.play(port); m.leave();         // a port, and the clock started; the last to l
 
 The first four of the eight wiring steps (FOLLOWUPS, "Machine phase 2b"):
 
-1. **The clock, with its offset.** `worldClock(handle, api.clock)` is the
+1. **The clock, with its offset.** `worldClock(handle, the "clock" service)` is the
    session clock with world time for its shared time: `at` is world ms, so
    a machine made hours into a world starts at tick 0, and pauses with its
    world. Its own `until` stops it while the world runs on.
 2. **A replicated process.** While the machine runs, each view running its
-   host registers `api.clock.process({ replicated: true, step() {} })`, so
+   host registers `use("clock").process({ replicated: true, step() {} })`, so
    that someone computes world time; while it's stopped, none. Its step
    does nothing: the host is pulled from world time on every frame, not
    stepped (Decision 13).
@@ -849,7 +849,7 @@ Then step 7 (round 3):
 ### Decisions, made unattended (the lead was away)
 
 1. **The machine's time is its session clock over world time, not
-   `api.clock` passed as is.** The plan passed `api.clock` with the
+   the `"clock"` service passed as is.** The plan passed the `"clock"` service with the
    machine's pause as the world's. But a machine stops while nobody plays
    (quiet.js), and stopping a world because nobody is playing Doom in it
    would stop the boat and the doors too. So the world's pause stops the
@@ -898,7 +898,7 @@ Then step 7 (round 3):
 10. **A machine plays only where the scene can be written.** Pins and
     mirrors never act; a read-only viewer sees a note. Spectating a
     read-only scene is deferred.
-11. **The host's liveness runs on the stage's time** (`now: api.clock.now`:
+11. **The host's liveness runs on the stage's time** (`now: api.now`:
     reaping, chunks, messages), as STAGE.md "Time" asks; its CPU budget
     stays on the wall.
 12. **`Screen` takes three.js as a parameter** (`api.THREE`): a texture
@@ -931,7 +931,7 @@ Made after review (round 1), also unattended:
     account.*
 14. **Starting is patient** (`src/scene/start.js`). A view that doesn't win
     the object's `machine.session` claim asks again every 2 s on the
-    stage's time (`api.clock.after`). So does the claim holder when it
+    stage's time (`api.after`). So does the claim holder when it
     can't make the session yet (the content still syncing, a fetch
     failing), and so does a view whose start failed for any reason. A
     holder that leaves lets its claim lapse (STAGE.md, "Claims"), and the
@@ -1637,7 +1637,7 @@ Round 3's review (Decisions 41-45):
 - The host in a worker, in a scene (decision 9).
 - A checkpoint nobody wrote in time is written by any peer a period later
   (with a clock passed in there is no `SyncedWall` reference). The view
-  computing the world (`api.clock.computer()`) is the natural reference.
+  computing the world (`use("clock").computer()`) is the natural reference.
 - A read-only viewer spectating (decision 10).
 - The Machine tool's own changes here are mechanical (the content helpers
   and `newSession` moved to load.js, the pad split from its DOM listeners;

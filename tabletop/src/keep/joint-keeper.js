@@ -78,7 +78,9 @@ export function playing(api, scene) {
 
 /** @param {object} api  @param {{ secret?: (viewer: string) => Promise<Uint8Array> | Uint8Array }} [o]  secret: the player's secret (default: their account's; player-secret.js) */
 export function create(api, { secret } = {}) {
-  const { repo, viewer } = api;
+  const { repo } = api;
+  const { viewer } = api.channel;
+  let settled = null; // what api.settled() said at the last update that looked
   // A stage that may not write its doc (a pin, a mirror, a viewer who may only read) takes no part:
   // it joins nothing, takes no turn, hands over no key and makes no secret. It only reveals, with
   // what the doc and this viewer's secret already hold; the stage that acts does the rest.
@@ -218,11 +220,13 @@ export function create(api, { secret } = {}) {
   const titleOf = (key) => decks.get(key)?.handle?.doc?.()?.title ?? null;
 
   return {
-    // Who is seated and who may see what are functions of the doc, of what's running and of which
-    // packages are here (scene/STAGE.md, "Audience"): step again when any of those changed, and
+    // Who is seated and who may see what are functions of the doc and of whether everything it calls
+    // for is here (api.settled; scene/STAGE.md, "Audience"): step again when either changed, and
     // not when only what's drawn did (a pose streaming by, sixty times a second).
     update(snapshot, local, prev) {
-      if (prev && snapshot === prev.scene && local?.running === prev.local?.running && local?.packages === prev.local?.packages) return;
+      const now = JSON.stringify(api.settled());
+      if (prev && snapshot === prev.scene && now === settled) return;
+      settled = now;
       scene = snapshot;
       bound = bindings(snapshot.objects, TRAIT);
       watch(new Set(bound.slots.keys()));

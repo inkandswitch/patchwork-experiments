@@ -130,7 +130,7 @@ export default {
       flash.scale.set(1, 1, 3.5);
       line.add(flash);
       world.add(line);
-      const now = api.clock.now();
+      const now = api.now();
       tracers.push({ line, flash, until: now + 120, flashUntil: now + FLASH_MS });
       api.invalidate();
       pruneLater();
@@ -151,7 +151,7 @@ export default {
     }
 
     function pruneTracers() {
-      const now = api.clock.now();
+      const now = api.now();
       for (let i = tracers.length - 1; i >= 0; i--) {
         const t = tracers[i];
         if (now >= t.flashUntil) t.flash.visible = false;
@@ -171,7 +171,7 @@ export default {
 
     function nameOf(viewer) {
       if (!viewer) return "Someone";
-      if (viewer === api.viewer) return "You";
+      if (viewer === api.channel.viewer) return "You";
       const known = names.get(viewer);
       if (known) return known;
       names.set(viewer, "Player");
@@ -200,12 +200,12 @@ export default {
       const targets = Object.values(objects).filter(isTarget);
       const standing = targets.filter((o) => !isDown(o)).length;
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
-      const now = api.clock.now();
+      const now = api.now();
       const reloading = now < reloadUntil;
       const key = JSON.stringify([holding, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
       if (key === hudKey) return;
       hudKey = key;
-      const scoreList = el("ol", { class: "arena-scores" }, ...board.slice(0, 6).map(([viewer, n]) => el("li", { "data-you": viewer === api.viewer }, el("span", {}, nameOf(viewer)), el("strong", {}, String(n)))));
+      const scoreList = el("ol", { class: "arena-scores" }, ...board.slice(0, 6).map(([viewer, n]) => el("li", { "data-you": viewer === api.channel.viewer }, el("span", {}, nameOf(viewer)), el("strong", {}, String(n)))));
       const show = (...kids) => hud.replaceChildren(...kids.filter((k) => k != null));
       if (!holding) {
         // the count with the scores under it, in one column (so a narrow view
@@ -229,7 +229,7 @@ export default {
 
     /** Shoot along a ray ({ origin, dir }, world): the pointer's, or the eye's under lock. */
     function shoot(ray) {
-      const now = api.clock.now();
+      const now = api.now();
       if (now - lastShot < SHOT_MS || now < reloadUntil) return;
       if (ammo <= 0) return reload();
       const e = ray?.origin ?? api.body?.eye?.()?.position;
@@ -242,8 +242,8 @@ export default {
       const yaw = Math.atan2(-d[0], -d[2]);
       // from just below, right of and ahead of the eye, where a gun's muzzle would be
       const from = [e[0] + Math.cos(yaw) * 0.22 - Math.sin(yaw) * 0.55, e[1] - 0.22, e[2] - Math.sin(yaw) * 0.22 - Math.cos(yaw) * 0.55];
-      tracer(from, to, hueOf(api.viewer));
-      api.send("shot", { from, to });
+      tracer(from, to, hueOf(api.channel.viewer));
+      api.channel.send("shot", { from, to });
       const o = hit ? scene?.objects?.[hit.id] : null;
       if (o && isTarget(o) && !isDown(o)) {
         hitUntil = now + HIT_MS;
@@ -252,7 +252,7 @@ export default {
           const tr = t?.traits?.[TARGET];
           if (!tr || isDown(t)) return; // someone got there first
           tr.stand = { rotation: [...(t.transform.rotation ?? [0, 0, 0])] };
-          tr.down = { by: api.viewer, at: api.clock.now() };
+          tr.down = { by: api.channel.viewer, at: api.now() };
           const fallen = knockedOver(t.transform, yaw);
           t.transform.position = fallen.position;
           t.transform.rotation = fallen.rotation;
@@ -264,8 +264,8 @@ export default {
 
     function reload() {
       if (reloadUntil || ammo === MAG) return;
-      reloadUntil = api.clock.now() + RELOAD_MS;
-      api.clock.after(RELOAD_MS, () => {
+      reloadUntil = api.now() + RELOAD_MS;
+      api.after(RELOAD_MS, () => {
         reloadUntil = 0;
         ammo = MAG;
         render();

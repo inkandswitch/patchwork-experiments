@@ -195,19 +195,19 @@ try {
       const m = worldOf(st, hull);
       const [x, y, z] = [m[12], m[13], m[14]];
       const W = inst(world, "water").water.at([x, y, z]);
-      const tW = world.worldTime().t;
+      const tW = world.reader.use("clock").t();
       const hWorld = W.heightAt(x, z, tW);
       // her reading: the world point in her frame, her reader at her t, the height back out
       const F = frameOf(st);
       const dx = x - F[12], dz = z - F[14];
       const lx = F[0] * dx + F[2] * dz, lz = F[8] * dx + F[10] * dz;
       const own = inst(st, "sailing").debug.sea.oceanAt([lx, y - F[13], lz], hull);
-      const hOwn = own ? own.heightAt(lx, lz, st.worldTime().t) + F[13] : null;
+      const hOwn = own ? own.heightAt(lx, lz, st.reader.use("clock").t()) + F[13] : null;
       const read = inst(st, "sailing").debug.sim.read?.(hull) ?? null;
       const v = read?.velocity;
       // her speed through the water along her heading (hud.js speedOver), in her frame: a frame turns heading and velocity alike
       const speed = Array.isArray(v) && Number.isFinite(read.heading) ? v[0] * Math.sin(read.heading) - v[2] * Math.cos(read.heading) : read ? Number(read.speed) || 0 : null;
-      return { x, y, z, hWorld, hOwn, tW, t: st.worldTime().t, speed };
+      return { x, y, z, hWorld, hOwn, tW, t: st.reader.use("clock").t(), speed };
     },
     /** the true wind at a world point as boat stage `link` reads it, turned back into the world */
     windAt: (w, link, x, z) => {
@@ -215,7 +215,7 @@ try {
       const F = frameOf(st);
       const dx = x - F[12], dz = z - F[14];
       const lx = F[0] * dx + F[2] * dz, lz = F[8] * dx + F[10] * dz;
-      const [vx, vz] = inst(st, "sailing").debug.sea.wind.at(lx, lz, st.worldTime().t);
+      const [vx, vz] = inst(st, "sailing").debug.sea.wind.at(lx, lz, st.reader.use("clock").t());
       return [F[0] * vx + F[8] * vz, F[2] * vx + F[10] * vz];
     },
     /**
@@ -239,7 +239,7 @@ try {
     huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),
     links: (w) => ["LA", "LB"].map((id) => dbg[w].view.linkState([id])),
     sky: (w) => dbg[w].viewport.atmosphere?.sky?.top ?? null,
-    clocks: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], ...s.worldTime(), computer: s.debug.host.record("water")?.api.clock.computer?.() ?? null })),
+    clocks: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], t: s.reader.use("clock").t(), running: s.reader.use("clock").running(), computer: s.reader.use("clock").computer() })),
     notices: (w) => (dbg[w]?.view.atom.get().notices ?? []).map((n) => n.text ?? String(n)),
   });
   window.__ready = true;

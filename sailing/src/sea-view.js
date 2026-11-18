@@ -25,7 +25,7 @@
 //     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
 //
 // It has no clock of its own: the sea's time is the doc's world time, which
-// every reader asks of api.clock.t() (scene STAGE.md, "World time": the computing
+// every reader asks of clock.t() (scene STAGE.md, "World time": the computing
 // view's own, every other view's following it).
 //
 // A boat at another scale than her world's doesn't sail (gravity doesn't
@@ -114,15 +114,17 @@ const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
  * @param {any} api
  */
 export function createSeaView(api) {
+  const clock = api.use("clock");
   const timing = { mine: false, delta: 0, running: true, worldT: 0 };
   let wind = null;
   let windFrom = null; // { value, key, mine }: the ambient the wind was made from
   let scaled = false; // said once: at another scale, she doesn't sail
 
-  function latch(clock) {
-    timing.running = !!clock.running;
-    timing.worldT = Number(clock.t) || 0;
-    timing.delta = timing.worldT - api.clock.t();
+  /** the world's clock (its outermost's, through the ambient's use) as of now, against this stage's */
+  function latch(world) {
+    timing.running = !!world.running();
+    timing.worldT = Number(world.t()) || 0;
+    timing.delta = timing.worldT - clock.t();
   }
 
   function refreshWind() {
@@ -137,7 +139,7 @@ export function createSeaView(api) {
     const key = frameKey(a.frame);
     if (!windFrom || windFrom.value !== a.value || windFrom.key !== key || windFrom.mine !== a.mine) {
       timing.mine = a.mine;
-      if (!a.mine && !windFrom) latch(a.clock);
+      if (!a.mine && !windFrom) latch(a.use("clock"));
       wind = windFor(a.value, a.frame, timing);
       windFrom = { value: a.value, key, mine: a.mine };
     }
@@ -184,8 +186,8 @@ export function createSeaView(api) {
     /** One frame, after every clock has ticked: the wind's offset for the next frame's reads. */
     tick() {
       const a = refreshWind();
-      if (a && !a.mine) latch(a.clock);
-      return api.clock.t();
+      if (a && !a.mine) latch(a.use("clock"));
+      return clock.t();
     },
   };
 }

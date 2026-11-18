@@ -212,6 +212,7 @@ function ownGeometry(node, count) {
  * @param {{ sea, sim }} ctx
  */
 export function createLooks(api, ctx) {
+  const clock = api.use("clock");
   const floatsOf = (scene) => (scene?.ids ?? []).filter((id) => scene.objects[id]?.traits?.[FLOAT]);
   let floats = floatsOf(api.scene?.());
   const moved = new Set(); // float roots this view has moved
@@ -728,7 +729,7 @@ export function createLooks(api, ctx) {
       floats = floatsOf(sc);
     },
     tick() {
-      const t = api.clock.t();
+      const t = clock.t();
       bob(t);
       dress(t);
     },

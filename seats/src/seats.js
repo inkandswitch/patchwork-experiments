@@ -16,7 +16,7 @@
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it
 //     (Sit as …, Stand up: model.js);
-//   - telling everyone when someone sits down (api.tell: the seat id only).
+//   - telling everyone when someone sits down (the "tell" service: the seat id only).
 //
 // Seats have an owner (model.js): the doc's own are its table's, an object's
 // are that object's (a machine's ports), copied and removed with it. The
@@ -81,7 +81,10 @@ const el = (tag, props = {}, ...children) => {
 };
 
 function create(api) {
-  const { repo, viewer } = api;
+  const { repo } = api;
+  const { viewer } = api.channel;
+  const claims = api.use("claims");
+  const teller = api.use("tell");
   let scene = null;
   let dead = false;
 
@@ -115,9 +118,9 @@ function create(api) {
   let held = null; // the lasting seat whose player this viewer is: { ref, release, at }
   let perch = null; // the seat that doesn't last this view sits in: { ref, release, at }
   const heard = new Set(); // sessions whose claims have had their lapse timer
-  const timers = new Set(); // cancels (the stage's time: api.clock.after)
+  const timers = new Set(); // cancels (the stage's time: api.after)
   function later(fn, ms) {
-    const t = api.clock.after(ms, () => {
+    const t = api.after(ms, () => {
       timers.delete(t);
       if (!dead) fn();
     });
@@ -125,10 +128,10 @@ function create(api) {
   }
   /** A seat's live claim, if any: { viewer, session, mine }. */
   function claimOf(ref) {
-    const by = api.claimedBy(ref.of, SEAT_CLAIM(ref.seat)) ?? null;
+    const by = claims.claimedBy(ref.of, SEAT_CLAIM(ref.seat)) ?? null;
     // a session this view hasn't heard from counts for the stage's grace
     // period and then lapses, and no presence event says so: look again then
-    if (by && !by.mine && !Object.hasOwn(api.presence.get() ?? {}, by.session) && !heard.has(by.session)) {
+    if (by && !by.mine && !Object.hasOwn(api.channel.peers(), by.session) && !heard.has(by.session)) {
       heard.add(by.session);
       later(redraw, LAPSE_MS);
     }
@@ -141,7 +144,7 @@ function create(api) {
   };
   /** Is this view in seat `ref` now: claiming it, and (lasting) written down there? */
   const holding = (ref) => (lasting(seatAt(api.scene(), ref)) ? sameSeat(mySeat(api.scene(), viewer), ref) : sameSeat(perch?.ref, ref));
-  const claim = (ref, onLost) => api.claim(ref.of, SEAT_CLAIM(ref.seat), { onLost });
+  const claim = (ref, onLost) => claims.claim(ref.of, SEAT_CLAIM(ref.seat), { onLost });
 
   // ── the picker ──
   api.style(css);
@@ -231,7 +234,7 @@ function create(api) {
     bar.hidden = !ids.length || shown === undefined;
     const st = new Map(ids.map((id) => [id, stateOf({ of, seat: id }, scene)]));
     // ask after everyone here by name now, so a notice about them can say who
-    for (const r of Object.values(api.presence.get() ?? {})) contactName(r?.viewer);
+    for (const r of Object.values(api.channel.peers())) contactName(r?.viewer);
     picked = ids.find((id) => st.get(id).state === "mine" || st.get(id).state === "mine-elsewhere") ?? "";
     const note = { taken: " (taken)", away: " (away)" };
     const label = (id) => `${seats[id]?.name || id}${note[st.get(id).state] ?? ""}`;
@@ -298,7 +301,7 @@ function create(api) {
     reconcile();
   };
   // who is here changes without a doc change: a seat's (taken) / (away), a claim to take back
-  api.presence.watch(redraw);
+  api.channel.watch(redraw);
   later(redraw, LAPSE_MS);
 
   /**
@@ -342,7 +345,7 @@ function create(api) {
           held = null;
         } else if (claimOf(ref)?.mine && seat.player !== viewer) {
           const elsewhere = mySeat(snap, viewer);
-          const otherTab = Object.values(api.presence.get() ?? {}).some((r) => r?.viewer === viewer);
+          const otherTab = Object.values(api.channel.peers()).some((r) => r?.viewer === viewer);
           if (elsewhere || (!seat.player && otherTab)) {
             held.release();
             held = null;
@@ -359,7 +362,7 @@ function create(api) {
       const mine = mySeat(snap, viewer);
       if (!mine || claimOf(mine)) return;
       const release = claim(mine, () => lost(mine));
-      if (release) held = { ref: mine, release, at: api.clock.now() };
+      if (release) held = { ref: mine, release, at: api.now() };
     });
   }
   /** In a draft: this viewer in lasting seat `ref` (or none) and in no other lasting seat of the doc. */
@@ -398,7 +401,7 @@ function create(api) {
   }
   function lostSay(ref, since, taker) {
     const name = someone(taker);
-    const race = since == null || api.clock.now() - since < RACE_MS;
+    const race = since == null || api.now() - since < RACE_MS;
     api.notify(race ? `${name} sat in ${nameOf(ref)} first; you're watching` : `${name} took ${nameOf(ref)} while you were away; you're watching`);
     // sat down from walking and lost the race for it: back on your feet there
     if (race && since != null && sameSeat(walkedUp?.ref, ref) && walkedUp.at === since) {
@@ -428,7 +431,7 @@ function create(api) {
         return drawSeats();
       }
       if (held && !sameSeat(held.ref, ref)) held.release();
-      held = release ? { ref, release, at: api.clock.now() } : null;
+      held = release ? { ref, release, at: api.now() } : null;
     } else if (held && !sameSeat(held.ref, ref)) {
       held.release();
       held = null;
@@ -450,7 +453,7 @@ function create(api) {
         return drawSeats();
       }
       releasePerch();
-      perch = { ref, release, at: api.clock.now() };
+      perch = { ref, release, at: api.now() };
       said(ref);
     }
     seatView(ref);
@@ -458,7 +461,7 @@ function create(api) {
   }
   /** "Sat down", here and to the others (the stage says it: `messages`). */
   function said(ref) {
-    api.tell("sat", ref.of == null ? { seat: ref.seat } : { seat: ref.seat, of: ref.of });
+    teller.tell("sat", ref.of == null ? { seat: ref.seat } : { seat: ref.seat, of: ref.of });
   }
   /**
    * Watching, from the picker of owner `of`'s seats: up from the seat there
@@ -599,7 +602,7 @@ function create(api) {
       who: name,
       walking: walking(),
       seated: seated() && sameSeat(sitting, ref),
-      confirming: sameSeat(confirming?.ref, ref) && api.clock.now() < confirming.until,
+      confirming: sameSeat(confirming?.ref, ref) && api.now() < confirming.until,
       lasting: lasting(st.seat),
     });
     if (!v) return null;
@@ -616,8 +619,8 @@ function create(api) {
     if (a.verb === "stand") return standUp(a.ref);
     const { by, seat, state } = stateOf(a.ref);
     if (state === "taken") return api.notify(`${someone(by?.viewer)} is sitting there.`);
-    if (state === "away" && !(sameSeat(confirming?.ref, a.ref) && api.clock.now() < confirming.until)) {
-      confirming = { ref: a.ref, until: api.clock.now() + CONFIRM_MS };
+    if (state === "away" && !(sameSeat(confirming?.ref, a.ref) && api.now() < confirming.until)) {
+      confirming = { ref: a.ref, until: api.now() + CONFIRM_MS };
       return api.notify(`${contactName(seat?.player) ?? "Whoever sat there"} is away. Press F again to take their seat; you'll see what's theirs.`);
     }
     confirming = null;

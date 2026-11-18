@@ -86,7 +86,7 @@ that carries one calls for walk and lists it, as `walk.spawn` does today.
 | `walk.spawn` | object | `{}` (unchanged) | where people start, facing the way it faces (as now); on an object with a `walk.stand`, at that stand spot, facing its `facing` (Decision 41); a seed and a `spawn` link of its owner |
 | `walk.support` | object | `{}` | a support: its subtree, less sub-supports, loose things and moving parts, is baked in its frame |
 | `walk.moves` | object | `{ swept?: "x"\|"y"\|"z", blocks?: true }` | a moving part (above); never more than one of the two |
-| `walk.stand` | object | `{ at: [x,y,z], facing?: [x,y,z], claim?: kind }`, points in the object's own frame | a stand spot: a seed, and a `stand` link at `at` facing `facing` (default the object's origin). Whoever holds the object's claim of kind `claim` (`api.claimedBy`) is drawn standing there ("Presence under a body") |
+| `walk.stand` | object | `{ at: [x,y,z], facing?: [x,y,z], claim?: kind }`, points in the object's own frame | a stand spot: a seed, and a `stand` link at `at` facing `facing` (default the object's origin). Whoever holds the object's claim of kind `claim` (`use("claims").claimedBy`) is drawn standing there ("Presence under a body") |
 | `walk.ladder` | object | `{ top: [x,y,z] }` in the object's own frame | a seed at `top`, a `ladder` link: `top` its cell, `foot` the nearest water point outside the owner's D_r to the object's origin |
 
 Each trait's part has the trait's verb, as `walk.spawn` has Walk from here:
@@ -404,7 +404,7 @@ stands, and where. Walk needs neither, with no scene change: under every
 body it withdraws its avatar, as now, and **walk.people draws whoever holds
 a stand spot's claim standing at it**. A `walk.stand` with `claim: kind`
 names the claim that says who stands there; for each such spot, walk.people
-asks `api.claimedBy(id, kind)` and draws that session's person (name and
+asks `use("claims").claimedBy(id, kind)` and draws that session's person (name and
 hue from its presence) at the spot's `at`, facing `facing`, in the spot's
 drawn frame. Sailing's stations hold `station` claims for their verbs
 (the sail's only while a key is down, so the helmsman can still trim);
@@ -995,7 +995,7 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 33. **walk contributes `avatar`** (decided unattended (2026-11-17,
     lane/n10), for the lead): `() => record | null`, this viewer's walker
     in this stage, the record its presence says, on top or under a body.
-    `api.presence.get()` holds the peers, never one's own session, so a
+    `api.channel.peers()` holds the peers, never one's own session, so a
     writer that must know whether its viewer walks on its support, or
     swims (sailing's HUD and verbs), reads it here, through the stage's
     generic `collect`, not through a sailing word in walk.

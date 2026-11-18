@@ -9,10 +9,10 @@
 //   Look (the orbit camera) anywhere;
 // - the motion: an act, a pose hold each frame while this view moves a part
 //   (a loop, only then, to draw it), released as landed after the one write;
-//   the landing itself is timed by the stage's time (api.clock.after: the
+//   the landing itself is timed by the stage's time (api.after: the
 //   wall, in a browser), so a view that draws no frames (a hidden tab) still
 //   lands and writes on time, and a pause doesn't stop it halfway;
-// - closing: the scene's process (api.clock.process), registered while any
+// - closing: the scene's process (the "clock" service's), registered while any
 //   part closes itself: its step closes each part once the doc's world time
 //   is its wait past `since`. Only the view computing the clock steps it, so
 //   exactly one view closes a part, whoever opened it; paused, or with
@@ -25,9 +25,10 @@
 import { KEY, createSlides, selfClosing } from "./slide.js";
 
 function create(api) {
+  const clock = api.use("clock");
   const slides = createSlides({
-    now: () => api.clock.now(), // the stage's time: the motion is an act (STAGE.md "Three times")
-    t: () => api.clock.t(),
+    now: () => api.now(), // the stage's time: the motion is an act (STAGE.md "Three times")
+    t: () => clock.t(),
     doc: () => api.doc(),
     change: (fn) => api.change(fn),
     hold: (id, t) => api.pose.hold(id, t, { yields: true }), // false: taken (a person's hold, here or there)
@@ -40,7 +41,7 @@ function create(api) {
   function processes(doc) {
     const want = selfClosing(doc);
     if (want && !removeProcess)
-      removeProcess = api.clock.process({
+      removeProcess = clock.process({
         step(_dt, t) {
           if (slides.due(t)) look();
         },
@@ -75,7 +76,7 @@ function create(api) {
     animate();
     // (a write above may have looked again already, re-entrantly: one timer)
     timer?.();
-    timer = next != null ? api.clock.after(Math.max(16, next - api.clock.now()), look) : null;
+    timer = next != null ? api.after(Math.max(16, next - api.now()), look) : null;
   }
   processes(api.doc());
 

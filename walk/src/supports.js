@@ -397,6 +397,7 @@ export function orientedBox(M, { min, max }) {
  * go of every mesh.
  */
 export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {}) {
+  const clock = api.use?.("clock"); // the world's time: a deck's water moves with it
   const entries = new Map(); // id (null: the ground) → { key, mesh, want, seen, timer, failed }
   const refused = (id) => {
     const e = entries.get(id);
@@ -442,7 +443,7 @@ export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {})
       const kept = MESHES.get(e.want);
       if (kept) use(e, e.want, kept.mesh);
       else if (!e.mesh) land(id, e); // the first: baked when first needed
-      else e.timer = api.clock.after(0, () => land(id, e)) ?? true; // a rebake: off the frame loop, the old mesh in use until it lands
+      else e.timer = api.after(0, () => land(id, e)) ?? true; // a rebake: off the frame loop, the old mesh in use until it lands
     }
     return e;
   }
@@ -454,7 +455,7 @@ export function createSupports(api, P = BODY, { maxColumns = MAX_COLUMNS } = {})
     water(x, z) {
       const w = api.collect?.("water")?.find((c) => c.value?.at)?.value;
       const r = w ? w.at([x, null, z], { not: supportsOf(api.scene?.()) }) : null;
-      const y = r?.heightAt?.(x, z, api.clock?.t?.() ?? 0);
+      const y = r?.heightAt?.(x, z, clock?.t() ?? 0);
       return Number.isFinite(y) ? y : null;
     },
     blockers(on) {

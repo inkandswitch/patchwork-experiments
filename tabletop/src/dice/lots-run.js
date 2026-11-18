@@ -18,7 +18,7 @@
 //     name(v) → string                 // what to call a viewer ("you" for this one)
 //     what(id) → string                // what to call the thing ("d20", "Red cup")
 //     storage?                         // where this client keeps its parts (localStorage, or nothing)
-//     now() → ms                       // the time a round is stamped and waited on: a scene's (api.clock.now), else the wall
+//     now() → ms                       // the time a round is stamped and waited on: a scene's (api.now), else the wall
 //     after(ms, fn) → cancel           // a timer on that time
 //   }
 //

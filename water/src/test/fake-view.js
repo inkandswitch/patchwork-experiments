@@ -132,7 +132,7 @@ export function fakeView(specs, { start = true } = {}) {
       },
       worldOf: (id) => s.poses?.[id] ?? s.api.scene().world(id),
       view: Object.freeze({ get: () => ({ selected: s.selected }) }),
-      clock: Object.freeze({ t: () => s.clock.t, running: () => s.clock.running, process: () => (spec.drawn ? () => {} : (s.processes++, () => s.processes--)) }),
+      use: (name) => (name === "clock" ? Object.freeze({ t: () => s.clock.t, running: () => s.clock.running, process: () => (spec.drawn ? () => {} : (s.processes++, () => s.processes--)) }) : null),
       loop: (fn) => (s.loops.add(fn), () => s.loops.delete(fn)),
       world: () => {
         const g = {
@@ -158,7 +158,7 @@ export function fakeView(specs, { start = true } = {}) {
         const value = view.ambients()[name];
         if (value === undefined) return null;
         const world = stages[0];
-        return Object.freeze({ value, mine: s === world, frame: s.matrix ? { matrix: s.matrix } : { matrix: null }, clock: Object.freeze({ t: world.clock.t, running: world.clock.running }) });
+        return Object.freeze({ value, mine: s === world, frame: s.matrix ? { matrix: s.matrix } : { matrix: null }, use: (name) => (name === "clock" ? Object.freeze({ t: () => world.clock.t, running: () => world.clock.running }) : null) });
       },
     };
   });

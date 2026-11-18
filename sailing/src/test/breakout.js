@@ -162,11 +162,11 @@ export async function replay({ sea, anchored = false, lay = 0, at = null, eased 
     const out = { ids, up: null, leave: null };
     let leaveAt = Infinity;
     const startHalyard = (until) => {
-      const release = bApi.claim(ids.rig, STATION);
+      const release = bApi.use("claims").claim(ids.rig, STATION);
       const v = Number(B.sim.value(ids.rig).raised) || 0;
       held = {
         until,
-        trim: heldTrim({ value: v, goal: 1, rate: RAISE_RATE, clock: () => bApi.clock.t(), input: (x) => B.sim.input(ids.rig, { raised: x }), commit: (x) => B.sim.commit(ids.rig, { raised: x }), alive: () => true, done: release }),
+        trim: heldTrim({ value: v, goal: 1, rate: RAISE_RATE, clock: () => bApi.use("clock").t(), input: (x) => B.sim.input(ids.rig, { raised: x }), commit: (x) => B.sim.commit(ids.rig, { raised: x }), alive: () => true, done: release }),
       };
     };
     for (let frame = 0; frame < 60 * 600; frame++) {
@@ -200,10 +200,10 @@ export async function replay({ sea, anchored = false, lay = 0, at = null, eased 
         startHalyard(() => Number(A.sim.value(ids.rig).raised) > 0.95);
         next = "weigh";
       } else if (next === "weigh" && now >= weigh) {
-        const release = bApi.claim(ids.windlass, STATION);
+        const release = bApi.use("claims").claim(ids.windlass, STATION);
         held = {
           until: () => false,
-          trim: heldWeigh({ rode: B.sim.value(ids.windlass).rode, clock: () => bApi.clock.t(), input: (f) => B.sim.input(ids.windlass, f), commit: (f) => B.sim.commit(ids.windlass, f), done: release }),
+          trim: heldWeigh({ rode: B.sim.value(ids.windlass).rode, clock: () => bApi.use("clock").t(), input: (f) => B.sim.input(ids.windlass, f), commit: (f) => B.sim.commit(ids.windlass, f), done: release }),
         };
         next = null;
         phase = "weighing";

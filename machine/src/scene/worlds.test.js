@@ -235,7 +235,7 @@ test("each object with the world trait has a world drawn in the machines' layer,
   const layer = new THREE.Group();
   let objects = { w1: { sourceUrl: "automerge:wad", traits: { [WORLD]: { machine: "gone", source: "automerge:m" } } }, plain: { sourceUrl: "automerge:x", traits: {} } };
   let snap = { objects };
-  const api = { THREE, world: () => layer, labels: () => ({ set() {} }), scene: () => snap, loop: () => () => {}, listen: () => {}, root: null, collect: () => [], content: () => null, worldOf: () => null };
+  const api = { THREE, world: () => layer, labels: () => ({ set() {} }), scene: () => snap, loop: () => () => {}, listen: () => {}, root: null, collect: () => [], content: () => null, worldOf: () => null, use: () => null };
   const instance = ext.create(api);
   const names = () => layer.children.map((c) => c.name).sort();
   expect(names()).toEqual(["machine.world:w1"]);

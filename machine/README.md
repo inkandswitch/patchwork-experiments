@@ -146,7 +146,7 @@ host.pause(); host.resume(); host.stand();
 
 **Time:**
 - The tick is `floor(clock.t() × hz)`. The clock is the session's own until
-  the stage's `api.clock` lands.
+  the stage's the `"clock"` service lands.
 - Pause is scheduled a quarter second ahead, so every peer stops on the
   same tick.
 
@@ -579,7 +579,7 @@ showed about it:
 What the scene will need from the engines, built before the scene's
 clock and bodies exist. Nothing here is in `src/host/`; the host's clock
 stays injectable (`Host.open(…, { clock })`, any `{ t(), running() }`), so
-`api.clock` can replace the session's own when it lands.
+the `"clock"` service can replace the session's own when it lands.
 
 **Decisions, made unattended (the lead was away):**
 - **Queries are one export, `machine_query(kind)`,** returning
@@ -638,7 +638,7 @@ check against native traces, which do not depend on the build.
 What the scene will need from the host, built before the scene's clock and
 bodies exist; the full text and numbers are in [HOST.md](HOST.md) ("Phase
 2, the host side"). The host's clock stays injectable (`{ clock }`), so
-`api.clock` can replace the session's own when it lands.
+the `"clock"` service can replace the session's own when it lands.
 
 ```js
 // on the page, the engine and timeline in a worker running src/worker/worker.js (bundled):
@@ -693,6 +693,6 @@ host.frame(); draw(host.picture(view)); play(host.output()); host.sit(0); host.s
 
 From "Not done yet" above, now done: the worker, ephemeral traffic,
 checkpoint garbage (they can't be deleted; every one stays linked), and
-rebasing before the oldest checkpoint. `api.clock` and the first half of
+rebasing before the oldest checkpoint. the `"clock"` service and the first half of
 the scene extension came after, in phase 2b (HOST.md). Still open: the rest
 of the scene extension, and the host side's own list in HOST.md.

@@ -48,17 +48,14 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
     return o.parent && objects[o.parent] ? multiply(worldOf(o.parent), own) : own;
   };
   const api = {
-    session,
     url,
-    clock: {
-      now: () => now,
-      t: () => now / 1000,
-      after(ms, fn) {
-        const t = { fn };
-        timers.push(t);
-        return () => (timers = timers.filter((x) => x !== t));
-      },
+    now: () => now,
+    after(ms, fn) {
+      const t = { fn };
+      timers.push(t);
+      return () => (timers = timers.filter((x) => x !== t));
     },
+    use: (name) => (name === "clock" ? { t: () => now / 1000 } : null),
     scene,
     worldOf,
     content(id) {
@@ -81,7 +78,7 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
       set: (c) => (calls.camera.push(c), (camera = c)),
       hold: () => (calls.holds++, () => calls.released++),
     },
-    presence: { set: (k, v) => (calls.presence[k] = v), rate: (hz) => calls.rate.push(hz) },
+    channel: { session, set: (k, v) => (calls.presence[k] = v), rate: (hz) => calls.rate.push(hz) },
     loop(fn) {
       loops.push(fn);
       return () => loops.splice(loops.indexOf(fn), 1);

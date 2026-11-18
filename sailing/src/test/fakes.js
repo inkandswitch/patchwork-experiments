@@ -6,7 +6,7 @@
 // tests need. scene().parents is a Map, resolved as the stage resolves it (a
 // missing parent, or a group, is none).
 //
-// The doc's clock (api.clock, scene/STAGE.md, "World time") as the stage keeps it: the
+// The doc's clock (the "clock" service, scene/STAGE.md, "World time") as the stage keeps it: the
 // first view here, drawing and with a process computes it (the doc's
 // "clock" claim) and steps its processes on a grid of 1/60 s of world time;
 // every view reads the same t (a follower's lag is the stage's business);
@@ -49,13 +49,13 @@ export function emptyScene() {
 export const CLOCK_FAULT = new Error("the clock's t() failed");
 
 /**
- * A stage's clock (api.clock) broken each way a reader could paper over:
+ * A stage's clock (the "clock" service, here api.clock) broken each way a reader could paper over:
  * none, one without t, and a t that throws CLOCK_FAULT. The stage always
  * has a clock with t (scene STAGE.md, "World time"), so a reader of the world time has
  * no fallback: with each row in place of `clock` the read throws (`throws`:
  * an Error class, or the fault itself) and asks the sea at no time at all.
  * Whatever a fallback's spelling, it shows as a read that didn't throw or a
- * time that reached the sea. The rest of `clock` (now, after) is kept.
+ * time that reached the sea. The rest of `clock` is kept.
  */
 export function brokenClocks(clock) {
   const { t, ...rest } = clock;
@@ -416,38 +416,45 @@ export function fakeWorld(doc, { content = {} } = {}) {
     const view = { session, viewer, here: true, keys: {}, at: Date.now(), loops: [], listeners: [], abort: new AbortController(), rate: null, processes: [] };
     views.set(session, view);
     const ext = "sailing";
+    // the native services, as the stage gives them; "clock" goes through to api.clock, which a test may swap (brokenClocks)
+    const services = {
+      claims: {
+        claim(id, kind, { onLost } = {}) {
+          const f = holderOf(id)?.claims?.[kind];
+          if (f && f.session !== session && present(f.session)) return null;
+          change((d) => {
+            const h = id == null ? d : d.objects[id];
+            if (!h.claims) h.claims = {};
+            h.claims[kind] = { viewer, session };
+          });
+          const entry = { session, id, kind, onLost };
+          claims.push(entry);
+          return () => {
+            const i = claims.indexOf(entry);
+            if (i >= 0) claims.splice(i, 1);
+            if (holderOf(id)?.claims?.[kind]?.session === session) change(() => delete holderOf(id).claims[kind]);
+          };
+        },
+        claimedBy(id, kind) {
+          const f = holderOf(id)?.claims?.[kind];
+          if (!f) return null;
+          if (f.session === session) return { viewer: f.viewer, session, mine: true };
+          return present(f.session) ? { viewer: f.viewer, session: f.session, mine: false } : null;
+        },
+      },
+      clock: Object.fromEntries(["t", "running", "computer", "pause", "resume", "process"].map((k) => [k, (...a) => api.clock[k](...a)])),
+    };
     const api = {
       id: ext,
-      session,
-      viewer,
       THREE: fakeThree(),
       signal: view.abort.signal,
       doc: () => doc,
       change,
       scene,
-      claim(id, kind, { onLost } = {}) {
-        const f = holderOf(id)?.claims?.[kind];
-        if (f && f.session !== session && present(f.session)) return null;
-        change((d) => {
-          const h = id == null ? d : d.objects[id];
-          if (!h.claims) h.claims = {};
-          h.claims[kind] = { viewer, session };
-        });
-        const entry = { session, id, kind, onLost };
-        claims.push(entry);
-        return () => {
-          const i = claims.indexOf(entry);
-          if (i >= 0) claims.splice(i, 1);
-          if (holderOf(id)?.claims?.[kind]?.session === session) change(() => delete holderOf(id).claims[kind]);
-        };
-      },
-      claimedBy(id, kind) {
-        const f = holderOf(id)?.claims?.[kind];
-        if (!f) return null;
-        if (f.session === session) return { viewer: f.viewer, session, mine: true };
-        return present(f.session) ? { viewer: f.viewer, session: f.session, mine: false } : null;
-      },
-      presence: {
+      use: (name) => services[name] ?? null,
+      channel: {
+        viewer,
+        session,
         set(key, value) {
           const mine = { ...view.keys[ext] };
           if (value === undefined) delete mine[key];
@@ -455,7 +462,8 @@ export function fakeWorld(doc, { content = {} } = {}) {
           view.keys = { ...view.keys, [ext]: mine };
           view.at = Date.now();
         },
-        get() {
+        get: () => Object.fromEntries(Object.entries(api.channel.peers()).flatMap(([s, p]) => (p.keys?.[ext] ? [[s, p.keys[ext]]] : []))),
+        peers() {
           const out = {};
           for (const [s, v] of views) if (s !== session && v.here) out[s] = { viewer: v.viewer, at: v.at, keys: v.keys };
           return out;
@@ -465,16 +473,17 @@ export function fakeWorld(doc, { content = {} } = {}) {
         },
         watch: () => () => {},
       },
+      // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
+      now: () => Date.now(),
+      after(ms, fn) {
+        const h = setTimeout(fn, ms);
+        return () => clearTimeout(h);
+      },
+      // the "clock" service's workings (scene/src/native/clock.js), behind api.use("clock")
       clock: {
-        // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
-        now: () => Date.now(),
-        after(ms, fn) {
-          const h = setTimeout(fn, ms);
-          return () => clearTimeout(h);
-        },
         t: () => clock.t,
         running,
-        computer: () => api.claimedBy(null, "clock"),
+        computer: () => services.claims.claimedBy(null, "clock"),
         pause() {
           if (!running()) return;
           const write = { running: false, by: viewer };
@@ -535,7 +544,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
       // the world's ambients: this doc's own, it being the outermost
       ambient: (name) => {
         const value = ambients()[name];
-        return value === undefined ? null : Object.freeze({ value, mine: true, frame: Object.freeze({ matrix: null }), clock: Object.freeze({ t: clock.t, running: running() }) });
+        return value === undefined ? null : Object.freeze({ value, mine: true, frame: Object.freeze({ matrix: null }), use: (n) => api.use(n) });
       },
       content: (id) => content[id] ?? null,
       loop(fn) {

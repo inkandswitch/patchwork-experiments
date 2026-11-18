@@ -45,7 +45,7 @@ if (new URLSearchParams(location.search).has("lock")) await import("./lock-shim.
 globalThis.__WALK_ASSERT__ = true;
 // walk's live sessions (walk/src/body.js): a view's walker, to read and to place
 globalThis.__WALK_LIVE__ = new Map();
-const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.session ?? ""} ${api.url ?? ""}`) ?? null : null);
+const liveOf = (api) => (api ? globalThis.__WALK_LIVE__.get(`${api.channel?.session ?? ""} ${api.url ?? ""}`) ?? null : null);
 const mapply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
 /** Put view api's walker at a point local to `on` (her hull's frame), else the stage's, facing yaw (to her heading): walk's P1 there. */
 const placeWalker = (api, on, position, yaw = 0, pitch = 0) => {
@@ -105,8 +105,8 @@ try {
     errors, scene, repo, hostA, hostB,
     get A() { return dbg.a; },
     get B() { return dbg.b; },
-    /** the world's clock running again (api.clock.resume, as the clock chip's ▶ does): → its t */
-    resume() { const api = dbg.a.host.record("sailing")?.api ?? dbg.a.view.plugins.record("scene.use")?.api; api.clock.resume(); return api.clock.t(); },
+    /** the world's clock running again (the clock service's resume, as the clock chip's ▶ does): → its t */
+    resume() { const api = dbg.a.host.record("sailing")?.api ?? dbg.a.view.plugins.record("scene.use")?.api; api.use("clock").resume(); return api.use("clock").t(); },
     joinB() {
       if (dbg.b) return;
       cleanups.b = Tool(B, hostB);
@@ -144,7 +144,7 @@ try {
     held: (w) => !dbg[w].viewport.controls.enabled,
     me: (w) => P.ctx(w)?.crew.me() ?? null,
     read: (id, w) => P.ctx(w)?.sim.read(id) ?? null,
-    clock: (w) => { const api = P.api(w); return api ? api.clock.t() : null; },
+    clock: (w) => { const api = P.api(w); return api ? api.use("clock").t() : null; },
     simulating: (w) => !!P.ctx(w)?.sim.simulating(),
     value: (id, w) => P.ctx(w)?.sim.value(id) ?? null,
     stations: (ship, w) => P.ctx(w)?.sim.stationsOf(ship) ?? null,
@@ -216,7 +216,7 @@ try {
         await time.step(1, { draw: false }); // (no picture: a sample)
         const m = dbg[w]?.viewport.worldOf(id);
         const sea = P.ctx(w)?.sea;
-        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], P.api(w).clock.t()));
+        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], P.api(w).use("clock").t()));
       }
       return out;
     },
@@ -304,7 +304,7 @@ try {
       start() {
         for (const w of ["a", "b"]) {
           const sim = P.ctx(w).sim;
-          off.push(P.api(w).clock.process({
+          off.push(P.api(w).use("clock").process({
             step(_dt, t) {
               last = t;
               for (const id of sim.ships()) {

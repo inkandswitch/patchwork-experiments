@@ -56,7 +56,7 @@
 // frame, against its parent's +Y (roll.js), so on a table aboard a ship it
 // stays on the table and is read against the table.
 //
-// A turn is told (api.tell, STAGE.md "Telling"): which die and which face.
+// A turn is told (the "tell" service, STAGE.md "Telling"): which die and which face.
 // The stage holds the word to the doc by asking this package's `says`, which
 // answers only when the doc moved that die lately, to a pose showing that
 // face as built here, and spends that move: once per move.
@@ -99,6 +99,7 @@ const fromOf = (o) => {
 };
 
 function create(api) {
+  const teller = api.use("tell");
   let scene = null;
   let dead = false;
   const isDie = (o) => !!o && o.kind !== "group" && !!o.traits && Object.hasOwn(o.traits, DIE);
@@ -155,11 +156,11 @@ function create(api) {
     return null;
   }
   /** What to call a viewer at the start of a line: "You", their contact's name, or "Someone"; and in the middle of one. */
-  const capWho = (v) => (v === api.viewer ? "You" : contactName(v) || "Someone");
-  const whoOf = (v) => (v === api.viewer ? "you" : contactName(v) || "someone");
+  const capWho = (v) => (v === api.channel.viewer ? "You" : contactName(v) || "Someone");
+  const whoOf = (v) => (v === api.channel.viewer ? "you" : contactName(v) || "someone");
   /** Ask for the names of everyone here, so a roll is told by name the first time. */
   function meetPeers() {
-    for (const p of Object.values(api.presence?.get?.() ?? {})) contactName(p?.viewer);
+    for (const p of Object.values(api.channel.peers())) contactName(p?.viewer);
   }
 
 
@@ -243,7 +244,7 @@ function create(api) {
     const draw = lots.draw(lead, { sealers: [], of: order });
     if (!draw) return api.notify("Couldn't start the roll");
     const dice = thrown(order, snap);
-    noteThrow({ draw, lead, of: order, by: api.viewer }, snap, true);
+    noteThrow({ draw, lead, of: order, by: api.channel.viewer }, snap, true);
     const toss = { draw, lead, dice, stop: null };
     throws.add(toss);
     for (const id of dice.keys()) rolling.set(id, toss);
@@ -275,7 +276,7 @@ function create(api) {
     const hold = (id, pose) => {
       if (!api.pose.hold(id, pose)) drop(id);
     };
-    const started = api.clock.now();
+    const started = api.now();
     let t = 0;
     let down = null; // once the seed is known: { u, paths: Map id → path, landed: Map id → { to, face } }
     toss.stop = api.loop((dt) => {
@@ -292,18 +293,18 @@ function create(api) {
       t += Math.min(0.1, Number(dt) || 0);
       if (!down) {
         const st = lots.state(lead);
-        if (st && st.draw !== draw) return fail(`${st.by === api.viewer ? "You" : capWho(st.by)} threw that die before yours was drawn: that is the throw.`);
+        if (st && st.draw !== draw) return fail(`${st.by === api.channel.viewer ? "You" : capWho(st.by)} threw that die before yours was drawn: that is the throw.`);
         // only an attempt this client made: one asked in my name by someone else, or a retry of my draw by
         // someone else, is no throw of mine
-        if (st && !(st.by === api.viewer && st.own)) return fail(st.by === api.viewer ? "Someone wrote the lots for that throw in your name: nothing was rolled." : `${capWho(st.by)} drew that throw again: nothing was rolled.`);
+        if (st && !(st.by === api.channel.viewer && st.own)) return fail(st.by === api.channel.viewer ? "Someone wrote the lots for that throw in your name: nothing was rolled." : `${capWho(st.by)} drew that throw again: nothing was rolled.`);
         if (st?.spoiled) return fail("That roll didn't land: its lots were spoiled (see above).");
         // given up (lots.js GONE): someone's client didn't see me here, or mine lost my part
         // (a `gone` in my name my client didn't write is a forgery: said so instead)
         if (st?.phase === "ended") {
-          const why = endedWhy(st, api.viewer, { forged: (vs) => forgedLine(vs, false), lost: "your client lost its part of the lots", gaveUp: (vs) => `${list(vs.map(whoOf))} gave its lots up, not seeing you here` });
+          const why = endedWhy(st, api.channel.viewer, { forged: (vs) => forgedLine(vs, false), lost: "your client lost its part of the lots", gaveUp: (vs) => `${list(vs.map(whoOf))} gave its lots up, not seeing you here` });
           return fail(`That roll didn't land: ${why}. Nothing was rolled.`, false);
         }
-        if (api.clock.now() - started > THROW_MS) {
+        if (api.now() - started > THROW_MS) {
           // (should the doc draw it after all, it lands and is told so, saying this view was told it didn't)
           const w = seenThrows.get(draw);
           if (w) w.late = true;
@@ -352,7 +353,7 @@ function create(api) {
         if (x.seed != null) tellThrow(x, true, by);
         x.done = true;
       }
-    const w = { draw, lead, of: [...of], by, from: new Map(of.map((d) => [d, copyOf(snap.objects?.[d]?.transform)])), seenAt: api.clock.now(), publicAt: null, seed: null, st: null, done: past, ended: false, late: false, early, told: false, forgedTold: false };
+    const w = { draw, lead, of: [...of], by, from: new Map(of.map((d) => [d, copyOf(snap.objects?.[d]?.transform)])), seenAt: api.now(), publicAt: null, seed: null, st: null, done: past, ended: false, late: false, early, told: false, forgedTold: false };
     seenThrows.set(draw, w);
     return w;
   }
@@ -364,7 +365,7 @@ function create(api) {
   /** Note every throw on the doc's dice, and what has become of it. */
   function watchThrows(snap, first) {
     if (!lotsApi()) return;
-    const now = api.clock.now();
+    const now = api.now();
     for (const [id, o] of Object.entries(snap.objects ?? {})) {
       // (a die with no draw on it leads no throw: nothing to ask)
       if (!isDie(o) || !o.traits?.[DIE]?.round) continue;
@@ -383,7 +384,7 @@ function create(api) {
       if (!w.done && !w.ended && st.phase === "ended") {
         w.ended = true;
         // (one somebody says was forged is said so already)
-        if (w.by !== api.viewer && !st.forged?.length) api.notify(`${whose(w.by).replace(/^./, (c) => c.toUpperCase())} throw of ${namesOf(w.of, snap)} was given up before it was drawn: ${st.gone.includes(w.by) ? "their part of its lots was lost" : `${whoOf(w.by)} had left`}. Nothing was rolled.`, "warn");
+        if (w.by !== api.channel.viewer && !st.forged?.length) api.notify(`${whose(w.by).replace(/^./, (c) => c.toUpperCase())} throw of ${namesOf(w.of, snap)} was given up before it was drawn: ${st.gone.includes(w.by) ? "their part of its lots was lost" : `${whoOf(w.by)} had left`}. Nothing was rolled.`, "warn");
       }
       if (!w.done && st.public && w.publicAt == null) {
         w.publicAt = now;
@@ -433,11 +434,11 @@ function create(api) {
   }
 
   const list = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? "");
-  const whose = (v) => (v === api.viewer ? "your" : `${contactName(v) || "someone"}'s`);
+  const whose = (v) => (v === api.channel.viewer ? "your" : `${contactName(v) || "someone"}'s`);
   const namesOf = (ids, snap) => list(ids.map((d) => snap.objects?.[d]?.name || "a die"));
   /** "Ana says someone wrote its lots in their name", for whoever says so (lots.js "forged"); `cap`: at the start of a line. */
   function forgedLine(forged, cap = true) {
-    if (forged.length === 1 && forged[0] === api.viewer) return `${cap ? "S" : "s"}omeone wrote its lots in your name`;
+    if (forged.length === 1 && forged[0] === api.channel.viewer) return `${cap ? "S" : "s"}omeone wrote its lots in your name`;
     return `${list(forged.map((v, i) => (cap && i === 0 ? capWho(v) : whoOf(v))))} say${forged.length === 1 ? "s" : ""} someone wrote its lots in their name`;
   }
   /**
@@ -477,9 +478,9 @@ function create(api) {
     // how it was drawn, when that's worth saying: by its asker alone, without someone left out, or forged
     const notes = [];
     const by = st.contributors ?? [];
-    if (by.length === 1 && (by[0] !== api.viewer || (st.members?.length ?? 1) > 1)) notes.push(`drawn by ${whoOf(by[0])} alone`);
+    if (by.length === 1 && (by[0] !== api.channel.viewer || (st.members?.length ?? 1) > 1)) notes.push(`drawn by ${whoOf(by[0])} alone`);
     const left = (st.excluded ?? []).filter((v) => !by.includes(v));
-    if (left.length) notes.push(`${list(left.map(whoOf))} didn't open ${left.length === 1 && left[0] === api.viewer ? "your" : "their"} part, and it was drawn again without ${left.length === 1 && left[0] === api.viewer ? "you" : "them"}`);
+    if (left.length) notes.push(`${list(left.map(whoOf))} didn't open ${left.length === 1 && left[0] === api.channel.viewer ? "your" : "their"} part, and it was drawn again without ${left.length === 1 && left[0] === api.channel.viewer ? "you" : "them"}`);
     if (st.forged?.length) notes.push(`${forgedLine(st.forged, false)}: no fair roll`);
     // told as given up first (an opening crossed the `gone`): it was drawn after all; or, in its thrower's view,
     // told it didn't land when its time was up (`late`), and the doc drew it later
@@ -520,15 +521,15 @@ function create(api) {
     // already lying that way: nothing to do, and nothing to tell
     if (sameTransform(to, from)) return;
     api.change(api.ops.setTransform(snap, id, to));
-    api.tell("turned", { die: id, face });
+    teller.tell("turned", { die: id, face });
   }
 
   // ── a turn's word, held to the doc (the stage asks `says`: STAGE.md "Telling") ──
   const seenAt = new Map(); // die id → its doc transform as this view last saw it (a copy)
   const moved = new Map(); // die id → when this view saw its doc transform change (ms), until a word of it is told
-  const timers = new Set(); // cancels (the stage's time: api.clock.after)
+  const timers = new Set(); // cancels (the stage's time: api.after)
   function later(fn, ms) {
-    const t = api.clock.after(ms, () => {
+    const t = api.after(ms, () => {
       timers.delete(t);
       if (!dead) fn();
     });
@@ -538,7 +539,7 @@ function create(api) {
   function look(id, o) {
     const was = seenAt.get(id);
     seenAt.set(id, copyOf(o.transform));
-    if (was !== undefined && !sameTransform(o.transform, was)) moved.set(id, api.clock.now());
+    if (was !== undefined && !sameTransform(o.transform, was)) moved.set(id, api.now());
   }
   /** In update(): note each die whose transform changed. */
   function diceMoved(snap) {
@@ -554,7 +555,7 @@ function create(api) {
         if (!isDie(o) || kept(data.die, s)) return null;
         // the doc may have moved it since this view last looked
         look(data.die, o);
-        if (api.clock.now() - (moved.get(data.die) ?? -Infinity) > MOVED_MS) return null;
+        if (api.now() - (moved.get(data.die) ?? -Infinity) > MOVED_MS) return null;
         if (shows(data.die, s)?.face !== data.face) return null;
         const label = builtFor(data.die)?.faces?.[data.face]?.label;
         if (typeof label !== "string") return null;
@@ -585,7 +586,7 @@ function create(api) {
     const body = document.createElement("div");
     body.className = "dice-panel";
     // the panel rolls among whoever has this die's panel open, as this scene's viewer
-    body.viewerId = api.viewer;
+    body.viewerId = api.channel.viewer;
     body.repo = api.repo;
     const mine = (dock = { id, close: null, unmount: null });
     // its × is someone closing it

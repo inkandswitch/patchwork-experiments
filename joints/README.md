@@ -26,7 +26,7 @@ It runs by its trait, whatever the viewer is doing (a drawer is opened by
 someone selecting things as well as by someone walking); the use prompt
 that shows its verb is the scene's, in every scene.
 While any part in the scene closes itself (a `wait`), it registers a
-**process** on the scene's world clock (`api.clock.process`, scene
+**process** on the scene's world clock (`use("clock").process`, scene
 STAGE.md, "World time"): the closing.
 
 ## The trait

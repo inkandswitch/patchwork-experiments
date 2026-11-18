@@ -51,7 +51,8 @@ export function holderOf(o) {
 }
 
 function create(api) {
-  const viewer = api.viewer;
+  const viewer = api.channel.viewer;
+  let settled = null; // what api.settled() said at the last update that looked
   let nudges = 0;
   function roster() {
     for (const { value } of api.collect?.("roster") ?? []) if (typeof value?.viewers === "function") return value;
@@ -76,7 +77,7 @@ function create(api) {
     },
     present() {
       const here = [viewer];
-      for (const p of Object.values(api.presence?.get?.() ?? {})) if (typeof p?.viewer === "string" && p.keys?.[api.id]?.here) here.push(p.viewer);
+      for (const p of Object.values(api.channel.peers())) if (typeof p?.viewer === "string" && p.keys?.[api.id]?.here) here.push(p.viewer);
       return here;
     },
     seated() {
@@ -96,8 +97,8 @@ function create(api) {
     },
     what: (id) => api.nameOf?.(id) || api.scene()?.objects?.[id]?.name || "this",
     // the stage's time (scene STAGE.md "Time"): a round's waits and stamps move with the scene's frames
-    now: () => api.clock.now(),
-    after: (ms, fn) => api.clock.after(ms, fn),
+    now: () => api.now(),
+    after: (ms, fn) => api.after(ms, fn),
     storage: (() => {
       try {
         return globalThis.localStorage ?? null;
@@ -107,12 +108,14 @@ function create(api) {
     })(),
   });
   // this client takes part in draws: say so to the others
-  api.presence?.set?.("here", true);
+  api.channel.set("here", true);
 
   return {
     update(snapshot, local, prev) {
-      // look again when the doc, what's running or what's installed changed (any of which can change an audience)
-      if (prev && snapshot === prev.scene && local?.running === prev.local?.running && local?.packages === prev.local?.packages && local?.["dice.lots.known"] === prev.local?.["dice.lots.known"]) return;
+      // look again when the doc, whether everything it calls for is here (api.settled) or what's known changed (any of which can change an audience)
+      const now = JSON.stringify(api.settled());
+      if (prev && snapshot === prev.scene && now === settled && local?.["dice.lots.known"] === prev.local?.["dice.lots.known"]) return;
+      settled = now;
       runner.act();
     },
     [ID]: Object.freeze({ draw: runner.draw, state: runner.state, told: runner.told }),

@@ -44,7 +44,9 @@ export async function contain({ repo }, { title, items }) {
 }
 
 function create(api) {
-  const { repo, viewer } = api;
+  const { repo } = api;
+  const { viewer } = api.channel;
+  let settled = null; // what api.settled() said at the last update that looked
   const containers = new Map(); // url → { handle, problem, off }
   let bound = bindings({}, TRAIT);
   let looks = new Map();
@@ -108,11 +110,13 @@ function create(api) {
   const titleOf = (key) => containers.get(key)?.handle?.doc?.()?.title ?? null;
 
   return {
-    // Who may see what is a function of the doc, of what's running and of which packages are here
-    // (scene/STAGE.md, "Audience"): look again when any of those changed, and not when only
+    // Who may see what is a function of the doc and of whether everything it calls for is here
+    // (api.settled; scene/STAGE.md, "Audience"): look again when either changed, and not when only
     // what's drawn did (a pose streaming by, sixty times a second).
     update(snapshot, local, prev) {
-      if (prev && snapshot === prev.scene && local?.running === prev.local?.running && local?.packages === prev.local?.packages) return;
+      const now = JSON.stringify(api.settled());
+      if (prev && snapshot === prev.scene && now === settled) return;
+      settled = now;
       bound = bindings(snapshot.objects, TRAIT);
       watch(new Set(bound.slots.keys()));
       lens();
