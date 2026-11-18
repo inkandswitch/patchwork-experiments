@@ -349,9 +349,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (stages.get(s.n) === s) stages.delete(s.n);
     packagesChanged();
     ambientsChanged();
-    if (shownLive.has(s)) announcer.release(shownLive.get(s));
-    shownLive.delete(s);
-    // the stage it was drawn under shows that object's hint again
+    if (s.path.length && s.acts) announcer.release(s.url);
+    // (what it was opened under shows that object's hint again)
     if (s.path.length) stageUnder(s.path.slice(0, -1))?.childrenChanged();
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
@@ -383,9 +382,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     return null;
   }
   // ─── opening stages: the tree (STAGE.md, "Views, stages and links") ─────────────
-  // A view plugin opens a doc as a stage under an object of another stage
-  // (scene.links does, for links): drawn in that object's frame, as its
-  // content. Closing one closes everything under it, and the focus leaves it.
 
   /** The open stage whose path is `p` exactly, acting or drawn, or null. */
   const stageUnder = (p) => [...stages.values()].find((s) => samePath(s.path, p)) ?? null;
@@ -406,11 +402,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       return m && f.matrix ? multiplyMatrices(f.matrix, m) : m;
     };
     const s = addStage((n) => openStage({ handle: h, view: api, n, path: [...at, id], frame, under: keyOf(parent.n, id), role: acting && h === handle ? "acting" : "pinned", deps }));
-    // a doc shown live is announced (./announce.js); a pin keeps its own version
-    if (h === handle) {
-      shownLive.set(s, h.url);
-      announcer.hold(h.url);
-    }
+    // a doc it plays is announced (./announce.js); a pin keeps its own version
+    if (s.acts) announcer.hold(s.url);
     parent.childrenChanged();
     return s;
   }
@@ -421,7 +414,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (within(atom.get().focus)) focusOn(s.path.slice(0, -1));
     for (const x of [...stages.values()].filter((x) => within(x.path)).sort((a, b) => b.path.length - a.path.length)) x.dispose();
   }
-  const shownLive = new Map(); // stage → the url it announced
   // While a view plugin is opening stages (api.opening()), arriving waits for them.
   const opening = new Set();
   const pending = () => plugins.starting() || opening.size > 0;
@@ -1382,8 +1374,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     cursor,
     arrive,
     tryArrive,
-    openUnder,
-    closeStage,
     stageUnder,
     /** what arriving still waits to enter (where view.start leads: its stage's number, body and place), for probes and tests */
     arriving: () => {
