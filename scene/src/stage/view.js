@@ -37,6 +37,7 @@ import { createDrawer } from "./dock.js";
 import { escapeHint, restLayer } from "./ladder.js";
 import { LOOK } from "./bodies.js";
 import { collectFrom, createHost, updateAll } from "./host.js";
+import { providersFirst } from "./activation.js";
 import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath, viewKey } from "./paths.js";
@@ -1301,7 +1302,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── leaving the page ─────────────────────────────────────────────────────
   // Patchwork doesn't run the tool's cleanup when the tab closes. On pagehide
-  // every stage lets go of its claims and says bye; restored from the
+  // every stage says "hide" (its services let go) and bye; restored from the
   // back-forward cache, the view is a new session and every stage comes back.
   let away = false;
   const onPageHide = () => {
@@ -1561,13 +1562,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** run a command in the stage it names (else the focus's): { stage?, ext, command, target, value?, hit? } */
       run: (inv) => live() && run(inv),
       /**
-       * the input path's stages, innermost first: each its reader { stage, path, scene, collect, context, attention, look, pointed, run, nameOf, writable, clock }
+       * the input path's stages, innermost first: each its reader { stage, path, scene, collect, context, attention, look, pointed, run, nameOf, writable, use }
        * (pointer: true for the pointer's path, what a menu is of; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's)
        */
       path: (o) => inputPath(o),
       /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
-      /** a service (STAGE.md, "Services"): the focus stage's provider's, else a view plugin's */
+      /** a service (STAGE.md, "Native services"): the focus stage's provider's, else a view plugin's */
       use: (name) => (live() ? (api.focus()?.use(name) ?? plugins.use(name, { id, signal })) : null),
     };
 
@@ -1617,7 +1618,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const plugins = createHost({
     registry: () => getRegistry("scene:view"),
     makeApi,
-    wanted: (metas) => metas.filter((m) => m?.id).map((meta) => ({ id: meta.id, meta, scope: "view" })),
+    wanted: (metas) => providersFirst(metas.filter((m) => m?.id).map((meta) => ({ id: meta.id, meta, scope: "view" }))),
     onChange: () => {
       if (dead) return;
       router.refresh();

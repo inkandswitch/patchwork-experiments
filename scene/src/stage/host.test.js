@@ -202,6 +202,42 @@ describe("the host", () => {
     expect(log.filter((l) => l.startsWith("dispose"))).toEqual(["dispose:clock", "dispose:inspector", "dispose:outline", "dispose:select"]);
   });
 
+  // Providers first, by construction: every registration order of two
+  // providers (B uses A's service at create) and two consumers (each uses
+  // one at create) runs A, B, then the consumers in registry order, and
+  // every create finds its service. A service an instance offers but its
+  // metadata doesn't declare is never handed out.
+  it("over every registration order of {A, B uses A, C uses A, D uses B}: providers first, every create's use finds its service", async () => {
+    const ms = [
+      { id: "A", traits: ["*"], provides: ["a"] },
+      { id: "B", traits: ["*"], provides: ["b"], uses: ["a"] },
+      { id: "C", traits: ["*"] },
+      { id: "D", traits: ["*"] },
+    ];
+    const needs = { B: "a", C: "a", D: "b" };
+    const perms = (xs) => (xs.length ? xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p])) : [[]]);
+    let n = 0;
+    for (const order of perms(ms)) {
+      const found = {};
+      let host;
+      const mods = Object.fromEntries(
+        ms.map((m) => [m.id, { create: (api) => ((found[m.id] = needs[m.id] ? api.use(needs[m.id]) : "-"), { provides: { [m.provides?.[0] ?? "z"]: (c) => ({ by: m.id, for: c.id }) } }) }]),
+      );
+      host = createHost({ registry: async () => registry(order, mods), makeApi: (rec) => ({ api: { use: (k) => host.use(k, rec) }, release: () => {} }) });
+      host.sync(doc());
+      await flush();
+      const ran = host.running().map((r) => r.id);
+      const where = order.map((m) => m.id).join("");
+      expect(ran, where).toEqual(["A", "B", ...order.map((m) => m.id).filter((id) => "CD".includes(id))]);
+      expect(found, where).toEqual({ A: "-", B: { by: "A", for: "B" }, C: { by: "A", for: "C" }, D: { by: "B", for: "D" } });
+      expect(host.use("z", { id: "x" }), where).toBeNull(); // C's and D's, undeclared
+      host.dispose();
+      n++;
+    }
+    expect(n).toBe(24);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("“C”: its metadata and instance differ on providing “z”"));
+  });
+
   // H2: one stop rule. One extension, the doc calling for it or not, busy or
   // not, over every sequence of up to four events (want, unwant, busy, idle,
   // wait LINGER_MS, wait BUSY_RECHECK_MS): 1,555 sequences. After every

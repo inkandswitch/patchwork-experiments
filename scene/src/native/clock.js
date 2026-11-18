@@ -497,14 +497,8 @@ function create(api) {
   }
   ch.watch(check);
   api.page.on("visible", check);
-  api.page.on("hide", () => {
-    clock.letGo();
-    away = true;
-  });
-  api.page.on("show", () => {
-    away = false;
-    check();
-  });
+  api.page.on("hide", () => (clock.letGo(), (away = true)));
+  api.page.on("show", () => ((away = false), check()));
 
   return {
     provides: {

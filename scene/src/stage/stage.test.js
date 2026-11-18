@@ -466,7 +466,6 @@ describe("the stage, mounted", () => {
     const a = exts["t.edit"].api.ambient("atmosphere");
     expect(a.value).toBe(m.debug.ambients().atmosphere);
     expect(a.mine).toBe(true);
-    expect(a.use("none")).toBeNull(); // (and the world's services: none here)
     expect(exts["t.edit"].api.ambient("t.weather")).toBeNull();
     uninstall("t.always");
     await settle();
@@ -876,8 +875,8 @@ describe("the stage, mounted", () => {
         () => api.run({ ext: "t.edit", command: "gun" }),
         () => m.local.swap((v) => ({ ...v, selected: "a" })),
         () => api.setPref("grid", false),
-        () => api.use("clock")?.pause(),
-        () => api.use("clock")?.resume(),
+        () => api.change((d) => void (d.clock.running = false)),
+        () => api.change((d) => void (d.clock.running = true)),
         () => api.run({ ext: "t.edit", command: "gun" }),
         () => api.body.leave(),
         () => m.local.swap((v) => ({ ...v, selected: null })),

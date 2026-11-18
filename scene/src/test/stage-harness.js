@@ -12,9 +12,9 @@
 // no traits is a part of every doc (traits ["*"]), unless its meta says
 // `type: "scene:view"`. They are registered in that order, which is the
 // order the view plugins run in.
-// The native services (claims, clock, telling) are registered before them
-// unless `natives: false`. The editor's hand (scene.edit) is registered after them unless one of
-// them is it or `editor: false` (s.edit(on) picks it up or puts it down). The
+// The editor's hand (scene.edit) is registered after them unless one of
+// them is it or `editor: false` (s.edit(on) picks it up or puts it down), and
+// the native services (claims, clock, telling) last unless `natives: false`. The
 // scene's own datatypes and sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
 // scene:part plugins.
@@ -77,7 +77,7 @@ async function asRegistered(meta) {
 const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
-/** The native services' ids (src/index.js): registered first unless `natives: false`. */
+/** The native services' ids (src/index.js): registered last unless `natives: false`. */
 export const NATIVES = ["scene.claims", "scene.clock", "scene.telling"];
 
 export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true, natives = true } = {}) {
@@ -86,13 +86,13 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     resetRegistries();
     const { plugins } = await import("../index.js");
     for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
-    // the native services (claims, clock, telling) first, as src/index.js has them
-    for (const p of plugins) if (natives && NATIVES.includes(p.id) && !extensions.some((x) => x.meta.id === p.id)) getRegistry(p.type).register(p);
     const all = editor && !extensions.some((x) => x.meta.id === "scene.edit") ? [...extensions, { meta: { id: "scene.edit" }, module: (await import("../parts/edit.js")).default }] : extensions;
     for (const { meta: m, module } of all) {
       const [type, meta] = await asRegistered(m);
       getRegistry(type).register({ type, name: meta.id, ...meta, load: async () => module });
     }
+    // the native services last: providers start first whatever the registry order (STAGE.md, "Activation")
+    for (const p of plugins) if (natives && NATIVES.includes(p.id) && !extensions.some((x) => x.meta.id === p.id)) getRegistry(p.type).register(p);
     for (const { meta, module } of templates) getRegistry("scene:template").register({ type: "scene:template", name: meta.id, ...meta, load: async () => module });
     for (const { meta, module } of parts) getRegistry("scene:part").register({ type: "scene:part", name: meta.id, ...meta, load: async () => module });
     handle = repo.add(emptyScene(doc));

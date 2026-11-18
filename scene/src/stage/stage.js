@@ -924,9 +924,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   // ─── the page (STAGE.md, "api.page") ──────────────────────────────────────
-  // The view's pagehide and pageshow (pageHide, pageShow below) and the tab's visibility, as api.page's events.
+  // The view's pagehide or the stage closing ("hide": last-first, as extensions stop), pageshow and the tab's visibility, as api.page's events.
   const pageFns = { hide: new Set(), show: new Set(), visible: new Set() };
-  const pageSay = (type) => [...pageFns[type]].forEach((fn) => fn());
+  const pageSay = (type) => [...pageFns[type]][type === "hide" ? "reverse" : "slice"]().forEach((fn) => fn());
   const onVisibility = () => pageSay("visible");
   globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
   cleanups.push(() => globalThis.document?.removeEventListener?.("visibilitychange", onVisibility));
@@ -1623,7 +1623,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         visible: () => globalThis.document?.visibilityState !== "hidden",
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
-      /** a service (STAGE.md, "Services"): the first running provider's facet, made for this extension, or null */
+      /** a service (STAGE.md, "Native services"): the first running provider's facet, made for this extension, or null */
       use: (name) => (live() ? host.use(name, { id, signal }) : null),
       /** has everything the doc calls for started (or failed), and is every listed package here (`missing`: those that aren't)? */
       settled: () => {
@@ -2006,7 +2006,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   function dispose() {
     if (dead) return;
-    // the view's plugins' facets and the extensions, while everything they hold is still there to give back
+    // "hide" (services let go at once), then the view's plugins' facets and the extensions, while everything they hold is still there to give back
+    if (!away) pageSay("hide");
     dropFacets();
     host.dispose();
     life.abort();
@@ -2050,7 +2051,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     packages: () => local.get().packages,
     /** may this view write its doc? */
     writable: () => writable(),
-    /** a service of its (STAGE.md, "Services"), for the view's plugins: what it gives lasts while the stage is open */
+    /** a service of its (STAGE.md, "Native services"), for the view's plugins: what it gives lasts while the stage is open */
     use: (name) => host.use(name, { id: "scene:view", signal: life.signal }),
   });
 

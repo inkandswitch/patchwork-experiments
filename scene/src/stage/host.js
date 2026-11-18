@@ -164,8 +164,8 @@ export function createHost({
 
   // ─── starting ─────────────────────────────────────────────────────────────
 
-  // Created in running order: each once every one before it has started or failed, so a
-  // provider is up before what comes after it asks for its service (api.use).
+  // Created in running order (providers first: activation.js providersFirst), each once every
+  // one before it has started or failed, so a create's api.use finds every service that runs.
   function start(w, before) {
     const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
@@ -187,6 +187,8 @@ export function createHost({
         teardown(rec);
         throw err;
       }
+      const said = new Set(listOf(w.meta?.provides)), has = Object.keys(rec.instance.provides ?? {});
+      for (const n of [...has.filter((n) => !said.has(n)), ...[...said].filter((n) => !has.includes(n))]) console.warn(`[scene] “${w.id}”: its metadata and instance differ on providing “${n}” (an undeclared one is ignored)`);
       rec.state = "running";
       publish();
       onChange();
@@ -196,10 +198,10 @@ export function createHost({
     });
   }
 
-  /** The facet of the first running provider of `name` (STAGE.md, "Services") made for `caller` ({ id, signal }), or null. */
+  /** The facet of the first running provider declaring `name` (STAGE.md, "Native services") made for `caller` ({ id, signal }), or null. */
   function use(name, caller) {
     for (const r of running()) {
-      const make = r.instance?.provides?.[name];
+      const make = listOf(r.meta?.provides).includes(name) ? r.instance?.provides?.[name] : null;
       if (typeof make !== "function") continue;
       try {
         return make(caller) ?? null;

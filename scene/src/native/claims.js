@@ -127,14 +127,8 @@ function create(api) {
       }
     }
   }
-  api.page.on("hide", () => {
-    write([...held.values()], true);
-    away = true;
-  });
-  api.page.on("show", () => {
-    away = false;
-    queueMicrotask(recheck);
-  });
+  api.page.on("hide", () => (write([...held.values()], true), (away = true)));
+  api.page.on("show", () => ((away = false), queueMicrotask(recheck)));
 
   return {
     provides: {

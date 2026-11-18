@@ -109,13 +109,13 @@ export const plugins = [
     },
   },
   // ─── the parts the scene editor is made of ───
-  // The native services first, so they're up before what asks for them
-  // (STAGE.md, "Native services"): parts of every doc.
+  // The native services (STAGE.md, "Native services"): parts of every doc,
+  // started before what doesn't provide (their `provides`, and the clock's `uses`).
   ...[
-    ["claims", "Claims", () => import("./native/claims.js")],
-    ["clock", "World time", () => import("./native/clock.js")],
-    ["telling", "Telling", () => import("./native/telling.js")],
-  ].map(([n, name, load]) => ({ type: "scene:extension", id: `scene.${n}`, name, traits: ["*"], load: async () => (await load()).default })),
+    ["claims", "Claims", { provides: ["claims"] }, () => import("./native/claims.js")],
+    ["clock", "World time", { provides: ["clock"], uses: ["claims"] }, () => import("./native/clock.js")],
+    ["telling", "Telling", { provides: ["tell"] }, () => import("./native/telling.js")],
+  ].map(([n, name, services, load]) => ({ type: "scene:extension", id: `scene.${n}`, name, traits: ["*"], ...services, load: async () => (await load()).default })),
   // All but carry and others are view plugins (STAGE.md, "View plugins"):
   // each runs once per view, for its whole life, and works on the focus
   // stage through api.focus() (the outermost doc until Enter moves the focus

@@ -125,6 +125,7 @@ refused, touch }`); `escape` (`{ layer, hint }`); `theme`; `notices`; `drawer`
   traits?:    string[],    // runs when the scene or an object has one ("*": every doc)
   drops?:     string[],    // may lay out a dropped doc of this datatype ("*": any): "Drops"
   describes?: { [traitKey]: description },
+  provides?:  string[],    // the services its instance provides; uses?: those it uses at create
   …                        // other plain data, for other extensions to read
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean> } } }
 { type: "scene:template", id, name, icon?, description?, params?: ParamSpec[],
@@ -144,10 +145,11 @@ A drop-only extension declares the marker trait its layout writes; a trait a
 body reads (`walk.spawn`) has a part declaring it. **Where a trait sits** is its
 scope: an object's covers it and what is attached or filed under it; a scene
 trait covers the doc. What belongs to a thing lives on that object. One instance
-per extension per stage. **Order**: `scene`, then `objects`, each in registry
-order (`local.running`), the only order anything combines in. Each is created
-once everything before it has started or failed, so a provider (the natives,
-registered first) is up before what asks for its service.
+per extension per stage. **Order**: providers (by metadata; one that `uses`
+another's service after it), then the rest; each `scene`, then `objects`, in
+registry order (`local.running`), the only order anything combines in. Each is
+created once everything before it has started or failed, so a create's `use`
+finds every service that runs, whatever the registry order.
 
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
 (2 s), and while it holds a body, tool, session or pose. One loading or
@@ -398,7 +400,7 @@ extension's.
 | `now()`, `after(ms, fn)`, `frame(fn)` | the stage's one time (`src/stage/time.js`, ms); `after`, `frame` → cancel. Never `Date.now`, `setTimeout` or `requestAnimationFrame`. `manualTime()` moves only when stepped |
 | `local`, `pref(key, fallback)`, `setPref` | see "Three places for state" |
 | `channel` | the doc's ephemeral side: `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz), shownAt(session) }`; `peers()` → `{ [session]: { viewer, body, held, at, keys } }`, `get()` this extension's keys by session; `send` reaches its `receive` on every peer; cleared when it stops; `session` null in a pin |
-| `page` | `{ visible(), on("hide" \| "show" \| "visible", fn) → off }`: pagehide, pageshow from the back-forward cache, the tab's visibility |
+| `page` | `{ visible(), on("hide" \| "show" \| "visible", fn) → off }`: pagehide or the stage closing (last-first), pageshow from the back-forward cache, the tab's visibility |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer |
 | `nameOf(id)` | the name this viewer sees |
 | `content(id)` | `{ loaded, box, extras, stats, root }`; `extras.connectors` each `{ position, rotation, yaw, tags }` |
@@ -460,7 +462,7 @@ keeper has them now.
 | `update(scene, local, prev, view)` | the stage, once per flush when doc, local, view or what's shown changed |
 | `looks()`, `audience(scene)`, `ambient()` | see "Lenses", "Audience", "Ambients" |
 | `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
-| `provides` | `{ [name]: (caller) → facet }`: see "Native services" |
+| `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`: see "Native services" |
 | `messages`, `receive(type, data, from)` | see "Native services" (Telling); `receive` hears this extension's sends |
 | `beforeRemove(draft, ids)`, `dispose()` | the stage |
 | `hud()` → `[{ text, state }]` | status surfaces |

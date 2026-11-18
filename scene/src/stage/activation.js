@@ -28,11 +28,32 @@ export function docReason(meta, d) {
 }
 
 /**
- * The extensions that run, in chain order, each with its scope (STAGE.md,
- * "Activation"): the scene's first (registry order), then those only some
- * objects call for (registry order). Each appears once; metadata without an
- * id is left out, and so is one with no traits: an extension runs for a
- * trait (`"*"`: every doc), and what is the view's is a view plugin.
+ * Providers first (STAGE.md, "Activation"): every entry whose metadata
+ * `provides` a service, then the rest, each in the order given; a provider
+ * that `uses` a service another of them provides goes after it (a cycle:
+ * the order given). As each is created once everything before it has
+ * started or failed, a create's `use` finds every service that will run.
+ * Pure.
+ * @template {{ meta: object }} E @param {E[]} entries @returns {E[]}
+ */
+export function providersFirst(entries) {
+  const of = (e, k) => list(e.meta?.[k]);
+  const prov = entries.filter((e) => of(e, "provides").length);
+  const out = [];
+  while (prov.length) {
+    const waits = (e) => of(e, "uses").some((n) => prov.some((p) => p !== e && of(p, "provides").includes(n)));
+    out.push(...prov.splice(Math.max(0, prov.findIndex((e) => !waits(e))), 1));
+  }
+  return [...out, ...entries.filter((e) => !of(e, "provides").length)];
+}
+
+/**
+ * The extensions that run, in running order, each with its scope (STAGE.md,
+ * "Activation"): providers first (providersFirst), each group the scene's
+ * (registry order) then those only some objects call for (registry order).
+ * Each appears once; metadata without an id is left out, and so is one with
+ * no traits: an extension runs for a trait (`"*"`: every doc), and what is
+ * the view's is a view plugin.
  *
  * @param {{ metas: object[], doc: object }} o
  * @returns {{ id: string, meta: object, scope: "scene" | "objects" }[]}
@@ -43,5 +64,5 @@ export function activeSet({ metas, doc }) {
   for (const scope of ["scene", "objects"]) {
     for (const m of byId.values()) if (docReason(m, doc) === scope) out.push({ id: m.id, meta: m, scope });
   }
-  return out;
+  return providersFirst(out);
 }

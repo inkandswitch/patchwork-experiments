@@ -106,4 +106,13 @@ describe("the chip on a stage", () => {
     expect(s.doc().claims?.clock).toBeUndefined();
     expect(s.doc().clock.t).toBeGreaterThan(0);
   });
+
+  it("a closing stage checkpoints every process in one change, before its claim goes", async () => {
+    const saves = []; // each save's draft, while the claim is still in it
+    const proc = (id) => ({ meta: { id }, module: { create: (api) => (api.use("clock").process({ step() {}, save: (d) => saves.push(d.claims?.clock && d) }), {}) } });
+    const s = await mountStage({ extensions: [proc("t.a"), proc("t.b")] });
+    await until(() => s.api("t.a").use("clock").computer()?.mine);
+    s.unmount();
+    expect(saves.length === 2 && saves[0] && saves[0] === saves[1]).toBe(true);
+  });
 });
