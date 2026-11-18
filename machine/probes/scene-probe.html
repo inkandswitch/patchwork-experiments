@@ -353,7 +353,8 @@ try {
     rom: () => rom.length,
     async part(w, at) {
       const host = dbg[w].host;
-      const api = host.running().map((r) => host.record(r.id)?.api).find((a) => typeof a?.part === "function");
+      // any running extension's stage api (scene.claims runs in every doc): the editor's part() writes through it
+      const api = host.record("scene.claims")?.api;
       return putPart(api, "machine", at);
     },
     dropFile(w, name, x, y) {
