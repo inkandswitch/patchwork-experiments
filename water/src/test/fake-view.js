@@ -132,7 +132,7 @@ export function fakeView(specs, { start = true } = {}) {
       },
       worldOf: (id) => s.poses?.[id] ?? s.api.scene().world(id),
       view: Object.freeze({ get: () => ({ selected: s.selected }) }),
-      use: (name) => (name === "clock" ? Object.freeze({ t: () => s.clock.t, running: () => s.clock.running, process: () => (spec.drawn ? () => {} : (s.processes++, () => s.processes--)) }) : null),
+      use: (name) => (name === "clock" ? Object.freeze({ t: () => s.clock.t, running: () => s.clock.running, process: () => (spec.drawn ? () => {} : (s.processes++, () => s.processes--)) }) : name === "notices" ? { notify: (text) => s.notices.push(text) } : null),
       loop: (fn) => (s.loops.add(fn), () => s.loops.delete(fn)),
       world: () => {
         const g = {
@@ -152,7 +152,6 @@ export function fakeView(specs, { start = true } = {}) {
         s.extentSets++;
       },
       invalidate: () => {},
-      notify: (text) => s.notices.push(text),
       collect: (name) => s.instances.filter((i) => i[name] !== undefined).map((i, k) => ({ id: `ext${k}`, value: i[name] })),
       ambient: (name) => {
         const value = view.ambients()[name];

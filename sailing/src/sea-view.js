@@ -153,7 +153,7 @@ export function createSeaView(api) {
     const ok = Math.abs(s - 1) <= EPS;
     if (!ok && !scaled) {
       scaled = true;
-      api.notify?.("At another scale than the water it's on, a boat doesn't sail (gravity doesn't scale)", "info");
+      api.use("notices")?.notify("At another scale than the water it's on, a boat doesn't sail (gravity doesn't scale)", "info");
     }
     return ok;
   }

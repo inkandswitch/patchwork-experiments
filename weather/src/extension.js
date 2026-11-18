@@ -190,14 +190,14 @@ export default {
     async function fetchInto(t) {
       if (!isMap(trait())) return;
       const request = fetchRequest(trait(), t);
-      if (!request) return void api.notify?.(NO_DATA, "error");
+      if (!request) return void api.use("notices")?.notify(NO_DATA, "error");
       try {
         const snapshot = snapshotFrom(await fetchWeather(request, { signal: api.signal }), request);
         if (api.signal?.aborted || !isWorlds(api)) return;
-        if (write(fetchWrites(trait(), snapshot))) api.notify?.(`Weather fetched from ${NAME} (${snapshot.source.api}) for ${forText(snapshot.source.for, snapshot.offset)}`);
+        if (write(fetchWrites(trait(), snapshot))) api.use("notices")?.notify(`Weather fetched from ${NAME} (${snapshot.source.api}) for ${forText(snapshot.source.for, snapshot.offset)}`);
       } catch (err) {
         if (err?.name === "AbortError" || api.signal?.aborted) return;
-        api.notify?.(`Couldn't fetch the weather: ${err?.message ?? err}`, "error");
+        api.use("notices")?.notify(`Couldn't fetch the weather: ${err?.message ?? err}`, "error");
       }
     }
 
