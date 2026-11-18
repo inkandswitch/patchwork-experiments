@@ -122,7 +122,7 @@ try {
     /** what the stage tells this viewer's extensions of who may see each card: how many unknown (null), and how many known */
     audiences() {
       let unknown = 0, known = 0;
-      for (const id of cardIds(objects())) (dbg.audience(id) === null ? unknown++ : known++);
+      for (const id of cardIds(objects())) (dbg.host.use("audience", { id: "probe", signal: new AbortController().signal }).audience(id) === null ? unknown++ : known++);
       return { unknown, known };
     },
     loading: () => { const st = Object.values(dbg?.local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },

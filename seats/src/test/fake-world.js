@@ -301,7 +301,25 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       sent.push({ session, viewer, type, data: structuredClone(data) });
       deliver(type, data);
     }
-    const services = { claims: { claim, claimedBy }, tell: { tell }, notices: { notify: (text, kind) => view.notices.push({ text, kind }) } };
+    // scene.poses, as the stage's (a peer's hold shows at once: worldOf)
+    const poses = {
+      hold(id, transform) {
+        holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });
+        return true;
+      },
+      release(id, { landed = false } = {}) {
+        released.push({ session, id, landed });
+        const h = holds.get(id);
+        if (h?.session !== session) return;
+        if (landed) h.landed = true;
+        else holds.delete(id);
+      },
+      heldBy(id) {
+        const h = holds.get(id);
+        return h && !h.landed && h.session !== session ? h.session : null;
+      },
+    };
+    const services = { claims: { claim, claimedBy }, tell: { tell }, notices: { notify: (text, kind) => view.notices.push({ text, kind }) }, poses };
     const api = {
       id: ext,
       repo,
@@ -403,22 +421,6 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
           };
         },
         object: { position: { x: 0, y: 1, z: 1 } },
-      },
-      pose: {
-        hold(id, transform) {
-          holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });
-        },
-        release(id, { landed = false } = {}) {
-          released.push({ session, id, landed });
-          const h = holds.get(id);
-          if (h?.session !== session) return;
-          if (landed) h.landed = true;
-          else holds.delete(id);
-        },
-      },
-      heldBy(id) {
-        const h = holds.get(id);
-        return h && !h.landed && h.session !== session ? h.session : null;
       },
       listen(target, type, fn) {
         view.listeners.push({ target, type, fn });

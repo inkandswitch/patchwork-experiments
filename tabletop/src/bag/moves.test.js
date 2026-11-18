@@ -14,7 +14,7 @@
 //
 // Two things the stage does that aren't in the docs are modelled as it does
 // them: a view doesn't put away a piece another view is holding (the
-// extension refuses: api.heldBy), and of two views still holding one object
+// extension refuses: scene.poses' heldBy), and of two views still holding one object
 // once everything is delivered, the stage lets one hand keep it, the other
 // giving it up and drawing again (`arbitrate`; extension.js step). Two draws
 // from one bag never need the second: the bag's own verdict names one drawer.

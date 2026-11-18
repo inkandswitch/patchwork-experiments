@@ -200,7 +200,7 @@ try {
     hovered: () => dbg.local.get().hovered ?? null,
     prompt: () => [...sceneHost.querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
     focus() { const r = sceneHost.querySelector(".scene-stage"); r.focus(); return r.contains(document.activeElement) || document.activeElement === r; },
-    audience: (id) => dbg.audience(id),
+    audience: (id) => dbg.host.use("audience", { id: "probe", signal: new AbortController().signal }).audience(id),
   };
   probe.phase = "ready";
 } catch (err) {

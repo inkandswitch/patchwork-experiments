@@ -68,6 +68,7 @@ const poseKey = (t) => JSON.stringify([t?.position ?? null, t?.rotation ?? null]
 export default {
   create(api) {
     const { repo } = api;
+    const poses = api.use("poses");
     const teller = api.use("tell");
     let dead = false;
     let scene = api.scene();
@@ -181,7 +182,7 @@ export default {
       if (inner && (inner === bag.url || bagsWithin(inner).has(bag.url))) return "A bag can't go inside itself.";
       if (o.locked) return `${o.name || "That"} is locked in place.`;
       if (!o.traits?.[CARRY]) return `${o.name || "That"} can't be picked up.`;
-      if (api.heldBy?.(id) != null) return "Someone is holding that.";
+      if (poses?.heldBy(id) != null) return "Someone is holding that.";
       if (vetoed(id)) return `${o.name || "That"} can't be picked up just now.`;
       return null;
     }
@@ -440,7 +441,7 @@ export default {
         // verdict settles two draws from one bag before this matters; this
         // is for the cases it can't see: a pour racing a draw, a piece put
         // away under a drawer's hand.)
-        if (api.heldBy?.(p.id) != null) {
+        if (poses?.heldBy(p.id) != null) {
           p.contested ??= poseKey(objectsNow()[p.id]?.transform);
           continue;
         }

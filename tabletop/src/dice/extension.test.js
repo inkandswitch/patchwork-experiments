@@ -303,7 +303,7 @@ describe("rolling a die", () => {
 
   it("a die a peer is holding can't be rolled; nor any die while lots aren't running here", () => {
     const t = world();
-    t.b.pose.hold("d1", t.doc.objects.d1.transform);
+    t.b.use("poses").hold("d1", t.doc.objects.d1.transform);
     expect(t.state("roll", "d1")).toEqual({ disabled: true, title: "Someone has that die" });
     t.run("roll", "d1");
     t.w.tick(1 / 60, FRAMES);
@@ -567,7 +567,7 @@ describe("a throw is the doc's", () => {
       t.draw(4, "d1", { by: "bob" });
       // B's client sees the face coming, drops that throw, nudges the die (or not), and throws again
       t.w.view("B").loops.length = 0;
-      t.b.pose.release("d1");
+      t.b.use("poses").release("d1");
       if (nudge) t.b.change((d) => (d.objects.d1.transform.position[0] += nudge));
       t.sync();
       t.lots.forViewer("bob").draw("d1", { sealers: [], of: ["d1"] });
@@ -862,7 +862,7 @@ describe("turning a die by hand", () => {
     const t = world({ dice: { d1: "d6", d2: "d6", d3: "d6" } });
     t.a.change((d) => (d.objects.d3.locked = true));
     t.run("roll", "d1");
-    t.b.pose.hold("d2", t.doc.objects.d2.transform);
+    t.b.use("poses").hold("d2", t.doc.objects.d2.transform);
     expect(t.state("turn", "d1")).toMatchObject({ disabled: true, title: "It's rolling" });
     expect(t.state("turn", "d2")).toMatchObject({ disabled: true, title: "Someone has that die" });
     expect(t.state("turn", "d3")).toBeNull();

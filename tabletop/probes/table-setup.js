@@ -70,7 +70,7 @@ export const deckUrlOf = (objects) => Object.values(objects).map((o) => kept(o)?
  * kept from you), or "back" (no look: the object's own).
  */
 export function shownAs(dbg, id) {
-  const l = dbg?.looks()?.get(id);
+  const l = new Map([...(dbg?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id);
   if (!l) return "back";
   if (l.veil === true) return "veil";
   return l.sourceUrl ? "face" : "back";

@@ -99,6 +99,7 @@ const fromOf = (o) => {
 };
 
 function create(api) {
+  const poses = api.use("poses");
   const teller = api.use("tell");
   let scene = null;
   let dead = false;
@@ -178,7 +179,7 @@ function create(api) {
   function busy(id) {
     if (!builtFor(id)) return "That die is still being made";
     if (rolling.has(id)) return "It's rolling";
-    if (api.heldBy?.(id) != null) return "Someone has that die";
+    if (poses?.heldBy(id) != null) return "Someone has that die";
     if (!lotsApi()) return "Rolls are drawn by lots, which aren't running here yet";
     return null;
   }
@@ -264,7 +265,7 @@ function create(api) {
      * else (given up, or still waiting) the doc may yet draw it, and then it's landed and told like anyone's.
      */
     const fail = (text, final = true) => {
-      for (const id of dice.keys()) api.pose.release(id);
+      for (const id of dice.keys()) poses?.release(id);
       end();
       const w = seenThrows.get(draw);
       if (w && final) w.done = true;
@@ -274,7 +275,7 @@ function create(api) {
     // A hold refused (something else here or a peer has hold of the die: a carry, the halo, someone's
     // catch) is the die caught: it's theirs, and this throw neither shows nor lands it.
     const hold = (id, pose) => {
-      if (!api.pose.hold(id, pose)) drop(id);
+      if (!poses?.hold(id, pose)) drop(id);
     };
     const started = api.now();
     let t = 0;
@@ -284,9 +285,9 @@ function create(api) {
       for (const [id, d] of [...dice]) {
         const now = objects[id];
         // a peer caught it, moved it or removed it: theirs. The rest carry on.
-        if (!now || api.heldBy?.(id) != null || !sameTransform(now.transform, d.from)) {
+        if (!now || poses?.heldBy(id) != null || !sameTransform(now.transform, d.from)) {
           drop(id);
-          if (now) api.pose.release(id);
+          if (now) poses?.release(id);
         }
       }
       if (!dice.size) return end();
@@ -329,7 +330,7 @@ function create(api) {
       end();
       // one write for the whole throw (the dice still in it)
       api.change(api.ops.setTransform(api.scene(), new Map(ids.map((id) => [id, down.landed.get(id).to]))));
-      for (const id of ids) api.pose.release(id, { landed: true });
+      for (const id of ids) poses?.release(id, { landed: true });
     });
     for (const [id, d] of [...dice]) hold(id, d.from);
     if (!dice.size) end();
@@ -420,9 +421,9 @@ function create(api) {
     const snap = api.scene();
     const left = unlanded(w, snap);
     if (!left.length) return;
-    // in someone's hand (a peer's, or this view's own: api.heldBy can't say that, but then it isn't drawn where the
+    // in someone's hand (a peer's, or this view's own: heldBy can't say that, but then it isn't drawn where the
     // doc has it), or still in its thrower's air: wait a while, then leave it be (caught is caught)
-    const held = (d) => api.heldBy?.(d) != null || rolling.has(d) || !drawnAsDoc(d, snap);
+    const held = (d) => poses?.heldBy(d) != null || rolling.has(d) || !drawnAsDoc(d, snap);
     if (left.some(held)) {
       if (tries < 8) later(() => landLeft(w, tries + 1), 500);
       return;
@@ -500,7 +501,7 @@ function create(api) {
     const built = builtFor(id);
     if (!built) return { disabled: true, title: "That die is still being made" };
     const face = faceUp(o.transform?.rotation ?? [0, 0, 0], built);
-    const why = rolling.has(id) ? "It's rolling" : api.heldBy?.(id) != null ? "Someone has that die" : null;
+    const why = rolling.has(id) ? "It's rolling" : poses?.heldBy(id) != null ? "Someone has that die" : null;
     return {
       label: `Turn (shows ${built.faces[face].label})`,
       value: face,

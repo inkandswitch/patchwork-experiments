@@ -3,8 +3,8 @@
 // shuffle between them, and shown only to whoever the scene says may see it.
 // Built only from the stage's contract (scene/STAGE.md): who takes part
 // comes from the `roster` convention (whoever owns seats contributes it),
-// who may see what from api.audience, and what this viewer sees is
-// looks() by the one rule (rule.js). It offers the `keeper` convention to
+// who may see what from scene.audience, and what this viewer sees is
+// shown by the one rule (rule.js). It offers the `keeper` convention to
 // whatever handles kept things (a table's Shuffle).
 //
 // An object is kept by its trait:  "card-table.kept": { by: <deck url>, slot: n }
@@ -17,7 +17,7 @@
 //   been shuffled, and who has been handed keys for which position. Never
 //   which item is where.
 // - A player's client hands over its key for a position only when its own
-//   reading of the scene says another may see it (api.audience): sealed to
+//   reading of the scene says another may see it (scene.audience): sealed to
 //   the players in the audience, in the open when the audience is everyone.
 //   When the audience is unknown (a listed package is missing here), it
 //   hands over nothing.
@@ -35,7 +35,7 @@
 
 import { createParticipant, newDeckDoc } from "./deck.js";
 import { secretFor } from "./player-secret.js";
-import { bindings, itemLook, lookFor } from "./rule.js";
+import { bindings, itemLook, lookFor, showLooks } from "./rule.js";
 
 export const TRAIT = "card-table.kept";
 
@@ -87,7 +87,8 @@ export function create(api, { secret } = {}) {
   const decks = new Map(); // url → { handle, participant, faces: Map slot → item, line, problem, off, queued, running, rerun }
   let bound = bindings({}, TRAIT);
   let scene = null;
-  let looks = new Map();
+  const aud = api.use("audience");
+  const looks = showLooks(api, aud);
   let dead = false;
 
   /** What the deck's protocol is told of the table, read from the stage as it is now. */
@@ -103,7 +104,7 @@ export function create(api, { secret } = {}) {
       visibleTo(player) {
         const out = [];
         for (const [slot, id] of slots) {
-          const a = api.audience(id);
+          const a = aud?.audience(id) ?? null;
           if (player == null ? a === "all" : a === "all" || (Array.isArray(a) && a.includes(player))) out.push(slot);
         }
         return out;
@@ -129,7 +130,7 @@ export function create(api, { secret } = {}) {
       // what this viewer may see, of this deck's
       const mine = [];
       for (const [slot, id] of bound.slots.get(url) ?? []) {
-        const a = api.audience(id);
+        const a = aud?.audience(id) ?? null;
         if (a === "all" || (Array.isArray(a) && a.includes(viewer))) mine.push(slot);
       }
       const { looks: next, waiting } = await deck.participant.reveal(mine);
@@ -164,12 +165,8 @@ export function create(api, { secret } = {}) {
     queueMicrotask(() => step(url, deck));
   }
 
-  // something learned (a face, a status), or a deck arrived: read the lens again, and have the stage look
-  function refresh() {
-    if (dead) return;
-    lens();
-    api.schedule(() => {});
-  }
+  // something learned (a face, a status), or a deck arrived: look again
+  const refresh = () => dead || lens();
 
   function watch(urls) {
     for (const [url, d] of decks) {
@@ -210,10 +207,10 @@ export function create(api, { secret } = {}) {
       const deck = decks.get(key);
       // nothing is anyone's until the players' first shuffle is done: every card closed
       const ready = !!deck?.participant && deck.participant.dealt();
-      const look = lookFor({ ready, audience: api.audience(id), shown: api.shown(id), viewer, look: ready && deck.faces.has(slot) ? itemLook(deck.faces.get(slot)) : null });
+      const look = lookFor({ ready, audience: aud?.audience(id) ?? null, shown: aud?.shown(id) ?? null, viewer, look: ready && deck.faces.has(slot) ? itemLook(deck.faces.get(slot)) : null });
       if (look) next.set(id, look);
     }
-    looks = next;
+    looks.set(next);
   }
 
   const titleOf = (key) => decks.get(key)?.handle?.doc?.()?.title ?? null;
@@ -232,7 +229,8 @@ export function create(api, { secret } = {}) {
       lens();
       for (const [url, deck] of decks) soon(url, deck);
     },
-    looks: () => looks,
+    /** what it shows each object as (tests, probes) */
+    showing: () => looks.get(),
     hud() {
       const out = [];
       for (const deck of decks.values()) {

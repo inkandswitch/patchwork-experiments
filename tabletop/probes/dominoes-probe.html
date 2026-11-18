@@ -150,7 +150,7 @@ try {
     veils: (w) => tiles().filter((id) => shownAs(dbg[w], id) === "veil"),
     backs: (w) => tiles().filter((id) => shownAs(dbg[w], id) === "back"),
     /** what a view says a tile really is (its look's name), for those it shows as faces */
-    seen: (w) => Object.fromEntries(tiles().filter((id) => shownAs(dbg[w], id) === "face").map((id) => [id, dbg[w].looks().get(id)?.name ?? null])),
+    seen: (w) => Object.fromEntries(tiles().filter((id) => shownAs(dbg[w], id) === "face").map((id) => [id, new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.name ?? null])),
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },

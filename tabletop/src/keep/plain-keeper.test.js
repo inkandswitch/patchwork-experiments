@@ -50,18 +50,17 @@ async function mount({ viewer = "me", doc = newPlain({ title: "Deck", items: FAC
   const deck = repo.add(doc);
   const objects = Object.fromEntries(FACES.map((_, k) => [`c${k}`, { name: "Card", sourceUrl: "automerge:back", traits: { [TRAIT]: { by: deck.url, slot: k } } }]));
   const said = { audience: {}, shown: {} };
-  const scheduled = [];
   const api = {
     repo,
     channel: { viewer },
     settled: () => ({ ready: true, missing: [] }),
-    audience: (id) => (id in said.audience ? said.audience[id] : []),
-    shown: (id) => (id in said.shown ? said.shown[id] : (said.audience[id] ?? [])),
-    schedule: (fn) => scheduled.push(fn),
+    // scene.audience as the test says, and what the keeper displays
+    use: (n) => (n === "audience" ? { audience: (id) => (id in said.audience ? said.audience[id] : []), shown: (id) => (id in said.shown ? said.shown[id] : (said.audience[id] ?? [])), veil: () => () => {} } : null),
+    display: () => () => {},
     notify() {},
   };
   const x = Keeper.create(api);
-  const t = { x, api, deck, objects, said, scheduled, repo, update: () => x.update({ objects }) };
+  const t = { x, api, deck, objects, said, repo, update: () => x.update({ objects }) };
   t.update();
   await settle();
   t.update();
@@ -74,7 +73,7 @@ describe("the plain keeper", () => {
     t.said.audience = { c0: "all", c1: ["me"], c2: ["you"], c3: ["you"] };
     t.said.shown = { c0: "all", c1: ["me"], c2: ["you"], c3: "all" };
     t.update();
-    expect([...t.x.looks()]).toEqual([
+    expect([...t.x.showing()]).toEqual([
       ["c0", FACES[0]], // face up on the table
       ["c1", FACES[1]], // in my hand
       // c2: in someone else's hand: its back, no look
@@ -87,22 +86,22 @@ describe("the plain keeper", () => {
     t.said.audience = { c0: null, c1: null, c2: null, c3: null };
     t.said.shown = { c0: null, c1: null, c2: null, c3: null };
     t.update();
-    expect(t.x.looks().size).toBe(0);
+    expect(t.x.showing().size).toBe(0);
   });
 
   it("before its container has loaded, and for one it can't read: closed, and the HUD says why", async () => {
     const repo = fakeRepo();
-    const api = { repo, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), audience: () => "all", shown: () => "all", schedule() {}, notify() {} };
+    const api = { repo, channel: { viewer: "me" }, settled: () => ({ ready: true, missing: [] }), use: (n) => (n === "audience" ? { audience: () => "all", shown: () => "all", veil: () => () => {} } : null), display: () => () => {}, notify() {} };
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const x = Keeper.create(api);
     const gone = "automerge:2GoneGoneGoneGoneGoneGone1";
     const bad = repo.add({ items: FACES, at: [0, 0, 1, 2] });
     const objects = { a: { traits: { [TRAIT]: { by: gone, slot: 0 } } }, b: { traits: { [TRAIT]: { by: bad.url, slot: 0 } } } };
     x.update({ objects });
-    expect(x.looks().size).toBe(0);
+    expect(x.showing().size).toBe(0);
     await settle();
     x.update({ objects });
-    expect(x.looks().size).toBe(0);
+    expect(x.showing().size).toBe(0);
     expect(x.hud().map((h) => h.state)).toEqual(["error", "error"]);
     expect(x.keeper.shuffle(["b"])).toBe(0);
   });
@@ -112,7 +111,7 @@ describe("the plain keeper", () => {
     t.objects.c9 = { traits: { [TRAIT]: { by: t.deck.url, slot: 0 } } };
     t.said.audience = { c0: "all", c9: "all" };
     t.update();
-    expect([...t.x.looks().keys()]).toEqual(["c0"]);
+    expect([...t.x.showing().keys()]).toEqual(["c0"]);
     expect(t.x.keeper.of("c9")).toBeNull();
     expect(t.x.hud().at(-1)).toMatchObject({ state: "error" });
   });
@@ -148,11 +147,9 @@ describe("the plain keeper", () => {
     expect(at[3]).toBe(3);
     expect([...at].sort()).toEqual([0, 1, 2, 3]);
     expect(at.slice(0, 3)).not.toEqual([0, 1, 2]);
-    // the doc changing is heard: the lens is read again and the stage asked to look
-    expect(t.scheduled.length).toBeGreaterThan(0);
     t.said.audience = { c0: "all" };
     t.update();
-    expect(t.x.looks().get("c0")).toEqual(FACES[at[0]]);
+    expect(t.x.showing().get("c0")).toEqual(FACES[at[0]]);
     // the scene doc was never touched: the binding is the object's, the order the container's
     expect(t.objects.c0.traits[TRAIT]).toEqual({ by: t.deck.url, slot: 0 });
   });

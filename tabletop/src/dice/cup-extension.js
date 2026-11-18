@@ -8,7 +8,7 @@
 // - `audience`: who may see what's under each cup (cup.js policy): pure in
 //   the doc, and running wherever there's a cup, so it holds whatever
 //   anyone is doing.
-// - `looks()`: for a die of a shake not yet turned up, the one rule keepers
+// - What it shows: for a die of a shake not yet turned up, the one rule keepers
 //   share (keep/rule.js): its own look when it isn't turned toward you, the veil
 //   when it is and you may not (or can't yet) know it, and when you may and
 //   your client knows it, the die itself, shown lying as it really does.
@@ -55,7 +55,7 @@
 import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, redrawFor, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
 import { builtOf, faceOfSeed, faceUp, scaleOf, seedFor, seedFromLots, settled } from "./roll.js";
 import { mayAskAgain } from "./lots.js";
-import { lookFor } from "../keep/rule.js";
+import { lookFor, showLooks } from "../keep/rule.js";
 
 /** How long a shake rattles before the cup comes down (s). */
 export const SHAKE_SECONDS = 0.6;
@@ -107,7 +107,9 @@ function create(api) {
   const THREE = api.THREE;
   let snap = null;
   let state = cupsOf(null);
-  let looks = new Map();
+  const aud = api.use("audience");
+  const poses = api.use("poses");
+  const looks = showLooks(api, aud);
   const builts = new Map(); // die id → what it is, as last built here (kept while it's veiled)
   const truth = new Map(); // die id → how it really lies, when this client knows its cup's seed
   const knownDraws = new Set(); // the shakes not yet turned up whose seed this client knows
@@ -333,10 +335,10 @@ function create(api) {
       const c = state.cups.get(cupId);
       if (!c.pending.includes(d)) continue;
       // known here: its seed is (what it looks like then follows from its build, once that's shown)
-      const look = lookFor({ ready: true, audience: api.audience(d), shown: api.shown(d), viewer, look: knownDraws.has(c.cup.roll?.draw) ? { known: true } : null });
+      const look = lookFor({ ready: true, audience: aud?.audience(d) ?? null, shown: aud?.shown(d) ?? null, viewer, look: knownDraws.has(c.cup.roll?.draw) ? { known: true } : null });
       if (look?.veil) next.set(d, { veil: true });
     }
-    looks = next;
+    looks.set(next);
   }
 
   const matrixOf = (t) => {
@@ -371,7 +373,7 @@ function create(api) {
     for (const [d, cupId] of state.cupOfDie) {
       seen.add(d);
       const c = state.cups.get(cupId);
-      const how = dressFor({ veiled: !!looks.get(d)?.veil, pending: c.pending.includes(d), known: truth.has(d), covered: state.covered.has(d), audience: api.audience(d), viewer });
+      const how = dressFor({ veiled: !!looks.get().get(d)?.veil, pending: c.pending.includes(d), known: truth.has(d), covered: state.covered.has(d), audience: aud?.audience(d) ?? null, viewer });
       dress(d, how === "truth" ? { matrix: matrixOf(transformOf(snap.objects[d])).invert().multiply(matrixOf(truth.get(d))) } : how);
     }
     // the cup I'm peeking under, tilted toward me, in this view alone
@@ -462,7 +464,7 @@ function create(api) {
     const others = (seated(s) ?? []).filter((v) => v !== viewer);
     const why = shaking.has(id)
       ? "It's being shaken"
-      : api.heldBy?.(id) != null
+      : poses?.heldBy(id) != null
         ? "Someone has that cup"
         : !lotsApi()
           ? "Rolls are drawn by lots, which aren't running here yet"
@@ -518,13 +520,13 @@ function create(api) {
       if (t >= 1) {
         stop?.();
         shaking.delete(id);
-        api.pose.release(id, { landed: true });
+        poses?.release(id, { landed: true });
         return;
       }
       const w = Math.sin(t * Math.PI * 7);
       const k = state.cups.get(id)?.k ?? 1;
       // refused (a carry or the halo here, or a peer, has hold of the cup): the rattle stops; the shake is written
-      const shown = api.pose.hold(id, {
+      const shown = poses?.hold(id, {
         position: [base.position[0] + (0.006 * w) / k, base.position[1] + (0.05 * Math.sin(t * Math.PI)) / k, base.position[2]],
         rotation: [0.25 * w, base.rotation[1], 0.15 * Math.cos(t * Math.PI * 5)],
         scale: base.scale,
@@ -643,7 +645,8 @@ function create(api) {
       drawLabels();
       tellTurnedUp();
     },
-    looks: () => looks,
+    /** what it shows each die as (tests, probes) */
+    showing: () => looks.get(),
     /** for probes: this view's own peek, and what it has dressed */
     debug: () => ({ peek, dressed: [...dressed.entries()].map(([id, d]) => [id, d.kind]), known: [...truth.keys()], built: [...builts.keys()] }),
     // a die under a cup can't be picked up through it; a cup being shaken is in someone's hand; a cup down over
@@ -682,7 +685,7 @@ function create(api) {
         }
         if (c.covering) continue;
         // lifted, and its sealed parts not all here: to everyone (turned up), or, shaken blind, to those it's shown to
-        const audience = api.audience(c.id);
+        const audience = aud?.audience(c.id) ?? null;
         if (st && st.phase === "sealed" && (audience === "all" || (Array.isArray(audience) && audience.includes(viewer)))) {
           const w = st.waiting;
           const what = audience === "all" ? "turned up" : "shown to you";

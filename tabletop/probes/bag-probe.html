@@ -141,7 +141,7 @@ try {
     /** the count label over the bag, as drawn in a view */
     label: (w) => [...hosts[w].querySelectorAll(".label.bag-count")].map((e) => e.textContent),
     /** what this view's hand holds now, as the OTHER view hears it (pose holds; not one already put down and waiting for the doc) */
-    carrying: (w) => [...dbg[other(w)].presence.remoteHolds()].filter(([, h]) => !h.landed).map(([id]) => id).sort(),
+    carrying: (w) => [...dbg[other(w)].host.instanceOf("scene.poses").remoteHolds()].filter(([, h]) => !h.landed).map(([id]) => id).sort(),
     /** whose tool is held in view w (scene/TOOLS.md §4: the drawn piece in hand is the bag's) */
     held: (w) => dbg[w].local.get().held?.ext ?? null,
     hovered: (w) => dbg[w].local.get().hovered ?? null,

@@ -131,7 +131,7 @@ try {
     /** the matrix a view is drawing an object with (a pose if one holds it) */
     shown: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m && [...m].map(r6); },
     /** what each hidden card in a hand shows in view w: id → face name/url */
-    handLooks(w) { const out = {}; const L = dbg[w].looks(); for (const id of hiddenIds()) { const z = zoneOf(id); if (!z) continue; const f = L?.get?.(id); out[id] = f ? `${z}:${f.name ?? ''}:${String(f.sourceUrl).slice(-6)}` : `${z}:-`; } return out; },
+    handLooks(w) { const out = {}; const L = new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])); for (const id of hiddenIds()) { const z = zoneOf(id); if (!z) continue; const f = L?.get?.(id); out[id] = f ? `${z}:${f.name ?? ''}:${String(f.sourceUrl).slice(-6)}` : `${z}:-`; } return out; },
     /** the cards a view sees as what they really are (a look with a source) */
     faces: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "face"),
     /** the cards a view sees as the stage's veil (turned toward them, kept from them or not known yet) */

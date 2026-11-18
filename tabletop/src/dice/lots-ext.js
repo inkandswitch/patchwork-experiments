@@ -3,7 +3,7 @@
 // that nobody chooses it: a die thrown in the open (nothing sealed), a cup
 // shaken (its holder's part sealed), a cup shaken blind (every seated part
 // sealed). Built only from the stage's contract (scene/STAGE.md): it reads
-// the doc, presence, the `roster` convention and api.audience.
+// the doc, presence, the `roster` convention and scene.audience.
 //
 // It runs wherever there is a die or a cup (its `traits` are theirs; it
 // describes none), whatever its viewer is doing: a member's client must
@@ -52,6 +52,7 @@ export function holderOf(o) {
 
 function create(api) {
   const viewer = api.channel.viewer;
+  const aud = api.use("audience");
   let settled = null; // what api.settled() said at the last update that looked
   let nudges = 0;
   function roster() {
@@ -84,7 +85,7 @@ function create(api) {
       const r = roster();
       return r ? r.viewers(api.scene()) : null;
     },
-    audience: (id) => api.audience?.(id) ?? null,
+    audience: (id) => aud?.audience(id) ?? null,
     // tell everything that reads lots to look again, when something was learned without a doc change (an envelope opened)
     nudge: () => api.local?.swap?.((m) => ({ ...m, "dice.lots.known": ++nudges })),
     name(v) {
