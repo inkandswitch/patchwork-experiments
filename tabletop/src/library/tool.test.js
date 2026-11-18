@@ -39,9 +39,10 @@ describe("the launcher (game-library tool)", () => {
     buttons(element, "Add the built-in games")[0].click();
     await until(() => element.querySelectorAll(".games-list li").length === 4);
     expect([...element.querySelectorAll(".games-list li strong")].map((e) => e.textContent)).toEqual(["Santorini", "Lost Cities", "Draw Dominoes", "Liar's dice"]);
-    // Draw Dominoes offers its variants
-    await until(() => element.querySelector("select.variant"));
-    expect([...element.querySelector("select.variant").options].map((o) => o.textContent)).toEqual(["2 players", "3 players", "4 players"]);
+    // Draw Dominoes asks how many play
+    const players = () => element.querySelector('select.option[aria-label="Draw Dominoes: Players"]');
+    await until(players);
+    expect([...players().options].map((o) => o.textContent)).toEqual(["2 players", "3 players", "4 players"]);
 
     // New game: Lost Cities, opened in the scene tool, listed in Sessions
     buttons(element, "New game")[1].click();

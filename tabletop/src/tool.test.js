@@ -160,7 +160,7 @@ describe("the tabletop-game tool", () => {
     const area = element.querySelector(".json");
     const def = JSON.parse(area.value);
     // the definition is the game, and only the game: GAME-FORMAT.md
-    expect(Object.keys(def).sort()).toEqual(["about", "assets", "format", "pieces", "players", "seats", "setup", "title", "version"]);
+    expect(Object.keys(def).sort()).toEqual(["about", "assets", "format", "pieces", "players", "recipe", "seats", "setup", "title", "version"]);
     def.setup.find((t) => t.piece === "dome").count = 20;
     area.value = JSON.stringify(def);
     button(element, "Apply").click();
@@ -180,7 +180,7 @@ describe("the tabletop-game tool", () => {
     cleanup();
   });
 
-  it("offers a game's variants beside Set up a table, and sets the table up as the one chosen (Draw Dominoes for 4)", async () => {
+  it("offers a game's options beside Set up a table, and sets the table up as chosen (Draw Dominoes for 4)", async () => {
     const repo = fakeRepo();
     const init = {};
     TabletopGameDatatype.init(init);
@@ -193,10 +193,10 @@ describe("the tabletop-game tool", () => {
     await until(() => button(element, "Draw Dominoes"));
     button(element, "Draw Dominoes").click();
     await until(() => game.doc().title === "Draw Dominoes");
-    const select = element.querySelector("select.variant");
+    const select = element.querySelector('select.option[data-key="players"]');
     expect([...select.options].map((o) => o.textContent)).toEqual(["2 players", "3 players", "4 players"]);
-    expect(select.value).toBe("0");
-    select.value = "2";
+    expect(select.value).toBe("2");
+    select.value = "4";
     select.dispatchEvent(new Event("change"));
     button(element, "Set up a table").click();
     await until(() => opened.length === 1, 4000);

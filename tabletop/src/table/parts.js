@@ -191,13 +191,13 @@ export function squared(t) {
  * ship it's put aboard carries it by the link; its pieces, seats and rules
  * are the game doc's alone.
  */
-export function gamePart(gameId, variant = null) {
+export function gamePart(gameId, options = {}) {
   return {
     async create(ctx, at) {
       const parent = at?.parent ?? null;
       const transform = parent ? squared(at?.transform) : (at?.transform ?? null);
       const handle = await ctx.repo.create2(emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()) }));
-      const layout = await setUp(docContext(ctx, handle), gameId, { variant });
+      const layout = await setUp(docContext(ctx, handle), gameId, { options });
       if (!layout) return null;
       // the room the host gives it: its pieces' extent, as laid out (the host's fact: the link's hint)
       const bounds = layoutBounds(layout);

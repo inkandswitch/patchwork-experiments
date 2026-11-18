@@ -10,6 +10,7 @@ import { importUrlOf, patchworkOf } from "../scene-package.js";
 import { BAG, inside, putIn, shadowsFor } from "../bag/contents.js";
 import { newBag } from "../bag/datatype.js";
 import { errorText, validate } from "../../contract/v2/validate.js";
+import { describeOptions, optionValues } from "../../contract/v2/recipe.js";
 
 /** Every plugin of a type in a registry (made-with.js's `registry`), in registry order. */
 async function pluginsOf(registry, type) {
@@ -77,18 +78,17 @@ export async function addBuiltIns({ repo, registry, library }) {
 }
 
 /**
- * New game: a description rendered into a fresh scene as one of its
- * variants (table/session.js), linked in Sessions as the game and the date.
+ * New game: a description rendered into a fresh scene as its recipe lays it
+ * out for these options (table/session.js; a default for each not given),
+ * linked in Sessions as the game, the options and the date.
  * @returns {Promise<{ url: string, name: string, notes: string[] }>}
  */
-export async function startSession({ repo, registry, library, game, variant = null, now = () => new Date(), phase, draw }) {
+export async function startSession({ repo, registry, library, game, options = {}, now = () => new Date(), phase, draw }) {
   const sessions = await need(repo, library, "sessions");
   const d = game.doc();
-  const variants = Array.isArray(d?.variants) ? d.variants : [];
-  // a game with variants is set up as one of them, the first unless told (newSession refuses one it hasn't)
-  const which = variants.length ? (variant ?? 0) : null;
-  const name = sessionName(d?.title, now(), variants.length > 1 ? (typeof which === "number" ? variants[which]?.name : which) : null);
-  const { url, notes } = await newSession({ repo, registry, handle: game, variant: which, title: name, phase, draw });
+  const values = optionValues(d, options);
+  const name = sessionName(d?.title, now(), values ? describeOptions(d, values) : null);
+  const { url, notes } = await newSession({ repo, registry, handle: game, options, title: name, phase, draw });
   linkIn(sessions, { name, type: SCENE_TYPE, url });
   return { url, name, notes };
 }

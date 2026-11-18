@@ -7,15 +7,16 @@
 //               exclusiveMinimum, anyOf, $ref to #/$defs). A number must be
 //               finite.
 //   semantic:   the cross-field rules of GAME-FORMAT.md §9, each with the
-//               error code the fixtures' manifest names, for the game and
-//               for each of its variants (applyVariant).
+//               error code the fixtures' manifest names, for the game and,
+//               where it has a recipe (recipe.js), for each way its options
+//               can be set, laid out.
 //
 // validate(game) → { ok, stage: null | "structural" | "semantic", errors: [{ code, path, message }] }
 // Semantic rules run only once the structure is sound. No imports but the
-// schema, so a consumer can copy this folder whole (packages never import
-// each other: tts-import and dice keep copies for their tests).
+// schema and the recipe, so a consumer can copy this folder whole.
 
 import schema from "./schema.json" with { type: "json" };
+import { applyRecipe, coerce, combinationCount, combinations, conditionProblem } from "./recipe.js";
 
 const typeOk = (t, v) => {
   switch (t) {
@@ -211,50 +212,161 @@ export function validateSemantics(g) {
   const posed = (c) => c && Math.hypot(...c.position.map((v, i) => v - c.target[i])) > 1e-6;
   if (g.camera && !posed(g.camera)) err("camera", "$.camera", "position and target must differ");
   for (const [k, s] of Object.entries(seats)) if (s.camera && !posed(s.camera)) err("camera", `$.seats.${k}.camera`, "position and target must differ");
+  if (g.recipe) (laid(g.recipe) ? startErrors : recipeErrors)(g, err);
   return errors;
 }
 
-// ───────────────────────────────── variants (GAME-FORMAT.md §3)
+// ───────────────────────────────── the recipe (GAME-FORMAT.md §6)
 
-/** The fields a variant may give in place of the game's own. */
-export const VARIANT_FIELDS = Object.freeze(["players", "setup", "seats", "camera"]);
+/** The codes that leave a recipe unable to lay anything out: with one of them, no table of it is checked. */
+const RECIPE_CODES = new Set(["option", "condition", "options-many", "seat-area"]);
+/** How many ways a game's options may be set: each is laid out and checked. */
+export const MAX_COMBINATIONS = 512;
 
-/**
- * The game as one of its variants sets it up: that variant's fields in place
- * of the game's own, and no `variants`. `which` is a variant's index or name;
- * null (or a game without variants) is the game as it is, without `variants`.
- * An unknown variant is null. Pure: the game isn't changed.
- */
-export function applyVariant(g, which = null) {
-  const { variants, ...base } = g ?? {};
-  if (which == null || !Array.isArray(variants)) return base;
-  const v = typeof which === "number" ? variants[which] : variants.find((x) => x?.name === which);
-  if (!v) return null;
-  const out = { ...base };
-  for (const k of VARIANT_FIELDS) if (v[k] !== undefined) out[k] = v[k];
-  return out;
+/** Is a recipe laid out already (applyRecipe's): nothing to choose, its start steps unconditional? */
+const laid = (r) => !r.options?.length && !r.layout?.length && !r.spots && (r.start ?? []).every((s) => s.when == null && s.unless == null);
+
+/** A connector's tags take a thing's (none: anything), as a scene connector does. */
+const takes = (slotTags, tags) => !slotTags?.length || (Array.isArray(tags) && tags.some((t) => slotTags.includes(t)));
+
+/** The recipe's own rules: its options, conditions, and what its steps name. */
+function recipeErrors(g, err) {
+  const r = g.recipe;
+  const options = r.options ?? [];
+  // option: keys its own, a range that has values, values their own, a default that's one of them
+  const keys = new Set();
+  options.forEach((o, i) => {
+    const p = `$.recipe.options[${i}]`;
+    if (keys.has(o.key)) err("option", `${p}.key`, `"${o.key}" names another option too`);
+    keys.add(o.key);
+    if (o.kind === "integer" && o.min > o.max) err("option", p, "min is above max: it has no values");
+    if (o.kind === "enum") {
+      const seen = new Set();
+      o.options.forEach((x, j) => {
+        if (seen.has(String(x.value))) err("option", `${p}.options[${j}].value`, `"${x.value}" is another of its values too`);
+        seen.add(String(x.value));
+      });
+    }
+    if (coerce(o, o.default) === undefined) err("option", `${p}.default`, `${JSON.stringify(o.default)} is no value of it`);
+  });
+  const n = combinationCount(g);
+  if (n > MAX_COMBINATIONS) err("options-many", "$.recipe.options", `its options can be set ${n} ways: at most ${MAX_COMBINATIONS}, each laid out and checked`);
+  // condition: one comparison on an option, with one of its values
+  for (const list of ["layout", "start"])
+    (r[list] ?? []).forEach((s, i) => {
+      for (const k of ["when", "unless"]) {
+        if (s[k] == null) continue;
+        const why = conditionProblem(s[k], options);
+        if (why) err("condition", `$.recipe.${list}[${i}].${k}`, why);
+      }
+    });
+  // what a layout step names is in the game: a thing, a tag, a seat, a spot; a seat that moves or gets a kit has an area
+  const all = everyThing(g.setup);
+  const ids = new Set(all.map((a) => a.thing.id).filter((x) => x != null));
+  const tags = new Set(all.flatMap((a) => a.thing.tags ?? []));
+  const seats = g.seats ?? {};
+  const spot = (at, path) => typeof at === "string" && !r.spots?.[at] && err("unknown-spot", path, `no spot "${at}"`);
+  let kits = false;
+  (r.layout ?? []).forEach((s, i) => {
+    const p = `$.recipe.layout[${i}]`;
+    const x = s.remove;
+    if (x?.id != null && !ids.has(x.id)) err("unknown-thing", `${p}.remove.id`, `no thing "${x.id}"`);
+    if (x?.tag != null && !tags.has(x.tag)) err("unknown-tag", `${p}.remove.tag`, `no thing is tagged "${x.tag}"`);
+    if (x?.seat != null && !seats[x.seat]) err("unknown-seat", `${p}.remove.seat`, `no seat "${x.seat}"`);
+    for (const [id, at] of Object.entries(s.place ?? {})) {
+      if (!ids.has(id)) err("unknown-thing", `${p}.place.${id}`, `no thing "${id}"`);
+      spot(at, `${p}.place.${id}`);
+    }
+    for (const [sid, at] of Object.entries(s.seats ?? {})) {
+      if (!seats[sid]) err("unknown-seat", `${p}.seats.${sid}`, `no seat "${sid}"`);
+      else if (!seats[sid].at) err("seat-area", `$.seats.${sid}`, "a seat that moves has an area (`at`) to move from");
+      spot(at, `${p}.seats.${sid}`);
+    }
+    if (s.kit) {
+      kits = true;
+      s.kit.forEach((t, j) => t.seat != null && err("seat-zone", `${p}.kit[${j}].seat`, "a kit's hand is each seat's own: it names no seat"));
+    }
+  });
+  if (kits) for (const [sid, seat] of Object.entries(seats)) if (!seat.at) err("seat-area", `$.seats.${sid}`, "a game with a kit gives every seat an area (`at`) to lay it at");
 }
 
 /**
- * The semantic rules for each variant: its name unique (`variant-name`), and
- * the game as it sets it up passing every rule above. An error the game
- * itself has is said once, as the game's; one in a field the variant gives
- * is at the variant's path; any other is the game's path, naming the variant.
+ * The start steps of a game laid out (its recipe's `start`, nothing left to
+ * choose): a deck is named by a thing on the table, the game's own or each
+ * seat's from its kit (`<id>.<seat>`); a deal fits every seat's hands (their
+ * card slots that take the deck's cards), a draw its target's snap points;
+ * nothing takes more cards from a deck than it has.
  */
-function variantErrors(g, own) {
-  const errors = [];
-  const seen = new Set(own.map((e) => `${e.code} ${e.path} ${e.message}`));
-  const names = new Set();
-  g.variants.forEach((v, i) => {
-    const at = `$.variants[${i}]`;
-    if (names.has(v.name)) errors.push({ code: "variant-name", path: `${at}.name`, message: `"${v.name}" names another variant too` });
-    names.add(v.name);
-    for (const e of validateSemantics(applyVariant(g, i))) {
-      const field = VARIANT_FIELDS.find((k) => v[k] !== undefined && (e.path === `$.${k}` || e.path.startsWith(`$.${k}.`) || e.path.startsWith(`$.${k}[`)));
-      if (field) errors.push({ ...e, path: `${at}${e.path.slice(1)}` });
-      else if (!seen.has(`${e.code} ${e.path} ${e.message}`)) errors.push({ ...e, message: `${e.message} (as variant "${v.name}" sets it up)` });
+function startErrors(g, err) {
+  const pieces = g.pieces;
+  const seats = Object.keys(g.seats ?? {});
+  const top = new Map(g.setup.filter((t) => t.id != null).map((t) => [t.id, t]));
+  const taken = new Map(); // a deck's id → cards taken from it
+  for (const t of top.values()) if (t.deck) taken.set(t.id, (t.deck.deal ?? []).reduce((n, x) => n + x.count, 0));
+  const tagsOf = (deck) => pieces[pieces[deck.cards[0]]?.back]?.tags ?? [];
+  /** The decks a step's `from` names, one per seat it serves ([null] for the game's own), or null when one isn't a deck on the table. */
+  const decksOf = (from, path) => {
+    if (top.get(from)?.deck) return [[null, top.get(from)]];
+    const own = seats.map((sid) => [sid, top.get(`${from}.${sid}`)]);
+    if (own.length && own.every(([, t]) => t?.deck)) return own;
+    err("start-deck", path, `"${from}" is no deck on the table, nor each seat's`);
+    return null;
+  };
+  const take = (deck, n, path) => {
+    const now = (taken.get(deck.id) ?? 0) + n;
+    taken.set(deck.id, now);
+    if (now > deck.deck.cards.length) err("deal-count", path, `takes ${now} of the ${deck.deck.cards.length} cards of "${deck.id}"`);
+  };
+  const dealt = new Map(); // a seat → cards dealt into its hands
+  const onto = new Map(); // a thing → cards drawn onto it
+  (g.recipe.start ?? []).forEach((s, i) => {
+    const p = `$.recipe.start[${i}]`;
+    if (s.shuffle != null) decksOf(s.shuffle, `${p}.shuffle`);
+    if (s.deal != null) {
+      const decks = decksOf(s.deal, `${p}.deal`);
+      if (!decks) return;
+      for (const sid of seats) {
+        const deck = decks.length === 1 && decks[0][0] == null ? decks[0][1] : decks.find(([x]) => x === sid)[1];
+        take(deck, s.count, `${p}.count`);
+        const room = g.setup.filter((t) => t.seat === sid && pieces[t.piece]?.zone).reduce((n, t) => n + (pieces[t.piece].snapPoints ?? []).filter((sp) => sp.tags?.length && takes(sp.tags, tagsOf(deck.deck))).length, 0);
+        const now = (dealt.get(sid) ?? 0) + s.count;
+        dealt.set(sid, now);
+        if (now > room) err("deal-hand", `${p}.count`, `seat "${sid}" has room for ${room} cards in its hands, and ${now} are dealt there`);
+      }
+    }
+    if (s.draw != null) {
+      const decks = decksOf(s.draw, `${p}.draw`);
+      if (!decks) return;
+      const target = top.get(s.to);
+      if (!target) return void err("unknown-thing", `${p}.to`, `no thing "${s.to}" on the table`);
+      for (const [, deck] of decks) {
+        take(deck, s.count, `${p}.count`);
+        const room = target.deck ? 0 : (pieces[target.piece]?.snapPoints ?? []).filter((sp) => takes(sp.tags, tagsOf(deck.deck))).length;
+        const now = (onto.get(s.to) ?? 0) + s.count;
+        onto.set(s.to, now);
+        if (now > room) err("deal-target", `${p}.to`, `"${s.to}" has room for ${room} cards, and ${now} are drawn onto it`);
+      }
     }
   });
+}
+
+/**
+ * Each way the game's options can be set, laid out (applyRecipe) and held to
+ * every rule. An error the game itself has is said once, as the game's; any
+ * other names the values that lay it out so.
+ */
+function laidErrors(g, own) {
+  const errors = [];
+  const seen = new Set(own.map((e) => `${e.code} ${e.path} ${e.message}`));
+  for (const values of combinations(g)) {
+    const words = Object.entries(values).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ");
+    for (const e of validateSemantics(applyRecipe(g, values))) {
+      const key = `${e.code} ${e.path} ${e.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      errors.push({ ...e, message: `${e.message} (laid out with ${words || "its defaults"})` });
+    }
+  }
   return errors;
 }
 
@@ -263,7 +375,7 @@ export function validate(g) {
   const s = validateStructure(g);
   if (s.length) return { ok: false, stage: "structural", errors: s };
   const own = validateSemantics(g);
-  const m = Array.isArray(g.variants) ? [...own, ...variantErrors(g, own)] : own;
+  const m = g.recipe && !laid(g.recipe) && !own.some((e) => RECIPE_CODES.has(e.code)) ? [...own, ...laidErrors(g, own)] : own;
   if (m.length) return { ok: false, stage: "semantic", errors: m };
   return { ok: true, stage: null, errors: [] };
 }

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
 import { CARD, ZONE, isCard, zones } from "./table/visibility.js";
+import { START } from "./table/start.js";
+import { valuesOf } from "../contract/v2/recipe.js";
 
 // The table's traits, as the scene's inspector offers them ("Add behaviour…").
 const table = plugins.find((p) => p.id === "tabletop");
@@ -18,7 +20,7 @@ const fresh = (desc) => {
 describe("tabletop: what runs", () => {
   it("one extension, by its traits alone: the verbs and the policy run wherever there's a hand or a card, whatever anyone is doing", () => {
     expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop", "dice", "dice.cup", "dice.lots", "bag", "keep.plain", "card-table"]);
-    expect(table.traits).toEqual([ZONE, CARD]);
+    expect(table.traits).toEqual([ZONE, CARD, START]);
     for (const k of ["activities", "requires", "always", "general"]) expect(k in table).toBe(false);
   });
 
@@ -68,10 +70,12 @@ describe("tabletop: templates", () => {
     }
   });
 
-  it("only Draw Dominoes takes params: how many play, 2, 3 or 4 (2 untouched), each a variant of the registered game", async () => {
+  it("only Draw Dominoes takes params: how many play, 2, 3 or 4 (2 untouched), each a value of the registered game's option", async () => {
     expect(templates.map((t) => t.params ?? null)).toEqual([null, null, [{ key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 }]]);
     const game = await plugins.find((p) => p.type === "tabletop:game" && p.id === "draw-dominoes").load();
-    for (const { value } of templates[2].params[0].options) expect(game.variants.map((v) => v.name)).toContain(`${value} players`);
+    const players = game.recipe.options.find((o) => o.key === "players");
+    expect(templates[2].params[0].options.map((o) => o.value)).toEqual(valuesOf(players));
+    expect(templates[2].params[0].default).toBe(players.default);
   });
 
 });
@@ -94,7 +98,7 @@ describe("tabletop: parts", () => {
 
   it("says what each brings by a trait the table describes", () => {
     for (const p of parts) for (const t of p.traits ?? []) expect(d[t]).toBeDefined();
-    expect(table.traits).toEqual(["tabletop.zone", "tabletop.card"]);
+    expect(table.traits).toEqual(["tabletop.zone", "tabletop.card", "tabletop.start"]);
     expect(Object.keys(d)).toEqual(table.traits);
   });
 });

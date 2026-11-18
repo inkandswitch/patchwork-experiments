@@ -29,16 +29,32 @@ export const TURNS = [0, 90, 180, 270];
  * @property {Camera} [camera]
  * @property {object} [origin]         where it came from (free form)
  * @property {Object<string, { file: string }>} [assets]   a web asset (keyed by its http(s) URL) → the file doc it's cached in
- * @property {Variant[]} [variants]    ways to set it up (how many play), the first the usual one
+ * @property {Recipe} [recipe]        how the setup is adapted to a new game's options, and started (recipe.js)
  */
 
 /**
- * The game set up another way: these fields in place of its own (validate.js applyVariant).
- * @typedef {{ name: string, players?: string, setup?: Thing[], seats?: Object<string, Seat>, camera?: Camera }} Variant
+ * A game's setup recipe (GAME-FORMAT.md §6). A condition is one comparison on an option: "players >= 3", "extras".
+ * @typedef {{ options?: Option[], spots?: Object<string, Pose>, layout?: LayoutStep[], start?: StartStep[] }} Recipe
+ * @typedef {(
+ *   { kind: "integer", key: string, label: string, min: number, max: number, default: number } |
+ *   { kind: "enum", key: string, label: string, options: { value: string | number, label: string }[], default: string | number } |
+ *   { kind: "boolean", key: string, label: string, default: boolean }
+ * )} Option
+ * @typedef {{ when?: string, unless?: string }} Condition
+ * @typedef {Pose | string} At   a pose, or a spot's name
+ * @typedef {Condition & (
+ *   { remove: { id: string } | { tag: string } | { seat: string } } |
+ *   { place: Object<string, At> } |
+ *   { seats: Object<string, At> } |
+ *   { kit: Thing[] }
+ * )} LayoutStep
+ * @typedef {Condition & (
+ *   { shuffle: string } | { deal: string, count: number } | { draw: string, count: number, to: string } | { first: true }
+ * )} StartStep
  */
 
 /** @typedef {{ position: Vec3, target: Vec3 }} Camera */
-/** @typedef {{ name: string, camera?: Camera }} Seat */
+/** @typedef {{ name: string, at?: Pose, camera?: Camera }} Seat   at: its area (where a kit is laid, +Z toward its player) */
 /** @typedef {{ position: Vec3, rotation?: Vec3 }} Pose */
 
 /**
@@ -72,8 +88,8 @@ export const TURNS = [0, 90, 180, 270];
 
 /**
  * @typedef {(
- *   { piece: Kind, id?: string, name?: string, at?: Pose, count?: number, grid?: { cols: number, across: Vec3, down: Vec3 }, seat?: string, contents?: Thing[] } |
- *   { deck: Deck, id?: string, at?: Pose }
+ *   { piece: Kind, id?: string, name?: string, tags?: string[], at?: Pose, count?: number, grid?: { cols: number, across: Vec3, down: Vec3 }, seat?: string, contents?: Thing[] } |
+ *   { deck: Deck, id?: string, tags?: string[], at?: Pose }
  * )} Thing
  */
 

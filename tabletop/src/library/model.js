@@ -42,10 +42,10 @@ export const sessionsIn = (folder) => linksOf(folder).filter((l) => l.type === S
 
 const two = (n) => String(n).padStart(2, "0");
 
-/** A session's name: the game, how it's set up (a variant's name, if it has variants) and when it started, local time. */
-export function sessionName(title, date = new Date(), variant = null) {
+/** A session's name: the game, how it's set up (its options, in words, if it asks any) and when it started, local time. */
+export function sessionName(title, date = new Date(), how = null) {
   const when = `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
-  return `${title || "Game"}${variant ? ` (${variant})` : ""}, ${when}`;
+  return `${title || "Game"}${how ? ` (${how})` : ""}, ${when}`;
 }
 
 /** A fork's name. */

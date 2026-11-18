@@ -89,6 +89,14 @@
   background: none;
 }
 
+/* a game's options (how many play, which layout…), beside New game / Set up a table */
+.tabletop-game .options {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
 .tabletop-game .about {
   width: 100%;
   resize: vertical;

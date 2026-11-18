@@ -69,12 +69,8 @@
         "$ref": "#/$defs/asset"
       }
     },
-    "variants": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/variant"
-      }
+    "recipe": {
+      "$ref": "#/$defs/recipe"
     }
   },
   "$defs": {
@@ -162,6 +158,9 @@
         },
         "camera": {
           "$ref": "#/$defs/camera"
+        },
+        "at": {
+          "$ref": "#/$defs/pose"
         }
       }
     },
@@ -729,6 +728,12 @@
               "items": {
                 "$ref": "#/$defs/thing"
               }
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
             }
           }
         },
@@ -747,43 +752,403 @@
             },
             "at": {
               "$ref": "#/$defs/pose"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
             }
           }
         }
       ]
     },
-    "variant": {
-      "description": "A way to set the game up (how many play): the game with these fields in place of its own. GAME-FORMAT.md §3",
-      "type": "object",
-      "required": [
-        "name"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
+    "condition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "at": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/pose"
+        },
+        {
           "type": "string",
           "minLength": 1
-        },
-        "players": {
-          "type": "string"
-        },
-        "setup": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/thing"
+        }
+      ]
+    },
+    "option": {
+      "description": "What a new game asks (GAME-FORMAT.md §6): an integer in a range, one of a list, or yes or no",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "key",
+            "label",
+            "min",
+            "max",
+            "default"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "min": {
+              "type": "integer"
+            },
+            "max": {
+              "type": "integer"
+            },
+            "default": {
+              "type": "integer"
+            }
           }
         },
-        "seats": {
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "key",
+            "label",
+            "options",
+            "default"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "enum"
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "label"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "default": {
+              "type": [
+                "string",
+                "integer"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "key",
+            "label",
+            "default"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "layoutStep": {
+      "description": "A step of laying a table out (GAME-FORMAT.md §6), when its condition holds",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "remove"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "remove": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "tag"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "tag": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "seat"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "seat": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                }
+              ]
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "place"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "place": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/at"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "seats"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "seats": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/at"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kit"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kit": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/thing"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        }
+      ]
+    },
+    "startStep": {
+      "description": "A step of starting the game, once every seat is taken (GAME-FORMAT.md §6), when its condition holds",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "shuffle"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shuffle": {
+              "$ref": "#/$defs/id"
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "deal",
+            "count"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "deal": {
+              "$ref": "#/$defs/id"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "draw",
+            "count",
+            "to"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "draw": {
+              "$ref": "#/$defs/id"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "to": {
+              "$ref": "#/$defs/id"
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "first"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "first": {
+              "const": true
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        }
+      ]
+    },
+    "recipe": {
+      "description": "How the setup is adapted to the options a new game is given, and started (GAME-FORMAT.md §6)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/option"
+          }
+        },
+        "spots": {
           "type": "object",
           "propertyNames": {
             "$ref": "#/$defs/id"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/seat"
+            "$ref": "#/$defs/pose"
           }
         },
-        "camera": {
-          "$ref": "#/$defs/camera"
+        "layout": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layoutStep"
+          }
+        },
+        "start": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/startStep"
+          }
         }
       }
     }
