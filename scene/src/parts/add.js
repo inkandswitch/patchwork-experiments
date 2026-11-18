@@ -255,7 +255,7 @@ function create(api) {
     const url = link.url;
     const version = heads?.length ? heads : link.heads;
     const f = api.focus(); // where it goes: the focus now, wherever the focus is by the time it's added
-    // (a live link to itself would only be closed, a cycle: stage/links.js; a version of itself is fine)
+    // (a live link to itself would only be closed, a cycle: native/link-graph.js; a version of itself is fine)
     if (url === f?.url && !version?.length) return fail("A scene can't contain itself.");
     let source;
     try {

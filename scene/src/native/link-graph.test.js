@@ -6,7 +6,7 @@
 // final expansion doesn't depend on the arrival order.
 
 import { describe, expect, it } from "vitest";
-import { CLOSED, LINK, atOf, expand, identityOf, isLink, linksOf } from "./links.js";
+import { CLOSED, LINK, atOf, expand, identityOf, isLink, linksOf } from "./link-graph.js";
 
 const URL = (i) => `automerge:doc${i}`;
 const H = ["h1"]; // the one older version a pin names

@@ -11,9 +11,9 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { NATIVES, mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, fakeHead } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
-import { ARRIVE_WAIT_MS, startArrival } from "./view.js";
-import { keyOf } from "./paths.js";
+import { LINK } from "./link-graph.js";
+import { ARRIVE_WAIT_MS, startArrival } from "../stage/view.js";
+import { keyOf } from "../stage/paths.js";
 import { spy } from "../test/spy.js";
 import keys from "../parts/keys.js";
 import { add } from "../parts/editor.js";
@@ -135,8 +135,8 @@ describe("a live link opens a stage for its doc", () => {
     expect([at(s.debug.view.stage(0)), at(m.g)]).toEqual([["t.view", "scene.keys", "scene.edit"], []]);
     expect(m.g.path).toEqual(["L"]);
     expect(m.g.url).toBe(m.game.url);
-    expect(s.api("t.host").link("L")).toEqual({ role: "acting", open: true });
-    expect(s.api("t.host").link("table")).toBe(null);
+    expect(s.api("t.host").use("links").role("L")).toEqual({ role: "acting", open: true });
+    expect(s.api("t.host").use("links").role("table")).toBe(null);
     // the game's api is the game's: its url, its scene, its root at null
     const gapi = m.g.debug.host.record("t.card").api;
     expect(gapi.url).toBe(m.game.url);
@@ -226,8 +226,8 @@ describe("a live link opens a stage for its doc", () => {
       d.objects.M = { name: "Gone", sourceUrl: "automerge:2222222222222222222222222222", providerId: LINK, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } };
       d.order.push("M");
     });
-    await until(() => s.api("t.host").link("M")?.role === "closed");
-    expect(s.api("t.host").link("M")).toEqual({ role: "closed", open: false, reason: "unavailable" });
+    await until(() => s.api("t.host").use("links").role("M")?.role === "closed");
+    expect(s.api("t.host").use("links").role("M")).toEqual({ role: "closed", open: false, reason: "unavailable" });
   });
 });
 
@@ -440,7 +440,7 @@ describe("startArrival: where a start leads, over every chain of up to two links
                 },
               }));
               const xs = [x0, x1];
-              const got = startArrival(stages[0], { doc: (s) => s.doc, next: (s) => (xs[s.i] === "stage" ? stages[s.i + 1] : xs[s.i] === "pending" ? undefined : null) });
+              const got = startArrival(stages[0], { doc: (s) => s.doc, next: (s, id) => (id !== "L" ? false : xs[s.i] === "stage" ? stages[s.i + 1] : xs[s.i] === "pending" ? undefined : null) });
               // the model: walk while the place is a link
               let want;
               for (let i = 0; ; i++) {

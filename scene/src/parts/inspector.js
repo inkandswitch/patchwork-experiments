@@ -20,7 +20,7 @@
 // another scene: STAGE.md, "Views, stages and links"), a Link row: what it is here
 // (live, shown again, fixed at a version, closed and why) and what this
 // scene sets of it: its place, name, display, lock and its own traits on it,
-// never what's inside (Enter, scene.focus's command, goes in for that). The
+// never what's inside (Enter, scene.links's command, goes in for that). The
 // Version row (what version of its source it shows: Latest, or Fixed at…
 // with Fix at this version / Follow latest, which are also this extension's
 // commands for the menu), and the status line.
@@ -205,8 +205,9 @@ function create(api) {
   const setPart = (id, kind, i, v) => apply(here.ops.setTransformPart(here.scene(), id, kind, i, v), kind === "rotation" ? "Rotate" : kind === "scale" ? "Scale" : "Move");
   // ─── fixed versions (`at`) ───────────────────────────────────────────────
 
-  /** Where here.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
-  const fixPointOf = (id) => here.fixPoint?.(id) ?? null;
+  /** Where it would be fixed: a link's by use("links"), else here.fixPoint (null: not built or open here yet). */
+  const fixPointOf = (id) => api.use("links")?.fixPoint(id) ?? here.fixPoint?.(id) ?? null;
+  const linkOf = (id) => api.use("links")?.role(id) ?? null;
 
   /**
    * Can it be fixed at a version: content that follows a doc as it changes
@@ -670,7 +671,7 @@ function create(api) {
       : null;
     const status = el("div", { class: "status-line", hidden: true });
     // a link's: what it is here, and what this scene sets of it
-    const linkRow = here.link(id) && !group
+    const linkRow = linkOf(id) && !group
       ? {
           text: el("span", { class: "link-text" }),
           note: el("p", { class: "hint link-note" }, "Its place, name, display, lock and behaviours here are this scene's. What's in it is its own: Enter to change that."),
@@ -844,7 +845,7 @@ function create(api) {
   function fillLink() {
     const r = view.linkRow;
     if (!r) return;
-    const text = linkText(here.link(view.id));
+    const text = linkText(linkOf(view.id));
     if (r.text.textContent !== text) r.text.textContent = text;
   }
 
@@ -976,7 +977,7 @@ function create(api) {
     }
     if (body.hidden) body.hidden = false;
     // (what a link is here is the view's, and changes with no change to the doc)
-    const lk = here.link(id);
+    const lk = linkOf(id);
     const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(here.loadState?.(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
     const name = here.nameOf(id);
     const ck = `${contentKey(id)}|${JSON.stringify(lk)}`;

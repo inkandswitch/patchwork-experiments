@@ -12,8 +12,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
-import { keyOf } from "./paths.js";
+import { LINK } from "./link-graph.js";
+import { keyOf } from "../stage/paths.js";
 import inspector from "../parts/inspector.js";
 
 const at = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
@@ -68,10 +68,10 @@ describe("a live doc linked twice: one acting, one closed", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
     s = m.s;
-    await until(() => running(stageAt(s, "L1")) && s.api("t.host").link("L2")?.role === "closed");
+    await until(() => running(stageAt(s, "L1")) && s.api("t.host").use("links").role("L2")?.role === "closed");
     const host = s.api("t.host");
-    expect(host.link("L1")).toEqual({ role: "acting", open: true });
-    expect(host.link("L2")).toEqual({ role: "closed", open: false, reason: "repeat" });
+    expect(host.use("links").role("L1")).toEqual({ role: "acting", open: true });
+    expect(host.use("links").role("L2")).toEqual({ role: "closed", open: false, reason: "repeat" });
     expect(stageAt(s, "L1").role).toBe("acting");
     expect(stageAt(s, "L2")).toBe(null);
     expect(s.debug.view.stages().length).toBe(2);
@@ -83,7 +83,7 @@ describe("a live doc linked twice: one acting, one closed", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
     s = m.s;
-    await until(() => running(stageAt(s, "L1")) && s.api("t.host").link("L2")?.role === "closed");
+    await until(() => running(stageAt(s, "L1")) && s.api("t.host").use("links").role("L2")?.role === "closed");
     const press = async (key) => {
       m.log.length = 0;
       s.debug.viewport.pick = () => ({ id: key, point: [5, 0, 0], normal: [0, 1, 0], distance: 3 });
@@ -100,13 +100,13 @@ describe("a live doc linked twice: one acting, one closed", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ L1: link(g.url, { transform: at(0) }), L2: link(g.url, { transform: at(5) }) }));
     s = m.s;
-    await until(() => running(stageAt(s, "L1")) && s.api("t.host").link("L2")?.role === "closed");
+    await until(() => running(stageAt(s, "L1")) && s.api("t.host").use("links").role("L2")?.role === "closed");
     s.change((d) => {
       delete d.objects.L1;
       d.order.splice(d.order.indexOf("L1"), 1);
     });
     await until(() => stageAt(s, "L2")?.role === "acting" && running(stageAt(s, "L2")));
-    expect(s.api("t.host").link("L2")).toEqual({ role: "acting", open: true });
+    expect(s.api("t.host").use("links").role("L2")).toEqual({ role: "acting", open: true });
     expect(stageAt(s, "L2").frame().pointOut([0, 0, 0])).toEqual([5, 0, 0]);
     expect(s.debug.view.stages().length).toBe(2);
   });
@@ -127,7 +127,7 @@ describe("pinned: its doc at the pinned heads", () => {
     await until(() => running(stageAt(s, "P")));
     const pin = stageAt(s, "P");
     expect(pin.role).toBe("pinned");
-    expect(s.debug.view.linkState(["P"])).toEqual({ role: "pinned", open: true });
+    expect(s.api("scene.links").use("links").role("P")).toEqual({ role: "pinned", open: true });
     expect(pin.doc().title).toBe("G then");
     game.change((d) => (d.title = "G later"));
     await settle();
@@ -141,8 +141,8 @@ describe("pinned: its doc at the pinned heads", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ P: link(g.url, { at: { heads: ["Hnothere"] } }) }));
     s = m.s;
-    await until(() => s.debug.view.linkState(["P"]) != null);
-    expect(s.debug.view.linkState(["P"])).toEqual({ role: "pinned", open: false });
+    await until(() => s.api("t.host").use("links").role("P") != null);
+    expect(s.api("t.host").use("links").role("P")).toEqual({ role: "pinned", open: false });
     expect(stageAt(s, "P")).toBe(null);
   });
 });
@@ -158,13 +158,13 @@ describe("fixing a link at a version, and following latest again", () => {
     s = await mountStage({ repo, extensions: extensions(log), doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => running(stageAt(s, "L")) && stageAt(s, "L", "K") && log.some((e) => e.startsWith("box writable")));
     const host = s.api("t.host");
-    const point = host.fixPoint("L");
+    const point = host.use("links").fixPoint("L");
     expect(point).toEqual({ heads: game.heads(), deps: { [box.url]: box.heads(), [inner.url]: inner.heads() } });
     // fixed: G, K and the box are held there; each goes on live and the pin doesn't
     host.change((d) => (d.objects.L.at = JSON.parse(JSON.stringify(point))));
     await until(() => stageAt(s, "L")?.role === "pinned" && stageAt(s, "L", "K")?.role === "pinned");
-    expect(host.link("L")).toEqual({ role: "pinned", open: true });
-    expect(host.fixPoint("L")).toBe(null); // fixed already: Follow latest first
+    expect(host.use("links").role("L")).toEqual({ role: "pinned", open: true });
+    expect(host.use("links").fixPoint("L")).toBe(null); // fixed already: Follow latest first
     game.change((d) => (d.title = "G later"));
     inner.change((d) => (d.title = "K later"));
     box.change((d) => (d.n = 2));
@@ -209,7 +209,7 @@ describe("fixing a link at a version, and following latest again", () => {
     const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }) }, order: ["card"], traits: { "t.game": { deck: deck.url } }, packages: [{ url: folder.url }] }));
     s = await mountStage({ repo, extensions: [keeper, ...extensions(log)], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => log.includes("kept") && found.includes(pkgFile.url));
-    expect(s.api("t.host").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads(), [file.url]: file.heads() } });
+    expect(s.api("t.host").use("links").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads(), [file.url]: file.heads() } });
   });
 
   // A find still on its way when Fix is asked: a pin made then would leave
@@ -226,10 +226,10 @@ describe("fixing a link at a version, and following latest again", () => {
     const game = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": { deck: deck.url } } }));
     s = await mountStage({ repo, extensions: [keeper, ...extensions([])], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => arrive != null && stageAt(s, "L")?.debug.host.instanceOf("t.keep"));
-    expect(s.api("t.host").fixPoint("L")).toBe(null);
+    expect(s.api("t.host").use("links").fixPoint("L")).toBe(null);
     arrive();
-    await until(() => s.api("t.host").fixPoint("L") != null);
-    expect(s.api("t.host").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads() } });
+    await until(() => s.api("t.host").use("links").fixPoint("L") != null);
+    expect(s.api("t.host").use("links").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads() } });
   });
 
   it("a pin is a function of its whole occurrence: its deps changed under the same heads, it opens again at them", async () => {
@@ -258,8 +258,8 @@ describe("fixing a link at a version, and following latest again", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith(() => ({ M: link("automerge:2222222222222222222222222222") }));
     s = m.s;
-    await until(() => s.api("t.host").link("M")?.role === "closed");
-    expect(s.api("t.host").fixPoint("M")).toBe(null);
+    await until(() => s.api("t.host").use("links").role("M")?.role === "closed");
+    expect(s.api("t.host").use("links").fixPoint("M")).toBe(null);
   });
 
   it("the inspector's Fix at this version and Follow latest, on a link: in Edit, from the menu, as for built content", async () => {

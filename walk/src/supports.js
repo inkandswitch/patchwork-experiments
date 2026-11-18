@@ -240,7 +240,7 @@ const named = (v) => typeof v === "string" && v !== "";
 /**
  * Is an object's model still coming? The stage's own rule for whether what
  * it shows has loaded (stage.js contentIn): content that loads (a source or
- * a render) and hasn't, unless it is a link (its content is its doc, drawn
+ * a render) and hasn't, unless its content is a stage (a link's doc, drawn
  * by that doc's own stage: no triangles here) or failed (its status `error`,
  * or `warn`: no provider). What isn't coming and hasn't loaded bakes as
  * nothing, and its loading later changes the key.
@@ -248,7 +248,7 @@ const named = (v) => typeof v === "string" && v !== "";
 function coming(api, id, o) {
   const c = api.content?.(id);
   if (!c || c.loaded || !(named(o.sourceUrl) || named(o.renderUrl))) return false;
-  if (api.link?.(id) != null) return false;
+  if (api.loadState?.(id)?.content === "scene") return false;
   const state = api.local?.get?.()?.status?.[id]?.state;
   return state !== "error" && state !== "warn";
 }

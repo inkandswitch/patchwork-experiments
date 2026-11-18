@@ -12,7 +12,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
 import body from "../parts/body.js";
 import { manualTime } from "./time.js";
 import { DEFAULT_HZ, HEARTBEAT_MS } from "./presence.js";

@@ -639,7 +639,7 @@ try {
       await until(`selectionPath('a')?.length === 1`, 3000);
       await b.soon(`window.__p.A.view.canvas.getBoundingClientRect().width < ${wide}`, { frames: 300, draw: true });
       await b.rest(300);
-      const enterAt = await js(`(() => { const e = document.querySelector('#a .inspector [data-ext="scene.focus"][data-command="enter"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; })()`);
+      const enterAt = await js(`(() => { const e = document.querySelector('#a .inspector [data-ext="scene.links"][data-command="enter"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; })()`);
       check("13: with the link selected, the inspector offers Enter", !!enterAt && !enterAt.disabled, enterAt);
       if (enterAt) await b.click(enterAt.x, enterAt.y);
       await b.rest(400);

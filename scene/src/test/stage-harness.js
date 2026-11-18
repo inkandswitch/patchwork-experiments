@@ -79,7 +79,7 @@ const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gest
 const PATHS = new Set(["hovered", "selected"]);
 
 /** The native services' ids (src/index.js): registered last unless `natives: false`. */
-export const NATIVES = ["scene.claims", "scene.poses", "scene.audience", "scene.clock", "scene.telling", "scene.notices", "scene.prefs", "scene.drawer"];
+export const NATIVES = ["scene.claims", "scene.poses", "scene.audience", "scene.clock", "scene.telling", "scene.notices", "scene.prefs", "scene.drawer", "scene.links"];
 
 /** A scene.poses in place of the native one, its facet `stub`'s hold, release and heldBy as they are when called (a test may swap them). */
 export const posesBy = (stub) => ({ meta: { id: "scene.poses" }, module: { create: () => ({ provides: { poses: () => ({ hold: (...a) => stub.hold(...a), release: (...a) => stub.release(...a), heldBy: (...a) => stub.heldBy(...a) }) } }) } });

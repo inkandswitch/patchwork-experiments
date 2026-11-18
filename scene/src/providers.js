@@ -11,7 +11,7 @@ import { isGroup } from "./groups.js";
  *   - "built": the provider builds a GLB from the source into a render doc of
  *     the object's own (the render manager).
  *   - "scene": the source doc is a scene, a world of its own: the object is a
- *     link (stage/links.js), and the view shows it by opening a stage for it.
+ *     link (native/link-graph.js), and the view shows it by opening a stage for it.
  *     The stage's one point of recursion; only the scene's own `scene.link`
  *     source makes it.
  * A source that declares none of these is not one the stage can use.

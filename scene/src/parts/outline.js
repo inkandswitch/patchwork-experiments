@@ -45,9 +45,9 @@ import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
 import { add, drop, editor } from "./editor.js";
-import { enterState } from "./focus.js";
+import { enterState } from "../native/links.js";
 
-/** What a link's row says it is, by its role here (api.link), and why. Pure. */
+/** What a link's row says it is, by its role here (use("links").role), and why. Pure. */
 export function linkMark(link) {
   if (!link) return null;
   if (link.role === "acting") return { text: "linked", title: "Another scene, placed here live: Enter to select and edit what's in it" };
@@ -154,6 +154,7 @@ export function createOutline(api, { shown = () => true } = {}) {
   api.style(css);
   // the focus doc's tree: read and written through the focus stage, whichever it is now
   const here = atFocus(api);
+  const linkOf = (id) => api.use("links")?.role(id) ?? null;
 
   // ── expand state: this viewer's, per doc, in localStorage ──────────────
   // (`firstDefaults`: a row's default is taken the first time it's drawn, so
@@ -254,11 +255,11 @@ export function createOutline(api, { shown = () => true } = {}) {
   const selectedId = () => here.view.get().selected ?? null;
   /** Can this row be entered (an open link whose doc acts, here or where it's live)? */
   const enterable = (id) => {
-    const can = enterState(here.link(id));
+    const can = enterState(linkOf(id));
     return !!can && !can.disabled;
   };
   /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
-  const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => here.link(id)).filter(Boolean));
+  const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => linkOf(id)).filter(Boolean));
   function select(id) {
     if ((here.view.get().selected ?? null) !== id) here.view.select(id);
   }
@@ -694,7 +695,7 @@ export function createOutline(api, { shown = () => true } = {}) {
           } else fixedMark.remove();
         }
         if (linkTag) {
-          const mark = linkMark(here.link(id));
+          const mark = linkMark(linkOf(id));
           if (mark) {
             if (linkTag.textContent !== mark.text) linkTag.textContent = mark.text;
             linkTag.title = mark.title;

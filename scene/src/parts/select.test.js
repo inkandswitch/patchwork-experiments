@@ -7,7 +7,7 @@ import { commandState } from "./toolbar-commands.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { emptyScene } from "../test/empty-scene.js";
-import { LINK } from "../stage/links.js";
+import { LINK } from "../native/link-graph.js";
 import { keyOf } from "../stage/paths.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };

@@ -7,7 +7,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
+import linksPlugin from "../native/links.js";
 import { editing } from "./bodies.js";
 import { keyOf } from "./paths.js";
 
@@ -139,7 +140,8 @@ describe("view plugins", () => {
           const ext = { meta: { id: "t.ext", traits: ["*"] }, module: g.E.p };
           const repo = new FakeRepo();
           const b = repo.add(emptyScene({ title: "B" }));
-          s = await mountStage({ repo, natives: false, editor: false, extensions: listed === "PE" ? [prov, ext] : [ext, prov] });
+          const links = { meta: { id: "scene.links" }, module: linksPlugin }; // (it opens L's stage)
+          s = await mountStage({ repo, natives: false, editor: false, extensions: listed === "PE" ? [links, prov, ext] : [links, ext, prov] });
           for (const e of seq) {
             if (e === "P") g.P.open({ create: () => (fails ? boom() : { provides: { "t.svc": (c) => ({ for: c.id }) } }) });
             else if (e === "E") g.E.open({ create: (api) => (found.push(api.use("t.svc")), {}) });

@@ -39,7 +39,7 @@ vi.mock("./readonly.js", async (importOriginal) => {
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, FakeHandle } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
 import { drop, editor, part, template } from "../parts/editor.js";
 import { manualTime } from "./time.js";
 import { CLOCK_HZ, CHECKPOINT_MS } from "../native/clock.js";

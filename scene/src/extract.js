@@ -73,7 +73,7 @@ import { detachAnchor, resolveAnchor } from "./anchors.js";
 import { newObjectRecord, orderedIds } from "./ops.js";
 import { listedPackages, packageUrl, packagesToList } from "./packages.js";
 import { pinnedRepo } from "./build.js";
-import { LINK, atOf, isLink } from "./stage/links.js";
+import { LINK, atOf, isLink } from "./native/link-graph.js";
 import { editor } from "./parts/editor.js";
 import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
 

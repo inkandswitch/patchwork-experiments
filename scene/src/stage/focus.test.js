@@ -13,26 +13,24 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { NATIVES, mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
 import { editing } from "./bodies.js";
 import { elementOf, keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
 import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "../selection.js";
-import focusPart from "../parts/focus.js";
 import inspector from "../parts/inspector.js";
 import toolbar from "../parts/toolbar.js";
 
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const J = JSON.stringify;
 
-/** Trait parts that record what reaches them, a view plugin, and Enter (scene.focus). */
+/** Trait parts that record what reaches them, a view plugin, and Enter (scene.links, native). */
 function extensions(log) {
   const input = (who) => ({ press: (ev) => (log.push(`${who} ${ev.hit?.id ?? "-"}`), null), click: (ev) => (log.push(`click ${who} ${ev.hit?.id ?? "-"}`), null) });
   return [
     { meta: { id: "t.card", traits: ["t.card"] }, module: { create: () => ({ input: input("t.card") }) } },
     { meta: { id: "t.host", traits: ["t.host"] }, module: { create: () => ({ input: input("t.host") }) } },
     { meta: { id: "t.general", type: "scene:view" }, module: { create: () => ({ input: input("t.general") }) } },
-    { meta: { id: "scene.focus" }, module: focusPart },
   ];
 }
 
@@ -70,7 +68,7 @@ async function mountNested({ repo = new FakeRepo(), log = [], extra = [], time =
   };
   const s = await mountStage({ repo, time, extensions: [...extensions(log), ...extra], doc: { title: "A", objects, order: Object.keys(objects) } });
   const view = s.debug.view;
-  await until(() => ["L", "L/M", "P"].every((p) => stageOf(view, p)?.debug.host.instanceOf("t.card")) && s.api("t.host")?.link("X")?.role === "closed" && s.api("t.host")?.link("R")?.reason === "repeat", 3000);
+  await until(() => ["L", "L/M", "P"].every((p) => stageOf(view, p)?.debug.host.instanceOf("t.card")) && s.api("t.host")?.use("links").role("X")?.role === "closed" && s.api("t.host")?.use("links").role("R")?.reason === "repeat", 3000);
   return { s, view, repo, b, c, log };
 }
 
@@ -170,7 +168,7 @@ const projections = (view) =>
 /** The stages the view plugins have facets of (api.focus()): the focus stage's, once one asks, and no other. */
 const facetsAt = (view) => view.stages().filter((x) => x.debug.facets().length).map((x) => x.path.join("/"));
 function placed(view) {
-  view.plugins.record("scene.focus").api.focus();
+  view.plugins.record("scene.links").api.focus();
   expect(facetsAt(view)).toEqual([view.atom.get().focus.join("/")]);
 }
 
@@ -239,8 +237,8 @@ describe("Enter and Leave", () => {
     const host = s.api("t.host");
     await placed(view);
     // Enter's verb says what each link does
-    const plugins = ["scene.focus", "t.general"].map((id) => s.instance(id));
-    const enterOf = (id) => s.instance("scene.focus").commands[0].state(id);
+    const plugins = ["scene.links", "t.general"].map((id) => s.instance(id));
+    const enterOf = (id) => s.instance("scene.links").commands[0].state(id);
     expect(enterOf("table")).toBe(null);
     expect(enterOf("L").disabled).toBeFalsy();
     expect(enterOf("R")).toMatchObject({ disabled: true, title: expect.stringMatching(/repeat/) });
@@ -257,7 +255,7 @@ describe("Enter and Leave", () => {
     await placed(view);
     // the camera came along, and nobody learns it was placed: not a stage's part (B's, or the host's: sailing's
     // quarter view still waits for a camera nobody placed), nor a view plugin (scene.autoframe knows the focus moved)
-    const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), s.facet("scene.focus").camera.touched()];
+    const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), s.facet("scene.links").camera.touched()];
     expect(touched()).toEqual([false, false, false]);
     // what the doc runs is untouched (H1): only the view plugins' facets moved
     const traitRun = (p) => stageOf(view, p).debug.host.running().map((r) => r.id).filter((id) => !NATIVES.includes(id));
@@ -277,7 +275,7 @@ describe("Enter and Leave", () => {
     expect(view.leave()).toBe(false);
     await placed(view);
     // the same instances all along
-    expect(["scene.focus", "t.general"].map((id) => s.instance(id))).toEqual(plugins);
+    expect(["scene.links", "t.general"].map((id) => s.instance(id))).toEqual(plugins);
   });
 
   it("the focus leaves a link that goes, is pinned, or stops acting there; the selection goes with it", async () => {
@@ -351,7 +349,7 @@ describe("surfaces across docs", () => {
     const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
     const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: (api) => ({ commands: [{ id: "ring", name: "Ring", show: ["toolbar"], state: (t, ctx) => (t == null && ctx.scene.objects.table ? { title: "Ring the bell" } : null), run: () => ran.push(api.url) }] }) } };
     const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
-    s = await mountStage({ repo, extensions: [HOST, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    s = await mountStage({ repo, extensions: [HOST, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug, 3000);
     s.edit(true);
@@ -381,7 +379,7 @@ describe("the bar of tools across docs, not editing", () => {
     const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: world("ring", "Ring") } };
     const GAME = { meta: { id: "t.game", traits: ["t.game"] }, module: { create: world("deal", "Deal") } };
     const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
-    s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
     await until(() => stageOf(view, "L")?.debug.host.instanceOf("t.game"), 3000);
     s.edit(false);
@@ -409,9 +407,9 @@ describe("the drawer follows the focus", () => {
     const c = repo.add(emptyScene({ title: "C", objects: { piece: object({ name: "Piece" }) }, order: ["piece"] }));
     const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }), M: link(c.url, { name: "C" }) }, order: ["card", "M"] }));
     const objects = { table: object({ name: "Table" }), L: link(b.url, { name: "B" }), P: link(b.url, { name: "B fixed", at: { heads: b.heads() } }) };
-    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.inspector" }, module: inspector }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.inspector" }, module: inspector }], doc: { title: "A", objects, order: Object.keys(objects) } });
     const view = s.debug.view;
-    await until(() => stageOf(view, "L")?.debug && s.instance("scene.focus") && view.linkState(["P"])?.open, 3000);
+    await until(() => stageOf(view, "L")?.debug && s.instance("scene.links") && s.api("scene.links")?.use("links").role("P")?.open, 3000);
     s.edit(true);
     s.instance("scene.inspector").tab.open();
     await settle();

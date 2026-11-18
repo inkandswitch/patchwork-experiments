@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { enterState } from "./focus.js";
-import { linkMark } from "./outline.js";
-import { linkText } from "./inspector.js";
+import { enterState } from "./links.js";
+import { linkMark } from "../parts/outline.js";
+import { linkText } from "../parts/inspector.js";
 
-// every state a link can be in, as the view says (api.link): its role here, whether its doc is drawn, why it's closed
+// every state a link can be in, as use("links").role says: its role here, whether its doc is drawn, why it's closed
 const LINKS = [null];
 for (const role of ["acting", "pinned"]) for (const open of [true, false]) LINKS.push({ role, open });
 for (const reason of ["unavailable", "cycle", "repeat", "unpinned"]) LINKS.push({ role: "closed", open: false, reason });

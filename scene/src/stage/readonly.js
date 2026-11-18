@@ -72,7 +72,7 @@ export function stageRepo(repo, { readOnly = false, deps = null, reached = null 
   if (!repo) return repo;
   const base = deps ? pinnedRepo(repo, deps) : repo;
   async function find(url, ...rest) {
-    // (`reached` notes a find on its way as null, so fixing a link waits for it: view.js fixPointAt)
+    // (`reached` notes a find on its way as null, so fixing a link waits for it: native/links.js fixPointAt)
     const noting = reached && typeof url === "string" && !reached.get(url);
     if (noting) reached.set(url, null);
     let h;

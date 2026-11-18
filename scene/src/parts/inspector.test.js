@@ -12,7 +12,7 @@ import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { EMBED_ATTR, EMBED_CLASS } from "../embed.js";
 import { SECTION_MIME } from "../dnd.js";
-import { LINK } from "../stage/links.js";
+import { LINK } from "../native/link-graph.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -1137,7 +1137,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     const L = object({ name: "B", sourceUrl: inner.url, providerId: LINK, renderUrl: null });
     s = await mountStage({ repo, time, extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }), L }, order: ["a", "b", "L"] } });
     const view = s.debug.view;
-    await time.until(() => view.enterable(["L"]), { what: "L to open" });
+    await time.until(() => view.stageAt(["L"]), { what: "L to open" });
     // open: the inspector's pane is docked in the view's drawer, whichever stage the focus (and so the inspector) is in
     const open = () => s.drawer().order.some((el) => el.dataset.panel === "inspector");
     const inspectorApi = () => s.api("scene.inspector");

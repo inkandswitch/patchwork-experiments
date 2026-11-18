@@ -7,8 +7,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
-import focusPart from "../parts/focus.js";
+import { LINK } from "../native/link-graph.js";
 import inspector from "../parts/inspector.js";
 import add from "../parts/add.js";
 
@@ -46,14 +45,13 @@ async function mountWithLink() {
   s = await mountStage({
     repo,
     extensions: [
-      { meta: { id: "scene.focus" }, module: focusPart },
       { meta: { id: "scene.inspector" }, module: inspector },
       { meta: { id: "scene.add" }, module: add },
     ],
     doc: { title: "A", objects, order: Object.keys(objects) },
   });
   const view = s.debug.view;
-  await until(() => view.enterable(["L"]), 3000);
+  await until(() => view.stageAt(["L"]), 3000);
   s.edit(true);
   view.select(["table"]);
   // the selection opens the shut inspector

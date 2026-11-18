@@ -89,7 +89,7 @@ export const plugins = [
     params: [],
     // A scene doc placed in another: a link (STAGE.md, "Views, stages and links"). Its object
     // gets no render doc; the view opens a stage for the linked doc and
-    // draws it where the link is (stage/links.js).
+    // draws it where the link is (native/link-graph.js).
     content: "scene",
   },
   {
@@ -120,6 +120,7 @@ export const plugins = [
     ["notices", "Notices", { provides: ["notices"] }, () => import("./native/notices.js"), "scene:view"],
     ["prefs", "Prefs", { provides: ["prefs"] }, () => import("./native/prefs.js"), "scene:view"],
     ["drawer", "Drawer", { provides: ["drawer"], uses: ["prefs"] }, () => import("./native/drawer.js"), "scene:view"],
+    ["links", "Links", { provides: ["links"] }, () => import("./native/links.js"), "scene:view"],
   ].map(([n, name, services, load, type = "scene:extension"]) => ({ type, id: `scene.${n}`, name, ...(type === "scene:view" ? {} : { traits: ["*"] }), ...services, load: async () => (await load()).default })),
   // All but carry and others are view plugins (STAGE.md, "View plugins"):
   // each runs once per view, for its whole life, and works on the focus
@@ -196,15 +197,6 @@ export const plugins = [
     name: "Context menu",
     async load() {
       return (await import("./parts/menu.js")).default;
-    },
-  },
-  {
-    // Enter a link: the focus, which scopes the selection, moves into it (STAGE.md, "The input chain")
-    type: "scene:view",
-    id: "scene.focus",
-    name: "Enter",
-    async load() {
-      return (await import("./parts/focus.js")).default;
     },
   },
   {

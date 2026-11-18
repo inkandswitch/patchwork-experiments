@@ -19,7 +19,7 @@ import * as Automerge from "@automerge/automerge";
 import { emptyScene } from "./test/empty-scene.js";
 import { bundlePlan, extractHost, extractPlan } from "./extract.js";
 import { cleanObject, describesOf, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
-import { LINK, atOf, isLink } from "./stage/links.js";
+import { LINK, atOf, isLink } from "./native/link-graph.js";
 import { orderedIds } from "./ops.js";
 
 const DESCRIBES = describesOf([{ id: "t", describes: { "t.keep": { name: "Keeper", runtime: ["bound"] } } }]);

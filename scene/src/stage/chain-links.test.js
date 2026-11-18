@@ -17,7 +17,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { NATIVES, mountStage, object, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
 import { keyOf, parseKey } from "./paths.js";
 
 const holder = (id, traits) => ({ meta: { id, traits }, module: { create: () => ({ input: { press: () => null } }) } });

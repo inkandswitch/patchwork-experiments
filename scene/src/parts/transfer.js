@@ -45,7 +45,7 @@ import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
 import { atFocus, perFocus } from "./per-focus.js";
-import { isLink, atOf } from "../stage/links.js";
+import { isLink, atOf } from "../native/link-graph.js";
 import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
 
 const RING_SEGMENTS = 48;
@@ -378,7 +378,7 @@ function create(api) {
         const o = target != null ? scene?.objects?.[target] : null;
         if (!isLink(o)) return null;
         if (!here.writable()) return { disabled: true, title: "view only" };
-        const l = here.link?.(target);
+        const l = api.use("links")?.role(target);
         if (!l?.open) return { disabled: true, title: l?.role === "closed" ? `Not open here (${l.reason ?? "closed"})` : "Not open here yet" };
         return { title: "Copy the scene it shows into this one, in its place; the copy no longer follows it (tick what of that scene comes with it)", options: traitOptions(rootTraitsOf(o)) };
       },

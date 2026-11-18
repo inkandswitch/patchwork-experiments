@@ -13,7 +13,7 @@ import { ACCEPTED_KEY, resetPackages } from "./packages.js";
 import { ARRIVE_WAIT_MS } from "./stage.js";
 import packagesPart from "../parts/packages.js";
 import * as editor from "../parts/editor.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
 
 const HEAD = "H".repeat(48);
 const PROMPT = { meta: { id: "scene.packages" }, module: packagesPart };

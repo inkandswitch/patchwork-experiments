@@ -16,7 +16,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, connect } from "../test/fake-repo.js";
 import { manualTime } from "./time.js";
-import { LINK } from "./links.js";
+import { LINK } from "../native/link-graph.js";
 
 const CARD = { meta: { id: "t.card", traits: ["t.game"] }, module: { create: () => ({}) } };
 const link = (url, extra = {}) => object({ name: "Game", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });

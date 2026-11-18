@@ -39,13 +39,9 @@ import { providersFirst } from "./activation.js";
 import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath, viewKey } from "./paths.js";
-import { expand, identityOf, isLink } from "./links.js";
 import { viewAt } from "../build.js";
 import { unionPackages } from "../packages.js";
 import { multiplyMatrices } from "../transform.js";
-
-/** How many stages a view opens at most, nearest first (STAGE.md, "Views, stages and links": the budget is the view's). */
-export const LINK_BUDGET = 64;
 
 /** How long after the orbit stops the camera is saved. */
 const CAMERA_SAVE_MS = 500;
@@ -89,10 +85,10 @@ export function startOf(doc) {
 
 /**
  * Where a start leads (STAGE.md, "Arriving"): from stage `s`, its doc's start; while
- * its place is one of that doc's links, on through it, as the linked doc
- * starts people. `next(s, linkId)` → the stage the link opens (undefined:
- * not yet; null: nobody arrives through it). Links can't repeat on a path
- * (links.js), so this ends. Pure.
+ * its place holds a stage (a link), on through it, as that doc starts
+ * people. `next(s, id)` → the stage under it (false: it holds none, so the
+ * start is here; undefined: not yet; null: nobody arrives through it).
+ * Paths can't repeat a doc (link-graph.js), so this ends. Pure.
  * @returns {{ stage, body: string | null, place: string | null, through: boolean } | null | undefined}
  */
 export function startArrival(s, { doc, next }) {
@@ -102,8 +98,8 @@ export function startArrival(s, { doc, next }) {
     if (!stage) return undefined;
     const d = doc(stage);
     const { body, place } = startOf(d);
-    if (place == null || !isLink(d?.objects?.[place])) return { stage, body, place, through };
-    const n = next(stage, place);
+    const n = place == null ? false : next(stage, place);
+    if (n === false) return { stage, body, place, through };
     if (n == null) return n;
     stage = n;
     through = true;
@@ -201,37 +197,15 @@ function newSession() {
 
 // ─── the view ───────────────────────────────────────────────────────────────
 
-/** A doc's URL without a path or heads (what `deps` is keyed by). */
-const docUrl = (u) => String(u ?? "").split(/[/#]/)[0];
-/** A pin's deps as a key: the same docs at the same heads give the same key, in any order. */
-const depsKey = (deps) =>
-  JSON.stringify(
-    Object.keys(deps ?? {})
-      .sort()
-      .map((u) => [u, [...(deps[u] ?? [])].sort()]),
-  );
-/** Every doc URL a doc names, anywhere in it (bytes skipped), without paths or heads. */
-function urlsIn(doc) {
-  const out = new Set();
-  const walk = (v) => {
-    if (typeof v === "string") {
-      if (v.startsWith("automerge:")) out.add(docUrl(v));
-    } else if (v && typeof v === "object" && !ArrayBuffer.isView(v)) for (const x of Object.values(v)) walk(x);
-  };
-  walk(doc);
-  return out;
-}
-
 /**
  * Mount a view in `element` (element.repo, element.viewerId and element.time
  * optional). Its stages come after, the outermost first (./stage.js).
  */
 export function createView(element, { url = "scene", openStage = null } = {}) {
   const repo = element.repo ?? globalThis.repo;
-  // the docs this view shows live, told to the host (./announce.js): the
-  // linked stages' here, their objects' through each stage's render manager
+  // the docs this view shows live, told to the host (./announce.js): its
+  // stages' here, their objects' through each stage's render manager
   const announcer = createAnnouncer(element);
-  let announcedLinks = new Set();
   let dead = false;
   const cleanups = [];
   // the one source of time everything here moves with (time.js): the
@@ -375,7 +349,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (stages.get(s.n) === s) stages.delete(s.n);
     packagesChanged();
     ambientsChanged();
-    for (const [k, rec] of opened) if (rec.stage === s) opened.delete(k);
+    if (shownLive.has(s)) announcer.release(shownLive.get(s));
+    shownLive.delete(s);
+    // the stage it was drawn under shows that object's hint again
+    if (s.path.length) stageUnder(s.path.slice(0, -1))?.childrenChanged();
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
@@ -405,196 +382,49 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     for (const s of stages.values()) if (s.path.length === p.length - 1 && s.path.every((x, i) => x === p[i])) return keyOf(s.n, p.at(-1));
     return null;
   }
-  // ─── links: the stages this view opens (STAGE.md, "Views, stages and links") ────────────────
-  // The expansion (links.js) is a pure function of the link graph as the view
-  // has it: worked out again whenever a stage's doc changes or a linked doc
-  // arrives. Every occurrence that isn't closed gets a stage of its own, keyed
-  // by its path: a live doc acts at the first of them (the rest are closed,
-  // "repeat"); a pinned value is a read-only stage on its doc at those heads.
-  // A stage whose occurrence changes role or identity closes, with
-  // everything opened under it, and opens again. A closed link, or one whose
-  // doc (or version) hasn't arrived, is drawn as its hint.
-  const docs = new Map(); // url → { handle, state: "loading" | "ready" | "unavailable" }
-  const pins = new Map(); // identity (links.js identityOf) → the doc's handle at those heads
-  const opened = new Map(); // path key → { stage, key: role and identity }
-  let expansion = [];
-  let linkStates = new Map(); // path key → { role, open, reason? }
-  const pathKey = (p) => p.join("\u001f");
-  // (a pin's deps are part of what it is: the same heads held with other deps show other docs)
-  const occKey = (o) => `${o.role}|${identityOf(o.url, o.heads)}|${o.heads ? depsKey(o.deps) : ""}`;
-  /** A doc's live handle as the view has it: found once, watched for changes; null if it can't be opened, undefined while on its way. */
-  function liveHandle(u) {
-    let d = docs.get(u);
-    if (!d) {
-      docs.set(u, (d = { handle: null, state: "loading" }));
-      Promise.resolve()
-        .then(() => repo.find(u))
-        .then(
-          (h) => {
-            if (dead) return;
-            d.handle = h;
-            d.state = "ready";
-            const on = () => relink();
-            h.on?.("change", on);
-            d.off = () => h.off?.("change", on);
-            relink();
-          },
-          () => {
-            if (dead) return;
-            d.state = "unavailable";
-            relink();
-          },
-        );
-      return undefined;
-    }
-    if (d.state === "unavailable") return null;
-    return d.state === "ready" ? d.handle : undefined;
-  }
-  /** A doc at fixed heads: its handle there, once those heads are here (the live doc's changes bring them), else undefined; null if it can't be opened. */
-  function pinHandle(u, heads) {
-    const ident = identityOf(u, heads);
-    if (pins.has(ident)) return pins.get(ident);
-    const live = liveHandle(u);
-    if (!live) return live;
-    const v = viewAt(live, heads);
-    if (!v) return undefined;
-    pins.set(ident, v);
-    return v;
-  }
-  function docOf(u, heads) {
-    const root = outermost();
-    if (!heads && root && u === root.url) return root.doc();
-    const h = heads ? pinHandle(u, heads) : liveHandle(u);
-    return h ? (h.doc() ?? undefined) : h;
-  }
-  let relinkQueued = false;
-  /** Work out the expansion again (soon): stages open and close to match. */
-  function relink() {
-    if (relinkQueued || dead) return;
-    relinkQueued = true;
-    queueMicrotask(() => {
-      relinkQueued = false;
-      if (!dead) relinkNow();
-    });
-  }
-  function relinkNow() {
-    const root = outermost();
-    if (!root) return;
-    expansion = expand({ url: root.url }, docOf, { budget: LINK_BUDGET });
-    // the linked docs shown live (a pin keeps its own version) are announced, and only those
-    const live = new Set();
-    for (const o of expansion) if (o.depth > 0 && o.role !== "closed" && !o.heads) live.add(o.url);
-    for (const u of live) if (!announcedLinks.has(u)) announcer.hold(u);
-    for (const u of announcedLinks) if (!live.has(u)) announcer.release(u);
-    announcedLinks = live;
-    const want = new Map();
-    for (const o of expansion) if (o.depth > 0 && o.role !== "closed") want.set(pathKey(o.path), o);
-    // a stage whose occurrence is gone, or is now another role or identity, closes, and everything opened under it (its claims go with it)
-    const closing = [];
-    for (const [k, rec] of opened) {
-      const o = want.get(k);
-      if (!(o && rec.key === occKey(o) && stages.get(rec.stage.n) === rec.stage)) closing.push(rec.stage.path);
-    }
-    // the focus is an occurrence, not a path: one whose stage closes is left now, so a new one opened at
-    // the same path (the link pointed at another doc) is the link going, not the focus staying (Decisions 8)
-    const focusNow = atom.get().focus;
-    const cut = closing.filter((p) => p.length <= focusNow.length && p.every((x, i) => x === focusNow[i])).reduce((a, p) => (a == null || p.length < a ? p.length : a), null);
-    if (cut != null) focusOn(focusNow.slice(0, cut - 1));
-    for (const p of closing)
-      for (const [k, rec] of [...opened])
-        if (rec.stage.path.length >= p.length && p.every((x, i) => x === rec.stage.path[i])) {
-          opened.delete(k);
-          rec.stage.dispose();
-        }
-    // open the rest, parents first (the expansion is in path order)
-    for (const o of expansion) {
-      const k = pathKey(o.path);
-      if (o.depth === 0 || o.role === "closed" || opened.has(k)) continue;
-      const parentOcc = expansion[o.parent];
-      const parent = parentOcc.depth === 0 ? root : opened.get(pathKey(parentOcc.path))?.stage;
-      const handle = o.heads ? pinHandle(o.url, o.heads) : liveHandle(o.url);
-      if (!parent || !handle) continue;
-      opened.set(k, { stage: openLinked(handle, parent, o), key: occKey(o) });
-    }
-    const states = new Map();
-    for (const o of expansion) {
-      if (o.depth === 0) continue;
-      const open = opened.get(pathKey(o.path))?.key === occKey(o);
-      states.set(pathKey(o.path), Object.freeze({ role: o.role, open: o.role !== "closed" && open, ...(o.reason ? { reason: o.reason } : {}) }));
-    }
-    const was = linkStates;
-    linkStates = states;
-    if (JSON.stringify([...was]) !== JSON.stringify([...states])) for (const s of stages.values()) s.linksChanged();
-    // the focus is a stage that acts: one whose link went, closed, or now pins its doc is left
-    const focus = atom.get().focus;
-    let keep = focus;
-    while (keep.length && !stageAt(keep)) keep = keep.slice(0, -1);
-    if (keep.length < focus.length) focusOn(keep);
-    else placeFocus();
-    showTrail();
-  }
-  /** Open a linked doc's stage, its root under the link's node, in the link's frame, acting or drawn as its occurrence says. */
-  function openLinked(handle, parent, o) {
-    const linkId = o.link;
-    const frame = () => {
-      const m = parent.displayedWorld(linkId);
-      if (!m) return null;
-      const f = parent.frame();
-      return f.matrix ? multiplyMatrices(f.matrix, m) : m;
-    };
-    return addStage((n) => openStage({ handle, view: api, n, path: o.path, frame, under: keyOf(parent.n, linkId), role: o.role, deps: o.deps }));
-  }
-  /** Is a linked doc still on its way: one being found, or acting with no stage open for it yet? */
-  function linksPending() {
-    for (const d of docs.values()) if (d.state === "loading") return true;
-    return expansion.some((o) => o.role === "acting" && o.depth > 0 && !opened.has(pathKey(o.path)));
-  }
-  /** A link's state as the view has it ({ role: "acting" | "pinned" | "closed", open, reason? }: open, its doc is drawn, else its hint), by its path; null if it isn't one. */
-  const linkState = (p) => linkStates.get(pathKey(p)) ?? null;
-  /**
-   * Where fixing the link at path `p` would fix it (STAGE.md, "Views, stages and links", "a pin
-   * is whole"): `{ heads, deps? }`, the heads of its doc as this view has it,
-   * and in `deps` the heads of every doc reached through it: of the docs the
-   * stages opened under it hold or found through their repos (live linked
-   * docs, render docs, files, a keeper's container), those its doc names by
-   * URL, or a doc so named names, and so on. A doc an extension found that
-   * nothing in the pin names is the viewer's, not the pin's (a player's
-   * secret): never recorded. Null when no live stage is open there.
-   */
-  function fixPointAt(p) {
-    const at = opened.get(pathKey(p))?.stage;
-    if (!at || at.role === "pinned") return null;
-    const heads = at.handle.heads?.();
-    if (!Array.isArray(heads) || !heads.length) return null;
-    // url → handle: what the stages under it hold or found; null: a find still on its way, so it
-    // can't be fixed yet if its docs name that one (a pin missing it would show it live)
-    const found = new Map();
-    for (const { stage: s } of opened.values()) {
-      // (a pin under it is fixed already, by its own `at`)
-      if (s.role === "pinned" || s.path.length < p.length || !p.every((x, i) => x === s.path[i])) continue;
-      if (s !== at) found.set(docUrl(s.url), s.handle);
-      for (const [u, h] of s.reached) if (!found.get(docUrl(u))) found.set(docUrl(u), h);
-    }
-    const deps = {};
-    const seen = new Set([docUrl(at.url)]);
-    for (let next = [at.handle.doc()]; next.length; ) {
-      const docs = next;
-      next = [];
-      for (const d of docs)
-        for (const u of urlsIn(d)) {
-          if (seen.has(u)) continue;
-          const h = found.get(u);
-          if (h === null) return null; // named, and still on its way: not yet
-          const hs = h?.heads?.();
-          if (seen.has(u) || !Array.isArray(hs) || !hs.length) continue;
-          seen.add(u);
-          deps[u] = [...hs];
-          next.push(h.doc());
-        }
-    }
-    return Object.keys(deps).length ? { heads: [...heads], deps } : { heads: [...heads] };
-  }
+  // ─── opening stages: the tree (STAGE.md, "Views, stages and links") ─────────────
+  // A view plugin opens a doc as a stage under an object of another stage
+  // (scene.links does, for links): drawn in that object's frame, as its
+  // content. Closing one closes everything under it, and the focus leaves it.
 
+  /** The open stage whose path is `p` exactly, acting or drawn, or null. */
+  const stageUnder = (p) => [...stages.values()].find((s) => samePath(s.path, p)) ?? null;
+  /**
+   * Open `handle` as a stage under object `id` of the stage at `at`, in its
+   * frame: acting, or drawn and read-only (`acting: false`); `heads`: the
+   * doc at those heads (a pin, drawn), `deps` the heads its repo finds docs
+   * at. → the stage, or null (no stage at `at`, one open under `id` already,
+   * or those heads aren't here yet).
+   */
+  function openUnder(handle, { under: [at, id] = [], acting = true, heads = null, deps = null } = {}) {
+    const parent = Array.isArray(at) ? stageUnder(at) : null;
+    const h = heads?.length ? viewAt(handle, heads) : handle;
+    if (dead || !parent || typeof id !== "string" || stageUnder([...at, id]) || !h) return null;
+    const frame = () => {
+      const m = parent.displayedWorld(id);
+      const f = parent.frame();
+      return m && f.matrix ? multiplyMatrices(f.matrix, m) : m;
+    };
+    const s = addStage((n) => openStage({ handle: h, view: api, n, path: [...at, id], frame, under: keyOf(parent.n, id), role: acting && h === handle ? "acting" : "pinned", deps }));
+    // a doc shown live is announced (./announce.js); a pin keeps its own version
+    if (h === handle) {
+      shownLive.set(s, h.url);
+      announcer.hold(h.url);
+    }
+    parent.childrenChanged();
+    return s;
+  }
+  /** Close stage `s` and everything under it, innermost first; a focus in it leaves it. */
+  function closeStage(s) {
+    if (dead || stages.get(s.n) !== s) return;
+    const within = (p) => p.length >= s.path.length && s.path.every((x, i) => x === p[i]);
+    if (within(atom.get().focus)) focusOn(s.path.slice(0, -1));
+    for (const x of [...stages.values()].filter((x) => within(x.path)).sort((a, b) => b.path.length - a.path.length)) x.dispose();
+  }
+  const shownLive = new Map(); // stage → the url it announced
+  // While a view plugin is opening stages (api.opening()), arriving waits for them.
+  const opening = new Set();
+  const pending = () => plugins.starting() || opening.size > 0;
   /** Every stage's update flush. */
   const requestFlush = () => {
     for (const s of stages.values()) s.requestFlush();
@@ -625,25 +455,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** Select a path (null: none): the element of the focus stage it goes through; outside the focus, nothing (../selection.js). */
   const select = (path) => selectStep(path == null ? { type: "clear" } : { type: "select", path: [...path] });
 
-  /**
-   * Where Enter on the link at path `p` goes: there, if its doc acts there;
-   * else null (a pin is a value, a closed link has no stage).
-   */
-  function enterable(p) {
-    const st = linkState(p);
-    if (!st?.open || st.role !== "acting") return null;
-    return stageAt(p) ? pathOf(p) : null;
-  }
   /** Move the focus to path `p`: out to where it and `p` part, then in a link at a time (as far as each acts), as one change. @returns did it get there */
   function focusOn(p) {
     selectSteps(focusSteps(atom.get().focus, p, (q) => !!stageAt(q)));
     return samePath(atom.get().focus, p);
   }
-  /** Enter the link at path `p`, wherever the focus is: it moves to where that link's doc acts. */
-  function enter(p) {
-    const to = Array.isArray(p) ? enterable(p) : null;
-    return to ? focusOn(to) : false;
-  }
+  /** Enter the acting stage at path `p`, wherever the focus is (a pin or a closed link has none). */
+  const enter = (p) => (Array.isArray(p) && !!stageAt(p) && focusOn(p));
   /** Leave: the focus one link out. */
   const leave = () => selectStep({ type: "leave" });
 
@@ -654,8 +472,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   /**
    * The focus moved: a tool held from a stage it left behind is put down,
-   * the view's plugins' facets of the stages it left go (they are told the
-   * new focus stage afresh), and the trail shows where it is.
+   * and the view's plugins' facets of the stages it left go (they are told the
+   * new focus stage afresh).
    */
   function focusMoved() {
     if (dead) return;
@@ -666,7 +484,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown();
     placeFocus();
     told = new WeakMap();
-    showTrail();
     router?.refresh();
     requestFlush();
   }
@@ -692,57 +509,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       for (const s of stagesInOrder()) s.packages.dismiss(urls);
     },
   });
-
-  // ─── the trail: where the focus is (STAGE.md, "The interface"'s breadcrumb) ─────────────
-  // The view's own chrome, shown only while the focus is inside a link: the
-  // outermost doc's title, then each link entered by its host's name for it,
-  // each a way back out to there, and Leave.
-  const trail = document.createElement("nav");
-  trail.className = "stage-trail";
-  trail.setAttribute("aria-label", "Where you are");
-  let trailKey = "";
-  /** What the trail calls the doc at path `p` on the focus path: the outermost's title, else its host's name for the link. */
-  function nameAt(p) {
-    if (!p.length) return String(outermost()?.doc()?.title || "Scene");
-    return String(stageAt(p.slice(0, -1))?.reader.nameOf(p.at(-1)) || "Linked scene");
-  }
-  function showTrail() {
-    const focus = atom.get().focus;
-    const names = [];
-    for (let i = 0; i <= focus.length; i++) names.push(nameAt(focus.slice(0, i)));
-    const key = focus.length ? JSON.stringify(names) : "";
-    if (key === trailKey) return;
-    trailKey = key;
-    // (the view's plugins hear it: the clock chips name their docs as the trail does)
-    told = new WeakMap();
-    requestFlush();
-    if (!focus.length) {
-      trail.remove();
-      trail.replaceChildren();
-      return;
-    }
-    const parts = names.flatMap((name, i) => {
-      const last = i === names.length - 1;
-      const crumb = document.createElement(last ? "span" : "button");
-      crumb.className = last ? "trail-here" : "button link trail-crumb";
-      crumb.textContent = name;
-      if (last) crumb.setAttribute("aria-current", "location");
-      else {
-        crumb.type = "button";
-        crumb.title = `Back out to ${name}`;
-        crumb.addEventListener("click", () => focusOn(atom.get().focus.slice(0, i)));
-      }
-      return i ? [Object.assign(document.createElement("span"), { className: "trail-sep", textContent: "›" }), crumb] : [crumb];
-    });
-    const out = document.createElement("button");
-    out.type = "button";
-    out.className = "button trail-leave";
-    out.textContent = "Leave";
-    out.title = "Back out one level (Esc)";
-    out.addEventListener("click", () => leave());
-    trail.replaceChildren(...parts, out);
-    if (!trail.isConnected) edges.top.prepend(trail);
-  }
 
   // ─── bodies and hands (STAGE.md, "Bodies", "Hands") ──────────────────────
 
@@ -898,12 +664,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function arrivalAt() {
     return startArrival(outermost(), {
       doc: (s) => s.doc(),
+      // (an object whose content is a stage, `content: "scene"`, holds one; a drawn one, or none once nothing is opening, nobody arrives through)
       next: (s, id) => {
-        const p = [...s.path, id];
-        const st = linkState(p);
-        if (!st) return undefined;
-        if (st.role !== "acting") return null;
-        return stageAt(p) ?? undefined;
+        const under = stageUnder([...s.path, id]);
+        if (under) return under.acts ? under : null;
+        return s.routeOf(id) !== "scene" ? false : pending() ? undefined : null;
       },
     });
   }
@@ -937,7 +702,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     }
     if (at === undefined) {
       // (each flush asks again; a doc arriving flushes)
-      if (linksPending()) requestFlushSoon();
+      if (pending()) requestFlushSoon();
       return;
     }
     if (!at.body || at.body === LOOK.id) {
@@ -958,7 +723,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const order = acting();
       const ahead = only ? [] : order.slice(0, order.indexOf(offer.stage));
       const waiting = time.now() - a.offered < ARRIVE_WAIT_MS;
-      if (((!only && linksPending()) || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && waiting) return requestFlushSoon();
+      if (((!only && pending()) || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && waiting) return requestFlushSoon();
       // a body may refuse at the moment it's offered (its doc not yet in, a seat not yet
       // laid): the start stays pending and is offered again until ARRIVE_WAIT_MS after the offer
       if (enterBody(at.body, at.place, caller, only) || !waiting) arrival = null;
@@ -972,9 +737,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       return;
     }
     // (a linked doc still on its way may bring it: a boat arrives in its linked game's seat body)
-    const pending = linksPending();
-    if (!pending && all.every((s) => s.packages.complete() && !s.starting())) arrival = null;
-    else if (pending || all.some(unsettled)) requestFlushSoon();
+    const waits = pending();
+    if (!waits && all.every((s) => s.packages.complete() && !s.starting())) arrival = null;
+    else if (waits || all.some(unsettled)) requestFlushSoon();
   }
 
   // ─── the look and attention (STAGE.md, "The input chain") ─────────────────────────────────
@@ -1256,7 +1021,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // the view's plugins first (their facets go with them), then the stages, innermost first
     plugins.dispose();
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
-    for (const d of docs.values()) d.off?.();
     announcer.dispose();
     dead = true;
     router.dispose();
@@ -1473,6 +1237,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
        * (pointer: true for the pointer's path, what a menu is of; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's)
        */
       path: (o) => inputPath(o),
+      /** open a doc as a stage under an object of another ({ under: [stagePath, id], acting?, heads?, deps? }: openUnder) → close, its `reached` the docs its repo found; or null */
+      open: (handle, o) => {
+        const s = live() ? openUnder(handle, o) : null;
+        return s ? Object.assign(acquire(own.offs, () => () => closeStage(s)), { reached: s.reached }) : null;
+      },
+      /** stages are still being opened: arriving waits for them until release() */
+      opening: () => acquire(own.offs, (t = {}) => (opening.add(t), () => opening.delete(t))),
       /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
       /** a service (STAGE.md, "Native services"): a view plugin's, else the focus stage's provider's */
@@ -1598,7 +1369,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     enter,
     leave,
     focusOn,
-    enterable,
     stageAt,
     look,
     pointed,
@@ -1612,18 +1382,15 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     cursor,
     arrive,
     tryArrive,
-    relink,
-    linkState,
-    fixPointAt,
+    openUnder,
+    closeStage,
+    stageUnder,
     /** what arriving still waits to enter (where view.start leads: its stage's number, body and place), for probes and tests */
     arriving: () => {
       if (!arrival) return null;
       const at = arrivalAt();
       return at ? { stage: at.stage.n, body: at.body, place: at.place, offered: arrival.offered } : { pending: at === undefined };
     },
-    linksPending: () => linksPending(),
-    /** the expansion as it stands (links.js), for probes and tests */
-    expansion: () => expansion,
     dispose,
   };
   return api;

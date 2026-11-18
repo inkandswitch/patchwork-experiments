@@ -519,7 +519,7 @@ describe("Extract and Bundle", () => {
     // the link is selected, and the view opened its doc
     expect(s.local.get().selected).toBe(id);
     await until(() => s.debug.view.stages().some((x) => x.url === link.sourceUrl));
-    expect(s.facet("scene.transfer").link(id)).toMatchObject({ role: "acting", open: true });
+    expect(s.facet("scene.transfer").use("links").role(id)).toMatchObject({ role: "acting", open: true });
     // one step
     expect(editor(s.facet("scene.transfer")).labels().undo).toBe("Extract");
     expect(editor(s.facet("scene.transfer")).undo()).toBe(true);
@@ -532,7 +532,7 @@ describe("Extract and Bundle", () => {
     await until(() => linkId());
     const id = linkId();
     const url = s.doc().objects[id].sourceUrl;
-    await until(() => s.facet("scene.transfer").link(id)?.open);
+    await until(() => s.facet("scene.transfer").use("links").role(id)?.open);
     const linked = JSON.stringify(s.repo.handles.get(url).doc());
     const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
     expect(cmd.state(id, { scene: { objects: s.doc().objects } })).toMatchObject({ title: expect.stringContaining("no longer follows") });
@@ -556,7 +556,7 @@ describe("Extract and Bundle", () => {
     await until(() => linkId());
     const id = linkId();
     const url = s.doc().objects[id].sourceUrl;
-    await until(() => s.facet("scene.transfer").link(id)?.open);
+    await until(() => s.facet("scene.transfer").use("links").role(id)?.open);
     const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
     const values = () => cmd.state(id, { scene: { objects: s.doc().objects } }).options.map((o) => o.value);
     await until(() => values().length === 1);

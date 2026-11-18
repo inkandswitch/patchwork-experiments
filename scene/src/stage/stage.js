@@ -51,7 +51,6 @@ import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
-import { isLink } from "./links.js";
 import { LOOK } from "./bodies.js";
 import { createView, projectView } from "./view.js";
 import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
@@ -206,7 +205,7 @@ export default function Stage(handle, element) {
  *   path?: string[],                   // the links that lead to it ([]: the outermost)
  *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
  *   under?: string | null,             // the viewport key its root hangs under (the link's)
- *   role?: "acting" | "pinned",       // does it act, or is it drawn (links.js expand)
+ *   role?: "acting" | "pinned",       // does it act, or is it drawn (a pin: view.js openUnder)
  *   deps?: object | null,              // a pin's: the heads of the docs reached through it ({ url: heads })
  * }} o
  */
@@ -656,12 +655,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         continue;
       }
       if (route === "scene") {
-        // a link: the view opens a stage for its doc (links.js), acting or
-        // drawn; open, its doc is what's drawn; otherwise it is drawn as its
-        // hint, the room the host gives it
+        // its content is a stage (a link's doc, opened by a view plugin): with
+        // one open under it, that is what's drawn; else its hint, the room the host gives it
         if (tracked.has(id)) manager.untrack(id);
         queue.remove(id);
-        applyHint(id, view.linkState([...path, id])?.open ? null : o.hint?.bounds);
+        applyHint(id, view.stageUnder([...path, id]) ? null : o.hint?.bounds);
         if (objState.delete(id)) statusDirty = true;
         continue;
       }
@@ -1278,8 +1276,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    */
   function fixPoint(id) {
     const o = doc().objects?.[id];
-    // a link: its doc's heads, and every doc reached through it (the view's to say, from the stages it opened there)
-    if (isLink(o)) return o.at ? null : view.fixPointAt([...path, id]);
     if (!o?.renderUrl || !manager.ids().includes(id)) return null;
     const point = manager.fixPoint(id);
     if (!point) return null;
@@ -1380,7 +1376,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
-        /** move the focus into this stage's link `target`: false if it can't be entered */
+        /** move the focus into the acting stage under this stage's `target` (a link's): false if there is none */
         enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
         /** arrive again where the outermost doc's view.start now says (a template's maker): only from the outermost */
         arrive: () => {
@@ -1410,7 +1406,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
       /** a service (STAGE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
-      use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x), doc }) : null)) : null),
+      use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x), doc, path }) : null)) : null),
       /** has everything the doc calls for started (or failed: `failed`), and is every listed package here (`missing`: those that aren't)? */
       settled: () => {
         const p = local.get().packages;
@@ -1435,8 +1431,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         applyDoc(derive());
       },
       providersFor,
-      /** a link of this doc's, as the view has it: { role: "acting" | "pinned" | "closed", open, reason? } (open: its doc is drawn, else its hint), or null (not a link, or not expanded yet) */
-      link: (oid) => view.linkState([...path, oid]),
       addObject,
       fixPoint,
 
@@ -1724,8 +1718,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     applyDoc(m);
     packages.check();
     requestFlush();
-    // its links may have changed: the view works out what it opens again
-    view.relink();
     perf.sync.add(cpuNow() - t0);
   }
   handle.on("change", sync);
@@ -1860,8 +1852,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     displayedWorld,
     pageHide,
     pageShow,
-    /** the view's links changed state: draw them again (open, or as their hints) */
-    linksChanged: () => {
+    /** where an object's content was routed ("built", "file", "scene": a stage) */
+    routeOf: (id) => routes.get(id) ?? null,
+    /** a stage opened or closed under one of its objects: draw it again (that stage, or its hint) */
+    childrenChanged: () => {
       if (!dead) {
         applyDoc(derive());
         displayChanged();

@@ -16,7 +16,7 @@ import { newRenderDoc } from "./datatype.js";
 import { boxIn, bundleLink, bundlePlan, composeTransforms, extractHost, extractObjects, extractPlan, extractable } from "./extract.js";
 import { describesOf, entryText, lostText, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
 import { resolveAnchor } from "./anchors.js";
-import { isLink } from "./stage/links.js";
+import { isLink } from "./native/link-graph.js";
 import { isGroup, resolveGroups } from "./groups.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices } from "./transform.js";
