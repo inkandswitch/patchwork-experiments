@@ -54,7 +54,8 @@ export default {
     caption.hidden = true;
     api.overlay().append(caption);
 
-    const shown = () => api.pref("grid", true) !== false;
+    const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
+    const shown = () => pref("grid", true) !== false;
     // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
@@ -72,7 +73,7 @@ export default {
       if (!here) return;
       const { f, layer, labels } = here;
       const on = drawn();
-      const unit = api.pref("units", "m");
+      const unit = pref("units", "m");
       const grid = gridFor(sceneExtent(f.sceneBox()), unit);
       const next = on ? JSON.stringify([unit, grid.size, grid.divisions]) : "off";
       if (next === key) return;
@@ -108,14 +109,14 @@ export default {
           name: "Grid",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show the ground grid" } : null),
-          run: () => api.setPref("grid", !shown()),
+          run: () => api.use("prefs")?.set("grid", !shown()),
         },
       ],
       update(scene, local, prev, view) {
         // only a doc change, a content change (same scene and local) or a pref or theme change can move the grid
         const was = prev.view;
         const content = scene === prev.scene && local === prev.local && view === was;
-        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.hands === was.hands) return;
+        if (was && scene === prev.scene && !content && view["scene.prefs"] === was["scene.prefs"] && view.theme === was.theme && view.hands === was.hands) return;
         if (was && view.theme !== was.theme) key = null;
         redraw(view.theme);
       },

@@ -248,7 +248,7 @@ export function create(api) {
   };
   let lastSeen = null; // what update() was last given
   const selectedOf = (scene, local) => dimensionOf(local?.selected ?? null, scene);
-  const unitsOf = (scene, local) => local?.prefs?.units ?? scene?.d?.view?.units ?? "m";
+  const unitsOf = (scene, local) => local?.["scene.prefs"]?.units ?? scene?.d?.view?.units ?? "m";
   const gap = (oid, local) => surfaceGap(F()?.content(oid)?.root ?? null, local);
 
   function compute(scene, local) {

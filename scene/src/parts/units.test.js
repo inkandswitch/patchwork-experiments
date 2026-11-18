@@ -22,11 +22,11 @@ describe("scene.units", () => {
     const s = await mount();
     const api = s.api("scene.units");
     expect(api.run({ ext: "scene.units", command: "units", target: null, value: "mm" })).toBe(true);
-    expect(s.local.get().prefs.units).toBe("mm");
+    expect(s.local.get()["scene.prefs"].units).toBe("mm");
     expect(s.doc().view.units).toBe("m");
-    expect(api.pref("units", "m")).toBe("mm");
+    expect(api.use("prefs").get("units", "m")).toBe("mm");
     api.run({ ext: "scene.units", command: "units", target: null, value: "furlong" });
-    expect(s.local.get().prefs.units).toBe("mm");
+    expect(s.local.get()["scene.prefs"].units).toBe("mm");
     // not for an object
     expect(api.run({ ext: "scene.units", command: "units", target: "a", value: "cm" })).toBe(false);
     s.unmount();

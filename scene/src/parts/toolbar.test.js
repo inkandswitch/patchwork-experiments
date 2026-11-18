@@ -19,8 +19,8 @@ function fakeTools(log) {
           {
             id: "grid",
             name: "Grid",
-            state: (t) => (t == null ? { checked: !!api.pref("grid", true) } : null),
-            run: (_t, v) => (log.push(["grid", v]), api.setPref("grid", v)),
+            state: (t) => (t == null ? { checked: !!api.use("prefs").get("grid", true) } : null),
+            run: (_t, v) => (log.push(["grid", v]), api.use("prefs").set("grid", v)),
           },
           {
             id: "shade",
@@ -127,7 +127,7 @@ describe("scene.toolbar", () => {
     grid.click();
     expect(log.at(-1)).toEqual(["grid", false]);
     await s.settle();
-    expect(s.local.get().prefs.grid).toBe(false);
+    expect(s.local.get()["scene.prefs"].grid).toBe(false);
     expect(control("grid")).toBe(grid); // updated in place
     expect(grid.getAttribute("aria-pressed")).toBe("false");
     const shade = control("shade");

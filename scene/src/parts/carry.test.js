@@ -95,10 +95,10 @@ describe("scene.carry commands", () => {
     expect(stateOf("snap")).toMatchObject({ checked: true });
     const docSnap = s.doc().view.snap;
     s.api("scene.carry").run({ ext: "scene.carry", command: "snap", target: null });
-    expect(s.local.get().prefs.snap).toBe(false);
+    expect(s.local.get()["scene.prefs"].snap).toBe(false);
     expect(stateOf("snap")).toMatchObject({ checked: false });
     s.api("scene.carry").run({ ext: "scene.carry", command: "snap", target: null, value: true });
-    expect(s.local.get().prefs.snap).toBe(true);
+    expect(s.local.get()["scene.prefs"].snap).toBe(true);
     expect(s.doc().view.snap).toBe(docSnap); // never the doc
   });
 
@@ -207,7 +207,7 @@ describe("scene.carry carrying", () => {
     expect(transformOf("a").position[0]).toBeCloseTo(1.2);
 
     s.change((d) => (d.objects.a.transform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }));
-    s.api("scene.carry").setPref("snap", false);
+    s.api("scene.carry").use("prefs").set("snap", false);
     session = x().input.press(press("a"));
     session.move(move(1.2, 0.1));
     session.end(move(1.2, 0.1));

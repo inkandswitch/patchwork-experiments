@@ -47,7 +47,7 @@ describe("scene.grid", () => {
     const s = await mount();
     expect(run(s, "grid")).toBe(true);
     await s.settle();
-    expect(s.local.get().prefs.grid).toBe(false);
+    expect(s.local.get()["scene.prefs"].grid).toBe(false);
     expect(s.doc().view.grid).toBe(true);
     expect(state(s).checked).toBe(false);
     expect(caption(s).hidden).toBe(true);
@@ -63,14 +63,14 @@ describe("scene.grid", () => {
   it("follows the doc's suggestion, the units pref and the scene's size", async () => {
     const s = await mount({ view: { grid: false } });
     expect(caption(s).hidden).toBe(true);
-    s.api("scene.grid").setPref("grid", true);
-    s.api("scene.grid").setPref("units", "cm");
+    s.api("scene.grid").use("prefs").set("grid", true);
+    s.api("scene.grid").use("prefs").set("units", "cm");
     await s.settle();
     expect(caption(s).textContent).toBe("grid 10 cm");
     expect(labels(s).some((l) => l.textContent.endsWith(" cm"))).toBe(true);
     // content arriving makes the scene bigger (no WebGL here, so the box is stubbed)
     s.facet("scene.grid").sceneBox = () => ({ min: [-3, 0, -1], max: [2, 1, 1] });
-    s.api("scene.grid").setPref("units", "m");
+    s.api("scene.grid").use("prefs").set("units", "m");
     s.change((d) => (d.objects.a = object()));
     await s.settle();
     expect(caption(s).textContent).toBe("grid 1 m");

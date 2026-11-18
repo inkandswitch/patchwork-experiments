@@ -14,7 +14,7 @@
 // order the view plugins run in.
 // The editor's hand (scene.edit) is registered after them unless one of
 // them is it or `editor: false` (s.edit(on) picks it up or puts it down), and
-// the native services (claims, clock, telling, notices, drawer) last unless `natives: false`. The
+// the native services (claims, clock, telling, notices, prefs, drawer) last unless `natives: false`. The
 // scene's own datatypes and sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
 // scene:part plugins.
@@ -75,11 +75,11 @@ async function asRegistered(meta) {
 }
 
 // the view's keys (stage/view.js), and those of them that are paths
-const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "prefs", "focus"]);
+const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
 /** The native services' ids (src/index.js): registered last unless `natives: false`. */
-export const NATIVES = ["scene.claims", "scene.clock", "scene.telling", "scene.notices", "scene.drawer"];
+export const NATIVES = ["scene.claims", "scene.clock", "scene.telling", "scene.notices", "scene.prefs", "scene.drawer"];
 
 export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true, natives = true } = {}) {
   repo ??= new FakeRepo();

@@ -12,7 +12,7 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | Word | Means |
 |---|---|
 | **Stage** | The core, one per open doc: the doc, content, its channel, holds, lenses, the audience, its extensions and their apis. No UI. |
-| **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, hand stack, drawer, selection and hover (as paths), notices, prefs, one presence session, its view plugins. |
+| **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, hand stack, selection and hover (as paths), one presence session, its view plugins. |
 | **View plugin** | A `scene:view`: runs once per view, whatever the focus; works on the focus stage through `api.focus()`. |
 | **Link** | An object whose source is a scene doc (`providerId: "scene.link"`). The view opens a stage for that doc in the link's frame. Live without `at`; pinned with it. |
 | **Pin** | A stage that is drawn and never acts: a doc at fixed heads. Read-only. |
@@ -21,7 +21,7 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | **Body** | Where a viewer is and how they move and look. One stack per view, Look (the stage's orbit camera) at the bottom. |
 | **Hand** | What a viewer holds: the held tool, a popover, the editor (`scene.edit`'s). One stack per view, offered every event first. |
 | **Selection**, **attention** | One target per view, a path. Attention is the selection, else the look. |
-| **Service** | What a running instance `provides` by name, for others to `use`. Claims, world time and telling are native ones. |
+| **Service** | What a running instance `provides` by name, for others to `use`. Claims, world time, telling, notices, the drawer and prefs are native ones. |
 | **Edit** (a write) | The editor's write (`src/parts/editor.js`): undoable, this viewer's, in the focus doc. |
 
 ## Views, stages and links
@@ -51,7 +51,7 @@ most `LINK_BUDGET` stages open. `api.link(id)` → `{ role, open, reason? }`,
 
 **Acting and drawn.** A pin is drawn: its extensions run and draw into
 the world, nothing more. No segment, body, tool, command, widget, chrome,
-camera, selection, notice or process (`drawnApi`). There is no `api.role`, only
+camera, selection, view service or process (`drawnApi`). There is no `api.role`, only
 `api.writable()`.
 
 **Read-only.** A stage that doesn't act, or whose handle refuses writes, gets a
@@ -96,11 +96,11 @@ home.
 |---|---|---|---|---|
 | **Doc** | yes | yes | `doc()`, `scene()` | `change(fn)` |
 | **Channel** | yes | no | `channel.peers()`, `.get()`, `.watch` | `channel.set`, `.send` |
-| **Local** | no | no | `local.get()`, `view.get()` | `local.swap`, `view.select`, `view.enter`, `setPref`, `notify` |
+| **Local** | no | no | `local.get()`, `view.get()` | `local.swap`, `view.select`, `view.enter` |
 
 The doc holds what is true for everyone, never the camera or selection. It may
-suggest defaults: `api.pref(key, fallback)` is `view.prefs[key] ?? doc.view[key]
-?? fallback`. Ids may be missing at any time; readers ignore missing references,
+suggest defaults: the viewer's prefs fall back to `doc.view[key]` ("Native
+services"). Ids may be missing at any time; readers ignore missing references,
 and writers set fields, never whole objects.
 
 **`api.local`** (`get`, `swap(fn)`, `watch(fn, select?)`) is the stage's frozen
@@ -114,8 +114,8 @@ prefixed `<id>.`; others run its commands instead of writing them.
 depth, lock, reach, keys, serial }`, depth 0 Look); `hands` (`[{ ext, kind,
 name, pointer, serial }]`, top last); `held` (the tool among them, with
 `command` and `keys`); `gesture`; `pointer` (`{ locked, lock, wanted, released,
-refused, touch }`); `escape` (`{ layer, hint }`); `theme`; `notices`; `drawer`
-(`{ tabs, shown, docs }`); `prefs`. Presence keys are the extension's own
+refused, touch }`); `escape` (`{ layer, hint }`); `theme`; and each view
+plugin's own value at its id (`view.set`). Presence keys are the extension's own
 (`scene.select`'s `selected` and `hovered`; walk's `avatar`).
 
 ## Activation
@@ -154,8 +154,8 @@ finds every service that runs, whatever the registry order.
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
 (2 s), and while it holds a body, tool, session or pose. One loading or
 unregistered stops at once. `api.signal` aborts first, and what services gave it
-goes with it (a kept process saved, claims without `onLost`); then everything it
-acquired (panes without `onClose`), then `dispose()`.
+goes with it (a kept process saved, claims without `onLost`, panes without
+`onClose`); then everything it acquired, then `dispose()`.
 
 **No migrations.** The stage reads only the current doc shape.
 
@@ -251,8 +251,8 @@ context; `update` on its flush (told afresh after a focus move).
 
 | Member | |
 |---|---|
-| as the stage `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `pref`, `setPref`, `notify`, `packages`, `overlay`, `edge`, `dock`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `use` (the focus stage's services, then the view plugins'); `camera`, `pick`, `ray`, `project`: in the world; and the view's `viewer` and `session` (no channel of its own) |
-| `view` | the viewer's value whole (`selected`, `hovered`, `focus` as paths; `packages`, `arrived`); `step(ev)` (`src/selection.js`), `dock(doc)` |
+| as the stage `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `packages`, `overlay`, `edge`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `use` (the view plugins' services, then the focus stage's); `wantPointer()` → release; `camera`, `pick`, `ray`, `project`: in the world; and the view's `url` (the outermost doc's), `viewer` and `session` (no channel of its own) |
+| `view` | the viewer's value whole (`selected`, `hovered`, `focus` as paths; `packages`, `arrived`; each view plugin's own value at its id); `step(ev)` (`src/selection.js`), `set(value)` (its own) |
 | `hand(spec)`, `putDown()`, `offerWidget(type, ev)` | see "Hands"; a hand hears events in the world, each hit with its `path` |
 | `collect(name)`, `run(inv)`, `path(opts)` | every acting stage's offers, the input path's first, tagged `stage`; `run` in the stage named, else the focus; the input path's readers `{ stage, path, scene, collect, context, attention, look, pointed, run, runs, nameOf, writable, use }` (`pointer: true`, `focus: true`, or `at` a full path) |
 | `focus()` | the focus stage's `api` for it; what it acquires through it goes when the focus leaves (a tool its command holds is put down), the plugin stops or the stage closes |
@@ -366,21 +366,17 @@ popover closes; Edit's clears the selection, else leaves the entered link), and
 when that does nothing the hand is put down (`put()`); with no hand, the
 selection clears, else the focus leaves. Never a body or the world's time. **The
 pointer** (`src/stage/pointer.js`; H5): `locked ⇔ body.lock ∧ ¬wanted ∧
-¬released ∧ ¬refused ∧ ¬touch`; a hand with `pointer: true`, a selection or the
-drawer wants it; after a release or touch, the next press on the world only
-relocks.
+¬released ∧ ¬refused ∧ ¬touch`; a hand with `pointer: true`, a selection or a
+view plugin's `wantPointer()` wants it; after a release or touch, the next
+press on the world only relocks.
 
 ## The interface
 
-All view plugins: the **toolbar** (the focus path's scene commands: the
-editor's while editing, `"world"` ones always), the **body chip** (Look,
-bodies with `here` not false, Leave, **Edit**), the **clock chip** (each
-focus-path doc's), the **drawer** (panes, `api.dock`; documents,
-`api.view.dock`), the **inspector** (tree, fields and the selection's
-documents, with **Dock** and **Open**: `src/parts/inspector-model.js`), the
-**use prompt** (attention's `"use"` verbs) and the **menu** (what applies to
-what was pressed, Select first). The clock chip (`scene.clock-chip`) reads each
-stage's `"clock"` through its reader's `use`.
+View plugins: the **toolbar** (the focus path's commands: the editor's while
+editing, `"world"` ones always), the **body chip** (Look, bodies with `here`
+not false, Leave, **Edit**), the **clock chip** (each focus-path stage's
+`"clock"`), the **inspector** (`src/parts/inspector-model.js`), the **use
+prompt** (attention's `"use"` verbs) and the **menu** (Select first).
 
 ## `api`
 
@@ -395,10 +391,10 @@ extension's.
 | `scene()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }` |
 | `ops` | pure planners (`src/ops.js`) → a change function or null |
 | `remove(ids)` | a change function: every `beforeRemove`, then the removal |
-| `notify(text, kind?)`, `audience`, `shown`, `pose`, `heldBy`, `ambient` | see "Audience", "Holding a pose", "Ambients" |
-| `use(name)`, `settled()` | a service: the first running provider's facet, made for this extension, or null; `{ ready, missing }`: everything the doc calls for started or failed, every listed package here (`missing`: those that aren't) |
+| `audience`, `shown`, `pose`, `heldBy`, `ambient` | see "Audience", "Holding a pose", "Ambients" |
+| `use(name)`, `settled()` | a service: this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null; `{ ready, missing }`: everything the doc calls for started or failed, every listed package here (`missing`: those that aren't) |
 | `now()`, `after(ms, fn)`, `frame(fn)` | the stage's one time (`src/stage/time.js`, ms); `after`, `frame` → cancel. Never `Date.now`, `setTimeout` or `requestAnimationFrame`. `manualTime()` moves only when stepped |
-| `local`, `pref(key, fallback)`, `setPref` | see "Three places for state" |
+| `local` | see "Three places for state" |
 | `channel` | the doc's ephemeral side: `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz), shownAt(session) }`; `peers()` → `{ [session]: { viewer, body, held, at, keys } }`, `get()` this extension's keys by session; `send` reaches its `receive` on every peer; cleared when it stops; `session` null in a pin |
 | `page` | `{ visible(), on("hide" \| "show" \| "visible", fn) → off }`: pagehide or the stage closing (last-first), pageshow from the back-forward cache, the tab's visibility |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer |
@@ -410,13 +406,12 @@ extension's.
 | `focus(ids)` | load first |
 | `providersFor(url, doc)`, `addObject(url, opts)` | → a change function with its `id`; `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }` |
 | `fixPoint(id)` | the `at` fixing an object at what it shows now |
-| `view` | `{ get, watch, select, enter, arrive, dock({ url, toolId?, title }) → close }` |
+| `view` | `{ get, watch, select, enter, arrive }` |
 | `link(id)`, `collect(name)`, `run(invocation)` | `collect`: this stage's offers, tagged `stage`; `run` in the stage `invocation.stage` names |
 | `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | see "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `THREE`, `world({ onTop? })` | three.js; a `Group` whose meshes are the extension's widgets |
 | `labels()` | `{ set(items) }`; decluttered by `rank`, 2 and up never hide |
 | `overlay()`, `edge(side)` | DOM over or beside the canvas; overlay children catch the pointer unless they opt out |
-| `dock(el, { title, onClose?, embed?, show? })` → close | a drawer pane; only its × calls `onClose`; `embed: false` is stage chrome |
 | `style`, `listen`, `cursor`, `extent(box)`, `invalidate`, `schedule`, `port`, `root` | `port`: the canvas's element; `root`: the view's |
 | `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage renders every frame while a loop runs (WebGL or not); `dt` ≤ 0.1 s; `first` runs before the others |
 
@@ -544,9 +539,9 @@ change an audience, visibly.
 
 ## Native services
 
-Doc extensions of every doc (`src/native/`), on the public api only, each
-`provides`-ing one service; what a facet hands a caller goes as its signal
-aborts. The kernel knows no service by name.
+Doc extensions of every doc, and view plugins (`src/native/`), on the public
+api only, each `provides`-ing one service; what a facet hands a caller goes as
+its signal aborts. The kernel knows no service by name.
 
 **Claims** (`scene.claims`, `"claims"`): `claim(id, kind, { onLost })` →
 release | null, `claimedBy(id, kind)` → `{ viewer, session, mine }` | null. A
@@ -573,6 +568,15 @@ that bears it out, for `messages: { [type]: { valid(data), says(data, who,
 scene) } }`. Told here at once as "You"; there `says` is asked until it answers
 text or 3 s pass (null: not borne out yet); `who` is `{ viewer, name, mine }`.
 Told at most once; a view that can't write tells nothing.
+
+View plugins, for acting stages too: **Notices** (`scene.notices`, `"notices"`):
+`notify(text, kind?, { from? })`, a toast for 6 s (`from`: a running extension of
+the caller's stage). **The drawer** (`scene.drawer`, `"drawer"`): `dock(el, {
+title, onClose?, embed?, show? })` → close (only its × calls `onClose`; `embed:
+false`: stage chrome); `dockDocument({ url, toolId?, title })` → close, the
+view's; `state()`, also `view["scene.drawer"]`; open, it wants the pointer.
+**Prefs** (`scene.prefs`, `"prefs"`): `get(key, fallback)` (the viewer's, else
+the focus doc's `doc.view[key]`), `set`, `watch(fn)`; `view["scene.prefs"]`.
 
 ## Conventions
 
@@ -659,9 +663,9 @@ The rest:
 | Module | Holds |
 |---|---|
 | `stage/stage.js` | the mount, doc loop, `makeApi` (the channel, the page, services), content, lenses, audience, arriving |
-| `stage/view.js` | the view: viewport, router, bodies, selection, prefs, camera saving, session, link expansion, cross-stage input, the view plugins' api |
+| `stage/view.js` | the view: viewport, router, bodies, selection, camera saving, session, link expansion, cross-stage input, the view plugins' api |
 | `stage/host.js` | starting (in running order) and stopping extensions and view plugins; `collect`, `use` |
-| `native/` | the native services, on the public api only: `claims.js`, `clock.js`, `telling.js` |
+| `native/` | the native services, on the public api only: `claims.js`, `clock.js`, `telling.js`, `notices.js`, `drawer.js`, `prefs.js` |
 | `stage/router.js` | DOM to events, sessions, the body stack, the hands, lock, keys, Escape, menu, cursor |
 | `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s), sends, poses |
-| `stage/viewport.js`, `stage/dock.js` | rendering and picking, one per view; the drawer |
+| `stage/viewport.js` | rendering and picking, one per view |

@@ -180,7 +180,7 @@ function create(api) {
   let seenS = null;
   const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status, running: local?.running }))));
   const now = () => seen(here.local.get(), here.view.get());
-  const units = () => api.pref("units", "m");
+  const units = () => api.use("prefs")?.get("units", "m") ?? "m";
   // the sections that go with a selection (or the scene): its Source, File or Linked scene, Build, About
   const documents = inspectorDocuments((id) => contentKind(here.loadState?.(id)));
 
@@ -500,7 +500,7 @@ function create(api) {
     const root = el("section", { class: "doc-section", dataset: { ext: doc.ext, section: doc.id } }, head, away, embed);
     let view = null;
     let shown = null;
-    fold.addEventListener("click", () => api.setPref(sectionPref(doc.ext, doc.id), !shown.open));
+    fold.addEventListener("click", () => api.use("prefs")?.set(sectionPref(doc.ext, doc.id), !shown.open));
     open.addEventListener("click", () => root.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url: doc.url, ...(doc.toolId ? { toolId: doc.toolId } : {}) }, bubbles: true, composed: true })));
     const toDrawer = () => api.use("drawer")?.dockDocument({ url: doc.url, toolId: doc.toolId ?? null, title: shown?.title ?? doc.label });
     dock.addEventListener("click", toDrawer);
@@ -565,7 +565,7 @@ function create(api) {
             rec = null;
           }
           rec ??= { identity, view: sectionView(d) };
-          const pref = api.pref(sectionPref(d.ext, d.id), null);
+          const pref = api.use("prefs")?.get(sectionPref(d.ext, d.id), null);
           rec.view.update({ ...d, title: paneTitle(d.label), open: typeof pref === "boolean" ? pref : !d.folded, docked: docked.has(identity) });
           next.set(k, rec);
         }

@@ -252,11 +252,10 @@ describe("I6: a read-only stage writes nothing", () => {
       const el = api.overlay();
       const edge = api.edge("right");
       ok("overlay and edge stay out of the DOM", !el.isConnected && !edge.isConnected);
-      ok("no notices, no drawer", api.use("notices") === null && api.use("drawer") === null);
+      ok("no notices, drawer or prefs", ["notices", "drawer", "prefs"].every((n) => api.use(n) === null));
       api.view.select("card");
-      api.setPref("units", "ft");
       api.cursor("grab");
-      ok("the selection, prefs and cursor stay the viewer's", view.atom.get().selected === before.selected && view.atom.get().prefs === before.prefs && s.canvas.style.cursor !== "grab");
+      ok("the selection and cursor stay the viewer's", view.atom.get().selected === before.selected && s.canvas.style.cursor !== "grab");
       const ride = api.camera.ride("card");
       api.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
       ok("the camera is not its to move", typeof ride === "function" && view.viewport.held === false);

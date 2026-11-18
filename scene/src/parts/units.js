@@ -1,12 +1,12 @@
 // scene.units: the "Units" picker. The unit is a viewer pref (`units`, the
 // doc's view.units as the suggestion); everything that shows a length reads
-// it with api.pref("units", "m"). This only offers the choice.
+// it through "prefs" (STAGE.md, "Native services"). This only offers the choice.
 
 import { UNIT_OPTIONS } from "../units.js";
 
 export default {
   create(api) {
-    const current = () => api.pref("units", "m");
+    const current = () => api.use("prefs")?.get("units", "m") ?? "m";
     return {
       commands: [
         {
@@ -16,7 +16,7 @@ export default {
           show: ["toolbar"],
           state: (target) => (target == null ? { value: current(), choices: UNIT_OPTIONS.map((o) => ({ ...o })), title: "Units for lengths" } : null),
           run: (_target, value) => {
-            if (UNIT_OPTIONS.some((o) => o.value === value)) api.setPref("units", value);
+            if (UNIT_OPTIONS.some((o) => o.value === value)) api.use("prefs")?.set("units", value);
           },
         },
       ],

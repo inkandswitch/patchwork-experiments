@@ -260,7 +260,7 @@ export default {
           W: W0,
           box,
           offset,
-          snaps: api.pref("snap", true) === false ? [] : snapsFor(id, skip, frame.matrixIn),
+          snaps: api.use("prefs")?.get("snap", true) === false ? [] : snapsFor(id, skip, frame.matrixIn),
           raycast,
           // the rules ask about the world
           landing: (oid, point, hitId) => landingAt(oid, frame.pointOut(point), hitId),
@@ -463,12 +463,12 @@ export default {
         state(target, { scene, view }) {
           if (target != null) return null;
           return {
-            checked: (view?.prefs?.snap ?? scene?.d?.view?.snap ?? true) !== false,
+            checked: api.use("prefs")?.get("snap", true) !== false,
             title: "Put pieces down on the nearest snap point (hold Alt to place freely)",
           };
         },
         run(target, value) {
-          api.setPref("snap", typeof value === "boolean" ? value : api.pref("snap", true) === false);
+          api.use("prefs")?.set("snap", typeof value === "boolean" ? value : api.use("prefs")?.get("snap", true) === false);
         },
       },
     ];

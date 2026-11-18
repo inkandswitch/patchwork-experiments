@@ -194,7 +194,7 @@ describe("scene.inspector: the panel", () => {
     const [x, y] = body().querySelectorAll(".triple")[0].querySelectorAll("input");
     expect(x.value).toBe("0.25");
     expect($(".unit").textContent).toBe("(m)");
-    s.api("scene.inspector").setPref("units", "mm");
+    s.api("scene.inspector").use("prefs").set("units", "mm");
     await settle();
     expect(x.value).toBe("250");
     expect($(".unit").textContent).toBe("(mm)");
@@ -544,7 +544,7 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
   ];
   it.each(FOLD)("fold: %s (%s), %s's section → open %s", async (_name, pref, target, id, open) => {
     await mountKinds();
-    if (pref !== undefined) s.api(ME).setPref(sectionPref(ME, id), pref);
+    if (pref !== undefined) s.api(ME).use("prefs").set(sectionPref(ME, id), pref);
     await select(target);
     await settle();
     const sec = section(`${ME}/${id}`);
@@ -563,7 +563,7 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
   ];
   it.each(OWN_FOLD)("%s: only that section follows it", async (_name, id, pref, want) => {
     await mountKinds();
-    s.api(ME).setPref(sectionPref(ME, id), pref);
+    s.api(ME).use("prefs").set(sectionPref(ME, id), pref);
     const got = {};
     for (const [target, sid] of [["built", "source"], ["file", "file"], ["link", "link"]]) {
       await select(target);
@@ -578,12 +578,12 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
     const before = JSON.stringify(s.doc());
     section(`${ME}/source`).querySelector(".section-fold").click();
     await settle();
-    expect(s.api(ME).pref(sectionPref(ME, "source"), null)).toBe(false);
+    expect(s.api(ME).use("prefs").get(sectionPref(ME, "source"), null)).toBe(false);
     expect(section(`${ME}/source`).querySelectorAll("patchwork-view").length).toBe(0);
     expect(views()).toBe(2);
     section(`${ME}/source`).querySelector(".section-fold").click();
     await settle();
-    expect(s.api(ME).pref(sectionPref(ME, "source"), null)).toBe(true);
+    expect(s.api(ME).use("prefs").get(sectionPref(ME, "source"), null)).toBe(true);
     expect(views()).toBe(3);
     expect(JSON.stringify(s.doc())).toBe(before);
   });

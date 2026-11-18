@@ -42,7 +42,8 @@ export default {
       key = null;
       return { f, layer, labels: f.labels() };
     });
-    const shown = () => api.pref("bounds", false) === true;
+    const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
+    const shown = () => pref("bounds", false) === true;
     // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
 
@@ -59,7 +60,7 @@ export default {
       if (!here) return;
       const { f, layer, labels } = here;
       const on = drawn();
-      const unit = api.pref("units", "m");
+      const unit = pref("units", "m");
       const selected = view.selected ?? null;
       const items = [];
       const boxes = [];
@@ -97,13 +98,13 @@ export default {
           name: "Bounds",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show bounding boxes and sizes" } : null),
-          run: () => api.setPref("bounds", !shown()),
+          run: () => api.use("prefs")?.set("bounds", !shown()),
         },
       ],
       update(scene, local, prev, view) {
         const was = prev.view;
         const content = scene === prev.scene && local === prev.local && view === was;
-        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.selected === was.selected && view.hands === was.hands) return;
+        if (was && scene === prev.scene && !content && view["scene.prefs"] === was["scene.prefs"] && view.theme === was.theme && view.selected === was.selected && view.hands === was.hands) return;
         redraw(scene, view);
       },
     };

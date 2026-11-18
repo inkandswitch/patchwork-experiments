@@ -79,7 +79,7 @@ import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
 // the view's pure parts, where they have always been imported from
-export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins } from "./view.js";
+export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
 
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
@@ -1152,10 +1152,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return patches;
   }
 
-  const setPref = (key, value) => view.setPref(key, value);
-  /** A pref: the viewer's, else this doc's suggestion (STAGE.md, "Views, stages and links"), else the fallback. */
-  const pref = (key, fallback) => view.atom.get().prefs?.[key] ?? doc().view?.[key] ?? fallback;
-
   /**
    * Removing `ids` as a change function (ops.removeObjects's plan) that
    * first runs every running extension's beforeRemove tidy-up (at the focus,
@@ -1548,7 +1544,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         return Object.freeze({ ...s, content: routes.get(oid) ?? null });
       },
 
-      // local, prefs, the channel
+      // local, the channel
       local: Object.freeze({
         get: local.get,
         swap: (fn) => local.swap(fn),
@@ -1565,7 +1561,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }),
       /**
        * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
-       * the hands and the held tool, the pointer, theme, prefs, and
+       * the hands and the held tool, the pointer, theme, and
        * the selection and hover as this stage's elements of their paths.
        * select(target) selects this stage's target (null: nothing).
        */
@@ -1592,8 +1588,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         },
         // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
       }),
-      pref,
-      setPref,
       /**
        * The doc's ephemeral side (STAGE.md, "api.channel"): this view's
        * session (null in a pin: it has none), every peer, and this
@@ -1787,7 +1781,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * that acts, all in this one place. A pin's extensions run
    * and draw into the world (layers, labels, looks, styles) and read all
    * they like; what would take input, put chrome in the view, move the
-   * viewer's camera, select, notify, set a pref, enter a body, hold a tool,
+   * viewer's camera, select, use the view's services, enter a body, hold a tool,
    * compute or run a command is inert here: a noop, an element kept out of
    * the DOM, or the answer the acting api gives when it can't. Writes need
    * nothing here: a drawn stage is read-only, so writable() is false and
@@ -1800,7 +1794,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
       view: facet(api.view, { select: noop, enter: () => false }),
-      setPref: noop,
       overlay: () => loose("stage-overlay"),
       edge: () => loose("stage-edge-part"),
       popover: () => noop,

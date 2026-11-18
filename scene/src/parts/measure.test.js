@@ -124,7 +124,7 @@ describe("scene.measure", () => {
 
   it("hovering previews the length from the first point, in the viewer's units, and glows when snapped", async () => {
     await mount();
-    s.api("scene.measure").setPref("units", "mm");
+    s.api("scene.measure").use("prefs").set("units", "mm");
     run();
     pickAt({ id: null, point: [0, 0, 0], snapped: false, ground: true });
     s.click();

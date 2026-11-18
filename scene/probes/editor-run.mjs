@@ -522,7 +522,7 @@ try {
       await b.click(row.x, row.y);
       const labels = await b.waitFor(`(() => { const l = __p.text('.bounds-label'); return l.length === 3 && l; })()`, 4000);
       check("boundsLabelsInMm", labels && labels.every((t) => /^20(\.0+)?\s*mm$/.test(t)), labels || (await A(`p.text('.bounds-label')`)));
-      check("unitsPickerIsLocal", (await doc()).view.units === "cm" && (await A(`d.local.get().prefs?.units`)) === "mm", { doc: (await doc()).view.units, pref: await A(`d.local.get().prefs`) });
+      check("unitsPickerIsLocal", (await doc()).view.units === "cm" && (await A(`d.local.get()["scene.prefs"]?.units`)) === "mm", { doc: (await doc()).view.units, pref: await A(`d.local.get()["scene.prefs"]`) });
       await shot("14-stl-bounds");
       // the build controls embedded in the inspector: the STL's unit param to cm
       const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.scene-render-controls select')`, 4000);

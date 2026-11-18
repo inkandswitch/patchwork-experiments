@@ -661,3 +661,24 @@ clock's own last checkpoint; a failed extension no longer keeps a doc from
 computing; view plugins are created in order too; told notices are
 `scene.telling`'s. STAGE.md's Claims, Time, World time and Telling became
 "Native services", and Keepers kept only what crosses packages.
+
+### 2026-11-17 — Kernel step 4b: notices, the drawer and prefs leave the kernel
+
+PLANS.md step 4b. The view held notices (`view.notices`, `api.notify`), the
+drawer (`stage/dock.js`, `api.dock`, `api.view.dock`, `view.drawer`) and prefs
+(`view.prefs`, `api.pref`, `setPref`, their storage). Now they are native view
+plugins in `src/native/`, each a service: `scene.notices` (`"notices"`:
+`notify(text, kind?, { from? })`, owning the list it draws; `from` is another
+running extension of the caller's stage, which telling passes, so told
+notices are the teller's again), `scene.drawer` (`"drawer"`: `dock`,
+`dockDocument`, `state()`; the model, DOM, CSS, tab-strip drop and the 1110
+width cases moved with it) and `scene.prefs` (`"prefs"`: `get`, `set`,
+`watch`). An acting stage's extensions reach the view plugins' services
+through `use` (a drawn stage's reach none); a view plugin's `use` asks the
+view plugins first. Three general hooks replace the special ones: a view
+plugin's `api.view.set(value)` (its own value at `view[id]`, so every update
+hears a pref or the drawer change), `api.wantPointer()` (an open drawer keeps
+the pointer free) and `api.url`. Behaviour: a pref's doc suggestion is the
+focus doc's for everyone (a stage's extension read its own doc's); an edge
+part made while the drawer is open no longer goes inside it; with no
+notices or drawer plugin, a notify or dock does nothing.

@@ -74,7 +74,7 @@ describe("the drawer's grip, mounted", () => {
     ptr("pointermove", 400);
     ptr("pointerup", 380);
     await settle();
-    expect(s.local.get().prefs).toEqual({ [prefKey("chrome")]: 340 });
+    expect(s.local.get()["scene.prefs"]).toEqual({ [prefKey("chrome")]: 340 });
     expect(JSON.parse(localStorage.getItem(`scene-prefs:${s.handle.url}`))).toEqual({ [prefKey("chrome")]: 340 });
     expect(drawerWidth()).toBe("340px");
     // another tab of this scene sets it: this one follows
@@ -86,7 +86,7 @@ describe("the drawer's grip, mounted", () => {
     grip().dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
     await settle();
     expect(drawerWidth()).toBe("");
-    expect(s.local.get().prefs).toEqual({});
+    expect(s.local.get()["scene.prefs"]).toEqual({});
   });
 
   it("a key held at the stage and let go with focus on the grip still reaches its holder, and its auto-repeats don't resize", async () => {
@@ -95,7 +95,7 @@ describe("the drawer's grip, mounted", () => {
     claimLeft.on = true;
     s.instance("t.seen").dockPanel();
     await settle();
-    const before = { ...s.local.get().prefs };
+    const before = { ...s.local.get()["scene.prefs"] };
     s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowLeft", code: "ArrowLeft" }));
     // focus comes to the grip (a click, or Tab) while ArrowLeft is held
     grip().focus();
@@ -103,7 +103,7 @@ describe("the drawer's grip, mounted", () => {
     grip().dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, composed: true, key: "ArrowLeft", code: "ArrowLeft" }));
     await settle();
     expect(seen.filter(([t]) => t === "keyup")).toEqual([["keyup", "ArrowLeft"]]);
-    expect(s.local.get().prefs).toEqual(before);
+    expect(s.local.get()["scene.prefs"]).toEqual(before);
   });
 
   for (const body of ["look", "edit"]) {
@@ -139,7 +139,7 @@ describe("the drawer's grip, mounted", () => {
       expect(s.local.get().pointer.locked).toBe(false);
       expect(seen).toEqual([]);
       // the keys did set the width: the last, Shift+ArrowLeft from End's MAX, stays at MAX
-      expect(s.local.get().prefs[prefKey("editor")]).toBe(MAX_PX);
+      expect(s.local.get()["scene.prefs"][prefKey("editor")]).toBe(MAX_PX);
     });
   }
 });

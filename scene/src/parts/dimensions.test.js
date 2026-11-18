@@ -101,7 +101,7 @@ describe("scene.dimensions", () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null }, d2: { a: free([0, 0, 0]), b: free([0, 2, 0]), label: "Height" } } });
     expect(labels().map((l) => l.textContent)).toEqual(["1 m", "Height: 2 m"]);
     expect(layer().map((o) => o.type)).toEqual(["LineSegments", "Points"]);
-    api().setPref("units", "cm");
+    api().use("prefs").set("units", "cm");
     await settle();
     expect(labels().map((l) => l.textContent)).toEqual(["100 cm", "Height: 200 cm"]);
     // a hover change redraws nothing

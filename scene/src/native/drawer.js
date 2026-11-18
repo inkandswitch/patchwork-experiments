@@ -408,40 +408,33 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
 
 // ─── the plugin ─────────────────────────────────────────────────────────────
 
-const NONE = Object.freeze({ tabs: Object.freeze([]), shown: null, docs: Object.freeze([]) });
-
 function create(api) {
-  let now = NONE;
+  const prefs = () => api.use("prefs");
+  let now = Object.freeze({ tabs: [], shown: null, docs: [] }); // what's docked, as state() and view["scene.drawer"] say
   let wanting = null; // while anything is docked, the pointer is wanted free (STAGE.md, "Bodies")
   api.style(css);
   const drawer = createDrawer({
     parent: api.edge("right"),
     onChange(d) {
-      if (JSON.stringify(d) !== JSON.stringify(now)) api.view.set((now = Object.freeze({ tabs: Object.freeze(d.tabs), shown: d.shown, docs: Object.freeze(d.docs) })));
-      if (!d.tabs.length) wanting = (wanting?.(), null);
-      else wanting ??= api.wantPointer();
+      if (JSON.stringify(d) !== JSON.stringify(now)) api.view.set((now = Object.freeze(d)));
+      wanting = d.tabs.length ? (wanting ?? api.wantPointer()) : (wanting?.(), null);
     },
-    prefs: () => api.view.get().prefs,
-    setPref: (key, px) => api.setPref(key, px),
+    prefs: () => Object.fromEntries(KINDS.map((k) => [prefKey(k), prefs()?.get(prefKey(k))])),
+    setPref: (key, px) => prefs()?.set(key, px),
   });
-  api.view.watch(() => drawer.refreshWidth(), (v) => v.prefs);
+  prefs()?.watch(() => drawer.refreshWidth());
   api.view.set(now);
-  return {
-    provides: {
-      drawer: ({ signal }) => {
-        const owner = {}; // what this caller docked, closed (without onClose) as it stops
-        signal.addEventListener("abort", () => drawer.closeOwner(owner), { once: true });
-        return Object.freeze({
-          dock: (el, o) => (signal.aborted || !el ? () => {} : drawer.dock(owner, el, o)),
-          dockDocument: (doc) => drawer.dockDocument(doc ?? {}),
-          state: () => now,
-        });
-      },
-    },
-    /** the docked elements in tab order, and the one shown (for tests and probes) */
-    panes: () => drawer.state(),
-    dispose: () => drawer.dispose(),
+  const drawerFor = ({ signal }) => {
+    const owner = {}; // what this caller docked, closed (without onClose) as it stops
+    signal.addEventListener("abort", () => drawer.closeOwner(owner), { once: true });
+    return Object.freeze({
+      dock: (el, o) => (signal.aborted || !el ? () => {} : drawer.dock(owner, el, o)),
+      dockDocument: (doc) => drawer.dockDocument(doc ?? {}),
+      state: () => now,
+    });
   };
+  /** panes(): the docked elements in tab order, and the one shown (for tests and probes) */
+  return { provides: { drawer: drawerFor }, panes: () => drawer.state(), dispose: () => drawer.dispose() };
 }
 
 export default { create };

@@ -178,7 +178,7 @@ function create(api) {
     const matrix = pid ? (here.worldOf(pid) ?? here.scene().world(pid)) : null;
     const extras = pid ? here.content(pid)?.extras : null;
     const parent = matrix ? { id: pid, matrix, connectors: extras?.connectors ?? [], snapRadius: extras?.snapRadius ?? null } : null;
-    return partLanding({ point: hit.point, parent, tags, eye: here.camera.get()?.position ?? null, free: free || api.pref("snap", true) === false });
+    return partLanding({ point: hit.point, parent, tags, eye: here.camera.get()?.position ?? null, free: free || api.use("prefs")?.get("snap", true) === false });
   }
 
   const local = (e) => {

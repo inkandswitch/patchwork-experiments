@@ -2,8 +2,8 @@
 // it opens. It holds what is the viewer's, not any doc's: the DOM and its
 // edges, the viewport, the router, the camera and its saving, labels, the
 // body stack and the hands, the view's atom (the body, the hands, the held
-// tool, the pointer, the selection and hover, theme, prefs, the focus), the session every stage's channel names, and the stages
-// themselves. A stage (./stage.js) is one per open doc and holds what is
+// tool, the pointer, the selection and hover, theme, the focus), the
+// session every stage's channel names, and the stages themselves. A stage (./stage.js) is one per open doc and holds what is
 // the doc's.
 //
 // Selection and hover are paths (./paths.js): the links from the outermost
@@ -126,11 +126,6 @@ const outermostEscape = (hands) => {
   const top = hands?.at(-1);
   return top ? Object.freeze({ layer: "hand", hint: escapeHint("hand", { hand: top.name }) }) : NO_ESCAPE;
 };
-
-/** A viewer's prefs as stored: a plain object. */
-export function cleanPrefs(v) {
-  return Object.freeze(v && typeof v === "object" && !Array.isArray(v) ? { ...v } : {});
-}
 
 /**
  * The view's value as one stage sees it (STAGE.md, "Views, stages and links"): the selection
@@ -277,7 +272,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── the view's atom ──────────────────────────────────────────────────────
 
-  const prefsKey = `scene-prefs:${url}`;
   const cameraKey = `scene-camera:${url}`;
   const atom = createAtom({
     // paths (./paths.js), each stage seeing its own element
@@ -292,7 +286,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
     escape: Object.freeze({ layer: null, hint: "" }),
     theme: null,
-    prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (STAGE.md, "The input chain"): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
     // every open doc's packages this viewer doesn't have (unionPackages): the packages prompt's
@@ -301,13 +294,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // (a template's arriving again says so even when the start is the same); null before the first
     arrived: null,
   });
-  const onStorage = (e) => {
-    if (e.key !== prefsKey) return;
-    const next = cleanPrefs(readJSON(prefsKey));
-    atom.swap((m) => (JSON.stringify(m.prefs) === JSON.stringify(next) ? m : { ...m, prefs: next }));
-  };
-  globalThis.addEventListener?.("storage", onStorage);
-  cleanups.push(() => globalThis.removeEventListener?.("storage", onStorage));
 
   // ─── the viewport ─────────────────────────────────────────────────────────
 
@@ -613,20 +599,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const requestFlush = () => {
     for (const s of stages.values()) s.requestFlush();
   };
-
-  // ─── prefs ────────────────────────────────────────────────────────────────
-
-  function setPref(key, value) {
-    if (typeof key !== "string") return;
-    atom.swap((m) => {
-      const prefs = m.prefs ?? {};
-      if (value === undefined ? !(key in prefs) : prefs[key] === value) return m;
-      const next = { ...prefs };
-      if (value === undefined) delete next[key];
-      else next[key] = value;
-      return { ...m, prefs: Object.freeze(next) };
-    });
-  }
 
   // ─── selection ────────────────────────────────────────────────────────────
 
@@ -1222,7 +1194,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   cleanups.push(
     atom.watch((next, prev) => {
-      if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
       if (next.body !== prev.body || next.hands !== prev.hands) announce();
       if (next.selected !== prev.selected) router?.refresh();
       requestFlush();
@@ -1443,11 +1414,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         step: (ev) => (live() && ev?.type !== "enter" ? selectStep(ev) : false),
         set: (value) => void (live() && atom.swap((m) => (m[id] === value ? m : { ...m, [id]: value }))),
       }),
-      /** a pref: the viewer's, else the focus doc's suggestion, else the fallback */
-      pref: (k, fallback) => atom.get().prefs?.[k] ?? focusStage()?.doc().view?.[k] ?? fallback,
-      setPref: (k, value) => {
-        if (live()) setPref(k, value);
-      },
       /** every open doc's missing packages (view.packages): load them (a yes), or don't ask again in this view */
       packages,
       ...viewParts({ id, key, own, live }),
@@ -1625,7 +1591,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     pickWidget,
     requestFlush,
     // the viewer's
-    setPref,
     select,
     selectStep,
     enter,

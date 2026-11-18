@@ -44,7 +44,7 @@ describe("scene.bounds", () => {
     run(s);
     s.change((d) => (d.title = "poke")); // the stubbed boxes are read on the next pass
     await s.settle();
-    expect(s.local.get().prefs.bounds).toBe(true);
+    expect(s.local.get()["scene.prefs"].bounds).toBe(true);
     expect(s.doc().view.bounds).toBe(false);
     expect(labels(s)).toEqual(["1 m", "2 m", "3 m", "0.5 m", "0.5 m", "0.5 m"]);
     expect(layer(s).children.length).toBe(2);
@@ -57,7 +57,7 @@ describe("scene.bounds", () => {
     await s.settle();
     expect(labels(s)).toEqual(["1 m", "2 m", "3 m"]);
     expect(layer(s).children.length).toBe(0);
-    s.api("scene.bounds").setPref("units", "mm");
+    s.api("scene.bounds").use("prefs").set("units", "mm");
     await s.settle();
     expect(labels(s)).toEqual(["1000 mm", "2000 mm", "3000 mm"]);
     // a selected group: its box

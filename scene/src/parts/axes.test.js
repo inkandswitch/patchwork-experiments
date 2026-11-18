@@ -44,7 +44,7 @@ describe("scene.axes", () => {
     expect(c.state("a", {})).toBe(null);
     expect(run(s)).toBe(true);
     await s.settle();
-    expect(s.local.get().prefs.axes).toBe(false);
+    expect(s.local.get()["scene.prefs"].axes).toBe(false);
     expect(s.doc().view.axes).toBe(true);
     expect(layer(s).children.length).toBe(0);
     expect(labelEls(s, "axis-label")).toEqual([]);

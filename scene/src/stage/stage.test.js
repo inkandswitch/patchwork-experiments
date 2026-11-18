@@ -55,7 +55,7 @@ const { add, drop, editor, part, template: runTemplate } = await import("../part
 // the drop context (STAGE.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: view.start.edit picks it up; and the view's native services)
-const VIEWS = ["scene.edit", "scene.notices", "scene.drawer"];
+const VIEWS = ["scene.edit", "scene.notices", "scene.prefs", "scene.drawer"];
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || VIEWS.includes(p.id)) getRegistry(p.type).register(p);
 /** what scene.notices shows */
 const noticesOf = (m) => m.debug.view.plugins.instanceOf("scene.notices").notices;
@@ -526,10 +526,10 @@ describe("the stage, mounted", () => {
     const m = mount(h);
     await settle();
     const api = exts["t.always"].api;
-    expect(api.pref("units", "cm")).toBe("m");
-    expect(api.pref("nothing", 7)).toBe(7);
-    api.setPref("units", "mm");
-    expect(api.pref("units", "cm")).toBe("mm");
+    expect(api.use("prefs").get("units", "cm")).toBe("m");
+    expect(api.use("prefs").get("nothing", 7)).toBe(7);
+    api.use("prefs").set("units", "mm");
+    expect(api.use("prefs").get("units", "cm")).toBe("mm");
     expect(JSON.parse(localStorage.getItem(`scene-prefs:${h.url}`))).toEqual({ units: "mm" });
     expect(Object.keys(localStorage).filter((k) => k.includes(h.url) && !k.startsWith("scene-prefs:") && !k.startsWith("scene-camera:"))).toEqual([]);
     // a second open of the same scene starts with the prefs, and where the doc says (made new: holding the editor), not where the last left
@@ -538,7 +538,7 @@ describe("the stage, mounted", () => {
     m.element.remove();
     const again = mount(h);
     await settle();
-    expect(again.local.get().prefs).toEqual({ units: "mm" });
+    expect(again.local.get()["scene.prefs"]).toEqual({ units: "mm" });
     expect(again.local.get().hands.map((h) => h.kind)).toEqual(["edit"]);
   });
 
@@ -853,7 +853,7 @@ describe("the stage, mounted", () => {
         () => api.body.enter("stroll"),
         () => api.run({ ext: "t.edit", command: "gun" }),
         () => m.local.swap((v) => ({ ...v, selected: "a" })),
-        () => api.setPref("grid", false),
+        () => api.use("prefs").set("grid", false),
         () => api.change((d) => void (d.clock.running = false)),
         () => api.change((d) => void (d.clock.running = true)),
         () => api.run({ ext: "t.edit", command: "gun" }),

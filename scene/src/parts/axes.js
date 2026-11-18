@@ -76,7 +76,8 @@ export default {
     let triadItems = [];
     const pushLabels = () => at()?.labels.set([...axisItems, ...triadItems]);
 
-    const shown = () => api.pref("axes", true) !== false;
+    const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
+    const shown = () => pref("axes", true) !== false;
     // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
     const drawn = () => shown() && editing(api.view.get());
     let theme = null;
@@ -105,7 +106,7 @@ export default {
       if (!here) return;
       const { f, layer } = here;
       const on = drawn();
-      const len = on ? axisLength(f.sceneBox(), { grid: api.pref("grid", true) !== false, unit: api.pref("units", "m") }) : 0;
+      const len = on ? axisLength(f.sceneBox(), { grid: pref("grid", true) !== false, unit: pref("units", "m") }) : 0;
       const next = `${on}|${len}`;
       if (next === key) return;
       key = next;
@@ -204,13 +205,13 @@ export default {
           name: "Axes",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show the world axes" } : null),
-          run: () => api.setPref("axes", !shown()),
+          run: () => api.use("prefs")?.set("axes", !shown()),
         },
       ],
       update(scene, local, prev, view) {
         const was = prev.view;
         const content = scene === prev.scene && local === prev.local && view === was;
-        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.hands === was.hands) return;
+        if (was && scene === prev.scene && !content && view["scene.prefs"] === was["scene.prefs"] && view.theme === was.theme && view.hands === was.hands) return;
         if (!triad.children.length || view.theme !== theme) {
           theme = view.theme;
           key = null;

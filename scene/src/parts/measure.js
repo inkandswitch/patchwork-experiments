@@ -71,7 +71,7 @@ function measureAt(api, view, hint) {
   let pending = null; // the latest pointer position waiting for a frame
   let frame = null; // the cancel of the frame it waits for
 
-  const units = () => view.pref("units", "m");
+  const units = () => view.use("prefs")?.get("units", "m") ?? "m";
   const worldOf = (id) => api.worldOf(id);
   const color = (rgb, fallback) =>
     Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback);
@@ -262,7 +262,7 @@ function measureAt(api, view, hint) {
       const was = prev?.view;
       // the first point follows its object; the units or theme may have changed
       const moved = a?.objectId && scene !== prev?.scene;
-      if (!was || moved || v.prefs !== was.prefs || v.theme !== was.theme) draw();
+      if (!was || moved || v["scene.prefs"] !== was["scene.prefs"] || v.theme !== was.theme) draw();
     },
     dispose() {
       cancelFrame();
