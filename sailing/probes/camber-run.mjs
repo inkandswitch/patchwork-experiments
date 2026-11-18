@@ -114,7 +114,8 @@ try {
   // ─── the hull: camber's, put in the scene and made a ship ────────────────
   // her bow (+X as camber draws her) to the south-east: a beam reach on starboard tack in the north-easterly
   const YAW = -Math.PI / 4;
-  const hull = await js(`window.__p.api().addObject(window.__p.hullUrl, { providerId: "camber-hull-surface", transform: { position: [0, 0, 0], rotation: [0, ${YAW}, 0], scale: ${SCALE} } })`);
+  // (addObject gives the write, with its id; applied here as the editor's add would)
+  const hull = await js(`(async () => { const api = window.__p.api(); const w = await api.addObject(window.__p.hullUrl, { providerId: "camber-hull-surface", transform: { position: [0, 0, 0], rotation: [0, ${YAW}, 0], scale: ${SCALE} } }); api.change(w); return w.id; })()`);
   await js(`window.__p.change((d) => { d.objects['${hull}'].traits = { "sailing.ship": {} }; })`);
   report.ids = { hull };
   const built = await loads(`window.__p.content('${hull}')?.loaded`, 60_000);

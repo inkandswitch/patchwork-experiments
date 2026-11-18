@@ -33,7 +33,7 @@
 <div id="s"></div><div id="f"></div><div id="w"></div>
 <script type="module">
 // a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
-import { part as putPart } from "../../scene/src/parts/editor.js";
+import { add as addLink, part as putPart } from "../../scene/src/parts/editor.js";
 {
   let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
   Math.random = () => {
@@ -125,7 +125,7 @@ try {
   };
   /** an api of the outermost stage of view w */
   const apiOf = (w) => {
-    for (const id of ["scene.inspector", "scene.use", "scene.keys", "scene.add", "sailing"]) { const x = dbg[w]?.host.record(id)?.api; if (x) return x; }
+    for (const id of ["scene.claims", "sailing"]) { const x = dbg[w]?.host.record(id)?.api; if (x) return x; }
     return null;
   };
   /** the stage at a path in view s ([] the boat), and its api (any running extension's) */
@@ -207,11 +207,11 @@ try {
     const place = JSON.parse(JSON.stringify(objectsOf(docs.s)[own]));
     const ownHatch = Object.keys(objectsOf(docs.s)).find((id) => objectsOf(docs.s)[id].parent === own);
     sapi.remove([own, ownHatch].filter(Boolean));
-    ids.fitout = await sapi.addObject(docs.f.url, { parent: place.parent, transform: place.transform, hint: { bounds: fBox }, fields: { locked: true }, name: "Companionway fit-out" });
+    ids.fitout = await addLink(sapi, docs.f.url, { parent: place.parent, transform: place.transform, hint: { bounds: fBox }, fields: { locked: true }, name: "Companionway fit-out" });
     // W twice on her cabin top, forward of the companionway, port and starboard of it
     const fwd = (dx, dz) => ({ position: [place.transform.position[0] + dx, place.transform.position[1] + 0.05, place.transform.position[2] + dz], rotation: [...place.transform.rotation], scale: 1 });
-    ids.port = await sapi.addObject(docs.w.url, { parent: place.parent, transform: fwd(0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (port)" });
-    ids.starboard = await sapi.addObject(docs.w.url, { parent: place.parent, transform: fwd(-0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (starboard)" });
+    ids.port = await addLink(sapi, docs.w.url, { parent: place.parent, transform: fwd(0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (port)" });
+    ids.starboard = await addLink(sapi, docs.w.url, { parent: place.parent, transform: fwd(-0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (starboard)" });
     if (!ids.fitout || !ids.port || !ids.starboard) return { error: "a link wasn't made", ids, errors };
     // which acts is the doc's structure: the link that comes first in path order (the smaller id); the other is closed, "repeat"
     [ids.acting, ids.repeat] = [ids.port, ids.starboard].sort();
@@ -235,7 +235,7 @@ try {
   }
 
   /** a link of S's: its state as S's view has it */
-  const linkOf = (id) => apiOf("s")?.link(id) ?? null;
+  const linkOf = (id) => apiOf("s")?.use("links").role(id) ?? null;
   /** what a stage of view s says of itself */
   const about = (st) => (st ? { n: st.n, url: st.url, path: [...st.path], role: st.role, running: st.debug.host.running().map((r) => r.id), title: st.doc().title } : null);
   /** an object of the stage at `path`, as view s draws it: its world matrix */
@@ -346,7 +346,7 @@ try {
       sapi.run({ ext: "scene.edit", command: "edit", target: null, value: false });
       return ran;
     },
-    fixPoint: () => JSON.parse(JSON.stringify(apiOf("s").fixPoint(ids.fitout))),
+    fixPoint: () => JSON.parse(JSON.stringify(apiOf("s").use("links").fixPoint(ids.fitout))),
     /** try every write through the pinned stage's api (an extension's): each refused, nothing thrown */
     tryWrites() {
       const out = {};
