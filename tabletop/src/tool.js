@@ -1,17 +1,17 @@
 // patchwork:tool "tabletop-game" — the game's page: what it is, its pieces,
 // and "Set up a table", which draws what a table lays out and lays the game
-// out in a new scene and opens it (a card's face is drawn when it's first
-// shown, pieces.js). While open it redraws each GLB already drawn when its
+// out in a new scene, as the variant chosen beside it (how many play), and
+// opens it (table/session.js; a card's face is drawn when it's first shown,
+// pieces.js). While open it redraws each GLB already drawn when its
 // piece changes. An
 // empty game offers every registered `tabletop:game` to start from, and the
 // whole game is editable as JSON (GAME-FORMAT.md), checked before it's kept.
 
 import css from "./styles.css?inline";
 import { pieceDrawer } from "./pieces.js";
-import { isCard, kindsLaid, tableLayout, writeTable } from "./setup.js";
-import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
-import { findSource, hostRegistry, prepareTable } from "./table/made-with.js";
-import { emptyScene } from "./empty-scene.js";
+import { isCard } from "./setup.js";
+import { findSource, hostRegistry } from "./table/made-with.js";
+import { newSession } from "./table/session.js";
 import { gameOf, writeGame } from "./game.js";
 import { defaultImages } from "./look/images.js";
 import { errorText, validate } from "../contract/v2/validate.js";
@@ -150,6 +150,7 @@ export default function TabletopGameTool(handle, element) {
 
   // ─── setting up a table ───────────────────────────────────────────────────
   let settingUp = false;
+  let variant = 0; // which of the game's variants a table is set up as (GAME-FORMAT.md §3), when it has any
   let setupPhase = null; // what setting up is doing now, for the status line
   const phase = (text) => {
     setupPhase = text;
@@ -162,39 +163,20 @@ export default function TabletopGameTool(handle, element) {
     render();
     try {
       clearTimeout(drawTimer);
-      const checked = validate(gameOf(doc()));
-      if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
-      // what the table lays out; a card's face is drawn when it's first shown
-      await draw(kindsLaid(gameOf(doc())));
-      if (drawError) throw new Error(drawError);
-      const d = doc();
-      const n = (d.tables?.length ?? 0) + 1;
-      const title = `${d.title || "Game"} table ${n}`;
-      // each kind shows the game's own GLB, which redraws when the game changes
-      const fileOf = (kind) => {
-        const f = d.drawn?.[kind];
-        return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
-      };
-      phase("Laying out the table…");
-      const layout = tableLayout(gameOf(d), { fileOf, faceOf: (kind) => ({ game: handle.url, kind }), gameUrl: handle.url });
-      phase(`Making the table's ${Object.keys(layout.containers ?? {}).length} decks and ${Object.keys(layout.bags ?? {}).length} bags…`);
-      // the decks' containers, the bags and the seats' owner first (whoever owns seats is found in the
-      // registry by what it is: table/made-with.js), so the scene never names one that isn't there; with
-      // them, what the maker is warned of
-      const made = await prepareTable({ repo, registry: hostRegistry }, layout);
-      // an empty scene as the scene makes one (every map and list it has;
-      // the stage fills `packages` in), and where the scene package comes
-      // from, for a viewer who doesn't have it
-      const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title });
-      phase(`Writing the table (${layout.order.length} things)…`);
-      writeTable(table, layout, made);
-      const scene = await repo.create2(table);
-      handle.change((g) => {
-        if (!g.tables) g.tables = [];
-        g.tables.push(scene.url);
+      const variants = doc().variants ?? [];
+      const { url, notes } = await newSession({
+        repo,
+        registry: hostRegistry,
+        handle,
+        variant: variants.length ? (variants[variant] ? variant : 0) : null,
+        draw: async (kinds) => {
+          await draw(kinds);
+          if (drawError) throw new Error(drawError);
+        },
+        phase,
       });
-      if (made.notes.length) status = made.notes.join(" ");
-      open(scene.url, "scene");
+      if (notes.length) status = notes.join(" ");
+      open(url, "scene");
     } catch (err) {
       status = `Couldn't set up a table: ${err?.message ?? err}`;
     } finally {
@@ -345,6 +327,11 @@ export default function TabletopGameTool(handle, element) {
 
     const title = el("input", { type: "text", class: "title", value: d.title ?? "", "aria-label": "Title", onchange: (e) => handle.change((g) => (g.title = e.target.value)) });
     const setUp = el("button", { type: "button", class: "button primary", disabled: settingUp || !(d.setup ?? []).length, onclick: setUpTable }, settingUp ? "Setting up…" : "Set up a table");
+    // which way to set it up, for a game with variants (how many play)
+    const variants = Array.isArray(d.variants) ? d.variants : [];
+    const choose = variants.length
+      ? el("select", { class: "variant", "aria-label": "Set up for", onchange: (e) => (variant = Number(e.target.value)) }, variants.map((v, i) => el("option", { value: String(i), selected: i === variant }, v.name)))
+      : null;
     const about = el("textarea", { class: "about", rows: "8", placeholder: "What the game is, and how it's played…", onchange: (e) => handle.change((g) => (g.about = e.target.value)) });
     about.value = d.about ?? "";
 
@@ -376,7 +363,7 @@ export default function TabletopGameTool(handle, element) {
     const tables = (d.tables ?? []).filter((u) => typeof u === "string");
     root.replaceChildren(
       ...[
-      el("header", { class: "head" }, title, setUp),
+      el("header", { class: "head" }, title, choose, setUp),
       el("p", { class: "status muted" }),
       empty,
       about,

@@ -180,6 +180,33 @@ describe("the tabletop-game tool", () => {
     cleanup();
   });
 
+  it("offers a game's variants beside Set up a table, and sets the table up as the one chosen (Draw Dominoes for 4)", async () => {
+    const repo = fakeRepo();
+    const init = {};
+    TabletopGameDatatype.init(init);
+    const game = repo.add(init);
+    const element = document.createElement("div");
+    element.repo = repo;
+    const opened = [];
+    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+    const cleanup = TabletopGameTool(game, element);
+    await until(() => button(element, "Draw Dominoes"));
+    button(element, "Draw Dominoes").click();
+    await until(() => game.doc().title === "Draw Dominoes");
+    const select = element.querySelector("select.variant");
+    expect([...select.options].map((o) => o.textContent)).toEqual(["2 players", "3 players", "4 players"]);
+    expect(select.value).toBe("0");
+    select.value = "2";
+    select.dispatchEvent(new Event("change"));
+    button(element, "Set up a table").click();
+    await until(() => opened.length === 1, 4000);
+    const scene = (await repo.find(opened[0].url)).doc();
+    expect(Object.keys(scene.traits[SEATS])).toEqual(["p1", "p2", "p3", "p4"]);
+    expect(Object.values(scene.objects).filter((o) => o.traits?.["tabletop.zone"])).toHaveLength(4);
+    expect(scene.title).toBe("Draw Dominoes table 1");
+    cleanup();
+  }, 30_000);
+
   it("sets up Lost Cities with its deck in a container of its own, from a keeper whose players shuffle, and its seats from their owner", async () => {
     const repo = fakeRepo();
     const init = {};

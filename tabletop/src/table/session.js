@@ -1,0 +1,64 @@
+// A session: a game description (a tabletop-game doc) rendered into a fresh
+// scene doc, as one of its variants sets it up. The game page's "Set up a
+// table" and the launcher's New game are this, so they can't drift apart.
+//
+// Each kind shows the description's own GLB (`drawn`, pieces.js): what the
+// table lays out is drawn first, a card's face when a keeper first shows it
+// (`{ game, kind }` in its container), and web assets are cached in the
+// description's `assets`, so every session made from one description shares
+// both. Then the containers, bags and seats' owner (made-with.js
+// prepareTable), so the scene never names one that isn't there; then the
+// scene, written whole as the scene makes one (empty-scene.js), with the
+// scene package as its suggested import; then the description lists it in
+// `tables`.
+
+import { kindsLaid, tableLayout, writeTable } from "../setup.js";
+import { sceneImportUrl, scenePatchwork } from "../scene-package.js";
+import { findSource, prepareTable } from "./made-with.js";
+import { emptyScene } from "../empty-scene.js";
+import { gameOf } from "../game.js";
+import { pieceDrawer } from "../pieces.js";
+import { defaultImages } from "../look/images.js";
+import { applyVariant, errorText, validate } from "../../contract/v2/validate.js";
+
+/**
+ * Set up a session of the game a doc holds.
+ * @param {{
+ *   repo: object, registry: (type: string) => Promise<object | null>, handle: object,
+ *   variant?: string | number | null, title?: string | null,
+ *   draw?: (kinds: string[]) => Promise<unknown>, phase?: (text: string) => void, rng?: () => number,
+ * }} o  handle: the game doc's; variant: which of its variants (GAME-FORMAT.md §3), null for the game as it is;
+ *   title: the scene's (by default "<game> table <n>"); draw: draws these kinds into the game's `drawn`, throwing
+ *   when it can't (by default a pieceDrawer of the game's own); phase: what it's doing now, for a status line
+ * @returns {Promise<{ url: string, notes: string[], layout: object }>}  the scene's url; what the maker is to be warned of
+ */
+export async function newSession({ repo, registry, handle, variant = null, title = null, draw = null, phase = () => {}, rng = Math.random }) {
+  const game = gameOf(handle.doc());
+  const checked = validate(game);
+  if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
+  const g = applyVariant(game, variant);
+  if (!g) throw new Error(`the game has no variant “${variant}”`);
+  // what the table lays out; a card's face is drawn when it's first shown
+  const kinds = kindsLaid(g);
+  if (draw) await draw(kinds);
+  else await pieceDrawer({ repo, handle, images: defaultImages(), source: (type) => findSource(registry, type) }).ensure(kinds);
+  const d = handle.doc();
+  // each kind shows the game's own GLB, which redraws when the game changes
+  const fileOf = (kind) => {
+    const f = d.drawn?.[kind];
+    return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
+  };
+  phase("Laying out the table…");
+  const layout = tableLayout(g, { fileOf, faceOf: (kind) => ({ game: handle.url, kind }), gameUrl: handle.url, rng });
+  phase(`Making the table's ${Object.keys(layout.containers ?? {}).length} decks and ${Object.keys(layout.bags ?? {}).length} bags…`);
+  const made = await prepareTable({ repo, registry }, layout);
+  const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title: title ?? `${d.title || "Game"} table ${(d.tables?.length ?? 0) + 1}` });
+  phase(`Writing the table (${layout.order.length} things)…`);
+  writeTable(table, layout, made);
+  const scene = await repo.create2(table);
+  handle.change((x) => {
+    if (!x.tables) x.tables = [];
+    x.tables.push(scene.url);
+  });
+  return { url: scene.url, notes: made.notes, layout };
+}
