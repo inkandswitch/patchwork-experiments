@@ -2,7 +2,7 @@
 
 **Everything in this file is deferred until further notice, except section 1,
 which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
-deferred; steps 1–3, 4a and 4b are done, HISTORY.md "Kernel step 1", "Kernel step 2", "Kernel step 3", "Kernel step 4a", "Kernel step 4b").** Section 3 (tabletop) is queued to start after it. Nothing else here is to be started without the lead asking.
+deferred; steps 1–3, 4a, 4b and 5 are done, HISTORY.md "Kernel step 1", "Kernel step 2", "Kernel step 3", "Kernel step 4a", "Kernel step 4b", "Kernel step 5").** Section 3 (tabletop) is queued to start after it. Nothing else here is to be started without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
@@ -84,15 +84,15 @@ its own page. About 30 api names and 4 instance hooks, against about 75 and
 | Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
 | ~~"general" scope, `api.path`, `reopened`, general-only packages/clocks~~ | done (step 2): **view plugins** (`scene:view`), offered at the focus |
 | ~~`own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading~~ | done (step 3): **editor**, recording from `change → patches` |
-| audience, shown, veil, keepers' looks | **hidden** (doc, `"*"`); the veil a `display` override |
-| ~~claims~~; pose holds and playback; ~~world clock and processes; telling~~ | done (4a): **claims**, **clock**, **telling**, native doc plugins of every doc; **poses** (playback a `display` override) to come |
+| ~~audience, shown, veil, keepers' looks~~ | done (step 5): **audience** (doc, `"*"`); the veil a `display` override |
+| ~~claims; pose holds and playback; world clock and processes; telling~~ | done (4a, 5): **claims**, **poses** (playback a `display` override), **clock**, **telling**, native doc plugins of every doc |
 | commands, attention, keymap, menu, use prompt, toolbar, touch | **verbs** (view); attention = the editor's selection, else the look |
 | selection, hover, focus, Enter/Leave, the trail, `scene.others`; ~~templates, parts, drops, assets~~ (done, step 3) | **editor** |
 | link roles, expansion, pins, `fixPoint`, ambients | **links** (view), calling `open(…)`; ambients become `collect(name, { world: true })` |
 | arriving (`view.start`); packages list and prompt | **arrive**, **packages** (view) |
 | ~~drawer, notices, prefs~~ | done (4b): **drawer**, **notices**, **prefs**, native view plugins |
 | carry, landing, `landed` | **carry** (doc) |
-| groups | **groups** (doc) + editor; hiding and fading are `display` |
+| groups | **groups** (doc) + editor; hiding and fading stay the doc's (step 5: no branch to replace) |
 | render docs, routing, staleness, GLB queue | **content** (native), last; until then inside the kernel behind one boundary |
 
 The kernel gains a few general hooks, not many special ones: services
@@ -112,8 +112,8 @@ Each step leaves everything green and deletes a section of STAGE.md:
 parts and templates move to the editor); 3b the board-game packages merge into `tabletop` (done 2026-11-17: dice, bag,
 tts-import, card-table, keep; seats stays separate, machine uses it), so
 step 4 migrates one games package, not six; 4 services and `channel` (4a done 2026-11-17: claims, clock, telling;
-4b done 2026-11-17: notices, drawer, prefs; poses with step 5); 5 `display` (lenses, veil,
-dressing, group hiding, pose playback); 6 links leave to a links plugin,
+4b done 2026-11-17: notices, drawer, prefs; poses with step 5); 5 `display` (done 2026-11-17: lenses, veil,
+pose playback; poses and the audience native; dressing and group hiding stay); 6 links leave to a links plugin,
 focus to the editor; 7 content leaves (optional); 8 the page: STAGE.md
 becomes the contract above plus a page per native plugin, the lint rule on,
 examples republished. Steps 1–3 are worth doing alone: they remove every

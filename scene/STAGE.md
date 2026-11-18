@@ -11,7 +11,7 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 
 | Word | Means |
 |---|---|
-| **Stage** | The core, one per open doc: the doc, content, its channel, holds, lenses, the audience, its extensions and their apis. No UI. |
+| **Stage** | The core, one per open doc: the doc, content, its channel, what is displayed instead, its extensions and their apis. No UI. |
 | **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, hand stack, selection and hover (as paths), one presence session, its view plugins. |
 | **View plugin** | A `scene:view`: runs once per view, whatever the focus; works on the focus stage through `api.focus()`. |
 | **Link** | An object whose source is a scene doc (`providerId: "scene.link"`). The view opens a stage for that doc in the link's frame. Live without `at`; pinned with it. |
@@ -21,7 +21,7 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | **Body** | Where a viewer is and how they move and look. One stack per view, Look (the stage's orbit camera) at the bottom. |
 | **Hand** | What a viewer holds: the held tool, a popover, the editor (`scene.edit`'s). One stack per view, offered every event first. |
 | **Selection**, **attention** | One target per view, a path. Attention is the selection, else the look. |
-| **Service** | What a running instance `provides` by name, for others to `use`. Claims, world time, telling, notices, the drawer and prefs are native ones. |
+| **Service** | What a running instance `provides` by name, for others to `use`. Claims, pose holds, the audience, world time, telling, notices, the drawer and prefs are native ones. |
 | **Edit** (a write) | The editor's write (`src/parts/editor.js`): undoable, this viewer's, in the focus doc. |
 
 ## Views, stages and links
@@ -153,7 +153,7 @@ or failed, so a create's `use` finds every service that runs, whatever the
 registry order.
 
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
-(2 s), and while it holds a body, tool, session or pose. One loading or
+(2 s), and while it holds a body, tool or session. One loading or
 unregistered stops at once. `api.signal` aborts first, and what services gave it
 goes with it (a kept process saved, claims without `onLost`, panes without
 `onClose`); then everything it acquired, then `dispose()`.
@@ -392,18 +392,18 @@ extension's.
 | `scene()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }` |
 | `ops` | pure planners (`src/ops.js`) → a change function or null |
 | `remove(ids)` | a change function: every `beforeRemove`, then the removal |
-| `audience`, `shown`, `pose`, `heldBy`, `ambient` | see "Audience", "Holding a pose", "Ambients" |
-| `use(name)`, `settled()` | a service: this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null; `{ ready, missing }`: everything the doc calls for started or failed, every listed package here (`missing`: those that aren't) |
+| `display(id, o)`, `ambient` | see "Display", "Ambients" |
+| `use(name)`, `settled()` | a service: this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null; `{ ready, missing, failed }`: everything the doc calls for started or failed (`failed`: those that did), every listed package here (`missing`: those that aren't) |
 | `now()`, `after(ms, fn)`, `frame(fn)` | the stage's one time (`src/stage/time.js`, ms); `after`, `frame` → cancel. Never `Date.now`, `setTimeout` or `requestAnimationFrame`. `manualTime()` moves only when stepped |
 | `local` | see "Three places for state" |
-| `channel` | the doc's ephemeral side: `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz), shownAt(session) }`; `peers()` → `{ [session]: { viewer, body, held, at, keys } }`, `get()` this extension's keys by session; `send` reaches its `receive` on every peer; cleared when it stops; `session` null in a pin |
+| `channel` | the doc's ephemeral side: `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held, at, keys } }`, `get()` this extension's keys by session; `send` reaches its `receive` on every peer; cleared when it stops; `session` null in a pin |
 | `page` | `{ visible(), on("hide" \| "show" \| "visible", fn) → off }`: pagehide or the stage closing (last-first), pageshow from the back-forward cache, the tab's visibility |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer |
 | `nameOf(id)` | the name this viewer sees |
 | `content(id)` | `{ loaded, box, extras, stats, root }`; `extras.connectors` each `{ position, rotation, yaw, tags }` |
 | `loadState(id)` | where content was routed and what its loader said |
 | `box(id, { hints, in })`, `groupBox`, `sceneBox` | `{ min, max }` or null |
-| `worldOf(id)` | the drawn matrix, holds included; `scene().world(id)` is the doc's |
+| `worldOf(id)` | the drawn matrix, displayed transforms included; `scene().world(id)` is the doc's |
 | `focus(ids)` | load first |
 | `providersFor(url, doc)`, `addObject(url, opts)` | → a change function with its `id`; `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }` |
 | `fixPoint(id)` | the `at` fixing an object at what it shows now |
@@ -416,9 +416,14 @@ extension's.
 | `style`, `listen`, `cursor`, `extent(box)`, `invalidate`, `schedule`, `port`, `root` | `port`: the canvas's element; `root`: the view's |
 | `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage renders every frame while a loop runs (WebGL or not); `dt` ≤ 0.1 s; `first` runs before the others |
 
-**Dressing.** An extension may move or hide `content(id).root` nodes of objects
-carrying its traits (a buoy bobbing) and puts them back when it stops. It is
-only a look: boxes, picking and shadows go by the pose.
+### Display
+
+`display(id, { transform?, content?, hidden?, name? })` → release: how this
+viewer sees an object, unwritten: a local `transform` under its doc parent
+(`worldOf`, boxes and picks follow; moving wakes no update), `content` (a file
+doc's URL, or stand-in GLB bytes) drawn instead, `name` for `nameOf`; layered
+in running order, later per field, again replacing the caller's own, gone on
+release or stop. **Dressing** (moving one's objects' `content(id).root` nodes) is only a look.
 
 ### Picking and camera
 
@@ -433,16 +438,6 @@ ride applies, the top body's, else the latest base ride (`src/stage/ride.js`).
 **Saving**: the camera is the viewer's (`localStorage` `scene-camera:<url>`),
 else `view.start.home`.
 
-### Holding a pose
-
-`pose.hold(id, transform, { yields })` → boolean shows an object at a local
-transform while held, streamed to peers (20 Hz, or `channel.rate`) and played
-back smoothly (`stage/smooth.js`). **One holder** (H6): a person's before a
-yielding one, then the earliest `since`, then the session (`ranksAhead`,
-`src/stage/holds.js`). A refused holder writes nothing for that object.
-`worldOf` in a loop is this frame's pose. Call `release(id, { landed: true })`
-right after writing the put-down.
-
 ### Undo
 
 The editor's (`src/parts/editor.js`, `src/undo.js`): it records its own writes
@@ -456,7 +451,7 @@ keeper has them now.
 | | Read by |
 |---|---|
 | `update(scene, local, prev, view)` | the stage, once per flush when doc, local, view or what's shown changed |
-| `looks()`, `audience(scene)`, `ambient()` | see "Lenses", "Audience", "Ambients" |
+| `audience(scene)`, `ambient()` | see "Audience", "Ambients" |
 | `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
 | `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`; `caller` is `{ id, signal }`, and a view plugin's from a stage's extension also `runs(id)`, `doc()`: see "Native services" |
 | `messages`, `receive(type, data, from)` | see "Native services" (Telling); `receive` hears this extension's sends |
@@ -495,18 +490,6 @@ A target is null (the scene), an object or group id, or a ref `"<kind>:<id>"`
 ref's owner answers for it and lets go when its thing is gone. Object-only code
 checks `scene.objects[target]`.
 
-### Lenses
-
-`looks()` → `Map id → { sourceUrl?, name?, veil? }` changes how objects appear
-to this viewer. Looks merge field by field in running order, later winning;
-`nameOf` applies them.
-
-### The veil
-
-`veil: true` means "kept from you". The stage draws a frosted box with a padlock
-from `hint.bounds` alone (`stage/veil.js`) and loads none of the object's
-content. A later `veil: false` lifts it.
-
 ### Landing
 
 Where a carried piece goes down, how it lies is `landedPose`
@@ -522,21 +505,6 @@ A carry session's `ended` promise settles once to `{ how, on }`: `"put"`
 (written once, `landed` called), `"back"` (cancelled, nowhere to land,
 read-only, gone), `"yielded"` (a peer's hold ranks ahead) or `"refused"`
 (something here holds it). Only a put writes.
-
-### Audience
-
-Who may see what a thing really is. The stage enforces nothing; it gives keepers
-one answer per object, the same on every peer (`stage/audience.js`).
-
-```js
-audience(scene) → (id) → null | { show?: "all" | viewer[], only?: viewer[] }
-// shown = ∪ show;  audience = shown ∩ (⋂ only);  a throwing policy is { only: [] }
-```
-
-A policy is pure in the snapshot. `api.audience(id)` and `api.shown(id)` return
-null while a listed package is missing or a called-for extension hasn't started;
-secrets then stay hidden. It isn't access control: anyone who can write can
-change an audience, visibly.
 
 ## Native services
 
@@ -580,6 +548,29 @@ view's; `state()`, also `view["scene.drawer"]`; open, it wants the pointer.
 the caller's doc's `doc.view[key]`, a view plugin's the focus doc's), `set`,
 `watch(fn)`; `view["scene.prefs"]`.
 
+### Holding a pose
+
+`scene.poses`: `hold(id, transform, { yields })` → boolean (a displayed
+transform, streamed every 50 ms or `rate(hz)`, played back ~1.5 intervals
+late: `native/smooth.js`), `release(id, { landed })` after the put-down's
+write, `heldBy(id, { yields })`, `shownAt(session)`. One holder (H6): a
+person's before a yielding one, then the Lamport stamp, then the session.
+
+### Audience
+
+`scene.audience`: `audience(id)`, `shown(id)` → `"all" | viewer[] | null`,
+every extension's `audience(scene) → (id) → { show?, only? } | null` merged:
+shown = ∪ show, audience = shown ∩ (⋂ only), a throwing policy `{ only: [] }`;
+null while anything called for is missing. Not access control.
+
+### The veil
+
+Its `veil(id)` → release displays a padlocked box from the bounds alone (`veil.js`).
+
+### Lenses
+
+None: an extension shows something otherwise with `display` (keepers, the cup).
+
 ## Conventions
 
 Contributions and module exports by which packages that don't know each other
@@ -599,8 +590,8 @@ seats, of?)` for setup code.
 An extension with its own trait that holds what objects are, away from the
 scene doc. Its metadata says `keeper: "<kind>"` (the editor reads it), and it
 contributes `keeper` (`{ kind, of, name, shuffle }`), read with
-`collect("keeper")`. Its looks follow the audience: in it, the item's; shown
-only, the veil; else the object's own.
+`collect("keeper")`. What it shows follows the audience: in it, the item's;
+shown only, the veil; else the object's own.
 
 ### Ambients
 
@@ -646,7 +637,7 @@ One atmosphere wins whole. None is the stage's own look. Ask a flush with
 | I1 | Every api read and write goes to its stage's handle. |
 | I2 | No reference crosses docs; a link is the only edge between docs. |
 | I3 | Expansion is finite and fixed by the graph: no identity repeats on a path, one acting occurrence per live doc, exact closed reasons. |
-| I4 | A stage's snapshot, running set, audience, looks and shown depend only on its doc and the registry; only space and `ambient`'s `mine`, `frame`, `use` depend on placement. |
+| I4 | A stage's snapshot, running set, audience, shown and display depend only on its doc and the registry; only space and `ambient`'s `mine`, `frame`, `use` depend on placement. |
 | I5 | An object's holds and sends, and so its claims, travel on its doc's channel. |
 | I6 | A read-only stage writes nothing, through its api or its repo. |
 | I7 | Points map by the frame's similarity, directions by its rotation, distances by its scale; boxes are the stage's own. |
@@ -664,10 +655,10 @@ The rest:
 
 | Module | Holds |
 |---|---|
-| `stage/stage.js` | the mount, doc loop, `makeApi` (the channel, the page, services), content, lenses, audience, arriving |
+| `stage/stage.js` | the mount, doc loop, `makeApi` (the channel, the page, services), content, display, arriving |
 | `stage/view.js` | the view: viewport, router, bodies, selection, camera saving, session, link expansion, cross-stage input, the view plugins' api |
 | `stage/host.js` | starting (in running order) and stopping extensions and view plugins; `collect`, `use` |
-| `native/` | the native services, on the public api only: `claims.js`, `clock.js`, `telling.js`, `notices.js`, `drawer.js`, `prefs.js` |
+| `native/` | the native services, on the public api only: `claims.js`, `poses.js` (`holds.js`, `smooth.js`), `audience.js` (`veil.js`), `clock.js`, `telling.js`, `notices.js`, `drawer.js`, `prefs.js` |
 | `stage/router.js` | DOM to events, sessions, the body stack, the hands, lock, keys, Escape, menu, cursor |
-| `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s), sends, poses |
+| `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s) and sends |
 | `stage/viewport.js` | rendering and picking, one per view |

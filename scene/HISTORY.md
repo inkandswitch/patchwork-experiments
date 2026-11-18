@@ -685,3 +685,30 @@ providers have started or failed (host.js `first`), so a create's
 `use("drawer")` holds whatever order things load in (24 cases); a pref's doc
 suggestion is the asking extension's doc's again (a view plugin's: the focus
 doc's).
+
+### 2026-11-17 — Kernel step 5: display; poses and the audience leave the kernel
+
+PLANS.md step 5. The stage's doc → viewport loop had separate branches for
+lenses (`instance.looks()`), the veil, remote pose holds and their playback,
+and the audience. Now one kernel primitive, `api.display(id, { transform?,
+content?, hidden?, name? })` → release, layered in running order (later per
+field; again from the same extension replaces its own; released as it stops);
+a transform is the viewport's pose, so `worldOf`, boxes and picking follow it.
+Pose holds became `scene.poses` (`native/poses.js`; `holds.js` now holds the
+order, the hold table and the wire, which rides the channel's sends;
+`smooth.js`): `hold`, `release`, `heldBy`, `rate`, `shownAt` (the clock
+`uses` it). The audience and the veil became `scene.audience`
+(`native/audience.js`, `veil.js`): `audience`, `shown`, `veil(id)` → release,
+the veil a `display` content (GLB bytes, not a three.js node: it goes through
+the GLB path, so box and picking go by it). Keepers and the dice cup show
+items and veils through `display` (tabletop `showLooks`). `settled()` gains
+`failed`. Group hiding stays: it is the doc's (a group's `visible`, the same
+for everyone), one argument to the viewport's display, not a branch.
+Behaviour: a pose moving (a peer's sample, a local drag) no longer wakes
+every extension's update, only its appearing and going do; an extension
+holding a pose no longer lingers for it; sends from a session that said bye
+are ignored; the pose rate is the poses service's `rate(hz)`, not the
+presence rate (sailing asks both). Also from the 4b review: a view or doc
+provider not started within the packages' load timeout counts as failed, so
+no stage waits on it for ever; the right edge with only the empty drawer
+takes no room.
