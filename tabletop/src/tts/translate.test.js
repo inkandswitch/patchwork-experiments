@@ -110,6 +110,47 @@ describe("pieces", () => {
     expect(t.game.setup.filter((s) => s.piece && t.game.pieces[s.piece].name === "PlayerPawn")).toHaveLength(3);
     expect(t.warnings).toEqual(["stopped at 3 objects: 2 more were left out"]);
   });
+
+  it("a seat's camera has its whole hand in the lower part of the picture and the table's middle above it, at every side of the table", () => {
+    // four hands as Sovereign's lie: 15.5 × 3.6 units, 28.6 out from the middle, each side's turned to face it
+    const hands = [["Red", 6.7, 28.7, 0], ["Yellow", -28.6, -6.1, 90], ["Green", 8.6, -28.6, 180], ["Pink", 28.6, 4.6, 270]].map(([c, x, z, r]) =>
+      node("HandTrigger", { kind: "zone", handColor: c, transform: { posX: x, posY: 2.9, posZ: z, rotY: r, scaleX: 15.5, scaleY: 6, scaleZ: 3.556 } }),
+    );
+    const { game } = translate(save([...hands, node("PlayerPawn", { kind: "piece", transform: { posX: 30, posZ: 30 } }), node("PlayerPawn", { kind: "piece", transform: { posX: -30, posZ: -30 } })]), { file: files });
+    const middle = game.setup.find((s) => game.pieces[s.piece]?.name === "Table").at.position;
+    // the stage's camera: 45° high; as wide as a 4:3 picture
+    const half = { v: (22.5 * Math.PI) / 180, h: Math.atan(Math.tan((22.5 * Math.PI) / 180) * (4 / 3)) };
+    const sub = (a, b) => a.map((v, i) => v - b[i]);
+    const dot = (a, b) => a.reduce((n, v, i) => n + v * b[i], 0);
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const unit = (a) => a.map((v) => v / Math.hypot(...a));
+    for (const [sid, seat] of Object.entries(game.seats)) {
+      const { position: eye, target } = seat.camera;
+      const f = unit(sub(target, eye));
+      const r = unit(cross(f, [0, 1, 0]));
+      const up = cross(r, f);
+      /** A point's angles off the middle of the picture: { v (up +), h }. */
+      const seen = (p) => {
+        const d = sub(p, eye);
+        return { v: Math.atan2(dot(d, up), dot(d, f)), h: Math.atan2(dot(d, r), dot(d, f)) };
+      };
+      const hand = game.setup.find((s) => s.seat === sid);
+      const { min, max } = game.pieces[hand.piece].zone;
+      const yaw = hand.at.rotation?.[1] ?? 0;
+      for (const x of [min[0], max[0]])
+        for (const z of [min[2], max[2]]) {
+          const p = [hand.at.position[0] + Math.cos(yaw) * x + Math.sin(yaw) * z, 0, hand.at.position[2] - Math.sin(yaw) * x + Math.cos(yaw) * z];
+          const a = seen(p);
+          expect(a.v, `${sid}: its hand's corner below the middle of the picture`).toBeLessThan(0);
+          expect(a.v, `${sid}: …and in it`).toBeGreaterThan(-half.v + 0.05);
+          expect(Math.abs(a.h), `${sid}: …across`).toBeLessThan(half.h);
+        }
+      const m = seen([middle[0], 0, middle[2]]);
+      expect(m.v, `${sid}: the table's middle in the upper half`).toBeGreaterThan(0);
+      expect(m.v).toBeLessThan(half.v);
+      expect(Math.abs(m.h)).toBeLessThan(1e-6);
+    }
+  });
 });
 
 describe("States: a piece's other looks", () => {
