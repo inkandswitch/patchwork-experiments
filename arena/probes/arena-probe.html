@@ -174,7 +174,7 @@ try {
     /** another view's presence keys, as this view sees them */
     peerKeys: (w) => Object.values(dbgOf(w).presence.get()).map((p) => ({ viewer: p.viewer, keys: p.keys })),
     labels: (w) => [...hostOf(w).querySelectorAll(".label")].map((e) => e.textContent.trim()).filter(Boolean),
-    notices: (w) => (dbgOf(w).local.get().notices ?? []).map((n) => n.text),
+    notices: (w) => (dbgOf(w).view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text),
     /** the extensions drawing in the world (viewport layers with anything in them) */
     layers: (w) => [...dbgOf(w).viewport.layers.entries()].filter(([, s]) => [...s].some((g) => g.children.length)).map(([k]) => k),
     /** what's on screen besides the canvas: the stage root's visible element children, by class */
