@@ -301,10 +301,9 @@ image, each named by its RotationValue), standees, hand triggers (a seat
 and its tray), snap points, tags, `Locked` and other `States` (the piece's
 states, each named by its Nickname; a thing saved in another state is laid
 out in it) come across (`src/tts/translate.js`); Lua, XML UI, a card's
-States, 3D text and notecards never. A custom d6's image is read as three
-cells across and two down, the k-th the side TTS's k-th default
-RotationValue turns up: TTS's template as read here, not yet checked
-against a real die's image (none is in this machine's cache). What the mod's data says of its setup becomes the game's recipe:
+States, 3D text and notecards never. A custom d6's image is read as TTS's own
+template (Modding/Dice Templates/D6.png): thirds, the top row unused, 2 4 5
+then 1 3 6, each the side TTS's default RotationValue of that number turns up. What the mod's data says of its setup becomes the game's recipe:
 how many play (a seat per hand, the last in TTS's colour order left out for
 fewer, as few as its PlayerCounts says); each **memory bag** (a bag whose
 script state saved where each thing in it goes, MrStump's and its copies:
@@ -363,5 +362,6 @@ check). `chrome-guard.mjs` makes sure Chrome never outlives its driver.
   place in the stage.
 - A fair, jointly drawn value for a bag's draw (`draw.js drawIndex`).
 - From TTS: Lua and XML UI (by design), asset bundles, normal maps, custom
-  dice other than d6 (numbered plainly), a card's States, card shapes other
+  dice other than d6 (numbered plainly: their templates' faces are
+  triangles, kites and pentagons, a d4's read at its corners, not cells), a card's States, card shapes other
   than rectangles.

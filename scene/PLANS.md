@@ -223,9 +223,8 @@ sends simulated locally (cannonballs, spray), and positional sound.
   at a table anyone turns a piece with PgDn/PgUp/a number key, one write
   for everyone (runtime: a fork shows the laid-out look; last writer wins).
   States are drawn on demand as card faces are. A TTS custom d6's faces are
-  cells of its image. Still to do: check the d6 template's cell layout
-  against a real die's image (none is cached here), custom dice other than
-  d6, a card's States (a keeper's look: they'd need the keeper to hold
+  cells of its image. Still to do: custom dice other than d6 (their
+  templates' faces aren't cells), which way up a d6's pictures lie, a card's States (a keeper's look: they'd need the keeper to hold
   every state), and the per-player-count map variants as recipe options
   (the importer keeps them as plain states).
 - **Open, deferred:** where live play state lives for a 2D view or scripts:

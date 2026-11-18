@@ -913,9 +913,9 @@ marks where it can't be had; look.js crops it for the die source through
 the game's assets. **The importer**: States become the piece's states in
 TTS's order (the object is the state its States leaves out), named by
 Nickname or "<piece> (state n)"; a card's or deck's States are left out,
-counted. A custom d6's faces are cells of its image, three across and two
-down (TTS's template as read here, unverified: no custom die's image is in
-this machine's cache), each on the side its RotationValue turns up (found
+counted. A custom d6's faces are cells of its image, in thirds as TTS's
+shipped D6.png template lays them out (the top row unused; the review
+checked it against the template), each on the side its RotationValue turns up (found
 from Unity's rotation, z mirrored) and named by its value. probes/
 states-run.mjs on Arcs, offline, with stand-in assets (none of Arcs's is
 cached): New game for four, a ship turned to Damaged and back (drawn on

@@ -631,11 +631,14 @@ function recipeOf({ seats, setup, memories, playerCounts, unit, warnings }) {
 export const D6_ROTATIONS = Object.freeze([[-90, 0, 0], [0, 0, 0], [0, 0, -90], [0, 0, 90], [0, 0, -180], [90, 0, 0]]);
 /**
  * Where the k-th side's picture is on a custom d6's image (fractions, top
- * left): three across and two down, row by row, as TTS's d6 template is read
- * here. Not checked against a real die's image: none is in this machine's
- * cache (tabletop/README.md, "Importing a TTS mod").
+ * left): TTS's own d6 template (the one it ships, Modding/Dice Templates/
+ * D6.png) is a square in thirds, the top row unused, its sides 2 4 5 across
+ * the middle row and 1 3 6 across the bottom, each numbered as its default
+ * RotationValue (1 and 6 drawn upside down there: which way up a picture
+ * lies on its side is our die's, not TTS's).
  */
-export const d6Cell = (k) => ({ x: (k % 3) / 3, y: Math.floor(k / 3) / 2, w: 1 / 3, h: 1 / 2 });
+const D6_CELLS = [[0, 2], [0, 1], [1, 2], [1, 1], [2, 1], [2, 2]];
+const d6Cell = (k) => ({ x: D6_CELLS[k][0] / 3, y: D6_CELLS[k][1] / 3, w: 1 / 3, h: 1 / 3 });
 /** The side up when TTS turns a die by these Euler degrees, in the die's own frame as the format has it (z mirrored). */
 export function sideUp(degrees) {
   const m = unityRotation(degrees.map(Number));

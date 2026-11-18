@@ -215,8 +215,8 @@ describe("turning a piece (the tabletop.states extension)", () => {
     expect([1, 2]).toContain(shown(one));
     expect(shown(other)).toBe(shown(one));
     expect(Automerge.toJS(one)).toEqual(Automerge.toJS(other));
-    // each turn is one write of one field: nothing else of the piece changed
-    expect(Automerge.toJS(one).objects.ship.transform).toEqual(table().objects.ship.transform);
+    // each turn is one write of one field, and nothing else
+    for (const p of Object.values(peers)) expect(Automerge.diff(p, Automerge.getHeads(base), Automerge.getHeads(p)).map((x) => [x.action, x.path.join(".")])).toEqual([["put", `objects.ship.traits.${STATES}.shown`]]);
   });
 
   it("a copy (a forked session) leaves which look it shows behind: it shows the one it was laid out in", () => {
