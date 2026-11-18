@@ -115,7 +115,7 @@ try {
     type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
     load: async () => ({
       create(api) {
-        let looks = new Map();
+        let looks = new Map(); // id → { sourceUrl, name, off }: shown through api.display (STAGE.md, "Display")
         const scene = () => api.scene();
         const inTray = (p) => { const l = scene().toLocal("tray", p); return !!l && l.every((v, k) => v >= TRAY.min[k] - 1e-9 && v <= TRAY.max[k] + 1e-9); };
         const seated = () => scene()?.traits?.["probe.seat"] === api.channel.viewer;
@@ -129,9 +129,9 @@ try {
               const m = s.world(id);
               if (inTray([m[12], m[13], m[14]]) ? seated() : m[5] > 1e-6) next.set(id, sec);
             }
-            looks = next;
+            for (const [id, was] of looks) if (next.get(id)?.sourceUrl !== was.sourceUrl) { was.off(); looks.delete(id); }
+            for (const [id, sec] of next) if (!looks.has(id)) looks.set(id, { ...sec, off: api.display(id, { name: sec.name, content: sec.sourceUrl }) });
           },
-          looks: () => looks,
           landing: (id, p) => (secretOf(id) && seated() && inTray(p) ? { faceUp: true } : null),
           commands: [{
             id: "shuffle", name: "Shuffle pile", key: "s",
@@ -204,10 +204,19 @@ try {
     enter: (who, id) => (who === "a" ? dbgA : dbgB).view.plugins.record("scene.body")?.api.body.enter(id, null) ?? false,
     bodyOf: (who) => (who === "a" ? dbgA : dbgB).local.get().body?.id ?? null,
     /** pick up the editor or put it down in a view, as the body chip's Edit does (api.view.edit) */
-    edit: (who, on) => (who === "a" ? dbgA : dbgB).view.plugins.record("scene.body")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: on }) ?? false,
+    edit: (who, on) => {
+      const d = who === "a" ? dbgA : dbgB;
+      d.view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: on });
+      return (d.local.get().hands ?? []).some((h) => h.kind === "edit") === !!on;
+    },
     editingOf: (who) => ((who === "a" ? dbgA : dbgB).local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** open a drawer tab of the stage's own, as its toolbar toggle does (ext "scene.inspector", command "inspector") */
-    openTab: (who, ext, command) => (who === "a" ? dbgA : dbgB).host.record(ext)?.api.run({ ext, command, value: true }) ?? false,
+    openTab: (who, ext, command) => {
+      const d = who === "a" ? dbgA : dbgB;
+      const api = d.view.plugins.record(ext)?.api ?? d.host.record(ext)?.api;
+      api?.run({ ext, command, target: null, value: true });
+      return !!api;
+    },
     running: (who) => ((who === "a" ? dbgA : dbgB).local.get().running ?? []).map((r) => r.id),
     /** "face" or "back": which look a viewer is showing for a hidden object */
     look: (who, id) => {
