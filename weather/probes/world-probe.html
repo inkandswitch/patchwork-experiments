@@ -274,7 +274,7 @@ try {
         return { command: e.dataset.command, text: e.textContent, title: e.title, disabled: !!e.disabled, rect: { x: r.x + r.width / 2, y: r.y + r.height / 2 } };
       });
     },
-    notices: () => (dbg?.view.atom.get().notices ?? []).map((n) => [n.kind, n.text]),
+    notices: () => (dbg?.view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => [n.kind, n.text]),
     running: () => stageOf()?.debug.host.running().map((r) => r.id) ?? [],
   });
   window.__ready = true;

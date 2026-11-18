@@ -134,7 +134,7 @@ try {
   const decks = () => (ids.tables ?? []).map((_, i) => deckIn(gameDoc(i))).filter(Boolean);
   const deckOf = (i) => { const url = deckIn(gameDoc(i)); return url ? repo.handles.get(url)?.doc() ?? null : null; };
   const apiOf = (w) => {
-    for (const id of ["scene.add", "scene.use", "scene.carry", "tabletop", "seats"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
+    for (const id of ["scene.claims", "tabletop", "seats"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
     return null;
   };
   const ids = {};
