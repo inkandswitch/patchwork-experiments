@@ -39,8 +39,23 @@
 //   HandTrigger     a seat, and its hand: a tray with card slots, the seat's zone
 //   SnapPoints      the pieces' snap points, and the table's
 //   other States, triggers, text, scripting: left out (counted)
+//
+// And a setup recipe (GAME-FORMAT.md §6) where the mod has what one says:
+//   - how many play: a seat for each hand, the last ones left out for fewer
+//     (TTS's colour order), as few as the mod's PlayerCounts says;
+//   - a memory bag (a bag whose script state holds the saved place of each
+//     thing in it, `{ ml }`): an option to lay its things out where it saved
+//     them (`place`, out of the bag). Bags whose layouts overlap are one
+//     choice (they lay out the same spot: Earthborne's ranger cards), others
+//     each a yes or no. Its things get ids, `tts-<guid>`;
+//   - face-down decks on the table: an option to shuffle them when the game
+//     starts (a start step each), off unless chosen, since a mod's deck may
+//     be in an order that matters (choice 15).
+// Any other scripted setup (plain Lua) is left for later.
 
 import { cardFaces } from "./cards.js";
+import { combinationCount } from "../../contract/v2/recipe.js";
+import { MAX_COMBINATIONS } from "../../contract/v2/validate.js";
 import { applyMat3, colorHex, convertPosition, convertRotation, readTransform, ttsUp, unityRotation } from "./convert.js";
 import { deckEntry } from "./tts.js";
 
@@ -320,7 +335,8 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
     const p = at(node);
     const rotation = down ? convertRotation(flipped(t.rotation)) : p.rotation;
     const foot = [p.position[0], p.position[1] - (kinds.length * h) / 2, p.position[2]];
-    return { deck: { ...deck, ...(down ? { faceDown: true } : {}) }, at: pose({ position: foot, rotation }) };
+    // a face-down deck is named, for a start step that shuffles it (recipeOf)
+    return { ...(down ? { id: idFor(node) } : {}), deck: { ...deck, ...(down ? { faceDown: true } : {}) }, at: pose({ position: foot, rotation }) };
   };
 
   /** A node → its things (a stack is one thing of several copies; a bag holds its contents). */
@@ -371,13 +387,54 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
     if (p.die) counts.dice += count;
     if (p.bag) {
       counts.bags++;
-      if (includeContents && node.contents.length) thing.contents = node.contents.flatMap((c) => thingsOf(c, false));
+      if (includeContents && node.contents.length) thing.contents = node.memory ? memoryContents(node) : node.contents.flatMap((c) => thingsOf(c, false));
     }
     counts.things++;
     out.push(thing);
     for (const c of node.children) out.push(...thingsOf(c, true));
     return out;
   };
+
+  /**
+   * A memory bag's contents: each thing it saved a place for gets an id, and
+   * its place (worked out as for a thing lying there: a deck's foot, a die's)
+   * is kept for the recipe; the rest are as any bag's.
+   */
+  const memories = []; // { guid, name, place: { [thingId]: Pose } }
+  const ids = new Set();
+  /** A thing's id, from its object's GUID (`tts-<guid>`), its own even where a mod repeats a GUID. */
+  function idFor(node) {
+    const base = `tts-${node.guid || node.path}`.replace(/[^A-Za-z0-9._-]/g, "-");
+    let id = base;
+    for (let k = 2; ids.has(id); k++) id = `${base}-${k}`;
+    ids.add(id);
+    return id;
+  }
+  function memoryContents(node) {
+    const place = {};
+    const out = [];
+    for (const c of node.contents) {
+      const saved = c.guid ? node.memory[c.guid] : null;
+      if (!saved) {
+        out.push(...thingsOf(c, false));
+        continue;
+      }
+      const [x, y, z] = saved.position;
+      const [rx, ry, rz] = saved.rotation;
+      const [first, ...rest] = thingsOf({ ...c, transform: { ...c.transform, posX: x, posY: y, posZ: z, rotX: rx, rotY: ry, rotZ: rz } }, true);
+      if (!first) continue;
+      const { at, id: named, ...inBag } = first;
+      const id = named ?? idFor(c);
+      out.push({ id, ...inBag });
+      // resting on the table, never under it: a bag saves where things lay on the table it was used at, which may
+      // be lower than the one this game's things say (tableHeight); a deck's place is its foot, anything else's its origin
+      const bottom = at.position[1] - (c.kind === "deck" ? 0 : (footOf(c) ?? 0) * u);
+      place[id] = bottom < 0 ? { ...at, position: [at.position[0], r6(at.position[1] - bottom), at.position[2]] } : at;
+      out.push(...rest.map(({ at: _, ...t }) => t));
+    }
+    if (Object.keys(place).length) memories.push({ guid: node.guid, name: node.nickname || "Memory bag", place });
+    return out;
+  }
 
   const setup = [];
   // the table under it all: the mod's table image on top, its free snap points
@@ -424,6 +481,7 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
   }
   if (truncated) warnings.push(`stopped at ${maxObjects} objects: ${truncated} more were left out`);
 
+  const recipe = recipeOf({ seats, setup, memories, playerCounts: save.playerCounts, unit: u, warnings });
   const span = Math.max(ext.hx, ext.hz) * u;
   const centre = convertPosition([ext.cx, tableY, ext.cz], { unit: u, tableY });
   const about = [`Imported from Tabletop Simulator: “${save.saveName}”. Its components as they start, and nothing scripted: the rules are the players'.`, save.rules, save.note].filter((x) => typeof x === "string" && x.trim()).join("\n\n");
@@ -436,8 +494,65 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
     setup,
     ...(Object.keys(seats).length ? { seats } : {}),
     camera: { position: v3([centre[0], span * 1.1, centre[2] + span]), target: v3(centre) },
+    ...(recipe ? { recipe } : {}),
   };
   return { game, counts: { ...counts, pieces: Object.keys(pieces).length, placed, tableY }, skipped, approximated, warnings };
+}
+
+/** TTS's player colours, in its own order: the order seats are kept in as fewer play. */
+const COLOURS = ["white", "brown", "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "grey", "black"];
+
+/**
+ * The setup recipe a mod's data says (above): how many play, its memory
+ * bags' layouts, shuffling its face-down decks at the start. null when it
+ * says none. Options are added while every way of setting them can still be
+ * checked (MAX_COMBINATIONS); a memory bag past that stays a bag (warned).
+ */
+function recipeOf({ seats, setup, memories, playerCounts, unit, warnings }) {
+  const options = [];
+  const layout = [];
+  const start = [];
+  const fits = (extra) => combinationCount({ recipe: { options: [...options, ...extra] } }) <= MAX_COMBINATIONS;
+  // how many play: the seats in TTS's colour order, the last ones left out for fewer
+  const order = Object.keys(seats).sort((a, b) => (COLOURS.indexOf(a) + 1 || 99) - (COLOURS.indexOf(b) + 1 || 99) || (a < b ? -1 : 1));
+  if (order.length > 1) {
+    const min = Math.max(1, Math.min(order.length, playerCounts?.[0] ?? 1));
+    options.push({ key: "players", label: "Players", kind: "integer", min, max: order.length, default: order.length });
+    for (let k = order.length; k > min; k--) layout.push({ remove: { seat: order[k - 1] }, unless: `players >= ${k}` });
+  }
+  // memory bags: those laying out the same spot (any two places within a card's width) are one choice
+  const near = (a, b) => Object.values(a.place).some((p) => Object.values(b.place).some((q) => Math.hypot(p.position[0] - q.position[0], p.position[2] - q.position[2]) < CARD.w * unit));
+  const groups = [];
+  for (const m of memories) {
+    const hit = groups.filter((g) => g.some((x) => near(x, m)));
+    const merged = [m, ...hit.flat()];
+    for (const g of hit) groups.splice(groups.indexOf(g), 1);
+    groups.push(merged);
+  }
+  let n = 0;
+  for (const group of groups.map((g) => [...g].sort((a, b) => memories.indexOf(a) - memories.indexOf(b)))) {
+    const key = `layout${n ? n + 1 : ""}`;
+    const option =
+      group.length === 1
+        ? { key, label: `Lay out “${group[0].name}”`, kind: "boolean", default: false }
+        : { key, label: "Lay out", kind: "enum", options: [{ value: "none", label: "Nothing" }, ...group.map((m) => ({ value: m.guid, label: m.name }))], default: "none" };
+    if (!fits([option])) {
+      warnings.push(`${group.length === 1 ? `the memory bag “${group[0].name}”` : `${group.length} memory bags`} left as bags: too many ways to set the game up already`);
+      continue;
+    }
+    n++;
+    options.push(option);
+    for (const m of group) layout.push({ place: m.place, when: group.length === 1 ? key : `${key} == ${m.guid}` });
+  }
+  // face-down decks on the table: shuffled when the game starts, if chosen
+  const down = setup.filter((t) => t.deck?.faceDown && t.id != null);
+  const shuffle = { key: "shuffle", label: "Shuffle the face-down decks when the game starts", kind: "boolean", default: false };
+  if (down.length && fits([shuffle])) {
+    options.push(shuffle);
+    for (const t of down) start.push({ shuffle: t.id, when: "shuffle" });
+  }
+  if (!options.length) return null;
+  return { options, ...(layout.length ? { layout } : {}), ...(start.length ? { start } : {}) };
 }
 
 /** A rotation that's another turned over about its own length (z): R · Rz(180°), as TTS degrees. */

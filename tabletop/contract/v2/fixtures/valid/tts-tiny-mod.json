@@ -268,6 +268,7 @@
     {"piece":"pl040qtafcdbw","at":{"position":[-0.0508,0,-0.0254]}},
     {"piece":"p6z1fx0zmcjkk","at":{"position":[0,0,-0.1016],"rotation":[0,3.141593,0]}},
     {
+      "id": "tts-d00001",
       "deck": {"name":"Draw pile","cards":["p98t1t3r7jf67","pcy5ufe1jq1cko","pgt5rci1d0smoq"],"faceDown":true},
       "at": {"position":[-0.1524,0.000254,0.0508],"rotation":[0,3.141593,0]}
     },
@@ -299,6 +300,10 @@
     "white": {"name":"White","camera":{"position":[0.023174,0.7112,0.455428],"target":[-0.054072,0,-0.046665]}}
   },
   "camera": {"position":[-0.0508,0.44704,0.381],"target":[-0.0508,0,-0.0254]},
+  "recipe": {
+    "options": [{"key":"shuffle","label":"Shuffle the face-down decks when the game starts","kind":"boolean","default":false}],
+    "start": [{"shuffle":"tts-d00001","when":"shuffle"}]
+  },
   "origin": {"tts":{"saveName":"Tiny Test Mod","fileName":"Workshop/1234567890.json","workshopId":"1234567890"}},
   "assets": {
     "https://i.imgur.com/tinyTable.png": {"file":"automerge:ZDtZEuaFvbGwcHxdKyeKzfL1gM2h"},
