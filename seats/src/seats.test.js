@@ -302,11 +302,11 @@ describe("seats, held by claims", () => {
 
   it("a name tag on each of a seat's places: its seat, who sits there, and whether they're here", async () => {
     const t = await room(seats(ANA, BEN), { views: [["A", ANA], ["C", "carol"]] });
-    const tags = () => t.w.view("C").labels.map(({ key, text, position, data }) => ({ key, text, position, state: data.state }));
+    const tags = () => t.w.view("C").labels.map(({ key, text, on, offset, data }) => ({ key, text, on, offset, state: data.state }));
     expect(tags()).toEqual([
-      // on each tray, in the world (these seats have no camera to say which edge is theirs: the middle)
-      { key: "hand1", text: "Player 1 · Ana", position: [0, 0, 0.5], state: "taken" },
-      { key: "hand2", text: "Player 2 · Ben (away)", position: [0, 0, -0.5], state: "away" },
+      // on each tray (these seats have no camera to say which edge is theirs: the middle)
+      { key: "hand1", text: "Player 1 · Ana", on: "hand1", offset: [0, 0, 0], state: "taken" },
+      { key: "hand2", text: "Player 2 · Ben (away)", on: "hand2", offset: [0, 0, 0], state: "away" },
     ]);
     expect(t.w.view("A").labels[0].text).toBe("Player 1 · Ana");
     await t.pick("A", "");
@@ -807,15 +807,14 @@ describe("the seat's view aboard", () => {
 });
 
 describe("name tags aboard", () => {
-  it("name tags lie on the hands as drawn, at the edge nearest each seat, and follow them each frame", async () => {
+  it("name tags lie on the hands (the stage draws them where the hands are drawn), at the edge nearest each seat, under way too", async () => {
     const t = await aboard();
-    const tag = (k) => t.w.view("A").labels.find((l) => l.key === k).position;
+    const tag = (k) => t.w.view("A").labels.find((l) => l.key === k);
     // p1 sits on hand1's +z side; hand2 is turned round, so p2's side is its +z too
-    near(tag("hand1"), apply(t.a.worldOf("hand1"), [0, 0, 0.05]), 3);
-    near(tag("hand2"), apply(t.a.worldOf("hand2"), [0, 0, 0.05]), 3);
+    for (const k of ["hand1", "hand2"]) expect([tag(k).on, tag(k).offset]).toEqual([k, [0, 0, 0.05]]);
     t.sail(T([12, 0.4, 7.5], [0.1, 0.95, 0]));
     t.w.tick(1 / 60);
-    near(tag("hand1"), apply(t.a.worldOf("hand1"), [0, 0, 0.05]), 3);
+    expect([tag("hand1").on, tag("hand1").offset]).toEqual(["hand1", [0, 0, 0.05]]);
     t.w.done();
   });
 

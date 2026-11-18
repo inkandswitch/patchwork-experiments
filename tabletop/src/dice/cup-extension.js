@@ -395,28 +395,22 @@ function create(api) {
   function drawLabels() {
     if (!labels) return;
     const items = [];
-    const at = (id) => {
-      const m = api.worldOf?.(id);
-      return m ? [m[12], m[13] + CUP_HEIGHT + 0.03, m[14]] : null;
-    };
+    // (on the cup, over its rim, wherever it is drawn: carried or shaken, a displayed pose, it follows)
+    const on = (id) => ({ on: id, offset: [0, CUP_HEIGHT + 0.03, 0], className: "dice-cup-tag" });
     for (const [session, p] of Object.entries(api.channel.peers())) {
       if (session === api.channel.session) continue;
       const cup = p?.keys?.[api.id]?.peek;
       const c = typeof cup === "string" ? state.cups.get(cup) : null;
       if (!c || !c.covering || c.cup.holder !== p.viewer) continue;
-      const position = at(cup);
-      if (position) items.push({ key: `peek:${cup}`, text: `${who(p.viewer)} is peeking`, position, className: "dice-cup-tag" });
+      items.push({ key: `peek:${cup}`, text: `${who(p.viewer)} is peeking`, ...on(cup) });
     }
     for (const c of state.cups.values()) {
       if (!c.cup.blind || !c.cup.holder) continue;
-      const position = at(c.id);
-      if (position) items.push({ key: `blind:${c.id}`, text: c.cup.holder === viewer ? "Blind: hidden from you" : `Blind: hidden from ${who(c.cup.holder)}`, position, className: "dice-cup-tag" });
+      items.push({ key: `blind:${c.id}`, text: c.cup.holder === viewer ? "Blind: hidden from you" : `Blind: hidden from ${who(c.cup.holder)}`, ...on(c.id) });
     }
     const k = JSON.stringify(items);
     if (k !== labelKey) (labelKey = k), labels.set(items);
   }
-  // a cup carried or shaken (a displayed pose) moves without a doc change: its tag follows, after each frame
-  api.afterRender?.(() => dead || drawLabels());
   // who is peeking comes by presence, not the doc: draw again whenever it changes, not only on a doc
   // or local change (which needn't come: a peek writes nothing)
   api.channel.watch(() => {

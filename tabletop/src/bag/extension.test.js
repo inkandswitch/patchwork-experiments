@@ -97,7 +97,7 @@ describe("a bag in a scene", () => {
     expect(t.rec.labels.map((l) => [l.key, l.text, l.data.empty])).toEqual([["bag1", "Red bag · 0", true], ["bag2", "Blue bag · 0", true]]);
     t.run("put", "cube", "bag1");
     expect(t.rec.labels[0].text).toBe("Red bag · 1");
-    expect(t.rec.labels[0].position[1]).toBeGreaterThan(0.1);
+    expect([t.rec.labels[0].on, t.rec.labels[0].offset[1] > 0.1]).toEqual(["bag1", true]);
   });
 
   it("Put in: the object leaves the scene doc and is in the bag, whole, and the others hear only that and how many", async () => {

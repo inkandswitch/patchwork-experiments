@@ -524,21 +524,17 @@ export default {
     // ── the count on each bag ──
     const labels = api.labels?.() ?? null;
     let labelKey = "";
-    let bagsAt = ""; // where the labelled bags were drawn: one carried (a displayed pose) moves without a doc change
-    const whereBags = () => bagsIn().map((b) => api.worldOf?.(b.id)?.join()).join(";");
-    api.afterRender?.(() => labels && !dead && scene && whereBags() !== bagsAt && drawLabels());
     function drawLabels() {
       if (!labels || dead || !scene) return;
-      bagsAt = whereBags();
       const sh = shadows();
       const items = [];
       for (const b of bagsIn()) {
         if (!isBagDoc(docOf(b.url))) continue;
-        const box = api.box?.(b.id);
-        const m = api.worldOf?.(b.id) ?? scene.world(b.id);
-        const position = (box ? [(box.min[0] + box.max[0]) / 2, box.max[1], (box.min[2] + box.max[2]) / 2] : [m[12], m[13] + 0.2, m[14]]).map((v) => +v.toFixed(4));
+        // on the bag, at the top of its model (in its own frame), wherever it is drawn: carried, it follows
+        const box = api.content?.(b.id)?.box;
+        const offset = (box ? [(box.min[0] + box.max[0]) / 2, box.max[1], (box.min[2] + box.max[2]) / 2] : [0, 0.2, 0]).map((v) => +v.toFixed(4));
         const n = insideOf(b.url, sh).length;
-        items.push({ key: b.id, text: `${titleOf(b.url)} · ${n}`, position, className: "bag-count", data: { empty: n === 0 }, rank: 2 });
+        items.push({ key: b.id, text: `${titleOf(b.url)} · ${n}`, on: b.id, offset, className: "bag-count", data: { empty: n === 0 }, rank: 2 });
       }
       const k = JSON.stringify(items);
       if (k === labelKey) return;
