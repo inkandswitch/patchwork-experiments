@@ -1612,7 +1612,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
       /** a service (STAGE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
-      use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x) }) : null)) : null),
+      use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x), doc }) : null)) : null),
       /** has everything the doc calls for started (or failed), and is every listed package here (`missing`: those that aren't)? */
       settled: () => {
         const p = local.get().packages;
@@ -1827,6 +1827,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     onChange: resync,
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
+    // (none created before the view's providers: a create's use() finds the drawer, notices, prefs)
+    first: () => view.plugins?.providersStarted(),
   });
 
   // ─── the view's plugins' facets (STAGE.md, "View plugins") ─────────────────

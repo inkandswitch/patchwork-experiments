@@ -424,15 +424,13 @@ function create(api) {
   });
   prefs()?.watch(() => drawer.refreshWidth());
   api.view.set(now);
-  const drawerFor = ({ signal }) => {
-    const owner = {}; // what this caller docked, closed (without onClose) as it stops
-    signal.addEventListener("abort", () => drawer.closeOwner(owner), { once: true });
-    return Object.freeze({
-      dock: (el, o) => (signal.aborted || !el ? () => {} : drawer.dock(owner, el, o)),
+  const heard = new WeakSet(); // callers' signals, each the owner of what it docked: closed (without onClose) as it aborts
+  const drawerFor = ({ signal }) =>
+    Object.freeze({
+      dock: (el, o) => (signal.aborted || !el ? () => {} : (heard.has(signal) || (heard.add(signal), signal.addEventListener("abort", () => drawer.closeOwner(signal))), drawer.dock(signal, el, o))),
       dockDocument: (doc) => drawer.dockDocument(doc ?? {}),
       state: () => now,
     });
-  };
   /** panes(): the docked elements in tab order, and the one shown (for tests and probes) */
   return { provides: { drawer: drawerFor }, panes: () => drawer.state(), dispose: () => drawer.dispose() };
 }

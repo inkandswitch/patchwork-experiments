@@ -678,7 +678,10 @@ through `use` (a drawn stage's reach none); a view plugin's `use` asks the
 view plugins first. Three general hooks replace the special ones: a view
 plugin's `api.view.set(value)` (its own value at `view[id]`, so every update
 hears a pref or the drawer change), `api.wantPointer()` (an open drawer keeps
-the pointer free) and `api.url`. Behaviour: a pref's doc suggestion is the
-focus doc's for everyone (a stage's extension read its own doc's); an edge
-part made while the drawer is open no longer goes inside it; with no
-notices or drawer plugin, a notify or dock does nothing.
+the pointer free) and `api.url`. Behaviour: an edge part made while the drawer
+is open no longer goes inside it; with no notices or drawer plugin, a notify or
+dock does nothing. Review: no stage creates an extension before the view's
+providers have started or failed (host.js `first`), so a create's
+`use("drawer")` holds whatever order things load in (24 cases); a pref's doc
+suggestion is the asking extension's doc's again (a view plugin's: the focus
+doc's).

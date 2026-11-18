@@ -202,7 +202,7 @@ function call(owner, obj, name, ...args) {
  *   onHover: (ev: object | null) => void,
  *   onCursor: (name: string | null) => void,
  *   onState?: (state: object) => void,   // the body, the hands, the gesture's keys, the pointer or the ladder changed
- *   pointerWanted?: () => boolean,       // something of the stage's wants the pointer (a selection, the open drawer)
+ *   pointerWanted?: () => boolean,       // something of the stage's wants the pointer (a selection, a wantPointer())
  *   restLayer?: () => "selection" | "focus" | null,  // what the view's own Escape does now, with no hand held (ladder.js restLayer)
  *   escapeRest?: () => void,             // do it
  *   requestLock?: () => Promise<void> | void,
@@ -810,7 +810,7 @@ export function createRouter(o) {
   }
   const onLockError = () => refusedNow(null);
 
-  /** Something of the stage's may want the pointer now (a selection, the drawer): look again. */
+  /** Something of the stage's may want the pointer now (a selection, a wantPointer()): look again. */
   function refresh() {
     const wanted = hands.some((h) => h.pointer) || !!o.pointerWanted?.();
     if (wanted !== ptr.wanted) pointerEvent({ type: "want", wanted });

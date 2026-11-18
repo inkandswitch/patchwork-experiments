@@ -148,8 +148,9 @@ trait covers the doc. What belongs to a thing lives on that object. One instance
 per extension per stage. **Order**: providers (by metadata; one that `uses`
 another's service after it), then the rest; each `scene`, then `objects`, in
 registry order (`local.running`), the only order anything combines in. Each is
-created once everything before it has started or failed, so a create's `use`
-finds every service that runs, whatever the registry order.
+created once everything before it, and every view plugin providing, has started
+or failed, so a create's `use` finds every service that runs, whatever the
+registry order.
 
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
 (2 s), and while it holds a body, tool, session or pose. One loading or
@@ -457,7 +458,7 @@ keeper has them now.
 | `update(scene, local, prev, view)` | the stage, once per flush when doc, local, view or what's shown changed |
 | `looks()`, `audience(scene)`, `ambient()` | see "Lenses", "Audience", "Ambients" |
 | `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
-| `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`: see "Native services" |
+| `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`; `caller` is `{ id, signal }`, and a view plugin's from a stage's extension also `runs(id)`, `doc()`: see "Native services" |
 | `messages`, `receive(type, data, from)` | see "Native services" (Telling); `receive` hears this extension's sends |
 | `beforeRemove(draft, ids)`, `dispose()` | the stage |
 | `hud()` → `[{ text, state }]` | status surfaces |
@@ -576,7 +577,8 @@ title, onClose?, embed?, show? })` → close (only its × calls `onClose`; `embe
 false`: stage chrome); `dockDocument({ url, toolId?, title })` → close, the
 view's; `state()`, also `view["scene.drawer"]`; open, it wants the pointer.
 **Prefs** (`scene.prefs`, `"prefs"`): `get(key, fallback)` (the viewer's, else
-the focus doc's `doc.view[key]`), `set`, `watch(fn)`; `view["scene.prefs"]`.
+the caller's doc's `doc.view[key]`, a view plugin's the focus doc's), `set`,
+`watch(fn)`; `view["scene.prefs"]`.
 
 ## Conventions
 

@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, until } from "../test/stage-harness.js";
+import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
@@ -113,5 +113,63 @@ describe("view plugins", () => {
     expect(view.root.querySelectorAll(".t-overlay").length).toBe(0);
     expect(view.plugins.instanceOf("scene.drawer").panes().order.length).toBe(0);
     expect(A.debug.facets()).toEqual([]);
+  });
+
+  // Services by construction (STAGE.md, "Activation"): no stage creates an extension before the
+  // view's providers have started or failed. Over both orders the registry lists {a view provider,
+  // a doc extension using its service at create}, every order of the provider loading (P), the
+  // extension loading (E) and a link's stage opening (L; the outermost opens before all three), the
+  // provider starting or failing: 24 cases, each stage's create finding the service (or null).
+  it("over both registry orders, every order of P, E and L, and the provider starting or failing: each stage's create finds the view's service", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const gate = (g = {}) => ((g.p = new Promise((r) => (g.open = r))), g);
+    const boom = () => {
+      throw new Error("no");
+    };
+    const perms = (xs) => (xs.length ? xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((q) => [x, ...q])) : [[]]);
+    let n = 0;
+    for (const listed of ["PE", "EP"])
+      for (const fails of [false, true])
+        for (const seq of perms(["P", "E", "L"])) {
+          const where = `${listed} ${fails ? "fails" : "starts"} ${seq.join("")}`;
+          const found = [];
+          const g = { P: gate(), E: gate() };
+          // (a module that is a promise: its load resolves as the gate opens)
+          const prov = { meta: { id: "t.prov", type: "scene:view", provides: ["t.svc"] }, module: g.P.p };
+          const ext = { meta: { id: "t.ext", traits: ["*"] }, module: g.E.p };
+          const repo = new FakeRepo();
+          const b = repo.add(emptyScene({ title: "B" }));
+          s = await mountStage({ repo, natives: false, editor: false, extensions: listed === "PE" ? [prov, ext] : [ext, prov] });
+          for (const e of seq) {
+            if (e === "P") g.P.open({ create: () => (fails ? boom() : { provides: { "t.svc": (c) => ({ for: c.id }) } }) });
+            else if (e === "E") g.E.open({ create: (api) => (found.push(api.use("t.svc")), {}) });
+            else {
+              s.handle.change((d) => void ((d.objects.L = object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null })), d.order.push("L")));
+              await until(() => s.debug.view.stageAt(["L"]), 2000);
+            }
+            await settle();
+          }
+          await until(() => found.length === 2, 2000);
+          expect([where, found]).toEqual([where, fails ? [null, null] : [{ for: "t.ext" }, { for: "t.ext" }]]);
+          s.unmount();
+          s = null;
+          n++;
+        }
+    expect(n).toBe(24);
+  }, 60_000);
+
+  // A pref this viewer hasn't set is the asking extension's doc's suggestion
+  // (`doc.view`), a linked game's own; a view plugin's is the focus doc's.
+  it("a pref falls back on the asking extension's doc, a view plugin's on the focus doc", async () => {
+    const repo = new FakeRepo();
+    const b = repo.add(emptyScene({ title: "B", view: { snap: false } }));
+    const got = [];
+    const ext = { meta: { id: "t.ext", traits: ["*"] }, module: { create: (api) => (got.push([api.doc().title, api.use("prefs").get("snap", null)]), {}) } };
+    const objects = { L: object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null }) };
+    s = await mountStage({ repo, extensions: [ext], doc: { title: "A", view: { snap: true }, objects, order: ["L"] } });
+    await until(() => got.length === 2, 2000);
+    const view = s.debug.view;
+    const asView = () => view.plugins.use("prefs", { id: "t.view", signal: new AbortController().signal }).get("snap", null);
+    expect([got.sort(), asView(), view.focusOn(["L"]) && asView()]).toEqual([[["A", true], ["B", false]], true, false]);
   });
 });

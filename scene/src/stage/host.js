@@ -114,6 +114,7 @@ const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.eve
  *   makeApi: (rec: object) => { api: object, release: () => void },
  *   busy?: (id: string) => boolean,             // a body entered, the held tool, an open session or a pose hold
  *   onChange?: () => void,                      // an extension started or stopped
+ *   first?: () => any,                          // awaited before each create (a stage: the view's providers started)
  *   lingerMs?: number,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (t: any) => void,
@@ -129,6 +130,7 @@ export function createHost({
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
   wanted = (metas, d) => activeSet({ metas, doc: d }),
+  first = () => null,
 }) {
   let dead = false;
   let isReady = false;
@@ -165,13 +167,13 @@ export function createHost({
   // ─── starting ─────────────────────────────────────────────────────────────
 
   // Created in running order (providers first: activation.js providersFirst), each once every
-  // one before it has started or failed, so a create's api.use finds every service that runs.
+  // one before it (and `first`) has started or failed, so a create's api.use finds every service that runs.
   function start(w, before) {
     const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
     rec.started = (async () => {
       const loaded = await reg?.load?.(w.id);
-      await Promise.all(before.map((r) => r.started));
+      await Promise.all([first(), ...before.map((r) => r.started)]);
       const mod = loaded?.module?.default ?? loaded?.module;
       if (dead || rec.state !== "loading") return;
       if (typeof mod?.create !== "function") throw new Error("its module has no create()");
@@ -212,6 +214,9 @@ export function createHost({
     }
     return null;
   }
+
+  /** Once every provider being started has started or failed: what a stage's host awaits before a create. */
+  const providersStarted = () => ready.then(() => Promise.all([...recs.values()].filter((r) => listOf(r.meta?.provides).length).map((r) => r.started)));
 
   // ─── stopping ─────────────────────────────────────────────────────────────
 
@@ -420,6 +425,7 @@ export function createHost({
     instanceOf,
     collect,
     use,
+    providersStarted,
     inputOf,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,

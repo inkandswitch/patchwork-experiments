@@ -1,6 +1,6 @@
 // scene.prefs (native, a view plugin): the viewer's display prefs, provided as
 // "prefs" (STAGE.md, "Native services"): get(key, fallback) is the viewer's,
-// else the focus doc's `doc.view[key]`, else the fallback; set(key, value)
+// else the caller's doc's `doc.view[key]` (a view plugin's: the focus doc's), else the fallback; set(key, value)
 // (undefined: unset) is kept per scene in localStorage, another tab's heard,
 // and published as view["scene.prefs"]; watch(fn) hears each change.
 
@@ -27,9 +27,9 @@ function create(api) {
   }
   put(read(), false);
   api.listen(globalThis, "storage", (e) => e.key === key && put(read(), false));
-  const prefsFor = ({ signal }) =>
+  const prefsFor = ({ signal, doc }) =>
     Object.freeze({
-      get: (k, fallback) => prefs[k] ?? api.focus()?.doc().view?.[k] ?? fallback,
+      get: (k, fallback) => prefs[k] ?? (doc ? doc() : api.focus()?.doc())?.view?.[k] ?? fallback,
       set(k, value) {
         if (signal.aborted || typeof k !== "string" || (value === undefined ? !(k in prefs) : prefs[k] === value)) return;
         const { [k]: _, ...rest } = prefs;
