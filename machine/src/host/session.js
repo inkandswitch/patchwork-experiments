@@ -6,7 +6,7 @@
 //   chunk:       ticks per durable input chunk (about one second)
 //   every:       ticks between checkpoints (about a minute)
 //   roll:        ticks per seat document (about ten minutes)
-//   clock:       { t, at, until? }  (the stand-in for api.clock; see clock.js)
+//   clock:       { t, at, until? }  (the stand-in for the "clock" service; see clock.js)
 //   seats:       { [id]: { port, by, from, until?, inputs: url } }
 //   checkpoints: { [tick]: { url, hash, seating } }   (every one still good: a
 //                seat change in the past drops those after it)

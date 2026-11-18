@@ -7,7 +7,7 @@ import { screenOf } from "./cabinet.js";
 
 test("its commands are Play and World; a click held by no machine here is no click of its", () => {
   const ran = [];
-  const api = { THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null, run: (inv) => (ran.push(inv), true) };
+  const api = { THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [], use: () => null, style: () => {}, overlay: () => null, run: (inv) => (ran.push(inv), true) };
   const instance = ext.create(api);
   expect(instance.commands.map((c) => c.id)).toEqual(["play", "world"]);
   // a click held by no machine here (the scene, or an object it has no entry for) is no click of its, and the stage isn't asked
@@ -191,7 +191,8 @@ test("a click on a cabinet goes through the stage as Play, on that cabinet with 
     const api = {
       THREE, id: "machine.pkg", world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => scene, loop: () => () => {}, listen: () => {}, root: null, collect: () => [], style: () => {}, overlay: () => null,
       repo: { find: async () => ({ doc: () => ({ title: "Empty" }) }) }, // no game yet: it never starts
-      clock: { after: () => () => {} },
+      after: () => () => {},
+      use: () => null,
       notify: (t) => notices.push(t),
       run: (inv) => (ran.push(inv), answer),
     };

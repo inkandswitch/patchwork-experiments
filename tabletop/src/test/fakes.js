@@ -265,10 +265,47 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         else v.instance.receive?.(type, structuredClone(data), from);
       }
     }
+    // the native services' facets (scene/src/native: claims, tell), as this view's stage gives them
+    const services = {
+      claims: {
+        claim(id, kind, { onLost } = {}) {
+          const f = holderOf(id)?.claims?.[kind];
+          if (f && f.session !== session && live(f, session)) return null;
+          const have = claims.find((c) => c.session === session && c.id === id && c.kind === kind);
+          if (have) return have.release;
+          change((d) => {
+            const h = id == null ? d : d.objects[id];
+            if (!h.claims) h.claims = {};
+            h.claims[kind] = { viewer, session };
+          });
+          const entry = { session, id, kind, onLost };
+          entry.release = () => {
+            const i = claims.indexOf(entry);
+            if (i >= 0) claims.splice(i, 1);
+            if (holderOf(id)?.claims?.[kind]?.session === session) change(() => delete holderOf(id).claims[kind]);
+          };
+          claims.push(entry);
+          return entry.release;
+        },
+        claimedBy(id, kind) {
+          const f = holderOf(id)?.claims?.[kind];
+          if (!f) return null;
+          if (f.session === session) return { viewer: f.viewer, session, mine: true };
+          return live(f, session) ? { viewer: f.viewer, session: f.session, mine: false } : null;
+        },
+      },
+      tell: {
+        // said here as "You" and sent; told on each peer as the stage tells it (telling.js)
+        tell(type, data) {
+          if (!view.here || !declared(view.instance, type)) return;
+          if (!view.telling.say(ext, view.instance, type, structuredClone(data), viewer)) return;
+          sent.push({ session, viewer, type, data: structuredClone(data) });
+          deliver(type, data);
+        },
+      },
+    };
     const api = {
       id: ext,
-      session,
-      viewer,
       repo,
       signal: view.abort.signal,
       doc: () => doc,
@@ -289,40 +326,16 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         watch: () => () => {},
         select: () => {},
       },
-      claim(id, kind, { onLost } = {}) {
-        const f = holderOf(id)?.claims?.[kind];
-        if (f && f.session !== session && live(f, session)) return null;
-        const have = claims.find((c) => c.session === session && c.id === id && c.kind === kind);
-        if (have) return have.release;
-        change((d) => {
-          const h = id == null ? d : d.objects[id];
-          if (!h.claims) h.claims = {};
-          h.claims[kind] = { viewer, session };
-        });
-        const entry = { session, id, kind, onLost };
-        entry.release = () => {
-          const i = claims.indexOf(entry);
-          if (i >= 0) claims.splice(i, 1);
-          if (holderOf(id)?.claims?.[kind]?.session === session) change(() => delete holderOf(id).claims[kind]);
-        };
-        claims.push(entry);
-        return entry.release;
-      },
-      claimedBy(id, kind) {
-        const f = holderOf(id)?.claims?.[kind];
-        if (!f) return null;
-        if (f.session === session) return { viewer: f.viewer, session, mine: true };
-        return live(f, session) ? { viewer: f.viewer, session: f.session, mine: false } : null;
-      },
       // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
-      clock: {
-        now: () => Date.now(),
-        after(ms, fn) {
-          const h = setTimeout(fn, ms);
-          return () => clearTimeout(h);
-        },
+      now: () => Date.now(),
+      after(ms, fn) {
+        const h = setTimeout(fn, ms);
+        return () => clearTimeout(h);
       },
-      presence: {
+      // the doc's ephemeral side (STAGE.md, "api.channel")
+      channel: {
+        viewer,
+        session,
         set(key, value) {
           const mine = { ...view.keys[ext] };
           if (value === undefined) delete mine[key];
@@ -331,7 +344,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
           view.at = Date.now();
           presenceChanged(session);
         },
-        get() {
+        peers() {
           const out = {};
           for (const [s, v] of views) if (s !== session && v.here) out[s] = { viewer: v.viewer, at: v.at, keys: v.keys };
           return out;
@@ -344,18 +357,14 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
             if (i >= 0) view.watchers.splice(i, 1);
           };
         },
+        send(type, data) {
+          sent.push({ session, viewer, type, data: structuredClone(data) });
+          deliver(type, data);
+        },
       },
-      send(type, data) {
-        sent.push({ session, viewer, type, data: structuredClone(data) });
-        deliver(type, data);
-      },
-      // said here as "You" and sent; told on each peer as the stage tells it (telling.js)
-      tell(type, data) {
-        if (!view.here || !declared(view.instance, type)) return;
-        if (!view.telling.say(ext, view.instance, type, structuredClone(data), viewer)) return;
-        sent.push({ session, viewer, type, data: structuredClone(data) });
-        deliver(type, data);
-      },
+      // the native services (scene/src/native), as the stage's
+      use: (name) => services[name] ?? null,
+      settled: () => ({ ready: true, missing: [] }),
       notify: (text, kind) => view.notices.push({ text, kind }),
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
@@ -426,8 +435,8 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
     };
     view.api = api;
     view.telling = createTelling({
-      now: api.clock.now,
-      after: api.clock.after,
+      now: api.now,
+      after: api.after,
       scene,
       notify: (text) => view.notices.push({ text, kind: undefined }),
       find: (url) => repo?.find?.(url),

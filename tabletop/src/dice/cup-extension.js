@@ -102,7 +102,8 @@ export function dressFor({ veiled, pending, known, covered, audience, viewer }) 
 }
 
 function create(api) {
-  const viewer = api.viewer;
+  const viewer = api.channel.viewer;
+  const teller = api.use("tell");
   const THREE = api.THREE;
   let snap = null;
   let state = cupsOf(null);
@@ -266,7 +267,7 @@ function create(api) {
    */
   function heal() {
     const lots = lotsApi();
-    const now = api.clock.now();
+    const now = api.now();
     for (const c of state.cups.values()) {
       const roll = c.cup.roll;
       if (!roll || roll.done || roll.stopped) continue;
@@ -395,8 +396,8 @@ function create(api) {
       const m = api.worldOf?.(id);
       return m ? [m[12], m[13] + CUP_HEIGHT + 0.03, m[14]] : null;
     };
-    for (const [session, p] of Object.entries(api.presence?.get?.() ?? {})) {
-      if (session === api.session) continue;
+    for (const [session, p] of Object.entries(api.channel.peers())) {
+      if (session === api.channel.session) continue;
       const cup = p?.keys?.[api.id]?.peek;
       const c = typeof cup === "string" ? state.cups.get(cup) : null;
       if (!c || !c.covering || c.cup.holder !== p.viewer) continue;
@@ -412,7 +413,7 @@ function create(api) {
   }
   // who is peeking comes by presence, not the doc: draw again whenever it changes, not only on a doc
   // or local change (which needn't come: a peek writes nothing)
-  api.presence?.watch?.(() => {
+  api.channel.watch(() => {
     if (!dead) drawLabels();
   });
 
@@ -457,7 +458,7 @@ function create(api) {
     const c = cupAt(id, s);
     if (!c) return null;
     const n = shaken(c, s.ids ?? []).length;
-    const here = new Set(Object.values(api.presence?.get?.() ?? {}).map((p) => p?.viewer));
+    const here = new Set(Object.values(api.channel.peers()).map((p) => p?.viewer));
     const others = (seated(s) ?? []).filter((v) => v !== viewer);
     const why = shaking.has(id)
       ? "It's being shaken"
@@ -543,7 +544,7 @@ function create(api) {
   }
   function clearPeek() {
     peek = null;
-    api.presence?.set?.("peek", undefined);
+    api.channel.set("peek", undefined);
   }
   function stopPeek() {
     clearPeek();
@@ -560,8 +561,8 @@ function create(api) {
       if (l > 1e-6) dir = [local.x / l, local.z / l];
     }
     peek = { cup: id, dir };
-    api.presence?.set?.("peek", id);
-    api.tell("peeked", { cup: id });
+    api.channel.set("peek", id);
+    teller.tell("peeked", { cup: id });
     dressAll();
   }
   function peekRun(id) {
@@ -601,7 +602,7 @@ function create(api) {
         }
       }
     });
-    if (did.length) api.tell("lifted", { cups: did });
+    if (did.length) teller.tell("lifted", { cups: did });
   }
 
   const liftAllState = (target, ctx) => {
@@ -653,7 +654,7 @@ function create(api) {
       const out = [];
       if (state.cups.size && !lotsApi()) out.push({ text: "Cups can't be shaken yet: rolls are drawn by lots, which aren't running here.", state: "warn" });
       const lots = lotsApi();
-      const now = api.clock.now();
+      const now = api.now();
       const list = listOf;
       for (const c of state.cups.values()) {
         const roll = c.cup.roll;

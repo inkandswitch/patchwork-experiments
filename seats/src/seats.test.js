@@ -155,7 +155,7 @@ describe("seats, held by claims", () => {
     await t.pick("C", "p1");
     expect(t.claim("p1").session).toBe("C");
     const writes = vi.spyOn(t.api.C, "change");
-    const claims = vi.spyOn(t.api.C, "claim");
+    const claims = vi.spyOn(t.api.C.use("claims"), "claim");
     // Ben sat down at the same moment, and the merge kept his claim and his player
     t.w.change((d) => {
       d.claims[KIND("p1")] = { viewer: BEN, session: "B" };

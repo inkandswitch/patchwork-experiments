@@ -75,7 +75,6 @@ function fakeApi(doc) {
   const api = {
     id: "arena",
     THREE,
-    viewer: "me",
     repo: { find: async () => ({ doc: () => ({}) }) },
     style() {},
     overlay: () => (calls.overlay = document.createElement("div")),
@@ -109,14 +108,12 @@ function fakeApi(doc) {
       calls.loops.push(fn);
       return () => (calls.loops = calls.loops.filter((f) => f !== fn));
     },
-    send: (type, data) => calls.sends.push({ type, data }),
+    channel: { viewer: "me", send: (type, data) => calls.sends.push({ type, data }) },
     // the stage's time (scene/src/stage/time.js): the event loop's wall, here
-    clock: {
-      now: () => performance.now(),
-      after(ms, fn) {
-        const h = setTimeout(fn, ms);
-        return () => clearTimeout(h);
-      },
+    now: () => performance.now(),
+    after(ms, fn) {
+      const h = setTimeout(fn, ms);
+      return () => clearTimeout(h);
     },
   };
   return { api, calls, world, bind: (inst) => (x = inst), setLocal: (l) => (local = l) };

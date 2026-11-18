@@ -98,7 +98,7 @@ seat's tray, gliding there as everyone watches), **Wash** (W, the face-down
 tiles round it jumbled where they lie, `wash.js`), **Stand on edge / Lay
 flat** (U, a piece thick enough, facing your hand, `stand.js`) and **Lay my
 hand face up** (menu only). Wash, Stand, Draw and Lay are play's, not Edit's.
-Each is told to everyone (`api.tell`) as counts only, never which card; a
+Each is told to everyone (`use("tell").tell`) as counts only, never which card; a
 told message is a peer's word and changes nothing. A slot takes a piece by
 its tags (`card`, `domino`); a rack's places hold a tile standing (a
 connector with a whole frame, `slots.js`).

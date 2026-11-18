@@ -101,7 +101,7 @@ export function rosterOf(scene) {
 
 /**
  * Where a seat stands for a viewer, from the seat (the doc's) and its live
- * claim (api.claimedBy, null when none is live):
+ * claim (the "claims" service's claimedBy, null when none is live):
  * - "mine": this view holds it, or the doc seats this viewer and nobody's
  *   claim is live (a reload, before it claims it again);
  * - "mine-elsewhere": this viewer, from another view (a second tab);

@@ -27,7 +27,6 @@ function world({ seated, present: arrived, running = arrived }) {
     const c = { local };
     const api = {
       id: ID,
-      viewer: v,
       scene: () => ({ objects: doc.objects }),
       change(fn) {
         doc = structuredClone(doc);
@@ -35,18 +34,17 @@ function world({ seated, present: arrived, running = arrived }) {
         queueMicrotask(flush);
       },
       audience: (id) => audience(id, v),
+      settled: () => ({ ready: true, missing: [] }),
       // everyone here, each saying whether their client runs lots (the extension's presence key)
-      presence: { get: () => Object.fromEntries(present.filter((p) => p !== v).map((p) => [`s-${p}`, { viewer: p, keys: running.includes(p) ? { [ID]: { here: true } } : {} }])), set() {} },
+      channel: { viewer: v, peers: () => Object.fromEntries(present.filter((p) => p !== v).map((p) => [`s-${p}`, { viewer: p, keys: running.includes(p) ? { [ID]: { here: true } } : {} }])), set() {} },
       collect: (name) => (name === "roster" ? [{ id: "seats", value: { viewers: () => seated, who: (x) => x } }] : []),
       local: { swap: (fn) => ((c.local = fn(c.local)), queueMicrotask(flush)) },
       nameOf: (id) => (id === "cup" ? "Cup" : id),
       // the stage's time (scene/src/stage/time.js): the event loop's wall, here
-      clock: {
-        now: () => Date.now(),
-        after(ms, fn) {
-          const h = setTimeout(fn, ms);
-          return () => clearTimeout(h);
-        },
+      now: () => Date.now(),
+      after(ms, fn) {
+        const h = setTimeout(fn, ms);
+        return () => clearTimeout(h);
       },
     };
     c.api = api;

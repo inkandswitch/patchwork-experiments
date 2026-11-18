@@ -82,7 +82,7 @@ export class SessionClock {
 }
 
 /**
- * A session's clock on a scene's world time (`api.clock`: scene/STAGE.md,
+ * A session's clock on a scene's world time (the "clock" service: scene/STAGE.md,
  * "World time"; or anything with t() in seconds and running()). The shared
  * time is world time, which every view of the scene has: no wall clock to
  * agree on, and a paused world stops the machine too. Its own `until` stops

@@ -144,7 +144,7 @@ try {
     docWorld: (id, w = "a") => { const m = dbg[w].scene().world(id); return m && [m[12], m[13], m[14]].map((v) => +v.toFixed(4)); },
     heldBy: (id, w) => dbg[w].presence.heldBy(id),
     /** the doc's world time as a view has it (scene's clock.js): its t, whether it computes, what its chip says */
-    clock: (w) => dbg[w] && { t: dbg[w].clock.t(), computing: dbg[w].clock.computing(), status: dbg[w].clock.status(), doc: dbg[w].scene().d.clock ?? null },
+    clock: (w) => dbg[w] && { t: dbg[w].view.outermost().reader.use("clock").t(), computing: !!dbg[w].view.outermost().reader.use("clock").computer()?.mine, status: dbg[w].view.outermost().reader.use("clock").status(), doc: dbg[w].scene().d.clock ?? null },
     /** the other views' holds on an object as view w has them (for a report) */
     holdsOn: (id, w) => [...(dbg[w].presence.remoteHolds().get(id)?.values() ?? [])].map((h) => ({ session: h.session, since: h.since, landed: h.landed?.position?.[1] ?? null, y: h.transform?.position?.[1] ?? null, samples: h.samples?.map((x) => [Math.round(x.at), x.transform?.position?.[1]]) ?? null })),
     cam: (w) => dbg[w].viewport.getCamera(),
