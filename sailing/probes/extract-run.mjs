@@ -58,25 +58,36 @@ const J = JSON.stringify;
 // stage, the boat's), each doc by url, where the game acts, and where its cards are drawn
 const HELPERS = `window.__ex = (() => {
   const dbg = () => window.__p.A;
+  // (scene.transfer is a view plugin: its commands through its api, the doc through the focus stage's, api.focus())
   const api = () => dbg().view.plugins.record("scene.transfer").api;
+  const focus = () => api().focus();
+  // Undo and Redo, as the toolbar's (scene.undo's commands): false when there's nothing to take
+  const step = (which) => {
+    const c = dbg().view.plugins.instanceOf("scene.undo")?.commands.find((k) => k.id === which);
+    const st = c?.state(null);
+    if (!st || st.disabled) return false;
+    dbg().view.plugins.record("scene.undo").api.run({ ext: "scene.undo", command: which, target: null });
+    return true;
+  };
   const plain = (v) => JSON.parse(JSON.stringify(v));
   const docAt = (url) => window.repo.handles.get(url)?.doc() ?? null;
   const links = (d) => Object.entries(d.objects ?? {}).filter(([, o]) => o.providerId === "scene.link").map(([id, o]) => ({ id, url: o.sourceUrl }));
   const stageOf = (url) => dbg().view.stages().find((s) => s.url === url && s.acts) ?? null;
   return {
-    host: () => plain(api().doc()),
-    hostUrl: () => api().url,
+    host: () => plain(focus().doc()),
+    hostUrl: () => focus().url,
     doc: (url) => plain(docAt(url)),
     heads: (url) => window.repo.handles.get(url)?.heads() ?? null,
-    links: () => links(api().doc()),
+    links: () => links(focus().doc()),
     selected: () => dbg().local.get().selected ?? null,
-    edits: () => plain(dbg().local.get().edits),
+    // the labels of the top undo and redo steps for the focus doc (the editor's stacks, per doc url: scene/src/undo.js)
+    edits: () => { const e = dbg().local.get().edits?.[focus().url]; return { undo: e?.undo?.at(-1)?.label ?? null, redo: e?.redo?.at(-1)?.label ?? null }; },
     run: (command, target, value) => api().run({ ext: "scene.transfer", command, target, value }),
     edit: () => dbg().view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: true }),
     body: () => dbg().local.get().body?.id ?? null,
     editing: () => (dbg().local.get().hands ?? []).some((h) => h.kind === "edit"),
-    undo: () => api().undo(),
-    redo: () => api().redo(),
+    undo: () => step("undo"),
+    redo: () => step("redo"),
     // the game's stage: where it acts, what runs there
     gamePath: (url) => stageOf(url)?.path ?? null,
     gameRuns: (url, ext) => !!stageOf(url)?.debug.host.instanceOf(ext),
