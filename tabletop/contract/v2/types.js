@@ -44,7 +44,7 @@ export const TURNS = [0, 90, 180, 270];
  * @typedef {Pose | string} At   a pose, or a spot's name
  * @typedef {Condition & (
  *   { remove: { id: string } | { tag: string } | { seat: string } } |
- *   { place: Object<string, At> } |
+ *   { place: Object<string, At | { state: string, at?: At }> } |   // where, or which state it shows (and where)
  *   { seats: Object<string, At> } |
  *   { kit: Thing[] }
  * )} LayoutStep
@@ -62,6 +62,7 @@ export const TURNS = [0, 90, 180, 270];
  * @property {string} name
  * @property {Part[]} [parts]          drawn from parts, or…
  * @property {{ "@patchwork": { type: string } }} [doc]   …as a document of that type
+ * @property {State[]} [states]       other looks it can be turned to (its own is called by its name); never a card's, nor a back's
  * @property {Kind} [back]             a card: kept, drawn as this piece on the table
  * @property {boolean} [locked]
  * @property {string[]} [tags]
@@ -71,6 +72,9 @@ export const TURNS = [0, 90, 180, 270];
  * @property {{ rule: "random" | "random-replace" | "top" }} [bag]
  * @property {Object<string, object>} [traits]
  */
+
+/** Another look a piece can show: named, drawn as a piece's look is; its own snap points, else the piece's. */
+/** @typedef {{ name: string, parts?: Part[], doc?: { "@patchwork": { type: string } }, snapPoints?: { position: Vec3, rotation?: Vec3, tags?: string[] }[] }} State */
 
 /**
  * Every part may have at (its base centre), rotation (about at), color, roughness, metalness, name.
@@ -88,7 +92,7 @@ export const TURNS = [0, 90, 180, 270];
 
 /**
  * @typedef {(
- *   { piece: Kind, id?: string, name?: string, tags?: string[], at?: Pose, count?: number, grid?: { cols: number, across: Vec3, down: Vec3 }, seat?: string, contents?: Thing[] } |
+ *   { piece: Kind, id?: string, name?: string, tags?: string[], at?: Pose, state?: string, count?: number, grid?: { cols: number, across: Vec3, down: Vec3 }, seat?: string, contents?: Thing[] } |
  *   { deck: Deck, id?: string, tags?: string[], at?: Pose }
  * )} Thing
  */

@@ -65,9 +65,9 @@ might reasonably want it otherwise.
     the slab's longest side (512 px under 10 cm, 1024 under 30 cm, else
     2048), not by the game. A token's outline is `cutout`: the drawer decides
     disc, cut-out or rectangle from the image's alpha.
-11. **No `States`, scripts, PDFs or per-thing About.** A TTS object's other
-    states are left out (counted in the import's report); a PDF is a blank
-    sheet; a game has one `about` text.
+11. **No scripts, PDFs or per-thing About.** A PDF is a blank sheet; a
+    game has one `about` text. (A TTS object's other States come across as
+    its piece's `states`, choice 23.)
 12. **Positions are explicit.** A TTS save's positions become the setup as
     they are; a hand-written game may use `count` and `grid`. There is no
     "resting on the table": a thing is where its `at` says.
@@ -117,6 +117,15 @@ might reasonably want it otherwise.
     it was never dealt by code. Moving it to a start step would mean every
     Lost Cities table waits for Start to be pressed before its hands fill
     (five probes assume they're dealt at setup); the lead's call.
+23. **A piece may have other looks, its `states`** (2026-11-18), as a TTS
+    object has States (Arcs's damaged ships, a board's look for three).
+    They are public: anyone at the table may turn a piece to another state,
+    for everyone, as an ordinary write; the doc says which state each
+    thing shows, as it says which piece it is. A card has none, nor does a
+    card's back (what a card shows is its keeper's), so a state never
+    shows what's hidden. Which state a thing shows is play: a copy (a
+    forked session) shows the look it was laid out in. Two people turning
+    one piece at once: the last write wins, and both see it.
 
 ## 1. Smallest useful document
 
@@ -170,6 +179,8 @@ Piece = {
   name: string,
   parts?: Part[],             // drawn from parts…
   doc?: { "@patchwork": { type: string }, … },   // …or as a document of that type, by whatever scene:source draws it
+  states?: { name: string, parts?: Part[], doc?: {…}, snapPoints?: […] }[],
+                              // other looks it can be turned to (§4, "States"); its own is called by its `name`
   back?: kind,                // a card: two-sided, kept; on the table it is drawn as this piece
   locked?: boolean,           // fixed in place (a board): never carried
   tags?: string[],            // the tagged snap points its copies fit (a card's are its back's)
@@ -204,6 +215,13 @@ turned clockwise on its face by `turn`. **A top image reads from +Z**: its
 top edge toward −Z, its left toward −X, seen from above. A bottom image reads
 the same once the slab is turned over about its length (Z), as a card is.
 
+**States.** A piece's `states` are other looks it can show, each named, and
+drawn as the piece's own is (its `parts` or `doc`, exactly one), with its own
+snap points or else the piece's. The piece's own look is called by its
+`name`; no two of its looks share a name. A thing shows its piece's own look
+unless its `state` names another (§5), and at a table anyone can turn it to
+any of them (§7). A card, and a card's back, has none.
+
 A card's look and its back's are the same size. A piece's GLB carries its
 snap points as the scene's connectors (`extras.connectors`, each with its
 whole frame, which the scene keeps) and `extras.snapRadius`.
@@ -212,7 +230,7 @@ whole frame, which the scene keeps) and `extras.snapRadius`.
 
 ```ts
 Thing =
-  | { piece: kind, id?, name?, tags?: id[], at?: Pose, count?: int ≥ 1, grid?: { cols, across: Vec3, down: Vec3 }, seat?: seatId, contents?: Thing[] }
+  | { piece: kind, id?, name?, tags?: id[], at?: Pose, state?: name, count?: int ≥ 1, grid?: { cols, across: Vec3, down: Vec3 }, seat?: seatId, contents?: Thing[] }
   | { deck: Deck, id?, tags?: id[], at?: Pose }
 Pose = { position: Vec3, rotation?: Vec3 }
 Deck = {
@@ -232,6 +250,8 @@ Deck = {
 - A stack is made bottom up from `at`, each card its back's thickness above
   the last (its thickest back's).
 - `seat` makes the copy that seat's hand (its piece must have a `zone`).
+- `state` is the look its copies are laid out showing: its piece's own
+  (its name) or one of its `states`.
 - `contents` is what a bag holds (its piece must have `bag`): pieces and
   decks, laid out into the bag, never the scene; a bag may hold a bag.
 - `id` names a thing for a deal, and for a recipe's steps; `tags` are what
@@ -266,7 +286,7 @@ Condition = "<option>" | "<option> <op> <value>"       // op: == != < <= > >= (a
 At = Pose | spotName
 LayoutStep =
   | { remove: { id } | { tag } | { seat } }   // take things away (a seat: with its hands)
-  | { place: { [thingId]: At } }             // these things here (out of their bag, if in one)
+  | { place: { [thingId]: At | { state, at?: At } } }   // these things here (out of their bag, if in one), or showing that state
   | { seats: { [seatId]: At } }              // move seats' areas, and what's theirs (hands, camera), rigidly
   | { kit: Thing[] }                         // at each seat's area, once every other step has run
 StartStep =
@@ -284,7 +304,9 @@ StartStep =
   values alone, so nothing hidden is in it: `remove` by thing id, tag
   (every thing so tagged, contents too) or seat (and every thing placed
   for it); `place` lays a thing at a pose or a named spot, taking it out of
-  a bag if it's in one (a TTS memory bag's layout); `seats` moves a seat's
+  a bag if it's in one (a TTS memory bag's layout), or turns it to one of
+  its piece's states, where it is unless an `at` goes with it (a board's
+  look for three); `seats` moves a seat's
   area to a pose or spot, its hands and camera with it; then each `kit` is
   laid at every seat's area, in the seat's frame: its ids become
   `<id>.<seat>`, `{seat}` in a name the seat's name, and a piece with a
@@ -338,7 +360,10 @@ each code is one invalid fixture's.
 
 | code | rule |
 |---|---|
-| `look` | a piece gives exactly one of `parts` and `doc` |
+| `look` | a piece gives exactly one of `parts` and `doc`, and so does each of its states |
+| `state-name` | a piece's states are named, each name its own and none the piece's |
+| `state-card` | a card, or a card's back, has no states |
+| `unknown-state` | a thing's `state`, or a place step's, is a look of its piece (its name, or one of its states'): never a deck's |
 | `unknown-piece` | a thing, a deck's card or a card's back names a piece the game has |
 | `card-back` | a card's back is a piece that isn't a card, and not itself |
 | `zone-box` | a zone's `min` is below its `max` on every axis |

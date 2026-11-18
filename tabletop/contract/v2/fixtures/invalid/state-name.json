@@ -1,0 +1,18 @@
+{
+  "format": "tabletop-game",
+  "version": 2,
+  "title": "A state named as the piece is",
+  "about": "A pawn whose other look has the pawn's own name: turning to it can't be told from turning back.",
+  "pieces": {
+    "pawn": {
+      "name": "Pawn",
+      "parts": [{"shape":"lathe","profile":[[0,0],[0.01,0],[0.006,0.02],[0,0.03]],"color":"#3a78d8"}],
+      "states": [
+        {"name":"Pawn","parts":[{"shape":"lathe","profile":[[0,0],[0.01,0],[0.006,0.02],[0,0.03]],"color":"#d83a3a"}]}
+      ]
+    }
+  },
+  "setup": [
+    {"piece":"pawn"}
+  ]
+}

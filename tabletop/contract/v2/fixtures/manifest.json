@@ -3,14 +3,14 @@
   {
     "file": "valid/every-feature.json",
     "stage": "valid",
-    "about": "one of each thing the format says: image slabs and cells (one from the web, cached in assets; one as wide as its image), a cut-out, a model, a document piece, decks dealt and spread, loose and bagged cards, a bag of things, hands for seats, grids, traits, origin"
+    "about": "one of each thing the format says: image slabs and cells (one from the web, cached in assets; one as wide as its image), a cut-out, a model, a document piece, decks dealt and spread, loose and bagged cards, a bag of things, hands for seats, grids, traits, a piece with states laid out in one of them, origin"
   },
   {
     "file": "valid/tts-tiny-mod.json",
     "stage": "valid",
     "about": "tts-import's tiny fixture mod, as it translates it: a deck, loose cards, tiles, a token, models, a bag with things in it, a die document, a stack, a seat's hand, the table's snap points"
   },
-  {"file":"valid/recipe.json","stage":"valid","about":"a recipe: how many play and whether the extras are out (options), a seat taken away and one moved to a spot, things taken away by tag, a thing taken out of its bag, a kit for each seat; and its start: a shuffle, deals into the hands, a draw onto a market, who goes first"},
+  {"file":"valid/recipe.json","stage":"valid","about":"a recipe: how many play and whether the extras are out (options), a seat taken away and one moved to a spot, things taken away by tag, a thing taken out of its bag, a board turned to its state for three, a kit for each seat; and its start: a shuffle, deals into the hands, a draw onto a market, who goes first"},
   {"file":"invalid/wrong-format.json","stage":"structural","code":"schema","about":"format must be tabletop-game"},
   {"file":"invalid/unsupported-version.json","stage":"structural","code":"schema","about":"only version 2"},
   {"file":"invalid/missing-setup.json","stage":"structural","code":"schema","about":"setup is required"},
@@ -34,6 +34,10 @@
   {"file":"invalid/cutout-image.json","stage":"semantic","code":"cutout","about":"a cut-out slab is cut by its top image"},
   {"file":"invalid/aspect-image.json","stage":"semantic","code":"aspect","about":"a slab as wide as its image says has a top image"},
   {"file":"invalid/lathe-radius.json","stage":"semantic","code":"lathe-profile","about":"a lathe's radii are ≥ 0"},
+  {"file":"invalid/state-name.json","stage":"semantic","code":"state-name","about":"a piece's looks have names of their own: its own is its name"},
+  {"file":"invalid/state-card.json","stage":"semantic","code":"state-card","about":"a card has no states: what it shows is its keeper's"},
+  {"file":"invalid/unknown-state.json","stage":"semantic","code":"unknown-state","about":"a thing shows a state its piece has"},
+  {"file":"invalid/place-state.json","stage":"semantic","code":"unknown-state","about":"a recipe turns a thing to a state its piece has"},
   {"file":"invalid/bag-card.json","stage":"semantic","code":"bag-card","about":"a card isn't a bag"},
   {"file":"invalid/duplicate-id.json","stage":"semantic","code":"duplicate-id","about":"thing ids are unique"},
   {"file":"invalid/unknown-seat.json","stage":"semantic","code":"unknown-seat","about":"a hand's seat is one the game has"},

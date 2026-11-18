@@ -180,6 +180,27 @@
         },
         {"shape":"lathe","profile":[[0,0],[0.012,0],[0.012,0.004],[0,0.004]],"color":"#2b2b2b"}
       ]
+    },
+    "ship": {
+      "name": "Ship",
+      "parts": [
+        {"shape":"frustum","bottom":[0.02,0.012],"top":[0.012,0.006],"height":0.008,"color":"#d8a020"}
+      ],
+      "states": [
+        {
+          "name": "Ship (damaged)",
+          "parts": [
+            {"shape":"frustum","bottom":[0.02,0.012],"top":[0.012,0.006],"height":0.004,"rotation":[0,0,0.2],"color":"#8a6a20"}
+          ]
+        },
+        {
+          "name": "Ship (docked)",
+          "parts": [
+            {"shape":"box","size":[0.02,0.004,0.012],"color":"#d8a020"}
+          ],
+          "snapPoints": [{"position":[0,0.004,0],"tags":["cargo"]}]
+        }
+      ]
     }
   },
   "setup": [
@@ -259,6 +280,13 @@
           "deck": {"name":"Bagged","cards":["c2","c3"]}
         }
       ]
+    },
+    {
+      "piece": "ship",
+      "count": 2,
+      "state": "Ship (damaged)",
+      "at": {"position":[0.15,0,-0.1]},
+      "grid": {"cols":2,"across":[0.03,0,0],"down":[0,0,0]}
     }
   ],
   "seats": {

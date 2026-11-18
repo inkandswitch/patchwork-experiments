@@ -543,6 +543,13 @@
             }
           }
         },
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/state"
+          }
+        },
         "back": {
           "$ref": "#/$defs/id"
         },
@@ -598,6 +605,52 @@
           "type": "object",
           "additionalProperties": {
             "type": "object"
+          }
+        }
+      }
+    },
+    "state": {
+      "description": "Another look a piece can show (GAME-FORMAT.md §4): its name, and parts or a document, as a piece's look; its own snap points, else the piece's",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/part"
+          }
+        },
+        "doc": {
+          "type": "object",
+          "required": [
+            "@patchwork"
+          ],
+          "properties": {
+            "@patchwork": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "snapPoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/snapPoint"
           }
         }
       }
@@ -713,6 +766,10 @@
             "at": {
               "$ref": "#/$defs/pose"
             },
+            "state": {
+              "type": "string",
+              "minLength": 1
+            },
             "count": {
               "type": "integer",
               "minimum": 1
@@ -775,6 +832,30 @@
         {
           "type": "string",
           "minLength": 1
+        }
+      ]
+    },
+    "placing": {
+      "description": "Where a place step lays a thing: a pose or a spot; or a state it is to show, and where, if it moves (GAME-FORMAT.md §6)",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/at"
+        },
+        {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "$ref": "#/$defs/at"
+            }
+          }
         }
       ]
     },
@@ -968,7 +1049,7 @@
                 "$ref": "#/$defs/id"
               },
               "additionalProperties": {
-                "$ref": "#/$defs/at"
+                "$ref": "#/$defs/placing"
               }
             },
             "when": {

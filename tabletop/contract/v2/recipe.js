@@ -11,7 +11,7 @@
 // never more: anything a game needs past that is a scripted step, later.
 //
 //   optionValues(game, given)  → every option's value (its default where not given), or null if one is no value of it
-//   applyRecipe(game, given)   → the game laid out as those values say (layout run, kits laid, its start steps
+//   applyRecipe(game, given)   → the game laid out as those values say (layout run, kits laid, states chosen, its start steps
 //                                that apply), with no options or layout of its own: a game like any other
 //   combinations(game)         → every set of values its options can take (the validator checks each)
 //   describeOptions(game, v)   → "3 players, Pre-made Rangers": a session's name
@@ -272,14 +272,23 @@ export function applyRecipe(game, given = {}) {
       else if (r.tag != null) removeWhere(setup, (t) => Array.isArray(t?.tags) && t.tags.includes(r.tag));
     } else if (step.place) {
       // one walk, whatever the step names: each thing there is laid where it says, where it was in the setup's
-      // order, or out of its bag onto the table (after the rest, in the step's order)
-      const to = new Map(Object.entries(step.place).map(([id, at]) => [id, placeOf(at, recipe.spots)]).filter(([, p]) => p));
+      // order, or out of its bag onto the table (after the rest, in the step's order); one given a state shows it
+      // (and stays where it is, unless it's given somewhere too)
+      const to = new Map();
+      for (const [id, v] of Object.entries(step.place)) {
+        const turned = !!v && typeof v === "object" && "state" in v;
+        const at = turned ? (v.at == null ? null : placeOf(v.at, recipe.spots)) : placeOf(v, recipe.spots);
+        if (at || turned) to.set(id, { at, state: turned ? v.state : null });
+      }
       const hits = [];
       for (const list of lists(setup)) list.forEach((t, i) => to.has(t?.id) && hits.push([list, i, t]));
       const out = new Map();
       // (each list's last first, so a splice leaves the indices before it as they were)
       for (const [list, i, t] of hits.reverse()) {
-        t.at = to.get(t.id);
+        const { at, state } = to.get(t.id);
+        if (state != null) t.state = state;
+        if (!at) continue;
+        t.at = at;
         if (list !== setup) out.set(t.id, list.splice(i, 1)[0]);
       }
       for (const id of to.keys()) if (out.has(id)) setup.push(out.get(id));
