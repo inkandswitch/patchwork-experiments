@@ -26,7 +26,7 @@ pnpm bench [cards] [players]     # what a joint shuffle costs on this machine
 | type | id | for |
 |---|---|---|
 | `patchwork:datatype` / `tool` | `tabletop-game` | a game, and its page: about, pieces, Set up a table, its tables, the game as JSON (checked before it's kept) |
-| `tabletop:game` | `santorini`, `lost-cities`, `draw-dominoes-2`, `-3`, `-4`, `liars-dice` | the games, as data (`games/*.json`): each loads to the game itself |
+| `tabletop:game` | `santorini`, `lost-cities`, `draw-dominoes` (a variant for 2, 3 and 4 players), `liars-dice` | the games, as data (`games/*.json`): each loads to the game itself |
 | `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes` (param `players`), `dice.liars-dice` | an empty scene's start screen: the game's table laid out in that scene, with its own art |
 | `scene:part` | `tabletop.pawn`, `.token`, `.card-spot`, `.table`, `.lost-cities`, `.santorini`, `.dominoes-2`/`-3`/`-4` | the parts bin, under "Tabletop"; a game part makes a game doc of its own and links it where it's put (a Card table aboard a ship) |
 | `scene:extension` | `tabletop` | hands, cards, Shuffle, Draw, Wash, Stand on edge, Lay my hand face up, and who may see what (the stage's `audience`) |
@@ -51,8 +51,8 @@ A game is registered as a `tabletop:game` plugin, from here or any other
 package: `{ id, name, icon, players, blurb, load() }`, `load` resolving to
 the game. The game page lists every registered game; starting from one
 copies it into the doc. A template for it is `template(id)`
-(`src/table/template.js`; or `template(params => id)`), a part `gamePart(id)`
-(`src/table/parts.js`). Or paste a game into a game page's definition: it is
+(`src/table/template.js`; or `template(params => ({ id, variant }))`), a
+part `gamePart(id, variant?)` (`src/table/parts.js`). Or paste a game into a game page's definition: it is
 checked against the format (`contract/v2/validate.js`) before it's kept.
 
 The doc: the game at its top level (its `assets` too: each web asset it

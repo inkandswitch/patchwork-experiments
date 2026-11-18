@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { validate, everyThing } from "../contract/v2/validate.js";
+import { applyVariant, validate, everyThing } from "../contract/v2/validate.js";
 import schema from "../contract/v2/schema.json" with { type: "json" };
 import manifest from "../contract/v2/fixtures/manifest.json" with { type: "json" };
 import { kindsUsed, tableLayout, writeTable, LOOSE } from "./setup.js";
@@ -58,8 +58,49 @@ describe("the validator", () => {
 
 describe("the games this package ships", () => {
   const files = readdirSync(here("../games")).filter((n) => n.endsWith(".json"));
-  it("are six JSON files", () => expect(files.sort()).toEqual(["draw-dominoes-2.json", "draw-dominoes-3.json", "draw-dominoes-4.json", "liars-dice.json", "lost-cities.json", "santorini.json"]));
+  it("are four JSON files", () => expect(files.sort()).toEqual(["draw-dominoes.json", "liars-dice.json", "lost-cities.json", "santorini.json"]));
   for (const n of files) it(`${n} is a valid tabletop-game`, () => expect(validate(read(`../games/${n}`))).toEqual({ ok: true, stage: null, errors: [] }));
+});
+
+describe("variants (GAME-FORMAT.md §3)", () => {
+  const g = read("../contract/v2/fixtures/valid/variants.json");
+
+  it("a variant is the game with its fields in place of the game's own, and no variants; by index or name", () => {
+    const { variants, ...base } = g;
+    expect(applyVariant(g)).toEqual(base);
+    expect(applyVariant(g, 0)).toEqual({ ...base, players: "2" });
+    expect(applyVariant(g, "3 players")).toEqual({ ...base, players: "3", setup: variants[1].setup, seats: variants[1].seats, camera: variants[1].camera });
+    expect(applyVariant(g, "5 players")).toBe(null);
+    expect(applyVariant(g, 2)).toBe(null);
+    expect(g.variants).toBe(variants); // the game is left as it was
+  });
+
+  it("an error in a field the variant gives is at the variant's path; the game's own errors are said once", () => {
+    const bad = read("../contract/v2/fixtures/invalid/variant-seat.json");
+    expect(validate(bad).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.variants[1].setup[3].seat"]]);
+    // a game's own error, which every variant that keeps its setup would repeat
+    const broken = structuredClone(g);
+    broken.setup[1].seat = "z";
+    expect(validate(broken).errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[1].seat"]]);
+    // one the variant's seats cause in the game's setup: the game's path, naming the variant
+    const seats = structuredClone(g);
+    seats.variants[0].seats = { a: { name: "A" } };
+    const errors = validate(seats).errors;
+    expect(errors.map((e) => [e.code, e.path])).toEqual([["unknown-seat", "$.setup[2].seat"]]);
+    expect(errors[0].message).toMatch(/as variant "2 players" sets it up/);
+  });
+
+  it("Draw Dominoes is one game, a variant for each count, each the table it was as a game of its own", () => {
+    const d = read("../games/draw-dominoes.json");
+    expect(d.variants.map((v) => v.name)).toEqual(["2 players", "3 players", "4 players"]);
+    for (const n of [2, 3, 4]) {
+      const v = applyVariant(d, `${n} players`);
+      expect(v.players).toBe(String(n));
+      expect(Object.keys(v.seats)).toHaveLength(n);
+      expect(v.setup.filter((t) => t.seat)).toHaveLength(n);
+      expect(validate(v).ok).toBe(true);
+    }
+  });
 });
 
 describe("a game with one of everything, laid out", () => {

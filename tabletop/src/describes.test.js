@@ -68,10 +68,10 @@ describe("tabletop: templates", () => {
     }
   });
 
-  it("only Draw Dominoes takes params: how many play, 2, 3 or 4 (2 untouched), each a registered game's count", () => {
-    const games = new Set(plugins.filter((p) => p.type === "tabletop:game").map((g) => g.id));
+  it("only Draw Dominoes takes params: how many play, 2, 3 or 4 (2 untouched), each a variant of the registered game", async () => {
     expect(templates.map((t) => t.params ?? null)).toEqual([null, null, [{ key: "players", label: "Players", kind: "enum", options: [2, 3, 4].map((n) => ({ value: n, label: String(n) })), default: 2 }]]);
-    for (const { value } of templates[2].params[0].options) expect(games.has(`draw-dominoes-${value}`)).toBe(true);
+    const game = await plugins.find((p) => p.type === "tabletop:game" && p.id === "draw-dominoes").load();
+    for (const { value } of templates[2].params[0].options) expect(game.variants.map((v) => v.name)).toContain(`${value} players`);
   });
 
 });

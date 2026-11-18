@@ -60,7 +60,7 @@ const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? pro
 const PLAYERS = Number(arg("--players") ?? 2);
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-dominoes"));
 /** A rack's places, in its own frame (the game, as data). */
-const PLACES = JSON.parse(readFileSync(join(PKG, "games/draw-dominoes-2.json"), "utf8")).pieces.rack.snapPoints;
+const PLACES = JSON.parse(readFileSync(join(PKG, "games/draw-dominoes.json"), "utf8")).pieces.rack.snapPoints;
 
 const b = await browser({ root: ROOT, port: 4877, cdp: 9877, page: "/tabletop/probes/dominoes-probe.html", width: 1536, height: 610, show: process.argv.includes("--show"), timeout: 420_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);

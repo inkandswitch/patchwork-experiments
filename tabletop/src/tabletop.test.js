@@ -491,6 +491,16 @@ describe("drawn on demand", () => {
     expect(new Set(cards.map((k) => lcOf.get(k))).size).toBe(1);
   });
 
+  it("a card's group is never smaller than any of the game's variants makes it", () => {
+    const g = cardGame();
+    const alone = groupsOf(g).get("c1");
+    expect(alone).toEqual(["c1"]);
+    // a variant that decks c1 with a1: the group a face is drawn with is the same whichever way the table was set up
+    g.variants = [{ name: "joined", setup: [{ deck: { name: "All", cards: ["a1", "c1"] } }] }];
+    expect(groupsOf(g).get("c1")).toEqual(groupsOf(g).get("a1"));
+    expect(groupsOf(g).get("c1")).toContain("a2");
+  });
+
   it("setting up draws what a table lays out; a face is drawn the first time it's shown, with its group, and kept for everyone", async () => {
     const repo = fakeRepo();
     const game = await newCardGame(repo);

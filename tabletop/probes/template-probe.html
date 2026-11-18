@@ -30,17 +30,16 @@ import { emptyScene } from "../src/empty-scene.js";
 import { PICKER, SEAT_TAG, cardIds, deckUrlOf, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
 import santorini from "../games/santorini.json" with { type: "json" };
-import dominoes2 from "../games/draw-dominoes-2.json" with { type: "json" };
-import dominoes3 from "../games/draw-dominoes-3.json" with { type: "json" };
-import dominoes4 from "../games/draw-dominoes-4.json" with { type: "json" };
+import dominoes from "../games/draw-dominoes.json" with { type: "json" };
+import { applyVariant } from "../contract/v2/validate.js";
 import { kindsUsed } from "../src/setup.js";
 import { lookFileKey } from "../src/table/files.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
 
 // each template's game, as data (its files are keyed by their looks: src/table/files.js)
-// (Draw Dominoes is one template; how many play picks the game: tabletop's index.js)
-const GAMES = { "lost-cities": () => lostCities, santorini: () => santorini, dominoes: ({ players }) => ({ 2: dominoes2, 3: dominoes3, 4: dominoes4 })[players] };
+// (Draw Dominoes is one template; how many play picks the game's variant: tabletop's index.js)
+const GAMES = { "lost-cities": () => lostCities, santorini: () => santorini, dominoes: ({ players }) => applyVariant(dominoes, `${players} players`) };
 const query = new URLSearchParams(location.search);
 const gameId = query.get("game") || "lost-cities";
 const params = JSON.parse(query.get("params") || "{}");

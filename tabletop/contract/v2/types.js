@@ -29,6 +29,12 @@ export const TURNS = [0, 90, 180, 270];
  * @property {Camera} [camera]
  * @property {object} [origin]         where it came from (free form)
  * @property {Object<string, { file: string }>} [assets]   a web asset (keyed by its http(s) URL) → the file doc it's cached in
+ * @property {Variant[]} [variants]    ways to set it up (how many play), the first the usual one
+ */
+
+/**
+ * The game set up another way: these fields in place of its own (validate.js applyVariant).
+ * @typedef {{ name: string, players?: string, setup?: Thing[], seats?: Object<string, Seat>, camera?: Camera }} Variant
  */
 
 /** @typedef {{ position: Vec3, target: Vec3 }} Camera */

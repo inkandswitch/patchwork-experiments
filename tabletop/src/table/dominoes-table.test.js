@@ -1,5 +1,5 @@
 // A Draw Dominoes table in play (extension.js with the game's own pieces,
-// games/draw-dominoes-2.json): drawing into a rack where the tile stands facing its
+// games/draw-dominoes.json, for 2): drawing into a rack where the tile stands facing its
 // player, washing the boneyard, standing and laying tiles, laying a hand face
 // up, and who may see what at each step (visibility.js). Seats and the keeper
 // are stand-ins (test/stand-ins.js), met only through the conventions.
@@ -15,7 +15,7 @@ import { composeMatrix } from "./frame.js";
 import { game as builtIn } from "../test/games.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
-// the game, as data (games/draw-dominoes-2.json), and what these tests need of it
+// the game, as data (games/draw-dominoes.json, its 2-player variant), and what these tests need of it
 const game = builtIn("draw-dominoes-2");
 const body = game.pieces.back.parts.find((p) => p.shape === "box" && p.name === "tile");
 /** A tile's size (m): across, along, thick; and the top of everything on it, face or back. */

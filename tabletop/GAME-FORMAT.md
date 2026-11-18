@@ -90,6 +90,12 @@ might reasonably want it otherwise.
     drawn without it. v2 for this: a v1 reader can't fetch.
 17. **A slab can be as wide as its picture** (`aspect: "image"`), as a TTS
     tile or token is: the importer reads no image, so it can't say how wide.
+18. **A game's ways of being set up are its variants** (2026-11-18, for the
+    launcher's options): one axis, a list of names, each giving its own
+    `players`, `setup`, `seats` and `camera`, never pieces, so every variant
+    draws from one set of pieces and one `assets` cache. Draw Dominoes is one
+    game with a variant for 2, 3 and 4 players. Options that combine (players
+    × expansion) would each need a variant of their own.
 
 ## 1. Smallest useful document
 
@@ -134,6 +140,18 @@ non-uniform size is baked into its piece's parts.
 | `camera` | `{ position, target }`? | a fresh table's view |
 | `origin` | object? | where it came from (free form; the TTS importer writes `{ tts: { saveName, fileName, workshopId } }`). A table set up from the game carries it |
 | `assets` | `{ [webUrl]: { file } }`? | where a web asset is cached: the file doc (`automerge:`) holding what its `http(s)` URL gave. Written by whoever first draws from it (§10), or the importer for what came with a mod |
+| `variants` | `Variant[]`? | other ways to set it up (how many play), the first the usual one |
+
+```ts
+Variant = { name: string, players?: string, setup?: Thing[], seats?: { [seatId]: Seat }, camera?: Camera }
+```
+
+A table is set up from the game as one variant has it: the variant's
+fields in place of the game's own, `variants` gone (`validate.js`
+`applyVariant(game, nameOrIndex)`). The game without a variant chosen is
+its own fields as they are; a game with variants is valid as itself too.
+A variant gives no pieces: a card's face is drawn with every card it may
+share a container with in any variant's setup (§10).
 
 ## 4. Pieces and looks
 
@@ -265,6 +283,12 @@ each code is one invalid fixture's.
 | `deal-count` | a deck deals no more cards than it has |
 | `deal-spread` | a spread deck deals nothing |
 | `camera` | a camera's position and target differ |
+| `variant-name` | each variant's name is its own |
+
+Each variant is checked too: the game as it sets it up passes every rule
+above. An error in a field the variant gives is at its path
+(`$.variants[1].setup[3].seat`); one the game has itself is said once, as
+the game's.
 
 ## 10. A tabletop-game doc
 

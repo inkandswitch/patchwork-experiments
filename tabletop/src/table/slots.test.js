@@ -68,11 +68,12 @@ const POSES = {
   "turned round, twice the size": composeMatrix({ position: [-1, 0, 2], rotation: [0, Math.PI, 0], scale: 2 }),
 };
 const RADIUS = 0.03; // a piece that gives none (Lost Cities' hand): the stage would work one out; the same for both
-const pieces = Object.entries(GAMES).flatMap(([g, game]) => Object.entries(game.pieces ?? {}).filter(([, p]) => p.snapPoints?.length).map(([k, p]) => [`${g}: ${k}`, p]));
+// (the games, not Draw Dominoes again as each of its variants: they share its pieces)
+const pieces = Object.entries(GAMES).filter(([g]) => !/-\d$/.test(g)).flatMap(([g, game]) => Object.entries(game.pieces ?? {}).filter(([, p]) => p.snapPoints?.length).map(([k, p]) => [`${g}: ${k}`, p]));
 
 describe("a piece's places, from the scene's connectors alone", () => {
-  it("covers every built-in game's pieces with places: Lost Cities' board and hand, Santorini's board, each Draw Dominoes rack", () => {
-    expect(pieces.map(([name]) => name).sort()).toEqual(["draw-dominoes-2: rack", "draw-dominoes-3: rack", "draw-dominoes-4: rack", "lost-cities: board", "lost-cities: hand", "santorini: board"]);
+  it("covers every built-in game's pieces with places: Lost Cities' board and hand, Santorini's board, Draw Dominoes' rack", () => {
+    expect(pieces.map(([name]) => name).sort()).toEqual(["draw-dominoes: rack", "lost-cities: board", "lost-cities: hand", "santorini: board"]);
   });
 
   // the same places, reached the same way, each in the same frame on its object (as a matrix: the stage may write
