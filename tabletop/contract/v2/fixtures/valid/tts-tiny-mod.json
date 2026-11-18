@@ -297,7 +297,7 @@
     }
   ],
   "seats": {
-    "white": {"name":"White","camera":{"position":[0.023174,0.7112,0.455428],"target":[-0.054072,0,-0.046665]}}
+    "white": {"name":"White","camera":{"position":[0.054072,0.6604,0.656265],"target":[-0.038623,0,0.053754]}}
   },
   "camera": {"position":[-0.0508,0.44704,0.381],"target":[-0.0508,0,-0.0254]},
   "recipe": {

@@ -527,8 +527,11 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
       snapRadius: r6(pitch / 2),
     });
     setup.push({ id: `hand-${sid}`, piece: hand, name: `${node.handColor}'s hand`, seat: sid, at: pose({ position: [p[0], 0, p[2]], rotation: [0, yaw, 0] }) });
-    const eye = [p[0] + (out[0] / len) * 6 * u, 28 * u, p[2] + (out[1] / len) * 6 * u];
-    const target = [p[0] - (out[0] / len) * 14 * u, 0, p[2] - (out[1] / len) * 14 * u];
+    // the seat's view: from behind and above its hand, down over it to the table beyond, so the
+    // hand lies whole in the lower part of the picture (the stage's 45° field of view) and the
+    // table's middle above it
+    const eye = [p[0] + (out[0] / len) * 14 * u, 26 * u, p[2] + (out[1] / len) * 14 * u];
+    const target = [p[0] - (out[0] / len) * 10 * u, 0, p[2] - (out[1] / len) * 10 * u];
     seats[sid] = { name: node.handColor, camera: { position: v3(eye), target: v3(target) } };
     counts.seats++;
   }
