@@ -778,3 +778,8 @@ four.
 ### 2026-11-17 — "Fitting out" retired
 
 The lead found it uninteresting; its hatch was linked twice, which mirrors' removal left as a placeholder.
+
+### 2026-11-17 — Republished after the kernel
+
+Synced scene (at the clock fix), tabletop, seats, walk, sailing, water, weather, terrain, machine, arena, joints, doom and traversal; each published tree matches the checkout.
+The Scene examples folder links 21 republished examples (each checked in real Patchwork by probes/real-check.mjs; swapped by probes/folder-swap.mjs in one change), the Harbour's second boat is Ship at anchor, and Fitting out is gone.
