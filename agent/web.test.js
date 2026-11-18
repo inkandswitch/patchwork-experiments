@@ -183,6 +183,17 @@ describe("web_search", () => {
 
 
 describe("direct mode (outside a browser)", () => {
+  it("points to web_capture for keeping the page as it looks — only where web_capture is here", async () => {
+    const page = async () => respond("<html><head><title>Hi</title></head><body><p>Hello</p></body></html>", { type: "text/html" })
+    const hint = /web_capture \{ url: "https:\/\/example\.com" \}/
+    const withIt = await webFetch.execute({ url: "https://example.com" }, { fetchImpl: page, direct: true, repo: fakeRepo(), hasTool: (id) => id === "web_capture" })
+    expect(withIt.text).toMatch(hint)
+    for (const ctx of [{ hasTool: () => false }, {}]) {
+      const without = await webFetch.execute({ url: "https://example.com" }, { fetchImpl: page, direct: true, repo: fakeRepo(), ...ctx })
+      expect(without.text).not.toMatch(/web_capture/)
+    }
+  })
+
   it("keeps the page itself, with its text beside it, instead of going through a reader", async () => {
     const seen = []
     const fetchImpl = async (url) => {
@@ -200,6 +211,7 @@ describe("direct mode (outside a browser)", () => {
       `Kept 'Hi.html' — the response itself (text/html, 5 chars of text) — ${out.doc.url}`,
       "Hello",
       `— all 5 characters shown. Search it later: source_read {source:"${out.doc.url}", find:"…"}.`,
+      `Cite what it says as [label](${out.doc.url} "the exact words").`,
     ])
     expect(out.text).not.toContain("bad()")
   })

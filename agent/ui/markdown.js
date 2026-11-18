@@ -61,7 +61,9 @@ const INLINE = [
   // contain them — `…/wiki/Foo_(bar)` is the common case, and stopping at the
   // first `)` both breaks the link and leaves a stray bracket in the prose.
   { name: "image", pattern: /!\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"]*")?\)/ },
-  { name: "link", pattern: /\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"]*")?\)/ },
+  { name: "link", pattern: /\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)(?:\s+"([^"]*)")?\)/ },
+  // The agent's word that a fact has no document behind it (see citations.js).
+  { name: "memory", pattern: /\(from memory\)/i },
   { name: "bold", pattern: /\*\*([^*]+)\*\*|__([^_]+)__/ },
   { name: "italic", pattern: /(?<![*\w])\*([^*\n]+)\*(?!\*)|(?<![_\w])_([^_\n]+)_(?![\w_])/ },
   { name: "strike", pattern: /~~([^~]+)~~/ },
@@ -105,13 +107,17 @@ export function renderInline(parent, text) {
       }
     } else if (name === "link") {
       const href = safeHref(match[2])
-      if (href) {
+      if (href && match[3] && /^automerge:/i.test(href)) {
+        parent.append(citation(href, match[1] || "source", match[3]))
+      } else if (href) {
         parent.append(anchor(href, match[1] || match[2]))
       } else {
         // Keep the words, drop the destination: a reader should still see what
         // was written, without a link they cannot trust.
         parent.append(document.createTextNode(match[1] || match[0]))
       }
+    } else if (name === "memory") {
+      parent.append(el("span", "agent-from-memory", "from memory"))
     } else if (name === "bold") {
       renderInline(parent.appendChild(el("strong")), content)
     } else if (name === "italic") {
@@ -144,6 +150,18 @@ function anchor(href, label) {
     link.target = "_blank"
     link.rel = "noopener noreferrer"
   }
+  return link
+}
+
+/**
+ * A citation: a link to a document carrying the passage it rests on. The
+ * view checks the passage is really there (citations.js) and marks it.
+ */
+function citation(href, label, quote) {
+  const link = anchor(href, label)
+  link.classList.add("agent-cite")
+  link.dataset.quote = quote
+  link.title = `“${quote}”`
   return link
 }
 

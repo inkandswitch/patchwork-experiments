@@ -22,6 +22,7 @@
 import { splice, updateText } from "@automerge/automerge"
 import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
 import { documentIdOf, cleanTitle } from "../session.js"
+import { citationsIn, checkCitation } from "../citations.js"
 
 const MODES = ["append", "replace"]
 
@@ -50,12 +51,38 @@ function citations(cites, members) {
   return out
 }
 
+/**
+ * Check the citations written into a finding: each must name a source of this
+ * workflow and quote words that are in it. Returns their URLs, to add to
+ * `cites`; throws, naming every one that fails, when any does.
+ */
+async function checkedCitations(text, members, repo) {
+  const failures = []
+  const urls = []
+  for (const cite of citationsIn(text)) {
+    const id = documentIdOf(cite.url)
+    if (!id || !members.has(id)) {
+      failures.push(`[${cite.label}](${cite.url}) is not one of this workflow's sources`)
+      continue
+    }
+    const result = await checkCitation(cite, async (url) => (await repo.find(url))?.doc?.() ?? null)
+    if (result.status === "found") urls.push(stringifyAutomergeUrl({ documentId: id }))
+    else if (result.status === "short") failures.push(`"${cite.quote}" is too short to find a place by: quote more of the passage`)
+    else if (result.status === "missing") failures.push(`"${cite.quote}" is not in ${cite.url}${result.part && result.part !== cite.quote.toLowerCase() ? ` (no "${result.part}")` : ""}: quote its words exactly — source_read with find to get them`)
+    else failures.push(`${cite.url} could not be read to check "${cite.quote}"`)
+  }
+  if (failures.length) throw new Error(`Not written: a finding's citations must quote their sources.\n- ${failures.join("\n- ")}`)
+  return urls
+}
+
 export const findingWrite = {
   id: "finding_write",
   name: "Write down a finding",
   target: "none",
   description: [
     "Write down something you have learned, as you go, so it is kept: a short markdown note of what you found and why you believe it, citing the kept sources it rests on. You, the other research steps of this workflow and the person can read it later (source_read, source_list), and it survives when older results in this conversation are shortened.",
+    "",
+    "Cite as you would in an answer: a link to the kept source whose title is the passage, word for word — [datasheet](automerge:… \"Rated capacity: 280Ah\"). Every quote is checked against its source, and a finding with one that is not there is refused, saying which.",
     "",
     "Without `finding` it writes a new one. With `finding` it adds to one already written (or, with mode 'replace', rewrites it). A finding someone else has edited since cannot be written over: write a new one.",
   ].join("\n"),
@@ -67,7 +94,7 @@ export const findingWrite = {
     type: "object",
     required: ["text"],
     properties: {
-      text: { type: "string", description: "The finding, in markdown: what you learned, and why you believe it." },
+      text: { type: "string", description: "The finding, in markdown: what you learned, citing where you read it as [label](automerge:… \"exact words\")." },
       title: { type: "string", description: "What it is about, in a few words. Defaults to the text's first line; with `finding`, renames it." },
       finding: { type: "string", description: "The automerge: URL of a finding already written, to add to or rewrite. Omit to write a new one." },
       mode: { type: "string", enum: MODES, description: "With `finding`: 'append' (the default) adds the text at the end; 'replace' rewrites the finding." },
@@ -87,7 +114,9 @@ export const findingWrite = {
     if (!text.trim()) throw new Error("Pass the finding's `text`.")
     const mode = input.mode == null ? "append" : String(input.mode)
     if (!MODES.includes(mode)) throw new Error(`'mode' must be one of ${MODES.join(", ")}.`)
-    const cites = citations(input.cites, new Set(ctx.repo.sources().map((entry) => entry.id)))
+    const members = new Set(ctx.repo.sources().map((entry) => entry.id))
+    const cites = citations(input.cites, members)
+    for (const url of await checkedCitations(text, members, ctx.repo)) if (!cites.includes(url)) cites.push(url)
 
     if (input.finding == null || input.finding === "") {
       const title = titleOf(input, text)

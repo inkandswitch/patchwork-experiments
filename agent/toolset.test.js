@@ -242,8 +242,9 @@ describe("the plugins a research step admits", () => {
     const offered = provider.requests[0].tools.map((t) => t.id ?? t.name)
     expect(offered.filter((id) => !SCOPED_TOOL_IDS.includes(id))).toEqual(["declared_tool"])
     // It ran with what every research tool runs with: the confined context
-    // (CONFINED) and the transcript reader the loop adds to every call.
-    expect(seen.map((s) => [s.id, s.keys])).toEqual([["declared_tool", [...CONFINED, "recall"].sort()]])
+    // (CONFINED), and what the loop adds to every call — the transcript
+    // reader, and which tool ids the session has (nothing of the person's).
+    expect(seen.map((s) => [s.id, s.keys])).toEqual([["declared_tool", [...CONFINED, "hasTool", "recall"].sort()]])
     expect(seen[0].ctx.fetchImpl).toBe(fetchImpl)
     expect(seen[0].ctx.repo).not.toBe(sessionRepo)
     expect(Object.keys(seen[0].ctx.repo).sort()).toEqual(["create2", "find", "sources"])

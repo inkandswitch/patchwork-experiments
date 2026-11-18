@@ -218,13 +218,17 @@ describe("the footer that points at the kept source", () => {
       [
         '— 6000 of 41893 shown. Read on: source_read {source:"automerge:abc", offset:6000}; search: source_read {source:"automerge:abc", find:"…"}.',
         "Outline: 0 # Title",
+        'Cite what it says as [label](automerge:abc "the exact words").',
       ].join("\n")
     )
   })
 
   it("says when everything was shown", () => {
     expect(sourceFooter({ url: "automerge:abc", chars: 900 }, 900)).toBe(
-      '— all 900 characters shown. Search it later: source_read {source:"automerge:abc", find:"…"}.'
+      [
+        '— all 900 characters shown. Search it later: source_read {source:"automerge:abc", find:"…"}.',
+        'Cite what it says as [label](automerge:abc "the exact words").',
+      ].join("\n")
     )
   })
 })

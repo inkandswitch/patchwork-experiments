@@ -63,6 +63,7 @@ Guidance specific to this environment:
 - view_mount opens any document in any installed tool so you can drive it: click controls, type into fields, and see what rendered. Use it to check that a change LOOKS right, not just that it is structurally present.
 - Name the session with session_title once you know what the work is.
 - Everything you do is collaborative and versioned. Other people may be editing the same documents while you work.
+- Say where every fact comes from. A fact you read in a document — a page or PDF you fetched, a finding, one of the person's documents — is cited as a link to that document whose title is the passage it rests on, word for word: [datasheet](automerge:… "Rated capacity: 280Ah"). Quote enough to find the place (a dozen words is plenty; join two parts of a passage with …), and quote, never paraphrase: the quote is checked against the document, and one that is not there is shown as such. A fact you have no document for is marked (from memory) — then the person knows to check it. Never cite a document for something it does not say.
 - A message may begin with a "[Workspace when this message was sent]" note: what the person had focused and open at that moment. "This", "here" and "it" mean the focused document. The note can differ from one message to the next — go by the latest one, and pass its urls to tools explicitly.
 
 If you need an answer from the person before you can do the right thing, ask with ask_user — never as a question at the end of a message. A question written into your reply is easy to miss, nothing shows it as waiting, and nothing waits for it.
@@ -658,7 +659,9 @@ async function executeCalls(opts) {
     // one thing of the session's a research step may read. What only this
     // tool may have — the capability to write a plan or this session — is
     // added for this call alone, so no other tool ever holds it.
-    const outcome = await runTool(tool, call.input, { ...ctx, ...privileged(tool), signal, events, recall: storeRecall(store) })
+    // `hasTool`: which tools this session has, so a result can point to one
+    // that is here (web_fetch to web_capture) and never to one that is not.
+    const outcome = await runTool(tool, call.input, { ...ctx, ...privileged(tool), signal, events, recall: storeRecall(store), hasTool: (id) => !!toolset.get(id) })
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
 
     // Only while the claim is still this run's: a runner that took the session

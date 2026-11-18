@@ -284,6 +284,24 @@ PDF, each one document written in one change, fit through the sync server is
 `probes/sync-size.mjs` (P7); it stays here because the PDF cap is this
 package's. It is written and not yet run.
 
+## Every fact says where it came from
+
+A fact the agent read is cited where it is stated, as a markdown link to the
+document it read, titled with the passage word for word:
+`[datasheet](automerge:… "Rated capacity: 280Ah at 0.2C")`. A fact it has
+no document for is marked `(from memory)`. The system prompt asks for both,
+and every fetch result ends with the form to use.
+
+The quote is checked, not trusted (`citations.js`). Case, whitespace,
+typographic quotes and dashes, and markdown emphasis and link syntax are set
+aside on both sides; anything else must match, and a quote must be at least
+12 characters so it names a place rather than a figure. The
+transcript marks each citation found (✓) or not in its source (✗), and
+`finding_write` refuses a finding whose quote is not in its source, or whose
+source is not the workflow's. `citations.test.js` checks every window of
+words of a markdown-heavy fixture is found where it is, and no window with a
+word changed is found at all.
+
 ## Where a tool may fetch
 
 Every runner gives its tools `ctx.fetchImpl`, a guarded fetch

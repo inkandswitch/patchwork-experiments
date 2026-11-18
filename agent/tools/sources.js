@@ -424,5 +424,6 @@ export function sourceFooter(ref, shown, marks = []) {
       : [`— ${shown} of ${total} shown. Read on: ${readOn(ref.url, shown)}; search: ${searchIn(ref.url)}.`]
   const map = outline(marks)
   if (map) lines.push(map)
+  lines.push(`Cite what it says as [label](${ref.url} "the exact words").`)
   return lines.join("\n")
 }

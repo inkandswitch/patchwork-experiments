@@ -24,6 +24,7 @@ import { attachView } from "./runners.js"
 import { startTabRunner, accountContext } from "./tab-runner.js"
 import { formatCost } from "./session.js"
 import { watchWaiting, renderWaiting } from "./ui/waiting.js"
+import { markCitations } from "./ui/citations.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import {
   getProvider,
@@ -903,6 +904,8 @@ export function AgentTool(handle, element, options = {}) {
       scopeOf: (block) => callScope(block, subjectUrl(), toolsetRef?.get(block.tool) ?? null),
       view: (block, result) => views.elementFor(block, result, uiState),
     })
+    // Each citation's quote, looked up in the document it cites.
+    markCitations(transcript, async (url) => (await repo.find(url))?.doc?.() ?? null)
 
     // Header label: what this session IS, not what it is docked beside.
     //

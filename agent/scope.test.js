@@ -634,4 +634,24 @@ describe("finding_write", () => {
     const w = await world()
     await expect(findingWrite.execute({ text: "x" }, { repo: w.repo })).rejects.toThrow(/not one/)
   })
+
+  it("checks the citations in its text: a quote that is in the source is kept, and the source is cited", async () => {
+    const w = await world()
+    const out = await findingWrite.execute({ text: `It says so [page](${w.ledger.source} "Kept from the web").` }, w.ctx)
+    expect([...(await w.repo.find(out.doc.url)).doc().cites]).toEqual([w.ledger.source])
+  })
+
+  it("refuses a quote that is not in its source, one too short to check, and a source that is not the workflow's — and writes nothing", async () => {
+    const w = await world()
+    const before = Object.keys(w.user.plan.doc().sources).length
+    const cases = [
+      [`[page](${w.ledger.source} "Kept from the sea")`, /"Kept from the sea" is not in .*quote its words exactly/],
+      [`[page](${w.ledger.source} "the web")`, /too short/],
+      [`[mine](${w.user.private.url} "${SENTINEL} private")`, /not one of this workflow's sources/],
+    ]
+    for (const [text, refusal] of cases) {
+      await expect(findingWrite.execute({ text: `Claim ${text}.` }, w.ctx)).rejects.toThrow(refusal)
+    }
+    expect(Object.keys(w.user.plan.doc().sources)).toHaveLength(before)
+  })
 })

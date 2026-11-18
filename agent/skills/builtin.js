@@ -884,7 +884,7 @@ it merges with other people's concurrent edits.
   {
     name: "working-with-the-web",
     description:
-      "When to search, fetch, capture a page or call an API; how everything fetched is kept and read back cheaply; how approval works and why you should not pre-negotiate it.",
+      "When to search, fetch, capture a page or call an API; how to cite what you read, word for word; how everything fetched is kept and read back cheaply; how approval works and why you should not pre-negotiate it.",
     body: `# Working with the web
 
 These tools reach out, and picking the wrong one wastes a turn.
@@ -934,6 +934,30 @@ folder offers an address and Capture.
 Without the Web snapshot package there is no \`web_capture\`: \`web_fetch\`
 still keeps a PDF as the PDF itself and a page as the reader's text, and
 that is what to cite.
+
+## Citing what you read
+
+Every fact you got from a document is cited where you state it, as a link to
+the document whose title is the passage, word for word:
+
+    The pack is rated at 280 Ah [datasheet](automerge:… "Rated capacity: 280Ah at 0.2C").
+
+The document is the kept source (the URL a fetch result or \`source_list\`
+gave you), a finding, or one of the person's own documents. The quote is how a
+reader finds the place, and it is checked: the transcript looks the words up
+in that document and marks the citation as found or not there, and
+\`finding_write\` refuses a finding with a quote that is not in its source.
+So:
+
+- **Quote, never paraphrase.** Copy the words from a \`source_read\` result.
+  Case, spacing, curly quotes and markdown are forgiven; anything else is not.
+- **Quote enough to find the place** — a dozen words or so; a figure alone
+  ("280 Ah") is too short to check. Join two parts of one passage with "…".
+- **Cite the copy you read.** A page captured and fetched is two documents;
+  cite the one whose words you quote.
+- **No document, no citation.** Something you know but did not read here is
+  marked (from memory), so the person knows to check it. Never cite a
+  document for something it does not say.
 
 ## Everything fetched is kept
 

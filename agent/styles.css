@@ -1361,3 +1361,47 @@
   color: var(--agent-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Citations (ui/markdown.js, ui/citations.js): a link carrying the passage it
+   rests on, marked once its document has been checked for the passage. */
+.patchwork-agent .agent-cite {
+  font-size: 0.8em;
+  vertical-align: super;
+  line-height: 0;
+  padding: 0 0.25em;
+  border-radius: 3px;
+  background: var(--agent-surface-2);
+  color: var(--agent-fg);
+  text-decoration: none;
+  cursor: pointer;
+}
+.patchwork-agent .agent-cite::after {
+  margin-left: 0.2em;
+}
+.patchwork-agent .agent-cite[data-check="found"]::after {
+  content: "✓";
+  color: var(--agent-added);
+}
+.patchwork-agent .agent-cite[data-check="missing"] {
+  background: none;
+  outline: 1px solid var(--agent-danger);
+  color: var(--agent-danger-text);
+}
+.patchwork-agent .agent-cite[data-check="missing"]::after {
+  content: "✗ not in source";
+}
+.patchwork-agent .agent-cite[data-check="short"]::after,
+.patchwork-agent .agent-cite[data-check="unreadable"]::after {
+  content: "?";
+  color: var(--agent-warning);
+}
+
+/* A fact the agent has no document for. */
+.patchwork-agent .agent-from-memory {
+  font-size: 0.8em;
+  padding: 0 0.35em;
+  border-radius: 3px;
+  border: 1px dashed var(--agent-muted);
+  color: var(--agent-muted);
+  white-space: nowrap;
+}

@@ -472,6 +472,12 @@ export const webFetch = {
       const shown = Math.min(max, read.text.length)
       lines.push(read.text.slice(0, shown), sourceFooter(read.ref, shown, read.marks))
     }
+    // What was kept is the page's text. When a claim will rest on the page
+    // itself — how it looks, or what it says today if it may change — a
+    // frozen snapshot keeps that too; say so only where web_capture is here.
+    if (read.ref && !read.ref.pdf && !/pdf/i.test(String(read.ref.mimeType ?? "")) && ctx.hasTool?.("web_capture")) {
+      lines.push(`To keep the page as it looks — for a claim that rests on it, or if it may change — web_capture { url: "${target}" }.`)
+    }
     return { text: lines.join("\n"), doc: read.ref }
   },
   summarize(input, output) {
