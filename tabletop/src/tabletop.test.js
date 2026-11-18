@@ -541,6 +541,27 @@ describe("drawn on demand", () => {
     expect(other.fetched).toEqual([]);
   });
 
+  it("a piece's state is drawn the first time someone turns a piece to it, alone (a public look), and kept under its ref", async () => {
+    const repo = fakeRepo();
+    const game = await newCardGame(repo);
+    game.change((d) => {
+      d.pieces.board.states = [{ name: "Board for three", parts: [{ shape: "slab", outline: "rect", size: [0.24, 0.2], thickness: 0.004, color: "#ffffff", top: { file: `${WEB}three.png` } }] }];
+    });
+    const w = web();
+    const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: w.fetch });
+    await pd.ensure(kindsLaid(gameOf(game.doc())));
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(["back", "board"]);
+    expect(w.fetched).not.toContain(`${WEB}three.png`);
+    const shown = await pd.face("board#1");
+    expect(shown.glb).toBeInstanceOf(Uint8Array);
+    await settled(() => !!game.doc().drawn["board#1"]);
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(["back", "board", "board#1"]);
+    expect(w.fetched.filter((u) => /three/.test(u))).toEqual([`${WEB}three.png`]);
+    expect(await pd.face("board#1")).toEqual({ url: game.doc().drawn["board#1"].url });
+    // a ref to no look is nothing
+    expect(await pd.face("board#2")).toBe(null);
+  });
+
   it("whichever face of a group is shown first, the game records the same: the same kinds and sheets, the same docs made in the same order, in one change", async () => {
     // every case: the game's changes, the docs made and the URLs fetched are the same function of the group alone
     const trace = async (kind) => {

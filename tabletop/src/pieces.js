@@ -16,7 +16,10 @@
 //     a card of that group was seen, never which: no more than its container,
 //     which everyone sees, already says. Its docs are made, and recorded, in
 //     kind order, in one change, once the group is drawn; the face asked for
-//     is drawn first and shown from its bytes meanwhile.
+//     is drawn first and shown from its bytes meanwhile;
+//   - a piece's state (GAME-FORMAT.md §4), when someone first turns a piece
+//     to it (`face`, by its ref `<kind>#<n>`, states.js: a group of its own,
+//     since a state is public), kept in `drawn` under its ref.
 //
 // A web asset (an http(s) URL, GAME-FORMAT.md §4) is read from the file doc
 // the game's `assets` names for it; else fetched (look/web.js), stored as a
@@ -40,6 +43,7 @@
 
 import { drawer, glbName, lookKey } from "./look/look.js";
 import { fetchAsset, isWeb } from "./look/web.js";
+import { pieceAt } from "./states.js";
 
 /** How long a web asset that couldn't be fetched is left before it's tried again. */
 export const RETRY_MS = 10 * 60 * 1000;
@@ -170,7 +174,7 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
   const due = (e) => (e?.missing ?? []).some((u) => !recent(u));
   /** What a kind shows now: its doc, else what was drawn here, if either is of what it is now. */
   const known = (kind) => {
-    const key = lookKey(doc().pieces?.[kind]);
+    const key = lookKey(pieceAt(doc().pieces, kind));
     const have = doc().drawn?.[kind];
     if (have?.url && have.key === key) return { show: { url: have.url }, entry: have };
     const l = local.get(kind);
@@ -242,7 +246,7 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
     return {
       /** Draw a kind as it is now: { key, glb, bounds, origins, missing, notes, name }, or null if it's gone. */
       async draw(kind) {
-        const piece = doc().pieces?.[kind];
+        const piece = pieceAt(doc().pieces, kind);
         if (!piece) return null;
         const out = await d.draw(piece);
         return {
@@ -310,9 +314,10 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
    */
   async function ensure(kinds, { onProgress = () => {} } = {}) {
     const pieces = doc().pieces ?? {};
-    const todo = [...new Set(kinds)].filter((k) => pieces[k] && !current(k)).sort((a, b) => firstFile(pieces[a]).localeCompare(firstFile(pieces[b])));
+    const at = (k) => pieceAt(pieces, k);
+    const todo = [...new Set(kinds)].filter((k) => at(k) && !current(k)).sort((a, b) => firstFile(at(a)).localeCompare(firstFile(at(b))));
     onProgress(0, todo.length);
-    await prefetch(todo.flatMap((k) => filesOf(pieces[k])));
+    await prefetch(todo.flatMap((k) => filesOf(at(k))));
     const s = session();
     const notes = []; // each kind's, in todo's order
     let drawn = 0;
@@ -362,7 +367,7 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
       const s = session();
       const drawn = [];
       try {
-        await prefetch(order.flatMap((k) => filesOf(pieces[k])));
+        await prefetch(order.flatMap((k) => filesOf(pieceAt(pieces, k))));
         const one = async (k) => {
           const e = await s.draw(k);
           if (e) {
@@ -409,10 +414,10 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
    * in place), and a face already drawn is shown as it is meanwhile.
    */
   async function face(kind) {
-    if (!doc().pieces?.[kind]) return null;
+    if (!pieceAt(doc().pieces, kind)) return null;
     if (waiting.has(kind)) return waiting.get(kind);
     const k = known(kind);
-    const stale = groupOf(kind).filter((m) => doc().pieces?.[m] && !waiting.has(m) && !current(m));
+    const stale = groupOf(kind).filter((m) => pieceAt(doc().pieces, m) && !waiting.has(m) && !current(m));
     const drawing = stale.length ? drawGroup(kind, stale) : null;
     return k ? k.show : (drawing ?? null);
   }
