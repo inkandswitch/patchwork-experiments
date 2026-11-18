@@ -260,9 +260,10 @@ try {
 
   // both open off her quarter (Look: view.start's home), running what the doc calls for: sailing,
   // by its traits, and every general part, the same in both views (scene/STAGE.md, H1)
+  // (the general parts are the view's plugins, beside the doc's extensions: scene/STAGE.md, "View plugins")
   const SOME = ["sailing", "scene.body", "scene.clock-chip", "scene.halo", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
   await b.rest(1000);
-  const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
+  const run = { a: [...(await P("running('a')")), ...(await P("views('a')"))].sort(), b: [...(await P("running('b')")), ...(await P("views('b')"))].sort() };
   check("both views open in Look, off her quarter", (await P("bodyLabel('a')")) === "Look" && (await P("bodyLabel('b')")) === "Look", { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
   check("both run what the doc calls for, the same: sailing and the general parts", JSON.stringify(run.a) === JSON.stringify(run.b) && SOME.every((id) => run.a.includes(id)), run);
   // the way in is the aboard command's Come aboard on the bar of tools (show "world": scene HISTORY.md, TOOLS Decisions 10); the HUD only reads
@@ -295,7 +296,7 @@ try {
   const c1 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
   const rate = (c1.s - c0.s) / ((c1.t - c0.t) / 1000);
   report.measured.clock = { rate: n2(rate), lag: n2(c1.s - c1.f) };
-  check("the follower's world time (api.use("clock").t()) runs with the simulator's, a little behind", Math.abs((c1.f - c0.f) - (c1.s - c0.s)) < 0.3 && c1.s - c1.f > 0 && c1.s - c1.f < 0.5, { c0, c1 });
+  check("the follower's world time (api.use(\"clock\").t()) runs with the simulator's, a little behind", Math.abs((c1.f - c0.f) - (c1.s - c0.s)) < 0.3 && c1.s - c1.f > 0 && c1.s - c1.f < 0.5, { c0, c1 });
   const frames = { a: await P(`sampleFrames('${hull}', 'a', 1000)`), b: await P(`sampleFrames('${hull}', 'b', 1000)`) };
   report.measured.fps = { a: frames.a.length, b: frames.b.length };
 
