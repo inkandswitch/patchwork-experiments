@@ -249,3 +249,37 @@ key names on touch; does arena's gun fire on a tap?
 `api.holders()` and `api.holderOf(id)`; menu sections by holder within one
 doc; one shared part drawing people from presence; ephemeral effects as
 sends simulated locally (cannonballs, spray), and positional sound.
+
+## 3. Tabletop: games as documents, and the launcher
+
+**Queued (not deferred): starts after the kernel steps.** The lead,
+2026-11-17, taking Tabletop Simulator as the design reference.
+
+- **The game description stays canonical** (the game format; TTS import
+  produces it), so other editors, a 2D view and scripting can work on it.
+  The 3D scene is one rendering of it.
+- **Our own games are template documents.** Santorini, Lost Cities,
+  Dominoes and Liar's dice become game-description documents in Patchwork;
+  the package's `games/*.json` become seed data for publishing them, and the
+  per-game `scene:template` plugins become one generic "start from a game
+  description".
+- **A session is an instance:** a description rendered into a fresh scene.
+  Every session is already saved (Automerge); "save a copy" forks a session
+  by the copy rule (keeper bindings dropped, seats empty, runtime state left
+  behind), which is save-game sharing.
+- **The launcher is a tool rendering a library folder**: `Games/` (template
+  documents, TTS imports) and `Sessions/` (session scenes). New game,
+  Continue, Fork, Import. Open: an ordinary folder with a marker (the launcher
+  offered beside the folder view) or a folder-shaped datatype (opens as the
+  launcher by default); check how Patchwork picks a tool first.
+- **TTS from the Workshop.** Tested 2026-11-17: Steam's
+  `GetPublishedFileDetails` needs no key and returns a direct `file_url` on
+  Steam's CDN, which allows cross-origin downloads; the file is TTS's binary
+  save (BSON), so the importer needs a small BSON decoder. Workshop search
+  (`IPublishedFileService/QueryFiles`) needs a Steam Web API key, and Steam's
+  API sends no CORS headers, so both lookups need a small relay. Open: where
+  the relay runs. Fallback: subscribe in Steam and drop the JSON from
+  `Mods/Workshop`, as today.
+- **Open, deferred:** where live play state lives for a 2D view or scripts:
+  (a) the scene's traits and transforms, as today, or (b) a tabletop session
+  doc the scene renders. Decide when 2D or scripting is on the table.
