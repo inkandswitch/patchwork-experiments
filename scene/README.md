@@ -159,7 +159,7 @@ automatic rebuilds. Render docs aren't branch-aware.
 ## Conventions
 
 Traits are keyed `<extension>.<name>`. Names shared between packages are in
-STAGE.md, "Conventions".
+CONVENTIONS.md.
 
 ### GLB conventions
 
@@ -188,8 +188,11 @@ and run `node scripts/check-kit.mjs --fix` at the repo root.
 
 ## Where to look
 
-[STAGE.md](STAGE.md) is the contract, [DESIGN.md](DESIGN.md) the idea,
-[HISTORY.md](HISTORY.md) how and why, [PLANS.md](PLANS.md) deferred work.
+[STAGE.md](STAGE.md) is the kernel's contract, [NATIVE.md](NATIVE.md) the
+native services, [EDITOR.md](EDITOR.md) the editor and the commands packages
+meet it by, [CONVENTIONS.md](CONVENTIONS.md) what packages agree among
+themselves; [DESIGN.md](DESIGN.md) the idea, [HISTORY.md](HISTORY.md) how and
+why, [PLANS.md](PLANS.md) deferred work.
 `src/index.js` is plugin metadata only (worker-safe); `src/stage/` the stage
 and view; `src/parts/` the editor's extensions; `src/test/` the harness.
 

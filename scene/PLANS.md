@@ -1,142 +1,56 @@
 # Plans
 
-**Everything in this file is deferred until further notice, except section 1,
-which the lead started on 2026-11-17 (steps 1–6 and 8; step 7 stays
-deferred; steps 1–3, 4a, 4b, 5 and 6 are done, HISTORY.md "Kernel step 1" to "Kernel step 6").** Section 3 (tabletop) is queued to start after it. Nothing else here is to be started without the lead asking.
+**Everything in this file is deferred until further notice.** Section 1 (the
+kernel), which the lead started on 2026-11-17, is complete (HISTORY.md "Kernel
+step 1" to "Kernel step 8"; step 7 stays deferred, in section 2). Section 3
+(tabletop) is queued to start next. Nothing else here is to be started
+without the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
-HISTORY.md; what it does now is STAGE.md. When an item is done or answered,
-take it out of here and add an entry to HISTORY.md.
+HISTORY.md; what it does now is STAGE.md, NATIVE.md, EDITOR.md and
+CONVENTIONS.md. When an item is done or answered, take it out of here and add
+an entry to HISTORY.md.
 
 ## 1. A small scene: kernel and plugins
 
-A design investigation of 2026-11-17 (KERNEL.md, never committed; condensed
-here). Not built. The lead's goal: the scene's contract fits in a page or
-two, the scene is very small, and complexity lives in plugins it loads,
-some of them native.
-
-### The kernel contract (draft)
-
-| Noun | |
-|---|---|
-| **Doc** | An Automerge doc: `objects: { [id]: { name?, parent?, transform, source: { provider, url, at? }, traits? } }` and the scene's `traits`. Every other field belongs to a plugin, under its own key. |
-| **Stage** | One doc open at a place in the view: its frame, its channel, and whether it **acts** or is only **drawn** (read-only, no input, no chrome). |
-| **View** | One per mounted tool: renderer, camera, DOM regions, input, the tree of stages. |
-| **Plugin** | A **doc plugin** (`scene:extension`) runs in a stage whose doc carries one of its traits (`"*"`: every doc). A **view plugin** (`scene:view`) runs once per view, always. |
-| **Contribution** | A named field on a plugin's instance, read by others with `collect(name)`. The kernel reads only `input`, `receive`, `provides`, `update`. |
-
-**Lifecycle.** `create(api) → instance`. What runs is a pure function of
-the registry and the doc. On stop, everything acquired through `api` is
-given back, `dispose()` is called and `api.signal` aborts. A plugin whose
-reason goes lingers 2 s, and while it holds a hand, a body or a gesture.
-
-**The doc plugin's api.** `id`, `url`, `viewer`, `signal`; `doc()`,
-`scene()` (frozen: objects, parents, traits, `world(id)`), `writable()`,
-`change(fn) → patches` (so a plugin can record its own writes); `local`
-(`{ get, swap, watch }`, the stage's atom); `channel` (`{ session, peers(),
-set(key, value), get(), watch(fn), send(type, data) }`, the doc's ephemeral
-side, namespaced per plugin; a peer's send arrives as
-`instance.receive(type, data, from)`); `now()`, `after(ms, fn)`,
-`frame(fn)`, `loop(fn(dt))`; `content(id)`, `worldOf(id)`, `box(id)`,
-`raycast(origin, dir)`, `camera.get()` (what is drawn, in this stage's
-frame); `THREE`, `world({ onTop })`, `labels()`, `invalidate()`;
-`display(id, override) → release` (`{ transform?, content?, hidden?, name?
-}` layered in running order: poses, lenses, the veil, dressing and hidden
-groups are all this); `hand(spec)`, `body(spec)` → release (acting stages
-only); `collect(name, { world? })`; `use(name)` (a service bound to the
-caller's lifetime); `settled()` (`{ ready, missing }`).
-
-**The view plugin's api.** As above for id, time and drawing, plus
-`stages()` (readers `{ path, frame, acting, doc, scene, collect }`),
-`open(handle, { under, acting, heads? }) → close`, `pick`, `ray`,
-`project`, `camera.set`, `overlay()`, `edge(side)`, `style(css)`,
-`cursor(name)`. It has no doc of its own.
-
-**Input.** event → hands, top first → the widget's owner → holders along
-the hit's path (innermost stage first, nearest object first, then each
-stage's root) → view plugins, in running order → bodies, top first. A
-**hand** is what you hold (the editor, Measure, a gun, a drawn piece, a
-popover, an open gesture): `{ name, input, keys?, pointer?, escape?() }`. A
-**body** is where you are and how you move (Look, walk, a seat, a station):
-`{ name, input, keys?, lock?, eye(), reach, camera(dt)? }`; the top body
-drives the camera. Keys: a focused field, then hands and the body by
-declared keys, then view plugins. Escape goes to the top hand's `escape()`,
-else the hand is put down; it never leaves a body. The pointer locks when
-the top body asks and no hand wants it.
-
-**Services.** `provides: { [name]: (caller) → facet }`; `use(name)` calls
-the first running provider with `caller = { id, signal }`, which ties what
-it hands out to the caller's signal.
-
-**What the kernel does not know:** selection, focus, undo, commands, menus,
-keys, the toolbar, the inspector, groups, links' roles, presence of people,
-claims, pose holds, world time, audience and the veil, carrying, seats, the
-drawer, notices, prefs, packages, templates, parts. Each is a plugin with
-its own page. About 30 api names and 4 instance hooks, against about 75 and
-15 today.
-
-### Where today's contract goes
-
-| Today | Goes to |
-|---|---|
-| ~~Edit body, `ahead`, "nothing stands on Edit"~~ | done (steps 1, 2): the Edit hand, `scene.edit`'s (a view plugin) |
-| ~~held-tool slot, popover, Escape ladder~~; gesture | done (step 1): the hands stack; the open gesture is still its own Escape layer, not a hand |
-| Look/orbit, camera rides | **orbit** (view) body; `camera.ride` its service; the seat's tilt its own `camera(dt)` |
-| ~~"general" scope, `api.path`, `reopened`, general-only packages/clocks~~ | done (step 2): **view plugins** (`scene:view`), offered at the focus |
-| ~~`own()`, `edit`/`edits`/`undo`/`redo`, `{ edit }` threading~~ | done (step 3): **editor**, recording from `change → patches` |
-| ~~audience, shown, veil, keepers' looks~~ | done (step 5): **audience** (doc, `"*"`); the veil a `display` override |
-| ~~claims; pose holds and playback; world clock and processes; telling~~ | done (4a, 5): **claims**, **poses** (playback a `display` override), **clock**, **telling**, native doc plugins of every doc |
-| commands, attention, keymap, menu, use prompt, toolbar, touch | **verbs** (view); attention = the editor's selection, else the look |
-| selection, hover, `scene.others`; ~~templates, parts, drops, assets~~ (done, step 3) | **editor** |
-| ~~link roles, expansion, pins, `fixPoint`, Enter, the trail~~ | done (step 6): **links** (view), calling `open(…)`; the focus stays the kernel's, and ambients stay |
-| arriving (`view.start`); packages list and prompt | **arrive**, **packages** (view) |
-| ~~drawer, notices, prefs~~ | done (4b): **drawer**, **notices**, **prefs**, native view plugins |
-| carry, landing, `landed` | **carry** (doc) |
-| groups | **groups** (doc) + editor; hiding and fading stay the doc's (step 5: no branch to replace) |
-| render docs, routing, staleness, GLB queue | **content** (native), last; until then inside the kernel behind one boundary |
-
-The kernel gains a few general hooks, not many special ones: services
-bound to the caller's signal, `settled()` (the one real gate), page
-lifecycle as events, `display`, hands before the chain; the stage tree
-stays kernel behind `open()`. The 16 extension packages migrate mostly by
-renames; the real rework is bodies (sailing, walk, seats) and the four
-visibility packages. Cost: rewrite stage, view, router and host (~6,000
-lines) and ~8k lines of their tests; pure modules keep theirs; every
-example republished at the end of the queue.
-
-### Build order
-
-Each step leaves everything green and deletes a section of STAGE.md:
-1 hands, Edit the editor's hand (done 2026-11-17); 2 view plugins (`scene:view`; done 2026-11-17), every
-`general` branch gone; 3 undo leaves (done 2026-11-17: `change → patches`; the editor records its own writes; drops,
-parts and templates move to the editor); 3b the board-game packages merge into `tabletop` (done 2026-11-17: dice, bag,
-tts-import, card-table, keep; seats stays separate, machine uses it), so
-step 4 migrates one games package, not six; 4 services and `channel` (4a done 2026-11-17: claims, clock, telling;
-4b done 2026-11-17: notices, drawer, prefs; poses with step 5); 5 `display` (done 2026-11-17: lenses, veil,
-pose playback; poses and the audience native; dressing and group hiding stay); 6 links leave to a links plugin (done
-2026-11-17; the focus and ambients stay); 7 content leaves (optional); 8 the page: STAGE.md
-becomes the contract above plus a page per native plugin, the lint rule on,
-examples republished. Steps 1–3 are worth doing alone: they remove every
-special case the review named.
-
-### Decided, and open
-
-Decided by the lead (2026-11-17): hands are a stack; the presence transport
-stays in the kernel, as `channel`; native plugins stay in `scene/`, under a
-lint rule against importing kernel internals; content loading stays where
-it is for now (step 7 deferred).
-
-Still open: **how it fits the queue.** It touches every package: pause the
-other lanes while steps 1–3 land, or run it as one lane merging behind
-them?
-
-**A size lint** (an idea): fail on a source file over about 600 lines, a
-contract over 2 pages, or a plugin's page over 1 page.
+**Complete** (2026-11-17, steps 1–6 and 8; HISTORY.md "Kernel step 1" to
+"Kernel step 8"). The lead's goal was that the scene's contract fit in a page
+or two, the scene be very small, and complexity live in plugins it loads, some
+of them native. The contract is STAGE.md (≤ 200 lines); each native plugin and
+the editor have their own page (NATIVE.md, EDITOR.md), conventions between
+packages theirs (CONVENTIONS.md); `src/native/boundary.test.js` keeps native
+plugins and the editor's parts off the kernel's internals and the pages within
+their sizes. Decided by the lead: hands are a stack; the presence transport
+stays in the kernel, as `channel`; native plugins stay in `scene/`; the focus
+and ambients stay the kernel's (step 6). What is still open went to section 2,
+"The kernel".
 
 ## 2. Open questions and deferred items
 
 Each names where it came from (in git at d80a2bfa for the removed notes).
 "TOOLS D" is TOOLS Decisions; "COMP" is COMPOSITION Decisions.
+
+### The kernel
+
+From section 1 (the design investigation of 2026-11-17, condensed there).
+- **Step 7, content leaves** (deferred by the lead): render docs, routing,
+  staleness and the GLB queue become a native **content** plugin; until then
+  they stay inside the kernel behind one boundary.
+- **What the draft would still move out**: Look/orbit and camera rides to an
+  **orbit** body (the seat's tilt its own `camera(dt)`); commands, attention,
+  the key order's key map, the menu, the use prompt, the toolbar and touch to
+  a **verbs** view plugin; selection, hover and `scene.others` to the editor;
+  arriving (`view.start`) and the packages list and prompt to **arrive** and
+  **packages** view plugins; groups to a **groups** doc plugin with the
+  editor (hiding and fading stay the doc's). The draft counted about 30 api
+  names and 4 instance hooks the kernel reads; today the extension api has
+  about 65 and the kernel reads 10 instance members (STAGE.md, "`instance`").
+- **A size lint** for source files (an idea): fail on one over about 600
+  lines, as the boundary test does for the pages.
+- **Still open from the build**: the open gesture is its own Escape layer, not
+  a hand.
+- **Examples republished**, step 8's last part: at the end of the queue, with
+  the real-Patchwork checks.
 
 ### Editing, selection and undo
 - **Undo needing the agreement of people with a stake** was removed
@@ -272,14 +186,11 @@ sends simulated locally (cannonballs, spray), and positional sound.
   Continue, Fork, Import. Open: an ordinary folder with a marker (the launcher
   offered beside the folder view) or a folder-shaped datatype (opens as the
   launcher by default); check how Patchwork picks a tool first.
-- **TTS from the Workshop.** Tested 2026-11-17: Steam's
-  `GetPublishedFileDetails` needs no key and returns a direct `file_url` on
-  Steam's CDN, which allows cross-origin downloads; the file is TTS's binary
-  save (BSON), so the importer needs a small BSON decoder. Workshop search
-  (`IPublishedFileService/QueryFiles`) needs a Steam Web API key, and Steam's
-  API sends no CORS headers, so both lookups need a small relay. Open: where
-  the relay runs. Fallback: subscribe in Steam and drop the JSON from
-  `Mods/Workshop`, as today.
+- **TTS mods come in as files.** The lead, 2026-11-17: no Workshop relay or
+  search; they provide the mod's JSON (from `Mods/Workshop` after subscribing
+  in Steam), as the importer takes today. (Checked then: Steam's file-details
+  call needs no key but has no CORS headers; downloads are BSON; search needs
+  a key.)
 - **Open, deferred:** where live play state lives for a 2D view or scripts:
   (a) the scene's traits and transforms, as today, or (b) a tabletop session
   doc the scene renders. Decide when 2D or scripting is on the table.

@@ -745,3 +745,32 @@ starts slowly delays links. Also from the step 5 review: a label item may
 sit `on: id` at `offset` in that object's drawn frame, placed each frame;
 seat tags, cup tags and bag counts use it instead of re-anchoring by hand
 (`scene.bounds` still redraws its boxes in `afterRender`, so it keeps it).
+
+### 2026-11-17 — Kernel step 8: the page
+
+PLANS.md step 8; section 1 is complete (step 7 stays deferred, now in
+section 2). STAGE.md (676 lines) became the kernel's contract alone, 200 lines:
+words, the stage tree and `open`, the three places for state, activation
+(providers start in parallel, each waiting only on what it `uses`), the view
+plugin and extension api tables, the input chain, bodies and hands, packages,
+arriving, and the invariants the kernel guarantees. Everything else went to a
+page of its own: NATIVE.md (the nine native services, H6–H8, I3), EDITOR.md
+(the editor's view plugins, commands, the key map and use prompt, undo, drops,
+templates, parts, copying, extract and bundle, describing traits, the
+interface; H3, H9, H13, I9) and CONVENTIONS.md (shared maps, no migrations,
+seats, keepers, world ambients, carry and landing; H11). Of 491 citations
+`STAGE.md, "<section>"` across the repo, 203 were rewritten to the page that
+now holds the section (a script, dry-run first; HISTORY.md left as written);
+16 naming sections gone since, and two dozen unquoted ones (`STAGE.md, H3`,
+`STAGE.md's clouds`), were pointed by hand.
+`src/native/boundary.test.js` is the lint rule: modules in `src/native/` and
+`src/parts/` import from `src/stage/` only an allowlist of pure helpers
+(`bodies.js`, `paths.js`, `ladder.js`, `pointer.js`); `contentMatrix` moved
+from `stage/scope.js` to `src/transform.js` and `isTyping` from
+`stage/router.js` to `src/keymap.js` (two copies of it in the parts went). It
+also holds the pages to their sizes (200, 400, 300, 200) and every invariant
+label they list to a test naming it (H8's are tabletop's and joints'). Docs
+found behind the code and fixed: `hud(scene, local, view)` (not `hud()`); a
+hold ranks a still one ahead of a landed one; a `scene:view` may declare
+`provides` and `uses`; the kernel reads ten instance members, not the draft's
+four.
