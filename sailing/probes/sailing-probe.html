@@ -118,6 +118,8 @@ try {
     /** a doc change from outside both views (as an editor's would land) */
     change: (fn) => scene.change(fn),
     running: (w) => dbg[w].local.get().running.map((r) => r.id),
+    /** the view's plugins running in view w (the editor, the body chip, notices…: scene/STAGE.md, "View plugins") */
+    views: (w) => dbg[w].view.plugins.running().map((r) => r.id),
     /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the body on top of view w's stack (scene/TOOLS.md §4) */
