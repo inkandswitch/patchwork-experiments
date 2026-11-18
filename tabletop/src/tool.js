@@ -113,10 +113,15 @@ export default function TabletopGameTool(handle, element) {
   let drawTimer = null;
   let drawError = null;
   let drawNotes = [];
+  let drawProgress = null; // { done, total } while drawing
   function draw() {
     if (dead) return Promise.resolve();
     if (drawing) return drawing.then(draw);
-    drawing = ensurePieceGLBs(repo, handle, { images: defaultImages(), source: (type) => findSource(hostRegistry, type) })
+    const onProgress = (done, total) => {
+      drawProgress = { done, total };
+      if (!dead) updateStatus();
+    };
+    drawing = ensurePieceGLBs(repo, handle, { images: defaultImages(), source: (type) => findSource(hostRegistry, type), onProgress })
       .then(({ notes }) => {
         drawError = null;
         drawNotes = notes;
@@ -127,6 +132,7 @@ export default function TabletopGameTool(handle, element) {
       })
       .finally(() => {
         drawing = null;
+        drawProgress = null;
         render();
       });
     render();
@@ -139,9 +145,15 @@ export default function TabletopGameTool(handle, element) {
 
   // ─── setting up a table ───────────────────────────────────────────────────
   let settingUp = false;
+  let setupPhase = null; // what setting up is doing now, for the status line
+  const phase = (text) => {
+    setupPhase = text;
+    if (!dead) updateStatus();
+  };
   async function setUpTable() {
     if (settingUp) return;
     settingUp = true;
+    setupPhase = null;
     render();
     try {
       clearTimeout(drawTimer);
@@ -157,7 +169,9 @@ export default function TabletopGameTool(handle, element) {
         const f = d.drawn?.[kind];
         return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
       };
+      phase("Laying out the table…");
       const layout = tableLayout(gameOf(d), { fileOf, gameUrl: handle.url });
+      phase(`Making the table's ${Object.keys(layout.containers ?? {}).length} decks and ${Object.keys(layout.bags ?? {}).length} bags…`);
       // the decks' containers, the bags and the seats' owner first (whoever owns seats is found in the
       // registry by what it is: table/made-with.js), so the scene never names one that isn't there; with
       // them, what the maker is warned of
@@ -166,6 +180,7 @@ export default function TabletopGameTool(handle, element) {
       // the stage fills `packages` in), and where the scene package comes
       // from, for a viewer who doesn't have it
       const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title });
+      phase(`Writing the table (${layout.order.length} things)…`);
       writeTable(table, layout, made);
       const scene = await repo.create2(table);
       handle.change((g) => {
@@ -178,6 +193,7 @@ export default function TabletopGameTool(handle, element) {
       status = `Couldn't set up a table: ${err?.message ?? err}`;
     } finally {
       settingUp = false;
+      setupPhase = null;
       render();
     }
   }
@@ -275,7 +291,9 @@ export default function TabletopGameTool(handle, element) {
 
   function definitionSection(d) {
     const area = el("textarea", { class: "json", spellcheck: "false", rows: "16" });
-    area.value = JSON.stringify(gameOf(d), null, 2);
+    // the whole game as JSON is big for an imported one (half a megabyte): written only while it's open
+    const fill = () => (area.value = JSON.stringify(gameOf(doc()), null, 2));
+    if (definitionOpen) fill();
     const msg = el("span", { class: "muted" }, definitionMsg);
     const say = (text) => (msg.textContent = definitionMsg = text);
     const apply = el(
@@ -304,7 +322,10 @@ export default function TabletopGameTool(handle, element) {
       },
       "Apply",
     );
-    return el("details", { class: "definition", open: definitionOpen, ontoggle: (e) => (definitionOpen = e.target.open) }, el("summary", {}, "Definition (JSON: the tabletop-game format)"), area, el("div", { class: "cluster" }, apply, msg));
+    return el("details", { class: "definition", open: definitionOpen, ontoggle: (e) => {
+      definitionOpen = e.target.open;
+      if (definitionOpen && !area.value) fill();
+    } }, el("summary", {}, "Definition (JSON: the tabletop-game format)"), area, el("div", { class: "cluster" }, apply, msg));
   }
 
   function render() {
@@ -375,9 +396,10 @@ export default function TabletopGameTool(handle, element) {
     const kinds = kindsOf(d);
     const total = Object.values(copiesOf(d.setup)).reduce((n, k) => n + k, 0);
     const notes = drawNotes.length ? ` ${drawNotes.length} note${drawNotes.length === 1 ? "" : "s"} on drawing them: ${drawNotes.slice(0, 3).join("; ")}${drawNotes.length > 3 ? "; …" : ""}` : "";
+    const drawingText = drawProgress?.total ? `Drawing pieces… ${drawProgress.done} of ${drawProgress.total}` : "Drawing pieces…";
     s.textContent =
       status ??
-      (drawError ? `Pieces couldn't be drawn: ${drawError}` : drawing ? "Drawing pieces…" : kinds.length ? `${total} pieces of ${kinds.length} kinds.${notes}` : "");
+      (settingUp && setupPhase ? setupPhase : drawError ? `Pieces couldn't be drawn: ${drawError}` : drawing ? drawingText : kinds.length ? `${total} pieces of ${kinds.length} kinds.${notes}` : "");
   }
 
   const onChange = () => {

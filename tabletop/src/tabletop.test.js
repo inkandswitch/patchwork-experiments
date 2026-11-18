@@ -270,6 +270,41 @@ describe("piece GLBs", () => {
     expect(Object.keys(gameOf(game.doc())).sort()).toEqual(["about", "format", "pieces", "players", "seats", "setup", "title", "version"]);
   });
 
+  it("a game of many kinds is drawn in a few changes to the game, not one a kind, saying how far it has got", async () => {
+    // an imported game has a thousand kinds (Terraforming Mars: 1368); a change a kind redrew the game
+    // page a thousand times, each time over the whole game (probes/setup-bench.mjs)
+    const repo = fakeRepo();
+    const game = await repo.create2({});
+    const kinds = Array.from({ length: 120 }, (_, i) => `k${i}`);
+    game.change((d) => {
+      TabletopGameDatatype.init(d);
+      for (const k of kinds) d.pieces[k] = { name: k, parts: [{ shape: "box", size: [0.01, 0.01, 0.01], color: "#ffffff" }] };
+    });
+    let changes = 0;
+    const change = game.change;
+    game.change = (fn) => (changes++, change(fn));
+    const progress = [];
+    expect((await ensurePieceGLBs(repo, game, { onProgress: (done, total) => progress.push([done, total]) })).drawn).toBe(120);
+    expect(changes).toBe(3); // 50, 50, 20
+    expect(Object.keys(game.doc().drawn).sort()).toEqual([...kinds].sort());
+    expect(progress[0]).toEqual([0, 120]);
+    expect(progress.at(-1)).toEqual([120, 120]);
+    expect(progress.map(([d]) => d)).toEqual(Array.from({ length: 121 }, (_, i) => i));
+
+    // a drawing that fails part way still records what it drew: no GLB doc is left unnamed
+    game.change((d) => {
+      d.drawn = {};
+    });
+    const create2 = repo.create2;
+    let made = 0;
+    repo.create2 = async (doc) => {
+      if (++made > 70) throw new Error("the repo is full");
+      return create2(doc);
+    };
+    await expect(ensurePieceGLBs(repo, game)).rejects.toThrow("the repo is full");
+    expect(Object.keys(game.doc().drawn)).toHaveLength(70);
+  });
+
   it("a GLB drawn from file docs carries their origin: provenance travels with what's drawn", async () => {
     const repo = fakeRepo();
     const sheet = await repo.create2({ "@patchwork": { type: "file" }, name: "s.png", extension: "png", mimeType: "image/png", content: encodePNG(2, 2, new Uint8Array(16).fill(255)), origin: { urls: ["https://example.org/s.png"] } });
