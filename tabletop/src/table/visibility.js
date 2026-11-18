@@ -1,5 +1,5 @@
 // Who may see what at a table: this package's policy, as the stage's
-// `audience` contribution (scene/STAGE.md, "Audience"). Pure, over a scene
+// `audience` contribution (scene/NATIVE.md, "Audience"). Pure, over a scene
 // snapshot (api.scene(): { objects, world(id), toLocal(id, point), parents })
 // and who sits where (the `roster` convention's seats: [{ id, viewer }]).
 //

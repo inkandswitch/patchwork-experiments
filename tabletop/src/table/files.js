@@ -1,7 +1,7 @@
 // The scene's own GLB files, for the parts (parts.js) and the templates
 // (template.js): a piece drawn to a GLB as ctx.file's make() wants it. One
 // module, so the two can't drift apart. The file for a key is the stage's
-// ctx.file (the scene's one doc per key, doc.assets; scene/STAGE.md "Parts").
+// ctx.file (the scene's one doc per key, doc.assets; scene/EDITOR.md "Parts").
 
 import { drawer, glbName, lookKey, shortHash } from "../look/look.js";
 

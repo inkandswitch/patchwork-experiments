@@ -12,7 +12,7 @@
 //     it from the rest; a card lying face up elsewhere shows to everyone.
 //     The stage merges it with any other's. It runs whatever a viewer is
 //     doing (traits decide what runs, nothing else), so it never stops
-//     under anyone and enlarges the audience (scene/STAGE.md, "Audience").
+//     under anyone and enlarges the audience (scene/NATIVE.md, "Audience").
 //
 // What is here: Shuffle (a pile, through its keeper), Draw (a pile's top
 // card into your own hand, face up, or into a rack standing on edge), Wash
@@ -28,7 +28,7 @@
 // for whoever shows seats (`seatPlaces`);
 // and telling everyone what happened (shuffled, drew, washed, laid face up)
 // with the "tell" service, as counts only, never which card: the stage says it, here as
-// "You" and to the others by name (`messages`; scene/STAGE.md "Native services").
+// "You" and to the others by name (`messages`; scene/NATIVE.md "Native services").
 //
 // Component physics, not rules: nothing here knows a game, a turn or a
 // legal move. (Dice are dice/'s.)
@@ -111,7 +111,7 @@ export default {
       }
     }
 
-    // ── telling everyone: what happened, never which card; told on arrival, unchecked, as counts name no card to wait for (scene/STAGE.md, telling 6) ──
+    // ── telling everyone: what happened, never which card; told on arrival, unchecked, as counts name no card to wait for (scene/NATIVE.md, "Telling") ──
     /** Whoever told it: "You", else what the table calls them (the roster's `who`: their seat's name stands in for a missing contact's), else the stage's name. */
     const speaker = (who) => {
       if (who.mine) return who.name;

@@ -107,7 +107,7 @@ function create(api) {
 
   return {
     // Who may see what is a function of the doc and of whether everything it calls for is here
-    // (api.settled; scene/STAGE.md, "Audience"): look again when either changed, and not when only
+    // (api.settled; scene/NATIVE.md, "Audience"): look again when either changed, and not when only
     // what's drawn did (a pose streaming by, sixty times a second).
     update(snapshot, local, prev) {
       const now = JSON.stringify(api.settled());

@@ -1,5 +1,5 @@
 // scene:part "machine": an empty cabinet, put in from the editor's parts bin
-// (scene/STAGE.md, "Parts"). Its source is a machine doc of its own with no
+// (scene/EDITOR.md, "Parts"). Its source is a machine doc of its own with no
 // game yet: a ROM or an IWAD dropped on it gives it one (extension.js), as
 // choosing one in the Machine tool does. Its session and seats come once it
 // has a game, as for any machine object.

@@ -1,7 +1,7 @@
 // A game's table laid out in a scene doc: an empty scene's start screen
 // (`scene:template`), or a game dropped from the parts bin (`scene:part`,
 // parts.js), which makes a game doc of its own, lays it out there and links
-// it onto what it was put on (scene/STAGE.md, "Extract and bundle"). Through the same
+// it onto what it was put on (scene/EDITOR.md, "Extract and bundle"). Through the same
 // writer as the game page's "Set up a table" (setup.js tableLayout +
 // writeTable), so they can't drift apart. The table is always the whole
 // doc's: its seats, title, view and origin are the doc's own.
@@ -28,7 +28,7 @@
 // Order: the files, then the containers and bags, then one change that
 // writes the table (objects, seats, view: `view.start` in the seat body where
 // the game has seats); the stage then starts its maker where the doc says
-// (STAGE.md, "Templates"): at Lost Cities watching from the first seat (every
+// (EDITOR.md, "Templates"): at Lost Cities watching from the first seat (every
 // built-in game has seats; one without would start them in Look).
 
 import { glbFile, lookFileKey } from "./files.js";
@@ -55,7 +55,7 @@ export async function loadGame(registry, gameId) {
 
 /**
  * Lay a game's table out in the doc a context is for (the stage's drop
- * context, STAGE.md "Drops", or docContext's for a game doc of its own).
+ * context, EDITOR.md "Drops", or docContext's for a game doc of its own).
  * @param {object} ctx      { repo, registry, newId, doc, change, file, notify }
  * @param {string | object} game  a registered game's id, or a game
  * @param {{ rng?: () => number, images?: object | null }} [o]
@@ -144,7 +144,7 @@ export function docContext(ctx, handle) {
 /**
  * A template that lays a registered game's table out in an empty scene: the
  * game's id, or a function of the template's params to it (the stage hands
- * create exactly the params its metadata declares, coerced: STAGE.md "Templates").
+ * create exactly the params its metadata declares, coerced: EDITOR.md "Templates").
  * @param {string | ((params: object) => string)} game
  */
 export const template = (game) => ({

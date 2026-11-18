@@ -114,7 +114,7 @@ export const plugins = [
   // table out in that scene, with its own art (src/table/template.js).
   // `game` is the game the table is of: the template's id for a fixed one,
   // a function of its params for one that takes them. Draw Dominoes is one
-  // template, how many play chosen under its button (STAGE.md "Templates"),
+  // template, how many play chosen under its button (EDITOR.md "Templates"),
   // each count its own game as data (above)
   ...[
     { id: "lost-cities", name: "Lost Cities", icon: "Map", description: "A two-player card table: five expeditions, a face-down deck and a private hand each" },

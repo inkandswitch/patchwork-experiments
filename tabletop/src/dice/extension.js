@@ -56,7 +56,7 @@
 // frame, against its parent's +Y (roll.js), so on a table aboard a ship it
 // stays on the table and is read against the table.
 //
-// A turn is told (the "tell" service, STAGE.md "Native services"): which die and which face.
+// A turn is told (the "tell" service, NATIVE.md "Native services"): which die and which face.
 // The stage holds the word to the doc by asking this package's `says`, which
 // answers only when the doc moved that die lately, to a pose showing that
 // face as built here, and spends that move: once per move.
@@ -525,7 +525,7 @@ function create(api) {
     teller.tell("turned", { die: id, face });
   }
 
-  // ── a turn's word, held to the doc (the stage asks `says`: STAGE.md "Native services") ──
+  // ── a turn's word, held to the doc (the stage asks `says`: NATIVE.md "Native services") ──
   const seenAt = new Map(); // die id → its doc transform as this view last saw it (a copy)
   const moved = new Map(); // die id → when this view saw its doc transform change (ms), until a word of it is told
   const timers = new Set(); // cancels (the stage's time: api.after)

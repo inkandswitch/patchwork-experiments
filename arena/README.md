@@ -49,7 +49,7 @@ listed before Play, so on the bar it comes and goes to Play's left and Play,
 the cluster's last, never moves under a pending click: a click meant for
 Play that landed on it would wipe the scores, with no undo outside Edit.
 
-**Copies** (scene/STAGE.md, "Copying objects"). `down` is play state, marked
+**Copies** (scene/EDITOR.md, "Copying objects"). `down` is play state, marked
 `runtime` in the trait's description, so a copy of a knocked-over target, in
 another scene or a duplicate in this one, is nobody's point. `stand` goes
 with it: the copy is still lying down, and standing targets up raises it
@@ -58,7 +58,7 @@ it came from.)
 
 ## Playing
 
-Enter, or **Play** on the bar of tools (scene/STAGE.md, "The interface": a world command,
+Enter, or **Play** on the bar of tools (scene/EDITOR.md, "The interface": a world command,
 `show: ["world", "menu"]`, so it is at the bar's right end looking, walking
 or editing) walks you in: the walk body (scene/STAGE.md, "Bodies", the walk
 package's) entered at a spawn point (a random one; with none, at the eye),

@@ -173,7 +173,7 @@ async function walkTo([x, z], { ms = 8000, tol = 0.6 } = {}) {
   return eye();
 }
 const r3 = (p) => p.map((v) => +v.toFixed(2));
-/** The arena's world commands on the bar of tools (scene/STAGE.md, "The interface"). */
+/** The arena's world commands on the bar of tools (scene/EDITOR.md, "The interface"). */
 const PLAY = `.toolbar [data-command="play"]`;
 const RESET = `.toolbar [data-command="reset"]`;
 /** View w's bar of tools: whether it's laid out, and its two clusters' commands (the editor's, the world's). */

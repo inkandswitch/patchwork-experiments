@@ -1,7 +1,7 @@
 // Cup dice on a table: the parts.
 //
 // Parts (the editor's bin, under "Dice"): a dice cup with its five dice, and
-// a pool. Every GLB is the scene's own file (ctx.file, STAGE.md "Parts"),
+// a pool. Every GLB is the scene's own file (ctx.file, EDITOR.md "Parts"),
 // shared by every object drawn from it, under a key that names what it's
 // drawn from. A die here is a GLB carrying `extras.dice` (as the die source
 // builds), not a die doc: a set's five dice are one kind of thing. What each

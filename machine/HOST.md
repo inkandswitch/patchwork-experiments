@@ -733,7 +733,7 @@ A machine is an object in a scene (`src/scene/`): its source a machine doc
 (the engine's kind and the content it boots), its content a cabinet the
 `machine` scene:source builds, its trait `machine` holding the session this
 object runs. The stage is not changed: everything here is the extension
-contract (scene/STAGE.md) and a replicated process (STAGE.md, "Native services").
+contract (scene/STAGE.md) and a replicated process (scene/NATIVE.md, "Native services").
 
 ```js
 // one machine on one view (running.js), what extension.js does for each object:
@@ -870,7 +870,7 @@ Then step 7 (round 3):
    view ahead of the pauser by more than the margin. The views still meet
    at the stop kept. A pause and a resume made at once settle the same way.
 4. **The process is registered only while the machine runs.** A machine
-   nobody plays keeps no world going (STAGE.md, "Native services", "Nobody present, no time
+   nobody plays keeps no world going (NATIVE.md, "Native services", "Nobody present, no time
    passes"), and the first player's resume brings the computer back.
 5. **The session is the object's, not the machine doc's.** The machine doc
    is the program and what it boots; each object is one running game on
@@ -899,7 +899,7 @@ Then step 7 (round 3):
     mirrors never act; a read-only viewer sees a note. Spectating a
     read-only scene is deferred.
 11. **The host's liveness runs on the stage's time** (`now: api.now`:
-    reaping, chunks, messages), as STAGE.md "Native services" asks; its CPU budget
+    reaping, chunks, messages), as NATIVE.md "Native services" asks; its CPU budget
     stays on the wall.
 12. **`Screen` takes three.js as a parameter** (`api.THREE`): a texture
     must be made by the three.js that draws it, and the package no longer
@@ -910,7 +910,7 @@ Made after review (round 1), also unattended:
 
 13. **The machine is pulled, not stepped; the process only keeps world time
     going.** The replicated process's step is a no-op, written out
-    (`step() {}`) because STAGE.md's process has a step. Making the host a
+    (`step() {}`) because NATIVE.md's process has a step. Making the host a
     stepped process would need two paths: the host must run on every
     frame while it's stopped too (a view that went past a stop rewinds to
     it, late inputs re-simulate, checkpoints settle, a resume is noticed),
@@ -934,7 +934,7 @@ Made after review (round 1), also unattended:
     stage's time (`api.after`). So does the claim holder when it
     can't make the session yet (the content still syncing, a fetch
     failing), and so does a view whose start failed for any reason. A
-    holder that leaves lets its claim lapse (STAGE.md, "Native services"), and the
+    holder that leaves lets its claim lapse (scene/NATIVE.md, "Native services"), and the
     next view to ask takes it. "No game yet" and a scene that can't be
     written are asked again too, since either can change. Retrying never
     stops on its own: a machine that can't start says why beside its
@@ -1054,7 +1054,7 @@ Round 2's review (Decisions 29-34):
     One key in one write: two views giving one cabinet a game at once end
     with one of the two whole, never one's kind with the other's content.
     (The review suggested a claim around the write; a drop's context has no
-    `claim`, scene/STAGE.md, "Drops".) It also keeps a copy of an empty
+    `claim`, scene/EDITOR.md, "Drops".) It also keeps a copy of an empty
     cabinet, which shares its empty doc, from getting the game too. And a
     session says which source it was made for (the trait's `source`,
     runtime like `session`): a session a view made meanwhile for the source
@@ -1403,7 +1403,7 @@ Round 3's review (Decisions 41-45):
   while the machine runs, on both views, through a world pause; two
   players, then none: both views stop at the same tick with the state the
   documents give, and stay there while the world runs on; the process is
-  STAGE.md's shape (`replicated`, `step`) and stepping it moves nothing.
+  NATIVE.md's shape (`replicated`, `step`) and stepping it moves nothing.
   Mutation-checked: the process always or never registered, no quiet stop,
   no world clock, a process with no step.
 - **`scene/start.test.js`:** two or three views, each making the session

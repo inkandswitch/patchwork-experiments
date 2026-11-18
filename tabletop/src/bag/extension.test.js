@@ -150,7 +150,7 @@ describe("a bag in a scene", () => {
     t.rec.held.set("cube", "s-peer");
     expect(t.state("put", "cube")).toBeNull();
     t.rec.held.clear();
-    // vetoed (STAGE.md, `carryable`)
+    // vetoed (CONVENTIONS.md, `carryable`)
     t.rec.contributions.carryable = [(id) => id !== "disc"];
     expect(t.state("put", "disc")).toBeNull();
     expect(t.state("put", "cube").choices.length).toBe(2);

@@ -109,7 +109,7 @@ bare back. A copied hand keeps its seat's id.
 ## Keepers
 
 A keeper holds what objects are, away from the scene, and shows each only to
-whoever the scene's policies say may see it (scene/STAGE.md, "Keepers"). It
+whoever the scene's policies say may see it (scene/CONVENTIONS.md, "Keepers"). It
 is an ordinary extension, attached by its own trait `{ by: <container>, slot }`,
 and contributes `keeper` (`of`, `shuffle`, `name`), which the table's Shuffle
 and Wash use. Two objects naming one slot: the lower id keeps it.

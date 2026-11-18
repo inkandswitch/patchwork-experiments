@@ -29,7 +29,7 @@ export const plugins = [
     // marked `runtime`, so a copy of a knocked-over target (into another
     // scene, or a duplicate) is nobody's point. `stand` (how it stood) is
     // about the object, which the copy still is: lying down, so it goes
-    // along, and Stand targets up raises the copy too (scene/STAGE.md,
+    // along, and Stand targets up raises the copy too (scene/EDITOR.md,
     // "Copying objects" and `runtime`; src/level.js).
     describes: {
       "arena.level": {

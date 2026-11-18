@@ -131,7 +131,7 @@ export function fakeRepo() {
  *   content: what api.content(id) answers; registries: what api.registry(type) answers
  */
 export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {} } = {}) {
-  // a scene as its datatype makes it: `assets` comes with the doc (scene/STAGE.md, "Shared maps")
+  // a scene as its datatype makes it: `assets` comes with the doc (scene/CONVENTIONS.md, "Shared maps")
   if (!doc.assets) doc.assets = {};
   vi.useFakeTimers();
   vi.setSystemTime(1_000_000);
@@ -371,7 +371,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         const h = setTimeout(fn, ms);
         return () => clearTimeout(h);
       },
-      // the doc's ephemeral side (STAGE.md, "api.channel")
+      // the doc's ephemeral side (STAGE.md, "`api`")
       channel: {
         viewer,
         session,

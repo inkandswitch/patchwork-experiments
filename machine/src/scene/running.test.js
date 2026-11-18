@@ -32,7 +32,7 @@ function world(t, running = true) {
     t: () => w.s,
     running: () => w.run,
     process(spec) {
-      // a process as STAGE.md has it (step is not optional), replicated; its step does
+      // a process as NATIVE.md has it (step is not optional), replicated; its step does
       // nothing, since the host pulls its tick from t() on every frame
       expect(Object.keys(spec).sort()).toEqual(["replicated", "step"]);
       expect(spec.replicated).toBe(true);

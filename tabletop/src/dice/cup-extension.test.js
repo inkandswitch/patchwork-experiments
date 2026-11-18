@@ -20,7 +20,7 @@ const SEED = "a1b2c3d4" + "0".repeat(56);
 const SEATED = ["alice", "bob"];
 const name = (v) => v[0].toUpperCase() + v.slice(1);
 
-/** The stage's merge of one policy's answer, for one viewer (STAGE.md, "Audience"): null → the doc's to say, everyone. */
+/** The stage's merge of one policy's answer, for one viewer (NATIVE.md, "Audience"): null → the doc's to say, everyone. */
 function audienceOf(a) {
   if (!a) return { audience: "all", shown: "all" };
   const shown = a.show ?? [];

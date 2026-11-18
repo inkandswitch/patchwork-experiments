@@ -369,7 +369,7 @@ describe("rolling a die", () => {
   });
 });
 
-describe("H8: a pause, at every frame of a roll, changes nothing (scene/STAGE.md, “World time”)", () => {
+describe("H8: a pause, at every frame of a roll, changes nothing (scene/NATIVE.md, “World time”)", () => {
   // The one way a pause reaches dice: the doc changes (the clock's fields), so every view's update()
   // runs again. Paused at each frame of a throw, from the press to the told landing, the roll lands
   // the same, in the same writes, released and told the same, as unpaused.

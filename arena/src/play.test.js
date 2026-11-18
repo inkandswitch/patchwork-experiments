@@ -125,7 +125,7 @@ const ray = (dir = [0, 0, -1]) => ({ origin: [0, 1.6, 0], dir });
 // a command's state as a surface asks it: in the stage's context (its view)
 const stateOf = (f, x, id, target = null) => x.commands.find((c) => c.id === id).state(target, { scene: scene(f.api.doc()), view: f.api.view.get() });
 
-describe("Play and Stand targets up: world commands, on the bar in every body (scene/STAGE.md, “The interface”)", () => {
+describe("Play and Stand targets up: world commands, on the bar in every body (scene/EDITOR.md, “The interface”)", () => {
   const PLAY = { label: "Play", title: "Walk the level with the gun" };
   const PICK = { label: "Pick up the gun", title: "Take the gun in hand: a click shoots, R reloads" };
   // holding × walking × target: every row (A2)

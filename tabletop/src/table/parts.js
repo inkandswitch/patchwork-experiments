@@ -1,4 +1,4 @@
-// The tabletop's parts (scene:part, scene/STAGE.md "Parts"), for the editor's
+// The tabletop's parts (scene:part, scene/EDITOR.md "Parts"), for the editor's
 // parts bin, under "Tabletop": a pawn, a token and a card spot. Each is one
 // object showing the scene's one GLB doc for its kind (ctx.file, under
 // "tabletop/<kind>@1": ten pawns share one file), drawn from the same piece
@@ -182,7 +182,7 @@ export function squared(t) {
 }
 
 /**
- * A game's whole table as a part (scene/STAGE.md, "Extract and bundle": a game part makes
+ * A game's whole table as a part (scene/EDITOR.md, "Extract and bundle": a game part makes
  * a game doc and links it): a registered game, by its id, laid out in a scene
  * doc of its own (template.js setUp, as the start screen's template lays it
  * out: its own seats, title, view and keepers' containers), then linked where
