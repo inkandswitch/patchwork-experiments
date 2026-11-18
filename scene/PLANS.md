@@ -172,21 +172,31 @@ sends simulated locally (cannonballs, spray), and positional sound.
 - **The game description stays canonical** (the game format; TTS import
   produces it), so other editors, a 2D view and scripting can work on it.
   The 3D scene is one rendering of it.
-- **Our own games are template documents.** Santorini, Lost Cities,
-  Dominoes and Liar's dice become game-description documents in Patchwork;
+- **Our own games are template documents. Done, 2026-11-18** (HISTORY.md).
+  Santorini, Lost Cities, Dominoes and Liar's dice become game-description
+  documents in Patchwork;
   the package's `games/*.json` become seed data for publishing them, and the
   per-game `scene:template` plugins become one generic "start from a game
-  description".
-- **A session is an instance:** a description rendered into a fresh scene.
+  description". As built: the launcher's "Add the built-in games" makes a
+  description of each registered game, once; Draw Dominoes is one
+  description with a variant for 2, 3 and 4 (the format's `variants`). The
+  per-game templates stay (an empty scene has no description to start from,
+  and a template's params are fixed per template: tabletop/README.md, "The
+  library").
+- **A session is an instance. Done, 2026-11-18:** a description rendered
+  into a fresh scene (tabletop's `table/session.js`, the game page's path too).
   Every session is already saved (Automerge); "save a copy" forks a session
   by the copy rule (keeper bindings dropped, seats empty, runtime state left
-  behind), which is save-game sharing.
-- **The launcher is a tool rendering a library folder**: `Games/` (template
-  documents, TTS imports) and `Sessions/` (session scenes). New game,
-  Continue, Fork, Import. Open: an ordinary folder with a marker (the launcher
-  offered beside the folder view) or a folder-shaped datatype (opens as the
-  launcher by default); check how Patchwork picks a tool first.
-- **TTS mods come in as files.** The lead, 2026-11-17: no Workshop relay or
+  behind), which is save-game sharing. As built, a fork's cards are bare
+  backs: what each card is stays with the session it was dealt in.
+- **The launcher is a tool rendering a library folder. Done, 2026-11-18**:
+  `Games/` (template documents, TTS imports) and `Sessions/` (session
+  scenes). New game, Continue, Fork, Import. Decided: a folder-shaped
+  datatype, `game-library` (Patchwork picks a doc's tool by datatype id
+  alone, so a marker on a plain folder couldn't make the launcher its
+  default); "Open as folder" shows it in the folder tool.
+- **TTS mods come in as files. Done, 2026-11-18** (the launcher's Import).
+  The lead, 2026-11-17: no Workshop relay or
   search; they provide the mod's JSON (from `Mods/Workshop` after subscribing
   in Steam), as the importer takes today. (Checked then: Steam's file-details
   call needs no key but has no CORS headers; downloads are BSON; search needs

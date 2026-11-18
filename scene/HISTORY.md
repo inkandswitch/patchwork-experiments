@@ -819,3 +819,33 @@ drawer holds at most six decoded, counted out and back, so its eviction
 never closes one a draw is still using, as its FIFO could): drawing what
 TM's table lays out in headless Chrome (probes/decode-bench.mjs, 305 real
 TTS-cache PNGs) went from 6.3–8.2 s to 2.8–4.3 s.
+
+### 2026-11-18 — Tabletop: the game library and its launcher
+
+PLANS.md §3, the lead's tabletop plan, built while the lead slept (nothing
+published or synced). A `game-library` doc (tabletop's `src/library/`) is
+folder-shaped, `{ title, docs }`, made holding two plain folders linked as
+folders, Games and Sessions; Patchwork picks a doc's tool by datatype id
+alone, so a datatype of its own, not a marked folder, is what makes the
+launcher its default, and "Open as folder" shows it in the folder tool.
+The launcher: **New game** renders a description, as a variant, into a
+fresh scene through the game page's own path (`table/session.js`, now one
+function both call), linked as the game and the time; **Continue**;
+**Fork** copies a session by the scene's copy rule (a copy of transfer.js's
+in tabletop, `copy-rule.js`: runtime state, keeper bindings and dropped
+fields left behind, every `entries` trait set back to its `init`, which
+empties the seats; bag docs copied) with `forkedFrom: { url, heads }`;
+**Import** runs the TTS importer at its default into Games; **Add the
+built-in games** makes each registered game's description once
+(`origin.builtIn`). The format gained `variants` (tabletop-game v2,
+GAME-FORMAT.md §3, choice 18): other ways to set a game up, each its own
+`players`, `setup`, `seats`, `camera`, never pieces, each checked as the
+game it sets up; a card's face group spans every variant's setup. The
+three Draw Dominoes files became one game with three variants. The
+start screen's per-game templates stay: an empty scene has no description
+to start from, and a template's params are fixed per template.
+probes/library-run.mjs (headless Chrome, in-memory repo) adds the built-in
+games twice, starts Lost Cities, sits, forks, imports the tiny mod and
+starts it: 17 checks pass. A fork's cards are bare backs (the copy rule:
+what a card is stays with the session it was dealt in); that a fork be a
+playable save of hidden state too is the lead's to decide.
