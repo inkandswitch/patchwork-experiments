@@ -75,9 +75,9 @@ describe("scene.autoframe", () => {
     expect(camera.frames).toEqual([B1]);
     // nor is a pose held mid-drag, though it moves the box
     world.box = B3;
-    s.facet("scene.autoframe").pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
+    s.facet("scene.autoframe").use("poses").hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
     await s.settle();
-    s.facet("scene.autoframe").pose.release("a");
+    s.facet("scene.autoframe").use("poses").release("a");
     await s.settle();
     expect(camera.frames).toEqual([B1]);
     world.box = B2;

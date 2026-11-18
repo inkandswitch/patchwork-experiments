@@ -124,15 +124,15 @@ describe("channels (I5): claims and holds on G's channel, wherever G is open", (
   it("a hold (a carry) taken in any view shows as that view's in every other stage of G", async () => {
     const w = await world();
     for (let i = 0; i < 3; i++) {
-      expect(w.acting(i).pose.hold("c", { position: [i, 0, 0], rotation: [0, 0, 0], scale: 1 })).toBe(true);
+      expect(w.acting(i).use("poses").hold("c", { position: [i, 0, 0], rotation: [0, 0, 0], scale: 1 })).toBe(true);
       await w.deliver();
       for (const { i: j, role, api } of w.everywhere()) {
         if (j === i && role === "acting") continue;
-        expect([j, role, api.heldBy("c")]).toEqual([j, role, w.session(i)]);
+        expect([j, role, api.use("poses").heldBy("c")]).toEqual([j, role, w.session(i)]);
       }
-      w.acting(i).pose.release("c");
+      w.acting(i).use("poses").release("c");
       await w.deliver();
-      for (const { api } of w.everywhere()) expect(api.heldBy("c")).toBe(null);
+      for (const { api } of w.everywhere()) expect(api.use("poses").heldBy("c")).toBe(null);
     }
   }, 30_000);
 

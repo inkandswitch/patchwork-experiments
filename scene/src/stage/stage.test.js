@@ -7,7 +7,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { wallAt } from "../test/stage-harness.js";
-import { bestWidget, hitChain, initialCamera, mergeLooks, sameTransform, startOf, statusOf, widgetWins } from "./stage.js";
+import { bestWidget, hitChain, initialCamera, startOf, statusOf, widgetWins } from "./stage.js";
+import { sameTransform } from "../native/poses.js";
+import { SEND } from "./presence.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const registries = new Map();
@@ -55,7 +57,7 @@ const { add, drop, editor, part, template: runTemplate } = await import("../part
 // the drop context (STAGE.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: view.start.edit picks it up; and the view's native services)
-const VIEWS = ["scene.edit", "scene.notices", "scene.prefs", "scene.drawer"];
+const VIEWS = ["scene.edit", "scene.notices", "scene.prefs", "scene.drawer", "scene.poses"];
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || VIEWS.includes(p.id)) getRegistry(p.type).register(p);
 /** what scene.notices shows */
 const noticesOf = (m) => m.debug.view.plugins.instanceOf("scene.notices").notices;
@@ -158,7 +160,7 @@ function mount(handle, viewerId, { time = null } = {}) {
 function newScene(extra = {}) {
   return repo.add(emptyScene(extra));
 }
-const running = (m) => m.local.get().running.map((r) => `${r.id}:${r.scope}`);
+const running = (m) => m.local.get().running.filter((r) => r.id !== "scene.poses").map((r) => `${r.id}:${r.scope}`);
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -203,11 +205,6 @@ describe("the stage's pure helpers", () => {
     expect(widgetWins({ owner: "a", distance: 3, onTop: true }, { distance: 2 })).toBe(true);
     expect(widgetWins({ owner: "a", distance: 1 }, { distance: 2 })).toBe(true);
     expect(widgetWins({ owner: "a" }, null)).toBe(true);
-  });
-  it("lenses stack in running order, later fields over earlier ones, missing objects dropped", () => {
-    const objects = { a: {}, b: {} };
-    const m = mergeLooks([new Map([["a", { name: "x", sourceUrl: "s" }], ["zz", { name: "gone" }]]), new Map([["a", { name: "y", sourceUrl: undefined }]])], objects);
-    expect([...m]).toEqual([["a", { name: "y", sourceUrl: "s" }]]);
   });
   it("compares transforms by number", () => {
     expect(sameTransform({ position: [1, 2, 3] }, { position: [1, 2, 3 + 1e-9], rotation: [0, 0, 0], scale: 1 })).toBe(true);
@@ -276,7 +273,7 @@ describe("the stage, mounted", () => {
       release();
       await settle();
       expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene", "t.obj:objects"]);
-      expect(m.debug.host.collect("update").map((x) => x.id)).toEqual(["t.scene", "t.edit", "t.always", "t.obj"]);
+      expect(m.debug.host.collect("update").map((x) => x.id).filter((id) => id !== "scene.poses")).toEqual(["t.scene", "t.edit", "t.always", "t.obj"]);
     } finally {
       getRegistry("scene:extension").get("t.scene").load = async () => ext("t.scene").module;
     }
@@ -411,7 +408,7 @@ describe("the stage, mounted", () => {
     const r = exts["t.scene"];
     const n = r.updates.length;
     // one tick: a pose held (what's shown changes) and a local swap (a status, say)
-    r.api.pose.hold("a", { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 });
+    r.api.use("poses").hold("a", { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 });
     m.local.swap(assoc("hovered", "a"));
     await settle();
     const after = r.updates.slice(n);
@@ -419,16 +416,30 @@ describe("the stage, mounted", () => {
     expect(after.some((u) => u.prev.scene === u.scene && u.prev.local === u.local && u.local.hovered === "a")).toBe(true);
   });
 
-  it("lenses: nameOf shows what this viewer sees", async () => {
-    exts["t.scene"] = recorder("t.scene", () => ({ looks: () => new Map([["a", { name: "Ace of spades" }]]) }));
-    exts["t.always"] = recorder("t.always", () => ({ looks: () => new Map([["a", { sourceUrl: null }], ["b", { name: "B!" }]]) }));
+  it("display: overrides layer in running order, later per field; again replaces the caller's own; nameOf shows them; release (or stopping) restores", async () => {
     const m = mount(newScene({ traits: { "t.scene": {} }, objects: { a: card(), b: card() }, order: ["a", "b"] }));
     await settle();
-    const api = exts["t.scene"].api;
-    expect(api.nameOf("a")).toBe("Ace of spades");
-    expect(api.nameOf("b")).toBe("B!");
-    expect(api.nameOf("zz")).toBeNull();
-    expect(m.debug.looks().get("a")).toEqual({ name: "Ace of spades", sourceUrl: null });
+    const [early, late] = [exts["t.scene"].api, exts["t.always"].api];
+    const T = { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 };
+    // t.always runs after t.scene: its fields win, whoever called first
+    late.display("a", { name: "Late", hidden: true });
+    const off = early.display("a", { name: "Early", transform: T });
+    early.display("b", { name: "B!" });
+    expect(early.nameOf("a")).toBe("Late");
+    expect(m.debug.displayed().get("a")).toEqual({ name: "Late", hidden: true, transform: T });
+    expect(m.debug.viewport.poses.get("a")).toEqual(T);
+    // again from the same extension replaces its override; the old release is spent
+    const again = early.display("a", { name: "Early again" });
+    off();
+    expect(m.debug.displayed().get("a")).toEqual({ name: "Late", hidden: true });
+    expect(m.debug.viewport.poses.has("a")).toBe(false);
+    again();
+    expect(early.nameOf("b")).toBe("B!");
+    expect(early.nameOf("zz")).toBeNull();
+    uninstall("t.always");
+    await settle();
+    expect(early.nameOf("a")).toBe("Card");
+    expect([...m.debug.displayed().keys()]).toEqual(["b"]);
   });
 
   it("ambients: the running extensions' offers stacked per name in running order, the later whole; the atmosphere among them is the viewport's; gone when its giver stops", async () => {
@@ -1023,17 +1034,17 @@ describe("two stages on one scene", () => {
     expect(recA.received).toEqual([]);
 
     // A holds the card: B shows it there
-    apiA.pose.hold("a", { position: [1, 2, 3] });
+    apiA.use("poses").hold("a", { position: [1, 2, 3] });
     await until(() => B.debug.viewport.poses.has("a"));
     expect(B.debug.viewport.poses.get("a").position).toEqual([1, 2, 3]);
-    expect(apiB.heldBy("a")).toBe(A.debug.presence.session);
+    expect(apiB.use("poses").heldBy("a")).toBe(A.debug.presence.session);
     // A puts it down: the doc, then a landed release; B lets go once its doc agrees
     h.change((d) => {
       d.objects.a.transform = { position: [1, 2, 3], rotation: [0, 0, 0], scale: 1 };
     });
-    apiA.pose.release("a", { landed: true });
+    apiA.use("poses").release("a", { landed: true });
     await until(() => !B.debug.viewport.poses.has("a"));
-    expect(apiB.heldBy("a")).toBeNull();
+    expect(apiB.use("poses").heldBy("a")).toBeNull();
 
     // stopping A's extension clears its keys on B
     A.cleanup();
@@ -1050,7 +1061,7 @@ describe("two stages on one scene", () => {
     forgetModules();
     const B = mount(h, "viewer:bob");
     await settle();
-    apiA.pose.hold("a", { position: [5, 0, 0] });
+    apiA.use("poses").hold("a", { position: [5, 0, 0] });
     await until(() => B.debug.viewport.poses.has("a"));
     // A's extension stops (uninstalled): the hold is released as a put-back
     uninstall("t.edit");
@@ -1064,6 +1075,10 @@ describe("another view's hold, played back", () => {
   let clockNow = 0;
   const T = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
   const x = (m) => m[12]; // a world matrix's x translation (column-major)
+  // a peer's pose, as scene.poses sends it on the channel
+  let n = 0;
+  const say = (h, data, session = "peer") => h.emit("ephemeral-message", { message: { type: SEND, session, viewer: `viewer:${session}`, ext: "scene.poses", kind: "pose", n: ++n, data } });
+  const tick = (M, t) => M.debug.host.instanceOf("scene.poses").tick(t);
 
   it("plays a peer's stream back between its samples; worldOf (and what's attached) follows what's shown", async () => {
     const h = newScene({ objects: { hull: card({ name: "Hull" }), deck: card({ name: "Deck", parent: "hull", transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 } }) }, order: ["hull", "deck"] });
@@ -1074,7 +1089,7 @@ describe("another view's hold, played back", () => {
     let seq = 0;
     const pose = (at, transform) => {
       clockNow = at + 1000;
-      h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", viewer: "viewer:peer", id: "hull", parent: null, transform, since: 1, seq: ++seq, at, every: 50 } });
+      say(h, { id: "hull", parent: null, transform, since: 1, seq: ++seq, at, every: 50 });
     };
     pose(0, T(0));
     // one sample: shown as it is
@@ -1083,7 +1098,7 @@ describe("another view's hold, played back", () => {
     pose(100, T(2));
     // heard at 1100, played 75 ms late: a quarter of the way from 0 to 1
     expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(0.5);
-    M.debug.tickPoses(1130); // the sender's 55
+    tick(M, 1130); // the sender's 55
     expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(1.1);
     expect(x(api.worldOf("hull"))).toBeCloseTo(1.1);
     // the deck rides on the hull as it's drawn, not as the doc has it
@@ -1092,20 +1107,20 @@ describe("another view's hold, played back", () => {
     expect(x(api.scene().world("deck"))).toBe(0);
     // the next is late: carry on for one interval, then ease back onto the
     // last that came and hold it (the sender may simply have stopped)
-    M.debug.tickPoses(1200);
+    tick(M, 1200);
     expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2.5);
-    M.debug.tickPoses(1400);
+    tick(M, 1400);
     expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2);
-    M.debug.tickPoses(1500);
+    tick(M, 1500);
     expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2);
     // a landed release shows where it landed at once, as before
     clockNow = 1600;
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "hull", parent: null, transform: null, landed: T(7), seq: ++seq } });
+    say(h, { id: "hull", parent: null, transform: null, landed: T(7), seq: ++seq });
     expect(M.debug.viewport.poses.get("hull").position).toEqual([7, 0, 0]);
-    M.debug.tickPoses(1700);
+    tick(M, 1700);
     expect(M.debug.viewport.poses.get("hull").position).toEqual([7, 0, 0]);
     // a put-back from a new hold drops it at once
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "hull", parent: null, transform: null, seq: ++seq } });
+    say(h, { id: "hull", parent: null, transform: null, seq: ++seq });
     expect(M.debug.viewport.poses.has("hull")).toBe(false);
   });
 
@@ -1116,17 +1131,18 @@ describe("another view's hold, played back", () => {
     const api = exts["t.edit"].api;
     clockNow = 1000;
     // a peer's process moves `a` (yielding), and a peer's person holds `b`
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50, yields: true } });
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "b", parent: null, transform: T(0), since: 2, seq: 2, at: 0, every: 50 } });
+    say(h, { id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50, yields: true });
+    say(h, { id: "b", parent: null, transform: T(0), since: 2, seq: 2, at: 0, every: 50 });
     clockNow = 1050;
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(1), since: 1, seq: 3, at: 50, every: 50, yields: true } });
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "b", parent: null, transform: T(1), since: 2, seq: 4, at: 50, every: 50 } });
-    expect(api.heldBy("a")).toBeNull(); // a person isn't kept off by a process
-    expect(api.heldBy("a", { yields: true })).toBe("peer");
-    expect(api.pose.hold("a", T(9))).toBe(true);
-    expect(api.heldBy("b")).toBe("peer");
-    expect(api.pose.hold("b", T(9))).toBe(false);
-    M.debug.tickPoses(1100);
+    say(h, { id: "a", parent: null, transform: T(1), since: 1, seq: 3, at: 50, every: 50, yields: true });
+    say(h, { id: "b", parent: null, transform: T(1), since: 2, seq: 4, at: 50, every: 50 });
+    const poses = api.use("poses");
+    expect(poses.heldBy("a")).toBeNull(); // a person isn't kept off by a process
+    expect(poses.heldBy("a", { yields: true })).toBe("peer");
+    expect(poses.hold("a", T(9))).toBe(true);
+    expect(poses.heldBy("b")).toBe("peer");
+    expect(poses.hold("b", T(9))).toBe(false);
+    tick(M, 1100);
     expect(M.debug.viewport.poses.get("a").position).toEqual([9, 0, 0]);
     expect(M.debug.viewport.poses.get("b").position[0]).toBeLessThan(2);
   });

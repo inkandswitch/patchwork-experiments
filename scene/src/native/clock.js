@@ -464,6 +464,7 @@ export function createClock(env) {
 function create(api) {
   const ch = api.channel;
   const claims = api.use("claims");
+  const poses = api.use("poses");
   const watchers = new Set();
   let away = false; // let go on pagehide, until pageshow
   const clock = createClock({
@@ -476,7 +477,7 @@ function create(api) {
     presence: {
       set: (sample) => ch.set(PRESENCE_KEY, sample),
       sample: (s) => ch.peers()[s]?.keys?.[api.id]?.[PRESENCE_KEY] ?? null,
-      shownAt: (s) => ch.shownAt(s),
+      shownAt: (s) => poses?.shownAt(s) ?? null,
       rate: (hz) => ch.rate(hz),
     },
     eligible: () => {

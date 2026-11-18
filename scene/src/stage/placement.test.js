@@ -1,11 +1,11 @@
 // I4, placement independence (STAGE.md, "Views, stages and links", Invariants): a stage's
-// snapshot, running set, audience, looks and shown are functions of its doc
+// snapshot, running set, audience, shown and display are functions of its doc
 // and the registry, never of its host, the focus, the viewer's body or held
 // tool. Checked over the finite case the
 // invariant names: a synthetic game G in the shape of Lost Cities' (two
 // extensions: seats, which contributes the roster and a seat body; a table
-// whose audience reads the roster, and a lens showing this viewer what its
-// audience lets it see) × seats {none, p1, p1 + p2} × clock {running,
+// whose audience reads the roster, and displays to this viewer what its
+// audience lets it see, else the veil) × seats {none, p1, p1 + p2} × clock {running,
 // paused} × card state {dealt, p2's card played to the table}, open
 //   - alone,
 //   - linked into a host X at 0°,
@@ -54,6 +54,8 @@ const EXTENSIONS = [
     module: {
       create: (api) => {
         const roster = () => api.collect("roster").map((r) => r.value).find((r) => typeof r?.playerAt === "function") ?? null;
+        const aud = api.use("audience");
+        const shown = new Map(); // card → { face, off }
         return {
           // G offers an ambient of its own, which counts only where G is the world
           ambient: () => ({ "t.x": { by: api.doc().title } }),
@@ -63,14 +65,15 @@ const EXTENSIONS = [
             const who = roster()?.playerAt(snap, seat);
             return { show: who ? [who] : [], only: who ? [who] : [] };
           },
-          looks: () => {
-            const out = new Map();
+          update: () => {
             for (const id of Object.keys(api.scene().objects)) {
               if (!api.scene().objects[id].traits?.["t.card"]) continue;
-              const a = api.audience(id);
-              out.set(id, a === "all" || (Array.isArray(a) && a.includes(api.channel.viewer)) ? { name: `face ${id}` } : { veil: true });
+              const a = aud.audience(id);
+              const face = a === "all" || (Array.isArray(a) && a.includes(api.channel.viewer));
+              if (shown.get(id)?.face === face) continue;
+              shown.get(id)?.off();
+              shown.set(id, { face, off: face ? api.display(id, { name: `face ${id}` }) : aud.veil(id) });
             }
-            return out;
           },
         };
       },
@@ -109,6 +112,9 @@ async function view(repo, handle) {
   return el.querySelector(".scene-stage").__sceneDebug.view;
 }
 
+/** What a stage displays for a card: its face's name, the veil, or as the doc has it (null). */
+const shownAs = (d) => (!d ? null : d.content instanceof Uint8Array ? { veil: true } : { name: d.name });
+
 /** What I4 says is G's own, as one of G's stages has it. */
 function seen(st) {
   const api = st.debug.host.record("t.table").api;
@@ -119,7 +125,7 @@ function seen(st) {
     running: st.debug.host.running().map((r) => r.id).sort(),
     // the doc's clock, and the stage's own reading of it (its t moves with each view's frames, so only whether it runs)
     clock: { doc: readClock(st.doc()).running, api: api.use("clock").running() },
-    cards: ["h1", "h2", "t"].map((id) => [id, api.audience(id), api.shown(id), st.debug.looks().get(id) ?? null]),
+    cards: ["h1", "h2", "t"].map((id) => [id, api.use("audience").audience(id), api.use("audience").shown(id), shownAs(st.debug.displayed().get(id))]),
   });
 }
 
@@ -158,7 +164,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       };
       // (a pin's url carries its heads)
       const gStages = (v) => v.stages().filter((st) => st.url.split("#")[0] === G.url);
-      const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.looks().size === 3;
+      const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.displayed().size === 3;
       await until(() => Object.values(views).every(({ v }) => gStages(v).length === 1 && gStages(v).every(ready)), 4000);
       for (const { v, pinned } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual([pinned ? "pinned" : "acting"]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)

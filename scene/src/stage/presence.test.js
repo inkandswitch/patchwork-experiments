@@ -6,10 +6,6 @@ import {
   same,
   HEARTBEAT_MS,
   PEER_TTL_MS,
-  POSE_MS,
-  HOLD_TTL_MS,
-  poseInterval,
-  cleanEvery,
 } from "./presence.js";
 
 // A clock whose timers run in due order when advanced.
@@ -239,23 +235,17 @@ describe("presence state", () => {
   it("ignores malformed and own messages", () => {
     const fn = vi.fn();
     b.watch(fn);
-    const holds = vi.fn();
-    b.watchHolds(holds);
     for (const m of [
       { type: "scene:presence", selected: "o1", hover: null }, // no session
       { type: "scene:presence", session: "sz", seq: "1", keys: {} },
       { type: "scene:presence", session: "sz", seq: 1, keys: "nope" },
       { type: "scene:presence", session: "sb", viewer: "bob", seq: 99, keys: {} }, // b's own session
-      { type: "scene:pose", session: "sz", id: "o1", transform: 3, seq: 1 },
-      { type: "scene:pose", session: "sz", transform: {}, seq: 1 },
-      { type: "scene:pose", session: "sz", id: "o1", transform: { position: [1, 2, 3] }, seq: 1 }, // a hold with no stamp
       { type: "scene:send", session: "sz", ext: "x", data: 1, n: 1 },
       null,
       "hello",
     ])
       ha.broadcast(m);
     expect(fn).not.toHaveBeenCalled();
-    expect(holds).not.toHaveBeenCalled();
     expect(Object.keys(b.get())).toEqual(["sa"]);
   });
 });
@@ -293,283 +283,10 @@ describe("sends", () => {
   });
 });
 
-describe("pose holds", () => {
-  const T = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
-
-  it("throttles to one pose per 50 ms per object, with a trailing send", () => {
-    for (let i = 0; i < 10; i++) {
-      a.hold("hand", "o1", "g1", T(i));
-      clock.advance(10);
-    }
-    // 100 ms: at 0, at 50 (carrying the latest by then), then the trailing one at 100
-    const poses = sent("A", "scene:pose").filter((m) => m.id === "o1");
-    expect(poses.length).toBe(3);
-    expect(poses[0].transform).toEqual(T(0));
-    expect(poses[1].transform).toEqual(T(4));
-    clock.advance(POSE_MS);
-    const after = sent("A", "scene:pose");
-    expect(after.at(-1).transform).toEqual(T(9)); // the last pose always goes
-    expect(b.remoteHolds().get("o1")).toMatchObject({ session: "sa", viewer: "alice", parent: "g1", transform: T(9), landed: null });
-  });
-
-  it("throttles each object separately", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.hold("hand", "o2", null, T(2));
-    expect(sent("A", "scene:pose").map((m) => m.id)).toEqual(["o1", "o2"]);
-  });
-
-  it("a put-back drops the hold at once", () => {
-    const fn = vi.fn();
-    b.watchHolds(fn);
-    a.hold("hand", "o1", null, T(1));
-    expect(b.heldBy("o1")).toBe("sa");
-    a.release("hand", "o1");
-    expect(sent("A", "scene:pose").at(-1)).toMatchObject({ id: "o1", transform: null });
-    expect(sent("A", "scene:pose").at(-1).landed).toBeUndefined();
-    expect(b.remoteHolds().has("o1")).toBe(false);
-    expect(b.heldBy("o1")).toBe(null);
-    expect(fn).toHaveBeenCalledTimes(2);
-    expect(fn.mock.calls[1][1]).toEqual(["o1"]);
-  });
-
-  it("a landed release keeps the last pose with landed set, until settled or 3 s", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.release("hand", "o1", T(2));
-    expect(sent("A", "scene:pose").at(-1)).toMatchObject({ id: "o1", transform: null, landed: T(2) });
-    expect(b.remoteHolds().get("o1")).toMatchObject({ transform: T(1), landed: T(2) });
-    expect(b.heldBy("o1")).toBe(null); // landed is no longer held
-    clock.advance(HOLD_TTL_MS - 1);
-    expect(b.remoteHolds().has("o1")).toBe(true);
-    clock.advance(1);
-    expect(b.remoteHolds().has("o1")).toBe(false);
-
-    a.hold("hand", "o2", null, T(1));
-    a.release("hand", "o2", T(3));
-    b.settle("o2"); // the stage saw its doc catch up
-    expect(b.remoteHolds().has("o2")).toBe(false);
-  });
-
-  it("only the extension holding an object releases it", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.release("halo", "o1");
-    expect(b.heldBy("o1")).toBe("sa");
-  });
-
-  it("a release cancels a pending trailing pose", () => {
-    a.hold("hand", "o1", null, T(1));
-    clock.advance(10);
-    a.hold("hand", "o1", null, T(2)); // waits for its slot
-    a.release("hand", "o1");
-    clock.advance(1000);
-    expect(b.remoteHolds().has("o1")).toBe(false);
-    expect(sent("A", "scene:pose").map((m) => m.transform)).toEqual([T(1), null]);
-  });
-
-  it("drops a hold not refreshed for 3 s (the holder went silent)", () => {
-    // forged peer that never refreshes
-    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o1", parent: null, transform: T(1), since: 1, seq: 1 });
-    expect(b.heldBy("o1")).toBe("sz");
-    clock.advance(HOLD_TTL_MS);
-    expect(b.heldBy("o1")).toBe(null);
-  });
-
-  it("keeps a still hold alive with resends", () => {
-    a.hold("hand", "o1", null, T(1));
-    const stamp = b.remoteHolds().get("o1").since;
-    clock.advance(HOLD_TTL_MS * 3);
-    expect(b.heldBy("o1")).toBe("sa");
-    expect(b.remoteHolds().get("o1").since).toBe(stamp); // resends keep the hold's stamp
-  });
-
-  it("heldBy and remoteHolds report the earliest of two holders", () => {
-    a.hold("hand", "o1", null, T(1));
-    clock.advance(100);
-    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o1", parent: null, transform: T(9), since: 50, seq: 1 });
-    expect(b.heldBy("o1")).toBe("sa");
-    expect(b.remoteHolds().get("o1").transform).toEqual(T(1));
-    a.release("hand", "o1");
-    expect(b.heldBy("o1")).toBe("sz"); // the other hold was kept underneath
-    expect(b.remoteHolds().get("o1").transform).toEqual(T(9));
-  });
-
-  it("every view ranks two holds alike, whatever order it heard them in (the holder's stamp)", () => {
-    const pose = (session, since) => ({ type: "scene:pose", session, viewer: session, id: "o9", parent: null, transform: T(1), since, seq: 1 });
-    // b hears the later grab first
-    hb.inject(pose("late", 2_000));
-    hb.inject(pose("early", 1_500));
-    expect(b.heldBy("o9")).toBe("early");
-    expect(b.remoteHolds().get("o9").session).toBe("early");
-  });
-
-  it("concurrent holds (neither holder had heard of the other) fall to the session id, on every view", () => {
-    const pose = (session, since) => ({ type: "scene:pose", session, viewer: session, id: "o8", parent: null, transform: T(1), since, seq: 1 });
-    hb.inject(pose("s2", 1));
-    hb.inject(pose("s1", 1));
-    expect(b.heldBy("o8")).toBe("s1");
-  });
-
-  it("a hold begun after hearing of another ranks after it, whatever the clocks say", () => {
-    a.hold("hand", "o1", null, T(1));
-    // b's clock is far behind a's: stamps, not times, decide
-    b.hold("hand", "o1", null, T(2));
-    expect(b.heldBy("o1")).toBe("sa");
-    expect(sent("B", "scene:pose")[0].since).toBeGreaterThan(sent("A", "scene:pose")[0].since);
-  });
-
-  it("while this view holds it too, only a peer that took it first counts", () => {
-    a.hold("hand", "o1", null, T(1));
-    clock.advance(100);
-    b.hold("hand", "o1", null, T(2)); // b grabbed it a moment later
-    expect(a.heldBy("o1")).toBe(null); // a was first: it's a's
-    expect(b.heldBy("o1")).toBe("sa"); // b should let go
-    expect(sent("A", "scene:pose")[0].since).toBeLessThan(sent("B", "scene:pose")[0].since);
-  });
-
-  it("goodbye (pagehide) puts holds back and leaves at once; hello comes back as a new session", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.goodbye();
-    expect(b.heldBy("o1")).toBe(null);
-    expect(Object.keys(b.get())).toEqual([]);
-    a.set("ext", "k", 1);
-    clock.advance(HEARTBEAT_MS * 2);
-    expect(Object.keys(b.get())).toEqual([]); // quiet while away
-    a.hello();
-    expect(a.session).not.toBe("sa");
-    expect(Object.keys(b.get())).toEqual([a.session]);
-    expect(b.get()[a.session].keys).toEqual({ ext: { k: 1 } });
-  });
-
-  it("ignores a pose that arrives after a later release", () => {
-    a.hold("hand", "o1", null, T(1));
-    const first = sent("A", "scene:pose")[0];
-    a.release("hand", "o1");
-    ha.broadcast(first); // replayed late
-    expect(b.heldBy("o1")).toBe(null);
-  });
-
-  it("clearing an extension puts its holds back", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.hold("halo", "o2", null, T(1));
-    a.clear("hand");
-    expect(b.heldBy("o1")).toBe(null);
-    expect(b.heldBy("o2")).toBe("sa");
-  });
-
-  it("a bye ends the departed peer's holds", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.dispose();
-    expect(b.remoteHolds().size).toBe(0);
-  });
-
-  it("remoteHolds is a stable value between changes", () => {
-    a.hold("hand", "o1", null, T(1));
-    const m = b.remoteHolds();
-    expect(b.remoteHolds()).toBe(m);
-    clock.advance(POSE_MS);
-    a.hold("hand", "o1", null, T(2));
-    expect(b.remoteHolds()).not.toBe(m);
-  });
-});
-
-describe("pose streams, for playing back", () => {
-  const T = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
-
-  it("the pose interval is POSE_MS, or faster when the presence rate is", () => {
-    expect(poseInterval([])).toBe(POSE_MS);
-    expect(poseInterval([10])).toBe(POSE_MS); // 10 Hz is slower than 20: poses still go at 20
-    expect(poseInterval([60])).toBeCloseTo(1000 / 60);
-    expect(cleanEvery(1000 / 60)).toBeCloseTo(1000 / 60);
-    expect(cleanEvery(1)).toBe(POSE_MS);
-    expect(cleanEvery("fast")).toBe(POSE_MS);
-  });
-
-  it("each pose carries the sender's clock and its interval", () => {
-    a.hold("sim", "hull", null, T(1));
-    const msg = sent("A", "scene:pose").at(-1);
-    expect(msg.at).toBe(clock.now());
-    expect(msg.every).toBe(POSE_MS);
-  });
-
-  it("raising the presence rate raises the pose rate too", () => {
-    a.rate("sim", 60);
-    for (let i = 0; i < 12; i++) {
-      a.hold("sim", "hull", null, T(i));
-      clock.advance(1000 / 60);
-    }
-    // 200 ms at 60 Hz: a pose a frame, not one per 50 ms
-    const poses = sent("A", "scene:pose").filter((m) => m.id === "hull");
-    expect(poses.length).toBeGreaterThanOrEqual(11);
-    expect(poses.at(-1).every).toBeCloseTo(1000 / 60);
-    expect(b.remoteHolds().get("hull").every).toBeCloseTo(1000 / 60);
-  });
-
-  it("a peer keeps the last few as samples on the sender's clock, with its clock's offset", () => {
-    for (let i = 0; i < 4; i++) {
-      a.hold("sim", "hull", null, T(i));
-      clock.advance(POSE_MS);
-    }
-    const h = b.remoteHolds().get("hull");
-    expect(h.samples.map((x) => x.transform.position[0])).toEqual([0, 1, 2, 3]);
-    expect(h.samples[1].at - h.samples[0].at).toBe(POSE_MS);
-    expect(h.offset).toBe(0); // one clock, delivered at once
-    expect(Object.isFrozen(h.samples)).toBe(true);
-  });
-
-  it("the offset is ours minus the sender's, from its stamps; an unstamped pose is timed on arrival", () => {
-    // a peer whose clock is 5 s behind ours, its poses 20 ms on the way
-    const pose = (seq, x, at) => ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o9", parent: null, transform: T(x), since: 1, seq, at, every: 50 });
-    pose(1, 0, clock.now() - 5_020);
-    expect(b.remoteHolds().get("o9").offset).toBe(5_020);
-    expect(b.remoteHolds().get("o9").samples[0].at).toBe(clock.now() - 5_020);
-    // a pose with no stamp and no interval
-    ha.broadcast({ type: "scene:pose", session: "sy", viewer: "yan", id: "o8", parent: null, transform: T(1), since: 1, seq: 1 });
-    expect(b.remoteHolds().get("o8")).toMatchObject({ offset: 0, every: POSE_MS, samples: [{ at: clock.now(), transform: T(1) }] });
-  });
-
-  it("a trailing pose is stamped when it was held, not when it went", () => {
-    a.hold("sim", "hull", null, T(0));
-    clock.advance(20);
-    const heldAt = clock.now();
-    a.hold("sim", "hull", null, T(1)); // waits for the 50 ms
-    clock.advance(POSE_MS);
-    const msg = sent("A", "scene:pose").at(-1);
-    expect(msg.transform).toEqual(T(1));
-    expect(msg.at).toBe(heldAt);
-  });
-
-  it("shownAt: the moment on a peer's clock whose holds are drawn now, behind by the playout delay", () => {
-    expect(b.shownAt("sa")).toBe(null); // nothing heard yet
-    a.rate("sim", 30);
-    a.hold("sim", "hull", null, T(0));
-    // one clock, delivered at once: 1.5 intervals at 30 Hz behind
-    expect(b.shownAt("sa")).toBeCloseTo(clock.now() - 1.5 * (1000 / 30));
-    // a peer whose clock is 5 s behind ours
-    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o9", parent: null, transform: T(0), since: 1, seq: 1, at: clock.now() - 5_000, every: 50 });
-    expect(b.shownAt("sz")).toBe(clock.now() - 5_000 - 75);
-    // gone with a bye: unknown again
-    a.goodbye();
-    expect(b.shownAt("sa")).toBe(null);
-  });
-
-  it("a new hold, or the same one moved to another parent, starts its samples afresh", () => {
-    a.hold("hand", "o1", "g1", T(1));
-    clock.advance(POSE_MS);
-    a.hold("hand", "o1", "g1", T(2));
-    expect(b.remoteHolds().get("o1").samples).toHaveLength(2);
-    clock.advance(POSE_MS);
-    a.hold("hand", "o1", "g2", T(3));
-    expect(b.remoteHolds().get("o1").samples.map((x) => x.transform)).toEqual([T(3)]);
-    a.release("hand", "o1");
-    a.hold("hand", "o1", "g2", T(4));
-    expect(b.remoteHolds().get("o1").samples.map((x) => x.transform)).toEqual([T(4)]);
-  });
-});
-
 describe("without a usable handle", () => {
   it("works locally when the handle has no broadcast or on", () => {
     const p = createPresence({ handle: {}, viewer: null });
     p.set("x", "y", 1);
-    p.hold("x", "o1", null, { position: [0, 0, 0] });
     expect(p.get()).toEqual({});
     p.dispose();
     p.dispose();
@@ -598,8 +315,6 @@ describe("listening only", () => {
     rate: (p) => p.rate("x", 60),
     clear: (p) => p.clear("x"),
     send: (p) => p.send("x", "kind", { n: 1 }),
-    hold: (p) => p.hold("x", "o1", null, { position: [1, 0, 0] }),
-    release: (p) => p.release("x", "o1"),
     goodbye: (p) => p.goodbye(),
     back: (p) => (p.goodbye(), p.hello("s-new")),
     dispose: (p) => p.dispose(),
@@ -611,12 +326,11 @@ describe("listening only", () => {
       act(l);
       clock.advance(60_000);
       expect(bus.log.filter((x) => x.from === "L")).toEqual([]);
-      expect(l.heldBy?.("o1") ?? null).toBe(null);
       l.dispose();
     });
   }
 
-  it("hears the channel: presence, sends and holds; never its own session", () => {
+  it("hears the channel: presence and sends; never its own session", () => {
     const hl = bus.makeHandle("L");
     const l = createPresence({ handle: hl, viewer: "alice", session: "sl", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
     const self = createPresence({ handle: bus.makeHandle("M"), viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
@@ -625,15 +339,12 @@ describe("listening only", () => {
     a.set("x", "k", 2);
     a.send("x", "kind", null);
     b.send("x", "kind", null);
-    a.hold("x", "o1", null, { position: [1, 0, 0] });
     clock.advance(HEARTBEAT_MS); // (b says nothing new until its heartbeat)
     expect(l.get().sa?.keys?.x?.k).toBe(2);
     expect(Object.keys(l.get()).sort()).toEqual(["sa", "sb"]);
     expect(got).toEqual([["x", "kind", "sa"], ["x", "kind", "sb"]]);
-    expect(l.remoteHolds().get("o1")?.session).toBe("sa");
     // a listener of the speaker's own session hears none of it, and nor does the speaker
     expect(self.get().sa).toBeUndefined();
-    expect(self.remoteHolds().get("o1")).toBeUndefined();
     expect(a.get().sa).toBeUndefined();
     self.dispose();
     l.dispose();

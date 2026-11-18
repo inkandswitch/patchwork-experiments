@@ -113,7 +113,9 @@ export const plugins = [
   // view plugins, started before what doesn't provide (their `provides`, and `uses`).
   ...[
     ["claims", "Claims", { provides: ["claims"] }, () => import("./native/claims.js")],
-    ["clock", "World time", { provides: ["clock"], uses: ["claims"] }, () => import("./native/clock.js")],
+    ["poses", "Pose holds", { provides: ["poses"] }, () => import("./native/poses.js")],
+    ["audience", "Audience", { provides: ["audience"] }, () => import("./native/audience.js")],
+    ["clock", "World time", { provides: ["clock"], uses: ["claims", "poses"] }, () => import("./native/clock.js")],
     ["telling", "Telling", { provides: ["tell"] }, () => import("./native/telling.js")],
     ["notices", "Notices", { provides: ["notices"] }, () => import("./native/notices.js"), "scene:view"],
     ["prefs", "Prefs", { provides: ["prefs"] }, () => import("./native/prefs.js"), "scene:view"],

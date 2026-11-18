@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import halo from "./halo.js";
 import { GRAB_PX, HANDLE_SIZE, MIN_SCALE, dragDelta, groupMembers, groupRoots, haloHandles, haloTarget, handleAt, handlePoints, planeHit, usable } from "./halo-math.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, multiplyMatrices } from "../transform.js";
@@ -189,7 +189,9 @@ const CUBE = { min: [-1, -1, -1], max: [1, 1, 1] };
  * origin. `worlds` overrides an object's drawn world matrix (a moving parent).
  */
 async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
-  s = await mountStage({ extensions: [HALO, ...extensions], doc: { objects, order: Object.keys(objects) } });
+  const poses = { heldBy: () => null };
+  s = await mountStage({ extensions: [HALO, posesBy(poses), ...extensions], doc: { objects, order: Object.keys(objects) } });
+  s.poses = poses;
   if (readOnly) s.handle.isReadOnly = () => true;
   const vp = s.debug.viewport;
   vp.project = (p) => ({ x: 100 + p[0] * 10, y: 100 - p[1] * 10, visible: true });
@@ -208,7 +210,8 @@ async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   s.releases = [];
   // `s.refuse`: ids something here holds ahead of the halo (holds.js), whose holds don't stand
   s.refuse = new Set();
-  api.pose = { hold: (id, t) => (s.holds.push([id, t]), !s.refuse.has(id)), release: (id, o) => s.releases.push([id, o ?? {}]) };
+  poses.hold = (id, t) => (s.holds.push([id, t]), !s.refuse.has(id));
+  poses.release = (id, o) => s.releases.push([id, o ?? {}]);
   s.halo = () => s.instance("scene.halo");
   s.select = async (id) => {
     s.local.swap((m) => ({ ...m, selected: id }));
@@ -307,7 +310,7 @@ describe("scene.halo on the stage", () => {
   it("something a peer holds: the press is still the halo's, but nothing moves", async () => {
     await mount({ objects: { a: object() } });
     await s.select("a");
-    s.facet("scene.halo").heldBy = () => "peer";
+    s.poses.heldBy = () => "peer";
     const { session, p } = pressOn(handle("move", 0));
     session.move(ev("move", p.x + 20, p.y));
     session.end(ev("move", p.x + 20, p.y));

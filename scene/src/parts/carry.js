@@ -76,6 +76,7 @@ const RING_SEGMENTS = 48;
 export default {
   create(api) {
     const THREE = api.THREE;
+    const poses = api.use("poses");
     let open = null; // the open carry (one at a time): { session, check }
     const flipping = new Map(); // id → stop: pieces turning over where they lie
     let layer = null;
@@ -95,7 +96,7 @@ export default {
       return false;
     }
     /** H11: it says it can be carried (the trait), nobody holds it, it isn't turning over, and nothing vetoes it now. */
-    const canCarry = (id) => id != null && carryable(doc().objects?.[id]) && api.heldBy(id) == null && !flipping.has(id) && !vetoed(id);
+    const canCarry = (id) => id != null && carryable(doc().objects?.[id]) && poses.heldBy(id) == null && !flipping.has(id) && !vetoed(id);
 
     /** The frame `id` is carried in: its doc parent now, as drawn (null at the root). */
     function frameFor(id) {
@@ -287,7 +288,7 @@ export default {
             stopSpin?.();
             stopSpin = null;
           }
-          if (!api.pose.hold(id, frame.pose(held()))) refused();
+          if (!poses.hold(id, frame.pose(held()))) refused();
         });
       }
 
@@ -296,7 +297,7 @@ export default {
         if (!l || done) return;
         land = l;
         spinning();
-        if (!api.pose.hold(id, frame.pose(held()))) return refused();
+        if (!poses.hold(id, frame.pose(held()))) return refused();
         showRing(l, frame);
       }
 
@@ -314,7 +315,7 @@ export default {
       // A peer picked it up before we did (both grabbed it at once): theirs
       // it is, so ours goes back.
       function yieldIfTaken() {
-        if (done || !c || api.heldBy(id) == null) return false;
+        if (done || !c || poses.heldBy(id) == null) return false;
         giveBack("yielded");
         api.use("notices")?.notify("Someone else picked that up first.", "info");
         return true;
@@ -325,7 +326,7 @@ export default {
         if (done) return;
         const lifted = !!c;
         finish();
-        if (lifted) api.pose.release(id);
+        if (lifted) poses.release(id);
         endedAs(Object.freeze({ how, on: null }));
       }
 
@@ -361,11 +362,11 @@ export default {
           try {
             api.change(api.ops.setTransform(api.scene(), id, frame.pose(put.W)));
           } catch (err) {
-            api.pose.release(id);
+            poses.release(id);
             endedAs(Object.freeze({ how: "back", on: null }));
             throw err;
           }
-          api.pose.release(id, { landed: true });
+          poses.release(id, { landed: true });
           tellLanded(id, on);
           endedAs(Object.freeze({ how: "put", on }));
         },
@@ -421,22 +422,22 @@ export default {
       const end = (W) => {
         flipping.get(id)?.();
         flipping.delete(id);
-        if (!W) return api.pose.release(id);
+        if (!W) return poses.release(id);
         api.change(api.ops.setTransform(api.scene(), id, frame.pose(W)));
-        api.pose.release(id, { landed: true });
+        poses.release(id, { landed: true });
       };
       flipping.set(
         id,
         api.loop((dt) => {
           // removed meanwhile, or a peer picked it up first: it's theirs
-          if (!doc().objects?.[id] || api.heldBy(id) != null) return end(null);
+          if (!doc().objects?.[id] || poses.heldBy(id) != null) return end(null);
           t += dt / TURN_OVER;
           if (t >= 1) return end(to);
           // something here holds it ahead of the flip: theirs, nothing written
-          if (!api.pose.hold(id, frame.pose(flipAt(W0, to, t, lift)))) end(null);
+          if (!poses.hold(id, frame.pose(flipAt(W0, to, t, lift)))) end(null);
         }),
       );
-      if (api.pose.hold(id, frame.pose(W0))) return true;
+      if (poses.hold(id, frame.pose(W0))) return true;
       end(null);
       return false;
     }

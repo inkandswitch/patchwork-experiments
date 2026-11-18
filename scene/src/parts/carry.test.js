@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import carry from "./carry.js";
 import touch from "./touch.js";
 import body from "./body.js";
@@ -29,18 +29,19 @@ afterEach(() => {
  * recorded.
  */
 async function mount({ doc = {}, before = [], extensions = [], content = {} } = {}) {
+  const fake = {};
   s = await mountStage({
-    extensions: [...before, CARRY_EXT, ...extensions],
+    extensions: [...before, CARRY_EXT, posesBy(fake), ...extensions],
     doc: { ...doc, objects: { a: piece({ name: "A" }), ...(doc.objects ?? {}) } },
   });
   const api = s.api("scene.carry");
   const holds = [];
   const releases = [];
-  const stub = {
+  const stub = Object.assign(fake, {
     holds,
     releases,
     surfaces: [], // [{ id, top, min: [x, z], max: [x, z] }]: what a downward ray meets
-  };
+  });
   api.raycast = (origin, dir, { skip } = {}) => {
     if (dir[1] >= 0) return null;
     let best = null;
@@ -58,13 +59,11 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
   api.sceneBox = () => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   api.content = (id) => ({ loaded: true, box: BOX, extras: content[id] ?? { connectors: [], snapRadius: null }, stats: null, root: null });
   api.box = (id) => ({ min: [-1, 0, -1], max: [1, 1, 1] });
-  api.heldBy = () => null;
-  api.pose = {
-    // as holds.js: a peer's hold that ranks ahead (`heldBy`) refuses it, and so
-    // does `stub.refuse`, something here that holds it ahead of the carry
-    hold: (id, t) => (holds.push([id, t]), !stub.refuse && api.heldBy(id) == null),
-    release: (id, opts) => releases.push([id, opts ?? {}]),
-  };
+  // scene.poses, as holds.js: a peer's hold that ranks ahead (`stub.heldBy`) refuses it, and so
+  // does `stub.refuse`, something here that holds it ahead of the carry
+  stub.heldBy = () => null;
+  stub.hold = (id, t) => (holds.push([id, t]), !stub.refuse && stub.heldBy(id) == null);
+  stub.release = (id, opts) => releases.push([id, opts ?? {}]);
   // frame loops, run by hand: stub.tick(dt)
   const loops = new Set();
   api.loop = (fn) => (loops.add(fn), () => loops.delete(fn));
@@ -527,7 +526,7 @@ describe("Flip: turning a piece over where it lies", () => {
     const { api, stub } = await mount({ doc: { objects: { a: piece({ transform: lying }) } } });
     run();
     stub.tick(0.1);
-    api.heldBy = () => "peer";
+    stub.heldBy = () => "peer";
     stub.tick(0.1);
     await settle();
     expect(stub.loops.size).toBe(0);
@@ -679,7 +678,7 @@ describe("H11: carry only with scene.carry, no veto, nobody holding it, in its o
     s.debug.viewport.pick = () => (hit ? { id: hit, point: [0, 0.1, 0], distance: 1 } : null);
     s.debug.viewport.ray = (x, y) => down(x / 100, y / 100);
     let held = null;
-    api.heldBy = (id) => (id === held ? "peer" : null);
+    stub.heldBy = (id) => (id === held ? "peer" : null);
     const chains = [["l2"], ["l1", "l2"], ["l0", "l1", "l2"]];
     let cases = 0;
     for (const chain of chains) {
@@ -742,8 +741,8 @@ describe("How a carry ends: `ended` and `landed`", () => {
     // no ray from the pointer, ever: lifted, but it never had a landing
     "end with none": (session) => session.end({ type: "up" }),
     "cancel (Escape)": (session) => session.cancel(),
-    "a peer took it first": (session, { api }) => {
-      api.heldBy = () => "peer";
+    "a peer took it first": (session, { stub }) => {
+      stub.heldBy = () => "peer";
       session.end(move(2, 2));
     },
     // (something here holds it ahead: refused at the next hold, which is a move's; never lifted, there is none)
@@ -759,20 +758,20 @@ describe("How a carry ends: `ended` and `landed`", () => {
     // A peer's hold that ranks ahead, seen first as a refused hold (before
     // the stage's update shows it): it is theirs whichever hold says so.
     // Not lifted, the move lifts it, and its first hold is refused.
-    "a peer's hold, then a move": (session, { api }) => {
-      api.heldBy = () => "peer";
+    "a peer's hold, then a move": (session, { stub }) => {
+      stub.heldBy = () => "peer";
       session.move(move(2.1, 2));
       session.end(move(2, 2));
     },
-    "a peer's hold, then a key (Q)": (session, { api }) => {
-      api.heldBy = () => "peer";
+    "a peer's hold, then a key (Q)": (session, { stub }) => {
+      stub.heldBy = () => "peer";
       session.key({ key: "q" });
       session.end(move(2, 2));
     },
     // turned over with F, then a peer's hold while the turn shows: the turn's next hold
-    "a peer's hold mid-turn": (session, { api, stub }) => {
+    "a peer's hold mid-turn": (session, { stub }) => {
       session.key({ key: "f" });
-      api.heldBy = () => "peer";
+      stub.heldBy = () => "peer";
       stub.tick();
       session.end(move(2, 2));
     },
@@ -861,8 +860,8 @@ describe("How a carry ends: `ended` and `landed`", () => {
   it("the stage's update ends it without the pointer: {a peer's hold, the object removed} × {lifted or not} (4 cases)", async () => {
     // not lifted, it holds nothing a peer could take: it waits for its first move (which yields, the end table)
     const ROWS = [
-      { what: "a peer's hold", lifted: false, run: ({ api }) => (api.heldBy = () => "peer"), want: "pending", releases: [] },
-      { what: "a peer's hold", lifted: true, run: ({ api }) => (api.heldBy = () => "peer"), want: { how: "yielded", on: null }, releases: [["a", {}]] },
+      { what: "a peer's hold", lifted: false, run: ({ stub }) => (stub.heldBy = () => "peer"), want: "pending", releases: [] },
+      { what: "a peer's hold", lifted: true, run: ({ stub }) => (stub.heldBy = () => "peer"), want: { how: "yielded", on: null }, releases: [["a", {}]] },
       { what: "removed", lifted: false, run: () => s.change((d) => delete d.objects.a), want: { how: "back", on: null }, releases: [] },
       { what: "removed", lifted: true, run: () => s.change((d) => delete d.objects.a), want: { how: "back", on: null }, releases: [["a", {}]] },
     ];

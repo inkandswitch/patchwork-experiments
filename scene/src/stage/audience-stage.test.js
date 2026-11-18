@@ -1,5 +1,5 @@
-// The audience and the veil through the mounted stage (STAGE.md, "Audience"
-// and "Lenses"): policies merged whatever order they run in, a broken one
+// The audience and the veil through the mounted stage (scene.audience:
+// STAGE.md, "Audience", "The veil"): policies merged whatever order they run in, a broken one
 // closed, unknown while a listed package is missing whatever the viewer
 // answered about it, and a veiled object loading nothing of its own.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -8,7 +8,7 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
 import { resetPackages } from "./packages.js";
-import { veilKey } from "./veil.js";
+import { veilGLB } from "../native/veil.js";
 import packagesPart from "../parts/packages.js";
 
 let mounted = [];
@@ -39,30 +39,30 @@ const asker = (log) => ({
   meta: { id: "t.asker" },
   module: {
     create: (api) => ({
-      update: () => log.push({ audience: api.audience("card"), shown: api.shown("card"), missing: api.local.get().packages.missing }),
+      update: () => log.push({ audience: api.use("audience").audience("card"), shown: api.use("audience").shown("card"), missing: api.local.get().packages.missing }),
     }),
   },
 });
 const card = (traits) => object({ name: "Card", traits });
 
-describe("api.audience, mounted", () => {
+describe("the audience, mounted", () => {
   it("every running policy's answer, merged: shown to all, screened to one", async () => {
     const log = [];
     const s = await mount({ extensions: [policy("t.faceup"), policy("t.screen"), asker(log)], doc: { objects: { card: card({ "t.faceup": { show: "all" }, "t.screen": { only: [A] } }) }, order: ["card"] }, viewerId: A });
     await settle();
     const api = s.api("t.asker");
-    expect(api.audience("card")).toEqual([A]);
-    expect(api.shown("card")).toBe("all");
+    expect(api.use("audience").audience("card")).toEqual([A]);
+    expect(api.use("audience").shown("card")).toBe("all");
     // the screen goes: everyone
     s.change((d) => delete d.objects.card.traits["t.screen"]);
     await settle();
-    expect(api.audience("card")).toBe("all");
+    expect(api.use("audience").audience("card")).toBe("all");
     expect(log.at(-1)).toMatchObject({ audience: "all", shown: "all", missing: false });
     // nothing shows it: nobody; an object that isn't there: nobody
     s.change((d) => delete d.objects.card.traits["t.faceup"]);
     await settle();
-    expect(api.audience("card")).toEqual([]);
-    expect(api.audience("gone")).toEqual([]);
+    expect(api.use("audience").audience("card")).toEqual([]);
+    expect(api.use("audience").audience("gone")).toEqual([]);
   });
 
   it("a policy that throws is read as nobody: it hides, it never reveals", async () => {
@@ -72,8 +72,8 @@ describe("api.audience, mounted", () => {
     for (const bad of [broken, worse]) {
       const s = await mount({ extensions: [policy("t.faceup"), bad, asker([])], doc: { objects: { card: card({ "t.faceup": { show: "all" } }) }, order: ["card"] }, viewerId: A });
       await settle();
-      expect(s.api("t.asker").audience("card")).toEqual([]);
-      expect(s.api("t.asker").shown("card")).toBe("all");
+      expect(s.api("t.asker").use("audience").audience("card")).toEqual([]);
+      expect(s.api("t.asker").use("audience").shown("card")).toBe("all");
     }
   });
 
@@ -84,12 +84,12 @@ describe("api.audience, mounted", () => {
     await settle();
     const api = s.api("t.asker");
     const before = calls;
-    for (let i = 0; i < 5; i++) api.audience("card");
+    for (let i = 0; i < 5; i++) api.use("audience").audience("card");
     expect(calls - before).toBeLessThanOrEqual(1);
     const n = calls;
     s.change((d) => (d.objects.card.name = "Renamed"));
     await settle();
-    api.audience("card");
+    api.use("audience").audience("card");
     expect(calls).toBeGreaterThan(n);
   });
 });
@@ -114,22 +114,22 @@ describe("unknown while a listed package is missing", () => {
     await until(() => s.local.get().packages.ask.length === 1);
     const api = s.api("t.asker");
     // without the screen's `only` the card would be everyone's: it must not be answered at all
-    expect(api.audience("card")).toBeNull();
-    expect(api.shown("card")).toBeNull();
+    expect(api.use("audience").audience("card")).toBeNull();
+    expect(api.use("audience").shown("card")).toBeNull();
     expect(s.local.get().packages.missing).toBe(true);
     // a load that fails: still unknown
     servePackage(SCREEN, new Error("the chunk was missing"));
     vi.spyOn(console, "warn").mockImplementation(() => {});
     await s.debug.packages.load([SCREEN]);
     await settle();
-    expect(api.audience("card")).toBeNull();
+    expect(api.use("audience").audience("card")).toBeNull();
     // it loads: the screen's `only` is in the answer from the first moment there is one
     servePackage(SCREEN, screenPackage());
     const n = log.length;
     await s.debug.packages.load([SCREEN]);
     await until(() => s.local.get().running.some((r) => r.id === "t.screen"), 3000);
     await settle();
-    expect(api.audience("card")).toEqual([B]);
+    expect(api.use("audience").audience("card")).toEqual([B]);
     expect(s.local.get().packages.missing).toBe(false);
     const after = log.slice(n);
     expect(after.at(-1)).toEqual({ audience: [B], shown: "all", missing: false });
@@ -143,81 +143,87 @@ describe("unknown while a listed package is missing", () => {
     s.api("t.asker").packages.dismiss();
     await settle();
     expect(s.local.get().packages).toMatchObject({ ask: [], loading: [], failed: [], missing: true });
-    expect(s.api("t.asker").audience("card")).toBeNull();
-    expect(s.api("t.asker").shown("card")).toBeNull();
+    expect(s.api("t.asker").use("audience").audience("card")).toBeNull();
+    expect(s.api("t.asker").use("audience").shown("card")).toBeNull();
   });
 
   it("before the registry has settled, when nothing is offered yet: unknown already", async () => {
     const s = await mount({ extensions: [policy("t.faceup"), asker([])], repo, doc: doc(), viewerId: A, packageSettleMs: 60_000 });
     await settle();
     expect(s.local.get().packages.ask).toEqual([]);
-    expect(s.api("t.asker").audience("card")).toBeNull();
+    expect(s.api("t.asker").use("audience").audience("card")).toBeNull();
   });
 
   it("a package listed in the very change that brings its trait is counted at once", async () => {
     const s = await mount({ extensions: [policy("t.faceup"), asker([])], repo, doc: { objects: { card: card({ "t.faceup": { show: "all" } }) }, order: ["card"] }, viewerId: A });
     await settle();
     const api = s.api("t.asker");
-    expect(api.audience("card")).toBe("all");
+    expect(api.use("audience").audience("card")).toBe("all");
     s.change((d) => {
       d.objects.card.traits["t.screen"] = { only: [B] };
       d.packages.push({ url: SCREEN });
     });
     // no settling: the doc as it is now
-    expect(api.audience("card")).toBeNull();
+    expect(api.use("audience").audience("card")).toBeNull();
   });
 });
 
 describe("the veil", () => {
   const HINT = { bounds: { min: [-0.028, 0, -0.0435], max: [0.028, 0.0012, 0.0435] } };
-  const lens = (state) => ({ meta: { id: "t.lens" }, module: { create: (api) => ((state.api = api), { looks: () => state.looks }) } });
+  // an extension that veils the card on asking: state.veil() → release
+  const veiler = (state) => ({ meta: { id: "t.veiler" }, module: { create: (api) => ((state.api = api), (state.veil = () => api.use("audience").veil("card")), {}) } });
+  const drawn = (s) => s.debug.displayed().get("card")?.content;
 
   it("a veiled object loads nothing of its own, is drawn from its hint, and loads again when the veil goes", async () => {
     const repo = new FakeRepo();
     const back = repo.add({ "@patchwork": { type: "file" }, name: "back.glb", content: new Uint8Array([1, 2, 3]) });
-    const state = { looks: new Map([["card", { veil: true }]]) };
-    const s = await mount({ extensions: [lens(state)], repo, doc: { objects: { card: object({ name: "Card", sourceUrl: back.url, hint: HINT }) }, order: ["card"] } });
+    const state = {};
+    const s = await mount({ extensions: [veiler(state)], repo, doc: { objects: { card: object({ name: "Card", sourceUrl: back.url, hint: HINT }) }, order: ["card"] } });
     await settle();
-    expect(s.debug.looks().get("card")).toEqual({ veil: true });
-    expect(s.debug.veils().get("card")).toBe(veilKey(HINT.bounds));
+    let release = state.veil();
+    await settle();
+    expect(drawn(s)).toEqual(veilGLB(HINT.bounds));
     expect(s.debug.queue.has("card")).toBe(false);
     // its name is its own: a veil carries none
     expect(state.api.nameOf("card")).toBe("Card");
     // the doc was never written (no file, no asset)
     expect(Object.keys(s.doc().assets ?? {})).toEqual([]);
     // the veil goes: its own source is asked for
-    state.looks = new Map();
-    state.api.schedule(() => {});
+    release();
     await settle();
-    expect(s.debug.veils().has("card")).toBe(false);
+    expect(drawn(s)).toBeUndefined();
     expect(s.debug.queue.state("card")?.url).toBe(back.url);
-    // and comes back: forgotten again
-    state.looks = new Map([["card", { veil: true }]]);
-    state.api.schedule(() => {});
+    // and comes back: forgotten again; its caller stopping lifts it too
+    release = state.veil();
     await settle();
     expect(s.debug.queue.has("card")).toBe(false);
-    expect(s.debug.veils().has("card")).toBe(true);
+    await s.uninstall("t.veiler");
+    await settle();
+    expect(drawn(s)).toBeUndefined();
   });
 
-  it("a later lens's `veil: false` lifts it; a veil beats a source in the same look", async () => {
-    const state = { looks: new Map([["card", { veil: true, sourceUrl: "automerge:2Facexxxxabcdefghijkmnopqr" }]]) };
-    const lift = { meta: { id: "t.lift" }, module: { create: () => ({ looks: () => state.lift ?? null }) } };
-    const s = await mount({ extensions: [lens(state), lift], doc: { objects: { card: object({ name: "Card", hint: HINT }) }, order: ["card"] } });
+  it("a later display's content draws over it", async () => {
+    const SRC = "automerge:2Facexxxxabcdefghijkmnopqr";
+    const state = {};
+    const s = await mount({ extensions: [veiler(state)], doc: { objects: { card: object({ name: "Card", hint: HINT }) }, order: ["card"] } });
     await settle();
-    expect(s.debug.veils().has("card")).toBe(true);
+    state.veil();
+    await settle();
+    expect(drawn(s)).toBeInstanceOf(Uint8Array);
     expect(s.debug.queue.has("card")).toBe(false);
-    state.lift = new Map([["card", { veil: false }]]);
-    state.api.schedule(() => {});
+    state.api.display("card", { content: SRC });
     await settle();
-    expect(s.debug.veils().has("card")).toBe(false);
-    expect(s.debug.queue.state("card")?.url).toBe("automerge:2Facexxxxabcdefghijkmnopqr");
+    expect(drawn(s)).toBe(SRC);
+    expect(s.debug.queue.state("card")?.url).toBe(SRC);
   });
 
   it("with no hint to go by, it is still drawn (a default box), never the thing itself", async () => {
-    const state = { looks: new Map([["card", { veil: true }]]) };
-    const s = await mount({ extensions: [lens(state)], doc: { objects: { card: object({ name: "Card", sourceUrl: "automerge:2Backxxxxabcdefghijkmnopqr" }) }, order: ["card"] } });
+    const state = {};
+    const s = await mount({ extensions: [veiler(state)], doc: { objects: { card: object({ name: "Card", sourceUrl: "automerge:2Backxxxxabcdefghijkmnopqr" }) }, order: ["card"] } });
     await settle();
-    expect(s.debug.veils().has("card")).toBe(true);
+    state.veil();
+    await settle();
+    expect(drawn(s)).toBeInstanceOf(Uint8Array);
     expect(s.debug.queue.has("card")).toBe(false);
   });
 });

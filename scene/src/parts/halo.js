@@ -42,6 +42,7 @@ const STILL_FRAMES = 30;
 /** The halo in one focus stage: `api` is its facet, `view` the view plugin's api. */
 function haloAt(api, view) {
   const THREE = api.THREE;
+  const held = api.use("poses");
   // drawn in the main pass (so the thing hides the parts of its halo behind
   // it), and never picked as meshes: widgetAt finds handles on screen
   const layer = api.world();
@@ -254,7 +255,7 @@ function haloAt(api, view) {
   }
 
   function release(d, landed) {
-    if (d?.poses) for (const id of d.poses.keys()) api.pose.release(id, landed ? { landed: true } : undefined);
+    if (d?.poses) for (const id of d.poses.keys()) held.release(id, landed ? { landed: true } : undefined);
   }
 
   const session = {
@@ -265,7 +266,7 @@ function haloAt(api, view) {
       if (!delta) return;
       const poses = new Map(drag.starts.map(({ id, M }) => [id, poseOf(id, moved(delta, M))]));
       // a peer took hold of something here before we did: theirs, so ours goes back
-      if ([...poses.keys()].some((id) => api.heldBy(id) != null)) {
+      if ([...poses.keys()].some((id) => held.heldBy(id) != null)) {
         session.cancel();
         view.use("notices")?.notify("Someone else is moving that.", "info");
         return;
@@ -273,7 +274,7 @@ function haloAt(api, view) {
       drag.poses = poses;
       // something here holds one ahead of us (another extension's act, not a process giving way): it goes back
       let refused = false;
-      for (const [id, t] of poses) if (!api.pose.hold(id, t)) refused = true;
+      for (const [id, t] of poses) if (!held.hold(id, t)) refused = true;
       if (refused) {
         session.cancel();
         view.use("notices")?.notify("Something else is moving that.", "info");
@@ -328,7 +329,7 @@ function haloAt(api, view) {
       // something here is in a peer's hands: the handle is still ours (nothing
       // under it is pressed), but it doesn't move
       const ids = roots();
-      if (ids.some((id) => api.heldBy(id) != null)) {
+      if (ids.some((id) => held.heldBy(id) != null)) {
         view.use("notices")?.notify("Someone else is moving that.", "info");
         return { tap: () => true, move() {}, end() {}, cancel() {} };
       }

@@ -51,8 +51,8 @@ const WRITER = {
           api.use("claims").claim("a", "t.hold");
           api.channel.send("t.ping", { n: 1 });
           api.channel.set("here", true);
-          api.pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
-          api.pose.release("a");
+          api.use("poses").hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
+          api.use("poses").release("a");
           api.change(api.remove(["b"]));
         },
       };

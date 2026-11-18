@@ -1,7 +1,7 @@
 // patchwork:tool "scene": a view (./view.js) and the stages it opens, one per
 // open doc (STAGE.md, "Views, stages and links"). This file is the stage: the doc, loading and
-// building object content, lenses and veils, the audience, presence on its
-// doc's channel, its extensions and the api each gets. It has no UI of its own and no opinion about what a click means:
+// building object content, what extensions display instead (api.display),
+// presence on its doc's channel, its extensions and the api each gets. It has no UI of its own and no opinion about what a click means:
 // everything a person sees or does beyond a rendered scene and an orbiting
 // camera comes from a `scene:extension`, which gets an api (makeApi below)
 // and is started and stopped by the host (host.js). The view holds what is
@@ -16,7 +16,7 @@
 // its doc is played: its extensions hear input, offer bodies, tools and
 // commands and speak on its channel. A pin (its doc at
 // fixed heads) is drawn: its extensions run, so it looks as the doc does, and
-// they draw into the world (layers, labels, looks, lenses), but nothing
+// they draw into the world (layers, labels, display), but nothing
 // more: no input, bodies, tools, commands or DOM chrome, no camera, no
 // processes, and they hear their doc's channel without speaking on it (a
 // pin has none). A stage is read-only when it doesn't act or its handle is,
@@ -29,9 +29,8 @@
 //   - content, routed at sync by the kind its provider makes (providers.js
 //     routeOf): the render manager for "built", the GLB queue for "file";
 //     their state → local.status.
-//   - presence on its doc's channel, and other views' pose holds shown on the
-//     viewport, played back smoothly (smooth.js); this view's holds in the one
-//     order (holds.js).
+//   - presence on its doc's channel (./presence.js), and display: each
+//     extension's override of how an object is drawn, layered in running order.
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
 //   - the view's plugins' facets (api.focus() while it is the focus): this
@@ -41,19 +40,15 @@
 //     (hearing events in its frame), its bodies and widgets.
 //   - the doc loop: derive, the running set, display and content; then the
 //     update flush (once per UI pass): each instance's update(), scheduled
-//     work, lenses, ambients (./ambients.js).
+//     work, ambients (./ambients.js).
 
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { createAtom, assoc } from "./atom.js";
 import { createHost, updateAll } from "./host.js";
 import { createPresence } from "./presence.js";
-import { createHolds } from "./holds.js";
-import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
-import { mergeAudience, mergeShown } from "./audience.js";
-import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
 import { isLink } from "./links.js";
@@ -136,42 +131,6 @@ export function hitChain(id, parents, groups, objects = null) {
   return [id, ...up, ...groupChain(groups, id).filter((g) => !objects || objects[g])];
 }
 
-/**
- * Lenses stacked in running order: per object, each lens's fields over the
- * earlier ones' (a field it leaves undefined is kept). References to objects
- * that aren't there are dropped.
- * @param {Iterable<Map<string, object> | Iterable<[string, object]>>} lenses
- * @param {object} objects
- * @returns {Map<string, { sourceUrl?, name?, veil? }>}
- */
-export function mergeLooks(lenses, objects) {
-  const out = new Map();
-  for (const lens of lenses) {
-    if (!lens) continue;
-    for (const [id, look] of lens) {
-      if (!objects?.[id] || !look || typeof look !== "object") continue;
-      const next = { ...(out.get(id) ?? {}) };
-      for (const [k, v] of Object.entries(look)) if (v !== undefined) next[k] = v;
-      out.set(id, next);
-    }
-  }
-  return out;
-}
-
-/** A stable key for a lens map, to tell whether it changed. */
-export function looksKey(looks) {
-  return JSON.stringify([...looks].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-}
-
-/** Are two transforms the same pose, number by number (within eps)? */
-export function sameTransform(a, b, eps = 1e-6) {
-  if (!a || !b) return false;
-  const x = normalizeTransform(a);
-  const y = normalizeTransform(b);
-  const close = (p, q) => Math.abs(p - q) <= eps;
-  return x.position.every((v, i) => close(v, y.position[i])) && x.rotation.every((v, i) => close(v, y.rotation[i])) && close(x.scale, y.scale);
-}
-
 const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
 
 /**
@@ -238,7 +197,7 @@ export default function Stage(handle, element) {
 
 /**
  * One open doc's stage (STAGE.md, "Views, stages and links"): its handle, derive and snapshot,
- * content, lenses and veils, the audience, its extensions, its channel,
+ * content and what is displayed instead, its extensions, its channel,
  * packages, and its own atom (`api.local`). It sees only
  * its doc, in its own root frame; the view (./view.js) is everything it
  * shares with the others.
@@ -356,7 +315,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // manager reports the provider each render doc names (objState), so one a
   // render doc asks for is listed even when the object's own field differs,
   // and no source package is taken off the list while a render doc built
-  // here hasn't said yet (one shown, not veiled, may name any provider).
+  // here hasn't said yet (one shown, not standing in, may name any provider).
   // (through the view's repo, not the stage's: a package is the viewer's to load, at its live heads,
   // never a doc this one reaches, so fixing a link never records one)
   const packages = createPackages({
@@ -480,8 +439,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     requestFlush();
   }
 
-  // What's shown changed without the doc or local state changing (a pose
-  // held or let go, a lens): every extension's update runs again, with the
+  // What's shown changed without the doc or local state changing (a
+  // display override): every extension's update runs again, with the
   // same scene and local, as after a GLB arrives.
   function displayChanged() {
     contentDirty = true;
@@ -545,14 +504,48 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   };
   const priorityOf = (id, o) => (focused(id) ? FOCUS_PRIORITY : hintVolume(o));
 
-  // ─── lenses ───────────────────────────────────────────────────────────────
+  // ─── display (STAGE.md, "Display") ──────────────────────────────────────────
+  // How this viewer sees an object instead of as the doc says, never written:
+  // each extension's override { transform?, content?, hidden?, name? },
+  // layered in running order, later winning per field. A transform is a pose
+  // (the viewport's, so worldOf, boxes and picking follow it); content is a
+  // file doc's URL or a stand-in's GLB bytes; hidden and name are as they say.
 
-  let looks = new Map(); // id → { sourceUrl?, name?, veil? }: what this viewer sees instead
-  const veils = new Map(); // id → veilKey of the veil it is shown as (a look with `veil: true`)
-  const veilBytes = new Map(); // veilKey → its GLB
-  let lastLooksKey = "[]";
+  const overrides = new Map(); // object id → Map extension id → its override
+  const displayed = new Map(); // object id → the merged override
+  const drawn = new Map(); // object id → the stand-in bytes drawn for it
+  let redraw = false; // content, hidden or a name changed: applyDoc on the next flush
   let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js): the view's when it's the outermost
-  const nameOf = (id) => looks.get(id)?.name ?? derive().objects[id]?.name ?? null;
+  const nameOf = (id) => displayed.get(id)?.name ?? derive().objects[id]?.name ?? null;
+
+  function display(ext, id, o) {
+    if (typeof id !== "string") return noop;
+    const mine = Object.freeze({ ...o });
+    if (!overrides.has(id)) overrides.set(id, new Map());
+    overrides.get(id).set(ext, mine);
+    redisplay(id);
+    return () => {
+      const by = overrides.get(id);
+      if (by?.get(ext) !== mine) return;
+      by.delete(ext);
+      if (!by.size) overrides.delete(id);
+      redisplay(id);
+    };
+  }
+  function redisplay(id) {
+    const rank = new Map(host.running().map((r, i) => [r.id, i]));
+    const next = {};
+    for (const [, o] of [...(overrides.get(id) ?? [])].sort(([a], [b]) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9)))
+      for (const k of ["transform", "content", "hidden", "name"]) if (o[k] !== undefined) next[k] = o[k];
+    const was = displayed.get(id) ?? {};
+    if (Object.keys(next).length) displayed.set(id, next);
+    else displayed.delete(id);
+    if (next.transform !== was.transform) scope.setPose(id, next.transform ? normalizeTransform(next.transform) : null);
+    // a pose moving isn't news (what moves reads worldOf in its loop); anything else wakes every update
+    if (next.content === was.content && next.hidden === was.hidden && next.name === was.name && !next.transform === !was.transform) return;
+    redraw ||= next.content !== was.content || next.hidden !== was.hidden;
+    displayChanged();
+  }
 
   // ─── the doc → the viewport ───────────────────────────────────────────────
 
@@ -604,7 +597,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         routes.delete(id);
         continue;
       }
-      const route = routeOf(o, kindOf);
+      const route = typeof displayed.get(id)?.content === "string" ? "file" : routeOf(o, kindOf);
       // a route that moved (its provider arrived or went) is a change to what's shown
       if (routes.has(id) && routes.get(id) !== route) rerouted = true;
       routes.set(id, route);
@@ -614,28 +607,30 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         statusDirty = true;
       }
       // placed even without geometry, so whatever is attached to it sits right
-      const key = displayKey(o, parent, inh);
+      const over = displayed.get(id);
+      const oo = over?.hidden ? { ...o, visible: false } : o;
+      const key = displayKey(oo, parent, inh);
       if (displayKeys.get(id) !== key) {
         displayKeys.set(id, key);
-        scope.applyDisplay(id, o, parent, inh);
+        scope.applyDisplay(id, oo, parent, inh);
       }
-      const shown = o.visible !== false && inh.visible;
-      // a veil stands in for it, whatever it is made of: nothing of its own is loaded while it's veiled
-      if (looks.get(id)?.veil === true) {
+      const shown = oo.visible !== false && inh.visible;
+      // a stand-in (the veil) is drawn through the GLB path, so box and picking go by it; nothing of the object's own loads
+      if (over?.content instanceof Uint8Array) {
         if (tracked.has(id)) manager.untrack(id);
         queue.remove(id);
         applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
-        const b = veilBounds(o.hint?.bounds) ?? veilBounds(objState.get(id)?.bounds) ?? veilBounds(scope.contentOf(id)?.box) ?? DEFAULT_BOUNDS;
-        const vk = veilKey(b);
-        if (veils.get(id) !== vk) {
-          veils.set(id, vk);
+        if (drawn.get(id) !== over.content) {
+          drawn.set(id, over.content);
           if (objState.delete(id)) statusDirty = true;
-          showVeil(id, vk, b);
+          Promise.resolve(scope.setGLB(id, over.content))
+            .catch((err) => console.warn("[scene] a stand-in failed to draw", err))
+            .then(() => dead || afterGLB());
         }
         continue;
       }
-      // (unveiled: its own content loads again below, and the veil stays up until that has)
-      veils.delete(id);
+      // (its own content loads again below, and the stand-in stays up until that has)
+      drawn.delete(id);
       if (route === "built") {
         queue.remove(id);
         applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
@@ -645,8 +640,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         continue;
       }
       if (route === "file") {
-        // what this viewer sees: a lens's source, or the object's own
-        const src = docUrl(looks.get(id)?.sourceUrl ?? o.sourceUrl);
+        // what this viewer sees: a displayed source, or the object's own
+        const src = docUrl(over?.content ?? o.sourceUrl);
         if (!src) continue;
         if (tracked.has(id)) manager.untrack(id);
         applyHint(id, o.hint?.bounds);
@@ -684,9 +679,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       if (objState.delete(id)) statusDirty = true;
       displayKeys.delete(id);
       hintKeys.delete(id);
-      veils.delete(id);
-      remotePosed.delete(id);
-      playing.delete(id);
+      drawn.delete(id);
+      overrides.delete(id);
+      displayed.delete(id);
     }
     if (rerouted) displayChanged();
   }
@@ -706,151 +701,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     } else if (objState.delete(id)) statusDirty = true;
   }
 
-  /** Draw the veil for these bounds in place of an object's content (veil.js): through the GLB path, so box and picking go by it. */
-  function showVeil(id, vk, bounds) {
-    let bytes = veilBytes.get(vk);
-    if (!bytes) veilBytes.set(vk, (bytes = veilGLB(bounds)));
-    Promise.resolve(scope.setGLB(id, bytes))
-      .catch((err) => console.warn("[scene] the veil failed to draw", err))
-      .then(() => {
-        if (!dead) afterGLB();
-      });
-  }
-
-  // ─── the audience ─────────────────────────────────────────────────────────
-
-  // Who may see what an object is (STAGE.md, "Audience"): every running
-  // extension's `audience(scene)` answer for it, merged (audience.js). Each
-  // policy is asked once per snapshot. One that throws is read as "nobody"
-  // (an `only` of no one): a broken screen hides, it never reveals.
-  const policies = new WeakMap(); // instance → { scene, fn }
-  const CLOSED = Object.freeze({ only: Object.freeze([]) });
-  function audienceAnswers(id) {
-    // a listed package isn't here, or an extension the doc calls for hasn't started (or failed to): one of
-    // its policies may be missing, and a missing `only` would enlarge the audience
-    if (!packages.complete() || !host.settled()) return null;
-    const snap = scene();
-    if (!snap.objects[id]) return [];
-    const out = [];
-    for (const r of host.instances()) {
-      if (typeof r.instance.audience !== "function") continue;
-      let p = policies.get(r.instance);
-      if (!p || p.scene !== snap) {
-        let fn = null;
-        try {
-          fn = r.instance.audience(snap);
-        } catch (err) {
-          console.warn(`[scene] extension “${r.id}”: audience failed`, err);
-          fn = () => CLOSED;
-        }
-        policies.set(r.instance, (p = { scene: snap, fn: typeof fn === "function" ? fn : null }));
-      }
-      if (!p.fn) continue;
-      try {
-        out.push(p.fn(id) ?? null);
-      } catch (err) {
-        console.warn(`[scene] extension “${r.id}”: audience failed for ${id}`, err);
-        out.push(CLOSED);
-      }
-    }
-    return out;
-  }
-  /** "all" | viewer[] | null (unknown): who may see what `id` is. */
-  const audienceOf = (id) => {
-    const answers = audienceAnswers(id);
-    return answers ? mergeAudience(answers) : null;
-  };
-  /** "all" | viewer[] | null (unknown): who `id` is turned toward, before anything screens it. */
-  const shownTo = (id) => {
-    const answers = audienceAnswers(id);
-    return answers ? mergeShown(answers) : null;
-  };
-
   // ─── presence ─────────────────────────────────────────────────────────────
 
   // its doc's channel: a read-only stage hears it and says nothing (its handle refuses to broadcast, too); a pin, a value, has none
   const channel = role !== "pinned";
   const presence = createPresence({ handle: channel ? handle : null, listen: readOnly, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
-  const remotePosed = new Set(); // object ids showing another view's pose
-  const playing = new Set(); // of those, the ones still playing back (smooth.js)
-  let poseLoopOff = null;
-
-  /** Where another view's live hold is shown at `t` (our clock): its stream, played back a little late. */
-  function playback(h, t) {
-    if (!h.samples?.length) return { transform: h.transform, settled: true };
-    return poseAt(h.samples, t - h.offset - playoutDelay(h.every), { ahead: aheadOf(h.every) }) ?? { transform: h.transform, settled: true };
-  }
-
-  // Another view's hold, shown here while its parent is the doc's parent; a
-  // landed hold until the doc shows the same transform. Our own hold wins.
-  // A live hold is played back between its samples, every frame, until it
-  // has caught up with the last one (tickPoses).
-  function applyRemoteHold(id) {
-    if (dead || holds.has(id)) return;
-    const h = presence.remoteHolds().get(id);
-    const m = derive();
-    const o = m.objects[id];
-    let t = null;
-    let settled = true;
-    if (h && o && (m.parents.get(id) ?? null) === (h.parent ?? null)) {
-      if (h.landed) {
-        playing.delete(id);
-        if (sameTransform(o.transform, h.landed)) return void presence.settle(id); // its watcher puts the doc's back
-        t = h.landed;
-      } else ({ transform: t, settled } = playback(h, time.now()));
-    }
-    if (t) {
-      scope.setPose(id, t);
-      remotePosed.add(id);
-      if (settled) playing.delete(id);
-      else {
-        playing.add(id);
-        startPoseLoop();
-      }
-    } else if (remotePosed.delete(id)) {
-      playing.delete(id);
-      scope.setPose(id, null);
-    } else return;
-    displayChanged();
-  }
 
   /**
-   * One frame of playback: every remote hold still playing moves to where its
-   * stream is now. It runs before any extension's loop, so what they read
-   * that frame (worldOf, raycast: a walker on a moving deck) is what's
-   * drawn. It doesn't wake every extension's update: a pose moving between
-   * samples isn't news, its samples were (applyRemoteHold).
-   */
-  function tickPoses(t = time.now()) {
-    if (dead) return;
-    const remote = presence.remoteHolds();
-    for (const id of [...playing]) {
-      const h = remote.get(id);
-      if (!h || h.landed || holds.has(id) || !remotePosed.has(id)) {
-        playing.delete(id);
-        continue;
-      }
-      const p = playback(h, t);
-      scope.setPose(id, p.transform);
-      if (p.settled) playing.delete(id);
-    }
-    if (!playing.size) stopPoseLoop();
-  }
-
-  // The playback loop runs only while something is playing, so a still scene isn't redrawn every frame.
-  function startPoseLoop() {
-    if (!poseLoopOff && !dead) poseLoopOff = viewport.addLoop(() => tickPoses(), { first: true });
-  }
-  function stopPoseLoop() {
-    const off = poseLoopOff;
-    poseLoopOff = null;
-    off?.();
-  }
-
-  /**
-   * An object's displayed world matrix: the viewport's, which held and
-   * played-back poses have moved; without WebGL, the doc's chain with each
-   * shown pose in place of its transform.
+   * An object's displayed world matrix: the viewport's, which displayed
+   * transforms have moved; without WebGL, the doc's chain with each displayed
+   * transform in place of its own.
    */
   function displayedWorld(oid) {
     const w = scope.worldOf(oid);
@@ -867,13 +727,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     return out;
   }
-  cleanups.push(
-    presence.watchHolds((_holds, ids) => {
-      // a peer's hold that now ranks ahead of one here takes it (holds.js), then each is shown as it stands
-      holds.reconcile(ids);
-      ids.forEach(applyRemoteHold);
-    }),
-  );
   // what a peer sends an extension here is its `receive`'s
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
@@ -886,42 +739,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }
     }),
   );
-
-  // This view's pose holds, in the one order (holds.js): a person's before a
-  // yielding one, then the first; a peer's that ranks ahead takes it.
-  const holds = createHolds({
-    presence,
-    exists: (id) => {
-      const o = derive().objects[id];
-      return !!o && !isGroup(o);
-    },
-    parentOf: (id) => derive().parents.get(id) ?? null,
-    shown: (id, t) => {
-      remotePosed.delete(id);
-      playing.delete(id);
-      scope.setPose(id, t);
-      displayChanged();
-    },
-    unshown: (id) => {
-      scope.setPose(id, null);
-      applyRemoteHold(id);
-      displayChanged();
-    },
-    lost: (ext, id) => owned.get(ext)?.holds.delete(id),
-  });
-
-  /** Hold an object's pose for an extension: true when the hold stands. */
-  function holdPose(extId, own, id, transform, yields) {
-    if (!writable()) return false;
-    if (!holds.hold(extId, id, normalizeTransform(transform), { yields })) return false;
-    own.holds.add(id);
-    return true;
-  }
-
-  function releasePose(extId, own, id, landed) {
-    const t = landed ? doc().objects?.[id]?.transform : null;
-    if (holds.release(extId, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined)) own.holds.delete(id);
-  }
 
   // ─── the page (STAGE.md, "api.page") ──────────────────────────────────────
   // The view's pagehide or the stage closing ("hide": last-first, as extensions stop), pageshow and the tab's visibility, as api.page's events.
@@ -979,6 +796,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }
       if (JSON.stringify(next) !== JSON.stringify(local.get().status)) local.swap(assoc("status", Object.freeze(next)));
     }
+    if (redraw) {
+      redraw = false;
+      applyDoc(derive());
+    }
     const snap = scene();
     const loc = local.get();
     const content = contentDirty;
@@ -998,27 +819,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       } catch (err) {
         console.warn(`[scene] extension “${rec.id}”: scheduled work failed`, err);
       }
-    }
-    // lenses, stacked in running order; a new source means loading again
-    const m = derive();
-    const next = mergeLooks(
-      running.map((r) => {
-        try {
-          return r.instance.looks?.() ?? null;
-        } catch (err) {
-          console.warn(`[scene] extension “${r.id}”: looks failed`, err);
-          return null;
-        }
-      }),
-      m.objects,
-    );
-    const key = looksKey(next);
-    if (key !== lastLooksKey) {
-      lastLooksKey = key;
-      looks = next;
-      applyDoc(m);
-      // names through a lens changed: let every extension read them again
-      displayChanged();
     }
     // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
     // the outermost doc's are the world's (STAGE.md, "Views, stages and links"), which the view reads (view.ambient)
@@ -1139,10 +939,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return w;
   }
 
-  // (a body it put on the stack, the held tool, an open session or a pose: a doc-caused stop waits)
+  // (a body it put on the stack, the held tool or an open session: a doc-caused stop waits)
   const busy = (id) => {
     const own = owned.get(id);
-    return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0 || own.holds.size > 0);
+    return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0);
   };
 
   /** Write fn, and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
@@ -1502,7 +1302,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       bodies: new Set(), // the bodies it put on the stack (sittings)
       tool: null, // put(): the held tool is its
       sessions: 0, // open press sessions
-      holds: new Set(), // object ids whose pose it holds
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
       offs: new Set(), // listeners, watchers, rides
@@ -1604,8 +1403,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         watch: (fn) => acquire(own.offs, () => presence.watch(fn)),
         send: (type, data) => void (live() && presence.send(id, type, data)),
         rate: (hz) => void (live() && presence.rate(id, hz)),
-        /** the moment (now()) whose poses of that peer this view draws */
-        shownAt: (session) => presence.shownAt(session),
       }),
       page: Object.freeze({
         visible: () => globalThis.document?.visibilityState !== "hidden",
@@ -1613,11 +1410,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }),
       /** a service (STAGE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
       use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x), doc }) : null)) : null),
-      /** has everything the doc calls for started (or failed), and is every listed package here (`missing`: those that aren't)? */
+      /** has everything the doc calls for started (or failed: `failed`), and is every listed package here (`missing`: those that aren't)? */
       settled: () => {
         const p = local.get().packages;
         const missing = Object.freeze([...p.ask, ...p.loading, ...p.failed].map((e) => e.url));
-        return Object.freeze({ ready: !host.starting() && packages.complete(), missing });
+        return Object.freeze({ ready: !host.starting() && packages.complete(), missing, failed: Object.freeze(host.failed()) });
       },
       /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
       packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
@@ -1676,12 +1473,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         });
       },
       ...lent,
-      pose: Object.freeze({
-        /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
-        hold: (oid, transform, { yields = false } = {}) => live() && holdPose(id, own, oid, transform, yields),
-        release: (oid, { landed = false } = {}) => releasePose(id, own, oid, landed),
-      }),
-      heldBy: (oid, opts) => presence.heldBy(oid, opts),
+      /** draw an object otherwise for this viewer (STAGE.md, "Display"): again from this extension replaces its override → release */
+      display: (oid, o) => (live() ? display(id, oid, o ?? {}) : noop),
       extent: (box) => {
         if (live()) scope.setExtent(id, box ?? null);
       },
@@ -1735,8 +1528,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // the others: what this stage's extensions offer, each item tagged with its `stage`; a command runs in the stage it names
       collect: (name) => reader.collect(name),
-      audience: audienceOf,
-      shown: shownTo,
       // (in another stage only if it acts: a pin is never acted on)
       run: (inv) => (inv?.stage != null && inv.stage !== n ? (view.acting().find((s) => s.n === inv.stage)?.reader.run(inv) ?? false) : run(inv)),
     };
@@ -1750,9 +1541,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
-      // 3: its pose holds, put back (what services gave it went as its signal aborted)
-      for (const oid of [...own.holds]) releasePose(id, own, oid, false);
-      // 4: its presence keys (and its rate)
+      // 3: its display overrides, its presence keys (and its rate); what services gave it went as its signal aborted
+      for (const [oid, by] of [...overrides]) if (by.delete(id)) (by.size || overrides.delete(oid), redisplay(oid));
       presence.clear(id);
       // 5: loops, afterRender hooks, scheduled work
       for (const give of [...own.frame]) give();
@@ -1779,7 +1569,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   /**
    * A drawn stage's api (STAGE.md, "Views, stages and links"): the acting api less everything
    * that acts, all in this one place. A pin's extensions run
-   * and draw into the world (layers, labels, looks, styles) and read all
+   * and draw into the world (layers, labels, display, styles) and read all
    * they like; what would take input, put chrome in the view, move the
    * viewer's camera, select, use the view's services, enter a body, hold a tool,
    * compute or run a command is inert here: a noop, an element kept out of
@@ -1931,9 +1721,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const m = derive();
     host.sync(d);
     applyDoc(m);
-    // other views' holds: a landed one the doc has caught up with goes, and a
-    // hold whose parent the doc changed is shown (or not) again
-    for (const id of [...presence.remoteHolds().keys()]) applyRemoteHold(id);
     packages.check();
     requestFlush();
     // its links may have changed: the view works out what it opens again
@@ -1963,17 +1750,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     packages,
     root,
     scene,
-    looks: () => looks,
-    /** the objects shown as a veil: id → the key of its drawing */
-    veils: () => new Map(veils),
-    audience: audienceOf,
-    shown: shownTo,
+    /** what this viewer sees instead of the doc (api.display), merged: id → { transform?, content?, hidden?, name? } */
+    displayed: () => displayed,
     /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,
-    /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */
+    /** does this extension hold a body, the held tool or an open session (so a doc-caused stop waits)? */
     busy,
-    /** one frame of remote pose playback at `t` (ms, this stage's time.now()), for tests */
-    tickPoses,
     /** does it act ("acting"), or is it drawn ("pinned")? */
     role,
     /** the view plugins with a facet here (api.focus()) */
@@ -1994,7 +1776,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     dropFacets();
     host.dispose();
     life.abort();
-    stopPoseLoop();
     dead = true;
     presence.dispose();
     if (flushFrame != null) caf(flushFrame);

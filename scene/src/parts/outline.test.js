@@ -193,8 +193,8 @@ describe("the inspector's tree", () => {
     expect(row("a").querySelector(".swatch")).toBe(swatch);
   });
 
-  it("shows names through lenses", async () => {
-    const lens = { create: () => ({ looks: () => new Map([["a", { name: "Ace of spades" }]]) }) };
+  it("shows names as displayed", async () => {
+    const lens = { create: (api) => (api.display("a", { name: "Ace of spades" }), {}) };
     await mount({ objects: { a: leaf("Card"), b: leaf("Card") }, order: ["a", "b"] }, { extra: [{ meta: { id: "t.lens" }, module: lens }] });
     await pass();
     expect(row("a").querySelector(".name").textContent).toBe("Ace of spades");

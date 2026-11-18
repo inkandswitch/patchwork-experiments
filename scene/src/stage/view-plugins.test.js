@@ -56,7 +56,7 @@ describe("view plugins", () => {
     for (const seq of seqs) {
       view.focusOn([]);
       let fa = api.focus();
-      fa.pose.release("table");
+      fa.use("poses")?.release("table");
       let alive = true;
       const where = seq.join(",") || "(none)";
       for (const e of seq) {
@@ -71,8 +71,8 @@ describe("view plugins", () => {
           alive = false;
         } else if (e === "busy") {
           // (a facet given back holds nothing)
-          expect([where, e, fa.pose.hold("table", T)]).toEqual([where, e, alive]);
-        } else fa.pose.release("table");
+          expect([where, e, fa.use("poses")?.hold("table", T) ?? false]).toEqual([where, e, alive]);
+        } else fa.use("poses")?.release("table");
         expect([where, e, counts.creates, counts.disposes]).toEqual([where, e, 1, 0]);
         expect([where, e, !fa.signal.aborted, A.debug.facets()]).toEqual([where, e, alive, alive ? ["t.view"] : []]);
         expect([where, e, A.reader.collect("commands").some((x) => x.id === "t.view")]).toEqual([where, e, false]);

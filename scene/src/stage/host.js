@@ -394,16 +394,8 @@ export function createHost({
     }
     return settledFor.ids;
   }
-  /**
-   * Is everything the doc calls for, of what's registered here, started?
-   * False before the registry is here, while a doc waits to be synced, and
-   * while any extension is still loading or failed to start: one of those
-   * may be a policy (`audience`), and the stage answers nothing about who
-   * may see what until it's in.
-   */
-  function settled() {
-    return activeIds()?.every((id) => recs.get(id)?.state === "running") ?? false;
-  }
+  /** What the doc calls for, of what's registered here, that failed to start (one may be a policy: scene.audience then answers nothing). */
+  const failed = () => activeIds()?.filter((id) => recs.get(id)?.state === "failed") ?? [];
 
   /**
    * Is anything the doc calls for, of what's registered here, still on its
@@ -418,7 +410,7 @@ export function createHost({
   return {
     ready,
     sync,
-    settled,
+    failed,
     starting,
     running,
     instances,

@@ -175,7 +175,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("claim on an object refuses", claims.claim("card", "carry") === null);
       api.channel.send("t", { x: 1 });
       api.use("tell").tell("t", { x: 1 });
-      ok("pose.hold refuses", api.pose.hold("card", { ...T, position: [1, 0, 0] }) === false);
+      ok("pose.hold refuses", api.use("poses").hold("card", { ...T, position: [1, 0, 0] }) === false);
       api.channel.set("here", role);
       api.channel.rate(30);
       let started = 0;

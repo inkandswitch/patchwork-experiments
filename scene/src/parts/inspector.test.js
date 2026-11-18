@@ -393,8 +393,8 @@ describe("scene.inspector: the panel", () => {
     expect($(".command-reason")).toBeNull();
   });
 
-  it("a lens's name is shown read-only, never written back", async () => {
-    const lens = { meta: { id: "t.lens" }, module: { create: () => ({ looks: () => new Map([["a", { name: "Secret" }]]) }) } };
+  it("a displayed name is shown read-only, never written back", async () => {
+    const lens = { meta: { id: "t.lens" }, module: { create: (api) => (api.display("a", { name: "Secret" }), {}) } };
     await mount({ objects: { a: object({ name: "Card" }), b: object({ name: "B" }) }, extensions: [lens] });
     await select("a");
     await settle();
