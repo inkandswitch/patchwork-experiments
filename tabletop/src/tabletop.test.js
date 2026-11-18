@@ -4,7 +4,7 @@ import { partGeometry } from "./shapes.js";
 import { boundsOf, connectorsOf, drawer, lookKey } from "./look/look.js";
 import { turned } from "./look/slab.js";
 import { pieceDrawer, readFile as readFileOf, RETRY_MS } from "./pieces.js";
-import { composePose, copyPose, isCard, kindsUsed, LOOSE, shuffle, tableLayout, writeTable } from "./setup.js";
+import { composePose, copyPose, isCard, kindsLaid, kindsUsed, LOOSE, shuffle, tableLayout, writeTable } from "./setup.js";
 import { prepareTable } from "./table/made-with.js";
 import { composeMatrix, multiply } from "./table/frame.js";
 import { TabletopGameDatatype } from "./datatype.js";
@@ -362,7 +362,7 @@ describe("drawn on demand", () => {
     expect(cond()).toBe(true);
   };
 
-  it("a table's kinds drawn now; a face drawn the first time it's asked for, with its sheet, and kept for everyone", async () => {
+  it("setting up draws what a table lays out; a face is drawn the first time it's shown, with its sheet, and kept for everyone", async () => {
     const repo = fakeRepo();
     const game = await newCardGame(repo);
     const w = web();
@@ -370,7 +370,7 @@ describe("drawn on demand", () => {
     const change = game.change;
     game.change = (fn) => (changes++, change(fn));
     const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: w.fetch });
-    await pd.ensure(["back", "board"]);
+    await pd.ensure(kindsLaid(gameOf(game.doc())));
     expect(Object.keys(game.doc().drawn).sort()).toEqual(["back", "board"]);
     expect(w.fetched.sort()).toEqual([`${WEB}back.png`, `${WEB}board.png`]);
     // what was fetched is cached in the game, under its URL
@@ -598,12 +598,19 @@ describe("setting up a table", () => {
     }
   });
 
-  it("asks for each kind it shows, the backs included, and no other", () => {
+  it("asks for each kind it shows, the backs included, and no other; a card's face only by name when there's a faceOf", () => {
     const lc = builtIn("lost-cities");
     expect(kindsUsed(lc).sort()).toEqual(Object.keys(lc.pieces).sort());
     const asked = new Set();
     tableLayout(lc, { fileOf: (k) => (asked.add(k), { url: `automerge:${k}`, hint: null }) });
     expect([...asked].sort()).toEqual(kindsUsed(lc).sort());
+    // what setting up from a game page draws: what a table lays out, a card as its back
+    const laid = Object.keys(lc.pieces).filter((k) => !isCard(lc, k));
+    expect(kindsLaid(lc).sort()).toEqual(laid.sort());
+    asked.clear();
+    const t = tableLayout(lc, { fileOf: (k) => (asked.add(k), { url: `automerge:${k}`, hint: null }), faceOf: (kind) => ({ game: "automerge:game", kind }) });
+    expect([...asked].sort()).toEqual(laid.sort());
+    for (const c of Object.values(t.containers)) for (const item of c.items) expect(item).toEqual({ game: "automerge:game", kind: expect.any(String), name: lc.pieces[item.kind].name });
     const sa = builtIn("santorini");
     sa.setup = sa.setup.filter((t) => t.piece !== "dome");
     expect(kindsUsed(sa)).not.toContain("dome");

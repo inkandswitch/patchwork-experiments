@@ -1,12 +1,14 @@
 // patchwork:tool "tabletop-game" — the game's page: what it is, its pieces,
-// and "Set up a table", which lays the game out in a new scene and opens it.
-// While open it keeps each piece's GLB drawn from what it is (pieces.js). An
+// and "Set up a table", which draws what a table lays out and lays the game
+// out in a new scene and opens it (a card's face is drawn when it's first
+// shown, pieces.js). While open it redraws each GLB already drawn when its
+// piece changes. An
 // empty game offers every registered `tabletop:game` to start from, and the
 // whole game is editable as JSON (GAME-FORMAT.md), checked before it's kept.
 
 import css from "./styles.css?inline";
 import { pieceDrawer } from "./pieces.js";
-import { isCard, tableLayout, writeTable } from "./setup.js";
+import { isCard, kindsLaid, tableLayout, writeTable } from "./setup.js";
 import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
 import { findSource, hostRegistry, prepareTable } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
@@ -115,16 +117,16 @@ export default function TabletopGameTool(handle, element) {
   let drawError = null;
   let drawNotes = [];
   let drawProgress = null; // { done, total } while drawing
-  /** Draw every kind (each once, again when its piece changed). */
-  function draw() {
+  /** Draw these kinds (by default those drawn already: redrawn when their pieces changed). */
+  function draw(kinds = null) {
     if (dead) return Promise.resolve();
-    if (drawing) return drawing.then(draw);
+    if (drawing) return drawing.then(() => draw(kinds));
     const onProgress = (done, total) => {
       drawProgress = { done, total };
       if (!dead) updateStatus();
     };
     drawing = pieces
-      .ensure(kindsOf(doc()), { onProgress })
+      .ensure(kinds ?? Object.keys(doc().drawn ?? {}), { onProgress })
       .then(({ notes }) => {
         drawError = null;
         drawNotes = notes;
@@ -143,7 +145,7 @@ export default function TabletopGameTool(handle, element) {
   }
   const drawSoon = () => {
     clearTimeout(drawTimer);
-    drawTimer = setTimeout(draw, DRAW_DEBOUNCE_MS);
+    drawTimer = setTimeout(() => draw(), DRAW_DEBOUNCE_MS);
   };
 
   // ─── setting up a table ───────────────────────────────────────────────────
@@ -160,11 +162,12 @@ export default function TabletopGameTool(handle, element) {
     render();
     try {
       clearTimeout(drawTimer);
-      await draw();
+      const checked = validate(gameOf(doc()));
+      if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
+      // what the table lays out; a card's face is drawn when it's first shown
+      await draw(kindsLaid(gameOf(doc())));
       if (drawError) throw new Error(drawError);
       const d = doc();
-      const checked = validate(gameOf(d));
-      if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
       const n = (d.tables?.length ?? 0) + 1;
       const title = `${d.title || "Game"} table ${n}`;
       // each kind shows the game's own GLB, which redraws when the game changes
@@ -173,7 +176,7 @@ export default function TabletopGameTool(handle, element) {
         return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
       };
       phase("Laying out the table…");
-      const layout = tableLayout(gameOf(d), { fileOf, gameUrl: handle.url });
+      const layout = tableLayout(gameOf(d), { fileOf, faceOf: (kind) => ({ game: handle.url, kind }), gameUrl: handle.url });
       phase(`Making the table's ${Object.keys(layout.containers ?? {}).length} decks and ${Object.keys(layout.bags ?? {}).length} bags…`);
       // the decks' containers, the bags and the seats' owner first (whoever owns seats is found in the
       // registry by what it is: table/made-with.js), so the scene never names one that isn't there; with
@@ -415,7 +418,7 @@ export default function TabletopGameTool(handle, element) {
   };
   handle.on("change", onChange);
   render();
-  if (kindsOf(doc()).length) draw();
+  if (Object.keys(doc().drawn ?? {}).length) draw();
 
   return () => {
     dead = true;

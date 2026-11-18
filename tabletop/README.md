@@ -75,13 +75,21 @@ and the scene package as its suggested import (`src/scene-package.js`).
   the game page the game keeps it (`drawn`) and redraws it in place; from a
   template or part the scene keeps it (`ctx.file`, under a hash of what it's
   drawn from). A board's `snapPoints` are connectors in its GLB.
-- **Assets.** A file named by its web URL is read from the file doc the
-  game's `assets` caches it in, else fetched when a piece is first drawn
-  from it (`src/pieces.js` `pieceDrawer`), stored and cached there; two
-  viewers doing it at once each write theirs only where nothing is yet,
-  and the merge keeps one. A viewer who can't write the game draws for
-  themselves. What a host won't give (no CORS) is drawn without, its URL in
-  `drawn[kind].missing` and on the game page, and fetched again after ten minutes.
+- **On demand** (`src/pieces.js` `pieceDrawer`). The game page's "Set up a
+  table" draws only what the table lays out (`kindsLaid`: its things, a
+  card as its back, what's in a bag); a card's face is named in its
+  container by the game and its kind, and drawn the first time a keeper is
+  to show it to someone (`src/table/faces.js`): with every face cut from
+  its sheet, created and recorded in kind order, so the game says only that
+  a card of that sheet was seen, never which. The viewer who draws it sees
+  it at once (its bytes), then its doc. An asset named by its web URL is
+  read from the file doc the game's `assets` caches it in, else fetched,
+  stored and cached there; two viewers doing either at once each write
+  theirs only where nothing is yet, and the merge keeps one. A viewer who
+  can't write the game draws for themselves and writes nothing. What a
+  host won't give (no CORS) is drawn without, its URL in `drawn[kind].missing`
+  and on the game page, and fetched again when next needed after ten minutes.
+  A template's or part's table (built-in games, small) draws every kind up front.
 - **Cards** (pieces with a `back`) are, in the scene, their back with the
   trait `tabletop.card`; what each really is goes only into a keeper's
   container (one per deck, one for loose cards), bound by the keeper's own
@@ -239,8 +247,9 @@ in each), each printing a checklist: `table.mjs`, `draw.mjs`, `privacy.mjs`,
 `seats.mjs`, `stations.mjs`, `dominoes.mjs`, `arrive.mjs` (arriving by link
 without this package: fail closed, then Load), `dice.mjs`, `liars-dice.mjs`,
 `bag.mjs`, `import-run.mjs`. `setup-bench.mjs` (Node, offline: a real
-Automerge repo with no network) times importing a big mod and setting up a
-table from it, phase by phase, with stand-in assets. `publish-table.mjs`, `publish-office.mjs` and
+Automerge repo with no network) times importing a big mod, setting up a
+table from it and showing a card's face, phase by phase, with stand-in
+assets, counting the docs, changes, fetches and decodes each makes. `publish-table.mjs`, `publish-office.mjs` and
 `publish-liars.mjs` publish examples to a sync server (`--dry-run` to only
 check). `chrome-guard.mjs` makes sure Chrome never outlives its driver.
 

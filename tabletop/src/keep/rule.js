@@ -36,25 +36,51 @@ export function lookFor({ ready, audience, shown, viewer, look }) {
   return null;
 }
 
-/** An item's look: what of it is shown ({ sourceUrl?, name? }), or null when it isn't known. */
+/**
+ * An item's look: what of it is shown ({ sourceUrl?, name? }, or a game's
+ * piece drawn when first shown: { game, kind, name? }), or null when it isn't known.
+ */
 export function itemLook(item) {
   if (item === undefined || item === null) return null;
   const out = {};
   if (typeof item === "object") {
-    if (typeof item.sourceUrl === "string" && item.sourceUrl) out.sourceUrl = item.sourceUrl;
-    if (typeof item.name === "string" && item.name) out.name = item.name;
+    for (const k of ["sourceUrl", "name", "game", "kind"]) if (typeof item[k] === "string" && item[k]) out[k] = item[k];
   }
   return out;
 }
 
 /**
  * Shows each object as its look says (scene/STAGE.md, "Display"): `{ veil:
- * true }` as scene.audience's veil, an item's as its name and file.
+ * true }` as scene.audience's veil, an item's as its name and file. A look
+ * naming a game's piece instead of a file is asked of `face(look)` (→ {
+ * url } or { glb, kept }: table/faces.js draws it the first time), shown by
+ * its name meanwhile, then its bytes, then its doc once that's kept.
  * set(looks) shows id → look and puts back what it no longer names.
  */
-export function showLooks(api, audience) {
+export function showLooks(api, audience, { face = null } = {}) {
   let now = new Map(); // id → { key, look, off }
-  const show = (id, look) => (look.veil ? (audience?.veil(id) ?? (() => {})) : api.display(id, { name: look.name, content: look.sourceUrl }));
+  const show = (id, look) => {
+    if (look.veil) return audience?.veil(id) ?? (() => {});
+    if (look.sourceUrl || !look.kind || !face) return api.display(id, { name: look.name, content: look.sourceUrl });
+    let off = api.display(id, { name: look.name });
+    let live = true;
+    const showing = (content) => {
+      if (!live || !content) return;
+      off();
+      off = api.display(id, { name: look.name, content });
+    };
+    Promise.resolve(face(look))
+      .then((c) => {
+        showing(c?.url ?? c?.glb);
+        // drawn here: its own doc once it's kept (shared, and the bytes let go)
+        return c?.kept?.then((k) => showing(k?.url));
+      })
+      .catch((err) => console.warn("[keep] couldn't draw a face", err));
+    return () => {
+      live = false;
+      off();
+    };
+  };
   return {
     set(looks) {
       const next = new Map([...looks].map(([id, look]) => [id, { key: JSON.stringify(look), look }]));

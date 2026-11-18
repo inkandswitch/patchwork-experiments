@@ -783,3 +783,27 @@ The lead found it uninteresting; its hatch was linked twice, which mirrors' remo
 
 Synced scene (at the clock fix), tabletop, seats, walk, sailing, water, weather, terrain, machine, arena, joints, doom and traversal; each published tree matches the checkout.
 The Scene examples folder links 21 republished examples (each checked in real Patchwork by probes/real-check.mjs; swapped by probes/folder-swap.mjs in one change), the Harbour's second boat is Ship at anchor, and Fitting out is gone.
+
+### 2026-11-18 — Tabletop: assets and pieces on demand
+
+The lead's call, after "Set up a table" on Terraforming Mars (1368 kinds)
+still drew every piece up front: 1368 GLB docs, 819 of them card faces
+nobody had seen, after an import that fetched and stored every asset.
+Now the game description (tabletop-game v2, `contract/v2`) names each
+asset by its original URL and caches it in `assets: { [url]: { file } }`;
+the importer stores only what came with the mod ("Fetch every asset now"
+is the offline option), and a TTS tile or token is as wide as its picture
+says (`aspect: "image"`), measured when drawn. `pieces.js` `pieceDrawer`
+draws a kind the first time something needs it: setting up draws what the
+table lays out (`kindsLaid`), and a card's face, named in its container by
+game and kind, is drawn when a keeper first shows it (`table/faces.js`,
+`keep/rule.js`), with every face of its sheet, made and recorded in kind
+order: `drawn` says which sheets were seen, never which card. Writes follow
+ctx.file's rule (theirs if it got there first; each shows what it made);
+a read-only viewer draws for themselves; a refused fetch leaves a
+placeholder with its URL (`drawn[kind].missing`), retried after ten
+minutes. setup-bench, TM at full size: import 2.8 s / 340 docs / 339 fetches
+→ 0.6 s / 1 / 0; setup 15.2 s / 1454 docs / 29 changes / 1330 crops → 8–11 s
+/ 742 / 8 / 310; a card's first showing 8 ms (46 ms to keep its sheet's 15
+faces), later ones its doc. The privacy probe (plain part) passes in
+headless Chrome with faces drawn on demand.

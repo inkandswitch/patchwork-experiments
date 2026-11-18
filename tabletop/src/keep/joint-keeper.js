@@ -36,6 +36,7 @@
 import { createParticipant, newDeckDoc } from "./deck.js";
 import { secretFor } from "./player-secret.js";
 import { bindings, itemLook, lookFor, showLooks } from "./rule.js";
+import { faces } from "../table/faces.js";
 
 export const TRAIT = "card-table.kept";
 
@@ -88,7 +89,7 @@ export function create(api, { secret } = {}) {
   let bound = bindings({}, TRAIT);
   let scene = null;
   const aud = api.use("audience");
-  const looks = showLooks(api, aud);
+  const looks = showLooks(api, aud, { face: faces(api) });
   let dead = false;
 
   /** What the deck's protocol is told of the table, read from the stage as it is now. */

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // How long a big TTS mod takes to import and then to set up a table from, and
-// where the time and memory go. Node only, offline: a real Automerge Repo with
+// to show a card's face once it's set up, and where the time, the documents
+// and the memory go. Node only, offline: a real Automerge Repo with
 // no network and no storage (nothing ever leaves this process), the game page
 // (src/tool.js) mounted in happy-dom, and stand-ins for everything the
 // browser would fetch or decode:
@@ -15,15 +16,28 @@
 //     reported as counts (a browser's cost is about 100 ms a 4096² decode,
 //     10 ms a crop).
 //
-//   node probes/setup-bench.mjs [--mod <Workshop/<id>.json>] [--scale 0.25]
+//   node probes/setup-bench.mjs [--mod <Workshop/<id>.json>] [--scale 0.25] [--fetch-now]
 //
 // Defaults: Terraforming Mars + Expansions (2104525488) from this machine's
-// TTS cache, at full size. --scale shrinks every stand-in asset's bytes (not
-// its pixel size). Set up a table is timed from the click to the scene
-// opening; `changes`/`listenerMs` are the game doc's change events and the
-// time the game page spent handling them (happy-dom's DOM is slower than a
-// browser's). Measured 2026-11-18 (TM, full size): 177 s and 1369 changes
-// before drawn was written in batches, 15 s and 29 after.
+// TTS cache, at full size, its assets fetched when first drawn (--fetch-now:
+// every one at import, the importer's offline option). --scale shrinks every
+// stand-in asset's bytes (not its pixel size). Set up a table is timed from
+// the click to the scene opening; `made` counts the docs made (by type),
+// `changes`/`listenerMs` are the game doc's change events and the time the
+// game page spent handling them (happy-dom's DOM is slower than a browser's).
+// Then a card's face is shown as a keeper shows it (table/faces.js): the
+// first of its sheet (`shown`: until it can be drawn; `kept`: until its sheet
+// is in the game), another of that sheet, and the first again for a viewer
+// who comes later.
+//
+// Measured 2026-11-18 (TM, full size): 177 s and 1369 changes before drawn
+// was written in batches, 15 s and 29 after, every piece drawn up front
+// (1454 docs at setup, 1368 of them GLBs, after an import that fetched and
+// stored all 339 assets). Drawn on demand: import 0.6 s, 1 doc, nothing
+// fetched; setup 8–11 s, 8 changes, 742 docs (331 GLBs, 325 assets fetched
+// and cached, 85 containers and bags, the scene); 6.5 s with --fetch-now. A
+// card's first showing: 8 ms to its bytes, 46 ms to its sheet's 15 faces
+// kept (16 docs, 1 change, 1 fetch); every later one, its doc (≤ 1 ms).
 import { register } from "node:module";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -43,6 +57,7 @@ const arg = (k, d) => {
 };
 const MOD = arg("mod", join(homedir(), "Library/Tabletop Simulator/Mods/Workshop/2104525488.json"));
 const SCALE = Number(arg("scale", 1));
+const FETCH_NOW = process.argv.includes("--fetch-now");
 const MB = 1024 * 1024;
 const t0 = performance.now();
 const mem = () => {
@@ -132,7 +147,7 @@ const fetchStub = async (url) => {
   counts.fetchedBytes += bytes.byteLength;
   return { ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(0) };
 };
-// what the game page fetches with (pieces.js): the stand-in, never the network
+// what the game page and the keepers fetch with (pieces.js): the stand-in, never the network
 globalThis.fetch = fetchStub;
 mark("read the mod", { objects: save.objects.length });
 
@@ -140,6 +155,23 @@ mark("read the mod", { objects: save.objects.length });
 await initSubduction();
 // no network, no storage, no sync endpoints: nothing leaves this process
 const repo = new Repo({ network: [], subductionWebsocketEndpoints: [] });
+// every doc made, counted (and what kind of doc it is)
+const made = { docs: 0, byType: {} };
+const create2 = repo.create2.bind(repo);
+repo.create2 = (init, ...rest) => {
+  made.docs++;
+  const t = init?.["@patchwork"]?.type ?? "?";
+  made.byType[t] = (made.byType[t] ?? 0) + 1;
+  return create2(init, ...rest);
+};
+const madeSince = (() => {
+  let was = { docs: 0, byType: {} };
+  return () => {
+    const out = { docs: made.docs - was.docs, byType: Object.fromEntries(Object.entries(made.byType).map(([k, n]) => [k, n - (was.byType[k] ?? 0)]).filter(([, n]) => n)) };
+    was = { docs: made.docs, byType: { ...made.byType } };
+    return out;
+  };
+})();
 const { runImport, source } = await import("../src/tts/importer.js");
 const { default: TabletopGameTool } = await import("../src/tool.js");
 
@@ -149,7 +181,7 @@ const { gameUrl, report } = await runImport({
   sources: [source(`Mods/Workshop/${MOD.split("/").pop()}`, statSync(MOD).size, async () => new TextEncoder().encode(text))],
   repo,
   fetch: fetchStub,
-  settings: { fetchNow: true },
+  settings: { fetchNow: FETCH_NOW },
   shrink: null,
   onProgress: (p) => {
     if (p.phase !== lastPhase) {
@@ -160,13 +192,15 @@ const { gameUrl, report } = await runImport({
 });
 const why = {};
 for (const a of Object.values(report.assets)) if (a.error) why[a.error.replace(/https?:\S+/g, "…")] = (why[a.error.replace(/https?:\S+/g, "…")] ?? 0) + 1;
-mark(`import: ${lastPhase}`, { missing: why, assets: report.counts.assets, fetches: counts.fetches, fetchedMB: Math.round(counts.fetchedBytes / MB) });
+mark(`import: ${lastPhase}`, { made: madeSince(), missing: why, assets: report.counts.assets, fetches: counts.fetches, fetchedMB: Math.round(counts.fetchedBytes / MB) });
 
 // ─── 2. the game page, then Set up a table ─────────────────────────────────
 const game = await repo.find(gameUrl);
 let listenerMs = 0;
 let changes = 0;
 const on = game.on.bind(game);
+let docChanges = 0; // the game doc's changes, whoever is listening
+on("change", () => docChanges++);
 game.on = (ev, fn) =>
   on(ev, (...a) => {
     const s = performance.now();
@@ -195,9 +229,11 @@ for (let i = 0; !opened.length && i < 36000; i++) {
   if (/Couldn't/.test(status())) break;
 }
 mark("set up a table", {
+  made: madeSince(),
   opened: opened.length,
   status: status().slice(0, 200),
   changes,
+  docChanges,
   listenerMs: Math.round(listenerMs),
   decodes: counts.decodes,
   crops: counts.crops,
@@ -207,6 +243,43 @@ mark("set up a table", {
 });
 unmount();
 const scene = opened[0] ? (await repo.find(opened[0].url)).doc() : null;
-console.log(JSON.stringify({ mod: save.saveName, scale: SCALE, totalMs: Math.round(performance.now() - t0), sceneObjects: scene ? Object.keys(scene.objects ?? {}).length : 0, phases }, null, 2));
+
+// ─── 3. a card shown, as a keeper shows it ─────────────────────────────────
+const { faces: facesOf } = await import("../src/table/faces.js");
+const g = () => game.doc();
+const sheetOf = (k) => g().pieces[k]?.parts?.find((p) => p.top?.file)?.top?.file ?? "";
+const cardKinds = Object.keys(g().pieces).filter((k) => typeof g().pieces[k].back === "string" && !g().drawn?.[k]);
+const sheets = new Map();
+for (const k of cardKinds) sheets.set(sheetOf(k), [...(sheets.get(sheetOf(k)) ?? []), k]);
+// a sheet of the commonest size: a typical first card
+const [sheet, ofSheet] = [...sheets].sort((a, b) => b[1].length - a[1].length)[Math.floor(sheets.size / 2)];
+const changesNow = () => docChanges;
+const reveal = async (label, look, api) => {
+  const was = { changes: changesNow(), fetches: counts.fetches, decodes: counts.decodes, crops: counts.crops };
+  madeSince();
+  const s = performance.now();
+  const shown = await facesOf(api)(look);
+  const shownMs = performance.now() - s;
+  // kept: its sheet is in the game (the whole sheet drawn, its docs made, recorded)
+  for (let i = 0; i < 6000 && !ofSheet.every((k) => g().drawn?.[k]); i++) await new Promise((r) => setTimeout(r, 5));
+  mark(label, {
+    shownMs: Math.round(shownMs),
+    shownAs: shown?.url ? "its doc" : shown?.glb ? "bytes drawn here" : "nothing",
+    keptMs: Math.round(performance.now() - s),
+    made: madeSince(),
+    changes: changesNow() - was.changes,
+    fetches: counts.fetches - was.fetches,
+    decodes: counts.decodes - was.decodes,
+    crops: counts.crops - was.crops,
+  });
+};
+const here = { repo, registry: async () => null };
+mark("before showing a card", { sheetFaces: ofSheet.length, sheets: sheets.size });
+await reveal("show a card: the first of its sheet", { game: gameUrl, kind: ofSheet[0] }, here);
+await reveal("show a card: another of that sheet", { game: gameUrl, kind: ofSheet[1] }, here);
+// a viewer who comes later: a drawer of their own (one per repo), finding it in the game
+const later = { repo: { find: (u) => repo.find(u), create2: (d) => repo.create2(d) }, registry: async () => null };
+await reveal("show a card: the first again, to a viewer who comes later", { game: gameUrl, kind: ofSheet[0] }, later);
+console.log(JSON.stringify({ mod: save.saveName, scale: SCALE, fetchNow: FETCH_NOW, totalMs: Math.round(performance.now() - t0), sceneObjects: scene ? Object.keys(scene.objects ?? {}).length : 0, phases }, null, 2));
 await window.happyDOM.abort?.();
 process.exit(0);

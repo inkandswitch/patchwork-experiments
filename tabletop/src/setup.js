@@ -2,13 +2,16 @@
 // what each deck and bag holds. The one writer every way of making a table
 // uses (GAME-FORMAT.md §8):
 //
-//   const layout = tableLayout(game, { fileOf, newId, rng, gameUrl });   // pure
+//   const layout = tableLayout(game, { fileOf, faceOf, newId, rng, gameUrl });   // pure
 //   const made = await prepareTable(host, layout);   // table/made-with.js: keepers, bags, seats' owner, warnings
 //   writeTable(d, layout, made);                     // in one change
 //
 // - The game page's "Set up a table" (tool.js) writes it onto a fresh scene
 //   doc; each kind shows the game's own GLB doc, which redraws when the game
-//   changes, and the game is each object's About.
+//   changes, and the game is each object's About. A card's face is named
+//   by the game and its kind (`faceOf`), and drawn the first time a keeper
+//   shows it (pieces.js), so only what a table lays out (`kindsLaid`) is
+//   drawn to set one up.
 // - A template (table/template.js) writes it into the scene it was opened
 //   in, and a game's part into a game doc of its own that it links onto what
 //   it was put on; each kind's GLB is that doc's own file, so the table
@@ -105,6 +108,23 @@ export function copyPose(thing, i) {
   return composePose(at, { position: off });
 }
 
+/** Every piece kind a table of this game lays out as a thing: each thing's piece, but a card's back in its place; contents too. */
+export function kindsLaid(game) {
+  const laid = new Set();
+  const pieces = game?.pieces ?? {};
+  const walk = (things) => {
+    for (const t of things ?? []) {
+      for (const k of t.deck ? (t.deck.cards ?? []) : [t.piece]) {
+        const shown = isCard(game, k) ? pieces[k].back : k;
+        if (pieces[shown]) laid.add(shown);
+      }
+      walk(t.contents);
+    }
+  };
+  walk(game?.setup);
+  return [...laid];
+}
+
 /** Every piece kind a table of this game shows: each thing's piece, a card's back, each deck's cards; contents too. */
 export function kindsUsed(game) {
   const used = new Set();
@@ -132,20 +152,23 @@ const copyBounds = (b) => (Array.isArray(b?.min) && Array.isArray(b?.max) ? { mi
  * @param {object} game  a tabletop-game (GAME-FORMAT.md), valid
  * @param {{
  *   fileOf: (kind: string) => { url: string, hint?: { bounds? } | null } | null,
+ *   faceOf?: (kind: string) => object,
  *   newId?: (prefix: string) => string,
  *   rng?: () => number,
  *   gameUrl?: string | null,
- * }} o  fileOf: the GLB file doc a kind shows, and its box; gameUrl: the game,
- *   as each object's About (none for a template's table)
+ * }} o  fileOf: the GLB file doc a kind shows, and its box; faceOf: what names a
+ *   card's face in its container (by default its file, `{ sourceUrl }`; the game
+ *   page's `{ game, kind }`, drawn when first shown); gameUrl: the game, as each
+ *   object's About (none for a template's table)
  * @returns {{ objects, order, seats, containers, bags, view, origin }} the scene's
  *   objects (each card naming its container and slot under tabletop.card until
  *   writeTable binds it) and their order; its seats ({ [seatId]: { name, camera? } });
  *   what each container is to hold ({ [key]: { title, secure, items } }: slot k is
- *   items[k], { sourceUrl, name }); what each bag is to hold ({ [bag's object id]:
+ *   items[k], { sourceUrl, name } or { game, kind, name }); what each bag is to hold ({ [bag's object id]:
  *   { title, rule, items: [{ id, object }] } }: objects that are never in the scene);
  *   its view settings; and where the game came from (its `origin`, or null)
  */
-export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = null } = {}) {
+export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.random, gameUrl = null } = {}) {
   let n = 0;
   const id = newId ?? ((prefix) => `${prefix}${(n++).toString(36).padStart(4, "0")}`);
   const pieces = game?.pieces ?? {};
@@ -208,7 +231,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
   /** A container's next slot: what card `kind` really is. */
   const contain = (key, kind) => {
     const items = containers[key].items;
-    items.push({ sourceUrl: drawn(kind).url, name: pieces[kind].name || kind });
+    items.push({ ...(faceOf ? copy(faceOf(kind)) : { sourceUrl: drawn(kind).url }), name: pieces[kind].name || kind });
     return items.length - 1;
   };
   /** A card: its back, kept in container `key`. */

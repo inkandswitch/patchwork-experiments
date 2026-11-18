@@ -191,6 +191,14 @@ sends simulated locally (cannonballs, spray), and positional sound.
   in Steam), as the importer takes today. (Checked then: Steam's file-details
   call needs no key but has no CORS headers; downloads are BSON; search needs
   a key.)
+- **Assets and pieces on demand. Done, 2026-11-18** (the lead's call that
+  day; HISTORY.md). The game description keeps each asset's original URL;
+  the first viewer who draws from it fetches it and caches it in a file doc
+  the description's `assets` names (writers only; a read-only viewer draws
+  for themselves); a host that refuses shows as missing, with its URL. A
+  table's setup draws only what it lays out; a card's face is drawn when a
+  keeper first shows it, with its whole sheet, so nothing recorded says
+  which card anyone holds.
 - **Open, deferred:** where live play state lives for a 2D view or scripts:
   (a) the scene's traits and transforms, as today, or (b) a tabletop session
   doc the scene renders. Decide when 2D or scripting is on the table.
