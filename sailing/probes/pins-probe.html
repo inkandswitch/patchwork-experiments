@@ -206,7 +206,9 @@ try {
     const own = withTrait(docs.s, EXIT);
     const place = JSON.parse(JSON.stringify(objectsOf(docs.s)[own]));
     const ownHatch = Object.keys(objectsOf(docs.s)).find((id) => objectsOf(docs.s)[id].parent === own);
-    sapi.remove([own, ownHatch].filter(Boolean));
+    // (remove plans the change, after every beforeRemove; applying it is the caller's: scene/STAGE.md)
+    const gone = sapi.remove([own, ownHatch].filter(Boolean));
+    if (gone) sapi.change(gone);
     ids.fitout = await addLink(sapi, docs.f.url, { parent: place.parent, transform: place.transform, hint: { bounds: fBox }, fields: { locked: true }, name: "Companionway fit-out" });
     // W twice on her cabin top, forward of the companionway, port and starboard of it
     const fwd = (dx, dz) => ({ position: [place.transform.position[0] + dx, place.transform.position[1] + 0.05, place.transform.position[2] + dz], rotation: [...place.transform.rotation], scale: 1 });
@@ -221,9 +223,11 @@ try {
     dbg.s.view.select(null);
     await loaded(() => stageAt(ids.fitout)?.debug.host.instanceOf("joints") && stageAt(ids.acting)?.debug.host.instanceOf("joints"));
     // F fixed where it is: the inspector's Fix at this version, holding the editor, as a person does it
-    sapi.run({ ext: "scene.edit", command: "edit", target: null, value: true });
-    const fixed = sapi.run({ ext: "scene.inspector", command: "fix-version", target: ids.fitout });
-    sapi.run({ ext: "scene.edit", command: "edit", target: null, value: false });
+    // (the editor and the inspector are view plugins: their commands run through the view's, not a stage's api)
+    const vrun = (ext, inv) => dbg.s.view.plugins.record(ext)?.api.run({ ext, target: null, ...inv });
+    vrun("scene.edit", { command: "edit", value: true });
+    const fixed = vrun("scene.inspector", { command: "fix-version", target: ids.fitout });
+    vrun("scene.edit", { command: "edit", value: false });
     await loaded(() => stageAt(ids.fitout)?.role === "pinned" && stageAt(ids.fitout)?.debug.host.instanceOf("joints"));
     ids.f = docs.f.url;
     ids.w = docs.w.url;
@@ -340,10 +344,10 @@ try {
     renameF: (name) => apiOf("f").change((d) => (d.objects[ids.fCompanionway].name = name)),
     /** the inspector's Follow latest / Fix at this version on the fit-out, holding the editor, then put down */
     version(command) {
-      const sapi = apiOf("s");
-      sapi.run({ ext: "scene.edit", command: "edit", target: null, value: true });
-      const ran = sapi.run({ ext: "scene.inspector", command, target: ids.fitout });
-      sapi.run({ ext: "scene.edit", command: "edit", target: null, value: false });
+      const vrun = (ext, inv) => dbg.s.view.plugins.record(ext)?.api.run({ ext, target: null, ...inv });
+      vrun("scene.edit", { command: "edit", value: true });
+      const ran = vrun("scene.inspector", { command, target: ids.fitout });
+      vrun("scene.edit", { command: "edit", value: false });
       return ran;
     },
     fixPoint: () => JSON.parse(JSON.stringify(apiOf("s").use("links").fixPoint(ids.fitout))),
