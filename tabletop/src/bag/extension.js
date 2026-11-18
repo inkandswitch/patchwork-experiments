@@ -524,8 +524,12 @@ export default {
     // ── the count on each bag ──
     const labels = api.labels?.() ?? null;
     let labelKey = "";
+    let bagsAt = ""; // where the labelled bags were drawn: one carried (a displayed pose) moves without a doc change
+    const whereBags = () => bagsIn().map((b) => api.worldOf?.(b.id)?.join()).join(";");
+    api.afterRender?.(() => labels && !dead && scene && whereBags() !== bagsAt && drawLabels());
     function drawLabels() {
       if (!labels || dead || !scene) return;
+      bagsAt = whereBags();
       const sh = shadows();
       const items = [];
       for (const b of bagsIn()) {

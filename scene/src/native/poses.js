@@ -103,6 +103,8 @@ function create(api) {
   return {
     provides: { poses },
     receive: (type, data, from) => type === "pose" && wire.receive(data, from),
+    // an extension holding a pose is busy: a peer's edit doesn't stop it mid-carry or mid-stream (STAGE.md, "Stopping")
+    busy: (ext) => [...here.keys()].some((id) => holds.holderOf(id) === ext),
     // the doc changed: a landed hold it caught up with goes, and one whose parent it changed is shown (or not) again
     update: () => [...wire.remoteHolds().keys()].forEach((id) => show(id)),
     tick,

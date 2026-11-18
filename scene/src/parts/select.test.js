@@ -216,6 +216,19 @@ describe("scene.select: presence", () => {
     expect(helpers().map((h) => h.userData.selection)).toEqual(["peer:p2"]);
   });
 
+  it("follows a held pose within one frame: no doc change, no update", async () => {
+    await mount();
+    const f = s.facet("scene.select");
+    // a unit box where the object is displayed (worldOf follows the pose)
+    f.box = (id) => ((w) => w && { min: [w[12], w[13], w[14]], max: [w[12] + 1, w[13] + 1, w[14] + 1] })(f.worldOf(id));
+    s.local.swap((m) => ({ ...m, selected: "a" }));
+    await settle();
+    expect(helpers()[0].box.min.toArray()).toEqual([0, 0, 0]);
+    expect(f.use("poses").hold("a", { position: [4, 0, 0], rotation: [0, 0, 0], scale: 1 })).toBe(true);
+    for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+    expect(helpers()[0].box.min.toArray()).toEqual([4, 0, 0]);
+  });
+
   it("boxes a group by its group box (api.box covers groups)", async () => {
     await mount({ objects: { g: group("G"), m: layer("M", "g") } });
     boxes({ g: { min: [-1, -1, -1], max: [1, 1, 1] } });

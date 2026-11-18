@@ -82,4 +82,18 @@ describe("scene.bounds", () => {
     expect(layer(s).children[0]).toBe(first);
     s.unmount();
   });
+
+  it("follows a held pose within one frame: no doc change, no update", async () => {
+    const s = await mount({ ...doc(), view: { bounds: true } });
+    const f = s.facet("scene.bounds");
+    f.box = (id) => ((w) => w && { min: [w[12], 0, 0], max: [w[12] + 1, 1, 1] })(f.worldOf(id));
+    s.change((d) => (d.title = "poke"));
+    await s.settle();
+    const xs = () => layer(s).children.map((h) => h.box.min.x);
+    expect(xs()).toEqual([0, 0]);
+    f.use("poses").hold("a", { position: [5, 0, 0], rotation: [0, 0, 0], scale: 1 });
+    for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+    expect(xs()).toEqual([5, 0]);
+    s.unmount();
+  });
 });

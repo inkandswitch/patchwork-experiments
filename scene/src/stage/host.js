@@ -12,7 +12,7 @@
 //
 // One stop rule (H2): an extension the doc no longer calls for lingers for
 // LINGER_MS, and for as long as it's busy (a body entered, the held tool, an
-// open session), so nobody's game is torn down under them by a
+// open session, a pose held), so nobody's game is torn down under them by a
 // peer's edit. One still loading stops at once, having acquired nothing, and
 // so does one whose plugin left the registry (there is no code to keep).
 //
@@ -404,7 +404,7 @@ export function createHost({
     }
     return settledFor.ids;
   }
-  /** What the doc calls for, of what's registered here, that failed to start (one may be a policy: scene.audience then answers nothing). */
+  /** What the doc calls for, of what's registered here, that failed to start (one may be an audience policy: then who may see what is unknown). */
   const failed = () => activeIds()?.filter((id) => recs.get(id)?.state === "failed") ?? [];
 
   /**

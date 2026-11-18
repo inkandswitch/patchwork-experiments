@@ -435,6 +435,29 @@ describe("the stage, mounted", () => {
     expect([early.nameOf("a"), m.debug.displayed().size]).toEqual(["Card", 0]);
   });
 
+  it("display: an override outlives its object's removal and applies again when it comes back (an undo)", async () => {
+    const h = newScene({ traits: { "t.scene": {} }, objects: { a: card(), b: card() }, order: ["a", "b"] });
+    const m = mount(h);
+    await settle();
+    const api = exts["t.scene"].api;
+    api.display("a", { name: "Veiled" });
+    h.change((d) => void (delete d.objects.a, d.order.splice(0, 1)));
+    await settle();
+    expect(m.debug.displayed().has("a")).toBe(false);
+    h.change((d) => void ((d.objects.a = card()), d.order.unshift("a")));
+    await settle();
+    expect(api.nameOf("a")).toBe("Veiled");
+  });
+
+  it("an extension holding a pose is busy, so a peer's edit doesn't stop it mid-hold; let go, it isn't", async () => {
+    const m = mount(newScene({ traits: { "t.scene": {} }, objects: { a: card() }, order: ["a"] }));
+    await settle();
+    const poses = exts["t.scene"].api.use("poses");
+    expect([m.debug.busy("t.scene"), poses.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 }), m.debug.busy("t.scene")]).toEqual([false, true, true]);
+    poses.release("a");
+    expect(m.debug.busy("t.scene")).toBe(false);
+  });
+
   it("ambients: the running extensions' offers stacked per name in running order, the later whole; the atmosphere among them is the viewport's; gone when its giver stops", async () => {
     exts["t.edit"] = recorder("t.edit", () => ({ ambient: () => ({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.weather": { rain: 2 } }) }));
     exts["t.always"] = recorder("t.always", () => ({ ambient: () => ({ atmosphere: { sun: { direction: [0, 1, 0], shadows: true } }, "t.weather": null }) }));

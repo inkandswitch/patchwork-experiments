@@ -52,7 +52,7 @@ export function frozenJSON(v, at = "", seen = new Set()) {
 /**
  * The ambients a stage offers: each extension's `ambient()` answer, stacked
  * in running order per name, a later value winning whole and `null` clearing
- * an earlier one (mergeLooks' and the old atmosphere's rule, one level up).
+ * an earlier one (the old atmosphere's rule, one level up).
  * An offer that isn't plain JSON is refused and reported through
  * `refuse(id, name, error)`, and stacks as null: it clears what came before
  * it under that name, so a broken override leaves no value rather than

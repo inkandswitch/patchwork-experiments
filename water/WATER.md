@@ -240,7 +240,7 @@ sails"); her sky has already given way to the room's for the same reason.
 - Consumers: the atmosphere (viewport; arena and sailing provide it) and
   water (the water package draws and reads it). Unrelated.
 
-**S2. One playout moment per peer session.** `presence.shownAt(session)`
+**S2. One playout moment per peer session.** `use("poses").shownAt(session)`
 becomes one moment for a peer across all the view's channels (the view
 already has one session id for all of them), using the largest playout
 delay among the channels that hear that peer. A channel with no holds from

@@ -597,6 +597,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         routes.delete(id);
         continue;
       }
+      // back (an undo): what extensions display for it applies again
+      if (overrides.has(id) && !displayed.has(id)) redisplay(id);
       const route = typeof displayed.get(id)?.content === "string" ? "file" : routeOf(o, kindOf);
       // a route that moved (its provider arrived or went) is a change to what's shown
       if (routes.has(id) && routes.get(id) !== route) rerouted = true;
@@ -680,8 +682,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       displayKeys.delete(id);
       hintKeys.delete(id);
       drawn.delete(id);
-      overrides.delete(id);
-      displayed.delete(id);
+      displayed.delete(id); // (its overrides stay until released: it may come back)
     }
     if (rerouted) displayChanged();
   }
@@ -939,10 +940,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return w;
   }
 
-  // (a body it put on the stack, the held tool or an open session: a doc-caused stop waits)
+  // (a body it put on the stack, the held tool, an open session, or a service busy on its behalf (a pose it holds): a doc-caused stop waits)
   const busy = (id) => {
     const own = owned.get(id);
-    return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0);
+    return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
   };
 
   /** Write fn, and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
@@ -1754,7 +1755,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     displayed: () => displayed,
     /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,
-    /** does this extension hold a body, the held tool or an open session (so a doc-caused stop waits)? */
+    /** does this extension hold a body, the held tool or an open session, or is a service busy for it (so a doc-caused stop waits)? */
     busy,
     /** does it act ("acting"), or is it drawn ("pinned")? */
     role,

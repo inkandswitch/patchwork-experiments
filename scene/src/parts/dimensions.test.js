@@ -125,6 +125,14 @@ describe("scene.dimensions", () => {
     expect(labels()[0].hasAttribute("data-detached")).toBe(true); // one end is free
   });
 
+  it("an end on an object follows a pose held on it within one frame: no doc change, no update", async () => {
+    await mount({ dims: { d1: { a: on("a", [0, 0, 0], [1, 0, 0]), b: free([0, 0, 0]), label: null } } });
+    expect(labels()[0].textContent).toBe("1 m");
+    expect(s.facet("scene.dimensions").use("poses").hold("a", T([3, 0, 0]))).toBe(true);
+    for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
+    expect(labels()[0].textContent).toBe("3 m");
+  });
+
   it("marks an end whose object is gone as fixed", async () => {
     await mount({ dims: { d1: { a: on("a", [0, 0, 0]), b: on("a", [0, 1, 0]), label: null }, d2: { a: on("gone", [0, 0, 0], [5, 0, 0]), b: on("a", [0, 0, 0]), label: null } } });
     const p = panel();

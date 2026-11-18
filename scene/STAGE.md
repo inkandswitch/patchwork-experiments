@@ -153,7 +153,8 @@ or failed, so a create's `use` finds every service that runs, whatever the
 registry order.
 
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
-(2 s), and while it holds a body, tool or session. One loading or
+(2 s), and while it holds a body, tool or session, or a running extension's
+`busy(id)` says so (`scene.poses`: a pose it holds). One loading or
 unregistered stops at once. `api.signal` aborts first, and what services gave it
 goes with it (a kept process saved, claims without `onLost`, panes without
 `onClose`); then everything it acquired, then `dispose()`.
@@ -420,10 +421,11 @@ extension's.
 
 `display(id, { transform?, content?, hidden?, name? })` → release: how this
 viewer sees an object, unwritten: a local `transform` under its doc parent
-(`worldOf`, boxes and picks follow; moving wakes no update), `content` (a file
+(`worldOf`, boxes and picks follow; moving wakes no update: what follows it
+looks in `afterRender` or a loop), `content` (a file
 doc's URL, or stand-in GLB bytes) drawn instead, `name` for `nameOf`; layered
-in running order, later per field, again replacing the caller's own, gone on
-release or stop. **Dressing** (moving one's objects' `content(id).root` nodes) is only a look.
+in running order, later per field, again replacing the caller's own, kept
+while its object is gone, gone on release or stop. **Dressing** (moving one's objects' `content(id).root` nodes) is only a look.
 
 ### Picking and camera
 
@@ -455,7 +457,7 @@ keeper has them now.
 | `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
 | `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`; `caller` is `{ id, signal }`, and a view plugin's from a stage's extension also `runs(id)`, `doc()`: see "Native services" |
 | `messages`, `receive(type, data, from)` | see "Native services" (Telling); `receive` hears this extension's sends |
-| `beforeRemove(draft, ids)`, `dispose()` | the stage |
+| `beforeRemove(draft, ids)`, `dispose()`, `busy(id)` | the stage; `busy`: is it busy for extension `id` (see "Stopping") |
 | `hud()` → `[{ text, state }]` | status surfaces |
 | `landing(id, worldPoint, hitId)` → `{ faceUp?, flat? }` | the carry, every move; see "Landing" |
 | `carryable(id)` → `false` | the carry: a veto for passing states |

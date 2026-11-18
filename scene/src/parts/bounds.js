@@ -89,6 +89,8 @@ export default {
       labels.set(items);
       api.invalidate();
     }
+    // a displayed pose (a carry, a hull under way) moves boxes without a doc change: look after each frame
+    api.afterRender(() => drawn() && at() && redraw(at().f.scene(), api.view.get()));
 
     return {
       commands: [
