@@ -806,4 +806,12 @@ minutes. setup-bench, TM at full size: import 2.8 s / 340 docs / 339 fetches
 → 0.6 s / 1 / 0; setup 15.2 s / 1454 docs / 29 changes / 1330 crops → 8–11 s
 / 742 / 8 / 310; a card's first showing 8 ms (46 ms to keep its sheet's 15
 faces), later ones its doc. The privacy probe (plain part) passes in
-headless Chrome with faces drawn on demand.
+headless Chrome with faces drawn on demand. Review the same day: a sheet
+said too much — Terraforming Mars's decks span up to three sheets under one
+back, so recording one sheet told everyone which third of the deck a
+player's card was in. A face is now drawn with its group (`groupsOf`: the
+cards it may share a container with, and those cut from the same sheets,
+closed over both); its sheets are fetched in URL order and the group is
+recorded whole or not at all; the game has its `assets` map from the start
+(two viewers making it at once lost one's entries), and editing the game
+writes it entry by entry.

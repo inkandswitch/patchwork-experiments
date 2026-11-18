@@ -183,7 +183,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
   // the mod it came from (its Workshop id when the file is named for it), so a game made from a
   // publisher's module says whose it is wherever it goes, and every table set up from it says so too
   const workshopId = /(?:^|\/)(\d{6,})\.json$/i.exec(found.path)?.[1] ?? null;
-  const game = { ...t.game, origin: { tts: { saveName: save.saveName ?? null, fileName: found.path, workshopId } }, ...(Object.keys(cached).length ? { assets: cached } : {}) };
+  const game = { ...t.game, origin: { tts: { saveName: save.saveName ?? null, fileName: found.path, workshopId } }, assets: cached };
   const gameHandle = await repo.create2({ "@patchwork": { type: "tabletop-game" }, ...game, drawn: {}, tables: [] });
 
   // ─── the report ──────────────────────────────────────────────────────────

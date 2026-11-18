@@ -9,6 +9,9 @@ export const TabletopGameDatatype = {
     doc.about = "";
     doc.pieces = {};
     doc.setup = [];
+    // made with the game, never on first use: two viewers caching at once each making the map would
+    // leave one map, and lose what the other cached in theirs
+    doc.assets = {};
     doc.drawn = {};
     doc.tables = [];
   },

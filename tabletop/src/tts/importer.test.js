@@ -10,6 +10,8 @@ import { zipSync } from "fflate";
 import { runImport, source } from "./importer.js";
 import { sourcesFromZip } from "./inputs.js";
 import { FakeRepo } from "../test/fake-repo.js";
+import { filesOf, pieceDrawer } from "../pieces.js";
+import { nodeImages } from "../test/node-images.js";
 import { FIXTURE, fixtureSources } from "./test/fixture.js";
 import { validate, errorText } from "../../contract/v2/validate.js";
 import tinyGame from "../../contract/v2/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
@@ -48,6 +50,30 @@ describe("runImport on the tiny fixture", () => {
     // nothing is a stand-in for want of an asset here: one that can't be had is when it's drawn
     expect(report.counts.approximated).toEqual({});
     expect(report.counts).toMatchObject({ cards: 4, decks: 1, bags: 1, dice: 1, seats: 1, pieces: 16 });
+  });
+
+  it("“Fetch every asset now” leaves a game that draws every piece with nothing more fetched (offline)", async () => {
+    // the web as a stand-in that answers: the one asset the dropped files lack is an OBJ
+    const fetched = [];
+    const obj = new TextEncoder().encode("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    const answer = async (url) => (fetched.push(url), { ok: true, status: 200, arrayBuffer: async () => obj.slice().buffer });
+    const { gameUrl, repo, report } = await importFixture({ settings: { fetchNow: true }, fetch: answer });
+    expect(report.counts.assets).toMatchObject({ needed: 9, cache: 8, fetched: 1, web: 0, missing: 0 });
+    const game = await repo.find(gameUrl);
+    // every web URL the game names is cached in it
+    const named = [...new Set(Object.values(game.doc().pieces).flatMap(filesOf))].filter((u) => /^https?:/.test(u));
+    expect(named.length).toBeGreaterThan(0);
+    for (const u of named) expect(game.doc().assets[u]?.file, u).toMatch(/^automerge:/);
+    // offline: every kind drawn from the game's own docs, nothing fetched, nothing missing
+    const offline = async (url) => {
+      throw new TypeError(`offline: ${url}`);
+    };
+    const was = fetched.length;
+    const pd = pieceDrawer({ repo, handle: game, images: nodeImages(), fetch: offline });
+    await pd.ensure(Object.keys(game.doc().pieces));
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(Object.keys(game.doc().pieces).sort());
+    expect(Object.entries(game.doc().drawn).filter(([, e]) => e.missing)).toEqual([]);
+    expect(fetched.length).toBe(was);
   });
 
   it("stores each asset as a file doc saying which of the mod's URLs it came from, OBJ as text", async () => {

@@ -26,8 +26,8 @@
 // `changes`/`listenerMs` are the game doc's change events and the time the
 // game page spent handling them (happy-dom's DOM is slower than a browser's).
 // Then a card's face is shown as a keeper shows it (table/faces.js): the
-// first of its sheet (`shown`: until it can be drawn; `kept`: until its sheet
-// is in the game), another of that sheet, and the first again for a viewer
+// first of its group (`shown`: until it can be drawn; `kept`: until its group
+// is in the game), another of that group, and the first again for a viewer
 // who comes later.
 //
 // Measured 2026-11-18 (TM, full size): 177 s and 1369 changes before drawn
@@ -36,8 +36,10 @@
 // stored all 339 assets). Drawn on demand: import 0.6 s, 1 doc, nothing
 // fetched; setup 8–11 s, 8 changes, 742 docs (331 GLBs, 325 assets fetched
 // and cached, 85 containers and bags, the scene); 6.5 s with --fetch-now. A
-// card's first showing: 8 ms to its bytes, 46 ms to its sheet's 15 faces
-// kept (16 docs, 1 change, 1 fetch); every later one, its doc (≤ 1 ms).
+// card's face is drawn with its group (31 groups, 1051 faces; median 23,
+// largest 171 over 4 sheets): its first showing 115 ms to its bytes, 233 ms
+// to its group of 23 kept (24 docs, 1 change, 1 fetch); the largest's 8 ms
+// and 595 ms (175 docs, 4 fetches); every later one, its doc (≤ 6 ms).
 import { register } from "node:module";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -246,22 +248,26 @@ const scene = opened[0] ? (await repo.find(opened[0].url)).doc() : null;
 
 // ─── 3. a card shown, as a keeper shows it ─────────────────────────────────
 const { faces: facesOf } = await import("../src/table/faces.js");
+const { groupsOf } = await import("../src/pieces.js");
 const g = () => game.doc();
 const sheetOf = (k) => g().pieces[k]?.parts?.find((p) => p.top?.file)?.top?.file ?? "";
-const cardKinds = Object.keys(g().pieces).filter((k) => typeof g().pieces[k].back === "string" && !g().drawn?.[k]);
-const sheets = new Map();
-for (const k of cardKinds) sheets.set(sheetOf(k), [...(sheets.get(sheetOf(k)) ?? []), k]);
-// a sheet of the commonest size: a typical first card
-const [sheet, ofSheet] = [...sheets].sort((a, b) => b[1].length - a[1].length)[Math.floor(sheets.size / 2)];
+// a card's face is drawn with its group (pieces.js groupsOf: its container's cards and their sheets)
+const groups = [...new Set(groupsOf(g()).values())].filter((m) => !m.some((k) => g().drawn?.[k]));
+const sizes = groups.map((m) => m.length).sort((a, b) => a - b);
+// a group of the middling size: a typical first card
+const middling = [...groups].sort((a, b) => a.length - b.length)[Math.floor(groups.length / 2)];
+const largest = [...groups].sort((a, b) => b.length - a.length)[0];
+const ofGroup = middling;
+const groupStats = { groups: groups.length, faces: sizes.reduce((a, b) => a + b, 0), median: sizes[Math.floor(sizes.length / 2)], largest: sizes.at(-1), sheets: new Set(ofGroup.map(sheetOf)).size };
 const changesNow = () => docChanges;
-const reveal = async (label, look, api) => {
+const reveal = async (label, look, api, ofGroup = middling) => {
   const was = { changes: changesNow(), fetches: counts.fetches, decodes: counts.decodes, crops: counts.crops };
   madeSince();
   const s = performance.now();
   const shown = await facesOf(api)(look);
   const shownMs = performance.now() - s;
-  // kept: its sheet is in the game (the whole sheet drawn, its docs made, recorded)
-  for (let i = 0; i < 6000 && !ofSheet.every((k) => g().drawn?.[k]); i++) await new Promise((r) => setTimeout(r, 5));
+  // kept: its group is in the game (the whole group drawn, its docs made, recorded)
+  for (let i = 0; i < 6000 && !ofGroup.every((k) => g().drawn?.[k]); i++) await new Promise((r) => setTimeout(r, 5));
   mark(label, {
     shownMs: Math.round(shownMs),
     shownAs: shown?.url ? "its doc" : shown?.glb ? "bytes drawn here" : "nothing",
@@ -274,12 +280,13 @@ const reveal = async (label, look, api) => {
   });
 };
 const here = { repo, registry: async () => null };
-mark("before showing a card", { sheetFaces: ofSheet.length, sheets: sheets.size });
-await reveal("show a card: the first of its sheet", { game: gameUrl, kind: ofSheet[0] }, here);
-await reveal("show a card: another of that sheet", { game: gameUrl, kind: ofSheet[1] }, here);
+mark("before showing a card", { groupFaces: ofGroup.length, ...groupStats });
+await reveal("show a card: the first of its group", { game: gameUrl, kind: ofGroup[0] }, here);
+await reveal("show a card: another of that group", { game: gameUrl, kind: ofGroup.at(-1) }, here);
 // a viewer who comes later: a drawer of their own (one per repo), finding it in the game
 const later = { repo: { find: (u) => repo.find(u), create2: (d) => repo.create2(d) }, registry: async () => null };
-await reveal("show a card: the first again, to a viewer who comes later", { game: gameUrl, kind: ofSheet[0] }, later);
+await reveal("show a card: the first again, to a viewer who comes later", { game: gameUrl, kind: ofGroup[0] }, later);
+await reveal(`show a card: the first of the largest group (${largest.length} faces)`, { game: gameUrl, kind: largest[0] }, here, largest);
 console.log(JSON.stringify({ mod: save.saveName, scale: SCALE, fetchNow: FETCH_NOW, totalMs: Math.round(performance.now() - t0), sceneObjects: scene ? Object.keys(scene.objects ?? {}).length : 0, phases }, null, 2));
 await window.happyDOM.abort?.();
 process.exit(0);

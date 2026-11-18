@@ -2,7 +2,7 @@
 // showLooks). A table set up from a game page names each card's face in its
 // container by the game and its kind (`{ game, kind, name }`, setup.js
 // faceOf), not by a file: the game's pieceDrawer (pieces.js) draws it, with
-// the rest of its sheet, keeps it in the game's `drawn` (a viewer who can
+// the rest of its group (pieces.js groupsOf), keeps it in the game's `drawn` (a viewer who can
 // write the game), and says what to show: its GLB doc, or bytes drawn for
 // this viewer alone. One pieceDrawer per game per repo, so a stage's two
 // keepers and every card share what's been drawn and fetched.

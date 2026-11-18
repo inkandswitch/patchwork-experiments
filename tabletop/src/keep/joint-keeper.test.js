@@ -9,6 +9,7 @@ import { newSecret } from "./crypto/derive.js";
 import { accountSecret, secretFor } from "./player-secret.js";
 import { newDeckDoc } from "./deck.js";
 import { plugins } from "../index.js";
+import { fakeRepo } from "../test/games.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -51,9 +52,9 @@ const until = async (fn, ms = 30000) => {
  * (face down). Each client reads it through its own api.audience, unless
  * the test makes that client's audience unknown.
  */
-function table({ seated = ["me", "you"], open = [] } = {}) {
-  const deck = sharedDeck();
-  const objects = Object.fromEntries(FACES.map((_, k) => [`c${k}`, { name: "Card", traits: { [TRAIT]: { by: DECK, slot: k } } }]));
+function table({ seated = ["me", "you"], open = [], faces = FACES, repo = null } = {}) {
+  const deck = sharedDeck(faces);
+  const objects = Object.fromEntries(faces.map((_, k) => [`c${k}`, { name: "Card", traits: { [TRAIT]: { by: DECK, slot: k } } }]));
   const where = {};
   const t = { deck, objects, where, seated, open, clients: {} };
   const roster = { viewers: () => [...t.seated], open: () => [...t.open], nameOf: (_s, v) => (v ? v.toUpperCase() : null) };
@@ -84,7 +85,11 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
       },
     };
     const api = {
-      repo: { find: async (url) => (url === DECK ? (writable ? deck : readOnlyDeck) : Promise.reject(new Error("unavailable"))) },
+      // (a repo of its own per client, as each player's is: the deck, and any other doc `repo` has)
+      repo: {
+        find: async (url) => (url === DECK ? (writable ? deck : readOnlyDeck) : repo ? repo.find(url) : Promise.reject(new Error("unavailable"))),
+        create2: async (d) => (repo ? repo.create2(d) : Promise.reject(new Error("unavailable"))),
+      },
       writable: () => writable,
       channel: { viewer },
       settled: () => ({ ready: true, missing: [] }),
@@ -96,8 +101,12 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
             n === "notices"
             ? { notify() {}, changed: () => c.told.push(c.x.hud().map((h) => h.text)) }
             : null,
-      display: () => () => {},
+      display: (id, o) => {
+        c.displayed[id] = o;
+        return () => c.displayed[id] === o && delete c.displayed[id];
+      },
     };
+    c.displayed = {};
     const secret = (t.secrets[viewer] ??= newSecret());
     c.x = create(api, { secret: () => secret });
     c.update = () => c.x.update({ objects });
@@ -118,7 +127,7 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
     }
     return out;
   };
-  t.dealt = () => deck.doc().phase === "playing" && deck.doc().op == null && deck.doc().queue.length === 0 && Object.keys(deck.doc().epochs).length === FACES.length;
+  t.dealt = () => deck.doc().phase === "playing" && deck.doc().op == null && deck.doc().queue.length === 0 && Object.keys(deck.doc().epochs).length === faces.length;
   t.dispose = () => Object.values(t.clients).forEach((c) => c.x.dispose());
   return t;
 }
@@ -159,6 +168,42 @@ describe("the joint keeper", () => {
     // keys followed the table, and nothing else: in the open for the public card, sealed for the hands and the screen
     expect(t.shares("me")).toEqual({ 1: ["you"], 2: ["open"], 3: ["you"] });
     expect(t.shares("you")).toEqual({ 0: ["me"], 2: ["open"] });
+    t.dispose();
+  }, 60000);
+
+  it("a face named by its game is drawn when it's first shown to someone, with its group: the game records every card of the deck, whichever were dealt", async () => {
+    // a table set up from a game page (setup.js faceOf): six cards cut from two sheets, one deck
+    const repo = fakeRepo();
+    const box = (file) => [{ shape: "slab", outline: "rect", size: [0.05, 0.07], thickness: 0.0005, color: "#ffffff", top: { file } }];
+    const sheet = async () => (await repo.create2({ "@patchwork": { type: "file" }, extension: "png", mimeType: "image/png", content: new Uint8Array(8) })).url;
+    const [s1, s2] = [await sheet(), await sheet()];
+    const kinds = ["k0", "k1", "k2", "k3", "k4", "k5"];
+    const pieces = { back: { name: "Back", parts: box(s1) } };
+    kinds.forEach((k, i) => (pieces[k] = { name: k.toUpperCase(), parts: box(i < 3 ? s1 : s2), back: "back" }));
+    const game = await repo.create2({ pieces, setup: [{ deck: { name: "Deck", cards: kinds } }], drawn: {}, assets: {} });
+    // every state of the game's `drawn` its writers leave: none of the deck, or all of it
+    const states = [];
+    const find = repo.find;
+    repo.find = async (url) => {
+      const h = await find(url);
+      if (url !== game.url) return h;
+      const change = h.change;
+      return { ...h, change: (fn) => (change(fn), states.push(Object.keys(h.doc().drawn).sort().join())) };
+    };
+    const t = table({ faces: kinds.map((kind) => ({ game: game.url, kind, name: kind.toUpperCase() })), repo });
+    Object.assign(t.where, { c0: "me", c1: "you" });
+    const me = t.join("me");
+    const you = t.join("you");
+    const content = (c, id) => c.displayed[id]?.content;
+    await until(() => t.dealt() && typeof content(me, "c0") === "string" && typeof content(you, "c1") === "string");
+    // each sees their own: its name, then its face, drawn once its key is here, then the game's doc for it
+    expect(me.displayed.c0.name).toBe(me.looks().c0);
+    expect(content(me, "c0")).toBe(game.doc().drawn[kinds.find((k) => k.toUpperCase() === me.looks().c0)].url);
+    expect(me.displayed.c1).toBeUndefined();
+    // what the game records says only that a card of the deck was seen: every card, both sheets, never which
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(kinds);
+    expect(states.length).toBeGreaterThan(0);
+    for (const s of states) expect(s).toBe(kinds.join());
     t.dispose();
   }, 60000);
 
