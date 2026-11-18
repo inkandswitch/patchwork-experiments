@@ -38,6 +38,7 @@ pnpm bench [cards] [players]     # what a joint shuffle costs on this machine
 | `scene:extension` | `keep.plain`, `card-table` | the plain keeper and the joint keeper (`keeper: "plain"`, `"joint"`) |
 | `patchwork:datatype` | `keep-plain`, `secure-deck` (+ tool) | their containers (unlisted: a table's setup makes them) |
 | `patchwork:datatype` / `tool` | `tts-import` | one import of a Tabletop Simulator mod |
+| `patchwork:datatype` / `tool` | `game-library` | a library of games and sessions, and its launcher |
 
 **Seats** are the seats package's, met only through the stage: this package
 tells it where each seat's hands are (`seatPlaces`), reads who sits where
@@ -61,10 +62,50 @@ has cached, by URL), `"@patchwork": { type: "tabletop-game" }`, `drawn: {
 has needed it: `src/pieces.js`) and `tables` (the scenes set up from it).
 `src/game.js` reads and writes it.
 
+## The library
+
+A **game library** (`src/library/`) is a folder-shaped doc, `{ title, docs }`
+(`DocLink = { name, type, url }`), made holding two plain folder docs linked
+as folders: **Games**, the game descriptions (tabletop-game docs), and
+**Sessions**, the scenes played from them. The sidebar shows it as a folder,
+and its default tool is the launcher; **Open as folder** shows it in the
+folder tool (`folder-viewer`), which reads it as any folder.
+
+The launcher (`tool.js`, every step in `actions.js`, the data in `model.js`):
+
+- **New game** renders a description into a fresh scene as the variant
+  chosen beside it (GAME-FORMAT.md §3: Draw Dominoes for 2, 3 or 4), through
+  the game page's own path (`src/table/session.js`), links it in Sessions as
+  the game, its variant and the time ("Draw Dominoes (3 players),
+  2026-11-18 21:30") and opens it. The description draws what the table lays
+  out (`drawn`) and caches web assets (`assets`), so every session of it
+  shares both.
+- **Continue** opens a session; Sessions lists the newest first.
+- **Fork** copies a session into a new scene doc by the scene's copy rule
+  (`copy-rule.js`, a copy of scene/src/transfer.js's): every object under its
+  id; the stage's runtime fields, runtime traits (a keeper's binding: a card
+  is a bare back) and `copy: "drop"` fields left behind; each `entries`
+  trait's entries set back to its `init` (the seats emptied); a render made
+  again where it's opened. Each bag's doc is copied too. It is linked as
+  "<name> (copy)" and says `forkedFrom: { url, heads }`. Its cards name the
+  same description, so it draws from the same `drawn` and `assets`.
+- **Import a TTS mod…** takes the mod's `.json` with any cached assets (or a
+  `.zip`) through the importer at its default (assets by URL, fetched when
+  first drawn; **Fetch every asset now** for offline play) into Games.
+- **Add the built-in games** makes a description of each registered
+  `tabletop:game` the library hasn't one of (`origin.builtIn` says which), so
+  pressing it again adds nothing.
+
+The start screen's per-game `scene:template`s stay: an empty scene has no
+description to start from, and a template's params are fixed in its
+metadata, so one generic template would have to offer every game and every
+game's options in one form, without each game's button, icon and blurb.
+They are metadata only (`template(id)`); no game has code of its own.
+
 ## A table
 
 One writer makes every table (`src/setup.js`): `tableLayout` lays the game
-out without writing; `prepareTable` (`src/table/made-with.js`) makes its
+out without writing (as one of its variants: `applyVariant`); `prepareTable` (`src/table/made-with.js`) makes its
 keepers' containers and its bags and finds whoever owns seats; `writeTable`
 writes the scene in one change, with a fresh scene's maps (`src/empty-scene.js`)
 and the scene package as its suggested import (`src/scene-package.js`).
@@ -236,6 +277,7 @@ live in synced documents.
 | `src/setup.js`, `src/table/` | the table writer, what it's made with, the table extension, visibility, slots, wash, stand, parts, templates |
 | `src/look/`, `src/shapes.js`, `src/glb.js` | a piece's GLB (the encoder: the scene's, forked with textures) |
 | `src/dice/`, `src/bag/`, `src/keep/`, `src/tts/` | dice, cups and lots; bags; keepers; the importer |
+| `src/library/` | the game library and its launcher |
 | `src/kit/glb.js` | the scene's kit GLB encoder (a copy: `scripts/check-kit.mjs`), for dice and bags |
 | `src/empty-scene.js`, `scene-package.js` | a fresh scene doc (a copy of the scene's init); a doc's suggested import |
 | `src/test/` | the stage stand-in (`fakes.js`), the telling copy, stand-ins for seats, fake repos, a PNG codec |
@@ -249,7 +291,8 @@ Headless Chrome against the BUILT scene, seats and this package (`pnpm build`
 in each), each printing a checklist: `table.mjs`, `draw.mjs`, `privacy.mjs`,
 `seats.mjs`, `stations.mjs`, `dominoes.mjs`, `arrive.mjs` (arriving by link
 without this package: fail closed, then Load), `dice.mjs`, `liars-dice.mjs`,
-`bag.mjs`, `import-run.mjs`. `setup-bench.mjs` (Node, offline: a real
+`bag.mjs`, `import-run.mjs`, `library-run.mjs` (the launcher: built-in
+games, New game, Fork, Import, in an in-memory repo). `setup-bench.mjs` (Node, offline: a real
 Automerge repo with no network) times importing a big mod, setting up a
 table from it and showing a card's face, phase by phase, with stand-in
 assets, counting the docs, changes, fetches and decodes each makes;
