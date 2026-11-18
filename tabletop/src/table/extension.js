@@ -38,10 +38,23 @@ import { CARD_TAGS, worldSlots } from "./slots.js";
 import { apply, composeMatrix, invert, levelPose, multiply } from "./frame.js";
 import { boxUnder, canStand, isStanding, layPose, spread, standPose, upness } from "./stand.js";
 import { cluster, colsFor, jumble } from "./wash.js";
-import { runStart, startLine, startState } from "./start.js";
 
 /** The keepers running here (api.collect("keeper")): each { of(id), shuffle(ids), name(key) }. */
 const keepers = (api) => (api.collect?.("keeper") ?? []).map((r) => r?.value).filter((k) => k && typeof k.of === "function");
+
+/** Whoever told something: "You", else what the table calls them (the roster's `who`: their seat's name stands in for a missing contact's), else the stage's name. */
+export function speaker(api, who) {
+  if (who.mine) return who.name;
+  for (const r of api.collect?.("roster") ?? []) {
+    try {
+      const n = r?.value?.who?.(who.viewer);
+      if (typeof n === "string" && n) return n;
+    } catch {
+      // nobody to ask
+    }
+  }
+  return who.name;
+}
 
 /** Which keeper keeps `id`, and under which key (its container): { keeper, key } | null. */
 export function keptBy(api, id) {
@@ -113,41 +126,13 @@ export default {
     }
 
     // ── telling everyone: what happened, never which card; told on arrival, unchecked, as counts name no card to wait for (scene/NATIVE.md, "Telling") ──
-    /** Whoever told it: "You", else what the table calls them (the roster's `who`: their seat's name stands in for a missing contact's), else the stage's name. */
-    const speaker = (who) => {
-      if (who.mine) return who.name;
-      for (const r of api.collect?.("roster") ?? []) {
-        try {
-          const n = r?.value?.who?.(who.viewer);
-          if (typeof n === "string" && n) return n;
-        } catch {
-          // nobody to ask
-        }
-      }
-      return who.name;
-    };
-    const says = (text) => (d, who) => text(d, speaker(who));
+    const says = (text) => (d, who) => text(d, speaker(api, who));
     const messages = {
       shuffled: { valid: VALID.shuffled, says: says((d, who) => `${who} shuffled ${d.of && d.of !== "Deck" ? `“${d.of}”` : "the deck"} (${d.n})`) },
       drew: { valid: VALID.drew, says: says((d, who) => `${who} drew ${counted(d.n, d.noun)}`) },
       washed: { valid: VALID.washed, says: says((d, who) => `${who} washed ${d.of ? `“${d.of}”` : `the ${plural(d.noun ?? "card")}`} (${d.n})`) },
       showed: { valid: VALID.showed, says: says((d, who) => `${who} laid ${counted(d.n, d.noun)} face up`) },
-      started: { valid: VALID.started, says: says((d, who) => `${who} started the game${d.n ? `, dealing ${d.n} to each seat` : ""}`) },
     };
-
-    // ── starting the game: the recipe's start steps, once every seat is taken (start.js) ──
-    function start() {
-      const snap = api.scene();
-      const done = runStart({
-        scene: snap,
-        seats: seatsFrom(api, snap),
-        keeperOf: (id) => keptBy(api, id)?.keeper ?? null,
-        change: (fn) => api.change(fn),
-        setTransform: (sc, id, t) => api.ops.setTransform(sc, id, t),
-      });
-      if (!done) return;
-      teller.tell("started", done.dealt ? { n: done.dealt } : {});
-    }
 
     // ── drawing: a pile's top card, into your own hand ──
     // D over a pile that's out on the table: its top card glides into the
@@ -531,20 +516,7 @@ export default {
       // who may see what: hands to their seat, face-up cards to everyone (visibility.js)
       audience: (snap) => audienceOf(snap, seatsFrom(api, snap)),
       messages,
-      // who goes first, once the game has started and its start chose them (start.js)
-      hud() {
-        const line = scene ? startLine(scene, seatsFrom(api, scene)) : null;
-        return line ? [{ text: line, state: "info" }] : [];
-      },
       commands: [
-        {
-          id: "start",
-          name: "Start game",
-          // the table's, not a piece's: on the bar of tools in every body, and the menu
-          show: ["menu", "world"],
-          state: (target, ctx) => (target == null ? startState(ctx?.scene ?? scene, seatsFrom(api, ctx?.scene ?? scene)) : null),
-          run: (target) => target == null && start(),
-        },
         {
           id: "shuffle",
           name: "Shuffle pile",
@@ -681,7 +653,6 @@ const VALID = {
   drew: (d) => count(d.n, 1000) && noun(d.noun),
   washed: (d) => count(d.n, 10000) && title(d.of) && noun(d.noun),
   showed: (d) => count(d.n, 1000) && noun(d.noun),
-  started: (d) => d.n === undefined || count(d.n, 1000),
 };
 const title = (t) => t === undefined || (typeof t === "string" && t.length > 0 && t.length < 200);
 const noun = (t) => t === undefined || (typeof t === "string" && NOUN.test(t));

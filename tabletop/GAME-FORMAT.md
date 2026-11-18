@@ -105,9 +105,13 @@ might reasonably want it otherwise.
     stage; Start game only asks the keeper to shuffle and writes the moves.
     What a dealt card *is* stays its keeper's. Start runs whatever has moved
     since (it lays the game out as the recipe says).
-21. **Who goes first is drawn in the open by the client that starts** (fair
-    against honest clients only). Drawing it by lots, as a die's roll is, is
-    later work.
+21. **Who goes first is drawn by lots** (`src/dice/lots.js`, open to all,
+    between the seated players' clients, as a die's roll is): nobody chooses
+    it, whoever presses Start included. Where lots aren't running, a start
+    that chooses who goes first waits for them. A shuffle is its keeper's:
+    the joint keeper's is fair by construction (every player takes part);
+    the plain keeper's is trust-the-dealer by design (anyone may read its
+    container, so whoever presses Start shuffles, as at a real table).
 22. **Lost Cities' deal stays a deck's `deal`** (laid out with the table,
     the joint keeper settling which card is which at its first shuffle):
     it was never dealt by code. Moving it to a start step would mean every
@@ -269,7 +273,7 @@ StartStep =
   | { shuffle: deckId }                      // its cards, mixed by their keeper
   | { deal: deckId, count }                  // count into each seat's hands, a card to each card slot
   | { draw: deckId, count, to: thingId }     // count face up onto that thing's snap points
-  | { first: true }                          // who goes first: one of the seats, at random
+  | { first: true }                          // who goes first: one of the seats, by lots
 ```
 
 - **Options** are what the launcher's New game and the game page's Set up
@@ -356,7 +360,7 @@ each code is one invalid fixture's.
 | `camera` | a camera's position and target differ |
 | `option` | an option's key is its own, its values its own, an integer's range not empty, its default one of its values |
 | `condition` | a condition is one comparison on an option, with one of its values; an order only on an integer |
-| `options-many` | the options can be set at most 512 ways (each is laid out and checked) |
+| `options-many` | the options can be set at most 512 ways (each is laid out and checked), and laying every one out costs at most 20 million things' worth (`layoutCost`: the setup's things, cards and seats per step, and the game's size) |
 | `unknown-tag` | a step takes away by a tag some thing has |
 | `unknown-spot` | a step's spot is one of the recipe's |
 | `seat-area` | a seat that moves, or a game with a kit, has every seat's area (`at`) |

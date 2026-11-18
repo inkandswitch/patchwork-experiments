@@ -131,6 +131,25 @@ describe("recipes (GAME-FORMAT.md §6)", () => {
     expect(errors[0].message).toMatch(/laid out with players = 2, extras = false/);
   });
 
+  it("can't be made to hang: a range of two billion is counted, never listed; a big setup set many ways is refused before any is laid out", () => {
+    const wide = structuredClone(g);
+    wide.recipe.options.push({ key: "n", label: "N", kind: "integer", min: 0, max: 2e9, default: 0 });
+    let t0 = performance.now();
+    expect(validate(wide).errors.map((e) => e.code)).toEqual(["options-many"]);
+    const big = structuredClone(g);
+    for (let i = 0; i < 7; i++) big.recipe.options.push({ key: `b${i}`, label: `B${i}`, kind: "boolean", default: false }); // 2 × 2 × 2⁷ = 512 ways
+    big.setup.push(...Array.from({ length: 4000 }, (_, i) => ({ piece: "pawn", at: { position: [i * 0.01, 0, 1] } })));
+    big.recipe.layout.push(...Array.from({ length: 20 }, (_, i) => ({ remove: { tag: "three" }, when: `b${i % 7}` })));
+    expect(validate(big).errors.map((e) => e.code)).toEqual(["options-many"]);
+    expect(performance.now() - t0).toBeLessThan(2000);
+    // and one within the bounds is laid out every way, and checked
+    big.recipe.options.splice(2);
+    big.recipe.layout.splice(-20);
+    t0 = performance.now();
+    expect(validate(big)).toEqual({ ok: true, stage: null, errors: [] });
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
   it("Draw Dominoes is one game: a seat, a rack and a deal for each who plays", () => {
     const d = read("../games/draw-dominoes.json");
     expect(d.recipe.options).toEqual([{ key: "players", label: "Players", kind: "integer", min: 2, max: 4, default: 2 }]);

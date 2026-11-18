@@ -54,8 +54,8 @@
 // Any other scripted setup (plain Lua) is left for later.
 
 import { cardFaces } from "./cards.js";
-import { combinationCount } from "../../contract/v2/recipe.js";
-import { MAX_COMBINATIONS } from "../../contract/v2/validate.js";
+import { combinationCount, layoutCost } from "../../contract/v2/recipe.js";
+import { MAX_COMBINATIONS, MAX_LAYOUT_COST } from "../../contract/v2/validate.js";
 import { applyMat3, colorHex, convertPosition, convertRotation, readTransform, ttsUp, unityRotation } from "./convert.js";
 import { deckEntry } from "./tts.js";
 
@@ -413,8 +413,10 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
   function memoryContents(node) {
     const place = {};
     const out = [];
+    const seen = new Set(); // a GUID the bag holds twice: the first is laid where it's saved, the rest stay in the bag
     for (const c of node.contents) {
-      const saved = c.guid ? node.memory[c.guid] : null;
+      const saved = c.guid && !seen.has(c.guid) ? node.memory[c.guid] : null;
+      if (saved) seen.add(c.guid);
       if (!saved) {
         out.push(...thingsOf(c, false));
         continue;
@@ -512,13 +514,21 @@ function recipeOf({ seats, setup, memories, playerCounts, unit, warnings }) {
   const options = [];
   const layout = [];
   const start = [];
-  const fits = (extra) => combinationCount({ recipe: { options: [...options, ...extra] } }) <= MAX_COMBINATIONS;
+  /** Can every way of setting these options, with these steps, still be checked (the validator's bounds)? */
+  const fits = (extra, more = {}) => {
+    const g = { setup, seats, recipe: { options: [...options, ...extra], layout: [...layout, ...(more.layout ?? [])], start: [...start, ...(more.start ?? [])] } };
+    const n = combinationCount(g);
+    return n <= MAX_COMBINATIONS && n * layoutCost(g) <= MAX_LAYOUT_COST;
+  };
   // how many play: the seats in TTS's colour order, the last ones left out for fewer
   const order = Object.keys(seats).sort((a, b) => (COLOURS.indexOf(a) + 1 || 99) - (COLOURS.indexOf(b) + 1 || 99) || (a < b ? -1 : 1));
   if (order.length > 1) {
     const min = Math.max(1, Math.min(order.length, playerCounts?.[0] ?? 1));
-    options.push({ key: "players", label: "Players", kind: "integer", min, max: order.length, default: order.length });
-    for (let k = order.length; k > min; k--) layout.push({ remove: { seat: order[k - 1] }, unless: `players >= ${k}` });
+    const players = { key: "players", label: "Players", kind: "integer", min, max: order.length, default: order.length };
+    const removes = [];
+    for (let k = order.length; k > min; k--) removes.push({ remove: { seat: order[k - 1] }, unless: `players >= ${k}` });
+    if (fits([players], { layout: removes })) options.push(players), layout.push(...removes);
+    else warnings.push("every seat kept, whoever plays: too much to check for each count");
   }
   // memory bags: those laying out the same spot (any two places within a card's width) are one choice
   const near = (a, b) => Object.values(a.place).some((p) => Object.values(b.place).some((q) => Math.hypot(p.position[0] - q.position[0], p.position[2] - q.position[2]) < CARD.w * unit));
@@ -529,28 +539,37 @@ function recipeOf({ seats, setup, memories, playerCounts, unit, warnings }) {
     for (const g of hit) groups.splice(groups.indexOf(g), 1);
     groups.push(merged);
   }
+  // a bag's value in a choice: its GUID, made a word and its own (a bag may have none, or share one)
+  const used = new Set(["none"]);
+  const valueOf = (m) => {
+    const base = String(m.guid ?? "").replace(/[^A-Za-z0-9_-]/g, "") || "bag";
+    let v = base;
+    for (let k = 2; used.has(v); k++) v = `${base}-${k}`;
+    used.add(v);
+    return v;
+  };
   let n = 0;
   for (const group of groups.map((g) => [...g].sort((a, b) => memories.indexOf(a) - memories.indexOf(b)))) {
     const key = `layout${n ? n + 1 : ""}`;
+    const values = group.map(valueOf);
     const option =
       group.length === 1
         ? { key, label: `Lay out “${group[0].name}”`, kind: "boolean", default: false }
-        : { key, label: "Lay out", kind: "enum", options: [{ value: "none", label: "Nothing" }, ...group.map((m) => ({ value: m.guid, label: m.name }))], default: "none" };
-    if (!fits([option])) {
+        : { key, label: "Lay out", kind: "enum", options: [{ value: "none", label: "Nothing" }, ...group.map((m, i) => ({ value: values[i], label: m.name }))], default: "none" };
+    const steps = group.map((m, i) => ({ place: m.place, when: group.length === 1 ? key : `${key} == ${values[i]}` }));
+    if (!fits([option], { layout: steps })) {
       warnings.push(`${group.length === 1 ? `the memory bag “${group[0].name}”` : `${group.length} memory bags`} left as bags: too many ways to set the game up already`);
       continue;
     }
     n++;
     options.push(option);
-    for (const m of group) layout.push({ place: m.place, when: group.length === 1 ? key : `${key} == ${m.guid}` });
+    layout.push(...steps);
   }
   // face-down decks on the table: shuffled when the game starts, if chosen
   const down = setup.filter((t) => t.deck?.faceDown && t.id != null);
   const shuffle = { key: "shuffle", label: "Shuffle the face-down decks when the game starts", kind: "boolean", default: false };
-  if (down.length && fits([shuffle])) {
-    options.push(shuffle);
-    for (const t of down) start.push({ shuffle: t.id, when: "shuffle" });
-  }
+  const shuffles = down.map((t) => ({ shuffle: t.id, when: "shuffle" }));
+  if (down.length && fits([shuffle], { start: shuffles })) options.push(shuffle), start.push(...shuffles);
   if (!options.length) return null;
   return { options, ...(layout.length ? { layout } : {}), ...(start.length ? { start } : {}) };
 }

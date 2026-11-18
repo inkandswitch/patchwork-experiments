@@ -6,7 +6,8 @@
 // audience is given here as the stage would merge it. The round lives in
 // the cup's own trait.
 
-import Lots, { ID, holderOf } from "./lots-ext.js";
+import Lots, { ID, SCENE_ROUNDS, holderOf } from "./lots-ext.js";
+import { FIRST, START } from "../table/start.js";
 import { STALE_MS, OPEN_MS, commitOf, contributorsOf, couldKnow, freshNonce, knewOf, newRound, roundOf, seedOf } from "./lots.js";
 import { cupOf, redrawFor } from "./cup.js";
 
@@ -14,12 +15,12 @@ const CUP = "dice.cup";
 
 function world({ seated, present: arrived, running = arrived }) {
   const present = [...arrived];
-  let doc = { objects: { cup: { name: "Cup", traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } }, d1: { name: "d1", traits: { "dice.die": {} } } } };
+  let doc = { objects: { cup: { name: "Cup", traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } }, d1: { name: "d1", traits: { "dice.die": {} } } }, traits: { [START]: { steps: [{ first: true }], started: { by: "ana" } } } };
   let audience = () => null;
   const clients = new Map();
   let local = {};
   const flush = () => {
-    for (const c of clients.values()) c.ext.update({ objects: doc.objects }, c.local, null);
+    for (const c of clients.values()) c.ext.update({ objects: doc.objects, traits: doc.traits }, c.local, null);
   };
   const store = new Map();
   globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
@@ -27,7 +28,7 @@ function world({ seated, present: arrived, running = arrived }) {
     const c = { local };
     const api = {
       id: ID,
-      scene: () => ({ objects: doc.objects }),
+      scene: () => ({ objects: doc.objects, traits: doc.traits }),
       change(fn) {
         doc = structuredClone(doc);
         fn(doc);
@@ -210,6 +211,20 @@ describe("dice.lots, a draw open to all (a throw in the open)", () => {
     expect(Object.keys(r.opens).sort()).toEqual(["ana", "ben", "cy"]);
     const seed = seedOf(r.id, Object.entries(r.opens));
     for (const v of ["ana", "ben", "cy"]) expect(w.lots(v).state("d1")).toMatchObject({ phase: "open", public: true, seed, by: "ben", of: ["d1"] });
+    w.dispose();
+  });
+
+  it("who goes first at a table: the round lives in the scene's start trait, drawn the same way, between the seated", async () => {
+    expect(SCENE_ROUNDS[FIRST]).toBe(START);
+    const w = world({ seated: ["ana", "ben"], present: ["ana", "ben", "cy"] });
+    w.lots("ana").draw(FIRST, { sealers: [], of: ["a", "b"] });
+    await w.settle();
+    let held;
+    w.write((d) => (held = d.traits[START]));
+    expect(roundOf(held)).toMatchObject({ by: "ana", of: ["a", "b"], members: ["ana", "ben"] });
+    const st = w.lots("ben").state(FIRST);
+    expect(st).toMatchObject({ phase: "open", public: true, by: "ana", of: ["a", "b"], contributors: ["ana", "ben"] });
+    for (const v of ["ana", "cy"]) expect(w.lots(v).state(FIRST).seed).toBe(st.seed);
     w.dispose();
   });
 

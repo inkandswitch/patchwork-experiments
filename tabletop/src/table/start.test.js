@@ -1,13 +1,17 @@
-// Start game (start.js, the table extension's world verb) on a table laid
-// out from a recipe (contract/v2/fixtures/valid/recipe.json: a deck shuffled,
-// dealt into each seat's tray and drawn onto a market, who goes first),
-// against both keepers: the plain one (a real container: its slots permuted,
-// each viewer's looks), and the joint one (real clients: the deal goes into
-// the hands before the players' first shuffle, and once it's done each sees
-// their own hand and the market, never the other's). Seats are the stand-in's.
+// Start game (start.js, the "tabletop.start" extension's world verb) on a
+// table laid out from a recipe (contract/v2/fixtures/valid/recipe.json: a
+// deck shuffled, dealt into each seat's tray and drawn onto a market, who
+// goes first), against both keepers: the plain one (a real container: its
+// slots permuted, each viewer's looks; who goes first by the package's real
+// lots between the two clients), and the joint one (real clients: the deal
+// goes into the hands before the players' first shuffle, and once it's done
+// each sees their own hand and the market, never the other's); and pressed
+// on two peers at once, merged by Automerge. Seats are the stand-in's.
 import { afterEach, describe, it, expect, vi } from "vitest";
-import Extension from "./extension.js";
-import { START, runStart, startOf, startState } from "./start.js";
+import * as Automerge from "@automerge/automerge";
+import StartExtension, { FIRST, START, firstOf, runStart, startOf, startState } from "./start.js";
+import Lots, { ID as LOTS } from "../dice/lots-ext.js";
+import { seed32 } from "../dice/lots.js";
 import { audienceOf, seatAt, zones } from "./visibility.js";
 import { testScene } from "./test-scene.js";
 import { tableLayout, writeTable } from "../setup.js";
@@ -93,8 +97,11 @@ describe("Start game, with the plain keeper", () => {
     const join = (session, viewer) => {
       const api = w.join(session, { viewer });
       const keeper = PlainKeeper.create(api);
-      const x = w.attach(session, Extension.create(api));
-      w.view(session).collected = { roster, keeper: keeper.keeper };
+      // Start and the package's lots, side by side in one view (the fake world gives a view one instance)
+      const lots = Lots.create(api);
+      const start = StartExtension.create(api);
+      const x = w.attach(session, { ...start, update: (...a) => (lots.update(...a), start.update(...a)) });
+      w.view(session).collected = { roster, keeper: keeper.keeper, [LOTS]: lots[LOTS] };
       w.view(session).audience = (id) => audienceIn(api.scene())(id);
       w.view(session).shown = (id) => audienceIn(api.scene())(id);
       return { api, keeper, x, seen: () => keeper.update(api.scene()) };
@@ -115,7 +122,14 @@ describe("Start game, with the plain keeper", () => {
       const by = keptIn(Object.values(w.doc.objects).find((o) => keptIn(o)))?.by;
       return t.repo.handles.get(by).doc();
     };
-    return { ...t, w, A, B, cmd, state, sit, container, notices: (s) => w.view(s).notices.map((n) => n.text) };
+    /** Let the clients' lots run: flushes and their timers, until nothing changes. */
+    const settle = async () => {
+      for (let i = 0; i < 40; i++) {
+        w.flush();
+        await vi.advanceTimersByTimeAsync(50);
+      }
+    };
+    return { ...t, w, A, B, cmd, state, sit, container, settle, notices: (s) => w.view(s).notices.map((n) => n.text) };
   }
 
   it("is the table's: on the bar of tools in every body and the menu, for the scene alone; disabled until every seat is taken, saying whose", async () => {
@@ -140,10 +154,13 @@ describe("Start game, with the plain keeper", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     t.cmd(t.A).run(null);
     vi.mocked(Math.random).mockRestore();
+    // (the deal and `started` one change; lots' first write, asking who goes first, the next)
+    expect(t.w.doc.traits[START].started).toEqual({ by: "ann" });
     // the keeper's container: its slots permuted (Math.random 0 every draw: each slot swapped with the first, never the identity)
     expect(t.container().at).not.toEqual(before);
     expect([...t.container().at].sort((x, y) => x - y)).toEqual([...before].sort((x, y) => x - y));
-    expect(changes).toHaveBeenCalledTimes(1);
+    expect(changes).toHaveBeenCalledTimes(2);
+    expect(changes.mock.calls[0][0]).not.toBe(changes.mock.calls[1][0]);
     t.w.flush();
     const snap = t.A.api.scene();
     const regions = zones(snap);
@@ -161,24 +178,62 @@ describe("Start game, with the plain keeper", () => {
     const shown = (who) => [...who.keeper.showing().keys()].map(where).sort();
     expect(shown(t.A)).toEqual(["a", "a", "a", "market", "market", "market"]);
     expect(shown(t.B)).toEqual(["b", "b", "b", "market", "market", "market"]);
-    // told as a count; who goes first in the HUD, by the seat's name (Math.random 0: the first seat)
+    // told as a count
     expect(t.notices("A")).toEqual(["You started the game, dealing 2 to each seat"]);
     expect(t.notices("B")).toEqual(["<ann> started the game, dealing 2 to each seat"]);
-    expect(t.w.doc.traits[START].started).toEqual({ first: "a" });
-    expect(t.B.x.hud()).toEqual([{ text: "A goes first.", state: "info" }]);
     t.w.done();
+  });
+
+  it("who goes first is drawn by lots between the seated players' clients, asked by whoever started: neither chooses it, and both read the same seat", async () => {
+    const t = await table();
+    t.sit({ a: "ann", b: "ben" });
+    t.cmd(t.A).run(null);
+    expect(t.state(t.B)).toMatchObject({ disabled: true, label: "Drawing who goes first…" });
+    await t.settle();
+    const st = t.w.view("A").collected[LOTS].state(FIRST);
+    expect(st).toMatchObject({ phase: "open", public: true, by: "ann", of: ["a", "b"], contributors: ["ann", "ben"] });
+    expect(t.w.view("B").collected[LOTS].state(FIRST).seed).toBe(st.seed);
+    const first = ["a", "b"][seed32(st.seed) % 2];
+    expect(t.w.doc.traits[START].started).toEqual({ by: "ann", first });
+    for (const who of [t.A, t.B]) expect(who.x.hud()).toEqual([{ text: `${first.toUpperCase()} goes first.`, state: "info" }]);
+    expect(t.state(t.A)).toEqual({ disabled: true, label: "Game started", title: "This game has started" });
+    t.w.done();
+  });
+
+  it("without lots running, a start that chooses who goes first waits for them; its lots ended without a seed, it can be drawn again", () => {
+    const steps = [{ deal: 1, moves: [] }, { first: true }];
+    const seats = [{ id: "a", viewer: "ann" }, { id: "b", viewer: "ben" }];
+    const scene = (started) => ({ traits: { [START]: { steps, started } } });
+    const lots = (st) => ({ draw() {}, state: () => st });
+    expect(startState(scene(null), seats, null)).toEqual({ disabled: true, title: "Who goes first is drawn by lots, which aren't running here yet" });
+    expect(startState({ traits: { [START]: { steps: steps.slice(0, 1), started: null } } }, seats, null)).toEqual({ title: "Start the game: deal 1 to each seat" });
+    expect(startState(scene(null), seats, lots(null))).toEqual({ title: "Start the game: deal 1 to each seat, choose who goes first" });
+    expect(startState(scene({ by: "ann" }), seats, lots({ phase: "committing", forged: [] }))).toMatchObject({ disabled: true, label: "Drawing who goes first…" });
+    for (const over of [{ phase: "ended", forged: [] }, { phase: "spoiled", forged: [] }, { phase: "open", forged: ["ben"] }, null])
+      expect(startState(scene({ by: "ann" }), seats, lots(over))).toMatchObject({ label: "Draw who goes first" });
+    expect(startState(scene({ by: "ann", first: "b" }), seats, lots(null))).toMatchObject({ disabled: true, label: "Game started" });
+  });
+
+  it("the seat a round names: its seed's first 32 bits mod the seats it was drawn over; nothing while it isn't everyone's, or was drawn over other seats", () => {
+    const seed = "0000000b" + "0".repeat(56);
+    const open = { phase: "open", public: true, seed, of: ["a", "b", "c"], forged: [] };
+    expect(firstOf(open, ["a", "b", "c"])).toBe("c"); // 11 mod 3
+    expect(firstOf({ ...open, of: ["a", "b"] }, ["a", "b", "c"])).toBe(null);
+    expect(firstOf({ ...open, public: false }, ["a", "b", "c"])).toBe(null);
+    expect(firstOf({ ...open, forged: ["a"] }, ["a", "b", "c"])).toBe(null);
+    expect(firstOf(null, ["a"])).toBe(null);
   });
 
   it("once started it says so, and Start again changes nothing (pressed on two peers, the second sees it started)", async () => {
     const t = await table();
     t.sit({ a: "ann", b: "ben" });
     t.cmd(t.A).run(null);
-    t.w.flush();
+    await t.settle();
     const after = structuredClone(t.w.doc);
     const items = [...t.container().at];
     expect(t.state(t.B)).toEqual({ disabled: true, label: "Game started", title: "This game has started" });
     t.cmd(t.B).run(null);
-    t.w.flush();
+    await t.settle();
     expect(t.w.doc).toEqual(after);
     expect(t.container().at).toEqual(items);
     t.w.done();
@@ -199,6 +254,46 @@ describe("Start game, with the plain keeper", () => {
     }
     expect(per).toEqual({ a: 2, b: 2, c: 2 });
     t.w.done();
+  });
+});
+
+describe("Start game pressed on two peers at once", () => {
+  it("deals once: merged, every card is where the plan put it, the plan's count in each hand, and one `started`; Start on the merge does nothing", async () => {
+    const { doc } = await laidTable({ players: 2 });
+    doc.traits[SEATS].a.player = "ann";
+    doc.traits[SEATS].b.player = "ben";
+    const base = Automerge.from(JSON.parse(JSON.stringify({ objects: doc.objects, traits: doc.traits })));
+    // each peer its own actor, from the same doc
+    const peers = { ann: Automerge.load(Automerge.save(base)), ben: Automerge.load(Automerge.save(base)) };
+    const snapOf = (d) => testScene(Automerge.toJS(d).objects, Automerge.toJS(d).traits);
+    const shuffled = [];
+    const press = (by) => {
+      const snap = snapOf(peers[by]);
+      return runStart({
+        scene: snap,
+        seats: roster.seats(snap),
+        keeperOf: () => ({ shuffle: (ids) => shuffled.push(by) && ids.length }),
+        change: (fn) => (peers[by] = Automerge.change(peers[by], fn)),
+        setTransform: (_s, id, tr) => (d) => (d.objects[id].transform = tr),
+        by,
+      });
+    };
+    expect([press("ann"), press("ben")]).toEqual([{ dealt: 2, moved: 9, first: true }, { dealt: 2, moved: 9, first: true }]);
+    const merged = Automerge.merge(Automerge.clone(peers.ann), peers.ben);
+    const snap = snapOf(merged);
+    const plan = startOf(snap);
+    expect(["ann", "ben"].map((by) => ({ by }))).toContainEqual(plan.started);
+    for (const [id, tr] of plan.steps.flatMap((x) => x.moves ?? [])) expect(snap.objects[id].transform).toEqual({ ...tr, scale: 1 });
+    const regions = zones(snap);
+    const per = {};
+    for (const id of Object.keys(snap.objects).filter((x) => snap.objects[x].traits?.["tabletop.card"])) {
+      const sid = seatAt(snap, regions, snap.world(id).slice(12, 15));
+      if (sid) per[sid] = (per[sid] ?? 0) + 1;
+    }
+    expect(per).toEqual({ a: 3, b: 3 });
+    // (each peer asked its keeper once: the plain keeper's shuffle writes the container's order whole, so its merge is one of them)
+    expect(shuffled).toEqual(["ann", "ben"]);
+    expect(runStart({ scene: snap, seats: roster.seats(snap), keeperOf: () => null, change: () => expect.unreachable(), setTransform: () => null, by: "cal" })).toBe(null);
   });
 });
 
@@ -247,9 +342,9 @@ describe("Start game, with the joint keeper (a secure deck)", () => {
         Object.assign(traits, d.traits);
       },
       setTransform: (_s, id, tr) => (d) => (d.objects[id].transform = tr),
-      random: () => 0,
+      by: "ann",
     });
-    expect(done).toEqual({ dealt: 2, moved: 9, first: "a" });
+    expect(done).toEqual({ dealt: 2, moved: 9, first: true });
     // the start's shuffle is queued in the deck, for every player to take part in, after the first
     expect((await deck()).queue.at(-1).offsets).toHaveLength(plan.steps[0].shuffle.length);
     update();

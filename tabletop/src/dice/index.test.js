@@ -29,7 +29,7 @@ describe("the dice plugins", () => {
 
   it("the dice, cup and lots extensions run by their traits alone, whatever anyone is doing; the dice extension lays out dropped die docs; who shook a cup, what's under it, its draw and any round don't copy", () => {
     const [dice, cup, lots] = of("scene:extension");
-    expect([dice.traits, cup.traits, lots.traits]).toEqual([[DIE], ["dice.cup"], [DIE, "dice.cup"]]);
+    expect([dice.traits, cup.traits, lots.traits]).toEqual([[DIE], ["dice.cup"], [DIE, "dice.cup", "tabletop.start"]]);
     for (const p of [dice, cup, lots]) for (const k of ["activities", "requires", "always", "general"]) expect(k in p).toBe(false);
     expect(dice.drops).toEqual(["die"]);
     // the die trait holds nothing: no fields to write
@@ -37,7 +37,7 @@ describe("the dice plugins", () => {
     expect(dice.describes[DIE].fields).toBeUndefined();
     expect(dice.describes[DIE].runtime).toEqual(["round"]);
     expect(cup.describes["dice.cup"].runtime).toEqual(["holder", "roll", "round"]);
-    // lots have no trait of their own: a round lives in its die's or cup's trait
+    // lots have no trait of their own: a round lives in its die's or cup's trait (or a table's start's: who goes first)
     expect(lots.describes).toBeUndefined();
   });
 });
