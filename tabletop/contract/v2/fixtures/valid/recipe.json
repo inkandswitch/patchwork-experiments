@@ -10,6 +10,9 @@
       "parts": [
         {"shape":"box","size":[0.3,0.01,0.3],"color":"#c8b38a"}
       ],
+      "states": [
+        {"name":"Board for three","parts":[{"shape":"box","size":[0.36,0.01,0.3],"color":"#b8a37a"}]}
+      ],
       "locked": true
     },
     "market": {
@@ -60,7 +63,7 @@
     "green": {"name":"Green","parts":[{"shape":"box","size":[0.04,0.0005,0.06],"color":"#00ff00"}],"back":"back"}
   },
   "setup": [
-    {"piece":"board"},
+    {"id":"board","piece":"board"},
     {"id":"market","piece":"market","at":{"position":[0,0,-0.25]}},
     {"id":"deck","deck":{"name":"Deck","cards":["red","green","red","green","red","green","red","green","red","green","red","green"],"faceDown":true},"at":{"position":[0.3,0,-0.2]}},
     {"id":"third","piece":"pawn","name":"Third pawn","tags":["three"],"at":{"position":[0.05,0.01,0]}},
@@ -87,6 +90,7 @@
       {"remove":{"tag":"three"},"unless":"players >= 3"},
       {"seats":{"b":"west"},"when":"players == 3"},
       {"place":{"spare":"spare"},"when":"extras"},
+      {"place":{"board":{"state":"Board for three"}},"when":"players == 3"},
       {"kit":[{"id":"tray","piece":"tray","name":"{seat}'s tray"},{"piece":"pawn","name":"{seat}'s pawn","at":{"position":[0,0.01,-0.06]}}]}
     ],
     "start": [

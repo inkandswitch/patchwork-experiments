@@ -92,6 +92,19 @@ describe("recipes (GAME-FORMAT.md §6)", () => {
     expect(three.setup.find((t) => t.id === "tray.c")).toEqual({ id: "tray.c", piece: "tray", name: "C's tray", seat: "c", at: g.seats.c.at });
     expect(three.setup.find((t) => t.name === "C's pawn").at.position).toEqual([0.14, 0.01, 0]);
     expect(three.recipe.start.map((x) => Object.keys(x)[0])).toEqual(["shuffle", "deal", "draw", "first"]);
+    // the board turned to its look for three, where it lies; for two, as it is
+    expect(three.setup.find((t) => t.id === "board")).toEqual({ id: "board", piece: "board", state: "Board for three" });
+    expect(applyRecipe(g, { players: 2 }).setup.find((t) => t.id === "board")).toEqual({ id: "board", piece: "board" });
+  });
+
+  it("a place step's state comes with somewhere to go, or none: the thing stays where it is (in its bag, too)", () => {
+    const h = structuredClone(g);
+    h.pieces.pawn.states = [{ name: "Pawn, lying", parts: [{ shape: "box", size: [0.01, 0.01, 0.03], color: "#3a78d8" }] }];
+    h.recipe.layout.push({ place: { spare: { state: "Pawn, lying" }, third: { state: "Pawn, lying", at: "spare" } } });
+    const v = applyRecipe(h, { players: 3 });
+    expect(v.setup.find((t) => t.id === "extras").contents).toEqual([{ id: "spare", piece: "pawn", name: "Spare pawn", state: "Pawn, lying" }]);
+    expect(v.setup.find((t) => t.id === "third")).toMatchObject({ state: "Pawn, lying", at: g.recipe.spots.spare });
+    expect(validate(h)).toEqual({ ok: true, stage: null, errors: [] });
   });
 
   it("a seat that moves takes its hands and its camera with it, rigidly", () => {

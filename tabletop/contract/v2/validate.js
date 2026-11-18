@@ -117,6 +117,9 @@ export function validateStructure(g) {
 
 // ───────────────────────────────── semantic rules (GAME-FORMAT.md §9)
 
+/** Does a piece have a look of this name: its own (its name), or one of its states? */
+export const hasLook = (piece, name) => !!piece && (name === piece.name || (piece.states ?? []).some((st) => st.name === name));
+
 /** Every thing in the setup, contents included, with its path: [{ thing, path, inBag }]. */
 export function everyThing(setup, path = "$.setup", inBag = false, out = []) {
   setup.forEach((t, i) => {
@@ -134,11 +137,23 @@ export function validateSemantics(g) {
   const pieces = g.pieces;
   const seats = g.seats ?? {};
   const isCard = (k) => typeof pieces[k]?.back === "string";
+  const backs = new Set(Object.values(pieces).map((p) => p.back).filter((b) => b != null));
 
-  // look: a piece is drawn one way: from parts, or as a document
+  // look: a piece is drawn one way: from parts, or as a document; so is each of its states
   for (const [k, p] of Object.entries(pieces)) {
     const path = `$.pieces.${k}`;
     if (!!p.parts === !!p.doc) err("look", path, "give exactly one of parts or doc");
+    if (p.states) {
+      // state-card: a card's look is its keeper's, and its back's everyone's: neither turns to another
+      if (isCard(k) || backs.has(k)) err("state-card", `${path}.states`, isCard(k) ? "a card has no states: what it shows is its keeper's" : "a card's back has no states: every card it backs would change");
+      // state-name: each look is told apart by its name (the piece's own is its name)
+      const names = new Set([p.name]);
+      p.states.forEach((st, j) => {
+        if (!!st.parts === !!st.doc) err("look", `${path}.states[${j}]`, "give exactly one of parts or doc");
+        if (names.has(st.name)) err("state-name", `${path}.states[${j}].name`, `"${st.name}" names another of its looks${st.name === p.name ? " (the piece's own)" : ""}`);
+        names.add(st.name);
+      });
+    }
     if (p.back != null) {
       // card-back: a card's back is a piece of its own that isn't a card
       if (!pieces[p.back]) err("unknown-piece", `${path}.back`, `no piece "${p.back}"`);
@@ -147,8 +162,8 @@ export function validateSemantics(g) {
     }
     // zone-box: a hand's box has some room in it
     if (p.zone && !p.zone.min.every((v, i) => v < p.zone.max[i])) err("zone-box", `${path}.zone`, "min must be below max on every axis");
-    for (const [j, part] of (p.parts ?? []).entries()) {
-      const pp = `${path}.parts[${j}]`;
+    const parts = [...(p.parts ?? []).map((part, j) => [part, `${path}.parts[${j}]`]), ...(p.states ?? []).flatMap((st, i) => (st.parts ?? []).map((part, j) => [part, `${path}.states[${i}].parts[${j}]`]))];
+    for (const [part, pp] of parts) {
       // image-rect: a cell lies within its image
       for (const side of ["top", "bottom"]) {
         const r = part[side]?.rect;
@@ -186,6 +201,7 @@ export function validateSemantics(g) {
       }
       if (t.contents && !p.bag) err("contents-bag", `${path}.contents`, `"${t.piece}" isn't a bag`);
       if (t.grid && (t.count ?? 1) < 2) err("grid-count", `${path}.grid`, "a grid lays out several copies: give a count of 2 or more");
+      if (t.state != null && !hasLook(p, t.state)) err("unknown-state", `${path}.state`, `"${t.piece}" has no state "${t.state}"`);
       if (inBag && t.seat != null) err("seat-zone", `${path}.seat`, "a hand in a bag belongs to nobody");
     }
     if (t.deck) {
@@ -278,9 +294,14 @@ function recipeErrors(g, err) {
     if (x?.id != null && !ids.has(x.id)) err("unknown-thing", `${p}.remove.id`, `no thing "${x.id}"`);
     if (x?.tag != null && !tags.has(x.tag)) err("unknown-tag", `${p}.remove.tag`, `no thing is tagged "${x.tag}"`);
     if (x?.seat != null && !seats[x.seat]) err("unknown-seat", `${p}.remove.seat`, `no seat "${x.seat}"`);
-    for (const [id, at] of Object.entries(s.place ?? {})) {
+    for (const [id, v] of Object.entries(s.place ?? {})) {
       if (!ids.has(id)) err("unknown-thing", `${p}.place.${id}`, `no thing "${id}"`);
-      spot(at, `${p}.place.${id}`);
+      const turned = v && typeof v === "object" && "state" in v;
+      spot(turned ? v.at : v, `${p}.place.${id}`);
+      if (turned && ids.has(id)) {
+        const t = all.find((a) => a.thing.id === id).thing;
+        if (!t.piece || !hasLook(g.pieces[t.piece], v.state)) err("unknown-state", `${p}.place.${id}.state`, t.piece ? `"${t.piece}" has no state "${v.state}"` : `"${id}" is a deck: it has no states`);
+      }
     }
     for (const [sid, at] of Object.entries(s.seats ?? {})) {
       if (!seats[sid]) err("unknown-seat", `${p}.seats.${sid}`, `no seat "${sid}"`);

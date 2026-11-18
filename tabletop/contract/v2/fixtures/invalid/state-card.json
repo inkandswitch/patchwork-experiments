@@ -1,0 +1,20 @@
+{
+  "format": "tabletop-game",
+  "version": 2,
+  "title": "A card with states",
+  "about": "A card that could be turned to another look: what a card shows is its keeper's.",
+  "pieces": {
+    "back": {"name":"Card","parts":[{"shape":"box","size":[0.06,0.0005,0.09],"color":"#203040"}],"tags":["card"]},
+    "ace": {
+      "name": "Ace",
+      "parts": [{"shape":"box","size":[0.06,0.0005,0.09],"color":"#f2f0ea"}],
+      "back": "back",
+      "states": [
+        {"name":"Ace, torn","parts":[{"shape":"box","size":[0.06,0.0005,0.08],"color":"#f2f0ea"}]}
+      ]
+    }
+  },
+  "setup": [
+    {"piece":"ace"}
+  ]
+}
