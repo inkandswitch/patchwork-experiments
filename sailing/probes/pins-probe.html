@@ -31,8 +31,8 @@
 </style>
 <div id="s"></div><div id="f"></div><div id="w"></div>
 <script type="module">
-// a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
-import { add as addLink, part as putPart } from "../../scene/src/parts/editor.js";
+// a part goes in as the editor puts one (scene/EDITOR.md, "Parts"), through the stage api alone (./put-part.js)
+import { add as addLink, part as putPart } from "./put-part.js";
 {
   let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
   Math.random = () => {
