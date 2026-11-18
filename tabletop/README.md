@@ -224,7 +224,9 @@ Headless Chrome against the BUILT scene, seats and this package (`pnpm build`
 in each), each printing a checklist: `table.mjs`, `draw.mjs`, `privacy.mjs`,
 `seats.mjs`, `stations.mjs`, `dominoes.mjs`, `arrive.mjs` (arriving by link
 without this package: fail closed, then Load), `dice.mjs`, `liars-dice.mjs`,
-`bag.mjs`, `import-run.mjs`. `publish-table.mjs`, `publish-office.mjs` and
+`bag.mjs`, `import-run.mjs`. `setup-bench.mjs` (Node, offline: a real
+Automerge repo with no network) times importing a big mod and setting up a
+table from it, phase by phase, with stand-in assets. `publish-table.mjs`, `publish-office.mjs` and
 `publish-liars.mjs` publish examples to a sync server (`--dry-run` to only
 check). `chrome-guard.mjs` makes sure Chrome never outlives its driver.
 

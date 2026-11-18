@@ -148,6 +148,11 @@ describe("the tabletop-game tool", () => {
     await until(() => game.doc().drawn?.dome?.url);
     const glb = game.doc().drawn.dome.url;
 
+    // the JSON is written when the definition is opened (an imported game's is half a megabyte)
+    expect(element.querySelector(".json").value).toBe("");
+    const details = element.querySelector(".definition");
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
     const area = element.querySelector(".json");
     const def = JSON.parse(area.value);
     // the definition is the game, and only the game: GAME-FORMAT.md

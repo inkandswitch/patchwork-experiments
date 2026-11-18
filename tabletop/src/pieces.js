@@ -27,13 +27,16 @@ const firstFile = (p) => (p?.parts ?? []).map((x) => x?.top?.file ?? x?.file ?? 
 /**
  * Make sure every piece of the game has a GLB drawn from what it is now:
  * create the file doc the first time, rewrite it when the piece has changed.
- * Writes `drawn` on the game.
+ * Writes `drawn` on the game, a batch of kinds to a change (`batch`, and
+ * whatever is drawn when it stops, even by failing): an imported game has
+ * a thousand kinds, and a change per kind is a thousand changes to a big doc,
+ * each one redrawing every page that shows it.
  * @param {object} repo
  * @param {object} handle  the game doc's handle
- * @param {{ images?: object | null, source?: (type: string) => Promise<object | null> }} [io]
+ * @param {{ images?: object | null, source?: (type: string) => Promise<object | null>, onProgress?: (done: number, total: number) => void, batch?: number }} [io]
  * @returns {Promise<{ drawn: number, notes: string[] }>}
  */
-export async function ensurePieceGLBs(repo, handle, { images = null, source = async () => null } = {}) {
+export async function ensurePieceGLBs(repo, handle, { images = null, source = async () => null, onProgress = () => {}, batch = 50 } = {}) {
   const pieces = handle.doc()?.pieces ?? {};
   const have = handle.doc()?.drawn ?? {};
   const todo = Object.keys(pieces)
@@ -42,8 +45,25 @@ export async function ensurePieceGLBs(repo, handle, { images = null, source = as
   const d = drawer({ read: (url) => readFile(repo, url), images, source });
   const notes = [];
   let drawn = 0;
+  const pending = new Map(); // kind → { url, key, bounds }, drawn but not yet written
+  const flush = () => {
+    if (!pending.size) return;
+    const entries = [...pending];
+    pending.clear();
+    handle.change((g) => {
+      if (!g.drawn) g.drawn = {};
+      for (const [kind, { url, key, bounds }] of entries) {
+        const was = g.drawn[kind];
+        // someone else drew it first: theirs wins, ours is an orphan
+        const entry = { url: was?.url ?? url, key, bounds: bounds ?? null };
+        if (!entry.bounds) delete entry.bounds;
+        g.drawn[kind] = entry;
+      }
+    });
+  };
+  onProgress(0, todo.length);
   try {
-    for (const kind of todo) {
+    for (const [i, kind] of todo.entries()) {
       const piece = handle.doc()?.pieces?.[kind];
       if (!piece) continue;
       const key = lookKey(piece);
@@ -63,18 +83,14 @@ export async function ensurePieceGLBs(repo, handle, { images = null, source = as
         const file = await repo.create2({ "@patchwork": { type: "file" }, name: glbName(piece), extension: "glb", mimeType: "model/gltf-binary", content: out.glb, ...(origin ? { origin } : {}) });
         url = file.url;
       }
-      handle.change((g) => {
-        if (!g.drawn) g.drawn = {};
-        const was = g.drawn[kind];
-        // someone else drew it first: theirs wins, ours is an orphan
-        const entry = { url: was?.url ?? url, key, bounds: out.bounds ?? null };
-        if (!entry.bounds) delete entry.bounds;
-        g.drawn[kind] = entry;
-      });
+      pending.set(kind, { url, key, bounds: out.bounds });
       drawn++;
+      if (pending.size >= batch) flush();
+      onProgress(i + 1, todo.length);
     }
   } finally {
     d.close();
+    flush();
   }
   return { drawn, notes };
 }
