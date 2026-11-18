@@ -12,7 +12,7 @@
      build() makes the scene the way a person would, through the stage's own
      calls: the start screen's "Ship at anchor" template (A clicks it), then
      the parts bin's Card table in her cockpit and Lost Cities on the table
-     (api.part). B opens it after. Nothing here imports another package's
+     (./put-part.js). B opens it after. Nothing here imports another package's
      source: each package's built dist is loaded as its plugins.
      Both views run on one manual clock (scene's manualTime, window.__time):
      nothing moves until the probe steps it, broadcasts included. -->
@@ -29,8 +29,8 @@
 </style>
 <div id="a"></div><div id="b"></div>
 <script type="module">
-// a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
-import { part as putPart } from "../../scene/src/parts/editor.js";
+// a part goes in as the editor puts one (scene/EDITOR.md, "Parts"), through the stage api alone (./put-part.js)
+import { part as putPart } from "./put-part.js";
 import { COCKPIT_TABLE, TABLE_TOP } from "./cockpit-table.js";
 // ?seed=N (default 1): Math.random seeded (mulberry32), so the template's sea and wind, and
 // whatever else draws on it (ids, sessions), are the same every run
@@ -179,7 +179,7 @@ try {
   const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
   const select = (w) => hosts[w].querySelector(".seats-pick");
   const ids = {};
-  /** any running extension's api in a view: the stage's public calls (api.part) */
+  /** any running extension's api in a view: the stage's public calls (put-part.js runs a part through them) */
   const apiOf = (w) => {
     for (const id of ["sailing", "tabletop", "scene.use", "scene.carry", "scene.add"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
     return null;
