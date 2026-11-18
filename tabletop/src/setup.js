@@ -41,6 +41,11 @@
 // - A piece with a `zone`, placed for a seat, is that seat's hand (trait
 //   tabletop.zone). A piece with `bag` is a bag: what the setup puts in it
 //   goes into a bag document (layout.bags), never the scene.
+// - A piece with states (GAME-FORMAT.md §4) shows the look its thing is laid
+//   out in, and carries the trait tabletop.states naming every look it may
+//   be turned to (each as a card's face is named: by the game and its ref,
+//   states.js, drawn the first time someone turns a piece to it), and the
+//   one it was laid out in (table/states.js turns it).
 // - A piece's `tags` and `traits` go on each of its copies; whatever isn't
 //   locked carries the scene's `scene.carry`, so it can be picked up.
 // - The seats are laid by their owner, which adds them to the scene's
@@ -52,6 +57,7 @@
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 import { jumble } from "./table/wash.js";
 import { boxUnder } from "./table/stand.js";
+import { STATES, lookIndex, lookRef, refsOf } from "./states.js";
 
 /** The trait of a card: two-sided, piled, shuffled and drawn (table/visibility.js CARD). */
 const CARD = "tabletop.card";
@@ -111,7 +117,11 @@ export function copyPose(thing, i) {
   return composePose(at, { position: off });
 }
 
-/** Every piece kind a table of this game lays out as a thing: each thing's piece, but a card's back in its place; contents too. */
+/**
+ * Every look a table of this game lays out as a thing: each thing's piece
+ * (as the state it's laid out in: its ref, states.js), but a card's back in
+ * its place; contents too. Its other states are drawn when first turned to.
+ */
 export function kindsLaid(game) {
   const laid = new Set();
   const pieces = game?.pieces ?? {};
@@ -119,7 +129,7 @@ export function kindsLaid(game) {
     for (const t of things ?? []) {
       for (const k of t.deck ? (t.deck.cards ?? []) : [t.piece]) {
         const shown = isCard(game, k) ? pieces[k].back : k;
-        if (pieces[shown]) laid.add(shown);
+        if (pieces[shown]) laid.add(lookRef(shown, Math.max(0, lookIndex(pieces[shown], t.deck ? null : t.state))));
       }
       walk(t.contents);
     }
@@ -128,13 +138,13 @@ export function kindsLaid(game) {
   return [...laid];
 }
 
-/** Every piece kind a table of this game shows: each thing's piece, a card's back, each deck's cards; contents too. */
+/** Every look a table of this game shows: each thing's piece and its states, a card's back, each deck's cards; contents too. */
 export function kindsUsed(game) {
   const used = new Set();
   const pieces = game?.pieces ?? {};
   const add = (k) => {
     if (!pieces[k] || used.has(k)) return;
-    used.add(k);
+    for (const r of refsOf(pieces, k)) used.add(r);
     if (isCard(game, k)) add(pieces[k].back);
   };
   const walk = (things) => {
@@ -159,8 +169,8 @@ const copyBounds = (b) => (Array.isArray(b?.min) && Array.isArray(b?.max) ? { mi
  *   newId?: (prefix: string) => string,
  *   rng?: () => number,
  *   gameUrl?: string | null,
- * }} o  fileOf: the GLB file doc a kind shows, and its box; faceOf: what names a
- *   card's face in its container (by default its file, `{ sourceUrl }`; the game
+ * }} o  fileOf: the GLB file doc a look (states.js ref) shows, and its box; faceOf: what names a
+ *   card's face in its container, and a state's look in its trait (by default its file, `{ sourceUrl }`; the game
  *   page's `{ game, kind }`, drawn when first shown); gameUrl: the game, as each
  *   object's About (none for a template's table)
  * @returns {{ objects, order, seats, containers, bags, view, origin }} the scene's
@@ -207,10 +217,15 @@ export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.ran
     order.push(gid);
     return { group: gid };
   };
-  const object = (kind, name, transform) => {
+  /** A look a thing may show, as its trait names it: a game's look drawn when first shown, else its file. */
+  const lookOf = (ref) => (faceOf ? copy(faceOf(ref)) : { sourceUrl: drawn(ref).url });
+  const object = (kind, name, transform, state = null) => {
     const piece = pieces[kind];
-    const file = drawn(kind);
-    const traits = { ...(piece.traits ? copy(piece.traits) : {}), ...(piece.locked ? {} : { [CARRY]: {} }) };
+    // a piece with states shows the one it's laid out in, and names every look it may be turned to (table/states.js)
+    const own = Math.max(0, lookIndex(piece, state));
+    const file = drawn(lookRef(kind, own));
+    const states = Array.isArray(piece.states) && piece.states.length ? { [STATES]: { looks: refsOf(pieces, kind).map((r, i) => ({ name: i ? piece.states[i - 1].name : piece.name, ...lookOf(r) })), own } } : {};
+    const traits = { ...(piece.traits ? copy(piece.traits) : {}), ...(piece.locked ? {} : { [CARRY]: {} }), ...states };
     return {
       name,
       parent: null,
@@ -268,7 +283,7 @@ export function tableLayout(game, { fileOf, faceOf = null, newId, rng = Math.ran
         card(t.piece, pose, LOOSE, where);
         continue;
       }
-      const o = object(t.piece, label, pose);
+      const o = object(t.piece, label, pose, t.state);
       if (piece.zone && t.seat != null) o.traits = { ...o.traits, "tabletop.zone": { seat: t.seat, min: [...piece.zone.min], max: [...piece.zone.max] } };
       const oid = id("o");
       if (piece.bag) bags[oid] = { title: label, rule: piece.bag.rule, items: [] };

@@ -211,6 +211,7 @@ export default function TabletopGameTool(handle, element) {
         p.bag ? `a bag (${p.bag.rule})` : "",
         p.doc ? `drawn as a ${p.doc?.["@patchwork"]?.type ?? "document"}` : "",
         p.snapPoints?.length ? `${p.snapPoints.length} spaces` : "",
+        p.states?.length ? `turns to ${p.states.map((x) => x.name).join(", ")}` : "",
       ]
         .filter(Boolean)
         .join(", ");

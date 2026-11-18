@@ -33,6 +33,7 @@
 
 import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, tableLayout, writeTable } from "../setup.js";
+import { pieceAt } from "../states.js";
 import { findSource, prepareTable } from "./made-with.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
@@ -83,7 +84,7 @@ export async function setUp(ctx, game, { options = {}, rng = Math.random, images
   const io = { read: (url) => readFile(ctx.repo, url), images, source: (type) => findSource(ctx.registry, type) };
   const files = {};
   for (const kind of kindsUsed(g)) {
-    const piece = g.pieces[kind];
+    const piece = pieceAt(g.pieces, kind);
     files[kind] = await ctx.file(lookFileKey(piece), () => glbFile(piece, io));
   }
 

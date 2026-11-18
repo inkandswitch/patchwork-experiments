@@ -181,8 +181,8 @@ describe("a game with one of everything, laid out", () => {
   const g = read("../contract/v2/fixtures/valid/every-feature.json");
   const fileOf = (kind) => ({ url: `automerge:${kind}`, hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.0005, 0.04] } } });
 
-  it("asks for every kind its setup uses, and nothing else", () => {
-    expect(kindsUsed(g).sort()).toEqual(Object.keys(g.pieces).sort());
+  it("asks for every look its setup uses (each piece's, and its states'), and nothing else", () => {
+    expect(kindsUsed(g).sort()).toEqual([...Object.keys(g.pieces), "ship#1", "ship#2"].sort());
   });
 
   it("keeps every card, wherever it is: dealt, stacked, spread, loose or in a bag; and puts a bag's things in it", async () => {

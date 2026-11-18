@@ -30,6 +30,7 @@ pnpm bench [cards] [players]     # what a joint shuffle costs on this machine
 | `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes` (param `players`), `dice.liars-dice` | an empty scene's start screen: the game's table laid out in that scene, with its own art |
 | `scene:part` | `tabletop.pawn`, `.token`, `.card-spot`, `.table`, `.lost-cities`, `.santorini`, `.dominoes-2`/`-3`/`-4` | the parts bin, under "Tabletop"; a game part makes a game doc of its own and links it where it's put (a Card table aboard a ship) |
 | `scene:extension` | `tabletop` | hands, cards, Shuffle, Draw, Wash, Stand on edge, Lay my hand face up, and who may see what (the stage's `audience`) |
+| `scene:extension` | `tabletop.start`, `tabletop.states` | Start game (a recipe's start steps); turning a piece to another of its states |
 | `patchwork:datatype` / `tool`, `scene:source` | `die` | a die doc, its 2D panel, and its GLB at real size |
 | `scene:extension` | `dice`, `dice.cup`, `dice.lots` | Roll, Turn, Roll all; dice cups; every roll's draw, by lots |
 | `scene:part` | `dice.die`, `.d4` … `.d20`, `.coin`, `.percentile`, `.plus-minus`, `.doubling`, `.cup`, `.pool` | the parts bin, under "Dice" |
@@ -168,6 +169,19 @@ told message is a peer's word and changes nothing. A slot takes a piece by
 its tags (`card`, `domino`); a rack's places hold a tile standing (a
 connector with a whole frame, `slots.js`).
 
+**Turn to a state** (`src/table/states.js`): a piece with other looks
+(GAME-FORMAT.md §4, "States": a damaged ship, a board's look for three)
+turns to its next one with PgDn, the one before with PgUp, or the n-th with
+a number key, as in TTS, for everyone: one write of the thing's trait
+`tabletop.states` (`shown`), play rather than an edit. Its own file is the
+look it was laid out in; the look it's turned to is shown over it by the
+stage's display, drawn the first time anyone is shown it (as a card's face
+is, `faces.js`) and kept in the game's `drawn` under its ref. Which look it
+shows is runtime state, so a copy (a fork) shows the one it was laid out
+in, and two people turning it at once leave the last write. A state is a
+public look; a card has none. A piece in someone's hand is seen turned by
+that seat alone (the hand's rule).
+
 **Start game** is the table's, on the bar of tools in every body (and the
 menu), where its game's recipe has start steps (GAME-FORMAT.md §6:
 Draw Dominoes deals each rack 7 tiles, 6 with four). It is disabled, saying
@@ -297,7 +311,7 @@ live in synced documents.
 |---|---|
 | `src/index.js` | every plugin's metadata (worker-safe: no imports) |
 | `src/datatype.js`, `tool.js`, `game.js`, `pieces.js` | the game doc and its page |
-| `src/setup.js`, `src/table/` | the table writer, what it's made with, the table extension, Start game, visibility, slots, wash, stand, parts, templates |
+| `src/setup.js`, `src/states.js`, `src/table/` | the table writer, a piece's looks by ref, what it's made with, the table extension, Start game, states, visibility, slots, wash, stand, parts, templates |
 | `src/look/`, `src/shapes.js`, `src/glb.js` | a piece's GLB (the encoder: the scene's, forked with textures) |
 | `src/dice/`, `src/bag/`, `src/keep/`, `src/tts/` | dice, cups and lots; bags; keepers; the importer |
 | `src/library/` | the game library and its launcher |

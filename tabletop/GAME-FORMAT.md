@@ -341,10 +341,12 @@ of it once every seat is taken, as its first shuffle does,
 (`src/bag/fill.js`); then whoever owns seats (`roster: true`), with what
 the maker is to be warned of; and
 `writeTable` writes the scene in one change, each card bound by its keeper's trait beside a bare
-`tabletop.card`, each bag given its document, and the recipe's start steps
-as they apply to this table's objects (the scene trait `tabletop.start`,
-§6). Shuffle, Draw, Wash, Stand on edge, Start game, private hands and who
-may see what all act on those traits, never on any game. A game with a
+`tabletop.card`, each bag given its document, each thing whose piece has
+states showing the one it's laid out in, with the trait `tabletop.states`
+naming every look it may be turned to (`table/states.js`), and the recipe's
+start steps as they apply to this table's objects (the scene trait
+`tabletop.start`, §6). Shuffle, Draw, Wash, Stand on edge, Turn to a state, Start game, private
+hands and who may see what all act on those traits, never on any game. A game with a
 recipe is laid out as `applyRecipe` gives it first.
 
 ## 8. Laying a game out in a scene
@@ -408,7 +410,9 @@ The doc is the game's fields at its top level, with `"@patchwork": { type:
 (the scenes set up from it).
 
 `drawn` holds each piece's GLB file doc, drawn the first time something
-needs it (`src/pieces.js`) and rewritten in place when its look changes;
+needs it (`src/pieces.js`) and rewritten in place when its look changes,
+and each of its states' under `<kind>#<n>` (its n-th state, 1 first),
+drawn the first time someone turns a piece to it;
 a GLB drawn from files carries their `origin.urls`, and `missing` lists the
 files it had to do without (tried again when next needed, after a while).
 Setting up a table draws what it lays out (its things, a card's back,

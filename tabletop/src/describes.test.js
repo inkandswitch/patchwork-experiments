@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
 import { CARD, ZONE, isCard, zones } from "./table/visibility.js";
 import { START } from "./table/start.js";
+import { STATES } from "./states.js";
 import { valuesOf } from "../contract/v2/recipe.js";
 
 // The table's traits, as the scene's inspector offers them ("Add behaviour…").
@@ -19,7 +20,7 @@ const fresh = (desc) => {
 
 describe("tabletop: what runs", () => {
   it("one extension, by its traits alone: the verbs and the policy run wherever there's a hand or a card, whatever anyone is doing", () => {
-    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop", "tabletop.start", "dice", "dice.cup", "dice.lots", "bag", "keep.plain", "card-table"]);
+    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop", "tabletop.start", "tabletop.states", "dice", "dice.cup", "dice.lots", "bag", "keep.plain", "card-table"]);
     expect(table.traits).toEqual([ZONE, CARD]);
     for (const k of ["activities", "requires", "always", "general"]) expect(k in table).toBe(false);
   });
@@ -29,6 +30,12 @@ describe("tabletop: what runs", () => {
     expect(start.traits).toEqual([START]);
     expect(start.describes[START]).toMatchObject({ on: "scene", runtime: ["started", "round"] });
     expect(plugins.find((p) => p.id === "dice.lots").traits).toContain(START);
+  });
+
+  it("a piece's states by their trait, an extension of its own; which look it shows now is play, left behind by a copy", () => {
+    const states = plugins.find((p) => p.id === "tabletop.states");
+    expect(states.traits).toEqual([STATES]);
+    expect(states.describes[STATES]).toMatchObject({ on: "object", runtime: ["shown"] });
   });
 
   it("names nobody else's traits: seats and keepers are met through the stage", () => {

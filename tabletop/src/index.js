@@ -91,6 +91,26 @@ export const plugins = [
     },
   },
   {
+    // a piece's other looks (GAME-FORMAT.md §4, src/table/states.js): turned with PgDn / PgUp or a number key,
+    // for everyone; its trait the table writer's, on every thing whose piece has states
+    type: "scene:extension",
+    id: "tabletop.states",
+    name: "States",
+    traits: ["tabletop.states"],
+    describes: {
+      "tabletop.states": {
+        name: "States",
+        on: "object",
+        blurb: "Other looks this piece can be turned to (PgDn, PgUp, a number key), for everyone: every look it has, the one it was laid out in, and the one it shows now. Made by the table, not by hand",
+        // which look it shows now is play: a copy shows the one it was laid out in
+        runtime: ["shown"],
+      },
+    },
+    async load() {
+      return (await import("./table/states.js")).default;
+    },
+  },
+  {
     type: "patchwork:datatype",
     id: "tabletop-game",
     name: "Tabletop game",
