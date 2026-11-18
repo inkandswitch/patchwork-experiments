@@ -90,12 +90,29 @@ might reasonably want it otherwise.
     drawn without it. v2 for this: a v1 reader can't fetch.
 17. **A slab can be as wide as its picture** (`aspect: "image"`), as a TTS
     tile or token is: the importer reads no image, so it can't say how wide.
-18. **A game's ways of being set up are its variants** (2026-11-18, for the
-    launcher's options): one axis, a list of names, each giving its own
-    `players`, `setup`, `seats` and `camera`, never pieces, so every variant
-    draws from one set of pieces and one `assets` cache. Draw Dominoes is one
-    game with a variant for 2, 3 and 4 players. Options that combine (players
-    × expansion) would each need a variant of their own.
+18. **A game's ways of being set up are its recipe's options** (2026-11-18,
+    replacing that morning's `variants`: one mechanism, not two). Options
+    combine (players × expansion), and one setup holds every thing any table
+    of it can lay, which a recipe takes from, moves and adds kits to, so
+    every table draws from one set of pieces and one `assets` cache. Draw
+    Dominoes is one setup with a `players` option.
+19. **A condition is one comparison on an option** (`"players >= 3"`, a bare
+    boolean option), a step's `when` and `unless` together at most two.
+    Anything past that is a scripted step, later; none is built.
+20. **Start steps are resolved when the table is laid out** (`setup.js`
+    `startPlan`): which objects a shuffle mixes and where each dealt card
+    goes are worked out from the game, so they're pure and tested without a
+    stage; Start game only asks the keeper to shuffle and writes the moves.
+    What a dealt card *is* stays its keeper's. Start runs whatever has moved
+    since (it lays the game out as the recipe says).
+21. **Who goes first is drawn in the open by the client that starts** (fair
+    against honest clients only). Drawing it by lots, as a die's roll is, is
+    later work.
+22. **Lost Cities' deal stays a deck's `deal`** (laid out with the table,
+    the joint keeper settling which card is which at its first shuffle):
+    it was never dealt by code. Moving it to a start step would mean every
+    Lost Cities table waits for Start to be pressed before its hands fill
+    (five probes assume they're dealt at setup); the lead's call.
 
 ## 1. Smallest useful document
 
@@ -140,18 +157,7 @@ non-uniform size is baked into its piece's parts.
 | `camera` | `{ position, target }`? | a fresh table's view |
 | `origin` | object? | where it came from (free form; the TTS importer writes `{ tts: { saveName, fileName, workshopId } }`). A table set up from the game carries it |
 | `assets` | `{ [webUrl]: { file } }`? | where a web asset is cached: the file doc (`automerge:`) holding what its `http(s)` URL gave. Written by whoever first draws from it (§10), or the importer for what came with a mod |
-| `variants` | `Variant[]`? | other ways to set it up (how many play), the first the usual one |
-
-```ts
-Variant = { name: string, players?: string, setup?: Thing[], seats?: { [seatId]: Seat }, camera?: Camera }
-```
-
-A table is set up from the game as one variant has it: the variant's
-fields in place of the game's own, `variants` gone (`validate.js`
-`applyVariant(game, nameOrIndex)`). The game without a variant chosen is
-its own fields as they are; a game with variants is valid as itself too.
-A variant gives no pieces: a card's face is drawn with every card it may
-share a container with in any variant's setup (§10).
+| `recipe` | `Recipe`? | how the setup is adapted to the options a new game is given, and started (§6) |
 
 ## 4. Pieces and looks
 
@@ -202,8 +208,8 @@ whole frame, which the scene keeps) and `extras.snapRadius`.
 
 ```ts
 Thing =
-  | { piece: kind, id?, name?, at?: Pose, count?: int ≥ 1, grid?: { cols, across: Vec3, down: Vec3 }, seat?: seatId, contents?: Thing[] }
-  | { deck: Deck, id?, at?: Pose }
+  | { piece: kind, id?, name?, tags?: id[], at?: Pose, count?: int ≥ 1, grid?: { cols, across: Vec3, down: Vec3 }, seat?: seatId, contents?: Thing[] }
+  | { deck: Deck, id?, tags?: id[], at?: Pose }
 Pose = { position: Vec3, rotation?: Vec3 }
 Deck = {
   name: string,
@@ -224,16 +230,79 @@ Deck = {
 - `seat` makes the copy that seat's hand (its piece must have a `zone`).
 - `contents` is what a bag holds (its piece must have `bag`): pieces and
   decks, laid out into the bag, never the scene; a bag may hold a bag.
-- `id` names a thing for a deal.
+- `id` names a thing for a deal, and for a recipe's steps; `tags` are what
+  a recipe takes things away by (never a snap point's tags: those are a
+  piece's).
 - A `secure` deck's listed order is nobody's to know, so a joint keeper
   shuffles every card of it, whatever `shuffle` says (§7). Kept by a plain
   keeper instead (choice 4's fallback), it is laid out as `shuffle` says.
 
-## 6. Seats and camera
+## 6. Seats, camera and the recipe
 
 `seats` is what whoever owns seats lays (the seats package, found by its
 plugin's `roster: true`); nothing here reads who sits where. A seat's
-`camera` is its view; the game's `camera` is a fresh table's home view.
+`camera` is its view; the game's `camera` is a fresh table's home view. A
+seat's `at` is its area: where a kit is laid for it, +Z toward its player.
+
+The **recipe** says how the setup is adapted to the options a new game is
+given (how many play, which expansion), and what Start game does once
+every seat is taken. It's data: `contract/v2/recipe.js` lays it out
+(`applyRecipe(game, values)`, pure), the validator checks every way its
+options can be set, laid out, and the setup holds every thing any table of
+it can lay.
+
+```ts
+Recipe = { options?: Option[], spots?: { [name]: Pose }, layout?: LayoutStep[], start?: StartStep[] }
+Option =
+  | { kind: "integer", key, label, min, max, default }
+  | { kind: "enum", key, label, options: { value: string | int, label }[], default }
+  | { kind: "boolean", key, label, default }
+Step = { when?: Condition, unless?: Condition } & …    // applies when `when` holds and `unless` doesn't
+Condition = "<option>" | "<option> <op> <value>"       // op: == != < <= > >= (an order only on an integer)
+At = Pose | spotName
+LayoutStep =
+  | { remove: { id } | { tag } | { seat } }   // take things away (a seat: with its hands)
+  | { place: { [thingId]: At } }             // these things here (out of their bag, if in one)
+  | { seats: { [seatId]: At } }              // move seats' areas, and what's theirs (hands, camera), rigidly
+  | { kit: Thing[] }                         // at each seat's area, once every other step has run
+StartStep =
+  | { shuffle: deckId }                      // its cards, mixed by their keeper
+  | { deal: deckId, count }                  // count into each seat's hands, a card to each card slot
+  | { draw: deckId, count, to: thingId }     // count face up onto that thing's snap points
+  | { first: true }                          // who goes first: one of the seats, at random
+```
+
+- **Options** are what the launcher's New game and the game page's Set up
+  a table ask (a picker each; a checkbox for a boolean), the default where
+  nothing's chosen. A template's params are its game's options. A session
+  is named for them ("Draw Dominoes (3 players), …").
+- **Layout** runs in order when a table is made, from the game and the
+  values alone, so nothing hidden is in it: `remove` by thing id, tag
+  (every thing so tagged, contents too) or seat (and every thing placed
+  for it); `place` lays a thing at a pose or a named spot, taking it out of
+  a bag if it's in one (a TTS memory bag's layout); `seats` moves a seat's
+  area to a pose or spot, its hands and camera with it; then each `kit` is
+  laid at every seat's area, in the seat's frame: its ids become
+  `<id>.<seat>`, `{seat}` in a name the seat's name, and a piece with a
+  `zone` that seat's hand.
+- **Start** steps are what Start game does (`src/table/start.js`), a verb
+  on the table's bar of tools, enabled once every seat is taken; once
+  started it says so, and does nothing again. They involve hidden
+  information, so they go through the keepers: a shuffle asks the cards'
+  keeper; a deal takes the deck's top cards into each seat's hands' card
+  slots (slots with tags that take the cards, as Draw's), seat by seat; a
+  draw takes them face up onto a thing's snap points. A deck is the game's,
+  or, where a kit has one, each seat's own (`<deckId>.<seat>`). Choosing
+  k of n at random is a shuffle then a draw of k. They are resolved to the
+  table's objects when it is laid out (choice 20) and written into the
+  scene's trait `tabletop.start`.
+- `applyRecipe` gives the game as laid out: its setup and seats as the
+  steps leave them, no options, spots or layout, and `recipe: { start }`
+  with the start steps that apply, unconditional.
+
+The TTS importer writes a recipe where a mod's data says one (README.md,
+"Importing a TTS mod"): how many play, from its hands; each memory bag's
+layout, as `place` steps; shuffling its face-down decks at the start.
 
 ## 7. What a table does with it
 
@@ -246,9 +315,11 @@ of it once every seat is taken, as its first shuffle does,
 (`src/bag/fill.js`); then whoever owns seats (`roster: true`), with what
 the maker is to be warned of; and
 `writeTable` writes the scene in one change, each card bound by its keeper's trait beside a bare
-`tabletop.card`, each bag given its document. Shuffle, Draw, Wash, Stand on
-edge, private hands and who may see what all act on those traits, never on
-any game.
+`tabletop.card`, each bag given its document, and the recipe's start steps
+as they apply to this table's objects (the scene trait `tabletop.start`,
+§6). Shuffle, Draw, Wash, Stand on edge, Start game, private hands and who
+may see what all act on those traits, never on any game. A game with a
+recipe is laid out as `applyRecipe` gives it first.
 
 ## 8. Laying a game out in a scene
 
@@ -283,12 +354,22 @@ each code is one invalid fixture's.
 | `deal-count` | a deck deals no more cards than it has |
 | `deal-spread` | a spread deck deals nothing |
 | `camera` | a camera's position and target differ |
-| `variant-name` | each variant's name is its own |
+| `option` | an option's key is its own, its values its own, an integer's range not empty, its default one of its values |
+| `condition` | a condition is one comparison on an option, with one of its values; an order only on an integer |
+| `options-many` | the options can be set at most 512 ways (each is laid out and checked) |
+| `unknown-tag` | a step takes away by a tag some thing has |
+| `unknown-spot` | a step's spot is one of the recipe's |
+| `seat-area` | a seat that moves, or a game with a kit, has every seat's area (`at`) |
+| `start-deck` | a start step's deck is a deck on the table (the game's, or each seat's from its kit) |
+| `deal-hand` | a deal fits every seat's hands' card slots |
 
-Each variant is checked too: the game as it sets it up passes every rule
-above. An error in a field the variant gives is at its path
-(`$.variants[1].setup[3].seat`); one the game has itself is said once, as
-the game's.
+A recipe's layout steps name a thing (`unknown-thing`) and a seat
+(`unknown-seat`) the game has; its start steps take no more cards from a
+deck than it has (`deal-count`), and a draw fits its target
+(`deal-target`). With a recipe, every way its options can be set is laid
+out and held to every rule above; an error the game itself has is said
+once, as the game's, and any other names the values ("laid out with
+players = 2").
 
 ## 10. A tabletop-game doc
 
@@ -304,7 +385,7 @@ files it had to do without (tried again when next needed, after a while).
 Setting up a table draws what it lays out (its things, a card's back,
 what's in its bags); a card's face is drawn when a keeper first shows it
 to someone, with every card it may share a container with (its deck's, or
-the loose cards) and every card cut from the same sheets, closed over both,
+the loose cards, in the setup or a recipe's kit) and every card cut from the same sheets, closed over both,
 made and recorded in kind order in one change, so `drawn` and `assets` say
 which containers' cards have been seen, never which card. Only
 a viewer who can write the game writes `drawn` or `assets`; two writing one

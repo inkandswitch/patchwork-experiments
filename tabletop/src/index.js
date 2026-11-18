@@ -51,6 +51,7 @@ const TRAITS = {
     on: "object",
     blurb: "Two-sided: lying face up outside every hand it is shown to everyone, face down to nobody. In a pile it can be shuffled (S) and drawn (D). What it really is, is its keeper's",
   },
+  // the scene's, written by the table writer and read by the extension (which its cards and hands run)
   "tabletop.start": {
     name: "Start game",
     on: "scene",
@@ -68,7 +69,9 @@ export const plugins = [
     type: "scene:extension",
     id: "tabletop",
     name: "Tabletop",
-    traits: ["tabletop.zone", "tabletop.card", "tabletop.start"],
+    // (not "tabletop.start": a table's start is read where its cards and hands already run it, and a
+    // scene trait would run it before the scene's carry, putting its verbs ahead of Flip on the use prompt)
+    traits: ["tabletop.zone", "tabletop.card"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
     // shapes). A hand's box is plain JSON for now.

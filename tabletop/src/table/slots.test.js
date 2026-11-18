@@ -68,7 +68,7 @@ const POSES = {
   "turned round, twice the size": composeMatrix({ position: [-1, 0, 2], rotation: [0, Math.PI, 0], scale: 2 }),
 };
 const RADIUS = 0.03; // a piece that gives none (Lost Cities' hand): the stage would work one out; the same for both
-// (the games, not Draw Dominoes again as each of its variants: they share its pieces)
+// (the games, not Draw Dominoes again for each count: every count shares its pieces)
 const pieces = Object.entries(GAMES).filter(([g]) => !/-\d$/.test(g)).flatMap(([g, game]) => Object.entries(game.pieces ?? {}).filter(([, p]) => p.snapPoints?.length).map(([k, p]) => [`${g}: ${k}`, p]));
 
 describe("a piece's places, from the scene's connectors alone", () => {

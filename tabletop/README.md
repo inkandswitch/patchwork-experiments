@@ -26,7 +26,7 @@ pnpm bench [cards] [players]     # what a joint shuffle costs on this machine
 | type | id | for |
 |---|---|---|
 | `patchwork:datatype` / `tool` | `tabletop-game` | a game, and its page: about, pieces, Set up a table, its tables, the game as JSON (checked before it's kept) |
-| `tabletop:game` | `santorini`, `lost-cities`, `draw-dominoes` (a variant for 2, 3 and 4 players), `liars-dice` | the games, as data (`games/*.json`): each loads to the game itself |
+| `tabletop:game` | `santorini` (2 or 3 players), `lost-cities`, `draw-dominoes` (2, 3 or 4), `liars-dice` | the games, as data (`games/*.json`): each loads to the game itself |
 | `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes` (param `players`), `dice.liars-dice` | an empty scene's start screen: the game's table laid out in that scene, with its own art |
 | `scene:part` | `tabletop.pawn`, `.token`, `.card-spot`, `.table`, `.lost-cities`, `.santorini`, `.dominoes-2`/`-3`/`-4` | the parts bin, under "Tabletop"; a game part makes a game doc of its own and links it where it's put (a Card table aboard a ship) |
 | `scene:extension` | `tabletop` | hands, cards, Shuffle, Draw, Wash, Stand on edge, Lay my hand face up, and who may see what (the stage's `audience`) |
@@ -52,8 +52,8 @@ A game is registered as a `tabletop:game` plugin, from here or any other
 package: `{ id, name, icon, players, blurb, load() }`, `load` resolving to
 the game. The game page lists every registered game; starting from one
 copies it into the doc. A template for it is `template(id)`
-(`src/table/template.js`; or `template(params => ({ id, variant }))`), a
-part `gamePart(id, variant?)` (`src/table/parts.js`). Or paste a game into a game page's definition: it is
+(`src/table/template.js`; its params are the game's options), a
+part `gamePart(id, options?)` (`src/table/parts.js`). Or paste a game into a game page's definition: it is
 checked against the format (`contract/v2/validate.js`) before it's kept.
 
 The doc: the game at its top level (its `assets` too: each web asset it
@@ -73,10 +73,11 @@ folder tool (`folder-viewer`), which reads it as any folder.
 
 The launcher (`tool.js`, every step in `actions.js`, the data in `model.js`):
 
-- **New game** renders a description into a fresh scene as the variant
-  chosen beside it (GAME-FORMAT.md §3: Draw Dominoes for 2, 3 or 4), through
-  the game page's own path (`src/table/session.js`), links it in Sessions as
-  the game, its variant and the time ("Draw Dominoes (3 players),
+- **New game** renders a description into a fresh scene as its recipe lays
+  it out for the options chosen beside it (GAME-FORMAT.md §6: how many play,
+  which memory bag to lay out…; `src/options-form.js`), through the game
+  page's own path (`src/table/session.js`), links it in Sessions as the
+  game, its options and the time ("Draw Dominoes (3 players),
   2026-11-18 21:30") and opens it. The description draws what the table lays
   out (`drawn`) and caches web assets (`assets`), so every session of it
   shares both.
@@ -106,7 +107,9 @@ template's params are fixed in its metadata.
 ## A table
 
 One writer makes every table (`src/setup.js`): `tableLayout` lays the game
-out without writing (as one of its variants: `applyVariant`); `prepareTable` (`src/table/made-with.js`) makes its
+out without writing (as its recipe lays it out for the options chosen:
+`contract/v2/recipe.js` `applyRecipe`, and its start steps resolved to the
+table's objects); `prepareTable` (`src/table/made-with.js`) makes its
 keepers' containers and its bags and finds whoever owns seats; `writeTable`
 writes the scene in one change, with a fresh scene's maps (`src/empty-scene.js`)
 and the scene package as its suggested import (`src/scene-package.js`).
@@ -164,6 +167,16 @@ Each is told to everyone (`use("tell").tell`) as counts only, never which card; 
 told message is a peer's word and changes nothing. A slot takes a piece by
 its tags (`card`, `domino`); a rack's places hold a tile standing (a
 connector with a whole frame, `slots.js`).
+
+**Start game** is the table's, on the bar of tools in every body (and the
+menu), where its game's recipe has start steps (GAME-FORMAT.md §6:
+Draw Dominoes deals each rack 7 tiles, 6 with four). It is disabled, saying
+whose seat is empty, until every seat is taken; then it asks the cards'
+keeper to shuffle, moves the dealt cards into each seat's card slots (and
+drawn ones face up onto their thing) in one change, and records that it
+started (and who goes first, which the HUD says). Once started it says so
+and does nothing again (`start.js`); it's told as "Ann started the game,
+dealing 7 to each seat". Like the other verbs it isn't the editor's undo.
 
 A copied card leaves its keeper's binding behind (the trait is `runtime`): a
 bare back. A copied hand keeps its seat's id.
@@ -266,7 +279,14 @@ table is set up from the game as from any other. Cards and decks
 `*_Stack`s, models, bags, dice (a die doc), standees, hand triggers (a seat
 and its tray), snap points, tags and `Locked` come across
 (`src/tts/translate.js`); Lua, XML UI, other `States`, 3D text and notecards
-never. Import a publisher's module only where they've shared it: the copies
+never. What the mod's data says of its setup becomes the game's recipe:
+how many play (a seat per hand, the last in TTS's colour order left out for
+fewer, as few as its PlayerCounts says); each **memory bag** (a bag whose
+script state saved where each thing in it goes, MrStump's and its copies:
+Earthborne Rangers' ranger cards) a layout to choose, its things laid where
+it saved them, out of the bag (bags laying out one spot are one choice);
+and shuffling its face-down decks at the start, off unless chosen. A setup
+done in plain Lua is left for later. Import a publisher's module only where they've shared it: the copies
 live in synced documents.
 
 ## Layout
@@ -275,14 +295,14 @@ live in synced documents.
 |---|---|
 | `src/index.js` | every plugin's metadata (worker-safe: no imports) |
 | `src/datatype.js`, `tool.js`, `game.js`, `pieces.js` | the game doc and its page |
-| `src/setup.js`, `src/table/` | the table writer, what it's made with, the table extension, visibility, slots, wash, stand, parts, templates |
+| `src/setup.js`, `src/table/` | the table writer, what it's made with, the table extension, Start game, visibility, slots, wash, stand, parts, templates |
 | `src/look/`, `src/shapes.js`, `src/glb.js` | a piece's GLB (the encoder: the scene's, forked with textures) |
 | `src/dice/`, `src/bag/`, `src/keep/`, `src/tts/` | dice, cups and lots; bags; keepers; the importer |
 | `src/library/` | the game library and its launcher |
 | `src/kit/glb.js` | the scene's kit GLB encoder (a copy: `scripts/check-kit.mjs`), for dice and bags |
 | `src/empty-scene.js`, `scene-package.js` | a fresh scene doc (a copy of the scene's init); a doc's suggested import |
 | `src/test/` | the stage stand-in (`fakes.js`), the telling copy, stand-ins for seats, fake repos, a PNG codec |
-| `GAME-FORMAT.md`, `contract/v2/` | the format: spec, schema, validator, fixtures |
+| `GAME-FORMAT.md`, `contract/v2/` | the format: spec, schema, validator, the recipe (`recipe.js`), fixtures |
 | `games/`, `fixtures/tiny-mod/` | the games; the TTS fixture mod (`make-tiny-mod.mjs`) |
 | `scripts/bench.mjs` | the joint shuffle's cost |
 
@@ -293,7 +313,9 @@ in each), each printing a checklist: `table.mjs`, `draw.mjs`, `privacy.mjs`,
 `seats.mjs`, `stations.mjs`, `dominoes.mjs`, `arrive.mjs` (arriving by link
 without this package: fail closed, then Load), `dice.mjs`, `liars-dice.mjs`,
 `bag.mjs`, `import-run.mjs`, `library-run.mjs` (the launcher: built-in
-games, New game, Fork, Import, in an in-memory repo). `setup-bench.mjs` (Node, offline: a real
+games, New game, Fork, Import, in an in-memory repo), `setup-run.mjs` (a
+real mod from this machine's TTS folder and cache, offline: Earthborne
+Rangers Demo's memory bags as New game's options, for two, then Start). `setup-bench.mjs` (Node, offline: a real
 Automerge repo with no network) times importing a big mod, setting up a
 table from it and showing a card's face, phase by phase, with stand-in
 assets, counting the docs, changes, fetches and decodes each makes;
