@@ -849,3 +849,41 @@ games twice, starts Lost Cities, sits, forks, imports the tiny mod and
 starts it: 17 checks pass. A fork's cards are bare backs (the copy rule:
 what a card is stays with the session it was dealt in); that a fork be a
 playable save of hidden state too is the lead's to decide.
+
+### 2026-11-18 — Tabletop: setup recipes
+
+PLANS.md §3, built while the lead slept (nothing published, synced or
+fetched). A game's setup is data: the format's `recipe` (tabletop-game v2,
+additive; GAME-FORMAT.md §6, choices 18–22; `contract/v2/recipe.js`, no
+imports). **Options** (integer, choice, yes/no) are what New game and Set
+up a table ask, and a template's params; a session is named for them.
+**Layout** steps run when a table is made, pure (game × values → game):
+`remove` by id, tag or seat (with its hands), `place` things at a pose or
+named spot (out of a bag too), `seats` (a seat's area moves, its hands and
+camera rigidly with it), and `kit`s laid at each seat's area last.
+**Start** steps (`shuffle`, `deal` n to each seat's hands, `draw` n face
+up onto a thing, `first`) are resolved to the table's objects when it is
+laid out (setup.js `startPlan`) into the scene trait `tabletop.start`, and
+run by **Start game**, a world verb (`table/start.js`) enabled once every
+seat is taken: the keeper shuffles, the moves are one change with
+`started`; pressed again, or on two peers, it deals once. A condition is
+one comparison on an option. The validator lays out and checks every way
+the options can be set (at most 512). `variants` (that morning's) are gone:
+one mechanism. Draw Dominoes is one setup with a `players` option, seats
+placed at spots, its rack a kit, and Start deals 7 (6 with four); Santorini
+asks 2 or 3. Lost Cities' deal stays its deck's `deal` (it was never code;
+moving it would make five probes press Start). The TTS importer reads a
+memory bag's saved layout (the `ml` of its script state: data, never
+code) into `place` steps, bags laying out one spot being one choice
+(Earthborne's six ranger bags), seats into a `players` option, face-down
+decks into a shuffle-at-start option (off unless chosen). The trait isn't
+one the table extension runs for: a scene trait would run it before
+carry, putting Draw and Wash ahead of Flip on the use prompt (dominoes.mjs
+caught it). Tests: every built-in game every way its options set it (every
+component once, a hand per seat, nothing on anything but the table, no
+hands overlapping, deals to their own seats), Start against the plain
+keeper and real joint-keeper clients. probes/setup-run.mjs imports
+Earthborne Rangers Demo offline (Chrome refusing every other host), New
+game for two with the pre-made rangers and shuffling, sits, Start: 11
+checks pass; library-run.mjs and dominoes.mjs (2, 3, 4) pass too.
+

@@ -15,7 +15,7 @@ import { composeMatrix } from "./frame.js";
 import { game as builtIn } from "../test/games.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
-// the game, as data (games/draw-dominoes.json, its 2-player variant), and what these tests need of it
+// the game, as data (games/draw-dominoes.json, laid out for 2 by its recipe), and what these tests need of it
 const game = builtIn("draw-dominoes-2");
 const body = game.pieces.back.parts.find((p) => p.shape === "box" && p.name === "tile");
 /** A tile's size (m): across, along, thick; and the top of everything on it, face or back. */

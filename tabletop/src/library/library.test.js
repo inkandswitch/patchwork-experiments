@@ -81,7 +81,7 @@ describe("the launcher's model", () => {
     expect(gamesIn(f).map((l) => l.name)).toEqual(["g"]);
   });
 
-  it("names a session by its game, its variant where there's a choice, and when it started; a fork by its source", () => {
+  it("names a session by its game, its options where it asks any, and when it started; a fork by its source", () => {
     const at = new Date(2026, 10, 18, 9, 5);
     expect(sessionName("Lost Cities", at)).toBe("Lost Cities, 2026-11-18 09:05");
     expect(sessionName("Draw Dominoes", at, "3 players")).toBe("Draw Dominoes (3 players), 2026-11-18 09:05");

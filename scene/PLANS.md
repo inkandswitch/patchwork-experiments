@@ -179,7 +179,7 @@ sends simulated locally (cannonballs, spray), and positional sound.
   per-game `scene:template` plugins become one generic "start from a game
   description". As built: the launcher's "Add the built-in games" makes a
   description of each registered game, once; Draw Dominoes is one
-  description with a variant for 2, 3 and 4 (the format's `variants`). The
+  description asking 2, 3 or 4 players (its recipe's options). The
   per-game templates stay (an empty scene has no description to start from,
   and a template's params are fixed per template: tabletop/README.md, "The
   library").
@@ -209,6 +209,13 @@ sends simulated locally (cannonballs, spray), and positional sound.
   table's setup draws only what it lays out; a card's face is drawn when a
   keeper first shows it, with its whole sheet, so nothing recorded says
   which card anyone holds.
+- **Setup recipes. Done, 2026-11-18** (HISTORY.md): the lead's call that
+  setup is most of scripting's value, as data. A game's `recipe` (options,
+  layout steps when a table is made, start steps run by Start game once
+  every seat is taken), folding in `variants`; TTS memory bags import as
+  layout. Still to do: one escape hatch (a scripted step), a first player
+  drawn by lots, Lost Cities' deal as a start step (the lead's call), and
+  translating a mod's plain-Lua setup (agent-assisted).
 - **Open, deferred:** where live play state lives for a 2D view or scripts:
   (a) the scene's traits and transforms, as today, or (b) a tabletop session
   doc the scene renders. Decide when 2D or scripting is on the table.
