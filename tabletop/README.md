@@ -239,8 +239,12 @@ unknown (a package the scene lists missing here) nothing is shown.
 
 A die is a document (`src/dice/die.js`): `shape` (d4, d6, d8, d10, d12, d20,
 coin), `size` in metres, `body` and `ink`, `turnOnly`, and `faces` (marks:
-pips, numbers, symbols, text; a name, a colour, a turn), edited in its panel. The
-`die` source builds it at real size (`die-glb.js`), and its GLB says what it
+pips, numbers, symbols, text; a name, a colour, a turn; and a picture,
+`image: { file, rect? }`, a cell of an image covering the side, as a TTS
+custom die's faces are), edited in its panel (all but the picture). The
+`die` source builds it at real size (`die-glb.js`: a pictured face with its
+picture where whoever builds it can crop images, as a game's drawer does,
+else with its marks), and its GLB says what it
 is in `extras.dice` (each face's up direction, rest height, label): the
 extension reads a die only from there, so anything with that and the
 `dice.die` trait is a die. A die lies on its parent: rolled, turned and read

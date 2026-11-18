@@ -13,7 +13,10 @@
 //         name?: "one",            // what it's called when read out; else its marks, read in order
 //         color?: "#aa0000",       // this face's own colour (the side itself; not on a d4, whose sides are shared)
 //         ink?: "#ffffff",         // its marks' own colour
-//         turn?: 90 },             // its marks turned this many degrees anticlockwise from their default
+//         turn?: 90,               // its marks (and its picture) turned this many degrees anticlockwise from their default
+//         image?: { file, rect? } }, // a picture covering the side read: a cell (rect: [x, y, w, h], fractions,
+//                                  // top left) of an image file (automerge: or http(s)); drawn where it can be had,
+//                                  // its marks where it can't (a TTS custom die's faces, tts/translate.js)
 //     ],
 //     rolls: [{ face: 3, how: "rolled", at: 1731300000000, draw?, by? }],   // the panel's last few (tool.js); never read by a scene
 //     round?: { … },               // the panel's draw by lots (panel-lots.js, lots.js); never read by a scene
@@ -91,17 +94,26 @@ export function faceLabel(face) {
   return marks.length ? marks.map(markLabel).join(" ") : "blank";
 }
 
+/** A face's picture as it's drawn ({ file, rect? }), or null when it isn't one. */
+export function cleanImage(im) {
+  const file = typeof im?.file === "string" && /^(automerge:|https?:\/\/)/i.test(im.file) ? im.file : null;
+  if (!file) return null;
+  const r = im.rect;
+  const rect = Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) && r[2] > 0 && r[3] > 0 && r[0] >= 0 && r[1] >= 0 && r[0] + r[2] <= 1 + 1e-9 && r[1] + r[3] <= 1 + 1e-9 ? [...r] : null;
+  return rect ? { file, rect } : { file };
+}
+
 function cleanFace(f) {
   const marks = (Array.isArray(f?.marks) ? f.marks : []).map(cleanMark).filter(Boolean).slice(0, MAX_MARKS);
   const name = typeof f?.name === "string" ? f.name.trim().slice(0, MAX_NAME) : "";
   const turn = Number.isFinite(f?.turn) ? ((f.turn % 360) + 360) % 360 : 0;
-  const face = { marks, name: name || null, color: isColor(f?.color) ? f.color.toLowerCase() : null, ink: isColor(f?.ink) ? f.ink.toLowerCase() : null, turn };
+  const face = { marks, name: name || null, color: isColor(f?.color) ? f.color.toLowerCase() : null, ink: isColor(f?.ink) ? f.ink.toLowerCase() : null, turn, image: cleanImage(f?.image) };
   return { ...face, label: faceLabel(face) };
 }
 
 /**
  * The die a doc describes, whole and valid.
- * @returns {{ shape, name, size, body, ink, turnOnly, underline, faces: { marks, name, color, ink, turn, label }[] }}
+ * @returns {{ shape, name, size, body, ink, turnOnly, underline, faces: { marks, name, color, ink, turn, image, label }[] }}
  *   `underline`: its 6 and 9 are told apart by a line under each (it has both).
  */
 export function dieOf(doc) {
@@ -127,7 +139,7 @@ export function dieOf(doc) {
 /** Everything a die's geometry is made from, as one string: not its title, nor its rolls. */
 export function dieKey(doc) {
   const d = dieOf(doc);
-  return JSON.stringify([d.shape, d.size, d.body, d.ink, d.turnOnly, d.faces.map((f) => [f.marks.map((m) => [m.kind, m.value]), f.name, f.color, f.ink, f.turn])]);
+  return JSON.stringify([d.shape, d.size, d.body, d.ink, d.turnOnly, d.faces.map((f) => [f.marks.map((m) => [m.kind, m.value]), f.name, f.color, f.ink, f.turn, ...(f.image ? [f.image] : [])])]);
 }
 
 // ─── layouts ────────────────────────────────────────────────────────────────

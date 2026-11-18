@@ -82,6 +82,8 @@ const STAND_IN = "#a0a0a8b0"; // a see-through grey: a stand-in reads as one
 /** How big an image may be drawn on a slab, by the slab's longest side (m): a card's face needs less than a board. */
 export const textureSize = (longest) => (longest < 0.1 ? 512 : longest < 0.3 ? 1024 : 2048);
 const MODEL_TEXTURE = 1024;
+/** How big a picture a document's piece is given (a die's face: a centimetre or two across). */
+const DOC_TEXTURE = 256;
 
 /** Points and normals placed at `at`, turned by `rotation` (Euler XYZ), as a part says. */
 function place(g, part) {
@@ -257,8 +259,16 @@ export function drawer({ read = async () => null, images = null, source = async 
       const src = typeof type === "string" ? await Promise.resolve(source(type)).catch(() => null) : null;
       if (src?.build) {
         try {
-          const out = await src.build({ doc: piece.doc });
-          if (out?.kind === "glb" && out.glb?.byteLength) return { glb: out.glb, bounds: round5(out.meta?.bounds ?? null), notes, origins: [] };
+          // what it shows from files (a die's pictured faces) is cropped here, read as any part's image is
+          const image = async (im) => {
+            if (!im?.file) return null;
+            await noteOrigin(im.file);
+            const t = images ? await crop({ file: im.file, rect: im.rect }, DOC_TEXTURE) : null;
+            if (!t) notes.push(`missing image: ${im.file}`);
+            return t;
+          };
+          const out = await src.build({ doc: piece.doc, image });
+          if (out?.kind === "glb" && out.glb?.byteLength) return { glb: out.glb, bounds: round5(out.meta?.bounds ?? null), notes, origins: [...origins].sort() };
         } catch (err) {
           notes.push(`couldn't draw the ${type}: ${err?.message ?? err}`);
         }

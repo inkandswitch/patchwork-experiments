@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { partGeometry } from "./shapes.js";
 import { boundsOf, connectorsOf, drawer, lookKey } from "./look/look.js";
 import { turned } from "./look/slab.js";
-import { groupsOf, pieceDrawer, readFile as readFileOf, RETRY_MS } from "./pieces.js";
+import { filesOf, groupsOf, pieceDrawer, readFile as readFileOf, RETRY_MS } from "./pieces.js";
 import { composePose, copyPose, isCard, kindsLaid, kindsUsed, LOOSE, shuffle, tableLayout, writeTable } from "./setup.js";
 import { prepareTable } from "./table/made-with.js";
 import { composeMatrix, multiply } from "./table/frame.js";
@@ -210,6 +210,20 @@ describe("a look, drawn", () => {
     const none = await draw(die, {});
     expect(none.notes).toEqual(["nothing installed here draws a “die”: drawn as a stand-in"]);
     expect(parseGLB(none.glb).json.meshes).toHaveLength(1);
+  });
+
+  it("a document piece's pictures (a die's faces) are read and cropped as a part's images are, and say where they came from; one missing is noted", async () => {
+    const sheet = "automerge:dieSheet";
+    const faces = Array.from({ length: 6 }, (_, i) => ({ name: `F${i + 1}`, marks: [], image: { file: i < 5 ? sheet : "automerge:gone", rect: [(i % 3) / 3, Math.floor(i / 3) / 2, 1 / 3, 1 / 2] } }));
+    const die = { name: "Die", doc: { "@patchwork": { type: "die" }, shape: "d6", size: 0.02, faces }, traits: { "dice.die": {} } };
+    const Source = (await import("./dice/source.js")).default;
+    const read = files({ [sheet]: { content: encodePNG(6, 4, new Uint8Array(96).fill(180)), mimeType: "image/png", origin: { urls: ["https://example.org/die.png"] } } });
+    const out = await draw(die, { read, images: nodeImages(), source: async (type) => (type === "die" ? Source : null) });
+    const { json } = parseGLB(out.glb);
+    expect(json.images).toHaveLength(5);
+    expect(out.notes).toEqual(["missing image: automerge:gone"]);
+    expect(out.origins).toEqual(["https://example.org/die.png"]);
+    expect(filesOf(die)).toEqual([sheet, "automerge:gone"]);
   });
 
   it("a look's key is everything it's drawn from, and nothing else", () => {

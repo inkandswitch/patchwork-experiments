@@ -186,3 +186,49 @@ describe("the cup and the pool", () => {
     expect(shade("#806040", 0.5)).toBe("#403020");
   });
 });
+
+describe("a die with pictured faces (a TTS custom die's)", () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const doc = { shape: "d6", size: 0.02, faces: Array.from({ length: 6 }, (_, i) => ({ marks: [{ kind: "text", value: `F${i + 1}` }], name: `F${i + 1}`, image: { file: "https://example.org/die.png", rect: [(i % 3) / 3, Math.floor(i / 3) / 2, 1 / 3, 1 / 2] } })) };
+
+  it("keeps each face's picture in the doc's die, and in its key (a new picture draws it again)", () => {
+    expect(dieOf(doc).faces[4].image).toEqual({ file: "https://example.org/die.png", rect: [1 / 3, 1 / 2, 1 / 3, 1 / 2] });
+    expect(dieOf({ ...doc, faces: [{ image: { file: "not a url" } }] }).faces[0].image).toBe(null);
+    expect(dieOf({ ...doc, faces: [{ image: { file: "automerge:abc", rect: [0.5, 0, 0.6, 1] } }] }).faces[0].image).toEqual({ file: "automerge:abc" });
+    const moved = structuredClone(doc);
+    moved.faces[0].image.rect = [0, 0, 0.5, 0.5];
+    expect(Source.fingerprint(moved)).not.toBe(Source.fingerprint(doc));
+  });
+
+  it("without its pictures, it's drawn with its marks, as any die", () => {
+    const { glb } = dieGLB(doc);
+    expect(parseGLB(glb).json.images).toBeUndefined();
+    expect(primitives(glb).some((p) => p.mesh === "marks")).toBe(true);
+  });
+
+  it("with them, each covers the side read when that face shows, a hair proud, and that face's marks are left out; it reads as its faces' names", async () => {
+    const asked = [];
+    // every face's picture comes but the third's: it keeps its marks
+    const out = await Source.build({ doc, image: async (im) => (asked.push(im.rect), im.rect[0] === 2 / 3 && im.rect[1] === 0 ? null : { bytes: png, mimeType: "image/png" }) });
+    expect(asked).toHaveLength(6);
+    const { json, bin } = parseGLB(out.glb);
+    const built = json.scenes[0].extras.dice;
+    expect(built.faces.map((f) => f.label)).toEqual(["F1", "F2", "F3", "F4", "F5", "F6"]);
+    expect(json.images).toHaveLength(5);
+    expect(json.meshes.map((m) => m.name).filter((n) => /^face/.test(n))).toEqual(["face 1", "face 2", "face 4", "face 5", "face 6"]);
+    expect(json.meshes.some((m) => m.name === "marks")).toBe(true);
+    const k = doc.size;
+    for (const f of [0, 1, 3, 4, 5]) {
+      const prim = json.meshes.find((x) => x.name === `face ${f + 1}`).primitives[0];
+      expect(prim.attributes.TEXCOORD_0).toBeDefined();
+      const a = json.accessors[prim.attributes.POSITION];
+      const v = json.bufferViews[a.bufferView];
+      const off = bin.byteOffset + (v.byteOffset ?? 0) + (a.byteOffset ?? 0);
+      const pts = new Float32Array(bin.buffer.slice(off, off + a.count * 12));
+      // its middle lies out along the face's up, half the die across and a hair past the side
+      const mid = [0, 1, 2].map((c) => pts.filter((_, n) => n % 3 === c).reduce((x, y) => x + y, 0) / a.count - built.centre[c]);
+      const up = built.faces[f].up;
+      expect(Math.hypot(...mid.map((x, c) => x - up[c] * (k / 2) * 1.008))).toBeLessThan(1e-5);
+    }
+  });
+});
