@@ -259,7 +259,7 @@ export function documentsFor(entries, target, ctx, ext) {
  * folded, since what they show is already in the scene, and each a section
  * of its own, so each keeps its own fold; its Build (the render doc, in the build controls) and About (its infoUrl,
  * else its nearest group's). The source is the doc's own `sourceUrl`, never
- * what a lens shows instead, so nothing veiled is offered.
+ * what is displayed instead, so nothing veiled is offered.
  * @param {(id: string) => "file" | "built" | "scene" | null} contentOf  what the stage routed an object's content to
  */
 export function inspectorDocuments(contentOf) {

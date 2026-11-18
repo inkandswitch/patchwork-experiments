@@ -73,7 +73,8 @@
   display: flex;
 }
 
-.scene-stage > .stage-edge:empty {
+/* an edge holding nothing but empty parts (the drawer with nothing docked) takes no room */
+.scene-stage > .stage-edge:not(:has(> :not(.stage-edge-part:empty))) {
   display: none;
 }
 

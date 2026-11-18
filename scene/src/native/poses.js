@@ -29,7 +29,6 @@ function playback(h, t) {
 function create(api) {
   const ch = api.channel;
   const rates = new Map(); // caller id → the pose rate it asked for (hz)
-  const mine = new Map(); // caller id → the object ids it holds
   const here = new Map(); // object id → this view's held transform
   const shown = new Map(); // object id → the release of what's displayed for it
   const playing = new Set(); // ids of peers' holds still playing back
@@ -41,7 +40,6 @@ function create(api) {
     parentOf: (id) => api.scene().parents.get(id) ?? null,
     shown: (id, t) => (here.set(id, t), show(id)),
     unshown: (id) => (here.delete(id), show(id)),
-    lost: (ext, id) => mine.get(ext)?.delete(id),
   });
 
   // What an object shows: this view's hold, else a peer's while its parent is
@@ -82,22 +80,17 @@ function create(api) {
 
   function release(ext, id, landed) {
     const t = landed ? api.doc().objects?.[id]?.transform : null;
-    if (holds.release(ext, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined)) mine.get(ext)?.delete(id);
+    holds.release(ext, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined);
   }
   const poses = (caller) => {
     const ext = caller.id;
     tie(caller.signal, () => {
-      for (const id of [...(mine.get(ext) ?? [])]) release(ext, id, false);
+      for (const id of [...here.keys()]) if (holds.holderOf(id) === ext) release(ext, id, false);
       rates.delete(ext);
     });
     return Object.freeze({
       /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
-      hold(id, transform, { yields = false } = {}) {
-        if (caller.signal.aborted || !api.writable() || !holds.hold(ext, id, normalizeTransform(transform), { yields })) return false;
-        if (!mine.has(ext)) mine.set(ext, new Set());
-        mine.get(ext).add(id);
-        return true;
-      },
+      hold: (id, transform, { yields = false } = {}) => !caller.signal.aborted && api.writable() && holds.hold(ext, id, normalizeTransform(transform), { yields }),
       release: (id, { landed = false } = {}) => release(ext, id, landed),
       heldBy: (id, o) => wire.heldBy(id, o),
       /** stream this caller's holds faster than 20 Hz (up to 60), or null for the default */
@@ -113,6 +106,8 @@ function create(api) {
     // the doc changed: a landed hold it caught up with goes, and one whose parent it changed is shown (or not) again
     update: () => [...wire.remoteHolds().keys()].forEach((id) => show(id)),
     tick,
+    /** for probes: peers' holds as this view has them */
+    remoteHolds: () => wire.remoteHolds(),
     dispose: () => wire.dispose(),
   };
 }

@@ -10,7 +10,7 @@
 // selection changes; putting the editor down shuts it; the toolbar's Inspector opens it
 // with nothing selected, on the scene.
 //
-// For an object: name (read-only when a lens names it), Visible, Wireframe,
+// For an object: name (read-only when a displayed name stands in), Visible, Wireframe,
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
 // to (objects), Position (display units, the pref "units"), Rotation (°),
 // Scale. For a group: name, Visible, Opacity, In group. Then its Behaviours
@@ -442,7 +442,6 @@ function create(api) {
   let body = null; // the fields' element (below the tree), while mounted
   let view = null; // the DOM for the current selection: { id, group, renderUrl, …fields }
   let last = null; // { scene, local, name, content } at the last full update
-  let namesQueued = false;
 
   function numberField(label, onCommit) {
     const input = el("input", { type: "number", step: "any", "aria-label": label });
@@ -985,22 +984,9 @@ function create(api) {
     if (fresh) build(id, o);
     last = { scene, local, name, content: ck };
     fill(scene, local, force || fresh);
-    queueNames();
   }
 
   const refreshNow = (force = false) => refresh(here.scene(), now(), force);
-
-  // A lens is applied after the extensions' updates in the same flush, and
-  // doesn't flush again: look at the names once it has.
-  function queueNames() {
-    if (namesQueued) return;
-    namesQueued = true;
-    queueMicrotask(() => {
-      namesQueued = false;
-      if (api.signal.aborted || !view || view.scene || !last) return;
-      if (here.nameOf(view.id) !== last.name) refreshNow();
-    });
-  }
 
   // ─── commands ─────────────────────────────────────────────────────────────
 

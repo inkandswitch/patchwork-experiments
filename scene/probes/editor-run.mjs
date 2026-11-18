@@ -197,7 +197,7 @@ try {
             doc: (await obj("b1")).transform.position,
             bShown: await Bv(`d.viewport.worldOf("b1").slice(12, 15)`),
             aShown: await A(`d.viewport.worldOf("b1").slice(12, 15)`),
-            bHeldBy: await Bv(`d.presence.heldBy?.("b1") ?? null`),
+            bHeldBy: await Bv(`d.host.use("poses", { id: "probe", signal: new AbortController().signal }).heldBy("b1")`),
           };
         },
       });

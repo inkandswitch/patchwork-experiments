@@ -168,7 +168,6 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     applyDisplay: (id, o, parent, inh) => vp.applyDisplay(key(id), o, parent != null ? key(parent) : root, inh),
     removeObject: (id) => vp.removeObject(key(id)),
     contentOf: (id) => vp.contentOf(key(id)),
-    hasPose: (id) => vp.poses.has(key(id)),
     poseOf: (id) => vp.poses.get(key(id)) ?? null,
     get posed() {
       for (const k of vp.poses.keys()) if (mine(k) != null) return true;

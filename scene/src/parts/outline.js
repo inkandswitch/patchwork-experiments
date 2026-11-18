@@ -26,7 +26,7 @@
 //   - Remove runs scene.select's "remove" command when it's running (it owns
 //     the confirm), else remove();
 //   - load and build state comes from local.status (the stage's);
-//   - names come from nameOf (lenses applied);
+//   - names come from nameOf (as displayed);
 //   - peers' selections and hovers come from presence, under "scene.select".
 //
 // Collapsed / expanded is this viewer's alone: localStorage
@@ -723,8 +723,7 @@ export function createOutline(api, { shown = () => true } = {}) {
       }
     }
 
-    // A lens is applied after the extensions' updates in the same pass, so
-    // a name it changes is looked at again just after.
+    // a displayed name changes with no change to the doc
     function refreshNames() {
       const objects = here.scene().objects;
       for (const [id, row] of rows) if (row.li.isConnected && objects[id]) setName(row, id, isGroup(objects[id]));
@@ -733,7 +732,6 @@ export function createOutline(api, { shown = () => true } = {}) {
     const v = {
       rows,
       draw,
-      refreshNames,
       dispose() {
         if (view === v) view = null;
         root.remove();
@@ -746,16 +744,6 @@ export function createOutline(api, { shown = () => true } = {}) {
   /** Draw the view, while it's shown (a shut pane is drawn when it opens). */
   function renderAll() {
     if (isShown()) view.draw();
-  }
-
-  let namesQueued = false;
-  function queueNames() {
-    if (namesQueued) return;
-    namesQueued = true;
-    queueMicrotask(() => {
-      namesQueued = false;
-      if (!api.signal.aborted && isShown()) view.refreshNames();
-    });
   }
 
   // peers' selections and hovers: the focus doc's presence, heard again wherever the focus goes
@@ -789,7 +777,6 @@ export function createOutline(api, { shown = () => true } = {}) {
     draw() {
       renderAll();
       flushReveal();
-      queueNames();
     },
 
     dispose() {

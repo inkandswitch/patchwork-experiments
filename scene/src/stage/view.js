@@ -1525,6 +1525,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const plugins = createHost({
     registry: () => getRegistry("scene:view"),
     makeApi,
+    setTimer: (fn, ms) => time.after(ms, fn),
+    clearTimer: (cancel) => cancel?.(),
     wanted: (metas) => providersFirst(metas.filter((m) => m?.id).map((meta) => ({ id: meta.id, meta, scope: "view" }))),
     onChange: () => {
       if (dead) return;

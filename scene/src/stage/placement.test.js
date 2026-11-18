@@ -112,9 +112,6 @@ async function view(repo, handle) {
   return el.querySelector(".scene-stage").__sceneDebug.view;
 }
 
-/** What a stage displays for a card: its face's name, the veil, or as the doc has it (null). */
-const shownAs = (d) => (!d ? null : d.content instanceof Uint8Array ? { veil: true } : { name: d.name });
-
 /** What I4 says is G's own, as one of G's stages has it. */
 function seen(st) {
   const api = st.debug.host.record("t.table").api;
@@ -125,7 +122,7 @@ function seen(st) {
     running: st.debug.host.running().map((r) => r.id).sort(),
     // the doc's clock, and the stage's own reading of it (its t moves with each view's frames, so only whether it runs)
     clock: { doc: readClock(st.doc()).running, api: api.use("clock").running() },
-    cards: ["h1", "h2", "t"].map((id) => [id, api.use("audience").audience(id), api.use("audience").shown(id), shownAs(st.debug.displayed().get(id))]),
+    cards: ["h1", "h2", "t"].map((id) => [id, api.use("audience").audience(id), api.use("audience").shown(id), ((d) => (!d ? null : d.content instanceof Uint8Array ? { veil: true } : { name: d.name }))(st.debug.displayed().get(id))]),
   });
 }
 

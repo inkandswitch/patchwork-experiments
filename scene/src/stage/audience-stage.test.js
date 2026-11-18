@@ -209,12 +209,10 @@ describe("the veil", () => {
     await settle();
     state.veil();
     await settle();
-    expect(drawn(s)).toBeInstanceOf(Uint8Array);
-    expect(s.debug.queue.has("card")).toBe(false);
+    expect([drawn(s) instanceof Uint8Array, s.debug.queue.has("card")]).toEqual([true, false]);
     state.api.display("card", { content: SRC });
     await settle();
-    expect(drawn(s)).toBe(SRC);
-    expect(s.debug.queue.state("card")?.url).toBe(SRC);
+    expect([drawn(s), s.debug.queue.state("card")?.url]).toEqual([SRC, SRC]);
   });
 
   it("with no hint to go by, it is still drawn (a default box), never the thing itself", async () => {
@@ -223,7 +221,6 @@ describe("the veil", () => {
     await settle();
     state.veil();
     await settle();
-    expect(drawn(s)).toBeInstanceOf(Uint8Array);
-    expect(s.debug.queue.has("card")).toBe(false);
+    expect([drawn(s) instanceof Uint8Array, s.debug.queue.has("card")]).toEqual([true, false]);
   });
 });

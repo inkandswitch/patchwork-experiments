@@ -75,22 +75,23 @@ function fakeClock() {
   };
 }
 
-/** A bus of wires whose messages wait in a queue until deliver(): what's sent before then is concurrent. */
-function queuedBus() {
+/** A bus of wires whose messages wait in a queue until deliver() (what's sent before then is concurrent), or go at once; `log` is everything sent. */
+function queuedBus({ atOnce = false } = {}) {
   const wires = [];
   const queue = [];
-  const make = (session, opts) => {
-    const w = createWire({ send: (data) => queue.push({ from: w, session, data: structuredClone(data) }), session: () => session, ...opts });
+  const log = [];
+  const make = (session, opts, viewer = session) => {
+    const w = createWire({ send: (data) => (log.push({ session, data }), queue.push({ from: w, session, viewer, data: structuredClone(data) }), atOnce && deliver()), session: () => session, ...opts });
     wires.push(w);
     return w;
   };
   function deliver() {
     while (queue.length) {
-      const { from, session, data } = queue.shift();
-      for (const w of wires) if (w !== from) w.receive(data, { session, viewer: session });
+      const { from, session, viewer, data } = queue.shift();
+      for (const w of wires) if (w !== from) w.receive(data, { session, viewer });
     }
   }
-  return { make, deliver };
+  return { make, deliver, log };
 }
 
 const OBJ = "hull";
@@ -224,28 +225,16 @@ describe("H6: one holder per object, by (a person's before a yielding one, then 
 // a (session sa, viewer alice) and b (sb, bob): what one sends the other
 // hears at once; everything sent is logged.
 
-let clock, log, a, b, rates;
-const sent = (from) => log.filter((l) => l.from === from).map((l) => l.data);
+let clock, bus, a, b, rates;
+const sent = (from) => bus.log.filter((l) => l.session === `s${from.toLowerCase()}`).map((l) => l.data);
 
 beforeEach(() => {
   clock = fakeClock();
-  log = [];
+  bus = queuedBus({ atOnce: true });
   rates = new Map(); // a's callers' pose rates
-  const wires = {};
-  const make = (name, session, viewer, o = {}) =>
-    (wires[name] = createWire({
-      send: (data) => {
-        log.push({ from: name, data });
-        for (const [other, w] of Object.entries(wires)) if (other !== name) w.receive(structuredClone(data), { session, viewer });
-      },
-      session: () => session,
-      now: clock.now,
-      setTimer: clock.setTimer,
-      clearTimer: clock.clearTimer,
-      ...o,
-    }));
-  a = make("A", "sa", "alice", { interval: () => poseInterval(rates.values()) });
-  b = make("B", "sb", "bob");
+  const opts = { now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer };
+  a = bus.make("sa", { ...opts, interval: () => poseInterval(rates.values()) }, "alice");
+  b = bus.make("sb", opts, "bob");
 });
 
 describe("pose holds", () => {
@@ -392,14 +381,6 @@ describe("pose holds", () => {
     a.release("hand", "o1");
     b.receive(first, { session: "sa", viewer: "alice" }); // replayed late
     expect(b.heldBy("o1")).toBe(null);
-  });
-
-  it("clearing an extension puts its holds back", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.hold("halo", "o2", null, T(1));
-    a.clear("hand");
-    expect(b.heldBy("o1")).toBe(null);
-    expect(b.heldBy("o2")).toBe("sa");
   });
 
   it("a peer gone (a bye) ends its holds", () => {

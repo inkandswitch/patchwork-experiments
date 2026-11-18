@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAtom } from "./atom.js";
 import { createHost, mergeOrder, LINGER_MS, BUSY_RECHECK_MS } from "./host.js";
 import { fakeTimers, flush } from "../test/fake-repo.js";
+import { PACKAGE_FIND_MS } from "./packages.js";
 
 // A registry of plugin metadata whose modules come from `mods` (id → module),
 // with a per-id load delay so start order can differ from running order.
@@ -302,4 +303,20 @@ describe("the host", () => {
       host.dispose();
     }
   }, 120_000);
+});
+
+describe("a provider whose module never arrives", () => {
+  it("counts as failed after the packages' load timeout: what waits on it starts, and finds no service", async () => {
+    const [t, log, metas] = [quickTimers(), [], [{ id: "svc", traits: ["*"], provides: ["svc"] }, { id: "user", traits: ["*"] }]];
+    let got;
+    const mods = { svc: mod("svc", log, { provides: { svc: () => ({}) } }), user: mod("user", log, (api) => ((got = api.use("svc")), {})) };
+    const host = createHost({ registry: () => registry(metas, mods, { svc: new Promise(() => {}) }), makeApi: (rec) => ({ api: { use: (n) => host.use(n, rec) }, release() {} }), setTimer: t.setTimeout, clearTimer: t.clearTimeout });
+    host.sync({});
+    await settle();
+    await t.advance(PACKAGE_FIND_MS - 1);
+    expect(log).toEqual([]);
+    await t.advance(1);
+    expect([log, got, host.failed()]).toEqual([["create:user"], null, ["svc"]]);
+    await host.providersStarted();
+  });
 });

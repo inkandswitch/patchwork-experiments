@@ -1,30 +1,18 @@
 // Pose holds (STAGE.md, "Holding a pose"): the one order they go in, the
-// holds of one view, and the wire that tells the others (scene.poses'
-// sends, ./poses.js).
+// holds of one view, and the wire that tells the others (scene.poses' sends).
 //
 // An object has at most one holder in a view, and every view agrees on one
-// across them. Holds are ranked by (a person's before a yielding one, then
-// `since`): `ranksAhead`, the same everywhere. A yielding hold
-// is a process's that gives way to a person: a hull nobody steers, a door
-// closing itself. So:
-//
-// - here, a hold by another extension stands unless it yields and the new
-//   one doesn't: a person takes an object from a process, never the other
-//   way, and of two of a kind the first stays (no silent last-hold-wins);
-// - across views, a hold is refused while a peer's ranks ahead of it
-//   (wire.heldBy), and one this view has is dropped as soon as a peer's
-//   does (reconcile), so its holder's next hold is refused.
-//
-// hold() says whether the hold stands. A refused hold changes nothing, and
-// the extension that lost an object it held hears of it through `lost`.
+// across them, ranked by (a person's before a yielding one, then `since`):
+// `ranksAhead`. A yielding hold is a process's that gives way to a person (a
+// hull nobody steers). Here, a hold by another extension stands unless it
+// yields and the new one doesn't, and of two of a kind the first stays;
+// across views, a hold is refused while a peer's ranks ahead (wire.heldBy),
+// and one this view has is dropped as soon as a peer's does (reconcile).
 // Nothing here draws: `shown` and `unshown` are the plugin's.
 //
-// The wire: a held object and where it is right now go out at most once per
-// send interval per object, stamped with the sender's clock and its
-// interval, and `yields` when it is a process's hold. Peers keep the last few
-// as timed samples and play them back smoothly (smooth.js). A release either
-// puts it back or says where it landed. A hold without its `since` stamp is
-// ignored. Time comes in through now / setTimer / clearTimer.
+// The wire sends a held pose at most once per interval per object, stamped
+// with the sender's clock; peers keep the last few as samples to play back
+// (smooth.js). A release puts it back or says where it landed.
 
 import { addSample, clockOffset, playoutDelay } from "./smooth.js";
 
@@ -166,8 +154,6 @@ export function createHolds({ presence, exists, parentOf, shown = () => {}, unsh
     reconcile,
     /** the extension holding this object here, or null */
     holderOf: (id) => local.get(id)?.ext ?? null,
-    /** does this view's hold on it yield? (null: none) */
-    yieldsOf: (id) => (local.has(id) ? local.get(id).yields : null),
     has: (id) => local.has(id),
   };
 }
@@ -279,26 +265,12 @@ export function createWire({ send, session, interval = () => POSE_MS, now = () =
   function remoteHolds() {
     if (!view) {
       view = new Map();
+      // each object's winner, with what playing it back needs: its timed samples (sender's clock), its send interval, and our clock minus the sender's
       for (const [id, bySession] of holds) {
         const w = winningHold(bySession.values());
-        if (w)
-          view.set(
-            id,
-            Object.freeze({
-              session: w.session,
-              viewer: w.viewer,
-              parent: w.parent,
-              transform: w.transform,
-              landed: w.landed,
-              since: w.since,
-              yields: w.yields,
-              // for playing it back: the timed samples (sender's clock), its
-              // send interval, and our clock minus the sender's
-              samples: w.samples,
-              every: w.every,
-              offset: offsets.get(w.session) ?? 0,
-            }),
-          );
+        if (!w) continue;
+        const { timer: _timer, ...h } = w;
+        view.set(id, Object.freeze({ ...h, offset: offsets.get(w.session) ?? 0 }));
       }
     }
     return view;
@@ -440,8 +412,6 @@ export function createWire({ send, session, interval = () => POSE_MS, now = () =
   return {
     hold,
     release,
-    /** put back every hold of an extension's */
-    clear: (ext) => [...held.values()].filter((h) => h.ext === ext).forEach((h) => release(ext, h.id)),
     remoteHolds,
     shownAt,
     heldBy,

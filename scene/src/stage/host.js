@@ -12,7 +12,7 @@
 //
 // One stop rule (H2): an extension the doc no longer calls for lingers for
 // LINGER_MS, and for as long as it's busy (a body entered, the held tool, an
-// open session, a pose hold), so nobody's game is torn down under them by a
+// open session), so nobody's game is torn down under them by a
 // peer's edit. One still loading stops at once, having acquired nothing, and
 // so does one whose plugin left the registry (there is no code to keep).
 //
@@ -21,6 +21,7 @@
 // loading in never counts.
 
 import { activeSet } from "./activation.js";
+import { PACKAGE_FIND_MS } from "./packages.js";
 
 /** How long an extension the doc no longer calls for keeps running. */
 export const LINGER_MS = 2_000;
@@ -112,10 +113,11 @@ const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.eve
  *   local?: { get(): object, swap(fn): object }, // the stage's local atom (local.running out)
  *   wanted?: (metas: object[], doc: object) => { id, meta, scope }[],  // the running set (activeSet)
  *   makeApi: (rec: object) => { api: object, release: () => void },
- *   busy?: (id: string) => boolean,             // a body entered, the held tool, an open session or a pose hold
+ *   busy?: (id: string) => boolean,             // a body entered, the held tool or an open session
  *   onChange?: () => void,                      // an extension started or stopped
  *   first?: () => any,                          // awaited before each create (a stage: the view's providers started)
  *   lingerMs?: number,
+ *   loadMs?: number,                            // how long a provider may take to start before it counts as failed
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (t: any) => void,
  * }} o
@@ -127,6 +129,7 @@ export function createHost({
   busy = () => false,
   onChange = () => {},
   lingerMs = LINGER_MS,
+  loadMs = PACKAGE_FIND_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
   wanted = (metas, d) => activeSet({ metas, doc: d }),
@@ -197,6 +200,13 @@ export function createHost({
     })().catch((err) => {
       if (rec.state === "loading") rec.state = "failed";
       console.warn(`[scene] extension “${w.id}” failed to start`, err);
+    });
+    // a provider not started within the load timeout (its import never settled) counts as failed: nothing waits on it longer
+    if (!listOf(w.meta?.provides).length) return;
+    let timer = null;
+    rec.started = Promise.race([rec.started, new Promise((r) => (timer = setTimer(r, loadMs)))]).then(() => {
+      clearTimer(timer);
+      if (rec.state === "loading") (rec.state = "failed"), console.warn(`[scene] extension “${w.id}” didn't start in ${loadMs} ms`);
     });
   }
 

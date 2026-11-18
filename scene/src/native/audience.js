@@ -93,41 +93,29 @@ function create(api) {
     if (!s.ready || s.failed.length) return null;
     const snap = api.scene();
     if (!snap.objects[id]) return [];
-    const warn = (ext, err) => (console.warn(`[scene] extension “${ext}”: audience failed`, err), [CLOSED]);
     return api.collect("audience").flatMap(({ id: ext, value }) => {
       if (typeof value !== "function") return [];
-      let p = asked.get(value);
-      if (!p || p.scene !== snap) {
-        let fn;
-        try {
-          fn = value(snap);
-        } catch (err) {
-          fn = () => warn(ext, err)[0];
-        }
-        asked.set(value, (p = { scene: snap, fn: typeof fn === "function" ? fn : null }));
-      }
-      if (!p.fn) return [];
       try {
-        return [p.fn(id) ?? null];
+        let p = asked.get(value);
+        if (p?.scene !== snap) asked.set(value, (p = { scene: snap, fn: value(snap) }));
+        return typeof p.fn === "function" ? [p.fn(id) ?? null] : [];
       } catch (err) {
-        return warn(ext, err);
+        console.warn(`[scene] extension “${ext}”: audience failed`, err);
+        return [CLOSED];
       }
     });
   }
-  const merged = (merge) => (id) => {
-    const a = answers(id);
-    return a ? merge(a) : null;
-  };
+  const merged = (merge) => (id) => ((a) => a && merge(a))(answers(id));
 
   // The veil: a frosted box with a padlock drawn from the object's bounds
   // alone (veil.js), in place of its content, none of which loads, while any
   // caller veils it.
-  const veils = new Map(); // object id → { callers: Set, key, bytes }
+  const veils = new Map(); // object id → { n: callers veiling it, key, release }
   const drawings = new Map(); // veilKey → its GLB
   function draw(id, v) {
     const o = api.scene().objects[id];
     if (!o) return;
-    const b = veilBounds(o?.hint?.bounds) ?? veilBounds(api.loadState(id)?.bounds) ?? veilBounds(api.content(id)?.box) ?? DEFAULT_BOUNDS;
+    const b = veilBounds(o.hint?.bounds) ?? veilBounds(api.loadState(id)?.bounds) ?? veilBounds(api.content(id)?.box) ?? DEFAULT_BOUNDS;
     const k = veilKey(b);
     if (v.key === k) return;
     v.key = k;
@@ -136,17 +124,11 @@ function create(api) {
   }
   function veil(caller, id) {
     if (caller.signal.aborted || !api.scene().objects[id]) return () => {};
-    if (!veils.has(id)) veils.set(id, { callers: new Set(), key: null, release: null });
-    const v = veils.get(id);
-    const me = {};
-    v.callers.add(me);
+    const v = veils.get(id) ?? { n: 0, key: null, release: null };
+    veils.set(id, v);
+    v.n++;
     draw(id, v);
-    return tie(caller.signal, () => {
-      v.callers.delete(me);
-      if (v.callers.size || veils.get(id) !== v) return;
-      veils.delete(id);
-      v.release?.();
-    });
+    return tie(caller.signal, () => --v.n || veils.get(id) !== v || (veils.delete(id), v.release?.()));
   }
 
   return {

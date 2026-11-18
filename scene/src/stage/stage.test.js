@@ -419,27 +419,20 @@ describe("the stage, mounted", () => {
   it("display: overrides layer in running order, later per field; again replaces the caller's own; nameOf shows them; release (or stopping) restores", async () => {
     const m = mount(newScene({ traits: { "t.scene": {} }, objects: { a: card(), b: card() }, order: ["a", "b"] }));
     await settle();
-    const [early, late] = [exts["t.scene"].api, exts["t.always"].api];
-    const T = { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 };
+    const [early, late, T] = [exts["t.scene"].api, exts["t.always"].api, { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 }];
     // t.always runs after t.scene: its fields win, whoever called first
     late.display("a", { name: "Late", hidden: true });
     const off = early.display("a", { name: "Early", transform: T });
-    early.display("b", { name: "B!" });
-    expect(early.nameOf("a")).toBe("Late");
-    expect(m.debug.displayed().get("a")).toEqual({ name: "Late", hidden: true, transform: T });
-    expect(m.debug.viewport.poses.get("a")).toEqual(T);
+    expect([early.nameOf("a"), m.debug.displayed().get("a"), m.debug.viewport.poses.get("a")]).toEqual(["Late", { name: "Late", hidden: true, transform: T }, T]);
     // again from the same extension replaces its override; the old release is spent
-    const again = early.display("a", { name: "Early again" });
+    const again = early.display("a", { transform: { ...T, scale: 2 } });
     off();
-    expect(m.debug.displayed().get("a")).toEqual({ name: "Late", hidden: true });
-    expect(m.debug.viewport.poses.has("a")).toBe(false);
+    expect(m.debug.viewport.poses.get("a").scale).toBe(2);
     again();
-    expect(early.nameOf("b")).toBe("B!");
-    expect(early.nameOf("zz")).toBeNull();
+    expect([m.debug.displayed().get("a"), m.debug.viewport.poses.has("a"), early.nameOf("zz")]).toEqual([{ name: "Late", hidden: true }, false, null]);
     uninstall("t.always");
     await settle();
-    expect(early.nameOf("a")).toBe("Card");
-    expect([...m.debug.displayed().keys()]).toEqual(["b"]);
+    expect([early.nameOf("a"), m.debug.displayed().size]).toEqual(["Card", 0]);
   });
 
   it("ambients: the running extensions' offers stacked per name in running order, the later whole; the atmosphere among them is the viewport's; gone when its giver stops", async () => {
