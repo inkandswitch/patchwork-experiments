@@ -372,7 +372,7 @@ try {
     // the play probe: a body entered (Look), the use prompt's verbs, the controls panel, the seat the roster says this view sits in
     enter: (w, body) => dbg[w].host.running().map((r) => dbg[w].host.record(r.id)?.api).find((a) => a?.body?.enter)?.body.enter(body) ?? null,
     /** pick up the editor or put it down (a hand, not a body), and whether view w holds it */
-    edit: (w, on) => dbg[w].view.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: on }),
+    edit: (w, on) => dbg[w].view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: on }),
     editing: (w) => (dbg[w].local.get().hands ?? []).some((h) => h.kind === "edit"),
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((v) => { const r = v.getBoundingClientRect(); return { text: v.textContent.trim(), disabled: v.disabled, title: v.title, x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
     controls: (w) => { const c = hosts[w].querySelector(".machine-controls"); const keys = c?.querySelector(".machine-controls-keys"); return c && !c.hidden ? { title: c.querySelector(".machine-controls-title")?.textContent, rows: [...c.querySelectorAll(".machine-controls-key")].map((k) => [[...k.querySelectorAll("kbd")].map((x) => x.textContent).join(""), k.querySelector(":scope > span")?.textContent]), foot: c.querySelector(".machine-controls-foot")?.textContent, folded: c.classList.contains("folded"), keysShown: !!keys && getComputedStyle(keys).display !== "none", box: (({ left, top, right, bottom }) => [left, top, right, bottom])(c.getBoundingClientRect()) } : null; },

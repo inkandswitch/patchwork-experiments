@@ -72,7 +72,7 @@ const state = async () => ({ body: (await P("body('a')")).id, stack: (await P("b
 // "in Edit": Look, holding the editor (a hand, not a body: scene HISTORY.md, Kernel step 1)
 const inEdit = (s) => s.body === "look" && s.editing === true;
 const editOver = async () => {
-  await js(`(__p.A.view.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: true }), true)`);
+  await js(`(__p.A.view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: true }), true)`);
   await b.rest(200);
   await P("setCam('a', __p.overTable('a'))");
   await b.rest(300);
