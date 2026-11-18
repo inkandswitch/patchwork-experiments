@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import { translate, tableHeight } from "./translate.js";
 import { convertRotation, sceneRotationMatrix } from "./convert.js";
 import { validate, errorText } from "../../contract/v2/validate.js";
+import { applyRecipe } from "../../contract/v2/recipe.js";
 
 const save = (objects, extra = {}) => ({ saveName: "S", gameMode: "", table: "", tableURL: "", note: "", rules: "", snapPoints: [], objects, ...extra });
 const node = (name, more = {}) => ({ path: "0", guid: "", name, kind: more.kind, nickname: "", description: "", transform: { posX: 0, posY: 1, posZ: 0, rotX: 0, rotY: 0, rotZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1, ...(more.transform ?? {}) }, color: null, locked: false, tags: [], mesh: null, image: null, customDeck: null, cardId: null, deckIds: null, pdf: null, number: 1, rotationValues: null, snapPoints: [], handColor: null, contents: [], states: [], children: [], ...more });
@@ -113,5 +114,65 @@ describe("the table top", () => {
     expect(tableHeight([node("Custom_Model", { kind: "model" })])).toBe(0.96);
     // a card lies by its middle: its foot is half its thickness down
     expect(tableHeight([card(100)].map((c) => ({ ...c, transform: { ...c.transform, posY: 1.01 } })))).toBe(1);
+  });
+});
+
+describe("a setup recipe from what a mod's data says (GAME-FORMAT.md §6)", () => {
+  const T = (x, z, more = {}) => ({ posX: x, posY: 1, posZ: z, ...more });
+  const hand = (color, x) => node("HandTrigger", { kind: "zone", guid: `h-${color}`, handColor: color, transform: T(x, -12, { posY: 3, scaleX: 10, scaleY: 4, scaleZ: 3 }) });
+  const token = (guid, x, z) => node("Custom_Token", { kind: "token", guid, nickname: guid, image: { ImageURL: "https://x/t.png", CustomToken: { Thickness: 0.2 } }, transform: T(x, z) });
+  /** A memory bag: these tokens inside, and where it saved each (TTS position, degrees). */
+  const memoryBag = (guid, nickname, x, saved) =>
+    node("Custom_Model_Bag", { kind: "bag", guid, nickname, transform: T(x, 20), contents: saved.map(([g]) => token(g, 0, 0)), memory: Object.fromEntries(saved.map(([g, px, pz]) => [g, { position: [px, 1, pz], rotation: [0, 90, 0] }])) });
+
+  it("how many play: a seat for each hand, the last in TTS's colour order left out for fewer, as few as PlayerCounts says", () => {
+    const { game } = translate(save([hand("Blue", 10), hand("White", -10), hand("Red", 0)], { playerCounts: [2, 3] }), { file: files });
+    expect(game.recipe.options).toEqual([{ key: "players", label: "Players", kind: "integer", min: 2, max: 3, default: 3 }]);
+    expect(game.recipe.layout).toEqual([{ remove: { seat: "blue" }, unless: "players >= 3" }]);
+    expect(validate(game).ok).toBe(true);
+    // one hand: nothing to choose
+    expect(translate(save([hand("White", 0)]), { file: files }).game.recipe).toBeUndefined();
+  });
+
+  it("a memory bag: its things named and placed where it saved them, out of the bag; bags laying out one spot are one choice, others each a yes or no", () => {
+    const bags = [
+      memoryBag("aaa111", "Heroes", 0, [["t1", 0, 0], ["t2", 4, 0]]),
+      memoryBag("bbb222", "Villains", 5, [["t3", 4.5, 0.5]]), // over t2's spot: the same place
+      memoryBag("ccc333", "Loot", 10, [["t4", 30, 30]]), // somewhere else
+    ];
+    bags[0].contents.push(token("stray", 0, 0)); // in the bag, no saved place: stays a bag's thing
+    const { game } = translate(save(bags), { file: files });
+    expect(game.recipe.options).toEqual([
+      { key: "layout", label: "Lay out", kind: "enum", options: [{ value: "none", label: "Nothing" }, { value: "aaa111", label: "Heroes" }, { value: "bbb222", label: "Villains" }], default: "none" },
+      { key: "layout2", label: "Lay out “Loot”", kind: "boolean", default: false },
+    ]);
+    expect(game.recipe.layout.map((s) => [Object.keys(s.place), s.when])).toEqual([
+      [["tts-t1", "tts-t2"], "layout == aaa111"],
+      [["tts-t3"], "layout == bbb222"],
+      [["tts-t4"], "layout2"],
+    ]);
+    // the place is the thing's as if it lay there (metres, mirrored z, its turn), on the table
+    const t2 = game.recipe.layout[0].place["tts-t2"];
+    expect(t2.position[0]).toBeCloseTo(4 * 0.0254, 6);
+    expect(game.recipe.layout[1].place["tts-t3"].position[2]).toBeCloseTo(-0.5 * 0.0254, 6);
+    expect(t2.rotation[1]).toBeCloseTo(-Math.PI / 2, 5);
+    expect(t2.position[1]).toBeGreaterThanOrEqual(0);
+    const heroes = game.setup.find((t) => t.contents?.some((c) => c.id === "tts-t1"));
+    expect(heroes.contents.map((c) => c.id ?? "unnamed")).toEqual(["tts-t1", "tts-t2", "unnamed"]);
+    expect(heroes.contents.every((c) => c.at === undefined)).toBe(true);
+    expect(validate(game).ok).toBe(true);
+    // laid out as Heroes: those two on the table, the stray still in the bag
+    const laid = applyRecipe(game, { layout: "aaa111" });
+    expect(laid.setup.filter((t) => /^tts-t/.test(t.id ?? "")).map((t) => t.id)).toEqual(["tts-t1", "tts-t2"]);
+    expect(laid.setup.find((t) => t.contents?.length === 1).contents[0].id).toBeUndefined();
+  });
+
+  it("face-down decks: shuffled when the game starts if whoever starts it chooses, never otherwise", () => {
+    const down = node("Deck", { kind: "deck", guid: "d1", contents: [card(100), card(101)], customDeck: DECK, transform: { rotZ: 180 } });
+    const up = node("Deck", { kind: "deck", guid: "d2", contents: [card(102), card(103)], customDeck: DECK, transform: { posX: 5 } });
+    const { game } = translate(save([down, up]), { file: files });
+    expect(game.recipe).toEqual({ options: [{ key: "shuffle", label: "Shuffle the face-down decks when the game starts", kind: "boolean", default: false }], start: [{ shuffle: "tts-d1", when: "shuffle" }] });
+    expect(applyRecipe(game).recipe.start).toEqual([]);
+    expect(applyRecipe(game, { shuffle: true }).recipe.start).toEqual([{ shuffle: "tts-d1" }]);
   });
 });

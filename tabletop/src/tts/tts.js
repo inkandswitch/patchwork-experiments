@@ -2,7 +2,9 @@
 //
 // Field names are checked against real saves (TTS v14, the Workshop folder of
 // a real install) and the KB's save-file-format page. Scripting is ignored on
-// purpose: LuaScript, LuaScriptState and XmlUI are never read.
+// purpose: LuaScript and XmlUI are never read, and of LuaScriptState only a
+// memory bag's saved layout (`{ ml: { [guid]: { position, rotation, lock } } }`,
+// MrStump's Memory Bag and its many copies): data, never code.
 //
 //   { SaveName, GameMode, Table, TableURL, SnapPoints: [SnapPoint], ObjectStates: [Object] }
 //   Object = { GUID, Name, Nickname, Description, Transform, ColorDiffuse, Locked, Tags,
@@ -73,6 +75,7 @@ export function readObject(o, path = "0") {
     rotationValues: Array.isArray(o?.RotationValues) ? o.RotationValues : null,
     snapPoints: Array.isArray(o?.AttachedSnapPoints) ? o.AttachedSnapPoints.map(readSnapPoint) : [],
     handColor: str(o?.FogColor) || null, // HandTrigger: the seat's colour
+    memory: memoryOf(o?.LuaScriptState), // a memory bag's saved layout, or null
     contents: [],
     states: [],
     children: [],
@@ -84,7 +87,29 @@ export function readObject(o, path = "0") {
   return node;
 }
 
-/** A save / mod JSON (object or text) → { saveName, gameMode, table, tableURL, note, rules, snapPoints, objects }. Throws if it isn't one. */
+/**
+ * A memory bag's saved layout, from its script state: guid → { position, rotation } (TTS's frame, degrees),
+ * or null when the state isn't one (any other script's, or none).
+ */
+export function memoryOf(state) {
+  if (typeof state !== "string" || !state.includes('"ml"')) return null;
+  let ml;
+  try {
+    ml = JSON.parse(state)?.ml;
+  } catch {
+    return null;
+  }
+  if (!ml || typeof ml !== "object" || Array.isArray(ml)) return null;
+  const vec = (v) => (v && typeof v === "object" ? [num(v.x), num(v.y), num(v.z)] : null);
+  const out = {};
+  for (const [guid, e] of Object.entries(ml)) {
+    const position = vec(e?.position);
+    if (position) out[guid] = { position, rotation: vec(e?.rotation) ?? [0, 0, 0] };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** A save / mod JSON (object or text) → { saveName, gameMode, table, tableURL, note, rules, playerCounts, snapPoints, objects }. Throws if it isn't one. */
 export function readSave(input) {
   const j = typeof input === "string" ? JSON.parse(input) : input;
   if (!j || typeof j !== "object" || !Array.isArray(j.ObjectStates)) throw new Error("not a Tabletop Simulator save: no ObjectStates");
@@ -96,6 +121,8 @@ export function readSave(input) {
     // the save's own words: its notebook's note and its rules text (plain text, if any)
     note: str(j.Note),
     rules: str(j.Rules),
+    // how many play, as the mod says ([min, max]), or null
+    playerCounts: Array.isArray(j.PlayerCounts) && j.PlayerCounts.length === 2 && j.PlayerCounts.every((n) => Number.isInteger(n) && n > 0) ? [...j.PlayerCounts] : null,
     snapPoints: Array.isArray(j.SnapPoints) ? j.SnapPoints.map(readSnapPoint) : [],
     objects: j.ObjectStates.map((o, i) => readObject(o, String(i))),
   };

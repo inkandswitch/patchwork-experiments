@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { runImport, source } from "./importer.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { validate, errorText } from "../../contract/v2/validate.js";
+import { applyRecipe } from "../../contract/v2/recipe.js";
 
 const MODS = join(homedir(), "Library", "Tabletop Simulator", "Mods");
 /**
@@ -73,4 +74,32 @@ describe.skipIf(!present.length)(`real mods from the TTS cache (${present.length
       console.log(`${c.name}: ${report.counts.placed} placed, ${report.counts.pieces} pieces, ${report.counts.cards} cards in ${report.counts.decks} decks, ${report.counts.bags} bags, ${report.counts.dice} dice, ${report.counts.seats} seats; assets ${a.cache}/${a.needed} from the cache`);
     }, 120_000);
   }
+});
+
+// Earthborne Rangers Demo's setup is in its memory bags (MrStump's script: each bag's state saves where
+// every card in it goes): imported, a choice of which to lay out, and how many play.
+const DEMO = join(MODS, "Workshop", "2899603882.json");
+describe.skipIf(!existsSync(DEMO))("Earthborne Rangers Demo: its memory bags as the recipe's layout", () => {
+  it("lays out the pre-made rangers for two: twelve things out of their bag, where it saved them, on two seats", async () => {
+    const repo = new FakeRepo();
+    const { game } = await runImport({ sources: [source("Mods/Workshop/2899603882.json", statSync(DEMO).size, async () => new Uint8Array(readFileSync(DEMO)))], repo, settings: {} });
+    const [players, layout, shuffle] = game.recipe.options;
+    expect(players).toEqual({ key: "players", label: "Players", kind: "integer", min: 1, max: 4, default: 4 });
+    expect(layout.options.map((o) => o.label)).toEqual(["Nothing", "Specialties", "Backgrounds", "Personalities", "Aspects", "Rewards", "Pre-made Rangers"]);
+    expect(shuffle.key).toBe("shuffle");
+    expect(validate(game).ok).toBe(true);
+    const two = applyRecipe(game, { players: 2, layout: "c9b6a8" });
+    expect(Object.keys(two.seats)).toEqual(["red", "yellow"]);
+    const placed = two.setup.filter((t) => /^tts-/.test(t.id ?? "") && t.at && game.recipe.layout.some((s) => s.place?.[t.id]));
+    expect(placed).toHaveLength(12);
+    expect(placed.filter((t) => t.deck).map((t) => t.deck.cards.length)).toEqual([30, 30, 30, 30]);
+    // out of their bag: the bags hold twelve fewer things
+    const held = (g) => g.setup.reduce((n, t) => n + (t.contents?.length ?? 0), 0);
+    expect(held(two)).toBe(held(game) - 12);
+    // each where its bag saved it, none on another
+    const spots = placed.map((t) => t.at.position.map((v) => v.toFixed(3)).join());
+    expect(new Set(spots).size).toBe(12);
+    // and as it was, with nothing chosen: every card in its bag
+    expect(applyRecipe(game).setup.filter((t) => /^tts-/.test(t.id ?? "") && t.at && !t.deck?.faceDown)).toHaveLength(0);
+  }, 60_000);
 });
