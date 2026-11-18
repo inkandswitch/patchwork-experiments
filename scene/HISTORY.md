@@ -712,3 +712,36 @@ presence rate (sailing asks both). Also from the 4b review: a view or doc
 provider not started within the packages' load timeout counts as failed, so
 no stage waits on it for ever; the right edge with only the empty drawer
 takes no room.
+
+### 2026-11-17 — Kernel step 6: links leave the kernel
+
+PLANS.md step 6. The view expanded links, kept their roles, fixed them,
+named the trail and announced linked docs. Now the kernel keeps a tree of
+stages and one way to grow it: `api.open(handle, { under: [stagePath, id],
+acting, heads?, deps? })` → close, on the view-plugin api (`heads`: a pin,
+read-only through readonly.js; `close.reached`: what its repo found). A
+stage under an object is its content (a `content: "scene"` source is drawn
+as its hint without one); closing one closes what is under it and takes the
+focus out; one that acts is announced. `api.opening()` holds arriving while
+stages are still on their way. Links became `scene.links` (`native/links.js`,
+pure `native/link-graph.js`, I3's tests with it): expansion, roles, pins with
+`deps`, the budget (64), `fixPoint`, relinking on every doc it reached; the
+service `"links"` (`role(id)`, `fixPoint(id)`, the caller's stage's: a
+service caller from a stage now carries its `path`); Enter (`scene.focus`
+folded in) and the trail. `api.link` is gone; walk asks `loadState(id).content
+=== "scene"`. **The focus stays the kernel's**: a path the view holds,
+scoping the selection (H10), where view plugins sit, changed by
+`selectionStep`, Escape's last rung; moving it out would move H10, the
+ladder and `focus()` with it for no fewer lines. Entering is generic (the
+acting stage under an object); only the command, the trail and its names
+moved. **Ambients stay**: `collect(name, { world: true })` would still need
+the frozen-JSON copy (I13: only data crosses docs), `mine`, the frame and
+the outermost's `use` in every reader (sailing, water, weather, arena), so
+more lines, not fewer. Behaviour: the Enter command is `scene.links`'s (the
+inspector's button, the menu: `data-ext`); arriving through a place that holds
+no open stage waits while anything is opening, then is decided by the route,
+not the link shape; a view provider registered before `scene.links` that
+starts slowly delays links. Also from the step 5 review: a label item may
+sit `on: id` at `offset` in that object's drawn frame, placed each frame;
+seat tags, cup tags and bag counts use it instead of re-anchoring by hand
+(`scene.bounds` still redraws its boxes in `afterRender`, so it keeps it).

@@ -14,40 +14,25 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 | **Stage** | The core, one per open doc: the doc, content, its channel, what is displayed instead, its extensions and their apis. No UI. |
 | **View** | One per mounted tool, shared by its stages: the DOM, viewport, input router, body stack, hand stack, selection and hover (as paths), one presence session, its view plugins. |
 | **View plugin** | A `scene:view`: runs once per view, whatever the focus; works on the focus stage through `api.focus()`. |
-| **Link** | An object whose source is a scene doc (`providerId: "scene.link"`). The view opens a stage for that doc in the link's frame. Live without `at`; pinned with it. |
+| **Link** | An object whose source is a scene doc (`providerId: "scene.link"`); `scene.links` opens a stage for that doc in its frame ("Native services"). |
 | **Pin** | A stage that is drawn and never acts: a doc at fixed heads. Read-only. |
-| **Closed link** | A link the view opens no stage for, drawn as its hint. |
-| **Focus** | The path of links the viewer has entered (`[]` until **Enter**; **Leave** goes out one). The view's alone. |
+| **Focus** | The path of the acting stage the viewer has entered (`[]` until **Enter**; **Leave** goes out one). The view's alone. |
 | **Body** | Where a viewer is and how they move and look. One stack per view, Look (the stage's orbit camera) at the bottom. |
 | **Hand** | What a viewer holds: the held tool, a popover, the editor (`scene.edit`'s). One stack per view, offered every event first. |
 | **Selection**, **attention** | One target per view, a path. Attention is the selection, else the look. |
-| **Service** | What a running instance `provides` by name, for others to `use`. Claims, pose holds, the audience, world time, telling, notices, the drawer and prefs are native ones. |
+| **Service** | What a running instance `provides` by name, for others to `use`. Claims, pose holds, the audience, world time, telling, notices, the drawer, prefs and links are native ones. |
 | **Edit** (a write) | The editor's write (`src/parts/editor.js`): undoable, this viewer's, in the focus doc. |
 
 ## Views, stages and links
 
-A view shows one stage per open doc occurrence: the outermost doc's, and one per
-open link, in the link's frame. Everything an api touches is its stage's doc:
-`null` is its root, every id its own (I1, I2).
-
-```js
-// a link
-{ name, sourceUrl: <scene doc url>, providerId: "scene.link", renderUrl: null,
-  parent?, group?, transform, visible, color, opacity, wireframe, locked?,
-  hint: { bounds },        // the room the host gives it, in the link's frame
-  at?: { heads, deps? },   // absent: live; set: pinned
-  traits?, tags? }         // the host's facts about the link
-```
-
-A `scene:source` declares `content: "file"`, `"built"` or `"scene"` (a child
-stage). Dropping a scene doc makes a live link.
-
-**Expansion** (`stage/links.js`, pure; I3). A live doc **acts** at one
-occurrence per view (shallowest, then smallest link id); every other live
-occurrence of it is closed, `"repeat"`. A link with `at` is **pinned**. Closed
-reasons are exactly `"cycle"`, `"repeat"`, `"unavailable"` and `"unpinned"`. At
-most `LINK_BUDGET` stages open. `api.link(id)` → `{ role, open, reason? }`,
-`role` being `"acting"`, `"pinned"` or `"closed"`.
+A view shows a tree of stages: the outermost doc's, and each a view plugin
+opens under an object of another, as that object's content, in its frame:
+`api.open(handle, { under: [stagePath, id], acting?, heads?, deps? })` →
+close. `acting: false` is drawn; `heads` is a pin, the doc at those heads
+(its repo finding docs at `deps`' heads). Closing one closes what is under it.
+A `scene:source` with `content: "scene"` is drawn as its hint until a stage
+is open under it. Everything an api touches is its stage's doc: `null` is
+its root, every id its own (I1, I2).
 
 **Acting and drawn.** A pin is drawn: its extensions run and draw into
 the world, nothing more. No segment, body, tool, command, widget, chrome,
@@ -59,16 +44,12 @@ read-only doc and repo (`stage/readonly.js`): every write is refused, and so is
 every handle its repo gives out (I6). Who may write is the handle's; "can" is
 the thing's (`locked`, `scene.carry`). No grants.
 
-**Fixing a link.** `api.fixPoint(linkId)` → `{ heads, deps }`: the doc's heads
-and those of every doc the pin's docs name by URL. A doc nothing names (a
-player's secret) is never recorded. Follow latest removes `at`.
-
-**The focus.** Enter moves it into a link whose doc acts there; pins and closed
-links can't be entered. Leave is Escape's or the trail's. If the entered
-link stops acting, the focus leaves to the deepest acting stage. The focus
-scopes the selection (H10) and is where the view plugins work, so the editor
-edits the focus doc. It cuts no segment. Focus and selection change only
-through `selectionStep` (`src/selection.js`). No stage sees the focus.
+**The focus.** Enter (`api.view.enter(id)`) moves it into the acting stage
+under an object; Leave is Escape's. A stage that closes takes the focus out
+of it. The focus scopes the selection (H10) and is where the view plugins
+work, so the editor edits the focus doc. It cuts no segment. Focus and
+selection change only through `selectionStep` (`src/selection.js`). No stage
+sees the focus.
 
 **Presence where it is** (I12). A doc's people are drawn where the doc is, by
 parts of every doc (`traits: ["*"]`): `walk.people` and `scene.others`.
@@ -256,6 +237,7 @@ context; `update` on its flush (told afresh after a focus move).
 | as the stage `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `packages`, `overlay`, `edge`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `use` (the view plugins' services, then the focus stage's); `wantPointer()` → release; `camera`, `pick`, `ray`, `project`: in the world; and the view's `url` (the outermost doc's), `viewer` and `session` (no channel of its own) |
 | `view` | the viewer's value whole (`selected`, `hovered`, `focus` as paths; `packages`, `arrived`; each view plugin's own value at its id); `step(ev)` (`src/selection.js`), `set(value)` (its own) |
 | `hand(spec)`, `putDown()`, `offerWidget(type, ev)` | see "Hands"; a hand hears events in the world, each hit with its `path` |
+| `open(handle, o)` → close, `opening()` → release | see "Views, stages and links"; `close.reached`: the docs its repo found; arriving waits while anything is opening |
 | `collect(name)`, `run(inv)`, `path(opts)` | every acting stage's offers, the input path's first, tagged `stage`; `run` in the stage named, else the focus; the input path's readers `{ stage, path, scene, collect, context, attention, look, pointed, run, runs, nameOf, writable, use }` (`pointer: true`, `focus: true`, or `at` a full path) |
 | `focus()` | the focus stage's `api` for it; what it acquires through it goes when the focus leaves (a tool its command holds is put down), the plugin stops or the stage closes |
 
@@ -374,7 +356,7 @@ press on the world only relocks.
 
 ## The interface
 
-View plugins: the **toolbar** (the focus path's commands: the editor's while
+View plugins: the **trail** (`scene.links`: the focus path, each a way out, and Leave), the **toolbar** (the focus path's commands: the editor's while
 editing, `"world"` ones always), the **body chip** (Look, bodies with `here`
 not false, Leave, **Edit**), the **clock chip** (each focus-path stage's
 `"clock"`), the **inspector** (`src/parts/inspector-model.js`), the **use
@@ -407,12 +389,12 @@ extension's.
 | `worldOf(id)` | the drawn matrix, displayed transforms included; `scene().world(id)` is the doc's |
 | `focus(ids)` | load first |
 | `providersFor(url, doc)`, `addObject(url, opts)` | → a change function with its `id`; `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }` |
-| `fixPoint(id)` | the `at` fixing an object at what it shows now |
+| `fixPoint(id)` | the `at` fixing a built object at what it shows now (a link's: `use("links")`) |
 | `view` | `{ get, watch, select, enter, arrive }` |
-| `link(id)`, `collect(name)`, `run(invocation)` | `collect`: this stage's offers, tagged `stage`; `run` in the stage `invocation.stage` names |
+| `collect(name)`, `run(invocation)` | `collect`: this stage's offers, tagged `stage`; `run` in the stage `invocation.stage` names |
 | `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | see "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `THREE`, `world({ onTop? })` | three.js; a `Group` whose meshes are the extension's widgets |
-| `labels()` | `{ set(items) }`; decluttered by `rank`, 2 and up never hide |
+| `labels()` | `{ set(items) }`; decluttered by `rank`, 2 and up never hide; an item `{ key, text, on: id, offset? }` sits at `offset` in that object's drawn frame, each frame |
 | `overlay()`, `edge(side)` | DOM over or beside the canvas; overlay children catch the pointer unless they opt out |
 | `style`, `listen`, `cursor`, `extent(box)`, `invalidate`, `schedule`, `port`, `root` | `port`: the canvas's element; `root`: the view's |
 | `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage renders every frame while a loop runs (WebGL or not); `dt` ≤ 0.1 s; `first` runs before the others |
@@ -421,8 +403,8 @@ extension's.
 
 `display(id, { transform?, content?, hidden?, name? })` → release: how this
 viewer sees an object, unwritten: a local `transform` under its doc parent
-(`worldOf`, boxes and picks follow; moving wakes no update: what follows it
-looks in `afterRender` or a loop), `content` (a file
+(`worldOf`, boxes, picks and labels `on` it follow; moving wakes no update:
+anything else that follows it looks in `afterRender` or a loop), `content` (a file
 doc's URL, or stand-in GLB bytes) drawn instead, `name` for `nameOf`; layered
 in running order, later per field, again replacing the caller's own, kept
 while its object is gone, gone on release or stop. **Dressing** (moving one's objects' `content(id).root` nodes) is only a look.
@@ -455,7 +437,7 @@ keeper has them now.
 | `update(scene, local, prev, view)` | the stage, once per flush when doc, local, view or what's shown changed |
 | `audience(scene)`, `ambient()` | see "Audience", "Ambients" |
 | `input`, `bodies`, `commands` | see "The input chain", "Bodies", "A command" |
-| `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`; `caller` is `{ id, signal }`, and a view plugin's from a stage's extension also `runs(id)`, `doc()`: see "Native services" |
+| `provides` | `{ [name]: (caller) → facet }`, each name in its metadata's `provides`; `caller` is `{ id, signal }`, and a view plugin's from a stage's extension also `runs(id)`, `doc()`, `path`: see "Native services" |
 | `messages`, `receive(type, data, from)` | see "Native services" (Telling); `receive` hears this extension's sends |
 | `beforeRemove(draft, ids)`, `dispose()`, `busy(id)` | the stage; `busy`: is it busy for extension `id` (see "Stopping") |
 | `hud()` → `[{ text, state }]` | status surfaces |
@@ -549,6 +531,33 @@ view's; `state()`, also `view["scene.drawer"]`; open, it wants the pointer.
 **Prefs** (`scene.prefs`, `"prefs"`): `get(key, fallback)` (the viewer's, else
 the caller's doc's `doc.view[key]`, a view plugin's the focus doc's), `set`,
 `watch(fn)`; `view["scene.prefs"]`.
+
+### Links
+
+`scene.links` (`"links"`; `native/links.js`, pure `native/link-graph.js`):
+
+```js
+{ name, sourceUrl: <scene doc url>, providerId: "scene.link", renderUrl: null,
+  parent?, group?, transform, visible, color, opacity, wireframe, locked?,
+  hint: { bounds },        // the room the host gives it, in the link's frame
+  at?: { heads, deps? },   // absent: live; set: pinned
+  traits?, tags? }         // the host's facts about the link
+```
+
+Dropping a scene doc makes a live link. **Expansion** (pure; I3): a live doc
+**acts** at one occurrence per view (shallowest, then smallest link id);
+every other live occurrence of it is closed, `"repeat"`. A link with `at` is
+**pinned**. Closed reasons are exactly `"cycle"`, `"repeat"`, `"unavailable"`
+and `"unpinned"`; a closed link is drawn as its hint. At most `LINK_BUDGET`
+(64) open. It opens a stage for each other occurrence, worked out again on
+every change of a doc it reached; one whose role or identity changes closes
+and opens again; while any is on its way it holds `opening()`. `role(id)` →
+`{ role, open, reason? }` of the caller's stage's link (a view plugin's: the
+focus's), `role` `"acting"`, `"pinned"` or `"closed"`. `fixPoint(id)` → `{
+heads, deps }`: the doc's heads and those of every doc the pin's docs name by
+URL; a doc nothing names (a player's secret) is never recorded. Follow
+latest removes `at`. Its **Enter** command enters a link that acts; the
+**trail** shows the focus path.
 
 ### Holding a pose
 
@@ -658,9 +667,9 @@ The rest:
 | Module | Holds |
 |---|---|
 | `stage/stage.js` | the mount, doc loop, `makeApi` (the channel, the page, services), content, display, arriving |
-| `stage/view.js` | the view: viewport, router, bodies, selection, camera saving, session, link expansion, cross-stage input, the view plugins' api |
+| `stage/view.js` | the view: viewport, router, bodies, selection, camera saving, session, the stage tree (`open`), cross-stage input, the view plugins' api |
 | `stage/host.js` | starting (in running order) and stopping extensions and view plugins; `collect`, `use` |
-| `native/` | the native services, on the public api only: `claims.js`, `poses.js` (`holds.js`, `smooth.js`), `audience.js` (`veil.js`), `clock.js`, `telling.js`, `notices.js`, `drawer.js`, `prefs.js` |
+| `native/` | the native services, on the public api only: `claims.js`, `poses.js` (`holds.js`, `smooth.js`), `audience.js` (`veil.js`), `clock.js`, `telling.js`, `notices.js`, `drawer.js`, `prefs.js`, `links.js` (`link-graph.js`) |
 | `stage/router.js` | DOM to events, sessions, the body stack, the hands, lock, keys, Escape, menu, cursor |
 | `stage/presence.js` | the wire protocol: presence (heartbeat 5 s, TTL 15 s) and sends |
 | `stage/viewport.js` | rendering and picking, one per view |
