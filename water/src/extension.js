@@ -189,10 +189,7 @@ export function isUnder(scene, id, root) {
 /** A frame's identity for rebuilding a reader: its matrix's numbers. */
 const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
 /** The world's time as an ambient's `use` gives it (its outermost's "clock"), as latch() reads it. */
-function worldTime(a) {
-  const c = a.use?.("clock");
-  return { t: c ? c.t() : 0, running: c ? c.running() : true };
-}
+const worldTime = (a, c = a.use("clock")) => ({ t: c.t(), running: c.running() });
 
 export default {
   create(api) {

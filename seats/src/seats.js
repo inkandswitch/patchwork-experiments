@@ -24,7 +24,7 @@
 //
 // Who sits in a lasting seat is the doc's (`player`), and lasts. Whether that
 // player is here now is a claim on the seats' owner, `seat:<id>`
-// (scene/STAGE.md, "Claims"): it lapses when they go, so a seat whose player
+// (scene/STAGE.md, "Native services"): it lapses when they go, so a seat whose player
 // has gone can be taken (after asking), and one whose player is here can't.
 // A seat that doesn't last (`lasting: false`) is the claim alone: nothing is
 // written, and getting up, sitting elsewhere or going frees it. Claims

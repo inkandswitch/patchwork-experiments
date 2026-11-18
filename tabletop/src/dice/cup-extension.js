@@ -417,7 +417,7 @@ function create(api) {
     if (!dead) drawLabels();
   });
 
-  // ── telling the others (ids only; each view words it from its own doc, once it bears it out: STAGE.md "Telling") ──
+  // ── telling the others (ids only; each view words it from its own doc, once it bears it out: STAGE.md "Native services") ──
   /** Whoever told it, as the HUD names them: "You", else the roster's name for them (seats), else the stage's. */
   const speaker = (by) => {
     if (by.mine) return by.name;

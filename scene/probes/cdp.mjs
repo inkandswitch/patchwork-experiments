@@ -6,7 +6,7 @@
 //   await b.js("1 + 1"); await b.drag([x0, y0], [x1, y1]); await b.key("g");
 //   await b.shot("/path/to.png"); b.stop(code);
 //
-// Simulated time (STAGE.md "Time"). A page that mounts its stages on a manual
+// Simulated time (STAGE.md "Native services"). A page that mounts its stages on a manual
 // clock puts it at window.__time (scene's manualTime(), from
 // `(await import(".../scene/dist/index.js")).loadTime()`, set as each host
 // element's `time`). Nothing in those stages moves unless it is stepped, so a

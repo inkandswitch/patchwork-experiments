@@ -31,7 +31,7 @@ import { applyMatrix, invertMatrix } from "./transform.js";
 
 export const SEATS = "seats";
 
-/** A seat's claim kind, on the scene (scene/STAGE.md, "Claims"). */
+/** A seat's claim kind, on the scene (scene/STAGE.md, "Native services"). */
 export const SEAT_CLAIM = (sid) => `seat:${sid}`;
 
 /** One owner's seats, { [seatId]: { name, player, lasting?, camera? } }: object `of`'s, or (null) the doc's own. */

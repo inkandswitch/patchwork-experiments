@@ -2,7 +2,7 @@
 // import another package's source). The fake stages here tell with it exactly as the stage does;
 // `git diff c4db8b57 -- scene/src/stage/telling.js` shows whether scene's has moved on since.
 //
-// Telling the others what the doc bears out (STAGE.md, "Telling").
+// Telling the others what the doc bears out (STAGE.md, "Native services").
 //
 // An extension declares what it tells, `messages: { [type]: { valid(data),
 // says(data, who, scene) } }`, and calls `api.tell(type, data)`. The stage

@@ -2,7 +2,7 @@
 // processes, the poses everyone sees, and the stations' controls. ctx.sim is
 // what the other parts read.
 //
-// The ships are a process on the doc's clock (the "clock" service, scene STAGE.md, "World time"):
+// The ships are a process on the doc's clock (the "clock" service, scene STAGE.md, "Native services"):
 // the view that computes the clock starts it (`start`: warm from the poses
 // it last saw held and the motion last published, else cold from the doc),
 // steps every ship's physics in world time, and once a frame holds each
@@ -251,7 +251,7 @@ export function sameTransform(a, b, eps = 1e-6) {
  * Did something move the hull (the halo, the inspector, a paste, a carry),
  * as against a checkpoint writing where she was? The stage stamps each
  * object a checkpoint's save moved with `saved` (the world t it was saved
- * at: scene STAGE.md, "World time"); a move writes only the transform. So
+ * at: scene STAGE.md, "Native services"); a move writes only the transform. So
  * a late checkpoint, landing after another view took over, isn't taken for
  * a move.
  * @param {object} doc  the doc's transform now  @param {number | undefined} saved  the object's `saved` stamp now

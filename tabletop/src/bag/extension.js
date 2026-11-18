@@ -146,7 +146,7 @@ export default {
       api.schedule(() => {});
     }
 
-    // ── telling everyone: that something was done, never what it was (STAGE.md "Telling") ──
+    // ── telling everyone: that something was done, never what it was (STAGE.md "Native services") ──
     const things = (n) => (n === 1 ? "something" : `${n} things`);
     const here = (u) => bagsIn().some((b) => b.url === u);
     /** Borne out at once by a bag of this scene (each one named); worded by this view, by the speaker's name the stage gives. */

@@ -634,3 +634,30 @@ reads the one, a table's Shuffle the other, per object at run time), and
 everything seats, machine and sailing read. STAGE.md, "Keepers", still says
 a keeper's module exports `contain` for setup code; nothing outside tabletop
 calls it now.
+
+### 2026-11-17 — Kernel step 4a: services and channel; claims, clock and telling leave the kernel
+
+PLANS.md step 4a. The kernel knew claims (their grace, lapse, re-assert and
+pagehide), the world clock (its claim, processes, frames, the chip's
+`local.clock` and the view's `view.clocks`) and telling (its wire and the
+flush's ask). Now an instance may declare `provides: { [name]: (caller) →
+facet }`, and `api.use(name)` gives the first running provider's facet made
+for `{ id, signal }` (a view plugin's: the focus stage's, then the view
+plugins'; a stage reader's and an ambient's `use` too). The host creates
+extensions in running order, so a provider is up before what asks.
+`api.presence`, `send`, `session` and `viewer` became `api.channel` (`peers`,
+`get`, `set`, `watch`, `send`, `rate`, `shownAt`; `session` null in a pin);
+`api.page` offers hide, show and visibility; `api.clock.now/after/frame`
+became `api.now/after/frame`; `api.settled()` says `{ ready, missing }`.
+Claims, world time and telling are `scene.claims`, `scene.clock` and
+`scene.telling` in `src/native/`, on the public api only, registered first;
+the clock chip became `scene.clock-chip` and reads each focus-path stage's
+`use("clock")`. Loops run without WebGL too (`loop(fn, { first })`). The
+packages moved by renames (each service got once per create); the keepers
+and lots look again on `settled()`, not `local.running`/`packages`; walk
+still reads `local.status` (content is step 7). Behaviour: a stopping
+extension's processes are saved one by one as its signal aborts, before the
+clock's own last checkpoint; a failed extension no longer keeps a doc from
+computing; view plugins are created in order too; told notices are
+`scene.telling`'s. STAGE.md's Claims, Time, World time and Telling became
+"Native services", and Keepers kept only what crosses packages.

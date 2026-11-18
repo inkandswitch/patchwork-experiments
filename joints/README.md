@@ -27,7 +27,7 @@ someone selecting things as well as by someone walking); the use prompt
 that shows its verb is the scene's, in every scene.
 While any part in the scene closes itself (a `wait`), it registers a
 **process** on the scene's world clock (`use("clock").process`, scene
-STAGE.md, "World time"): the closing.
+STAGE.md, "Native services"): the closing.
 
 ## The trait
 
@@ -68,7 +68,7 @@ the verb is there but disabled.
   raycasts and `worldOf` see it too, so a door blocks a walker as it's
   drawn); it writes the stop it reaches **once**, with `since` (the world
   time it got there). A cycle (open, wait, close) is **two writes**.
-- **Three times** (scene STAGE.md, "World time"). A motion is an *act*: timed by the
+- **Three times** (scene STAGE.md, "Native services"). A motion is an *act*: timed by the
   wall clock from when it started. Where it's drawn is the fraction of its
   travel time gone by, and its write is due at a fixed time (below), set on
   a timer. Frames only draw it, so a view that draws none (a hidden tab)

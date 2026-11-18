@@ -5,7 +5,7 @@
 //   `machine.session` claim makes it and writes it on the trait; every other
 //   view waits. But the holder can fail (what the machine runs hasn't synced
 //   yet, a fetch fails), or leave before it writes (its claim then lapses:
-//   scene/STAGE.md, "Claims"). So a view that didn't make it asks again a
+//   scene/STAGE.md, "Native services"). So a view that didn't make it asks again a
 //   while later, and takes the claim if it's free by then.
 // - What it needs isn't here yet: the machine doc's content, the engine.
 //

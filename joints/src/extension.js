@@ -16,7 +16,7 @@
 //   part closes itself: its step closes each part once the doc's world time
 //   is its wait past `since`. Only the view computing the clock steps it, so
 //   exactly one view closes a part, whoever opened it; paused, or with
-//   nobody present, doors stay open (STAGE.md, "World time").
+//   nobody present, doors stay open (STAGE.md, "Native services").
 //
 // The motion's holds yield (a process's, giving way to a person's): someone
 // carrying the door, in this view or another, stops it, and the act lets go
@@ -27,7 +27,7 @@ import { KEY, createSlides, selfClosing } from "./slide.js";
 function create(api) {
   const clock = api.use("clock");
   const slides = createSlides({
-    now: () => api.now(), // the stage's time: the motion is an act (STAGE.md "Three times")
+    now: () => api.now(), // the stage's time: the motion is an act (STAGE.md "Native services")
     t: () => clock.t(),
     doc: () => api.doc(),
     change: (fn) => api.change(fn),

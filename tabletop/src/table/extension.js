@@ -28,7 +28,7 @@
 // for whoever shows seats (`seatPlaces`);
 // and telling everyone what happened (shuffled, drew, washed, laid face up)
 // with the "tell" service, as counts only, never which card: the stage says it, here as
-// "You" and to the others by name (`messages`; scene/STAGE.md "Telling").
+// "You" and to the others by name (`messages`; scene/STAGE.md "Native services").
 //
 // Component physics, not rules: nothing here knows a game, a turn or a
 // legal move. (Dice are dice/'s.)

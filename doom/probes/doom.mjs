@@ -273,7 +273,7 @@ try {
   await P(`focus("a")`);
   restOpen ??= (await P(`doc("a")`)).objects[doorId].traits["joints.slide"];
   details.clocks = { a: await P(`clock("a")`), b: await P(`clock("b")`) };
-  // since: the world time it got there (scene STAGE.md, "World time"); whoever computes the world closes it, so no `by`
+  // since: the world time it got there (scene STAGE.md, "Native services"); whoever computes the world closes it, so no `by`
   check("its rest, written once it got there: open, since a world time", restOpen.at === "open" && Number.isFinite(restOpen.since) && !("by" in restOpen), restOpen);
   await shot("2-a-open");
 
