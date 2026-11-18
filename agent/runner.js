@@ -22,7 +22,9 @@ import {
   STATUS,
   canClaim,
   claimLease,
+  holdsLease,
   leaseIsLive,
+  LeaseWatch,
   lastTurn,
   runnableCalls,
   callsAwaitingApproval,
@@ -40,6 +42,26 @@ export const HEARTBEAT_MS = 5000
 export const STALE_AFTER_MS = 15000
 
 /**
+ * How long a runner waits after claiming a session before it believes the
+ * claim. A claim is a write to a document other browsers share; two that
+ * claim within one round trip of each other both think they won until the
+ * writes meet. The merge picks one of them, the same one everywhere, and the
+ * other sees it lost and stands down. This is how long the meeting is given.
+ * It overlaps building the run, so it costs little on top.
+ *
+ * Safe while it is more than twice the time a change takes to reach the other
+ * browser: a rival claims only before ours reaches it (under one delay after
+ * ours), and its claim reaches us one delay later still. Sync through the
+ * server takes a few hundred milliseconds; two seconds covers under one. A
+ * claim slower than that can still win late, and the runner it displaces
+ * stops at its next look at the lease, mid-stream included (loop.js).
+ */
+export const CONFIRM_MS = 2000
+
+/** How long a runner already busy with N other sessions waits, per session, before taking one more: time for an idler browser to take it first. */
+export const DEFER_PER_BUSY_MS = 1000
+
+/**
  * Is there anything for THIS runner to do?
  *
  * Runner-aware on purpose. A worker that cannot run a host-tier call must not
@@ -53,11 +75,11 @@ export const STALE_AFTER_MS = 15000
  * a runner spinning on an errored session — the loop writes its error as an
  * assistant turn, so the next check sees nothing to do until a human speaks.
  */
-export function needsWork(doc, canRun = () => true) {
+export function needsWork(doc, canRun = () => true, live = null) {
   if (!doc) return false
   // A call whose runner died mid-flight has to be closed out before anything
   // else can happen — whatever else the session is waiting on.
-  if (orphanedCalls(doc).length) return true
+  if (orphanedCalls(doc, live ? { live } : {}).length) return true
   if (callsAwaitingApproval(doc).length) return false
   // A question the agent asked is work for a person, not for a runner.
   if (questionsAwaitingAnswer(doc).length) return false
@@ -96,6 +118,11 @@ export class SessionRunner {
     this.onToolset = opts.onToolset ?? null
     this.getProvider = opts.getProvider
     this.getKey = opts.getKey ?? (() => null)
+    // A runner that cannot call the model must not take the session from one
+    // that can: it would claim, fail for want of a key, and mark the session
+    // errored for everyone. A runner given a key source runs only while it
+    // yields a key; one given none (tests, mock providers) needs none.
+    this.hasKey = opts.getKey ? () => !!opts.getKey() : () => true
     // (modelId, providerId) => catalogue entry | null. Optional: without it
     // the loop sends whatever the session's config says and caps nothing.
     this.getModelInfo = opts.getModelInfo ?? null
@@ -103,6 +130,16 @@ export class SessionRunner {
     this.onEvent = opts.onEvent ?? (() => {})
     this.now = opts.now ?? (() => Date.now())
     this.system = opts.system ?? undefined
+    // Whether another runner's lease is live, judged by this runner's clock
+    // alone (session.js LeaseWatch). Every lease decision here goes through it.
+    this.watch = new LeaseWatch({ now: () => this.now(), staleAfterMs: STALE_AFTER_MS })
+    this.live = (lease) => this.watch.live(lease)
+    this.confirmMs = opts.confirmMs ?? CONFIRM_MS
+    // How long to hold back before taking a free session, so a browser with
+    // less on its plate gets it first. Zero unless the host says otherwise.
+    this.deferMs = opts.deferMs ?? (() => 0)
+    this.wantedSince = null
+    this.later = null
 
     this.running = false
     this.stopped = false
@@ -113,7 +150,12 @@ export class SessionRunner {
   /** Begin watching for work. Returns a stop function. */
   start() {
     this.stopped = false
-    this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS)
+    // The poll as well as the heartbeat: a holder that dies goes quiet, and
+    // quiet makes no change to hear, so only looking again notices it.
+    this.heartbeat = setInterval(() => {
+      this.beat()
+      if (!this.running) this.tick()
+    }, HEARTBEAT_MS)
     this.tick()
     return () => this.stop()
   }
@@ -122,6 +164,8 @@ export class SessionRunner {
     this.stopped = true
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = null
+    if (this.later) clearTimeout(this.later)
+    this.later = null
     this.interrupt()
   }
 
@@ -147,12 +191,34 @@ export class SessionRunner {
   async tick() {
     if (this.stopped || this.running) return
     const doc = this.store.doc()
-    if (!needsWork(doc, this.canRun)) return
-
-    if (!canClaim(doc, this.runnerUrl, { now: this.now(), staleAfterMs: STALE_AFTER_MS })) {
-      // Someone else is on it. Their heartbeat going quiet will bring us back.
+    // Sampled on every tick, work or none, so the watch sees each heartbeat.
+    this.live(doc?.lease)
+    if (!needsWork(doc, this.canRun, this.live) || !this.hasKey()) {
+      this.wantedSince = null
       return
     }
+
+    if (!canClaim(doc, this.runnerUrl, { live: this.live })) {
+      // Someone else is on it. The poll in start() looks again, and their
+      // heartbeat going quiet brings us back.
+      this.wantedSince = null
+      return
+    }
+
+    // Already ours: carry on. Otherwise a runner busy elsewhere gives an idler
+    // one the first chance — that is how a workflow's steps spread over the
+    // browsers that have it open.
+    const wasOurs = doc.lease?.runner === this.runnerUrl
+    if (!wasOurs) {
+      const defer = this.deferMs()
+      if (defer > 0) {
+        const t = this.now()
+        this.wantedSince ??= t
+        const left = this.wantedSince + defer - t
+        if (left > 0) return this.tickLater(left)
+      }
+    }
+    this.wantedSince = null
 
     // Mark ourselves busy BEFORE the first write. Claiming the lease *is* a
     // change to the session document, and the document's change handler calls
@@ -162,14 +228,14 @@ export class SessionRunner {
     this.controller = new AbortController()
     this.onEvent({ type: "start" })
 
+    let generation = null
     try {
-      let generation
       this.store.change((d) => {
         generation = claimLease(d, this.runnerUrl, this.now()).generation
-        // Taking over: anything the previous runner was in the middle of will
-        // never finish. Say so, so the model can check and carry on.
-        resolveOrphans(d, { now: this.now(), staleAfterMs: STALE_AFTER_MS })
       })
+      // Believe a fresh claim only once any rival's has had time to meet it
+      // (CONFIRM_MS); the wait runs alongside building the run.
+      const confirmed = wasOurs || !this.confirmMs ? null : new Promise((resolve) => setTimeout(resolve, this.confirmMs))
 
       const provider = await this.getProvider()
       const { toolset, ctx, privileged } = await this.prepare(this.store.doc())
@@ -184,6 +250,24 @@ export class SessionRunner {
         } catch {
           modelInfo = null
         }
+      }
+
+      await confirmed
+      if (this.stopped || !holdsLease(this.store.doc(), this.runnerUrl, generation)) {
+        // Another runner's claim won the merge. It runs the session; we wrote
+        // nothing but the claim.
+        const lost = { outcome: OUTCOME.aborted, reason: "another runner has this session" }
+        this.onEvent({ type: "done", ...lost })
+        return lost
+      }
+
+      // Ours for certain now. Anything the previous runner was in the middle
+      // of will never finish: say so, so the model can check and carry on.
+      // Not before: a claim that loses must not close a live runner's calls.
+      if (orphanedCalls(this.store.doc(), { live: this.live }).length) {
+        this.store.change((d) => {
+          resolveOrphans(d, { live: this.live })
+        })
       }
 
       const result = await run({
@@ -208,6 +292,11 @@ export class SessionRunner {
       this.onEvent({ type: "done", ...result })
       return result
     } catch (err) {
+      // A runner that lost the session to another says nothing in it.
+      if (generation !== null && !holdsLease(this.store.doc(), this.runnerUrl, generation)) {
+        this.onEvent({ type: "error", error: String(err?.message ?? err) })
+        return { outcome: OUTCOME.aborted, reason: "lease lost" }
+      }
       // Anything that escaped the loop (a provider that could not be
       // constructed, a toolset that failed to build) lands here. Recording the
       // error is best-effort: if the document itself is what failed, the write
@@ -270,10 +359,19 @@ export class SessionRunner {
   releaseIfIdle() {
     const doc = this.store.doc()
     if (doc?.lease?.runner !== this.runnerUrl) return
-    if (needsWork(doc, this.canRun)) return
+    if (needsWork(doc, this.canRun, this.live)) return
     this.store.change((d) => {
       d.lease = null
     })
+  }
+
+  /** Tick once more in `ms`, however many times this is asked meanwhile. */
+  tickLater(ms) {
+    if (this.later || this.stopped) return
+    this.later = setTimeout(() => {
+      this.later = null
+      this.tick()
+    }, ms)
   }
 }
 
@@ -333,9 +431,15 @@ export async function privileges(base, store) {
   return (tool) => given.get(tool) ?? null
 }
 
-/** Is some *other* runner working on this session right now? */
-export function heldElsewhere(doc, runnerUrl, now = Date.now()) {
+/**
+ * Is some *other* runner working on this session right now?
+ *
+ * `live` is a runner's own judgement (its LeaseWatch), which is right across
+ * machines; without one, the lease's stamp is compared with this clock, which
+ * is only right when the clocks agree, and is for display.
+ */
+export function heldElsewhere(doc, runnerUrl, live = null) {
   const lease = doc?.lease
   if (!lease || lease.runner === runnerUrl) return false
-  return leaseIsLive(lease, { now, staleAfterMs: STALE_AFTER_MS })
+  return live ? live(lease) : leaseIsLive(lease, { staleAfterMs: STALE_AFTER_MS })
 }

@@ -10,12 +10,19 @@
  *
  * The driver holds a lease on the plan document, exactly as a runner holds one
  * on a session, so two tabs with the plan open cannot both start the same
- * step. Nothing about the run lives only in memory: close the tab and reopen
- * the plan, and a new driver picks up where the document says things are.
+ * step: liveness judged on its own clock, and a fresh claim believed only
+ * after CONFIRM_MS, as a runner's is (runner.js). Nothing about the run lives
+ * only in memory: close the tab and reopen the plan, and a new driver picks up
+ * where the document says things are.
+ *
+ * Driving and running are separate. One browser drives — starts steps, files
+ * their results — but every browser with the plan open starts runners for its
+ * running steps, and each step's session lease decides which browser runs it.
+ * So steps spread over the browsers that have a key, and none runs twice.
  */
 
-import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS } from "../session.js"
-import { heldElsewhere, needsWork, HEARTBEAT_MS } from "../runner.js"
+import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch } from "../session.js"
+import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
 import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS } from "./plan.js"
 import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
@@ -102,7 +109,7 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, toolIds = null, toolset = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS }) {
+  constructor({ repo, handle, startSession, notify = null, toolIds = null, toolset = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
@@ -117,6 +124,12 @@ export class WorkflowDriver {
     this.soon = null
     this.runnerUrl = `workflow-${Math.random().toString(36).slice(2, 10)}`
     this.generation = null
+    // Whose the plan is, judged on this page's clock alone (session.js).
+    this.watch = new LeaseWatch({ now: () => this.now(), staleAfterMs: STALE_AFTER_MS })
+    this.live = (lease) => this.watch.live(lease)
+    this.confirmMs = confirmMs
+    this.claimedAt = null
+    this.confirming = null
     this.watched = new Map() // sessionUrl -> unsubscribe
     this.reasons = new Map() // sessionUrl -> why its runner stopped, from its events
     this.listening = new Set() // sessionUrls whose runner events we hear
@@ -142,6 +155,7 @@ export class WorkflowDriver {
     this.stopped = true
     clearInterval(this.timer)
     clearTimeout(this.soon)
+    clearTimeout(this.confirming)
     this.handle.off("change", this.onPlanChange)
     for (const off of this.watched.values()) off()
     this.watched.clear()
@@ -201,10 +215,22 @@ export class WorkflowDriver {
   hold() {
     const plan = this.handle.doc()
     if (!plan) return false
-    if (heldElsewhere(plan, this.runnerUrl, this.now())) return false
-    if (this.generation !== null && holdsLease(plan, this.runnerUrl, this.generation)) return true
-    this.handle.change((d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
-    return true
+    if (heldElsewhere(plan, this.runnerUrl, this.live)) return false
+    if (this.generation === null || !holdsLease(plan, this.runnerUrl, this.generation)) {
+      this.handle.change((d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
+      this.claimedAt = this.now()
+    }
+    // A claim another page made at the same moment may yet win the merge;
+    // act on ours only once it has had time to arrive (CONFIRM_MS).
+    const left = this.claimedAt + this.confirmMs - this.now()
+    if (left <= 0) return true
+    if (!this.confirming) {
+      this.confirming = setTimeout(() => {
+        this.confirming = null
+        this.kick()
+      }, left)
+    }
+    return false
   }
 
   /** Renew the lease. Called by the heartbeat timer, never by a tick. */
@@ -215,7 +241,8 @@ export class WorkflowDriver {
   }
 
   async tick() {
-    if (this.stopped || !this.hold()) return
+    if (this.stopped) return
+    if (!this.hold()) return this.help()
     let plan = this.handle.doc()
     if (plan.status !== PLAN.running) {
       this.report()
@@ -291,6 +318,19 @@ export class WorkflowDriver {
       })
     }
     this.report()
+  }
+
+  /**
+   * What a page that is not driving the plan does: keep a runner here for
+   * each running step, so this browser can take any step nobody is running.
+   * Writes nothing to the plan; the step's own lease decides who runs it.
+   */
+  async help() {
+    const plan = this.handle.doc()
+    if (this.stopped || plan?.status !== PLAN.running) return
+    for (const step of plan.steps ?? []) {
+      if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
+    }
   }
 
   /**

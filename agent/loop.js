@@ -222,6 +222,8 @@ export async function run(opts) {
     }
 
     if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+    // Lost mid-stream: the session is another runner's, so write nothing more.
+    if (assistant.lost) return { outcome: OUTCOME.aborted, reason: "lease lost" }
 
     // ---- 4. Was it cut off?
     //
@@ -482,6 +484,7 @@ async function streamTurn(opts) {
   let textIndex = null
   let reasoningIndex = null
   let stopReason = "end"
+  let lost = false
 
   // Watch this turn's own prose for a loop. Checked every few dozen characters
   // rather than every delta; the scan is linear in the turn so far.
@@ -504,6 +507,12 @@ async function streamTurn(opts) {
     for await (const event of provider.stream(request)) {
       if (signal?.aborted) break
       if (repeated) break
+      // Another runner has the session now (a claim that won a merge late):
+      // stop writing into its transcript at once, not at the end of the turn.
+      if (stillOurs && !stillOurs()) {
+        lost = true
+        break
+      }
 
       if (event.type === "text") {
         if (textIndex === null) {
@@ -539,6 +548,8 @@ async function streamTurn(opts) {
   } finally {
     appender.flush()
   }
+
+  if (lost) return { calls: [], stopReason: "lease-lost", turnIndex, lost: true }
 
   // Stopped for going round in circles. Whatever was streamed stays in the
   // transcript — it is what happened — but no call is committed from it.

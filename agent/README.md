@@ -44,8 +44,27 @@ document history without any separate machinery.
 **The loop is leased.** A runner claims the session by writing
 `{runner, at, generation}` and heartbeating. A runner that sees a stale
 heartbeat takes over and bumps the generation; the displaced runner notices at
-its next write and stands down. The same class runs in a tab, a worker, or node
-— only `canRun` and `runnerUrl` differ.
+its next write, or mid-stream, and stands down. The same class runs in a tab, a
+worker, or node — only `canRun` and `runnerUrl` differ.
+
+**Two browsers, one session, one runner.** Every browser with a session open has
+a runner for it, and three rules keep them from running it twice:
+
+- *Liveness is judged on the observer's own clock.* A lease is stale when its
+  value has not changed for 15 s of the observer's time (`LeaseWatch`), never by
+  comparing its stamp with another machine's clock. Only a lease nobody has been
+  seen renewing, stamped over ten minutes ago, counts as dead on sight.
+- *A claim is believed only after `CONFIRM_MS`* (2 s, overlapping the run's
+  setup). Two claims made at once are both writes to a shared document; the merge
+  keeps one, the same one everywhere, and the other runner stands down having
+  written nothing but its claim. Safe while sync takes under half of that.
+- *Only a runner with a key claims.* A browser without one never writes to the
+  session and says another browser is running it.
+
+A tab already running other sessions waits a second per busy session before
+taking one more, so a workflow's steps spread over the browsers that have it
+open. `coordination.test.js` runs two replicas over every combination of sync
+delay, start offset, clock skew (to nine minutes) and keys.
 
 **Tool calls are tiered.** Each tool declares `where`:
 
@@ -1136,8 +1155,10 @@ result calls for it.
   than `parallel` at once nor `hostParallel` on the page, blocked exactly when
   something it needs failed — are checked over every plan of up to three steps
   and every four-step graph (`workflow-plan.test.js`).
-- **One driver per plan**, by the same lease a runner holds on a session, so two
-  tabs with the plan open cannot both start a step. Close the tab and the plan
+- **One driver per plan**, by the same lease a runner holds on a session — judged
+  and confirmed the same way — so two browsers with the plan open cannot both
+  start a step. The others still start runners for its running steps, and each
+  step's own lease decides which browser runs it. Close every tab and the plan
   pauses; open its view anywhere and it resumes from what the document says.
 - **The orchestrator is woken** through `ctx.events` as steps finish, with their
   results, and once more when the plan is over.

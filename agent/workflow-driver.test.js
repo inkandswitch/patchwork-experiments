@@ -55,7 +55,7 @@ async function setup(steps, { behaviour = {}, limits = {}, grants = {} } = {}) {
   const runner = fakeRunner(behaviour)
   const news = []
   const notify = () => ({ notify: (render) => news.push(render()), close: () => {} })
-  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, notify, heartbeatMs: 1e9, toolIds: { worker: ["doc_read", "doc_edit"] } })
+  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, notify, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: ["doc_read", "doc_edit"] } })
   return { repo, plan, orchestrator, runner, news, make }
 }
 
@@ -256,7 +256,7 @@ describe("filing what research steps kept", () => {
       if (state !== "unfiled") folder.change((d) => { d.docs.push(link) })
       if (state === "filed") plan.change((d) => { d.sourcesFiled[made.documentId] = true })
     }
-    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => null, heartbeatMs: 1e9 })
+    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => null, heartbeatMs: 1e9, confirmMs: 0 })
     drivers.push(driver)
     driver.hold()
     return { plan, folder, driver, links, unwritten }

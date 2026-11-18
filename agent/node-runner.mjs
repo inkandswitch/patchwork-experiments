@@ -161,9 +161,9 @@ setInterval(() => {
     const doc = handle.doc()
     if (!doc) continue
     const mine = doc.lease?.runner === runner.runnerUrl
-    const elsewhere = heldElsewhere(doc, runner.runnerUrl)
+    const elsewhere = heldElsewhere(doc, runner.runnerUrl, runner.live)
     lines.push(
-      `${doc.title ?? url.slice(0, 20)}: ${doc.status}${mine ? " (ours)" : elsewhere ? " (held elsewhere)" : ""}${needsWork(doc, runner.canRun) ? " · work waiting" : ""}`
+      `${doc.title ?? url.slice(0, 20)}: ${doc.status}${mine ? " (ours)" : elsewhere ? " (held elsewhere)" : ""}${needsWork(doc, runner.canRun, runner.live) ? " · work waiting" : ""}`
     )
   }
   if (lines.length) log(lines.join(" | "))

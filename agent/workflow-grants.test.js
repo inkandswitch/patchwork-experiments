@@ -48,7 +48,7 @@ function setup(steps, { behaviour = {} } = {}) {
   }
   const make = () => {
     const driver = new WorkflowDriver({
-      repo, handle: plan, startSession, heartbeatMs: 1e9, settleMs: 5, toolIds: { worker: ["doc_read"] }, sensitive: () => [],
+      repo, handle: plan, startSession, heartbeatMs: 1e9, confirmMs: 0, settleMs: 5, toolIds: { worker: ["doc_read"] }, sensitive: () => [],
       notify: () => ({ notify: (render) => { const text = render(); if (text) news.push(text) }, close: () => {} }),
     })
     drivers.push(driver)

@@ -87,7 +87,7 @@ describe("the driver tells the orchestrator", () => {
     const { plan } = planWaiting(repo, kind)
     const news = []
     const driver = new WorkflowDriver({
-      repo, handle: plan, heartbeatMs: 1e9, toolIds: { worker: [] },
+      repo, handle: plan, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: [] },
       startSession: async () => ({ runner: {}, listen: () => {} }),
       notify: () => ({ notify: (render) => { const text = render(); if (text) news.push(text) }, close: () => {} }),
     })
@@ -199,6 +199,8 @@ describe("end to end: a step asks, the orchestrator answers", () => {
         buildToolset: toolset,
         getProvider: async () => provider,
         getKey: () => "test",
+        // One repo, nobody to race: no wait before believing a claim.
+        confirmMs: 0,
         canRun: () => true,
       })
       handle.on("change", () => runner.tick())

@@ -9,8 +9,8 @@
  */
 
 import { handleStore } from "./store.js"
-import { SessionRunner } from "./runner.js"
-import { ensureRunner as ensureSharedRunner } from "./runners.js"
+import { SessionRunner, DEFER_PER_BUSY_MS } from "./runner.js"
+import { ensureRunner as ensureSharedRunner, busyCount } from "./runners.js"
 import { createEvents } from "./events.js"
 import { buildToolset, loadPluginTools } from "./tools/index.js"
 import { getProvider, readKey, modelInfo } from "./providers/index.js"
@@ -100,6 +100,10 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       // what each is willing to pick up.
       canRun: canRun ?? ((where) => where === "worker" || where === "host"),
       onEvent: emit,
+      // A tab already running other sessions holds back a little before taking
+      // one more, so a workflow's steps spread over every browser that has it
+      // open and a key; alone, it takes them all, just a moment later.
+      deferMs: () => busyCount(made) * DEFER_PER_BUSY_MS,
     })
     // The runner watches the document itself, so it hears approvals and
     // messages written from anywhere — with or without a view open.

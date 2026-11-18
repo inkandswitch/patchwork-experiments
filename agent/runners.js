@@ -35,6 +35,13 @@ export function liveCount() {
   return live.size
 }
 
+/** How many of this page's runners are mid-run, other than the one asking. */
+export function busyCount(except = null) {
+  let n = 0
+  for (const entry of live.values()) if (entry.runner && entry.runner !== except && entry.runner.running) n++
+  return n
+}
+
 /**
  * Register a runner for a session, or return the one already running it.
  *

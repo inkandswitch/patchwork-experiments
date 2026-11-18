@@ -938,12 +938,14 @@ export function AgentTool(handle, element, options = {}) {
 
     const pending = callsAwaitingApproval(doc).length
     const asking = questionsAwaitingAnswer(doc).length
-    const elsewhere = heldElsewhere(doc, runner?.runnerUrl)
+    const elsewhere = heldElsewhere(doc, runner?.runnerUrl, runner?.live)
     // Dictation's status wins while it is on: it is what you are doing now.
     hint.textContent =
       voiceStatus ??
       (!hasKey
-        ? "Add an API key to start"
+        ? elsewhere
+          ? "Running in another browser — this one has no API key"
+          : "Add an API key to start"
         : asking
           ? asking === 1
             ? "Waiting on your answer"
