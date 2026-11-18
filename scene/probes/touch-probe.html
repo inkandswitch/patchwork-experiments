@@ -79,7 +79,8 @@ try {
   window.__turns = 0;
 
   getRegistry("scene:extension").register({
-    type: "scene:extension", id: "probe", name: "Probe",
+    // it runs for the scene's trait (STAGE.md, "Activation")
+    type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.world"],
     load: async () => ({
       create(api) {
         window.__probeApi = api;
@@ -136,7 +137,7 @@ try {
     }),
   });
   const scene = repo.add(emptyScene({
-    title: "Touch probe", objects, order: Object.keys(objects),
+    title: "Touch probe", traits: { "probe.world": true }, objects, order: Object.keys(objects),
     view: { units: "m", grid: false, axes: false, bounds: false, start: { home: { position: [0, 2.2, 4], target: [0, 0, 0] } } },
   }));
   try { localStorage.clear(); } catch {}
