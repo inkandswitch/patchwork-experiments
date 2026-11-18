@@ -219,8 +219,8 @@ function create(api) {
       if (labelsOf.length !== roll.dice.filter((d) => snap.objects?.[d]).length) continue;
       announced.add(roll.draw);
       const by = (st.contributors ?? []).map((v) => (v === viewer ? "you" : who(v)));
-      api.notify?.(`${c.cup.holder ? `${who(c.cup.holder)} rolled` : "Rolled"} ${labelsOf.join(", ")}: drawn by ${by.length > 1 ? `${by.slice(0, -1).join(", ")} and ${by.at(-1)}` : `${by[0] ?? "nobody"} alone`}.`);
-      if (!right) api.notify?.(`The dice under ${whose(c.cup.holder)} cup don't lie as their roll says: someone has moved them.`, "warn");
+      api.use("notices")?.notify(`${c.cup.holder ? `${who(c.cup.holder)} rolled` : "Rolled"} ${labelsOf.join(", ")}: drawn by ${by.length > 1 ? `${by.slice(0, -1).join(", ")} and ${by.at(-1)}` : `${by[0] ?? "nobody"} alone`}.`);
+      if (!right) api.use("notices")?.notify(`The dice under ${whose(c.cup.holder)} cup don't lie as their roll says: someone has moved them.`, "warn");
     }
   }
 
@@ -233,11 +233,11 @@ function create(api) {
       if (was === undefined || draw === null || draw === was || ownShakes.has(draw)) continue;
       // drawn again by its holder for a forgery: said with who said so (the holder's word that they did)
       if (c.cup.roll.forged.length) {
-        api.notify?.(cap(`${whose(c.cup.holder)} cup was drawn again: ${forgedLine(c.cup.roll.forged)}.`), "warn");
+        api.use("notices")?.notify(cap(`${whose(c.cup.holder)} cup was drawn again: ${forgedLine(c.cup.roll.forged)}.`), "warn");
         continue;
       }
       const how = c.cup.roll.blind ? " blind" : "";
-      api.notify?.(c.cup.holder === viewer ? `Your cup was shaken${how}.` : `${who(c.cup.holder)} shook their cup${how}.`);
+      api.use("notices")?.notify(c.cup.holder === viewer ? `Your cup was shaken${how}.` : `${who(c.cup.holder)} shook their cup${how}.`);
     }
   }
 
@@ -306,7 +306,7 @@ function create(api) {
       if (!t?.roll || t.roll.draw !== draw || t.roll.done) return;
       t.roll.stopped = true;
     });
-    api.notify?.("Your shake was written over or given up after someone else could know it, so it isn't drawn again (that would let them choose): shake again.", "warn");
+    api.use("notices")?.notify("Your shake was written over or given up after someone else could know it, so it isn't drawn again (that would let them choose): shake again.", "warn");
   }
 
   /** Shake my cup again in place, its dice where they lie: a new draw, told with who said the last one's lots were forged. */
@@ -323,7 +323,7 @@ function create(api) {
       if (!t?.roll || t.roll.draw !== roll.draw || t.roll.done) return;
       t.roll = { draw, dice: [...roll.dice], blind: roll.blind, done: false, forged };
     });
-    api.notify?.(`Your cup was drawn again: ${forgedLine(forged)}.`, "warn");
+    api.use("notices")?.notify(`Your cup was drawn again: ${forgedLine(forged)}.`, "warn");
   }
 
   // ── what this view shows ──
@@ -485,7 +485,7 @@ function create(api) {
     const s = api.scene();
     const st = shakeState(id, { scene: s, local: api.local.get() }, blind);
     if (!st) return;
-    if (st.disabled) return api.notify?.(st.title);
+    if (st.disabled) return api.use("notices")?.notify(st.title);
     const c = cupsOf(s, kOf(s)).cups.get(id);
     const dice = shaken(c, s.ids ?? []);
     const plan = shakePlan(c, dice, new Map(dice.map((d) => [d, Number(s.objects[d]?.transform?.scale) || 1])));
@@ -493,7 +493,7 @@ function create(api) {
     const lots = lotsApi();
     const before = lots.state(id)?.id ?? null;
     const draw = lots.draw(id, { sealers: sealersFor(viewer, !!blind, seated(s)), of: [...plan.dice.keys()] });
-    if (!draw) return api.notify?.("Couldn't start the roll.");
+    if (!draw) return api.use("notices")?.notify("Couldn't start the roll.");
     // (its round lands after this write, over whatever round is there now: not a round gone astray)
     asked.set(draw, before);
     ownShakes.add(draw);
@@ -509,7 +509,7 @@ function create(api) {
       t.blind = !!blind;
       t.roll = { draw, dice: [...plan.dice.keys()], blind: !!blind, done: false };
     });
-    api.notify?.(blind ? "You shook your cup blind: the others may look, you may not." : "You shook your cup.");
+    api.use("notices")?.notify(blind ? "You shook your cup blind: the others may look, you may not." : "You shook your cup.");
     // rattle it in the air, where everyone sees, and slam it down
     let t = 0;
     const base = plan.cup;

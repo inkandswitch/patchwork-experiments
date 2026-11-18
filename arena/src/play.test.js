@@ -82,7 +82,7 @@ function fakeApi(doc) {
     labels: () => ({ set: (items) => (calls.labels = items) }),
     listen: (target, type, fn) => (calls.listen[type] = fn),
     invalidate() {},
-    notify: (t) => calls.notices.push(t),
+    use: (n) => (n === "notices" ? { notify: (t) => calls.notices.push(t) } : null),
     doc: () => doc,
     change: (fn) => fn(doc),
     raycast: () => null,

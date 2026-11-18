@@ -161,7 +161,7 @@ function create(api) {
     const { by, seat, state } = stateOf(ref);
     // someone is sitting there now: it's theirs while they're here
     if (state === "taken") {
-      api.notify(`${someone(by.viewer)} is sitting there.`);
+      api.use("notices")?.notify(`${someone(by.viewer)} is sitting there.`);
       picker.value = picked;
       return;
     }
@@ -402,7 +402,7 @@ function create(api) {
   function lostSay(ref, since, taker) {
     const name = someone(taker);
     const race = since == null || api.now() - since < RACE_MS;
-    api.notify(race ? `${name} sat in ${nameOf(ref)} first; you're watching` : `${name} took ${nameOf(ref)} while you were away; you're watching`);
+    api.use("notices")?.notify(race ? `${name} sat in ${nameOf(ref)} first; you're watching` : `${name} took ${nameOf(ref)} while you were away; you're watching`);
     // sat down from walking and lost the race for it: back on your feet there
     if (race && since != null && sameSeat(walkedUp?.ref, ref) && walkedUp.at === since) {
       walkedUp = null;
@@ -427,7 +427,7 @@ function create(api) {
       // (your own other tab has it: you're both seated, and it keeps the claim)
       const release = claim(ref, () => lost(ref));
       if (release === null) {
-        api.notify(`${someone(claimOf(ref)?.viewer)} is sitting there.`);
+        api.use("notices")?.notify(`${someone(claimOf(ref)?.viewer)} is sitting there.`);
         return drawSeats();
       }
       if (held && !sameSeat(held.ref, ref)) held.release();
@@ -449,7 +449,7 @@ function create(api) {
     if (!sameSeat(perch?.ref, ref)) {
       const release = claim(ref, () => lostPerch(ref));
       if (release === null) {
-        api.notify(`${someone(claimOf(ref)?.viewer)} is sitting there.`);
+        api.use("notices")?.notify(`${someone(claimOf(ref)?.viewer)} is sitting there.`);
         return drawSeats();
       }
       releasePerch();
@@ -618,10 +618,10 @@ function create(api) {
     if (!a) return;
     if (a.verb === "stand") return standUp(a.ref);
     const { by, seat, state } = stateOf(a.ref);
-    if (state === "taken") return api.notify(`${someone(by?.viewer)} is sitting there.`);
+    if (state === "taken") return api.use("notices")?.notify(`${someone(by?.viewer)} is sitting there.`);
     if (state === "away" && !(sameSeat(confirming?.ref, a.ref) && api.now() < confirming.until)) {
       confirming = { ref: a.ref, until: api.now() + CONFIRM_MS };
-      return api.notify(`${contactName(seat?.player) ?? "Whoever sat there"} is away. Press F again to take their seat; you'll see what's theirs.`);
+      return api.use("notices")?.notify(`${contactName(seat?.player) ?? "Whoever sat there"} is away. Press F again to take their seat; you'll see what's theirs.`);
     }
     confirming = null;
     sit(a.ref);
@@ -657,7 +657,7 @@ function create(api) {
     const keeps = lasting(seatAt(api.scene(), ref));
     const name = nameOf(ref);
     getUp();
-    api.notify(keeps ? `You got up from ${name}; it's still yours.` : `You got up from ${name}.`);
+    api.use("notices")?.notify(keeps ? `You got up from ${name}; it's still yours.` : `You got up from ${name}.`);
   }
 
   return {

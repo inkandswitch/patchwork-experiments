@@ -95,9 +95,9 @@ export default {
 
     function shuffleStack(id) {
       const kept = isCard(scene?.objects?.[id]) ? keptBy(api, id) : null;
-      if (typeof kept?.keeper?.shuffle !== "function") return api.notify(kept ? "This pile can't be shuffled." : "Only cards something keeps can be shuffled: these are what they look like.", "error");
+      if (typeof kept?.keeper?.shuffle !== "function") return api.use("notices")?.notify(kept ? "This pile can't be shuffled." : "Only cards something keeps can be shuffled: these are what they look like.", "error");
       const n = kept.keeper.shuffle(stackOf(id));
-      if (!n) return api.notify("There's nothing here to shuffle with it.", "error");
+      if (!n) return api.use("notices")?.notify("There's nothing here to shuffle with it.", "error");
       teller.tell("shuffled", { n, ...(titleOf(kept) ? { of: titleOf(kept) } : {}) });
     }
     /** A kept card's container's name, for a notice (public: the container's title). */
@@ -249,10 +249,10 @@ export default {
     function draw(id) {
       const plan = drawPlan(id, api.scene());
       if (!plan) return;
-      if (plan.disabled) return api.notify(plan.label ?? plan.title);
+      if (plan.disabled) return api.use("notices")?.notify(plan.label ?? plan.title);
       const pile = drawable(id);
       // (none left but the one already on its way to your hand: D twice)
-      if (!pile.length) return drawing.has(id) ? undefined : api.notify("Someone drew that one");
+      if (!pile.length) return drawing.has(id) ? undefined : api.use("notices")?.notify("Someone drew that one");
       glide(pile, plan.slot, 1);
     }
 
@@ -278,7 +278,7 @@ export default {
         const regions = zones(s);
         const next = rest.filter((x) => canDraw(s, regions, x));
         if (retries > 0 && next.length) return glide(next, slot, retries - 1);
-        return api.notify("Someone drew that one");
+        return api.use("notices")?.notify("Someone drew that one");
       };
       entry.stop = api.loop((dt) => {
         const now = api.scene().objects?.[id];
@@ -368,9 +368,9 @@ export default {
     function wash(id) {
       const snap = api.scene();
       const plan = washPlan(id, snap);
-      if (!plan) return api.notify("There's nothing here to wash: face-down pieces spread out on the table are.", "error");
+      if (!plan) return api.use("notices")?.notify("There's nothing here to wash: face-down pieces spread out on the table are.", "error");
       const n = plan.kept.keeper.shuffle(plan.ids);
-      if (!n) return api.notify("These can't be washed.", "error");
+      if (!n) return api.use("notices")?.notify("These can't be washed.", "error");
       // and swept about: laid out again where they were, jumbled, each at a turn of its own
       const at = plan.ids.map((x) => snap.objects[x].transform?.position ?? [0, 0, 0]).map((p) => p.map(Number));
       const lo = [0, 1, 2].map((k) => Math.min(...at.map((p) => p[k])));

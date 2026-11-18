@@ -311,7 +311,7 @@ export default {
       if (api.view.get()?.body?.id !== "walk") {
         const spots = Object.entries(scene?.objects ?? {}).filter(([, o]) => o?.traits?.[SPAWN]).map(([id]) => id);
         const spot = spots.length ? spots[Math.floor(Math.random() * spots.length)] : null;
-        if (!api.body.enter("walk", spot)) api.notify("Walking needs the walk package; you can still shoot from here.");
+        if (!api.body.enter("walk", spot)) api.use("notices")?.notify("Walking needs the walk package; you can still shoot from here.");
       }
       if (!holding) api.run({ ext: api.id, command: "gun" });
     }

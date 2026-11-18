@@ -92,16 +92,22 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
       };
       return Object.assign(add, { id });
     },
-    notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text),
     channel: { viewer: "automerge:viewerMe", session, send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]) },
-    // the "tell" service: said here (and recorded as sent) when declared and valid
+    // the services: "tell", said here (and recorded as sent) when declared and valid; "notices"; "drawer", every
+    // dock() in order, each { el, title, open, x() } (x() is its ×: it closes and calls onClose)
     use: (name) =>
-      name === "tell" && {
-        tell(type, data) {
-          const copy = JSON.parse(JSON.stringify(data));
-          if (declared(instance, type) && telling.say("bag", instance, type, copy, api.channel.viewer)) rec.sends.push([type, copy]);
+      ({
+        tell: { tell: (type, data, copy = JSON.parse(JSON.stringify(data))) => declared(instance, type) && telling.say("bag", instance, type, copy, api.channel.viewer) && rec.sends.push([type, copy]) },
+        notices: { notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text) },
+        drawer: {
+          dock(el, { title, onClose } = {}) {
+            const d = { el, title, open: true, x: () => ((d.open = false), onClose?.()) };
+            document.body.append(el);
+            rec.docked.push(d);
+            return () => void (d.open = false);
+          },
         },
-      },
+      })[name] ?? false,
     // the stage's time (scene/src/stage/time.js): the event loop's wall, here
     now: () => Date.now(),
     after(ms, fn) {
@@ -115,15 +121,6 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     heldBy: (id) => rec.held.get(id) ?? null,
     labels: () => ({ set: (items) => (rec.labels = items) }),
     style: () => {},
-    // the stage's drawer: every api.dock() in order, each { el, title, open, x() } (x() is its ×: it closes and calls onClose)
-    dock(el, { title, onClose } = {}) {
-      const d = { el, title, open: true };
-      const close = () => void (d.open = false);
-      d.x = () => (close(), onClose?.());
-      document.body.append(el);
-      rec.docked.push(d);
-      return close;
-    },
     // the held tool (scene/STAGE.md, "Bodies"): one slot; holding again puts the last down
     hold(tool, handlers) {
       const was = rec.arms.at(-1);

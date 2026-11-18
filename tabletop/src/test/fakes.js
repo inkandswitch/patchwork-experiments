@@ -245,7 +245,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       watchers: [],
       notices: [], // { text, kind }
       labels: [], // the last labels().set(items)
-      docked: [], // the drawer: { el, title, x() } per api.dock() still open, in docking order (x() is its ×)
+      docked: [], // the drawer: { el, title, x() } per dock() still open, in docking order (x() is its ×)
       instance: null,
       seen: null, // the snapshot last flushed to its instance
       seenLocal: null,
@@ -298,7 +298,18 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       sent.push({ session, viewer, type, data: structuredClone(data) });
       deliver(type, data);
     }
-    const services = { claims: { claim, claimedBy }, tell: { tell } };
+    const notices = { notify: (text, kind) => view.notices.push({ text, kind }) };
+    // the drawer, as STAGE.md says: close() and the × close it, and only the × calls onClose
+    const drawer = {
+      dock(el, { title, onClose } = {}) {
+        const had = view.docked.find((d) => d.el === el);
+        if (had) return had.close;
+        const d = { el, title, close: () => void (view.docked = view.docked.filter((x) => x !== d)), x: () => (d.close(), onClose?.()) };
+        view.docked.push(d);
+        return d.close;
+      },
+    };
+    const services = { claims: { claim, claimedBy }, tell: { tell }, notices, drawer };
     const api = {
       id: ext,
       repo,
@@ -357,20 +368,11 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
           deliver(type, data);
         },
       },
-      // the native services (scene/src/native), as the stage's
+      // the native services (scene/src/native), as the stage's (and the view's)
       use: (name) => services[name] ?? null,
       settled: () => ({ ready: true, missing: [] }),
-      notify: (text, kind) => view.notices.push({ text, kind }),
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
-      // the stage's drawer, as STAGE.md says: close() and the × close it, and only the × calls onClose
-      dock(el, { title, onClose } = {}) {
-        const had = view.docked.find((d) => d.el === el);
-        if (had) return had.close;
-        const d = { el, title, close: () => void (view.docked = view.docked.filter((x) => x !== d)), x: () => (d.close(), onClose?.()) };
-        view.docked.push(d);
-        return d.close;
-      },
       style() {},
       cursor() {},
       box: () => null,
