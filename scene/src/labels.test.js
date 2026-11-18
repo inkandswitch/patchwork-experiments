@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { declutter, placeDimensionLabel } from "./stage/viewport.js";
+import { LabelLayer, declutter, placeDimensionLabel } from "./stage/viewport.js";
 
 // the ranks the parts give their labels: dimensions 3, axes 2, bounds 1, grid 0
 const RANK = { "dimension-label": 3, "axis-label": 2, "bounds-label": 1, "grid-label": 0 };
@@ -30,6 +30,22 @@ describe("label declutter", () => {
     bounds.p = { x: 500, y: 500 };
     declutter([bounds, grid, dim, bounds2, axis]);
     expect(bounds.el.style.visibility).toBe("");
+  });
+});
+
+// a label `on` an object is one whose at() the stage answers from where the object is drawn (api.labels)
+describe("a label that follows something", () => {
+  it("is placed where its at() says each time the layer places them, and hidden while it says nowhere", () => {
+    const layer = new LabelLayer(document.createElement("div"));
+    let p = [1, 2, 0];
+    layer.sync("o", [{ key: "k", text: "t", at: () => p }]);
+    const el = layer.el.querySelector(".label");
+    const place = () => (layer.update((v) => ({ x: v.x * 10, y: v.y * 10 })), el.style.display === "none" ? null : el.style.transform);
+    expect(place()).toBe("translate(10px, 20px) translate(-50%, -50%)");
+    p = [3, 4, 0];
+    expect(place()).toBe("translate(30px, 40px) translate(-50%, -50%)");
+    p = null;
+    expect(place()).toBe(null);
   });
 });
 

@@ -550,7 +550,8 @@ export function placeDimensionLabel(pa, pb, w, h, gap = 14) {
 /**
  * DOM labels that track 3D points, one set per owner (an extension id), so
  * each replaces its own and every owner's are decluttered together.
- * An item: { key (required), text, position? (world [x,y,z]), ends?: [p, p]
+ * An item: { key (required), text, position? (world [x,y,z]), at?() → position
+ * (asked each time it's placed: one that follows something), ends?: [p, p]
  * (a segment: placed off it when it's short),
  * screen?: { x, y } (port px), className?, data? (data-* attributes), rank?,
  * onPointerDown? }.
@@ -587,6 +588,7 @@ export class LabelLayer {
       entry.ends = Array.isArray(item.ends) && item.ends.length === 2 ? item.ends.map(v3) : null;
       entry.world = at ? v3(at) : entry.ends ? entry.ends[0].clone().add(entry.ends[1]).multiplyScalar(0.5) : null;
       entry.screen = item.screen ?? null;
+      entry.follow = typeof item.at === "function" ? item.at : null;
       entry.rank = Number.isFinite(item.rank) ? item.rank : undefined;
       entry.item = item;
       const el = entry.el;
@@ -634,7 +636,8 @@ export class LabelLayer {
       const project = fm ? (v) => projectWorld(v.clone().applyMatrix4(m4)) : projectWorld;
       const hidden = this.shown.get(owner)?.() === false;
       for (const entry of entries.values()) {
-        const p = hidden ? null : (entry.screen ?? (entry.world ? project(entry.world) : null));
+        const w = entry.follow ? entry.follow() : entry.world;
+        const p = hidden ? null : (entry.screen ?? (w ? project(v3(w)) : null));
         if (!p) {
           entry.el.style.display = "none";
           if (entry.leader) entry.leader.style.display = "none";
