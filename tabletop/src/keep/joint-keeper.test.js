@@ -71,7 +71,7 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
    */
   t.secrets = {};
   t.join = (viewer, { roster: has = true, writable = true, at = null } = {}) => {
-    const c = { unknown: false, refused: 0 };
+    const c = { unknown: false, refused: 0, told: [] };
     const readOnlyDeck = {
       // (a pin's handle is the deck at fixed heads: its url names them)
       url: at ? `${deck.url}#${at}` : deck.url,
@@ -89,9 +89,14 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
       channel: { viewer },
       settled: () => ({ ready: true, missing: [] }),
       collect: (name) => (name === "roster" && has ? [{ id: "seats", value: roster }] : []),
-      use: (n) => (n === "audience" ? { audience: (id) => (c.unknown ? null : audienceOf(id).audience), shown: (id) => (c.unknown ? null : audienceOf(id).shown), veil: () => () => {} } : null),
+      use: (n) =>
+        n === "audience"
+          ? { audience: (id) => (c.unknown ? null : audienceOf(id).audience), shown: (id) => (c.unknown ? null : audienceOf(id).shown), veil: () => () => {} }
+          : // scene.notices: what it would draw when told the lines changed (it reads every hud then)
+            n === "notices"
+            ? { notify() {}, changed: () => c.told.push(c.x.hud().map((h) => h.text)) }
+            : null,
       display: () => () => {},
-      notify() {},
     };
     const secret = (t.secrets[viewer] ??= newSecret());
     c.x = create(api, { secret: () => secret });
@@ -119,6 +124,16 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
 }
 
 describe("the joint keeper", () => {
+  it("a status learned after the update (its deck step) is told to the notices, so the HUD shows it", async () => {
+    const t = table();
+    Object.assign(t.where, { c0: "me", c1: "you" });
+    const me = t.join("me");
+    // the line comes from the deck's step, after update returned: nothing the stage sees changed
+    await until(() => me.status()[0] === "Waiting for YOU to shuffle Deck.");
+    expect(me.told.at(-1)).toEqual(me.status());
+    t.dispose();
+  }, 60000);
+
   it("two seated players: shuffled between them once both are here, then each sees their own hand and the face-up card, by the rule", async () => {
     const t = table();
     Object.assign(t.where, { c0: "me", c1: "you", c2: "public", c3: "screened:you" });

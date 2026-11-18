@@ -166,7 +166,9 @@ export function create(api, { secret } = {}) {
   }
 
   // something learned (a face, a status), or a deck arrived: look again
-  const refresh = () => dead || lens();
+  // (and its HUD lines may have changed with nothing the stage sees: scene/NATIVE.md, "Notices")
+  const notices = api.use("notices");
+  const refresh = () => dead || (lens(), notices?.changed?.());
 
   function watch(urls) {
     for (const [url, d] of decks) {
