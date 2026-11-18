@@ -6,8 +6,9 @@
 // four views of the session (four peers: each its own viewer and its own
 // card drawer), each sitting in a seat; Start if the import made a recipe
 // with start steps, else each seat draws five from a deck it turned face
-// down; then whether each hand's faces are shown to its seat alone. Screenshots
-// the four views, and the table from seats 1 and 3.
+// down; then what each view really draws for every hand card (the GLB it
+// shows, as the game's kind: a face or a back; loaded; lying face up), once
+// drawing has settled. Screenshots the four views, and the table from seats 1 and 3.
 //
 // The page's fetch of a web asset is answered from files fetched beforehand
 // (fetch-assets.mjs, its --out dir here as --assets), with the CORS header the
@@ -161,13 +162,20 @@ try {
       const d = await step("drawFrom", { w, k: w, n: 5 }, `draw${w}`);
       lap(`seat ${w + 1} drew`);
       check(`seat ${w + 1} draws five into its hand (D)`, d?.drawn?.length === 5);
+      check(`seat ${w + 1} draws them from the deck it turned face down`, d?.fromTurned);
     }
   }
   const pv = await step("privacy");
   lap("privacy");
   const seats = pv?.seats ?? [];
-  check("each view sees its own hand's faces", pv?.settled);
-  check("…and every other seat's hand as backs (no face, no veil)", !!pv && pv.tallies.every((t, w) => seats.every((s, k) => k === w || !t[s] || (t[s].face === 0 && t[s].veil === 0))));
+  // what each view really draws for each hand card (rendered, sovereign-probe.html): the GLB it shows, as the game's kind
+  const own = (w) => pv?.rendered?.[w]?.[seats[w]] ?? [];
+  report.hands = pv?.rendered?.map((by, w) => own(w).map((r) => `${r.as}${r.faceUp ? "" : " (face down)"} ${r.image ?? "-"}`)) ?? null;
+  check("drawing settled before the screenshots: each view draws its own hand's faces from their kept docs, loaded, and every other hand as backs", pv?.settled);
+  check("each view draws its own hand's 5 faces: each card's GLB is its face's (not a back, not bytes, not the veil), loaded with its art", seats.every((_, w) => own(w).length === 5 && own(w).every((r) => r.as === "face" && r.loaded && r.textured)));
+  check("…lying face up (its face toward the seat's camera)", seats.every((_, w) => own(w).every((r) => r.faceUp)));
+  check("…and no face shown is drawn from a card back's image", seats.every((_, w) => own(w).every((r) => r.imageIsABack === false)));
+  check("…and every other seat's hand as backs (no face, no veil): drawn as the shown, and its GLB a back's", !!pv && pv.tallies.every((t, w) => seats.every((s, k) => k === w || !t[s] || (t[s].face === 0 && t[s].veil === 0))) && seats.every((s, w) => seats.every((o, k) => k === w || (pv.rendered[w][o] ?? []).every((r) => r.as === "back"))));
   report.shots.push(await shoot("3-four-views.png"));
   for (const w of [0, 2]) {
     await step("lookFromSeat", { w, k: w }, `look${w}`);
