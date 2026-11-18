@@ -1,5 +1,5 @@
 // scene.notices (native, a view plugin): what the scene has to say, over the
-// view, provided as "notices" (STAGE.md, "Native services").
+// view, provided as "notices" (NATIVE.md, "Native services").
 //   - toasts (bottom centre): `use("notices").notify(text, kind?)` adds one
 //     for 6 s; one saying what one still showing says replaces it; a notice
 //     that goes fades out.

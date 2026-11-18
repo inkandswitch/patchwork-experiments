@@ -1,5 +1,5 @@
 // The veil: the stand-in the stage draws for an object whose look says
-// (STAGE.md, "The veil"): "what this is, is kept from you". One
+// (NATIVE.md, "The veil"): "what this is, is kept from you". One
 // drawing for any shape, made from the object's bounds alone, so nothing of
 // what it stands in for can reach it: a frosted box filling the bounds, a
 // pale padlock on its two largest faces, both sides alike (a veiled thing

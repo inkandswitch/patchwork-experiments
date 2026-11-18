@@ -114,7 +114,7 @@ export function hintVolume(o) {
 }
 
 /**
- * The hit chain (STAGE.md, step 4): the hit object, then what it's attached
+ * The hit chain (STAGE.md, "The input chain", step 3): the hit object, then what it's attached
  * to (nearest first), then its groups (nearest first).
  * @param {string} id  @param {Map} parents  resolveParents  @param {Map} groups  resolveGroups
  * @returns {string[]}
@@ -739,7 +739,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }),
   );
 
-  // ─── the page (STAGE.md, "api.page") ──────────────────────────────────────
+  // ─── the page (STAGE.md, "`api`") ──────────────────────────────────────
   // The view's pagehide or the stage closing ("hide": last-first, as extensions stop), pageshow and the tab's visibility, as api.page's events.
   const pageFns = { hide: new Set(), show: new Set(), visible: new Set() };
   const pageSay = (type) => [...pageFns[type]][type === "hide" ? "reverse" : "slice"]().forEach((fn) => fn());
@@ -1385,7 +1385,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
       }),
       /**
-       * The doc's ephemeral side (STAGE.md, "api.channel"): this view's
+       * The doc's ephemeral side (STAGE.md, "`api`"): this view's
        * session (null in a pin: it has none), every peer, and this
        * extension's own keys and sends; cleared when it stops.
        */
@@ -1405,7 +1405,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         visible: () => globalThis.document?.visibilityState !== "hidden",
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
-      /** a service (STAGE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
+      /** a service (NATIVE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
       use: (name) => (live() ? (host.use(name, { id, signal }) ?? (acts ? view.plugins.use(name, { id, signal, runs: (x) => !!host.instanceOf(x), doc, path }) : null)) : null),
       /** has everything the doc calls for started (or failed: `failed`), and is every listed package here (`missing`: those that aren't)? */
       settled: () => {
@@ -1808,7 +1808,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     packages: () => local.get().packages,
     /** may this view write its doc? */
     writable: () => writable(),
-    /** a service of its (STAGE.md, "Native services"), for the view's plugins: what it gives lasts while the stage is open */
+    /** a service of its (NATIVE.md, "Native services"), for the view's plugins: what it gives lasts while the stage is open */
     use: (name) => host.use(name, { id: "scene:view", signal: life.signal }),
   });
 

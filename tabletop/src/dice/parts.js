@@ -1,4 +1,4 @@
-// The dice in the editor's parts bin (scene:part, scene/STAGE.md "Parts"),
+// The dice in the editor's parts bin (scene:part, scene/EDITOR.md "Parts"),
 // under "Dice". Each makes a new die doc from a preset (die.js PRESETS) and
 // adds it to the scene, built by this package's scene:source: a die in a
 // scene is its own document, so it can be opened and changed on its own, in

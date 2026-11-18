@@ -1,6 +1,6 @@
 // An empty scene doc, as the scene datatype's init makes it: every map and
 // list a scene has, made with it, so no two peers ever create one at once
-// (scene/STAGE.md, "Shared maps").
+// (scene/CONVENTIONS.md, "Shared maps").
 //
 // The source of truth is scene/src/datatype.js (SceneDatatype.init and
 // DEFAULT_VIEW). This is a copy, since packages don't import each other: when

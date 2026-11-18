@@ -2,7 +2,7 @@
 // scene-render doc. It finds the provider by id, draws a form from its
 // ParamSpecs, and writes params / pinned back to the render doc. It also shows
 // build status and can rebuild on demand. It opens nothing: the source is
-// the inspector's Source section beside it (STAGE.md, "The interface").
+// the inspector's Source section beside it (EDITOR.md, "The interface").
 //
 // "Rebuild now" first asks an enclosing scene (a cancelable, bubbling
 // `scene:rebuild` DOM event) so the scene's own build loop does it; standalone,

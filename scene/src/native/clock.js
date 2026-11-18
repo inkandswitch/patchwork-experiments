@@ -1,5 +1,5 @@
 // scene.clock (native, every doc): world time for one doc, provided as
-// "clock" (STAGE.md, "Native services").
+// "clock" (NATIVE.md, "Native services").
 //
 // `doc.clock = { running, t, by? }` (absent: running from 0) is made with the
 // doc and written field by field, so a pause and a checkpoint made at once

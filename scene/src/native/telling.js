@@ -1,5 +1,5 @@
 // scene.telling (native, every doc): telling the others what the doc bears
-// out, provided as "tell" (STAGE.md, "Native services").
+// out, provided as "tell" (NATIVE.md, "Native services").
 //
 // An extension declares `messages: { [type]: { valid(data), says(data, who,
 // scene) } }` and calls `api.use("tell").tell(type, data)`: said here as

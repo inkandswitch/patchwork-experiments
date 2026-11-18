@@ -2,7 +2,7 @@
 //
 // What goes in is the object's whole record except where it was: its
 // transform's position and rotation, its parent and its group (a bag has no
-// "where"), and `claims` (the stage's runtime state; scene/STAGE.md,
+// "where"), and `claims` (the stage's runtime state; scene/EDITOR.md,
 // "Copying objects": RUNTIME_FIELDS). Everything else is kept as it is:
 // name, sourceUrl, providerId, renderUrl, traits, tags, colour, hint, `at`…
 // Its size (the transform's scale) is part of what it is, so that is kept

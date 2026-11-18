@@ -14,7 +14,7 @@
 //
 // A dimension is selectable though it isn't a scene object: selecting one
 // sets local.selected, the one selection, to its ref "dimension:<id>"
-// (STAGE.md, "Targets and refs"), so selecting an object (or anything else)
+// (EDITOR.md, "Targets and refs"), so selecting an object (or anything else)
 // lets go of it with nothing to reconcile. Delete is a command on that ref;
 // Escape (the stage's ladder) and a click elsewhere in the view (the Edit hand's
 // click) clear it, as they clear any selection. This

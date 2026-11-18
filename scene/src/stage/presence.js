@@ -1,5 +1,5 @@
 // Presence: what this view tells the others while it's open, and what they
-// tell it (STAGE.md, "Three places for state" and "Inside the stage"). Two
+// tell it (STAGE.md, "Three places for state", "`api`"). Two
 // kinds of ephemeral message go over handle.broadcast:
 //
 //   scene:presence  this view's whole state, keys namespaced by extension,

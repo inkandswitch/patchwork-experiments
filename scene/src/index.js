@@ -109,7 +109,7 @@ export const plugins = [
     },
   },
   // ─── the parts the scene editor is made of ───
-  // The native services (STAGE.md, "Native services"): parts of every doc, or
+  // The native services (NATIVE.md, "Native services"): parts of every doc, or
   // view plugins, started before what doesn't provide (their `provides`, and `uses`).
   ...[
     ["claims", "Claims", { provides: ["claims"] }, () => import("./native/claims.js")],
@@ -358,7 +358,7 @@ export const plugins = [
     },
   },
   // objects from another scene, or from this one: an outline row dragged
-  // into this view, Copy and Paste (STAGE.md, "Copying objects")
+  // into this view, Copy and Paste (EDITOR.md, "Copying objects")
   {
     type: "scene:view",
     id: "scene.transfer",

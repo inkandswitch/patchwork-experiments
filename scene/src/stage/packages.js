@@ -248,7 +248,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     if (add.length || prune.length || suggest) {
       try {
         handle.change((d) => {
-          // (only the list init made: STAGE.md, "Shared maps")
+          // (only the list init made: CONVENTIONS.md, "Shared maps")
           changeList(d, { add, prune });
           // a scalar in the map the doc was made with: nothing two peers could each create
           if (suggest && d["@patchwork"] && typeof d["@patchwork"] === "object" && !packageUrl(d["@patchwork"].suggestedImportUrl)) d["@patchwork"].suggestedImportUrl = suggest;

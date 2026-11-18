@@ -1,6 +1,6 @@
 // Copying objects into a scene from another one (or from itself): an outline
 // row dragged into another scene's view or tree, Copy and Paste
-// (STAGE.md, "Copying objects"). Shared by the outline (where a row drag
+// (EDITOR.md, "Copying objects"). Shared by the outline (where a row drag
 // starts and where it lands in a tree) and scene.transfer (the view's drop,
 // Copy, Paste).
 //
@@ -677,7 +677,7 @@ async function copyInto(api, payload, target, change) {
 
   // every copy's id, chosen before anything is written, so each reference is
   // written once: to the copy of what it named, to what's here (in its own
-  // scene), or nothing (STAGE.md, "Copying objects"; the copy rule, copyRefs)
+  // scene), or nothing (EDITOR.md, "Copying objects"; the copy rule, copyRefs)
   const map = new Map(plan.items.map((it) => [it.from, api.newId(it.group ? "g" : "o")]));
   const sceneTraits = api.doc()?.traits ?? {};
   const fixes = new Map(plan.items.map((it) => [it.from, copyRefs(it.data.traits, refs, { map, outside: (v) => (same ? v : undefined), entries: same ? () => true : entryIn(sceneTraits) })]));

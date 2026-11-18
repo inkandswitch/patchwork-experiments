@@ -1,5 +1,5 @@
 // Dropping a .wad file doc into a scene: what's laid out, against a stand-in
-// for the drop context (STAGE.md, "Drops") that records what it's asked.
+// for the drop context (EDITOR.md, "Drops") that records what it's asked.
 import { describe, expect, it } from "vitest";
 import ext from "./extension.js";
 import { aboutText, EXIT, MAP, isWad, slideOf, SPAWN_PART, yawOf } from "./layout.js";

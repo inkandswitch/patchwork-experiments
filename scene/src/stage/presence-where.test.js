@@ -1,4 +1,4 @@
-// Presence where it is (STAGE.md, "Views, stages and links", STAGE.md, "The interface"): what a doc's
+// Presence where it is (STAGE.md, "Views, stages and links", EDITOR.md, "The interface"): what a doc's
 // people are is drawn wherever the doc is drawn with its channel, each in
 // its own stage's frame, whatever the focus; and the clock chips are the
 // focus path's.

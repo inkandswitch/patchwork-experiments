@@ -1,4 +1,4 @@
-// A part's tab in the drawer (STAGE.md, "Native services"): its panel, docked with "drawer"
+// A part's tab in the drawer (NATIVE.md, "Native services"): its panel, docked with "drawer"
 // while it's open. Chrome follows attention, never the doc: whoever owns the
 // tab says when it opens (the inspector on a selection, staying open after;
 // dimensions and parts when the viewer asks), and the tab's × is

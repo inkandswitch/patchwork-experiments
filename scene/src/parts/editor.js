@@ -1,4 +1,4 @@
-// The editor's writes (STAGE.md, "Undo", "Drops", "Templates", "Parts"). Its
+// The editor's writes (EDITOR.md, "Undo", "Drops", "Templates", "Parts"). Its
 // view plugins (the halo, handles, inspector and tree, transfer, add, the
 // parts bin, dimensions, Frame's Set home view, Delete, Undo) write the focus
 // doc through here, each write recorded from what the stage's change(fn)
@@ -30,7 +30,7 @@ const writer = (h) => ({
 /**
  * What a step did to a doc (undo.js `judge`): the names of the objects it
  * removed whose contents a keeper holds, bound by the trait of an extension
- * whose plugin says `keeper` (STAGE.md, "Keepers"), read from `reg` (the
+ * whose plugin says `keeper` (CONVENTIONS.md, "Keepers"), read from `reg` (the
  * focus's registry("scene:extension"), at once).
  */
 function judge(reg, { before, after }) {
@@ -87,7 +87,7 @@ export async function add(f, input, opts) {
 const making = new Map(); // `${scene url} ${key}` → the file being made, so two drops at once make one
 
 /**
- * ctx.file(key, make) (STAGE.md, "Parts"): the scene's own file doc for a
+ * ctx.file(key, make) (EDITOR.md, "Parts"): the scene's own file doc for a
  * versioned key ("sailing/mast@1"), the one doc.assets[key] names, else one
  * made now from make() and remembered there. Two peers making one key at
  * once each write theirs if it is still empty; the merge keeps one in
@@ -119,7 +119,7 @@ async function sceneFile(f, key, make) {
   return making.get(k);
 }
 
-/** Run create(ctx) with a drop context (STAGE.md, "Drops") made from the focus `f`, its writes one step. */
+/** Run create(ctx) with a drop context (EDITOR.md, "Drops") made from the focus `f`, its writes one step. */
 async function inStep(f, id, label, create) {
   const g = editor(f).edits(label);
   try {
@@ -191,7 +191,7 @@ export async function drop(f, info) {
 }
 
 /**
- * Put a part in (STAGE.md, "Parts"): its create(ctx, at), `at` being {
+ * Put a part in (EDITOR.md, "Parts"): its create(ctx, at), `at` being {
  * parent, transform, world }: a parent gone or a group is the scene root,
  * the transform is in the parent's frame, and `world` the same place in the
  * world. What it returns is selected.
@@ -218,7 +218,7 @@ export async function part(f, partId, at = null) {
 }
 
 /**
- * Start the scene from a template (STAGE.md, "Templates"): its create(ctx,
+ * Start the scene from a template (EDITOR.md, "Templates"): its create(ctx,
  * params) with exactly the params its metadata declares (coerced, defaulted,
  * others dropped: paramsBySpec). Then this viewer arrives where the doc now
  * says. True when it ran.

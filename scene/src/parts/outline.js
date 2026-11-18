@@ -1,5 +1,5 @@
 // The object tree: the top of the inspector's one pane (./inspector.js,
-// STAGE.md, "The interface"), mounted with it and following the same selection
+// EDITOR.md, "The interface"), mounted with it and following the same selection
 // (view.selected): a row click selects, and the inspector's fields below
 // follow in the same flush. Not a plugin of its own: createOutline(api,
 // { shown }) is called by the inspector with its api (a view plugin's: the
@@ -565,7 +565,7 @@ export function createOutline(api, { shown = () => true } = {}) {
         const ids = [id];
         // In its type list, which scene it's from and how big it is: another
         // scene's view shows a ring that size while it's dragged over
-        // (only types are readable then). STAGE.md, "Copying objects".
+        // (only types are readable then). EDITOR.md, "Copying objects".
         const snap = here.scene();
         const order = here.doc()?.order ?? [];
         const solid = subtreeOf(snap.objects, ids, order).ids.filter((x) => !isGroup(snap.objects[x]));

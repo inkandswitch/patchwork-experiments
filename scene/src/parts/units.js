@@ -1,6 +1,6 @@
 // scene.units: the "Units" picker. The unit is a viewer pref (`units`, the
 // doc's view.units as the suggestion); everything that shows a length reads
-// it through "prefs" (STAGE.md, "Native services"). This only offers the choice.
+// it through "prefs" (NATIVE.md, "Native services"). This only offers the choice.
 
 import { UNIT_OPTIONS } from "../units.js";
 

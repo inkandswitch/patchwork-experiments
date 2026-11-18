@@ -1,4 +1,4 @@
-// scene.claims (native, every doc): provides "claims" (STAGE.md, "Native services").
+// scene.claims (native, every doc): provides "claims" (NATIVE.md, "Native services").
 //
 // A claim is a fact about the shared world (who is at the helm, who computes
 // world time), so it's a doc field on what's claimed: taking one writes it,

@@ -1,4 +1,4 @@
-// The bar of tools (scene.toolbar, STAGE.md, "The interface", Decisions 10), measured in
+// The bar of tools (scene.toolbar, EDITOR.md, "The interface", Decisions 10), measured in
 // headless Chrome: what toolbar.test.js can only read from the stylesheet.
 //
 //   pnpm build

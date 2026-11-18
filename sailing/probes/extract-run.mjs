@@ -1,4 +1,4 @@
-// Extract and bundle on a real example (scene/STAGE.md, "Extract and bundle", build step
+// Extract and bundle on a real example (scene/EDITOR.md, "Extract and bundle", build step
 // 15): Lost Cities aboard, the boat's card table and the game linked on it
 // made a scene of their own, then bundled back.
 //

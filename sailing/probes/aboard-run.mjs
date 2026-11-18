@@ -511,7 +511,7 @@ try {
     }
     await b.rest(300);
     const prompt = await P("promptKeys('a')");
-    // a shown key works (STAGE.md, H3): walking, S and D are the body's, so Shuffle and Draw show without them
+    // a shown key works (EDITOR.md, H3): walking, S and D are the body's, so Shuffle and Draw show without them
     const flip = prompt.find((v) => /Flip/.test(v.name));
     const keyed = prompt.filter((v) => /Shuffle|Draw/.test(v.name));
     check("9: over the deck walking, the prompt shows Flip with F, and Shuffle or Draw only without their keys (S and D walk)", over && flip?.key === "F" && keyed.every((v) => v.key === ""), { prompt, over, hovered: await P("hovered('a')") });

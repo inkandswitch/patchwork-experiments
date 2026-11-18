@@ -1,4 +1,4 @@
-// Sailing's parts (scene:part, STAGE.md "Parts"): the sloop whole, and each
+// Sailing's parts (scene:part, EDITOR.md "Parts"): the sloop whole, and each
 // thing aboard her on its own, for the editor's parts bin, so any hull can
 // be rigged by dragging them onto it, and buoys and an islet to sail past.
 // The "Ship at sea" template lays her out with the same code (layout.js):
@@ -393,7 +393,7 @@ export async function sloopFiles(ctx) {
 export const sloop = {
   async create(ctx, at) {
     const files = await sloopFiles(ctx);
-    // where she was put, in the world (the stage's at.world: STAGE.md, api.part)
+    // where she was put, in the world (the stage's at.world: EDITOR.md, "Parts")
     const world = matrixOf(at.world);
     const objects = sloopObjects({ position: [world[12], 0, world[14]], yaw: headingOf(world) }, files, ctx.newId);
     ctx.change((d) => {

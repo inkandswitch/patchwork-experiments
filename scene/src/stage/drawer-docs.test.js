@@ -1,4 +1,4 @@
-// Documents docked in the drawer are the view's (STAGE.md, "The interface", "Documents in
+// Documents docked in the drawer are the view's (EDITOR.md, "The interface", "Documents in
 // the drawer"; the drawer's dockDocument): a finite table of what happens around
 // one, each with the pane still docked and its view never remounted, but the
 // view going; a drop in the view never docks; keys typed in one are its own.

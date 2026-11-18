@@ -147,7 +147,7 @@ export default {
       api.schedule(() => {});
     }
 
-    // ── telling everyone: that something was done, never what it was (STAGE.md "Native services") ──
+    // ── telling everyone: that something was done, never what it was (NATIVE.md "Native services") ──
     const things = (n) => (n === 1 ? "something" : `${n} things`);
     const here = (u) => bagsIn().some((b) => b.url === u);
     /** Borne out at once by a bag of this scene (each one named); worded by this view, by the speaker's name the stage gives. */
@@ -242,7 +242,7 @@ export default {
       });
     }
     const pointerNow = () => pointer ?? { x: (api.port?.clientWidth ?? 0) / 2, y: (api.port?.clientHeight ?? 0) / 2, alt: false };
-    /** The hand's carry, if a running extension provides one (STAGE.md, `carry`). */
+    /** The hand's carry, if a running extension provides one (CONVENTIONS.md, `carry`). */
     const carryFn = () => (api.collect?.("carry") ?? []).map((c) => c.value).find((v) => typeof v === "function") ?? null;
 
     /** How far a bag reaches from its middle, in plan (m). */

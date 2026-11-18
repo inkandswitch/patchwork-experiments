@@ -575,7 +575,7 @@ void main() {
   gl_FragColor.rgb += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
 }`;
 
-/** A cloud deck as the stage's atmosphere gives it (scene STAGE.md, "Atmosphere": clouds), checked as the stage checks it: { cover, contrast, scale, base } or null. Pure. */
+/** A cloud deck as the stage's atmosphere gives it (scene CONVENTIONS.md, "Atmosphere": clouds), checked as the stage checks it: { cover, contrast, scale, base } or null. Pure. */
 export function cloudsOf(c) {
   if (!c || typeof c !== "object") return null;
   const num = (v, d) => (v == null || v === "" ? d : Number.isFinite(Number(v)) ? Number(v) : null);

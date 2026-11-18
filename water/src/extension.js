@@ -45,7 +45,7 @@ import { amplitudeBound, applyDir, applyPoint, bodiesOf, boxOf, clipBody, clipTo
 import { boundedReader } from "./bounded.js";
 import { choose } from "./choose.js";
 
-/** The sky a surface reflects, from the world's atmosphere: its sky's colours and its cloud deck (scene STAGE.md, "Atmosphere"), or undefined (keep what was set). */
+/** The sky a surface reflects, from the world's atmosphere: its sky's colours and its cloud deck (scene CONVENTIONS.md, "Atmosphere"), or undefined (keep what was set). */
 const skyOf = (atm) => (atm?.sky ? { ...atm.sky, clouds: atm.clouds ?? null } : undefined);
 
 export { TRAIT, CURRENT };

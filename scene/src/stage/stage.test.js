@@ -54,7 +54,7 @@ const { plugins } = await import("../index.js");
 const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
 const { add, drop, editor, part, template: runTemplate } = await import("../parts/editor.js");
-// the drop context (STAGE.md, "Drops"), whole: what a drop, a part and a template get
+// the drop context (EDITOR.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: view.start.edit picks it up; and the view's native services)
 const VIEWS = ["scene.edit", "scene.notices", "scene.prefs", "scene.drawer", "scene.poses"];

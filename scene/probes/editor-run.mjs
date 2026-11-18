@@ -527,7 +527,7 @@ try {
       // the build controls embedded in the inspector: the STL's unit param to cm
       const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.scene-render-controls select')`, 4000);
       check("inspectorEmbedsBuildControls", hasControls);
-      // the built object's documents, a section each (STAGE.md, "The interface"): its Source, then its Build (the
+      // the built object's documents, a section each (EDITOR.md, "The interface"): its Source, then its Build (the
       // controls, open); no button anywhere opens the source but a section's Open
       const docs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section')].map((s) => [s.dataset.section, s.querySelector('.section-label').textContent, !s.hasAttribute('data-folded'), !!s.querySelector('.scene-render-controls')])`);
       check("sectionsSourceThenBuild", JSON.stringify(docs) === JSON.stringify([["source", "Source", true, false], ["build", "Build", true, true]]), docs);

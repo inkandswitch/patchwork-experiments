@@ -1240,7 +1240,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       opening: () => acquire(own.offs, (t = {}) => (opening.add(t), () => opening.delete(t))),
       /** the focus stage's api for this plugin (stage.js facetFor): its doc, scene, content, world layers… or null */
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
-      /** a service (STAGE.md, "Native services"): a view plugin's, else the focus stage's provider's */
+      /** a service (NATIVE.md, "Native services"): a view plugin's, else the focus stage's provider's */
       use: (name) => (live() ? (plugins.use(name, { id, signal }) ?? api.focus()?.use(name)) : null),
     };
 

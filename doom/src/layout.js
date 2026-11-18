@@ -1,5 +1,5 @@
 // A .wad file doc dropped into a scene: its first map, laid out as references
-// into that one file doc (STAGE.md, "Drops"). Nothing is copied out of the
+// into that one file doc (EDITOR.md, "Drops"). Nothing is copied out of the
 // WAD; each object is the same file doc seen through the map provider with
 // params of its own, so the scene is rebuilt from the WAD and its params:
 //
@@ -101,7 +101,7 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 /**
  * Lay out a WAD's first map in a scene (the drop context's api).
- * @param {object} ctx   the drop context (STAGE.md): repo, change, newId, addObject, registry, doc, notify
+ * @param {object} ctx   the drop context (EDITOR.md): repo, change, newId, addObject, registry, doc, notify
  * @param {{ url: string, doc: object, handle: object, group?: string | null, at?: { point } | null }} info
  * @returns {Promise<string | null>} the static part's id
  */

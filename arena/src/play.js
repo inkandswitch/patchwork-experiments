@@ -8,7 +8,7 @@
 // level too.
 //
 // Play and Stand targets up are world commands (show "world"): buttons on
-// the stage's bar of tools in every body (scene/STAGE.md, "The interface", Decisions 10),
+// the stage's bar of tools in every body (scene/EDITOR.md, "The interface", Decisions 10),
 // and in the menu. The HUD only reads: the count, the scores, the
 // crosshair, the ammo. It holds no button and takes no press.
 //
@@ -327,7 +327,7 @@ export default {
       },
       // the bar's world cluster is right-aligned and in this order, so Play
       // goes last: its place is anchored, and Stand targets up comes and goes
-      // to its left, never sliding Play under a pending click (STAGE.md, "The interface")
+      // to its left, never sliding Play under a pending click (EDITOR.md, "The interface")
       commands: [
         resetCommand(api),
         { id: "play", name: "Play", key: "Enter", show: ["world", "menu"], state: (t, ctx) => playState(t, { holding, walking: ctx.view?.body?.id === "walk" }), run: () => start() },

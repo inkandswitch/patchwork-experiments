@@ -76,7 +76,7 @@ in each of 360 azimuth bins, a tree's tip as tall as the bin's hash, the
 land lowered up to 0.012 rad toward the bin's edges) and its tint
 varies ±15% round the compass (`SHORE_RAG`). `shoreWeight` is the shader's
 working in JS, tested over tilts, views, lands and footprints. The sky it
-reflects carries the atmosphere's cloud deck (scene STAGE.md,
+reflects carries the atmosphere's cloud deck (scene CONVENTIONS.md,
 "Atmosphere": `clouds`), the same function as the stage's sky (`cloudAt`),
 so the reflections agree with it. Without
 either it draws the sky alone, and the shader has no shore at all (a
@@ -265,7 +265,7 @@ A new top-level package with everything CLAUDE.md asks of one
 `pnpm-lock.yaml`, `.gitignore`), checked by copying it out alone.
 
 This section is where the `water` ambient and the `water.waves`
-contribution are documented: scene/STAGE.md, "Conventions", names them
+contribution are documented: scene/CONVENTIONS.md, "Conventions", names them
 and links here, and the wind they are roughened by is sailing's
 (sailing/DESIGN.md, "Conventions").
 
@@ -649,7 +649,7 @@ Grafted from B:
   `api.worldOf(id)`, and it is selected from the outline.
 - **One open body per doc.** A second one is flagged in the inspector and
   draws and offers nothing; the lowest id keeps it. This is the keepers'
-  rule for two objects naming one slot (STAGE.md, "Keepers"). It is a
+  rule for two objects naming one slot (CONVENTIONS.md, "Keepers"). It is a
   validity rule for an authoring error, not a precedence field.
 
 **The sea is a behaviour on the shape.**
@@ -949,7 +949,7 @@ Otherwise the stage gives all of it already:
 - objects with no source.
 
 Edits to the words in `scene/`, made at build step 5:
-- STAGE.md, Conventions, "Water": the object trait `water`, open or
+- CONVENTIONS.md, "Water and wind": the object trait `water`, open or
   bounded; the ambient is the world's open water; bounded water is its
   doc's own and is never offered.
 - DESIGN.md, "The sailboat": a sea is a Water object with sea behaviour,
@@ -1469,11 +1469,11 @@ Each is fixed here with a test that fails without the fix, or answered.
     the surface's roughness and foam. Decision 10's condition for a shared
     wind (a second reader) was already met by water's material, so the wind
     is now one unprefixed ambient, `wind: { speed, from, seed, gustiness }`,
-    offered by sailing's sea, documented in STAGE.md "Wind" (in sailing/DESIGN.md since 40), and read by
+    offered by sailing's sea, documented in CONVENTIONS.md "Water and wind" (in sailing/DESIGN.md since 40), and read by
     sailing's physics and water's surface. `look` shrinks to `{ seed, stats }`.
 30. **A click on the open sea no longer boards a boat alone, on purpose.**
     The cause: the stage offers a click on nothing to the extensions that
-    hold the scene (STAGE.md, "Input": "with nothing hit, it is the scene
+    hold the scene (STAGE.md, "The input chain": "with nothing hit, it is the scene
     alone"), and an extension holds the scene only through a scene trait it
     runs on. Sailing's ship part used to run on `sailing.sea` too, so it
     held the scene and took every click on sea, sky or shore. Since the sea

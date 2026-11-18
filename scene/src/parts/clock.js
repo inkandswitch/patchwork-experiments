@@ -1,4 +1,4 @@
-// scene.clock-chip (always on): the clock chips (STAGE.md, "The interface").
+// scene.clock-chip (always on): the clock chips (EDITOR.md, "The interface").
 // One chip for each doc on the focus path that has a clock to show,
 // outermost first: its world time as its stage's "clock" service says it
 // (its status: src/native/clock.js), heard through each stage's reader. A doc
@@ -11,7 +11,7 @@
 // doc and no name. Notices
 // are aria-live. No keys.
 //
-// It sits in a slim bar on the stage's top edge, the seed of STAGE.md, "The interface"'s
+// It sits in a slim bar on the stage's top edge, the seed of EDITOR.md, "The interface"'s
 // world bar, beside the view rather than over it: the view's corners and its
 // top middle are games' (seats' picker, an arena's lobby, a ship's hint).
 

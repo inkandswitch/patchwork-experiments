@@ -1,5 +1,5 @@
 // A whole scene doc for a test, a probe page or a publish script: exactly
-// what the scene datatype's init makes (STAGE.md, "Shared maps": every map
+// what the scene datatype's init makes (CONVENTIONS.md, "Shared maps": every map
 // and list a scene has), under "@patchwork", with `fields` over it. Every
 // place that writes a scene doc whole without the shell builds it here, so
 // none can go without a field init gains later. No imports beyond the

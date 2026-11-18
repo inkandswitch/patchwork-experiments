@@ -1,5 +1,5 @@
 // scene.prefs (native, a view plugin): the viewer's display prefs, provided as
-// "prefs" (STAGE.md, "Native services"): get(key, fallback) is the viewer's,
+// "prefs" (NATIVE.md, "Native services"): get(key, fallback) is the viewer's,
 // else the caller's doc's `doc.view[key]` (a view plugin's: the focus doc's), else the fallback; set(key, value)
 // (undefined: unset) is kept per scene in localStorage, another tab's heard,
 // and published as view["scene.prefs"]; watch(fn) hears each change.

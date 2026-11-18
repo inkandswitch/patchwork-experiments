@@ -227,7 +227,7 @@ export const CONTROLS_TOOL = "scene-render-controls";
 
 /**
  * The inspector's documents that go with `target`, one section each
- * (STAGE.md, "The interface"), as [{ ext, id, label, url, toolId, folded }],
+ * (EDITOR.md, "The interface"), as [{ ext, id, label, url, toolId, folded }],
  * in `entries`' order, `ext` being the inspector's id. Dropped: an entry that
  * doesn't apply (state null or false), one whose url isn't an automerge URL,
  * one whose state throws (with a warning), and a repeat of a url and tool

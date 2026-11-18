@@ -644,7 +644,7 @@ rest).
     by its exposure, never more than two running), a lull's foam a quarter
     of its width or less in grey-white, domes of spray over the exposed
     white ends; stones stretched 0.6 to 1.4 on each axis (`stretch`).
-  - *A textured overcast* (scene STAGE.md's atmosphere `clouds`): Ukee
+  - *A textured overcast* (scene CONVENTIONS.md's atmosphere `clouds`): Ukee
     grey a stratocumulus deck 600 m up (cover 1, ±12%); sailing's bright
     day fair-weather cumulus over a third of its sky, which Cadboro shows.
     (Both are the weather package's now: the places' weathers name the

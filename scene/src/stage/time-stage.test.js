@@ -1,4 +1,4 @@
-// A stage on a manual clock (time.js; STAGE.md "Native services"): everything that moves
+// A stage on a manual clock (time.js; NATIVE.md "Native services"): everything that moves
 // with time moves only as the clock is stepped, and nothing reads the wall,
 // sets a real timer or asks for a real frame while it runs.
 import { describe, it, expect, vi, afterEach } from "vitest";

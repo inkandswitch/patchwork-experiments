@@ -13,7 +13,7 @@ import { composeMatrix, multiplyMatrices } from "../transform.js";
 import { editor } from "./editor.js";
 
 // what a ship's extension says about its traits: a ship's motion is runtime. (`needs` is
-// no key of the stage's any more, so a copy says nothing of it: STAGE.md "Copying objects")
+// no key of the stage's any more, so a copy says nothing of it: EDITOR.md "Copying objects")
 const SHIP = {
   meta: {
     id: "t.ship",
@@ -472,7 +472,7 @@ describe("the menu's Copy", () => {
   });
 });
 
-// Extract and bundle through the stage (STAGE.md, "Extract and bundle"; the exhaustive
+// Extract and bundle through the stage (EDITOR.md, "Extract and bundle"; the exhaustive
 // harness is ../extract.test.js): the commands in Edit, the link the view
 // opens, one undo step each, and the inspector's checkboxes for K.
 describe("Extract and Bundle", () => {

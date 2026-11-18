@@ -1,6 +1,6 @@
 // The slide joint: its reading of the trait, and every interleaving of a
 // finite set of events among views on a simulated network, run on the real
-// createSlides; then the same with the world paused at every step (STAGE.md
+// createSlides; then the same with the world paused at every step (NATIVE.md
 // H8: a pause changes no act and no liveness outcome).
 import { describe, expect, it } from "vitest";
 import { HEAR_MS, KEY, MAX_LATENCY_MS, POSE_MS, createSlides, positionAt, readSlide, selfClosing, travelTime } from "./slide.js";
@@ -45,7 +45,7 @@ describe("reading the trait", () => {
 // the next whole second as a browser throttles them, or when it hears
 // something), as the extension drives createSlides either way.
 //
-// The doc's world time is the stage's clock as scene/STAGE.md, "Native services" has it: one
+// The doc's world time is the stage's clock as scene/NATIVE.md, "Native services" has it: one
 // view computes it, the first drawing view here (the claim's first taker),
 // handing over when it goes or hides; it moves on only while someone
 // computes and nobody has paused it, and only the computer steps the

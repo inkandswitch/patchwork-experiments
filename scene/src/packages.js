@@ -174,7 +174,7 @@ export function packagesOf(plugins) {
  * registered plugin answering the doc's needs comes from, that can be
  * shared and isn't listed. Parts and templates count by what they make:
  * objects and traits, which are needs like any other. Empty when the doc
- * has no list: the list is made with the doc, never here (STAGE.md,
+ * has no list: the list is made with the doc, never here (CONVENTIONS.md,
  * "Shared maps").
  * @param {{ doc: object, registries: object, providerIds?: Iterable<string> }} o
  * @returns {string[]}

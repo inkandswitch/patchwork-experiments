@@ -1,7 +1,7 @@
 // scene.carry: carrying objects like pieces on a table (README, "Carry").
 //
-// "Can be carried" is data: the `scene.carry` trait on an object (STAGE.md
-// §1). This part declares that trait, so it runs, with object scope, in any
+// "Can be carried" is data: the `scene.carry` trait on an object (CONVENTIONS.md,
+// "Carry"). This part declares that trait, so it runs, with object scope, in any
 // stage whose doc has something carryable, and the input chain offers it a
 // press when the nearest link of the hit's chain that carries the trait is
 // its holder: press a card, or anything attached to a card, and the card is
@@ -18,7 +18,7 @@
 // carried into your own hand) or lying flat (a domino out of its rack), and a
 // connector with a whole frame takes it into that frame (a rack's place
 // stands a tile on edge): how it lies is landedPose's (./carry-math.js,
-// STAGE.md "Landing"). Put down, it rests on the highest surface under its
+// CONVENTIONS.md "Landing"). Put down, it rests on the highest surface under its
 // footprint, and only that final pose is written.
 //
 // Flip (F over a piece, or the menu) is carry's verb: it turns one over where
@@ -38,7 +38,7 @@
 // ahead). After a put's write, every
 // running extension's `landed(id, on)` hears it once, on this client only:
 // an event, not a claim, so nothing is ordered and nothing can refuse it
-// (STAGE.md "Landing", "How a carry ends").
+// (CONVENTIONS.md "Landing", "How a carry ends").
 //
 // The maths is ./carry-math.js (plain arrays): this file is the stage side —
 // rays and raycasts, the pose hold peers see, the ring, the doc write.

@@ -35,7 +35,7 @@ const TRAITS = ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "
 
 // what the traits are, for the scene's inspector ("Add behaviour…"), so a
 // ship can be rigged without a script. Who's at a station is a claim, and
-// who computes her is the doc's clock's (scene STAGE.md, "Native services"): neither is a
+// who computes her is the doc's clock's (scene NATIVE.md, "Native services"): neither is a
 // setting, so nothing to describe.
 const DESCRIBES = {
   "sailing.ship": {
@@ -47,7 +47,7 @@ const DESCRIBES = {
       { key: "frame", label: "Ship frame in the model ({ position, rotation }, radians)", kind: "json" },
       { key: "spec", label: "Spec overrides", kind: "json" },
     ],
-    // her way as last saved is about now, not about her: a copy starts at rest (STAGE.md, "Copying objects")
+    // her way as last saved is about now, not about her: a copy starts at rest (EDITOR.md, "Copying objects")
     runtime: ["motion"],
     // (she floats on whatever water she is in, or rests: she needs nothing of the scene)
   },

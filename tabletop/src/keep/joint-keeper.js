@@ -217,7 +217,7 @@ export function create(api, { secret } = {}) {
 
   return {
     // Who is seated and who may see what are functions of the doc and of whether everything it calls
-    // for is here (api.settled; scene/STAGE.md, "Audience"): step again when either changed, and
+    // for is here (api.settled; scene/NATIVE.md, "Audience"): step again when either changed, and
     // not when only what's drawn did (a pose streaming by, sixty times a second).
     update(snapshot, local, prev) {
       const now = JSON.stringify(api.settled());

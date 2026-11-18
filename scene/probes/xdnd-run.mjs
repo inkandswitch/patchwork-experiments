@@ -1,4 +1,4 @@
-// Cross-scene drag-and-drop and Copy/Paste (STAGE.md, "Copying objects"),
+// Cross-scene drag-and-drop and Copy/Paste (EDITOR.md, "Copying objects"),
 // in headless Chrome with real HTML5 drags over CDP.
 //
 //   pnpm build            (and sailing's, for --mode sail)
@@ -442,7 +442,7 @@ async function main() {
     report.counts.menuPastedInB = fresh.length + fresh2.length;
     await shot("7-menu");
   }
-  // ── 10. a section of the inspector dragged out to the drawer (STAGE.md, "The interface", "Documents in the drawer") ──
+  // ── 10. a section of the inspector dragged out to the drawer (NATIVE.md, "The drawer") ──
   {
     await P(`select("a", "bracket")`);
     await b.rest(400);

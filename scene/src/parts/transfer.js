@@ -1,5 +1,5 @@
 // scene.transfer: objects from another scene (or this one), by dragging or
-// by Copy and Paste (STAGE.md, "Copying objects"; the copy is ../transfer.js).
+// by Copy and Paste (EDITOR.md, "Copying objects"; the copy is ../transfer.js).
 //
 //   - An outline row from another scene, dragged into this view, is copied
 //     here and lands where the pointer hits, as a part from the bin does
@@ -29,7 +29,7 @@
 //   - Extract (on an object or group) makes it a scene of its own, linked
 //     here in its place; Bundle (on a link) copies the scene it shows into
 //     this one in its place, which then no longer follows it
-//     (STAGE.md, "Extract and bundle"; the rule is ../extract.js). Each takes a set of
+//     (EDITOR.md, "Extract and bundle"; the rule is ../extract.js). Each takes a set of
 //     the scene's root traits to go along (Extract: this scene's; Bundle:
 //     the linked scene's), offered as `options`: checkboxes in the
 //     inspector, none ticked; the menu takes none.

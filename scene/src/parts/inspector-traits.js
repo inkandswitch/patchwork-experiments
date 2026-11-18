@@ -1,5 +1,5 @@
 // scene.inspector's Behaviours, the pure side: what the scene:extension
-// registry says about traits (each plugin's `describes`, STAGE.md
+// registry says about traits (each plugin's `describes`, EDITOR.md
 // "Describing traits"), and how a described field reads from and writes to a
 // trait's value. No DOM, no api.
 //

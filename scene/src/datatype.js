@@ -10,15 +10,15 @@ export const SceneDatatype = {
     doc.objects = {};
     doc.order = [];
     // every map a scene has is made here, so no two peers ever create one at
-    // once (STAGE.md, "Shared maps")
+    // once (CONVENTIONS.md, "Shared maps")
     doc.dimensions = {};
     doc.traits = {};
-    // the scene's own file docs, by key (ctx.file: STAGE.md, "Parts")
+    // the scene's own file docs, by key (ctx.file: EDITOR.md, "Parts")
     doc.assets = {};
     // the packages its contents come from, as { url } (STAGE.md, "Packages"):
     // the stage adds to it, and offers a viewer the ones they don't have
     doc.packages = [];
-    // world time (STAGE.md, "Native services"): the stage only ever writes its fields, so a
+    // world time (NATIVE.md, "Native services"): the stage only ever writes its fields, so a
     // pause and a checkpoint made at once both keep theirs
     doc.clock = { running: true, t: 0 };
     // where people start (STAGE.md, "Arriving"): a scene made new is made to be

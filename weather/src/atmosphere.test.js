@@ -285,7 +285,7 @@ describe(`every output, over a grid of ${GRID.length} weathers`, () => {
     }
   });
 
-  it("names only STAGE.md's fields", () => {
+  it("names only CONVENTIONS.md's fields", () => {
     for (const t of GRID) {
       const a = atmosphereOf(params(t));
       expect(Object.keys(a).filter((k) => k !== "clouds")).toEqual(["sky", "fog", "sun", "exposure"]);

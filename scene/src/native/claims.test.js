@@ -1,4 +1,4 @@
-// Claims (scene.claims; STAGE.md, "Native services"): doc fields naming who holds what, counted only
+// Claims (scene.claims; NATIVE.md, "Native services"): doc fields naming who holds what, counted only
 // while their holder's session is in presence, settled by Automerge when two
 // views take one at once. Mounted with the stage harness, two views at a time:
 // on one shared handle (one doc, broadcasts delivered to both), or on two real

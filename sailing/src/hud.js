@@ -187,9 +187,9 @@ export function sailRow(s, k, v = {}) {
  *   lowered sail (`advice`, under way). Before coming aboard (the lobby) nobody
  *   is walking and the HUD says nothing: whether a click on her comes aboard is
  *   the base's (Look's click does, the Edit hand's selects, a seat's is the game's), which
- *   a package may not ask (scene STAGE.md, "Conventions for bodies"), and the
+ *   a package may not ask (scene STAGE.md, "Bodies"), and the
  *   way in that holds in every base is the bar of tools' Come aboard, whose key
- *   the bar shows where it reaches it (scene STAGE.md, H3)
+ *   the bar shows where it reaches it (scene EDITOR.md, H3)
  */
 export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";

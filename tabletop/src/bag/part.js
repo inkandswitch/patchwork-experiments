@@ -1,4 +1,4 @@
-// The "Token bag" part (scene:part, scene/STAGE.md "Parts") and what a bag
+// The "Token bag" part (scene:part, scene/EDITOR.md "Parts") and what a bag
 // document dropped into a scene becomes: one object, built from the bag doc
 // by the "bag-sack" source, carrying the trait that makes it a container.
 

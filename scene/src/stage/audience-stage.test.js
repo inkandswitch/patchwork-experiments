@@ -1,5 +1,5 @@
 // The audience and the veil through the mounted stage (scene.audience:
-// STAGE.md, "Audience", "The veil"): policies merged whatever order they run in, a broken one
+// NATIVE.md, "Audience", "The veil"): policies merged whatever order they run in, a broken one
 // closed, unknown while a listed package is missing whatever the viewer
 // answered about it, and a veiled object loading nothing of its own.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";

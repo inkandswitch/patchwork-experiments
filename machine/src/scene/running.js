@@ -2,7 +2,7 @@
 // scene's world time (worldClock), and the two things that time asks of it.
 //
 // - The stage's world time passes only while some view computes it, and a
-//   view computes only for a process (scene/STAGE.md, "Native services"). So
+//   view computes only for a process (scene/NATIVE.md, "Native services"). So
 //   while the machine runs this view registers a replicated process; while
 //   it's stopped, none, so a machine nobody plays keeps no world going. The
 //   process's step does nothing: the host is pulled, not stepped. It reads

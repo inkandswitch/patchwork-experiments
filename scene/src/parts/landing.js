@@ -1,6 +1,6 @@
 // Where a copy from another scene (or a duplicate) lands in a view: the parts
 // bin's rule (./parts-place.js), shared by scene.transfer (a drop in the view,
-// Paste) and the outline (another scene's row dropped in the tree). STAGE.md,
+// Paste) and the outline (another scene's row dropped in the tree). EDITOR.md,
 // "Copying objects".
 //
 //   - at(x, y): where the pointer hits. On an object it goes under that

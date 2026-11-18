@@ -1,4 +1,4 @@
-// Telling the others what the doc bears out (scene.telling; STAGE.md "Native services"):
+// Telling the others what the doc bears out (scene.telling; NATIVE.md "Native services"):
 // a mounted stage on a manual clock, an extension that declares one message,
 // and a peer's sends put on the wire as presence carries them. Every case of
 // valid × when `says` first answers × how often the same send arrives, each

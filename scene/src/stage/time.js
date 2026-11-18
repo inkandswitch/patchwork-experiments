@@ -1,4 +1,4 @@
-// The one source of time a stage runs on (STAGE.md, "Native services").
+// The one source of time a stage runs on (NATIVE.md, "Native services").
 //
 // Everything in a stage that moves with time takes it from here: the frame
 // loop (and with it every extension's `api.loop`, the bodies' walking and

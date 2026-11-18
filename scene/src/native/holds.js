@@ -1,4 +1,4 @@
-// Pose holds (STAGE.md, "Holding a pose"): the one order they go in, the
+// Pose holds (NATIVE.md, "Holding a pose"): the one order they go in, the
 // holds of one view, and the wire that tells the others (scene.poses' sends).
 //
 // An object has at most one holder in a view, and every view agrees on one

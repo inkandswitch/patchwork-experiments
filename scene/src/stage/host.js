@@ -62,7 +62,7 @@ export function mergeOrder(prev, want, lingering) {
 }
 
 /**
- * The update flush (STAGE.md, "Extensions"): each instance's
+ * The update flush (STAGE.md, "`instance`"): each instance's
  * update(scene, local, prev, view) when any of the three is new to it
  * (`seen`: instance → what it was last told). What's shown changing in the
  * same flush as the doc or local state (`content`: a rebuilt GLB lands with
@@ -210,7 +210,7 @@ export function createHost({
     });
   }
 
-  /** The facet of the first running provider declaring `name` (STAGE.md, "Native services") made for `caller` ({ id, signal }), or null. */
+  /** The facet of the first running provider declaring `name` (NATIVE.md, "Native services") made for `caller` ({ id, signal }), or null. */
   function use(name, caller) {
     for (const r of running()) {
       const make = listOf(r.meta?.provides).includes(name) ? r.instance?.provides?.[name] : null;

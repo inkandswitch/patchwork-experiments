@@ -276,7 +276,7 @@ export function effectiveParams(specs, params) {
  * Exactly the params a spec list describes: effectiveParams's values (each
  * coerced to its spec, a default where one is missing or can't be), with
  * every key that has no spec dropped. What a template's create() is handed
- * (STAGE.md, "Templates"): a template runs once, from a form or for another
+ * (EDITOR.md, "Templates"): a template runs once, from a form or for another
  * tool, so nothing it wasn't declared to take reaches it. A spec counts
  * only with a string key, as the start screen's form draws it (templatesOf,
  * parts/add.js): create gets exactly what the form offers.

@@ -1,4 +1,4 @@
-// scene.poses (native, every doc): provides "poses" (STAGE.md, "Holding a pose").
+// scene.poses (native, every doc): provides "poses" (NATIVE.md, "Holding a pose").
 //
 // A pose hold shows an object at a local transform while held, says so to
 // peers on the channel (createWire: its sends), and shows theirs, played

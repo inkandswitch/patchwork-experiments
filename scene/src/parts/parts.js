@@ -1,5 +1,5 @@
 // scene.parts: the parts bin, a drawer tab the viewer opens (Parts in the
-// toolbar; STAGE.md, "Parts").
+// toolbar; EDITOR.md, "Parts").
 //
 // It lists every registered scene:part from the registry's metadata (name,
 // icon, category, description, tags, traits; nothing is loaded to offer

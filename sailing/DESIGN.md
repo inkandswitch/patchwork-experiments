@@ -27,7 +27,7 @@ modules share.
 - **Densities:** water 1025 kg/m³, air 1.225 kg/m³.
 - **The `wind` ambient** is the weather package's: it offers it from the
   outermost doc's `weather` trait, and documents its value
-  (weather/WEATHER.md, "What it offers"; scene/STAGE.md, "Conventions",
+  (weather/WEATHER.md, "What it offers"; scene/CONVENTIONS.md, "Conventions",
   points there). Sailing offers no ambient. It reads the wind twice: its
   physics makes it a wind in each stage's frame (`sea-view.js`, by
   `wind.js`: `seed` and `gustiness` make its gusts), and every sea builds
@@ -570,7 +570,7 @@ rewrite that table.
    bodies"), so no condition sailing can see makes it true. The plan had
    "Come aboard (Enter)" in its place; that names a key the HUD can't
    check (a key is shown only where the resolver says it reaches the
-   command, scene STAGE.md, H3, and the bar already shows Come aboard's
+   command, scene EDITOR.md, H3, and the bar already shows Come aboard's
    key that way). So the lobby hint is empty in every base, and with it
    `NEAR`, `nearEye`, hudModel's `seated` and `near`, the `data-seated`
    attribute and the import of crew.js's `seatedView` are gone: the HUD
@@ -2210,7 +2210,7 @@ Both are open (FOLLOWUPS, N6 step 5).
 
 ## Parts
 
-`parts.js` gives the parts bin (STAGE.md, "Parts") sailing's parts, each
+`parts.js` gives the parts bin (EDITOR.md, "Parts") sailing's parts, each
 a scene:part in index.js under "Sailing":
 
 | Part | Pieces (the first is selected) | Tags | Traits |
@@ -2305,7 +2305,7 @@ moved).
 Who is at a station is a **claim** in the doc (`claims: { station | halyard:
 { viewer, session } }` on the object), lapsing when the holder's session
 leaves presence; who computes the sea and the ships is the doc's clock's
-claim, the stage's (`claims.clock`, scene STAGE.md, "Native services"). `halyard`, on the sail
+claim, the stage's (`claims.clock`, scene NATIVE.md, "Native services"). `halyard`, on the sail
 station, is who stands at the mast; the sail's own `station` claim is held
 only while a key works it, from wherever, so someone at the mast doesn't
 stop the helmsman trimming. The ship's motion is a
@@ -2314,7 +2314,7 @@ shows interpolated; it is written to the doc only at the clock's
 checkpoints (every 30 s, on pause, on letting go).
 
 The stage's names: `use("claims").claim(id, kind, { onLost })` → release | null,
-`use("claims").claimedBy(id, kind)` → `{ viewer, session, mine } | null` (STAGE.md,
+`use("claims").claimedBy(id, kind)` → `{ viewer, session, mine } | null` (NATIVE.md,
 "Claims"). A lapse is a presence change, not a doc change, so whoever waits
 to take over checks `claimedBy` in its loop. There is no `continuous` flag:
 every peer's hold is played back interpolated (about 1.5 send intervals
@@ -2435,7 +2435,7 @@ parts through it.
 
 **The sea's time is the world's.** The sea, the wind's gusts, the ships'
 physics and the floats' bob all read one time, the doc's world time
-(`use("clock").t()`, scene STAGE.md, "Native services"). The view computing it runs it at the
+(`use("clock").t()`, scene NATIVE.md, "Native services"). The view computing it runs it at the
 wall's rate, at most a quarter second a frame (a longer stall is skipped;
 the physics skips with it, `catchUp`), and steps the ships' process on a
 fixed grid of it. A follower's is the computer's at the moment whose held

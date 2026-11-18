@@ -27,7 +27,7 @@ someone selecting things as well as by someone walking); the use prompt
 that shows its verb is the scene's, in every scene.
 While any part in the scene closes itself (a `wait`), it registers a
 **process** on the scene's world clock (`use("clock").process`, scene
-STAGE.md, "Native services"): the closing.
+NATIVE.md, "Native services"): the closing.
 
 ## The trait
 
@@ -68,7 +68,7 @@ the verb is there but disabled.
   raycasts and `worldOf` see it too, so a door blocks a walker as it's
   drawn); it writes the stop it reaches **once**, with `since` (the world
   time it got there). A cycle (open, wait, close) is **two writes**.
-- **Three times** (scene STAGE.md, "Native services"). A motion is an *act*: timed by the
+- **Three times** (scene NATIVE.md, "Native services"). A motion is an *act*: timed by the
   wall clock from when it started. Where it's drawn is the fraction of its
   travel time gone by, and its write is due at a fixed time (below), set on
   a timer. Frames only draw it, so a view that draws none (a hidden tab)
@@ -85,7 +85,7 @@ the verb is there but disabled.
   one in this view only as `api.pose.hold` refusing the motion's next hold,
   so the motion reads what every hold answers.
 - **Two at once.** Two views starting at the same moment both hold it; the
-  stage ranks the holds the same way in every view (STAGE.md, `heldBy`), and
+  stage ranks the holds the same way in every view (NATIVE.md, `heldBy`), and
   the one told that a peer holds it first lets go without writing. The one
   that loses may be the one that pressed first: ranks are Lamport stamps, so
   the winner pressed before it heard the loser's hold (within a latency and
@@ -159,7 +159,7 @@ or be worked from a distance (a switch, a wire: a trigger that names the part).
   and the door stays open), and that the bound is real: at 600 ms of
   latency, the loser pressing first, both write an open; at 440 ms, the
   same presses write one.
-- **H8** (scene STAGE.md): a plain cycle and two pressing at once, for both
+- **H8** (scene NATIVE.md): a plain cycle and two pressing at once, for both
   doors, with the world paused for 0.5 s or 3 s from every 250 ms of the
   first 12 s: 392 cases. In every one the same writes by the same views as
   unpaused, each open landing when it would have (acts aren't paused),

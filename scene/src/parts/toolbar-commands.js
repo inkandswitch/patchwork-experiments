@@ -1,4 +1,4 @@
-// Reading commands (STAGE.md, "A command"), for the surfaces that present
+// Reading commands (EDITOR.md, "A command"), for the surfaces that present
 // them: the bar of tools, the key map and the menu. Pure: no DOM, no api.
 
 import { editing, inBody } from "../stage/bodies.js";
@@ -172,7 +172,7 @@ export function applicable(flat, target, ctx, surface, opts) {
 export const isWorld = (command) => shownOn(command, "world", { strict: true });
 
 /**
- * Is this command meant for the bar of tools in this view (STAGE.md, "The interface")?
+ * Is this command meant for the bar of tools in this view (EDITOR.md, "The interface")?
  * A world command is, in every body; a toolbar command (show names
  * "toolbar", or says nothing) is the editor's, so only while editing. Whether it
  * applies (state, and `edit: true`) is commandState's, as on every surface.

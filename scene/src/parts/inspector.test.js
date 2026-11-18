@@ -416,7 +416,7 @@ describe("scene.inspector: the panel", () => {
   });
 });
 
-describe("scene.inspector: documents, a section each (STAGE.md, “The interface”)", () => {
+describe("scene.inspector: documents, a section each (EDITOR.md, “The interface”)", () => {
   const ME = "scene.inspector";
   /** the sections as shown: [ext/id, label, open?, the doc-url and tool-id of its view, or null while folded] */
   const sections = () =>
@@ -627,7 +627,7 @@ describe("scene.inspector: documents, a section each (STAGE.md, “The interface
     expect(rule(".scene-stage .inspector .section-embed > patchwork-view")).toMatch(/(^|[\s;])height:\s*100%/);
   });
 
-  // ─── detach: a section in the drawer (STAGE.md, "The interface", "Documents in the drawer") ───
+  // ─── detach: a section in the drawer (NATIVE.md, "The drawer") ───
   const drawerViews = () => [...s.root.querySelectorAll(".stage-drawer-doc > patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
   const docTab = (title) => [...s.root.querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title);
   /** a section as shown: [docked?, its inline view's doc-url or null, "In the drawer" shown?] */
@@ -830,7 +830,7 @@ describe("scene.inspector: the pure side", () => {
   });
 });
 
-describe("scene.inspector: one pane, the tree and the fields together (STAGE.md, “The interface”)", () => {
+describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md, “The interface”)", () => {
   const tab = () => s.instance("scene.inspector").tab;
   const marked = () => [...tab().body.querySelectorAll('.inspector-tree .object-row[aria-selected="true"]')].map((r) => r.dataset.id);
   /** what the fields show: an object's or group's id and kind, the scene's, or hidden (a ref) */

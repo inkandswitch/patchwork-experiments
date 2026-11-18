@@ -13,7 +13,7 @@
 // world's; a linked world brings its things, not its weather.
 //
 // The trait is flat, one field per slider, so concurrent edits merge field by
-// field. A missing field is its default (STAGE.md's rule). A fetched snapshot
+// field. A missing field is its default (EDITOR.md's rule). A fetched snapshot
 // also writes `source` ({ name, api, for, fetched, fields }), which nothing
 // describes, so the inspector neither shows nor touches it.
 //

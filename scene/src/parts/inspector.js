@@ -1,5 +1,5 @@
 // scene.inspector: the editor's one pane for what's in the scene, a drawer
-// tab (STAGE.md, "The interface"). It holds the object tree on top (./outline.js) and the
+// tab (EDITOR.md, "The interface"). It holds the object tree on top (./outline.js) and the
 // selection's fields below; the selection is one value (view.selected), so a
 // row click selects and the fields follow in the same flush, and a canvas,
 // menu or Escape selection marks and reveals its row. Chrome follows
@@ -48,7 +48,7 @@
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
 // every trait some scene:extension plugin describes for that place
-// (`describes`, STAGE.md "Describing traits"; inspector-traits.js). That is
+// (`describes`, EDITOR.md "Describing traits"; inspector-traits.js). That is
 // metadata, so nothing is started to offer it: adding the trait is what
 // starts its extension, through activation. Writes are field by field: a
 // trait's key, a field in it, an entry in a map trait (a seat); never the
@@ -273,7 +273,7 @@ function create(api) {
     editor(here).edit((d) => {
       const h = holderIn(d, id);
       if (!h) return;
-      // the scene's map is pre-created (STAGE.md, "Shared maps"); an object's
+      // the scene's map is pre-created (CONVENTIONS.md, "Shared maps"); an object's
       // first trait makes its own
       if (!isMap(h.traits)) h.traits = {};
       if (!(desc.key in h.traits)) h.traits[desc.key] = newValue(desc);
@@ -901,7 +901,7 @@ function create(api) {
         sel.addEventListener("change", () => api.run({ ext, command: command.id, target, value: state.choices[Number(sel.value)]?.value }));
         return [el("label", { class: "toggle" }, `${command.name ?? command.id} `, sel), reason];
       }
-      // a command run with a set of its options (STAGE.md "A command"): a checkbox each, none ticked, then the button
+      // a command run with a set of its options (EDITOR.md "A command"): a checkbox each, none ticked, then the button
       const options = Array.isArray(state.options) && state.options.length && !state.disabled ? state.options : null;
       const tickKey = `${ext}|${command.id}|${target}`;
       if (options && !ticks.has(tickKey)) ticks.set(tickKey, new Set());
@@ -929,7 +929,7 @@ function create(api) {
           dataset: { ext, command: command.id },
           onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : options ? { ext, command: command.id, target, value: options.map((o) => o.value).filter((v) => ticked.has(v)) } : { ext, command: command.id, target }),
         },
-        // the verb's name for this target (STAGE.md "A command"), as the menu, toolbar and use prompt show it
+        // the verb's name for this target (EDITOR.md "A command"), as the menu, toolbar and use prompt show it
         String(state.label ?? command.name ?? command.id),
       );
       return options ? [el("span", { class: "command-with-options" }, button, boxes), reason] : [button, reason];

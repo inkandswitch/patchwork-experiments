@@ -1,4 +1,4 @@
-// scene.links (native, a view plugin): links (STAGE.md, "Native services"),
+// scene.links (native, a view plugin): links (NATIVE.md, "Native services"),
 // provided as "links". A link is an object whose source is a scene doc
 // (./link-graph.js). This expands the view's links, one pure function of the
 // link graph (expand, I3), and opens a stage for each occurrence that isn't

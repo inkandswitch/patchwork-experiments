@@ -1,4 +1,4 @@
-// The stage's renderer (STAGE.md, "Inside the stage"): the WebGL renderer,
+// The stage's renderer (STAGE.md, "Picking and camera"): the WebGL renderer,
 // lights and the extensions' atmosphere (sky, fog, sun), object nodes and
 // their display, the camera rig (orbit, hold, limits), picking with vertex
 // snap, the extensions' drawing layers (world groups, an on-top pass, DOM
@@ -155,7 +155,7 @@ function hexColour(v) {
 const finite = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 
 /**
- * An atmosphere (STAGE.md, "Atmosphere") made safe to draw: colours checked,
+ * An atmosphere (CONVENTIONS.md, "Atmosphere") made safe to draw: colours checked,
  * numbers finite, the sun's direction a unit vector; whatever can't be used
  * is left out, and nothing usable at all is null. A sky missing a colour takes
  * a neighbour's; fog without a colour takes the sky's horizon; a sun without
@@ -201,7 +201,7 @@ export function cleanAtmosphere(a) {
   return Object.keys(out).length ? out : null;
 }
 
-/** A cloud deck's defaults (STAGE.md, "Atmosphere"): its cells' size and its height, metres; how far it moves the sky's luminance either way. */
+/** A cloud deck's defaults (CONVENTIONS.md, "Atmosphere"): its cells' size and its height, metres; how far it moves the sky's luminance either way. */
 export const CLOUDS = Object.freeze({ contrast: 0.1, scale: 600, base: 800 });
 
 /**
@@ -1256,7 +1256,7 @@ export class Viewport {
   // ─── atmosphere ───────────────────────────────────────────────────────────
 
   /**
-   * The extensions' atmosphere, merged by the stage (STAGE.md, "Atmosphere"):
+   * The extensions' atmosphere, merged by the stage (CONVENTIONS.md, "Atmosphere"):
    * a sky, fog, a sun and exposure. null (or nothing usable) is the stage's
    * own look, exactly: no sky, no fog, the key light, no shadows. Only a
    * change does anything.

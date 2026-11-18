@@ -1,4 +1,4 @@
-// scene.audience (native, every doc): provides "audience" (STAGE.md,
+// scene.audience (native, every doc): provides "audience" (NATIVE.md,
 // "Audience", "The veil"). Who may see what a thing is, by every running
 // extension's `audience` policy, and the veil, a stand-in for what is kept
 // from this viewer. Only the public api; the merge is pure.

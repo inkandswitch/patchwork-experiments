@@ -20,7 +20,7 @@
 // blocks a walker as drawn), and writes the stop it reaches once. So a cycle
 // (open, wait, close) is two writes.
 //
-// THREE TIMES (scene/STAGE.md, "Native services"). A motion is an act: timed by the wall
+// THREE TIMES (scene/NATIVE.md, "Native services"). A motion is an act: timed by the wall
 // clock from when it started, not by frames and not by the world's clock,
 // so a pause never stops one halfway. Where the part is drawn is
 // (now − started) / travel time along the line, and the write is due at a
@@ -34,7 +34,7 @@
 // view that closes it is never a matter of who opened it.
 //
 // TWO AT ONCE. Two views starting at once both hold it; the stage ranks their
-// holds the same way everywhere (STAGE.md, `heldBy`), and the one that is
+// holds the same way everywhere (NATIVE.md, `heldBy`), and the one that is
 // told a peer holds it first lets go without writing. The one that loses may
 // be the one that pressed first: a hold's rank is a Lamport stamp, so the
 // winner is one that pressed before it heard the loser's hold, at most one
@@ -49,7 +49,7 @@
 // test's simulated network) provides; it reads and writes nothing else.
 
 export const KEY = "joints.slide";
-/** The stage's pose interval: how often a held pose goes out (STAGE.md, "Holding a pose"). */
+/** The stage's pose interval: how often a held pose goes out (NATIVE.md, "Holding a pose"). */
 export const POSE_MS = 50;
 /** The most network latency (one way, ms) the joint promises to settle a contest within. */
 export const MAX_LATENCY_MS = 450;

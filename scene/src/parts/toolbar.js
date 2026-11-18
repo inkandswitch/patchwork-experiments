@@ -1,4 +1,4 @@
-// scene.toolbar: the bar of tools (STAGE.md, "The interface"), a row along the top
+// scene.toolbar: the bar of tools (EDITOR.md, "The interface"), a row along the top
 // presenting the scene commands (the null target) of every running
 // extension on the focus path, in two clusters: the editor's, at the left,
 // only while editing (show includes "toolbar", or says nothing), and the world's,
@@ -15,7 +15,7 @@
 // nothing.
 //
 // Across linked docs it holds the scene commands of the stages on the focus
-// path, the focus first, out to the outermost (STAGE.md, "The interface": entered in a
+// path, the focus first, out to the outermost (EDITOR.md, "The interface": entered in a
 // game aboard, the game's and the boat's), each worked out in its own
 // stage's context and run there. It doesn't follow the pointer, so it
 // doesn't change under it.

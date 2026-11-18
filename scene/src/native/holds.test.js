@@ -1,4 +1,4 @@
-// Ordered holds (STAGE.md, "Native services", "A person and a process on one object"; H6):
+// Ordered holds (NATIVE.md, "Holding a pose"; H6):
 // the one order holds go in, a view's own holds and its peers' (holds.js,
 // the hold tables and the wire), exhaustively. Real wires on a bus whose
 // messages wait until the test delivers them, a doc as a plain object.

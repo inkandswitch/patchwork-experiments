@@ -1,4 +1,4 @@
-// Extract and bundle (STAGE.md, "Extract and bundle", invariants I9 and I11): one copy
+// Extract and bundle (EDITOR.md, "Extract and bundle", invariants I9 and I11): one copy
 // rule used in two directions, each followed by one change to the host.
 //
 //   extract(S, K): objects S of a scene, siblings under one parent p, become

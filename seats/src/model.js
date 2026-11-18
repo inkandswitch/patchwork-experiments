@@ -31,7 +31,7 @@ import { applyMatrix, invertMatrix } from "./transform.js";
 
 export const SEATS = "seats";
 
-/** A seat's claim kind, on the scene (scene/STAGE.md, "Native services"). */
+/** A seat's claim kind, on the scene (scene/NATIVE.md, "Native services"). */
 export const SEAT_CLAIM = (sid) => `seat:${sid}`;
 
 /** One owner's seats, { [seatId]: { name, player, lasting?, camera? } }: object `of`'s, or (null) the doc's own. */
@@ -150,7 +150,7 @@ export function cleanPlaces(list, objects) {
  * { [seatId]: { name, lasting?, camera? } }, laid as the doc's own (`of`
  * null: a game is a doc of its own, so its seats are its doc's) or as
  * object `of`'s, on that object (a machine's ports: they go where it goes).
- * The seats map is made once (scene/STAGE.md, "Shared maps"), each seat
+ * The seats map is made once (scene/CONVENTIONS.md, "Shared maps"), each seat
  * written empty (player: null), and a seat already there under that id
  * keeps its player and takes the new name, view and lasting. A seat's
  * camera is in its doc's root frame (a doc linked onto a moving table rides

@@ -1,4 +1,4 @@
-// Showing another view's held pose smoothly (STAGE.md, "Holding a pose").
+// Showing another view's held pose smoothly (NATIVE.md, "Holding a pose").
 //
 // A held pose reaches peers as a stream of samples, one per send interval
 // (20 Hz by default, faster when an extension raises the presence rate).

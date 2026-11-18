@@ -134,7 +134,7 @@ export function fakeRepo() {
  *   content: what api.content(id) answers; registries: what api.registry(type) answers
  */
 export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {}, ext = "tabletop" } = {}) {
-  // a scene as its datatype makes it: `assets` comes with the doc (scene/STAGE.md, "Shared maps")
+  // a scene as its datatype makes it: `assets` comes with the doc (scene/CONVENTIONS.md, "Shared maps")
   if (!doc.assets) doc.assets = {};
   vi.useFakeTimers();
   vi.setSystemTime(1_000_000);
@@ -299,7 +299,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       deliver(type, data);
     }
     const notices = { notify: (text, kind) => view.notices.push({ text, kind }) };
-    // the drawer, as STAGE.md says: close() and the × close it, and only the × calls onClose
+    // the drawer, as NATIVE.md says: close() and the × close it, and only the × calls onClose
     const drawer = {
       dock(el, { title, onClose } = {}) {
         const had = view.docked.find((d) => d.el === el);
@@ -359,7 +359,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         const h = setTimeout(fn, ms);
         return () => clearTimeout(h);
       },
-      // the doc's ephemeral side (STAGE.md, "api.channel")
+      // the doc's ephemeral side (STAGE.md, "`api`")
       channel: {
         viewer,
         session,
@@ -513,7 +513,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
 }
 
 /**
- * A drop context (STAGE.md, "Drops" and "Parts"), as a template, a part or a
+ * A drop context (EDITOR.md, "Drops" and "Parts"), as a template, a part or a
  * drop gets one: the doc, its snapshot (parents resolved), change, newId, a
  * repo that makes docs, ctx.file (the scene's one doc per key, remembered at
  * doc.assets[key]), the registry, worldOf, local, notify, and addObject, which

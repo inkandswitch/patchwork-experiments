@@ -1,5 +1,5 @@
 // The world's look from its weather (WEATHER.md, "The look"): the ambient
-// `atmosphere` (scene STAGE.md, "Atmosphere") as a pure function of the
+// `atmosphere` (scene CONVENTIONS.md, "Atmosphere") as a pure function of the
 // weather's params. Same params, same JSON, on every peer.
 //
 // A finite table of looks, each a complete daytime atmosphere, combined in
@@ -103,7 +103,7 @@ export function dayLook(ce, h) {
 /**
  * Each kind's opacity (how much of the sky's look it takes: thin cirrus lets
  * the blue through), which of the stage's two decks draws it, and that
- * deck's contrast and cell size (STAGE.md's clouds). The stage draws a deck
+ * deck's contrast and cell size (CONVENTIONS.md's clouds). The stage draws a deck
  * of cover under 1 as scattered clouds (the noise's top `cover` whitened and
  * brightened overhead) and a deck of cover 1 as a layer (the whole sky
  * textured ±contrast, nothing whitened): two decks, not one deck at two
@@ -129,7 +129,7 @@ export const KINDS = Object.freeze({
 export const SCATTERED_MAX = 0.95;
 
 /**
- * The deck (STAGE.md's clouds) for conditions `c`, or null: continuous in
+ * The deck (CONVENTIONS.md's clouds) for conditions `c`, or null: continuous in
  * the trait's cover and the haze, as drawn, because it moves only by the
  * stage deck's own continuous levers and never crosses from one deck to the
  * other. A layer is the stage's cover-1 deck, its contrast the kind's ×
@@ -232,7 +232,7 @@ export function skyAt(c, e) {
 // ─── the atmosphere ──────────────────────────────────────────────────────────
 
 /**
- * The ambient `atmosphere` (STAGE.md's shape) under conditions `c` with the
+ * The ambient `atmosphere` (CONVENTIONS.md's shape) under conditions `c` with the
  * sun at `sun` ({ azimuth, apparent, geometric }, solar.js's sunAt):
  *   - sky: the look's gradient;
  *   - fog: the horizon's colour, far 0.9 × the visibility in force

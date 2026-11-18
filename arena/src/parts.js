@@ -1,4 +1,4 @@
-// The arena's parts (scene:part, STAGE.md "Parts"): a target, a crate and a
+// The arena's parts (scene:part, EDITOR.md "Parts"): a target, a crate and a
 // spawn point, for the editor's parts bin. Each is one block of its kind,
 // put where the bin says (under the object it was dropped on, if any), from
 // the scene's own GLB for that kind (layout.js). They aren't locked as the

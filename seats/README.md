@@ -43,7 +43,7 @@ people lists this package in its `packages`, like any other.
   that owner's seat.
 - **Who sits in a lasting seat is the doc's** (`player`) and lasts. Whether
   that player is here now is a claim on the seats' owner (the scene, or the
-  object), `seat:<id>` (scene/STAGE.md, "Native services"): it lapses when they go, so
+  object), `seat:<id>` (scene/NATIVE.md, "Native services"): it lapses when they go, so
   a seat whose player has gone can be taken (after asking), and one whose
   player is here can't. Claims decide who may take a seat, never who sees
   what.
@@ -67,7 +67,7 @@ people lists this package in its `packages`, like any other.
   whatever body you're in (walking her deck, or Look); standing up, the
   chip's Leave or watching pops it, and that body carries on.
 - **"Sat down"**, told to everyone (`use("tell").tell`: the seat id, and the
-  owner's object id for an object's seat; scene STAGE.md "Native services"): said
+  owner's object id for an object's seat; scene NATIVE.md "Native services"): said
   once the seat is one of the scene's, by the sitter's contact name.
 
 ## Conventions
@@ -78,7 +78,7 @@ people lists this package in its `packages`, like any other.
 | `seatPlaces` (collected: whoever gives a seat somewhere to be) | `(scene) → [{ seat, of?, id, min, max }]`: a box in object `id`'s own frame (a hand tray) for seat `seat` of object `of`'s (absent: the doc's own). A name tag goes on each, and a look at one is a look at its seat. Several places may share one object (a machine's ports along its front): a look at that object is at the place it lands in, else at your own among them if you sit at one, else at the nearest (`placeOn`) |
 | `lay(d, seats, of?)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, lasting?, camera? } }` into a scene doc being set up, empty: the doc's own seats, or object `of`'s, on it (nothing if it isn't there). A seat already there keeps its player and takes the new name, view and lasting. A game is a doc of its own, so its seats are its doc's: a second game is a second doc, with its own `p1` and `p2`. A machine lays its ports on itself, not lasting |
 
-These are also listed in scene/STAGE.md, "Conventions", with the keepers'.
+These are also listed in scene/CONVENTIONS.md, "Conventions", with the keepers'.
 Where this package isn't loaded there is no roster: a hand is nobody's and
 a deck waits for players; the stage offers the package from the scene's
 `packages`.
