@@ -135,7 +135,11 @@ and the scene package as its suggested import (`src/scene-package.js`).
   read from the file doc the game's `assets` caches it in, else fetched,
   stored and cached there; two viewers doing either at once each write
   theirs only where nothing is yet, and the merge keeps one. A viewer who
-  can't write the game draws for themselves and writes nothing. What a
+  can't write the game draws for themselves and writes nothing. An image
+  over 32 MB (Sovereign's player decks are 7700 × 3174 PNGs of 33 MB) is
+  halved until it fits, as the importer stores one (`tts/shrink.js`), and
+  drawn from and stored at that size; where the page can't re-encode it, it's
+  drawn from as it is and not stored. What a
   host won't give (no CORS) is drawn without, its URL in `drawn[kind].missing`
   and on the game page, and fetched again when next needed after ten minutes.
   A template's or part's table (built-in games, small) draws every kind up front.
@@ -343,7 +347,13 @@ Rangers Demo's memory bags as New game's options, for two, then Start),
 `states-run.mjs` (Arcs from this machine's TTS folder, offline, its assets
 the cache lacks answered by stand-ins of about their size: set up for four
 by New game, a ship turned to Damaged and back with PgDn, a custom die
-rolled showing its pictured face). `setup-bench.mjs` (Node, offline: a real
+rolled showing its pictured face), `sovereign-run.mjs` (a mod with its
+REAL art, Sovereign: Fall of Wormwood by default: its JSON alone imported,
+New game for four, four views of the session each its own peer, each
+seated, five drawn into each hand from a deck turned face down, each hand's
+faces shown to its seat alone; the page's fetches answered from the files
+`fetch-assets.mjs` fetched beforehand, with the CORS header each host sent,
+which it also tabulates per host). `setup-bench.mjs` (Node, offline: a real
 Automerge repo with no network) times importing a big mod, setting up a
 table from it and showing a card's face, phase by phase, with stand-in
 assets, counting the docs, changes, fetches and decodes each makes;
