@@ -216,6 +216,18 @@ sends simulated locally (cannonballs, spray), and positional sound.
   layout. Still to do: one escape hatch (a scripted step), a first player
   drawn by lots, Lost Cities' deal as a start step (the lead's call), and
   translating a mod's plain-Lua setup (agent-assisted).
+- **Alternate States and custom dice. Done, 2026-11-18** (HISTORY.md),
+  from the ranking of the lead's 42 local mods (States in 28, custom dice in
+  12), proven on Arcs. A piece may have other looks (`states`), a thing be
+  laid out in one, and a recipe's `place` turn one (a board's look for three);
+  at a table anyone turns a piece with PgDn/PgUp/a number key, one write
+  for everyone (runtime: a fork shows the laid-out look; last writer wins).
+  States are drawn on demand as card faces are. A TTS custom d6's faces are
+  cells of its image. Still to do: check the d6 template's cell layout
+  against a real die's image (none is cached here), custom dice other than
+  d6, a card's States (a keeper's look: they'd need the keeper to hold
+  every state), and the per-player-count map variants as recipe options
+  (the importer keeps them as plain states).
 - **Open, deferred:** where live play state lives for a 2D view or scripts:
   (a) the scene's traits and transforms, as today, or (b) a tabletop session
   doc the scene renders. Decide when 2D or scripting is on the table.

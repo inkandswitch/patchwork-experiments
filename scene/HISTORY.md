@@ -888,3 +888,37 @@ Earthborne Rangers Demo offline (Chrome refusing every other host), New
 game for two with the pre-made rangers and shuffling, sits, Start: 11
 checks pass; library-run.mjs and dominoes.mjs (2, 3, 4) pass too.
 
+### 2026-11-18 — Tabletop: alternate states and custom dice
+
+PLANS.md §3, built while the lead slept (nothing published, synced or
+fetched). The ranking of the lead's 42 local TTS mods found alternate
+States in 28 and custom dice in 12; Arcs (75 ships with a Damaged state,
+20 custom d6s) is the proof. **The format** (tabletop-game v2, additive;
+GAME-FORMAT.md §4–6, choice 23): a piece may have `states`, other looks
+each named and drawn as a piece is (its own is called by its name); a
+thing's `state` is the look it is laid out in; a recipe's `place` may turn
+a thing to a state (`{ state, at? }`). Never a card's or a card's back's,
+so a state never shows what's hidden. Codes `state-name`, `state-card`,
+`unknown-state`. **At a table** (`src/states.js`, `table/states.js`, the
+extension `tabletop.states`): a look is drawn by ref (`<kind>#<n>`), so a
+state is drawn the first time anyone is shown it and kept in the game's
+`drawn`, as a card's face is; the thing's trait names every look and the
+one it was laid out in, and PgDn / PgUp / a number key write `shown`, one
+write for everyone, runtime (a fork shows the laid-out look), the last
+writer winning when two turn it at once (an Automerge test). The turned
+look is shown over the object with the stage's display; a piece in
+someone's hand is seen turned by that seat alone. **Dice**: a die face may
+carry a picture (`image: { file, rect? }`) drawn over the side read, its
+marks where it can't be had; look.js crops it for the die source through
+the game's assets. **The importer**: States become the piece's states in
+TTS's order (the object is the state its States leaves out), named by
+Nickname or "<piece> (state n)"; a card's or deck's States are left out,
+counted. A custom d6's faces are cells of its image, three across and two
+down (TTS's template as read here, unverified: no custom die's image is in
+this machine's cache), each on the side its RotationValue turns up (found
+from Unity's rotation, z mirrored) and named by its value. probes/
+states-run.mjs on Arcs, offline, with stand-in assets (none of Arcs's is
+cached): New game for four, a ship turned to Damaged and back (drawn on
+demand, one entry more in `drawn`), a die rolled showing its pictured
+face: 16 checks pass. rank-mods.mjs marks a mod down only for States left
+out: two grades (if fetched) rise, Arcs and Root Accessories, B to A.
