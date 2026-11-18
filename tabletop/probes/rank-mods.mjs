@@ -30,8 +30,9 @@
 // grade: that, capped by this cache's coverage — under 90% cached at best B,
 // under 50% at best C):
 //   A  imports nearly whole, no or trivial scripting
-//   B  imports whole, but setup-only scripting, > 10 alternate States, any
-//      grey-box stand-in, or > 5% built-in pieces / custom dice drawn plainly
+//   B  imports whole, but setup-only scripting, > 10 alternate States the
+//      importer leaves out (a card's or a deck's), any grey-box stand-in, or
+//      > 5% built-in pieces / custom dice drawn plainly (any but a d6)
 //   C  rules/UI scripting, > 3% grey boxes (asset bundles, fixtures such as
 //      counters/tablets/clocks, unknown Names), or over the 5000-object cap
 //   D  doesn't import, heavy scripting, > 30% grey boxes, or under half the
@@ -370,7 +371,9 @@ export function grade(r) {
   if (minor) why.push(`${minor} built-in/custom-dice stand-ins`);
   why.push(`assets ${have}/${need} cached`);
   if (kinds["3D text"] || kinds.notecard) why.push(`${(kinds["3D text"] ?? 0) + (kinds.notecard ?? 0)} text/notecards left out`);
-  if (r.states.total) why.push(`${r.states.total} alt States on ${r.states.objects}`);
+  // alternate States come across as a piece's states, but a card's or a deck's (and a state of another sort of thing)
+  const statesLeft = Object.entries(r.import.skipped ?? {}).filter(([k]) => /state/.test(k)).reduce((n, [, v]) => n + v, 0);
+  if (r.states.total) why.push(`${r.states.total} alt States on ${r.states.objects}${statesLeft ? `, ${statesLeft} left out` : ""}`);
   if (r.import.truncated) why.push("over 5000 objects (truncated)");
   if (c.placed < 0.5 * (r.objects ?? 0)) why.push(`only ${c.placed} of ${r.objects} objects placed`);
   why.push(`Lua ${sc} (${Math.round(r.lua.restBytes / 1000)} KB${r.lua.memoryBags ? `, ${r.lua.memoryBags} memory bags` : ""}${r.lua.xml ? `, XML ${Math.round(r.lua.xml / 1000)} KB` : ""})`);
@@ -379,7 +382,7 @@ export function grade(r) {
   let f;
   if (sc === "heavy" || s > 0.3 || c.placed < 0.5 * (r.objects ?? 0)) f = "D";
   else if (sc === "rules/UI" || s > 0.03 || r.import.truncated) f = "C";
-  else if (sc === "setup" || r.states.total > 10 || minor / placed > 0.05 || serious > 0) f = "B";
+  else if (sc === "setup" || statesLeft > 10 || minor / placed > 0.05 || serious > 0) f = "B";
   else f = "A";
   // on this machine: the cache's coverage too
   const order = "ABCD";

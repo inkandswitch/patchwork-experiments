@@ -340,7 +340,11 @@ without this package: fail closed, then Load), `dice.mjs`, `liars-dice.mjs`,
 `bag.mjs`, `import-run.mjs`, `library-run.mjs` (the launcher: built-in
 games, New game, Fork, Import, in an in-memory repo), `setup-run.mjs` (a
 real mod from this machine's TTS folder and cache, offline: Earthborne
-Rangers Demo's memory bags as New game's options, for two, then Start). `setup-bench.mjs` (Node, offline: a real
+Rangers Demo's memory bags as New game's options, for two, then Start),
+`states-run.mjs` (Arcs from this machine's TTS folder, offline, its assets
+the cache lacks answered by stand-ins of about their size: set up for four
+by New game, a ship turned to Damaged and back with PgDn, a custom die
+rolled showing its pictured face). `setup-bench.mjs` (Node, offline: a real
 Automerge repo with no network) times importing a big mod, setting up a
 table from it and showing a card's face, phase by phase, with stand-in
 assets, counting the docs, changes, fetches and decodes each makes;
