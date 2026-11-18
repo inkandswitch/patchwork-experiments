@@ -273,9 +273,14 @@ The doc is the game's fields at its top level, with `"@patchwork": { type:
 `drawn: { [kind]: { url, key, bounds, missing? } }` and `tables: url[]`
 (the scenes set up from it).
 
-`drawn` holds each piece's GLB file doc, drawn by the game page and
-rewritten in place when its look changes; a GLB drawn from files carries
-their `origin.urls`, and `missing` lists the files it had to do without
-(tried again after a while). Only a viewer who can write the game writes
-`drawn` or `assets`; two writing one entry at once each write theirs only
-where nothing is yet, and the merge keeps one.
+`drawn` holds each piece's GLB file doc, drawn the first time something
+needs it (`src/pieces.js`) and rewritten in place when its look changes;
+a GLB drawn from files carries their `origin.urls`, and `missing` lists the
+files it had to do without (tried again when next needed, after a while).
+Setting up a table draws what it lays out (its things, a card's back,
+what's in its bags); a card's face is drawn when a keeper first shows it
+to someone, with every face cut from its sheet, made and recorded in kind
+order, so `drawn` says which sheets have been seen, never which card. Only
+a viewer who can write the game writes `drawn` or `assets`; two writing one
+entry at once each write theirs only where nothing is yet, and the merge
+keeps one.

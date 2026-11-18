@@ -22,6 +22,7 @@
 //   object.traits = { ...bind(slot) };     // slot k holds items[k] to begin with
 
 import { bindings, itemLook, lookFor, showLooks } from "./rule.js";
+import { faces } from "../table/faces.js";
 import { itemAt, newPlain, shuffleSlots, wellFormed } from "./plain.js";
 
 export const TRAIT = "keep.plain";
@@ -49,7 +50,7 @@ function create(api) {
   const containers = new Map(); // url → { handle, problem, off }
   let bound = bindings({}, TRAIT);
   const aud = api.use("audience");
-  const looks = showLooks(api, aud);
+  const looks = showLooks(api, aud, { face: faces(api) });
   let dead = false;
 
   // a container changed (a shuffle), or arrived: look again

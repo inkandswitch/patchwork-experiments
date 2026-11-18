@@ -95,11 +95,12 @@ try {
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
   let scene;
+  let game = null; // the game a plain table is set up from (its drawn faces)
   if (MODE === "template") {
     scene = repo.add(emptyScene());
   } else {
     // a table whose deck doesn't ask for its players to shuffle it: kept in the open, by the plain keeper
-    ({ scene } = await lostCitiesTable(repo, { title: "Plain table", secure: false }));
+    ({ scene, game } = await lostCitiesTable(repo, { title: "Plain table", secure: false }));
   }
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -173,7 +174,10 @@ try {
     objects: () => portable(scene.doc().objects ?? {}),
     privateKeys,
     /** how many documents the repo has made, of each type (a veil must make none) */
-    made: () => { const out = {}; for (const h of repo.created) { const t = h.doc()?.["@patchwork"]?.type ?? "?"; out[t] = (out[t] ?? 0) + 1; } return out; },
+    // (a face drawn when it's first shown is the game's, recorded in its drawn: not made to hide anything)
+    made: () => { const faces = new Set(Object.values(game?.doc()?.drawn ?? {}).map((e) => e.url)); const out = {}; for (const h of repo.created) { if (faces.has(h.url)) continue; const t = h.doc()?.["@patchwork"]?.type ?? "?"; out[t] = (out[t] ?? 0) + 1; } return out; },
+    /** the faces the game has drawn (its drawn GLBs) */
+    facesDrawn: () => Object.keys(game?.doc()?.drawn ?? {}).length,
     packages: () => JSON.parse(JSON.stringify(scene.doc().packages ?? [])),
     seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,

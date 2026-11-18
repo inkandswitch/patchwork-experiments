@@ -7,7 +7,7 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { emptyScene } from "../src/empty-scene.js";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
 import { pieceDrawer } from "../src/pieces.js";
-import { tableLayout, writeTable } from "../src/setup.js";
+import { kindsLaid, tableLayout, writeTable } from "../src/setup.js";
 import { prepareTable } from "../src/table/made-with.js";
 import { TabletopGameDatatype } from "../src/datatype.js";
 import { gameOf, writeGame } from "../src/game.js";
@@ -38,10 +38,11 @@ export async function lostCitiesTable(repo, { title = "Probe table", secure = tr
     if (!secure) delete d.setup.find((t) => t.deck).deck.secure;
     edit?.(d);
   });
-  await pieceDrawer({ repo, handle: game }).ensure(Object.keys(game.doc().pieces));
+  // as the game page sets a table up: what it lays out drawn now, each card's face when it's first shown
+  await pieceDrawer({ repo, handle: game }).ensure(kindsLaid(gameOf(game.doc())));
   const g = game.doc();
   const fileOf = (k) => (g.drawn?.[k]?.url ? { url: g.drawn[k].url, hint: g.drawn[k].bounds ? { bounds: g.drawn[k].bounds } : null } : null);
-  const layout = tableLayout(gameOf(g), { fileOf, gameUrl: game.url });
+  const layout = tableLayout(gameOf(g), { fileOf, faceOf: (kind) => ({ game: game.url, kind }), gameUrl: game.url });
   const made = await prepareTable({ repo, registry }, layout);
   const table = emptyScene({ title });
   writeTable(table, layout, made);
@@ -70,7 +71,8 @@ export const deckUrlOf = (objects) => Object.values(objects).map((o) => kept(o)?
  * kept from you), or "back" (no look: the object's own).
  */
 export function shownAs(dbg, id) {
-  const l = new Map([...(dbg?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id);
+  // the veil is bytes with no name; a face drawn here, before its doc is kept, is bytes with its name (pieces.js)
+  const l = new Map([...(dbg?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array && !o.name ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id);
   if (!l) return "back";
   if (l.veil === true) return "veil";
   return l.sourceUrl ? "face" : "back";

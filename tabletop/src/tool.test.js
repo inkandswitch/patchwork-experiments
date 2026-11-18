@@ -145,6 +145,10 @@ describe("the tabletop-game tool", () => {
     const cleanup = TabletopGameTool(game, element);
     await until(() => button(element, "Santorini"));
     button(element, "Santorini").click();
+    // a kind is drawn when something needs it: setting up a table
+    await until(() => game.doc().title === "Santorini");
+    expect(game.doc().drawn).toEqual({});
+    button(element, "Set up a table").click();
     await until(() => game.doc().drawn?.dome?.url);
     const glb = game.doc().drawn.dome.url;
 

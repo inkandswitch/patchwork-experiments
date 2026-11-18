@@ -45,10 +45,9 @@ function fakeRepo() {
 }
 
 /** A scene of four kept cards, and a stage that answers audience and shown from a table the test fills. */
-async function mount({ viewer = "me", doc = newPlain({ title: "Deck", items: FACES }) } = {}) {
-  const repo = fakeRepo();
+async function mount({ viewer = "me", doc = newPlain({ title: "Deck", items: FACES }), repo = fakeRepo(), objects: n = FACES.length } = {}) {
   const deck = repo.add(doc);
-  const objects = Object.fromEntries(FACES.map((_, k) => [`c${k}`, { name: "Card", sourceUrl: "automerge:back", traits: { [TRAIT]: { by: deck.url, slot: k } } }]));
+  const objects = Object.fromEntries(Array.from({ length: n }, (_, k) => [`c${k}`, { name: "Card", sourceUrl: "automerge:back", traits: { [TRAIT]: { by: deck.url, slot: k } } }]));
   const said = { audience: {}, shown: {} };
   const api = {
     repo,
@@ -79,6 +78,38 @@ describe("the plain keeper", () => {
       // c2: in someone else's hand: its back, no look
       ["c3", { veil: true }], // face up behind their screen
     ]);
+  });
+
+  it("a face named by its game is drawn when it's first shown here, and not before: in someone else's hand, or face down, it isn't", async () => {
+    // a table set up from a game page: each item names the game and the kind (setup.js faceOf)
+    const repo = fakeRepo();
+    const box = (color) => [{ shape: "box", size: [0.05, 0.001, 0.07], color }];
+    const game = repo.add({ pieces: { back: { name: "Back", parts: box("#203040") }, x: { name: "X", parts: box("#ff0000"), back: "back" }, y: { name: "Y", parts: box("#00ff00"), back: "back" } }, drawn: {} });
+    const items = [{ game: game.url, kind: "x", name: "X" }, { game: game.url, kind: "y", name: "Y" }];
+    const t = await mount({ repo, doc: newPlain({ title: "Deck", items }), objects: 2 });
+    const shown = new Map(); // id → what this viewer's client displays for it
+    const log = [];
+    t.api.display = (id, o) => (log.push([id, o.content instanceof Uint8Array ? "bytes" : (o.content ?? null)]), shown.set(id, o), () => shown.get(id) === o && shown.delete(id));
+    // c0 in someone else's hand, c1 face down: nothing drawn
+    t.said.audience = { c0: ["you"], c1: [] };
+    t.update();
+    await settle();
+    expect(game.doc().drawn).toEqual({});
+    expect(shown.size).toBe(0);
+    // c1 dealt to me: its name at once, its face from the bytes drawn here, then its doc once its sheet
+    // (every face of it, here both) is kept in the game
+    t.said.audience = { c0: ["you"], c1: ["me"] };
+    t.update();
+    expect(shown.get("c1")).toEqual({ name: "Y" });
+    for (let i = 0; i < 1000 && typeof shown.get("c1")?.content !== "string"; i++) await settle();
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(["x", "y"]);
+    expect(log).toEqual([["c1", null], ["c1", "bytes"], ["c1", game.doc().drawn.y.url]]);
+    // c0 shown to me later: the doc the game has, nothing drawn again
+    const url = game.doc().drawn.x.url;
+    t.said.audience = { c0: "all", c1: ["me"] };
+    t.update();
+    for (let i = 0; i < 1000 && !shown.get("c0")?.content; i++) await settle();
+    expect(shown.get("c0")).toEqual({ name: "X", content: url });
   });
 
   it("unknown (a listed package missing): no look for anything, even what would be mine", async () => {

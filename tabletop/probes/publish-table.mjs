@@ -8,9 +8,9 @@
 //
 // The game page (default): the Lost Cities game, as the package's own UI
 // would make it. A tabletop-game doc holding the Lost Cities game
-// (games/lost-cities.json, as "Start from" writes it), every piece's GLB drawn
-// into a file doc (pieces.js pieceDrawer, as the game page does while
-// open), then "Set up a table" (tool.js setUpTable): tableLayout with the
+// (games/lost-cities.json, as "Start from" writes it), what a table lays out
+// drawn into file docs (pieces.js pieceDrawer; each card's face is drawn when
+// it's first shown), then "Set up a table" (tool.js setUpTable): tableLayout with the
 // game's GLBs, a container per deck from a keeper and the seats from their
 // owner (found, as the game page finds it, by its plugin's metadata: here in
 // the BUILT seats package, so build it first), writeTable onto a skeleton scene doc with every map a scene
@@ -77,7 +77,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
 import { pieceDrawer } from "../src/pieces.js";
-import { tableLayout, writeTable } from "../src/setup.js";
+import { kindsLaid, tableLayout, writeTable } from "../src/setup.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { prepareTable } from "../src/table/made-with.js";
 import { TabletopGameDatatype } from "../src/datatype.js";
@@ -179,13 +179,14 @@ const init = { "@patchwork": { type: "tabletop-game", suggestedImportUrl: pushwo
 TabletopGameDatatype.init(init);
 const game = await repo.create2(init);
 game.change((d) => writeGame(d, lostCities));
-const { drawn } = await pieceDrawer({ repo, handle: game }).ensure(Object.keys(game.doc().pieces));
+// what the table lays out drawn now, each card's face when it's first shown (as the game page does)
+const { drawn } = await pieceDrawer({ repo, handle: game }).ensure(kindsLaid(gameOf(game.doc())));
 
 // ─── "Set up a table" (tool.js setUpTable) ──────────────────────────────────
 const g = game.doc();
 const title = `${g.title || "Game"} table ${(g.tables?.length ?? 0) + 1}`;
 const fileOf = (kind) => (g.drawn?.[kind]?.url ? { url: g.drawn[kind].url, hint: g.drawn[kind].bounds ? { bounds: g.drawn[kind].bounds } : null } : null);
-const layout = tableLayout(gameOf(g), { fileOf, gameUrl: game.url });
+const layout = tableLayout(gameOf(g), { fileOf, faceOf: (kind) => ({ game: game.url, kind }), gameUrl: game.url });
 const decks = layout.containers;
 // What's installed, for setting up: the built seats, as a registry the game
 // page's own lookup reads (src/table/made-with.js).
