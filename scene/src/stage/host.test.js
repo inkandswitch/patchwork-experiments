@@ -320,3 +320,51 @@ describe("a provider whose module never arrives", () => {
     await host.providersStarted();
   });
 });
+
+describe("a package loaded at an old version first (the module watcher registers it again at each version it loads)", () => {
+  // Seats as published before the kernel's channel (2026-11-17): its create
+  // watched `api.presence`, which the kernel no longer has. A view that
+  // loaded that copy from its cache before a sync brought the new one got
+  // "extension seats failed to start TypeError: … reading 'watch'".
+  const oldSeats = { create: (api) => (api.presence.watch(() => {}), {}) };
+  const newSeats = (log) => mod("seats", log, (api) => (api.channel.watch(() => {}), {}));
+  const OLD = "automerge:seats#old";
+  const NEW = "automerge:seats#new";
+  function make(log) {
+    const metas = [{ id: "seats", traits: ["seats"], importUrl: OLD }];
+    const mods = { seats: oldSeats };
+    const reg = registry(metas, mods);
+    const host = createHost({ registry: async () => reg, makeApi: () => ({ api: { channel: Object.freeze({ watch: () => () => {} }) }, release() {} }) });
+    const reregister = (importUrl, module) => {
+      metas[0] = { ...metas[0], importUrl };
+      mods.seats = module;
+      reg.changed();
+    };
+    return { host, reregister };
+  }
+  beforeEach(() => vi.spyOn(console, "warn").mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("fails to start as it did, then starts once its plugin is registered from the new version", async () => {
+    const log = [];
+    const { host, reregister } = make(log);
+    host.sync({ traits: { seats: {} } });
+    await flush();
+    expect(host.failed()).toEqual(["seats"]);
+    expect(String(console.warn.mock.calls.find((c) => /failed to start/.test(c[0]))?.[1])).toMatch(/TypeError: .*reading 'watch'/);
+    reregister(NEW, newSeats(log));
+    await flush();
+    expect([host.failed(), host.instances().map((r) => r.id), log]).toEqual([[], ["seats"], ["create:seats"]]);
+  });
+
+  it("a failed one isn't tried again for anything but a new registration: a doc change, or the same one again, leaves it failed", async () => {
+    const log = [];
+    const { host, reregister } = make(log);
+    host.sync({ traits: { seats: {} } });
+    await flush();
+    host.sync({ traits: { seats: {} }, title: "changed" });
+    reregister(OLD, oldSeats);
+    await flush();
+    expect([host.failed(), console.warn.mock.calls.filter((c) => /failed to start/.test(c[0])).length]).toEqual([["seats"], 1]);
+  });
+});

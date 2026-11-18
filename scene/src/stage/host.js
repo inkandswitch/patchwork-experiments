@@ -27,6 +27,9 @@ import { PACKAGE_FIND_MS } from "./packages.js";
 export const LINGER_MS = 2_000;
 /** While a lingering extension is busy, how often to look again. */
 export const BUSY_RECHECK_MS = 250;
+/** Where a plugin's registration came from (its importUrl, with the heads it was loaded at), or null. */
+const sourceOf = (meta) => (typeof meta?.importUrl === "string" ? meta.importUrl : null);
+
 const listOf = (reg) => {
   try {
     return reg?.filter?.(() => true) ?? [];
@@ -172,7 +175,7 @@ export function createHost({
   // Created in running order (providers first: activation.js providersFirst), each once every one before it
   // (a provider's: those providing what it `uses`) and `first` have started or failed, so a create's api.use finds every service that runs.
   function start(w, before) {
-    const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
+    const rec = { id: w.id, meta: w.meta, scope: w.scope, source: sourceOf(w.meta), state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
     rec.started = (async () => {
       const loaded = await reg?.load?.(w.id);
@@ -313,7 +316,16 @@ export function createHost({
     const registered = new Set(metas.map((m) => m?.id));
     const want = new Map(set.map((w) => [w.id, w]));
     for (const [i, w] of set.entries()) {
-      const rec = recs.get(w.id);
+      let rec = recs.get(w.id);
+      // One that failed to start from another registration than its plugin's
+      // now (the module watcher registers a package again at each version it
+      // loads, and the first may be one cached from before a sync, written
+      // against another kernel): that one starts afresh. Never one failed
+      // from the same registration: it would only fail again.
+      if (rec?.state === "failed" && rec.source !== sourceOf(w.meta)) {
+        stop(rec);
+        rec = undefined;
+      }
       const uses = listOf(w.meta?.provides).length ? listOf(w.meta?.uses) : null; // (a provider waits only for what it uses)
       if (!rec) start(w, set.slice(0, i).flatMap((x) => (recs.get(x.id)?.state === "loading" && (!uses || listOf(x.meta?.provides).some((p) => uses.includes(p))) ? [recs.get(x.id)] : [])));
       else {
