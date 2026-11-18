@@ -29,6 +29,12 @@
 // (the rule the scene's ctx.file keeps for its `assets`): the merge keeps
 // one, and each shows what it made.
 //
+// An image over `maxStoredBytes` (a deck's sheet of 7700 × 3174 px, 33 MB)
+// is made smaller where the page can (tts/shrink.js: halved until it fits,
+// as the importer stores one), stored and drawn from that, so every viewer
+// draws from the same file and the next has it from Patchwork; where it
+// can't be, it's drawn from as it is and not stored (held a while instead).
+//
 // Only a viewer who can write the game saves anything: one who can't
 // (a read-only handle) draws for themselves and shows the bytes.
 //
@@ -44,6 +50,7 @@
 import { drawer, glbName, lookKey } from "./look/look.js";
 import { fetchAsset, isWeb } from "./look/web.js";
 import { pieceAt } from "./states.js";
+import { browserShrink } from "./tts/shrink.js";
 
 /** How long a web asset that couldn't be fetched is left before it's tried again. */
 export const RETRY_MS = 10 * 60 * 1000;
@@ -148,10 +155,12 @@ export function groupsOf(game) {
  *   repo: object, handle: object,
  *   images?: object | null, source?: (type: string) => Promise<object | null>,
  *   fetch?: typeof fetch | null, now?: () => number, retryMs?: number, batch?: number, maxStoredBytes?: number, draws?: number,
+ *   shrink?: ((bytes: Uint8Array, o: { mimeType: string, limit: number }) => Promise<{ bytes: Uint8Array, mimeType: string, extension: string } | null>) | null,
  * }} o  handle: the game doc's; images, source: look.js's drawer's; batch: kinds to a change (`ensure`);
- *   draws: pieces drawn at once (and images decoded at once: look.js)
+ *   draws: pieces drawn at once (and images decoded at once: look.js); shrink: an image over
+ *   maxStoredBytes made smaller to store (tts/shrink.js: the browser's, by default; none in Node)
  */
-export function pieceDrawer({ repo, handle, images = null, source = async () => null, fetch = globalThis.fetch?.bind(globalThis) ?? null, now = () => Date.now(), retryMs = RETRY_MS, batch = 50, maxStoredBytes = 32e6, draws = 4 }) {
+export function pieceDrawer({ repo, handle, images = null, source = async () => null, fetch = globalThis.fetch?.bind(globalThis) ?? null, now = () => Date.now(), retryMs = RETRY_MS, batch = 50, maxStoredBytes = 32e6, draws = 4, shrink = browserShrink() }) {
   const doc = () => handle.doc() ?? {};
   let refused = false; // a write was refused: this viewer draws for themselves from now on
   const writer = () => !refused && !(typeof handle.isReadOnly === "function" && handle.isReadOnly());
@@ -196,8 +205,15 @@ export function pieceDrawer({ repo, handle, images = null, source = async () => 
     if (!fetching.has(url)) {
       const p = (async () => {
         try {
-          const f = await fetchAsset(fetch, url);
-          const size = f.content?.byteLength ?? f.content?.length ?? 0;
+          let f = await fetchAsset(fetch, url);
+          let size = f.content?.byteLength ?? f.content?.length ?? 0;
+          if (writer() && size > maxStoredBytes && shrink && f.content instanceof Uint8Array) {
+            const smaller = await shrink(f.content, { mimeType: f.mimeType, limit: maxStoredBytes }).catch(() => null);
+            if (smaller?.bytes?.byteLength > 0 && smaller.bytes.byteLength <= maxStoredBytes) {
+              f = { ...f, name: f.name.replace(/\.[^.]*$/, `.${smaller.extension}`), extension: smaller.extension, mimeType: smaller.mimeType, content: smaller.bytes };
+              size = smaller.bytes.byteLength;
+            }
+          }
           if (writer() && size <= maxStoredBytes) {
             try {
               cached.set(url, (await repo.create2({ "@patchwork": { type: "file" }, ...f })).url);
