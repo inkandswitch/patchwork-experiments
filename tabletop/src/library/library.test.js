@@ -17,6 +17,7 @@ import { setUp } from "../table/template.js";
 import { tableLayout, writeTable } from "../setup.js";
 import { prepareTable } from "../table/made-with.js";
 import { emptyScene } from "../empty-scene.js";
+import { PUBLISHED } from "../scene-package.js";
 import { fakeRepo, gamePlugins, game as builtIn, seeded } from "../test/games.js";
 import { fakeDrop } from "../test/fakes.js";
 import { SEATS, inBag, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
@@ -289,10 +290,30 @@ describe("the launcher's actions", () => {
       expect(norm(session)).toEqual(norm(doc));
       for (const k of ["view", "dimensions"]) expect(session[k]).toEqual(doc[k]);
       expect(session.traits[SEATS]).toEqual(doc.traits[SEATS]);
+      // both name the packages they call for, and the scene as the suggested import
+      expect(session.packages).toEqual(doc.packages);
+      expect([session["@patchwork"], doc["@patchwork"]]).toEqual([0, 1].map(() => ({ type: "scene", suggestedImportUrl: PUBLISHED.scene })));
       // the containers hold the same cards: by name (the template's names the face's file; the session's, the game and kind)
       const containers = (all) => all.filter((d) => /secure-deck|keep-plain/.test(d?.["@patchwork"]?.type)).map((d) => [d.title, (d.faces ?? d.items ?? []).map((i) => i.name)]);
       expect(containers([...repo.docs.values()])).toEqual(containers(calls.created));
     }, 30_000);
+
+  it("a session names the packages it needs, the scene's as its suggested import, with none of them registered here (Patchwork with only this package installed)", async () => {
+    const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
+    for (const id of ["scene", "seats"]) for (const t of ["patchwork:datatype", "patchwork:tool", "scene:extension"]) expect(getRegistry(t)?.filter?.((p) => p?.id === id) ?? []).toEqual([]);
+    const repo = fakeRepo();
+    const game = repo.handleFor(repo.create(descriptionDoc(builtIn("lost-cities"), { builtIn: "lost-cities" })).url);
+    // the seats laid by the seats package (registered as `seats`, as from a dev server: no URL another viewer could load)
+    const reg = registries({ ...seatsPlugin(), id: "seats" }, ...gamePlugins(), ...extensions);
+    const { url } = await newSession({ repo, registry: async (t) => reg[t] ?? null, handle: game, rng: seeded(7) });
+    const session = repo.docs.get(url);
+    expect(Object.keys(session.traits[SEATS])).toHaveLength(2);
+    expect(session["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: PUBLISHED.scene });
+    expect(session.packages).toEqual([{ url: PUBLISHED.scene }, { url: PUBLISHED.seats }, { url: PUBLISHED.tabletop }]);
+    // a seats owner known only by the convention, from nowhere another viewer could load: not named
+    const other = await newSession({ repo, registry: installed(), handle: game, rng: seeded(7) });
+    expect(repo.docs.get(other.url).packages).toEqual([{ url: PUBLISHED.scene }, { url: PUBLISHED.tabletop }]);
+  }, 30_000);
 
   it("Fork: the session copied by the copy rule (bare backs, empty seats, bags copied), linked as its copy; the session untouched", async () => {
     // a session with one of everything: decks (secure and not), loose cards, a bag holding cards, hands, dice

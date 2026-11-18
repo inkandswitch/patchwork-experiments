@@ -6,16 +6,20 @@ import { CONTAINER, bagUrlOf, freshTitle } from "./part.js";
 
 const BAG = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const SCENE_PKG = "automerge:3yt6LbnDAzvNj9WDNDA4ew21R85G";
+const TABLETOP_PKG = "automerge:3uPxcveQxJkJ6D2GKPnrS7uTh2h2";
 
 describe("a scene made here", () => {
   const bagDoc = newBag({ title: "Tile bag" });
   const file = sackFile(bagDoc);
-  const make = (sceneImportUrl) => sceneWithBag({ bagUrl: BAG, bagDoc, fileUrl: "automerge:sackfile", hint: file.hint, sceneImportUrl });
+  const make = (scene) => sceneWithBag({ bagUrl: BAG, bagDoc, fileUrl: "automerge:sackfile", hint: file.hint, urls: scene ? { scene, tabletop: TABLETOP_PKG } : {} });
 
   it("is a whole scene doc: every map and list the scene's own init makes, `packages` among them", () => {
     const scene = make(SCENE_PKG);
     for (const k of Object.keys(emptyScene())) expect(k in scene).toBe(true);
-    expect(scene.packages).toEqual([]);
+    // naming what it calls for: the scene (its suggested import too) and this package, for the bag
+    expect(scene.packages).toEqual([{ url: SCENE_PKG }, { url: TABLETOP_PKG }]);
+    expect(scene["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: SCENE_PKG });
+    expect(make(null).packages).toEqual([]);
     expect([scene.traits, scene.assets, scene.dimensions]).toEqual([{}, {}, {}]);
     expect(scene.order).toEqual([BAG_OBJECT]);
   });

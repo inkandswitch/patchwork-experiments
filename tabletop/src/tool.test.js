@@ -30,6 +30,7 @@ vi.mock("@inkandswitch/patchwork-plugins", async () => {
   return { getRegistry };
 });
 import { TabletopGameDatatype } from "./datatype.js";
+import { PUBLISHED, callsForTabletop } from "./scene-package.js";
 import { SEATS, keptIn } from "./test/stand-ins.js";
 import { CASES, cardsGame } from "./test/table-notes.js";
 
@@ -113,23 +114,25 @@ describe("the tabletop-game tool", () => {
     expect(scene.view).not.toHaveProperty("tool");
     expect(scene.view.start.body).toBe("seat");
     await until(() => element.querySelector(".tables a")?.textContent === "Santorini table 1");
-    // made with the packages list the stage fills in; with no scene package
-    // registered here, it says only that it's a scene
-    expect(scene.packages).toEqual([]);
-    expect(scene["@patchwork"]).toEqual({ type: "scene" });
+    // it names the packages it calls for and suggests the scene package: with
+    // none of them registered here, where each is published
+    expect(scene.packages).toEqual([{ url: PUBLISHED.scene }, ...(callsForTabletop(scene) ? [{ url: PUBLISHED.tabletop }] : [])]);
+    expect(scene["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: PUBLISHED.scene });
     // with the scene package registered (at the heads the module watcher
-    // loaded), the next table carries it, bare, as its suggested import
-    const SCENE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
+    // loaded), the next table carries that one, bare
+    const SCENE = "automerge:2zt7LbnDAzvNj9WDNDA4ew21R85F";
     const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
     getRegistry("patchwork:datatype").register({ type: "patchwork:datatype", id: "scene", importUrl: `${SCENE}#${"H".repeat(48)}` });
     button(element, "Set up a table").click();
     await until(() => opened.length === 2);
-    expect((await repo.find(opened[1].url)).doc()["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: SCENE });
-    // a dev server's copy is nobody else's to load: left off
+    const second = (await repo.find(opened[1].url)).doc();
+    expect(second["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: SCENE });
+    expect(second.packages[0]).toEqual({ url: SCENE });
+    // a dev server's copy is nobody else's to load: the published one instead
     getRegistry("patchwork:datatype").register({ type: "patchwork:datatype", id: "scene", importUrl: "http://localhost:5173/" });
     button(element, "Set up a table").click();
     await until(() => opened.length === 3);
-    expect((await repo.find(opened[2].url)).doc()["@patchwork"]).toEqual({ type: "scene" });
+    expect((await repo.find(opened[2].url)).doc()["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: PUBLISHED.scene });
 
     cleanup();
     expect(element.children).toHaveLength(0);

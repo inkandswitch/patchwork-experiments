@@ -41,12 +41,17 @@ async function moduleOf(reg, id) {
 
 /** How to write seats into a scene doc (the seats owner's `lay(d, seats)`), or null where nothing owns seats. */
 export async function findSeats(registry) {
+  return (await seatsOwner(registry))?.lay ?? null;
+}
+
+/** The seats owner: its `lay` and who it is (`{ id, importUrl }`, from its metadata, for the scene's packages list), or null. */
+async function seatsOwner(registry) {
   const reg = typeof registry === "function" ? await Promise.resolve(registry("scene:extension")).catch(() => null) : null;
   if (!reg) return null;
   for (const p of listOf(reg)) {
     if (p?.roster !== true || typeof p.id !== "string") continue;
     const mod = await moduleOf(reg, p.id);
-    if (typeof mod?.lay === "function") return mod.lay;
+    if (typeof mod?.lay === "function") return { lay: mod.lay, by: { id: p.id, importUrl: typeof p.importUrl === "string" ? p.importUrl : null } };
   }
   return null;
 }
@@ -84,9 +89,10 @@ export async function findSource(registry, type) {
  * owns. One step, so a writer can't make the table and leave it out.
  * @param {{ repo: object, registry: (type: string) => Promise<object | null> }} host
  * @param {ReturnType<import("../setup.js").tableLayout>} layout
- * @returns {Promise<{ binds, kinds, bags: { [oid]: object }, seats: Function | null, notes: string[] }>}
+ * @returns {Promise<{ binds, kinds, bags: { [oid]: object }, seats: Function | null, seatsBy: { id: string, importUrl: string | null } | null, notes: string[] }>}
  *   kinds: the keeper each container got ("joint", "plain"); seats: the seats owner's lay (writeTable
- *   lays the seats through it), null where there is none or the game has no seats.
+ *   lays the seats through it), null where there is none or the game has no seats; seatsBy: that
+ *   owner (whose package the scene lists: scene-package.js packageUrls).
  */
 export async function prepareTable({ repo, registry }, layout) {
   const binds = {};
@@ -102,8 +108,8 @@ export async function prepareTable({ repo, registry }, layout) {
     bags[id] = (await fill({ repo }, { title: bag.title, rule: bag.rule, items })).traits;
   }
   const seated = Object.keys(layout.seats ?? {}).length > 0;
-  const seats = seated ? await findSeats(registry) : null;
-  return { binds, kinds, bags, seats, notes: seated && !seats ? [NO_SEATS] : [] };
+  const owner = seated ? await seatsOwner(registry) : null;
+  return { binds, kinds, bags, seats: owner?.lay ?? null, seatsBy: owner?.by ?? null, notes: seated && !owner ? [NO_SEATS] : [] };
 }
 
 /** What a table writer says when the game has seats and nothing installed owns seats. */

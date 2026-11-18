@@ -33,7 +33,7 @@ import { glbFile } from "./files.js";
 import { composeMatrix } from "./frame.js";
 import { docContext, setUp } from "./template.js";
 import { emptyScene } from "../empty-scene.js";
-import { sceneImportUrl, scenePatchwork } from "../scene-package.js";
+import { namePackages, packageUrls } from "../scene-package.js";
 
 // ─── what each is drawn as ──────────────────────────────────────────────────
 
@@ -196,7 +196,10 @@ export function gamePart(gameId, options = {}) {
     async create(ctx, at) {
       const parent = at?.parent ?? null;
       const transform = parent ? squared(at?.transform) : (at?.transform ?? null);
-      const handle = await ctx.repo.create2(emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()) }));
+      // a scene from the start (the scene package its suggested import); setUp names the rest
+      const doc = emptyScene();
+      namePackages(doc, await packageUrls());
+      const handle = await ctx.repo.create2(doc);
       const layout = await setUp(docContext(ctx, handle), gameId, { options });
       if (!layout) return null;
       // the room the host gives it: its pieces' extent, as laid out (the host's fact: the link's hint)
