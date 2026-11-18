@@ -208,8 +208,6 @@ function create(api) {
   const tags = api.labels();
   let seatKey = "";
   let tagKey = "";
-  let tagged = []; // { z, text, state, cam }: what drawSeats last said
-  let tagLoop = null;
   /** The places other extensions give seats (`seatPlaces`), for this snapshot. */
   function placesOf(snap) {
     const out = [];
@@ -244,44 +242,24 @@ function create(api) {
       picker.replaceChildren(el("option", { value: "" }, "Watching"), ...ids.map((id) => el("option", { value: id }, label(id))));
     }
     if (globalThis.document?.activeElement !== picker) picker.value = picked;
-    tagged = [];
-    for (const z of placesOf(scene)) {
-      if (!seatAt(scene, z)) continue;
-      const s = stateOf(z, scene);
-      tagged.push({ z, text: `${s.seat?.name || z.seat} · ${occupant(s)}`, state: s.state, cam: s.seat?.camera ?? null });
-    }
-    placeTags();
-  }
-  // Each tag on its place as drawn (a table aboard a ship is where the ship
-  // is this frame, not where the doc last saved her), every frame while a
-  // place is attached to something (which may be moving): on the place's
-  // floor at its edge nearest the seat (seatTagAt).
-  function placeTags() {
-    if (dead) return;
+    // Each tag on its place as drawn (a table aboard a ship is where the ship is, wherever she is drawn):
+    // on the place's floor at its edge nearest the seat's eye (seatTagAt)
     const items = [];
-    for (const { z, text, state, cam } of tagged) {
-      const m = api.worldOf(z.id) ?? scene.world(z.id);
+    for (const z of placesOf(scene)) {
+      const s = seatAt(scene, z) ? stateOf(z, scene) : null;
+      const m = s && (api.worldOf(z.id) ?? scene.world(z.id));
       const inv = m ? invertMatrix(m) : null;
       if (!inv) continue;
+      const cam = s.seat?.camera ?? null;
       const frame = cam?.in ? (api.worldOf(cam.in) ?? (scene.objects?.[cam.in] ? scene.world(cam.in) : null)) : null;
       const eye = cam?.position && (!cam.in || frame) ? (frame ? applyMatrix(frame, cam.position) : cam.position) : null;
-      const position = applyMatrix(m, seatTagAt(z, eye ? applyMatrix(inv, eye) : null)).map((v) => +v.toFixed(4));
-      items.push({ key: z.of == null ? z.id : `${z.id}:${z.seat}`, text, position, className: "seat-tag", data: { state }, rank: 1 });
+      const offset = seatTagAt(z, eye ? applyMatrix(inv, eye) : null).map((v) => +v.toFixed(4));
+      items.push({ key: z.of == null ? z.id : `${z.id}:${z.seat}`, text: `${s.seat?.name || z.seat} · ${occupant(s)}`, on: z.id, offset, className: "seat-tag", data: { state: s.state }, rank: 1 });
     }
     const tk = JSON.stringify(items);
-    if (tk !== tagKey) {
-      tagKey = tk;
-      tags.set(items);
-    }
-  }
-  /** Follow the places each frame while any is attached to something (a table aboard a ship); else stop. */
-  function followTags(snapshot) {
-    const moving = tagged.some(({ z }) => (snapshot.parents?.get?.(z.id) ?? null) != null);
-    if (moving && !tagLoop) tagLoop = api.loop(placeTags);
-    else if (!moving && tagLoop) {
-      tagLoop();
-      tagLoop = null;
-    }
+    if (tk === tagKey) return;
+    tagKey = tk;
+    tags.set(items);
   }
   /** Who a name tag says sits in a seat. */
   function occupant({ by, seat, state }) {
@@ -666,11 +644,10 @@ function create(api) {
       if (snapshot === prev?.scene && local?.running === prev?.local?.running) {
         // attention moved (the picker follows it): another owner's seats, or none
         if (scene && pickerOwner(scene) !== shown) drawSeats();
-        return followTags(snapshot, local);
+        return;
       }
       scene = snapshot;
       drawSeats();
-      followTags(snapshot, local);
       reconcile();
     },
     messages,
@@ -705,8 +682,6 @@ function create(api) {
     ],
     dispose() {
       dead = true;
-      tagLoop?.();
-      tagLoop = null;
       getUp();
       releasePerch();
       for (const cancel of timers) cancel();
