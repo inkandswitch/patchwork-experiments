@@ -44,6 +44,7 @@ import {
   runnableCalls,
   needsApproval,
   findCall,
+  findResult,
   holdsLease,
 } from "./session.js"
 import { batchedAppender } from "./store.js"
@@ -612,8 +613,16 @@ async function executeCalls(opts) {
   const results = []
 
   for (const call of runnable) {
-    if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
-    if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
+    if (signal?.aborted) {
+      commitResults(store, results)
+      return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+    }
+    if (!stillOurs()) {
+      // What already ran, ran: record it. Its calls are marked done, and a
+      // call marked done with no result is one no runner will ever answer.
+      commitResults(store, results)
+      return { outcome: OUTCOME.aborted, reason: "lease lost" }
+    }
 
     const tool = toolset.get(call.tool)
     const where = tool?.where ?? call.where ?? WHERE.worker
@@ -652,9 +661,13 @@ async function executeCalls(opts) {
     const outcome = await runTool(tool, call.input, { ...ctx, ...privileged(tool), signal, events, recall: storeRecall(store) })
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
 
+    // Only while the claim is still this run's: a runner that took the session
+    // over meanwhile may have closed the call as interrupted, and that stands.
     store.change((d) => {
       const found = findCall(d, call.id)
-      if (found) found.block.status = outcome.isError ? CALL.error : CALL.done
+      if (found && found.block.status === CALL.running && found.block.runner === runnerUrl && found.block.generation === generation) {
+        found.block.status = outcome.isError ? CALL.error : CALL.done
+      }
     })
 
     results.push(
@@ -702,9 +715,13 @@ export function storeRecall(store) {
 
 function commitResults(store, results) {
   if (!results.length) return
-  // Copy: the turn keeps this array, and the caller reuses its buffer.
-  appendTurn(store, makeTurn("tool", results.slice()))
+  // A call already answered — closed as interrupted by a runner that took
+  // over while it ran — keeps the answer it has; a second is never written.
+  // (Two can still meet in a merge; toRequest sends one of them.)
+  const doc = store.doc()
+  const fresh = results.filter((r) => !findResult(doc, r.callId))
   results.length = 0
+  if (fresh.length) appendTurn(store, makeTurn("tool", fresh))
 }
 
 // ---------------------------------------------------------------- helpers

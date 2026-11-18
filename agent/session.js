@@ -1119,9 +1119,10 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
   const withImages = []
   const results = []
   const answered = new Set()
+  const sent = theResultOfEachCall(turns)
   for (const turn of turns) {
     for (const block of turn.blocks ?? []) {
-      if (block.type !== "result") continue
+      if (block.type !== "result" || sent.get(block.callId) !== block.id) continue
       answered.add(block.callId)
       results.push(block)
       if (block.image && !block.imageRejected) withImages.push(block.id)
@@ -1186,6 +1187,8 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
           content.push({ type: "result", callId: block.id, output: DENIED_RESULT, isError: true })
         }
       } else if (block.type === "result") {
+        // One result per call, whatever the document holds (theResultOfEachCall).
+        if (sent.get(block.callId) !== block.id) continue
         const part = {
           type: "result",
           callId: block.callId,
@@ -1209,6 +1212,36 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
   }
 
   return { system, messages }
+}
+
+/**
+ * The one result each call is answered with in a request.
+ *
+ * A provider refuses a call with two results, and a document can hold two:
+ * a runner taking a session over closes a call it thinks was cut off, while
+ * the runner it displaced finishes the call and writes what it found; or two
+ * runners each record a result before their writes meet. Both are writes to a
+ * shared document, so nothing can stop them both landing. What is sent is
+ * decided here instead: a real result over the takeover's "interrupted" note,
+ * since it says what actually happened, and otherwise the first.
+ * Returns callId -> the id of its result block.
+ */
+export function theResultOfEachCall(turns) {
+  const chosen = new Map()
+  for (const turn of turns ?? []) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type !== "result") continue
+      const held = chosen.get(block.callId)
+      if (!held || (isInterruptedResult(held) && !isInterruptedResult(block))) chosen.set(block.callId, block)
+    }
+  }
+  // By id: a document hands out a fresh object for a block on every read.
+  return new Map([...chosen].map(([callId, block]) => [callId, block.id]))
+}
+
+/** Is this the result a takeover writes for a call it found cut off? */
+export function isInterruptedResult(block) {
+  return block?.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED
 }
 
 // ---------------------------------------------------------------- lease
