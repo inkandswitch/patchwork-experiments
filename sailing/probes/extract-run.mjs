@@ -72,7 +72,7 @@ const HELPERS = `window.__ex = (() => {
     selected: () => dbg().local.get().selected ?? null,
     edits: () => plain(dbg().local.get().edits),
     run: (command, target, value) => api().run({ ext: "scene.transfer", command, target, value }),
-    edit: () => dbg().view.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: true }),
+    edit: () => dbg().view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: true }),
     body: () => dbg().local.get().body?.id ?? null,
     editing: () => (dbg().local.get().hands ?? []).some((h) => h.kind === "edit"),
     undo: () => api().undo(),
