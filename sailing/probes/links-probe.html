@@ -117,7 +117,7 @@ try {
   const gStage = (w) => (dbg[w] ? dbg[w].view.stages().find((s) => s.url === docs.game?.url && s.acts) ?? null : null);
   /** the stage of view w at a link of its outermost doc's */
   const stageAtLink = (w, id) => dbg[w]?.view.stages().find((s) => s.path.length === 1 && s.path[0] === id) ?? null;
-  const facesIn = (st) => { const looks = st?.debug.looks(); return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; }); };
+  const facesIn = (st) => { const looks = new Map([...(st?.debug?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])); return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; }); };
   const gKey = (w, id) => { const s = gStage(w); return s ? keyOf(s.n, id) : null; };
   const G = () => docs.game?.doc() ?? {};
   const gObjects = () => G().objects ?? {};
@@ -284,7 +284,9 @@ try {
       if (!st) return null;
       const api = st.debug.host.record("tabletop")?.api;
       const kept = st.debug.host.instanceOf("card-table");
-      return { audience: api?.audience(id) ?? "no api", shown: api?.shown(id) ?? null, look: st.debug.looks().get(id) ?? null, looks: st.debug.looks().size, hud: kept?.hud?.() ?? null, roster: api?.collect("roster").map((r) => r.value?.viewers?.(api.scene())) ?? null, packages: st.packages?.complete?.() ?? null, settled: st.debug.host.settled?.() ?? null, at: G().title };
+      const aud = api?.use("audience");
+      const looks = new Map([...(st.debug?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }]));
+      return { audience: aud ? aud.audience(id) : "no api", shown: aud?.shown(id) ?? null, look: looks.get(id) ?? null, looks: looks.size, hud: kept?.hud?.() ?? null, roster: api?.collect("roster").map((r) => r.value?.viewers?.(api.scene())) ?? null, packages: st.packages?.complete?.() ?? null, failed: st.debug.host.failed?.() ?? null, at: G().title };
     },
     i6Stages: () => {
       const one = (st) => (st ? { role: st.role, writable: st.debug.host.record("tabletop")?.api.writable() ?? null, running: st.debug.host.running().map((r) => r.id) } : null);

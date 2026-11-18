@@ -296,6 +296,10 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
   const slot = (id, kind) => (kind === "station" ? id : `${id}:${kind}`);
   const services = {
     clock: { t: () => s.t },
+    poses: {
+      hold: (id, t) => (s.holds[id] = t),
+      release: (id, o) => (s.released.push([id, o]), delete s.holds[id]),
+    },
     claims: {
       claim(id, kind, { onLost } = {}) {
         const k = slot(id, kind);
@@ -314,10 +318,6 @@ function stage({ mainsheet = true, helm = true, rehung = false, sail = true, jib
     scene: () => s.scene,
     worldOf: (id) => worlds[id] ?? null,
     content: (id) => (id === "hull" ? { box: { min: [-2, -2, -6.2], max: [2, 15, 6] } } : null),
-    pose: {
-      hold: (id, t) => (s.holds[id] = t),
-      release: (id, o) => (s.released.push([id, o]), delete s.holds[id]),
-    },
   };
   s.ctx = {
     sim: {

@@ -443,6 +443,8 @@ export function fakeWorld(doc, { content = {} } = {}) {
         },
       },
       clock: Object.fromEntries(["t", "running", "computer", "pause", "resume", "process"].map((k) => [k, (...a) => api.clock[k](...a)])),
+      // "poses" goes through to api.poses, which a test may wrap
+      poses: { ...Object.fromEntries(["hold", "release", "heldBy"].map((k) => [k, (...a) => api.poses[k](...a)])), rate: (hz) => void (view.poseRate = hz) },
     };
     const api = {
       id: ext,
@@ -514,7 +516,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
           return remove;
         },
       },
-      pose: {
+      poses: {
         hold(id, transform, { yields = false } = {}) {
           const cur = holds.get(id);
           // a person's before a yielding one, then the first (scene's holds.js)
@@ -529,11 +531,11 @@ export function fakeWorld(doc, { content = {} } = {}) {
           if (landed) h.landed = true;
           else holds.delete(id);
         },
-      },
-      heldBy(id, { yields = false } = {}) {
-        const h = holds.get(id);
-        if (!h || h.landed || h.session === session) return null;
-        return !h.yields || yields ? h.session : null;
+        heldBy(id, { yields = false } = {}) {
+          const h = holds.get(id);
+          if (!h || h.landed || h.session === session) return null;
+          return !h.yields || yields ? h.session : null;
+        },
       },
       listen(target, type, fn) {
         view.listeners.push({ target, type, fn });

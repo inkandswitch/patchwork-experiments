@@ -215,8 +215,8 @@ describe("createSim on a stage", () => {
       w = fakeWorld(doc, { content });
       const api = w.join("A");
       const holds = [];
-      const hold = api.pose.hold;
-      api.pose = { ...api.pose, hold: (id, t, o) => (holds.push(id), hold(id, t, o)) };
+      const hold = api.poses.hold;
+      api.poses = { ...api.poses, hold: (id, t, o) => (holds.push(id), hold(id, t, o)) };
       play(api);
       w.tick(1 / 60, 2);
       holds.length = 0;
@@ -450,14 +450,14 @@ describe("createSim on a stage", () => {
     play(bApi);
     w.tick(1 / 60, 3 * 60);
     expect(w.holds.get(ids.hull)).toMatchObject({ session: "A", yields: true });
-    expect(bApi.heldBy(ids.hull)).toBeNull(); // a person isn't kept off by a process
+    expect(bApi.use("poses").heldBy(ids.hull)).toBeNull(); // a person isn't kept off by a process
     const put = { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 };
-    expect(bApi.pose.hold(ids.hull, put)).toBe(true);
+    expect(bApi.use("poses").hold(ids.hull, put)).toBe(true);
     w.tick(1 / 60, 10);
     expect(w.holds.get(ids.hull).session).toBe("B"); // the process's holds are refused meanwhile
     // put down: written where it landed, then the process starts her again from there
     w.change((d) => Object.assign(d.objects[ids.hull].transform, put));
-    bApi.pose.release(ids.hull, { landed: true });
+    bApi.use("poses").release(ids.hull, { landed: true });
     w.tick(1 / 60, 2);
     const p = heldAt(w, ids.hull).position;
     expect(Math.hypot(p[0] - 40, p[2] + 30)).toBeLessThan(0.5);
@@ -474,13 +474,13 @@ describe("createSim on a stage", () => {
     const before = heldAt(w, ids.hull).position;
     const speed = a.sim.read(ids.hull).speed;
     expect(speed).toBeGreaterThan(0.5); // under way: three seconds stepped would move her metres
-    expect(bApi.pose.hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(true);
+    expect(bApi.use("poses").hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(true);
     w.tick(1 / 60, 3 * 60);
     expect(w.holds.get(ids.hull).session).toBe("B");
     // not stepped: no step to show (not her last one, with a state it didn't reach)
     expect(a.sim.stepped(ids.hull)).toBeNull();
     // Escape: put back, the doc unchanged (no move for movedByEditor to see)
-    bApi.pose.release(ids.hull);
+    bApi.use("poses").release(ids.hull);
     w.tick(1 / 60, 1);
     expect(w.holds.get(ids.hull).session).toBe("A");
     const after = heldAt(w, ids.hull).position;
@@ -502,8 +502,8 @@ describe("createSim on a stage", () => {
     bApi.use("claims").claim(ids.wheel, "station");
     w.tick(1 / 60, 2);
     expect(w.holds.get(ids.hull)).toMatchObject({ session: "A", yields: false });
-    expect(bApi.heldBy(ids.hull)).toBe("A");
-    expect(bApi.pose.hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(false);
+    expect(bApi.use("poses").heldBy(ids.hull)).toBe("A");
+    expect(bApi.use("poses").hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(false);
   });
 
   it("the wheel is its helmsman's to hold while someone's at the helm; the simulator holds it otherwise", async () => {
