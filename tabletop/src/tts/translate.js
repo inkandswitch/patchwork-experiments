@@ -330,6 +330,7 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
     const kinds = [];
     for (const c of list) {
       if (!more()) break;
+      for (const st of c.states ?? []) skip(st, "another state of a card");
       const p = cardPiece(c, node);
       if (!p.card) {
         skip(c, "a card without a CustomDeck entry");
@@ -390,12 +391,12 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
 
   /** A node → its things (a stack is one thing of several copies; a bag holds its contents). */
   const thingsOf = (node, located = true) => {
+    // a card's look is its keeper's, a deck's its cards': neither has states here
+    for (const st of node.kind === "card" || node.kind === "deck" ? node.states : []) skip(st, `another state of a ${node.kind}`);
     if (node.kind === "deck") {
       const d = deckThing(node, located);
       return d ? [d] : [];
     }
-    // a card's look is its keeper's, a deck's its cards': neither has states here
-    for (const st of node.kind === "card" || node.kind === "deck" ? node.states : []) skip(st, `another state of a ${node.kind}`);
     if (node.kind === "card") {
       if (!more()) return [];
       const p = cardPiece(node, null);

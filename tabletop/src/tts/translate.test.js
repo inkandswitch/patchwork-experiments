@@ -162,9 +162,10 @@ describe("States: a piece's other looks", () => {
 
   it("leaves out a card's and a deck's States, and a state that isn't the same sort of thing (a die's that's a model), counted", () => {
     const c = { ...card(100), states: [{ ...card(101), stateId: "2" }] };
+    const deck = node("Deck", { kind: "deck", customDeck: DECK, contents: [{ ...card(102), states: [{ ...card(103), stateId: "2" }] }], states: [{ ...card(104), stateId: "2" }] });
     const die = node("Die_6", { kind: "die", states: [ship(2)] });
-    const { game, skipped, counts } = translate(save([c, die]), { file: files });
-    expect(skipped).toMatchObject({ "Card (another state of a card)": 1, "Custom_Model (another state, not drawn as one)": 1 });
+    const { game, skipped, counts } = translate(save([c, deck, die]), { file: files });
+    expect(skipped).toMatchObject({ "Card (another state of a card)": 2, "Card (another state of a deck)": 1, "Custom_Model (another state, not drawn as one)": 1 });
     expect(Object.values(game.pieces).some((p) => p.states)).toBe(false);
     expect(counts.states).toBe(0);
   });
