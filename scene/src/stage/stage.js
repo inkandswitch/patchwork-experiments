@@ -1138,7 +1138,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   async function providersFor(url, sourceDoc) {
-    // (a scene in itself is a link whose expansion closes it: a cycle, links.js)
+    // (a scene in itself is a link whose expansion closes it: a cycle, native/link-graph.js)
     return matchProviders(listProviders(), describeSource(sourceDoc));
   }
 
@@ -1462,10 +1462,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         const key = `${id}#${(own.labelSets = (own.labelSets ?? 0) + 1)}`;
         own.labelKeys = [...(own.labelKeys ?? []), key];
         return Object.freeze({
-          // (an item `on` an object sits at `offset` in its drawn frame, wherever it is drawn each frame)
           set: (items) => {
-            const at = (it) => () => (displayedWorld(it.on) ? applyMatrix(displayedWorld(it.on), it.offset ?? [0, 0, 0]) : null);
-            if (live()) scope.labels.sync(key, (items ?? []).map((it) => (it?.on == null ? it : { ...it, at: at(it) })));
+            if (live()) scope.labels.sync(key, items ?? []);
           },
         });
       },

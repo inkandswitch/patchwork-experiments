@@ -169,8 +169,8 @@ export function createHost({
 
   // ─── starting ─────────────────────────────────────────────────────────────
 
-  // Created in running order (providers first: activation.js providersFirst), each once every
-  // one before it (and `first`) has started or failed, so a create's api.use finds every service that runs.
+  // Created in running order (providers first: activation.js providersFirst), each once every one before it
+  // (a provider's: those providing what it `uses`) and `first` have started or failed, so a create's api.use finds every service that runs.
   function start(w, before) {
     const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
@@ -314,7 +314,8 @@ export function createHost({
     const want = new Map(set.map((w) => [w.id, w]));
     for (const [i, w] of set.entries()) {
       const rec = recs.get(w.id);
-      if (!rec) start(w, set.slice(0, i).flatMap((x) => (recs.get(x.id)?.state === "loading" ? [recs.get(x.id)] : [])));
+      const uses = listOf(w.meta?.provides).length ? listOf(w.meta?.uses) : null; // (a provider waits only for what it uses)
+      if (!rec) start(w, set.slice(0, i).flatMap((x) => (recs.get(x.id)?.state === "loading" && (!uses || listOf(x.meta?.provides).some((p) => uses.includes(p))) ? [recs.get(x.id)] : [])));
       else {
         rec.meta = w.meta;
         rec.scope = w.scope;

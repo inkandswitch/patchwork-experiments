@@ -28,8 +28,9 @@ the idea, [HISTORY.md](HISTORY.md) is how and why it got this way, and
 A view shows a tree of stages: the outermost doc's, and each a view plugin
 opens under an object of another, as that object's content, in its frame:
 `api.open(handle, { under: [stagePath, id], acting?, heads?, deps? })` →
-close. `acting: false` is drawn; `heads` is a pin, the doc at those heads
-(its repo finding docs at `deps`' heads). Closing one closes what is under it.
+close, or null: a doc acts at one stage per view, under one that acts (I3).
+`acting: false` is drawn; `heads` is a pin, the doc at those heads (its repo
+finding docs at `deps`' heads). Closing one closes what is under it.
 A `scene:source` with `content: "scene"` is drawn as its hint until a stage
 is open under it. Everything an api touches is its stage's doc: `null` is
 its root, every id its own (I1, I2).
@@ -128,10 +129,10 @@ scope: an object's covers it and what is attached or filed under it; a scene
 trait covers the doc. What belongs to a thing lives on that object. One instance
 per extension per stage. **Order**: providers (by metadata; one that `uses`
 another's service after it), then the rest; each `scene`, then `objects`, in
-registry order (`local.running`), the only order anything combines in. Each is
-created once everything before it, and every view plugin providing, has started
-or failed, so a create's `use` finds every service that runs, whatever the
-registry order.
+registry order (`local.running`), the only order anything combines in. A
+provider is created once the providers of what it `uses` have started or failed,
+anything else once everything before it has, and every view plugin providing,
+so a create's `use` finds every service that runs, whatever the registry order.
 
 **Stopping** (H2). An extension leaving the running set lingers `LINGER_MS`
 (2 s), and while it holds a body, tool or session, or a running extension's
@@ -394,7 +395,7 @@ extension's.
 | `collect(name)`, `run(invocation)` | `collect`: this stage's offers, tagged `stage`; `run` in the stage `invocation.stage` names |
 | `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | see "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `THREE`, `world({ onTop? })` | three.js; a `Group` whose meshes are the extension's widgets |
-| `labels()` | `{ set(items) }`; decluttered by `rank`, 2 and up never hide; an item `{ key, text, on: id, offset? }` sits at `offset` in that object's drawn frame, each frame |
+| `labels()` | `{ set(items) }`; decluttered by `rank`, 2 and up never hide; an item `{ key, text, on: id, offset? }` sits at `offset` in that object's drawn frame, each frame, and nowhere while it isn't drawn |
 | `overlay()`, `edge(side)` | DOM over or beside the canvas; overlay children catch the pointer unless they opt out |
 | `style`, `listen`, `cursor`, `extent(box)`, `invalidate`, `schedule`, `port`, `root` | `port`: the canvas's element; `root`: the view's |
 | `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage renders every frame while a loop runs (WebGL or not); `dt` ≤ 0.1 s; `first` runs before the others |
@@ -551,13 +552,13 @@ every other live occurrence of it is closed, `"repeat"`. A link with `at` is
 and `"unpinned"`; a closed link is drawn as its hint. At most `LINK_BUDGET`
 (64) open. It opens a stage for each other occurrence, worked out again on
 every change of a doc it reached; one whose role or identity changes closes
-and opens again; while any is on its way it holds `opening()`. `role(id)` →
+and opens again; while a doc is on its way it holds `opening()`. `role(id)` →
 `{ role, open, reason? }` of the caller's stage's link (a view plugin's: the
 focus's), `role` `"acting"`, `"pinned"` or `"closed"`. `fixPoint(id)` → `{
 heads, deps }`: the doc's heads and those of every doc the pin's docs name by
 URL; a doc nothing names (a player's secret) is never recorded. Follow
 latest removes `at`. Its **Enter** command enters a link that acts; the
-**trail** shows the focus path.
+**trail** shows the focus path. Any change: `view["scene.links"]` is `{}` anew.
 
 ### Holding a pose
 
@@ -648,7 +649,7 @@ One atmosphere wins whole. None is the stage's own look. Ask a flush with
 | I1 | Every api read and write goes to its stage's handle. |
 | I2 | No reference crosses docs; a link is the only edge between docs. |
 | I3 | Expansion is finite and fixed by the graph: no identity repeats on a path, one acting occurrence per live doc, exact closed reasons. |
-| I4 | A stage's snapshot, running set, audience, shown and display depend only on its doc and the registry; only space and `ambient`'s `mine`, `frame`, `use` depend on placement. |
+| I4 | A stage's snapshot, running set, audience, shown and display depend only on its doc and the registry; only space, `ambient`'s `mine`, `frame`, `use` and links' `role`, `fixPoint` depend on placement. |
 | I5 | An object's holds and sends, and so its claims, travel on its doc's channel. |
 | I6 | A read-only stage writes nothing, through its api or its repo. |
 | I7 | Points map by the frame's similarity, directions by its rotation, distances by its scale; boxes are the stage's own. |

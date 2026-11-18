@@ -88,7 +88,7 @@ export function startOf(doc) {
  * its place holds a stage (a link), on through it, as that doc starts
  * people. `next(s, id)` → the stage under it (false: it holds none, so the
  * start is here; undefined: not yet; null: nobody arrives through it).
- * Paths can't repeat a doc (link-graph.js), so this ends. Pure.
+ * Each step is a stage deeper in the view's finite tree, so this ends. Pure.
  * @returns {{ stage, body: string | null, place: string | null, through: boolean } | null | undefined}
  */
 export function startArrival(s, { doc, next }) {
@@ -390,18 +390,20 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * frame: acting, or drawn and read-only (`acting: false`); `heads`: the
    * doc at those heads (a pin, drawn), `deps` the heads its repo finds docs
    * at. → the stage, or null (no stage at `at`, one open under `id` already,
-   * or those heads aren't here yet).
+   * those heads aren't here yet, or it would act under a stage that doesn't
+   * or for a doc that acts in this view already: one acting stage per doc, I3).
    */
   function openUnder(handle, { under: [at, id] = [], acting = true, heads = null, deps = null } = {}) {
     const parent = Array.isArray(at) ? stageUnder(at) : null;
     const h = heads?.length ? viewAt(handle, heads) : handle;
-    if (dead || !parent || typeof id !== "string" || stageUnder([...at, id]) || !h) return null;
+    const acts = acting && h === handle;
+    if (dead || !parent || typeof id !== "string" || stageUnder([...at, id]) || !h || (acts && (!parent.acts || [...stages.values()].some((s) => s.acts && s.url === h.url)))) return null;
     const frame = () => {
       const m = parent.displayedWorld(id);
       const f = parent.frame();
       return m && f.matrix ? multiplyMatrices(f.matrix, m) : m;
     };
-    const s = addStage((n) => openStage({ handle: h, view: api, n, path: [...at, id], frame, under: keyOf(parent.n, id), role: acting && h === handle ? "acting" : "pinned", deps }));
+    const s = addStage((n) => openStage({ handle: h, view: api, n, path: [...at, id], frame, under: keyOf(parent.n, id), role: acts ? "acting" : "pinned", deps }));
     // a doc it plays is announced (./announce.js); a pin keeps its own version
     if (s.acts) announcer.hold(s.url);
     parent.childrenChanged();

@@ -150,6 +150,8 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
   const box = (b) => (b && !b.isEmpty() ? { min: b.min.toArray(), max: b.max.toArray() } : null);
   const within = () => f().inverse;
   const worldHit = (h) => (h ? hitIn(f(), h, h.id == null ? null : element(h.id)) : null);
+  /** A label item `on` an object: at `offset` in its frame as drawn now, nowhere while it isn't drawn (hidden, gone). */
+  const follow = (it) => (it?.on == null ? it : { ...it, at: () => ((w) => (w ? applyMatrix(f().matrixIn(w), it.offset ?? [0, 0, 0]) : null))(vp.isShown(key(it.on)) && vp.worldOf(key(it.on))) });
 
   return {
     n,
@@ -215,9 +217,9 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     worldLayer: (owner, { onTop = false } = {}) => vp.worldLayer(keyOf(n, owner), { onTop, under: root }),
     removeLayers: (owner) => vp.removeLayers(keyOf(n, owner)),
     labels: {
-      // positions in this stage's frame, which the labels follow as it moves
+      // positions in this stage's frame, which the labels follow as it moves, or an object's (`on`)
       // (shown while the link's content is: a hidden link hides its doc's labels too)
-      sync: (owner, items) => vp.labels.sync(keyOf(n, owner), items, root ? () => f().matrix : null, root ? () => vp.contentShown(root) : null),
+      sync: (owner, items) => vp.labels.sync(keyOf(n, owner), items.map(follow), root ? () => f().matrix : null, root ? () => vp.contentShown(root) : null),
       clear: (owner) => vp.labels.clear(keyOf(n, owner)),
     },
     setExtent: (owner, b) => vp.setExtent(keyOf(n, owner), boxOut(f(), b)),

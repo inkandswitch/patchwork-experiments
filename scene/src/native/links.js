@@ -6,12 +6,12 @@
 // where its doc acts, a pin drawn at its heads. It works the expansion out
 // again whenever a doc it reached changes or arrives; a stage whose
 // occurrence changes role or identity closes (with everything under it, and
-// the focus leaves it) and opens again. While a doc is on its way or an
-// acting occurrence has no stage yet, it holds api.opening(): arriving waits.
+// the focus leaves it) and opens again. While a doc is on its way it holds
+// api.opening(): arriving waits.
 //   - `use("links")`: `role(id)` → `{ role, open, reason? }` of the caller's
 //     stage's link `id` (a view plugin's: the focus stage's), `fixPoint(id)`.
 //   - Enter, a command on a link; the trail, where the focus is.
-//   - view["scene.links"]: `{ links, names }`, each link's state and name by path.
+//   - view["scene.links"]: `{}`, afresh whenever a link's state or name changes.
 
 import css from "./links.css?inline";
 import { expand, identityOf } from "./link-graph.js";
@@ -57,6 +57,7 @@ function create(api) {
   let states = new Map(); // path key → { role, open, reason? }
   let waiting = api.opening();
   let queued = false;
+  let heard = "";
   api.signal.addEventListener("abort", () => {
     for (const d of docs.values()) d.off?.();
   });
@@ -122,17 +123,14 @@ function create(api) {
     states = new Map(
       expansion.filter((o) => o.depth).map((o) => [pathKey(o.path), Object.freeze({ role: o.role, open: o.role !== "closed" && opened.get(pathKey(o.path))?.key === occKey(o), ...(o.reason ? { reason: o.reason } : {}) })]),
     );
-    const pending = [...docs.values()].some((d) => d.state === "loading") || expansion.some((o) => o.role === "acting" && o.depth && !opened.has(pathKey(o.path)));
-    if (pending) waiting ??= api.opening();
+    // (every stage is open by now that can be: one the kernel refused never comes, so only a doc on its way is waited for)
+    if ([...docs.values()].some((d) => d.state === "loading")) waiting ??= api.opening();
     else waiting = void waiting?.();
-    // what every link is, and what its host calls it (the outermost: its title), whatever the focus (I4)
-    const named = expansion.map((o) => {
-      const host = o.depth ? expansion[o.parent] : o;
-      const d = docOf(host.url, host.heads);
-      return [pathKey(o.path), (o.depth ? d?.objects?.[o.link]?.name : d?.title) ?? null];
-    });
-    const value = { links: Object.fromEntries(states), names: Object.fromEntries(named) };
-    if (JSON.stringify(value) !== JSON.stringify(api.view.get()[api.id] ?? null)) api.view.set(Object.freeze(value));
+    // a link's state or name changed: the view plugins hear it (the trail's names, the clock chips') through a
+    // fresh empty value, which tells a stage nothing of where it is (I4)
+    const key = JSON.stringify([[...states], expansion.map((o) => (o.depth ? docOf(expansion[o.parent].url, expansion[o.parent].heads)?.objects?.[o.link]?.name : docOf(o.url)?.title))]);
+    if (key !== heard) api.view.set(Object.freeze({}));
+    heard = key;
     drawTrail();
   }
 

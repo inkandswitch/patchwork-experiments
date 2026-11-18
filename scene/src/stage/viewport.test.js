@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { encodeGLB } from "../glb.js";
 import { keyOf } from "./paths.js";
 import { scopeViewport } from "./scope.js";
+import { applyMatrix } from "../transform.js";
 import { prepareGLB } from "../gltf-content.js";
 import { defaultSnapRadius } from "../carry-rules.js";
 import {
@@ -1046,5 +1047,29 @@ describe("I7: a linked doc's layers, two links deep", () => {
         n++;
       }
     expect(n).toBe(16);
+  });
+
+  // a label `on` an object (api.labels): where it is drawn each frame (a held pose too), in a linked stage's frame
+  it("a label on an object sits at its offset there as drawn, for every pose of the link; nowhere while it isn't drawn", () => {
+    for (const p1 of POSES) {
+      const vp = headless();
+      const X = keyOf(1, "x");
+      vp.applyDisplay("L1", { transform: p1 });
+      vp.applyDisplay(X, { transform: { position: [1, 0.5, 0] } }, "L1");
+      scopeViewport(vp, { n: 1, root: "L1", frame: () => vp.worldOf("L1") }).labels.sync("tags", [{ key: "k", text: "t", on: "x", offset: [0, 1, 0] }]);
+      const el = vp.labels.el.querySelector(".label");
+      let seen = null;
+      const at = () => (vp.labels.update((v) => ((seen = v.toArray()), { x: 0, y: 0 })), el.style.display === "none" ? null : seen);
+      const onX = () => near(at(), applyMatrix(vp.worldOf(X), [0, 1, 0]));
+      expect(onX()).toBe(true);
+      vp.setPose(X, { position: [0, 2, 0], rotation: [0, 1, 0], scale: 1 });
+      expect(onX()).toBe(true);
+      vp.applyDisplay(X, { visible: false, transform: { position: [1, 0.5, 0] } }, "L1");
+      expect(at()).toBe(null);
+      vp.applyDisplay(X, { transform: { position: [1, 0.5, 0] } }, "L1");
+      expect(onX()).toBe(true);
+      vp.removeObject(X);
+      expect(at()).toBe(null);
+    }
   });
 });

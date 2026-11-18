@@ -340,6 +340,33 @@ describe("arriving through a link", () => {
     }
   });
 
+  // api.open is any view plugin's: a doc another opened acting first doesn't act at its link too (the
+  // kernel refuses), and links holds arriving only while a doc is on its way, not for a stage that never comes.
+  it("a start placed on a link whose doc another view plugin opened acting first arrives nowhere, and arriving ends", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const entered = [];
+    const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => (entered.push(1), { input: {} }) }] }) } };
+    let open;
+    const gate = new Promise((r) => (open = r));
+    class GatedRepo extends FakeRepo {
+      async find(url) {
+        if (url === g.url) await gate;
+        return super.find(url);
+      }
+    }
+    const repo = new GatedRepo();
+    const g = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit" } } }));
+    const taker = { meta: { id: "t.taker", type: "scene:view" }, module: { create: () => ({}) } };
+    const objects = { x: object({ name: "X" }), m: object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null }) };
+    s = await mountStage({ repo, extensions: [SEATISH, taker], doc: { objects, order: ["x", "m"], view: { start: { body: "t.sit", place: "m" } } } });
+    await until(() => s.instance("t.taker"));
+    expect(!!s.api("t.taker").open(g, { under: [[], "x"] })).toBe(true);
+    expect(s.debug.view.arriving()).toEqual({ pending: true });
+    open();
+    await until(() => s.debug.view.arriving() === null, 2000);
+    expect([entered, s.debug.view.atom.get().body.id, s.api("t.taker").use("links").role("m")]).toEqual([[], "look", { role: "acting", open: false }]);
+  });
+
   // A body may refuse at the moment it's offered (a seat not yet laid, its
   // doc not yet in). The start stays pending and the body is asked again
   // until ARRIVE_WAIT_MS after the offer; past that, nobody arrives. Every

@@ -160,6 +160,25 @@ describe("view plugins", () => {
     expect(n).toBe(24);
   }, 60_000);
 
+  // api.open is any view plugin's, so the kernel keeps I3's "one acting occurrence per doc" itself:
+  // a doc acts at one stage of a view (the outermost's too), and nothing acts under a stage that doesn't.
+  it("open: a doc acting in the view already, or under a drawn stage, opens no acting stage; drawn, it opens", async () => {
+    const repo = new FakeRepo();
+    const b = repo.add(emptyScene({ title: "B" }));
+    const plugin = { meta: { id: "t.view", type: "scene:view" }, module: { create: () => ({}) } };
+    const objects = Object.fromEntries(["L1", "L2", "L3"].map((id) => [id, object({ name: id })]));
+    s = await mountStage({ repo, natives: false, editor: false, extensions: [plugin], doc: { title: "A", objects, order: Object.keys(objects) } });
+    await until(() => s.instance("t.view"), 2000);
+    const api = s.api("t.view");
+    const view = s.debug.view;
+    const at = (under, h = b, o = {}) => !!api.open(h, { under, ...o });
+    const close = api.open(b, { under: [[], "L1"] });
+    expect([!!close, at([[], "L2"]), at([[], "L2"], s.handle), at([[], "L2"], b, { acting: false }), at([["L2"], "x"], s.handle), at([["L2"], "x"], s.handle, { acting: false })]).toEqual([true, false, false, true, false, true]);
+    expect([view.stageAt(["L1"])?.url, view.stageAt(["L2"]), view.stageUnder(["L2", "x"])?.acts]).toEqual([b.url, null, false]);
+    close();
+    expect(at([[], "L3"])).toBe(true);
+  });
+
   // A pref this viewer hasn't set is the asking extension's doc's suggestion
   // (`doc.view`), a linked game's own; a view plugin's is the focus doc's.
   it("a pref falls back on the asking extension's doc, a view plugin's on the focus doc", async () => {
