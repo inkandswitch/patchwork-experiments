@@ -29,6 +29,8 @@
 </style>
 <div id="a"></div><div id="b"></div>
 <script type="module">
+// a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
+import { part as putPart } from "../../scene/src/parts/editor.js";
 import { getRegistry, registerPlugins } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
@@ -200,10 +202,10 @@ try {
             d.objects[table] = object("Low table", made["office/low-table@1"], { parent: ids.Tatami, group: d.objects[ids.Tatami].group ?? null, transform: at });
             d.order.push(table);
           });
-        } else table = await api.part("tabletop.table", { parent: ids.Tatami, transform: at });
+        } else table = await putPart(api, "tabletop.table", { parent: ids.Tatami, transform: at });
         if (!table) return { error: `no Card table for ${t.part}`, notices: P.notices("a") };
         // the game part makes the game's own doc and links it onto the table
-        const made1 = await api.part(t.part, { parent: table, transform: { position: t.at, rotation: [0, 0, 0], scale: 1 } });
+        const made1 = await putPart(api, t.part, { parent: table, transform: { position: t.at, rotation: [0, 0, 0], scale: 1 } });
         if (!made1) return { error: `no ${t.part}`, notices: P.notices("a") };
         const gameUrl = objects()[made1].sourceUrl;
         const g = (await repo.find(gameUrl)).doc();
