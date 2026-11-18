@@ -224,7 +224,7 @@ try {
       return docs[k].doc().objects[ids[`sea${k}`]].traits.water.clip;
     },
     huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),
-    notices: (w) => (dbg[w]?.view.atom.get().notices ?? []).map((n) => n.text ?? String(n)),
+    notices: (w) => (dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text ?? String(n)),
   });
   window.__ready = true;
 } catch (err) {

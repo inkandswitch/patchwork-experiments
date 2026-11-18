@@ -203,7 +203,7 @@ try {
       return { y: m[13], x: m[12], z: m[14], h: r ? r.heightAt(m[12], m[14], st.reader.use("clock").t()) : null, body: r ? r.body : "none", doc: doc.position, rot: doc.rotation, drawnYaw: Math.atan2(m[8], m[10]), simulating: !!inst(st, "sailing").debug.sim.simulating?.(), read: inst(st, "sailing").debug.sim.read?.(hull) ?? null };
     },
     huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),
-    notices: (w) => (dbg[w]?.view.atom.get().notices ?? []).map((n) => n.text ?? String(n)),
+    notices: (w) => (dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text ?? String(n)),
   });
   window.__ready = true;
 } catch (err) {

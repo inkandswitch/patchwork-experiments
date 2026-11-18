@@ -240,7 +240,7 @@ try {
     links: (w) => ["LA", "LB"].map((id) => dbg[w].view.linkState([id])),
     sky: (w) => dbg[w].viewport.atmosphere?.sky?.top ?? null,
     clocks: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], t: s.reader.use("clock").t(), running: s.reader.use("clock").running(), computer: s.reader.use("clock").computer() })),
-    notices: (w) => (dbg[w]?.view.atom.get().notices ?? []).map((n) => n.text ?? String(n)),
+    notices: (w) => (dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []).map((n) => n.text ?? String(n)),
   });
   window.__ready = true;
 } catch (err) {

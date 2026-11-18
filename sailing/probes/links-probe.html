@@ -33,7 +33,7 @@
 <div id="a"></div><div id="b"></div><div id="c"></div><div id="d"></div>
 <script type="module">
 // a part is the editor's to put in (scene/EDITOR.md, "Parts"): its module, borrowed from scene's source at dev time
-import { part as putPart } from "../../scene/src/parts/editor.js";
+import { add as addLink, part as putPart } from "../../scene/src/parts/editor.js";
 {
   let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
   Math.random = () => {
@@ -107,12 +107,12 @@ try {
   const told = { a: [], b: [], c: [] };
   const collect = () => {
     time.frame(collect);
-    for (const w of ["a", "b", "c"]) for (const n of dbg[w]?.view.atom.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+    for (const w of ["a", "b", "c"]) for (const n of dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   };
   time.frame(collect);
   /** an api of the outermost stage of view w */
   const apiOf = (w) => {
-    for (const id of ["scene.use", "scene.keys", "scene.add", "sailing"]) { const x = dbg[w].host.record(id)?.api; if (x) return x; }
+    for (const id of ["scene.claims", "sailing"]) { const x = dbg[w].host.record(id)?.api; if (x) return x; }
     return null;
   };
   /** the stage view w shows G in: its own (C, D), else the one its link opened where G acts */
@@ -181,7 +181,7 @@ try {
     await loaded(() => apiOf("a"));
     const aapi = apiOf("a");
     ids.roomTable = await putPart(aapi, "tabletop.table", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
-    ids.roomLink = await aapi.addObject(docs.game.url, { parent: ids.roomTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 }, hint: link.hint, fields: { locked: true } });
+    ids.roomLink = await addLink(aapi, docs.game.url, { parent: ids.roomTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 }, hint: link.hint, fields: { locked: true } });
     // a part selects what it makes: let go, so attention is the look
     dbg.a.view.select(null);
     dbg.b.view.select(null);
@@ -198,7 +198,7 @@ try {
   }
   async function i6() {
     const aapi = apiOf("a");
-    const point = aapi.fixPoint(ids.roomLink);
+    const point = aapi.use("links").fixPoint(ids.roomLink);
     if (!point) return { error: "the room's link has no version to fix" };
     const pinHand = P.where().p1;
     // what Ana sees now: the pin must go on showing exactly this
@@ -219,7 +219,7 @@ try {
     const readOnly = new Proxy(g, { get: (t, p) => (p === "isReadOnly" ? () => true : typeof t[p] === "function" ? t[p].bind(t) : t[p]) });
     mount("d", readOnly);
     const up = (st) => st?.debug.host.instanceOf("tabletop") && st.debug.host.instanceOf("card-table") && st.debug.host.instanceOf("seats");
-    const ok = await loaded(() => up(stageAtLink("a", ids.pinLink)) && up(gStage("d")) && apiOf("a").link(ids.repeatLink)?.role === "closed", 60_000);
+    const ok = await loaded(() => up(stageAtLink("a", ids.pinLink)) && up(gStage("d")) && apiOf("a").use("links").role(ids.repeatLink)?.role === "closed", 60_000);
     if (!ok) return { error: "the pin and D never both ran G's extensions, or the repeat never closed", stages: P.i6Stages() };
     return { pinHand, pinFaces, deps: Object.keys(point.deps ?? {}).length, repeatLink: ids.repeatLink, pinLink: ids.pinLink };
   }
@@ -227,13 +227,14 @@ try {
     /** view w's focus: the links entered ([]: its outermost doc) */
     focusPath: (w) => dbg[w].view.atom.get().focus,
     /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
-    // (an extension runs in a stage; a view plugin has its facet at the focus stage: scene/STAGE.md, "View plugins")
-    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => (s.debug.host.instanceOf(ext) || s.debug.facets().includes(ext))).map((s) => [...s.path]),
+    // (an extension runs in the stages whose docs call for it; a view plugin, the general parts, at the focus stage
+    // wherever it is: scene/STAGE.md, "View plugins")
+    runsIn: (w, ext) => (dbg[w].view.plugins.instanceOf(ext) ? [dbg[w].view.focusStage()] : dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext))).map((s) => [...s.path]),
     /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
     traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().map((r) => r.id)]),
     /** Enter on a link of the focus stage's, as the menu runs it (scene.focus's command): false where it can't */
     enter(w, id) {
-      const c = dbg[w].view.focusStage()?.debug.view.plugins.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
+      const c = dbg[w].view.focusStage()?.debug.view.plugins.instanceOf("scene.links")?.commands.find((k) => k.id === "enter");
       const st = c?.state(id);
       if (!st || st.disabled) return false;
       c.run(id);
@@ -241,7 +242,7 @@ try {
     },
     /** each view's stages: [{ n, url, path }] */
     stages: (w) => dbg[w].view.stages().map((s) => ({ n: s.n, url: s.url, path: [...s.path] })),
-    link: (w) => (w === "a" ? apiOf("a").link(ids.roomLink) : w === "b" ? apiOf("b").link(ids.boatLink) : null),
+    link: (w) => (w === "a" ? apiOf("a").use("links").role(ids.roomLink) : w === "b" ? apiOf("b").use("links").role(ids.boatLink) : null),
     shape: () => ({
       boatHasGamePieces: Object.values(docs.boat.doc().objects).some((o) => o.traits?.["tabletop.card"]),
       roomHasGamePieces: Object.values(docs.room.doc().objects).some((o) => o.traits?.["tabletop.card"]),
@@ -294,7 +295,7 @@ try {
     },
     i6Stages: () => {
       const one = (st) => (st ? { role: st.role, writable: st.debug.host.record("tabletop")?.api.writable() ?? null, running: st.debug.host.running().map((r) => r.id) } : null);
-      return { acting: one(gStage("a")), repeat: one(stageAtLink("a", ids.repeatLink)), pin: one(stageAtLink("a", ids.pinLink)), d: one(gStage("d")), aLinks: { repeat: apiOf("a").link(ids.repeatLink), pin: apiOf("a").link(ids.pinLink), room: apiOf("a").link(ids.roomLink) } };
+      return { acting: one(gStage("a")), repeat: one(stageAtLink("a", ids.repeatLink)), pin: one(stageAtLink("a", ids.pinLink)), d: one(gStage("d")), aLinks: { repeat: apiOf("a").use("links").role(ids.repeatLink), pin: apiOf("a").use("links").role(ids.pinLink), room: apiOf("a").use("links").role(ids.roomLink) } };
     },
     where() { const out = { p1: [], p2: [], table: [] }; for (const id of hidden()) out[zoneOf(id) ?? "table"].push(id); return out; },
     /** the deck's pile, at its spot ([0.3, 0] in G's root frame), top first */
