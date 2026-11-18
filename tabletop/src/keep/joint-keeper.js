@@ -78,8 +78,7 @@ export function playing(api, scene) {
 
 /** @param {object} api  @param {{ secret?: (viewer: string) => Promise<Uint8Array> | Uint8Array }} [o]  secret: the player's secret (default: their account's; player-secret.js) */
 export function create(api, { secret } = {}) {
-  const { repo } = api;
-  const { viewer } = api.channel;
+  const { repo, channel: { viewer } } = api;
   let settled = null; // what api.settled() said at the last update that looked
   // A stage that may not write its doc (a pin, a mirror, a viewer who may only read) takes no part:
   // it joins nothing, takes no turn, hands over no key and makes no secret. It only reveals, with

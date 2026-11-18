@@ -96,7 +96,7 @@ function create(api) {
       }
     },
     what: (id) => api.nameOf?.(id) || api.scene()?.objects?.[id]?.name || "this",
-    // the stage's time (scene STAGE.md "Time"): a round's waits and stamps move with the scene's frames
+    // the stage's time (scene STAGE.md "Native services"): a round's waits and stamps move with the scene's frames
     now: () => api.now(),
     after: (ms, fn) => api.after(ms, fn),
     storage: (() => {

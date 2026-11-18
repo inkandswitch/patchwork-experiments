@@ -44,8 +44,7 @@ export async function contain({ repo }, { title, items }) {
 }
 
 function create(api) {
-  const { repo } = api;
-  const { viewer } = api.channel;
+  const { repo, channel: { viewer } } = api;
   let settled = null; // what api.settled() said at the last update that looked
   const containers = new Map(); // url → { handle, problem, off }
   let bound = bindings({}, TRAIT);

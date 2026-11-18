@@ -43,7 +43,7 @@ people lists this package in its `packages`, like any other.
   that owner's seat.
 - **Who sits in a lasting seat is the doc's** (`player`) and lasts. Whether
   that player is here now is a claim on the seats' owner (the scene, or the
-  object), `seat:<id>` (scene/STAGE.md, "Claims"): it lapses when they go, so
+  object), `seat:<id>` (scene/STAGE.md, "Native services"): it lapses when they go, so
   a seat whose player has gone can be taken (after asking), and one whose
   player is here can't. Claims decide who may take a seat, never who sees
   what.
@@ -67,7 +67,7 @@ people lists this package in its `packages`, like any other.
   whatever body you're in (walking her deck, or Look); standing up, the
   chip's Leave or watching pops it, and that body carries on.
 - **"Sat down"**, told to everyone (`use("tell").tell`: the seat id, and the
-  owner's object id for an object's seat; scene STAGE.md "Telling"): said
+  owner's object id for an object's seat; scene STAGE.md "Native services"): said
   once the seat is one of the scene's, by the sitter's contact name.
 
 ## Conventions
