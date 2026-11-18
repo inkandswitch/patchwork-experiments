@@ -375,6 +375,7 @@ async function roundTrip(roots, K, { squat = false } = {}) {
 const TALLY = { refused: 584, exact: 116, withEdges: 316 };
 const CLASSES = { "p=root ungrouped one block": 64, "p=root ungrouped spread": 32, "p=shelf ungrouped one block": 16, "p=shelf grouped spread": 4 };
 
+// I2: T and the host stay intra-doc (intraDoc): no reference crosses docs, whatever S and K
 describe("extract and bundle (I9): every set of roots × every K", () => {
   it(
     "one host change each, no other doc written; T and the host each intra-doc and T without runtime state; each edge outside cleared where it lives and said; bundle(extract(S, K), K) is the original when S has no edge outside, ids taken or not",

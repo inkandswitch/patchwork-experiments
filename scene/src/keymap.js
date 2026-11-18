@@ -1,4 +1,5 @@
-// The one key resolver (STAGE.md, "Keys"). Pure: no DOM, no api.
+// The one key resolver (STAGE.md, "Keys"). Pure: no api, and no DOM but
+// for isTyping, which reads the element it is given.
 //
 // One key order: a focused field (the DOM's, before any of this), the open
 // gesture (a carry's Q/E/F), the held tool's declared keys, the body's, then
@@ -21,6 +22,14 @@
 // the scene (the null target).
 
 import { commandState, flatCommands, keyMatches, keysOf } from "./parts/toolbar-commands.js";
+
+/** Is someone typing into this element (a focused field: the first in the key order, so it keeps its keys)? */
+export function isTyping(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return !!el.isContentEditable || el.getAttribute?.("contenteditable") === "true";
+}
 
 /** The physical key (KeyboardEvent.code, US layout) a command's `key` names, or null when it names none. */
 export function codeOfKey(key) {

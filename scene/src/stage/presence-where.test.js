@@ -216,6 +216,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// I12: every acting stage draws its doc's people in its frame; a pin draws nobody; nobody draws this view
 describe("presence where it is", () => {
   it("every focus × where the body is held (nowhere, or each acting stage, then let go): every stage but the pin draws its doc's people in its own frame, by the one instance of its part of every doc; the walk's facet is the focus's, the body where it was entered; the chips are the focus path's", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -37,6 +37,7 @@ function offers() {
 
 const deepFrozen = (v) => v === null || typeof v !== "object" || (Object.isFrozen(v) && Object.values(v).every(deepFrozen));
 
+// I13: non-plain offers are refused; what a reader holds is one frozen object
 describe("only data crosses, by construction (W4)", () => {
   for (const { name, value, ok } of offers()) {
     it(`${name}: ${ok ? "copied, deep-frozen, equal as JSON, never the same object" : "refused"}`, () => {

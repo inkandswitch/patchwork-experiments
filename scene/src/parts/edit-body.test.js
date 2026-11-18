@@ -134,6 +134,7 @@ function expected(edit, selected, writable) {
   return { handles: edit && obj && writable, knobs: edit && obj && writable, inspector: edit && obj, grid: edit, axes: edit, bounds: edit, toolbar: edit };
 }
 
+// H13: editing ⇔ the Edit hand is held; its chrome shows exactly then, in any body
 describe("the editor is the Edit hand", () => {
   it("every body × editing or not × nothing, an object or a ref selected × writable or not: handles, knobs, inspector, grid, axes, bounds, toolbar", async () => {
     let cases = 0;

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { buildEvent, createRouter, isMac, isTyping, releaseKind, retype, withHolder } from "./router.js";
+import { buildEvent, createRouter, isMac, releaseKind, retype, withHolder } from "./router.js";
+import { isTyping } from "../keymap.js";
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
@@ -332,6 +333,7 @@ describe("clicks on unclaimed presses", () => {
   });
 });
 
+// H12: an event goes to the hands top first, then the chain, then the top body, cut at the first claim
 describe("hands, top first", () => {
   // Every stack of up to three hands picked up in turn (a tool, an
   // editor-like hand, a popover; a tool picked up replaces the tool held),

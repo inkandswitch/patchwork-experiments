@@ -31,6 +31,7 @@ import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
+import { isTyping } from "../keymap.js";
 import { add as addObject, drop, template } from "./editor.js";
 import { atFocus } from "./per-focus.js";
 import { editing } from "../stage/bodies.js";
@@ -68,12 +69,6 @@ export const templatesOf = (list) =>
       description: typeof t.description === "string" ? t.description : null,
       params: Array.isArray(t.params) ? t.params.filter((p) => p && typeof p.key === "string") : [],
     }));
-
-/** Is someone typing into this element? */
-function isTyping(el) {
-  if (!el || el.nodeType !== 1) return false;
-  return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || !!el.isContentEditable || el.getAttribute?.("contenteditable") === "true";
-}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);

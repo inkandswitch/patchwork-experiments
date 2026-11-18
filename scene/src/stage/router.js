@@ -25,7 +25,7 @@
 
 import { offer } from "./chain.js";
 import { fromEmbed } from "../embed.js";
-import { keyOfCode, reservedBy } from "../keymap.js";
+import { isTyping, keyOfCode, reservedBy } from "../keymap.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
 import { realTime } from "./time.js";
@@ -52,14 +52,6 @@ export function releaseKind({ button, ctrl }, mac) {
 
 /** Is `el` in something over the canvas that keeps the look while the pointer is on it (`data-keeps-look`: the use prompt)? */
 export const keepsLook = (el) => !!el?.closest?.("[data-keeps-look]");
-
-/** Is someone typing into this element (so it keeps its keys)? */
-export function isTyping(el) {
-  if (!el || el.nodeType !== 1) return false;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return !!el.isContentEditable || el.getAttribute?.("contenteditable") === "true";
-}
 
 // A copy of an event with one field changed; its lazy getters still share one memo.
 function copyWith(ev, key, value) {

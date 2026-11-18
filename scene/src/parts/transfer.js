@@ -41,6 +41,7 @@
 import { isGroup } from "../groups.js";
 import { editing } from "../stage/bodies.js";
 import { fromEmbed } from "../embed.js";
+import { isTyping } from "../keymap.js";
 import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
@@ -53,12 +54,6 @@ const RING_SEGMENTS = 48;
 const RING_SIZE = 0.025;
 /** What a duplicate is moved by when nothing says how big it is (scene units). */
 const BESIDE = 1;
-
-/** Is someone typing into this element? */
-function isTyping(el) {
-  if (!el || el.nodeType !== 1) return false;
-  return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || !!el.isContentEditable || el.getAttribute?.("contenteditable") === "true";
-}
 
 /** Is there text selected on the page (a label, a panel)? Then Copy is the browser's. */
 function textSelected() {

@@ -174,6 +174,7 @@ describe("a live link opens a stage for its doc", () => {
     expect(m.log[2]).toMatchObject({ id: "L", point: [10, 1, 0], holder: "table" });
   });
 
+  // I10: each stage sees its own element of the selection and the hover, or null
   it("hover and selection are paths: each stage sees its own element; selecting from outside selects the link", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();

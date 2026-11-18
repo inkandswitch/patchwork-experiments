@@ -26,12 +26,11 @@
 
 import css from "./dimensions.css?inline";
 import { detachAnchor, distance } from "../anchors.js";
-import { applyMatrix } from "../transform.js";
+import { applyMatrix, contentMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { editor } from "./editor.js";
-import { contentMatrix } from "../stage/scope.js";
 import { editing } from "../stage/bodies.js";
 import { perFocus } from "./per-focus.js";
 

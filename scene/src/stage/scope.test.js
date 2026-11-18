@@ -4,9 +4,9 @@
 
 import { describe, expect, it } from "vitest";
 import { SEP, comparePaths, elementOf, keyOf, parseKey, samePath } from "./paths.js";
-import { contentMatrix, frameOf, hitIn, rayIn, scopeViewport, similarityOf } from "./scope.js";
+import { frameOf, hitIn, rayIn, scopeViewport, similarityOf } from "./scope.js";
 import { Group } from "three";
-import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
+import { applyMatrix, composeMatrix, contentMatrix, multiplyMatrices } from "../transform.js";
 
 const IDS = ["a", "o1x", "", "0", "12", `${SEP}x`, `${SEP}3${SEP}y`, `a${SEP}b`, "L/c7", " "];
 const close = (a, b, eps = 1e-9) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);

@@ -63,6 +63,7 @@ function expected(world) {
   return running.length ? { by: running.at(-1), doc: world.doc().title } : null;
 }
 
+// I13: every api.ambient(name) is the outermost's stacked value, `mine` only at the outermost
 describe("one world's ambients (W2): the outermost's, everywhere in the view", () => {
   // (alone, linked and two deep, with every body and focus: placement.test.js's ambient reads; the stack: ambients.test.js)
   for (const [hostOffers, hostTraits] of Object.entries(OFFERS))

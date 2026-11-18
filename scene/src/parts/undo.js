@@ -11,7 +11,7 @@
 // wrote: undo's compare-and-set).
 
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../stage/router.js";
+import { isTyping } from "../keymap.js";
 import { editor } from "./editor.js";
 import { editing } from "../stage/bodies.js";
 

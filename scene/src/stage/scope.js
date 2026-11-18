@@ -85,20 +85,6 @@ export function hitIn(f, hit, id) {
   return out;
 }
 
-/**
- * A node's matrix in its content root's own frame (column-major 16): the one
- * way geometry inside an object is read (a GLB's meshes under
- * `api.content(id).root`). Every frame above the root cancels, a stage's
- * included, so it is the same wherever the object is drawn. Duck-typed on
- * three.js's Object3D (updateWorldMatrix, matrixWorld.elements). Pure but
- * for bringing the two world matrices up to date.
- */
-export function contentMatrix(root, node) {
-  root.updateWorldMatrix?.(true, false);
-  node.updateWorldMatrix?.(true, false);
-  return multiplyMatrices(invertMatrix(Array.from(root.matrixWorld.elements)), Array.from(node.matrixWorld.elements));
-}
-
 /** A world ray { origin, dir } in a frame. */
 export const rayIn = (f, r) => (r ? { origin: f.pointIn(r.origin), dir: f.dirIn(r.dir) } : null);
 
