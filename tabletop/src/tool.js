@@ -5,14 +5,14 @@
 // whole game is editable as JSON (GAME-FORMAT.md), checked before it's kept.
 
 import css from "./styles.css?inline";
-import { ensurePieceGLBs } from "./pieces.js";
+import { pieceDrawer } from "./pieces.js";
 import { isCard, tableLayout, writeTable } from "./setup.js";
 import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
 import { findSource, hostRegistry, prepareTable } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
 import { gameOf, writeGame } from "./game.js";
 import { defaultImages } from "./look/images.js";
-import { errorText, validate } from "../contract/v1/validate.js";
+import { errorText, validate } from "../contract/v2/validate.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const DRAW_DEBOUNCE_MS = 400;
@@ -109,11 +109,13 @@ export default function TabletopGameTool(handle, element) {
   const open = (url, toolId) => element.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url, toolId }, bubbles: true, composed: true }));
 
   // ─── keeping the piece GLBs drawn ─────────────────────────────────────────
+  const pieces = pieceDrawer({ repo, handle, images: defaultImages(), source: (type) => findSource(hostRegistry, type) });
   let drawing = null;
   let drawTimer = null;
   let drawError = null;
   let drawNotes = [];
   let drawProgress = null; // { done, total } while drawing
+  /** Draw every kind (each once, again when its piece changed). */
   function draw() {
     if (dead) return Promise.resolve();
     if (drawing) return drawing.then(draw);
@@ -121,7 +123,8 @@ export default function TabletopGameTool(handle, element) {
       drawProgress = { done, total };
       if (!dead) updateStatus();
     };
-    drawing = ensurePieceGLBs(repo, handle, { images: defaultImages(), source: (type) => findSource(hostRegistry, type), onProgress })
+    drawing = pieces
+      .ensure(kindsOf(doc()), { onProgress })
       .then(({ notes }) => {
         drawError = null;
         drawNotes = notes;
@@ -396,10 +399,13 @@ export default function TabletopGameTool(handle, element) {
     const kinds = kindsOf(d);
     const total = Object.values(copiesOf(d.setup)).reduce((n, k) => n + k, 0);
     const notes = drawNotes.length ? ` ${drawNotes.length} note${drawNotes.length === 1 ? "" : "s"} on drawing them: ${drawNotes.slice(0, 3).join("; ")}${drawNotes.length > 3 ? "; …" : ""}` : "";
+    // what the web wouldn't give (a host refusing a cross-origin fetch): drawn without it, tried again later (pieces.js)
+    const missing = [...new Set(Object.values(d.drawn ?? {}).flatMap((e) => (Array.isArray(e?.missing) ? e.missing : [])))];
+    const lacking = missing.length ? ` ${missing.length} file${missing.length === 1 ? "" : "s"} couldn't be fetched, so what uses ${missing.length === 1 ? "it is" : "them is"} drawn without: ${missing.slice(0, 2).join(", ")}${missing.length > 2 ? ", …" : ""}` : "";
     const drawingText = drawProgress?.total ? `Drawing pieces… ${drawProgress.done} of ${drawProgress.total}` : "Drawing pieces…";
     s.textContent =
       status ??
-      (settingUp && setupPhase ? setupPhase : drawError ? `Pieces couldn't be drawn: ${drawError}` : drawing ? drawingText : kinds.length ? `${total} pieces of ${kinds.length} kinds.${notes}` : "");
+      (settingUp && setupPhase ? setupPhase : drawError ? `Pieces couldn't be drawn: ${drawError}` : drawing ? drawingText : kinds.length ? `${total} pieces of ${kinds.length} kinds.${notes}${lacking}` : "");
   }
 
   const onChange = () => {

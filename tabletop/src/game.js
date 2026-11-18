@@ -1,9 +1,10 @@
 // A tabletop-game doc is a game (GAME-FORMAT.md) and two things beside it:
 // `drawn` (each piece's GLB file doc, pieces.js) and `tables` (the scenes
-// set up from it). These read the game out of a doc and write one in.
+// set up from it). These read the game out of a doc and write one in. The
+// web assets it's cached (`assets`) are the game's: they go wherever it goes.
 
 /** The fields of a doc that are the game. */
-export const GAME_FIELDS = Object.freeze(["format", "version", "title", "about", "players", "pieces", "setup", "seats", "camera", "origin"]);
+export const GAME_FIELDS = Object.freeze(["format", "version", "title", "about", "players", "pieces", "setup", "seats", "camera", "origin", "assets"]);
 
 const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 

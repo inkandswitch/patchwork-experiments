@@ -35,7 +35,7 @@ describe("the datatype", () => {
     const d = {};
     TtsImportDatatype.init(d);
     expect(d).toMatchObject({ status: "empty", report: null, gameUrl: null, games: [] });
-    expect(d.settings).toEqual({ metresPerUnit: 0.0254, includeContents: true, fetchMissing: true, flipObjX: true, maxObjects: 5000, maxStoredBytes: 32e6 });
+    expect(d.settings).toEqual({ metresPerUnit: 0.0254, includeContents: true, fetchNow: false, flipObjX: true, maxObjects: 5000, maxStoredBytes: 32e6 });
     expect(d.settings.metresPerUnit).toBe(0.0254);
     expect(TtsImportDatatype.getTitle(d)).toBe("TTS import");
   });

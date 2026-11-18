@@ -1,0 +1,749 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchwork.inkandswitch.com/tabletop-game/v2/schema.json",
+  "title": "tabletop-game v2",
+  "description": "A board game's components and where they start, as data (tabletop/GAME-FORMAT.md). The structural part: GAME-FORMAT.md §9 lists the rules a schema can't say.",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "title",
+    "about",
+    "pieces",
+    "setup"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "tabletop-game"
+    },
+    "version": {
+      "const": 2
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "about": {
+      "type": "string"
+    },
+    "players": {
+      "type": "string"
+    },
+    "pieces": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/piece"
+      }
+    },
+    "setup": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/thing"
+      }
+    },
+    "seats": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/seat"
+      }
+    },
+    "camera": {
+      "$ref": "#/$defs/camera"
+    },
+    "origin": {
+      "type": "object"
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/webUrl"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/asset"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "vec2": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^(automerge:[1-9A-HJ-NP-Za-km-z]+|https?://\\S+)$"
+    },
+    "fileUrl": {
+      "type": "string",
+      "pattern": "^automerge:[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "webUrl": {
+      "type": "string",
+      "pattern": "^https?://\\S+$"
+    },
+    "asset": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/fileUrl"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "camera": {
+      "type": "object",
+      "required": [
+        "position",
+        "target"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "target": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "seat": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "camera": {
+          "$ref": "#/$defs/camera"
+        }
+      }
+    },
+    "pose": {
+      "type": "object",
+      "required": [
+        "position"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/url"
+        },
+        "rect": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "turn": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ]
+        }
+      }
+    },
+    "part": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "size",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "box"
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "bottom",
+            "top",
+            "height",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "frustum"
+            },
+            "bottom": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "top": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "height": {
+              "type": "number",
+              "minimum": 0
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "profile",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "lathe"
+            },
+            "profile": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/vec2"
+              },
+              "minItems": 2
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 256
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "outline",
+            "size",
+            "thickness",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "slab"
+            },
+            "outline": {
+              "enum": [
+                "rect",
+                "rounded",
+                "hex",
+                "circle",
+                "cutout"
+              ]
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "thickness": {
+              "type": "number",
+              "minimum": 0
+            },
+            "aspect": {
+              "const": "image"
+            },
+            "top": {
+              "$ref": "#/$defs/image"
+            },
+            "bottom": {
+              "$ref": "#/$defs/image"
+            },
+            "side": {
+              "$ref": "#/$defs/color"
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "file",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "model"
+            },
+            "file": {
+              "$ref": "#/$defs/url"
+            },
+            "texture": {
+              "$ref": "#/$defs/url"
+            },
+            "matrix": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 9,
+              "maxItems": 9
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "snapPoint": {
+      "type": "object",
+      "required": [
+        "position"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        }
+      }
+    },
+    "piece": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/part"
+          }
+        },
+        "doc": {
+          "type": "object",
+          "required": [
+            "@patchwork"
+          ],
+          "properties": {
+            "@patchwork": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "back": {
+          "$ref": "#/$defs/id"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        },
+        "snapPoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/snapPoint"
+          }
+        },
+        "snapRadius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "zone": {
+          "type": "object",
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "$ref": "#/$defs/vec3"
+            },
+            "max": {
+              "$ref": "#/$defs/vec3"
+            }
+          }
+        },
+        "bag": {
+          "type": "object",
+          "required": [
+            "rule"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rule": {
+              "enum": [
+                "random",
+                "random-replace",
+                "top"
+              ]
+            }
+          }
+        },
+        "traits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "required": [
+        "cols",
+        "across",
+        "down"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "across": {
+          "$ref": "#/$defs/vec3"
+        },
+        "down": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "deck": {
+      "type": "object",
+      "required": [
+        "name",
+        "cards"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1
+        },
+        "faceDown": {
+          "type": "boolean"
+        },
+        "shuffle": {
+          "type": "boolean"
+        },
+        "secure": {
+          "type": "boolean"
+        },
+        "deal": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "to",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "to": {
+                "$ref": "#/$defs/id"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "spread": {
+          "type": "object",
+          "required": [
+            "cols",
+            "cell"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "cols": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cell": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      }
+    },
+    "thing": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "piece"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "piece": {
+              "$ref": "#/$defs/id"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "$ref": "#/$defs/pose"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "grid": {
+              "$ref": "#/$defs/grid"
+            },
+            "seat": {
+              "$ref": "#/$defs/id"
+            },
+            "contents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/thing"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "deck"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "deck": {
+              "$ref": "#/$defs/deck"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "at": {
+              "$ref": "#/$defs/pose"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

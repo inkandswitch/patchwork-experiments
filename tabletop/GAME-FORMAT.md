@@ -1,6 +1,6 @@
-# tabletop-game v1 — a board game as data
+# tabletop-game v2 — a board game as data
 
-**Status: v1, Patchwork-local.** A board game's components (what each piece
+**Status: v2, Patchwork-local.** A board game's components (what each piece
 looks like and is) and where everything starts, as one JSON document. It is
 what a `tabletop-game` doc holds, what a game this package or any other
 ships is (`games/*.json`; dice's `games/liars-dice.json`), and what the TTS
@@ -9,11 +9,11 @@ table — keeping cards, filling bags, drawing dice, seating people — is this
 package's, for every game alike: no game, and no importer, has code of its
 own here.
 
-- Structural schema: [contract/v1/schema.json](contract/v1/schema.json)
-- Both stages of validation: [contract/v1/validate.js](contract/v1/validate.js)
-- Readable types and constants: [contract/v1/types.js](contract/v1/types.js)
-- Example: [contract/v1/examples/minimal.json](contract/v1/examples/minimal.json)
-- Conformance fixtures: [contract/v1/fixtures/](contract/v1/fixtures/) and their [manifest](contract/v1/fixtures/manifest.json)
+- Structural schema: [contract/v2/schema.json](contract/v2/schema.json)
+- Both stages of validation: [contract/v2/validate.js](contract/v2/validate.js)
+- Readable types and constants: [contract/v2/types.js](contract/v2/types.js)
+- Example: [contract/v2/examples/minimal.json](contract/v2/examples/minimal.json)
+- Conformance fixtures: [contract/v2/fixtures/](contract/v2/fixtures/) and their [manifest](contract/v2/fixtures/manifest.json)
 
 The layout is naval's rig contract's (a structural schema, a specification
 of the rules it can't express, valid and invalid fixtures each naming the
@@ -81,13 +81,22 @@ might reasonably want it otherwise.
     importer writes none, and making one secure is the game page's tick on
     that deck. The other way round, every face-down deck secure, is one line
     in tts-import's translate.js.
+16. **Assets are named where they are, and cached in the game.** A part's
+    image or model is a file doc's `automerge:` URL or the web's `http(s)`
+    one (a TTS mod's own); the first viewer who draws something from a web
+    asset fetches it and caches it in a file doc the game's `assets` names
+    under that URL, so the game, and every copy of it, has it from then on
+    (§10). A host that refuses a page's fetch (no CORS) leaves what uses it
+    drawn without it. v2 for this: a v1 reader can't fetch.
+17. **A slab can be as wide as its picture** (`aspect: "image"`), as a TTS
+    tile or token is: the importer reads no image, so it can't say how wide.
 
 ## 1. Smallest useful document
 
 ```json
 {
   "format": "tabletop-game",
-  "version": 1,
+  "version": 2,
   "title": "Two pawns",
   "about": "A board and two pawns, for nobody's rules.",
   "pieces": {
@@ -115,7 +124,7 @@ non-uniform size is baked into its piece's parts.
 | field | | |
 |---|---|---|
 | `format` | `"tabletop-game"` | |
-| `version` | `1` | |
+| `version` | `2` | |
 | `title` | string | |
 | `about` | string | plain text for the players: what it is, how it's played. Never enforced |
 | `players` | string? | shown in lists ("2–4") |
@@ -124,6 +133,7 @@ non-uniform size is baked into its piece's parts.
 | `seats` | `{ [seatId]: { name, camera? } }`? | the places people sit, laid by whoever owns seats |
 | `camera` | `{ position, target }`? | a fresh table's view |
 | `origin` | object? | where it came from (free form; the TTS importer writes `{ tts: { saveName, fileName, workshopId } }`). A table set up from the game carries it |
+| `assets` | `{ [webUrl]: { file } }`? | where a web asset is cached: the file doc (`automerge:`) holding what its `http(s)` URL gave. Written by whoever first draws from it (§10), or the importer for what came with a mod |
 
 ## 4. Pieces and looks
 
@@ -155,11 +165,13 @@ see-through), `roughness`, `metalness`, `name`. The shapes:
 | `box` | `size: [w, h, d]` | |
 | `frustum` | `bottom: [w, d], top: [w, d], height` | a tapering box |
 | `lathe` | `profile: [r, y][], segments?` | turned about +Y; normals face the way the profile runs (up the outside, down an inside) |
-| `slab` | `outline: rect\|rounded\|hex\|circle\|cutout, size: [w, d], thickness, top?: Image, bottom?: Image, side?` | a card, tile, token or board: the outline extruded from y = 0 to `thickness`. A face with an image shows it as it is; without, `color`. `side` colours the edge. A `cutout` is cut by its top image's alpha (a round one is a disc, an opaque one a rectangle, anything else alpha-masked without sides), and without a bottom image shows its top's on both faces |
-| `model` | `file: url, texture?: url, matrix?: number[9]` | an OBJ file doc (its v flipped to glTF's), every point through the row-major 3×3 `matrix` (scale, mirror, units; a mirror re-winds it), tinted by `color` |
+| `slab` | `outline: rect\|rounded\|hex\|circle\|cutout, size: [w, d], thickness, aspect?: "image", top?: Image, bottom?: Image, side?` | a card, tile, token or board: the outline extruded from y = 0 to `thickness`. A face with an image shows it as it is; without, `color`. `side` colours the edge. A `cutout` is cut by its top image's alpha (a round one is a disc, an opaque one a rectangle, anything else alpha-masked without sides), and without a bottom image shows its top's on both faces. With `aspect: "image"` it is as wide as its top image (its cell, as turned) says: `size[0]` is its width for a square one, and its width while the image can't be had |
+| `model` | `file: url, texture?: url, matrix?: number[9]` | an OBJ (its v flipped to glTF's), every point through the row-major 3×3 `matrix` (scale, mirror, units; a mirror re-winds it), tinted by `color` |
 
-`Image = { file: url, rect?: [x, y, w, h], turn?: 0|90|180|270 }`: a file
-doc (an image), cropped to `rect` (fractions of the image, top left origin),
+A `url` is a file doc's (`automerge:`) or the web's (`http(s)`, fetched
+when first drawn from and cached through `assets`, §3).
+`Image = { file: url, rect?: [x, y, w, h], turn?: 0|90|180|270 }`: an
+image, cropped to `rect` (fractions of the image, top left origin),
 turned clockwise on its face by `turn`. **A top image reads from +Z**: its
 top edge toward −Z, its left toward −X, seen from above. A bottom image reads
 the same once the slab is turned over about its length (Z), as a card is.
@@ -239,6 +251,7 @@ each code is one invalid fixture's.
 | `zone-box` | a zone's `min` is below its `max` on every axis |
 | `image-rect` | a rect has `w`, `h` > 0 and lies inside its image |
 | `cutout` | a `cutout` slab has a top image |
+| `aspect` | a slab as wide as its image has a top image |
 | `lathe-profile` | a lathe's radii are ≥ 0 |
 | `bag-card` | a card isn't a bag |
 | `duplicate-id` | thing ids are unique |
@@ -257,7 +270,12 @@ each code is one invalid fixture's.
 
 The doc is the game's fields at its top level, with `"@patchwork": { type:
 "tabletop-game" }` and two things beside them that aren't the game:
-`drawn: { [kind]: { url, key, bounds } }` (each piece's GLB file doc, drawn
-by the game page and rewritten in place when the look changes; a GLB drawn
-from file docs carries their `origin.urls`) and `tables: url[]` (the scenes
-set up from it).
+`drawn: { [kind]: { url, key, bounds, missing? } }` and `tables: url[]`
+(the scenes set up from it).
+
+`drawn` holds each piece's GLB file doc, drawn by the game page and
+rewritten in place when its look changes; a GLB drawn from files carries
+their `origin.urls`, and `missing` lists the files it had to do without
+(tried again after a while). Only a viewer who can write the game writes
+`drawn` or `assets`; two writing one entry at once each write theirs only
+where nothing is yet, and the merge keeps one.

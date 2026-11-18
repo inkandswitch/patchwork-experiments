@@ -9,7 +9,7 @@
 // The game page (default): the Lost Cities game, as the package's own UI
 // would make it. A tabletop-game doc holding the Lost Cities game
 // (games/lost-cities.json, as "Start from" writes it), every piece's GLB drawn
-// into a file doc (pieces.js ensurePieceGLBs, as the game page does while
+// into a file doc (pieces.js pieceDrawer, as the game page does while
 // open), then "Set up a table" (tool.js setUpTable): tableLayout with the
 // game's GLBs, a container per deck from a keeper and the seats from their
 // owner (found, as the game page finds it, by its plugin's metadata: here in
@@ -76,7 +76,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import lostCities from "../games/lost-cities.json" with { type: "json" };
-import { ensurePieceGLBs } from "../src/pieces.js";
+import { pieceDrawer } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { prepareTable } from "../src/table/made-with.js";
@@ -179,7 +179,7 @@ const init = { "@patchwork": { type: "tabletop-game", suggestedImportUrl: pushwo
 TabletopGameDatatype.init(init);
 const game = await repo.create2(init);
 game.change((d) => writeGame(d, lostCities));
-const { drawn } = await ensurePieceGLBs(repo, game);
+const { drawn } = await pieceDrawer({ repo, handle: game }).ensure(Object.keys(game.doc().pieces));
 
 // ─── "Set up a table" (tool.js setUpTable) ──────────────────────────────────
 const g = game.doc();

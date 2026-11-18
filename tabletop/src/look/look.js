@@ -166,6 +166,14 @@ export function drawer({ read = async () => null, images = null, source = async 
     const r = image.rect ?? [0, 0, 1, 1];
     return open(image.file).then((h) => (h ? images.shape(h, { x: r[0], y: r[1], w: r[2], h: r[3] }) : null)).catch(() => null);
   };
+  /** An image's width over its height, as it lies on its face (its cell of the sheet, turned), or null. */
+  const aspectOf = async (image) => {
+    const h = await open(image.file).catch(() => null);
+    if (!h?.width || !h?.height) return null;
+    const r = image.rect ?? [0, 0, 1, 1];
+    const a = (h.width * r[2]) / (h.height * r[3]);
+    return image.turn === 90 || image.turn === 270 ? 1 / a : a;
+  };
   const mesh = (url) => {
     if (!meshes.has(url))
       meshes.set(
@@ -243,7 +251,9 @@ export function drawer({ read = async () => null, images = null, source = async 
           break;
         }
         case "slab": {
-          const [w, d] = (part.size ?? [0, 0]).map(Number);
+          const [w0, d] = (part.size ?? [0, 0]).map(Number);
+          // as wide as its image says: size[0] is its width for a square image (a TTS tile or token stretched to its picture)
+          const w = part.aspect === "image" && part.top ? w0 * ((await aspectOf(part.top)) ?? 1) : w0;
           const hx = w / 2;
           const hz = d / 2;
           const max = textureSize(Math.max(w, d));

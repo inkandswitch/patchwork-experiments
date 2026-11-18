@@ -53,11 +53,13 @@ the game. The game page lists every registered game; starting from one
 copies it into the doc. A template for it is `template(id)`
 (`src/table/template.js`; or `template(params => id)`), a part `gamePart(id)`
 (`src/table/parts.js`). Or paste a game into a game page's definition: it is
-checked against the format (`contract/v1/validate.js`) before it's kept.
+checked against the format (`contract/v2/validate.js`) before it's kept.
 
-The doc: the game at its top level, `"@patchwork": { type: "tabletop-game" }`,
-`drawn: { [kind]: { url, key, bounds } }` (each kind's GLB, `src/pieces.js`)
-and `tables` (the scenes set up from it). `src/game.js` reads and writes it.
+The doc: the game at its top level (its `assets` too: each web asset it
+has cached, by URL), `"@patchwork": { type: "tabletop-game" }`, `drawn: {
+[kind]: { url, key, bounds, missing? } }` (each kind's GLB, once something
+has needed it: `src/pieces.js`) and `tables` (the scenes set up from it).
+`src/game.js` reads and writes it.
 
 ## A table
 
@@ -73,6 +75,13 @@ and the scene package as its suggested import (`src/scene-package.js`).
   the game page the game keeps it (`drawn`) and redraws it in place; from a
   template or part the scene keeps it (`ctx.file`, under a hash of what it's
   drawn from). A board's `snapPoints` are connectors in its GLB.
+- **Assets.** A file named by its web URL is read from the file doc the
+  game's `assets` caches it in, else fetched when a piece is first drawn
+  from it (`src/pieces.js` `pieceDrawer`), stored and cached there; two
+  viewers doing it at once each write theirs only where nothing is yet,
+  and the merge keeps one. A viewer who can't write the game draws for
+  themselves. What a host won't give (no CORS) is drawn without, its URL in
+  `drawn[kind].missing` and on the game page, and fetched again after ten minutes.
 - **Cards** (pieces with a `back`) are, in the scene, their back with the
   trait `tabletop.card`; what each really is goes only into a keeper's
   container (one per deck, one for loose cards), bound by the keeper's own
@@ -188,13 +197,18 @@ a drawer knows it won only after the merge, and the loser draws again.
 Make a **Tabletop Simulator import** and drop on it a mod's `.json`
 (`Mods/Workshop/<id>.json`, or a save) with its cached assets: files, a
 folder (the whole `Mods` folder is fine) or a `.zip`. It shows progress and a
-report (objects, pieces, assets from the cache or fetched or missing, what
-was left out or is a stand-in); **Open the game** opens the game it made.
-Settings: metres per TTS unit, bags' contents, fetching, mirroring OBJ x.
+report (objects, pieces, assets from the cache, fetched, to be fetched
+when first drawn, or missing; what was left out or is a stand-in); **Open
+the game** opens the game it made. Settings: metres per TTS unit, bags'
+contents, fetching every asset now (for playing offline), mirroring OBJ x.
 
-It writes a `file` doc per asset (`origin: { urls }`) and one
-`tabletop-game` (`origin: { tts: { saveName, fileName, workshopId } }`), no
-scene: a table is set up from the game as from any other. Cards and decks
+It writes one `tabletop-game` (`origin: { tts: { saveName, fileName,
+workshopId } }`), its pieces naming each asset by the mod's own URL, and a
+`file` doc (`origin: { urls }`) for each asset that came with the mod,
+cached under its URL in the game's `assets`; the rest are fetched when
+something is first drawn from them. A tile or token is as wide as its
+picture says (`aspect: "image"`), measured when it's drawn. No scene: a
+table is set up from the game as from any other. Cards and decks
 (never `secure`: tick it on the game page), tiles, tokens (cut out), boards,
 `*_Stack`s, models, bags, dice (a die doc), standees, hand triggers (a seat
 and its tray), snap points, tags and `Locked` come across
@@ -214,7 +228,7 @@ live in synced documents.
 | `src/kit/glb.js` | the scene's kit GLB encoder (a copy: `scripts/check-kit.mjs`), for dice and bags |
 | `src/empty-scene.js`, `scene-package.js` | a fresh scene doc (a copy of the scene's init); a doc's suggested import |
 | `src/test/` | the stage stand-in (`fakes.js`), the telling copy, stand-ins for seats, fake repos, a PNG codec |
-| `GAME-FORMAT.md`, `contract/v1/` | the format: spec, schema, validator, fixtures |
+| `GAME-FORMAT.md`, `contract/v2/` | the format: spec, schema, validator, fixtures |
 | `games/`, `fixtures/tiny-mod/` | the games; the TTS fixture mod (`make-tiny-mod.mjs`) |
 | `scripts/bench.mjs` | the joint shuffle's cost |
 

@@ -8,7 +8,8 @@
 //   - every asset the mod names is "fetched" from a stand-in that answers
 //     bytes of a realistic size (a deck's face sheet: a 4096 × 2880 JPEG of
 //     ~2.5 MB; a back or another image ~0.4 MB; a model an OBJ), headed so
-//     sniff/imageSize read them as TTS's would be;
+//     sniff reads them as TTS's would be (globalThis.fetch is the stand-in:
+//     nothing reaches the network);
 //   - createImageBitmap / OffscreenCanvas are stand-ins that only count:
 //     opening a sheet costs nothing here, so the decodes and crops are
 //     reported as counts (a browser's cost is about 100 ms a 4096² decode,
@@ -30,7 +31,6 @@ import { join } from "node:path";
 import { Window } from "happy-dom";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { readSave, collectAssets } from "../src/tts/tts.js";
-import { imageSize } from "../src/tts/image-size.js";
 
 // the tools' `?inline` CSS imports (vite's): nothing, here
 register(
@@ -64,8 +64,9 @@ for (const k of ["document", "CustomEvent", "Event", "HTMLElement", "Node", "Mut
 const counts = { decodes: 0, crops: 0, fetches: 0, fetchedBytes: 0 };
 globalThis.createImageBitmap = async (blob) => {
   counts.decodes++;
-  const head = new Uint8Array(await blob.slice(0, 4096).arrayBuffer());
-  const d = imageSize(head) ?? { width: 1024, height: 1024 };
+  // the stand-in's own header (jpeg() below): its SOF0's height and width
+  const b = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  const d = b[3] === 0xc0 ? { height: (b[7] << 8) | b[8], width: (b[9] << 8) | b[10] } : { width: 1024, height: 1024 };
   return { width: d.width, height: d.height, close() {} };
 };
 globalThis.OffscreenCanvas = class {
@@ -131,6 +132,8 @@ const fetchStub = async (url) => {
   counts.fetchedBytes += bytes.byteLength;
   return { ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(0) };
 };
+// what the game page fetches with (pieces.js): the stand-in, never the network
+globalThis.fetch = fetchStub;
 mark("read the mod", { objects: save.objects.length });
 
 // ─── a repo that never leaves this process ─────────────────────────────────
@@ -146,7 +149,7 @@ const { gameUrl, report } = await runImport({
   sources: [source(`Mods/Workshop/${MOD.split("/").pop()}`, statSync(MOD).size, async () => new TextEncoder().encode(text))],
   repo,
   fetch: fetchStub,
-  settings: { fetchMissing: true },
+  settings: { fetchNow: true },
   shrink: null,
   onProgress: (p) => {
     if (p.phase !== lastPhase) {

@@ -4,7 +4,7 @@
 export const TabletopGameDatatype = {
   init(doc) {
     doc.format = "tabletop-game";
-    doc.version = 1;
+    doc.version = 2;
     doc.title = "Untitled game";
     doc.about = "";
     doc.pieces = {};

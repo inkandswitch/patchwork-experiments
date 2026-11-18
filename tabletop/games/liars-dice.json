@@ -1,6 +1,6 @@
 {
   "format": "tabletop-game",
-  "version": 1,
+  "version": 2,
   "title": "Liar's dice",
   "players": "2–6",
   "about": "Liar's dice (dudo, cacho) — 2 to 6 players, each with a cup and five dice.\n\nEveryone shakes their dice under their cup and looks only at their own. Players then bid in turn on how many dice of a face there are under all the cups together (\"four fives\"), each bid higher than the last: more dice, or the same number of a higher face. Instead of bidding, a player may call the last bid a lie (dudo). Then every cup is lifted and the dice are counted: if there are fewer than bid, the bidder loses a die; otherwise the caller does. A lost die goes into the pool in the middle. Whoever loses their last die is out; the last player with dice wins. Ones are often wild.\n\nIn this scene: pick your seat at the top right. Hover your cup: S shakes it (a roll nobody chooses, drawn between everyone present), hold P to peek under it, L lifts it for everyone to see. Carry a lost die to the pool by hand. Nothing here counts, checks a bid or keeps turns: that's the players'.",

@@ -152,7 +152,6 @@ async function one(file) {
   const { translate } = await import("../src/tts/translate.js");
   const { AssetIndex, cacheCandidates } = await import("../src/tts/cache.js");
   const { sniff } = await import("../src/tts/sniff.js");
-  const { imageSize } = await import("../src/tts/image-size.js");
   const { DEFAULT_SETTINGS } = await import("../src/tts/settings.js");
 
   const jsonBytes = statSync(file).size;
@@ -322,13 +321,13 @@ async function one(file) {
     }
     if (statSync(hit.value).size > DEFAULT_SETTINGS.maxStoredBytes) assets.big++;
     assets[role].cached++;
-    found.set(u, { fileUrl: `automerge:asset${k++}`, dims: t.image ? imageSize(bytes) : null });
+    found.set(u, { fileUrl: `automerge:asset${k++}` });
   }
   out.assets = assets;
 
   let t;
   try {
-    t = translate(save, { ...options, file: (u) => found.get(u)?.fileUrl ?? null, imageSize: (u) => found.get(u)?.dims ?? null });
+    t = translate(save, { ...options, file: (u) => found.get(u)?.fileUrl ?? null });
   } catch (err) {
     out.import = { ok: false, error: `translate: ${err?.message ?? err}` };
     return out;

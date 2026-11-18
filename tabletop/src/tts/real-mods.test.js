@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { runImport, source } from "./importer.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { validate, errorText } from "../../contract/v1/validate.js";
+import { validate, errorText } from "../../contract/v2/validate.js";
 
 const MODS = join(homedir(), "Library", "Tabletop Simulator", "Mods");
 /**
@@ -47,20 +47,17 @@ describe.skipIf(!present.length)(`real mods from the TTS cache (${present.length
       const json = join(MODS, "Workshop", `${c.id}.json`);
       const repo = new FakeRepo();
       const sources = [source(`Mods/Workshop/${c.id}.json`, statSync(json).size, async () => new Uint8Array(readFileSync(json))), ...assets];
-      const { game, report, gameUrl } = await runImport({ sources, repo, settings: { fetchMissing: false } });
+      const { game, report, gameUrl } = await runImport({ sources, repo, settings: {} });
       const r = validate(game);
       expect(r.ok, errorText(r).slice(0, 2000)).toBe(true);
       expect(game.origin.tts.workshopId).toBe(c.id);
       expect(repo.handles.get(gameUrl).doc()["@patchwork"].type).toBe("tabletop-game");
-      // what pieces name is stored, each stored file saying where it came from
-      const stored = new Map(Object.values(report.assets).filter((a) => a.fileUrl).map((a) => [a.fileUrl, a.url]));
+      // what pieces name is the mod's own URL; what came with it is stored, under that URL in the game's
+      // assets, each stored file saying where it came from
       for (const p of Object.values(game.pieces))
         for (const part of p.parts ?? [])
-          for (const u of [part.top?.file, part.bottom?.file, part.file, part.texture]) {
-            if (!u) continue;
-            expect(stored.has(u)).toBe(true);
-            expect(repo.handles.get(u).doc().origin).toEqual({ urls: [stored.get(u)] });
-          }
+          for (const u of [part.top?.file, part.bottom?.file, part.file, part.texture]) if (u) expect(u).toMatch(/^https?:\/\//);
+      for (const [u, { file }] of Object.entries(game.assets ?? {})) expect(repo.handles.get(file).doc().origin).toEqual({ urls: [u] });
       // a cached mod's assets are mostly in the cache
       const a = report.counts.assets;
       if (c.cached) expect(a.cache).toBeGreaterThanOrEqual(c.cached);

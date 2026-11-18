@@ -1,20 +1,26 @@
 // The import, a translation: a mod JSON + whatever cached asset files came
-// with it → a file doc for each raw asset the game uses (saying which of the
-// mod's URLs it came from), a tabletop-game doc (translate.js: the game as
-// data, tabletop/GAME-FORMAT.md, its pieces naming those file docs), and a
-// report written into the tts-import doc. It writes no scene: the game's
-// tables are set up from the game (setup.js), as any game's are.
+// with it → a tabletop-game doc (translate.js: the game as data,
+// tabletop/GAME-FORMAT.md, its pieces naming each asset by the mod's own URL),
+// and a report written into the tts-import doc. It writes no scene: the
+// game's tables are set up from the game (setup.js), as any game's are.
+//
+// Assets are fetched when something is first drawn from them (pieces.js),
+// not here: an asset that came with the mod (TTS's cache, dropped with it)
+// is stored now, as a file doc saying which URL it came from, and the game's
+// `assets` names it under that URL; the rest are only named. "Fetch every
+// asset now" (settings.fetchNow, for a game to be played offline) fetches
+// and stores the rest too.
 //
 // Everything the browser provides is passed in, so it runs in vitest too:
 //   repo            create2(doc) → handle
-//   fetch           for assets that weren't dropped (optional; CORS often says no)
+//   fetch           for fetchNow (optional; CORS often says no)
 //   onProgress      ({ phase, done, total }) → void
 
 import { AssetIndex, cacheName, urlVariants, extensionOf } from "./cache.js";
 import { readSave, countNames, collectAssets } from "./tts.js";
 import { shortHash, translate } from "./translate.js";
-import { imageSize } from "./image-size.js";
 import { sniff } from "./sniff.js";
+import { fetchBytes, isWeb } from "../look/web.js";
 import { DEFAULT_METRES_PER_UNIT } from "./convert.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { browserShrink } from "./shrink.js";
@@ -40,25 +46,6 @@ export async function findSave(sources) {
 }
 
 const safeName = (s) => String(s ?? "asset").replace(/[\\/:*?"<>|]+/g, "-").trim().slice(0, 80) || "asset";
-
-async function fetchBytes(fetchFn, url, timeoutMs = 20000) {
-  let lastError = null;
-  for (const u of urlVariants(url)) {
-    if (!/^https?:\/\//i.test(u)) continue;
-    const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
-    try {
-      const res = await fetchFn(u, ctl ? { signal: ctl.signal } : undefined);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return { bytes: new Uint8Array(await res.arrayBuffer()), via: u };
-    } catch (err) {
-      lastError = err?.name === "AbortError" ? new Error("timed out") : err;
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-  throw lastError ?? new Error("not an http(s) URL");
-}
 
 /**
  * Run an import. Returns { gameUrl, report, game }. Never throws for a
@@ -94,7 +81,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
       let a = needed.get(u);
       if (!a) needed.set(u, (a = { url: u, role: roleOf(u), uses: 0 }));
       a.uses++;
-      return null;
+      return u; // named, so everything drawn from it is asked for (a model's texture too)
     },
   });
   // what uses each (up to five names), and which are models, from the save itself
@@ -109,7 +96,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
   let done = 0;
   progress("Finding assets", 0, needed.size);
   for (const a of needed.values()) {
-    const entry = { url: a.url, role: a.role, by: a.by, uses: a.uses, source: null, fileUrl: null, error: null, mimeType: null, extension: null, size: 0, bytes: null, dims: null };
+    const entry = { url: a.url, role: a.role, by: a.by, uses: a.uses, source: null, fileUrl: null, error: null, mimeType: null, extension: null, size: 0, bytes: null };
     const hit = index.find(a.url);
     if (hit) {
       try {
@@ -120,14 +107,15 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
       }
     }
     if (!entry.bytes && !entry.error) {
-      if (s.fetchMissing && fetchFn) {
+      if (!isWeb(a.url)) entry.error = "not in the dropped files, and not on the web";
+      else if (s.fetchNow && fetchFn) {
         try {
           entry.bytes = (await fetchBytes(fetchFn, a.url)).bytes;
           entry.source = "fetch";
         } catch (err) {
           entry.error = `not in the dropped files; fetching failed: ${err?.message ?? err}`;
         }
-      } else entry.error = "not in the dropped files";
+      } else entry.source = "web"; // fetched when something is first drawn from it
     }
     if (entry.bytes) {
       const t = sniff(entry.bytes);
@@ -139,7 +127,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
         entry.error = `expected ${a.role === "model" ? "an OBJ" : "an image"}, got ${t.mimeType}${t.extension === "html" ? " (a web page: the link is probably dead)" : ""}`;
         entry.bytes = null;
         entry.source = null;
-      } else if (t.image) entry.dims = imageSize(entry.bytes);
+      }
     }
     assets.set(a.url, entry);
     progress("Finding assets", ++done, needed.size);
@@ -163,7 +151,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
     }
     if (smaller?.bytes?.byteLength > 0 && smaller.bytes.byteLength <= keepLimit) {
       warnings.push(`${a.url} (${mb(a.size)}) was over ${mb(keepLimit)}: stored at ${smaller.width} × ${smaller.height} (${mb(smaller.bytes.byteLength)}) instead`);
-      Object.assign(a, { bytes: smaller.bytes, size: smaller.bytes.byteLength, mimeType: smaller.mimeType, extension: smaller.extension, dims: { width: smaller.width, height: smaller.height }, shrunkFrom: a.size });
+      Object.assign(a, { bytes: smaller.bytes, size: smaller.bytes.byteLength, mimeType: smaller.mimeType, extension: smaller.extension, shrunkFrom: a.size });
       continue;
     }
     warnings.push(`${a.url} (${mb(a.size)}) wasn't stored: over ${mb(keepLimit)}`);
@@ -188,12 +176,14 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
 
   // ─── the game ────────────────────────────────────────────────────────────
   progress("Translating the game");
-  const t = translate(save, { ...options, file: (u) => assets.get(u)?.fileUrl ?? null, imageSize: (u) => assets.get(u)?.dims ?? null });
+  // a web asset by its URL, cached in `assets` when it's stored; anything else by the file doc it's stored in
+  const t = translate(save, { ...options, file: (u) => (isWeb(u) ? u : (assets.get(u)?.fileUrl ?? null)) });
   warnings.push(...t.warnings);
+  const cached = Object.fromEntries([...assets.values()].filter((a) => isWeb(a.url) && a.fileUrl).map((a) => [a.url, { file: a.fileUrl }]));
   // the mod it came from (its Workshop id when the file is named for it), so a game made from a
   // publisher's module says whose it is wherever it goes, and every table set up from it says so too
   const workshopId = /(?:^|\/)(\d{6,})\.json$/i.exec(found.path)?.[1] ?? null;
-  const game = { ...t.game, origin: { tts: { saveName: save.saveName ?? null, fileName: found.path, workshopId } } };
+  const game = { ...t.game, origin: { tts: { saveName: save.saveName ?? null, fileName: found.path, workshopId } }, ...(Object.keys(cached).length ? { assets: cached } : {}) };
   const gameHandle = await repo.create2({ "@patchwork": { type: "tabletop-game" }, ...game, drawn: {}, tables: [] });
 
   // ─── the report ──────────────────────────────────────────────────────────
@@ -213,6 +203,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
     };
   }
   const ok = (a) => !a.error && !!a.source && !!a.fileUrl;
+  const later = (a) => !a.error && a.source === "web";
   const report = {
     mod: { saveName: save.saveName, gameMode: save.gameMode, fileName: found.path, table: save.table, objects: Object.values(countNames(save.objects)).reduce((x, y) => x + y, 0) },
     counts: {
@@ -220,7 +211,14 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
       ...t.counts,
       skipped: t.skipped,
       approximated: t.approximated,
-      assets: { needed: assets.size, cache: [...assets.values()].filter((a) => ok(a) && a.source === "cache").length, fetched: [...assets.values()].filter((a) => ok(a) && a.source === "fetch").length, missing: [...assets.values()].filter((a) => !ok(a)).length, referenced: referenced.size },
+      assets: {
+        needed: assets.size,
+        cache: [...assets.values()].filter((a) => ok(a) && a.source === "cache").length,
+        fetched: [...assets.values()].filter((a) => ok(a) && a.source === "fetch").length,
+        web: [...assets.values()].filter(later).length,
+        missing: [...assets.values()].filter((a) => !ok(a) && !later(a)).length,
+        referenced: referenced.size,
+      },
     },
     assets: assetReport,
     warnings,
