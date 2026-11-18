@@ -112,8 +112,12 @@ out without writing (as its recipe lays it out for the options chosen:
 `contract/v2/recipe.js` `applyRecipe`, and its start steps resolved to the
 table's objects); `prepareTable` (`src/table/made-with.js`) makes its
 keepers' containers and its bags and finds whoever owns seats; `writeTable`
-writes the scene in one change, with a fresh scene's maps (`src/empty-scene.js`)
-and the scene package as its suggested import (`src/scene-package.js`).
+writes the scene in one change, with a fresh scene's maps (`src/empty-scene.js`),
+the packages it needs in `packages` (the scene's, the seats owner's, this
+one's where it calls for it) and the scene package as its suggested import,
+from the registry where it can say, else where each is published
+(`src/scene-package.js` `PUBLISHED`, which must match each package's pushwork
+`rootUrl`): so a viewer with only this package installed is offered the scene.
 
 - **Pieces.** Each kind is drawn once as a GLB `file` doc (`src/look/`:
   boxes, turned shapes, slabs with images cropped from file docs, OBJ

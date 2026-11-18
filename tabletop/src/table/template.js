@@ -27,7 +27,9 @@
 //
 // Order: the files, then the containers and bags, then one change that
 // writes the table (objects, seats, view: `view.start` in the seat body where
-// the game has seats); the stage then starts its maker where the doc says
+// the game has seats) and names the packages it calls for, with the scene
+// package as its suggested import (scene-package.js namePackages: a game
+// part's doc of its own is never opened alone before it's linked); the stage then starts its maker where the doc says
 // (EDITOR.md, "Templates"): at Lost Cities watching from the first seat (every
 // built-in game has seats; one without would start them in Look).
 
@@ -35,6 +37,7 @@ import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, tableLayout, writeTable } from "../setup.js";
 import { pieceAt } from "../states.js";
 import { findSource, prepareTable } from "./made-with.js";
+import { namePackages, packageUrls } from "../scene-package.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
 import { errorText, validate } from "../../contract/v2/validate.js";
@@ -94,9 +97,11 @@ export async function setUp(ctx, game, { options = {}, rng = Math.random, images
 
   // the containers, bags and seats' owner first, so the scene never names one that isn't there
   const made = await prepareTable({ repo: ctx.repo, registry: ctx.registry }, layout);
+  const urls = await packageUrls(made);
 
   ctx.change((d) => {
     writeTable(d, layout, made);
+    namePackages(d, urls);
     if (named) d.title = `${g.title || "Game"} table`;
   });
 

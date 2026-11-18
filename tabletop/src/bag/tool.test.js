@@ -2,11 +2,12 @@
 // cleanup contract, what it shows, and what its buttons write.
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("@inkandswitch/patchwork-plugins", () => ({ getRegistry: () => ({ filter: () => [{ id: "scene", importUrl: "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F" }] }) }));
+vi.mock("@inkandswitch/patchwork-plugins", () => ({ getRegistry: () => ({ filter: (fn) => [{ id: "scene", importUrl: "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F" }].filter(fn) }) }));
 import { inside, outside, putIn, takeOut } from "./contents.js";
 import { newBag } from "./datatype.js";
 import Tool, { drewText } from "./tool.js";
 import { FakeHandle, FakeRepo } from "../test/fake-repo.js";
+import { PUBLISHED } from "../scene-package.js";
 
 const SCENE = "automerge:3yt6LbnDAzvNj9WDNDA4ew21R85G";
 const thing = (id, name) => ({ id, object: { name, sourceUrl: `automerge:glb-${name}`, providerId: "file-glb" }, scale: 1 });
@@ -110,7 +111,8 @@ describe("the bag's panel on its own", () => {
     const [file, scene] = repo.created.map((h) => h.doc());
     expect(file["@patchwork"]).toEqual({ type: "file" });
     expect(scene["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F" });
-    expect(scene.packages).toEqual([]);
+    // the packages it calls for: the scene's (registered here) and this one's (not: where it's published)
+    expect(scene.packages).toEqual([{ url: "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F" }, { url: PUBLISHED.tabletop }]);
     expect(Object.values(scene.objects).map((o) => o.traits)).toEqual([{ "bag.container": { doc: "automerge:bag" }, "scene.carry": {} }]);
     expect(opened[0]).toEqual({ url: repo.created[1].url, toolId: "scene" });
     t.cleanup();

@@ -8,12 +8,13 @@
 // description's `assets`, so every session made from one description shares
 // both. Then the containers, bags and seats' owner (made-with.js
 // prepareTable), so the scene never names one that isn't there; then the
-// scene, written whole as the scene makes one (empty-scene.js), with the
-// scene package as its suggested import; then the description lists it in
-// `tables`.
+// scene, written whole as the scene makes one (empty-scene.js), naming the
+// packages it calls for (the scene's, the seats', this one's) and the scene
+// package as its suggested import, whether or not they're installed here
+// (scene-package.js namePackages); then the description lists it in `tables`.
 
 import { kindsLaid, tableLayout, writeTable } from "../setup.js";
-import { sceneImportUrl, scenePatchwork } from "../scene-package.js";
+import { namePackages, packageUrls } from "../scene-package.js";
 import { findSource, prepareTable } from "./made-with.js";
 import { emptyScene } from "../empty-scene.js";
 import { gameOf } from "../game.js";
@@ -53,9 +54,10 @@ export async function newSession({ repo, registry, handle, options = {}, title =
   const layout = tableLayout(g, { fileOf, faceOf: (kind) => ({ game: handle.url, kind }), gameUrl: handle.url, rng });
   phase(`Making the table's ${Object.keys(layout.containers ?? {}).length} decks and ${Object.keys(layout.bags ?? {}).length} bags…`);
   const made = await prepareTable({ repo, registry }, layout);
-  const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title: title ?? `${d.title || "Game"} table ${(d.tables?.length ?? 0) + 1}` });
+  const table = emptyScene({ title: title ?? `${d.title || "Game"} table ${(d.tables?.length ?? 0) + 1}` });
   phase(`Writing the table (${layout.order.length} things)…`);
   writeTable(table, layout, made);
+  namePackages(table, await packageUrls(made));
   const scene = await repo.create2(table);
   handle.change((x) => {
     if (!x.tables) x.tables = [];
