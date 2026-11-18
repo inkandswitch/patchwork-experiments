@@ -1,6 +1,12 @@
 // A die as a GLB, at real size: the solid, each side in its colour, with its
 // faces' marks drawn a hair proud of it. Pure: no DOM, no three.js.
 //
+// A face with a picture (die.js `image`) shows it over the whole side read,
+// drawn a hair proud as its marks are, its top toward the marks' up; its
+// marks are left out. The picture comes cropped, as `textures` (face index →
+// { bytes, mimeType }: source.js crops them through whoever reads files);
+// a face whose picture isn't given is drawn with its marks.
+//
 // The GLB's frame: metres, Y up, the die standing on y = 0 showing face 0,
 // its middle over the origin; so a die put down at a point stands on it.
 //
@@ -11,9 +17,10 @@
 // is rolled and read is always the die that was built.
 
 import { computeBounds, encodeGLB } from "../kit/glb.js";
+import { encodeGLB as encodeTextured } from "../glb.js";
 import { dieOf } from "./die.js";
-import { dieMarks, lift } from "./marks.js";
-import { add, scale } from "./m3.js";
+import { dieMarks, lift, placements } from "./marks.js";
+import { add, dot, scale, sub } from "./m3.js";
 import { solid } from "./solids.js";
 
 /** How far the marks stand off a side, as a part of the die's size. */
@@ -76,10 +83,34 @@ export function strokeOutlines({ points, closed, width }) {
 }
 
 /**
+ * A face's picture on the side read when it shows: that side's corners (unit
+ * solid), with uvs putting the picture's square over the side's square
+ * about its middle, its top toward the marks' up, turned as the face is.
+ * null for a face read at a corner (a d4): it has no side of its own.
+ */
+export function pictureSide(s, i, turn = 0) {
+  const pl = placements(s, i)[0];
+  if (!pl || s.outcomes[i].readPoly == null) return null;
+  const poly = s.polys[pl.poly];
+  const pts = poly.verts.map((v) => s.verts[v]);
+  const c = scale(pts.reduce((a, p) => add(a, p), [0, 0, 0]), 1 / pts.length);
+  const a = (-turn * Math.PI) / 180;
+  const flat = pts.map((p) => {
+    const x = dot(sub(p, c), pl.right);
+    const y = dot(sub(p, c), pl.up);
+    return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
+  });
+  const h = Math.max(...flat.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)])) || 1;
+  return { pts, normal: poly.normal, uvs: flat.flatMap(([x, y]) => [trim(0.5 + x / (2 * h)), trim(0.5 - y / (2 * h))]) };
+}
+
+/**
  * A die doc → its GLB and what it measures.
+ * @param {object} doc
+ * @param {{ textures?: Map<number, { bytes: Uint8Array, mimeType: string }> }} [o]  each pictured face's picture, cropped
  * @returns {{ glb: Uint8Array, bounds: { min: number[], max: number[] }, built: object, die: object }}
  */
-export function dieGLB(doc) {
+export function dieGLB(doc, { textures = null } = {}) {
   const die = dieOf(doc);
   const s = solid(die.shape);
   const k = die.size;
@@ -94,9 +125,25 @@ export function dieGLB(doc) {
     body.fan(color, poly.verts.map((v) => place(s.verts[v])), poly.normal);
   });
 
+  // the pictures, each over its side, a hair proud: and those faces' marks left out
+  const images = [];
+  const pictured = [];
+  die.faces.forEach((f, i) => {
+    const t = f.image ? textures?.get?.(i) : null;
+    const side = t?.bytes?.length ? pictureSide(s, i, f.turn) : null;
+    if (!side) return;
+    const positions = side.pts.flatMap((p) => place(add(p, scale(side.normal, PROUD))));
+    const indices = [];
+    for (let k = 1; k + 1 < side.pts.length; k++) indices.push(0, k, k + 1);
+    pictured.push({ face: i, positions, normals: side.pts.flatMap(() => side.normal), uvs: side.uvs, indices, texture: { image: images.length, wrap: "clamp" }, color: "#ffffff", roughness: 0.6 });
+    images.push({ bytes: t.bytes, mimeType: t.mimeType ?? "image/png" });
+  });
+  const bare = new Set(pictured.map((p) => p.face));
+
   // the marks, lifted onto their sides
   const ink = gather();
   for (const m of dieMarks(die, s)) {
+    if (bare.has(m.face)) continue;
     const pl = m.placement;
     const onSide = (q) => place(add(lift(pl, q), scale(pl.normal, PROUD)));
     for (const st of m.strokes) for (const outline of strokeOutlines(st)) ink.fan(m.ink, outline.map(onSide), pl.normal);
@@ -107,7 +154,9 @@ export function dieGLB(doc) {
   const meshes = [{ name: "die", primitives: body.primitives().map((p) => ({ ...p, roughness: 0.55 })) }];
   const marks = ink.primitives();
   if (marks.length) meshes.push({ name: "marks", primitives: marks.map((p) => ({ ...p, roughness: 0.7 })) });
-  const glb = encodeGLB({ generator: "patchwork dice", meshes, extras: { dice: built } });
+  for (const { face, ...p } of pictured) meshes.push({ name: `face ${face + 1}`, primitives: [p] });
+  // (a pictured die needs the encoder with textures: the kit's has none)
+  const glb = pictured.length ? encodeTextured({ generator: "patchwork dice", images, meshes, extras: { dice: built } }) : encodeGLB({ generator: "patchwork dice", meshes, extras: { dice: built } });
   const all = meshes.flatMap((m) => m.primitives.flatMap((p) => p.positions));
   const b = computeBounds(all);
   return { glb, bounds: { min: b.min.map(trim), max: b.max.map(trim) }, built, die };

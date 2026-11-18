@@ -83,9 +83,11 @@ export async function readFile(repo, url) {
   }
 }
 
-/** Every file a piece is drawn from: its images, models and textures. */
+/** Every file a piece is drawn from: its images, models and textures, and a die document's pictured faces. */
 export const filesOf = (piece) => [
-  ...new Set((piece?.parts ?? []).flatMap((p) => [p?.top?.file, p?.bottom?.file, p?.file, p?.texture]).filter((u) => typeof u === "string" && u)),
+  ...new Set(
+    [...(piece?.parts ?? []).flatMap((p) => [p?.top?.file, p?.bottom?.file, p?.file, p?.texture]), ...(Array.isArray(piece?.doc?.faces) ? piece.doc.faces.map((f) => f?.image?.file) : [])].filter((u) => typeof u === "string" && u),
+  ),
 ];
 /** The first image or model a piece is drawn from: kinds drawn in this order read each sheet once. */
 const firstFile = (p) => (p?.parts ?? []).map((x) => x?.top?.file ?? x?.file ?? "").find(Boolean) ?? "";
