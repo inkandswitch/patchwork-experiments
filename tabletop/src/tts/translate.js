@@ -34,11 +34,18 @@
 //   Bag, Infinite_  a bag holding what TTS had in it (an infinite bag hands out
 //   Bag             copies: rule "random-replace")
 //   Die_N, Custom_  a die drawn as a die document (dice/ draws it),
-//   Dice            with the trait that makes it a die
+//   Dice            with the trait that makes it a die; a custom d6's faces
+//                   are cells of its image, each named by its RotationValues
+//                   (customDieFaces below)
 //   Figurine        a standee: its image stood up on a base
 //   HandTrigger     a seat, and its hand: a tray with card slots, the seat's zone
 //   SnapPoints      the pieces' snap points, and the table's
-//   other States, triggers, text, scripting: left out (counted)
+//   States          the piece's states, in TTS's order (its first the piece's
+//                   own look), each named by its Nickname or "<piece> (state n)";
+//                   a thing in another state says which (`state`). A card's
+//                   and a deck's, and a state that isn't the same sort of
+//                   thing (a die's that isn't a die), are left out (counted)
+//   triggers, text, scripting: left out (counted)
 //
 // And a setup recipe (GAME-FORMAT.md §6) where the mod has what one says:
 //   - how many play: a seat for each hand, the last ones left out for fewer
@@ -57,6 +64,7 @@ import { cardFaces } from "./cards.js";
 import { combinationCount, layoutCost } from "../../contract/v2/recipe.js";
 import { MAX_COMBINATIONS, MAX_LAYOUT_COST } from "../../contract/v2/validate.js";
 import { applyMat3, colorHex, convertPosition, convertRotation, readTransform, ttsUp, unityRotation } from "./convert.js";
+import { solid } from "../dice/solids.js";
 import { deckEntry } from "./tts.js";
 
 /** Sizes at TTS scale 1, in TTS units, read off real mods. */
@@ -122,7 +130,7 @@ export function pieceLook(name) {
 export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.0254, flipObjX = true, includeContents = true, maxObjects = 5000 } = {}) {
   const u = unit;
   const pieces = {};
-  const counts = { things: 0, cards: 0, decks: 0, bags: 0, dice: 0, seats: 0 };
+  const counts = { things: 0, cards: 0, decks: 0, bags: 0, dice: 0, seats: 0, states: 0 };
   const skipped = {};
   const approximated = {};
   const warnings = [];
@@ -189,8 +197,12 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
     return { id: usePiece({ name: node.nickname || "Card", parts: [slab({ w: CARD.w * S[0] * u, d: CARD.l * S[2] * u, t, y: -t / 2, top: face, bottom: behind })], back }), card: true };
   };
 
-  /** Any other drawn object's piece: { id, die?, bag? } or null when it isn't drawn. */
-  const pieceOf = (node) => {
+  /**
+   * Any other drawn object's piece: { id, die?, bag? } or null when it isn't
+   * drawn. `keep` makes the piece's id (by default deduped into the game's
+   * pieces); a state's look is read with `keep` giving the piece itself.
+   */
+  const pieceOf = (node, keep = usePiece) => {
     const S = scaleOf(node);
     const color = colorHex(node.color);
     const im = node.image ?? {};
@@ -207,7 +219,7 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
         // stretched to its picture: as wide as the image says, measured when it's drawn
         const part = slab({ outline: outline === "cutout" && !top ? "rect" : outline, w: 2 * S[0] * u, d: 2 * S[2] * u, t, y: node.kind === "token" ? -t / 2 : 0, color: "#ffffff", side: color ?? "#ffffff", top, bottom, aspect: stretch });
         const snaps = node.snapPoints.map((s) => snap(s, S));
-        return { id: usePiece({ name: node.nickname || (node.kind === "tile" ? "Tile" : "Token"), parts: [part], ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}) }) };
+        return { id: keep({ name: node.nickname || (node.kind === "tile" ? "Tile" : "Token"), parts: [part], ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}) }) };
       }
       case "board": {
         const ws = Number(im.WidthScale) > 0 ? Number(im.WidthScale) : 1;
@@ -215,7 +227,7 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
         const top = image(url(im.ImageURL));
         const part = slab({ w: 2 * BOARD_HALF * ws * S[0] * u, d: 2 * BOARD_HALF * S[2] * u, t, y: -t / 2, color: color ?? "#ffffff", top, bottom: top });
         const snaps = node.snapPoints.map((s) => snap(s, S, ws));
-        return { id: usePiece({ name: node.nickname || "Board", parts: [part], ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}) }) };
+        return { id: keep({ name: node.nickname || "Board", parts: [part], ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}) }) };
       }
       case "figurine": {
         const front = image(url(im.ImageURL));
@@ -227,7 +239,7 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
         // the image stood up facing +z (the near seats), its top up: a slab turned a quarter about x, on a round base
         const stand = { ...slab({ w: 2 * hw * S[0] * u, d: h * S[1] * u, t: 0.03 * S[2] * u, color: PAPER, top: front && { ...front, turn: 0 }, bottom: back && { ...back, turn: 0 }, aspect: true }), at: v3([0, (base + h / 2) * S[1] * u, (-0.03 / 2) * S[2] * u]), rotation: [Math.PI / 2, 0, 0] };
         const foot = slab({ outline: "circle", w: 2 * r * S[0] * u, d: 2 * r * S[2] * u, t: base * S[1] * u, color: "#2b2b2b" });
-        return { id: usePiece({ name: node.nickname || "Figurine", parts: [stand, foot], ...common(node) }) };
+        return { id: keep({ name: node.nickname || "Figurine", parts: [stand, foot], ...common(node) }) };
       }
       case "model":
       case "bag": {
@@ -249,15 +261,17 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
           parts = [{ shape: "box", size: v3([S[0] * u, S[1] * u, S[2] * u]), at: [0, r6(-0.5 * S[1] * u), 0], color: STAND_IN }];
         }
         const snaps = node.snapPoints.map((s) => snap(s, S));
-        return { id: usePiece({ name: node.nickname || (bag ? "Bag" : "Model"), parts, ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}), ...(bag ? { bag } : {}) }), bag: !!bag };
+        return { id: keep({ name: node.nickname || (bag ? "Bag" : "Model"), parts, ...common(node), ...(snaps.length ? { snapPoints: snaps } : {}), ...(bag ? { bag } : {}) }), bag: !!bag };
       }
       case "die": {
         const custom = node.name === "Custom_Dice";
         const sides = custom ? [4, 6, 8, 10, 12, 20][Number(node.image?.CustomDice?.Type) || 0] ?? 6 : Number(/^Die_(\d+)/.exec(node.name)?.[1]) || 6;
         const size = r6(((S[0] + S[1] + S[2]) / 3) * u);
-        if (custom && node.image?.ImageURL) approx(node);
-        // drawn as a die document by whatever draws dice (dice/source.js), numbered the usual way; a die by its trait
-        return { id: usePiece({ name: node.nickname || `d${sides}`, doc: { "@patchwork": { type: "die" }, shape: `d${sides}`, size, ...(color ? { body: color } : {}) }, traits: { "dice.die": {} }, ...common(node) }), die: true, size };
+        // a custom d6's faces are cells of its image; any other custom die is numbered the usual way (a stand-in)
+        const faces = custom ? customDieFaces(node, (cell) => image(url(im.ImageURL), cell)) : null;
+        if (custom && im.ImageURL && !faces) approx(node);
+        // drawn as a die document by whatever draws dice (dice/source.js); a die by its trait
+        return { id: keep({ name: node.nickname || `d${sides}`, doc: { "@patchwork": { type: "die" }, shape: `d${sides}`, size, ...(color ? { body: color } : {}), ...(faces ? { faces } : {}) }, traits: { "dice.die": {} }, ...common(node) }), die: true, size };
       }
       case "piece": {
         const look = pieceLook(node.name);
@@ -272,11 +286,11 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
         } else if (look.shape === "disc") parts = [slab({ outline: "circle", w: 2 * look.radius * S[0] * u, d: 2 * look.radius * S[2] * u, t: look.height * S[1] * u, y: (-look.height / 2) * S[1] * u, color: c })];
         else if (look.shape === "bowl") parts = [{ shape: "lathe", profile: [[0, 0], [1, 0], [1.6, 0.6], [1.5, 0.62], [0.9, 0.08], [0, 0.08]].map(([pr, py]) => [r6(pr * k), r6(py * S[1] * u)]), segments: 32, at: [0, r6(-0.3 * S[1] * u), 0], color: c }];
         else parts = [{ shape: "box", size: v3([look.size[0] * S[0] * u, look.size[1] * S[1] * u, look.size[2] * S[2] * u]), at: [0, r6((-look.size[1] / 2) * S[1] * u), 0], color: c }];
-        return { id: usePiece({ name: node.nickname || node.name, parts, ...common(node) }) };
+        return { id: keep({ name: node.nickname || node.name, parts, ...common(node) }) };
       }
       case "pdf": {
         const t = 0.04 * S[1] * u;
-        return { id: usePiece({ name: node.nickname || "PDF", parts: [slab({ w: 2 * 1.105 * S[0] * u, d: 2 * 1.43 * S[2] * u, t, y: -t / 2, color: "#fbfaf6", side: "#d8d4c8" })], ...common(node) }) };
+        return { id: keep({ name: node.nickname || "PDF", parts: [slab({ w: 2 * 1.105 * S[0] * u, d: 2 * 1.43 * S[2] * u, t, y: -t / 2, color: "#fbfaf6", side: "#d8d4c8" })], ...common(node) }) };
       }
       case "deck":
       case "zone":
@@ -285,7 +299,7 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
       default: {
         approx(node);
         const size = node.kind === "assetbundle" ? [1, 1, 1] : [0.6, 0.6, 0.6];
-        return { id: usePiece({ name: node.nickname || node.name || "Object", parts: [{ shape: "box", size: v3([size[0] * S[0] * u, size[1] * S[1] * u, size[2] * S[2] * u]), at: [0, r6((-size[1] / 2) * S[1] * u), 0], color: STAND_IN }], ...common(node) }) };
+        return { id: keep({ name: node.nickname || node.name || "Object", parts: [{ shape: "box", size: v3([size[0] * S[0] * u, size[1] * S[1] * u, size[2] * S[2] * u]), at: [0, r6((-size[1] / 2) * S[1] * u), 0], color: STAND_IN }], ...common(node) }) };
       }
     }
   };
@@ -339,12 +353,49 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
     return { ...(down ? { id: idFor(node) } : {}), deck: { ...deck, ...(down ? { faceDown: true } : {}) }, at: pose({ position: foot, rotation }) };
   };
 
+  /**
+   * An object with States → its piece, with every state's look in TTS's
+   * order (the one with the lowest id is the piece's own; the object itself
+   * is the state whose id States leaves out), and which one it shows:
+   * { id, die?, bag?, size?, state? }. A state that isn't drawn, or isn't
+   * the same sort of thing (a die, a bag), is left out.
+   */
+  const statedPiece = (node) => {
+    const ids = node.states.map((st) => Number(st.stateId)).filter((n) => Number.isInteger(n) && n > 0);
+    let own = 1;
+    while (ids.includes(own)) own++;
+    const own0 = pieceOf(node, (piece) => piece);
+    if (!own0) return null;
+    const looks = [{ id: own, node, look: own0 }];
+    for (const st of node.states) {
+      const n = Number(st.stateId);
+      const look = Number.isInteger(n) && n > 0 && st.kind !== "card" && st.kind !== "deck" ? pieceOf(st, (piece) => piece) : null;
+      if (!look || !!look.die !== !!own0.die || !!look.bag !== !!own0.bag) skip(st, "another state, not drawn as one");
+      else looks.push({ id: n, node: st, look });
+    }
+    looks.sort((a, b) => a.id - b.id);
+    const [first, ...rest] = looks;
+    const base = first.look.id;
+    // each look named by its Nickname where that's its own, else "<the piece> (state n)"
+    const nicks = looks.map((l) => l.node.nickname);
+    const name = base.name;
+    const named = looks.map((l, k) => (k === 0 ? name : l.node.nickname && l.node.nickname !== name && nicks.filter((x) => x === l.node.nickname).length === 1 ? l.node.nickname : `${name} (state ${l.id})`));
+    const lookOf = (piece) => ({ ...(piece.parts ? { parts: piece.parts } : {}), ...(piece.doc ? { doc: piece.doc } : {}), ...(piece.snapPoints && keyOf(piece.snapPoints) !== keyOf(base.snapPoints ?? null) ? { snapPoints: piece.snapPoints } : {}) });
+    const states = rest.map((l, k) => ({ name: named[k + 1], ...lookOf(l.look.id) }));
+    if (!states.length) return { ...own0, id: usePiece(base) };
+    counts.states += states.length;
+    const shown = looks.findIndex((l) => l.node === node);
+    return { ...own0, id: usePiece({ ...base, states }), ...(shown > 0 ? { state: named[shown] } : {}) };
+  };
+
   /** A node → its things (a stack is one thing of several copies; a bag holds its contents). */
   const thingsOf = (node, located = true) => {
     if (node.kind === "deck") {
       const d = deckThing(node, located);
       return d ? [d] : [];
     }
+    // a card's look is its keeper's, a deck's its cards': neither has states here
+    for (const st of node.kind === "card" || node.kind === "deck" ? node.states : []) skip(st, `another state of a ${node.kind}`);
     if (node.kind === "card") {
       if (!more()) return [];
       const p = cardPiece(node, null);
@@ -360,18 +411,17 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
       skip(node);
       return [];
     }
-    const p = pieceOf(node);
+    const p = node.states.length ? statedPiece(node) : pieceOf(node);
     if (!p) {
       skip(node, "not drawn");
       return [];
     }
-    for (const s of node.states) skip(s, "another state");
     const n = node.number > 1 && /_Stack$/.test(node.name) ? node.number : 1;
     const out = [];
     let count = 0;
     for (let i = 0; i < n && more(); i++) count++;
     if (!count) return out;
-    const thing = { piece: p.id };
+    const thing = { piece: p.id, ...(p.state ? { state: p.state } : {}) };
     if (located) {
       const q = at(node);
       // a die document stands on its foot; TTS has a die by its middle
@@ -572,6 +622,51 @@ function recipeOf({ seats, setup, memories, playerCounts, unit, warnings }) {
   if (down.length && fits([shuffle], { start: shuffles })) options.push(shuffle), start.push(...shuffles);
   if (!options.length) return null;
   return { options, ...(layout.length ? { layout } : {}), ...(start.length ? { start } : {}) };
+}
+
+// ── a custom d6: its image is six cells, the k-th the side TTS turns up by its k-th default RotationValue ──
+
+/** TTS's default RotationValues for a d6 (values 1 to 6): each the turn that puts its side up. */
+export const D6_ROTATIONS = Object.freeze([[-90, 0, 0], [0, 0, 0], [0, 0, -90], [0, 0, 90], [0, 0, -180], [90, 0, 0]]);
+/**
+ * Where the k-th side's picture is on a custom d6's image (fractions, top
+ * left): three across and two down, row by row, as TTS's d6 template is read
+ * here. Not checked against a real die's image: none is in this machine's
+ * cache (tabletop/README.md, "Importing a TTS mod").
+ */
+export const d6Cell = (k) => ({ x: (k % 3) / 3, y: Math.floor(k / 3) / 2, w: 1 / 3, h: 1 / 2 });
+/** The side up when TTS turns a die by these Euler degrees, in the die's own frame as the format has it (z mirrored). */
+export function sideUp(degrees) {
+  const m = unityRotation(degrees.map(Number));
+  // Rᵀ · (0, 1, 0): the local direction R turns to world up
+  return [m[1][0], m[1][1], -m[1][2]];
+}
+const nearest = (dirs, v) => dirs.reduce((best, d, k) => (d[0] * v[0] + d[1] * v[1] + d[2] * v[2] > best.dot ? { k, dot: d[0] * v[0] + d[1] * v[1] + d[2] * v[2] } : best), { k: -1, dot: 0.9 }).k;
+
+/**
+ * A custom d6's faces, in the order the dice package's d6 has its outcomes:
+ * each the cell of the die's image on the side its RotationValue turns up,
+ * named by that value (as it reads when rolled), its value as a text mark
+ * where the image can't be had. `imageOf(cell)` names the image's cell
+ * ({ file, rect? }), or nothing when the mod's image isn't had. null for any
+ * other custom die, or RotationValues that don't put each value on a side
+ * of its own.
+ */
+export function customDieFaces(node, imageOf) {
+  if (([4, 6, 8, 10, 12, 20][Number(node.image?.CustomDice?.Type) || 0] ?? 6) !== 6) return null;
+  const rv = (node.rotationValues ?? []).filter((v) => v && typeof v.Rotation === "object");
+  const values = (rv.length === 6 ? rv.map((v) => ({ value: String(v.Value ?? "").trim(), up: sideUp([v.Rotation.x ?? 0, v.Rotation.y ?? 0, v.Rotation.z ?? 0]) })) : D6_ROTATIONS.map((r, k) => ({ value: String(k + 1), up: sideUp(r) })));
+  const cells = D6_ROTATIONS.map(sideUp);
+  const outcomes = solid("d6").outcomes.map((o) => o.up);
+  const faces = new Array(6).fill(null);
+  for (const v of values) {
+    const cell = nearest(cells, v.up);
+    const i = nearest(outcomes, v.up);
+    if (cell < 0 || i < 0 || faces[i]) return null;
+    const im = imageOf(d6Cell(cell));
+    faces[i] = { marks: v.value ? [{ kind: "text", value: v.value.slice(0, 6) }] : [], ...(v.value ? { name: v.value.slice(0, 24) } : {}), ...(im?.file ? { image: { file: im.file, ...(im.rect ? { rect: im.rect } : {}) } } : {}) };
+  }
+  return faces;
 }
 
 /** A rotation that's another turned over about its own length (z): R · Rz(180°), as TTS degrees. */

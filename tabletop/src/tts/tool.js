@@ -230,6 +230,7 @@ export default function TtsImportTool(handle, element) {
         stat(c.cards, `cards (${c.decks ?? 0} decks)`),
         stat(c.bags, "bags"),
         stat(c.dice, "dice"),
+        stat(c.states, "other states"),
         stat(a.cache, "assets from the cache"),
         stat(a.fetched, "fetched"),
         stat(a.web, "fetched when first drawn"),

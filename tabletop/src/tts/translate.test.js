@@ -2,7 +2,12 @@
 // face-down deck comes out as TTS has it; every tile shape, every die, both
 // kinds of bag; and an image's size read from its header.
 import { describe, it, expect } from "vitest";
-import { translate, tableHeight } from "./translate.js";
+import { D6_ROTATIONS, customDieFaces, d6Cell, sideUp, translate, tableHeight } from "./translate.js";
+import { dieOf } from "../dice/die.js";
+import { solid } from "../dice/solids.js";
+import { unityRotation } from "./convert.js";
+import { tableLayout } from "../setup.js";
+import { STATES } from "../states.js";
 import { convertRotation, sceneRotationMatrix } from "./convert.js";
 import { validate, errorText } from "../../contract/v2/validate.js";
 import { applyRecipe } from "../../contract/v2/recipe.js";
@@ -104,6 +109,129 @@ describe("pieces", () => {
     const t = translate(save(Array.from({ length: 5 }, () => node("PlayerPawn", { kind: "piece" }))), { maxObjects: 3 });
     expect(t.game.setup.filter((s) => s.piece && t.game.pieces[s.piece].name === "PlayerPawn")).toHaveLength(3);
     expect(t.warnings).toEqual(["stopped at 3 objects: 2 more were left out"]);
+  });
+});
+
+describe("States: a piece's other looks", () => {
+  const MESH = (u, color) => ({ mesh: { MeshURL: `https://x/${u}.obj`, DiffuseURL: "https://x/skin.png", MaterialIndex: 1 }, color });
+  const YELLOW = { r: 1, g: 0.72, b: 0 };
+  const ship = (stateId = null, more = {}) => node("Custom_Model", { kind: "model", nickname: "Ship", ...MESH("ship", YELLOW), ...(stateId ? { stateId: String(stateId) } : {}), ...more });
+  const damaged = (stateId) => node("Custom_Model", { kind: "model", nickname: "Ship (Damaged)", ...MESH("shipdamaged", { r: 0.96, g: 0.78, b: 0.27 }), stateId: String(stateId) });
+
+  it("an object with States is one piece with a state for each, in TTS's order, each named by its Nickname; its things all one piece", () => {
+    const a = ship(null, { states: [damaged(2)] });
+    const b = ship(null, { states: [damaged(2)], transform: { posX: 3 } });
+    const { game, counts, skipped } = translate(save([a, b]), { file: files });
+    const kinds = Object.entries(game.pieces).filter(([, p]) => p.states);
+    expect(kinds).toHaveLength(1);
+    const [kind, piece] = kinds[0];
+    expect(piece.name).toBe("Ship");
+    expect(piece.states.map((x) => x.name)).toEqual(["Ship (Damaged)"]);
+    expect(piece.states[0].parts[0]).toMatchObject({ shape: "model", file: files("https://x/shipdamaged.obj") });
+    expect(piece.states[0].parts[0].color).not.toBe(piece.parts[0].color);
+    expect(game.setup.filter((t) => t.piece === kind)).toHaveLength(2);
+    expect(game.setup.some((t) => t.state)).toBe(false);
+    expect(counts.states).toBe(2); // (each object's other states)
+    expect(Object.keys(skipped).filter((k) => /state/.test(k))).toEqual([]);
+    expect(validate(game)).toEqual({ ok: true, stage: null, errors: [] });
+  });
+
+  it("an object saved in another of its states is the same piece, laid out in that state (the object is the state States leaves out)", () => {
+    const sunk = node("Custom_Model", { kind: "model", nickname: "Ship (Damaged)", ...MESH("shipdamaged", { r: 0.96, g: 0.78, b: 0.27 }), states: [ship(1)] });
+    const fine = ship(null, { states: [damaged(2)] });
+    const { game } = translate(save([fine, sunk]), { file: files });
+    const kinds = Object.keys(game.pieces).filter((k) => game.pieces[k].states);
+    expect(kinds).toHaveLength(1);
+    const things = game.setup.filter((t) => t.piece === kinds[0]);
+    expect(things.map((t) => t.state ?? null)).toEqual([null, "Ship (Damaged)"]);
+    // laid out: the damaged one shows its state's look, and both can be turned to either
+    const layout = tableLayout(game, { fileOf: (ref) => ({ url: `automerge:${ref.replace(/#/, "x")}` }), rng: () => 0.5 });
+    const laid = Object.values(layout.objects).filter((o) => o.traits?.[STATES]);
+    expect(laid.map((o) => o.traits[STATES].own)).toEqual([0, 1]);
+    expect(laid[1].sourceUrl).toBe(`automerge:${kinds[0]}x1`);
+  });
+
+  it("names a state with no Nickname of its own (none, or one another look has) by the piece and its number", () => {
+    const board = (stateId, nickname) => node("Custom_Board", { kind: "board", nickname, image: { ImageURL: `https://x/map${stateId}.png` }, ...(stateId > 1 ? { stateId: String(stateId) } : {}) });
+    const b = { ...board(1, "Map"), states: [board(2, "Map"), board(3, ""), board(4, "Map for 4")] };
+    const { game } = translate(save([b]), { file: files });
+    const piece = Object.values(game.pieces).find((p) => p.states);
+    expect([piece.name, ...piece.states.map((x) => x.name)]).toEqual(["Map", "Map (state 2)", "Map (state 3)", "Map for 4"]);
+    expect(validate(game).ok).toBe(true);
+  });
+
+  it("leaves out a card's and a deck's States, and a state that isn't the same sort of thing (a die's that's a model), counted", () => {
+    const c = { ...card(100), states: [{ ...card(101), stateId: "2" }] };
+    const die = node("Die_6", { kind: "die", states: [ship(2)] });
+    const { game, skipped, counts } = translate(save([c, die]), { file: files });
+    expect(skipped).toMatchObject({ "Card (another state of a card)": 1, "Custom_Model (another state, not drawn as one)": 1 });
+    expect(Object.values(game.pieces).some((p) => p.states)).toBe(false);
+    expect(counts.states).toBe(0);
+  });
+});
+
+describe("a custom d6: its faces are cells of its image", () => {
+  const DIE = "https://x/assault-die.png";
+  const defaults = D6_ROTATIONS.map(([x, y, z], k) => ({ Value: String(k + 1), Rotation: { x, y, z } }));
+  const custom = (more = {}) => node("Custom_Dice", { kind: "die", image: { ImageURL: DIE, CustomDice: { Type: 1 } }, rotationValues: defaults, ...more });
+
+  it("each RotationValue's side, found from its turn, is a side of the d6 of its own, opposite values opposite (TTS's defaults sum to 7)", () => {
+    const outcomes = solid("d6").outcomes;
+    const sides = D6_ROTATIONS.map((r) => outcomes.findIndex((o) => o.up.every((v, i) => Math.abs(v - sideUp(r)[i]) < 1e-9)));
+    expect(new Set(sides).size).toBe(6);
+    for (let k = 0; k < 6; k++) expect(outcomes[sides[k]].opposite).toBe(sides[5 - k]);
+  });
+
+  it("the side a turn puts up is the one Unity's rotation lifts to +Y (z mirrored into the format's frame)", () => {
+    for (const r of D6_ROTATIONS) {
+      const m = unityRotation(r);
+      const n = sideUp(r);
+      const local = [n[0], n[1], -n[2]];
+      expect([0, 1, 2].map((i) => m[i][0] * local[0] + m[i][1] * local[1] + m[i][2] * local[2]).map((v) => +v.toFixed(9) + 0)).toEqual([0, 1, 0]);
+    }
+  });
+
+  it("each face is its value's cell of the image, named by its value, which is how it reads when rolled", () => {
+    const { game, approximated } = translate(save([custom()]), { file: files });
+    const doc = Object.values(game.pieces).find((p) => p.doc).doc;
+    const die = dieOf(doc);
+    const outcomes = solid("d6").outcomes;
+    for (let k = 0; k < 6; k++) {
+      const i = outcomes.findIndex((o) => o.up.every((v, j) => Math.abs(v - sideUp(D6_ROTATIONS[k])[j]) < 1e-9));
+      const c = d6Cell(k);
+      expect(die.faces[i].label).toBe(String(k + 1));
+      expect(die.faces[i].image.file).toBe(files(DIE));
+      expect(die.faces[i].image.rect.map((v) => +v.toFixed(5))).toEqual([c.x, c.y, c.w, c.h].map((v) => +v.toFixed(5)));
+    }
+    expect(approximated).toEqual({});
+    expect(validate(game).ok).toBe(true);
+  });
+
+  it("its values may be anything, on any side: a value is the cell of the side it names, wherever TTS's defaults put that side", () => {
+    // the sides as TTS has them, relabelled: a face of hits where 1 was, blanks for 2 and 5
+    const words = ["Hit", "", "Miss", "Miss", "", "Hit 2"];
+    const rv = D6_ROTATIONS.map(([x, y, z], k) => ({ Value: words[k], Rotation: { x, y, z } }));
+    const faces = customDieFaces(custom({ rotationValues: rv }), (cell) => ({ file: "automerge:img", rect: [cell.x, cell.y, cell.w, cell.h] }));
+    const die = dieOf({ shape: "d6", faces });
+    const outcomes = solid("d6").outcomes;
+    const at = (k) => outcomes.findIndex((o) => o.up.every((v, j) => Math.abs(v - sideUp(D6_ROTATIONS[k])[j]) < 1e-9));
+    expect(die.faces[at(0)].label).toBe("Hit");
+    expect(die.faces[at(5)].label).toBe("Hit 2");
+    expect(die.faces[at(1)].label).toBe("blank");
+    // turns that put two values on one side: not a die this can read (numbered plainly, approximated)
+    const bad = D6_ROTATIONS.map(([x, y, z], k) => ({ Value: String(k), Rotation: { x: 0, y: 0, z: 0 } }));
+    expect(customDieFaces(custom({ rotationValues: bad }), () => null)).toBe(null);
+    const t = translate(save([custom({ rotationValues: bad })]), { file: files });
+    expect(t.approximated).toEqual({ Custom_Dice: 1 });
+  });
+
+  it("without its image, each face carries its value as a mark; another custom die (a d20) is numbered the usual way, counted", () => {
+    const { game } = translate(save([custom()]), { file: () => null });
+    const die = dieOf(Object.values(game.pieces).find((p) => p.doc).doc);
+    expect(die.faces.every((f) => f.image === null && f.marks.length === 1)).toBe(true);
+    const d20 = translate(save([custom({ image: { ImageURL: DIE, CustomDice: { Type: 5 } } })]), { file: files });
+    expect(Object.values(d20.game.pieces).find((p) => p.doc).doc.faces).toBeUndefined();
+    expect(d20.approximated).toEqual({ Custom_Dice: 1 });
   });
 });
 
