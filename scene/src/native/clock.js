@@ -1,60 +1,38 @@
 // scene.clock (native, every doc): world time for one doc, provided as
-// "clock" (STAGE.md, "World time").
+// "clock" (STAGE.md, "Native services").
 //
-// A doc has one clock, `doc.clock = { running, t, by? }` (absent: running
-// from 0), made with the doc (the scene datatype's init, STAGE.md "Shared
-// maps") and only ever written field by field, so a pause and a checkpoint
-// made at once both keep what they wrote; and the processes the extensions
-// in its stage register: a sea, a
-// ship's physics, a door closing itself. World time passes only while a view
-// computes it: one holds the doc's "clock" claim, under the usual claim rules
-// (STAGE.md, "Claims"), and steps every process; the others follow. Nobody
+// `doc.clock = { running, t, by? }` (absent: running from 0) is made with the
+// doc and written field by field, so a pause and a checkpoint made at once
+// both keep theirs. Time passes only while a view computes it, holding the
+// doc's "clock" claim and stepping every process; the others follow. Nobody
 // present, no time passes.
 //
-// - **Eligible.** A view may compute when its stage acts (not a pin), its
-//   doc is writable, its tab is visible, everything the doc
-//   calls for is running (settled, every listed package here) and it has a
-//   process. The first eligible view to find the claim free takes it.
-// - **Computing.** The computer's t runs on with the wall clock, at most
-//   MAX_FRAME_S of world time a frame (a longer stall is skipped), and its
-//   processes are stepped on a fixed grid of world time, STEP_S apart, so
-//   two views stepping the same process from the same t step it alike. It
-//   starts each kept process at its t (`start(t)`: warm from what it has
-//   followed, else cold from the doc, the process's call), and lets go when
-//   it's hidden, paused or no longer eligible, or loses the claim.
-// - **Checkpoints.** On pause, on letting go and every CHECKPOINT_MS while
-//   computing, one change writes `clock.t` and every process's `save(d)`. A
-//   process saves only what it still holds. Each object whose transform a
-//   save wrote is stamped `saved: t`, so a process can tell a write that
-//   moved an object (the halo, the inspector, a paste: transform changed,
-//   stamp not) from a checkpoint landing late (both changed): STAGE.md,
-//   "World time"; sailing's movedByEditor is one reading of it.
-// - **Followers.** The computer puts `{ t, at }` (its t at its now()) in
-//   presence at CLOCK_HZ. A follower runs its t toward the computer's at the
-//   moment whose holds this view is drawing (presence.shownAt), so a hull
-//   sits on the waves drawn under it; it slews, jumps only forward, and never
-//   passes the newest t it has heard, so it never runs ahead of the world.
-//   With no computer a view's t is `clock.t`, still.
-// - **Paused.** t is the larger of this view's and `clock.t`: once the
-//   computer's checkpoint arrives, every view has the same t (none has passed
-//   it, above). Kept processes aren't stepped; no view computes. Two pauses
-//   made at once (the computer's and a follower's) each write their t, and
-//   the merge keeps one: if it kept the follower's, the view that computed
-//   writes what it wrote again, so every view meets at the computer's t,
-//   which none has passed.
-// - **Replicated processes** (`replicated: true`) are stepped by every view
-//   that runs them, at its own t, on the same grid: a deterministic engine
-//   every present peer runs from a shared input log (machine/HOST.md). They
-//   make a view eligible like any process, so someone moves t; only the
-//   computer calls their `save`. While paused they are stepped only up to
-//   `clock.t`, which catches a follower up to the pause point everyone has.
+// - **Eligible**: its stage acts, it may write, its tab is visible, the doc is
+//   settled, and it has a process. The first to find the claim free takes it.
+// - **Computing**: t runs on with the stage's time, at most MAX_FRAME_S a
+//   frame; processes step on a grid STEP_S apart, so two views stepping one
+//   from the same t step it alike. Kept processes start at t (`start(t)`); it
+//   lets go when hidden, paused or ineligible, or when the claim is lost.
+// - **Checkpoints** (pause, letting go, every CHECKPOINT_MS): one change
+//   writes `clock.t` and every `save(d)` (a process saves only what it holds),
+//   stamping objects a save moved `saved: t`, so a process tells an editor's
+//   move (transform changed, stamp not) from a late checkpoint (both changed).
+// - **Followers**: the computer puts `{ t, at }` on the channel at CLOCK_HZ; a
+//   follower runs toward it at the moment whose holds it draws (shownAt), so a
+//   hull sits on the waves drawn under it; it slews, jumps only forward and
+//   never passes the newest t heard. With no computer, t is `clock.t`.
+// - **Paused**: t is the larger of this view's and `clock.t`, so every view
+//   meets at the computer's checkpoint. Of two pauses at once the merge keeps
+//   one t; if a follower's, the computer writes its own again.
+// - **Replicated** processes (machine/HOST.md) step in every view that runs
+//   them, at its own t, and make it eligible; only the computer saves them;
+//   paused, they step only up to `clock.t`.
 //
-// t per view never decreases. createClock is the whole of it against an env
-// (claims, the channel, the doc, eligibility, the stage's time), so tests
-// drive it with in-memory docs and frames of their choosing; the plugin at
-// the end gives it that env from the public api.
+// t per view never decreases. createClock takes its env (claims, the channel,
+// the doc, eligibility, time), so tests drive it with in-memory docs; the
+// plugin at the end gives it that env from the public api.
 
-import { tie } from "./tie.js";
+import { tie } from "./claims.js";
 
 /** The claim kind the computer holds, on the doc (id null). */
 export const CLOCK = "clock";

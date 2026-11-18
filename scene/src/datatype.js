@@ -18,7 +18,7 @@ export const SceneDatatype = {
     // the packages its contents come from, as { url } (STAGE.md, "Packages"):
     // the stage adds to it, and offers a viewer the ones they don't have
     doc.packages = [];
-    // world time (STAGE.md, "World time"): the stage only ever writes its fields, so a
+    // world time (STAGE.md, "Native services"): the stage only ever writes its fields, so a
     // pause and a checkpoint made at once both keep theirs
     doc.clock = { running: true, t: 0 };
     // where people start (STAGE.md, "Arriving"): a scene made new is made to be

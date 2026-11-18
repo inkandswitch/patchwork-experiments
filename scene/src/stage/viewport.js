@@ -922,17 +922,7 @@ export class Viewport {
     // updated current for picking.
     const tick = (now, draw = true) => {
       this.raf = time.frame(tick);
-      // dt from the last frame, whatever ran in it; clamped so a backgrounded
-      // tab (or a debugger pause) doesn't come back as one enormous step
-      const dt = this.lastTick == null ? 0 : Math.min(0.1, Math.max(0, (now - this.lastTick) / 1000));
-      this.lastTick = now;
-      for (const fn of [...this.loops]) {
-        try {
-          fn(dt, now);
-        } catch (err) {
-          console.error("scene: a frame loop failed", err);
-        }
-      }
+      this.runLoops(now);
       // a ride carries the camera with what it's on, now that the loops have moved it
       this.stepRide();
       // while held, the orbit neither moves the camera nor re-aims it
@@ -1413,22 +1403,27 @@ export class Viewport {
     else this.loops.add(fn);
     this.invalidate();
     // without WebGL there are no frames to join: the loops get their own while there are any
+    const run = (now) => {
+      this.raf = this.loops.size ? this.time.frame(run) : null;
+      this.runLoops(now);
+    };
     if (!this.ok && !this.raf) {
-      let last = null;
-      const run = (now) => {
-        this.raf = this.loops.size ? this.time.frame(run) : null;
-        const dt = last == null ? 0 : Math.min(0.1, Math.max(0, (now - last) / 1000));
-        last = now;
-        for (const f of [...this.loops])
-          try {
-            f(dt, now);
-          } catch (err) {
-            console.error("scene: a frame loop failed", err);
-          }
-      };
+      this.lastTick = null;
       this.raf = this.time.frame(run);
     }
     return () => this.loops.delete(fn);
+  }
+
+  /** The loops, one frame: dt from the last, clamped so a backgrounded tab (or a debugger pause) isn't one enormous step. */
+  runLoops(now) {
+    const dt = this.lastTick == null ? 0 : Math.min(0.1, Math.max(0, (now - this.lastTick) / 1000));
+    this.lastTick = now;
+    for (const fn of [...this.loops])
+      try {
+        fn(dt, now);
+      } catch (err) {
+        console.error("scene: a frame loop failed", err);
+      }
   }
 
   /** Call fn(renderer, size) after the main and on-top passes of every frame drawn. @returns {() => void} off */

@@ -1,4 +1,4 @@
-// World time (clock.js; STAGE.md, "World time", H7): the pure parts, then the clock of
+// World time (clock.js; STAGE.md, "Native services", H7): the pure parts, then the clock of
 // several views on real Automerge replicas of one doc, every order of a
 // finite set of events.
 import { describe, it, expect } from "vitest";

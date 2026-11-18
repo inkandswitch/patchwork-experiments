@@ -118,7 +118,7 @@ export function cleanHeld(v) {
 /**
  * Does hold `a` rank ahead of hold `b` on one object? One still held beats a
  * landed one; then a person's beats a yielding one (a process's that gives
- * way: STAGE.md, "World time"); then the lower `since`, then the lower session id. One
+ * way: STAGE.md, "Native services"); then the lower `since`, then the lower session id. One
  * total order, the same in every view.
  * @param {{ session: string, since: number, landed?: object | null, yields?: boolean }} a
  * @param {{ session: string, since: number, landed?: object | null, yields?: boolean }} b

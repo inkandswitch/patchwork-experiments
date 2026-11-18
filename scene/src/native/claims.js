@@ -1,27 +1,29 @@
-// scene.claims (native, every doc): provides "claims" (STAGE.md, "Claims").
+// scene.claims (native, every doc): provides "claims" (STAGE.md, "Native services").
 //
 // A claim is a fact about the shared world (who is at the helm, who computes
-// the world's time, whose hands a bucket is in), so it's a doc field on
-// what's claimed: objects[id].claims[kind] = { viewer, session }, or
-// doc.claims[kind] for the scene. Taking one writes it, letting go deletes
-// it. Concurrent takers are Automerge's to settle: both writes succeed here,
-// the merge keeps one on every peer, and the view whose claim isn't there
-// any more is told (onLost). A claim counts only while its session is on the
-// doc's channel (or is this view's), so a tab that died holding one doesn't
-// hold it forever and nothing has to clean up after it: the next taker
-// writes over it. What a caller takes goes as its signal aborts (no onLost);
-// on pagehide every claim is let go, and on pageshow taken back. Only the
-// public api.
+// world time), so it's a doc field on what's claimed: taking one writes it,
+// letting go deletes it. Concurrent takers are Automerge's to settle: the
+// merge keeps one on every peer, and the view whose claim isn't there any
+// more is told (onLost). A claim counts only while its session is on the
+// channel (or is this view's), so a tab that died holding one holds nothing:
+// the next taker writes over it. Only the public api.
 
-import { tie } from "./tie.js";
-
-/**
- * How long a claim whose holder isn't on the channel still counts, from when
- * this view first read it so (ms): a peer that has just joined writes its
- * claim as its hello goes out, and the doc may get here first; a view that
- * has just opened hasn't heard anyone yet. A heartbeat (5 s) and a second.
- */
+/** How long a claim by a session never heard on the channel still counts (ms): its hello, or ours, may be late. A heartbeat (5 s) and a second. */
 export const CLAIM_GRACE_MS = 6_000;
+
+/** What a service hands a caller goes as its signal aborts: tie `give` to it, to run once, then or on the returned off. */
+export function tie(signal, give) {
+  let done = false;
+  const off = () => {
+    if (done) return;
+    done = true;
+    signal.removeEventListener("abort", off);
+    give();
+  };
+  if (signal.aborted) off();
+  else signal.addEventListener("abort", off);
+  return off;
+}
 const MAX = 1024;
 const keyOf = (oid, kind) => `${oid ?? ""}\u0000${kind}`;
 const isKind = (kind) => typeof kind === "string" && kind.length > 0;

@@ -1,4 +1,4 @@
-// Ordered holds (STAGE.md, "World time", "A person and a process on one object"; H6):
+// Ordered holds (STAGE.md, "Native services", "A person and a process on one object"; H6):
 // the one order holds go in, a view's own holds (holds.js) and its peers'
 // (presence.js), exhaustively. Real presences on a bus whose messages wait
 // until the test delivers them, real hold tables, a doc as a plain object.

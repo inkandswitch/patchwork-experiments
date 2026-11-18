@@ -1,30 +1,19 @@
 // scene.telling (native, every doc): telling the others what the doc bears
-// out, provided as "tell" (STAGE.md, "Telling").
+// out, provided as "tell" (STAGE.md, "Native services").
 //
-// An extension declares what it tells, `messages: { [type]: { valid(data),
-// says(data, who, scene) } }`, and calls `api.use("tell").tell(type, data)`.
-// It is said here as "You" and sent; every peer, on receipt, drops
-// it unless its data is an object and `valid`, then asks `says` at once and
-// again on every update of that stage until it answers text or TELL_MS of the
-// stage's time has passed since it arrived: told once, or forgotten when that
-// time runs out, whether or not anything updates. One's own goes the same
-// way (sends are never echoed back, so it is told once, here).
+// An extension declares `messages: { [type]: { valid(data), says(data, who,
+// scene) } }` and calls `api.use("tell").tell(type, data)`: said here as
+// "You", and sent. A peer drops it unless its data is an object and `valid`,
+// then asks `says` at once and on every update until it answers text or
+// TELL_MS has passed: told once, or forgotten then. `says` keeps the
+// package's evidence: null until the doc bears it out (a die moved lately to
+// the face named), text once it does, which is the moment it is told.
 //
-// `says` is where a package keeps its evidence: it answers null until the
-// doc bears the message out (a die moved lately to the face named), and text
-// once it does. Answering text is the moment the stage tells it, so a
-// package may spend what bore it out there.
-//
-// The speaker is named here, the same way for every package: their
-// contact's name, else "Someone", asked once per viewer; `who.mine` is
-// whether this view told it (another tab of the same viewer is a peer). `says` is not asked
-// until their name has come or NAME_MS has passed, so the first word from
-// someone is told by name.
-//
-// createTelling knows no stage: it is handed time, the scene, notify, a way
-// to find a contact's doc and whether an extension's messages still run; the
-// plugin at the end hands it them from the public api. (Packages' fake
-// stages copy createTelling whole: they stand alone.)
+// The speaker is their contact's name, else "Someone", asked once per viewer
+// (`says` waits for it up to NAME_MS); `who.mine` is whether this view told it.
+// createTelling knows no stage: the plugin at the end hands it time, the
+// scene, notify, a way to find a contact's doc and whether an extension's
+// messages still run. (Packages' fake stages copy createTelling whole.)
 
 /** How long after it arrives a message may still be borne out and told (ms, the stage's time). */
 export const TELL_MS = 3000;
