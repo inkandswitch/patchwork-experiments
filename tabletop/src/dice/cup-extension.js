@@ -391,6 +391,7 @@ function create(api) {
     api.invalidate?.();
   }
 
+  let labelKey = "";
   function drawLabels() {
     if (!labels) return;
     const items = [];
@@ -411,8 +412,11 @@ function create(api) {
       const position = at(c.id);
       if (position) items.push({ key: `blind:${c.id}`, text: c.cup.holder === viewer ? "Blind: hidden from you" : `Blind: hidden from ${who(c.cup.holder)}`, position, className: "dice-cup-tag" });
     }
-    labels.set(items);
+    const k = JSON.stringify(items);
+    if (k !== labelKey) (labelKey = k), labels.set(items);
   }
+  // a cup carried or shaken (a displayed pose) moves without a doc change: its tag follows, after each frame
+  api.afterRender?.(() => dead || drawLabels());
   // who is peeking comes by presence, not the doc: draw again whenever it changes, not only on a doc
   // or local change (which needn't come: a peek writes nothing)
   api.channel.watch(() => {
