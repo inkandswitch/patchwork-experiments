@@ -2,7 +2,7 @@
 // face-down deck comes out as TTS has it; every tile shape, every die, both
 // kinds of bag; and an image's size read from its header.
 import { describe, it, expect } from "vitest";
-import { D6_ROTATIONS, customDieFaces, d6Cell, sideUp, translate, tableHeight } from "./translate.js";
+import { D6_ROTATIONS, customDieFaces, sideUp, translate, tableHeight } from "./translate.js";
 import { dieOf } from "../dice/die.js";
 import { solid } from "../dice/solids.js";
 import { unityRotation } from "./convert.js";
@@ -192,17 +192,19 @@ describe("a custom d6: its faces are cells of its image", () => {
     }
   });
 
-  it("each face is its value's cell of the image, named by its value, which is how it reads when rolled", () => {
+  it("each face is its value's cell of the image as TTS's shipped D6.png template has it, named by its value, which is how it reads when rolled", () => {
     const { game, approximated } = translate(save([custom()]), { file: files });
     const doc = Object.values(game.pieces).find((p) => p.doc).doc;
     const die = dieOf(doc);
     const outcomes = solid("d6").outcomes;
+    // the template (2048²) in thirds, the top row unused: 2 4 5 across the middle, 1 3 6 across the bottom
+    const template = { 1: [0, 2], 2: [0, 1], 3: [1, 2], 4: [1, 1], 5: [2, 1], 6: [2, 2] };
     for (let k = 0; k < 6; k++) {
       const i = outcomes.findIndex((o) => o.up.every((v, j) => Math.abs(v - sideUp(D6_ROTATIONS[k])[j]) < 1e-9));
-      const c = d6Cell(k);
+      const [col, row] = template[k + 1];
       expect(die.faces[i].label).toBe(String(k + 1));
       expect(die.faces[i].image.file).toBe(files(DIE));
-      expect(die.faces[i].image.rect.map((v) => +v.toFixed(5))).toEqual([c.x, c.y, c.w, c.h].map((v) => +v.toFixed(5)));
+      expect(die.faces[i].image.rect).toEqual([col / 3, row / 3, 1 / 3, 1 / 3].map((v) => +v.toFixed(6)));
     }
     expect(approximated).toEqual({});
     expect(validate(game).ok).toBe(true);

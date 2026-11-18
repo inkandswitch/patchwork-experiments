@@ -52,6 +52,13 @@ describe("the validator", () => {
     expect(files.sort()).toEqual(manifest.map((f) => f.file).sort());
   });
 
+  it("a card's back has no states either (state-card): every card it backs would change", () => {
+    const g = read("../contract/v2/fixtures/invalid/state-card.json");
+    g.pieces.back.states = g.pieces.ace.states;
+    delete g.pieces.ace.states;
+    expect(validate(g).errors.map((e) => [e.code, e.path])).toEqual([["state-card", "$.pieces.back.states"]]);
+  });
+
   it("the example is the minimal valid fixture", () => {
     expect(read("../contract/v2/examples/minimal.json")).toEqual(read("../contract/v2/fixtures/valid/minimal.json"));
   });

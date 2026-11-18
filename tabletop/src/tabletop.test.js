@@ -566,7 +566,9 @@ describe("drawn on demand", () => {
     await pd.ensure(kindsLaid(gameOf(game.doc())));
     expect(Object.keys(game.doc().drawn).sort()).toEqual(["back", "board"]);
     expect(w.fetched).not.toContain(`${WEB}three.png`);
-    const shown = await pd.face("board#1");
+    // two turning pieces to it at once: drawn once
+    const [shown, also] = await Promise.all([pd.face("board#1"), pd.face("board#1")]);
+    expect(also).toBe(shown);
     expect(shown.glb).toBeInstanceOf(Uint8Array);
     await settled(() => !!game.doc().drawn["board#1"]);
     expect(Object.keys(game.doc().drawn).sort()).toEqual(["back", "board", "board#1"]);

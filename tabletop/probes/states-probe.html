@@ -57,12 +57,15 @@ const png = async (w, h, paint) => {
   return new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
 };
 const hue = (s) => [...s].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) >>> 0, 7) % 360;
-/** A custom d6's image: three cells across, two down, the k-th painted with k + 1 (tts/translate.js d6Cell), and the die's initial. */
+/** A custom d6's image, laid out as TTS's D6.png template (tts/translate.js d6Cell): a square in thirds, the top row blank, value n painted in its cell, with the die's initial. */
+const D6_TEMPLATE = [[0, 2], [0, 1], [1, 2], [1, 1], [2, 1], [2, 2]];
 const dieImage = (url) =>
-  png(384, 256, (g, w, h) => {
+  png(384, 384, (g, w, h) => {
     const name = (/\/([a-z]+)-die/i.exec(url)?.[1] ?? "d").toUpperCase();
+    g.fillStyle = "#888";
+    g.fillRect(0, 0, w, 128);
     for (let k = 0; k < 6; k++) {
-      const [x, y] = [(k % 3) * 128, Math.floor(k / 3) * 128];
+      const [x, y] = D6_TEMPLATE[k].map((c) => c * 128);
       g.fillStyle = `hsl(${hue(name)} 55% ${k % 2 ? 78 : 88}%)`;
       g.fillRect(x, y, 128, 128);
       g.strokeStyle = "#222";
