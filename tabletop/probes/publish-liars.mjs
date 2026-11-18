@@ -215,12 +215,15 @@ else await publish(snapshot).then((code) => b.stop(code), (err) => {
 async function publish(snapshot) {
   // the packages are stated here, and must be the ones A's stage listed from what the table calls for:
   // stating them changes nothing, and nothing else is listed
+  // (the list is in the order the doc's needs appeared as it was laid out, which is the stage's to say:
+  // the same set is the same statement, and the doc goes out as the stage made it)
   const asMade = snapshot.docs[snapshot.scene];
-  const docs = { ...snapshot.docs, [snapshot.scene]: withPackages(asMade, PACKAGES) };
-  const stamped = packageProblems(docs[snapshot.scene], PACKAGES);
+  const docs = { ...snapshot.docs, [snapshot.scene]: asMade };
+  const stated = withPackages(asMade, PACKAGES);
+  const stamped = packageProblems(stated, PACKAGES);
   const urls = (doc) => (Array.isArray(doc.packages) ? doc.packages.map((e) => e?.url) : []);
   if (!sameSet(urls(asMade), STATED)) stamped.push(`the stage listed ${Q(urls(asMade))}, not the stated ${Q(STATED)}`);
-  if (Q(urls(docs[snapshot.scene])) !== Q(urls(asMade)) || asMade["@patchwork"]?.suggestedImportUrl !== SCENE_URL) stamped.push("stating the packages changed the scene the stage made");
+  if (!sameSet(urls(stated), urls(asMade)) || urls(asMade).length !== urls(stated).length || asMade["@patchwork"]?.suggestedImportUrl !== SCENE_URL) stamped.push("stating the packages changed the scene the stage made");
   if (stamped.length) {
     for (const p of stamped) console.error(`  ${p}`);
     return 1;
