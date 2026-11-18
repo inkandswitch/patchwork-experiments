@@ -308,8 +308,9 @@ try {
   await b.rest(300);
   check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (Look again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "look", { chip: chipA, body: await P(`body("a")`) });
   // the tree is the top of the inspector's pane, which A opens from the toolbar, which is the editor's: A picks up the editor first
+  // (a toggle: A may hold it already, a scene made new starting people holding it)
   const editItem = await P(`editToggle("a")`);
-  if (editItem) await clickAt(editItem);
+  if (editItem && !(await P(`editing("a")`))) await clickAt(editItem);
   await b.rest(300);
   check("A picks up the editor, beside the body chip (the toolbar, the inspector and Copy are the editor's)", !!editItem && (await P(`editing("a")`)), { body: await P(`body("a")`) });
   // the toolbar's Inspector is a toggle: pressed only if a selection hasn't opened the pane already
