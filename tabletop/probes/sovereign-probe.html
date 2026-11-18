@@ -1,0 +1,372 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>a TTS mod, end to end, with its real art</title>
+<!-- Driven by probes/sovereign-run.mjs. A game library (the BUILT package,
+     in an in-memory repo) imports a TTS mod's JSON alone (Sovereign: Fall of
+     Wormwood by default: nothing of it in TTS's cache), so every asset is
+     fetched when first drawn; New game for four through the launcher; then
+     four views of the session (the BUILT scene tool, each its own viewer,
+     its own repo object, so its own drawer, as four peers would be), each
+     sitting in a seat; Start if the recipe has start steps, else each seat
+     draws from a deck turned face down; then what each view shows of every
+     hand. The page's fetch of a web asset is answered by the runner from
+     files fetched beforehand (fetch-assets.mjs), with the host's CORS header
+     as it was recorded: one recorded without Access-Control-Allow-Origin
+     fails here as a browser's would. Nothing reaches the network.
+     window.__step(name, arg) runs one step. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; }
+  #tool { width: 380px; height: 100%; flex: none; overflow: hidden; background: #fff; }
+  #views { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 4px; }
+  #views > div { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #111; }
+</style>
+<div id="tool"></div>
+<div id="views"><div id="v0"></div><div id="v1"></div><div id="v2"></div><div id="v3"></div></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { composeMatrix, decompose, multiply } from "../src/table/frame.js";
+import { shownAs } from "./table-setup.js";
+
+const probe = (window.__probe = { errors: [], warnings: [], opened: [], web: { asked: {}, refused: [], bytes: 0 } });
+window.addEventListener("error", (e) => probe.errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => probe.errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn;
+console.warn = (...a) => { probe.warnings.push(a.map((x) => x?.stack ?? String(x)).join(" ").slice(0, 300)); origWarn(...a); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 20_000) => {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; await sleep(50)) if (fn()) return true;
+  return false;
+};
+
+// ─── the web: answered from the files fetched beforehand, CORS as the host sent it ──
+const realFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input.url;
+  if (!/^https?:\/\//.test(url) || url.startsWith(location.origin)) return realFetch(input, init);
+  probe.web.asked[url] = (probe.web.asked[url] ?? 0) + 1;
+  const r = await realFetch(`/web-asset?u=${encodeURIComponent(url)}`, { signal: init?.signal });
+  const acao = r.headers.get("x-recorded-acao");
+  // a browser's cross-origin fetch: no Access-Control-Allow-Origin (or the host unreachable) is a network error
+  if (r.status === 599 || !(acao === "*" || acao === location.origin)) {
+    probe.web.refused.push(url);
+    throw new TypeError("Failed to fetch");
+  }
+  const body = await r.arrayBuffer();
+  probe.web.bytes += body.byteLength;
+  return new Response(body, { status: r.status, headers: { "content-type": r.headers.get("content-type") ?? "application/octet-stream" } });
+};
+
+const toolHost = document.getElementById("tool");
+const rows = (list) => [...toolHost.querySelectorAll(`.${list} li`)];
+const status = () => toolHost.querySelector(".status")?.textContent ?? "";
+
+for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
+  const { plugins } = await import(url);
+  for (const p of plugins) getRegistry(p.type).register(p);
+}
+const repo = new FakeRepo();
+window.repo = repo;
+const Library = (await getRegistry("patchwork:datatype").load("game-library")).module;
+const seed = {};
+Library.init(seed, repo);
+seed["@patchwork"] = { type: "game-library" };
+const lib = repo.add(seed);
+toolHost.repo = repo;
+toolHost.addEventListener("patchwork:open-document", (e) => probe.opened.push(e.detail));
+const Launcher = (await getRegistry("patchwork:tool").load("game-library")).module;
+Launcher(lib, toolHost);
+const SceneTool = (await getRegistry("patchwork:tool").load("scene")).module;
+const folder = (name) => repo.handles.get(lib.doc().docs.find((l) => l.name === name).url).doc();
+
+let game = null; // the imported game's link
+let session = null; // the session's url
+const gameDoc = () => repo.handles.get(game.url).doc();
+const scene = () => repo.handles.get(session);
+const objects = () => scene().doc().objects ?? {};
+const row = (title) => rows("games-list").find((r) => r.querySelector("strong")?.textContent === title);
+
+// ─── views: each a peer of the session (its broadcasts reach the others), its own viewer and repo object ──
+const views = []; // { host, peer, dbg, viewer }
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const v of views) if (v.peer !== p) for (const fn of v.peer.eph) fn({ message, senderId: p.id }); }, 5),
+    eph,
+  };
+  return p;
+}
+/** A peer's repo: the shared documents, but an object of its own (tabletop keeps one card drawer per repo object). */
+const viewRepo = () => ({
+  handles: repo.handles,
+  created: repo.created,
+  add: (...a) => repo.add(...a),
+  create2: (...a) => repo.create2(...a),
+  create: (...a) => repo.create(...a),
+  find: (url) => repo.find(url),
+});
+
+const seatIds = () => Object.keys(scene().doc().traits?.seats ?? {});
+/** Each seat's hand: { seat → zone id }. */
+const hands = () => Object.fromEntries(Object.entries(objects()).filter(([, o]) => o.traits?.["tabletop.zone"]).map(([id, o]) => [o.traits["tabletop.zone"].seat, id]));
+const isCard = (o) => !!o?.traits?.["tabletop.card"];
+const cardIds = () => Object.keys(objects()).filter((id) => isCard(objects()[id]));
+/** The seat whose hand holds `id`, as view 0's scene has it, or null. */
+function seatOfCard(id) {
+  const s = views[0].dbg.scene();
+  const m = s.world(id);
+  for (const [zid, o] of Object.entries(objects())) {
+    const z = o.traits?.["tabletop.zone"];
+    if (!z) continue;
+    const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+    if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+  }
+  return null;
+}
+/** The piles of cards: stacks of cards lying within a centimetre of each other in plan, biggest first. */
+function piles() {
+  const s = views[0].dbg.scene();
+  const out = [];
+  for (const id of cardIds()) {
+    if (seatOfCard(id)) continue;
+    const m = s.world(id);
+    const p = out.find((q) => Math.hypot(q.x - m[12], q.z - m[14]) < 0.01);
+    if (p) p.ids.push(id);
+    else out.push({ x: m[12], z: m[14], ids: [id] });
+  }
+  for (const p of out) p.ids.sort((a, b) => s.world(b)[13] - s.world(a)[13]);
+  return out.sort((a, b) => b.ids.length - a.ids.length || a.x - b.x || a.z - b.z);
+}
+/** Does this view's drawing of `id` carry a texture (real art), and how many objects drawn carry one? */
+const textured = (dbg, id) => {
+  let n = false;
+  dbg.viewport.contentOf(id)?.root?.traverse?.((o) => { if (o.material?.map) n = true; });
+  return n;
+};
+const loadedAll = (dbg) => {
+  const visible = Object.values(objects()).filter((o) => o.kind !== "group" && o.visible !== false).length;
+  return dbg.stats().loaded >= visible && dbg.stats().pending === 0;
+};
+/** What view w makes of every card: { [where]: { face, veil, back } } (where: a seat, or "table"). */
+function tally(w) {
+  const out = {};
+  for (const id of cardIds()) {
+    const where = seatOfCard(id) ?? "table";
+    const s = shownAs(views[w].dbg, id);
+    out[where] ??= { face: 0, veil: 0, back: 0 };
+    out[where][s]++;
+  }
+  return out;
+}
+const command = (w, ext, cmd) => views[w].dbg.host.instanceOf(ext)?.commands?.find((x) => x.id === cmd) ?? null;
+
+const steps = {
+  async importMod() {
+    const manifest = await (await fetch("/manifest.json")).json();
+    const files = await Promise.all(manifest.map(async (m) => new File([await (await fetch(m.url)).arrayBuffer()], m.name)));
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    const input = toolHost.querySelector("input.import-file");
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const t0 = performance.now();
+    await until(() => rows("games-list").length === 1 && /Imported/.test(status()), 180_000);
+    game = folder("Games").docs.at(-1);
+    const d = gameDoc();
+    return {
+      ms: Math.round(performance.now() - t0),
+      files: files.length,
+      title: d.title,
+      status: status(),
+      pieces: Object.keys(d.pieces).length,
+      cards: Object.values(d.pieces).filter((p) => typeof p.back === "string").length,
+      seats: Object.keys(d.seats ?? {}),
+      options: (d.recipe?.options ?? []).map((o) => o.key),
+      startSteps: (d.recipe?.start ?? []).length,
+      assetsCached: Object.keys(d.assets ?? {}).length,
+      fetchedAtImport: Object.keys(probe.web.asked).length,
+    };
+  },
+  async newGame({ players }) {
+    await until(() => row(gameDoc().title)?.querySelector('[data-key="players"]'));
+    const r = row(gameDoc().title);
+    const c = r.querySelector('[data-key="players"]');
+    c.value = String(players);
+    c.dispatchEvent(new Event("change"));
+    const n = probe.opened.length;
+    const asked = Object.keys(probe.web.asked).length;
+    const t0 = performance.now();
+    r.querySelector("button.primary").click();
+    await until(() => probe.opened.length > n, 300_000);
+    session = probe.opened.at(-1).url;
+    const sc = scene().doc();
+    const d = gameDoc();
+    return {
+      ms: Math.round(performance.now() - t0),
+      sessions: rows("sessions-list").map((x) => x.querySelector(".what").textContent),
+      seats: Object.keys(sc.traits?.seats ?? {}),
+      objects: Object.keys(sc.objects).length,
+      cards: Object.values(sc.objects).filter(isCard).length,
+      start: sc.traits?.["tabletop.start"] ?? null,
+      fetchedForSetup: Object.keys(probe.web.asked).length - asked,
+      assetsCached: Object.keys(d.assets ?? {}).length,
+      drawn: Object.keys(d.drawn ?? {}).length,
+      missing: Object.entries(d.drawn ?? {}).filter(([, e]) => e.missing?.length).map(([k, e]) => [d.pieces[k]?.name ?? k, e.missing]),
+    };
+  },
+  /** Open view w (its own viewer), wait for everything in it to load and the faces it shows to be drawn. */
+  async openView({ w }) {
+    const host = document.getElementById(`v${w}`);
+    const p = peer(scene());
+    p.id = `peer-${w}`;
+    const v = { host, peer: p, viewer: `viewer:${w + 1}`, dbg: null };
+    views[w] = v;
+    host.repo = viewRepo();
+    host.viewerId = v.viewer;
+    SceneTool(p, host);
+    await until(() => host.querySelector(".scene-stage")?.__sceneDebug, 20_000);
+    v.dbg = host.querySelector(".scene-stage").__sceneDebug;
+    const t0 = performance.now();
+    const loaded = await until(() => loadedAll(v.dbg), 300_000);
+    const ms = Math.round(performance.now() - t0);
+    // the faces shown to everyone (the face-up cards) kept: none shown from bytes drawn here any more
+    // (a face drawn here is bytes with its name until its group is written; the veil, bytes without)
+    const fromBytes = () => [...v.dbg.displayed().values()].filter((o) => o.content instanceof Uint8Array && o.name).length;
+    const shownBefore = fromBytes();
+    const kept = await until(() => fromBytes() === 0 && loadedAll(v.dbg), 900_000);
+    const keptMs = Math.round(performance.now() - t0);
+    const ids = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
+    return {
+      loaded, ms, kept, keptMs, shownBefore, stats: { ...v.dbg.stats(), objects: ids.length },
+      textured: ids.filter((id) => textured(v.dbg, id)).length,
+      errors: Object.entries(v.dbg.local.get().status ?? {}).filter(([, s]) => s?.state === "error").map(([id, s]) => [objects()[id]?.name, s.message ?? s.error ?? ""]).slice(0, 10),
+      tally: tally(w),
+      drawn: Object.keys(gameDoc().drawn ?? {}).length,
+      assetsCached: Object.keys(gameDoc().assets ?? {}).length,
+      webAsked: Object.keys(probe.web.asked).length,
+      webFetches: Object.values(probe.web.asked).reduce((a, b) => a + b, 0),
+      webBytes: probe.web.bytes,
+    };
+  },
+  /** View w sits in seat k, by its picker. */
+  async sit({ w, k }) {
+    const v = views[w];
+    const sid = seatIds()[k];
+    await until(() => v.host.querySelector(".seats-pick")?.options.length > 1, 20_000);
+    const sel = v.host.querySelector(".seats-pick");
+    sel.value = sid;
+    sel.dispatchEvent(new Event("change"));
+    const ok = await until(() => scene().doc().traits.seats[sid]?.player === v.viewer, 10_000);
+    return { seat: sid, ok, body: v.dbg.local.get().body?.label ?? null };
+  },
+  startButton({ w }) {
+    const b = views[w].host.querySelector('.toolbar [data-command="start"]');
+    return { button: !!b, disabled: b?.disabled ?? null, title: b?.title ?? null };
+  },
+  async start({ w }) {
+    const b = views[w].host.querySelector('.toolbar [data-command="start"]');
+    b.click();
+    const ok = await until(() => scene().doc().traits["tabletop.start"]?.started != null, 30_000);
+    await sleep(2000);
+    return { ok, started: scene().doc().traits["tabletop.start"]?.started ?? null };
+  },
+  /** The biggest piles, and turn pile k face down where it lies (one write: each card turned over its long axis, the order reversed), as a player turns a deck over. */
+  piles() {
+    return piles().map((p) => ({ x: +p.x.toFixed(3), z: +p.z.toFixed(3), n: p.ids.length, top: p.ids[0], faceUp: views[0].dbg.scene().world(p.ids[0])[5] > 0 }));
+  },
+  turnDown({ k }) {
+    const p = piles()[k];
+    const s = views[0].dbg.scene();
+    const ys = p.ids.map((id) => objects()[id].transform.position[1]);
+    const lo = Math.min(...ys), hi = Math.max(...ys);
+    const over = composeMatrix({ rotation: [0, 0, Math.PI] });
+    scene().change((d) => {
+      for (const id of p.ids) {
+        const t = d.objects[id].transform;
+        const m = multiply(composeMatrix({ position: [...t.position], rotation: [...(t.rotation ?? [0, 0, 0])], scale: t.scale }), over);
+        const out = decompose(m);
+        d.objects[id].transform = { position: [t.position[0], lo + hi - t.position[1], t.position[2]], rotation: out.rotation, scale: t.scale ?? 1 };
+      }
+    });
+    return { n: p.ids.length, faceUp: s.world(p.ids[0])[5] > 0 };
+  },
+  /** View w draws n cards from pile k (D, its Draw to my hand), one after another as each lands. */
+  async drawFrom({ w, k, n }) {
+    const sid = scene().doc().traits.seats ? Object.entries(scene().doc().traits.seats).find(([, s]) => s.player === views[w].viewer)?.[0] : null;
+    const drawn = [];
+    const offered = [];
+    for (let i = 0; i < n; i++) {
+      const top = piles()[k].ids[0];
+      const c = command(w, "tabletop", "draw");
+      offered.push(c?.state?.(top) ?? null);
+      const before = new Set(cardIds().filter((id) => seatOfCard(id) === sid));
+      c?.run(top);
+      const ok = await until(() => cardIds().some((id) => !before.has(id) && seatOfCard(id) === sid), 15_000);
+      if (!ok) break;
+      drawn.push(cardIds().find((id) => !before.has(id) && seatOfCard(id) === sid));
+      await sleep(300);
+    }
+    return { seat: sid, drawn, offered: offered.slice(0, 2) };
+  },
+  /** What every view shows of every seat's hand, once the faces have come: { view: { seat: { face, veil, back } } }. */
+  async privacy({ wait = 60_000 } = {}) {
+    const mine = (w) => Object.entries(scene().doc().traits.seats).find(([, s]) => s.player === views[w].viewer)?.[0];
+    const settled = () => views.every((v, w) => {
+      const t = tally(w)[mine(w)];
+      return t && t.face > 0 && !t.veil && !t.back;
+    });
+    const ok = await until(settled, wait);
+    await until(() => views.every((v) => loadedAll(v.dbg)), 120_000);
+    await sleep(1500);
+    return { settled: ok, seats: views.map((_, w) => mine(w)), tallies: views.map((_, w) => tally(w)) };
+  },
+  /** Look from seat k's place (the game's camera for it) in view w. */
+  async lookFromSeat({ w, k }) {
+    const sid = seatIds()[k];
+    const cam = scene().doc().traits?.seats?.[sid]?.camera ?? gameDoc().seats?.[sid]?.camera;
+    if (cam) views[w].dbg.viewport.setCamera({ position: [...cam.position], target: [...cam.target] });
+    await sleep(1500);
+    await until(() => loadedAll(views[w].dbg), 60_000);
+    return { seat: sid, cam: cam ?? null };
+  },
+  /** Where view w's box is on the page (for a screenshot of it alone). */
+  rect({ w }) {
+    const r = views[w].host.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height };
+  },
+  gameState() {
+    const d = gameDoc();
+    return {
+      drawn: Object.keys(d.drawn ?? {}).length,
+      missing: Object.entries(d.drawn ?? {}).filter(([, e]) => e.missing?.length).map(([k, e]) => [d.pieces[k]?.name ?? k, e.missing.length]),
+      assetsCached: Object.keys(d.assets ?? {}).length,
+      docs: repo.handles.size,
+      asked: probe.web.asked,
+      refused: probe.web.refused,
+      webBytes: probe.web.bytes,
+    };
+  },
+};
+window.__step = async (name, arg) => {
+  try {
+    return await steps[name](arg ?? {});
+  } catch (err) {
+    probe.errors.push(`${name}: ${err?.stack || err}`);
+    return null;
+  }
+};
+window.__ready = true;
+</script>
