@@ -154,7 +154,12 @@ try {
     row: (w, id) => { const li = hosts[w].querySelector(`li.object-row[data-id="${id}"]`); if (!li) return null; li.scrollIntoView({ block: "nearest" }); return { main: rect(li.querySelector(".row-main")), li: rect(li) }; },
     rows: (w) => [...hosts[w].querySelectorAll("li.object-row")].map((li) => li.dataset.id),
     /** open a drawer tab from the toolbar (Edit's): "inspector" (the tree and the fields), "parts"; true once it's docked */
-    openTab: (w, id) => { if (hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)) return true; const e = hosts[w].querySelector(`.toolbar [data-command="${id}"]`); e?.click(); return !!e; },
+    // open a drawer tab from the toolbar, or show it when it is docked behind another (its tab's name)
+    openTab: (w, id) => {
+      const pane = hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.closest(".stage-drawer-pane");
+      if (pane) { if (pane.hidden) hosts[w].querySelector(`#${pane.id}-tab`)?.click(); return !pane.hidden; }
+      const e = hosts[w].querySelector(`.toolbar [data-command="${id}"]`); e?.click(); return !!e;
+    },
     tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     ring: (w) => dbg[w].view.plugins.instanceOf("scene.transfer")?.debug?.ring() ?? null,
     toasts: (w) => [...hosts[w].querySelectorAll(".toast")].map((e) => e.textContent.trim()),
