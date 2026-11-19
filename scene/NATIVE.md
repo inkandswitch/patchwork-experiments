@@ -205,9 +205,10 @@ look, as the use prompt's), looked at again every 200 ms.
   (a neutral tint, partly transparent: `display`'s `tint`, `opacity`,
   `outline`; STAGE.md, "`api`") and outlined in the colours of the extensions
   that respond to it, in input order, alternating dashes for several (three
-  at most). One colour per extension, a hash of its id into a twelve-colour
-  palette, the next free slot on a collision, used everywhere: outlines,
-  chips, swatches, the route strip. An object nothing responds to fades
+  at most). One colour per extension holding objects, a hash of its id into a
+  twelve-colour palette, the next free slot on a collision; extensions
+  holding none are a neutral grey, so a colour always means a holder. The
+  same colour everywhere: outlines, chips, swatches, the route strip. An object nothing responds to fades
   further. Its looks are the X-ray's own override, released as it is put down.
 - **Glyphs** on objects with live state, one small label each: a lock (a
   claim; who, on its card), a hand (someone holds it: a pose of rank 0), a

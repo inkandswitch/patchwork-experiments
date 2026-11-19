@@ -1005,3 +1005,36 @@ reached iff nothing consumed the press; key resolution over two hands;
 touch controls for every pair of tool declarations; the X-ray with Measure
 either way up, and under a walk. tabletop/probes/xray.mjs adds the editor
 and Measure over the X-ray at the Lost Cities table.
+
+### 2026-11-19 — The X-ray as a scene-wide view
+
+The lead found the X-ray's panel unintelligible, "big lists of things with
+no structure", and asked for a view mode that affects every object. Held, it
+now ghosts every object and outlines it in the colour of the extensions that
+respond to it (one colour per extension that holds objects, a hash of its id into a
+twelve-colour palette, used everywhere; the rest neutral grey); what nothing responds to fades.
+Glyphs mark live state (lock, hand, gear, eye; links as dashed labelled
+boxes). The drawer tab is a legend: extensions by package with the count of
+objects each holds, failures first in red, a click isolating one extension.
+The hovered object has a card beside it (traits, the responding chain with
+verbs as keycaps, live state); a click pins it and opens its details folded
+per extension; the last route runs along the bottom as boxes. The lists
+(running, layers, extension lens, grid, tables) are gone, with `LAYERS` and
+the `xray.layers` pref.
+
+The kernel change: `display` takes three visual fields beside `transform`,
+`content`, `hidden`, `name`: `tint` (a colour over the object's own, through
+the doc-level `color`), `opacity` (times its own) and `outline` (colours its
+box is drawn in, fat lines, alternating dashes for several; the viewport's
+`setOutline`, a child of the object's body, never picked). They layer per
+field in running order like the others, so the dressing scrubber can use
+them. STAGE.md stays at 200 lines. The scene's own claims (a seat's) are listed in the panel, since they sit on
+no object. A clock process may say what it drives
+(`on`), which `inspect` publishes as `drives` for the gear glyph; nothing
+passes `on` yet (machine's and sailing's processes could).
+
+Tests: the model over the 2048 small worlds (looks, isolation, legend, card,
+details agree with who holds what), colours for every subset of ten ids,
+glyphs and the route's boxes by finite cases; the plugin's own tests
+(isolate, card, pin, glyph labels, down leaves nothing displayed); the
+display fields' layering. tabletop/probes/xray.mjs takes the screenshots.
