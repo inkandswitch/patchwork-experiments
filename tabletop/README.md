@@ -81,7 +81,10 @@ The launcher (`tool.js`, every step in `actions.js`, the data in `model.js`):
   game, its options and the time ("Draw Dominoes (3 players),
   2026-11-18 21:30") and opens it. The description draws what the table lays
   out (`drawn`) and caches web assets (`assets`), so every session of it
-  shares both.
+  shares both. A game with seats is never set up without them: where nothing
+  installed owns seats, it first loads the seats package (`PUBLISHED.seats`,
+  as the scene loads a listed package: `src/table/load-package.js`), saying
+  "Loading seats…", and sets nothing up if it can't, saying why.
 - **Continue** opens a session; Sessions lists the newest first (each link
   a list insert: two people starting games at once both appear).
 - **Fork** copies a session into a new scene doc by the scene's copy rule

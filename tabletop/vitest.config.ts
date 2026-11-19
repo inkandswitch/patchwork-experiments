@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // the host's filesystem module comes from its importmap; in a test, a stand-in that loads nothing
+  resolve: { alias: { "@inkandswitch/patchwork-filesystem": new URL("./src/test/filesystem-stub.js", import.meta.url).pathname } },
   test: {
     environment: "happy-dom",
     // Node 26 defines a global localStorage of its own (undefined without

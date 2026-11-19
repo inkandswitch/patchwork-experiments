@@ -6,7 +6,10 @@
 // table lays out is drawn first, a card's face when a keeper first shows it
 // (`{ game, kind }` in its container), and web assets are cached in the
 // description's `assets`, so every session made from one description shares
-// both. Then the containers, bags and seats' owner (made-with.js
+// both. A game with seats is never set up without them: where nothing here
+// owns seats, the seats package is loaded first ("Loading seats…"), and
+// nothing is made if it can't be (made-with.js seatsReady). Then the
+// containers, bags and seats' owner (made-with.js
 // prepareTable), so the scene never names one that isn't there; then the
 // scene, written whole as the scene makes one (empty-scene.js), naming the
 // packages it calls for (the scene's, the seats', this one's) and the scene
@@ -14,8 +17,9 @@
 // (scene-package.js namePackages); then the description lists it in `tables`.
 
 import { kindsLaid, tableLayout, writeTable } from "../setup.js";
-import { namePackages, packageUrls } from "../scene-package.js";
-import { findSource, prepareTable } from "./made-with.js";
+import { PUBLISHED, namePackages, packageUrls } from "../scene-package.js";
+import { findSource, prepareTable, seatsReady } from "./made-with.js";
+import { loadPackage as hostLoad } from "./load-package.js";
 import { emptyScene } from "../empty-scene.js";
 import { gameOf } from "../game.js";
 import { pieceDrawer } from "../pieces.js";
@@ -29,17 +33,21 @@ import { applyRecipe, optionsProblem } from "../../contract/v2/recipe.js";
  *   repo: object, registry: (type: string) => Promise<object | null>, handle: object,
  *   options?: object, title?: string | null,
  *   draw?: (kinds: string[]) => Promise<unknown>, phase?: (text: string) => void, rng?: () => number,
+ *   loadPackage?: (url: string, host: { repo: object }) => Promise<unknown>,
  * }} o  handle: the game doc's; options: its recipe's options' values (GAME-FORMAT.md §6; a default for each not given);
  *   title: the scene's (by default "<game> table <n>"); draw: draws these kinds into the game's `drawn`, throwing
- *   when it can't (by default a pieceDrawer of the game's own); phase: what it's doing now, for a status line
+ *   when it can't (by default a pieceDrawer of the game's own); phase: what it's doing now, for a status line;
+ *   loadPackage: loads a package this viewer lacks and registers its plugins (by default load-package.js's)
  * @returns {Promise<{ url: string, notes: string[], layout: object }>}  the scene's url; what the maker is to be warned of
  */
-export async function newSession({ repo, registry, handle, options = {}, title = null, draw = null, phase = () => {}, rng = Math.random }) {
+export async function newSession({ repo, registry, handle, options = {}, title = null, draw = null, phase = () => {}, rng = Math.random, loadPackage = hostLoad }) {
   const game = gameOf(handle.doc());
   const checked = validate(game);
   if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
   const g = applyRecipe(game, options);
   if (!g) throw new Error(optionsProblem(game, options));
+  // seats first: nothing is drawn or made for a table that can't have them
+  if (Object.keys(g.seats ?? {}).length) await seatsReady({ repo, registry, phase, load: loadPackage, url: PUBLISHED.seats });
   // what the table lays out; a card's face is drawn when it's first shown
   const kinds = kindsLaid(g);
   if (draw) await draw(kinds);

@@ -80,15 +80,17 @@ export async function addBuiltIns({ repo, registry, library }) {
 /**
  * New game: a description rendered into a fresh scene as its recipe lays it
  * out for these options (table/session.js; a default for each not given),
- * linked in Sessions as the game, the options and the date.
+ * linked in Sessions as the game, the options and the date. A game with
+ * seats where nothing owns seats loads the seats package first (`phase`
+ * says so), and makes nothing if it can't.
  * @returns {Promise<{ url: string, name: string, notes: string[] }>}
  */
-export async function startSession({ repo, registry, library, game, options = {}, now = () => new Date(), phase, draw }) {
+export async function startSession({ repo, registry, library, game, options = {}, now = () => new Date(), phase, draw, loadPackage }) {
   const sessions = await need(repo, library, "sessions");
   const d = game.doc();
   const values = optionValues(d, options);
   const name = sessionName(d?.title, now(), values ? describeOptions(d, values) : null);
-  const { url, notes } = await newSession({ repo, registry, handle: game, options, title: name, phase, draw });
+  const { url, notes } = await newSession({ repo, registry, handle: game, options, title: name, phase, draw, loadPackage });
   linkIn(sessions, { name, type: SCENE_TYPE, url });
   return { url, name, notes };
 }

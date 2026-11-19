@@ -12,7 +12,9 @@
 // 16 cases. Expected, by the rule and nothing else: the table is laid out
 // (a secure deck by the joint keeper, any other by the plain one; the bag's
 // things in a bag doc), and the maker is warned that the table has no seats
-// iff the game has seats and nothing owns them.
+// iff the game has seats and nothing owns them. (The game page never sets
+// a table up without them: it loads the seats package first, table/session.js;
+// it's the template, inside a scene, that warns.)
 
 import { NO_SEATS } from "../table/made-with.js";
 
