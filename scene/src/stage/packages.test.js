@@ -92,7 +92,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([]);
   });
 
-  it("takes off only what this viewer has and nothing calls for, every entry naming it, in one change; a package missing here and the scene package stay, and a part lists only what it made calls for", async () => {
+  it("takes off what nothing calls for, every entry naming it, in one change: one this viewer has, and one missing here once every need is answered here; the scene package stays, and a part lists only what it made calls for", async () => {
     const JOINTS = fakeUrl();
     const TRAVERSAL = fakeUrl();
     const MISSING = fakeUrl();
@@ -110,18 +110,18 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     h.on("change", () => changes++);
     const s = await mount({ handle: h, repo });
     await settle();
-    expect(urls(s)).toEqual([SAILING, MISSING, SCENE]);
+    // (MISSING, too: whatever it was listed for, weather answers here now)
+    expect(urls(s)).toEqual([SAILING, SCENE]);
     expect(changes).toBe(1); // the entries off and the suggested import on, together
     expect(s.doc()["@patchwork"].suggestedImportUrl).toBe(SCENE);
-    // taking off is never a way to stop asking: the one missing here is still asked about
-    expect(state(s).ask).toEqual([MISSING]);
+    expect(state(s).ask).toEqual([]);
     // a part run here: what it made calls for nothing, so nothing of the part's is listed
     await editor.part(s.api("t.user"), "buoy", { parent: null });
     await settle();
     s.change((d) => (d.title = "Fitted"));
     await settle();
     expect(s.doc().objects.b?.name).toBe("Buoy");
-    expect(urls(s)).toEqual([SAILING, MISSING, SCENE]);
+    expect(urls(s)).toEqual([SAILING, SCENE]);
   });
 
   it("not before the registry has gone quiet: the viewer's own packages may still be on their way", async () => {
@@ -136,14 +136,16 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
 
   it("while a need goes unanswered here nothing is taken off: a package listed for it may be what answers it elsewhere", async () => {
     const JOINTS = fakeUrl();
-    const s = await mount({ extensions: [weather, { meta: { id: "joints", traits: ["joints.slide"], importUrl: JOINTS }, module: { create: () => ({}) } }], doc: { traits: { "joints.hinge": {} }, packages: [{ url: JOINTS }] } });
+    const HINGES = fakeUrl();
+    const s = await mount({ extensions: [weather, { meta: { id: "joints", traits: ["joints.slide"], importUrl: JOINTS }, module: { create: () => ({}) } }], doc: { traits: { "joints.hinge": {} }, packages: [{ url: JOINTS }, { url: HINGES }] } });
     await settle();
-    // (a hinge: an older joints here has no plugin for it, a newer one elsewhere may)
-    expect(urls(s)).toEqual([JOINTS]);
+    // (a hinge: an older joints here has no plugin for it, a newer one elsewhere may, or HINGES, which isn't here)
+    expect(urls(s)).toEqual([JOINTS, HINGES]);
+    expect(state(s).ask).toEqual([HINGES]);
     s.change((d) => (d.title = "Again"));
     await settle();
-    expect(urls(s)).toEqual([JOINTS]);
-    // every need answered here: joints answers none of them, so it goes
+    expect(urls(s)).toEqual([JOINTS, HINGES]);
+    // every need answered here: joints answers none of them, and HINGES, missing, was listed for nothing that isn't answered: both go
     s.change((d) => delete d.traits["joints.hinge"]);
     await settle();
     expect(urls(s)).toEqual([]);
@@ -176,6 +178,32 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([P, Q]);
     // P was never off the list on the way
     expect(seen.every((list) => list.includes(P))).toBe(true);
+  });
+
+  it("a retired package and the one that took its plugin id over (the Lost Cities table): only the package whose plugin runs is listed, in either order, and the other heals off", async () => {
+    // the retired card-table package and tabletop both register "card-table" (trait card-table.kept)
+    const CARD_TABLE = fakeUrl();
+    const TABLETOP = fakeUrl();
+    const keeper = (url) => [{ type: "scene:extension", id: "card-table", traits: ["card-table.kept"], load: async () => ({ create: () => ({}) }) }, url];
+    for (const [first, later] of [
+      [CARD_TABLE, TABLETOP],
+      [TABLETOP, CARD_TABLE],
+    ]) {
+      const s = await mount({ doc: { objects: { c: object({ providerId: null, traits: { "card-table.kept": {} } }) }, order: ["c"], packages: [] } });
+      getRegistry("scene:extension").register(...keeper(first));
+      getRegistry("scene:extension").register(...keeper(later));
+      await settle();
+      expect([first, urls(s)]).toEqual([first, [later]]);
+      s.unmount();
+    }
+    // a table listed with both: the list follows what runs here, as the registry changes
+    const s = await mount({ doc: { objects: { c: object({ providerId: null, traits: { "card-table.kept": {} } }) }, order: ["c"], packages: [{ url: TABLETOP }, { url: CARD_TABLE }] } });
+    getRegistry("scene:extension").register(...keeper(CARD_TABLE));
+    await until(() => !urls(s).includes(TABLETOP), 2000);
+    expect(urls(s)).toEqual([CARD_TABLE]); // card-table's runs here (registered last)
+    getRegistry("scene:extension").register(...keeper(TABLETOP));
+    await until(() => !urls(s).includes(CARD_TABLE), 2000);
+    expect([urls(s), state(s).ask]).toEqual([[TABLETOP], []]);
   });
 
   it("the scene's own plugins, registered here without an importUrl, and a dev server's, name nothing", async () => {

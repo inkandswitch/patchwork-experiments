@@ -165,9 +165,9 @@ keys. **A popover** (`api.popover(close)`) wants the pointer. **Escape**
 ## Packages
 
 `doc.packages` (`[{ url }]`, `automerge:` or public `https:`) lists where its
-contents come from (`src/packages.js`, `stage/packages.js`): each source's and
-trait's package is added once registered here, and those answering nothing
-pruned once quiet. Nothing loads without a click on Load for its URL.
+contents come from (`src/packages.js`, `stage/packages.js`): each running
+source's and trait's package is added; once quiet, those no running plugin
+comes from are pruned. Nothing loads without a click on Load for its URL.
 
 ## Arriving
 

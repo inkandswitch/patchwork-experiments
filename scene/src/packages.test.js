@@ -168,13 +168,20 @@ describe("who answers (answeringPlugins)", () => {
     expect(ids(answeringPlugins(d, r))).toEqual(["scene:extension/game"]);
   });
 
-  it("a source id two packages register: each answers, in registry order, whichever the registry hands out", () => {
-    const d = newScene({ objects: { a: { providerId: "p" } } });
-    for (const order of [
+  it("an id two packages register: only the one the registry hands out (the later) answers, in either order, source or extension", () => {
+    const d = newScene({ traits: { t: {} }, objects: { a: { providerId: "p" } } });
+    for (const [first, later] of [
       [A, B],
       [B, A],
-    ])
-      expect(answeringPlugins(d, reg([], order.map((importUrl) => ({ id: "p", importUrl }))))).toEqual(order.map((importUrl) => ({ type: "scene:source", id: "p", importUrl })));
+    ]) {
+      expect(answeringPlugins(d, reg([], [first, later].map((importUrl) => ({ id: "p", importUrl }))))).toEqual([{ type: "scene:source", id: "p", importUrl: later }]);
+      expect(answeringPlugins(d, reg([first, later].map((importUrl) => ({ id: "x", traits: ["t"], importUrl }))))).toEqual([{ type: "scene:extension", id: "x", importUrl: later }]);
+      // two ids answering one trait both run, so both answer
+      expect(answeringPlugins(d, reg([{ id: "x", traits: ["t"], importUrl: first }, { id: "y", traits: ["t"], importUrl: later }]))).toEqual([
+        { type: "scene:extension", id: "x", importUrl: first },
+        { type: "scene:extension", id: "y", importUrl: later },
+      ]);
+    }
     // the same plugin registered twice from one place answers once
     expect(answeringPlugins(d, reg([], [{ id: "p", importUrl: A }, { id: "p", importUrl: A }]))).toEqual([{ type: "scene:source", id: "p", importUrl: A }]);
   });
@@ -346,7 +353,7 @@ describe("the prune rule (packagesToPrune)", () => {
     return out;
   };
 
-  it("takes a listed package off exactly when every need is answered here, it is here, answers none, isn't the scene package, and isn't a source while a render doc is unheard: all 32 cases, for each kind of need", () => {
+  it("takes a listed package off exactly when every need is answered here, it answers none, isn't the scene package, and is here (and isn't a source while a render doc is unheard) or, missing here, every render doc has been heard: all 32 cases, for each kind of need", () => {
     let cases = 0;
     for (const [kind, need] of Object.entries(NEEDS)) {
       const source = need.plugin[0] === "scene:source";
@@ -357,15 +364,17 @@ describe("the prune rule (packagesToPrune)", () => {
               for (const rendersKnown of [false, true]) {
                 const base = need.doc(answers);
                 // a need nothing here answers: an object trait no extension has
-                const doc = { ...base, objects: { ...base.objects, ...(allAnswered ? {} : { u: { traits: { "nobody.has": {} } } }) }, packages: [{ url: P }, { url: B }] };
+                // (every scene doc carries the scene package as its suggested import: CONVENTIONS.md, "Shared maps")
+                const doc = { ...base, objects: { ...base.objects, ...(allAnswered ? {} : { u: { traits: { "nobody.has": {} } } }) }, packages: [{ url: P }, { url: B }], "@patchwork": { suggestedImportUrl: isScene ? P : B } };
                 const registries = registriesFor(need.plugin, registered, isScene);
                 const providerIds = need.providerIds(answers);
                 const got = packagesToPrune({ doc, registries, providerIds, rendersKnown });
-                const want = registered && !answers && !isScene && allAnswered && (rendersKnown || !source) ? [P] : [];
+                const want = !answers && !isScene && allAnswered && (rendersKnown || (registered && !source)) ? [P] : [];
                 const c = { kind, registered, answers, isScene, allAnswered, rendersKnown };
-                expect([c, got]).toEqual([c, want]);
-                // the invariants, said directly: never one missing here, never one that answers a need, never with a need unanswered
-                for (const url of got) expect(registeredPackages(registries).has(url) && !packagesOf(answeringPlugins(doc, registries, { providerIds })).includes(url) && unansweredNeeds(doc, registries, { providerIds }).length === 0).toBe(true);
+                // (B is only ever the scene package or missing here: whether it goes is the cases below's business)
+                expect([c, got.filter((u) => u === P)]).toEqual([c, want]);
+                // the invariants, said directly: never one that answers a need, never with a need unanswered, never the suggested import, and one missing here only once every render doc is heard
+                for (const url of got) expect((registeredPackages(registries).has(url) || rendersKnown) && url !== packageUrl(doc["@patchwork"].suggestedImportUrl) && !packagesOf(answeringPlugins(doc, registries, { providerIds })).includes(url) && unansweredNeeds(doc, registries, { providerIds }).length === 0).toBe(true);
                 cases++;
               }
     }
@@ -375,7 +384,7 @@ describe("the prune rule (packagesToPrune)", () => {
   it("every entry naming it goes, however it names it; the rest stay as they are, and a doc without the list is never touched", () => {
     const registries = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }] };
     const packages = [{ url: P }, { url: B }, { url: `${P}#${HEAD}` }, { url: DEV }, { url: P }, { other: 1 }, null];
-    const doc = newScene({ packages });
+    const doc = newScene({ packages, "@patchwork": { suggestedImportUrl: B } });
     const prune = packagesToPrune({ doc, registries });
     expect(prune).toEqual([P]);
     const want = [{ url: B }, { url: DEV }, { other: 1 }, null];
@@ -423,7 +432,7 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
   const STATES = [];
   for (const listed of [0, 1, 2]) for (const registered of [false, true]) for (const source of [false, true]) for (const needed of [false, true]) STATES.push({ listed, registered, source, needed });
 
-  it("one pass reaches listed = answering ∪ (listed ∩ (unregistered ∪ {scene} ∪ kept)), and the next writes nothing: all 4608 cases", () => {
+  it("one pass reaches listed = answering ∪ (listed ∩ ({scene} ∪ kept)), and the next writes nothing: all 4608 cases", () => {
     let cases = 0;
     for (const sa of STATES)
       for (const sb of STATES)
@@ -455,7 +464,8 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
                 const s = states[i];
                 const isScene = sceneIsA && i === 0;
                 const here = s.registered || isScene;
-                return (s.registered && s.needed) || (s.listed > 0 && (unanswered || !here || isScene || (!rendersKnown && s.registered && s.source)));
+                // (one missing here stays only while a need goes unanswered or a render doc is unheard: every need here is answered by a package that can be named)
+                return (s.registered && s.needed) || (s.listed > 0 && (unanswered || isScene || (!rendersKnown && (!here || s.source))));
               }).map(([url]) => url);
               const c = { states, sceneIsA, rendersKnown, stray };
               expect([c, [...listedPackages(after)].sort()]).toEqual([c, want.sort()]);
@@ -498,11 +508,15 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
     expect(settleViews({ ...doc, packages: [] }, [older, newer])).toEqual({ settled: true, writes: [[1, [P], []]], listed: [P] });
   });
 
-  it("two viewers whose registries hand out a shared source id from different packages settle with both listed", () => {
+  it("two viewers whose registries hand out a shared id from different packages each list the one that runs for them: they take turns, and agree once either has only one", () => {
+    // Each is right by its own registry: what the list names is what runs.
     const doc = newScene({ objects: { a: { providerId: "p" } }, packages: [] });
     const ab = { "scene:source": [{ id: "p", importUrl: A }, { id: "p", importUrl: B }] };
     const ba = { "scene:source": [{ id: "p", importUrl: B }, { id: "p", importUrl: A }] };
-    expect(settleViews(doc, [ab, ba])).toEqual({ settled: true, writes: [[0, [A, B], []]], listed: [A, B] });
+    expect(settleViews(doc, [ab, ba])).toMatchObject({ settled: false, listed: [A] });
+    expect(settleViews(doc, [ab, ab])).toEqual({ settled: true, writes: [[0, [B], []]], listed: [B] });
+    // the other uninstalls A: B runs for both
+    expect(settleViews(doc, [ab, { "scene:source": [{ id: "p", importUrl: B }] }])).toEqual({ settled: true, writes: [[0, [B], []]], listed: [B] });
   });
 
   it("the one disagreement that takes turns: P's versions differ on a trait another package answers too; it ends when the versions agree", () => {
@@ -517,6 +531,77 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
     const newer = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }, { id: "y", traits: ["t"], importUrl: Q }] };
     expect(settleViews(doc, [older, newer])).toEqual({ settled: false, writes: 20, listed: [Q, P] });
     expect(settleViews(doc, [newer, newer])).toEqual({ settled: true, writes: [], listed: [P, Q] });
+  });
+});
+
+describe("a retired package and the one that took its plugins over, both installed (the Lost Cities table)", () => {
+  // The retired card-table package and tabletop both register the
+  // "card-table" extension (trait card-table.kept) and the secure-deck
+  // datatype and tool. Patchwork's registry keeps the later registration of
+  // each id. A viewer with both installed listed card-table's URL beside
+  // tabletop's: only the package whose plugin runs belongs on the list.
+  const CARD_TABLE = "automerge:4cC6LbnDAzvNj9WDNDA4ew21R85H";
+  const TABLETOP = B;
+  const SCENE = A;
+  const plugins = (url) => ({
+    "scene:extension": [{ id: "card-table", traits: ["card-table.kept"], importUrl: url }],
+    "patchwork:datatype": [{ id: "secure-deck", importUrl: url }],
+    "patchwork:tool": [{ id: "secure-deck", importUrl: url }],
+  });
+  /** One registry as registered in this order (a package's plugins after the one before's, as the module watcher does). */
+  const registered = (...urls) => {
+    const out = { "patchwork:datatype": [{ id: "scene", importUrl: SCENE }], "scene:extension": [{ id: "tabletop", traits: ["tabletop.card"], importUrl: TABLETOP }] };
+    for (const url of urls) for (const [type, list] of Object.entries(plugins(url))) out[type] = [...(out[type] ?? []), ...list];
+    return out;
+  };
+  const table = (packages) => newScene({ objects: { c: { traits: { "card-table.kept": {}, "tabletop.card": {} } } }, packages: packages.map((url) => ({ url })), "@patchwork": { suggestedImportUrl: SCENE } });
+  const pass = (doc, registries) => {
+    const plan = reconcileList({ doc, registries });
+    const after = structuredClone(doc);
+    changeList(after, plan);
+    return { plan, listed: listedPackages(after) };
+  };
+
+  it("one package: it is listed, and stays", () => {
+    expect(pass(table([SCENE]), registered()).listed).toEqual([SCENE, TABLETOP]);
+    expect(pass(table([SCENE, TABLETOP]), registered()).plan).toEqual({ add: [], prune: [] });
+  });
+
+  it("two answering one need, registered in either order: only the later's package is appended, and the earlier's, listed, is taken off", () => {
+    for (const [first, later] of [
+      [CARD_TABLE, TABLETOP],
+      [TABLETOP, CARD_TABLE],
+    ]) {
+      const registries = registered(first, later);
+      const runs = answeringPlugins(table([]), registries).find((p) => p.id === "card-table").importUrl;
+      expect(runs).toBe(later);
+      // from a list naming neither: the one that runs, never the other
+      const fresh = pass(table([SCENE]), registries);
+      expect([first, fresh.listed.includes(first), fresh.listed.includes(later)]).toEqual([first, first === TABLETOP, true]); // (tabletop answers tabletop.card too)
+      // the polluted list heals: card-table is taken off when tabletop's runs; when card-table's runs, it's what runs
+      const healed = pass(table([SCENE, TABLETOP, CARD_TABLE]), registries);
+      expect([first, healed.listed]).toEqual([first, later === TABLETOP ? [SCENE, TABLETOP] : [SCENE, TABLETOP, CARD_TABLE]]);
+      // and that is a fixed point
+      expect(reconcileList({ doc: table(healed.listed), registries })).toEqual({ add: [], prune: [] });
+    }
+  });
+
+  it("one uninstalled: the retired package, listed, goes once tabletop answers every need; it stays while a need goes unanswered, a render doc is unheard, or a need is answered only from a dev server", () => {
+    const polluted = table([SCENE, TABLETOP, CARD_TABLE]);
+    expect(pass(polluted, registered(TABLETOP)).listed).toEqual([SCENE, TABLETOP]);
+    // a need nothing here answers: it may be what answers that elsewhere
+    const stray = { ...polluted, traits: { "nobody.has": {} } };
+    expect(reconcileList({ doc: stray, registries: registered(TABLETOP) }).prune).toEqual([]);
+    // a render doc not yet heard from may name its source
+    expect(reconcileList({ doc: polluted, registries: registered(TABLETOP), rendersKnown: false }).prune).toEqual([]);
+    // tabletop from a dev server: the listed one may be the same package, published
+    const dev = "http://localhost:5173/";
+    expect(reconcileList({ doc: polluted, registries: registered(dev) }).prune).toEqual([]);
+    // the scene package, missing here (a viewer on a dev copy of the scene), is the suggested import: it stays
+    const devScene = { ...registered(TABLETOP), "patchwork:datatype": [{ id: "scene", importUrl: dev }, { id: "secure-deck", importUrl: TABLETOP }] };
+    expect(reconcileList({ doc: polluted, registries: devScene }).prune).toEqual([CARD_TABLE]);
+    // nothing installed answers: nothing is taken off
+    expect(reconcileList({ doc: polluted, registries: { "patchwork:datatype": [{ id: "scene", importUrl: SCENE }] } }).prune).toEqual([]);
   });
 });
 

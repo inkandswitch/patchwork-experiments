@@ -116,11 +116,29 @@ export function neededPlugins(doc, extra = {}) {
 }
 
 /**
+ * What a registry hands out: of the plugins in its list (registry order),
+ * the last registered under each id. Two packages registering one id (a
+ * retired package and the one that took its plugins over, both installed)
+ * leave one plugin under it, the later; the earlier is shadowed: it is
+ * installed here and runs nowhere. (Patchwork's registry lists one per id;
+ * a list naming an id twice is read as registered in that order, as
+ * activation reads it.)
+ * @param {object[]} list
+ * @returns {object[]}
+ */
+export function handedOut(list) {
+  const metas = Array.isArray(list) ? list.filter((p) => p && typeof p.id === "string") : [];
+  const last = new Map(metas.map((p) => [p.id, p]));
+  return metas.filter((p) => last.get(p.id) === p);
+}
+
+/**
  * The registered plugins that answer the doc's needs: `[{ type, id,
- * importUrl }]`, each once. A source by its id: every plugin registered
- * with that id, whichever the registry would hand out (two packages may
- * register the same id, in an order that differs between viewers); an
- * extension when the doc has one of its traits. An extension of every doc
+ * importUrl }]`, each once. Only what runs answers (handedOut): a source by
+ * its id, the plugin the registry hands out under it; an extension when the
+ * doc has one of its traits (every one that does: each runs). So of two
+ * packages registering one id, only the one whose plugin runs answers, in
+ * whichever order they registered. An extension of every doc
  * (`traits: ["*"]`) runs wherever it is installed and answers no need: no
  * doc calls for it by having it (STAGE.md, "Packages"). What isn't
  * registered answers nothing: only a viewer who has a plugin can say where
@@ -142,7 +160,7 @@ export function answeringPlugins(doc, registries, extra = {}) {
 
 /** The registered plugins answering one need (answeringPlugins). */
 function answersTo(need, registries) {
-  const metas = Array.isArray(registries?.[need.type]) ? registries[need.type].filter((p) => p && typeof p.id === "string") : [];
+  const metas = handedOut(registries?.[need.type]);
   return need.type === "scene:source" ? metas.filter((p) => p.id === need.id) : metas.filter((p) => strings(p.traits).includes(need.trait));
 }
 
@@ -187,25 +205,33 @@ export function packagesToList({ doc, registries, providerIds = [] }) {
 
 /**
  * The prune rule, reconcile's other half: the listed packages to take off
- * the doc's list now, in list order. Nothing, while any need of the doc's
- * is answered by nothing here (unansweredNeeds): a package listed for it
- * may be what answers it elsewhere (another version of a package, or one
- * this viewer lacks under the URL listed). Otherwise a listed package goes
- * when:
- *   1. it is registered here (registeredPackages). A package missing on this
- *      machine, still loading, failed or declined answers nothing here, and
- *      that says nothing about the doc: it stays;
- *   2. none of its registered plugins answers a need of the doc's
- *      (answeringPlugins, with the providers render docs asked for);
- *   3. it isn't the scene package (scenePackage): the stage itself, and the
- *      doc's suggested import;
- *   4. while some render doc built here hasn't said which provider it names
+ * the doc's list now, in list order. The list names the packages whose
+ * plugins run for the doc (answeringPlugins: of two answering one need by
+ * one id, only the one handed out). Nothing goes while any need of the
+ * doc's is answered by nothing here (unansweredNeeds): a package listed
+ * for it may be what answers it elsewhere (another version of a package,
+ * or one this viewer lacks under the URL listed). Otherwise a listed
+ * package goes when:
+ *   1. none of its plugins answers a need of the doc's here (answeringPlugins,
+ *      with the providers render docs asked for), and either
+ *      a. it is registered here (registeredPackages, shadowed or not), or
+ *      b. it isn't, and every need is answered here by a package that can be
+ *         named (packageUrl), and every render doc has said which provider it
+ *         names: whatever it was listed for, another listed package answers
+ *         now (a retired package listed by a viewer who had it running, its
+ *         plugins since taken over). A need answered from a dev server's
+ *         copy names nothing, so then the listed one may be the same
+ *         package, published: it stays;
+ *   2. it isn't the scene package (scenePackage), nor the doc's suggested
+ *      import (`@patchwork.suggestedImportUrl`): the stage itself;
+ *   3. while some render doc built here hasn't said which provider it names
  *      (`rendersKnown` false), it registers no source: a render doc may
  *      name any provider, its object's field notwithstanding.
- * So it never drops a package missing here, never one that answers a need,
- * and it is a function of the doc and this viewer's registry alone. Each
- * doc lists only its own packages, so its own needs are the whole
- * question. Empty when the doc has no list.
+ * So it never drops one that answers a need, nor one missing here while
+ * this viewer can't say what answers each need in its place, and it is a
+ * function of the doc and this viewer's registry alone. Each doc lists
+ * only its own packages, so its own needs are the whole question. Empty
+ * when the doc has no list.
  * @param {{ doc: object, registries: object, providerIds?: Iterable<string>, rendersKnown?: boolean }} o
  * @returns {string[]}
  */
@@ -214,18 +240,23 @@ export function packagesToPrune({ doc, registries, providerIds = [], rendersKnow
   const ids = [...providerIds];
   if (unansweredNeeds(doc, registries, { providerIds: ids }).length) return [];
   const registered = registeredPackages(registries);
-  const keep = new Set([...packagesOf(answeringPlugins(doc, registries, { providerIds: ids })), ...[scenePackage(registries)].filter(Boolean)]);
+  const answering = answeringPlugins(doc, registries, { providerIds: ids });
+  const keep = new Set([...packagesOf(answering), ...[scenePackage(registries), packageUrl(doc?.["@patchwork"]?.suggestedImportUrl)].filter(Boolean)]);
   if (!rendersKnown) for (const url of packagesOf(Array.isArray(registries?.["scene:source"]) ? registries["scene:source"] : [])) keep.add(url);
-  return listedPackages(doc).filter((url) => registered.has(url) && !keep.has(url));
+  // (1b) every need answered by a plugin from a package that can be named
+  const named = rendersKnown && neededPlugins(doc, { providerIds: ids }).every((need) => answersTo(need, registries).some((p) => packageUrl(p.importUrl)));
+  return listedPackages(doc).filter((url) => !keep.has(url) && (registered.has(url) || named));
 }
 
 /**
  * One reconcile pass: what to write to the doc's list now. `prune: false`
  * (before the registry has gone quiet) only adds. A function of the doc and
  * this viewer's registry: at its fixed point the list is
- *   answering ∪ (listed ∩ (unregistered ∪ {scene package} ∪ kept)),
- * where kept is every listed package while a need goes unanswered here, and
- * the source packages while a render doc hasn't reported (packagesToPrune).
+ *   answering ∪ (listed ∩ ({scene package, suggested import} ∪ kept)),
+ * where kept is every listed package while a need goes unanswered here,
+ * the source packages while a render doc hasn't reported, and the
+ * unregistered ones while either of those holds or a need is answered only
+ * by a package that can't be named (packagesToPrune).
  * @param {{ doc: object, registries: object, providerIds?: Iterable<string>, rendersKnown?: boolean, prune?: boolean }} o
  * @returns {{ add: string[], prune: string[] }}
  */
