@@ -105,7 +105,7 @@ export default {
     const overlay = api.overlay();
     overlay.classList.add("arena");
 
-    let holding = false; // the gun is the held tool
+    let holding = false; // the gun is held (a tool on the hands)
     let ammo = MAG;
     let reloadUntil = 0;
     let lastShot = 0;
@@ -275,7 +275,7 @@ export default {
 
     // a bare session: a press the gun took is a shot (or a reload), never a drag
     const bare = { move() {}, end() {}, cancel() {}, tap: () => true };
-    // the gun's input, while it's the held tool: under the lock a press
+    // the gun's input, while it's held: under the lock a press
     // shoots at once; without it a press is the body's (a walk drags to look)
     // and a tap comes back as a click, which shoots
     const gun = {
@@ -332,7 +332,7 @@ export default {
         resetCommand(api),
         { id: "play", name: "Play", key: "Enter", show: ["world", "menu"], state: (t, ctx) => playState(t, { holding, walking: ctx.view?.body?.id === "walk" }), run: () => start() },
         {
-          // a tool: its run's input goes in the stage's one slot
+          // a tool: its run's input goes on top of the hands
           id: "gun",
           name: "Gun",
           key: "g",

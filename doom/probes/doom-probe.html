@@ -246,7 +246,7 @@ try {
     /** does view w hold the editor, and the Edit toggle beside its chip (a hand, not a body) */
     editing: (w) => (dbg[w].local.get().hands ?? []).some((h) => h.kind === "edit"),
     editToggle: (w) => { const e = hosts[w].querySelector(".body-edit"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
-    held: (w) => dbg[w].local.get().held?.command ?? null,
+    held: (w) => dbg[w].local.get().held.at(-1)?.command ?? null,
     /** the body chip's rect, and its menu's item called `label`, to click */
     chip: (w) => { const e = hosts[w].querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent }; },
     chipItem: (w, label) => { const e = [...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },

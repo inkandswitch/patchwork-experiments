@@ -121,10 +121,8 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     worldOf: (id) => (handle.doc().objects[id] ? snapshot(handle.doc()).world(id) : null),
     labels: () => ({ set: (items) => (rec.labels = items) }),
     style: () => {},
-    // the held tool (scene/STAGE.md, "Bodies"): one slot; holding again puts the last down
+    // a held tool (scene/STAGE.md, "Hands"): on top of the hands; holding another puts none down
     hold(tool, handlers) {
-      const was = rec.arms.at(-1);
-      if (was?.on) (was.on = false), was.handlers.put?.();
       const a = { tool, handlers, on: true };
       rec.arms.push(a);
       return () => {

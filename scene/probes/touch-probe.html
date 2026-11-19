@@ -157,7 +157,7 @@ try {
     errors,
     dbg,
     loaded: () => dbg.stats().loaded === total,
-    view: () => { const v = dbg.local.get(); return { body: v.body?.id, held: v.held?.name ?? null, gesture: v.gesture?.owner ?? null, pointer: v.pointer }; },
+    view: () => { const v = dbg.local.get(); return { body: v.body?.id, held: v.held.at(-1)?.name ?? null, gesture: v.gesture?.owner ?? null, pointer: v.pointer }; },
     locked: () => document.pointerLockElement != null,
     focused: () => document.activeElement === host.querySelector(".scene-stage") ? "root" : document.activeElement?.className || document.activeElement?.tagName,
     /** what the pad shows: its places, and each group's name and buttons */

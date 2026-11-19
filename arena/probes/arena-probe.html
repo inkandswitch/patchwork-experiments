@@ -120,7 +120,7 @@ try {
     /** the body on top of view w's stack, the stack, and the held tool's command (scene/TOOLS.md §4) */
     body: (w) => dbgOf(w).local.get().body?.id ?? null,
     stack: (w) => dbgOf(w).router.bodies().map((b) => b.id),
-    tool: (w) => dbgOf(w).local.get().held?.command ?? null,
+    tool: (w) => dbgOf(w).local.get().held.at(-1)?.command ?? null,
     pointer: (w) => dbgOf(w).local.get().pointer ?? null,
     /** does view w hold the editor, and the Edit toggle beside its chip (a hand, not a body) */
     editing: (w) => (dbgOf(w).local.get().hands ?? []).some((h) => h.kind === "edit"),

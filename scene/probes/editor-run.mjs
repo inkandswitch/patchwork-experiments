@@ -363,7 +363,7 @@ try {
   {
     await b.key("m");
     // Measure is a held tool (STAGE.md, "Bodies"): it goes in the one slot
-    check("measureArmed", (await A(`d.local.get().held?.ext`)) === "scene.measure" && (await pressed()).includes("Measure"), await A(`d.local.get().held`));
+    check("measureArmed", (await A(`d.local.get().held.at(-1)?.ext`)) === "scene.measure" && (await pressed()).includes("Measure"), await A(`d.local.get().held`));
     const p1 = await world([-0.12, 0.04, -0.13]), p2 = await world([0.12, 0.04, -0.13]);
     await b.click(p1.x, p1.y);
     await b.move(p1.x + (p2.x - p1.x) * 0.85, p1.y + (p2.y - p1.y) * 0.85 + 3);
@@ -387,7 +387,7 @@ try {
     await b.key("Escape");
     await b.key("Escape");
     // the ladder: the first Escape puts the tool down, the second lets the selection go
-    check("measureDisarmed", (await A(`d.local.get().held`)) == null, await A(`d.local.get().held`));
+    check("measureDisarmed", (await A(`d.local.get().held.length`)) === 0, await A(`d.local.get().held`));
   }
 
   // ── a dimension: its label selects it (the one selection); Delete removes it ──
