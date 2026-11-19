@@ -15,7 +15,12 @@
 // - the claims layer shows the seats' claims; the poses layer shows a card
 //   B is carrying, held by Ben;
 // - A clicks a card: the X-ray pins it and takes nothing, and the input
-//   route says who took the click.
+//   route says who took the click;
+// - A picks up the editor and Measure over it: both tools held at once (the
+//   X-ray isn't put down), B's chip lists every hand A holds; a click goes
+//   to Measure (on top: its first point), not to the X-ray under it, whose
+//   pin stays; putting the editor down puts Measure down, the X-ray stays;
+// - Escape puts the X-ray down.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -116,6 +121,20 @@ try {
   await P("scrollTo('a', 'layers')");
   await b.rest(200);
   await shot("route");
+
+  // ── Measure held over the X-ray: two tools at once ──
+  check("the X-ray alone asks nothing of the pointer", (await P("wanted('a')")) === false, { held: await P("held('a')"), wanted: await P("wanted('a')") });
+  check("A picks up the editor", await P("edit('a', true)"), await P("hands('a')"));
+  await P("focus('a')");
+  await b.key("m");
+  check("M: Measure held over the X-ray, both at once", await until(`held('a').join() === ${J("X-ray,Measure")} && __p.xray('a').held && __p.measure('a').held`, 3000), { held: await P("held('a')"), hands: await P("hands('a')"), xray: await P("xray('a')"), measure: await P("measure('a')") });
+  check("B's chip lists every hand A holds, top last", await until("people('b').some((r) => /X-ray, Edit, Measure/.test(r))", 5000), await P("people('b')"));
+  await shot("measure");
+  const other = (await P("where()")).p1.find((id) => id !== mine) ?? mine;
+  const atOther = await P(`aimAt(${J(other)}, 'a')`);
+  await b.click(atOther.x, atOther.y);
+  check("a click goes to Measure on top (its first point, on the card); the X-ray under it never hears it (its pin stays)", await until("measure('a').a !== null", 3000) && (await P("xray('a')")).pinned === mine, { measure: await P("measure('a')"), xray: await P("xray('a')"), other, mine });
+  check("putting the editor down puts Measure down with it; the X-ray stays", (await P("edit('a', false)")) && (await until(`held('a').join() === "X-ray" && __p.xray('a').held && !__p.measure('a').held`, 3000)), { held: await P("held('a')"), xray: await P("xray('a')"), measure: await P("measure('a')") });
 
   // ── Escape puts it down ──
   await P("focus('a')");

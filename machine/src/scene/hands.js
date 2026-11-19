@@ -43,7 +43,7 @@ const JOINING = Object.freeze({ label: "Play (joining…)", disabled: true, titl
 
 /**
  * @param o.machines  Map id → machine, the extension's
- * @param o.hold      (spec, input) → put: api.hold, the held tool
+ * @param o.hold      (spec, input) → put: api.hold, a held tool (one pad at a time: the last goes down first)
  * @param o.sitting   () → { of, seat } | null: the seat this view sits in (the roster's)
  * @param o.seatsOf   (id) → seat id per port | null: what machine `id`'s trait lists
  * @param o.prefer    (e) → the port Play offers first (the screen's player)
@@ -68,6 +68,8 @@ export function hands({ machines, hold, sitting, seatsOf, prefer, notify, roster
         if (!seated(e)) e.m?.leave();
       },
     };
+    // one pad in hand: the one held goes down first (the stage's hands would hold both)
+    held?.put();
     held = mine;
     mine.put = hold({ name: `${e.title} · P${port + 1}`, keys: KEYS[e.kind] ?? [] }, input);
   }

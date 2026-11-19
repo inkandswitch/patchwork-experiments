@@ -125,6 +125,14 @@ try {
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     /** the use prompt's text in a view */
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    // ── the hands in view w: the tools held (names, top last), the pointer, the editor, Measure ──
+    held: (w) => dbg[w].local.get().held.map((t) => t.name),
+    hands: (w) => dbg[w].local.get().hands.map((h) => h.name),
+    wanted: (w) => !!dbg[w].local.get().pointer?.wanted,
+    edit(w, on) { return dbg[w].view.plugins.record("scene.edit").api.run({ ext: "scene.edit", command: "edit", value: on }); },
+    measure: (w) => { const m = dbg[w].view.plugins.instanceOf("scene.measure")?.state; return m ? { held: m.held, a: m.a ? (m.a.objectId ?? "free") : null } : null; },
+    /** who's here, as view w's body chip lists it */
+    people: (w) => [...hosts[w].querySelectorAll(".body-person")].map((e) => e.textContent),
     // ── the X-ray (scene.xray) in view w ──
     xray: (w) => { const x = dbg[w].view.plugins.instanceOf("scene.xray")?.state; return x ? { held: x.held, pinned: x.pinned, hovered: x.hovered, picked: x.picked } : null; },
     /** the panel's text in view w: a section's rows (`[data-id=…]`), or a group's headings */

@@ -43,15 +43,16 @@ function view(specs, sat = null, { states = {}, refuse = [], roster = "seats" } 
     machines.set(id, e);
     seats.set(id, list);
   }
-  const v = { machines, sat, tool: null, notices: [] };
+  const v = { machines, sat, tools: [], notices: [] };
+  // the stage's hands: a stack, top last; a tool held goes on top and puts none down
+  Object.defineProperty(v, "tool", { get: () => v.tools.at(-1) ?? null });
   v.h = hands({
     machines,
     hold(spec, input) {
-      const was = v.tool;
-      v.tool = { spec, input };
-      if (was) was.input.put(); // replaced: the old one is put down
+      const t = { spec, input };
+      v.tools.push(t);
       return () => {
-        if (v.tool?.input === input) (v.tool = null), input.put();
+        if (v.tools.includes(t)) (v.tools = v.tools.filter((x) => x !== t)), input.put();
       };
     },
     sitting: () => v.sat,
@@ -75,10 +76,9 @@ function view(specs, sat = null, { states = {}, refuse = [], roster = "seats" } 
   v.frame = () => {
     for (const e of machines.values()) if (e.m) v.h.follow(e); // as the extension: only a running machine follows
   };
-  /** Escape: the held tool put down, as the stage does it. */
+  /** Escape: the top hand put down, as the stage does it. */
   v.escape = () => {
-    const t = v.tool;
-    v.tool = null;
+    const t = v.tools.pop();
     t?.input.put();
   };
   v.port = (id) => machines.get(id).m.host.seat?.port ?? null;
