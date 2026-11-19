@@ -53,6 +53,10 @@ export function sessionOutcome(doc) {
   // Out of budget is not done: it stopped part-way, and the orchestrator
   // decides whether it goes on.
   if (doc.stopped?.reason === "budget") return { state: "running", outOfBudget: { spent: doc.stopped.spent, limit: doc.stopped.limit, at: doc.stopped.at } }
+  // Waiting on a person is read off the calls themselves, not the status: a
+  // status reset to idle while a permission was still pending made a step
+  // look finished — "done", with nothing said and its document empty.
+  if (waitingIn(doc).length) return { state: "running", waiting: true }
   const waiting = doc.status === STATUS.awaitingApproval || doc.status === STATUS.awaitingAnswer
   if (doc.status !== STATUS.idle || needsWork(doc)) return { state: "running", waiting }
   const last = lastTurn(doc)

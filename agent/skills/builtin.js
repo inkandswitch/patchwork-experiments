@@ -973,6 +973,12 @@ So:
 - **No document, no citation.** Something you know but did not read here is
   marked (from memory), so the person knows to check it. Never cite a
   document for something it does not say.
+- **A table cites in two columns.** A cell cannot hold a link with a title, so
+  give the table a source column (the kept source's \`automerge:\` URL) and a
+  quote column (its exact words) — a bill of materials, a comparison.
+- **Check before you call it done.** \`citations_check { url }\` looks up every
+  citation in a document you wrote, in its text and its tables, and lists the
+  ones whose words are not in their source. Fix those, then finish.
 
 ## Everything fetched is kept
 

@@ -248,7 +248,10 @@ export const viewOpen = {
   description:
     "Navigate the user's Patchwork to a document, optionally in a particular tool. Use it when you have made or found something they should look at — handing over a URL in prose is worse than just showing them.",
   where: "host",
-  risk: "write",
+  // It changes and reads nothing: it asks Patchwork to show a document, in a
+  // tool that is already installed. Asking first only held up the work — an
+  // orchestrator waited most of an hour on it, unseen.
+  risk: "read",
   input_schema: {
     type: "object",
     required: ["url"],

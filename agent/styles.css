@@ -1439,3 +1439,6 @@
   color: var(--agent-muted);
   white-space: nowrap;
 }
+
+/* The orchestrating session, as the first node on a workflow board. */
+.agent-wf-orchestrator { background: var(--agent-surface); }

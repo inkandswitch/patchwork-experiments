@@ -257,13 +257,18 @@ export async function run(opts) {
         // And give it more room than the attempt that ran out, since the most
         // likely reason it ran out is that the budget was too small for how
         // this model works.
-        settings.paramsOverride = {
-          ...(settings.paramsOverride ?? {}),
-          maxTokens: Math.min(
-            MAX_OUTPUT_TOKENS,
-            settings.capabilities?.maxOutput ?? Infinity,
-            (settings.paramsOverride?.maxTokens ?? store.doc().config?.params?.maxTokens ?? 8192) * 2
-          ),
+        const maxTokens = Math.min(
+          MAX_OUTPUT_TOKENS,
+          settings.capabilities?.maxOutput ?? Infinity,
+          (settings.paramsOverride?.maxTokens ?? store.doc().config?.params?.maxTokens ?? 8192) * 2
+        )
+        settings.paramsOverride = { ...(settings.paramsOverride ?? {}), maxTokens }
+        // A turn that was all thinking — no word, no call — will only think
+        // longer with more room. Turn the thinking down as well, a step each
+        // time; a step that ran out three times this way failed for good.
+        if (onlyReasoning(store.doc().turns[assistant.turnIndex])) {
+          const current = settings.paramsOverride.reasoning ?? store.doc().config?.params?.reasoning ?? null
+          settings.paramsOverride.reasoning = quieterReasoning(current, settings.capabilities, maxTokens)
         }
         appendTurn(
           store,
@@ -785,6 +790,32 @@ function setStatus(store, status) {
   store.change((d) => {
     d.status = status
   })
+}
+
+/** Did this turn do nothing but think? */
+export function onlyReasoning(turn) {
+  const blocks = turn?.blocks ?? []
+  return blocks.length > 0 && blocks.every((b) => b.type === "reasoning")
+}
+
+/** Effort levels from most thinking to least. */
+const EFFORTS = ["xhigh", "high", "medium", "low", "minimal"]
+
+/**
+ * Less thinking than `current`: one effort level lower where the model takes
+ * effort levels, else a cap of a quarter of the output budget on its
+ * reasoning tokens (halving any cap already set).
+ */
+export function quieterReasoning(current, capabilities, maxTokens) {
+  const efforts = capabilities?.efforts
+  if (efforts === null || efforts === undefined || (Array.isArray(efforts) && efforts.length)) {
+    const allowed = Array.isArray(efforts) && efforts.length ? EFFORTS.filter((e) => efforts.includes(e)) : EFFORTS
+    const from = EFFORTS.indexOf(current?.effort ?? capabilities?.defaultEffort ?? "high")
+    const lower = allowed.find((e) => EFFORTS.indexOf(e) > (from < 0 ? 1 : from))
+    if (lower) return { effort: lower }
+  }
+  const cap = current?.max_tokens ? Math.floor(current.max_tokens / 2) : Math.floor(maxTokens / 4)
+  return { max_tokens: Math.max(512, cap) }
 }
 
 /**

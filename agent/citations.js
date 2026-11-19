@@ -165,3 +165,87 @@ export async function checkCitation({ url, quote }, find) {
   if (located.found) return { status: "found", at: located.at, end: located.end }
   return { status: located.reason, ...(located.part ? { part: located.part } : {}) }
 }
+
+/** A header cell that names where a row's fact came from, and one that holds its words. */
+const SOURCE_HEADER = /source|citation|reference/i
+const QUOTE_HEADER = /quote|verbatim|excerpt/i
+
+/**
+ * Citations kept as a table's columns: a header row naming a source column
+ * (an automerge: URL) and a quote column (the words, verbatim). Rows as arrays
+ * under a header row, or as objects with such keys. Each one is
+ *
+ *   { url, quote, row }   row: its index in the table
+ *
+ * A table cannot hold a link with a title, so this is how a bill of materials
+ * or a comparison cites what each row rests on.
+ */
+export function tableCitations(rows) {
+  if (!Array.isArray(rows) || !rows.length) return []
+  const out = []
+  if (rows.every((row) => row && typeof row === "object" && !Array.isArray(row))) {
+    const keys = Object.keys(rows[0] ?? {})
+    const source = keys.find((k) => SOURCE_HEADER.test(k))
+    const quote = keys.find((k) => QUOTE_HEADER.test(k))
+    if (!source || !quote) return []
+    rows.forEach((row, i) => push(out, row[source], row[quote], i))
+    return out
+  }
+  const headerAt = rows.findIndex(
+    (row) => Array.isArray(row) && row.some((cell) => SOURCE_HEADER.test(String(cell ?? ""))) && row.some((cell) => QUOTE_HEADER.test(String(cell ?? "")))
+  )
+  if (headerAt < 0) return []
+  const header = rows[headerAt].map((cell) => String(cell ?? ""))
+  const source = header.findIndex((cell) => SOURCE_HEADER.test(cell) && !QUOTE_HEADER.test(cell))
+  const quote = header.findIndex((cell) => QUOTE_HEADER.test(cell))
+  if (source < 0 || quote < 0) return []
+  rows.forEach((row, i) => {
+    if (i > headerAt && Array.isArray(row)) push(out, row[source], row[quote], i)
+  })
+  return out
+}
+
+function push(out, url, quote, row) {
+  const link = String(url ?? "").match(/automerge:[A-Za-z0-9]+(?:#[A-Za-z0-9|]+)?/)?.[0]
+  const words = String(quote ?? "").trim()
+  if (link && words) out.push({ url: link, quote: words, row })
+}
+
+/**
+ * Every citation in a document, wherever it is: links with quotes in any of
+ * its text, and tables with source and quote columns. Also how many places
+ * say (from memory).
+ *
+ *   { citations: [{ url, quote, where }], fromMemory }
+ */
+export function citationsInDocument(doc) {
+  const citations = []
+  let fromMemory = 0
+  const seenTables = new Set()
+  const walk = (value, path, depth) => {
+    if (depth > 14 || value == null) return
+    if (typeof value === "string" || value?.constructor?.name === "ImmutableString") {
+      const text = String(value)
+      for (const cite of citationsIn(text)) citations.push({ ...cite, where: path.join(".") || "text" })
+      fromMemory += (text.match(/\(from memory\)|\bfrom memory\b/gi) ?? []).length
+      return
+    }
+    if (value instanceof Uint8Array) return
+    if (Array.isArray(value)) {
+      const rows = tableCitations(value)
+      if (rows.length && !seenTables.has(value)) {
+        seenTables.add(value)
+        for (const cite of rows) citations.push({ url: cite.url, quote: cite.quote, label: "row", where: `${path.join(".") || "table"} row ${cite.row}` })
+      }
+      value.forEach((item, i) => {
+        // Cells of a table's quote column are checked as rows above; their
+        // own text is still scanned for links and for "from memory".
+        walk(item, [...path, i], depth + 1)
+      })
+      return
+    }
+    if (typeof value === "object") for (const [key, item] of Object.entries(value)) if (!key.startsWith("@")) walk(item, [...path, key], depth + 1)
+  }
+  walk(doc, [], 0)
+  return { citations, fromMemory }
+}

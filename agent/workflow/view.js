@@ -14,7 +14,8 @@
 import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf } from "./plan.js"
 import { budgetWaiting } from "./waiting.js"
 import { renderBudgetItem } from "../ui/waiting.js"
-import { formatCost } from "../session.js"
+import { formatCost, STATUS, sessionTitle } from "../session.js"
+import { activityOf } from "../ui/attention.js"
 import { drivePlanHere, getDriver, keptCounts } from "./driver.js"
 import { waitingIn } from "./waiting.js"
 import { renderWaitingItem } from "../ui/waiting.js"
@@ -128,6 +129,47 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     return sessions.get(url)?.handle?.doc() ?? null
   }
 
+  /** The orchestrating session, as a node on the board. */
+  function orchestratorCard(plan) {
+    const url = plan.sessionUrl
+    const doc = sessionDoc(url)
+    const waits = waitingIn(doc)
+    const state = waits.length
+      ? STATE.needsInput
+      : doc?.status === STATUS.running
+        ? STATE.running
+        : doc?.status === STATUS.error
+          ? STATE.failed
+          : plan.status === PLAN.running
+            ? STATE.waiting
+            : STATE.done
+    const label = { [STATE.needsInput]: "needs you", [STATE.running]: "working", [STATE.failed]: "stopped", [STATE.waiting]: "waiting for steps", [STATE.done]: "idle" }[state]
+
+    const card = el("article", "agent-wf-step agent-wf-orchestrator")
+    card.dataset.state = state
+    const head = el("div", "agent-wf-step-head")
+    head.append(el("span", "agent-wf-chip", label), el("strong", null, (doc && sessionTitle(doc)) || "Orchestrator"))
+    card.append(head)
+
+    if (doc) {
+      const activity = activityOf(doc)
+      const spent = formatCost(doc.usage)
+      card.append(el("p", "agent-wf-activity", [activity, `${doc.turns?.length ?? 0} turns`, spent].filter(Boolean).join(" · ")))
+    }
+    // What it waits on you for, answerable here.
+    const orchestratorHandle = sessions.get(url)?.handle
+    for (const item of waits) {
+      card.append(renderWaitingItem({ ...item, handle: orchestratorHandle, stepTitle: "Orchestrator" }, { showStep: false }))
+    }
+    const open = el("button", "agent-wf-open", waits.length ? "Answer in its session" : "Open session")
+    open.addEventListener("click", (event) => {
+      event.preventDefault()
+      openDoc(url)
+    })
+    card.append(open)
+    return card
+  }
+
   function stepCard(step, state) {
     const card = el("article", "agent-wf-step")
     card.dataset.state = state
@@ -234,7 +276,11 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     }
     for (const step of plan.steps) watch(step.sessionUrl)
 
-    const statuses = Object.fromEntries(plan.steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, sessionDoc(s.sessionUrl)?.status ?? null]))
+    // Waiting on a person is read off the calls, not the status field: a
+    // status reset to idle hid a step's pending permissions from this view.
+    const statusOf = (doc) => (waitingIn(doc).length ? STATUS.awaitingApproval : doc?.status ?? null)
+    const statuses = Object.fromEntries(plan.steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, statusOf(sessionDoc(s.sessionUrl))]))
+    if (plan.sessionUrl) watch(plan.sessionUrl)
     const derived = states(plan, statuses)
     const count = (state) => plan.steps.filter((s) => derived.get(s.id) === state).length
 
@@ -273,14 +319,6 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     header.append(summary)
 
     const actions = el("div", "cluster")
-    if (plan.sessionUrl) {
-      const orchestrator = el("button", null, "Open orchestrator")
-      orchestrator.addEventListener("click", (event) => {
-        event.preventDefault()
-        openDoc(plan.sessionUrl)
-      })
-      actions.append(orchestrator)
-    }
     if (plan.sourcesFolderUrl) {
       // What the research steps kept, filed for people. Shown once there is
       // something in it; the count is the ledger's, which the folder follows.
@@ -315,6 +353,13 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     out.append(header)
 
     const board = el("div", "agent-wf-board")
+    // The orchestrator is part of the work, not a link beside it: what it is
+    // doing, and anything it waits on you for, on the board with its steps.
+    if (plan.sessionUrl) {
+      const column = el("section", "agent-wf-stage")
+      column.append(el("h3", null, "Orchestrator"), orchestratorCard(plan))
+      board.append(column)
+    }
     stages(plan.steps).forEach((stage, i) => {
       const column = el("section", "agent-wf-stage")
       column.append(el("h3", null, i === 0 ? "Start" : `Stage ${i + 1}`))

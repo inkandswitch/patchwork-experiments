@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { normalise, locateQuote, quoteParts, citationsIn, quotableText, checkCitation, MIN_QUOTE } from "./citations.js"
+import { normalise, locateQuote, quoteParts, citationsIn, quotableText, checkCitation, MIN_QUOTE, tableCitations, citationsInDocument } from "./citations.js"
+import { citationsCheck } from "./tools/citing.js"
 import { renderMarkdown } from "./ui/markdown.js"
 import { markCitations, _forgetChecks } from "./ui/citations.js"
 
@@ -161,5 +162,45 @@ describe("checking citations against their documents", () => {
     expect([...md.querySelectorAll(".agent-cite")].map((a) => a.dataset.check)).toEqual(["found", "missing", "found"])
     expect(md.querySelectorAll(".agent-cite")[1].title).toMatch(/NOT found in that document/)
     expect(finds).toBe(2)
+  })
+})
+
+describe("citations in a table", () => {
+  // The shape the battery workflow's bill of materials took, unprompted.
+  const bom = [
+    ["#", "Item", "Unit price", "Source (automerge URL)", "Verbatim price quote", "Notes"],
+    ["A", "CELLS", "", "", "", "FX assumption: 1 GBP = 1.27 USD (from memory)"],
+    ["1", "EVE LF280K", "89.00", "automerge:sheet", "rated capacity is 280 Ah at 0.2C", ""],
+    ["2", "Busbar", "4.10", "automerge:sheet", "rated capacity is 999 Ah", ""],
+    ["3", "Fuse", "40", "", "", "ESTIMATE (from memory)"],
+  ]
+
+  it("are found from the header row: a source column and a quote column", () => {
+    expect(tableCitations(bom)).toEqual([
+      { url: "automerge:sheet", quote: "rated capacity is 280 Ah at 0.2C", row: 2 },
+      { url: "automerge:sheet", quote: "rated capacity is 999 Ah", row: 3 },
+    ])
+    expect(tableCitations([{ item: "cell", source: "automerge:sheet", quote: "rated capacity is 280 Ah" }])).toEqual([{ url: "automerge:sheet", quote: "rated capacity is 280 Ah", row: 0 }])
+    expect(tableCitations([["a", "b"], ["1", "2"]])).toEqual([])
+  })
+
+  it("and a document's citations are found wherever they are, with what is marked from memory", () => {
+    const doc = { title: "BOM", data: bom, notes: 'Pack cells [sheet](automerge:sheet "rated capacity is 280 Ah").' }
+    const { citations, fromMemory } = citationsInDocument(doc)
+    expect(citations.map((c) => c.where)).toEqual(["data row 2", "data row 3", "notes"])
+    expect(fromMemory).toBe(2)
+  })
+
+  it("citations_check says which hold and what to fix", async () => {
+    const docs = {
+      "automerge:bom": { title: "BOM", data: bom },
+      "automerge:sheet": { "@patchwork": { type: "file" }, role: "primary", text: SOURCE },
+    }
+    const ctx = { repo: { find: async (url) => ({ doc: () => docs[url] ?? null }) } }
+    const out = await citationsCheck.execute({ url: "automerge:bom" }, ctx)
+    expect(out).toMatch(/^1 of 2 citations hold/)
+    expect(out).toMatch(/2 places marked from memory/)
+    expect(out).toMatch(/- data row 3: "rated capacity is 999 Ah" — not in automerge:sheet/)
+    expect(citationsCheck.summarize({}, out)).toBe("1/2 citations hold")
   })
 })

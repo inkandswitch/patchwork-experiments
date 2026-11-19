@@ -37,6 +37,7 @@ import httpTools, { scopedHttpRequest } from "./http.js"
 import readSourceTools from "./read-source.js"
 import fileSourceTools from "./file-source.js"
 import findingTools from "./findings.js"
+import citingTools from "./citing.js"
 import askTools from "./ask.js"
 import namingTools from "./naming.js"
 import recallTools from "./recall.js"
@@ -48,7 +49,7 @@ import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...citingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
 
 /**
  * Tools for one kind of session only. finding_write writes into a research
