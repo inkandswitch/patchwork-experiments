@@ -889,7 +889,7 @@ it merges with other people's concurrent edits.
 
 These tools reach out, and picking the wrong one wastes a turn.
 
-- **\`web_search\`** — titles and URLs. It returns links, not answers.
+- **\`web_search\`** — titles, URLs and the engine's excerpt of each: enough to choose what to read, never something to cite.
 - **\`web_fetch\`** — read a page or a paper. The default choice.
 - **\`web_capture\`** — keep a page as it looks, for good. It comes from the
   Web snapshot package, so it is there only when that package is installed

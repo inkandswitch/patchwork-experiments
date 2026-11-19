@@ -58,16 +58,32 @@ export function htmlToText(html) {
 export function parseDuckDuckGoHtml(html, limit = 8) {
   const results = []
   const seen = new Set()
+  const page = String(html ?? "")
   const anchor = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
-  let match
-  while ((match = anchor.exec(String(html ?? ""))) !== null && results.length < limit) {
+  const found = [...page.matchAll(anchor)]
+  for (const [i, match] of found.entries()) {
+    if (results.length >= limit) break
     const url = unwrapRedirect(match[1].replace(/&amp;/g, "&"))
     const title = htmlToText(match[2])
     if (!/^https?:\/\//.test(url) || seen.has(url) || !title) continue
     seen.add(url)
-    results.push({ title, url })
+    // The snippet is the engine's excerpt of the page, between this result's
+    // link and the next one's.
+    const rest = page.slice(match.index + match[0].length, found[i + 1]?.index ?? page.length)
+    const snippet = rest.match(/<(?:a|div|td)[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|div|td)>/i)
+    results.push({ title, url, snippet: snippet ? cleanSnippet(htmlToText(snippet[1])) : null })
   }
   return results
+}
+
+/** How much of an engine's excerpt a result shows. */
+export const SNIPPET_MAX = 300
+
+/** An excerpt on one line, without emphasis marks, cut at SNIPPET_MAX. */
+export function cleanSnippet(text) {
+  const line = String(text ?? "").replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim()
+  if (!line) return null
+  return line.length > SNIPPET_MAX ? `${line.slice(0, SNIPPET_MAX - 1).trimEnd()}…` : line
 }
 
 export const DEFAULT_READER = "https://r.jina.ai/"
@@ -125,6 +141,8 @@ export function unwrapRedirect(href) {
  * own chrome links. Pure, so the parsing is unit-tested rather than hoped at.
  */
 export function parseSearchResults(markdown, limit = 8) {
+  const structured = parseResultHeadings(markdown, limit)
+  if (structured.length) return structured
   const results = []
   const seen = new Set()
   const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g
@@ -144,6 +162,36 @@ export function parseSearchResults(markdown, limit = 8) {
     if (results.length >= limit) break
   }
 
+  return results
+}
+
+/**
+ * The engine's results as the reader renders them: each one a heading linking
+ * the page, then links to the same page — its icon, its address, and the
+ * engine's excerpt of it. The excerpt is the longest of those that is neither
+ * an image nor the address. Nothing found here (another layout) leaves
+ * parseSearchResults to read the links alone.
+ */
+function parseResultHeadings(markdown, limit) {
+  const text = String(markdown ?? "")
+  const heading = /^#{1,6}\s*\[([^\]]+)\]\(([^)\s]+)\)\s*$/gm
+  const found = [...text.matchAll(heading)]
+  const results = []
+  const seen = new Set()
+  for (const [i, match] of found.entries()) {
+    if (results.length >= limit) break
+    const url = unwrapRedirect(match[2].trim())
+    const title = match[1].replace(/\*\*/g, "").replace(/\s+/g, " ").trim()
+    if (!/^https?:\/\//.test(url) || /duckduckgo\.com/.test(url) || seen.has(url) || title.length < 3) continue
+    seen.add(url)
+    const block = text.slice(match.index + match[0].length, found[i + 1]?.index ?? text.length)
+    const excerpts = [...block.matchAll(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(([^)\s]+)\)/g)]
+      .filter(([, words, href]) => unwrapRedirect(href) === url && !words.startsWith("!["))
+      .map(([, words]) => words)
+      .filter((words) => /\s/.test(words.trim()))
+    const longest = excerpts.sort((a, b) => b.length - a.length)[0]
+    results.push({ title, url, snippet: longest ? cleanSnippet(longest) : null })
+  }
   return results
 }
 
@@ -504,7 +552,7 @@ export const webSearch = {
   // `web@*`: every site, for every web tool.
   target: "none",
   description:
-    "Search the web and return titles and URLs. Follow up with web_fetch to read any result. Prefer specific queries; this returns links, not answers.",
+    "Search the web: each result's title, URL and the engine's excerpt of it. Choose from the excerpts what is worth reading, then web_fetch it — an excerpt is the engine's words, not the page's, so cite the page once fetched. The results page is kept, as a record of what the search returned. Prefer specific queries.",
   where: "worker",
   risk: "external",
   input_schema: {
@@ -523,28 +571,56 @@ export const webSearch = {
     const target = SEARCH_ENGINE + encodeURIComponent(query)
     const limit = input.limit ?? 8
 
+    const at = Date.now()
     let results
+    let page
+    let response
     if (ctx.direct) {
-      const response = await fetchImpl(target, {
+      response = await fetchImpl(target, {
         signal: ctx.signal,
         headers: { accept: "text/html", "user-agent": "patchwork-agent" },
       })
       if (!response.ok) throw new Error(`Search failed (${response.status}).`)
-      results = parseDuckDuckGoHtml(await response.text(), limit)
+      page = await response.text()
+      results = parseDuckDuckGoHtml(page, limit)
     } else {
-      const response = await fetchImpl(readerUrl(target, ctx.reader ?? DEFAULT_READER), {
+      response = await fetchImpl(readerUrl(target, ctx.reader ?? DEFAULT_READER), {
         signal: ctx.signal,
         headers: { accept: "text/plain" },
       })
       if (!response.ok) throw new Error(`Search failed (${response.status}).`)
-      results = parseSearchResults(await response.text(), limit)
+      page = await response.text()
+      results = parseSearchResults(page, limit)
     }
-    if (!results.length) return `No results for "${query}".`
 
-    return [
-      `${results.length} results for "${query}":`,
-      ...results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`),
-    ].join("\n")
+    // What the search returned, as it was seen: how the agent came to read
+    // what it read. Best-effort — a runner that cannot keep still searches.
+    let kept = null
+    try {
+      kept = (
+        await keepSource(ctx, {
+          source: target,
+          role: "extract",
+          content: page,
+          mimeType: ctx.direct ? "text/html" : "text/markdown",
+          title: `Search: ${query}`,
+          capture: { at, via: ctx.direct ? "direct" : "reader", engine: "search", status: response.status ?? null },
+        })
+      ).ref
+    } catch {
+      kept = null
+    }
+
+    const keptLine = kept ? [`Results page kept at ${kept.url}.`] : []
+    if (!results.length) return { text: [`No results for "${query}".`, ...keptLine].join("\n"), doc: kept }
+    return {
+      text: [
+        `${results.length} results for "${query}":`,
+        ...results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   “${r.snippet}”` : ""}`),
+        ...keptLine,
+      ].join("\n"),
+      doc: kept,
+    }
   },
   summarize(input, output) {
     const match = String(output ?? "").match(/^(\d+) results/)
