@@ -36,6 +36,7 @@
 // plugin at the end gives it that env from the public api.
 
 import { tie } from "./claims.js";
+import { snapshot } from "./inspect.js";
 
 /** The claim kind the computer holds, on the doc (id null). */
 export const CLOCK = "clock";
@@ -470,6 +471,7 @@ function create(api) {
   const claims = api.use("claims");
   const poses = api.use("poses");
   const watchers = new Set();
+  const procs = new Map(); // caller id → how many processes it has here (inspect)
   let away = false; // let go on pagehide, until pageshow
   const clock = createClock({
     doc: api.doc,
@@ -522,12 +524,21 @@ function create(api) {
             // (a pin has no channel, and no processes)
             if (!ch.session || caller.signal.aborted) return () => {};
             const remove = clock.process(spec);
+            procs.set(caller.id, (procs.get(caller.id) ?? 0) + 1);
             check();
-            return tie(caller.signal, () => (remove(), check()));
+            return tie(caller.signal, () => {
+              remove();
+              const n = procs.get(caller.id) - 1;
+              if (n > 0) procs.set(caller.id, n);
+              else procs.delete(caller.id);
+              check();
+            });
           },
         }),
     },
     update: check,
+    /** CONVENTIONS.md, "Inspect": who computes, whether it runs, t here, whether this view computes, and each extension's processes here */
+    inspect: () => snapshot({ computer: claims?.claimedBy(null, CLOCK) ?? null, running: clock.running(), t: clock.t(), computing: clock.computing(), processes: Object.fromEntries([...procs].sort(([a], [b]) => (a < b ? -1 : 1))) }),
     dispose: () => clock.dispose(),
   };
 }

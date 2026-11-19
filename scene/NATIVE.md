@@ -168,6 +168,18 @@ is never recorded). Follow latest removes `at`. Both depend on placement
 that tells no stage where it is. Its **Enter** command enters a link that
 acts; the **trail** shows the focus path, each a way out, and Leave.
 
+## Inspect
+
+Each native's `inspect()` (CONVENTIONS.md, "Inspect"): `scene.claims`
+`{ claims: [{ id, kind, viewer, session, mine, ext, lapsing }] }`, every claim
+that counts (`ext`: the extension holding it, if this view's; `lapsing`: its
+holder off the channel, in its grace); `scene.poses` `{ holds: [{ id, session,
+viewer, ext, since, yields, landed, mine, rank }] }`, every hold on each object
+in the one order (rank 0 counts); `scene.clock` `{ computer, running, t,
+computing, processes: { [ext]: count } }`; `scene.links` `{ stages: [{ path,
+role, open, reason?, url }] }`; `scene.audience` `{ objects: [{ id, audience,
+shown, veiled }] }` for objects a policy answers for: who, never what.
+
 ## Invariants
 
 | | Invariant |

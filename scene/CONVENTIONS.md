@@ -23,6 +23,17 @@ package.
 Everything reads only the current doc shape. A doc made before a change is
 remade, not migrated.
 
+## Inspect
+
+An instance may contribute `inspect()` → a snapshot of its state as plain
+JSON: frozen, cheap to make, and nothing a viewer may not see (who holds what,
+never what a kept thing is). The X-ray reads every one with
+`collect("inspect")` and shows it as it is; three fields it links to objects
+and extensions: `claims` (`[{ id, kind, ext?, viewer, session, … }]`), `holds`
+(`[{ id, ext?, session, rank, … }]`) and `processes` (`{ [ext]: count }`).
+`snapshot(v)` (`src/native/inspect.js`) makes one. The natives publish
+theirs (NATIVE.md, "Inspect").
+
 ## Seats
 
 From `seats` ([seats/README.md](../seats/README.md)). Trait `seats`: `{

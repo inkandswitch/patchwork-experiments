@@ -8,6 +8,7 @@
 
 import { normalizeTransform } from "../transform.js";
 import { tie } from "./claims.js";
+import { snapshot } from "./inspect.js";
 import { createHolds, createWire, poseInterval } from "./holds.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 
@@ -108,6 +109,8 @@ function create(api) {
     // the doc changed: a landed hold it caught up with goes, and one whose parent it changed is shown (or not) again
     update: () => [...wire.remoteHolds().keys()].forEach((id) => show(id)),
     tick,
+    /** CONVENTIONS.md, "Inspect": every hold on every object, this view's and peers', ranked (rank 0 counts): holder (an extension here, else the peer's session), yields, since */
+    inspect: () => snapshot({ holds: wire.all() }),
     /** for probes: peers' holds as this view has them */
     remoteHolds: () => wire.remoteHolds(),
     dispose: () => wire.dispose(),

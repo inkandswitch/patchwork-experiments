@@ -18,6 +18,7 @@
 // come in, and audience ⊆ shown always.
 
 import { tie } from "./claims.js";
+import { snapshot } from "./inspect.js";
 import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 
 export const ALL = "all";
@@ -145,6 +146,20 @@ function create(api) {
     },
     // its bounds may have changed
     update: () => veils.forEach((v, id) => draw(id, v)),
+    /**
+     * CONVENTIONS.md, "Inspect": per object some policy answers for, who may
+     * see what it is and who it is turned toward (who, never what), and
+     * whether it is veiled here; null throughout while it is unknown.
+     */
+    inspect() {
+      const objects = [];
+      for (const id of Object.keys(api.scene().objects).sort()) {
+        const a = answers(id);
+        if (a && !a.some(Boolean) && !veils.has(id)) continue;
+        objects.push({ id, audience: a && mergeAudience(a), shown: a && mergeShown(a), veiled: veils.has(id) });
+      }
+      return snapshot({ objects });
+    },
   };
 }
 

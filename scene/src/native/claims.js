@@ -8,6 +8,8 @@
 // channel (or is this view's), so a tab that died holding one holds nothing:
 // the next taker writes over it. Only the public api.
 
+import { snapshot } from "./inspect.js";
+
 /** How long a claim by a session never heard on the channel still counts (ms): its hello, or ours, may be late. A heartbeat (5 s) and a second. */
 export const CLAIM_GRACE_MS = 6_000;
 
@@ -139,6 +141,26 @@ function create(api) {
         }),
     },
     update: recheck,
+    /**
+     * CONVENTIONS.md, "Inspect": every claim that counts now, as claimedBy
+     * sees it, `ext` the extension holding it when it's this view's, and
+     * `lapsing` while its holder isn't on the channel (its grace running).
+     */
+    inspect() {
+      const d = api.doc();
+      const out = [];
+      const add = (oid, claims) => {
+        for (const kind of Object.keys(claims && typeof claims === "object" ? claims : {}).sort()) {
+          const c = claimedBy(oid, kind);
+          if (!c) continue;
+          const ext = held.get(keyOf(oid, kind))?.ext ?? null;
+          out.push({ id: oid, kind, viewer: c.viewer, session: c.session, mine: c.mine, ext, lapsing: !c.mine && !Object.hasOwn(ch.peers(), c.session) });
+        }
+      };
+      add(null, d?.claims);
+      for (const oid of Object.keys(d?.objects ?? {}).sort()) add(oid, d.objects[oid]?.claims);
+      return snapshot({ claims: out });
+    },
     /** for probes: the claims this view holds, [{ id, kind, ext }] */
     held: () => [...held.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),
     dispose: () => write([...held.values()], true),

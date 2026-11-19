@@ -16,6 +16,7 @@
 import css from "./links.css?inline";
 import { expand, identityOf } from "./link-graph.js";
 import { viewAt } from "../build.js";
+import { snapshot } from "./inspect.js";
 
 /** How many stages a view opens for links at most, nearest first. */
 export const LINK_BUDGET = 64;
@@ -220,6 +221,8 @@ function create(api) {
   const at = (caller, id) => [...(Array.isArray(caller?.path) ? caller.path : focus()), id];
   return {
     provides: { links: (caller) => Object.freeze({ role: (id) => role(at(caller, id)), fixPoint: (id) => fixPointAt(at(caller, id)) }) },
+    /** CONVENTIONS.md, "Inspect": the stage tree, each link occurrence by its path with its role, whether a stage is open for it, why not, and its doc */
+    inspect: () => snapshot({ stages: [...states].map(([k, st]) => ({ path: k.split("\u001f"), ...st, url: opened.get(k)?.url ?? null })) }),
     commands: [
       {
         id: "enter",

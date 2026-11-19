@@ -409,10 +409,24 @@ export function createWire({ send, session, interval = () => POSE_MS, now = () =
     watchers.clear();
   }
 
+  /**
+   * Every hold this view knows of, per object in the one order (ranksAhead):
+   * `[{ id, session, viewer, ext, since, yields, landed, mine, rank }]`,
+   * rank 0 the one that counts; `ext` only for this view's own.
+   */
+  function all() {
+    const by = new Map();
+    const add = (h) => (by.get(h.id) ?? by.set(h.id, []).get(h.id)).push(h);
+    for (const h of held.values()) add({ id: h.id, session: session(), viewer: null, ext: h.ext, since: h.since, yields: !!h.yields, landed: false, mine: true });
+    for (const [id, bySession] of holds) for (const h of bySession.values()) add({ id, session: h.session, viewer: h.viewer ?? null, ext: null, since: h.since, yields: !!h.yields, landed: !!h.landed, mine: false });
+    return [...by.keys()].sort().flatMap((id) => by.get(id).sort((a, b) => (ranksAhead(a, b) ? -1 : ranksAhead(b, a) ? 1 : 0)).map((h, rank) => ({ ...h, rank })));
+  }
+
   return {
     hold,
     release,
     remoteHolds,
+    all,
     shownAt,
     heldBy,
     watch: (fn) => (watchers.add(fn), () => watchers.delete(fn)),

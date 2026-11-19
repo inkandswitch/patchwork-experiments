@@ -502,3 +502,38 @@ describe("what the wire won't take", () => {
     expect(fn).not.toHaveBeenCalled();
   });
 });
+
+describe("every hold the wire knows of (all(): scene.poses' inspect)", () => {
+  // Over every order of up to three holds on one object by two views (a
+  // person's or a yielding one each, the second view's heard or concurrent):
+  // all() lists each live hold once, its rank its place in ranksAhead's
+  // order, and rank 0 is the hold heldBy says counts.
+  it("each hold once, ranked as ranksAhead orders them; rank 0 is the one that counts", () => {
+    const actors = [["a", "hand", false], ["a", "proc", true], ["b", "hand", false], ["b", "proc", true]];
+    let n = 0;
+    for (const p of actors)
+      for (const q of actors)
+        for (const sync of [false, true]) {
+          if (p[0] === q[0]) continue;
+          const clock = fakeClock();
+          const bus = queuedBus({ atOnce: sync });
+          const wa = bus.make("a", clock);
+          const wb = bus.make("b", clock);
+          const wire = { a: wa, b: wb };
+          wire[p[0]].hold(p[1], OBJ, null, at(1), p[2]);
+          wire[q[0]].hold(q[1], OBJ, null, at(2), q[2]);
+          bus.deliver();
+          for (const [s, w] of Object.entries(wire)) {
+            const all = w.all();
+            expect(all.map((h) => h.session).sort()).toEqual(["a", "b"]);
+            expect(all.map((h) => h.rank)).toEqual([0, 1]);
+            expect(ranksAhead(all[0], all[1])).toBe(true);
+            // the first is this view's own iff no peer's ranks ahead of it
+            expect(all[0].mine).toBe(w.heldBy(OBJ, { yields: all.find((h) => h.mine).yields }) == null);
+            expect(all.find((h) => h.mine)).toMatchObject({ session: s, ext: s === p[0] ? p[1] : q[1] });
+            n++;
+          }
+        }
+    expect(n).toBe(32);
+  });
+});
