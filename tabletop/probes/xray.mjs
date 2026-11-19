@@ -75,7 +75,12 @@ try {
   check("scene-wide: objects ghosted, those nothing responds to faded", tally.ghost > 20 && tally.faded >= 1, tally);
   const top = (await P("pile()"))[0];
   const lookTop = await P(`look('a', ${J(top)})`);
-  check("the deck's top card: ghosted, outlined in its responders' colours", lookTop?.opacity < 0.6 && lookTop?.outline?.length >= 1 && !!lookTop?.tint, lookTop);
+  const gameColour = report.details.swatches.find(([e]) => e === game)?.[1];
+  check("the deck's top card: ghosted, one outline, in tabletop's colour (not the carry's, not the keeper's)", lookTop?.opacity < 0.6 && lookTop?.outline?.length === 1 && !!gameColour && lookTop.outline[0] === gameColour && !!lookTop?.tint, { lookTop, gameColour });
+  const pile = await P("pile()");
+  const piled = await Promise.all(pile.map((id) => P(`look('a', ${J(id)})`)));
+  check("the whole pile reads as one colour: every card one outline, the same", piled.length > 10 && piled.every((l) => l?.outline?.length === 1 && l.outline[0] === gameColour), { cards: piled.length });
+  check("no eye on any object until one is hovered (veiled cards carry none)", !(await P("badges('a')")).some((t) => t.includes("👁")), await P("badges('a')"));
   mark("scene-wide", tally);
   await shot("1-scene-wide");
 
@@ -95,7 +100,8 @@ try {
   check("A hovers the deck's top card: it has a card, lit", await until(`xray('a').hovered === ${J(top)} && __p.card('a')?.chain.length > 0`, 3000), { xray: await P("xray('a')"), card: await P("card('a')") });
   const card = await P("card('a')");
   check("its card: the responding chain in input order (tabletop's, scene.carry), a verb Draw", card.chain.some((e) => /^tabletop/.test(e)) && card.chain.includes("scene.carry") && card.verbs.some((v) => /Draw/.test(v)), card);
-  check("…the card is lit in the world", (await P(`look('a', ${J(top)})`))?.opacity === 1, await P(`look('a', ${J(top)})`));
+  const lookHover = await P(`look('a', ${J(top)})`);
+  check("…the card is lit in the world, and now outlined by the whole chain (more than one band)", lookHover?.opacity === 1 && lookHover.outline?.length >= 2 && lookHover.outline.includes(gameColour), lookHover);
   mark("card", card);
   await b.rest(300);
   await shot("3-card");
