@@ -40,7 +40,7 @@ await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "scene-drag-"));
 const chrome = spawn(
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  [args.show ? "" : "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
+  [args.show ? "" : "--headless=new", "--no-first-run", "--mute-audio", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
    "--window-size=1400,800", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"].filter(Boolean),
   { stdio: "ignore", detached: true },
 );

@@ -56,7 +56,7 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "arena-probe-"));
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  [SHOW ? "" : "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
+  [SHOW ? "" : "--headless=new", "--no-first-run", "--mute-audio", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
    "--window-size=1400,700", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"].filter(Boolean), { stdio: "ignore", detached: true });
 const stop = (code) => { killChrome(chrome); server.close(); setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); }, 300); };
 // Chrome dies with this process however it ends (chrome-guard.mjs)

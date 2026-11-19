@@ -38,7 +38,7 @@ export async function browser({ root, mounts, port, cdp, page, width = 1280, hei
   const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "ocean-probe-"));
   const chrome = spawn(
     CHROME,
-    ["--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${cdp}`, `--window-size=${width},${height}`, "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"],
+    ["--headless=new", "--no-first-run", "--mute-audio", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${cdp}`, `--window-size=${width},${height}`, "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"],
     { stdio: "ignore", detached: true },
   );
   const stop = (code) => {

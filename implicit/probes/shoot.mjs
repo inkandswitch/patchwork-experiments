@@ -18,7 +18,7 @@ const port = 9300 + Math.floor(Math.random() * 500);
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "implicit-shot-"));
 const chrome = spawn(
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ["--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`,
+  ["--headless=new", "--no-first-run", "--mute-audio", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`,
    `--window-size=${w},${h}`, "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"],
   { stdio: "ignore", detached: true },
 );

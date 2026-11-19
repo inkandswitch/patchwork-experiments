@@ -50,7 +50,7 @@ await new Promise((r) => server.listen(port, r));
 
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "solander-chrome-"));
 const chromeArgs = [
-  "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`,
+  "--headless=new", "--no-first-run", "--mute-audio", "--no-default-browser-check", `--user-data-dir=${profile}`,
   `--remote-debugging-port=${cdpPort}`, `--window-size=${W},${H}`, "--enable-webgl", "--ignore-gpu-blocklist",
   ...(args.swiftshader ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : []),
   ...(typeof args.flags === "string" ? args.flags.split(/\s+/).filter(Boolean) : []),
