@@ -54,19 +54,21 @@ acts, from its channel. **The outermost doc** gives the view its ambients,
 `{ type: "scene:extension" | "scene:view", id, name, traits?, provides?, uses?,
 …, async load() → { create(api) → instance } }`: `traits` for an extension
 (`"*"`: every doc); the services it `provides`, those its create `uses`; other
-plain data for plugins (`drops`, `describes`: EDITOR.md). **The running set**
-is a pure function of metadata and the doc (`stage/activation.js`; H1). An
+plain data for plugins (`drops`, `describes`: EDITOR.md). **The running set** is
+a pure function of metadata and the doc (`stage/activation.js`; H1). An
 extension runs for a trait: scope `scene` (a scene trait, or `"*"`) or
 `objects`; a trait covers what it sits on and what hangs or is filed under it.
 One instance per stage. **Order**: providers (after those of what they `uses`),
 then the rest; each `scene`, then `objects`, in registry order
 (`local.running`), the only order anything combines in. Providers start in
 parallel, each waiting only for the providers of what it `uses`; the rest wait
-for all before them and the view's providers. So a create's `use` finds every
+for all before them and the view's providers, so a create's `use` finds every
 service that runs. **Stopping** (H2): leaving the running set, an extension
 lingers `LINGER_MS` (2 s), and while it holds a body, tool or session or an
 instance's `busy(id)` says so; one loading or unregistered stops at once. Its
 `signal` aborts (services' gifts go), then what it acquired goes, `dispose()`.
+**Failing**: a failed one starts again only when its plugin registers from
+elsewhere (its package's next version).
 
 ## View plugins
 
@@ -81,8 +83,8 @@ stage's extensions', in that stage's frame and context; `update` on its flush.
 | `view` | the value whole (`selected`, `hovered`, `focus` as paths; `packages`, `arrived`); `step(ev)`, `set(value)` (its own) |
 | `hand(spec)`, `putDown()`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path` |
 | `open(handle, o)`, `opening()` | "Views, stages and links"; `close.reached`: docs its repo found; arriving waits on `opening` |
-| `collect(name)`, `run(inv)`, `path(o)` | acting stages' offers, the input path's first, tagged `stage`; run in the stage named, else the focus; the path's readers |
 | `focus()` | the focus stage's `api` for it; what it acquires there goes as the focus leaves |
+| `collect(name)`, `run(inv)`, `path(o)`, `routes()`, `tap(fn)` → off | acting stages' offers, the input path's first, tagged `stage`; run in the stage named, else the focus; the path's readers; the last 50 events' routes (`{ type, at, path, steps: [{ step, stage?, ext, holder? }], took }`; "The input chain"); every channel message sent or heard (`{ stage, url, dir, kind, session, viewer, ext?, type?, data?, keys?, to? \| dropped? }`), made only while tapped |
 
 ## `api`
 
@@ -91,16 +93,15 @@ Each extension's own; what it acquires through it goes when it stops.
 | Member | |
 |---|---|
 | `id`, `repo`, `handle`, `url`, `signal`, `registry(type)` | the registry at once |
-| `doc()`, `scene()`, `change(fn)`, `newId(prefix)`, `writable()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }`; `change` → its patches (`[]`: none) |
+| `doc()`, `scene()`, `change(fn)`, `newId(prefix)`, `writable()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }`; `change` → its patches (`[]`: none), its message `{"ext":id}` (the stage's own `{"kernel":…}`; `lastWriter(doc, path)`: `stage/provenance.js`) |
 | `ops`, `remove(ids)` | pure planners (`src/ops.js`) → a change function or null; `remove` runs every `beforeRemove` first |
-| `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty) |
-| `now()`, `after(ms, fn)`, `frame(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame` |
+| `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
+| `now()`, `after(ms, fn)`, `frame(fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`, `watch(fn, select?)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
 | `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, pointer, serial }]`), `held`, `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
 | `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held, at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
 | `page`, `packages` | `{ visible(), on("hide" \| "show" \| "visible", fn) }`; the prompt's answer `{ load(urls?), dismiss(urls?) }` |
-| `nameOf(id)`, `content(id)`, `loadState(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said |
-| `box(id, o)`, `groupBox`, `sceneBox`, `worldOf(id)` | `{ min, max }` or null; the drawn matrix |
+| `nameOf(id)`, `content(id)`, `loadState(id)`, `box(id, o)`, `groupBox`, `sceneBox`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null; the drawn matrix |
 | `focus(ids)`, `providersFor`, `addObject(url, o)`, `fixPoint(id)` | load first; → a change function with its `id`; `at` for what a built object shows |
 | `display(id, o)` → release | **Display**: `{ transform?, content?, hidden?, name? }` shows an object otherwise to this viewer, unwritten (`worldOf`, boxes, picks, labels follow); layered in running order per field. **Dressing** (moving `content(id).root` nodes) is only a look |
 | `ambient(name)` | **Ambients**: `instance.ambient()` offers `{ [name]: value \| null }`, stacked in running order, copied to frozen JSON; this is the outermost doc's, `null \| { value, mine, frame, use }` (I13). The viewport draws `atmosphere` |
@@ -108,9 +109,8 @@ Each extension's own; what it acquires through it goes when it stops.
 | `camera` | `{ get, set, frame(box), hold, ride, touched, watch, onEnd }`. **Hold**: orbit off. **Riding**: `ride(id, { turn, rise, tilt, at })`, the top body's, else the latest base ride (I8). **Saving**: the viewer's, else `view.start.home` |
 | `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `collect(name)`, `run(inv)` | this stage's offers, tagged `stage`; run in the stage `inv.stage` names (EDITOR.md, "A command") |
-| `THREE`, `world({ onTop? })`, `labels()` | a `Group` whose meshes are its widgets; `{ set([{ key, text, on?, offset?, rank? }]) }`, `on` an object's drawn frame |
+| `THREE`, `world({ onTop? })`, `labels()`, `owners()` | a `Group` whose meshes are its widgets; `{ set([{ key, text, on?, offset?, rank? }]) }`, `on` an object's drawn frame; who draws in this stage, frozen, in running (layering) order: `{ layers: [{ ext, onTop, meshes }], labels: [{ ext, key, text, on }], display: { [id]: [{ ext, fields }] } }` |
 | `overlay()`, `edge(side)`, `style`, `listen`, `cursor`, `extent`, `invalidate`, `schedule`, `port`, `root` | DOM over or beside the canvas |
-| `loop(fn(dt, now), { first? })`, `afterRender(fn)` | rendering every frame while a loop runs; `dt` ≤ 0.1 s |
 
 ## `instance`
 

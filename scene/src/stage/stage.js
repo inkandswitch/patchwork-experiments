@@ -47,9 +47,10 @@ import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { createAtom, assoc } from "./atom.js";
 import { createHost, updateAll } from "./host.js";
 import { createPresence } from "./presence.js";
+import { stamp } from "./provenance.js";
 import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
-import { chainOrder, holdersFor } from "./chain.js";
+import { chainOrder, hitChain, holdersFor } from "./chain.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
 import { LOOK } from "./bodies.js";
 import { createView, projectView } from "./view.js";
@@ -111,23 +112,6 @@ export function hintVolume(o) {
   if (!b || !Array.isArray(b.min) || !Array.isArray(b.max)) return 0;
   const v = (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) * (b.max[2] - b.min[2]);
   return Number.isFinite(v) && v > 0 ? v : 0;
-}
-
-/**
- * The hit chain (STAGE.md, "The input chain", step 3): the hit object, then what it's attached
- * to (nearest first), then its groups (nearest first).
- * @param {string} id  @param {Map} parents  resolveParents  @param {Map} groups  resolveGroups
- * @returns {string[]}
- */
-export function hitChain(id, parents, groups, objects = null) {
-  if (id == null) return [];
-  const up = [];
-  const seen = new Set([id]);
-  for (let p = parents.get(id); p != null && !seen.has(p); p = parents.get(p)) {
-    seen.add(p);
-    up.push(p);
-  }
-  return [id, ...up, ...groupChain(groups, id).filter((g) => !objects || objects[g])];
 }
 
 const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
@@ -531,11 +515,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       redisplay(id);
     };
   }
-  function redisplay(id) {
+  /** An object's overrides in layering order (running order; a view plugin's after), as [ext, override]. */
+  function layered(id) {
     const rank = new Map(host.running().map((r, i) => [r.id, i]));
+    return [...(overrides.get(id) ?? [])].sort(([a], [b]) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+  }
+  function redisplay(id) {
     const next = {};
-    for (const [, o] of [...(overrides.get(id) ?? [])].sort(([a], [b]) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9)))
-      for (const k of ["transform", "content", "hidden", "name"]) if (o[k] !== undefined) next[k] = o[k];
+    for (const [, o] of layered(id)) for (const k of ["transform", "content", "hidden", "name"]) if (o[k] !== undefined) next[k] = o[k];
     const was = displayed.get(id) ?? {};
     if (Object.keys(next).length) displayed.set(id, next);
     else displayed.delete(id);
@@ -704,7 +691,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // its doc's channel: a read-only stage hears it and says nothing (its handle refuses to broadcast, too); a pin, a value, has none
   const channel = role !== "pinned";
-  const presence = createPresence({ handle: channel ? handle : null, listen: readOnly, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
+  const presence = createPresence({
+    handle: channel ? handle : null,
+    listen: readOnly,
+    viewer,
+    session: view.session,
+    now: time.now,
+    setTimer: (fn, ms) => time.after(ms, fn),
+    clearTimer: (cancel) => cancel?.(),
+    tap: { on: () => !!view.tapping?.(), say: (e) => view.tapSay(n, handle.url ?? null, e) },
+  });
 
   /**
    * An object's displayed world matrix: the viewport's, which displayed
@@ -726,16 +722,19 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     return out;
   }
-  // what a peer sends an extension here is its `receive`'s
+  // what a peer sends an extension here is its `receive`'s (where it went, for the tap: an extension's, a service's, or dropped and why)
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
       const x = host.instanceOf(ext);
-      if (typeof x?.receive !== "function") return;
+      if (!x) return { dropped: "not running here" };
+      if (typeof x.receive !== "function") return { dropped: "no receive" };
       try {
         x.receive(kind, data, from);
       } catch (err) {
         console.warn(`[scene] extension “${ext}”: receive failed`, err);
+        return { dropped: "receive failed" };
       }
+      return { to: Object.keys(x.provides ?? {}).length ? "service" : "extension" };
     }),
   );
 
@@ -944,10 +943,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
   };
 
-  /** Write fn, and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
-  function change(fn) {
+  /** Write fn for extension `ext`, stamped with its id (./provenance.js), and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
+  function change(fn, ext) {
     let patches = [];
-    if (typeof fn === "function" && fn.ok !== false && writable()) handle.change(fn, { patchCallback: (p) => void (patches = p) });
+    if (typeof fn === "function" && fn.ok !== false && writable()) handle.change(fn, { message: stamp({ ext }), patchCallback: (p) => void (patches = p) });
     return patches;
   }
 
@@ -1322,7 +1321,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       url: handle.url,
       signal,
       doc,
-      change,
+      change: (fn) => change(fn, id),
       /** may this view write the doc? (not in a pin, nor where the handle refuses: Keyhive's to answer, in time) */
       writable,
       newId,
@@ -1411,7 +1410,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       settled: () => {
         const p = local.get().packages;
         const missing = Object.freeze([...p.ask, ...p.loading, ...p.failed].map((e) => e.url));
-        return Object.freeze({ ready: !host.starting() && packages.complete(), missing, failed: Object.freeze(host.failed()) });
+        return Object.freeze({ ready: !host.starting() && packages.complete(), missing, failed: Object.freeze(host.failed()), errors: Object.freeze(host.errors()) });
       },
       /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
       packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
@@ -1456,17 +1455,25 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // drawing
       THREE,
-      world: ({ onTop = false } = {}) => (live() ? scope.worldLayer(id, { onTop }) : new THREE.Group()),
+      world: ({ onTop = false } = {}) => {
+        if (!live()) return new THREE.Group();
+        const group = scope.worldLayer(id, { onTop });
+        (own.layers ??= []).push({ onTop: !!onTop, group });
+        return group;
+      },
       // each call is its own set (an extension may keep several)
       labels: () => {
         const key = `${id}#${(own.labelSets = (own.labelSets ?? 0) + 1)}`;
         own.labelKeys = [...(own.labelKeys ?? []), key];
         return Object.freeze({
           set: (items) => {
-            if (live()) scope.labels.sync(key, items ?? []);
+            if (!live()) return;
+            (own.labelItems ??= new Map()).set(key, items ?? []);
+            scope.labels.sync(key, items ?? []);
           },
         });
       },
+      owners,
       ...lent,
       /** draw an object otherwise for this viewer (STAGE.md, "Display"): again from this extension replaces its override → release */
       display: (oid, o) => (live() ? display(id, oid, o ?? {}) : noop),
@@ -1559,6 +1566,27 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
 
     return { api: acts ? api : drawnApi(api), release };
+  }
+
+  /**
+   * Who draws what in this stage (STAGE.md, "`api`", `owners`), in running
+   * order: each extension's (and view plugin's facet's) world layers with
+   * their mesh counts, its labels (key, text, the object `on`), and each
+   * object's display overrides by author, in layering order. Plain, frozen;
+   * worked out when asked.
+   */
+  function owners() {
+    const rank = new Map(host.running().map((r, i) => [r.id, i]));
+    const exts = [...owned.keys()].sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+    const meshes = (g) => {
+      let n = 0;
+      g.traverse?.((o) => void (o.isMesh && n++));
+      return n;
+    };
+    const layers = exts.flatMap((ext) => (owned.get(ext).layers ?? []).map((l) => Object.freeze({ ext, onTop: l.onTop, meshes: meshes(l.group) })));
+    const labels = exts.flatMap((ext) => [...(owned.get(ext).labelItems?.values() ?? [])].flat().filter((i) => i?.key != null).map((i) => Object.freeze({ ext, key: String(i.key), text: i.text == null ? "" : String(i.text), on: typeof i.on === "string" ? i.on : null })));
+    const display = Object.fromEntries([...overrides.keys()].sort().map((oid) => [oid, Object.freeze(layered(oid).map(([ext, o]) => Object.freeze({ ext, fields: Object.freeze(Object.keys(o).filter((k) => o[k] !== undefined)) })))]));
+    return Object.freeze({ layers: Object.freeze(layers), labels: Object.freeze(labels), display: Object.freeze(display) });
   }
 
   /**

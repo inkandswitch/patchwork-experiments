@@ -137,6 +137,7 @@ function newSession() {
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (t: any) => void,
  *   listen?: boolean,                       // hear the channel, say nothing on it
+ *   tap?: { on(): boolean, say(e: object): void },  // a read-only tap: every message sent or heard, said while on()
  * }} o
  */
 export function createPresence({
@@ -147,8 +148,13 @@ export function createPresence({
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
   listen = false,
+  tap = null,
 }) {
   let dead = false;
+  // the tap (STAGE.md, "View plugins"): what goes out and what comes in, and where it went or why it was dropped; made only while on
+  const said = (make) => {
+    if (tap?.on()) tap.say(make());
+  };
   let session = firstSession;
   let away = false; // said bye on pagehide; hello() comes back as a new session
 
@@ -192,6 +198,7 @@ export function createPresence({
     if (dead || away || listen) return;
     sentAt = now();
     broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys, ...(body ? { body } : {}), ...(heldTool ? { held: heldTool } : {}) });
+    said(() => ({ dir: "out", kind: "presence", session, viewer, keys }));
     clearTimer(heartbeat);
     heartbeat = setTimer(sendState, HEARTBEAT_MS);
   }
@@ -281,20 +288,23 @@ export function createPresence({
 
   function onPresence(msg) {
     const s = msg.session;
+    const v = typeof msg.viewer === "string" ? msg.viewer : null;
+    const drop = (why) => said(() => ({ dir: "in", kind: "presence", session: s, viewer: v, dropped: why }));
     if (msg.bye === true) {
       gone.add(s);
       if (gone.size > GONE) gone.delete(gone.values().next().value);
+      said(() => ({ dir: "in", kind: "bye", session: s, viewer: v, to: "stage" }));
       dropPeer(s);
       return;
     }
-    if (typeof msg.seq !== "number" || gone.has(s)) return;
+    if (typeof msg.seq !== "number") return drop("malformed");
+    if (gone.has(s)) return drop("said bye");
     const k = cleanKeys(msg.keys);
-    if (!k) return;
-    const v = typeof msg.viewer === "string" ? msg.viewer : null;
+    if (!k) return drop("malformed");
     const b = cleanBody(msg.body);
     const h = cleanHeld(msg.held);
     const p = peers.get(s);
-    if (p && msg.seq <= p.seq) return; // older than what we have
+    if (p && msg.seq <= p.seq) return drop("stale"); // older than what we have
     const fresh = !p;
     const entry = p ?? { record: null, seq: 0, ttl: null };
     entry.seq = msg.seq;
@@ -303,7 +313,9 @@ export function createPresence({
     peers.set(s, entry);
     // A heartbeat that changes nothing keeps the record (and `at`, the local
     // time this state last changed), so watchers aren't woken for it.
-    if (!entry.record || entry.record.viewer !== v || !same(entry.record.keys, k) || !same(entry.record.body, b) || !same(entry.record.held, h)) {
+    const changed = !entry.record || entry.record.viewer !== v || !same(entry.record.keys, k) || !same(entry.record.body, b) || !same(entry.record.held, h);
+    said(() => ({ dir: "in", kind: "presence", session: s, viewer: v, keys: k, changed, to: "stage" }));
+    if (changed) {
       entry.record = Object.freeze({ viewer: v, body: b, held: h, at: now(), keys: k });
       peersChanged();
     }
@@ -319,16 +331,29 @@ export function createPresence({
   function send(ext, kind, data) {
     if (dead || !isStr(ext) || !isStr(kind)) return;
     broadcast({ type: SEND, session, viewer, ext, kind, n: ++sendSeq, data: data ?? null });
+    if (!listen && !away) said(() => ({ dir: "out", kind: "send", session, viewer, ext, type: kind, data: data ?? null }));
   }
 
   function onSend(msg) {
-    if (!isStr(msg.ext) || !isStr(msg.kind) || typeof msg.n !== "number" || gone.has(msg.session)) return;
+    const v = typeof msg.viewer === "string" ? msg.viewer : null;
+    const heard = (o) => said(() => ({ dir: "in", kind: "send", session: msg.session, viewer: v, ext: msg.ext, type: msg.kind, data: msg.data ?? null, ...o }));
+    if (!isStr(msg.ext) || !isStr(msg.kind) || typeof msg.n !== "number") return heard({ dropped: "malformed" });
+    if (gone.has(msg.session)) return heard({ dropped: "said bye" });
     const key = `${msg.session}:${msg.n}`;
-    if (seenSends.has(key)) return;
+    if (seenSends.has(key)) return heard({ dropped: "duplicate" });
     seenSends.add(key);
     if (seenSends.size > SEEN_SENDS) seenSends.delete(seenSends.values().next().value);
-    const from = Object.freeze({ session: msg.session, viewer: typeof msg.viewer === "string" ? msg.viewer : null });
-    tell(receivers, msg.ext, msg.kind, msg.data ?? null, from);
+    const from = Object.freeze({ session: msg.session, viewer: v });
+    // each receiver says where it went ({ to } or { dropped }): the stage's, its extension's receive
+    let route = null;
+    for (const fn of [...receivers]) {
+      try {
+        route = fn(msg.ext, msg.kind, msg.data ?? null, from) ?? route;
+      } catch (err) {
+        console.warn("[scene] a presence listener failed", err);
+      }
+    }
+    heard(route ?? { dropped: "no receiver" });
   }
 
   // ─── the wire ──────────────────────────────────────────────────────────────
@@ -354,6 +379,7 @@ export function createPresence({
   function goodbye() {
     if (dead || away) return;
     broadcast({ type: PRESENCE, session, bye: true });
+    if (!listen) said(() => ({ dir: "out", kind: "bye", session, viewer }));
     away = true;
     clearTimer(sendTimer);
     sendTimer = null;

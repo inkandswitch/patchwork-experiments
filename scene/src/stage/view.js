@@ -801,8 +801,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const path = hit?.id != null ? pathOfKey(hit.id) : null;
     const order = [];
     const holders = new Map();
+    const steps = new Map(); // key → which step offers it ("widget", "holder", "plugin": the route's)
     const won = widgetWins(widget, hit);
-    if (won) order.push(widget.owner);
+    if (won) order.push(widget.owner), steps.set(widget.owner, "widget");
     const on = path ? onPath(path) : [];
     for (const s of on.length ? on : [outermost()].filter(Boolean)) {
       const seg = s.segment(elementOf(path, s.path));
@@ -811,12 +812,33 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         if (order.includes(k)) continue;
         order.push(k);
         holders.set(k, seg.holderOf(ext));
+        steps.set(k, "holder");
       }
     }
     // then the view's plugins, wherever the hit is, hearing the focus stage's element of the path (null off it)
     const at = focusStage();
-    for (const p of pluginsAt(at)) if (!order.includes(keyOf(at.n, p.id))) order.push(keyOf(at.n, p.id));
-    return { order, holderOf: (k) => holders.get(k) ?? null };
+    for (const p of pluginsAt(at)) if (!order.includes(keyOf(at.n, p.id))) order.push(keyOf(at.n, p.id)), steps.set(keyOf(at.n, p.id), "plugin");
+    return { order, holderOf: (k) => holders.get(k) ?? null, stepOf: (k) => steps.get(k) ?? null, path };
+  }
+  /** Who a router key names: { stage, ext } (a stage's extension, or at the focus a view plugin's chain step), { view: true, ext } (a view plugin's hand), or null (the view's own). */
+  function ownerOfKey(key) {
+    if (key == null) return null;
+    const p = parseKey(key);
+    if (p) return { stage: p.n, ext: p.id };
+    const pre = viewKey("");
+    return String(key).startsWith(pre) ? { view: true, ext: String(key).slice(pre.length) } : null;
+  }
+  /** The router's last routes (STAGE.md, "The input chain"), each step's owner as ownerOfKey says: plain and frozen. */
+  function routes() {
+    return Object.freeze(
+      router.routes().map((r) =>
+        Object.freeze({
+          ...r,
+          path: pathOf(r.path),
+          steps: Object.freeze(r.steps.map(({ owner, ...st }) => Object.freeze({ ...st, ...(ownerOfKey(owner) ?? { ext: null }) }))),
+        }),
+      ),
+    );
   }
   /**
    * The input path (STAGE.md, "Views, stages and links"): the stages from attention's innermost
@@ -1242,6 +1264,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
       /** a service (NATIVE.md, "Native services"): a view plugin's, else the focus stage's provider's */
       use: (name) => (live() ? (plugins.use(name, { id, signal }) ?? api.focus()?.use(name)) : null),
+      /** the last events' routes through the input chain, oldest first (STAGE.md, "The input chain") */
+      routes: () => routes(),
+      /** hear every message every stage's channel sends or receives (presence.js tap), read-only → off */
+      tap: (fn) => (live() && typeof fn === "function" ? acquire(own.offs, () => (taps.add(fn), () => taps.delete(fn))) : noop),
     };
 
     function release() {
@@ -1260,6 +1286,23 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       router.refresh();
     }
     return { api, release };
+  }
+
+  // ─── the channel tap ──────────────────────────────────────────────────────
+  // What view plugins hear through api.tap: each stage's channel's messages,
+  // as presence.js says them, with the stage's number and doc. Nothing is
+  // made of a message while nobody listens.
+  const taps = new Set();
+  const tapping = () => taps.size > 0;
+  function tapSay(stage, url, e) {
+    const said = Object.freeze({ stage, url, ...e });
+    for (const fn of [...taps]) {
+      try {
+        fn(said);
+      } catch (err) {
+        console.warn("[scene] a channel tap failed", err);
+      }
+    }
   }
 
   /** Run a command in the stage it names, else the focus's; a view plugin's runs in the focus stage's context, a tool it holds held through its facet there. */
@@ -1355,6 +1398,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     collect,
     /** the chain for an event, and the widget under it (the router's; for probes and tests) */
     chainFor,
+    routes,
+    tapping,
+    tapSay,
     pickWidget,
     requestFlush,
     // the viewer's

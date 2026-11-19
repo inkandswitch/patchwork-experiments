@@ -65,6 +65,7 @@ export class FakeHandle {
     this._history = new Map([[this._heads[0], structuredClone(this._doc)]]);
     this._listeners = new Map();
     this.broadcasts = [];
+    this.messages = []; // each change's message (provenance), in order
   }
   view(heads) {
     const hs = [...heads].map(String);
@@ -89,6 +90,7 @@ export class FakeHandle {
     const draft = structuredClone(this._doc);
     fn(draft);
     this._doc = draft;
+    this.messages.push(opts.message ?? null);
     // like Automerge's: a change's patches, with the doc before and after (only when it changed something)
     if (typeof opts.patchCallback === "function") {
       const patches = diffPatches(before, draft);

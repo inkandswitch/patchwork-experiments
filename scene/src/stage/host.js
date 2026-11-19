@@ -205,7 +205,7 @@ export function createHost({
       publish();
       onChange();
     })().catch((err) => {
-      if (rec.state === "loading") rec.state = "failed";
+      if (rec.state === "loading") (rec.state = "failed"), (rec.error = String(err?.message ?? err));
       console.warn(`[scene] extension “${w.id}” failed to start`, err);
     });
     // a provider not started within the load timeout (its import never settled) counts as failed: nothing waits on it longer
@@ -213,7 +213,7 @@ export function createHost({
     let timer = null;
     rec.started = Promise.race([rec.started, new Promise((r) => (timer = setTimer(r, loadMs)))]).then(() => {
       clearTimer(timer);
-      if (rec.state === "loading") (rec.state = "failed"), console.warn(`[scene] extension “${w.id}” didn't start in ${loadMs} ms`);
+      if (rec.state === "loading") (rec.state = "failed"), (rec.error = `didn't start in ${loadMs} ms`), console.warn(`[scene] extension “${w.id}” didn't start in ${loadMs} ms`);
     });
   }
 
@@ -462,6 +462,8 @@ export function createHost({
   }
   /** What the doc calls for, of what's registered here, that failed to start (one may be an audience policy: then who may see what is unknown). */
   const failed = () => activeIds()?.filter((id) => recs.get(id)?.state === "failed") ?? [];
+  /** Why each of failed() failed: { [id]: the error's message }. */
+  const errors = () => Object.fromEntries(failed().map((id) => [id, recs.get(id)?.error ?? "failed"]));
 
   /**
    * Is anything the doc calls for, of what's registered here, still on its
@@ -477,6 +479,7 @@ export function createHost({
     ready,
     sync,
     failed,
+    errors,
     starting,
     running,
     instances,

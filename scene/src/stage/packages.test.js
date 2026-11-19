@@ -10,6 +10,7 @@ import { emptyScene } from "../test/empty-scene.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import { imported, resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
 import { ACCEPTED_KEY, resetPackages } from "./packages.js";
+import { writerOf } from "./provenance.js";
 import { ARRIVE_WAIT_MS } from "./stage.js";
 import packagesPart from "../parts/packages.js";
 import * as editor from "../parts/editor.js";
@@ -68,6 +69,8 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s).sort()).toEqual([SAILING, TERRAIN].sort());
     // every entry is a plain { url }
     expect(s.doc().packages.every((e) => JSON.stringify(Object.keys(e)) === '["url"]')).toBe(true);
+    // written as the kernel's (write provenance: ./provenance.js)
+    expect(s.handle.messages.map(writerOf)).toContainEqual({ kernel: "packages" });
     let changes = 0;
     s.handle.on("change", () => changes++);
     s.change((d) => (d.title = "Renamed"));

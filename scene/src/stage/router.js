@@ -30,6 +30,9 @@ import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
 import { realTime } from "./time.js";
 
+/** How many routes the router keeps: the last events it dispatched (routes()). */
+export const ROUTES = 50;
+
 /** How far (px) a press may wander and still be a tap / click. */
 export const SLOP = 4;
 /** How long (ms) a touch held still takes to become a `menu`. */
@@ -249,16 +252,48 @@ export function createRouter(o) {
   // event a hand takes never picks (the Edit hand's click reads the widget
   // and the hit itself).
   function dispatch(type, ev) {
+    const pre = [];
     for (const h of [...hands].reverse()) {
+      pre.push({ step: "hand", owner: h.owner, kind: h.kind, name: h.name });
       const r = offerTo(h.owner ?? "scene", h.input, type, ev);
-      if (r) return r;
+      if (r) return routed(type, pre, null, null, { at: "pre", i: pre.length - 1 }, r);
     }
-    const { order = [], holderOf } = chainFor(ev) ?? {};
-    return offer(order, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null)) ?? offerTo(top().owner ?? "scene", top().input, type, ev);
+    const chain = chainFor(ev) ?? {};
+    const { order = [], holderOf } = chain;
+    let r = offer(order, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null));
+    if (r) return routed(type, pre, chain, null, { at: "chain", i: order.indexOf(r.id) }, r);
+    const b = top();
+    r = offerTo(b.owner ?? "scene", b.input, type, ev);
+    return routed(type, pre, chain, b, r && { at: "body" }, r);
   }
   function offerChain(type, ev) {
-    const { order = [], holderOf } = chainFor(ev) ?? {};
-    return offer(order, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null));
+    const chain = chainFor(ev) ?? {};
+    const { order = [], holderOf } = chain;
+    const r = offer(order, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null));
+    return routed(type, [], chain, null, r && { at: "chain", i: order.indexOf(r.id) }, r);
+  }
+
+  // ─── the input route ──────────────────────────────────────────────────────
+  // Each dispatched event's route, as raw as it was offered (the hands it
+  // passed, the chain the view gave, the body), kept for the last ROUTES
+  // events and spelt out only when someone reads routes().
+  const routeLog = [];
+  function routed(type, pre, chain, body, took, r) {
+    routeLog.push({ type, at: time.now(), pre, chain, body: body ? { owner: body.owner, id: body.id } : null, took: took || null });
+    if (routeLog.length > ROUTES) routeLog.shift();
+    return r;
+  }
+  /** One route spelt out: { type, at, path, steps: [{ step, owner, … }], took: the index of the step that took it, or -1 }. */
+  function spell({ type, at, pre, chain, body, took }) {
+    const order = chain?.order ?? [];
+    const upTo = took?.at === "chain" ? took.i + 1 : took?.at === "pre" ? 0 : order.length;
+    const steps = [
+      ...pre,
+      ...order.slice(0, upTo).map((owner) => ({ step: chain.stepOf?.(owner) ?? "holder", owner, holder: chain.holderOf?.(owner) ?? null })),
+      ...(body ? [{ step: body.owner == null ? "default" : "body", owner: body.owner, body: body.id }] : []),
+    ];
+    const i = !took ? -1 : took.at === "pre" ? took.i : took.at === "chain" ? pre.length + took.i : steps.length - 1;
+    return { type, at, path: chain?.path ?? null, steps, took: i };
   }
 
   // ─── the cursor ───────────────────────────────────────────────────────────
@@ -672,7 +707,10 @@ export function createRouter(o) {
       if (call(t.owner, t.input, "key", withHolder(ev, null))) claimer = { owner: t.owner, hand: t, up: (kev) => call(t.owner, t.input, "keyup", kev) };
     } else if (by === "body") {
       if (call(b.owner ?? "scene", b.input, "key", withHolder(ev, null))) claimer = { owner: b.owner, body: b, up: (kev) => call(b.owner ?? "scene", b.input, "keyup", kev) };
-    } else {
+    }
+    // (a reserved key's route is its reserver alone)
+    if (by) routed("key", [{ step: by, owner: by === "gesture" ? g.owner : by === "tool" ? tool.owner : b.owner }], null, null, claimer && { at: "pre", i: 0 }, null);
+    else {
       const r = offerChain("key", ev);
       if (r) claimer = { owner: r.id, up: (kev) => call(r.id, inputOf(r.id), "keyup", kev) };
     }
@@ -997,6 +1035,8 @@ export function createRouter(o) {
     },
     /** the hands, bottom first: [{ owner, kind, name }] */
     hands: () => hands.map((h) => ({ owner: h.owner, kind: h.kind, name: h.name })),
+    /** the last ROUTES dispatched events' routes, oldest first (spell) */
+    routes: () => routeLog.map(spell),
     popover,
     escape,
     refresh,

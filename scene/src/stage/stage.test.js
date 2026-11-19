@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { wallAt } from "../test/stage-harness.js";
-import { bestWidget, hitChain, initialCamera, startOf, statusOf, widgetWins } from "./stage.js";
+import { bestWidget, initialCamera, startOf, statusOf, widgetWins } from "./stage.js";
+import { hitChain } from "./chain.js";
 import { sameTransform } from "../native/poses.js";
 import { SEND } from "./presence.js";
 

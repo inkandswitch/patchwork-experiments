@@ -8,6 +8,8 @@
 // of what it's attached to, and both before the scene's. Running order breaks
 // ties only between extensions holding the same link.
 
+import { groupChain } from "../groups.js";
+
 /**
  * @param {{
  *   running: { id: string, meta: object, scope: "scene" | "objects" }[],  // running order
@@ -31,6 +33,23 @@ export function chainOrder({ running, widgetOwner = null, holders = new Map() })
   held.sort((a, b) => holders.get(a.id).depth - holders.get(b.id).depth);
   for (const r of held) push(r.id);
   return out;
+}
+
+/**
+ * The hit chain (STAGE.md, "The input chain", step 3): the hit object, then what it's attached
+ * to (nearest first), then its groups (nearest first).
+ * @param {string} id  @param {Map} parents  resolveParents  @param {Map} groups  resolveGroups
+ * @returns {string[]}
+ */
+export function hitChain(id, parents, groups, objects = null) {
+  if (id == null) return [];
+  const up = [];
+  const seen = new Set([id]);
+  for (let p = parents.get(id); p != null && !seen.has(p); p = parents.get(p)) {
+    seen.add(p);
+    up.push(p);
+  }
+  return [id, ...up, ...groupChain(groups, id).filter((g) => !objects || objects[g])];
 }
 
 /**

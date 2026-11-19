@@ -30,6 +30,7 @@
 // lasts until the page is reloaded.
 
 import { answeringPlugins, changeList, listedPackages, missingPackages, packageTitle, packageUrl, reconcileList, registeredPackages, suggestedImportToSet, triage } from "../packages.js";
+import { stamp as stampOf } from "./provenance.js";
 
 /** How long the registry must be quiet, after the scene opens, before anything is offered or loaded. */
 export const PACKAGE_SETTLE_MS = 1_000;
@@ -254,7 +255,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
           changeList(d, { add, prune });
           // a scalar in the map the doc was made with: nothing two peers could each create
           if (suggest && d["@patchwork"] && typeof d["@patchwork"] === "object" && !packageUrl(d["@patchwork"].suggestedImportUrl)) d["@patchwork"].suggestedImportUrl = suggest;
-        });
+        }, { message: stampOf({ kernel: "packages" }) });
       } catch (err) {
         console.warn("[scene] couldn't list the scene's packages", err);
       }
