@@ -233,6 +233,15 @@ export const plugins = [
     },
   },
   {
+    // the X-ray: a held tool showing what runs here and how it meets (NATIVE.md, "X-ray")
+    type: "scene:view",
+    id: "scene.xray",
+    name: "X-ray",
+    async load() {
+      return (await import("./native/xray.js")).default;
+    },
+  },
+  {
     type: "scene:view",
     id: "scene.handles",
     name: "Handles",

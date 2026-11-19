@@ -17,6 +17,7 @@ a facet hands a caller goes as the caller's signal aborts.
 | `scene.prefs` | view plugin | `"prefs"` | | `prefs.js` |
 | `scene.drawer` | view plugin | `"drawer"` | prefs | `drawer.js` |
 | `scene.links` | view plugin | `"links"` | | `links.js` (`link-graph.js`) |
+| `scene.xray` | view plugin | | prefs, drawer | `xray.js` (`xray-model.js`, `gears.js`) |
 
 An extension of every doc (`traits: ["*"]`) runs in every stage, as that doc's
 own part; one in a pin runs and draws but has no channel and writes nothing. A
@@ -188,6 +189,40 @@ then the view plugins: verbs, events, drawing, services) and
 `gearsOfExtension` (objects by trait, the objects × verbs grid, what it holds
 now, its services, what it wrote last) read it. It uses the chain's own order
 (`stage/chain.js`), so it can't disagree with the input chain.
+
+## X-ray
+
+A held tool, **X-ray** (X, or the toolbar's toggle while editing; X again or
+Escape puts it down), in any body. It wants the pointer free and takes no
+event: everything goes on down the chain, so you play or edit with it held,
+and a click pins the object under it (a click on nothing unpins). Its panel
+is a drawer tab (`embed: false`); its × puts it down.
+
+- **The object** hovered or pinned is outlined, with the links it is held
+  through, and its lens is in the panel: its traits; its holders in input
+  order (package, version, how it holds it, verbs as chips: enabled, disabled
+  with why, out of reach; keys; events it takes; what it draws there;
+  services), a holder of the scene with nothing for it named in a note; view
+  plugins with something for it; claims, poses and overrides on it; the last
+  writer of each field and trait (provenance; "unstamped" for a write
+  without a stamp).
+- **An extension** picked (any row naming one) outlines its objects by
+  trait, and its lens comes first: package, scope, state or error; its
+  traits' values as tables; the objects × verbs grid; what it holds now;
+  its services; what it last wrote.
+- **The scene**: the running list in running order (scope, provides, uses;
+  busy, lingering), the view plugins, and what isn't running.
+- **Layers** (the pref `xray.layers`; claims, poses and the input route by
+  default): claims, poses, clock, display, input route (the last event's
+  steps, the taker marked, a run of view plugins passed over as one; older
+  routes on hover), links, people, visibility (who, never what). Claims,
+  poses, display and visibility badge their objects, one label per object.
+
+All of it is `buildGears` of the public reads (registry, `scene()`,
+`local.running`, `collect`, `context()`, `owners()`, `settled()`, `routes()`,
+`writers` of the focus doc) through pure models (`xray-model.js`), rebuilt
+at most every 200 ms on a flush, an event its hand hears or a channel
+message (`tap`), for the targets it shows; nothing while it isn't held.
 
 ## Invariants
 

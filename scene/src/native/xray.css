@@ -1,0 +1,158 @@
+/* scene.xray (xray.js): the X-ray's drawer tab and its badges on objects */
+
+.scene-stage .xray:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 6px 8px 16px;
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+.scene-stage .xray-top:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  padding-bottom: 4px;
+}
+.scene-stage .xray button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  padding: 1px 6px;
+  border: 1px solid var(--scene-border);
+  border-radius: 4px;
+  background: var(--scene-surface);
+  color: var(--scene-fg);
+  cursor: pointer;
+}
+.scene-stage .xray-group > h2:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--scene-muted);
+  border-bottom: 1px solid var(--scene-border);
+}
+.scene-stage .xray-layers:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 4px 0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--scene-fg);
+}
+.scene-stage .xray-group[data-group="layers"] > h2:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex-direction: column;
+  align-items: stretch;
+}
+.scene-stage .xray-section h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 6px 0 2px;
+  font-size: 12px;
+}
+.scene-stage .xray-note:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0 0 2px;
+  color: var(--scene-muted);
+}
+.scene-stage .xray-rows:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.scene-stage .xray-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 4px;
+  border-left: 2px solid transparent;
+}
+.scene-stage .xray-row[data-ext]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-row[data-object]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray td[data-object]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: pointer;
+}
+.scene-stage .xray-row[data-ext]:hover:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-row[data-object]:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+}
+.scene-stage .xray-row[data-state="on"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-left-color: var(--scene-accent);
+}
+.scene-stage .xray-row[data-state="off"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-left-color: var(--scene-warning);
+}
+.scene-stage .xray-sub:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-line:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.scene-stage .xray-chips:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 2px 0;
+}
+.scene-stage .xray-chip:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 8px;
+  border: 1px solid var(--scene-border);
+  background: var(--scene-surface);
+}
+.scene-stage .xray [data-state="on"].xray-chip:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray td[data-state="on"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-accent-text);
+}
+.scene-stage .xray [data-state="off"].xray-chip:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray td[data-state="off"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+}
+.scene-stage .xray [data-state="far"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-style: italic;
+}
+.scene-stage .xray [data-state="took"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  font-weight: 600;
+}
+/* the older routes show while the pointer is over the route */
+.scene-stage .xray-section[data-id="route"]:not(:hover) .older:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+.scene-stage .xray-row.older:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.7;
+}
+.scene-stage .xray-table:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow-x: auto;
+}
+.scene-stage .xray table:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.scene-stage .xray th:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray td:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border: 1px solid var(--scene-border);
+  padding: 1px 4px;
+  white-space: nowrap;
+  text-align: left;
+}
+.scene-stage .xray-badge:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: none;
+  font-size: 11px;
+  background: var(--scene-label-bg);
+  border: 1px solid var(--scene-accent);
+}
+.scene-stage .xray-pose:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-color: var(--scene-remote);
+}
+.scene-stage .xray-display:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-visibility:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-color: var(--scene-warning);
+}
