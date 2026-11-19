@@ -1,0 +1,7 @@
+name = "patchwork-fetch-relay"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+# Set the key as a secret, never here: `wrangler secret put RELAY_KEY`.
+# [vars]
+# RELAY_ORIGINS = "https://patchwork.inkandswitch.com"

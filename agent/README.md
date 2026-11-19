@@ -211,6 +211,17 @@ wrote, and it exists because the failure mode is not knowing what to look for.
 
 ## Everything fetched is kept
 
+**Originals need a relay in a browser.** Most sites will not let another
+site's page read them (CORS), so a tab on its own keeps a reader's text of a
+page, and a PDF only when the site allows. With a fetch relay set up in the
+agent's settings (`fetch-relay/` in this repo: a Cloudflare Worker or a Node
+server), every GET and HEAD a tab makes goes through it (`tools/relay.js`),
+still behind the guard, and the tab keeps what a node runner keeps — the PDF
+or the page as the site sent it, with its text beside it. A search's results
+page is kept too, as the record of how a step found what it read, but it is
+not filed in a workflow's Sources folder: that folder is for what a reviewer
+checks claims against.
+
 A fetched page used to exist only as a paragraph in a tool result. It cost
 context on every later turn, a person could not open it, and a PDF arrived as a
 third party's markdown of it. One measured workflow re-read pages it had

@@ -305,6 +305,20 @@ describe("filing what research steps kept", () => {
     expect(folder.doc().docs).toEqual([{ name, type: type === "untyped" ? "file" : type, url: stringifyAutomergeUrl({ documentId: made.documentId, heads: made.heads() }) }])
   })
 
+  // A search's results page is the record of how a step found what it read,
+  // not a source a reviewer checks a claim against: kept, never filed.
+  it("keeps a search's results page out of the folder, and does not try again", async () => {
+    const { plan, folder, driver } = await ledgerOf([])
+    const scoped = scopedRepo(driver.repo, plan, { stepId: "r" })
+    const search = await scoped.create2()
+    search.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Search: lfp cells.md", role: "extract", source: "https://duckduckgo.com/html/?q=lfp", capture: { engine: "search" }, content: "results" }))
+    const page = await scoped.create2()
+    page.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "cells.pdf", role: "primary", source: "https://site.test/cells.pdf", capture: { engine: "raw" }, content: "%PDF" }))
+    await driver.fileSources()
+    expect(folder.doc().docs.map((entry) => entry.name)).toEqual(["cells.pdf"])
+    expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual([search.documentId, page.documentId].sort())
+  })
+
   // A ledger is a shared document, and its entries say what each is; none
   // is ever filed as a session or a plan, whatever its entry says.
   it.each(KERNEL_TYPES)("never files an entry as an %s", async (type) => {

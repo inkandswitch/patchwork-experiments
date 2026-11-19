@@ -31,6 +31,8 @@ import {
   getProvider,
   readKey,
   writeKey,
+  readRelay,
+  writeRelay,
   onKeyChange,
   connectAccountKeys,
   loadCatalogue,
@@ -286,6 +288,21 @@ export function AgentTool(handle, element, options = {}) {
     null,
     "Stored with your account's LLM settings, shared with your other LLM tools — never written to this session, so it is not synced to anyone you share it with."
   )
+  // Without a relay, a browser keeps a reader's text of what it reads.
+  const relayInput = document.createElement("input")
+  relayInput.type = "url"
+  relayInput.placeholder = "https://relay.example (fetch-relay)"
+  relayInput.autocomplete = "off"
+  relayInput.spellcheck = false
+  const relayKeyInput = document.createElement("input")
+  relayKeyInput.type = "password"
+  relayKeyInput.placeholder = "Relay key, if it has one"
+  relayKeyInput.autocomplete = "off"
+  const relayNote = el(
+    "p",
+    null,
+    "Most sites will not let a browser page read them, so without a relay the agent keeps a reader's text of each page and a PDF only when the site allows. A relay fetches for it, and the PDF or page itself is kept as the source. Stored with your API key."
+  )
 
   settings.append(
     el("p", null, "Model"),
@@ -302,6 +319,10 @@ export function AgentTool(handle, element, options = {}) {
     el("p", null, "API key"),
     keyInput,
     keyNote,
+    el("p", null, "Fetch relay"),
+    relayInput,
+    relayKeyInput,
+    relayNote,
     saveKey
   )
   main.insertBefore(settings, transcript)
@@ -705,6 +726,8 @@ export function AgentTool(handle, element, options = {}) {
     if (!showing) {
       keyInput.focus()
       if (!catalogueLoaded) loadModels()
+      // The relay's address, not its key: a key is never shown back.
+      relayInput.value = readRelay()?.url ?? ""
     }
   })
 
@@ -882,6 +905,13 @@ export function AgentTool(handle, element, options = {}) {
       workerRunner?.setKey(value)
       keyInput.value = ""
     }
+    // The relay: saved as typed, cleared by emptying its address.
+    const relayUrl = relayInput.value.trim()
+    const current = readRelay()
+    if (relayUrl !== (current?.url ?? "") || (relayKeyInput.value && relayKeyInput.value !== current?.key)) {
+      writeRelay(relayUrl ? { url: relayUrl, key: relayKeyInput.value || current?.key || "" } : null)
+    }
+    relayKeyInput.value = ""
     settings.style.display = "none"
     render()
   })

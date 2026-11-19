@@ -109,6 +109,53 @@ export function writeKey(providerId, key, storage = globalThis.localStorage) {
   return true
 }
 
+/**
+ * The fetch relay this account uses, or null: `{ url, key }`.
+ *
+ * Kept where the API keys are, under a field of its own, for the same
+ * reasons: the account's, every device of it, never a session's. A relay
+ * fetches for a browser that may not, so the agent keeps the PDF or page
+ * itself rather than a reader's text of it (fetch-relay/ in this repo).
+ */
+const RELAY_FIELD = "agentFetchRelay"
+const RELAY_LOCAL = "patchwork-agent:relay"
+
+export function readRelay(storage = globalThis.localStorage) {
+  const own = accountSettings?.doc()?.[RELAY_FIELD]
+  if (typeof own?.url === "string" && own.url) return { url: own.url, key: own.key || null }
+  try {
+    const local = JSON.parse(storage?.getItem(RELAY_LOCAL) ?? "null")
+    return typeof local?.url === "string" && local.url ? { url: local.url, key: local.key || null } : null
+  } catch {
+    return null
+  }
+}
+
+/** Set the relay (`{ url, key }`), or clear it with null. */
+export function writeRelay(relay, storage = globalThis.localStorage) {
+  const value = relay?.url ? { url: String(relay.url).trim().replace(/\/+$/, ""), key: relay.key ? String(relay.key) : "" } : null
+  if (accountSettings) {
+    accountSettings.change((d) => {
+      if (value) d[RELAY_FIELD] = value
+      else delete d[RELAY_FIELD]
+    })
+    try {
+      storage?.removeItem(RELAY_LOCAL)
+    } catch {
+      /* nothing kept here */
+    }
+  } else {
+    try {
+      if (value) storage?.setItem(RELAY_LOCAL, JSON.stringify(value))
+      else storage?.removeItem(RELAY_LOCAL)
+    } catch {
+      return false
+    }
+  }
+  keysChanged()
+  return true
+}
+
 /** Hear about keys changing, here or from another tool or device. */
 export function onKeyChange(listener) {
   keyListeners.add(listener)

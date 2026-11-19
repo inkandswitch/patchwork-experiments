@@ -13,7 +13,8 @@ import { SessionRunner, DEFER_PER_BUSY_MS } from "./runner.js"
 import { ensureRunner as ensureSharedRunner, busyCount } from "./runners.js"
 import { createEvents } from "./events.js"
 import { buildToolset, loadPluginTools } from "./tools/index.js"
-import { getProvider, readKey, modelInfo } from "./providers/index.js"
+import { getProvider, readKey, readRelay, modelInfo } from "./providers/index.js"
+import { relayFetch } from "./tools/relay.js"
 import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "./tools/guard.js"
@@ -21,10 +22,12 @@ import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "./tools/guard.js"
 /**
  * The fetch every tool in this tab uses. It refuses this page's own origin —
  * which serves the person's documents to anyone asking by URL — the sync
- * servers, and every local or private address; see tools/guard.js.
+ * servers, and every local or private address; see tools/guard.js. With a
+ * fetch relay set up, GET and HEAD go through it (tools/relay.js), read
+ * afresh for every request, so setting one up takes effect at once.
  */
-export function tabFetch() {
-  return guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [location.origin, ...SYNC_SERVERS] })
+export function tabFetch({ relay = () => readRelay() } = {}) {
+  return guardedFetch({ fetch: relayFetch({ fetch: (url, init) => fetch(url, init), relay }), deny: [location.origin, ...SYNC_SERVERS] })
 }
 
 /** The account's documents, as every runner's context carries them. */
@@ -76,6 +79,11 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       // So view_screenshot can photograph a view that view_mount opened.
       getMount,
       fetchImpl: tabFetch(),
+      // With a relay a tab reaches pages as node does, so it keeps them as
+      // node does: the PDF or the page itself, with its text beside it.
+      get direct() {
+        return !!readRelay()
+      },
       // The page's own origin, for plugin_source alone (see pageOriginFetch).
       pageFetch: pageOriginFetch({ fetch: (url, init) => fetch(url, init), origin: location.origin }),
     }

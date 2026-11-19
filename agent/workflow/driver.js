@@ -453,8 +453,11 @@ export class WorkflowDriver {
       return
     }
     const present = new Set((folder.doc()?.docs ?? []).map((entry) => documentIdOf(entry?.url)))
+    // A search's results page is kept, as the record of how a step found what
+    // it read, but it is not a source: the folder is for what a person
+    // reviewing the work checks claims against.
     const fresh = due
-      .filter(([id]) => !present.has(id))
+      .filter(([id, e]) => !present.has(id) && e.engine !== "search")
       .map(([id, e]) => ({
         name: e.name ?? (e.kind === "finding" ? "finding" : "source"),
         // Filed as what it is, so the folder opens a web-snapshot in its own
