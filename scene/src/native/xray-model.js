@@ -5,6 +5,7 @@
 //
 //   colours(ids)               one colour per extension, stable and distinct
 //   responders(g, id)          who responds to an object, in input order
+//   lead(g, id)                the most specific of them: the one outline an object has
 //   looks(g, colour, o)        how every object is drawn: { tint?, opacity, outline? }
 //   glyphs(g, o)               the live state on objects: lock, hand, gear, eye, link
 //   legend(g, colour, o)       the extensions by package, with what each holds
@@ -72,22 +73,52 @@ export function colours(ids) {
 /** The extensions that respond to an object, in input order: those holding it, not the ones holding only the scene. */
 export const responders = (g, id) => (g.chains[id] ?? []).filter((h) => h.via != null).map((h) => h.ext);
 
+/** A generic part: a native one of the scene (its id starts "scene.") or a keeper: they respond to many objects without saying what any of them is. */
+export const isGeneric = (g, ext) => ext.startsWith("scene.") || !!g.extensions.find((e) => e.id === ext)?.keeper;
+
 /**
- * How every object is drawn. Ghosted and outlined in its responders' colours
- * (up to BANDS, in input order); an object nothing responds to fades further;
- * the object looked at is lit. With an extension isolated, its objects are
- * lit in its colour and everything else is faded.
+ * The most specific responder to an object: the one that says what it is.
+ * Rule: among those responding, a holder that is not a generic part (not a
+ * native "scene." one, not a keeper) before one that is; then the nearer to
+ * the object (holding it itself before holding what it hangs on or is filed
+ * under); then input order. Tabletop for a Lost Cities card or deck (over
+ * Carry and the keeper), Carry for a plain carryable. Null when none respond.
+ * @param {object} g
+ * @param {string} id
+ * @returns {string | null}
+ */
+export function lead(g, id) {
+  const hs = (g.chains[id] ?? []).filter((h) => h.via != null);
+  const rank = (h) => [isGeneric(g, h.ext) ? 1 : 0, h.depth ?? 0];
+  let best = null;
+  for (const h of hs) {
+    const a = rank(h);
+    const b = best && rank(best);
+    if (!best || a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])) best = h;
+  }
+  return best?.ext ?? null;
+}
+
+/**
+ * How every object is drawn. Ghosted and outlined once, in the colour of its
+ * most specific responder (`lead`); an object nothing responds to fades
+ * further; the objects looked at are lit, and those in `banded` (the one
+ * hovered) are outlined in the whole chain's colours (up to BANDS, in input
+ * order). With an extension isolated, its objects are lit in its colour and
+ * everything else is faded.
  * @param {object} g
  * @param {(id: string) => string} colour
- * @param {{ isolated?: string | null, focus?: string | string[] | null }} [o]
+ * @param {{ isolated?: string | null, focus?: string | string[] | null, banded?: string | string[] | null }} [o]
  * @returns {{ [id: string]: { tint?: string, opacity: number, outline?: string[] } }}
  */
-export function looks(g, colour, { isolated = null, focus = [] } = {}) {
+export function looks(g, colour, { isolated = null, focus = [], banded = [] } = {}) {
   const lit = new Set([focus].flat().filter(Boolean));
+  const chain = new Set([banded].flat().filter(Boolean));
   const out = {};
   for (const { id } of g.objects) {
     const by = responders(g, id);
-    const bands = (isolated ? by.filter((e) => e === isolated) : by).slice(0, BANDS).map(colour);
+    const first = lead(g, id);
+    const bands = (isolated ? by.filter((e) => e === isolated) : chain.has(id) ? by : first ? [first] : []).slice(0, BANDS).map(colour);
     if (lit.has(id)) out[id] = { opacity: OPACITY.lit, ...(bands.length ? { outline: bands } : {}) };
     else if (isolated) out[id] = by.includes(isolated) ? { opacity: OPACITY.lit, outline: bands } : { tint: GHOST, opacity: OPACITY.faded };
     else out[id] = by.length ? { tint: GHOST, opacity: OPACITY.ghost, outline: bands } : { tint: GHOST, opacity: OPACITY.faded };
@@ -315,8 +346,8 @@ export function routeBoxes(r, { g, colour }) {
   return { type: r.type, on, took: r.took >= 0, boxes: boxes.filter((b) => b.names.length) };
 }
 
-/** The last event's route, and a few before it, newest first. */
+/** The latest route (taken or not), and up to five earlier ones something took, newest first. */
 export function strip(routes, o) {
-  const list = routes.slice(-6).reverse().map((r) => routeBoxes(r, o));
-  return { last: list[0] ?? null, older: list.slice(1) };
+  const taken = routes.slice(0, -1).filter((r) => r.took >= 0);
+  return { last: routes.length ? routeBoxes(routes[routes.length - 1], o) : null, older: taken.slice(-5).reverse().map((r) => routeBoxes(r, o)) };
 }

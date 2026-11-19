@@ -132,7 +132,7 @@ function stripEl(s) {
 }
 
 /** The panel's legend and details as DOM. */
-function panelEls({ lg, det, isolated, pinnedName, keys, onScene }) {
+function panelEls({ lg, det, isolated, pinnedName, keys, onScene, eyes }) {
   const out = [];
   const top = el("div", "xray-top");
   top.append(el("span", "xray-hint", pinnedName ? `Pinned: ${pinnedName}` : "Hover an object; a click pins it"));
@@ -178,9 +178,10 @@ function panelEls({ lg, det, isolated, pinnedName, keys, onScene }) {
     for (const x of onScene) sec.append(glyphEl(x));
     out.push(sec);
   }
-  if (keys.length) {
+  if (keys.length || eyes) {
     const k = el("div", "xray-key");
     for (const kind of keys) k.append(el("span", null, `${GLYPHS[kind].text} ${GLYPHS[kind].name}`));
+    if (eyes) k.append(el("span", null, `${GLYPHS.eye.text} ${eyes} shown otherwise (hover one)`));
     out.push(k);
   }
   if (det) {
@@ -378,7 +379,7 @@ function create(api) {
     const links = g.extensions.find((e) => e.id === "scene.links")?.inspect?.stages ?? [];
     const ctx = { who, self: self(), links };
     const lit = [pinned, hovered].filter(Boolean);
-    const looksOf = looks(g, colour, { isolated, focus: lit });
+    const looksOf = looks(g, colour, { isolated, focus: lit, banded: hovered });
     const glyphsOf = glyphs(seen, ctx);
     const cardId = hovered ?? pinned;
     const c = cardId ? card(seen, cardId, colour, ctx) : null;
@@ -388,22 +389,24 @@ function create(api) {
     for (const [id, list] of glyphsOf) {
       if (id == null) continue;
       const link = list.find((x) => x.kind === "link");
-      const live = list.filter((x) => x.kind !== "link").map((x) => GLYPHS[x.kind].text);
+      // (an eye only on the one hovered: the legend counts them)
+      const live = list.filter((x) => x.kind !== "link" && (x.kind !== "eye" || id === hovered)).map((x) => GLYPHS[x.kind].text);
       const text = [link ? `${GLYPHS.link.text} ${objectName(id)} · ${link.title}` : "", live.join(" ")].filter(Boolean).join("  ");
+      if (!link && !live.length) continue;
       items.push({ key: `xray:${id}`, text, on: id, className: `xray-badge${link ? " xray-link" : ""}`, rank: 2 });
     }
     at()?.set(looksOf, items);
-    renderPanel(legend(g, colour, { isolated }), pinned ? details(seen, pinned, colour, ctx) : null, [...new Set([...glyphsOf.values()].flat().map((x) => x.kind))].filter((k) => k !== "link"), glyphsOf.get(null) ?? []);
+    renderPanel(legend(g, colour, { isolated }), pinned ? details(seen, pinned, colour, ctx) : null, [...new Set([...glyphsOf].flatMap(([id, l]) => (id == null ? [] : l.filter((x) => x.kind !== "eye" || id === hovered)).map((x) => x.kind)))].filter((k) => k !== "link" && k !== "eye"), glyphsOf.get(null) ?? [], [...glyphsOf].filter(([id, l]) => id != null && l.some((x) => x.kind === "eye")).length);
     renderCard(f, c);
     renderStrip(api.routes(), colour);
   }
 
-  function renderPanel(lg, det, keys, onScene) {
-    const sig = JSON.stringify([lg, det, isolated, pinned, keys, onScene]);
+  function renderPanel(lg, det, keys, onScene, eyes) {
+    const sig = JSON.stringify([lg, det, isolated, pinned, keys, onScene, eyes]);
     if (sig === shown) return;
     shown = sig;
     const open = new Set([...panel.querySelectorAll("details[open]")].map((d) => `${d.className}|${d.dataset.ext ?? d.querySelector("summary")?.textContent}`));
-    panel.replaceChildren(...panelEls({ lg, det, isolated, pinnedName: pinned ? det?.title : null, keys, onScene }));
+    panel.replaceChildren(...panelEls({ lg, det, isolated, pinnedName: pinned ? det?.title : null, keys, onScene, eyes }));
     for (const d of panel.querySelectorAll("details")) if (open.has(`${d.className}|${d.dataset.ext ?? d.querySelector("summary")?.textContent}`)) d.open = true;
   }
 

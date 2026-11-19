@@ -203,18 +203,23 @@ look, as the use prompt's), looked at again every 200 ms.
 
 - **The scene, ghosted and outlined.** Every object is displayed ghosted
   (a neutral tint, partly transparent: `display`'s `tint`, `opacity`,
-  `outline`; STAGE.md, "`api`") and outlined in the colours of the extensions
-  that respond to it, in input order, alternating dashes for several (three
-  at most). One colour per extension holding objects, a hash of its id into a
-  twelve-colour palette, the next free slot on a collision; extensions
-  holding none are a neutral grey, so a colour always means a holder. The
-  same colour everywhere: outlines, chips, swatches, the route strip. An object nothing responds to fades
+  `outline`; STAGE.md, "`api`") and outlined **once**, in the colour of its
+  most specific responder, so a sixty-card deck reads as one pile. Most
+  specific (`lead`): a holder that is not a generic part (a native "scene."
+  one, a keeper) before one that is, then the nearer to the object (holding
+  it itself before what it hangs on), then input order: Tabletop for a Lost
+  Cities card, Carry for a plain carryable. The whole chain, banded in input
+  order (three at most), only on the object hovered. One colour per extension
+  holding objects, a hash of its id into a twelve-colour palette, the next
+  free slot on a collision; extensions holding none are a neutral grey, so a
+  colour always means "acts on objects". An object nothing responds to fades
   further. Its looks are the X-ray's own override, released as it is put down.
 - **Glyphs** on objects with live state, one small label each: a lock (a
   claim; who, on its card), a hand (someone holds it: a pose of rank 0), a
   gear (a process drives it: a clock process's `on`, CONVENTIONS.md,
-  "Inspect"), an eye (an extension other than the X-ray displays it
-  otherwise); a link is a dashed labelled box (its name and role: acting,
+  "Inspect"); an eye (an extension other than the X-ray displays it
+  otherwise) only on the hovered object, the panel counting them ("8 shown
+  otherwise"); a link is a dashed labelled box (its name and role: acting,
   pinned, closed). The legend's key names the kinds shown.
 - **The legend** (the drawer tab, `embed: false`, docked `pointer: false`; its
   × puts the tool down): the running extensions grouped by package, each in
@@ -236,8 +241,8 @@ look, as the use prompt's), looked at again every 200 ms.
   "unstamped" for a write without a stamp).
 - **The route strip** along the bottom: the last event's route as boxes in
   the chain's order (Tools, Widget, Holders, View plugins, Body; only those
-  offered the event), the taker filled in its colour; the older routes on
-  hover.
+  offered the event), the taker filled in its colour. Always the latest route (even one
+  nobody took); the older routes only if something took them, on hover.
 
 All of it is `buildGears` of the public reads (registry, `scene()`,
 `local.running`, `collect`, `context()`, `owners()`, `settled()`, `routes()`,

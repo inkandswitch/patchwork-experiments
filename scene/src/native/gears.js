@@ -76,6 +76,7 @@ export function buildGears({ metas = [], scene, running = [], views = [], settle
       name: typeof m.name === "string" ? m.name : id,
       ...sourceOf(m),
       traits: list(m.traits),
+      ...(m.keeper ? { keeper: true } : {}),
       provides: list(m.provides),
       uses: list(m.uses),
       describes: Object.keys(m.describes ?? {}),

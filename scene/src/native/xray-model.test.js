@@ -17,7 +17,7 @@ import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { TOO_FAR } from "../parts/toolbar-commands.js";
 import { buildGears } from "./gears.js";
-import { BANDS, GHOST, GLYPHS, NEUTRAL, OPACITY, PALETTE, card, colours, details, glyphs, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
+import { BANDS, GHOST, GLYPHS, NEUTRAL, OPACITY, PALETTE, card, colours, details, glyphs, isGeneric, lead, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
 
 const has = (o, t) => !!o?.traits?.[t];
 const run = () => {};
@@ -53,6 +53,7 @@ function world(subset, combo, sceneA) {
 
 
 const ALL = ["t.all", "t.a", "t.b", "t.u"];
+const depth = (g, id, ext) => g.chains[id].find((h) => h.ext === ext).depth;
 
 describe("colours", () => {
   it("every subset of ten ids, in any order: each in the palette, all distinct, the same asked again", () => {
@@ -96,9 +97,12 @@ describe("the scene-wide view, over every small world", () => {
             // (a trait on the object or what it hangs on or is filed under; the scene's traits hold nothing in particular)
             expect([at, id, by.every((e) => running.some((r) => r.id === e))]).toEqual([at, id, true]);
             if (!by.length) expect([at, id, all[id]]).toEqual([at, id, { tint: GHOST, opacity: OPACITY.faded }]);
-            else expect([at, id, all[id]]).toEqual([at, id, { tint: GHOST, opacity: OPACITY.ghost, outline: by.slice(0, BANDS).map(colour) }]);
-            // the one looked at is lit
-            expect(looks(g, colour, { focus: [id] })[id]).toEqual({ opacity: OPACITY.lit, ...(by.length ? { outline: by.slice(0, BANDS).map(colour) } : {}) });
+            else expect([at, id, all[id]]).toEqual([at, id, { tint: GHOST, opacity: OPACITY.ghost, outline: [colour(lead(g, id))] }]);
+            // the lead is one of the responders, the nearest of them (none of these are generic); none when none respond
+            expect([at, id, lead(g, id)]).toEqual([at, id, by.length ? by.reduce((a, e) => (depth(g, id, e) < depth(g, id, a) ? e : a)) : null]);
+            // the one looked at is lit; the one hovered shows the whole chain
+            expect(looks(g, colour, { focus: [id] })[id]).toEqual({ opacity: OPACITY.lit, ...(by.length ? { outline: [colour(lead(g, id))] } : {}) });
+            expect(looks(g, colour, { focus: [id], banded: id })[id]).toEqual({ opacity: OPACITY.lit, ...(by.length ? { outline: by.slice(0, BANDS).map(colour) } : {}) });
           }
           for (const r of running) {
             const iso = looks(g, colour, { isolated: r.id });
@@ -149,6 +153,47 @@ describe("the scene-wide view, over every small world", () => {
   it("failed extensions and missing packages are the legend's problems, in red", () => {
     const g = buildGears({ metas: [{ id: "t.x", type: "scene:extension", name: "Ex" }], scene: { d: { objects: {}, traits: {} }, objects: {}, ids: [], parents: new Map(), groups: new Map() }, settled: { failed: ["t.x"], errors: { "t.x": "boom" }, missing: ["https://x.test/pkg"] } });
     expect(legend(g, colours([])).problems).toEqual([{ text: "Ex", why: "failed: boom" }, { text: "x.test/pkg", why: "package not loaded here" }]);
+  });
+});
+
+describe("the most specific responder", () => {
+  // a Lost Cities card in miniature: Carry (native), a game extension and a keeper all hold it
+  const objects = { card: { name: "Card", transform: T, traits: { "scene.carry": {}, "g.card": {}, "keep.plain": {} } }, plain: { name: "Plain", transform: T, traits: { "scene.carry": {} } }, kept: { name: "Kept", transform: T, traits: { "scene.carry": {}, "keep.plain": {} } }, kid: { name: "Kid", parent: "plain", transform: T, traits: { "g.card": {} } } };
+  const scene = { d: { objects, traits: {} }, objects, ids: Object.keys(objects), parents: resolveParents(objects), groups: resolveGroups(objects) };
+  const metas = [
+    { id: "scene.carry", type: "scene:extension", name: "Carry", traits: ["scene.carry"] },
+    { id: "g.game", type: "scene:extension", name: "Game", traits: ["g.card"] },
+    { id: "keep.plain", type: "scene:extension", name: "Keeper", traits: ["keep.plain"], keeper: "plain" },
+  ];
+  const make = (ids) => buildGears({ metas, scene, running: ids.map((id) => ({ id, scope: "scene" })) });
+  const ALLR = metas.map((m) => m.id);
+
+  it("over every subset running: a game over a native and a keeper; a native alone is its own", () => {
+    for (let m = 0; m < 8; m++) {
+      const running = ALLR.filter((_, i) => m & (1 << i));
+      const g = make(running);
+      const has = (e) => running.includes(e);
+      expect([m, lead(g, "card")]).toEqual([m, has("g.game") ? "g.game" : has("scene.carry") ? "scene.carry" : has("keep.plain") ? "keep.plain" : null]);
+      expect([m, lead(g, "plain")]).toEqual([m, has("scene.carry") ? "scene.carry" : null]);
+      // a native part ahead of a keeper only by input order: both generic, the nearer then the first
+      expect([m, lead(g, "kept")]).toEqual([m, g.chains.kept.filter((h) => h.via != null)[0]?.ext ?? null]);
+      // a child: its own trait is the game's (it holds it itself), the carry on what it hangs on is farther
+      expect([m, lead(g, "kid")]).toEqual([m, has("g.game") ? "g.game" : has("scene.carry") ? "scene.carry" : null]);
+      for (const id of scene.ids) {
+        const l = lead(g, id);
+        if (l != null) expect(responders(g, id)).toContain(l);
+      }
+    }
+    expect(isGeneric(make(ALLR), "scene.carry") && isGeneric(make(ALLR), "keep.plain") && !isGeneric(make(ALLR), "g.game")).toBe(true);
+  });
+
+  it("one outline in the lead's colour; the whole chain only when hovered", () => {
+    const g = make(ALLR);
+    const colour = colours(ALLR);
+    expect(looks(g, colour).card.outline).toEqual([colour("g.game")]);
+    expect(looks(g, colour).plain.outline).toEqual([colour("scene.carry")]);
+    expect(looks(g, colour, { focus: "card", banded: "card" }).card.outline).toEqual(responders(g, "card").slice(0, BANDS).map(colour));
+    expect(looks(g, colour, { focus: "card", banded: "card" }).plain.outline).toEqual([colour("scene.carry")]);
   });
 });
 
@@ -216,10 +261,14 @@ describe("the route strip", () => {
     expect([b.on, b.took, b.boxes.map((x) => [x.label, x.names, x.took])]).toEqual(["nothing", false, [["Body", ["Game"], null], ["Default", ["default"], null]]]);
   });
 
-  it("the last route first, up to five older ones after it", () => {
-    const routes = Array.from({ length: 9 }, (_, i) => ({ type: `e${i}`, path: [], steps: [], took: -1 }));
-    const s = strip(routes, o);
+  it("the latest route always, even untaken; the older ones only if something took them, five at most, newest first", () => {
+    const mk = (n, took) => Array.from({ length: n }, (_, i) => ({ type: `e${i}`, path: [], steps: [], took: took(i) }));
+    const s = strip(mk(9, () => 0), o);
     expect([s.last.type, s.older.map((r) => r.type)]).toEqual(["e8", ["e7", "e6", "e5", "e4", "e3"]]);
+    const u = strip(mk(9, (i) => (i % 3 === 0 ? 0 : -1)), o);
+    expect([u.last.type, u.last.took, u.older.map((r) => r.type)]).toEqual(["e8", false, ["e6", "e3", "e0"]]);
+    expect(strip(mk(3, () => -1), o).older).toEqual([]);
+    expect(strip(mk(1, () => -1), o).last.type).toBe("e0");
     expect(strip([], o)).toEqual({ last: null, older: [] });
   });
 });
