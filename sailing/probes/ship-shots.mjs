@@ -37,7 +37,7 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "ship-probe-"));
-const chrome = spawn(CHROME, ["--headless=new", "--no-first-run", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`, "--window-size=1280,800", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"], { stdio: "ignore", detached: true });
+const chrome = spawn(CHROME, ["--headless=new", "--no-first-run", "--mute-audio", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`, "--window-size=1280,800", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"], { stdio: "ignore", detached: true });
 const done = (code) => {
   killChrome(chrome);
   server.close();
