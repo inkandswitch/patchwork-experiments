@@ -3,8 +3,9 @@
 **Everything in this file is deferred until further notice.** Section 1 (the
 kernel), which the lead started on 2026-11-17, is complete (HISTORY.md "Kernel
 step 1" to "Kernel step 8"; step 7 stays deferred, in section 2). Section 3
-(tabletop) is queued to start next. Nothing else here is to be started
-without the lead asking.
+(tabletop) is queued to start next. Section 4 (visible gears) was started
+2026-11-18 at the lead's request. Nothing else here is to be started without
+the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
 HISTORY.md; what it does now is STAGE.md, NATIVE.md, EDITOR.md and
@@ -244,3 +245,81 @@ sends simulated locally (cannonballs, spray), and positional sound.
 - **Open, deferred:** where live play state lives for a 2D view or scripts:
   (a) the scene's traits and transforms, as today, or (b) a tabletop session
   doc the scene renders. Decide when 2D or scripting is on the table.
+
+## 4. Visible gears (X-ray)
+
+**Started 2026-11-18 at the lead's request ("write it up and give it a go").**
+
+Make the structure of a running scene visible, so the system explains
+itself: what is loaded, what each piece contributes, and how things are
+coordinated, in place. Built as plugins on the public api: where it can't
+see something, the kernel or a service is hiding state it shouldn't.
+
+### The model: one gears graph
+A pure function of registry metadata, the docs, and running instances'
+published snapshots: extensions ↔ traits ↔ objects ↔ verbs ↔ services ↔
+claims, poses, display overrides ↔ meshes and labels. Testable exhaustively.
+
+### Two lenses
+- **Object → extensions** (hover or select): its holders in input order
+  (nearest first, then the scene's, then view plugins); for each, the
+  package and version, its verbs for this object (enabled, disabled with the
+  reason, out of reach; keys), the events it takes, what it draws here
+  (meshes, labels, display overrides), the services it provides and uses.
+- **Extension → objects** (pick from the running list): the objects
+  carrying its traits highlighted by trait; a table of their trait values
+  (its `describes`); a grid of objects × verbs with each cell's state; what
+  it holds now (claims, poses, overrides, processes, meshes, labels); its
+  service connections; package, scope, busy/lingering/failed with the error.
+  View plugins show their contributions instead (verbs by surface, hands,
+  chrome).
+- The scene's **running list**, plus what is **not** running and why
+  (`settled().missing`, failed extensions with errors).
+
+### Layers (toggles, remembered as a pref)
+Claims; poses (holder, rank, yielding); the clock (computer, processes);
+display (overrides by author, in order); the input route (the last event's
+path: hands → widget → holders → view plugins → body, and who took it);
+links (the stage tree, roles, frames); people (sessions, bodies, hands);
+visibility (who may see what an object is — who, never what).
+
+### Dressing through `display`, with a scrubber
+Dressing (moving or hiding nodes inside an object's content) goes through
+`display`, which gains sub-node overrides (`{ nodes: { [name]: { transform?,
+hidden? } } }`). An object's look is then a fold over layers in running
+order; the X-ray lists the participants per object and can render any
+prefix of the fold ("the scene after layer k") on hover.
+
+### The presence tap
+A read-only tap on `channel`: streams collapsed to meters (who, what, which
+object, rate, last seen), discrete events as a log (sends, tells, claims
+taken/lost/lapsed, hello/bye, holds begun/refused/landed) with their routing
+(which namespace, which receiver, or dropped and why); filters by person,
+extension or object; pause; follow an object. Nothing private: everything on
+the channel is already broadcast to the doc's peers.
+
+### Kernel additions (small; STAGE.md stays ≤ 200 lines)
+Owners of meshes and labels, and authors of display overrides, readable;
+the input route recorded per event (which step took it); a read-only
+`channel` tap; `display` sub-node overrides; **write provenance**: each
+change is stamped with the writing extension's id (Automerge change
+message), so a field's last writer is known even for a peer's write.
+
+### Conventions
+`inspect` — an extension or service may publish a read-only snapshot of its
+state as plain data; the X-ray renders it generically. Natives publish
+theirs (claims, poses, clock, links, audience).
+
+### Where it lives
+A native view plugin, `scene.xray`, as a held tool ("X-ray"), so it can be
+held while editing or playing; Escape puts it down. Focus on the hovered or
+selected object by default; a slim panel for the scene.
+
+### Slices
+1. Kernel additions (owners, override authors, input route, channel tap,
+   provenance) + `inspect` on the natives + the gears graph (pure, tested).
+2. The X-ray tool: both lenses, the running/missing/failed list, layers for
+   claims, poses, clock, display, input route.
+3. The presence tap.
+4. Dressing through `display` (migrate sailing, water and others that dress)
+   + the scrubber.
