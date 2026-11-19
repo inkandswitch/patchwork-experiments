@@ -30,6 +30,9 @@ export const BUSY_RECHECK_MS = 250;
 /** Where a plugin's registration came from (its importUrl, with the heads it was loaded at), or null. */
 const sourceOf = (meta) => (typeof meta?.importUrl === "string" ? meta.importUrl : null);
 
+/** What loadOwn gives back for a rec whose plugin was registered again from elsewhere while it loaded. */
+const SUPERSEDED = Symbol("superseded");
+
 const listOf = (reg) => {
   try {
     return reg?.filter?.(() => true) ?? [];
@@ -178,7 +181,8 @@ export function createHost({
     const rec = { id: w.id, meta: w.meta, scope: w.scope, source: sourceOf(w.meta), state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
     rec.started = (async () => {
-      const loaded = await reg?.load?.(w.id);
+      const loaded = await loadOwn(rec);
+      if (loaded === SUPERSEDED) return;
       await Promise.all([first(), ...before.map((r) => r.started)]);
       const mod = loaded?.module?.default ?? loaded?.module;
       if (dead || rec.state !== "loading") return;
@@ -212,6 +216,43 @@ export function createHost({
       if (rec.state === "loading") (rec.state = "failed"), console.warn(`[scene] extension “${w.id}” didn't start in ${loadMs} ms`);
     });
   }
+
+  /**
+   * The module of the registration `rec` was started for (rec.source), and
+   * no other: the registry's load(id) resolves to whatever is registered
+   * under the id when its import settles, or to nothing when the id was
+   * registered again meanwhile (a retired package and the one that took its
+   * plugins over both register it; the module watcher registers a package
+   * again at each version it loads). A load that brings back another
+   * registration's module, or none while the id is still registered, is
+   * never this rec's failure: if the registration is still rec's, load it
+   * again; if it's another's, this rec is SUPERSEDED, and the sync that the
+   * registration's "changed" asks for (asked here too, in case it came
+   * first) starts a rec for it, which awaits its own load.
+   */
+  async function loadOwn(rec) {
+    for (;;) {
+      const was = registrationOf(rec.id);
+      const loaded = await reg?.load?.(rec.id);
+      if (dead || rec.state !== "loading") return SUPERSEDED;
+      if (loaded && (rec.source == null || sourceOf(loaded) === rec.source)) return loaded;
+      const now = registrationOf(rec.id);
+      if (now && sourceOf(now) !== rec.source) {
+        Promise.resolve().then(() => recs.get(rec.id) === rec && rec.state === "loading" && sync(lastDoc));
+        return SUPERSEDED;
+      }
+      // registered again from the same source mid-load: load that one. Otherwise
+      // (uninstalled, or nothing changed) what came back is what there is.
+      if (!now || now === was || loaded) return loaded;
+    }
+  }
+  const registrationOf = (id) => {
+    try {
+      return reg?.get?.(id) ?? listOf(reg).find((m) => m?.id === id) ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   /** The facet of the first running provider declaring `name` (NATIVE.md, "Native services") made for `caller` ({ id, signal }), or null. */
   function use(name, caller) {
@@ -317,12 +358,14 @@ export function createHost({
     const want = new Map(set.map((w) => [w.id, w]));
     for (const [i, w] of set.entries()) {
       let rec = recs.get(w.id);
-      // One that failed to start from another registration than its plugin's
-      // now (the module watcher registers a package again at each version it
-      // loads, and the first may be one cached from before a sync, written
-      // against another kernel): that one starts afresh. Never one failed
+      // One that failed to start, or is still loading, from another
+      // registration than its plugin's now (the module watcher registers a
+      // package again at each version it loads, and the first may be one
+      // cached from before a sync, written against another kernel; a retired
+      // package registers ids its successor took over): that one starts
+      // afresh, from the registration that's there now. Never one failed
       // from the same registration: it would only fail again.
-      if (rec?.state === "failed" && rec.source !== sourceOf(w.meta)) {
+      if ((rec?.state === "failed" || rec?.state === "loading") && rec.source !== sourceOf(w.meta)) {
         stop(rec);
         rec = undefined;
       }

@@ -3,6 +3,7 @@ import { createAtom } from "./atom.js";
 import { createHost, mergeOrder, LINGER_MS, BUSY_RECHECK_MS } from "./host.js";
 import { fakeTimers, flush } from "../test/fake-repo.js";
 import { PACKAGE_FIND_MS } from "./packages.js";
+import { PluginRegistry } from "@inkandswitch/patchwork-plugins";
 
 // A registry of plugin metadata whose modules come from `mods` (id → module),
 // with a per-id load delay so start order can differ from running order.
@@ -366,5 +367,81 @@ describe("a package loaded at an old version first (the module watcher registers
     reregister(OLD, oldSeats);
     await flush();
     expect([host.failed(), console.warn.mock.calls.filter((c) => /failed to start/.test(c[0])).length]).toEqual([["seats"], 1]);
+  });
+});
+
+describe("a plugin registered again from another package while it loads (Patchwork's own registry)", () => {
+  // The Lost Cities table, in a Patchwork that still has the retired
+  // card-table package installed beside tabletop: both register
+  // "card-table". The registry's load(id) resolves to nothing when the id is
+  // registered again mid-load, and the host took that for the plugin's own
+  // failure: "card-table failed to start: its module has no create()".
+  const OLD = "automerge:card-table#retired";
+  const NEW = "automerge:tabletop#1";
+  const NEWER = "automerge:tabletop#2";
+  function make() {
+    const reg = new PluginRegistry();
+    const log = [];
+    const imports = new Map(); // importUrl → each registration's import, to settle
+    const register = (importUrl, module = mod(`card-table@${importUrl.split(":")[1]}`, log)) => {
+      let resolve;
+      const loaded = new Promise((r) => (resolve = r));
+      imports.set(importUrl, [...(imports.get(importUrl) ?? []), () => resolve(module)]);
+      reg.register({ type: "scene:extension", id: "card-table", name: "Card table", traits: ["card-table"], load: () => loaded }, importUrl);
+    };
+    const host = createHost({ registry: async () => reg, makeApi: () => ({ api: {}, release() {} }) });
+    const arrive = async (importUrl) => (imports.get(importUrl).forEach((settle) => settle()), flush());
+    return { host, log, register, arrive };
+  }
+  const failures = () => console.warn.mock.calls.filter((c) => /failed to start/.test(c[0])).map((c) => String(c[1]));
+  beforeEach(() => vi.spyOn(console, "warn").mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("the retired package's load is overtaken by tabletop's registration: tabletop's starts, nothing fails", async () => {
+    const { host, log, register, arrive } = make();
+    register(OLD);
+    host.sync({ traits: { "card-table": {} } });
+    await flush();
+    register(NEW); // mid-load
+    await arrive(OLD); // the old import settles after: the registry gives back nothing
+    expect([failures(), host.failed(), host.starting()]).toEqual([[], [], true]);
+    await arrive(NEW);
+    expect([failures(), host.failed(), host.instances().map((r) => r.id), log]).toEqual([[], [], ["card-table"], ["create:card-table@tabletop#1"]]);
+  });
+
+  it("the old import settling first, or last, after the swap comes to the same", async () => {
+    const { host, log, register, arrive } = make();
+    register(OLD);
+    host.sync({ traits: { "card-table": {} } });
+    await flush();
+    register(NEW);
+    await arrive(NEW);
+    await arrive(OLD);
+    expect([failures(), host.failed(), log]).toEqual([[], [], ["create:card-table@tabletop#1"]]);
+  });
+
+  it("the restart path: a failed rec restarts for the new registration, and that one's load overtaken again starts the newest", async () => {
+    const { host, log, register, arrive } = make();
+    register(OLD, { create: () => { throw new TypeError("written against another kernel"); } });
+    host.sync({ traits: { "card-table": {} } });
+    await flush();
+    await arrive(OLD);
+    expect(host.failed()).toEqual(["card-table"]);
+    register(NEW); // restarts
+    await flush();
+    register(NEWER); // tabletop's next version, while the restart loads NEW
+    await arrive(NEW);
+    await arrive(NEWER);
+    expect([failures().length, host.failed(), log]).toEqual([1, [], ["create:card-table@tabletop#2"]]);
+  });
+
+  it("registered again from the same source mid-load: the same rec loads that registration", async () => {
+    const { host, log, register, arrive } = make();
+    register(NEW);
+    host.sync({ traits: { "card-table": {} } });
+    await flush();
+    register(NEW, mod("card-table@again", log));
+    await arrive(NEW);
+    expect([failures(), host.failed(), log]).toEqual([[], [], ["create:card-table@again"]]);
   });
 });
