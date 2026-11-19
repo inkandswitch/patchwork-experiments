@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import TabletopGameTool from "./tool.js";
 
 // A stand-in for the host's plugin registry, holding this package's plugins
@@ -29,6 +29,17 @@ vi.mock("@inkandswitch/patchwork-plugins", async () => {
   for (const p of plugins) getRegistry(p.type).register(p);
   return { getRegistry };
 });
+// Loading a package this viewer lacks (table/load-package.js): `seats` says
+// what loading the seats package does here, "fails" or "registers" (it
+// brings the seats owner back).
+const loader = vi.hoisted(() => ({ seats: "fails", loads: [] }));
+vi.mock("./table/load-package.js", () => ({
+  async loadPackage(url) {
+    loader.loads.push(url);
+    if (loader.seats === "fails") throw new Error("its folder couldn't be found");
+    installed.absent = new Set();
+  },
+}));
 import { TabletopGameDatatype } from "./datatype.js";
 import { PUBLISHED, callsForTabletop } from "./scene-package.js";
 import { SEATS, keptIn } from "./test/stand-ins.js";
@@ -241,32 +252,59 @@ describe("the tabletop-game tool", () => {
   }, 30_000); // builds the whole game: ~7 s seen under load (default 5 s)
 });
 
-describe("what the game page's status line tells the maker (test/table-notes.js: the template says the same)", () => {
-  // the rule is template.test.js's, over every case; here, that the page says it: a warning, and a clean status
-  const PICKS = [CASES.find((c) => c.expected.length), CASES.find((c) => !c.expected.length)];
-  for (const c of PICKS)
+describe("what the game page's status line tells the maker (test/table-notes.js: the template says the same, but where it would warn of no seats)", () => {
+  // The rule is template.test.js's, over every case; here, that the page says it. A game with seats is never set
+  // up without them here: where nothing owns seats the page loads the seats package first, and sets up nothing if
+  // it can't (the template, inside a scene, warns instead: the scene offers the package).
+  const setUp = async (c) => {
+    const repo = fakeRepo();
+    const game = repo.add({ "@patchwork": { type: "tabletop-game" }, ...cardsGame(c) });
+    const element = document.createElement("div");
+    element.repo = repo;
+    const opened = [];
+    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+    const cleanup = TabletopGameTool(game, element);
+    await until(() => button(element, "Set up a table") && !button(element, "Set up a table").disabled);
+    button(element, "Set up a table").click();
+    return { repo, opened, element, cleanup };
+  };
+  const status = (element) => element.querySelector(".status").textContent;
+  const unseated = CASES.find((c) => c.expected.length);
+  afterEach(() => {
+    installed.absent = new Set();
+    loader.seats = "fails";
+    loader.loads = [];
+  });
+
+  for (const c of CASES.filter((c) => !c.expected.length).slice(0, 1))
     it(c.name, async () => {
-      // the stand-in's id (test/stand-ins.js)
-      installed.absent = new Set(c.owner ? [] : ["t.seats"]);
-      try {
-        const repo = fakeRepo();
-        const game = repo.add({ "@patchwork": { type: "tabletop-game" }, ...cardsGame(c) });
-        const element = document.createElement("div");
-        element.repo = repo;
-        const opened = [];
-        element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-        const cleanup = TabletopGameTool(game, element);
-        await until(() => button(element, "Set up a table") && !button(element, "Set up a table").disabled);
-        button(element, "Set up a table").click();
-        await until(() => opened.length === 1 && button(element, "Set up a table"));
-        const status = element.querySelector(".status").textContent;
-        if (c.expected.length) expect(status).toBe(c.expected.join(" "));
-        else expect(status).toMatch(/^\d+ pieces of \d+ kinds\.$/);
-        cleanup();
-      } finally {
-        installed.absent = new Set();
-      }
+      const { opened, element, cleanup } = await setUp(c);
+      await until(() => opened.length === 1 && button(element, "Set up a table"));
+      expect(status(element)).toMatch(/^\d+ pieces of \d+ kinds\.$/);
+      expect(loader.loads).toEqual([]);
+      cleanup();
     });
+
+  it(`${unseated.name}: the seats package loaded first (“Loading seats…”), then the table set up with its seats`, async () => {
+    installed.absent = new Set(["t.seats"]); // the stand-in's id (test/stand-ins.js)
+    loader.seats = "registers";
+    const { repo, opened, element, cleanup } = await setUp(unseated);
+    await until(() => opened.length === 1 && button(element, "Set up a table"));
+    expect(loader.loads).toEqual([PUBLISHED.seats]);
+    expect(status(element)).toMatch(/^\d+ pieces of \d+ kinds\.$/);
+    const scene = (await repo.find(opened[0].url)).doc();
+    expect(Object.keys(scene.traits[SEATS])).toEqual(["p1"]);
+    cleanup();
+  });
+
+  it(`${unseated.name}: the seats package can't be loaded: nothing is set up, and the page says why`, async () => {
+    installed.absent = new Set(["t.seats"]);
+    const { opened, element, cleanup } = await setUp(unseated);
+    await until(() => /Couldn't set up a table/.test(status(element)) && button(element, "Set up a table"));
+    expect(status(element)).toBe("Couldn't set up a table: it needs seats, and the seats package couldn't be loaded: its folder couldn't be found");
+    expect(opened).toEqual([]);
+    cleanup();
+  });
 });
 
 describe("a deck's summary on the game page says how it's shuffled, for every combination of shuffle and secure", () => {

@@ -115,3 +115,31 @@ export async function prepareTable({ repo, registry }, layout) {
 /** What a table writer says when the game has seats and nothing installed owns seats. */
 export const NO_SEATS = "Nothing installed here owns seats, so this table has none.";
 
+/** What setting a table up says while it loads the seats package. */
+export const LOADING_SEATS = "Loading seats…";
+
+/**
+ * Whoever owns seats, loading the seats package first where nothing here
+ * does (a Patchwork with only this package installed): a game with seats is
+ * never set up without them. Says LOADING_SEATS through `phase` while it
+ * loads, and waits for the load; rejects, saying so, when the package can't
+ * be loaded or lays no seats once it has.
+ * @param {{ repo: object, registry: (type: string) => Promise<object | null>, phase?: (text: string) => void,
+ *   load: (url: string, host: { repo: object }) => Promise<unknown>, url: string }} o
+ *   load: loads a package and registers its plugins (load-package.js); url: the seats package's (scene-package.js PUBLISHED.seats)
+ * @returns {Promise<{ lay: Function, by: { id: string, importUrl: string | null } }>}
+ */
+export async function seatsReady({ repo, registry, phase = () => {}, load, url }) {
+  const here = await seatsOwner(registry);
+  if (here) return here;
+  phase(LOADING_SEATS);
+  try {
+    await load(url, { repo });
+  } catch (err) {
+    throw new Error(`it needs seats, and the seats package couldn't be loaded: ${err?.message ?? err}`);
+  }
+  const owner = await seatsOwner(registry);
+  if (!owner) throw new Error("it needs seats, and the seats package, loaded, lays none");
+  return owner;
+}
+

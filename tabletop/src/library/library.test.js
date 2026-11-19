@@ -22,6 +22,7 @@ import { fakeRepo, gamePlugins, game as builtIn, seeded } from "../test/games.js
 import { fakeDrop } from "../test/fakes.js";
 import { SEATS, inBag, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
 import { inside, putIn } from "../bag/contents.js";
+import { cardsGame } from "../test/table-notes.js";
 import { plugins } from "../index.js";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -314,6 +315,70 @@ describe("the launcher's actions", () => {
     const other = await newSession({ repo, registry: installed(), handle: game, rng: seeded(7) });
     expect(repo.docs.get(other.url).packages).toEqual([{ url: PUBLISHED.scene }, { url: PUBLISHED.tabletop }]);
   }, 30_000);
+
+  describe("New game in a Patchwork with only this package installed: the seats package is loaded first, and waited for", () => {
+    // Lost Cities, set up where nothing owns seats, once made a session with none
+    const onlyTabletop = () => {
+      const reg = registries(...gamePlugins(), ...extensions);
+      return { reg, registry: async (t) => reg[t] ?? null };
+    };
+    const lost = (repo) => repo.handleFor(repo.create(descriptionDoc(builtIn("lost-cities"), { builtIn: "lost-cities" })).url);
+
+    it("unregistered, then registered by the load: “Loading seats…”, then the table laid with its seats, the seats package named", async () => {
+      const { repo, lib } = library();
+      const { reg, registry } = onlyTabletop();
+      const phases = [];
+      const loads = [];
+      const loadPackage = async (url) => {
+        loads.push(url);
+        expect(phases.at(-1)).toBe("Loading seats…"); // said before anything is waited for
+        await new Promise((r) => setTimeout(r, 20));
+        // the seats package registers its plugins (registerPlugins, under its bare URL)
+        reg["scene:extension"] = registries({ ...seatsPlugin(), id: "seats", importUrl: url }, ...extensions)["scene:extension"];
+      };
+      const { games } = await foldersFor(repo, lib);
+      linkIn(games, { name: "Lost Cities", type: "tabletop-game", url: lost(repo).url });
+      const game = repo.handleFor(gamesIn(games.doc())[0].url);
+      const { url, notes } = await startSession({ repo, registry, library: lib, game, phase: (t) => phases.push(t), loadPackage });
+      expect(loads).toEqual([PUBLISHED.seats]);
+      expect(phases[0]).toBe("Loading seats…");
+      const session = repo.docs.get(url);
+      expect(Object.keys(session.traits[SEATS])).toEqual(["p1", "p2"]);
+      expect(session.packages).toEqual([{ url: PUBLISHED.scene }, { url: PUBLISHED.seats }, { url: PUBLISHED.tabletop }]);
+      expect(notes).toEqual([]);
+      // once here, the next New game loads nothing
+      await startSession({ repo, registry, library: lib, game, loadPackage });
+      expect(loads).toEqual([PUBLISHED.seats]);
+    }, 30_000);
+
+    it("it can't be loaded, or lays no seats once loaded: nothing is made, and the launcher is told why", async () => {
+      for (const [loadPackage, says] of [
+        [async () => Promise.reject(new Error("its folder couldn't be found")), /it needs seats, and the seats package couldn't be loaded: its folder couldn't be found/],
+        [async () => {}, /it needs seats, and the seats package, loaded, lays none/],
+      ]) {
+        const { repo, lib } = library();
+        const { registry } = onlyTabletop();
+        const game = lost(repo);
+        const before = repo.docs.size;
+        await expect(startSession({ repo, registry, library: lib, game, loadPackage })).rejects.toThrow(says);
+        // no scene, no deck, no link in Sessions, nothing drawn, no table listed
+        expect(repo.docs.size).toBe(before);
+        expect(sessionsIn((await foldersFor(repo, lib)).sessions.doc())).toEqual([]);
+        expect(game.doc().tables ?? []).toEqual([]);
+      }
+    }, 30_000);
+
+    it("a game without seats loads nothing", async () => {
+      const repo = fakeRepo();
+      const { registry } = onlyTabletop();
+      const game = repo.handleFor(repo.create(descriptionDoc(cardsGame({ secure: false, seats: false }), {})).url);
+      const loadPackage = async () => {
+        throw new Error("loaded");
+      };
+      const { url } = await newSession({ repo, registry, handle: game, loadPackage, rng: seeded(7) });
+      expect(repo.docs.get(url).traits[SEATS]).toBeUndefined();
+    }, 30_000);
+  });
 
   it("Fork: the session copied by the copy rule (bare backs, empty seats, bags copied), linked as its copy; the session untouched", async () => {
     // a session with one of everything: decks (secure and not), loose cards, a bag holding cards, hands, dice
