@@ -22,6 +22,7 @@ const ALLOW = {
   "stage/paths.js": { names: ["samePath", "keyOf", "elementOf"], why: "the path grammar, pure: how the view names an object across stages" },
   "stage/ladder.js": { names: ["restLayer"], why: "what the view's own Escape does now, pure: the Edit hand's escape is it" },
   "stage/pointer.js": { names: ["looksFromEye"], why: "whether the look goes along the eye ray, pure: the use prompt's anchor" },
+  "stage/chain.js": { names: ["hitChain", "holdersFor", "chainOrder"], why: "the input chain's order, pure: who holds an object, in the order the chain offers it (the gears graph agrees with the chain by using it)" },
 };
 
 /** The contract pages and their most lines. */

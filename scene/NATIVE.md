@@ -180,6 +180,15 @@ computing, processes: { [ext]: count } }`; `scene.links` `{ stages: [{ path,
 role, open, reason?, url }] }`; `scene.audience` `{ objects: [{ id, audience,
 shown, veiled }] }` for objects a policy answers for: who, never what.
 
+**The gears graph** (`gears.js`, pure): `buildGears` makes one value of the
+registry's metadata, a stage's scene, its running list, its instances'
+commands, inputs and `inspect`s, and the kernel's `owners()`, `settled()` and
+provenance (STAGE.md, "`api`"); `gearsOfObject` (its holders in input order,
+then the view plugins: verbs, events, drawing, services) and
+`gearsOfExtension` (objects by trait, the objects × verbs grid, what it holds
+now, its services, what it wrote last) read it. It uses the chain's own order
+(`stage/chain.js`), so it can't disagree with the input chain.
+
 ## Invariants
 
 | | Invariant |
