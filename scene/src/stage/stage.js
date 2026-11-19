@@ -100,6 +100,9 @@ export function docUrl(v) {
   return typeof v === "string" && v.startsWith("automerge:") ? parseAutomergeUrl(v) : null;
 }
 
+/** The fields an extension may display an object as, merged per field in layering order. */
+const DISPLAY_FIELDS = ["transform", "content", "hidden", "name", "tint", "opacity", "outline"];
+
 /** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
 export function displayKey(o, parent, inh) {
   const t = o.transform ?? {};
@@ -404,6 +407,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // has the manager said which provider this object's render doc names? (its first word, before the doc has loaded, hasn't)
   const said = (st) => st?.content === "built" && "providerId" in st;
   const displayKeys = new Map(); // id → displayKey last applied
+  const outlineKeys = new Map(); // id → the outline last drawn, as a string
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
   // render docs this scene made itself, this session: nothing to wait to sync before building
   const createdHere = new Set();
@@ -489,15 +493,18 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── display (STAGE.md, "Display") ──────────────────────────────────────────
   // How this viewer sees an object instead of as the doc says, never written:
-  // each extension's override { transform?, content?, hidden?, name? },
-  // layered in running order, later winning per field. A transform is a pose
-  // (the viewport's, so worldOf, boxes and picking follow it); content is a
-  // file doc's URL or a stand-in's GLB bytes; hidden and name are as they say.
+  // each extension's override { transform?, content?, hidden?, name?, tint?,
+  // opacity?, outline? }, layered in running order, later winning per field. A
+  // transform is a pose (the viewport's, so worldOf, boxes and picking follow
+  // it); content is a file doc's URL or a stand-in's GLB bytes; hidden and
+  // name are as they say; tint is a colour over the object's own, opacity
+  // multiplies its own, outline is a list of colours its box is drawn in
+  // (alternating dashes for several).
 
   const overrides = new Map(); // object id → Map extension id → its override
   const displayed = new Map(); // object id → the merged override
   const drawn = new Map(); // object id → the stand-in bytes drawn for it
-  let redraw = false; // content, hidden or a name changed: applyDoc on the next flush
+  let redraw = false; // content, hidden, tint, opacity or an outline changed: applyDoc on the next flush
   let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js): the view's when it's the outermost
   const nameOf = (id) => displayed.get(id)?.name ?? derive().objects[id]?.name ?? null;
 
@@ -522,14 +529,15 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
   function redisplay(id) {
     const next = {};
-    for (const [, o] of layered(id)) for (const k of ["transform", "content", "hidden", "name"]) if (o[k] !== undefined) next[k] = o[k];
+    for (const [, o] of layered(id)) for (const k of DISPLAY_FIELDS) if (o[k] !== undefined) next[k] = o[k];
     const was = displayed.get(id) ?? {};
     if (Object.keys(next).length) displayed.set(id, next);
     else displayed.delete(id);
     if (next.transform !== was.transform) scope.setPose(id, next.transform ? normalizeTransform(next.transform) : null);
     // a pose moving isn't news (what moves reads worldOf in its loop); anything else wakes every update
-    if (next.content === was.content && next.hidden === was.hidden && next.name === was.name && !next.transform === !was.transform) return;
-    redraw ||= next.content !== was.content || next.hidden !== was.hidden;
+    const look = (d) => JSON.stringify([d.tint, d.opacity, d.outline]);
+    if (next.content === was.content && next.hidden === was.hidden && next.name === was.name && !next.transform === !was.transform && look(next) === look(was)) return;
+    redraw ||= next.content !== was.content || next.hidden !== was.hidden || look(next) !== look(was);
     displayChanged();
   }
 
@@ -596,11 +604,17 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }
       // placed even without geometry, so whatever is attached to it sits right
       const over = displayed.get(id);
-      const oo = over?.hidden ? { ...o, visible: false } : o;
+      const oo = over ? { ...o, ...(over.hidden ? { visible: false } : {}), ...(over.tint ? { color: over.tint } : {}), ...(over.opacity != null ? { opacity: (o.opacity ?? 1) * over.opacity } : {}) } : o;
       const key = displayKey(oo, parent, inh);
       if (displayKeys.get(id) !== key) {
         displayKeys.set(id, key);
         scope.applyDisplay(id, oo, parent, inh);
+      }
+      const outline = over?.outline?.length ? over.outline : null;
+      const outlineKey = outline ? outline.join("|") : "";
+      if (outlineKeys.get(id) !== outlineKey) {
+        outlineKeys.set(id, outlineKey);
+        scope.setOutline(id, outline);
       }
       const shown = oo.visible !== false && inh.visible;
       // a stand-in (the veil) is drawn through the GLB path, so box and picking go by it; nothing of the object's own loads
@@ -665,6 +679,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scope.removeObject(id);
       if (objState.delete(id)) statusDirty = true;
       displayKeys.delete(id);
+      outlineKeys.delete(id);
       hintKeys.delete(id);
       drawn.delete(id);
       displayed.delete(id); // (its overrides stay until released: it may come back)
@@ -1774,7 +1789,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     packages,
     root,
     scene,
-    /** what this viewer sees instead of the doc (api.display), merged: id → { transform?, content?, hidden?, name? } */
+    /** what this viewer sees instead of the doc (api.display), merged: id → { transform?, content?, hidden?, name?, tint?, opacity?, outline? } */
     displayed: () => displayed,
     /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,

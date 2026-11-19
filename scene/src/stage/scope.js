@@ -154,6 +154,7 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     setGLB: (id, bytes) => vp.setGLB(key(id), bytes),
     setHint: (id, b) => vp.setHint(key(id), b),
     applyDisplay: (id, o, parent, inh) => vp.applyDisplay(key(id), o, parent != null ? key(parent) : root, inh),
+    setOutline: (id, colors) => vp.setOutline(key(id), colors),
     removeObject: (id) => vp.removeObject(key(id)),
     contentOf: (id) => vp.contentOf(key(id)),
     poseOf: (id) => vp.poses.get(key(id)) ?? null,

@@ -37,6 +37,9 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { prepareGLB } from "../gltf-content.js";
 import { layerShown, layerStates } from "../layers.js";
 import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
@@ -1682,6 +1685,7 @@ export class Viewport {
     } else return;
     if (entry.content || !entry.hint) this.removePlaceholder(entry);
     else this.showPlaceholder(entry);
+    if (entry.outlineColors && !entry.content) this.drawOutline(entry);
     this.contentChanged();
   }
 
@@ -1703,6 +1707,49 @@ export class Viewport {
     const size = entry.hint.getSize(new Vector3()).max(new Vector3(1e-4, 1e-4, 1e-4));
     ph.position.copy(c);
     ph.scale.copy(size);
+    this.invalidate();
+  }
+
+  /**
+   * Draw an object's box in these colours (CSS strings; several alternate as
+   * dashes), 2.5 px, as a child of its body (so it follows, hides and goes
+   * with the object, and is never picked); null clears.
+   */
+  setOutline(id, colors) {
+    const entry = this.objects.get(id);
+    if (!entry) return;
+    entry.outlineColors = colors?.length ? [...colors] : null;
+    this.drawOutline(entry);
+  }
+
+  drawOutline(entry) {
+    for (const l of entry.outlines ?? []) {
+      l.removeFromParent();
+      l.geometry.dispose();
+      l.material.dispose();
+    }
+    entry.outlines = [];
+    const box = entry.content ? entry.box : entry.hint;
+    if (entry.outlineColors && box && !box.isEmpty() && entry.kind !== "group") {
+      const { min, max } = box;
+      const corner = (i) => [i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z];
+      const edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+      const positions = edges.flatMap(([a, b]) => [...corner(a), ...corner(b)]);
+      const n = entry.outlineColors.length;
+      const dash = Math.max(box.getSize(new Vector3()).length() / 18, 1e-5);
+      entry.outlineColors.forEach((c, i) => {
+        const geometry = new LineSegmentsGeometry().setPositions(positions);
+        const material = new LineMaterial({ color: new Color(c), linewidth: 2.5, transparent: true, depthWrite: false, ...(n > 1 ? { dashed: true, dashSize: dash, gapSize: dash * (n - 1), dashOffset: -i * dash } : {}) });
+        const line = new LineSegments2(geometry, material);
+        if (n > 1) line.computeLineDistances();
+        line.renderOrder = 3;
+        line.raycast = () => {};
+        line.userData.noPick = true;
+        line.name = "outline";
+        entry.body.add(line);
+        entry.outlines.push(line);
+      });
+    }
     this.invalidate();
   }
 
@@ -1759,6 +1806,7 @@ export class Viewport {
     this.removePlaceholder(entry);
     entry.body.add(prepared.content);
     this.applyLayers(entry);
+    if (entry.outlineColors) this.drawOutline(entry);
     if (this.shadows) castShadows(prepared.content, true);
     this.queueBVH(prepared.content);
     this.applyMaterials(entry);

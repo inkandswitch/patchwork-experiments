@@ -472,6 +472,7 @@ function create(api) {
   const poses = api.use("poses");
   const watchers = new Set();
   const procs = new Map(); // caller id → how many processes it has here (inspect)
+  const drives = new Set(); // { id, ext }: an object a process says it drives (spec.on: an id or ids), for the X-ray's gear
   let away = false; // let go on pagehide, until pageshow
   const clock = createClock({
     doc: api.doc,
@@ -525,9 +526,12 @@ function create(api) {
             if (!ch.session || caller.signal.aborted) return () => {};
             const remove = clock.process(spec);
             procs.set(caller.id, (procs.get(caller.id) ?? 0) + 1);
+            const mine = [spec?.on ?? []].flat().filter((id) => typeof id === "string").map((id) => ({ id, ext: caller.id }));
+            for (const d of mine) drives.add(d);
             check();
             return tie(caller.signal, () => {
               remove();
+              for (const d of mine) drives.delete(d);
               const n = procs.get(caller.id) - 1;
               if (n > 0) procs.set(caller.id, n);
               else procs.delete(caller.id);
@@ -537,8 +541,8 @@ function create(api) {
         }),
     },
     update: check,
-    /** CONVENTIONS.md, "Inspect": who computes, whether it runs, t here, whether this view computes, and each extension's processes here */
-    inspect: () => snapshot({ computer: claims?.claimedBy(null, CLOCK) ?? null, running: clock.running(), t: clock.t(), computing: clock.computing(), processes: Object.fromEntries([...procs].sort(([a], [b]) => (a < b ? -1 : 1))) }),
+    /** CONVENTIONS.md, "Inspect": who computes, whether it runs, t here, whether this view computes, and each extension's processes here, and the objects they say they drive (`on`) */
+    inspect: () => snapshot({ computer: claims?.claimedBy(null, CLOCK) ?? null, running: clock.running(), t: clock.t(), computing: clock.computing(), processes: Object.fromEntries([...procs].sort(([a], [b]) => (a < b ? -1 : 1))), drives: [...drives] }),
     dispose: () => clock.dispose(),
   };
 }

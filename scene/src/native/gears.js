@@ -134,9 +134,11 @@ export function buildGears({ metas = [], scene, running = [], views = [], settle
   const claims = [];
   const poses = [];
   const processes = [];
+  const drives = [];
   for (const { id: by, value } of inspect) {
     for (const c of Array.isArray(value?.claims) ? value.claims : []) claims.push({ object: c.id ?? null, kind: c.kind, ext: c.ext ?? null, viewer: c.viewer ?? null, session: c.session ?? null, mine: !!c.mine, lapsing: !!c.lapsing, from: by });
     for (const h of Array.isArray(value?.holds) ? value.holds : []) poses.push({ object: h.id, ext: h.ext ?? null, session: h.session ?? null, viewer: h.viewer ?? null, rank: h.rank ?? 0, yields: !!h.yields, since: h.since ?? null, landed: !!h.landed, mine: !!h.mine, from: by });
+    for (const d of Array.isArray(value?.drives) ? value.drives : []) drives.push({ object: d.id, ext: d.ext ?? null, from: by });
     for (const [ext, n] of Object.entries(value?.processes && typeof value.processes === "object" ? value.processes : {})) processes.push({ ext, count: n, from: by });
   }
 
@@ -166,6 +168,7 @@ export function buildGears({ metas = [], scene, running = [], views = [], settle
     claims,
     poses,
     processes,
+    drives,
     overrides,
     layers,
     labels,
