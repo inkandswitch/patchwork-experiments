@@ -5,6 +5,8 @@ import { initSubduction, DocHandle } from "@automerge/automerge-repo";
 import { SimNet } from "./simnet.js";
 import { rig, run, FRAME, LAN, WAN, LOSSLESS, LOSSY, SKEWS } from "./harness.js";
 import { gzip } from "./session.js";
+import { SECONDS } from "./host.js";
+import { quietClock } from "../patchwork/quiet.js";
 import { hashSnapshot } from "../wasm-state.js";
 import { FULL } from "../test-tier.js";
 
@@ -174,6 +176,52 @@ test("a holder who vanishes loses the rest of the seat; the others carry on", as
   const cs = Object.entries(doc.seats).filter(([id]) => id.startsWith("c."));
   expect(cs.every(([, s]) => s.until !== undefined)).toBe(true); // reaped
   await settle(peers);
+}, 30_000);
+
+// The Freedoom co-op of 2026-11-18: a holder's tab killed without standing
+// leaves a seat that keeps the clock running at wall time. A newcomer an hour
+// later must not take a port on that clock (its inputs would land an hour of
+// ticks past the state on its screen, which the time budget never closes):
+// the left-behind seat is silent as soon as its inputs say so, joining holds
+// sit() until it is reaped, and the stop (quietClock, the tool's) puts the
+// newcomer's seat where the last player left off.
+test("a seat left behind hours ago is reaped as soon as its inputs are read, and nobody sits on its runaway clock", async () => {
+  const net = new SimNet({ latency: LAN, hub: "hub" });
+  const { peers, url } = await session(net, 1);
+  const [a] = peers;
+  a.port = 0;
+  a.host.sit(0);
+  await run([a], 2000);
+  net.remove(a.name); // a's tab is killed: its seat is never stood up from
+  vi.setSystemTime(Date.now() + 3_600_000); // an hour later
+  const d = peer(net, "d", SKEWS[3]);
+  let ms = 0; // the budget's clock moves 1 ms a step: 5 steps a frame (fake timers hold performance.now)
+  await open(d, url, { budget: 5, perf: () => ms++ });
+  const handle = await d.repo.find(url);
+  const [num, den] = handle.doc().engine.hz;
+  // the tool's stop (quietClock), a microtask after each change to the session, as tool.js and running.js do
+  handle.on("change", () =>
+    queueMicrotask(() => {
+      const stop = quietClock(handle.doc(), handle.doc().engine.players, num / den, d.now());
+      if (stop) handle.change((doc) => void (doc.clock = stop));
+    }),
+  );
+  const ahead = (ticks) => ticks - Math.round((3600 * num) / den);
+  expect(d.host.target()).toBeGreaterThan(Math.round((3600 * num) / den)); // the runaway clock
+  expect(d.host.joining).toBe(true);
+  expect(() => d.host.sit(1)).toThrow(/joining/);
+  // well inside SECONDS.reap (10 s): the seat's inputs, read, end an hour behind the clock
+  await run([d], 1500);
+  // a's last seat (a seat rolls over into a new one every SECONDS.roll)
+  const left = Object.entries(handle.doc().seats).filter(([id]) => id.startsWith("a.")).map(([, x]) => x).sort((x, y) => x.from - y.from).at(-1);
+  expect(left.until).toBeDefined();
+  expect(left.until).toBeLessThan(left.from + Math.round((3 * num) / den)); // where a's inputs end, not where the clock ran
+  expect(ahead(left.until)).toBeLessThan(0);
+  expect(handle.doc().clock.until).toBe(left.until / (num / den)); // stopped where a left off
+  expect(d.host.joining).toBe(false);
+  d.port = 1;
+  d.host.sit(1);
+  expect(d.host.seat.from).toBeLessThanOrEqual(left.until + Math.round((SECONDS.claim * num) / den) + 1);
 }, 30_000);
 
 test("standing up, and sitting again later, on a running session", async () => {

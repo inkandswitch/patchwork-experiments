@@ -13,7 +13,8 @@
 //     computed (a machine nobody plays keeps no world going);
 //  2. Ana plays (a click selects it, P: a port and the pad in hand), walks
 //     with the arrow keys: both views' machines advance, the picture changes
-//     (Doom's view as she walks; Unarmed's screens as Start is pressed), and
+//     (Doom's view as she walks; Unarmed's screens as Start is pressed), the
+//     keys are in the seat's durable record at ticks the game reached, and
 //     the world is computed while it runs;
 //  3. the pictures both views drew for one tick mostly agree; those that
 //     don't were drawn from a prediction of the player's input, put right a
@@ -191,6 +192,11 @@ try {
     check(`${kind}: and the pictures hold there while the world runs on`, held.every((s, i) => s.shown?.hash === end[i].shown?.hash && s.tick === end[i].tick), held.map((s) => s.shown));
     const settled = await b.waitFor(`!__p.clock("a").computing && !__p.clock("b").computing`, 30_000);
     check(`${kind}: and the world is no longer computed for it`, !!settled, [await P(`clock("a")`), await P(`clock("b")`)]);
+    // A changing picture isn't enough (Doom's face moves with nobody pressing anything): the keys are
+    // in the durable record, at ticks the game reached (a seat taken on a clock nobody ran puts them past it)
+    const keyed = Object.values(await P(`keyed(${JSON.stringify(session)})`)).filter((s) => s.n > 0);
+    report.numbers[`${kind}-keyed`] = keyed;
+    check(`${kind}: the keys are in the record, at ticks the game reached`, keyed.length === 1 && keyed[0].n >= 5 && keyed[0].last < end[0].tick && keyed[0].first - keyed[0].from < 600, keyed);
     const sess = await P(`session(${JSON.stringify(session)})`);
     report.numbers[`${kind}-session`] = sess;
     check(`${kind}: the session's stop is at the tick both views stopped at`, Math.floor(sess.clock.until * (kind === "doom" ? 35 : 21477270 / 357366) + 1e-6) === end[0].tick || Math.round(sess.clock.until * (kind === "doom" ? 35 : 21477270 / 357366)) === end[0].tick, { clock: sess.clock, tick: end[0].tick });

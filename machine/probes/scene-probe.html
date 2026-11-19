@@ -336,6 +336,28 @@ try {
     /** what each machine on view w shows: { [id]: { tick, running, shown: { tick, hash, size } | null } } */
     shows,
     placement,
+    /** Per seat of session `url`: the first and last tick its durable input wasn't all zeros (a key held), and how many such ticks. */
+    keyed: async (url) => {
+      const d = (await net.a.find(url)).doc();
+      const width = d.engine.inputBytes, chunk = d.chunk;
+      const out = {};
+      for (const [id, s] of Object.entries(d.seats ?? {})) {
+        const doc = (await net.a.find(s.inputs)).doc();
+        let first = null, last = null, n = 0;
+        for (const [k, bytes] of Object.entries(doc.chunks ?? {})) {
+          const start = Math.max(doc.from, +k * chunk);
+          for (let i = 0; i + width <= bytes.length; i += width) {
+            if (!bytes.subarray(i, i + width).some((x) => x !== 0)) continue;
+            const t = start + i / width;
+            n++;
+            first = first === null ? t : Math.min(first, t);
+            last = last === null ? t : Math.max(last, t);
+          }
+        }
+        out[id] = { port: s.port, from: s.from, until: s.until ?? null, first, last, n };
+      }
+      return out;
+    },
     session: async (url) => { const h = await net.a.find(url); const d = h.doc(); return { clock: JSON.parse(JSON.stringify(d.clock)), seats: JSON.parse(JSON.stringify(d.seats ?? {})), checkpoints: Object.keys(d.checkpoints ?? {}).length }; },
     clock: (w) => ({ t: dbg[w].view.outermost().reader.use("clock").t(), computing: !!dbg[w].view.outermost().reader.use("clock").computer()?.mine, doc: JSON.parse(JSON.stringify(docOf(w).clock ?? null)) }),
     held: (w) => dbg[w].local.get().held ?? null,

@@ -133,6 +133,7 @@ function state(host) {
     frontier: host.frontier,
     target: host.target(),
     loading: host.loading,
+    joining: host.joining,
     seat: host.seat,
     status: host.status,
     stats: host.stats,
