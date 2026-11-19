@@ -15,7 +15,7 @@ import { hostImport } from "./host.js"
 import { applyOps, OpError } from "./ops.js"
 import { previewJson, preview, shape, bytes } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
-import { isCodePath, isDirectory, isFile, isFolder } from "./folders.js"
+import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -249,11 +249,11 @@ export const docCreate = {
   // offered "this document", which was not what it was going to touch.
   target: "none",
   description: [
-    "Create a new document of a registered datatype, and return its URL.",
+    "Create a new document of an installed datatype, and return its URL. This is how to make something for the person — a table, a board, a list, a sketch — so it opens in a real tool and merges field by field, instead of keeping it as a file.",
     "",
     "Use registry_list to find the datatype id first — this fails on one that is not installed, and the id is rarely what you would guess.",
     "",
-    "The new document is not filed in any folder. It is listed in the user's panel of what this session made, so they can reach it, but if it belongs somewhere in their tree put it there with fs_write or by editing the folder.",
+    "Pass `folder` (a folder's automerge: URL) to file it there; without one it is listed only in this session's panel of what it made. Then doc_read it to see the shape the datatype starts with, and fill it in with doc_edit.",
   ].join("\n"),
   // Host tier: it needs the datatype from the page's plugin registry.
   where: "host",
@@ -264,6 +264,7 @@ export const docCreate = {
     properties: {
       datatype: { type: "string", description: "Datatype id, e.g. 'folder' or 'chitterchatter'. Get one from registry_list." },
       title: { type: "string", description: "What to call it. Give it one — an untitled document is hard for the user to find later." },
+      folder: { type: "string", description: "automerge: URL of the folder to file it in, under its title." },
     },
   },
   async execute(input, ctx) {
@@ -276,8 +277,10 @@ export const docCreate = {
       else if (input.title) doc.title = input.title
     })
 
+    const filed = input.folder ? await fileInFolder(ctx.repo, input.folder, { name: input.title || input.datatype, type: input.datatype, url: handle.url }) : null
+
     return {
-      text: `Created ${input.datatype} document: ${handle.url}`,
+      text: `Created ${input.datatype} document: ${handle.url}${filed ? ` — filed in ${filed}` : ""}. doc_read it to see its shape, then fill it in with doc_edit.`,
       // Without this the new document is reachable from this one line of the
       // transcript and nowhere else — the shortest path to losing the thing the
       // user just asked for.
@@ -287,6 +290,26 @@ export const docCreate = {
   summarize(input, output) {
     return `created ${input?.datatype} · ${String(output ?? "").split(": ")[1] ?? ""}`
   },
+}
+
+/**
+ * Link a document into a folder under a name, as the datatype it is. Returns
+ * how to say where it went; throws when the URL is not a folder.
+ */
+export async function fileInFolder(repo, folderUrl, { name, type, url }) {
+  const handle = await repo.find(String(folderUrl).trim())
+  const node = treeNode(handle)
+  if (!node) throw new Error(`${folderUrl} is not a folder; the document was made but not filed (${url}).`)
+  handle.change((d) => {
+    if (node.prefix === null) {
+      if (!d.docs) d.docs = []
+      d.docs.push({ name, type, url })
+    } else {
+      d[`${node.prefix}${name}`] = url
+    }
+  })
+  const doc = handle.doc()
+  return `'${doc?.title ?? doc?.name ?? "folder"}' (${handle.url})`
 }
 
 /** Values in a history are evidence, not content: enough to recognise, with doc_read for the rest. */

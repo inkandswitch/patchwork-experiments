@@ -239,6 +239,36 @@ function looksLikeDocUrl(value) {
 export const ROOT_DESCRIPTION =
   "Folder document to work from. Omit this for the account's root folder, which is almost always what you want — do not pass a placeholder."
 
+/** A file whose content is data — records, a table, a config — rather than prose or code. */
+export const DATA_FILE = /\.(json|ndjson|jsonl|csv|tsv|ya?ml|xml|toml)$/i
+
+/**
+ * The data files just created that are not part of a package: no package.json
+ * in their folder or any folder above it, up to where the write began. Inside a
+ * package a data file is the package's (a manifest, a fixture); outside one it
+ * is somebody's data, kept as a blob of text.
+ */
+async function dataOutsidePackages(repo, root, created) {
+  const out = []
+  for (const { path, parts } of created) {
+    let inPackage = false
+    for (let depth = 0; depth <= parts.length && !inPackage; depth++) {
+      const node = await ensurePath(repo, root, parts.slice(0, depth))
+      inPackage = treeEntries(node).some((entry) => entry.name === "package.json")
+    }
+    if (!inPackage) out.push(path)
+  }
+  return out
+}
+
+/** What fs_write says when it has kept data as a file. */
+export function dataFileNote(paths) {
+  return [
+    `Note: ${paths.join(", ")} ${paths.length === 1 ? "keeps" : "keep"} data as a plain file — one blob of text, opened as text, merged only as text.`,
+    "If this is data for the person (records, a table, a list), a document of an installed datatype is better: it opens in a real tool and merges field by field. registry_list for a datatype, then doc_create { datatype, title, folder }, then doc_edit. A file is right for a tool's source, or when a file was asked for.",
+  ].join(" ")
+}
+
 function rootFor(input, ctx) {
   // A model filling in the `root` field with a placeholder — "automerge:",
   // "root", "" — is a predictable mistake, and passing it through meant a failed
@@ -609,6 +639,7 @@ export const fsWrite = {
     const root = rootFor(input, ctx)
     const written = []
     const touched = []
+    const createdData = []
 
     for (const [path, content] of Object.entries(batch)) {
       const parts = String(path).split("/").filter(Boolean)
@@ -632,9 +663,12 @@ export const fsWrite = {
         touched.push(parts)
         const created = await createFile(ctx.repo, name, content)
         treeAdd(folder, name, created.url)
+        if (DATA_FILE.test(name)) createdData.push({ path, parts: [...parts] })
         written.push(`${path} · created ${content.split("\n").length} lines (${created.url})`)
       }
     }
+
+    const data = await dataOutsidePackages(ctx.repo, root, createdData)
 
     // The folder a package lives in is what gets installed, so say which it is.
     const topFolder = Object.keys(batch)[0].split("/").filter(Boolean).slice(0, -1)
@@ -656,6 +690,7 @@ export const fsWrite = {
           ? `Package folder: ${containing} — this is the \`url\` for tool_check, view_mount, package_build and package_test.`
           : `Written at the root folder: ${containing}`,
         ...(bumped ? [bumped] : []),
+        ...(data.length ? ["", dataFileNote(data)] : []),
       ].join("\n"),
       // The FOLDER is the artifact, not the individual files: it is what you
       // open, what you install, and what a person means by "my tool". Listing

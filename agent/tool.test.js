@@ -574,3 +574,50 @@ describe("what a call made or opened, inline", () => {
     cleanup()
   })
 })
+
+describe("the workflow link in the header", () => {
+  const opened = (element) => {
+    const urls = []
+    element.addEventListener("patchwork:open-document", (event) => urls.push(event.detail.url))
+    return urls
+  }
+
+  it("is hidden when the session has no workflow", () => {
+    const { element, cleanup } = mount(fakeHandle())
+    expect(element.querySelector(".agent-workflow-link").hidden).toBe(true)
+    cleanup()
+  })
+
+  it("on a step's session opens the plan it is a step of", () => {
+    const handle = fakeHandle()
+    handle.change((d) => {
+      d.workflow = { planUrl: "automerge:plan", stepId: "research", orchestratorUrl: "automerge:orch" }
+    })
+    const { element, cleanup } = mount(handle)
+    const urls = opened(element)
+    const link = element.querySelector(".agent-workflow-link")
+    expect([link.hidden, link.textContent]).toEqual([false, "↑ Workflow"])
+    link.click()
+    expect(urls).toEqual(["automerge:plan"])
+    cleanup()
+  })
+
+  it("on an orchestrator opens the latest workflow it started, and appears as soon as one is started", () => {
+    const handle = fakeHandle()
+    const { element, cleanup } = mount(handle)
+    const urls = opened(element)
+    const link = element.querySelector(".agent-workflow-link")
+    expect(link.hidden).toBe(true)
+    handle.change((d) => {
+      d.made = [
+        { url: "automerge:first", kind: "agent-workflow", name: "First" },
+        { url: "automerge:pkg", kind: "package", name: "pkg" },
+        { url: "automerge:second", kind: "agent-workflow", name: "Second" },
+      ]
+    })
+    expect([link.hidden, link.textContent]).toEqual([false, "Workflow"])
+    link.click()
+    expect(urls).toEqual(["automerge:second"])
+    cleanup()
+  })
+})

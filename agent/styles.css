@@ -124,6 +124,20 @@
 
 .patchwork-agent .agent-model:hover { background: var(--agent-surface); }
 
+/* The workflow this session started or is a step of. */
+.patchwork-agent .agent-workflow-link {
+  font-size: 0.72rem;
+  color: var(--agent-accent-text);
+  background: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.patchwork-agent .agent-workflow-link:hover { background: var(--agent-surface); }
+.patchwork-agent .agent-workflow-link[hidden] { display: none; }
+
 /* ---- Transcript -------------------------------------------------------- */
 
 .patchwork-agent .agent-transcript {

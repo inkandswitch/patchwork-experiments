@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import { fsWrite, fsList, fsRead, fsDelete, fsEdit } from "./tools/folders.js"
+import { fileInFolder } from "./tools/docs.js"
 import { needsApproval, initSession, grantKey } from "./session.js"
 
 /** A repo of plain-object documents with a root folder. */
@@ -329,5 +330,56 @@ describe("writing into a package moves the package's version", () => {
     expect(written.text).toMatch(/write by `path` instead/)
     const edited = await fsEdit.execute({ url: agentUrl, old: "real", new: "realer" }, ctx(repo))
     expect(edited.text).toMatch(/write by `path` instead/)
+  })
+})
+
+describe("data kept as a file is pointed at a datatype instead", () => {
+  const NOTE = /keeps? data as a plain file/
+
+  it("a data file outside any package gets the note; prose and code do not", async () => {
+    for (const [path, noted] of [
+      ["inventory.json", true],
+      ["lists/parts.csv", true],
+      ["config.yaml", true],
+      ["notes.md", false],
+      ["script.js", false],
+    ]) {
+      const repo = fakeRepo()
+      const out = await fsWrite.execute({ path, content: "x" }, ctx(repo))
+      expect(NOTE.test(out.text), path).toBe(noted)
+      if (noted) expect(out.text).toContain("doc_create { datatype, title, folder }")
+    }
+  })
+
+  it("a data file inside a package — in its folder or below — is the package's, and gets no note", async () => {
+    const repo = fakeRepo()
+    const out = await fsWrite.execute({ files: { "tool/package.json": "{}", "tool/index.js": "", "tool/data/cells.json": "[]" } }, ctx(repo))
+    expect(out.text).not.toMatch(NOTE)
+    const later = await fsWrite.execute({ path: "tool/fixtures/more.json", content: "[]" }, ctx(repo))
+    expect(later.text).not.toMatch(NOTE)
+  })
+
+  it("rewriting an existing data file says nothing more", async () => {
+    const repo = fakeRepo()
+    await fsWrite.execute({ path: "inventory.json", content: "[]" }, ctx(repo))
+    const again = await fsWrite.execute({ path: "inventory.json", content: "[1]" }, ctx(repo))
+    expect(again.text).not.toMatch(NOTE)
+  })
+})
+
+describe("doc_create files what it makes", () => {
+  it("links the new document into the folder under its title, as its datatype", async () => {
+    const repo = fakeRepo()
+    const said = await fileInFolder(repo, "automerge:root", { name: "Parts", type: "datagrid", url: "automerge:grid" })
+    expect(entry(repo, "automerge:root", "Parts")).toEqual({ name: "Parts", type: "datagrid", url: "automerge:grid" })
+    expect(said).toBe("'root' (automerge:root)")
+  })
+
+  it("refuses a URL that is not a folder, saying the document was made", async () => {
+    const repo = fakeRepo()
+    const out = await fsWrite.execute({ path: "notes.md", content: "x" }, ctx(repo))
+    const file = entry(repo, "automerge:root", "notes.md").url
+    await expect(fileInFolder(repo, file, { name: "Parts", type: "datagrid", url: "automerge:grid" })).rejects.toThrow(/is not a folder; the document was made but not filed \(automerge:grid\)/)
+    expect(out.text).toBeTruthy()
   })
 })

@@ -362,3 +362,17 @@ export function stepPrompt(plan, step) {
   )
   return lines.join("\n")
 }
+
+/**
+ * The workflow a session belongs to, for a view to link to:
+ *
+ *   { url, role: "step", stepId }   a step's session: the plan it is a step of
+ *   { url, role: "orchestrator" }   a session that started workflows: the latest
+ *   null                            neither
+ */
+export function workflowOf(session) {
+  const step = session?.workflow
+  if (step?.planUrl) return { url: String(step.planUrl), role: "step", stepId: step.stepId ?? null }
+  const started = [...(session?.made ?? [])].reverse().find((m) => m?.kind === "agent-workflow" && m.url)
+  return started ? { url: String(started.url), role: "orchestrator" } : null
+}

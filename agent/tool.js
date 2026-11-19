@@ -25,6 +25,7 @@ import { startTabRunner, accountContext } from "./tab-runner.js"
 import { formatCost } from "./session.js"
 import { watchWaiting, renderWaiting } from "./ui/waiting.js"
 import { markCitations } from "./ui/citations.js"
+import { workflowOf } from "./workflow/plan.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import {
   getProvider,
@@ -132,7 +133,29 @@ export function AgentTool(handle, element, options = {}) {
   modelButton.title = "Change model or API key"
   // What this session has spent, as OpenRouter reports it.
   const costLabel = el("span", "agent-cost", "")
-  header.append(statusDot, subjectLabel, costLabel, modelButton)
+  // The workflow this session started, or is a step of: one click to its view.
+  const workflowButton = el("button", "agent-workflow-link", "Workflow")
+  workflowButton.hidden = true
+  header.append(statusDot, subjectLabel, workflowButton, costLabel, modelButton)
+  let workflowShown = null
+  workflowButton.addEventListener("click", (event) => {
+    event.preventDefault()
+    if (workflowShown) onOpenDoc(workflowShown)
+  })
+  /** Show the workflow link, or hide it; its title is fetched once per plan. */
+  function renderWorkflowLink(doc) {
+    const found = workflowOf(doc)
+    workflowButton.hidden = !found
+    if (!found || found.url === workflowShown) return
+    workflowShown = found.url
+    workflowButton.textContent = found.role === "step" ? "↑ Workflow" : "Workflow"
+    workflowButton.title = found.role === "step" ? "Open the workflow this is a step of" : "Open the workflow this session started"
+    titleOf(repo, found.url).then((title) => {
+      if (title && workflowShown === found.url) {
+        workflowButton.title = found.role === "step" ? `Step ${found.stepId ?? ""} of “${title}” — open the workflow` : `Open the workflow “${title}”`
+      }
+    })
+  }
 
   // What the session makes and opens lives IN the transcript, beside the call
   // that made or opened it (ui/views.js). There used to be a strip of "things
@@ -894,6 +917,7 @@ export function AgentTool(handle, element, options = {}) {
     renderStrip()
 
     uiState.subject = doc.subject ?? null
+    renderWorkflowLink(doc)
     renderTranscript(transcript, doc, uiState, {
       decide: onDecide,
       answer: onAnswer,
