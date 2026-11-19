@@ -64,7 +64,7 @@ for (const mode of modes) {
   const profile = mkdtempSync(join(tmpdir(), "machine-worker-"));
   const browser = spawn(chrome, [
     "--headless=new",
-    "--no-first-run",
+    "--no-first-run", "--mute-audio",
     "--no-default-browser-check",
     `--user-data-dir=${profile}`,
     `http://localhost:${port}/bench/worker/probe.html?mode=${mode.split(":")[0]}&budget=${mode.split(":")[1] ?? 25}`,

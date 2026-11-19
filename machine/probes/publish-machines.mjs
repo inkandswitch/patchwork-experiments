@@ -3,7 +3,7 @@
 // (the IWAD with its start arguments, or the ROM), the host's session, and
 // the machine doc that names them and suggests this package.
 //
-//   node probes/publish-machines.mjs [--sync wss://…] [--settle 8000]
+//   node probes/publish-machines.mjs [--only doom|snes] [--sync wss://…] [--settle 8000]
 //
 // Needs engines/doom/test/freedoom1.wad (sh engines/doom/test/fetch-freedoom.sh)
 // and this package pushworked (.pushwork/config.json names its url).
@@ -43,7 +43,7 @@ await initSubduction();
 const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
 console.log(`connected to ${SYNC}; package ${pkg}`);
 const made = [];
-for (const ex of EXAMPLES) {
+for (const ex of EXAMPLES.filter((e) => !arg("only") || e.kind === arg("only"))) {
   const wasm = read(`engines/${ex.kind}/dist/${ex.kind}.wasm`);
   const content = ex.content();
   const c = await repo.create2({ title: ex.contentTitle, bytes: content });

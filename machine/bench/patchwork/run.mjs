@@ -73,7 +73,7 @@ const profile = mkdtempSync(join(tmpdir(), "machine-probe-"));
 const browser = spawn(chrome, [
   "--headless=new",
   "--disable-gpu",
-  "--no-first-run",
+  "--no-first-run", "--mute-audio",
   "--no-default-browser-check",
   `--user-data-dir=${profile}`,
   "--enable-logging=stderr",
