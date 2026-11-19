@@ -131,6 +131,20 @@ key names on touch; does arena's gun fire on a tap?
 - **Packages pruned** (COMP packages pruned): two viewers on different
   versions take turns listing a package; settle it? Lost Cities aboard and
   the Quiet games room wait for W8's republish (10).
+- **Bug, the packages list flip-flops** (found 2026-11-18, scene 6ff568f6).
+  The list records the package whose plugin actually runs for each need, and
+  a writable visit prunes a listed package that nothing running comes from,
+  even one this viewer lacks, when its own shareable packages answer every
+  need. So two viewers whose registries hand the same plugin id to
+  *different* packages (a stale or retired package still installed beside
+  its replacement: the old card-table beside tabletop) rewrite the list in
+  turn, each visit undoing the other's. Harmless once stale packages are
+  uninstalled, but the list never converges while both exist. A repair
+  needs an order every viewer agrees on for "which package answers this
+  need" that doesn't depend on local registration order: e.g. prefer the
+  package the doc already lists while it still answers the need, or a
+  deterministic rank (newest published version of the same package name),
+  and never prune a package another listed one doesn't replace.
 - **Landing** (COMP landing): confirm that a snap's turn no longer sticks
   and faceUp turns over only a face pointing down; tabletop's domino rule
   (a, b or c); a general `up` axis; drop yaw-only connectors (a GLB
