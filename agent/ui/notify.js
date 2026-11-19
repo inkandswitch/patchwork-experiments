@@ -8,6 +8,8 @@
  * several open Patchwork tabs raise one notification between them, not one each.
  */
 
+import { describeBudget } from "./waiting.js"
+
 const SETTING_KEY = "patchwork-agent:notifications"
 
 export function notificationsSupported() {
@@ -85,5 +87,6 @@ export function describe(event) {
     return { title: `${event.title} finished`, body: event.summary || `After ${minutes} minute${minutes === 1 ? "" : "s"} of work.` }
   }
   if (event.kind === "approval") return { title: `${event.title} needs your permission`, body: `To run ${event.tool}.` }
+  if (event.kind === "budget") return { title: `${event.title} paused: budget spent`, body: describeBudget(event) }
   return { title: `${event.title} is asking you`, body: event.question ?? "" }
 }

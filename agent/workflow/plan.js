@@ -38,7 +38,7 @@
 export const TIERS = ["deep", "standard", "fast"]
 
 /** The tools that orchestrate. A step never gets them: workflows do not nest. */
-export const WORKFLOW_TOOL_IDS = ["workflow_start", "workflow_add_steps", "workflow_status", "workflow_stop", "workflow_answer"]
+export const WORKFLOW_TOOL_IDS = ["workflow_start", "workflow_add_steps", "workflow_status", "workflow_stop", "workflow_answer", "workflow_budget"]
 
 /** OpenRouter's aliases follow each family's newest release. */
 export const DEFAULT_TIER_MODELS = {
@@ -52,7 +52,29 @@ export const DEFAULT_TIER_MODELS = {
  * Host steps share the page — they mount views and drive them — so they take
  * turns by default.
  */
-export const DEFAULT_LIMITS = { parallel: 3, hostParallel: 1, steps: 24, tokens: 3_000_000 }
+/**
+ * `cost` is the budget, in dollars, for what the steps spend together as
+ * OpenRouter reports it. Not tokens: most of a long session's input is
+ * cache reads at a tenth of the price, so a token count tripped on runs that
+ * had spent almost nothing.
+ */
+export const DEFAULT_LIMITS = { parallel: 3, hostParallel: 1, steps: 24, cost: 20 }
+
+/**
+ * What a step may spend, in dollars, unless the orchestrator gives it a
+ * budget of its own. A step that spends its budget stops and waits for the
+ * orchestrator to decide (workflow_budget, workflow_stop): a weak model going
+ * round in circles spends its own allowance, not the whole workflow's.
+ */
+export const DEFAULT_STEP_BUDGETS = { deep: 5, standard: 2, fast: 0.5 }
+
+/** A step's budget in dollars: its own, or its tier's. */
+export function stepBudget(step) {
+  return step?.budget ?? DEFAULT_STEP_BUDGETS[step?.tier] ?? DEFAULT_STEP_BUDGETS.standard
+}
+
+/** What a person can add to a spent budget in one click, in dollars. */
+export const RESUME_AMOUNTS = [5, 20]
 
 export const WHERE = ["host", "worker"]
 
@@ -122,6 +144,7 @@ export function newStep(step) {
     status: STEP.pending,
   }
   if (step.access === "web") out.access = "web"
+  if (step.budget != null) out.budget = Number(step.budget)
   return out
 }
 
@@ -155,6 +178,7 @@ export function validateSteps(plan, incoming) {
     if (!WHERE.includes(step.where)) errors.push(`${at}: 'where' must be one of ${WHERE.join(", ")}.`)
     if (!TIERS.includes(step.tier)) errors.push(`${at}: 'tier' must be one of ${TIERS.join(", ")}.`)
     if (step.access != null && !ACCESS.includes(step.access)) errors.push(`${at}: 'access' must be one of ${ACCESS.join(", ")}.`)
+    if (step.budget != null && !(typeof step.budget === "number" && Number.isFinite(step.budget) && step.budget > 0)) errors.push(`${at}: 'budget' must be a positive number of dollars.`)
     if (step.access === "web" && step.where !== "worker") errors.push(`${at}: a web-only step runs on a worker; it needs nothing from the page.`)
     if (step.after != null && !Array.isArray(step.after)) errors.push(`${at}: 'after' must be a list of step ids.`)
   }
@@ -252,15 +276,16 @@ export function states(plan, sessions = {}) {
  * Which steps to start now, in plan order.
  *
  * The rules, each of which the tests check over every small plan:
- *   - only a running plan starts anything, and not once its token budget is spent;
+ *   - only a running plan starts anything, and not while it is paused or once
+ *     its budget is spent;
  *   - only a ready step starts: everything it depends on is done;
  *   - never more than `parallel` steps running at once,
  *     nor more than `hostParallel` of them on the page.
  */
 export function toStart(plan, sessions = {}) {
-  if (plan.status !== PLAN.running) return []
+  if (plan.status !== PLAN.running || plan.paused) return []
   const limits = { ...DEFAULT_LIMITS, ...(plan.limits ?? {}) }
-  if ((plan.usage?.in ?? 0) + (plan.usage?.out ?? 0) >= limits.tokens) return []
+  if (overBudget(plan)) return []
 
   const derived = states(plan, sessions)
   const running = (plan.steps ?? []).filter((s) => s.status === STEP.running)
@@ -285,10 +310,50 @@ export function isSettled(plan, sessions = {}) {
   return [...derived.values()].every((s) => TERMINAL.has(s) || s === STATE.blocked)
 }
 
-/** Has the token budget been spent? */
+/** What the steps have spent, in dollars, and the budget for it. */
+export function budgetOf(plan) {
+  return { spent: plan?.usage?.cost ?? 0, limit: plan?.limits?.cost ?? DEFAULT_LIMITS.cost }
+}
+
+/** Has the budget been spent? */
 export function overBudget(plan) {
-  const limit = plan.limits?.tokens ?? DEFAULT_LIMITS.tokens
-  return (plan.usage?.in ?? 0) + (plan.usage?.out ?? 0) >= limit
+  const { spent, limit } = budgetOf(plan)
+  return spent >= limit
+}
+
+/**
+ * Should the plan pause for its budget now?
+ *
+ * When the budget is spent nothing more starts (toStart); before this, a plan
+ * in that state said "running" for ever, with work ready that would never
+ * begin and nobody told. It pauses instead, once whatever was running has
+ * finished — a step is not cut off half-way — and only when something is
+ * ready to start, since a plan with nothing left to start is finishing, not
+ * stuck.
+ */
+export function shouldPause(plan, sessions = {}) {
+  if (plan?.status !== PLAN.running || plan.paused || !overBudget(plan)) return false
+  if ((plan.steps ?? []).some((s) => s.status === STEP.running)) return false
+  const derived = states(plan, sessions)
+  return [...derived.values()].some((state) => state === STATE.ready)
+}
+
+/** The steps a paused plan has not started. */
+export function notStarted(plan) {
+  return (plan?.steps ?? []).filter((s) => s.status === STEP.pending)
+}
+
+/**
+ * Resume a paused plan with `add` dollars more than it has spent, inside a
+ * change. A person's decision: no agent tool calls this.
+ */
+export function resumePlan(doc, add) {
+  const amount = Number(add)
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Resume with a positive amount.")
+  const { spent } = budgetOf(doc)
+  if (!doc.limits) doc.limits = { ...DEFAULT_LIMITS }
+  doc.limits.cost = Math.round((spent + amount) * 100) / 100
+  doc.paused = null
 }
 
 /** How much of a dependency's result a step is handed. The rest is in its session. */

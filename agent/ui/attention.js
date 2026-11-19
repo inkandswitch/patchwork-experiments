@@ -14,7 +14,7 @@
 
 import { STATUS, lastTurn, sessionTitle, callsAwaitingApproval, questionsAwaitingAnswer } from "../session.js"
 import { needsWork } from "../runner.js"
-import { waitingIn } from "../workflow/waiting.js"
+import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP } from "../workflow/plan.js"
 import { describeCall } from "./calls.js"
 
@@ -168,6 +168,8 @@ export function watchAttention(repo, getSessionUrls, onChange, { now = () => Dat
       }
       for (const planUrl of plansOf(doc)) {
         const plan = docOf(planUrl)
+        const budget = budgetWaiting(plan, planUrl, watched.get(planUrl)?.handle)
+        if (budget) needs.push({ ...budget, key: budget.callId, repo, sessionUrl: url, title: plan.title })
         for (const step of plan?.steps ?? []) {
           if (step.status !== STEP.running) continue
           const stepDoc = docOf(step.sessionUrl)

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   STEP, STATE, PLAN, TIERS, DEFAULT_LIMITS,
   initPlan, validateSteps, findCycle, states, toStart, isSettled, stepPrompt,
+  overBudget, shouldPause, resumePlan, budgetOf, notStarted,
 } from "./workflow/plan.js"
 
 const STATUSES = Object.values(STEP)
@@ -93,6 +94,78 @@ function checkInvariants(p) {
   return null
 }
 
+describe("the budget, over every small plan", () => {
+  // Every plan of up to three steps, under budget and spent, paused or not.
+  function* budgeted() {
+    for (let n = 1; n <= 3; n++) {
+      for (const p of every(n)) {
+        for (const cost of [0, 19.99, 20, 31]) {
+          for (const paused of [null, { reason: "budget", at: 1, spent: cost, limit: 20, reported: false }]) {
+            yield { ...p, usage: { in: 9e9, out: 9e9, cost }, paused }
+          }
+        }
+      }
+    }
+  }
+  /** The same plan with all the budget it could want, and not paused. */
+  const flush = (p) => ({ ...p, paused: null, limits: { ...p.limits, cost: Infinity } })
+
+  it("counts dollars, not tokens: billions of tokens under budget still start work", () => {
+    const p = plan([step("a")], { usage: { in: 9e9, out: 9e9, cost: 0.24 } })
+    expect([overBudget(p), toStart(p)]).toEqual([false, ["a"]])
+    expect(budgetOf(p)).toEqual({ spent: 0.24, limit: DEFAULT_LIMITS.cost })
+  })
+
+  it("starts nothing paused or spent; pauses exactly when more budget would start something with nothing running; is never stuck without pausing", () => {
+    let count = 0
+    for (const p of budgeted()) {
+      const label = () => `${JSON.stringify(p.steps.map(({ id, after, status }) => ({ id, after, status })))} cost ${p.usage.cost} paused ${!!p.paused}`
+      if ((p.paused || overBudget(p)) && toStart(p).length) throw new Error(`started work: ${label()}`)
+
+      const nothingRunning = !p.steps.some((x) => x.status === STEP.running)
+      const expected = !p.paused && overBudget(p) && nothingRunning && toStart(flush(p)).length > 0
+      if (shouldPause(p) !== expected) throw new Error(`shouldPause ${shouldPause(p)}, expected ${expected}: ${label()}`)
+
+      // The bug this exists for: spent, nothing running, not finished — and
+      // nobody told. Every such plan pauses.
+      if (!p.paused && overBudget(p) && nothingRunning && !isSettled(p) && !shouldPause(p)) throw new Error(`stuck without pausing: ${label()}`)
+      count++
+    }
+    expect(count).toBe(24630 * 8)
+  })
+
+  it("resuming lifts the pause and leaves the plan scheduling exactly as if it had budget", () => {
+    let count = 0
+    for (const p of budgeted()) {
+      if (!p.paused) continue
+      const unlimited = toStart(flush(p)).join(",")
+      for (const add of [0.01, 5, 20]) {
+        // resumePlan writes only `limits` and `paused`.
+        const d = { ...p, limits: { ...p.limits } }
+        resumePlan(d, add)
+        const broken =
+          d.paused !== null ? "still paused"
+          : Math.abs(d.limits.cost - (p.usage.cost + add)) > 0.005 ? `limit ${d.limits.cost}`
+          : overBudget(d) ? "still over budget"
+          : toStart(d).join(",") !== unlimited ? `starts ${toStart(d)} not ${unlimited}`
+          : null
+        if (broken) throw new Error(`${broken} after +${add}: cost ${p.usage.cost}`)
+        count++
+      }
+    }
+    expect(count).toBe(24630 * 4 * 3)
+  })
+
+  it("refuses to resume with nothing", () => {
+    for (const add of [0, -5, Number.NaN, "lots"]) expect(() => resumePlan(plan([step("a")]), add)).toThrow(/positive/)
+  })
+
+  it("names what has not started", () => {
+    const p = plan([step("a", { status: STEP.done }), step("b"), step("c", { status: STEP.running }), step("d")])
+    expect(notStarted(p).map((x) => x.id)).toEqual(["b", "d"])
+  })
+})
+
 describe("scheduling, over every small plan", () => {
   it("holds every rule for all plans of up to three steps", () => {
     let count = 0
@@ -121,7 +194,8 @@ describe("scheduling, over every small plan", () => {
     const steps = [step("a")]
     expect(toStart(plan(steps, { status: PLAN.stopped }))).toEqual([])
     expect(toStart(plan(steps, { status: PLAN.done }))).toEqual([])
-    expect(toStart(plan(steps, { usage: { in: DEFAULT_LIMITS.tokens, out: 0 } }))).toEqual([])
+    expect(toStart(plan(steps, { usage: { in: 0, out: 0, cost: DEFAULT_LIMITS.cost } }))).toEqual([])
+    expect(toStart(plan(steps, { paused: { reason: "budget", at: 1, spent: 1, limit: 1 } }))).toEqual([])
     expect(toStart(plan(steps))).toEqual(["a"])
   })
 

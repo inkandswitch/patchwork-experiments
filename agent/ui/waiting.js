@@ -14,8 +14,8 @@ import { grantOffers, callScope, asksEveryTime } from "../session.js"
 import { builtinToolset } from "../tools/index.js"
 import { handleStore } from "../store.js"
 import { describeCall } from "./calls.js"
-import { waitingIn } from "../workflow/waiting.js"
-import { STEP } from "../workflow/plan.js"
+import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
+import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
 
 /** Documents a grant never covers: the account and its module settings. */
 const sensitiveDocs = () =>
@@ -70,6 +70,8 @@ export function watchWaiting(repo, sessionHandle, onChange) {
     const out = []
     for (const url of plans()) {
       const plan = watched.get(url)?.handle?.doc()
+      const budget = budgetWaiting(plan, url, watched.get(url)?.handle)
+      if (budget) out.push({ ...budget, repo })
       for (const step of plan?.steps ?? []) {
         if (step.status !== STEP.running) continue
         const handle = watched.get(step.sessionUrl)?.handle
@@ -104,6 +106,7 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
   node.dataset.kind = item.kind
   const store = () => handleStore(item.handle, splice)
 
+  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
   if (showStep) node.append(el("p", "agent-waiting-step", `${item.stepTitle}${item.planTitle ? ` · ${item.planTitle}` : ""}`))
 
   const actions = el("div", "cluster")
@@ -182,6 +185,49 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
   }
   node.append(actions)
   return node
+}
+
+/**
+ * A workflow paused for its budget: what it spent, what is waiting, and
+ * Resume with a little more or a lot more. Resuming is a person's decision,
+ * made here or in the workflow view; no agent tool can do it.
+ */
+export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) {
+  const node = el("div", "agent-waiting-item")
+  node.dataset.kind = "budget"
+  if (showStep && item.planTitle) node.append(el("p", "agent-waiting-step", item.planTitle))
+  node.append(el("p", null, describeBudget(item)))
+  const actions = el("div", "cluster")
+  for (const amount of RESUME_AMOUNTS) {
+    const resume = el("button", null, `Resume with $${amount} more`)
+    if (amount === RESUME_AMOUNTS[0]) resume.dataset.variant = "primary"
+    resume.addEventListener("click", async (event) => {
+      event.preventDefault()
+      item.planHandle?.change((d) => resumePlan(d, amount))
+      // A driver must be running for anything to start: the plan view starts
+      // one, and so does this, for a person who never opened it.
+      if (item.repo && item.planUrl) {
+        const { drivePlanHere } = await import("../workflow/driver.js")
+        drivePlanHere(item.planUrl, { repo: item.repo }).catch(() => {})
+      }
+    })
+    actions.append(resume)
+  }
+  if (onOpen && item.planUrl) {
+    const open = el("button", null, "Open workflow")
+    open.addEventListener("click", (event) => {
+      event.preventDefault()
+      onOpen(item.planUrl)
+    })
+    actions.append(open)
+  }
+  node.append(actions)
+  return node
+}
+
+/** One line on a paused budget. */
+export function describeBudget({ spent, limit, notStarted }) {
+  return `Budget spent: $${Number(spent).toFixed(2)} of $${Number(limit).toFixed(2)}. ${notStarted} step${notStarted === 1 ? "" : "s"} waiting to start.`
 }
 
 /** The strip above the orchestrator's transcript. Empty, it is hidden. */

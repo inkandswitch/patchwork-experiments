@@ -8,11 +8,30 @@
  */
 
 import { callsAwaitingApproval, questionsAwaitingAnswer, questionOptions } from "../session.js"
+import { notStarted } from "./plan.js"
 
 /**
  *   { kind: "approval", callId, tool, input }
  *   { kind: "question", callId, question, options: [{label, detail}] }
  */
+/**
+ * A plan paused for its budget, as something waiting on a person: who can
+ * resume it with more, or leave it. `planHandle` is what Resume writes to.
+ */
+export function budgetWaiting(plan, planUrl, planHandle) {
+  if (plan?.paused?.reason !== "budget") return null
+  return {
+    kind: "budget",
+    callId: `budget:${planUrl}:${plan.paused.at}`,
+    planUrl,
+    planHandle,
+    planTitle: plan.title,
+    spent: plan.paused.spent,
+    limit: plan.paused.limit,
+    notStarted: notStarted(plan).length,
+  }
+}
+
 export function waitingIn(doc) {
   if (!doc) return []
   const approvals = callsAwaitingApproval(doc).map((call) => ({

@@ -802,6 +802,21 @@ When the workflow is over, bring the results together for the person: what was
 done, what was found, what failed and why. \`workflow_status\` shows every
 step; \`workflow_stop\` cancels steps or the whole thing.
 
+## Budgets
+
+Money is managed in two layers. The workflow has a budget in dollars that only
+the person can raise: when the steps have spent it, nothing more starts, you
+are told, and they are offered Resume. Each step has a budget of its own within
+that — \`budget\` on the step, or its tier's default — so that one step going
+round in circles spends its own allowance, not everyone's.
+
+A step that spends its budget stops part-way and you are woken. Look at its
+session and decide: \`workflow_budget\` to let it carry on with more if it was
+making progress, \`workflow_stop\` if it was not, or \`workflow_add_steps\` to
+do the rest differently — a narrower question, a stronger tier. Give a step a
+bigger budget up front when it has a lot to do (a long design, many pages to
+read), rather than topping it up later.
+
 ## Steps that need someone
 
 A step that asks a question wakes you with it. It works for you, so answer it

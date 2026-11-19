@@ -11,7 +11,9 @@
  * running when its tab closed resumes when anyone opens it again.
  */
 
-import { states, STATE, PLAN, DEFAULT_LIMITS } from "./plan.js"
+import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf } from "./plan.js"
+import { budgetWaiting } from "./waiting.js"
+import { renderBudgetItem } from "../ui/waiting.js"
 import { formatCost } from "../session.js"
 import { drivePlanHere, getDriver, keptCounts } from "./driver.js"
 import { waitingIn } from "./waiting.js"
@@ -195,13 +197,12 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
 
     const header = el("header", "agent-wf-header")
     const titleRow = el("div", "cluster")
-    const status = el("span", "agent-wf-chip", plan.status)
-    status.dataset.state = plan.status === PLAN.running ? STATE.running : plan.status === PLAN.done ? STATE.done : STATE.cancelled
+    const status = el("span", "agent-wf-chip", plan.paused ? "paused" : plan.status)
+    status.dataset.state = plan.paused ? STATE.needsInput : plan.status === PLAN.running ? STATE.running : plan.status === PLAN.done ? STATE.done : STATE.cancelled
     titleRow.append(el("h2", null, plan.title), status)
     header.append(titleRow, el("p", "agent-wf-goal", plan.goal))
 
-    const used = (plan.usage?.in ?? 0) + (plan.usage?.out ?? 0)
-    const limit = plan.limits?.tokens ?? DEFAULT_LIMITS.tokens
+    const budget = budgetOf(plan)
     const summary = el("p", "agent-wf-summary")
     summary.textContent = [
       `${count(STATE.done)}/${plan.steps.length} done`,
@@ -209,8 +210,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       count(STATE.needsInput) ? `${count(STATE.needsInput)} need you` : null,
       count(STATE.failed) ? `${count(STATE.failed)} failed` : null,
       count(STATE.blocked) ? `${count(STATE.blocked)} blocked` : null,
-      `${tokens(used)} of ${tokens(limit)} tokens`,
-      formatCost(plan.usage) ? `${formatCost(plan.usage)} so far` : null,
+      `$${budget.spent.toFixed(2)} of $${budget.limit.toFixed(2)} budget${plan.usage?.costEstimated ? " (partly estimated)" : ""}`,
       `up to ${plan.limits?.parallel ?? DEFAULT_LIMITS.parallel} at once`,
     ]
       .filter(Boolean)
@@ -250,6 +250,13 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       actions.append(stop)
     }
     header.append(actions)
+    // Paused for its budget: say so first, with Resume.
+    const paused = budgetWaiting(plan, handle.url, handle)
+    if (paused) {
+      const banner = renderBudgetItem({ ...paused, repo }, { showStep: false })
+      banner.classList.add("agent-wf-paused")
+      header.append(banner)
+    }
     root.append(header)
 
     const board = el("div", "agent-wf-board")

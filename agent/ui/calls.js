@@ -108,6 +108,7 @@ export const PRESENTATION = {
   workflow_status: { verb: "check workflow", detail: () => null },
   workflow_stop: { verb: "stop", detail: (i) => (i.steps?.length ? i.steps.join(", ") : "workflow") },
   workflow_answer: { verb: "answer step", detail: (i) => i.step ?? null },
+  workflow_budget: { verb: "give more budget to", detail: (i) => (i.step ? `${i.step} (+${i.add ?? "?"})` : null) },
   note_read: { verb: "recall", detail: (i) => i.name ?? "notes" },
   note_delete: { verb: "forget", detail: (i) => i.name ?? null },
   fs_edit: {

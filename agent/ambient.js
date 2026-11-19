@@ -434,14 +434,14 @@ export function AmbientAgent(element, options = {}) {
       el(
         "strong",
         null,
-        item.kind === "finished" ? `${item.title} finished` : item.kind === "approval" ? `${item.title} needs your permission` : `${item.title} asks`
+        item.kind === "finished" ? `${item.title} finished` : item.kind === "approval" ? `${item.title} needs your permission` : item.kind === "budget" ? `${item.title} paused: budget spent` : `${item.title} asks`
       )
     )
     if (rest) head.append(el("span", "agent-peek-more", `+${rest} more`))
     card.append(head)
 
-    if (item.kind === "question" || item.kind === "approval") {
-      card.append(renderWaitingItem(item, { showStep: false }))
+    if (item.kind === "question" || item.kind === "approval" || item.kind === "budget") {
+      card.append(renderWaitingItem(item, { showStep: false, onOpen: (url) => openDocument(pop, url, "agent-workflow") }))
     } else if (item.kind === "asked") {
       card.append(el("p", "agent-peek-question", item.question))
       const row = el("div", "cluster")

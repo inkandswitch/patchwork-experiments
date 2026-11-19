@@ -12,10 +12,10 @@
  * `privileges`). This is the only module that uses it.
  */
 
-import { initPlan, newStep, validateSteps, states, STATE, PLAN, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS } from "../workflow/plan.js"
+import { initPlan, newStep, validateSteps, states, STATE, PLAN, STEP, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS, DEFAULT_STEP_BUDGETS, budgetOf, stepBudget } from "../workflow/plan.js"
+import { makeTurn, textBlock } from "../session.js"
 import { drivePlanHere, getDriver, keptCounts } from "../workflow/driver.js"
 import { truncate } from "./format.js"
-import { formatCost } from "../session.js"
 import { answerQuestion } from "../loop.js"
 import { handleStore } from "../store.js"
 import { waitingIn } from "../workflow/waiting.js"
@@ -43,6 +43,10 @@ const STEP_SCHEMA = {
       description: "'deep' for planning, judgement, hard reasoning and checking others' work; 'standard' for most writing and editing; 'fast' for searching, reading and simple mechanical work.",
     },
     why: { type: "string", description: "One line on why this tier and placement. Shown beside the step." },
+    budget: {
+      type: "number",
+      description: `Dollars the step may spend before it stops and waits for you to decide (workflow_budget, workflow_stop). Defaults by tier: ${Object.entries(DEFAULT_STEP_BUDGETS).map(([tier, dollars]) => `${tier} $${dollars}`).join(", ")}. Give a step more when it has more to do; a step going round in circles then wastes only its own.`,
+    },
     access: {
       type: "string",
       enum: ["full", "web"],
@@ -74,14 +78,14 @@ export function describePlan(plan, url) {
   const lines = [
     `${plan.title} — ${plan.status} (${url})`,
     `Goal: ${plan.goal}`,
-    `Tokens: ${((plan.usage?.in ?? 0) + (plan.usage?.out ?? 0)).toLocaleString("en")} of ${(plan.limits?.tokens ?? DEFAULT_LIMITS.tokens).toLocaleString("en")}${formatCost(plan.usage) ? ` · cost so far ${formatCost(plan.usage)}` : ""}`,
+    `Budget: $${budgetOf(plan).spent.toFixed(2)} of $${budgetOf(plan).limit.toFixed(2)} spent${plan.paused ? " — paused: the budget is spent, and only the person can resume it" : ""}`,
   ]
   const kept = keptCounts(plan)
   if (kept.sources + kept.findings) lines.push(`Research kept: ${kept.sources} sources, ${kept.findings} findings — Sources: ${plan.sourcesFolderUrl}`)
   lines.push("")
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
-    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier}${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
     if (step.sessionUrl) lines.push(`  session: ${step.sessionUrl}`)
     if (state === STATE.done && step.result) lines.push(`  result: ${truncate(step.result.replace(/\s+/g, " "), 400)}`)
     if (state === STATE.failed && step.error) lines.push(`  error: ${step.error}`)
@@ -117,7 +121,7 @@ export const workflowStart = {
     if (!settings.enabled) throw new Error("Workflows are switched off for this session. The person can turn them on in the agent's settings.")
     const limits = {
       ...DEFAULT_LIMITS,
-      ...Object.fromEntries(Object.entries({ parallel: settings.parallel, steps: settings.steps, tokens: settings.tokens }).filter(([, v]) => v != null)),
+      ...Object.fromEntries(Object.entries({ parallel: settings.parallel, steps: settings.steps, cost: settings.cost }).filter(([, v]) => v != null)),
     }
     const errors = validateSteps({ steps: [], limits }, input.steps)
     if (errors.length) throw new Error(`The plan cannot run:\n- ${errors.join("\n- ")}`)
@@ -283,4 +287,61 @@ export const workflowAnswer = {
   },
 }
 
-export default [workflowStart, workflowAddSteps, workflowStatus, workflowStop, workflowAnswer]
+export const workflowBudget = {
+  id: "workflow_budget",
+  name: "Give a workflow step more budget",
+  description: [
+    "Give a step more to spend. A step that has spent its budget stops part-way and you are told; if it was making progress, this lets it carry on from where it stopped. It works on a step that has not started too.",
+    "",
+    "Look at what the step was doing first (its session): one going round in circles is better stopped (workflow_stop) or replaced (workflow_add_steps). The workflow as a whole has a budget only the person can raise.",
+  ].join("\n"),
+  where: "worker",
+  risk: "edit",
+  input_schema: {
+    type: "object",
+    required: ["step", "add"],
+    properties: {
+      plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
+      step: { type: "string", description: "The id of the step." },
+      add: { type: "number", description: "Dollars to add to what it may spend." },
+    },
+  },
+  async execute(input, ctx) {
+    const add = Number(input.add)
+    if (!Number.isFinite(add) || add <= 0) throw new Error("Pass `add`: a positive number of dollars.")
+    const url = await planUrlFor(input, ctx)
+    const { repo } = workflows(ctx)
+    const planHandle = await repo.find(url)
+    const step = planHandle.doc().steps.find((s) => s.id === input.step)
+    if (!step) throw new Error(`No step '${input.step}' in this workflow.`)
+    if (step.status !== STEP.pending && step.status !== STEP.running) throw new Error(`Step '${input.step}' is ${step.status}; only a step still to run or running can be given more.`)
+
+    let limit = Math.round((stepBudget(step) + add) * 100) / 100
+    let resumed = false
+    if (step.sessionUrl) {
+      const session = await repo.find(step.sessionUrl)
+      const doc = session.doc()
+      // More than it has already spent, whatever its budget said.
+      limit = Math.round((Math.max(stepBudget(step), doc?.usage?.cost ?? 0) + add) * 100) / 100
+      session.change((d) => {
+        d.config.budget = limit
+        if (d.stopped?.reason === "budget") {
+          d.stopped = null
+          d.turns.push(makeTurn("user", [textBlock(`[Your budget is now $${limit.toFixed(2)}. Carry on from where you stopped.]`)]))
+          resumed = true
+        }
+      })
+    }
+    planHandle.change((d) => {
+      const s = d.steps.find((x) => x.id === step.id)
+      if (s) s.budget = limit
+    })
+    if (resumed) await drive(url, ctx)
+    return `Step '${input.step}' may now spend $${limit.toFixed(2)}${resumed ? "; it carries on from where it stopped" : ""}. The workflow has spent $${budgetOf(planHandle.doc()).spent.toFixed(2)} of its $${budgetOf(planHandle.doc()).limit.toFixed(2)}.`
+  },
+  summarize(input) {
+    return `gave ${input?.step ?? "a step"} ${input?.add ?? "?"} more`
+  },
+}
+
+export default [workflowStart, workflowAddSteps, workflowStatus, workflowStop, workflowAnswer, workflowBudget]

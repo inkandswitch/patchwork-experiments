@@ -252,7 +252,9 @@ export function AgentTool(handle, element, options = {}) {
   }
   const wfParallel = numberField("At once", "parallel", DEFAULT_LIMITS.parallel)
   const wfSteps = numberField("Steps in all", "steps", DEFAULT_LIMITS.steps)
-  const wfTokens = numberField("Token budget", "tokens", DEFAULT_LIMITS.tokens)
+  // Dollars, so cents are allowed.
+  const wfBudget = numberField("Budget ($)", "cost", DEFAULT_LIMITS.cost)
+  wfBudget.input.step = "any"
   const tierInputs = TIERS.map((tier) => {
     const input = document.createElement("input")
     input.type = "text"
@@ -270,7 +272,7 @@ export function AgentTool(handle, element, options = {}) {
     el("p", "agent-model-defaults", "The agent can split big jobs across several sessions, each on the model its tier names. Watch them in the workflow view."),
     wfParallel.field,
     wfSteps.field,
-    wfTokens.field,
+    wfBudget.field,
     ...tierInputs.map((input) => input.parentElement)
   )
   const keyInput = document.createElement("input")
@@ -746,9 +748,9 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   workflowsToggle.addEventListener("change", () => writeWorkflows((w) => { w.enabled = workflowsToggle.checked }))
-  for (const { input } of [wfParallel, wfSteps, wfTokens]) {
+  for (const { input } of [wfParallel, wfSteps, wfBudget]) {
     input.addEventListener("change", () => {
-      const value = Number.parseInt(input.value, 10)
+      const value = input.dataset.key === "cost" ? Number.parseFloat(input.value) : Number.parseInt(input.value, 10)
       writeWorkflows((w) => {
         if (Number.isFinite(value) && value > 0) w[input.dataset.key] = value
         else delete w[input.dataset.key]
@@ -770,7 +772,7 @@ export function AgentTool(handle, element, options = {}) {
     const w = handle.doc()?.config?.workflows ?? {}
     workflowsToggle.checked = !!w.enabled
     const focused = workflowsBox.ownerDocument?.activeElement
-    for (const { input } of [wfParallel, wfSteps, wfTokens]) {
+    for (const { input } of [wfParallel, wfSteps, wfBudget]) {
       if (focused !== input) input.value = w[input.dataset.key] ?? ""
       input.disabled = !w.enabled
     }

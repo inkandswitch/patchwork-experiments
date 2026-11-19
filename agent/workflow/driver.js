@@ -24,7 +24,7 @@
 import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
 import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS } from "./plan.js"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS, shouldPause, budgetOf, notStarted, stepBudget } from "./plan.js"
 import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
 import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
@@ -50,6 +50,9 @@ export const RESULT_KEPT = 8000
 export function sessionOutcome(doc) {
   if (!doc) return { state: "running" }
   if (doc.status === STATUS.error) return { state: "failed" }
+  // Out of budget is not done: it stopped part-way, and the orchestrator
+  // decides whether it goes on.
+  if (doc.stopped?.reason === "budget") return { state: "running", outOfBudget: { spent: doc.stopped.spent, limit: doc.stopped.limit, at: doc.stopped.at } }
   const waiting = doc.status === STATUS.awaitingApproval || doc.status === STATUS.awaitingAnswer
   if (doc.status !== STATUS.idle || needsWork(doc)) return { state: "running", waiting }
   const last = lastTurn(doc)
@@ -258,6 +261,7 @@ export class WorkflowDriver {
     const sessions = {}
     const usages = []
     const waiting = []
+    const outOfBudget = []
     for (const step of plan.steps) {
       if (!step.sessionUrl) continue
       const child = await this.session(step.sessionUrl)
@@ -269,6 +273,7 @@ export class WorkflowDriver {
       const outcome = sessionOutcome(doc)
       if (outcome.state === "running") {
         if (outcome.waiting) for (const item of waitingIn(doc)) waiting.push({ stepId: step.id, ...item })
+        if (outcome.outOfBudget) outOfBudget.push({ stepId: step.id, ...outcome.outOfBudget })
         continue
       }
       this.write((d) => {
@@ -284,6 +289,7 @@ export class WorkflowDriver {
       })
     }
     this.waiting = waiting
+    this.outOfBudget = outOfBudget
     const usage = sumUsage(usages)
     plan = this.handle.doc()
     const was = plan.usage ?? {}
@@ -307,6 +313,16 @@ export class WorkflowDriver {
     for (const id of toStart(this.handle.doc(), sessions)) {
       if (this.stopped || !holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
       await this.begin(id)
+    }
+
+    // 4b. Out of budget, with work ready to start: pause and say so, rather
+    // than sit "running" with nothing happening.
+    plan = this.handle.doc()
+    if (shouldPause(plan, sessions)) {
+      const { spent, limit } = budgetOf(plan)
+      this.write((d) => {
+        d.paused = { reason: "budget", at: this.now(), spent, limit, reported: false }
+      })
     }
 
     // 5. Finished?
@@ -527,6 +543,8 @@ export class WorkflowDriver {
           params: { maxTokens: orchestrator?.config?.params?.maxTokens ?? 16000 },
           // Workflows do not nest: a step never orchestrates.
           workflows: { enabled: false },
+          // What it may spend before it stops and waits on the orchestrator.
+          budget: stepBudget(step),
         },
       })
       d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null }
@@ -627,8 +645,11 @@ export class WorkflowDriver {
     const unreported = (plan) => plan.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !s.reported)
     const unasked = (plan) => this.waiting.filter((w) => w.kind === "question" && !(plan.asked ?? []).includes(w.callId))
     const endUnreported = (plan) => plan.status !== PLAN.running && !plan.reportedEnd
+    const pauseUnreported = (plan) => !!plan.paused && !plan.paused.reported
+    // A step out of budget is told once per time it stops.
+    const budgetsUnreported = (plan) => (this.outOfBudget ?? []).filter((b) => plan.steps.find((s) => s.id === b.stepId)?.budgetNoticed !== b.at)
     const plan = this.handle.doc()
-    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan)) return
+    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan) && !pauseUnreported(plan) && !budgetsUnreported(plan).length) return
     this.channel ??= this.notify(this.handle.url, plan.title)
     this.channel?.notify(() => {
       // Read at delivery: a question answered meanwhile is no longer news.
@@ -636,7 +657,9 @@ export class WorkflowDriver {
       const news = unreported(now)
       const questions = unasked(now)
       const end = endUnreported(now)
-      if (!news.length && !questions.length && !end) return ""
+      const paused = pauseUnreported(now)
+      const budgets = budgetsUnreported(now)
+      if (!news.length && !questions.length && !end && !paused && !budgets.length) return ""
       const recorded = this.write((d) => {
         for (const s of d.steps) if (news.some((n) => n.id === s.id)) s.reported = true
         if (questions.length) {
@@ -644,20 +667,34 @@ export class WorkflowDriver {
           for (const q of questions) d.asked.push(q.callId)
         }
         if (end) d.reportedEnd = true
+        if (paused && d.paused) d.paused.reported = true
+        for (const b of budgets) {
+          const s = d.steps.find((x) => x.id === b.stepId)
+          if (s) s.budgetNoticed = b.at
+        }
       })
       // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
       if (end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news, this.waiting)
+      return describeProgress(now, news, this.waiting, budgets)
     })
   }
 }
 
 /** The news the orchestrator wakes to. */
-export function describeProgress(plan, news, waiting = []) {
+export function describeProgress(plan, news, waiting = [], outOfBudget = []) {
   const derived = states(plan)
   const count = (state) => [...derived.values()].filter((s) => s === state).length
-  const lines = [`Workflow "${plan.title}" (${plan.status === PLAN.running ? "running" : plan.status}).`]
+  const lines = [`Workflow "${plan.title}" (${plan.paused ? "paused" : plan.status === PLAN.running ? "running" : plan.status}).`]
+  if (plan.paused?.reason === "budget") {
+    const waitingSteps = notStarted(plan)
+    lines.push(
+      "",
+      "## Paused: the budget is spent",
+      `The steps have spent $${plan.paused.spent.toFixed(2)} of the $${plan.paused.limit.toFixed(2)} budget, so ${waitingSteps.length} step${waitingSteps.length === 1 ? "" : "s"} will not start: ${waitingSteps.map((s) => `${s.title} (${s.id})`).join(", ")}.`,
+      "Only the person can give it more: the workflow view and your session both offer them Resume. Tell them briefly where things stand — what is done, what is waiting — and do not start the waiting work yourself."
+    )
+  }
   for (const step of news) {
     lines.push(
       "",
@@ -668,6 +705,13 @@ export function describeProgress(plan, news, waiting = []) {
     if (step.access === "web") lines.push(`It ${keptLine(plan, step.id)}`)
   }
   const title = (id) => plan.steps.find((s) => s.id === id)?.title ?? id
+  for (const b of outOfBudget) {
+    lines.push(
+      "",
+      `## Out of budget: ${title(b.stepId)} (${b.stepId})`,
+      `It has spent $${Number(b.spent).toFixed(2)} of its $${Number(b.limit).toFixed(2)} and stopped part-way; what it kept and wrote so far is still there. Decide: workflow_budget to let it carry on with more, if it was making progress; workflow_stop to stop it (what depends on it will not run); or workflow_add_steps to do the rest differently. Its session shows what it was doing.`
+    )
+  }
   for (const q of waiting.filter((w) => w.kind === "question")) {
     lines.push(
       "",

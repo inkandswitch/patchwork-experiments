@@ -181,6 +181,8 @@ export async function run(opts) {
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
     if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
     if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
+    const spent = spentBudget(store.doc())
+    if (spent) return stopForBudget(store, spent, emit)
 
     // ---- 1. Anything already pending decides what happens before we call out.
     //
@@ -783,6 +785,32 @@ function setStatus(store, status) {
   store.change((d) => {
     d.status = status
   })
+}
+
+/**
+ * Has this session spent the budget its config gives it (dollars, as
+ * OpenRouter reports them)? `{ spent, limit }` when it has, else null. Most
+ * sessions have none; a workflow step always does.
+ */
+export function spentBudget(doc) {
+  const limit = doc?.config?.budget
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return null
+  const spent = doc?.usage?.cost ?? 0
+  return spent >= limit ? { spent, limit } : null
+}
+
+/**
+ * Stop for the budget: say so in the transcript, and record it, so whoever
+ * gave the budget — a workflow's orchestrator — can decide what happens next.
+ * Ending on the agent's word means no runner picks the session up again
+ * until someone writes to it.
+ */
+function stopForBudget(store, { spent, limit }, emit) {
+  store.change((d) => {
+    d.stopped = { reason: "budget", spent, limit, at: Date.now() }
+    d.turns.push(makeTurn("assistant", [textBlock(`⚠ Stopped: this session has spent its $${limit.toFixed(2)} budget ($${spent.toFixed(2)}). It carries on only if it is given more.`)]))
+  })
+  return finish(store, STATUS.idle, OUTCOME.budgetExhausted, emit, "budget")
 }
 
 function finish(store, status, outcome, emit, reason = null) {
