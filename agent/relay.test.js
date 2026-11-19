@@ -77,6 +77,26 @@ describe("relayFetch", () => {
 })
 
 describe("a tab with a relay keeps originals", () => {
+  it("and where a site refuses the relay, keeps the reader's text instead, and says it is not the original", async () => {
+    const { send } = relayed((url) => {
+      const target = decodeURIComponent(new URL(url).searchParams.get("url"))
+      if (target.startsWith("https://reader.test/")) return new Response("# Cells\n\nRated capacity 280Ah.", { headers: { "content-type": "text/plain", "x-relay-final-url": target } })
+      return new Response("blocked", { status: 403, headers: { "content-type": "text/html", "x-relay-final-url": target } })
+    })
+    const repo = fakeRepo()
+    const ctx = { fetchImpl: guardedFetch({ fetch: relayFetch({ fetch: send, relay: () => RELAY }) }), direct: true, repo, reader: "https://reader.test/" }
+    const out = await webFetch.execute({ url: "https://strict.test/cells" }, ctx)
+    expect(out.text).toMatch(/The page itself could not be had \(http-error: HTTP 403\), so what is kept is the reader's text of it, not the original\./)
+    expect(repo.docs.get(out.doc.url)).toMatchObject({ role: "extract" })
+  })
+
+  it("but a target the guard refuses is refused, not read another way", async () => {
+    const { send, sent } = relayed(() => new Response("never"))
+    const ctx = { fetchImpl: guardedFetch({ fetch: relayFetch({ fetch: send, relay: () => RELAY }) }), direct: true, repo: fakeRepo(), reader: "https://reader.test/" }
+    await expect(webFetch.execute({ url: "http://10.0.0.1/admin" }, ctx)).rejects.toBeInstanceOf(Refused)
+    expect(sent).toEqual([])
+  })
+
   it("web_fetch keeps the PDF itself, as a node runner would", async () => {
     const { send } = relayed(() => new Response(pdf, { headers: { "content-type": "application/pdf", "x-relay-final-url": "https://site.test/cells.pdf" } }))
     const repo = fakeRepo()

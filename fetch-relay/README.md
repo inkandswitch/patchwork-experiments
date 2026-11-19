@@ -62,3 +62,12 @@ every redirect, which the relay follows itself:
 
 `relay.test.js` checks each of these, and that a PDF's bytes come back
 exactly.
+
+## What sites see
+
+Requests come from Cloudflare's network (or the Node server's address), as
+`PatchworkFetchRelay/1.0 (+https://www.inkandswitch.com/)` — some sites, such
+as Wikipedia, refuse a request that does not say what it is. It names the
+software, never who is using it. Some sites refuse fetchers like this whatever
+they send (w3.org, for one); the agent then keeps the reader's text of the
+page and says it is not the original.

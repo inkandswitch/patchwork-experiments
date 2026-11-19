@@ -28,6 +28,12 @@ import { checkTarget, isPrivateAddress, parseV4, parseV6 } from "./guard.js"
 
 export const DEFAULTS = { maxBytes: 50 * 1024 * 1024, timeoutMs: 30_000, maxRedirects: 5 }
 
+/**
+ * Who the relay says it is. Some sites (Wikipedia) refuse a request that does
+ * not say; it names the software, never the person using it.
+ */
+export const USER_AGENT = "PatchworkFetchRelay/1.0 (+https://www.inkandswitch.com/)"
+
 /** Request headers passed on to the site; everything else is dropped. */
 const FORWARD = ["accept", "accept-language", "range", "if-none-match", "if-modified-since"]
 
@@ -47,7 +53,11 @@ const REDIRECTS = new Set([301, 302, 303, 307, 308])
  *     lookup    host -> [{ address }], to refuse names that resolve privately
  */
 export async function handle(request, options = {}) {
-  const config = { ...DEFAULTS, ...options }
+  // An option left unset — a deployment's missing variable arrives as
+  // undefined — keeps its default. Spread as it was, an undefined timeout
+  // replaced the 30 seconds, and every fetch was cancelled the moment it began.
+  const given = Object.fromEntries(Object.entries(options).filter(([, value]) => value != null && !Number.isNaN(value)))
+  const config = { ...DEFAULTS, ...given }
   if (typeof config.fetch !== "function") throw new Error("handle needs the fetch that reaches the web.")
   const origin = request.headers.get("origin")
   const cors = corsHeaders(origin, config.origins)
@@ -61,7 +71,7 @@ export async function handle(request, options = {}) {
   const target = new URL(request.url).searchParams.get("url")
   if (!target) return refuse(400, "pass the page to fetch as ?url=", cors)
 
-  const headers = {}
+  const headers = { "user-agent": config.userAgent ?? USER_AGENT }
   for (const name of FORWARD) {
     const value = request.headers.get(name)
     if (value) headers[name] = value

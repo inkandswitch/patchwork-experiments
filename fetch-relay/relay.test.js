@@ -47,7 +47,7 @@ describe("relaying", () => {
   it("forwards only harmless headers, and never a cookie or credential", async () => {
     const { fetch, sent } = web({ "https://maker.test/": () => new Response("ok") })
     await handle(ask("https://maker.test/", { headers: { accept: "text/html", cookie: "session=1", authorization: "Bearer x", range: "bytes=0-9" } }), { fetch })
-    expect(sent[0].init.headers).toEqual({ accept: "text/html", range: "bytes=0-9" })
+    expect(sent[0].init.headers).toEqual({ "user-agent": "PatchworkFetchRelay/1.0 (+https://www.inkandswitch.com/)", accept: "text/html", range: "bytes=0-9" })
     expect(sent[0].init.redirect).toBe("manual")
   })
 
@@ -138,6 +138,12 @@ describe("being called from a page", () => {
     expect(corsHeaders("https://patchwork.test", "https://patchwork.test, https://other.test")["access-control-allow-origin"]).toBe("https://patchwork.test")
     expect(corsHeaders("https://evil.test", ["https://patchwork.test"])).toBe(null)
     expect(corsHeaders(null, ["https://patchwork.test"])).toEqual({})
+  })
+
+  it("keeps its defaults for options a deployment left unset", async () => {
+    const { fetch } = web({ "https://maker.test/": () => new Response("ok") })
+    const response = await handle(ask("https://maker.test/"), { fetch, key: null, origins: null, maxBytes: undefined, timeoutMs: undefined, maxRedirects: Number.NaN })
+    expect([response.status, await response.text()]).toEqual([200, "ok"])
   })
 
   it("has limits that a deployment can only tighten from sensible defaults", () => {

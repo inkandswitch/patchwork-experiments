@@ -424,10 +424,16 @@ async function readDirect(target, input, ctx, fetchImpl, at) {
   const got = await requestDirect(target, ctx, fetchImpl)
   const typed = mediaType(got.response?.headers?.get?.("content-type")) === "application/pdf"
   if (pdfByPath(target) || typed) return withReader(got.response ? await pdfFrom(got.response) : got)
-  // Not announced as a PDF, so nothing is worth asking the reader for: a
-  // refusal stands as the call's answer, and any other failure is one.
+  // A refusal by the guard stands as the call's answer.
   if (got.error) throw got.error
-  if (!got.response) throw new Error(`Could not fetch ${target} (${got.outcome}: ${got.detail}).`)
+  if (!got.response) {
+    // The site would not hand over the page itself — some refuse fetchers
+    // like a relay or a server, some are down. The reader may still read it:
+    // keep its text, and say plainly that it is not the original.
+    const read = await readInBrowser(target, "markdown", input, ctx, fetchImpl, at).catch(() => null)
+    if (read) return { ...read, lead: `${read.lead}. The page itself could not be had (${got.outcome}: ${got.detail}), so what is kept is the reader's text of it, not the original.` }
+    throw new Error(`Could not fetch ${target} (${got.outcome}: ${got.detail}).`)
+  }
 
   const body = await readBytes(got.response)
   if (isPdf(body)) return withReader(judgePdf(got.response, body))

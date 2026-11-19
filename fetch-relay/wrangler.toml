@@ -1,6 +1,9 @@
 name = "patchwork-fetch-relay"
 main = "worker.js"
 compatibility_date = "2026-11-01"
+# Served at https://patchwork-fetch-relay.<account>.workers.dev; no preview URLs.
+workers_dev = true
+preview_urls = false
 
 # Set the key as a secret, never here: `wrangler secret put RELAY_KEY`.
 # [vars]
