@@ -134,24 +134,40 @@ try {
     /** who's here, as view w's body chip lists it */
     people: (w) => [...hosts[w].querySelectorAll(".body-person")].map((e) => e.textContent),
     // ── the X-ray (scene.xray) in view w ──
-    xray: (w) => { const x = dbg[w].view.plugins.instanceOf("scene.xray")?.state; return x ? { held: x.held, pinned: x.pinned, hovered: x.hovered, picked: x.picked } : null; },
-    /** the panel's text in view w: a section's rows (`[data-id=…]`), or a group's headings */
-    rows: (w, id) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(`[data-id="${id}"] .xray-row:not(.older)`) ?? [])].map((r) => r.textContent.replace(/\s+/g, " ").trim()),
-    titles: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll("h3") ?? [])].map((e) => e.textContent),
-    focusText: (w) => dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelector(".xray-focus")?.textContent ?? null,
-    /** the object lens's holders: [{ ext, verbs }] */
-    holders: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll('[data-group="object"] [data-id="holders"] .xray-row') ?? [])].map((r) => ({ ext: r.dataset.ext, verbs: [...r.querySelectorAll(".xray-chip")].map((c) => `${c.textContent} [${c.dataset.state}]`) })),
-    grid: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll('[data-id="grid"] tr') ?? [])].map((tr) => [...tr.children].map((td) => td.textContent)),
-    /** click a row of the panel naming an extension (the running list's first) */
-    pickExt(w, ext) { const r = dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelector(`[data-group="scene"] [data-ext="${ext}"]`); r?.click(); return !!r; },
-    running: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll('[data-id="running"] [data-ext]') ?? [])].map((r) => r.dataset.ext),
-    /** the X-ray's outlines in view w (its world layer's boxes) */
-    outlines: (w) => [...(dbg[w].viewport.layers.get("scene.xray") ?? [])].flatMap((g) => g.children.map((h) => h.userData.selection)),
+    xrayOf: (w) => dbg[w].view.plugins.instanceOf("scene.xray"),
+    xray: (w) => { const x = dbg[w].view.plugins.instanceOf("scene.xray")?.state; return x ? { held: x.held, pinned: x.pinned, hovered: x.hovered, isolated: x.isolated } : null; },
+    /** the legend's rows in view w: [{ ext, name, count, on }] */
+    legend: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-pkg .xray-row") ?? [])].map((r) => ({ ext: r.dataset.ext, name: r.querySelector(".xray-name").textContent, count: +r.querySelector(".xray-count").textContent, on: r.hasAttribute("data-on") })),
+    packages: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-pkg h3") ?? [])].map((e) => e.textContent),
+    /** click a legend row (isolate / clear) */
+    isolate(w, ext) { const r = dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelector(`.xray-row[data-ext="${ext}"]`); r?.click(); return !!r; },
+    /** how an object is displayed by the X-ray in view w */
+    look: (w, id) => dbg[w].displayed().get(id) ?? null,
+    /** how many objects are lit, ghosted, faded by the X-ray in view w */
+    tally(w) { const out = { lit: 0, ghost: 0, faded: 0 }; for (const v of dbg[w].displayed().values()) if (v.opacity === 1) out.lit++; else if (v.opacity > 0.3) out.ghost++; else if (v.opacity != null) out.faded++; return out; },
+    /** the card in view w: { title, chain: [ext ids], verbs: [text], live: [text] } or null */
+    card(w) {
+      const c = dbg[w].view.plugins.instanceOf("scene.xray")?.card;
+      if (!c || c.hidden) return null;
+      return { title: c.querySelector("h4")?.textContent, chain: [...c.querySelectorAll(".xray-chain:not(.xray-also) > .xray-ext")].map((e) => e.dataset.ext), verbs: [...c.querySelectorAll(".xray-verb")].map((e) => e.textContent), live: [...c.querySelectorAll(".xray-glyph")].map((e) => e.textContent) };
+    },
+    /** the route strip in view w: { on, took, boxes: [labels] } or null */
+    strip(w) {
+      const s = dbg[w].view.plugins.instanceOf("scene.xray")?.strip;
+      if (!s || s.hidden) return null;
+      const r = s.querySelector(".xray-route");
+      return r ? { on: r.querySelector(".xray-route-on").textContent, took: r.querySelector(".xray-box[data-took]")?.textContent ?? null, boxes: [...r.querySelectorAll(".xray-box b")].map((e) => e.textContent) } : null;
+    },
+    swatches: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-row") ?? [])].map((r) => [r.dataset.ext, r.querySelector(".xray-swatch").style.getPropertyValue("--xc")]),
+    running: (w) => dbg[w].view.plugins.instanceOf("scene.xray")?.state.gears?.extensions.filter((e) => e.state === "running").map((e) => e.id),
+    /** the claims the X-ray's graph holds in view w */
+    claims: (w) => (dbg[w].view.plugins.instanceOf("scene.xray")?.state.gears?.claims ?? []).map((c) => ({ object: c.object, kind: c.kind, mine: c.mine })),
+    /** the panel's claims on the scene itself in view w */
+    sceneClaims: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-scene .xray-glyph") ?? [])].map((e) => e.textContent),
+    /** the glyph labels in view w */
     badges: (w) => [...hosts[w].querySelectorAll(".label.xray-badge")].filter((e) => e.style.display !== "none" && !e.hidden).map((e) => e.textContent),
-    /** how long one rebuild takes in view w (ms, the median of n), as the X-ray is now */
-    refreshMs(w, n = 9) { const x = dbg[w].view.plugins.instanceOf("scene.xray"); const ts = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); x.pick(x.state.picked); ts.push(performance.now() - t0); } return +ts.sort((p, q) => p - q)[n >> 1].toFixed(1); },
-    /** scroll the panel to a group ("object", "extension", "layers", "scene") */
-    scrollTo(w, group) { const p = dbg[w].view.plugins.instanceOf("scene.xray")?.panel; const g = p?.querySelector(`[data-group="${group}"]`); if (g) p.scrollTop = g.offsetTop - p.offsetTop; return !!g; },
+    /** how long one rebuild takes in view w (ms, the median of n) */
+    refreshMs(w, n = 9) { const x = dbg[w].view.plugins.instanceOf("scene.xray"); const ts = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); x.isolate(x.state.isolated); ts.push(performance.now() - t0); } return +ts.sort((p, q) => p - q)[n >> 1].toFixed(1); },
     /** a card in seat s's hand */
     handCard(s) { return this.where()[s][0] ?? null; },
     /** a page point over object `id` in view `w` (its origin, then spiralling out until a pick hits it) */
