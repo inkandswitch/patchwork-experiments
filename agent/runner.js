@@ -37,6 +37,26 @@ import {
 import { run, OUTCOME } from "./loop.js"
 import { scopeOf, assertScopeAgrees, confine, scopedToolset, kernelRepo, ScopeRefusal } from "./scope.js"
 import { WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
+import { urlsIn } from "./doc-urls.js"
+
+/**
+ * The document URLs this conversation has seen — its subject, what it made,
+ * and every URL in its turns — for mending one a model mistyped. Read only
+ * when a URL fails its checksum; kept until the conversation grows.
+ */
+const knownCache = new WeakMap()
+export function knownUrls(store) {
+  const doc = store?.doc?.()
+  if (!doc) return []
+  const turns = doc.turns?.length ?? 0
+  const cached = knownCache.get(store)
+  if (cached?.turns === turns) return cached.urls
+  const text = JSON.stringify({ subject: doc.subject ?? null, made: doc.made ?? [], turns: (doc.turns ?? []).map((t) => (t.blocks ?? []).map((b) => (b.image ? { ...b, image: null } : b))) })
+  // Newest first, so a suggestion favours what was mentioned last.
+  const urls = urlsIn(text).reverse()
+  knownCache.set(store, { turns, urls })
+  return urls
+}
 
 export const HEARTBEAT_MS = 5000
 export const STALE_AFTER_MS = 15000
@@ -392,7 +412,7 @@ export class SessionRunner {
  */
 export function fullContext(base, store) {
   const overrides = {
-    repo: kernelRepo(base.repo),
+    repo: kernelRepo(base.repo, { known: () => knownUrls(store) }),
     session: { url: store?.url ?? null, doc: () => store.doc() },
     startStepSession: undefined,
   }

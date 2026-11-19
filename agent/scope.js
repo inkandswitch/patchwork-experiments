@@ -35,6 +35,7 @@
 
 import * as A from "@automerge/automerge"
 import { interpretAsDocumentId, isValidAutomergeUrl, stringifyAutomergeUrl, decodeHeads, encodeHeads } from "@automerge/automerge-repo"
+import { repairDocUrl } from "./doc-urls.js"
 import { readable } from "./tools/sources.js"
 
 /** The documents only the runtime writes: sessions and workflow plans. */
@@ -530,14 +531,17 @@ const wrapped = (result) => (result && typeof result.then === "function" ? resul
  * handle — its table of live handles, deleting by id, importing over an
  * existing id — are closed too.
  */
-export function kernelRepo(repo) {
+export function kernelRepo(repo, { known = null } = {}) {
   if (!repo || typeof repo !== "object") return repo
+  // A mistyped document URL is mended where that is safe, or refused with
+  // the nearest the conversation has seen (doc-urls.js).
+  const mend = (args) => (args.length ? [repairDocUrl(args[0], known ?? []).url, ...args.slice(1)] : args)
   return new Proxy(repo, {
     get(target, key) {
       if (key === "handles" || key === "findWithProgress") return undefined
       const value = Reflect.get(target, key)
       if (typeof value !== "function") return value
-      if (key === "find" || key === "findClassic") return (...args) => wrapped(value.apply(target, args))
+      if (key === "find" || key === "findClassic") return (...args) => wrapped(value.apply(target, mend(args)))
       if (key === "create" || key === "create2") {
         return (initial) => {
           if (isKernel(initial)) refuse()

@@ -19,6 +19,7 @@
  */
 
 import { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo"
+import { repairDocUrl } from "../doc-urls.js"
 import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
 import { bytes } from "./format.js"
 
@@ -84,7 +85,8 @@ function around(text, at, length) {
  * document instead, which is not a source.
  */
 export async function openDocument(source, repo) {
-  const name = String(source ?? "").trim()
+  // A run-on or quoted URL is mended (doc-urls.js); the repo mends the rest.
+  const name = repairDocUrl(String(source ?? "").trim()).url
   const id = canonical(name)
   if (!id) throw new Error(`'${name}' does not name a document. Pass the automerge: URL a fetch gave you.`)
   const heads = isValidAutomergeUrl(name) ? parseAutomergeUrl(name).heads : undefined
