@@ -1,5 +1,4 @@
-/* scene.xray (xray.js): the X-ray's drawer tab and its badges on objects */
-
+/* scene.xray (xray.js): the X-ray's legend (a drawer tab), the card beside an object, the route strip, the glyph labels */
 .scene-stage .xray:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font-size: 12px;
   line-height: 1.35;
@@ -14,7 +13,7 @@
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
 }
 .scene-stage .xray button:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font: inherit;
@@ -27,37 +26,12 @@
   color: var(--scene-fg);
   cursor: pointer;
 }
-.scene-stage .xray-group > h2:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 10px 0 2px;
+.scene-stage .xray-pkg h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 8px 0 2px;
   font-size: 11px;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--scene-muted);
-  border-bottom: 1px solid var(--scene-border);
-}
-.scene-stage .xray-layers:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  margin: 4px 0;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 400;
-  color: var(--scene-fg);
-}
-.scene-stage .xray-group[data-group="layers"] > h2:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  flex-direction: column;
-  align-items: stretch;
-}
-.scene-stage .xray-section h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  margin: 6px 0 2px;
-  font-size: 12px;
-}
-.scene-stage .xray-note:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  margin: 0 0 2px;
   color: var(--scene-muted);
 }
 .scene-stage .xray-rows:where(:not(.about-embed *), .about-embed .scene-tool *) {
@@ -67,92 +41,275 @@
 }
 .scene-stage .xray-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
-  flex-direction: column;
-  padding: 2px 4px;
-  border-left: 2px solid transparent;
-}
-.scene-stage .xray-row[data-ext]:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray-row[data-object]:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray td[data-object]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 5px;
   cursor: pointer;
 }
-.scene-stage .xray-row[data-ext]:hover:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray-row[data-object]:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .xray-row:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
   background: var(--scene-hover);
 }
-.scene-stage .xray-row[data-state="on"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  border-left-color: var(--scene-accent);
+.scene-stage .xray-row[data-on]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  font-weight: 600;
 }
-.scene-stage .xray-row[data-state="off"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  border-left-color: var(--scene-warning);
+.scene-stage .xray-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+.scene-stage .xray-count:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-variant-numeric: tabular-nums;
+}
+.scene-stage .xray-swatch:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--xc);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--scene-fg) 25%, transparent);
+}
+.scene-stage .xray-note:where(:not(.about-embed *), .about-embed .scene-tool *),
 .scene-stage .xray-sub:where(:not(.about-embed *), .about-embed .scene-tool *),
 .scene-stage .xray-line:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: var(--scene-muted);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-.scene-stage .xray-chips:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin: 2px 0;
-}
-.scene-stage .xray-chip:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  font-size: 11px;
-  padding: 0 5px;
-  border-radius: 8px;
-  border: 1px solid var(--scene-border);
-  background: var(--scene-surface);
-}
-.scene-stage .xray [data-state="on"].xray-chip:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray td[data-state="on"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  color: var(--scene-accent-text);
-}
-.scene-stage .xray [data-state="off"].xray-chip:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray td[data-state="off"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .xray-problems:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 4px 6px;
+  border-left: 3px solid var(--scene-danger);
   color: var(--scene-danger-text);
 }
-.scene-stage .xray [data-state="far"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .xray-problems li:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+}
+.scene-stage .xray-idle:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-fold:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 6px 0 0;
+}
+.scene-stage .xray summary:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: pointer;
+  color: var(--scene-muted);
+}
+.scene-stage .xray-fold summary:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--scene-fg);
+}
+.scene-stage .xray-fold > summary > .xray-sub:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin-left: auto;
+}
+.scene-stage .xray-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--scene-border);
+  color: var(--scene-muted);
+}
+.scene-stage .xray-details h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 12px 0 0;
+  font-size: 12px;
+  border-top: 1px solid var(--scene-border);
+  padding-top: 6px;
+}
+
+/* verbs as keycaps, extensions as coloured chips */
+.scene-stage .xray-chain:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 4px 0;
+}
+.scene-stage .xray-ext:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 6px 2px 5px;
+  border-radius: 6px;
+  border: 1.5px solid var(--xc, var(--scene-border));
+}
+.scene-stage .xray-verb:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.scene-stage .xray-verb[data-state="off"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+  text-decoration: line-through;
+}
+.scene-stage .xray-verb[data-state="far"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: var(--scene-muted);
   font-style: italic;
 }
-.scene-stage .xray [data-state="took"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  background: var(--scene-accent-fill);
-  color: var(--scene-accent-line);
+.scene-stage .xray kbd:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-card kbd:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  font-size: 10px;
   font-weight: 600;
+  min-width: 1.4em;
+  text-align: center;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid var(--scene-border);
+  border-bottom-width: 2px;
+  background: var(--scene-surface);
+  color: var(--scene-fg);
 }
-/* the older routes show while the pointer is over the route */
-.scene-stage .xray-section[data-id="route"]:not(:hover) .older:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .xray-arrow:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+/* the card beside an object */
+.scene-stage .xray-layer > .xray-card-host:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: var(--xx, 0);
+  top: var(--xy, 0);
+  width: max-content;
+  max-width: min(320px, 60%);
+  pointer-events: none;
+  z-index: 4;
+}
+.scene-stage .xray-layer > .xray-card-host[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .xray-layer > .xray-strip-host[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: none;
 }
-.scene-stage .xray-row.older:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  opacity: 0.7;
+.scene-stage .xray-card:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-family: var(--scene-family);
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--scene-surface);
+  color: var(--scene-fg);
+  border: 1px solid var(--scene-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
 }
-.scene-stage .xray-table:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  overflow-x: auto;
+.scene-stage .xray-card h4:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0 0 4px;
+  font-size: 13px;
 }
-.scene-stage .xray table:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  border-collapse: collapse;
+.scene-stage .xray-traits:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+.scene-stage .xray-trait:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--xc) 22%, var(--scene-surface));
+  border: 1px solid var(--xc);
+}
+.scene-stage .xray-trait[data-state="none"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: none;
+  border: 1px dashed var(--scene-border);
+  color: var(--scene-muted);
+}
+.scene-stage .xray-also:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-top: 1px solid var(--scene-border);
+  padding-top: 3px;
+}
+.scene-stage .xray-live:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
   font-size: 11px;
 }
-.scene-stage .xray th:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray td:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  border: 1px solid var(--scene-border);
-  padding: 1px 4px;
-  white-space: nowrap;
-  text-align: left;
+
+/* the route strip along the bottom */
+.scene-stage .xray-layer > .xray-strip-host:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: 96%;
+  z-index: 4;
+  font-family: var(--scene-family);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
 }
+.scene-stage .xray-strip:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 4px;
+}
+.scene-stage .xray-route:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--scene-surface);
+  color: var(--scene-fg);
+  border: 1px solid var(--scene-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}
+.scene-stage .xray-route-on:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+  margin-right: 4px;
+}
+.scene-stage .xray-box:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--scene-border);
+  line-height: 1.2;
+}
+.scene-stage .xray-box b:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--scene-muted);
+}
+.scene-stage .xray-box[data-took]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--xc, var(--scene-accent));
+  border-color: var(--xc, var(--scene-accent));
+  color: #fff;
+}
+.scene-stage .xray-box[data-took] b:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: color-mix(in oklch, #fff 80%, transparent);
+}
+.scene-stage .xray-older:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  opacity: 0.85;
+}
+.scene-stage .xray-strip:hover > .xray-older:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+}
+
+/* glyphs and links on objects */
 .scene-stage .xray-badge:where(:not(.about-embed *), .about-embed .scene-tool *) {
   pointer-events: none;
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1.2;
   background: var(--scene-label-bg);
-  border: 1px solid var(--scene-accent);
+  border: 1px solid var(--scene-border);
+  border-radius: 9px;
 }
-.scene-stage .xray-pose:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  border-color: var(--scene-remote);
-}
-.scene-stage .xray-display:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .xray-visibility:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  border-color: var(--scene-warning);
+.scene-stage .xray-badge.xray-link:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  border-style: dashed;
+  border-color: var(--scene-accent);
 }

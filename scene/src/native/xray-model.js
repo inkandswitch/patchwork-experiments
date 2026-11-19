@@ -1,42 +1,123 @@
-// The X-ray's panel models (PLANS.md section 4, "Visible gears"): pure
-// functions from a gears value (gears.js) and a few reads the graph doesn't
-// hold (the routes, who's on the channel, how people are named) to what the
-// panel and the world show. The DOM (xray.js) only draws what these say:
+// The X-ray's models (PLANS.md section 4, "Visible gears"): pure functions
+// from a gears value (gears.js) and a few reads the graph doesn't hold (the
+// routes, how people are named) to what the world and the panel show. The DOM
+// (xray.js) only draws what these say.
 //
-//   a section  { id, title, note?, rows?: Row[], table?: { head, rows, more } }
-//   a row      { text, sub?, ext?, object?, state?, chips?: Chip[], lines?: string[], older? }
-//   a chip     { text, state?: "on" | "off" | "far" | "took", title? }
-//   a cell     { text, state?, title? }
-//   a badge    { key, on, text, kind }          a label on an object, for the layers
-//   an outline { key, id, role: "focus" | "chain" | "trait", index? }
-//
-// `ext` on a row picks that extension, `object` pins that object.
+//   colours(ids)               one colour per extension, stable and distinct
+//   responders(g, id)          who responds to an object, in input order
+//   looks(g, colour, o)        how every object is drawn: { tint?, opacity, outline? }
+//   glyphs(g, o)               the live state on objects: lock, hand, gear, eye, link
+//   legend(g, colour, o)       the extensions by package, with what each holds
+//   card(g, id, colour, o)     the hover card of one object
+//   details(g, id, colour, o)  its details, folded per extension
+//   strip(routes, o)           the last event's route as boxes
 
 import { TOO_FAR } from "../parts/toolbar-commands.js";
-import { gearsOfExtension, gearsOfObject } from "./gears.js";
+import { gearsOfObject } from "./gears.js";
 
-/** The layers, in the panel's order; `on` by default. */
-export const LAYERS = Object.freeze([
-  { id: "claims", name: "Claims", on: true },
-  { id: "poses", name: "Poses", on: true },
-  { id: "clock", name: "Clock", on: false },
-  { id: "display", name: "Display", on: false },
-  { id: "route", name: "Input route", on: true },
-  { id: "links", name: "Links", on: false },
-  { id: "people", name: "People", on: false },
-  { id: "visibility", name: "Visibility", on: false },
-]);
-/** Most rows a long list shows before "and n more". */
-export const MOST = 30;
+// ── colour ──
 
-const ids = LAYERS.map((l) => l.id);
-/** The layers on, from the pref's value (a list of ids; anything else is the default). */
-export const layersOn = (pref) => (Array.isArray(pref) ? ids.filter((id) => pref.includes(id)) : LAYERS.filter((l) => l.on).map((l) => l.id));
-/** The pref's value with one layer turned on or off. */
-export const toggleLayer = (pref, id, on) => {
-  const now = layersOn(pref);
-  return ids.filter((x) => (x === id ? on : now.includes(x)));
+/** Twelve hues at one saturation and lightness: they read on a light or a dark ground. */
+export const PALETTE = Object.freeze([210, 25, 150, 330, 50, 270, 180, 0, 100, 240, 300, 80].map((h) => `hsl(${h},68%,${h > 40 && h < 110 ? 40 : 52}%)`));
+/** The ghost an object is drawn in while the X-ray looks (a neutral that sits on either ground). */
+export const GHOST = "#a4aab3";
+/** How much of an object shows: ghosted, nothing responding or not in the lens, and lit. */
+export const OPACITY = Object.freeze({ ghost: 0.42, faded: 0.12, lit: 1 });
+/** Most bands an outline has (more holders are in the hover card). */
+export const BANDS = 3;
+
+const hash = (s) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
 };
+
+/**
+ * A colour for each id: the palette's slot its hash says, the next free one
+ * when that is taken (ids sorted first, so the same set always gets the same
+ * colours, and no two share while the palette lasts).
+ * @param {string[]} ids
+ * @returns {(id: string) => string}
+ */
+export function colours(ids) {
+  const taken = new Set();
+  const by = new Map();
+  for (const id of [...new Set(ids)].sort()) {
+    let k = hash(id) % PALETTE.length;
+    for (let i = 0; i < PALETTE.length && taken.has(k); i++) k = (k + 1) % PALETTE.length;
+    taken.add(k);
+    by.set(id, PALETTE[k]);
+  }
+  return (id) => by.get(id) ?? PALETTE[hash(String(id)) % PALETTE.length];
+}
+
+// ── who responds ──
+
+/** The extensions that respond to an object, in input order: those holding it, not the ones holding only the scene. */
+export const responders = (g, id) => (g.chains[id] ?? []).filter((h) => h.via != null).map((h) => h.ext);
+
+/**
+ * How every object is drawn. Ghosted and outlined in its responders' colours
+ * (up to BANDS, in input order); an object nothing responds to fades further;
+ * the object looked at is lit. With an extension isolated, its objects are
+ * lit in its colour and everything else is faded.
+ * @param {object} g
+ * @param {(id: string) => string} colour
+ * @param {{ isolated?: string | null, focus?: string | string[] | null }} [o]
+ * @returns {{ [id: string]: { tint?: string, opacity: number, outline?: string[] } }}
+ */
+export function looks(g, colour, { isolated = null, focus = [] } = {}) {
+  const lit = new Set([focus].flat().filter(Boolean));
+  const out = {};
+  for (const { id } of g.objects) {
+    const by = responders(g, id);
+    const bands = (isolated ? by.filter((e) => e === isolated) : by).slice(0, BANDS).map(colour);
+    if (lit.has(id)) out[id] = { opacity: OPACITY.lit, ...(bands.length ? { outline: bands } : {}) };
+    else if (isolated) out[id] = by.includes(isolated) ? { opacity: OPACITY.lit, outline: bands } : { tint: GHOST, opacity: OPACITY.faded };
+    else out[id] = by.length ? { tint: GHOST, opacity: OPACITY.ghost, outline: bands } : { tint: GHOST, opacity: OPACITY.faded };
+  }
+  return out;
+}
+
+// ── live state ──
+
+/** The glyphs, by kind: what they look like, their words. */
+export const GLYPHS = Object.freeze({
+  lock: { text: "🔒", name: "claimed" },
+  hand: { text: "✋", name: "held by someone" },
+  gear: { text: "⚙️", name: "driven by a process" },
+  eye: { text: "👁", name: "its look is overridden" },
+  link: { text: "⛓", name: "a linked scene" },
+});
+const KINDS = Object.keys(GLYPHS);
+
+/**
+ * What is live on each object: a lock (claimed, by whom), a hand (someone
+ * holds it), a gear (a process drives it), an eye (its look is overridden by
+ * someone other than `self`); and a link drawn as a box.
+ * @param {object} g
+ * @param {{ who?: (viewer, mine) => string, self?: string, links?: object[] }} [o]  `links`: the links inspect's stages
+ * @returns {Map<string, { kind: string, title: string }[]>} id → glyphs, in KINDS order; objects with none are absent
+ */
+export function glyphs(g, { who = (viewer, mine) => (mine ? "you" : (viewer ?? "someone")), self = null, links = [] } = {}) {
+  const out = new Map();
+  const add = (id, kind, title) => {
+    if (id == null || !g.objects.some((o) => o.id === id)) return;
+    if (!out.has(id)) out.set(id, []);
+    if (!out.get(id).some((x) => x.kind === kind && x.title === title)) out.get(id).push({ kind, title });
+  };
+  const name = extName(g);
+  for (const c of g.claims) add(c.object, "lock", `${c.kind} claimed by ${who(c.viewer, c.mine)}${c.lapsing ? " (lapsing)" : ""}`);
+  for (const p of g.poses) if (p.rank === 0) add(p.object, "hand", `held by ${who(p.viewer, p.mine)}${p.yields ? " (yielding)" : ""}`);
+  for (const d of g.drives) add(d.object, "gear", `driven by a process of ${name(d.ext)}`);
+  for (const o of g.overrides) if (o.ext !== self) add(o.object, "eye", `shown otherwise by ${name(o.ext)} (${o.fields.join(", ")})`);
+  const stages = links.filter((s) => s.path?.length === 1);
+  for (const s of stages) add(s.path[0], "link", `${s.role}${s.open ? "" : `, closed${s.reason ? `: ${s.reason}` : ""}`}`);
+  for (const [id, list] of out) out.set(id, list.sort((a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind)));
+  return out;
+}
+
+// ── names ──
 
 /** A package URL as a person scans it: a doc's first characters, or a URL's last part. */
 export function shortPackage(url) {
@@ -57,341 +138,168 @@ export function brief(v, most = 40) {
   s = s ?? "—";
   return s.length > most ? `${s.slice(0, most - 1)}…` : s;
 }
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const more = (list, most = MOST) => ({ shown: list.slice(0, most), more: Math.max(0, list.length - most) });
-
-/** A verb as a chip: enabled, disabled with why, or out of reach; its label for this target and its key. */
-export function verbChip(v) {
-  const state = v.enabled ? "on" : v.reason === TOO_FAR ? "far" : "off";
-  const key = v.keys?.[0] ? ` (${v.keys[0].length === 1 ? v.keys[0].toUpperCase() : v.keys[0]})` : "";
-  const why = state === "far" ? "out of reach" : state === "off" ? `disabled${v.reason ? `: ${v.reason}` : ""}` : "enabled";
-  return { text: `${v.label ?? v.name}${key}`, state, title: why };
-}
-
-/** The reads the graph doesn't hold. */
-const ctxOf = (ctx = {}) => ({
-  who: typeof ctx.who === "function" ? ctx.who : (viewer, mine) => (mine ? "you" : (viewer ?? "someone")),
-  viewer: ctx.viewer ?? null,
-  ...ctx,
-});
-/** An object's name as the panel says it: the doc's, with its id where another has the same name. */
+const extName = (g) => {
+  const names = new Map(g.extensions.map((e) => [e.id, e.name]));
+  return (id) => names.get(id) ?? id;
+};
 const objectName = (g) => {
   const count = new Map();
   for (const o of g.objects) count.set(o.name, (count.get(o.name) ?? 0) + 1);
   const names = new Map(g.objects.map((o) => [o.id, count.get(o.name) > 1 ? `${o.name} ${o.id}` : o.name]));
   return (id) => (id == null ? "the scene" : (names.get(id) ?? id));
 };
-/** A holder with nothing for this object: it holds the scene, and takes, offers and draws nothing here. */
-export const quietHolder = (h) => h.via == null && !h.verbs.length && !h.events.length && !h.draws.labels.length && !h.draws.overrides.length;
-const extName = (g) => {
-  const names = new Map(g.extensions.map((e) => [e.id, e.name]));
-  return (id) => names.get(id) ?? id;
-};
 
-/** One extension's part in one object, as a row: package and version, how it holds it, verbs, events, drawing, services. */
-function entryRow(g, h, nameOf) {
-  const e = g.extensions.find((x) => x.id === h.ext);
-  const version = shortVersion(h.version);
-  const how = h.kind === "holder" ? (h.via == null ? "holds the scene" : h.depth === 0 ? "holds it" : `holds ${nameOf(h.via)}`) : h.kind === "view" ? "view plugin" : "a verb for it";
-  const draws = [...h.draws.labels.map((l) => `label “${brief(l.text, 24)}”`), ...h.draws.overrides.map((o) => `display ${o.fields.join(", ")}`)];
-  const lines = [
-    ...(h.events.length ? [`takes ${h.events.join(", ")}`] : []),
-    ...(draws.length ? [`draws here: ${draws.join("; ")}`] : []),
-    ...(h.services.provides.length || h.services.uses.length
-      ? [[h.services.provides.length ? `provides ${h.services.provides.join(", ")}` : "", h.services.uses.length ? `uses ${h.services.uses.join(", ")}` : ""].filter(Boolean).join(" · ")]
-      : []),
-  ];
-  return {
-    text: e?.name ?? h.ext,
-    sub: `${h.ext} · ${shortPackage(h.package)}${version ? `@${version}` : ""} · ${how}`,
-    ext: h.ext,
-    chips: h.verbs.map(verbChip),
-    lines,
-  };
+/** A verb as a keycap: its label, its key, enabled, disabled with why, or out of reach. */
+export function verbChip(v) {
+  const state = v.enabled ? "on" : v.reason === TOO_FAR ? "far" : "off";
+  const key = v.keys?.[0] ? (v.keys[0].length === 1 ? v.keys[0].toUpperCase() : v.keys[0]) : null;
+  const why = state === "far" ? "out of reach" : state === "off" ? `disabled${v.reason ? `: ${v.reason}` : ""}` : "enabled";
+  return { text: v.label ?? v.name, key, state, title: why };
 }
+
+// ── the legend ──
 
 /**
- * The object lens (gearsOfObject), as sections: its traits, its holders in
- * input order, the view plugins with something for it, others with a verb
- * for it, what holds it now, who last wrote its fields. Null for an object
- * the stage doesn't have.
- * @param {object} g  buildGears
- * @param {string} id
- * @param {{ who?: (viewer, mine) => string }} [ctx]
- */
-export function objectSections(g, id, ctx) {
-  const o = gearsOfObject(g, id);
-  if (!o) return null;
-  const { who } = ctxOf(ctx);
-  const nameOf = objectName(g);
-  const ext = extName(g);
-  const busy = (h) => h.verbs.length || h.draws.labels.length || h.draws.overrides.length;
-  const views = o.views.filter(busy);
-  const quiet = o.views.length - views.length;
-  const now = [
-    ...o.claims.map((c) => ({ text: `claim ${c.kind}`, sub: `${who(c.viewer, c.mine)}${c.ext ? ` · ${ext(c.ext)}` : ""}${c.lapsing ? " · lapsing" : ""}`, state: c.lapsing ? "off" : "on" })),
-    ...o.poses.map((p) => ({ text: `pose held by ${who(p.viewer, p.mine)}`, sub: `rank ${p.rank}${p.rank === 0 ? " (counts)" : ""}${p.yields ? " · yielding" : ""}${p.landed ? " · landed" : ""}${p.ext ? ` · ${ext(p.ext)}` : ""}`, state: p.rank === 0 ? "on" : "off" })),
-    ...o.overrides.map((x) => ({ text: `display ${x.fields.join(", ")}`, sub: `layer ${x.layer} · ${ext(x.ext)}`, ext: x.ext })),
-  ];
-  const wrote = g.provenance.filter((p) => p.path[0] === "objects" && p.path[1] === id && p.path.length >= 3);
-  const loud = o.holders.filter((h) => !quietHolder(h));
-  const hush = o.holders.filter(quietHolder).map((h) => ext(h.ext));
-  return [
-    {
-      id: "object",
-      title: nameOf(id),
-      note: o.traits.length ? o.traits.map((t) => `${t.trait}${t.by.length ? "" : " (nothing here declares it)"}`).join(" · ") : "no traits",
-      rows: [],
-    },
-    {
-      id: "holders",
-      title: `Holders, in input order (${o.holders.length})`,
-      rows: loud.map((h) => entryRow(g, h, nameOf)),
-      ...(o.holders.length ? (hush.length ? { note: `and, holding the scene with nothing for it: ${hush.join(", ")}` } : {}) : { note: "nothing holds it: its presses go to the view plugins" }),
-    },
-    ...(views.length || quiet ? [{ id: "views", title: "View plugins", rows: views.map((h) => entryRow(g, h, nameOf)), note: quiet ? `${plural(quiet, "other")} with nothing here` : undefined }] : []),
-    ...(o.others.length ? [{ id: "others", title: "Other verbs for it", rows: o.others.map((h) => entryRow(g, h, nameOf)) }] : []),
-    ...(now.length ? [{ id: "now", title: "Holding it now", rows: now }] : []),
-    ...(wrote.length ? [{ id: "wrote", title: "Last written by", rows: wrote.map((p) => ({ text: p.path.slice(2).join("."), sub: p.ext ? ext(p.ext) : p.kernel ? `the kernel (${p.kernel})` : "unstamped", ...(p.ext ? { ext: p.ext } : {}) })) }] : []),
-  ];
-}
-
-/** What to outline for an object: it, and the links of its chain it is held through (what it hangs on, its groups). */
-export function objectOutline(g, id) {
-  if (!g.objects.some((o) => o.id === id)) return [];
-  const chain = [...new Set((g.chains[id] ?? []).map((h) => h.via).filter((v) => v != null && v !== id))];
-  return [{ key: `focus:${id}`, id, role: "focus" }, ...chain.map((c) => ({ key: `chain:${c}`, id: c, role: "chain" }))];
-}
-
-/**
- * Is a running extension lingering? Nothing here calls for it: it runs for
- * traits (not every doc's "*"), and none of them sits anywhere.
- */
-export function lingering(g, e) {
-  if (e.kind !== "extension" || e.state !== "running" || !e.traits.length || e.traits.includes("*")) return false;
-  return !g.carries.some((c) => e.traits.includes(c.trait));
-}
-
-/**
- * The scene's running list (running order, scope, provides and uses,
- * busy or lingering) with the view plugins after, and what isn't running:
- * traits nothing here declares, packages not here, failures with errors.
+ * The running extensions by package, each with a colour and how many objects
+ * it holds; the ones holding nothing folded into `idle`; what failed or is
+ * missing, to show first. A row is `on` while it is the isolated one.
  * @param {object} g
- * @param {{ body?: { ext? }, hands?: { ext? }[] }} [view]  the view's value (a body or tool an extension holds makes it busy)
+ * @param {(id: string) => string} colour
+ * @param {{ isolated?: string | null }} [o]
  */
-export function runningSections(g, view = null) {
-  const holding = new Set([view?.body?.ext, ...(view?.hands ?? []).map((h) => h?.ext)].filter(Boolean));
-  const busy = (e) => holding.has(e.id) || g.poses.some((p) => p.ext === e.id && p.mine);
-  const ext = extName(g);
-  const running = g.extensions.filter((e) => e.kind === "extension" && e.state === "running");
-  const views = g.extensions.filter((e) => e.kind === "view" && e.state === "running");
-  const nr = g.notRunning;
-  const not = [
-    ...nr.failed.map((f) => ({ text: ext(f.id), sub: `failed: ${f.error}`, ext: f.id, state: "off" })),
-    ...nr.packages.map((p) => ({ text: shortPackage(p), sub: "package not loaded here", state: "off" })),
-    ...nr.traits.map((t) => ({ text: t.trait, sub: `on ${t.on.length === 1 ? (t.on[0] == null ? "the scene" : "1 object") : plural(t.on.length, "object")}: nothing here declares it`, state: "off" })),
-  ];
-  return [
-    {
-      id: "running",
-      title: `Running (${running.length})`,
-      rows: running.map((e) => {
-        const tags = [lingering(g, e) ? "lingering" : null, busy(e) ? "busy" : null].filter(Boolean);
-        const svc = [e.provides.length ? `provides ${e.provides.join(", ")}` : "", e.uses.length ? `uses ${e.uses.join(", ")}` : ""].filter(Boolean);
-        return { text: e.name, sub: [e.id, e.scope, ...svc, ...tags].join(" · "), ext: e.id, ...(tags.length ? { state: tags.includes("lingering") ? "off" : "on" } : {}) };
-      }),
-    },
-    { id: "views", title: `View plugins (${views.length})`, rows: views.map((e) => ({ text: e.name, sub: e.id, ext: e.id })) },
-    { id: "not-running", title: "Not running", rows: not, ...(not.length ? {} : { note: "everything the doc calls for runs" }) },
-  ];
-}
-
-/** A trait's values as a table: a column per key its values have (the first six), a row per object. */
-function traitTable(g, trait, rows) {
-  const nameOf = objectName(g);
-  const keys = [];
-  for (const r of rows) if (r.value && typeof r.value === "object" && !Array.isArray(r.value)) for (const k of Object.keys(r.value)) if (!keys.includes(k)) keys.push(k);
-  const cols = keys.slice(0, 6);
-  const { shown, more: n } = more(rows);
-  return {
-    head: [trait, ...(cols.length ? cols : ["value"])],
-    rows: shown.map((r) => [{ text: nameOf(r.id), object: r.id ?? undefined }, ...(cols.length ? cols.map((k) => ({ text: r.value?.[k] === undefined ? "" : brief(r.value[k], 18) })) : [{ text: brief(r.value) }])]),
-    more: n,
-  };
-}
-
-/**
- * The extension lens (gearsOfExtension), as sections: what it is, the
- * objects carrying its traits with their values, the objects × verbs grid,
- * what it holds now, its services, what it wrote last; a view plugin's
- * verbs by surface and its hands instead of the holdings. Null for an id
- * nothing knows.
- * @param {object} g
- * @param {string} extId
- * @param {{ who?, hands?: { ext, kind, name }[] }} [ctx]
- */
-export function extensionSections(g, extId, ctx) {
-  const x = gearsOfExtension(g, extId);
-  if (!x) return null;
-  const { who, hands = [] } = ctxOf(ctx);
-  const nameOf = objectName(g);
-  const version = shortVersion(x.version);
-  const head = {
-    id: "extension",
-    title: x.name,
-    note: [x.id, `${shortPackage(x.package)}${version ? `@${version}` : ""}`, x.kind === "view" ? "view plugin" : x.scope ? `scope ${x.scope}` : null, x.state === "running" ? (lingering(g, x) ? "lingering" : "running") : x.state, x.error ? `error: ${x.error}` : null].filter(Boolean).join(" · "),
-    rows: [],
-  };
-  const traits = x.traits.filter((t) => t !== "*");
-  // (a marker trait, every value empty, is a count: a table of nothing says nothing)
-  const empty = (v) => v == null || v === true || (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length);
-  const byTrait = traits.map((t) => ({
-    id: `trait:${t}`,
-    title: `${t} on ${t === "*" ? "every doc" : plural(x.objects[t].length, "object")}${x.describes.includes(t) ? "" : " (undescribed)"}`,
-    ...(x.objects[t].every((r) => empty(r.value)) ? { note: x.objects[t].length ? "no fields" : "nothing carries it here" } : { table: traitTable(g, t, x.objects[t]) }),
-  }));
-  const verbName = new Map(g.verbs.filter((v) => v.ext === extId).map((v) => [v.command, v.name]));
-  const rows = more(x.grid.rows);
-  const grid = x.grid.commands.length
-    ? [
-        {
-          id: "grid",
-          title: `Verbs × ${x.kind === "view" ? "targets" : "what it holds"}`,
-          table: {
-            head: ["", ...x.grid.commands.map((c) => verbName.get(c) ?? c)],
-            rows: rows.shown.map((r) => [{ text: nameOf(r.id), object: r.id ?? undefined }, ...x.grid.commands.map((c) => (r.cells[c] ? cellOf(r.cells[c]) : { text: "·", title: "not for it" }))]),
-            more: rows.more,
-          },
-        },
-      ]
-    : [];
-  const n = x.now;
-  const now = [
-    ...n.claims.map((c) => ({ text: `claim ${c.kind} on ${nameOf(c.object)}`, sub: `${who(c.viewer, c.mine)}${c.lapsing ? " · lapsing" : ""}`, ...(c.object ? { object: c.object } : {}) })),
-    ...n.poses.map((p) => ({ text: `pose on ${nameOf(p.object)}`, sub: `rank ${p.rank}${p.yields ? " · yielding" : ""}${p.landed ? " · landed" : ""}`, object: p.object })),
-    ...n.overrides.map((o) => ({ text: `display ${o.fields.join(", ")} on ${nameOf(o.object)}`, sub: `layer ${o.layer}`, object: o.object })),
-    ...n.processes.map((p) => ({ text: plural(p.count, "process", "processes"), sub: "stepped by the clock" })),
-    ...n.layers.map((l) => ({ text: `world layer: ${plural(l.meshes, "mesh", "meshes")}`, sub: l.onTop ? "on top" : "in the scene" })),
-    ...(n.labels.length ? [{ text: plural(n.labels.length, "label"), sub: n.labels.slice(0, 4).map((l) => `“${brief(l.text, 16)}”${l.on ? ` on ${nameOf(l.on)}` : ""}`).join(", ") }] : []),
-    ...hands.filter((h) => h.ext === extId).map((h) => ({ text: `${h.kind === "tool" ? "a held tool" : `a ${h.kind}`}: ${h.name}` })),
-  ];
-  const svc = [
-    ...x.services.provides.map((s) => ({ text: `provides ${s.name}`, sub: s.serving ? (s.users.length ? `to ${s.users.join(", ")}` : "nobody uses it here") : "another provider serves it" })),
-    ...x.services.uses.map((s) => ({ text: `uses ${s.name}`, sub: s.provider ? `from ${s.provider}` : "nobody provides it here", ...(s.provider ? { ext: s.provider } : {}) })),
-  ];
-  const surfaces = x.surfaces ? Object.entries(x.surfaces).map(([s, cs]) => ({ text: s, sub: cs.map((c) => verbName.get(c) ?? c).join(", ") })) : [];
-  const wrote = more(x.wrote, 12);
-  return [
-    head,
-    ...byTrait,
-    ...grid,
-    ...(surfaces.length ? [{ id: "surfaces", title: "Verbs by surface", rows: surfaces }] : []),
-    { id: "now", title: "Holds now", rows: now, ...(now.length ? {} : { note: "nothing" }) },
-    ...(svc.length ? [{ id: "services", title: "Services", rows: svc }] : []),
-    { id: "wrote", title: "Last writer of", rows: wrote.shown.map((p) => ({ text: p.join("."), ...(p[0] === "objects" && typeof p[1] === "string" ? { object: p[1] } : {}) })), ...(x.wrote.length ? {} : { note: "nothing it shows here" }), ...(wrote.more ? { more: wrote.more } : {}) },
-  ];
-}
-
-/** A grid cell: a verb's state for one target. */
-const cellOf = (v) => {
-  const c = verbChip(v);
-  return { text: c.state === "on" ? "✓" : c.state === "far" ? "far" : "✗", state: c.state, title: `${c.text}: ${c.title}` };
-};
-
-/** What to outline for an extension: every object carrying one of its traits, by trait (index: the trait's). */
-export function extensionOutline(g, extId) {
-  const e = g.extensions.find((x) => x.id === extId);
-  if (!e) return [];
-  const out = [];
-  e.traits.filter((t) => t !== "*").forEach((t, index) => {
-    for (const c of g.carries) if (c.trait === t && c.object != null && !out.some((o) => o.id === c.object)) out.push({ key: `trait:${c.object}`, id: c.object, role: "trait", index });
-  });
-  return out;
-}
-
-const inspectOf = (g, id) => g.extensions.find((e) => e.id === id)?.inspect ?? null;
-const whoList = (v, who, viewer) => (v === "all" ? "everyone" : Array.isArray(v) ? (v.length ? v.map((x) => who(x, x === viewer)).join(", ") : "nobody") : "unknown yet");
-
-/** A route as a row: its type and target, each step a chip, the one that took it marked. */
-function routeRow(r, nameOf, ext, older = false) {
-  const on = Array.isArray(r.path) && r.path.length ? r.path.map(nameOf).join(" › ") : "nothing";
-  return {
-    text: `${r.type} on ${on}`,
-    sub: r.took < 0 ? "nobody took it" : `taken by ${ext(r.steps[r.took]?.ext ?? "the view")} (${r.steps[r.took]?.step})`,
-    chips: r.steps.reduce((out, s, i) => {
-      const name = s.ext ? ext(s.ext) : (s.body ?? "");
-      const last = out.at(-1);
-      // a run of view plugins passed over is one chip
-      if (s.step === "plugin" && i !== r.took && last?.plugins) last.plugins.push(name);
-      else out.push(s.step === "plugin" && i !== r.took ? { plugins: [name] } : { text: `${s.step} ${name}`.trim(), ...(i === r.took ? { state: "took" } : {}), ...(s.holder ? { title: `holder ${nameOf(s.holder)}` } : {}) });
-      return out;
-    }, []).map((c) => (c.plugins ? (c.plugins.length === 1 ? { text: `plugin ${c.plugins[0]}` } : { text: `${c.plugins.length} view plugins`, title: c.plugins.join(", ") }) : c)),
-    ...(older ? { older: true } : {}),
-  };
-}
-
-/**
- * The layers on, as panel sections and world badges.
- * @param {object} g
- * @param {string[]} on  layersOn()
- * @param {{ who?, viewer?, routes?: object[], peers?: object, session?: string | null, view?: { body?, hands? } }} [ctx]
- * @returns {{ sections: object[], badges: object[] }}
- */
-export function layerSections(g, on, ctx) {
-  const { who, viewer, routes = [], peers = {}, session = null, view = null } = ctxOf(ctx);
-  const nameOf = objectName(g);
-  const ext = extName(g);
-  const sections = [];
-  const badges = [];
-  const has = (id) => id != null && g.objects.some((o) => o.id === id);
-  for (const layer of on) {
-    if (layer === "claims") {
-      sections.push({ id: "claims", title: "Claims", rows: g.claims.map((c) => ({ text: `${c.kind} on ${nameOf(c.object)}`, sub: `${who(c.viewer, c.mine)}${c.ext ? ` · ${ext(c.ext)}` : ""}${c.lapsing ? " · lapsing" : ""}`, state: c.lapsing ? "off" : "on", ...(c.object ? { object: c.object } : {}) })), ...(g.claims.length ? {} : { note: "no claims" }) });
-      for (const c of g.claims) if (has(c.object)) badges.push({ key: `claim:${c.object}:${c.kind}`, on: c.object, text: `${c.kind}: ${who(c.viewer, c.mine)}${c.lapsing ? " (lapsing)" : ""}`, kind: "claim" });
-    } else if (layer === "poses") {
-      sections.push({ id: "poses", title: "Poses", rows: g.poses.map((p) => ({ text: `${nameOf(p.object)}: ${who(p.viewer, p.mine)}`, sub: `rank ${p.rank}${p.yields ? " · yielding" : ""}${p.landed ? " · landed" : ""}${p.ext ? ` · ${ext(p.ext)}` : ""}`, state: p.rank === 0 ? "on" : "off", object: p.object })), ...(g.poses.length ? {} : { note: "nothing held" }) });
-      for (const p of g.poses) if (p.rank === 0 && has(p.object)) badges.push({ key: `pose:${p.object}`, on: p.object, text: `held: ${who(p.viewer, p.mine)}${p.yields ? " (yielding)" : ""}`, kind: "pose" });
-    } else if (layer === "clock") {
-      const c = inspectOf(g, "scene.clock");
-      const rows = c
-        ? [
-            { text: c.running ? "running" : "paused", sub: `t = ${Number(c.t ?? 0).toFixed(1)} s` },
-            { text: `computed by ${c.computer ? who(c.computer.viewer, c.computer.mine) : "nobody"}`, sub: c.computing ? "here" : "not here" },
-            ...g.processes.map((p) => ({ text: ext(p.ext), sub: plural(p.count, "process", "processes"), ext: p.ext })),
-          ]
-        : [];
-      sections.push({ id: "clock", title: "Clock", rows, ...(c ? {} : { note: "no clock here" }) });
-    } else if (layer === "display") {
-      const by = new Map();
-      for (const o of g.overrides) by.set(o.object, [...(by.get(o.object) ?? []), o]);
-      sections.push({ id: "display", title: "Display overrides", rows: [...by].map(([id, os]) => ({ text: nameOf(id), sub: os.map((o) => `${ext(o.ext)} (${o.fields.join(", ")})`).join(" › "), object: id })), ...(by.size ? {} : { note: "nothing shown otherwise" }) });
-      for (const [id, os] of by) if (has(id)) badges.push({ key: `display:${id}`, on: id, text: `shown by ${os.map((o) => ext(o.ext)).join(" › ")}`, kind: "display" });
-    } else if (layer === "route") {
-      const last = routes.at(-1);
-      const older = routes.slice(-9, -1).reverse();
-      sections.push({ id: "route", title: "Input route", rows: last ? [routeRow(last, nameOf, ext), ...older.map((r) => routeRow(r, nameOf, ext, true))] : [], ...(last ? {} : { note: "no event yet" }) });
-    } else if (layer === "links") {
-      const l = inspectOf(g, "scene.links");
-      const rows = (l?.stages ?? []).map((s) => ({ text: s.path.map(nameOf).join(" › ") || "this scene", sub: `${s.role}${s.open ? " · open" : ` · closed${s.reason ? `: ${s.reason}` : ""}`}`, state: s.open ? "on" : "off", ...(s.path.length === 1 ? { object: s.path[0] } : {}) }));
-      sections.push({ id: "links", title: "Links", rows, ...(rows.length ? {} : { note: "no links" }) });
-    } else if (layer === "people") {
-      const rows = [
-        { text: "you", sub: [view?.body?.label ?? "Look", (view?.hands ?? []).filter((h) => h.kind !== "popover").map((h) => h.name).join(", ")].filter(Boolean).join(" · ") },
-        ...Object.entries(peers)
-          .filter(([s]) => s !== session)
-          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-          .map(([s, p]) => ({ text: who(p?.viewer ?? null, false), sub: [p?.body?.label ?? "Look", (Array.isArray(p?.held) ? p.held : []).map((h) => h?.name).filter((n) => typeof n === "string").join(", "), `session ${String(s).slice(0, 6)}`].filter(Boolean).join(" · ") })),
-      ];
-      sections.push({ id: "people", title: "People", rows });
-    } else if (layer === "visibility") {
-      const a = inspectOf(g, "scene.audience");
-      const objs = more(a?.objects ?? []);
-      sections.push({ id: "visibility", title: "Visibility (who, never what)", rows: objs.shown.map((o) => ({ text: nameOf(o.id), sub: `may see: ${whoList(o.audience, who, viewer)} · turned toward: ${whoList(o.shown, who, viewer)}${o.veiled ? " · veiled here" : ""}`, object: o.id })), ...(objs.shown.length ? {} : { note: "no policy answers for anything" }), ...(objs.more ? { more: objs.more } : {}) });
-      for (const o of a?.objects ?? []) if (has(o.id)) badges.push({ key: `visibility:${o.id}`, on: o.id, text: `sees: ${whoList(o.audience, who, viewer)}`, kind: "visibility" });
-    }
+export function legend(g, colour, { isolated = null } = {}) {
+  const count = new Map();
+  for (const h of g.holds) if (h.via != null) count.set(h.ext, (count.get(h.ext) ?? 0) + 1);
+  const exts = g.extensions.filter((e) => e.kind === "extension" && e.state === "running");
+  const row = (e) => ({ ext: e.id, name: e.name, colour: colour(e.id), count: count.get(e.id) ?? 0, on: e.id === isolated });
+  const groups = [];
+  for (const e of exts.filter((x) => count.has(x.id))) {
+    const label = shortPackage(e.package);
+    let grp = groups.find((x) => x.label === label);
+    if (!grp) groups.push((grp = { label, rows: [] }));
+    grp.rows.push(row(e));
   }
-  // one badge per object: its layers' texts, in the panel's order
-  const merged = new Map();
-  for (const b of badges) merged.set(b.on, merged.has(b.on) ? { ...merged.get(b.on), text: `${merged.get(b.on).text} · ${b.text}` } : { ...b, key: `xray:${b.on}` });
-  return { sections, badges: [...merged.values()] };
+  const nr = g.notRunning;
+  return {
+    problems: [
+      ...nr.failed.map((f) => ({ text: extName(g)(f.id), why: `failed: ${f.error}` })),
+      ...nr.packages.map((p) => ({ text: shortPackage(p), why: "package not loaded here" })),
+    ],
+    groups,
+    idle: exts.filter((x) => !count.has(x.id)).map((e) => ({ ext: e.id, name: e.name, colour: colour(e.id) })),
+  };
+}
+
+// ── the hover card and the details ──
+
+/**
+ * What an object is and who acts on it: its traits as chips (coloured as the
+ * extension declaring one), the responding chain in input order each with its
+ * verbs, the view plugins with a verb for it, and what is live on it. Nothing
+ * that doesn't act on it. Null for an object the stage doesn't have.
+ * @param {object} g
+ * @param {string} id
+ * @param {(id: string) => string} colour
+ * @param {{ who?, self?, links? }} [o]  as glyphs
+ */
+export function card(g, id, colour, o = {}) {
+  const x = gearsOfObject(g, id);
+  if (!x) return null;
+  const name = extName(g);
+  const chainOf = (list) => list.map((h) => ({ ext: h.ext, name: name(h.ext), colour: colour(h.ext), verbs: h.verbs.map(verbChip) }));
+  return {
+    id,
+    title: objectName(g)(id),
+    traits: x.traits.map((t) => ({ text: t.trait, ...(t.by[0] && g.extensions.some((e) => e.id === t.by[0] && e.state === "running") ? { colour: colour(t.by[0]) } : {}) })),
+    chain: chainOf(x.holders.filter((h) => h.via != null)),
+    plugins: chainOf(x.views.filter((h) => h.verbs.length)),
+    live: glyphs(g, o).get(id) ?? [],
+  };
+}
+
+/**
+ * An object's details, folded per extension: how each holds it (package,
+ * version, verbs, events, drawing, services), and what holds it now and who
+ * last wrote its fields.
+ * @param {object} g
+ * @param {string} id
+ * @param {(id: string) => string} colour
+ * @param {{ who? }} [o]
+ */
+export function details(g, id, colour, { who = (viewer, mine) => (mine ? "you" : (viewer ?? "someone")) } = {}) {
+  const x = gearsOfObject(g, id);
+  if (!x) return null;
+  const name = extName(g);
+  const nameOf = objectName(g);
+  const fold = (h) => {
+    const e = g.extensions.find((y) => y.id === h.ext);
+    const version = shortVersion(h.version);
+    const how = h.kind === "holder" ? (h.depth === 0 ? "holds it" : `holds ${nameOf(h.via)}`) : h.kind === "view" ? "view plugin" : "a verb for it";
+    const draws = [...h.draws.labels.map((l) => `label “${brief(l.text, 24)}”`), ...h.draws.overrides.map((d) => `display ${d.fields.join(", ")}`)];
+    return {
+      ext: h.ext,
+      name: e?.name ?? h.ext,
+      colour: colour(h.ext),
+      sub: `${how} · ${shortPackage(h.package)}${version ? `@${version}` : ""}`,
+      verbs: h.verbs.map(verbChip),
+      lines: [
+        ...(h.events.length ? [`takes ${h.events.join(", ")}`] : []),
+        ...(draws.length ? [`draws here: ${draws.join("; ")}`] : []),
+        ...(h.services.provides.length ? [`provides ${h.services.provides.join(", ")}`] : []),
+        ...(h.services.uses.length ? [`uses ${h.services.uses.join(", ")}`] : []),
+      ],
+    };
+  };
+  const now = [
+    ...x.claims.map((c) => `claim ${c.kind}: ${who(c.viewer, c.mine)}${c.lapsing ? " (lapsing)" : ""}`),
+    ...x.poses.map((p) => `pose held by ${who(p.viewer, p.mine)}, rank ${p.rank}${p.rank === 0 ? " (counts)" : ""}${p.yields ? ", yielding" : ""}${p.landed ? ", landed" : ""}`),
+    ...x.overrides.map((d) => `display ${d.fields.join(", ")}: ${name(d.ext)}`),
+  ];
+  const wrote = g.provenance.filter((p) => p.path[0] === "objects" && p.path[1] === id && p.path.length >= 3).map((p) => `${p.path.slice(2).join(".")}: ${p.ext ? name(p.ext) : p.kernel ? `the kernel (${p.kernel})` : "unstamped"}`);
+  return {
+    id,
+    title: nameOf(id),
+    folds: [...x.holders.filter((h) => h.via != null), ...x.views.filter((h) => h.verbs.length || h.draws.labels.length || h.draws.overrides.length), ...x.others].map(fold),
+    now,
+    wrote,
+  };
+}
+
+// ── the route strip ──
+
+const BOX = [
+  ["hand", "Tools"],
+  ["widget", "Widget"],
+  ["holder", "Holders"],
+  ["plugin", "View plugins"],
+  ["body", "Body"],
+  ["default", "Default"],
+];
+const boxOf = (step) => (step === "gesture" || step === "hand" ? "hand" : step === "widget" ? "widget" : step === "plugin" ? "plugin" : step === "holder" ? "holder" : step === "default" ? "default" : "body");
+
+/**
+ * An event's route as boxes in the chain's order (Tools, Widget, the holders,
+ * View plugins, Body), each with who was offered it, the one that took it
+ * marked (and in its colour).
+ * @param {{ type, path, steps, took }} r  api.routes()'s
+ * @param {{ g: object, colour: (id: string) => string }} o
+ */
+export function routeBoxes(r, { g, colour }) {
+  const ext = extName(g);
+  const nameOf = objectName(g);
+  const names = (s) => (s.ext ? ext(s.ext) : (s.name ?? s.body ?? s.step));
+  const boxes = BOX.map(([kind, label]) => ({ kind, label, names: [], took: null }));
+  r.steps.forEach((s, i) => {
+    const b = boxes.find((x) => x.kind === boxOf(s.step));
+    b.names.push(names(s));
+    if (i === r.took) b.took = { name: names(s), ...(s.ext ? { colour: colour(s.ext) } : {}) };
+  });
+  const on = Array.isArray(r.path) && r.path.length ? r.path.map(nameOf).join(" › ") : "nothing";
+  return { type: r.type, on, took: r.took >= 0, boxes: boxes.filter((b) => b.names.length) };
+}
+
+/** The last event's route, and a few before it, newest first. */
+export function strip(routes, o) {
+  const list = routes.slice(-6).reverse().map((r) => routeBoxes(r, o));
+  return { last: list[0] ?? null, older: list.slice(1) };
 }

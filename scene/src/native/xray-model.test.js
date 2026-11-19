@@ -1,22 +1,23 @@
-// The X-ray's panel models (xray-model.js), pure, over the gears graph's
-// small worlds (gears.test.js's: 16 extension subsets × 64 object trait
-// combinations × 2 scene traits) and the finite cases of the layers:
-//   - the object lens lists exactly the graph's holders in input order, each
-//     verb as its chip; the outline is the object, then the links it is
-//     held through, each once;
-//   - the running list is the running order; in a world whose running set
-//     is the doc's, nothing lingers; one running for a trait nowhere does;
-//   - the extension lens's grid has a cell per (held object, verb), each the
-//     object lens's verb; its trait tables a row per object carrying it;
-//   - every subset of layers toggles exactly the one asked for.
+// The X-ray's models (xray-model.js), pure, over the gears graph's small
+// worlds (gears.test.js's: 16 extension subsets × 64 object trait
+// combinations × 2 scene traits) and the finite cases of the rest:
+//   - colours: one per extension, in the palette, distinct for every subset
+//     the palette can hold, the same whatever the order asked;
+//   - looks: every object has one; what nothing responds to fades with no
+//     outline; the rest are outlined in their responders' colours in input
+//     order; isolating an extension lights exactly the objects it holds;
+//   - the legend counts what each extension holds, by package, the rest idle;
+//   - the card has exactly the responding chain, with the graph's verbs;
+//   - glyphs: each kind from exactly the state that makes it;
+//   - the route's boxes are in the chain's order with the taker marked.
 
 import { describe, expect, it } from "vitest";
 import { activeSet } from "../stage/activation.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { TOO_FAR } from "../parts/toolbar-commands.js";
-import { buildGears, gearsOfObject } from "./gears.js";
-import { LAYERS, extensionOutline, extensionSections, layerSections, layersOn, lingering, objectOutline, objectSections, quietHolder, runningSections, toggleLayer, verbChip } from "./xray-model.js";
+import { buildGears } from "./gears.js";
+import { BANDS, GHOST, GLYPHS, OPACITY, PALETTE, card, colours, details, glyphs, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
 
 const has = (o, t) => !!o?.traits?.[t];
 const run = () => {};
@@ -50,159 +51,177 @@ function world(subset, combo, sceneA) {
   return { g, scene, running };
 }
 
-describe("the X-ray's lenses, over every small world", () => {
-  it("2048 worlds: the object lens is the graph's holders and verbs; the outline its chain; the running list; nothing lingers; the grid is the verbs", () => {
+
+const ALL = ["t.all", "t.a", "t.b", "t.u"];
+
+describe("colours", () => {
+  it("every subset of ten ids, in any order: each in the palette, all distinct, the same asked again", () => {
+    const pool = ["scene.carry", "tabletop", "seats", "keeper", "scene.claims", "scene.poses", "scene.clock", "machine", "sailing", "scene.links"];
+    expect(new Set(PALETTE).size).toBe(PALETTE.length);
+    for (let m = 1; m < 1 << pool.length; m++) {
+      const ids = pool.filter((_, i) => m & (1 << i));
+      const c = colours(ids);
+      const got = ids.map(c);
+      expect(new Set(got).size).toBe(ids.length);
+      for (const x of got) expect(PALETTE).toContain(x);
+      const back = colours([...ids].reverse());
+      expect(ids.map(back)).toEqual(got);
+    }
+  });
+  it("more ids than the palette holds: still one from it each, the first of the sorted taking its own slot", () => {
+    const ids = Array.from({ length: PALETTE.length + 5 }, (_, i) => `e${i}`);
+    const c = colours(ids);
+    expect(ids.every((id) => PALETTE.includes(c(id)))).toBe(true);
+    expect(new Set(ids.map(c)).size).toBe(PALETTE.length);
+  });
+});
+
+describe("the scene-wide view, over every small world", () => {
+  it("2048 worlds: looks, isolation, the legend and the card agree with who holds what", () => {
     let worlds = 0;
     for (let subset = 0; subset < 16; subset++)
       for (let c = 0; c < 64; c++)
         for (const sceneA of [false, true]) {
           const { g, scene, running } = world(subset, [c & 3, (c >> 2) & 3, (c >> 4) & 3], sceneA);
           const at = `${subset}/${c}/${sceneA}`;
+          const colour = colours(running.map((r) => r.id));
+          const all = looks(g, colour);
+          expect([at, Object.keys(all)]).toEqual([at, scene.ids]);
           for (const id of scene.ids) {
-            const o = gearsOfObject(g, id);
-            const secs = objectSections(g, id);
-            const holders = secs.find((s) => s.id === "holders");
-            // (every holder with something for it, in input order; one with nothing, holding the scene, is named in the note)
-            const loud = o.holders.filter((h) => !quietHolder(h));
-            expect([at, id, holders.rows.map((r) => r.ext)]).toEqual([at, id, loud.map((h) => h.ext)]);
-            holders.rows.forEach((r, i) => expect([at, id, r.chips]).toEqual([at, id, loud[i].verbs.map(verbChip)]));
-            // a reach verb beyond reach is out of reach, never "disabled"
-            for (const r of holders.rows) for (const ch of r.chips) if (ch.text.startsWith("Tick")) expect([at, id, ch.state]).toEqual([at, id, id === "o3" ? "far" : "on"]);
-            const out = objectOutline(g, id);
-            expect(out[0]).toEqual({ key: `focus:${id}`, id, role: "focus" });
-            const chain = out.slice(1).map((x) => x.id);
-            expect(new Set(chain).size).toBe(chain.length);
-            expect(chain.every((x) => x !== id && o.holders.some((h) => h.via === x))).toBe(true);
+            const by = responders(g, id);
+            // (a trait on the object or what it hangs on or is filed under; the scene's traits hold nothing in particular)
+            expect([at, id, by.every((e) => running.some((r) => r.id === e))]).toEqual([at, id, true]);
+            if (!by.length) expect([at, id, all[id]]).toEqual([at, id, { tint: GHOST, opacity: OPACITY.faded }]);
+            else expect([at, id, all[id]]).toEqual([at, id, { tint: GHOST, opacity: OPACITY.ghost, outline: by.slice(0, BANDS).map(colour) }]);
+            // the one looked at is lit
+            expect(looks(g, colour, { focus: [id] })[id]).toEqual({ opacity: OPACITY.lit, ...(by.length ? { outline: by.slice(0, BANDS).map(colour) } : {}) });
           }
-          const runningSec = runningSections(g).find((s) => s.id === "running");
-          expect([at, runningSec.rows.map((r) => r.ext)]).toEqual([at, running.map((r) => r.id)]);
-          // the running set is the doc's: nothing here lingers
-          expect([at, g.extensions.filter((e) => lingering(g, e)).map((e) => e.id)]).toEqual([at, []]);
           for (const r of running) {
-            const secs = extensionSections(g, r.id);
-            const lens = secs.find((s) => s.id === "grid");
-            const held = g.holds.filter((h) => h.ext === r.id).map((h) => h.object);
-            const mine = g.verbs.filter((v) => v.ext === r.id);
-            if (!mine.length) expect(lens).toBeUndefined();
-            else {
-              // a row for the scene and each object it holds; each cell the verb's chip state, or "·"
-              expect(lens.table.rows.length).toBe(1 + held.length);
-              const commands = [...new Set(mine.map((v) => v.command))];
-              lens.table.rows.forEach((row, i) => {
-                const target = i === 0 ? null : held[i - 1];
-                commands.forEach((cmd, k) => {
-                  const v = mine.find((x) => x.command === cmd && x.target === target);
-                  expect([at, r.id, target, cmd, row[k + 1].state ?? null]).toEqual([at, r.id, target, cmd, v ? verbChip(v).state : null]);
-                });
-              });
+            const iso = looks(g, colour, { isolated: r.id });
+            const lit = scene.ids.filter((id) => iso[id].opacity === OPACITY.lit);
+            expect([at, r.id, lit]).toEqual([at, r.id, scene.ids.filter((id) => responders(g, id).includes(r.id))]);
+            for (const id of scene.ids) {
+              if (lit.includes(id)) expect(iso[id].outline).toEqual([colour(r.id)]);
+              else expect([at, id, iso[id]]).toEqual([at, id, { tint: GHOST, opacity: OPACITY.faded }]);
             }
-            const e = EXTS.find((x) => x.id === r.id);
-            for (const t of e.traits.filter((x) => x !== "*")) {
-              const sec = secs.find((s) => s.id === `trait:${t}`);
-              const carrying = [null, ...scene.ids].filter((l) => has(l == null ? scene.d : scene.objects[l], t));
-              // (a table while anything carries it, every value having a field here; else a note)
-              expect([at, t, (sec.table?.rows ?? []).map((row) => row[0].object ?? null), !!sec.note]).toEqual([at, t, carrying, !carrying.length]);
-            }
-            // its outline: the objects carrying its traits, each once
-            const outline = extensionOutline(g, r.id).map((x) => x.id);
-            expect(new Set(outline).size).toBe(outline.length);
           }
+          // the legend: a row per running extension holding something, its count, grouped by package; the rest idle
+          const lg = legend(g, colour);
+          const rows = lg.groups.flatMap((x) => x.rows);
+          const exts = g.extensions.filter((e) => e.kind === "extension" && e.state === "running");
+          const holds = (e) => g.holds.filter((h) => h.ext === e && h.via != null).length;
+          expect([at, rows.map((r) => [r.ext, r.count])]).toEqual([at, exts.filter((e) => holds(e.id)).map((e) => [e.id, holds(e.id)])]);
+          expect([at, lg.idle.map((x) => x.ext)]).toEqual([at, exts.filter((e) => !holds(e.id)).map((e) => e.id)]);
+          expect(lg.problems).toEqual([]);
+          expect(legend(g, colour, { isolated: "t.a" }).groups.flatMap((x) => x.rows).filter((r) => r.on).map((r) => r.ext)).toEqual(running.some((r) => r.id === "t.a") && holds("t.a") ? ["t.a"] : []);
+          // the card: the responding chain with the graph's verbs for it; nothing that doesn't act on it
+          for (const id of scene.ids) {
+            const k = card(g, id, colour);
+            expect([at, id, k.chain.map((x) => x.ext)]).toEqual([at, id, responders(g, id)]);
+            const mine = g.verbs.filter((v) => v.target === id);
+            k.chain.forEach((x) => expect(x.verbs).toEqual(mine.filter((v) => v.ext === x.ext).map(verbChip)));
+            expect(k.plugins).toEqual([]);
+            expect(k.traits.map((t) => t.text)).toEqual(g.carries.filter((t) => t.object === id).map((t) => t.trait));
+            const d = details(g, id, colour);
+            expect([at, id, d.folds.filter((f) => responders(g, id).includes(f.ext)).map((f) => f.ext)]).toEqual([at, id, responders(g, id)]);
+          }
+          expect(card(g, "nope", colour)).toBe(null);
+          expect(details(g, "nope", colour)).toBe(null);
           worlds++;
         }
     expect(worlds).toBe(2048);
   });
 
-  it("an extension running for a trait that sits nowhere lingers; one busy holding a pose or the tool says so", () => {
-    const { g } = world(0b0010, [0, 0, 0], false); // t.a registered, nothing carries t.a
-    expect(g.extensions.find((e) => e.id === "t.a").state).toBe("idle");
+  it("a view plugin with a verb for the object is on the card after the chain, in its own colour", () => {
     const objects = { o: { name: "O", transform: T } };
     const scene = { d: { objects, traits: {} }, objects, ids: ["o"], parents: resolveParents(objects), groups: resolveGroups(objects) };
-    const metas = [{ id: "t.a", type: "scene:extension", traits: ["t.a"] }, { id: "t.all", type: "scene:extension", traits: ["*"] }];
-    const g2 = buildGears({ metas, scene, running: [{ id: "t.all", scope: "scene" }, { id: "t.a", scope: "objects" }], inspect: [{ id: "scene.poses", value: { holds: [{ id: "o", ext: "t.all", mine: true, rank: 0 }] } }] });
-    expect(g2.extensions.filter((e) => lingering(g2, e)).map((e) => e.id)).toEqual(["t.a"]);
-    const rows = runningSections(g2, { hands: [{ ext: "t.a", kind: "tool", name: "Thing" }] }).find((s) => s.id === "running").rows;
-    expect(rows.map((r) => [r.ext, r.sub.split(" · ").slice(2)])).toEqual([
-      ["t.all", ["busy"]],
-      ["t.a", ["lingering", "busy"]],
-    ]);
+    const g = buildGears({ metas: [{ id: "v.sel", type: "scene:view", name: "Select" }], scene, views: ["v.sel"], commands: [{ id: "v.sel", value: [{ id: "pick", name: "Pick", key: "e", run, state: () => ({}) }] }] });
+    const colour = colours(["v.sel"]);
+    const k = card(g, "o", colour);
+    expect(k.chain).toEqual([]);
+    expect(k.plugins).toEqual([{ ext: "v.sel", name: "Select", colour: colour("v.sel"), verbs: [{ text: "Pick", key: "E", state: "on", title: "enabled" }] }]);
+  });
+
+  it("failed extensions and missing packages are the legend's problems, in red", () => {
+    const g = buildGears({ metas: [{ id: "t.x", type: "scene:extension", name: "Ex" }], scene: { d: { objects: {}, traits: {} }, objects: {}, ids: [], parents: new Map(), groups: new Map() }, settled: { failed: ["t.x"], errors: { "t.x": "boom" }, missing: ["https://x.test/pkg"] } });
+    expect(legend(g, colours([])).problems).toEqual([{ text: "Ex", why: "failed: boom" }, { text: "x.test/pkg", why: "package not loaded here" }]);
   });
 });
 
-describe("verbs, layers and badges", () => {
-  it("a verb's chip: enabled, disabled with why, out of reach; its label and key", () => {
-    expect(verbChip({ name: "Draw", keys: ["d"], enabled: true })).toEqual({ text: "Draw (D)", state: "on", title: "enabled" });
-    expect(verbChip({ name: "Draw", label: "Draw to my hand", keys: [], enabled: false, reason: "not your turn" })).toEqual({ text: "Draw to my hand", state: "off", title: "disabled: not your turn" });
-    expect(verbChip({ name: "Lift", keys: ["Delete"], enabled: false, reason: TOO_FAR })).toEqual({ text: "Lift (Delete)", state: "far", title: "out of reach" });
-  });
+describe("glyphs", () => {
+  const objects = { c: { name: "Card", transform: T }, d: { name: "Deck", transform: T }, e: { name: "Engine", transform: T } };
+  const scene = { d: { objects, traits: {} }, objects, ids: ["c", "d", "e"], parents: resolveParents(objects), groups: resolveGroups(objects) };
+  const metas = ["t.game", "scene.xray"].map((id) => ({ id, type: id === "scene.xray" ? "scene:view" : "scene:extension", name: id === "t.game" ? "Game" : "X-ray", traits: [] }));
+  const make = (inspect, display = {}) => buildGears({ metas, scene, running: [{ id: "t.game", scope: "scene" }], inspect, owners: { layers: [], labels: [], display } });
+  const who = (v, mine) => (mine ? "you" : { "v:ben": "Ben" }[v] ?? "someone");
 
-  it("every subset of layers: toggling one turns exactly it on or off, in the panel's order", () => {
-    const all = LAYERS.map((l) => l.id);
-    expect(layersOn(null)).toEqual(LAYERS.filter((l) => l.on).map((l) => l.id));
-    for (let m = 0; m < 1 << all.length; m++) {
-      const pref = all.filter((_, i) => m & (1 << i));
-      expect(layersOn(pref)).toEqual(pref);
-      for (const id of all)
-        for (const on of [true, false]) {
-          const next = toggleLayer(pref, id, on);
-          expect(next).toEqual(all.filter((x) => (x === id ? on : pref.includes(x))));
-        }
-    }
-  });
-
-  it("claims, poses and display as sections and one badge per object; the route's taker marked, older routes after; clock, links, people, visibility", () => {
-    const objects = { c: { name: "Card", transform: T }, d: { name: "Deck", transform: T } };
-    const scene = { d: { objects, traits: {} }, objects, ids: ["c", "d"], parents: resolveParents(objects), groups: resolveGroups(objects) };
-    const g = buildGears({
-      // (the natives whose snapshots the layers read run, as in every stage)
-      metas: [{ id: "t.game", type: "scene:extension", name: "Game", traits: ["*"] }, ...["claims", "poses", "clock", "audience"].map((n) => ({ id: `scene.${n}`, type: "scene:extension", traits: ["*"] })), { id: "scene.links", type: "scene:view" }],
-      scene,
-      running: ["t.game", "scene.claims", "scene.poses", "scene.clock", "scene.audience"].map((id) => ({ id, scope: "scene" })),
-      views: ["scene.links"],
-      inspect: [
-        { id: "scene.claims", value: { claims: [{ id: null, kind: "seat:p1", viewer: "v:ana", mine: true }, { id: "c", kind: "turn", viewer: "v:ben", lapsing: true }] } },
-        { id: "scene.poses", value: { holds: [{ id: "c", viewer: "v:ben", session: "s2", rank: 0, yields: false }, { id: "c", viewer: "v:ana", mine: true, rank: 1 }] } },
-        { id: "scene.clock", value: { running: true, t: 12.34, computing: false, computer: { viewer: "v:ben", mine: false }, processes: { "t.game": 2 } } },
-        { id: "scene.links", value: { stages: [{ path: ["d"], role: "pinned", open: false, reason: "unavailable" }] } },
-        { id: "scene.audience", value: { objects: [{ id: "c", audience: ["v:ana"], shown: "all", veiled: false }] } },
+  it("a lock for a claim, a hand for the pose that counts, a gear for a process, an eye for another's override; in that order; none for the X-ray's own", () => {
+    const g = make(
+      [
+        { id: "scene.claims", value: { claims: [{ id: "c", kind: "turn", viewer: "v:ben" }, { id: null, kind: "seat", viewer: "v:ana", mine: true }] } },
+        { id: "scene.poses", value: { holds: [{ id: "c", viewer: "v:ben", rank: 0 }, { id: "d", viewer: "v:ana", mine: true, rank: 1 }] } },
+        { id: "scene.clock", value: { drives: [{ id: "c", ext: "t.game" }, { id: "gone", ext: "t.game" }] } },
       ],
-      owners: { layers: [], labels: [], display: { d: [{ ext: "t.game", fields: ["hidden"] }] } },
-    });
-    const who = (v, mine) => (mine ? "you" : { "v:ana": "Ana", "v:ben": "Ben" }[v] ?? "someone");
-    const routes = [
-      { type: "press", path: ["d"], steps: [{ step: "holder", ext: "t.game", holder: null }], took: 0 },
-      { type: "click", path: ["c"], steps: [{ step: "hand", ext: "scene.xray" }, { step: "holder", ext: "t.game", holder: "c" }, { step: "default", ext: null }], took: 1 },
-    ];
-    const { sections, badges } = layerSections(g, layersOn(LAYERS.map((l) => l.id)), { who, viewer: "v:ana", routes, peers: { s1: { viewer: "v:ana" }, s2: { viewer: "v:ben", body: { label: "Seated" }, held: [{ name: "Edit" }, { name: "X-ray" }] } }, session: "s1", view: { body: { label: "Watching" }, hands: [] } });
-    const by = Object.fromEntries(sections.map((s) => [s.id, s]));
-    expect(sections.map((s) => s.id)).toEqual(LAYERS.map((l) => l.id));
-    expect(by.claims.rows.map((r) => [r.text, r.sub, r.state])).toEqual([
-      ["seat:p1 on the scene", "you", "on"],
-      ["turn on Card", "Ben · lapsing", "off"],
+      { c: [{ ext: "t.game", fields: ["hidden"] }, { ext: "scene.xray", fields: ["tint", "opacity", "outline"] }], d: [{ ext: "scene.xray", fields: ["opacity"] }] },
+    );
+    const out = glyphs(g, { who, self: "scene.xray" });
+    expect([...out.keys()]).toEqual(["c"]);
+    expect(out.get("c")).toEqual([
+      { kind: "lock", title: "turn claimed by Ben" },
+      { kind: "hand", title: "held by Ben" },
+      { kind: "gear", title: "driven by a process of Game" },
+      { kind: "eye", title: "shown otherwise by Game (hidden)" },
     ]);
-    expect(by.poses.rows.map((r) => [r.text, r.state])).toEqual([
-      ["Card: Ben", "on"],
-      ["Card: you", "off"],
+    expect(Object.keys(GLYPHS)).toEqual(["lock", "hand", "gear", "eye", "link"]);
+  });
+
+  it("links are boxes: their role, or closed with why", () => {
+    const g = make([]);
+    const out = glyphs(g, { links: [{ path: ["d"], role: "acting", open: true }, { path: ["e"], role: "pinned", open: false, reason: "unavailable" }, { path: ["d", "x"], role: "acting", open: true }] });
+    expect(out.get("d")).toEqual([{ kind: "link", title: "acting" }]);
+    expect(out.get("e")).toEqual([{ kind: "link", title: "pinned, closed: unavailable" }]);
+  });
+
+  it("a yielding hand and a lapsing lock say so", () => {
+    const g = make([{ id: "scene.claims", value: { claims: [{ id: "c", kind: "turn", viewer: "v:ben", lapsing: true }] } }, { id: "scene.poses", value: { holds: [{ id: "c", viewer: "v:ben", rank: 0, yields: true }] } }]);
+    expect(glyphs(g, { who }).get("c").map((x) => x.title)).toEqual(["turn claimed by Ben (lapsing)", "held by Ben (yielding)"]);
+  });
+});
+
+describe("the route strip", () => {
+  const g = buildGears({ metas: [{ id: "t.game", type: "scene:extension", name: "Game" }, { id: "scene.edit", type: "scene:extension", name: "Edit" }], scene: { d: { objects: { c: { name: "Card", transform: T } }, traits: {} }, objects: { c: { name: "Card", transform: T } }, ids: ["c"], parents: new Map(), groups: new Map() } });
+  const colour = colours(["t.game", "scene.edit"]);
+  const o = { g, colour };
+
+  it("boxes in the chain's order, only those offered it; the taker marked in its colour", () => {
+    const r = { type: "click", path: ["c"], steps: [{ step: "hand", ext: "scene.edit", name: "Edit" }, { step: "holder", ext: "t.game", holder: "c" }, { step: "plugin", ext: "v.a" }], took: 1 };
+    const b = routeBoxes(r, o);
+    expect([b.type, b.on, b.took]).toEqual(["click", "Card", true]);
+    expect(b.boxes.map((x) => [x.kind, x.label, x.names, x.took?.name ?? null])).toEqual([
+      ["hand", "Tools", ["Edit"], null],
+      ["holder", "Holders", ["Game"], "Game"],
+      ["plugin", "View plugins", ["v.a"], null],
     ]);
-    expect(by.clock.rows.map((r) => r.text)).toEqual(["running", "computed by Ben", "Game"]);
-    expect(by.display.rows).toEqual([{ text: "Deck", sub: "Game (hidden)", object: "d" }]);
-    const [last, older] = by.route.rows;
-    expect([last.text, last.sub, last.chips.map((c) => c.state ?? null)]).toEqual(["click on Card", "taken by Game (holder)", [null, "took", null]]);
-    // a run of view plugins passed over is one chip
-    const passed = layerSections(g, ["route"], { routes: [{ type: "key", path: null, steps: ["a", "b", "c"].map((x) => ({ step: "plugin", ext: `v.${x}` })).concat([{ step: "body", ext: "t.game", body: "seat" }]), took: -1 }] }).sections[0].rows[0];
-    expect(passed.chips).toEqual([{ text: "3 view plugins", title: "v.a, v.b, v.c" }, { text: "body Game" }]);
-    expect([older.text, older.older]).toEqual(["press on Deck", true]);
-    expect(by.links.rows.map((r) => [r.text, r.sub])).toEqual([["Deck", "pinned · closed: unavailable"]]);
-    expect(by.people.rows.map((r) => [r.text, r.sub])).toEqual([
-      ["you", "Watching"],
-      ["Ben", "Seated · Edit, X-ray · session s2"],
-    ]);
-    expect(by.visibility.rows.map((r) => r.sub)).toEqual(["may see: you · turned toward: everyone"]);
-    // one badge per object, its layers' texts in the panel's order; a scene claim has no object to sit on
-    expect(badges).toEqual([
-      { key: "xray:c", on: "c", text: "turn: Ben (lapsing) · held: Ben · sees: you", kind: "claim" },
-      { key: "xray:d", on: "d", text: "shown by Game", kind: "display" },
-    ]);
-    // none on: nothing
-    expect(layerSections(g, [], { who })).toEqual({ sections: [], badges: [] });
+    expect(b.boxes[1].took.colour).toBe(colour("t.game"));
+  });
+
+  it("nobody took it: no box marked; the body and the default are boxes of their own", () => {
+    const b = routeBoxes({ type: "key", path: null, steps: [{ step: "body", ext: "t.game", body: "walk" }, { step: "default", ext: null }], took: -1 }, o);
+    expect([b.on, b.took, b.boxes.map((x) => [x.label, x.names, x.took])]).toEqual(["nothing", false, [["Body", ["Game"], null], ["Default", ["default"], null]]]);
+  });
+
+  it("the last route first, up to five older ones after it", () => {
+    const routes = Array.from({ length: 9 }, (_, i) => ({ type: `e${i}`, path: [], steps: [], took: -1 }));
+    const s = strip(routes, o);
+    expect([s.last.type, s.older.map((r) => r.type)]).toEqual(["e8", ["e7", "e6", "e5", "e4", "e3"]]);
+    expect(strip([], o)).toEqual({ last: null, older: [] });
+  });
+});
+
+describe("verbs", () => {
+  it("a verb's chip: enabled, disabled with why, out of reach; its label and its key apart", () => {
+    expect(verbChip({ name: "Draw", keys: ["d"], enabled: true })).toEqual({ text: "Draw", key: "D", state: "on", title: "enabled" });
+    expect(verbChip({ name: "Draw", label: "Draw to my hand", keys: [], enabled: false, reason: "not your turn" })).toEqual({ text: "Draw to my hand", key: null, state: "off", title: "disabled: not your turn" });
+    expect(verbChip({ name: "Lift", keys: ["Delete"], enabled: false, reason: TOO_FAR })).toEqual({ text: "Lift", key: "Delete", state: "far", title: "out of reach" });
   });
 });

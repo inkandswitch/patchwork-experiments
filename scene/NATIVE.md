@@ -177,7 +177,7 @@ that counts (`ext`: the extension holding it, if this view's; `lapsing`: its
 holder off the channel, in its grace); `scene.poses` `{ holds: [{ id, session,
 viewer, ext, since, yields, landed, mine, rank }] }`, every hold on each object
 in the one order (rank 0 counts); `scene.clock` `{ computer, running, t,
-computing, processes: { [ext]: count } }`; `scene.links` `{ stages: [{ path,
+computing, processes: { [ext]: count }, drives: [{ id, ext }] }` (`drives`: objects a process names with `on`); `scene.links` `{ stages: [{ path,
 role, open, reason?, url }] }`; `scene.audience` `{ objects: [{ id, audience,
 shown, veiled }] }` for objects a policy answers for: who, never what.
 
@@ -201,31 +201,49 @@ panel (a drawer tab, `embed: false`, docked with `pointer: false`; its × puts
 it down): a walk keeps its lock, and then what it looks at is the eye's (the
 look, as the use prompt's), looked at again every 200 ms.
 
-- **The object** hovered or pinned is outlined, with the links it is held
-  through, and its lens is in the panel: its traits; its holders in input
-  order (package, version, how it holds it, verbs as chips: enabled, disabled
-  with why, out of reach; keys; events it takes; what it draws there;
-  services), a holder of the scene with nothing for it named in a note; view
-  plugins with something for it; claims, poses and overrides on it; the last
-  writer of each field and trait (provenance; "unstamped" for a write
-  without a stamp).
-- **An extension** picked (any row naming one) outlines its objects by
-  trait, and its lens comes first: package, scope, state or error; its
-  traits' values as tables; the objects × verbs grid; what it holds now;
-  its services; what it last wrote.
-- **The scene**: the running list in running order (scope, provides, uses;
-  busy, lingering), the view plugins, and what isn't running.
-- **Layers** (the pref `xray.layers`; claims, poses and the input route by
-  default): claims, poses, clock, display, input route (the last event's
-  steps, the taker marked, a run of view plugins passed over as one; older
-  routes on hover), links, people, visibility (who, never what). Claims,
-  poses, display and visibility badge their objects, one label per object.
+- **The scene, ghosted and outlined.** Every object is displayed ghosted
+  (a neutral tint, partly transparent: `display`'s `tint`, `opacity`,
+  `outline`; STAGE.md, "`api`") and outlined in the colours of the extensions
+  that respond to it, in input order, alternating dashes for several (three
+  at most). One colour per extension, a hash of its id into a twelve-colour
+  palette, the next free slot on a collision, used everywhere: outlines,
+  chips, swatches, the route strip. An object nothing responds to fades
+  further. Its looks are the X-ray's own override, released as it is put down.
+- **Glyphs** on objects with live state, one small label each: a lock (a
+  claim; who, on its card), a hand (someone holds it: a pose of rank 0), a
+  gear (a process drives it: a clock process's `on`, CONVENTIONS.md,
+  "Inspect"), an eye (an extension other than the X-ray displays it
+  otherwise); a link is a dashed labelled box (its name and role: acting,
+  pinned, closed). The legend's key names the kinds shown.
+- **The legend** (the drawer tab, `embed: false`, docked `pointer: false`; its
+  × puts the tool down): the running extensions grouped by package, each in
+  its colour with the count of objects it holds; the ones holding nothing
+  folded into a count; failed extensions and missing packages first, in red,
+  only if any. A click on a row **isolates** it: its objects lit in its
+  colour, everything else faded; again clears it.
+- **The card** beside the hovered object (anchored to its box on screen, like
+  the use prompt; under a lock, the eye's look): its traits as chips in the
+  colour of the extension declaring one, the responding chain in input order
+  as chips with arrows, each with its verbs as keycaps (enabled, disabled
+  with why, out of reach), the view plugins with a verb for it, its live
+  state. Nothing that doesn't act on it: a holder of the scene with nothing
+  for it, a service nobody uses here, is not there.
+- **A click pins** the object (a click on nothing unpins) and goes on down the
+  chain; its details open in the panel, folded per extension (package and
+  version, how it holds it, verbs, events, what it draws, services), with
+  what holds it now and the last writer of each field (provenance;
+  "unstamped" for a write without a stamp).
+- **The route strip** along the bottom: the last event's route as boxes in
+  the chain's order (Tools, Widget, Holders, View plugins, Body; only those
+  offered the event), the taker filled in its colour; the older routes on
+  hover.
 
 All of it is `buildGears` of the public reads (registry, `scene()`,
 `local.running`, `collect`, `context()`, `owners()`, `settled()`, `routes()`,
-`writers` of the focus doc) through pure models (`xray-model.js`), rebuilt
-at most every 200 ms on a flush, an event its hand hears or a channel
-message (`tap`), for the targets it shows; nothing while it isn't held.
+`writers` of the focus doc) through pure models (`xray-model.js`: colours,
+looks, glyphs, legend, card, details, route boxes), rebuilt at most every
+200 ms on a flush, an event its hand hears or a channel message (`tap`), for
+the objects the card and the details show; nothing while it isn't held.
 
 ## Invariants
 
