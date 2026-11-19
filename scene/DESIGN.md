@@ -14,7 +14,7 @@ derives a snapshot, loads and builds each object's content, runs the
 extensions the doc calls for, keeps presence and claims on the doc's
 channel, and keeps the doc's clock. The **view** belongs to the viewer, one
 per mounted tool. It renders, picks, routes input, holds the body stack and
-the held tool, the selection and the focus, and the drawer. Neither has UI:
+the hands, the selection and the focus, and the drawer. Neither has UI:
 no toolbar, no sidebar, no modes, no verbs.
 
 ## Traits activate code
@@ -76,23 +76,25 @@ sailing, then the scene. A hit inside a linked doc walks the linked doc's
 chain first, then the host's from the link outward. There is no priority to
 declare: a global ranking would need every new package to fit into it.
 
-The whole chain: the held tool, the widget under the pointer, the holders,
-the view plugins, the top body, and last an unclaimed drag orbits.
+The whole chain: the hands top first, the widget under the pointer, the
+holders, the view plugins, the top body, and last an unclaimed drag orbits.
 (Edit takes a plain click ahead of the holders, to select.) Keys have no
-position: the open gesture, the held tool and the body take theirs first,
+position: the open gesture, the topmost hand and the body take theirs first,
 then the key map over **attention**, the selection or else what you look
 at. A key a surface shows is resolved by the function that runs it.
 
-## Bodies and the held tool
+## Bodies and hands
 
 A **body** is where a viewer is and how they move and look. The stage owns
 Look, the orbit camera. Packages add the rest: walk, a seat, a ship's
 station. Bodies stack: sitting down from walking pushes a seat. The top
 body's eye and reach measure every verb ("too far" is computed once).
 
-**Hands** are what a viewer holds, a stack per view, offered every event
-first: a tool (measure, a gun, a piece drawn from a bag), an open menu, and
-the editor. **Editing is a hand.** Holding it a click selects, and the halo,
+**Hands** are what a viewer holds, one stack per view, offered every event
+first, top first: tools (measure, a gun, a piece drawn from a bag, the
+X-ray), an open menu, and the editor. Each consumes an event or passes it
+on, acted on or not; picking up a tool puts it on top and puts nothing
+down, so several are held at once. **Editing is a hand.** Holding it a click selects, and the halo,
 inspector, grid and editor commands appear; put down, none of it shows. It
 is picked up, never imposed, and held in any body. Playing is the empty
 hand. Carrying needs no tool and no body: it is a trait.
@@ -102,7 +104,7 @@ hand. Carrying needs no tool and no body: it is a trait.
 - **The doc:** shared and kept. Objects, traits, claims (who has the helm).
 - **Presence:** shared and passing. Selections, carries, avatars, a moving
   ship's pose. The doc is written where things come to rest.
-- **Local:** this view only. The selection, the held tool, prefs, the camera.
+- **Local:** this view only. The selection, the hands, prefs, the camera.
 
 ## Time
 

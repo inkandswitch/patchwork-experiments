@@ -29,6 +29,19 @@ export const EDIT_HAND = "Edit";
 export const editing = (view) => Array.isArray(view?.hands) && view.hands.some((h) => h?.kind === "edit");
 
 /**
+ * Is a tool held that points (it wants the pointer free: Measure, a drawn
+ * piece), other than `self`'s? Its clicks are where the world's go, so what
+ * would answer a press on the world itself (the halo's handles and knobs, a
+ * carry) stands aside while one is held. A tool that doesn't point (the
+ * X-ray, which only looks; a gun, aimed by the eye; a pad, all keys) leaves
+ * them be: the stack offers it every event first, and it passes what it
+ * doesn't take.
+ * @param {{ held?: { ext?: string, pointer?: boolean }[] } | null | undefined} view  api.view.get()
+ * @param {string | null} [self]
+ */
+export const pointing = (view, self = null) => Array.isArray(view?.held) && view.held.some((t) => !!t?.pointer && t.ext !== self);
+
+/**
  * Does a command apply in this view? A command that says `edit: true` is
  * the editor's: it applies (on every surface: toolbar, menu, key map, use
  * prompt, inspector) only while editing. Everything else applies always.

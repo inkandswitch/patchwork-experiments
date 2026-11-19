@@ -81,7 +81,7 @@ stage's extensions', in that stage's frame and context; `update` on its flush.
 | as the extension `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `packages`, `overlay`, `edge`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `camera`, `pick`, `ray`, `project` in the world |
 | `url`, `viewer`, `session`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
 | `view` | the value whole (`selected`, `hovered`, `focus` as paths; `packages`, `arrived`); `step(ev)`, `set(value)` (its own) |
-| `hand(spec)`, `putDown()`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path` |
+| `hand(spec)`, `putDown(tool?)`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path`; `putDown` one of `held`, else the topmost |
 | `open(handle, o)`, `opening()` | "Views, stages and links"; `close.reached`: docs its repo found; arriving waits on `opening` |
 | `focus()` | the focus stage's `api` for it; what it acquires there goes as the focus leaves |
 | `collect(name)`, `run(inv)`, `path(o)`, `routes()`, `tap(fn)` → off | acting stages' offers, the input path's first, tagged `stage`; run in the stage named, else the focus; the path's readers; the last 50 events' routes (`{ type, at, path, steps: [{ step, stage?, ext, holder? }], took }`; "The input chain"); every channel message sent or heard (`{ stage, url, dir, kind, session, viewer, ext?, type?, data?, keys?, to? \| dropped? }`), made only while tapped |
@@ -98,8 +98,8 @@ Each extension's own; what it acquires through it goes when it stops.
 | `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
 | `now()`, `after(ms, fn)`, `frame(fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`, `watch(fn, select?)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
-| `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, pointer, serial }]`), `held`, `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
-| `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held, at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
+| `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
+| `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held: [{ name }] (top last), at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
 | `page`, `packages` | `{ visible(), on("hide" \| "show" \| "visible", fn) }`; the prompt's answer `{ load(urls?), dismiss(urls?) }` |
 | `nameOf(id)`, `content(id)`, `loadState(id)`, `box(id, o)`, `groupBox`, `sceneBox`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null; the drawn matrix |
 | `focus(ids)`, `providersFor`, `addObject(url, o)`, `fixPoint(id)` | load first; → a change function with its `id`; `at` for what a built object shows |
@@ -123,7 +123,7 @@ Each extension's own; what it acquires through it goes when it stops.
 
 ## The input chain
 
-Each event goes, until one claims it (H12): (1) **the hands**, top first; (2)
+Each event goes, until one consumes it (H12): (1) **the hands**, top first; (2)
 **the widget's owner**; (3) **the holders, nearest first**: the hit object, what
 it hangs on, its groups, the scene (`ev.holder`: the extension's nearest member
 with its trait; a segment per stage, innermost first; I8); (4) **the view
@@ -140,10 +140,10 @@ groups or `widgetAt`; `onTop` beats any object. No double-click. **The look**:
 the pointer's hit, or the eye ray's under lock (`looksFromEye`).
 
 **Keys**: those in an embedded document (`data-stage-embed`) are its own. **One
-key order** (`src/keymap.js`): a focused field, the gesture's declared keys, the
-held tool's, the top body's, then `input.key` over attention's path, innermost
-first (I10). Declared keys are `[{ code, label }]`; a reserved key is its
-reserver's; a `keyup` goes to its `keydown`'s claimer.
+key order** (`src/keymap.js`; H12): a focused field, the gesture's declared keys,
+the topmost hand's that declares it, the top body's, then `input.key` over
+attention's path, innermost first (I10). Declared keys are `[{ code, label }]`;
+a reserved key is its reserver's; a `keyup` goes to its `keydown`'s claimer.
 
 ### Bodies
 
@@ -154,13 +154,13 @@ has it. `api.body.enter(id, place)` pushes what `enter` answers (`"look"`
 leaves every body); `leave()`, `current()`, `eye()`, `reach()`. The top body
 hears every move and its keys; its eye and reach are every command's.
 
-**Hands**: a stack per view (`stage/router.js`): `{ kind, name, input, keys?,
-pointer?, escape?(), put?() }`. **The held tool**: a command's `tool`, or `api.hold({
-name, keys?, pointer? }, input)`; it replaces the one held; only it declares
-keys. **A popover** (`api.popover(close)`) wants the pointer. **Escape**
-(`stage/ladder.js`; H4): the lock, a field, the gesture, the top hand's
-`escape()` else putting it down; no hand: the selection, else the focus.
-**The pointer** (H5): wanted by a hand's `pointer`, a selection, `wantPointer()`.
+**Hands**: one stack per view (`stage/router.js`), `{ kind, name, input, keys?,
+pointer?, escape?(), put?() }`; each input consumes an event (true, a session)
+or passes it (false, null), acted or not. **Tools**: a command's `tool`, or
+`api.hold({ name, keys?, pointer? }, input)`: onto the top (one held: put down),
+out from anywhere. **A popover** (`api.popover(close)`) wants the pointer, takes
+all. **Escape** (`stage/ladder.js`; H4): the lock, a field, the gesture, the top
+hand's `escape()` else putting it down; no hand: the selection, else the focus.
 
 ## Packages
 
@@ -183,10 +183,10 @@ under it arrives in that stage alone, a drawn one nowhere.
 |---|---|
 | H1 | What runs is the doc's: the host resyncs only on a registry or doc change. |
 | H2 | One stop rule: stop only when the doc stops calling, after the linger or once not busy. |
-| H4 | Escape pops exactly the top of lock, field, gesture, top hand (its escape first), else selection, then focus; never a body or the clock; every state ends in as many presses as layers. |
-| H5 | locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release or a finger, a press on the world only relocks. |
+| H4 | Escape pops exactly the top of lock, field, gesture, the hand stack's top (its escape first), else selection, then focus; never a body or the clock; every state ends in as many presses as layers. |
+| H5 | locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch, wanted ⇔ any hand, a selection or a wantPointer() asks; after a release or a finger, a press on the world only relocks. |
 | H10 | The selected path ends at an element of the focus stage. |
-| H12 | An event goes to the hands top first, then the chain, then the top body, cut at the first claim; a tool held replaces only the tool held. |
+| H12 | An event goes to the hands top first, then the chain, then the top body, cut exactly at the first that consumes it; a tool picked up goes on top (one held: put down) and puts none down; a key is the gesture's, else the topmost hand's declaring it, else the top body's. |
 | I1 | Every api read and write goes to its stage's handle. |
 | I2 | No reference crosses docs; a link (an object whose source is a scene doc) is the only edge between docs. |
 | I4 | A stage's snapshot, running set and display depend only on its doc and the registry; only space and `ambient`'s `mine`, `frame`, `use` depend on placement. |

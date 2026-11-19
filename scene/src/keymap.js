@@ -2,12 +2,13 @@
 // for isTyping, which reads the element it is given.
 //
 // One key order: a focused field (the DOM's, before any of this), the open
-// gesture (a carry's Q/E/F), the held tool's declared keys, the body's, then
-// the key map over attention's path. Keys have no position, so what
-// reserves them comes before what offers verbs. Escape is none of these:
-// it is the ladder's (stage/ladder.js).
+// gesture (a carry's Q/E/F), the hands' declared keys (the stack top down:
+// a key is the topmost hand's that declares it), the body's, then the key
+// map over attention's path. Keys have no position, so what reserves them
+// comes before what offers verbs. Escape is none of these: it is the
+// ladder's (stage/ladder.js).
 //
-// The gesture, the tool and the body *declare* their keys ({ code, label }),
+// The gesture, the hands and the body *declare* their keys ({ code, label }),
 // so whether a key is theirs is known before it is pressed. That is what
 // makes a shown key work by construction: every surface that shows a
 // command's key (the prompt, the menu, the bar) asks `hintFor`, which
@@ -92,18 +93,36 @@ export function declaredKeys(declared) {
 export const codesOf = (declared) => new Set(declaredKeys(declared).map((k) => k.code));
 
 /**
- * Who a key's physical code is reserved by, in the key order: "gesture",
- * "tool" or "body", or null (the key map's).
- * @param {string | null} code
- * @param {{ gesture?: { keys? } | null, tool?: { keys? } | null, body?: { keys? } | null }} layers
+ * The layers that may declare keys, in the key order: the open gesture, the
+ * hands top first (`hands` as the view has them, top last), the top body;
+ * each { from: "gesture" | "hand" | "body", layer }, the absent left out.
+ * @param {{ gesture?: { keys? } | null, hands?: { keys? }[] | null, body?: { keys? } | null }} layers
  */
-export function reservedBy(code, { gesture = null, tool = null, body = null } = {}) {
-  if (typeof code !== "string" || !code) return null;
-  if (gesture && codesOf(gesture.keys).has(code)) return "gesture";
-  if (tool && codesOf(tool.keys).has(code)) return "tool";
-  if (body && codesOf(body.keys).has(code)) return "body";
-  return null;
+export function keyLayers({ gesture = null, hands = null, body = null } = {}) {
+  const out = [];
+  if (gesture) out.push({ from: "gesture", layer: gesture });
+  for (const h of Array.isArray(hands) ? [...hands].reverse() : []) if (h) out.push({ from: "hand", layer: h });
+  if (body) out.push({ from: "body", layer: body });
+  return out;
 }
+
+/**
+ * Who a key's physical code belongs to: the first layer in the key order
+ * that declares it ({ from, layer }: keyLayers'), or null (the key map's).
+ * @param {string | null} code  @param {object} layers  keyLayers'
+ */
+export function keyHolder(code, layers) {
+  if (typeof code !== "string" || !code) return null;
+  return keyLayers(layers).find(({ layer }) => codesOf(layer.keys).has(code)) ?? null;
+}
+
+/**
+ * Who a key's physical code is reserved by, in the key order: "gesture",
+ * "hand" (the topmost hand declaring it) or "body", or null (the key map's).
+ * @param {string | null} code
+ * @param {{ gesture?: { keys? } | null, hands?: { keys? }[] | null, body?: { keys? } | null }} layers
+ */
+export const reservedBy = (code, layers) => keyHolder(code, layers)?.from ?? null;
 
 /** What a look reaches: the object, then what it's attached to, nearest first. */
 export function lookChain(id, parents) {
@@ -152,8 +171,8 @@ export function mapInvocation(collected, key, ctx, attention) {
 /**
  * The whole resolver: where a key goes. Escape is the ladder's (null here).
  * @param {{ key: string, code?: string | null }} k
- * @param {{ gesture?, tool?, body?, collected, ctx, attention }} state
- * @returns {{ layer: "gesture" | "tool" | "body" } | { layer: "map", invocation: object } | null}
+ * @param {{ gesture?, hands?, body?, collected, ctx, attention }} state
+ * @returns {{ layer: "gesture" | "hand" | "body" } | { layer: "map", invocation: object } | null}
  */
 /**
  * The segments the key map visits (STAGE.md, "The input chain"): attention's path,
@@ -180,7 +199,7 @@ export function resolveKey({ key, code = null }, state) {
  * person reads it ("F", "Del"), else "". So a verb whose key is reserved
  * (walking, D is the body's) shows without one.
  * @param {{ ext: string, command: object, target: string | null }} entry
- * @param {{ gesture?, tool?, body?, collected, ctx, attention }} state
+ * @param {{ gesture?, hands?, body?, collected, ctx, attention }} state
  */
 export function hintFor(verb, state) {
   const k = keyFor(verb, state);

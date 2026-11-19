@@ -58,6 +58,7 @@ import { isGroup } from "../groups.js";
 import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./carry-math.js";
 import { decomposeMatrix, frameConversions } from "../transform.js";
 import { CARRY, carryable } from "../carry-rules.js";
+import { pointing } from "../stage/bodies.js";
 
 export { CARRY, carryable };
 
@@ -489,11 +490,11 @@ export default {
       input: {
         press(ev) {
           if (ev.button != null && ev.button !== 0) return null;
-          if (api.view.get().held != null) return null;
+          if (pointing(api.view.get())) return null;
           return carry(ev.holder, ev);
         },
         cursor(ev) {
-          if (open || api.view.get().held != null) return null;
+          if (open || pointing(api.view.get())) return null;
           return canCarry(ev.holder) ? "grab" : null;
         },
       },

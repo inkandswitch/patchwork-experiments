@@ -53,14 +53,14 @@ describe("scene.measure", () => {
     expect(run()).toBe(true);
     await settle();
     expect(state()).toMatchObject({ checked: true });
-    expect(s.local.get().held).toMatchObject({ ext: "scene.measure", command: "measure", pointer: true });
+    expect(s.local.get().held).toMatchObject([{ ext: "scene.measure", command: "measure", pointer: true }]);
     expect(s.canvas.style.cursor).toBe("crosshair");
     expect(hint().hidden).toBe(false);
     expect(hint().textContent).toBe(HINT_FIRST);
     run();
     await settle();
     expect(state()).toMatchObject({ checked: false });
-    expect(s.local.get().held).toBeNull();
+    expect(s.local.get().held).toEqual([]);
     expect(s.canvas.style.cursor).toBe("");
     expect(hint().hidden).toBe(true);
   });
@@ -108,7 +108,7 @@ describe("scene.measure", () => {
     expect(inst().state.a).toBeNull();
     expect(state()).toMatchObject({ checked: false });
     await settle();
-    expect(s.local.get().held).toBeNull();
+    expect(s.local.get().held).toEqual([]);
     expect(s.local.get().hands.map((h) => h.name)).toEqual(["Edit"]);
   });
 
@@ -167,9 +167,9 @@ describe("scene.measure", () => {
     await mount();
     run();
     await settle();
-    expect(s.local.get().held).toMatchObject({ ext: "scene.measure", command: "measure", pointer: true });
+    expect(s.local.get().held).toMatchObject([{ ext: "scene.measure", command: "measure", pointer: true }]);
     await s.uninstall("scene.measure");
-    expect(s.local.get().held).toBeNull();
+    expect(s.local.get().held).toEqual([]);
     expect(s.canvas.style.cursor).toBe("");
   });
 });

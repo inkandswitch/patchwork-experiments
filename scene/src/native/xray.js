@@ -1,9 +1,12 @@
 // scene.xray (native, a view plugin): the X-ray, a held tool that shows the
 // gears of the focus stage (PLANS.md section 4, "Visible gears"; NATIVE.md,
-// "X-ray"). X (or its toolbar toggle) picks it up, X again or Escape puts it
-// down. It wants the pointer free and takes nothing: every event goes on
-// down the chain, so you play or edit with it held. While held:
-//   - the object hovered (or pinned by a click; a click on nothing unpins) is
+// "X-ray"). X (or its toolbar toggle) picks it up, X again or Escape (while
+// it is the top hand) puts it down. It is an ordinary tool on the hand
+// stack that passes every event (it acts on a click and returns false), and
+// it doesn't ask for the pointer: the game, Edit and Measure go on working
+// under it, a walk keeps its lock. While held:
+//   - the object looked at (hovered, or under lock what the eye looks at, as
+//     the use prompt's look; or pinned by a click; a click on nothing unpins) is
 //     outlined with the links it is held through, and its lens is in the
 //     panel: holders in input order, verbs, events, drawing, services, what
 //     holds it now, who last wrote its fields;
@@ -21,6 +24,8 @@
 import css from "./xray.css?inline";
 import { boxes } from "../parts/boxes.js";
 import { perFocus } from "../parts/per-focus.js";
+import { looksFromEye } from "../stage/pointer.js";
+import { parseKey } from "../stage/paths.js";
 import { writers } from "../stage/provenance.js";
 import { buildGears } from "./gears.js";
 import { LAYERS, extensionOutline, extensionSections, layerSections, layersOn, objectOutline, objectSections, runningSections, toggleLayer } from "./xray-model.js";
@@ -207,6 +212,11 @@ function create(api) {
     });
   }
 
+  // The look, under lock (or a lock body under touch): the eye's, which moves
+  // with no event of the stage's (a walk's keys held down), so it is looked
+  // at again every REFRESH_MS while that lasts.
+  const fromEye = () => looksFromEye(api.view.get().pointer);
+
   function refresh() {
     timer = null;
     if (!holding) return;
@@ -217,6 +227,10 @@ function create(api) {
       pinned = hovered = picked = g = null;
     }
     const objects = f.scene().objects;
+    if (fromEye()) {
+      hovered = f.look()?.id ?? null;
+      schedule();
+    }
     if (pinned && !objects[pinned]) pinned = null;
     const focusId = pinned ?? (hovered && objects[hovered] ? hovered : null);
     g = gather(f, focusId);
@@ -288,11 +302,15 @@ function create(api) {
     if (holding && !timer) timer = api.after(REFRESH_MS, refresh);
   }
 
-  // the hand: it takes nothing (every event goes on), it only looks
+  // the hand: it passes every event on (it only looks)
   const input = {
     press() {
       schedule();
       return null;
+    },
+    // (under lock the eye turns with the mouse: what it looks at is the look's)
+    move(ev) {
+      if (ev.locked) schedule();
     },
     click(ev) {
       // (the focus stage's own pick: an object of another doc is no id here)
@@ -317,9 +335,15 @@ function create(api) {
     },
   };
 
+  /** Put this X-ray down, from wherever it is in the stack (its drawer tab closed). */
+  const putDown = () => {
+    const mine = (api.view.get().held ?? []).find((t) => t.command === "xray" && parseKey(t.ext)?.id === api.id);
+    if (mine) api.putDown(mine);
+  };
+
   function start() {
     holding = true;
-    close = api.use("drawer")?.dock(panel, { title: "X-ray", embed: false, onClose: () => ((close = null), holding && api.putDown()) }) ?? null;
+    close = api.use("drawer")?.dock(panel, { title: "X-ray", embed: false, pointer: false, onClose: () => ((close = null), holding && putDown()) }) ?? null;
     offTap = api.tap(schedule);
     refresh();
     return input;
@@ -332,14 +356,16 @@ function create(api) {
         name: "X-ray",
         key: "x",
         show: ["toolbar"],
-        tool: { pointer: true },
+        // a tool that doesn't ask for the pointer: a walk under it keeps its lock
+        tool: {},
         state: (target) => (target == null ? { checked: holding, title: "X-ray: what runs here and how it meets" } : null),
-        run: () => start(),
+        // (held from a stage the focus has since gone into: X there puts that one down)
+        run: () => (holding ? (putDown(), null) : start()),
       },
     ],
     update() {
       if (!holding) return;
-      const h = api.focus()?.view.get().hovered ?? null;
+      const h = fromEye() ? null : (api.focus()?.view.get().hovered ?? null);
       if (h != null) hovered = h;
       schedule();
     },

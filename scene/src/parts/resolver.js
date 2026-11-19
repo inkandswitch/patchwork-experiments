@@ -1,5 +1,5 @@
 // What the key resolver (../keymap.js) needs, read from a view plugin's api:
-// the layers that reserve keys (the open gesture's, the held tool's and the
+// the layers that reserve keys (the open gesture's, the hands' and the
 // body's declared keys, from local), every command, the command context and
 // attention. Every surface that shows a key asks hintFor with this, and the
 // key map dispatches with it, so what a surface shows is what a key does.
@@ -34,7 +34,7 @@ export function keyPinned(api) {
 /**
  * @param {object} api  a view plugin's
  * @param {string[] | null} [pinned]  keyPinned(api) unless given (the key map gives its own)
- * @returns {{ gesture, tool, body, collected, segments }}
+ * @returns {{ gesture, hands, body, collected, segments }}
  */
 export function resolverState(api, pinned = keyPinned(api)) {
   const view = api.view.get();
@@ -48,7 +48,7 @@ export function resolverState(api, pinned = keyPinned(api)) {
   });
   return {
     gesture: view.gesture ?? null,
-    tool: view.held ?? null,
+    hands: view.hands ?? [],
     body: view.body ?? null,
     collected: segments.flatMap((s) => s.collected),
     segments,

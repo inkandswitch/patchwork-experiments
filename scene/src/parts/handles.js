@@ -23,7 +23,7 @@ import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.j
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { editor } from "./editor.js";
-import { editing } from "../stage/bodies.js";
+import { editing, pointing } from "../stage/bodies.js";
 import { perFocus } from "./per-focus.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
@@ -33,11 +33,11 @@ export const GRAB_PX = 12;
 
 /**
  * May the selection's knobs show? Only while editing, where the scene may be
- * written, and while no other extension holds the tool. Pure.
+ * written, and while no other extension holds a pointing tool (bodies.js pointing). Pure.
  * @param {object} view  api.view.get()  @param {boolean} writable  @param {string} self  this part's id
  */
 export function knobsShown(view, writable, self) {
-  return editing(view) && !!writable && (view?.held == null || view.held.ext === self);
+  return editing(view) && !!writable && !pointing(view, self);
 }
 
 /** The provider (scene:source metadata) an object was built by, or null. */
@@ -200,11 +200,8 @@ function handlesAt(api, view) {
 
   // ─── drawing ──────────────────────────────────────────────────────────
 
-  /** Is another extension in charge of the pointer (a held tool)? */
-  function standingDown() {
-    const held = api.view.get().held;
-    return held != null && held.ext !== api.id;
-  }
+  /** Is another extension in charge of the pointer (a pointing tool held: bodies.js pointing)? */
+  const standingDown = () => pointing(api.view.get(), api.id);
 
   /** Each spec's world line, while the object is shown and has its content. */
   function lines() {
@@ -370,7 +367,7 @@ function handlesAt(api, view) {
       // only the hover (or something else we don't read) changed: nothing to do.
       // (status: an object's content arriving moves where its handles go)
       if (pl && (pl !== view || prev.local !== local) && prev.scene === scene && local.status === prev.local?.status && ["selected", "held", "hands", "theme"].every((k) => pl[k] === view[k])) return;
-      // the selection, its object, the provider, the held tool, theme, a move or content arriving
+      // the selection, its object, the provider, the held tools, theme, a move or content arriving
       refresh();
     },
     /** The selected object's handles, at the values shown (for probes and tests). */

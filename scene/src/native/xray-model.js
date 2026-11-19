@@ -273,7 +273,7 @@ export function extensionSections(g, extId, ctx) {
     ...n.processes.map((p) => ({ text: plural(p.count, "process", "processes"), sub: "stepped by the clock" })),
     ...n.layers.map((l) => ({ text: `world layer: ${plural(l.meshes, "mesh", "meshes")}`, sub: l.onTop ? "on top" : "in the scene" })),
     ...(n.labels.length ? [{ text: plural(n.labels.length, "label"), sub: n.labels.slice(0, 4).map((l) => `“${brief(l.text, 16)}”${l.on ? ` on ${nameOf(l.on)}` : ""}`).join(", ") }] : []),
-    ...hands.filter((h) => h.ext === extId).map((h) => ({ text: `${h.kind === "tool" ? "the held tool" : `a ${h.kind}`}: ${h.name}` })),
+    ...hands.filter((h) => h.ext === extId).map((h) => ({ text: `${h.kind === "tool" ? "a held tool" : `a ${h.kind}`}: ${h.name}` })),
   ];
   const svc = [
     ...x.services.provides.map((s) => ({ text: `provides ${s.name}`, sub: s.serving ? (s.users.length ? `to ${s.users.join(", ")}` : "nobody uses it here") : "another provider serves it" })),
@@ -376,11 +376,11 @@ export function layerSections(g, on, ctx) {
       sections.push({ id: "links", title: "Links", rows, ...(rows.length ? {} : { note: "no links" }) });
     } else if (layer === "people") {
       const rows = [
-        { text: "you", sub: [view?.body?.label ?? "Look", view?.hands?.filter((h) => h.kind !== "popover").at(-1)?.name].filter(Boolean).join(" · ") },
+        { text: "you", sub: [view?.body?.label ?? "Look", (view?.hands ?? []).filter((h) => h.kind !== "popover").map((h) => h.name).join(", ")].filter(Boolean).join(" · ") },
         ...Object.entries(peers)
           .filter(([s]) => s !== session)
           .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-          .map(([s, p]) => ({ text: who(p?.viewer ?? null, false), sub: [p?.body?.label ?? "Look", p?.held?.name ?? null, `session ${String(s).slice(0, 6)}`].filter(Boolean).join(" · ") })),
+          .map(([s, p]) => ({ text: who(p?.viewer ?? null, false), sub: [p?.body?.label ?? "Look", (Array.isArray(p?.held) ? p.held : []).map((h) => h?.name).filter((n) => typeof n === "string").join(", "), `session ${String(s).slice(0, 6)}`].filter(Boolean).join(" · ") })),
       ];
       sections.push({ id: "people", title: "People", rows });
     } else if (layer === "visibility") {

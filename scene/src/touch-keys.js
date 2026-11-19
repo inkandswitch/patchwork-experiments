@@ -1,7 +1,7 @@
 // Touch controls derived from declared keys (STAGE.md, "Keys"). Pure: no DOM,
 // no api.
 //
-// The open gesture, the held tool and the body declare the keys they take
+// The open gesture, the hands (held tools) and the body declare the keys they take
 // ([{ code, label }]). On touch there is no keyboard, so a pad shows those
 // keys as controls a finger can hold. Nothing here is per body: the controls
 // come from the declarations alone, in the router's key order.
@@ -25,29 +25,27 @@
 // The contract this reads into a declaration (STAGE.md, "Bodies"): codes one
 // reserver labels alike do the same thing, so touch shows one control for
 // them. Labels are one per reserver, not across them: a pad shows each
-// control under its reserver (`from`).
+// control under its reserver (`from`; for a hand, which one is keyHolder's).
 
-import { declaredKeys, keyOfCode, nameOfCode, reservedBy } from "./keymap.js";
-
-/** The router's key order: the open gesture, the held tool, the body (keymap.js). "tool" is the view's `held` slot, by reservedBy's name for it. */
-const ORDER = ["gesture", "tool", "body"];
+import { declaredKeys, keyHolder, keyLayers, keyOfCode, nameOfCode } from "./keymap.js";
 
 /** The pad's places, by the arrow code that names each. */
 const SLOTS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
 /**
- * The touch controls for a view, in the key order and then declared order.
- * @param {{ gesture?: { keys? } | null, held?: { keys? } | null, body?: { keys? } | null }} view  api.view.get()'s fields
- * @returns {{ code: string, key: string, label: string, slot: "up" | "down" | "left" | "right" | null, from: "gesture" | "tool" | "body" }[]}
- *   `from` is reservedBy's name for the layer ("tool" is `held`), so reservedBy(code, …) === from for every control
+ * The touch controls for a view, in the key order (the gesture, the hands
+ * top first, the body: keymap.js keyLayers) and then declared order.
+ * @param {{ gesture?: { keys? } | null, hands?: { keys? }[] | null, body?: { keys? } | null }} view  api.view.get()'s fields
+ * @returns {{ code: string, key: string, label: string, slot: "up" | "down" | "left" | "right" | null, from: "gesture" | "hand" | "body" }[]}
+ *   `from` is reservedBy's name for the layer, and keyHolder(code, view) is the layer each control is under
  */
-export function touchControls({ gesture = null, held = null, body = null } = {}) {
-  const layers = { gesture, tool: held, body };
+export function touchControls({ gesture = null, hands = null, body = null } = {}) {
+  const view = { gesture, hands, body };
   const out = [];
-  for (const from of ORDER) {
+  for (const { from, layer } of keyLayers(view)) {
     const groups = new Map(); // label → { code, label, codes }
-    for (const { code, label: declared } of declaredKeys(layers[from]?.keys)) {
-      if (reservedBy(code, layers) !== from) continue;
+    for (const { code, label: declared } of declaredKeys(layer.keys)) {
+      if (keyHolder(code, view)?.layer !== layer) continue;
       const label = declared ?? nameOfCode(code);
       const g = groups.get(label);
       if (g) g.codes.push(code);

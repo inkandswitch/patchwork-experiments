@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { touchControls } from "./touch-keys.js";
-import { keyOfCode, nameOfCode, reservedBy } from "./keymap.js";
+import { keyHolder, keyOfCode, nameOfCode, reservedBy } from "./keymap.js";
 import { CARRY_KEYS } from "./parts/carry.js";
 import { LOOK } from "./stage/bodies.js";
 
@@ -109,7 +109,7 @@ const BELOW = {
 };
 const EXPECTED = Object.fromEntries(Object.entries(BELOW).flatMap(([b, row]) => COLUMNS.map((col, i) => [`${b}|${col}`, J(ABOVE[col], row[i])])));
 
-const FROM = { g: "gesture", t: "tool", b: "body" };
+const FROM = { g: "gesture", t: "hand", b: "body" };
 /** "b.KeyW=Forward@up" → { code, key, label, slot, from }; the key is keyOfCode's (keymap.test.js checks it against what Chrome sends). */
 const parse = (s) =>
   s
@@ -119,7 +119,7 @@ const parse = (s) =>
       })
     : [];
 
-const viewOf = (b, t, g) => ({ body: { keys: BODIES[b] }, held: TOOLS[t] && { keys: TOOLS[t] }, gesture: GESTURES[g] && { keys: GESTURES[g] } });
+const viewOf = (b, t, g) => ({ body: { keys: BODIES[b] }, hands: TOOLS[t] ? [{ keys: TOOLS[t] }] : [], gesture: GESTURES[g] && { keys: GESTURES[g] } });
 const CASES = Object.keys(BODIES).flatMap((b) => Object.keys(TOOLS).flatMap((t) => Object.keys(GESTURES).map((g) => [b, t, g])));
 
 describe("touchControls: every keys declaration in the repo, in every combination (10 bodies × 5 tools × 2 gestures)", () => {
@@ -128,7 +128,8 @@ describe("touchControls: every keys declaration in the repo, in every combinatio
     const got = touchControls(view);
     expect(got).toEqual(parse(EXPECTED[`${b}|${t}|${g}`]));
 
-    const layers = { gesture: view.gesture, tool: view.held, body: view.body };
+    const layers = { gesture: view.gesture, hands: view.hands, body: view.body };
+    const of = { gesture: [view.gesture], hand: view.hands, body: [view.body] };
     // a shown key works: each control reaches the reserver it's shown for
     for (const c of got) expect(reservedBy(c.code, layers)).toBe(c.from);
     // no two controls look the same within one reserver, and no pad place is held twice
@@ -138,8 +139,8 @@ describe("touchControls: every keys declaration in the repo, in every combinatio
     expect(new Set(slots).size).toBe(slots.length);
     // every declared, reserved code's (reserver, label) has a control (an empty label is none, as in the code);
     // not every code: one label is one control, so a group's later codes have none of their own
-    for (const from of ["gesture", "tool", "body"]) {
-      for (const k of layers[from]?.keys ?? []) {
+    for (const from of ["gesture", "hand", "body"]) {
+      for (const k of of[from].flatMap((l) => l?.keys ?? [])) {
         if (reservedBy(k.code, layers) !== from) continue;
         expect(seen).toContain(`${from}|${k.label || nameOfCode(k.code)}`);
       }
@@ -149,11 +150,11 @@ describe("touchControls: every keys declaration in the repo, in every combinatio
 
 describe("touchControls: the bodies with no keys", () => {
   it.each([["Look", LOOK], ["a seat", { id: "seat", keys: [] }]])("%s shows nothing", (_, body) => {
-    expect(touchControls({ body, held: null, gesture: null })).toEqual([]);
+    expect(touchControls({ body, hands: [], gesture: null })).toEqual([]);
   });
   it("nothing at all (no body yet) shows nothing", () => {
     expect(touchControls({})).toEqual([]);
-    expect(touchControls({ body: null, held: null, gesture: null })).toEqual([]);
+    expect(touchControls({ body: null, hands: null, gesture: null })).toEqual([]);
   });
 });
 
@@ -177,6 +178,23 @@ describe("touchControls: the declaration's shape", () => {
   // geometry wins over the label: a "Forward" declared on ArrowDown sits in the down place (Decisions 12)
   it("a control takes its first arrow's place, whatever the layer before it holds", () => {
     expect(touchControls({ body: { keys: [{ code: "ArrowLeft", label: "Turn" }, { code: "ArrowRight", label: "Turn" }] } })).toEqual(parse("b.ArrowLeft=Turn@left"));
-    expect(touchControls({ held: { keys: [{ code: "ArrowUp", label: "Up" }] }, body: { keys: [{ code: "KeyW", label: "Forward" }, { code: "ArrowDown", label: "Forward" }] } })).toEqual(parse("t.ArrowUp=Up@up, b.KeyW=Forward@down"));
+    expect(touchControls({ hands: [{ keys: [{ code: "ArrowUp", label: "Up" }] }], body: { keys: [{ code: "KeyW", label: "Forward" }, { code: "ArrowDown", label: "Forward" }] } })).toEqual(parse("t.ArrowUp=Up@up, b.KeyW=Forward@down"));
+  });
+});
+
+describe("touchControls: two hands", () => {
+  // every pair of tool declarations held one over the other: each code is the
+  // topmost hand's that declares it, so each control is under that hand, and
+  // the top hand's controls come first
+  const decls = Object.keys(TOOLS).filter((t) => TOOLS[t]?.length);
+  it.each(decls.flatMap((a) => decls.map((b) => [a, b])))("%s under %s", (a, b) => {
+    const under = { keys: TOOLS[a] };
+    const over = { keys: TOOLS[b] };
+    const view = { hands: [under, over] };
+    const got = touchControls(view);
+    for (const c of got) expect([c.code, keyHolder(c.code, view).layer === over]).toEqual([c.code, over.keys.some((k) => k.code === c.code) || !under.keys.some((k) => k.code === c.code)]);
+    const tops = got.map((c) => keyHolder(c.code, view).layer === over);
+    expect(tops).toEqual([...tops].sort((x, y) => Number(y) - Number(x)));
+    expect(got.every((c) => c.from === "hand")).toBe(true);
   });
 });

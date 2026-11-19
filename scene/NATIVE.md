@@ -119,7 +119,7 @@ nothing the stage sees changing (a status learned later) says so.
 
 ## The drawer
 
-`use("drawer")`: `dock(el, { title, onClose?, embed?, show? })` → close;
+`use("drawer")`: `dock(el, { title, onClose?, embed?, show?, pointer? })` → close;
 `dockDocument({ url, toolId?, title })` → close; `state()`, also
 `view["scene.drawer"]`. One panel at the view's right, a tab per docked
 element; one pane shows. Only its × calls `onClose`; what a caller docked goes
@@ -127,7 +127,7 @@ as it stops. A pane is an embedded document whose keys are its own, unless
 docked `embed: false` (the stage's own chrome). A docked document is the view's,
 one pane per `(url, toolId)`. Its width is a function of the kind shown
 (chrome or editor) and that kind's pref (`drawer.chrome`, `drawer.editor`).
-While anything is docked it wants the pointer.
+While a pane docked without `pointer: false` is in it, it wants the pointer.
 
 ## Prefs
 
@@ -192,11 +192,14 @@ now, its services, what it wrote last) read it. It uses the chain's own order
 
 ## X-ray
 
-A held tool, **X-ray** (X, or the toolbar's toggle while editing; X again or
-Escape puts it down), in any body. It wants the pointer free and takes no
-event: everything goes on down the chain, so you play or edit with it held,
-and a click pins the object under it (a click on nothing unpins). Its panel
-is a drawer tab (`embed: false`); its × puts it down.
+A held tool, **X-ray** (X, or the toolbar's toggle while editing; X again, or
+Escape while it is the top hand, puts it down), in any body. An ordinary tool
+on the hand stack that passes every event: a click pins the object under it
+(a click on nothing unpins) and goes on, so the game, Edit and Measure (under
+it or over it) work with it held. It asks nothing of the pointer, nor does its
+panel (a drawer tab, `embed: false`, docked with `pointer: false`; its × puts
+it down): a walk keeps its lock, and then what it looks at is the eye's (the
+look, as the use prompt's), looked at again every 200 ms.
 
 - **The object** hovered or pinned is outlined, with the links it is held
   through, and its lens is in the panel: its traits; its holders in input

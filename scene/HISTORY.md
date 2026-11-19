@@ -956,3 +956,52 @@ outlined, its grid), both seats' claims, a card Ben is carrying held by Ben
 in Ana's poses layer, a click's route, Escape; 19 checks pass; a rebuild
 with tabletop picked takes about 9 ms there. The probe's repo is no
 Automerge one, so it shows no provenance.
+
+### 2026-11-19 — Tools are a stack; each consumes or passes
+
+The lead's design: "Tools should be more like a stack, so you can have
+multiple at once, and a tool may consume the current event or take
+some/no action and pass it on." Before, picking up a tool (a command's
+`tool`, or `api.hold`) replaced the one held, so the X-ray and Measure put
+each other down; and the X-ray asked for the pointer (its tool and its
+drawer tab both), breaking a walk's lock.
+
+Now the hands are one stack per view (`stage/router.js`): picking up a tool
+puts it on top and puts nothing down; picking up one held (the same
+command) puts it down; putting a tool down (its toggle, `putDown`, its
+extension stopping) takes it from wherever it is; Escape still pops exactly
+the top (after the lock, a field, a gesture), through its `escape()`. Each
+hand's input consumes an event (true, a session) or passes it on (false,
+null), acted on or not: the Edit hand, held tools, the X-ray alike; a
+popover now consumes everything (modal: the router gives it its input);
+`kind` only says what a hand is. The pointer is wanted while any hand asks;
+a key is the gesture's, else the topmost hand's that declares it
+(`keymap.js` `keyLayers`/`keyHolder`), else the body's. `view.held` is the
+list of held tools (top last) and `view.hands` carries each hand's keys;
+presence's `held` is every hand's name (an open menu passed over), top
+last, and who's here (the body chip, the X-ray's people layer) shows them
+all; the touch pad shows a group per hand; `api.putDown(tool?)` names one.
+An extension may hold several tools (`busy` counts them all). The X-ray is
+an ordinary tool that always passes, asks nothing of the pointer (its
+drawer tab is docked `pointer: false`, a new `dock` option) and, under a
+lock, looks where the eye looks. Carrying, the halo and the knobs stand
+aside while a held tool that points (`pointer: true`: Measure, a drawn
+piece) is held (`bodies.js` `pointing`), not for the X-ray, a gun or a pad.
+Putting the editor down puts down every `edit: true` tool, wherever it is.
+machine's pad puts its last pad down before holding another (one pad in
+hand); bag already sets one drawn piece down before the next.
+
+Invariants: H4 (the stack's top), H5 (wanted ⇔ any hand, a selection or a
+`wantPointer()`), H12 (offering order, the cut at the first consumer, push
+and toggle, key ownership) restated in STAGE.md; H13 (EDITOR.md) gains
+"every `edit: true` tool, wherever it is". Tests: router.test's "H4, H5,
+H12", every sequence of up to four of {pick up, put down} × {Measure, a
+gun, the X-ray, Edit, a popover} and Escape (16,104 sequences) × a lock
+body or not, against a model: the stack, every put-down told once, the
+pointer and the lock (the browser's Escape releasing it, the next press
+only relocking), Escape's rung, a press and its release, a wheel and four
+keys offered top first and cut exactly at the first consumer, orbit
+reached iff nothing consumed the press; key resolution over two hands;
+touch controls for every pair of tool declarations; the X-ray with Measure
+either way up, and under a walk. tabletop/probes/xray.mjs adds the editor
+and Measure over the X-ray at the Lost Cities table.

@@ -29,16 +29,19 @@ describe("haloTarget: what the handles are on", () => {
     lg: group("Locked"),
     lm: object({ group: "lg", locked: true }),
   });
-  it("every body × the editor held or not × selection × held tool × writable: only holding the editor", () => {
+  it("every body × the editor held or not × selection × the tools held (none, a pointing one, one that only looks, both) × writable: only holding the editor, and no pointing tool", () => {
     const want = { a: { kind: "object", id: "a" }, g: { kind: "group", id: "g" }, m: { kind: "object", id: "m" } };
+    const MEASURE = { ext: "scene.measure", command: "measure", pointer: true };
+    const XRAY = { ext: "scene.xray", command: "xray", pointer: false };
     for (const body of ["look", "walk", "seat", "station", undefined])
       for (const edit of [false, true])
         for (const selected of [null, "a", "l", "g", "m", "e", "lg", "lm", "gone", "dimension:x"])
-          for (const armed of [null, { ext: "scene.measure", command: "measure" }])
+          for (const held of [[], [MEASURE], [XRAY], [MEASURE, XRAY], [XRAY, MEASURE]])
             for (const writable of [true, false]) {
-              const hands = [...(edit ? [{ kind: "edit" }] : []), ...(armed ? [{ kind: "tool" }] : [])];
-              const got = haloTarget(sc, { body: body ? { id: body } : undefined, hands, selected, held: armed }, writable);
-              expect([body, edit, selected, armed, writable, got]).toEqual([body, edit, selected, armed, writable, edit && writable && armed == null ? (want[selected] ?? null) : null]);
+              const hands = [...(edit ? [{ kind: "edit" }] : []), ...held.map(() => ({ kind: "tool" }))];
+              const got = haloTarget(sc, { body: body ? { id: body } : undefined, hands, selected, held }, writable);
+              const armed = held.includes(MEASURE);
+              expect([body, edit, selected, held, writable, got]).toEqual([body, edit, selected, held, writable, edit && writable && !armed ? (want[selected] ?? null) : null]);
             }
   });
 });

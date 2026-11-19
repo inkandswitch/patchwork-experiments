@@ -915,7 +915,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return Object.create(s, props);
   }
 
-  // Input (an extension's, a body's or the held tool's) whose press sessions are counted, in this stage's frame.
+  // Input (an extension's, a body's or a held tool's) whose press sessions are counted, in this stage's frame.
   function withSessions(own, input, extra = {}) {
     const f = framed(input);
     return Object.create(f, {
@@ -937,10 +937,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return w;
   }
 
-  // (a body it put on the stack, the held tool, an open session, or a service busy on its behalf (a pose it holds): a doc-caused stop waits)
+  // (a body it put on the stack, a held tool, an open session, or a service busy on its behalf (a pose it holds): a doc-caused stop waits)
   const busy = (id) => {
     const own = owned.get(id);
-    return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
+    return !!own && (own.bodies.size > 0 || own.tools.size > 0 || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
   };
 
   /** Write fn for extension `ext`, stamped with its id (./provenance.js), and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
@@ -980,8 +980,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * `reach: true` command out of reach is disabled), doesn't run; one
    * without state() only runs for the scene (target null). It runs as
    * run(target, value, ctx), in the same context its state was asked in. A command that
-   * declares `tool` is held: its run returns the tool's input, which goes in
-   * the slot (running it again while held puts it down).
+   * declares `tool` is held: its run returns the tool's input, which goes on
+   * top of the hands (running it again while held puts it down, from wherever
+   * it is in the stack; `value` true only picks up, false only puts down).
    * @returns {boolean} whether it ran
    */
   function run(invocation) {
@@ -995,9 +996,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       const st = commandState(c, target, ctx);
       if (!st || st.disabled) return false;
       if (c.tool) {
-        const held = router?.held();
-        if (held && held.owner === ownerKey(ext) && held.command === c.id) {
-          if (value !== true) router.putDown();
+        const which = { owner: ownerKey(ext), command: c.id };
+        if (router?.held().some((h) => h.owner === which.owner && h.command === which.command)) {
+          if (value !== true) router.putDown(which);
           return true;
         }
         if (value === false) return true;
@@ -1014,7 +1015,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   // ─── bodies, attention and the command context (STAGE.md, "The input chain") ──────────
-  // The stack and the slot are the view's; a body or a tool an extension of
+  // The body stack and the hands are the view's; a body or a tool an extension of
   // this stage puts there hears events in this stage's frame, and is its own
   // (a stopping extension's go with it).
 
@@ -1080,13 +1081,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const wrapped = withSessions(own, input, {
       put: {
         value: () => {
-          if (own.tool === put) own.tool = null;
+          own.tools.delete(put);
           return input.put?.call(input);
         },
       },
     });
     put = view.holdTool(ownerKey(ext), t, wrapped);
-    own.tool = put;
+    if (!put) return noop; // (a toggle: the one held went down)
+    own.tools.add(put);
     return put;
   }
 
@@ -1296,7 +1298,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // What it holds. Each bag holds the "give it back" functions.
     const own = {
       bodies: new Set(), // the bodies it put on the stack (sittings)
-      tool: null, // put(): the held tool is its
+      tools: new Set(), // put()s: the held tools that are its
       sessions: 0, // open press sessions
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
@@ -1356,7 +1358,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }),
       /**
        * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
-       * the hands and the held tool, the pointer, theme, and
+       * the hands and the held tools among them, the pointer, theme, and
        * the selection and hover as this stage's elements of their paths.
        * select(target) selects this stage's target (null: nothing).
        */
@@ -1499,7 +1501,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         requestFlush();
       },
 
-      // bodies, the held tool, attention (STAGE.md, "The input chain"–§5)
+      // bodies, held tools, attention (STAGE.md, "The input chain"–§5)
       body: Object.freeze({
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
         current: () => viewNow().body,
@@ -1515,7 +1517,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /**
        * Hold a tool not picked up through a command (bag's drawn piece in
        * hand): its declaration { name, keys?: [{ code, label }], pointer? }
-       * and its input. Whatever was held is put down. @returns put
+       * and its input. It goes on top of the hands; nothing else is put
+       * down. @returns put
        */
       hold: (tool, input) => {
         if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
@@ -1535,11 +1538,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     };
 
     function release() {
-      // 1–2: its open session, its bodies and its held tool (the router
+      // 1–2: its open session, its bodies and its held tools (the router
       // cancels, pops, puts down and unlocks), then its camera holds
       router.stopOwner(ownerKey(id));
       view.leaveBodiesOf(stage, id);
-      own.tool = null;
+      own.tools.clear();
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
@@ -1775,7 +1778,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     displayed: () => displayed,
     /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,
-    /** does this extension hold a body, the held tool or an open session, or is a service busy for it (so a doc-caused stop waits)? */
+    /** does this extension hold a body, a held tool or an open session, or is a service busy for it (so a doc-caused stop waits)? */
     busy,
     /** does it act ("acting"), or is it drawn ("pinned")? */
     role,
@@ -1875,7 +1878,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     /** a view plugin's input, hearing events in this stage's frame (the view offers it while this is the focus) */
     framedInput: (input) => framedInput(input),
     runCommand,
-    /** what the view says of the viewer on this doc's channel: its body and held tool (presence.announce) */
+    /** what the view says of the viewer on this doc's channel: its body and hands (presence.announce) */
     announce: (state) => presence.announce(state),
     displayedWorld,
     pageHide,

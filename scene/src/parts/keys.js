@@ -1,5 +1,5 @@
 // scene.keys: the key map, the only `input.key` implementer (STAGE.md, "Keys").
-// A key the open gesture, the held tool and the body don't reserve comes
+// A key the open gesture, the hands and the body don't reserve comes
 // here (the router decides that first), and runs the command the resolver
 // says (../keymap.js mapInvocation): the first whose `key` matches and that
 // applies to attention's element (the selection, else the look's), then to

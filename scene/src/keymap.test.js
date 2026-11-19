@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { attentionPath, codeOfKey, codesOf, declaredKeys, hintFor, keyOfCode, labelOf, lookChain, mapInvocation, nameOfCode, reservedBy, resolveKey } from "./keymap.js";
+import { attentionPath, codeOfKey, codesOf, declaredKeys, hintFor, keyHolder, keyLayers, keyOfCode, labelOf, lookChain, mapInvocation, nameOfCode, reservedBy, resolveKey } from "./keymap.js";
 import { keyContext, resolverState } from "./parts/resolver.js";
 import { TOO_FAR, barEntries, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
 import { promptEntries } from "./parts/use.js";
@@ -40,7 +40,11 @@ const BODIES = [
   { id: "seat", keys: [], reach: 2 },
   { id: "station", keys: [{ code: "KeyA" }, { code: "KeyD" }], reach: 2.5 },
 ];
-const TOOLS = [null, { name: "gun", keys: [{ code: "KeyR" }] }, { name: "measure", keys: [] }];
+const GUN = { name: "gun", kind: "tool", keys: [{ code: "KeyR" }] };
+const MEASURE = { name: "measure", kind: "tool", keys: [] };
+const EDIT = { name: "Edit", kind: "edit", keys: [] };
+// the hands held, top last: none, one tool, the editor under a tool, two tools either way up
+const TOOLS = [[], [GUN], [MEASURE], [EDIT, MEASURE], [GUN, MEASURE], [MEASURE, GUN]];
 const GESTURES = [null, { keys: CARRY_KEYS }];
 // Attention and the look under it: with a selection, attention's hit is
 // null but the look still decides the distance (and the point), so the
@@ -81,7 +85,7 @@ function apiFor({ body, tool, gesture, attention, look, box }) {
     }),
   };
   return {
-    view: { get: () => ({ gesture, held: tool, body }) },
+    view: { get: () => ({ gesture, hands: tool, body }) },
     collect: () => COLLECTED,
     path: () => [reader],
     reader,
@@ -178,19 +182,26 @@ describe("the key resolver (H3), exhaustively", () => {
     expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "tabletop", command: "draw", target: "card", stage: 0 } });
   });
 
-  it("what reserves keys comes first: the gesture's, the tool's, then the body's", () => {
+  it("what reserves keys comes first: the gesture's, the topmost hand's that declares it, then the body's", () => {
     const gesture = { keys: CARRY_KEYS };
     const tool = { keys: [{ code: "KeyR" }, { code: "KeyF" }] };
+    const over = { keys: [{ code: "KeyF" }, { code: "KeyG" }] };
     const body = { keys: WALK };
-    expect(reservedBy("KeyF", { gesture, tool, body })).toBe("gesture");
-    expect(reservedBy("KeyR", { gesture, tool, body })).toBe("tool");
-    expect(reservedBy("KeyD", { gesture, tool, body })).toBe("body");
-    expect(reservedBy("KeyM", { gesture, tool, body })).toBe(null);
-    expect(reservedBy("KeyF", { tool, body })).toBe("tool");
+    expect(reservedBy("KeyF", { gesture, hands: [tool], body })).toBe("gesture");
+    expect(reservedBy("KeyR", { gesture, hands: [tool], body })).toBe("hand");
+    expect(reservedBy("KeyD", { gesture, hands: [tool], body })).toBe("body");
+    expect(reservedBy("KeyM", { gesture, hands: [tool], body })).toBe(null);
+    expect(reservedBy("KeyF", { hands: [tool], body })).toBe("hand");
+    // two hands: each key is the topmost's that declares it, wherever the other is
+    expect(keyHolder("KeyF", { hands: [tool, over], body }).layer).toBe(over);
+    expect(keyHolder("KeyF", { hands: [over, tool], body }).layer).toBe(tool);
+    expect(keyHolder("KeyR", { hands: [tool, over], body }).layer).toBe(tool);
+    expect(keyHolder("KeyG", { hands: [over, tool], body }).layer).toBe(over);
+    expect(keyLayers({ gesture, hands: [tool, over], body }).map((l) => l.layer)).toEqual([gesture, over, tool, body]);
   });
 
   it("walking, Draw shows without D and is in the menu; seated, D draws", () => {
-    const at = (body) => ({ gesture: null, tool: null, body, collected: COLLECTED, ctx: { scene, local: {}, from: [0, 0, 0], reach: 2, distance: () => 1 }, attention: { selected: null, hit: { id: "card", distance: 1 } } });
+    const at = (body) => ({ gesture: null, hands: [], body, collected: COLLECTED, ctx: { scene, local: {}, from: [0, 0, 0], reach: 2, distance: () => 1 }, attention: { selected: null, hit: { id: "card", distance: 1 } } });
     const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
     expect(hintFor(draw, at(BODIES[1]))).toBe("");
     expect(menuEntries(COLLECTED, "card", at(BODIES[1]).ctx).forObject.some((e) => e.command.id === "draw")).toBe(true);

@@ -172,7 +172,7 @@ describe("verbs, layers and badges", () => {
       { type: "press", path: ["d"], steps: [{ step: "holder", ext: "t.game", holder: null }], took: 0 },
       { type: "click", path: ["c"], steps: [{ step: "hand", ext: "scene.xray" }, { step: "holder", ext: "t.game", holder: "c" }, { step: "default", ext: null }], took: 1 },
     ];
-    const { sections, badges } = layerSections(g, layersOn(LAYERS.map((l) => l.id)), { who, viewer: "v:ana", routes, peers: { s1: { viewer: "v:ana" }, s2: { viewer: "v:ben", body: { label: "Seated" }, held: { name: "X-ray" } } }, session: "s1", view: { body: { label: "Watching" }, hands: [] } });
+    const { sections, badges } = layerSections(g, layersOn(LAYERS.map((l) => l.id)), { who, viewer: "v:ana", routes, peers: { s1: { viewer: "v:ana" }, s2: { viewer: "v:ben", body: { label: "Seated" }, held: [{ name: "Edit" }, { name: "X-ray" }] } }, session: "s1", view: { body: { label: "Watching" }, hands: [] } });
     const by = Object.fromEntries(sections.map((s) => [s.id, s]));
     expect(sections.map((s) => s.id)).toEqual(LAYERS.map((l) => l.id));
     expect(by.claims.rows.map((r) => [r.text, r.sub, r.state])).toEqual([
@@ -194,7 +194,7 @@ describe("verbs, layers and badges", () => {
     expect(by.links.rows.map((r) => [r.text, r.sub])).toEqual([["Deck", "pinned · closed: unavailable"]]);
     expect(by.people.rows.map((r) => [r.text, r.sub])).toEqual([
       ["you", "Watching"],
-      ["Ben", "Seated · X-ray · session s2"],
+      ["Ben", "Seated · Edit, X-ray · session s2"],
     ]);
     expect(by.visibility.rows.map((r) => r.sub)).toEqual(["may see: you · turned toward: everyone"]);
     // one badge per object, its layers' texts in the panel's order; a scene claim has no object to sit on

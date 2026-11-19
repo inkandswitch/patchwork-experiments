@@ -125,8 +125,8 @@ const outermostEscape = (hands) => {
 
 /**
  * The view's value as one stage sees it (STAGE.md, "Views, stages and links"): the selection
- * and hover as its element of their paths, the body's and the held tool's
- * owner as its extension's id where they are its own (else the view's key,
+ * and hover as its element of their paths, the body's, the hands' and the held tools'
+ * owners as its extension's id where they are its own (else the view's key,
  * which no id of a stage's equals), and not the focus: where the viewer has
  * entered is the view's, and a stage that read it could act differently
  * entered than not (I4). So Escape leaving an entered link is shown as
@@ -150,7 +150,7 @@ export function projectView(v, n, prefix) {
     hovered: elementOf(v.hovered, prefix),
     body: v.body?.ext != null ? Object.freeze({ ...v.body, ext: own(v.body.ext) }) : v.body,
     hands: v.hands?.some((h) => h.ext != null) ? Object.freeze(v.hands.map((h) => (h.ext != null ? Object.freeze({ ...h, ext: own(h.ext) }) : h))) : v.hands,
-    held: v.held?.ext != null ? Object.freeze({ ...v.held, ext: own(v.held.ext) }) : v.held,
+    held: v.held?.some((h) => h.ext != null) ? Object.freeze(v.held.map((h) => (h.ext != null ? Object.freeze({ ...h, ext: own(h.ext) }) : h))) : v.held,
     gesture: v.gesture?.owner != null ? Object.freeze({ ...v.gesture, owner: own(v.gesture.owner) }) : v.gesture,
   });
 }
@@ -253,9 +253,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     selected: null,
     // the body on top of the stack (STAGE.md, "Bodies"); Look until arriving says otherwise
     body: LOOK_LOCAL,
-    // what the viewer holds, top last (STAGE.md, "Hands"), and the held tool among them
+    // what the viewer holds, top last (STAGE.md, "Hands"), and the held tools among them, top last
     hands: Object.freeze([]),
-    held: null,
+    held: Object.freeze([]),
     gesture: null,
     pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
     escape: Object.freeze({ layer: null, hint: "" }),
@@ -330,16 +330,16 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     packagesChanged();
     return s;
   }
-  // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and top hand are the
+  // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and hands are the
   // view's, so the view says them on every channel it acts on, not a part on
   // the focus doc's: whoever has a doc open sees what a person at any
   // placement of it is doing (a viewer of the game alone sees the boat's
   // sailor seated at it). A drawn stage's channel only listens. An open menu
-  // is nobody else's business: the hand under it is said.
+  // is nobody else's business: the hands under it are said, every one, top last.
   const announced = () => {
     const v = atom.get();
-    const top = (v.hands ?? []).filter((h) => h.kind !== "popover").at(-1);
-    return { body: { id: v.body?.id ?? LOOK.id, label: v.body?.label ?? LOOK.label }, held: top ? { name: top.name } : null };
+    const held = (v.hands ?? []).filter((h) => h.kind !== "popover").map((h) => ({ name: h.name }));
+    return { body: { id: v.body?.id ?? LOOK.id, label: v.body?.label ?? LOOK.label }, held };
   };
   function announce() {
     const a = announced();
@@ -465,17 +465,18 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     for (const s of stages.values()) if (s !== at) s.dropFacets();
   }
   /**
-   * The focus moved: a tool held from a stage it left behind is put down,
+   * The focus moved: each tool held from a stage it left behind is put down,
    * and the view's plugins' facets of the stages it left go (they are told the
    * new focus stage afresh).
    */
   function focusMoved() {
     if (dead) return;
-    const held = router?.held();
-    const p = held ? parseKey(held.owner) : null;
-    const s = p ? stages.get(p.n) : null;
-    // (a stage on the focus path is one whose path the focus starts with)
-    if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown();
+    for (const held of router?.held() ?? []) {
+      const p = parseKey(held.owner);
+      const s = p ? stages.get(p.n) : null;
+      // (a stage on the focus path is one whose path the focus starts with)
+      if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown(held);
+    }
     placeFocus();
     told = new WeakMap();
     router?.refresh();
@@ -622,9 +623,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     viewport.bodyRide?.(s && r && typeof r === "object" ? s.stage.scope.rideSpec(r) : null);
   }
 
-  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, keys, pointer }) and its input (already the stage's). */
+  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, keys, pointer }) and its input (already the stage's). → put, or null (no router, or a toggle that put it down) */
   function holdTool(owner, t, input) {
-    if (!router) return noop;
+    if (!router) return null;
     return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
   }
 
@@ -942,8 +943,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]), serial: st.body.serial })
         : LOOK_LOCAL;
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-    const hands = Object.freeze(st.hands.map((h) => Object.freeze({ ...h })));
-    const held = st.held ? Object.freeze({ ...st.held }) : null;
+    const hands = Object.freeze(st.hands.map((h) => Object.freeze({ ...h, keys: Object.freeze([...h.keys]) })));
+    const held = Object.freeze(st.held.map((t) => Object.freeze({ ...t, keys: Object.freeze([...t.keys]) })));
     const pointer = Object.freeze({ ...st.pointer });
     const escape = Object.freeze({ layer: st.escape, hint: escapeHint(st.escape, { hand: st.hands.at(-1)?.name ?? null }) });
     return {
@@ -1239,8 +1240,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         const kind = typeof spec.kind === "string" && !["tool", "popover"].includes(spec.kind) ? spec.kind : "hand";
         return acquire(own.hands, () => router.pushHand(key, { ...spec, kind, input: viewInput(spec.input ?? {}) }));
       },
-      /** put the held tool down, whoever's it is */
-      putDown: () => (live() ? router.putDown() : false),
+      /** put a held tool down, whoever's it is, from wherever it is in the stack: `which` one of view.held's, else the topmost */
+      putDown: (which) => (live() ? router.putDown(which ? { serial: which.serial, owner: which.ext, command: which.command } : undefined) : false),
       /** offer an event to the widget under it, as the chain does first, if the widget is nearer than the hit: did its owner take it? */
       offerWidget: (type, ev) => (live() && widgetWins(ev?.widget, ev?.hit) ? !!offer([ev.widget.owner], inputOf, type, ev) : false),
       // the stages (STAGE.md, "Views, stages and links")

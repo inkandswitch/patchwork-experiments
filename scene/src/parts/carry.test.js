@@ -109,13 +109,17 @@ describe("scene.carry commands", () => {
 
 describe("scene.carry input", () => {
   // (the trait, a lock, a veto, a peer's hold and the holder over the hit: H11, below)
-  it("claims a press on its holder only: not a group, not nothing, not a secondary button, not with a tool held", async () => {
+  it("claims a press on its holder only: not a group, not nothing, not a secondary button, not with a pointing tool held (a tool that only looks leaves it be)", async () => {
     const { x } = await mount({ doc: { objects: { g: piece({ kind: "group" }) } } });
     expect(x().input.press(press("a"))).toBeTruthy();
     expect(x().input.press(press("g"))).toBe(null);
     expect(x().input.press(press(null))).toBe(null);
     expect(x().input.press(press("a", { button: 2 }))).toBe(null);
-    s.local.swap((m) => ({ ...m, held: { ext: "scene.measure", command: "measure" } }));
+    s.local.swap((m) => ({ ...m, held: [{ ext: "scene.xray", command: "xray", pointer: false }] }));
+    const session = x().input.press(press("a"));
+    expect(session).toBeTruthy();
+    session.cancel();
+    s.local.swap((m) => ({ ...m, held: [{ ext: "scene.measure", command: "measure", pointer: true }, { ext: "scene.xray", command: "xray", pointer: false }] }));
     expect(x().input.press(press("a"))).toBe(null);
   });
 

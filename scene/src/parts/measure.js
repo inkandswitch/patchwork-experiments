@@ -1,8 +1,10 @@
 // scene.measure: point-to-point measuring, as a held tool (STAGE.md, "Bodies").
 //
-// "Measure" (M) picks it up; M again, or Escape (the ladder's tool rung),
-// puts it down. It takes every press, so it is held, one tool at a time,
-// and it wants the pointer (`pointer: true`: no lock while it's held).
+// "Measure" (M) picks it up, on top of the hands; M again (from wherever it
+// is in them), or Escape while it's the top hand, puts it down. It takes
+// every click and passes presses on (a drag still orbits), and it wants the
+// pointer (`pointer: true`: no lock while it's held; carrying and the halo
+// stand aside: stage/bodies.js pointing).
 // While held:
 //   - the pointer's hover picks a point (the ground counts; a vertex within
 //     10 px snaps) and shows a rubber band from the first point, with its
@@ -65,7 +67,7 @@ function measureAt(api, view, hint) {
   layer.userData.noPick = true;
   const labels = api.labels();
 
-  let holding = false; // set while it's the held tool
+  let holding = false; // set while it's held
   let a = null; // the first point's anchor
   let hover = null; // { world, snapped } under the pointer
   let pending = null; // the latest pointer position waiting for a frame
@@ -247,7 +249,7 @@ function measureAt(api, view, hint) {
       edit: true,
       name: "Measure",
       key: "m",
-      // a tool: its run's input goes in the stage's one slot
+      // a tool: its run's input goes on top of the hands
       tool: { pointer: true },
       state: (target) => (target == null ? { checked: holding, title: "Measure point to point" } : null),
       run: () => start(),

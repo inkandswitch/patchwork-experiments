@@ -336,11 +336,10 @@ describe("clicks on unclaimed presses", () => {
 // H12: an event goes to the hands top first, then the chain, then the top body, cut at the first claim
 describe("hands, top first", () => {
   // Every stack of up to three hands picked up in turn (a tool, an
-  // editor-like hand, a popover; a tool picked up replaces the tool held),
+  // editor-like hand, a popover: each goes on top, none puts another down),
   // each hand and the chain claiming or passing a click: who hears it is
   // the hands top first, then the chain, then the body, cut at the first
-  // claim. A tool picked up goes on top; picking up a tool puts down only
-  // the tool held.
+  // claim.
   const KINDS = ["tool", "edit", "popover"];
   function* picks(n) {
     yield [];
@@ -356,11 +355,10 @@ describe("hands, top first", () => {
       const input = (who) => ({ click: () => (heard.push(who), claims[who] || null) });
       t.router.pushBody("w", { id: "walk", input: input("body") });
       t.inputs.x = input("x");
-      // the model: a tool replaces the tool held; anything else goes on top
-      let model = [];
+      // the model: each goes on top
+      const model = [];
       seq.forEach((kind, i) => {
         const name = `${kind}${i}`;
-        if (kind === "tool") model = model.filter((h) => !h.startsWith("tool"));
         model.push(name);
         t.router.pushHand(name, { kind, name, input: input(name) });
       });
@@ -663,16 +661,25 @@ describe("the body stack", () => {
     expect(over.move).toHaveBeenCalledTimes(2);
     expect(under.move).not.toHaveBeenCalled();
   });
-  it("tells the stage the body, the held tool, the gesture's keys, the pointer and the ladder's rung", () => {
+  it("tells the stage the body, the hands and the held tools among them (top last), the gesture's keys, the pointer and the ladder's rung", () => {
     const t = setup();
     t.router.pushBody("w", { id: "walk", input: {}, keys: [{ code: "KeyW", label: "Forward" }], lock: true });
     let st = t.onState.mock.calls.at(-1)[0];
     expect(st.body).toEqual({ id: "walk", owner: "w", depth: 1, lock: true, keys: [{ code: "KeyW", label: "Forward" }], serial: 2 });
-    expect(st.held).toBe(null);
+    expect(st.held).toEqual([]);
     t.router.hold("m", { command: "measure", name: "Measure", input: {}, keys: [{ code: "KeyR" }], pointer: true });
+    t.router.pushHand("e", { kind: "edit", name: "Edit", pointer: true });
+    t.router.hold("x", { command: "xray", name: "X-ray", input: {} });
     st = t.onState.mock.calls.at(-1)[0];
-    expect(st.held).toEqual({ ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 });
-    expect(st.hands).toEqual([{ ext: "m", kind: "tool", name: "Measure", pointer: true, serial: 3 }]);
+    expect(st.held).toEqual([
+      { ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 },
+      { ext: "x", command: "xray", name: "X-ray", keys: [], pointer: false, serial: 5 },
+    ]);
+    expect(st.hands).toEqual([
+      { ext: "m", kind: "tool", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 },
+      { ext: "e", kind: "edit", name: "Edit", keys: [], pointer: true, serial: 4 },
+      { ext: "x", kind: "tool", name: "X-ray", keys: [], pointer: false, serial: 5 },
+    ]);
     expect(st.escape).toBe("hand");
     expect(st.pointer.wanted).toBe(true);
   });
@@ -680,14 +687,15 @@ describe("the body stack", () => {
     const t = setup();
     const serials = () => {
       const st = t.onState.mock.calls.at(-1)[0];
-      return [st.body.serial, st.held?.serial ?? null, st.gesture?.serial ?? null];
+      return [st.body.serial, st.held[0]?.serial ?? null, st.gesture?.serial ?? null];
     };
     const walk = { id: "walk", input: { press: () => ({ keys: [{ code: "KeyQ" }], end() {}, cancel() {} }) }, keys: [{ code: "KeyW" }] };
     const measure = { command: "measure", name: "Measure", input: {}, keys: [{ code: "KeyR" }] };
     const steps = [
       ["walk", () => t.router.pushBody("w", walk), [2, null, null]],
       ["measure", () => t.router.hold("m", measure), [2, 3, null]],
-      ["measure again", () => t.router.hold("m", measure), [2, 4, null]],
+      ["measure again: put down", () => t.router.hold("m", measure), [2, null, null]],
+      ["and again: picked up anew", () => t.router.hold("m", measure), [2, 4, null]],
       ["walk left and taken again", () => (t.router.leave(), t.router.pushBody("w", walk)), [5, 4, null]],
       ["a press opens a session", () => down(t), [5, 4, 6]],
       ["its release", () => up(t), [5, 4, null]],
@@ -700,34 +708,51 @@ describe("the body stack", () => {
   });
 });
 
-describe("the held tool", () => {
-  it("one slot: holding another puts the first down; put() puts down only its own", () => {
+describe("held tools", () => {
+  it("a stack: another goes on top and puts none down; one held picked up again is put down (a toggle); put() and putDown take one from wherever it is", () => {
     const t = setup();
     const a = { put: vi.fn() };
     const b = { put: vi.fn() };
+    const c = { put: vi.fn() };
     const putA = t.router.hold("x", { command: "a", input: a });
     t.router.hold("y", { command: "b", input: b });
-    expect(a.put).toHaveBeenCalledTimes(1);
-    expect(t.router.held()).toEqual({ owner: "y", command: "b" });
+    t.router.hold("z", { command: null, name: "Piece", input: c });
+    expect([a.put.mock.calls.length, t.router.held()]).toEqual([0, [{ owner: "x", command: "a", name: "a", serial: 2 }, { owner: "y", command: "b", name: "b", serial: 3 }, { owner: "z", command: null, name: "Piece", serial: 4 }]]);
+    // b again: b goes, from the middle; nothing else
+    expect(t.router.hold("y", { command: "b", input: b })).toBe(null);
+    expect([a.put.mock.calls.length, b.put.mock.calls.length, c.put.mock.calls.length]).toEqual([0, 1, 0]);
+    expect(t.router.held().map((h) => h.owner)).toEqual(["x", "z"]);
+    // a tool held directly (no command) is never a toggle: another goes on top
+    t.router.hold("z", { command: null, name: "Piece", input: c });
+    expect(t.router.held().map((h) => h.owner)).toEqual(["x", "z", "z"]);
+    // put(): its own, from the bottom
     putA();
-    expect(b.put).not.toHaveBeenCalled();
-    t.router.putDown();
-    expect(b.put).toHaveBeenCalledTimes(1);
-    expect(t.router.held()).toBe(null);
+    putA();
+    expect([a.put.mock.calls.length, t.router.held().map((h) => h.owner)]).toEqual([1, ["z", "z"]]);
+    // putDown(): the one named (by its serial: a tool held directly has no command to name it by), else the topmost
+    expect(t.router.putDown({ owner: "x", command: "a" })).toBe(false);
+    expect(t.router.putDown({ owner: "z", command: null })).toBe(false);
+    const [under, over] = t.router.held();
+    expect(t.router.putDown({ serial: under.serial })).toBe(true);
+    expect(t.router.held()).toEqual([over]);
+    expect(t.router.putDown()).toBe(true);
+    expect([c.put.mock.calls.length, t.router.held(), t.router.putDown()]).toEqual([2, [], false]);
   });
-  it("its declared keys are its, ahead of the body's and the chain", () => {
+  it("a key is the topmost hand's that declares it, ahead of the body's and the chain; a hand under it keeps the rest of its keys", () => {
     const t = setup();
     const tool = { key: vi.fn(() => true) };
+    const over = { key: vi.fn(() => true) };
     const body = { key: vi.fn(() => true) };
     t.inputs.keys = { key: vi.fn(() => true) };
     t.router.pushBody("w", { id: "walk", input: body, keys: [{ code: "KeyR" }, { code: "KeyW" }] });
-    t.router.hold("gun", { command: "gun", input: tool, keys: [{ code: "KeyR" }] });
+    t.router.hold("gun", { command: "gun", input: tool, keys: [{ code: "KeyR" }, { code: "KeyQ" }] });
+    t.router.hold("pad", { command: "pad", input: over, keys: [{ code: "KeyQ" }] });
     key(t.root, "keydown", "r");
+    key(t.root, "keydown", "q");
     key(t.root, "keydown", "w");
     key(t.root, "keydown", "d");
-    expect(tool.key).toHaveBeenCalledTimes(1);
-    expect(body.key).toHaveBeenCalledTimes(1);
-    expect(t.inputs.keys.key).toHaveBeenCalledTimes(1);
+    expect([tool.key.mock.calls.length, over.key.mock.calls.length, body.key.mock.calls.length, t.inputs.keys.key.mock.calls.length]).toEqual([1, 1, 1, 1]);
+    expect(t.router.routes().at(-4).steps).toEqual([{ step: "hand", owner: "gun", kind: "tool", name: "gun" }]);
   });
   it("a reserved key does nothing else even when its reserver passes", () => {
     const t = setup();
@@ -771,7 +796,6 @@ describe("Escape", () => {
       let serial = 0;
       for (const step of seq) {
         if (step === "tool") {
-          hands = hands.filter((k) => k !== "tool");
           hands.push("tool");
           t.router.pushHand(`h${serial++}`, { kind: "tool", name: "Tool" });
         } else if (step === "edit") {
@@ -821,6 +845,159 @@ describe("Escape", () => {
     expect([t.router.hands().length, put.mock.calls.length, t.router.state().escape]).toEqual([0, 1, null]);
     expect(key(t.root, "keydown", "Escape", "Escape").defaultPrevented).toBe(false); // nothing stood: the key is the page's
   });
+});
+
+describe("H4, H5, H12: one stack of hands, exhaustively", () => {
+  // Every sequence of up to four steps, each picking up or putting down one
+  // of five hands, or pressing Escape, over a body that locks the pointer
+  // (walk) or one that doesn't (seat), both declaring W and Q:
+  //   M  Measure: a tool that wants the pointer, passes presses, takes clicks; declares Q
+  //   G  a gun: a tool that takes a press under the lock only, and every click; declares R and Q
+  //   X  the X-ray: a tool that passes everything and wants nothing
+  //   E  the Edit hand: wants the pointer, takes clicks
+  //   P  a popover: wants the pointer, modal (the router's own input: it takes everything)
+  // Picking up a tool held puts it down (the router's toggle); picking up E or
+  // P held puts it down too (as the editor's command and a menu's button do).
+  // Escape under the lock is the browser's (released, the page hears
+  // nothing); else it pops the top hand. After the steps, against a model:
+  // the stack and the tools in it, every put-down told once (H4: Escape put
+  // down exactly the top), the pointer (H5: wanted ⇔ a hand asks; locked ⇔
+  // the body locks ∧ ¬wanted ∧ ¬released), Escape's rung, then a press and
+  // its release, a wheel and four keys: each offered the hands top first,
+  // then the chain, then the body, and cut exactly at the first that
+  // consumes it (H12: a press consumed never reaches orbit; one only
+  // relocking reaches nobody), each key heard only by the topmost layer
+  // declaring it, else the chain (H12).
+  const E = {
+    M: { owner: "m", name: "Measure", tool: "measure", pointer: true, keys: ["KeyQ"], takes: { press: false, click: true, wheel: false } },
+    G: { owner: "g", name: "Gun", tool: "gun", pointer: false, keys: ["KeyR", "KeyQ"], takes: { press: "locked", click: true, wheel: false } },
+    X: { owner: "x", name: "X-ray", tool: "xray", pointer: false, keys: [], takes: { press: false, click: false, wheel: false } },
+    E: { owner: "e", name: "Edit", tool: null, pointer: true, keys: [], takes: { click: true } },
+    P: { owner: "p", name: "menu", tool: null, pointer: true, keys: [], takes: { press: true, click: true, wheel: true } },
+  };
+  const STEPS = [...Object.keys(E).flatMap((k) => [`+${k}`, `-${k}`]), "esc"];
+  const BODY_KEYS = ["KeyW", "KeyQ"];
+  const CODES = ["KeyQ", "KeyR", "KeyW", "KeyZ"];
+
+  function* seqs(n) {
+    if (n === 0) return yield [];
+    for (const p of seqs(n - 1)) for (const st of STEPS) yield [...p, st];
+  }
+
+  /** The model's route for one event type: who hears it (P's input is the router's: unheard), and who took it. */
+  function route(m, type, locked) {
+    const heard = [];
+    for (const k of [...m.stack].reverse()) {
+      const takes = E[k].takes[type];
+      if (takes === undefined) continue;
+      if (k !== "P") heard.push(`${k}:${type}`);
+      if (takes === true || (takes === "locked" && locked)) return { heard, took: k };
+    }
+    heard.push(`chain:${type}`, `body:${type}`);
+    return { heard, took: type === "click" ? "body" : null };
+  }
+
+  it("every sequence of ≤4 steps × a lock body or not: the stack, the put-downs, the pointer, Escape's rung, the offering order and its cut, and key ownership are the model's", () => {
+    let n = 0;
+    for (const lockBody of [true, false])
+      for (let len = 1; len <= 4; len++)
+        for (const seq of seqs(len)) {
+          const t = setup({ touch: false });
+          // a lock the browser grants at once, and lets go on its own Escape
+          let lockEl = null;
+          Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => lockEl });
+          const change = (el) => ((lockEl = el), document.dispatchEvent(new Event("pointerlockchange")));
+          t.requestLock.mockImplementation(() => (change(t.canvas), Promise.resolve()));
+          t.exitLock.mockImplementation(() => change(null));
+          const heard = [];
+          const puts = [];
+          const rec = (who, type, answer) => (ev) => (heard.push(`${who}:${type}`), typeof answer === "function" ? answer(ev) : answer);
+          const bare = { move() {}, end() {}, cancel() {}, tap: () => true };
+          t.inputs.chain = { press: rec("chain", "press", null), click: rec("chain", "click", false), wheel: rec("chain", "wheel", false), key: rec("chain", "key", true), keyup: rec("chain", "keyup", true) };
+          const input = {
+            M: { press: rec("M", "press", null), click: rec("M", "click", true), wheel: rec("M", "wheel", false), key: rec("M", "key", true), keyup: rec("M", "keyup", true), put: () => puts.push("M") },
+            G: { press: rec("G", "press", (ev) => (ev.locked ? bare : null)), click: rec("G", "click", true), wheel: rec("G", "wheel", false), key: rec("G", "key", true), keyup: rec("G", "keyup", true), put: () => puts.push("G") },
+            X: { press: rec("X", "press", null), click: rec("X", "click", false), wheel: rec("X", "wheel", false), put: () => puts.push("X") },
+            E: { click: rec("E", "click", true) },
+          };
+          t.router.pushBody("b", { id: lockBody ? "walk" : "seat", lock: lockBody, keys: BODY_KEYS.map((code) => ({ code })), input: { press: rec("body", "press", null), click: rec("body", "click", true), wheel: rec("body", "wheel", false), key: rec("body", "key", true), keyup: rec("body", "keyup", true) } });
+          // the model
+          const m = { stack: [], puts: [], released: false };
+          const wanted = () => m.stack.some((k) => E[k].pointer);
+          const locked = () => lockBody && !wanted() && !m.released;
+          const releases = {}; // E's and P's release, while held
+          const drop = (k) => ((m.stack = m.stack.filter((x) => x !== k)), m.puts.push(k));
+          for (const step of seq) {
+            const k = step.slice(1);
+            const held = m.stack.includes(k);
+            if (step === "esc") {
+              if (locked()) {
+                // the browser's own Escape: the page never hears it
+                m.released = true;
+                change(null);
+              } else {
+                if (m.stack.length) drop(m.stack.at(-1));
+                key(t.root, "keydown", "Escape", "Escape");
+              }
+            } else if (E[k].tool) {
+              if (step[0] === "+") {
+                if (held) drop(k);
+                else m.stack.push(k);
+                t.router.hold(E[k].owner, { command: E[k].tool, name: E[k].name, input: input[k], keys: E[k].keys.map((code) => ({ code })), pointer: E[k].pointer });
+              } else {
+                if (held) drop(k);
+                expect(t.router.putDown({ owner: E[k].owner, command: E[k].tool })).toBe(held);
+              }
+            } else if (step[0] === "-" || held) {
+              if (held) (drop(k), releases[k]());
+            } else {
+              m.stack.push(k);
+              if (k === "E") releases.E = t.router.pushHand("e", { kind: "edit", name: "Edit", input: input.E, pointer: true, escape: () => false, escaping: () => null, put: () => puts.push("E") });
+              else {
+                // a menu closing (itself, or Escape's close()) says so
+                const rel = t.router.popover("p", () => releases.P());
+                releases.P = () => (puts.push("P"), rel());
+              }
+            }
+          }
+          const top = m.stack.at(-1);
+          const owners = (ks) => ks.map((x) => E[x].owner);
+          expect([seq, lockBody, t.router.hands().map((h) => h.owner), t.router.held().map((h) => h.owner), puts]).toEqual([seq, lockBody, owners(m.stack), owners(m.stack.filter((x) => E[x].tool)), m.puts]);
+          const st = t.router.state();
+          expect([seq, lockBody, st.pointer.wanted, st.pointer.locked, lockEl === t.canvas, st.escape]).toEqual([seq, lockBody, wanted(), locked(), locked(), locked() ? "lock" : top ? (top === "P" ? "popover" : "hand") : null]);
+          // a press and its release: after the browser's Escape, the first press on the world only relocks
+          heard.length = 0;
+          t.orbit.mockClear();
+          if (lockBody && m.released && !wanted()) {
+            down(t);
+            up(t);
+            expect([seq, lockBody, heard, t.orbit.mock.calls.length, lockEl === t.canvas]).toEqual([seq, lockBody, [], 0, true]);
+            m.released = false;
+          }
+          const press = route(m, "press", locked());
+          const click = press.took === "G" ? null : route(m, "click", locked());
+          down(t);
+          up(t);
+          expect([seq, lockBody, heard, t.orbit.mock.calls.length > 0]).toEqual([seq, lockBody, [...press.heard, ...(click?.heard ?? [])], press.took == null]);
+          heard.length = 0;
+          t.orbit.mockClear();
+          t.canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 10 }));
+          const wheel = route(m, "wheel", locked());
+          expect([seq, lockBody, heard, t.orbit.mock.calls.length > 0]).toEqual([seq, lockBody, wheel.heard, wheel.took == null]);
+          // each key: the topmost hand that declares it, else the body, else the chain; its keyup to the same
+          for (const code of CODES) {
+            heard.length = 0;
+            key(t.root, "keydown", code.slice(3).toLowerCase(), code);
+            key(t.root, "keyup", code.slice(3).toLowerCase(), code);
+            const owner = [...m.stack].reverse().find((x) => E[x].keys.includes(code)) ?? (BODY_KEYS.includes(code) ? "body" : "chain");
+            expect([seq, lockBody, code, heard]).toEqual([seq, lockBody, code, [`${owner}:key`, `${owner}:keyup`]]);
+          }
+          while (cleanups.length) cleanups.pop()();
+          delete document.pointerLockElement;
+          n++;
+        }
+    expect(n).toBe(2 * (11 + 11 ** 2 + 11 ** 3 + 11 ** 4));
+  }, 600_000);
 });
 
 describe("the pointer", () => {
@@ -945,7 +1122,7 @@ describe("the pointer", () => {
   });
 
   it("wanted ⇔ some hand wants the pointer: under a lock body, every sequence of ≤3 pick-ups and put-downs of a tool that does or doesn't, the Edit hand and a popover; the lock follows", async () => {
-    // a step picks a hand up (a tool replaces the tool held) or puts the oldest held down
+    // a step picks a hand up (on top: none puts another down) or puts the oldest held down
     const KINDS = [
       ["tool", true],
       ["tool", false],
@@ -965,10 +1142,7 @@ describe("the pointer", () => {
       for (const [kind, pointer] of seq) {
         if (kind === "drop") model.shift()?.release();
         else if (kind === "popover") model.push({ kind, pointer, release: t.router.popover("p", () => {}) });
-        else {
-          if (kind === "tool") model = model.filter((h) => h.kind !== "tool");
-          model.push({ kind, pointer, release: t.router.pushHand("h", { kind, name: kind, pointer }) });
-        }
+        else model.push({ kind, pointer, release: t.router.pushHand("h", { kind, name: kind, pointer }) });
         await settleLock();
         const wanted = model.some((h) => h.pointer);
         expect([seq, t.router.state().pointer.wanted, lock.locked]).toEqual([seq, wanted, !wanted]);
@@ -1215,7 +1389,7 @@ describe("stopping an owner", () => {
     expect(tool.put).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
     expect(t.router.body().id).toBe("look");
-    expect(t.router.held()).toBe(null);
+    expect(t.router.held()).toEqual([]);
     expect(t.router.state().escape).toBe(null);
     up(t, { x: 40 });
     expect(session.end).not.toHaveBeenCalled();

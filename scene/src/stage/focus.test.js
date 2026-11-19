@@ -463,11 +463,11 @@ describe("what the viewer holds across a focus move", () => {
         expect(bodyId(view), name).toBe(body);
         const holder = view.atom.get().body?.ext ?? null;
         expect(s.api("t.measure").run({ ext: "t.measure", command: "measure" }), name).toBe(true);
-        expect(view.router.held()?.owner, name).toBe(keyOf(view.focusStage().n, "t.measure"));
+        expect(view.router.held().map((t) => t.owner), name).toEqual([keyOf(view.focusStage().n, "t.measure")]);
         expect(view.focusOn(to), name).toBe(true);
         await placed(view);
         // the body is the one entered, held where it was; the tool went with the focus
-        expect([name, bodyId(view), view.atom.get().body?.ext ?? null, view.router.held()]).toEqual([name, body, holder, null]);
+        expect([name, bodyId(view), view.atom.get().body?.ext ?? null, view.router.held()]).toEqual([name, body, holder, []]);
         expect([name, started["t.measure"], offered(view, "commands", "measure")]).toEqual([name, 1, 1]);
         s.unmount();
         s = null;

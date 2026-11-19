@@ -18,10 +18,10 @@ const ROOT = resolve(SRC, "..");
 
 /** What a native plugin or an editor part may import from src/stage/, by module: names and why. */
 const ALLOW = {
-  "stage/bodies.js": { names: ["LOOK", "EDIT_HAND", "editing", "inBody"], why: "pure readers of the view value: the Look body, the Edit hand's name, whether editing, whether a command applies" },
-  "stage/paths.js": { names: ["samePath", "keyOf", "elementOf"], why: "the path grammar, pure: how the view names an object across stages" },
+  "stage/bodies.js": { names: ["LOOK", "EDIT_HAND", "editing", "pointing", "inBody"], why: "pure readers of the view value: the Look body, the Edit hand's name, whether editing, whether a pointing tool is held, whether a command applies" },
+  "stage/paths.js": { names: ["samePath", "keyOf", "parseKey", "elementOf"], why: "the path grammar, pure: how the view names an object across stages (and an owner: whose a held tool is)" },
   "stage/ladder.js": { names: ["restLayer"], why: "what the view's own Escape does now, pure: the Edit hand's escape is it" },
-  "stage/pointer.js": { names: ["looksFromEye"], why: "whether the look goes along the eye ray, pure: the use prompt's anchor" },
+  "stage/pointer.js": { names: ["looksFromEye"], why: "whether the look goes along the eye ray, pure: the use prompt's anchor, the X-ray's look" },
   "stage/provenance.js": { names: ["writers"], why: "who wrote what a path shows, read from the doc's change messages, pure: the X-ray's last writers (STAGE.md, `change`)" },
   "stage/chain.js": { names: ["hitChain", "holdersFor", "chainOrder"], why: "the input chain's order, pure: who holds an object, in the order the chain offers it (the gears graph agrees with the chain by using it)" },
 };

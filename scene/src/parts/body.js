@@ -12,7 +12,7 @@
 //   (scene.edit's `edit` command). It is not a body: you can walk or sit
 //   holding it.
 // - Who's here: each person present in the focus doc, with their body and
-//   what they hold (the top hand: "Edit", "Measure"), from presence (the view
+//   what they hold (every hand, top last: "Edit, Measure, X-ray"), from presence (the view
 //   says every viewer's on every channel it acts on: a person at another
 //   placement of this doc shows as what they're doing there).
 // - The Esc hint names the layer the next Escape pops (stage/ladder.js),
@@ -34,22 +34,22 @@ const el = (tag, cls, text) => {
   return e;
 };
 
-/** What a view holds, as peers are told it: its top hand's name (an open menu is passed over), or null. Pure. */
-export const heldName = (view) => (Array.isArray(view?.hands) ? (view.hands.filter((h) => h?.kind !== "popover").at(-1)?.name ?? null) : null);
+/** What a view holds, as peers are told it: its hands' names, top last (an open menu is passed over). Pure. */
+export const heldNames = (view) => (Array.isArray(view?.hands) ? view.hands.filter((h) => h?.kind !== "popover" && typeof h?.name === "string").map((h) => h.name) : []);
 
 /**
  * Who's here, from presence: [{ session, viewer, body, held, you }], this
- * view first, the others in session order; a person whose view hasn't said
- * its body yet is in Look. Pure.
+ * view first, the others in session order; `held` every hand's name, top
+ * last; a person whose view hasn't said its body yet is in Look. Pure.
  * @param {object} presence  api.channel.peers() (each peer's `body` and `held`, as its view says them)
  * @param {string | null} self  this view's session
  * @param {{ body?: { id, label }, hands?: { kind, name }[] }} mine  this view's
  */
 export function whoIsHere(presence, self, mine) {
-  const out = [{ session: self, viewer: null, body: mine?.body?.label ?? LOOK.label, held: heldName(mine), you: true }];
+  const out = [{ session: self, viewer: null, body: mine?.body?.label ?? LOOK.label, held: heldNames(mine), you: true }];
   for (const [session, p] of Object.entries(presence ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (session === self) continue;
-    out.push({ session, viewer: p?.viewer ?? null, body: typeof p?.body?.label === "string" ? p.body.label : LOOK.label, held: typeof p?.held?.name === "string" ? p.held.name : null, you: false });
+    out.push({ session, viewer: p?.viewer ?? null, body: typeof p?.body?.label === "string" ? p.body.label : LOOK.label, held: Array.isArray(p?.held) ? p.held.filter((h) => typeof h?.name === "string").map((h) => h.name) : [], you: false });
   }
   return out;
 }
@@ -179,7 +179,7 @@ function create(api) {
         const row = el("span", "body-person");
         row.dataset.session = p.session ?? "";
         if (p.you) row.dataset.you = "";
-        row.textContent = [p.you ? "You" : nameOf(p.viewer), p.body.toLowerCase(), p.held].filter(Boolean).join(" · ");
+        row.textContent = [p.you ? "You" : nameOf(p.viewer), p.body.toLowerCase(), p.held.join(", ")].filter(Boolean).join(" · ");
         return row;
       }),
     );

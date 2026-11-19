@@ -162,14 +162,18 @@ describe("scene.handles on the stage", () => {
     expect(labelTexts(s)).toEqual(["Height: 0.2"]);
   });
 
-  it("stands down while another extension's tool is held, and only then", async () => {
+  it("stands down while another extension's pointing tool is held, and only then (one that doesn't point leaves it be)", async () => {
     const { s } = await setup();
     current = s;
     await select(s, "a");
     expect(labelTexts(s)).toHaveLength(1);
-    const putDown = s.api("t.tool").hold({ name: "Tool" }, {});
+    const putLooker = s.api("t.tool").hold({ name: "Looker" }, {});
     await settle();
-    expect(s.local.get().held).toMatchObject({ ext: "t.tool", command: null, name: "Tool" });
+    expect(labelTexts(s)).toHaveLength(1);
+    putLooker();
+    const putDown = s.api("t.tool").hold({ name: "Tool", pointer: true }, {});
+    await settle();
+    expect(s.local.get().held).toMatchObject([{ ext: "t.tool", command: null, name: "Tool", pointer: true }]);
     expect(labelTexts(s)).toEqual([]);
     expect(s.instance("scene.handles").input.widgetAt({ x: 100, y: 98 })).toBe(null);
     putDown();

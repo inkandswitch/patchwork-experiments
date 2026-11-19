@@ -193,6 +193,26 @@ describe("scene.touch", () => {
     expect(shown().buttons).toEqual([["Walkish", "Run", "Jump", "Q"]]);
   });
 
+  it("two tools held: each hand is its own group, the top one first; a key both declare is the top one's", async () => {
+    await mount();
+    await enter("walkish");
+    await input("touch");
+    const wrench = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
+    const spanner = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
+    api().hold({ name: "Wrench", keys: [{ code: "KeyQ", label: "Turn" }, { code: "KeyZ", label: "Zap" }] }, wrench);
+    const putSpanner = api().hold({ name: "Spanner", keys: [{ code: "KeyQ", label: "Twist" }] }, spanner);
+    await settle();
+    expect(shown().buttons).toEqual([["Spanner", "Twist"], ["Wrench", "Zap"], ["Walkish", "Run", "Jump"]]);
+    finger("pointerdown", "Twist", 1);
+    finger("pointerup", "Twist", 1);
+    finger("pointerdown", "Zap", 2);
+    finger("pointerup", "Zap", 2);
+    expect([keys(spanner.key), keys(wrench.key)]).toEqual([["KeyQ/q"], ["KeyZ/z"]]);
+    putSpanner();
+    await settle();
+    expect(shown().buttons).toEqual([["Wrench", "Turn", "Zap"], ["Walkish", "Run", "Jump"]]);
+  });
+
   for (const how of ["blur", "hidden"]) {
     it(`the window losing focus (${how}) lets every finger go, as the router lets go of every key: unlit, and a finger down again presses again`, async () => {
       await mount();
@@ -271,7 +291,7 @@ describe("scene.touch", () => {
     const e = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch" });
     hint().dispatchEvent(e);
     expect(e.defaultPrevented).toBe(true);
-    expect(s.local.get().held).toBe(null);
+    expect(s.local.get().held).toEqual([]);
     hint().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch" }));
     await settle();
     // the editor under it is the next rung
@@ -281,9 +301,10 @@ describe("scene.touch", () => {
     expect([hint().hidden, hint().hasAttribute("data-key")]).toEqual([true, false]);
   });
 
-  it("names each layer's buttons: the body's label, the held tool's name; a gesture's, none (the stage knows no gesture's name)", () => {
-    const view = { body: { id: "walk", label: "Walk" }, held: { name: "Gun" }, gesture: { owner: "scene.carry" } };
-    expect(["body", "tool", "gesture"].map((f) => layerName(f, view))).toEqual(["Walk", "Gun", null]);
-    expect(["body", "tool", "gesture"].map((f) => layerName(f, {}))).toEqual(["Body", "Held", null]);
+  it("names each layer's buttons: the body's label, each hand's name; a gesture's, none (the stage knows no gesture's name)", () => {
+    const view = { body: { id: "walk", label: "Walk", keys: ["KeyW"] }, hands: [{ name: "Gun", keys: ["KeyR"] }, { name: "Pad", keys: ["KeyZ"] }], gesture: { owner: "scene.carry", keys: ["KeyQ"] } };
+    const cases = [["body", "KeyW"], ["hand", "KeyR"], ["hand", "KeyZ"], ["gesture", "KeyQ"]];
+    expect(cases.map(([from, code]) => layerName({ from, code }, view))).toEqual(["Walk", "Gun", "Pad", null]);
+    expect(["body", "hand", "gesture"].map((from) => layerName({ from, code: "KeyX" }, {}))).toEqual(["Body", "Held", null]);
   });
 });

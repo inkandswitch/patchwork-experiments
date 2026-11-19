@@ -110,7 +110,7 @@ const told = async () => {
   await time.step(30);
   await settle();
   const p = s.handle.broadcasts.filter((m) => m.type === "scene:presence" && !m.bye).at(-1);
-  return { body: p?.body?.label ?? null, held: p?.held?.name ?? null };
+  return { body: p?.body?.label ?? null, held: (p?.held ?? []).map((h) => h.name) };
 };
 
 const drawnIn = (id) => [...(s.debug.viewport.layers.get(id) ?? [])].reduce((n, g) => n + g.children.length, 0) > 0;
@@ -164,7 +164,7 @@ describe("the editor is the Edit hand", () => {
     expect(cases).toBe(4 * 2 * 3 * 2);
   }, 60_000);
 
-  it("a body doesn't touch the editor: walking, a held Measure, the selection and the inspector stay; Leave never puts the editor down; peers are told the top hand, an open menu passed over", async () => {
+  it("a body doesn't touch the editor: walking, a held Measure, the selection and the inspector stay; Leave never puts the editor down; peers are told every hand, top last, an open menu passed over", async () => {
     const { default: measure } = await import("./measure.js");
     PARTS.push({ meta: { id: "scene.measure" }, module: measure });
     try {
@@ -176,28 +176,28 @@ describe("the editor is the Edit hand", () => {
       expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(true);
       api.body.enter("walk");
       await still();
-      expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command, s.local.get().selected, chrome().inspector]).toEqual(["walk", true, "measure", "a", true]);
-      // Measure sits over Edit: the top hand is what peers see
+      expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held.map((t) => t.command), s.local.get().selected, chrome().inspector]).toEqual(["walk", true, ["measure"], "a", true]);
+      // Measure sits over Edit: peers see both, top last
       expect(s.local.get().hands.map((h) => h.name)).toEqual(["Edit", "Measure"]);
-      expect(await told()).toEqual({ body: "Walk", held: "Measure" });
+      expect(await told()).toEqual({ body: "Walk", held: ["Edit", "Measure"] });
       api.body.leave();
       await still();
-      expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held?.command]).toEqual(["look", true, "measure"]);
+      expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held.map((t) => t.command)]).toEqual(["look", true, ["measure"]]);
       // Measure put down, Edit is what peers see; an open menu over it is nobody else's business
       s.api("scene.measure").run({ ext: "scene.measure", command: "measure", value: false });
       const close = api.popover(() => close());
       await still();
-      expect([s.local.get().hands.map((h) => h.kind), await told()]).toEqual([["edit", "popover"], { body: "Look", held: "Edit" }]);
+      expect([s.local.get().hands.map((h) => h.kind), await told()]).toEqual([["edit", "popover"], { body: "Look", held: ["Edit"] }]);
       close();
       s.edit(false);
       await still();
-      expect(await told()).toEqual({ body: "Look", held: null });
+      expect(await told()).toEqual({ body: "Look", held: [] });
     } finally {
       PARTS.pop();
     }
   }, 30_000);
 
-  it("putting the editor down takes what it holds with it: the inspector shuts, a held Measure and the selection are put down; picking it up again and selecting, the inspector opens again", async () => {
+  it("putting the editor down takes what it holds with it: the inspector shuts, a held Measure (wherever it is in the hands) and the selection are put down, a tool that isn't the editor's stays; picking it up again and selecting, the inspector opens again", async () => {
     const { default: measure } = await import("./measure.js");
     PARTS.push({ meta: { id: "scene.measure" }, module: measure });
     try {
@@ -208,11 +208,14 @@ describe("the editor is the Edit hand", () => {
       await still();
       expect(chrome().inspector).toBe(true);
       expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(true);
-      expect(s.local.get().held?.command).toBe("measure");
+      // a tool not the editor's, over Measure
+      const putWrench = api.hold({ name: "Wrench" }, {});
+      expect(s.local.get().held.map((t) => t.name)).toEqual(["Measure", "Wrench"]);
       s.edit(false);
       await still();
       expect(editing(s.local.get())).toBe(false);
-      expect(s.local.get().held).toBe(null);
+      expect(s.local.get().held.map((t) => t.name)).toEqual(["Wrench"]);
+      putWrench();
       expect(chrome().inspector).toBe(false);
       // Measure isn't on offer while not editing: not run, not on a key
       expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(false);

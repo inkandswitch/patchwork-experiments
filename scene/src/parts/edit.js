@@ -6,8 +6,9 @@
 // it selects nothing and goes no further), after only a widget under it,
 // offered the click first; presses aren't its, and it wants the pointer.
 // Escape clears the selection, then leaves the entered link, then puts it
-// down; putting it down puts down a tool picked up through an `edit: true`
-// command (Measure) and the selection. It stays in hand across Enter and Leave.
+// down; putting it down puts down every tool picked up through an `edit: true`
+// command (Measure), wherever it is in the stack, and the selection. It stays
+// in hand across Enter and Leave.
 
 import { EDIT_HAND } from "../stage/bodies.js";
 import { restLayer } from "../stage/ladder.js";
@@ -30,9 +31,8 @@ export default {
         return true;
       },
     };
-    /** Is the held tool one picked up through an `edit: true` command? */
-    function heldEdits() {
-      const held = api.view.get().held;
+    /** Is this held tool one picked up through an `edit: true` command? */
+    function edits(held) {
       if (!held?.command) return false;
       for (const { id, value, stage } of api.collect("commands"))
         if (keyOf(stage, id) === held.ext && Array.isArray(value)) return value.some((c) => c?.id === held.command && c.edit === true);
@@ -42,7 +42,7 @@ export default {
       const r = release;
       release = null;
       r?.();
-      if (heldEdits()) api.putDown();
+      for (const t of api.view.get().held ?? []) if (edits(t)) api.putDown(t);
       api.view.step({ type: "clear" });
     }
     /** Pick the editor up (true) or put it down. @returns whether it is held now */

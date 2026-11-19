@@ -15,7 +15,9 @@
 // selection doesn't cover the parts bin the viewer is using); closing the
 // one shown shows the one shown before it; the tabs stay in the order they
 // were docked. With nothing docked, the drawer leaves the edge, which then
-// takes no room, and wants the pointer no more.
+// takes no room. It wants the pointer free while a pane docked with
+// `pointer` (the default) is in it: a pane docked with `pointer: false`
+// (the X-ray's, read while walking) leaves a lock body its lock.
 //
 // The drawer is as wide as the kind of pane it shows: the
 // stage's own chrome (embed: false) a side panel's width, anything else a
@@ -136,11 +138,11 @@ let paneIds = 0;
  * docked. dock(owner, el, { title, onClose }) → close; closeOwner(owner)
  * closes everything an owner docked, without onClose (it is stopping);
  * dockDocument({ url, toolId, title }) → close docks a document, the view's.
- * `onChange({ tabs, shown, docs })` hears every change of what's docked or
+ * `onChange({ tabs, shown, docs }, wants)` hears every change of what's docked or
  * shown (the stage publishes it as view.drawer, so a surface showing whether
  * a tab is open, the toolbar's toggles, or whether a document is docked, an
  * inspector section, hears of it too): `docs` is the docked documents' keys,
- * in docking order.
+ * in docking order; `wants`, whether a pane docked wants the pointer free.
  * The widths are the viewer's prefs: `prefs()` reads them and
  * `setPref(key, px)` stores one (undefined: back to the default); the stage
  * calls refreshWidth() when they change, here or in another tab.
@@ -165,7 +167,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   let drag = null;
   /** The keys the grip took that are still down (their codes) */
   const mine = new Set();
-  /** content element → { owner, pane, tab, name, embed, doc, onClose, close } (`doc`: a document's key, else null) */
+  /** content element → { owner, pane, tab, name, embed, doc, pointer, onClose, close } (`doc`: a document's key, else null) */
   const entries = new Map();
   /** The content element docked for a document's key, or null */
   const paneOf = (key) => {
@@ -191,7 +193,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     refreshWidth();
     const titles = model.order.map((k) => entries.get(k)?.name.textContent ?? "");
     const docKeys = model.order.map((k) => entries.get(k)?.doc).filter((k) => k != null);
-    onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null, docs: docKeys });
+    onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null, docs: docKeys }, model.order.some((k) => entries.get(k)?.pointer));
   }
 
   /** The kind of the pane shown, or null with none. */
@@ -298,7 +300,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     return e;
   }
 
-  function dock(owner, content, { title, onClose, embed = true, show = true, doc = null } = {}) {
+  function dock(owner, content, { title, onClose, embed = true, show = true, doc = null, pointer = true } = {}) {
     const had = entries.get(content);
     if (had) {
       if (title != null) had.name.textContent = String(title);
@@ -321,7 +323,7 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     // (tabs and panes are only ever added at the end, so the DOM keeps the model's order)
     tabs.append(tab);
     panes.append(pane);
-    const e = { owner, pane, tab, name, embed: !!embed, doc, onClose: typeof onClose === "function" ? onClose : null, close: () => void remove(content) };
+    const e = { owner, pane, tab, name, embed: !!embed, doc, pointer: pointer !== false, onClose: typeof onClose === "function" ? onClose : null, close: () => void remove(content) };
     name.addEventListener("click", () => {
       if (!entries.has(content)) return;
       model = shown(model, content);
@@ -411,13 +413,13 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
 function create(api) {
   const prefs = () => api.use("prefs");
   let now = Object.freeze({ tabs: [], shown: null, docs: [] }); // what's docked, as state() and view["scene.drawer"] say
-  let wanting = null; // while anything is docked, the pointer is wanted free (STAGE.md, "Bodies")
+  let wanting = null; // while a pane that wants it is docked, the pointer is wanted free (STAGE.md, "Hands")
   api.style(css);
   const drawer = createDrawer({
     parent: api.edge("right"),
-    onChange(d) {
+    onChange(d, wants) {
       if (JSON.stringify(d) !== JSON.stringify(now)) api.view.set((now = Object.freeze(d)));
-      wanting = d.tabs.length ? (wanting ?? api.wantPointer()) : (wanting?.(), null);
+      wanting = wants ? (wanting ?? api.wantPointer()) : (wanting?.(), null);
     },
     prefs: () => Object.fromEntries(KINDS.map((k) => [prefKey(k), prefs()?.get(prefKey(k))])),
     setPref: (key, px) => prefs()?.set(key, px),

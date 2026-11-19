@@ -351,31 +351,36 @@ describe("listening only", () => {
   });
 });
 
-// What the view says of the viewer (STAGE.md, "Views, stages and links"): its body and held
-// tool, beside `viewer`, on every channel it acts on; cleaned on the way in;
-// a listening presence says none of it.
-describe("the view's body and held tool", () => {
+// What the view says of the viewer (STAGE.md, "Views, stages and links"): its body and its
+// hands, top last, beside `viewer`, on every channel it acts on; cleaned on
+// the way in; a listening presence says none of it.
+describe("the view's body and hands", () => {
   it("go out with the state, cleaned, and only when they change; a listener says nothing", () => {
-    a.announce({ body: { id: "seat", label: "Player 1", extra: 1 }, held: { name: "Measure", ext: "x" } });
+    a.announce({ body: { id: "seat", label: "Player 1", extra: 1 }, held: [{ name: "Edit" }, { name: "Measure", ext: "x" }] });
     clock.advance(1000);
-    expect(b.get().sa).toMatchObject({ viewer: "alice", body: { id: "seat", label: "Player 1" }, held: { name: "Measure" } });
+    expect(b.get().sa).toMatchObject({ viewer: "alice", body: { id: "seat", label: "Player 1" }, held: [{ name: "Edit" }, { name: "Measure" }] });
     expect(Object.keys(b.get().sa.body)).toEqual(["id", "label"]);
+    expect(Object.keys(b.get().sa.held[1])).toEqual(["name"]);
     const before = sent("A", "scene:presence").length;
-    a.announce({ body: { id: "seat", label: "Player 1" }, held: { name: "Measure" } });
+    a.announce({ body: { id: "seat", label: "Player 1" }, held: [{ name: "Edit" }, { name: "Measure" }] });
     clock.advance(100);
     expect(sent("A", "scene:presence").length).toBe(before);
-    a.announce({ body: { id: "look", label: "Look" }, held: null });
+    // the order is what's said: the same hands the other way up are a change
+    a.announce({ body: { id: "seat", label: "Player 1" }, held: [{ name: "Measure" }, { name: "Edit" }] });
     clock.advance(1000);
-    expect(b.get().sa).toMatchObject({ body: { id: "look", label: "Look" }, held: null });
-    // what isn't a body or a tool is nothing
-    for (const [body, held] of [[{ id: 3, label: "x" }, { name: 4 }], ["seat", "Measure"], [null, undefined]]) {
+    expect(b.get().sa.held).toEqual([{ name: "Measure" }, { name: "Edit" }]);
+    a.announce({ body: { id: "look", label: "Look" }, held: [] });
+    clock.advance(1000);
+    expect(b.get().sa).toMatchObject({ body: { id: "look", label: "Look" }, held: [] });
+    // what isn't a body is nothing; what isn't a hand is left out, and what isn't a list holds nothing
+    for (const [body, held, want] of [[{ id: 3, label: "x" }, [{ name: 4 }, { name: "Gun" }], [{ name: "Gun" }]], ["seat", { name: "Measure" }, []], [null, undefined, []], [null, "Measure", []]]) {
       a.announce({ body, held });
       clock.advance(1000);
-      expect([b.get().sa.body, b.get().sa.held]).toEqual([null, null]);
+      expect([b.get().sa.body, b.get().sa.held]).toEqual([null, want]);
     }
     const hc = bus.makeHandle("C");
     const quiet = createPresence({ handle: hc, viewer: "cara", session: "sc", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
-    quiet.announce({ body: { id: "walk", label: "Walk" }, held: null });
+    quiet.announce({ body: { id: "walk", label: "Walk" }, held: [] });
     clock.advance(HEARTBEAT_MS * 2);
     expect(sent("C", "scene:presence")).toEqual([]);
     expect("sc" in b.get()).toBe(false);

@@ -897,7 +897,7 @@ describe("the stage, mounted", () => {
     }
   });
 
-  it("a tool command's run fills the slot; running it again, Escape or another tool puts it down", async () => {
+  it("a tool command's run puts it on top of the hands, over whatever is held; running it again puts down that one, wherever it is; Escape the top one", async () => {
     const put = [];
     exts["t.always"] = recorder("t.always", () => ({
       commands: [
@@ -908,37 +908,49 @@ describe("the stage, mounted", () => {
     const m = mount(newScene());
     await settle();
     const api = m.debug.host.record("t.always").api;
+    const names = () => m.local.get().held.map((t) => t.command);
     // (not editing: the Edit hand wants the pointer too)
     m.debug.view.plugins.record("scene.edit").api.run({ ext: "scene.edit", command: "edit", value: false });
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
-    expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) });
-    const serials = [m.local.get().held.serial];
+    expect(m.local.get().held).toEqual([{ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) }]);
+    const serials = [m.local.get().held[0].serial];
     expect(m.local.get().pointer.wanted).toBe(false);
+    // another tool goes on top: the gun stays held
     api.run({ ext: "t.always", command: "brush" });
-    serials.push(m.local.get().held.serial);
-    expect(put).toEqual(["gun"]);
-    expect(m.local.get().held.command).toBe("brush");
+    serials.push(m.local.get().held[1].serial);
+    expect(put).toEqual([]);
+    expect(names()).toEqual(["gun", "brush"]);
     expect(m.local.get().pointer.wanted).toBe(true);
+    // the gun again puts the gun down, from under the brush
+    api.run({ ext: "t.always", command: "gun" });
+    expect(put).toEqual(["gun"]);
+    expect(names()).toEqual(["brush"]);
+    // value true only picks up (held: nothing), false only puts down (not held: nothing)
+    api.run({ ext: "t.always", command: "brush", value: true });
+    api.run({ ext: "t.always", command: "gun", value: false });
+    expect([put, names()]).toEqual([["gun"], ["brush"]]);
     api.run({ ext: "t.always", command: "brush" });
     expect(put).toEqual(["gun", "brush"]);
-    expect(m.local.get().held).toBe(null);
+    expect(m.local.get().held).toEqual([]);
     api.run({ ext: "t.always", command: "gun" });
-    serials.push(m.local.get().held.serial);
+    api.run({ ext: "t.always", command: "brush" });
+    serials.push(m.local.get().held[0].serial);
+    // Escape puts down the top one only
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
-    expect(put).toEqual(["gun", "brush", "gun"]);
-    expect(m.local.get().held).toBe(null);
-    // a tool held directly, not through a command: its declaration, and no command
+    expect([put, names()]).toEqual([["gun", "brush", "brush"], ["gun"]]);
+    // a tool held directly, not through a command: its declaration, and no command; on top of the gun
     const putDown = api.hold({ name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true }, { put: () => put.push("piece") });
-    expect(m.local.get().held).toEqual({ ext: "t.always", command: null, name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
-    serials.push(m.local.get().held.serial);
+    expect(m.local.get().held[1]).toEqual({ ext: "t.always", command: null, name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
+    serials.push(m.local.get().held[1].serial);
     // each tool held is its own (the gun held again is a new one)
     expect(new Set(serials).size).toBe(4);
     putDown();
-    expect(put).toEqual(["gun", "brush", "gun", "piece"]);
-    expect(m.local.get().held).toBe(null);
+    expect([put, names()]).toEqual([["gun", "brush", "brush", "piece"], ["gun"]]);
+    m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+    expect([put, m.local.get().held]).toEqual([["gun", "brush", "brush", "piece", "gun"], []]);
     // one with no name isn't a tool
     api.hold({}, { put() {} });
-    expect(m.local.get().held).toBe(null);
+    expect(m.local.get().held).toEqual([]);
   });
 
   it("a reach: true command runs only within the body's reach; Look reaches everything", async () => {

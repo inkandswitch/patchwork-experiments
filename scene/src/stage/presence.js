@@ -4,8 +4,8 @@
 //
 //   scene:presence  this view's whole state, keys namespaced by extension,
 //                   and what the view itself says of the viewer on every
-//                   channel it acts on: its body and held tool (`body`,
-//                   `held`: STAGE.md, "Views, stages and links", so whoever has this doc open
+//                   channel it acts on: its body and hands (`body`,
+//                   `held`, top last: STAGE.md, "Views, stages and links", so whoever has this doc open
 //                   sees what a person at any placement of it is doing). It
 //                   goes out coalesced, at the highest rate any extension
 //                   asked for, and again as a heartbeat. Peers drop a view
@@ -80,9 +80,9 @@ export function cleanBody(v) {
   return isObj(v) && isStr(v.id) && typeof v.label === "string" ? Object.freeze({ id: v.id, label: v.label }) : null;
 }
 
-/** A held tool as presence carries it: `{ name }`; null if it isn't one (nothing held). */
+/** What a view holds as presence carries it: its hands (an open menu passed over), `[{ name }]`, top last; each that isn't one is left out, and anything but a list is nothing held (`[]`). */
 export function cleanHeld(v) {
-  return isObj(v) && typeof v.name === "string" ? Object.freeze({ name: v.name }) : null;
+  return Object.freeze(Array.isArray(v) ? v.filter((h) => isObj(h) && typeof h.name === "string").map((h) => Object.freeze({ name: h.name })) : []);
 }
 
 // ─── the page bus ────────────────────────────────────────────────────────────
@@ -182,8 +182,8 @@ export function createPresence({
 
   // ─── this view's state ─────────────────────────────────────────────────────
   let keys = {}; // { [ext]: { [key]: value } }, replaced, never mutated
-  let body = null; // the view's: its body ({ id, label }) and held tool ({ name } | null), the same on every channel it acts on
-  let heldTool = null;
+  let body = null; // the view's: its body ({ id, label }) and hands ([{ name }], top last), the same on every channel it acts on
+  let heldTool = cleanHeld(null);
   const rates = new Map(); // ext → hz
   let seq = 0;
   let sentAt = -Infinity;
@@ -197,7 +197,7 @@ export function createPresence({
     sendTimer = null;
     if (dead || away || listen) return;
     sentAt = now();
-    broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys, ...(body ? { body } : {}), ...(heldTool ? { held: heldTool } : {}) });
+    broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys, ...(body ? { body } : {}), ...(heldTool.length ? { held: heldTool } : {}) });
     said(() => ({ dir: "out", kind: "presence", session, viewer, keys }));
     clearTimer(heartbeat);
     heartbeat = setTimer(sendState, HEARTBEAT_MS);
@@ -226,7 +226,7 @@ export function createPresence({
     requestSend();
   }
 
-  /** What the view says of the viewer here: its body and held tool (the view's, on every channel it acts on). */
+  /** What the view says of the viewer here: its body and hands (the view's, on every channel it acts on). */
   function announce(state) {
     if (dead) return;
     const b = cleanBody(state?.body);

@@ -30,8 +30,8 @@ clears the selection, then leaves the entered link. It stays in hand across
 Enter and Leave, in any body; a tool can sit over it. **Editing** is
 `editing(view)` (`stage/bodies.js`): the editor's chrome (halo, inspector,
 toolbar's editor commands, grid, axes, bounds, dimensions, Measure, every
-`edit: true` command) shows exactly then (H13). Putting it down puts down such
-a tool and the selection.
+`edit: true` command) shows exactly then (H13). Putting it down puts down every
+such tool, wherever it is in the hands, and the selection.
 
 ## A command
 
@@ -68,7 +68,7 @@ checks `scene.objects[target]`.
 ## The use prompt and key map
 
 **The key map** (`scene.keys`, the only `input.key`; `src/keymap.js`): a key the
-gesture, the held tool and the body don't reserve runs the first command whose
+gesture, the hands and the body don't reserve runs the first command whose
 `key` matches and that applies to attention's path (the selection, else the
 look's hit and what it hangs on, nearest first), then the scene's; within one
 target in running order, then command order. With ctrl or meta held a key is the
@@ -195,5 +195,5 @@ field as its default.
 |---|---|
 | H3 | A shown key works: hints come from the dispatching resolver; each key reaches at most one invocation; a shown touch control reaches its reserver. |
 | H9 | A `reach` command runs iff distance ≤ body.reach, else shows "too far". |
-| H13 | Editing ⇔ the Edit hand is held: its chrome shows exactly then, in any body; no body changes it; putting it down puts down the selection and an `edit: true` tool. |
+| H13 | Editing ⇔ the Edit hand is held: its chrome shows exactly then, in any body; no body changes it; putting it down puts down the selection and every `edit: true` tool, wherever it is in the hands, and no other. |
 | I9 | Extract and bundle are each one host change; `bundle(extract(S, K), K)` restores every non-runtime field when S has no edge outside. |

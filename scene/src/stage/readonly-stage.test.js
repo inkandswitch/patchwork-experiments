@@ -245,7 +245,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("not acting", !view.acting().includes(stage));
       ok("off the input path", !view.onPath([...stage.path, "card"]).includes(stage));
       ok("body.enter refuses", api.body.enter("t.sit") === false);
-      ok("hold refuses", api.hold({ name: "Tool" }, {}) && view.router.held() == null);
+      ok("hold refuses", api.hold({ name: "Tool" }, {}) && view.router.held().length === 0);
       ok("run refuses", api.run({ ext: "t.probe", command: "poke" }) === false);
       const general = view.stage(0).debug.host.record("t.general").api;
       ok("a general part can't run one of its commands either", general.run({ stage: stage.n, ext: "t.probe", command: "poke" }) === false && api.doc().title !== "poked");
