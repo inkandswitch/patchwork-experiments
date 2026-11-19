@@ -115,6 +115,20 @@
   border-top: 1px solid var(--scene-border);
   color: var(--scene-muted);
 }
+.scene-stage .xray-scene:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 8px;
+}
+.scene-stage .xray-scene h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--scene-muted);
+}
 .scene-stage .xray-details h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
   margin: 12px 0 0;
   font-size: 12px;
@@ -233,16 +247,15 @@
 /* the route strip along the bottom */
 .scene-stage .xray-layer > .xray-strip-host:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
-  left: 50%;
+  left: 10px;
   bottom: 10px;
-  transform: translateX(-50%);
-  max-width: 96%;
+  max-width: calc(100% - 330px);
   z-index: 4;
   font-family: var(--scene-family);
   font-size: 12px;
   display: flex;
   flex-direction: column-reverse;
-  align-items: center;
+  align-items: flex-start;
 }
 .scene-stage .xray-strip:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
@@ -253,14 +266,14 @@
 .scene-stage .xray-route:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   align-items: center;
-  gap: 5px;
+  flex-wrap: wrap;
+  gap: 4px 5px;
   padding: 4px 8px;
   border-radius: 8px;
   background: var(--scene-surface);
   color: var(--scene-fg);
   border: 1px solid var(--scene-border);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  white-space: nowrap;
 }
 .scene-stage .xray-route-on:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font-weight: 600;
@@ -302,11 +315,12 @@
 /* glyphs and links on objects */
 .scene-stage .xray-badge:where(:not(.about-embed *), .about-embed .scene-tool *) {
   pointer-events: none;
-  font-size: 13px;
+  font-size: 17px;
   line-height: 1.2;
+  padding: 1px 5px;
   background: var(--scene-label-bg);
   border: 1px solid var(--scene-border);
-  border-radius: 9px;
+  border-radius: 11px;
 }
 .scene-stage .xray-badge.xray-link:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font-size: 11px;

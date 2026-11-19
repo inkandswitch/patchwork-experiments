@@ -17,7 +17,7 @@ import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { TOO_FAR } from "../parts/toolbar-commands.js";
 import { buildGears } from "./gears.js";
-import { BANDS, GHOST, GLYPHS, OPACITY, PALETTE, card, colours, details, glyphs, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
+import { BANDS, GHOST, GLYPHS, NEUTRAL, OPACITY, PALETTE, card, colours, details, glyphs, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
 
 const has = (o, t) => !!o?.traits?.[t];
 const run = () => {};
@@ -67,6 +67,10 @@ describe("colours", () => {
       const back = colours([...ids].reverse());
       expect(ids.map(back)).toEqual(got);
     }
+  });
+  it("an id not asked for is neutral, the same whoever asks", () => {
+    expect(colours(["a"])("b")).toBe(NEUTRAL);
+    expect(PALETTE).not.toContain(NEUTRAL);
   });
   it("more ids than the palette holds: still one from it each, the first of the sorted taking its own slot", () => {
     const ids = Array.from({ length: PALETTE.length + 5 }, (_, i) => `e${i}`);
@@ -165,7 +169,9 @@ describe("glyphs", () => {
       { c: [{ ext: "t.game", fields: ["hidden"] }, { ext: "scene.xray", fields: ["tint", "opacity", "outline"] }], d: [{ ext: "scene.xray", fields: ["opacity"] }] },
     );
     const out = glyphs(g, { who, self: "scene.xray" });
-    expect([...out.keys()]).toEqual(["c"]);
+    // (a claim on the scene is the scene's: id null)
+    expect(new Set(out.keys())).toEqual(new Set(["c", null]));
+    expect(out.get(null)).toEqual([{ kind: "lock", title: "seat claimed by you" }]);
     expect(out.get("c")).toEqual([
       { kind: "lock", title: "turn claimed by Ben" },
       { kind: "hand", title: "held by Ben" },

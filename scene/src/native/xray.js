@@ -132,7 +132,7 @@ function stripEl(s) {
 }
 
 /** The panel's legend and details as DOM. */
-function panelEls({ lg, det, isolated, pinnedName, keys }) {
+function panelEls({ lg, det, isolated, pinnedName, keys, onScene }) {
   const out = [];
   const top = el("div", "xray-top");
   top.append(el("span", "xray-hint", pinnedName ? `Pinned: ${pinnedName}` : "Hover an object; a click pins it"));
@@ -171,6 +171,12 @@ function panelEls({ lg, det, isolated, pinnedName, keys }) {
     for (const r of lg.idle) ul.append(row({ ...r, count: null }));
     d.append(ul);
     out.push(d);
+  }
+  if (onScene.length) {
+    const sec = el("section", "xray-scene");
+    sec.append(el("h3", null, "On the scene itself"));
+    for (const x of onScene) sec.append(glyphEl(x));
+    out.push(sec);
   }
   if (keys.length) {
     const k = el("div", "xray-key");
@@ -365,8 +371,8 @@ function create(api) {
     if (hovered && !objects[hovered]) hovered = null;
     g = gather(f, [pinned, hovered]);
     if (isolated && !g.extensions.some((e) => e.id === isolated)) isolated = null;
-    const running = g.extensions.filter((e) => e.state === "running").map((e) => e.id);
-    const colour = colours(running);
+    // (a colour only for the extensions holding objects: the rest are neutral)
+    const colour = colours(g.holds.filter((h) => h.via != null).map((h) => h.ext));
     // (what an extension overrides on its own: never the X-ray's own looks)
     const seen = { ...g, overrides: g.overrides.filter((o) => !isSelf(o.ext)) };
     const links = g.extensions.find((e) => e.id === "scene.links")?.inspect?.stages ?? [];
@@ -380,23 +386,24 @@ function create(api) {
     model = { looks: looksOf, glyphs: glyphsOf, card: c, colour };
     const items = [];
     for (const [id, list] of glyphsOf) {
+      if (id == null) continue;
       const link = list.find((x) => x.kind === "link");
       const live = list.filter((x) => x.kind !== "link").map((x) => GLYPHS[x.kind].text);
       const text = [link ? `${GLYPHS.link.text} ${objectName(id)} · ${link.title}` : "", live.join(" ")].filter(Boolean).join("  ");
       items.push({ key: `xray:${id}`, text, on: id, className: `xray-badge${link ? " xray-link" : ""}`, rank: 2 });
     }
     at()?.set(looksOf, items);
-    renderPanel(legend(g, colour, { isolated }), pinned ? details(seen, pinned, colour, ctx) : null, [...new Set([...glyphsOf.values()].flat().map((x) => x.kind))].filter((k) => k !== "link"));
+    renderPanel(legend(g, colour, { isolated }), pinned ? details(seen, pinned, colour, ctx) : null, [...new Set([...glyphsOf.values()].flat().map((x) => x.kind))].filter((k) => k !== "link"), glyphsOf.get(null) ?? []);
     renderCard(f, c);
     renderStrip(api.routes(), colour);
   }
 
-  function renderPanel(lg, det, keys) {
-    const sig = JSON.stringify([lg, det, isolated, pinned, keys]);
+  function renderPanel(lg, det, keys, onScene) {
+    const sig = JSON.stringify([lg, det, isolated, pinned, keys, onScene]);
     if (sig === shown) return;
     shown = sig;
     const open = new Set([...panel.querySelectorAll("details[open]")].map((d) => `${d.className}|${d.dataset.ext ?? d.querySelector("summary")?.textContent}`));
-    panel.replaceChildren(...panelEls({ lg, det, isolated, pinnedName: pinned ? det?.title : null, keys }));
+    panel.replaceChildren(...panelEls({ lg, det, isolated, pinnedName: pinned ? det?.title : null, keys, onScene }));
     for (const d of panel.querySelectorAll("details")) if (open.has(`${d.className}|${d.dataset.ext ?? d.querySelector("summary")?.textContent}`)) d.open = true;
   }
 
@@ -429,7 +436,7 @@ function create(api) {
     const cw = cardHost.offsetWidth || 260;
     const ch = cardHost.offsetHeight || 120;
     const x = right + 12 + cw <= w ? right + 12 : Math.max(4, left - 12 - cw);
-    const y = Math.max(4, Math.min(top, h - ch - 48, bottom));
+    const y = Math.max(4, Math.min(top, h - ch - 100, bottom));
     cardHost.style.setProperty("--xx", `${Math.round(x)}px`);
     cardHost.style.setProperty("--xy", `${Math.round(y)}px`);
   }

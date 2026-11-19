@@ -96,7 +96,7 @@ describe("scene.xray", () => {
     s.key("x");
     await settle();
     await refreshed();
-    const game = colours(s.local.get().running.map((r) => r.id))("t.game");
+    const game = colours(["t.game"])("t.game");
     expect(looksOf("a")).toMatchObject({ tint: GHOST, opacity: OPACITY.ghost, outline: [game] });
     expect(looksOf("b")).toMatchObject({ outline: [game] });
     expect(looksOf("t")).toEqual({ tint: GHOST, opacity: OPACITY.faded });

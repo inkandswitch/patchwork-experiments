@@ -17,8 +17,23 @@ import { gearsOfObject } from "./gears.js";
 
 // ── colour ──
 
-/** Twelve hues at one saturation and lightness: they read on a light or a dark ground. */
-export const PALETTE = Object.freeze([210, 25, 150, 330, 50, 270, 180, 0, 100, 240, 300, 80].map((h) => `hsl(${h},68%,${h > 40 && h < 110 ? 40 : 52}%)`));
+/** Twelve colours spread in hue and lightness that read on a light or a dark ground, in an order where neighbouring slots differ (a collision takes the next). */
+export const PALETTE = Object.freeze([
+  "hsl(215,78%,52%)", // blue
+  "hsl(28,92%,50%)", // orange
+  "hsl(135,58%,36%)", // green
+  "hsl(325,72%,52%)", // pink
+  "hsl(48,95%,44%)", // gold
+  "hsl(272,62%,58%)", // purple
+  "hsl(185,82%,34%)", // teal
+  "hsl(0,74%,52%)", // red
+  "hsl(245,58%,60%)", // indigo
+  "hsl(78,70%,44%)", // lime
+  "hsl(300,48%,52%)", // plum
+  "hsl(18,52%,42%)", // brown
+]);
+/** What an extension holding no object is drawn in: no colour of its own, so a colour always means a holder. */
+export const NEUTRAL = "hsl(220,9%,52%)";
 /** The ghost an object is drawn in while the X-ray looks (a neutral that sits on either ground). */
 export const GHOST = "#a4aab3";
 /** How much of an object shows: ghosted, nothing responding or not in the lens, and lit. */
@@ -35,7 +50,8 @@ const hash = (s) => {
 /**
  * A colour for each id: the palette's slot its hash says, the next free one
  * when that is taken (ids sorted first, so the same set always gets the same
- * colours, and no two share while the palette lasts).
+ * colours, and no two share while the palette lasts); any other id is NEUTRAL.
+ * Ask for the extensions that hold objects.
  * @param {string[]} ids
  * @returns {(id: string) => string}
  */
@@ -48,7 +64,7 @@ export function colours(ids) {
     taken.add(k);
     by.set(id, PALETTE[k]);
   }
-  return (id) => by.get(id) ?? PALETTE[hash(String(id)) % PALETTE.length];
+  return (id) => by.get(id) ?? NEUTRAL;
 }
 
 // ── who responds ──
@@ -97,12 +113,13 @@ const KINDS = Object.keys(GLYPHS);
  * someone other than `self`); and a link drawn as a box.
  * @param {object} g
  * @param {{ who?: (viewer, mine) => string, self?: string, links?: object[] }} [o]  `links`: the links inspect's stages
- * @returns {Map<string, { kind: string, title: string }[]>} id → glyphs, in KINDS order; objects with none are absent
+ * @returns {Map<string | null, { kind: string, title: string }[]>} id → glyphs, in KINDS order; objects with none are absent; null: the scene's own claims
  */
 export function glyphs(g, { who = (viewer, mine) => (mine ? "you" : (viewer ?? "someone")), self = null, links = [] } = {}) {
   const out = new Map();
   const add = (id, kind, title) => {
-    if (id == null || !g.objects.some((o) => o.id === id)) return;
+    // (id null: the scene's own, a seat's claim)
+    if (id != null && !g.objects.some((o) => o.id === id)) return;
     if (!out.has(id)) out.set(id, []);
     if (!out.get(id).some((x) => x.kind === kind && x.title === title)) out.get(id).push({ kind, title });
   };
@@ -110,7 +127,7 @@ export function glyphs(g, { who = (viewer, mine) => (mine ? "you" : (viewer ?? "
   for (const c of g.claims) add(c.object, "lock", `${c.kind} claimed by ${who(c.viewer, c.mine)}${c.lapsing ? " (lapsing)" : ""}`);
   for (const p of g.poses) if (p.rank === 0) add(p.object, "hand", `held by ${who(p.viewer, p.mine)}${p.yields ? " (yielding)" : ""}`);
   for (const d of g.drives) add(d.object, "gear", `driven by a process of ${name(d.ext)}`);
-  for (const o of g.overrides) if (o.ext !== self) add(o.object, "eye", `shown otherwise by ${name(o.ext)} (${o.fields.join(", ")})`);
+  for (const o of g.overrides) if (o.ext !== self && o.object != null) add(o.object, "eye", `shown otherwise by ${name(o.ext)} (${o.fields.join(", ")})`);
   const stages = links.filter((s) => s.path?.length === 1);
   for (const s of stages) add(s.path[0], "link", `${s.role}${s.open ? "" : `, closed${s.reason ? `: ${s.reason}` : ""}`}`);
   for (const [id, list] of out) out.set(id, list.sort((a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind)));
