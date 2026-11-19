@@ -319,7 +319,11 @@ selected object by default; a slim panel for the scene.
 1. Kernel additions (owners, override authors, input route, channel tap,
    provenance) + `inspect` on the natives + the gears graph (pure, tested).
 2. The X-ray tool: both lenses, the running/missing/failed list, layers for
-   claims, poses, clock, display, input route.
+   claims, poses, clock, display, input route. **Done 2026-11-18**
+   (`scene.xray`, NATIVE.md "X-ray"; also links, people and visibility
+   layers). Deferred: meshes per object (owners() counts a layer's meshes,
+   not whose object they're on); names of extensions' packages beyond the
+   URL; the scrubber (slice 4).
 3. The presence tap.
 4. Dressing through `display` (migrate sailing, water and others that dress)
    + the scrubber.

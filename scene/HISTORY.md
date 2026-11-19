@@ -927,3 +927,32 @@ out: two grades (if fetched) rise, Arcs and Root Accessories, B to A.
 
 Synced tabletop alone (at d30ee986; scene and sailing changed only docs and probes, so not synced): its published tree matches the checkout.
 Republished the 12 examples a tabletop table reaches (Lost Cities, its table, Santorini, Draw Dominoes for 2, Liar's dice, Lost Cities aboard with E1M1's exit re-set, the Quiet games room, Games night, both Arcade mashups, the Harbour, the Model room); each checked in real Patchwork and swapped in the Scene examples folder in one change.
+
+### 2026-11-18 — Visible gears: the X-ray tool
+
+PLANS.md §4, slice 2. `scene.xray`, a native view plugin (NATIVE.md,
+"X-ray"): a held tool, X (free across every package's keys) or the editor
+toolbar's toggle, held in any body; it wants the pointer free and takes no
+event, so a game goes on under it and a click both pins the object and
+reaches whoever takes it. Its panel is one drawer tab: the object lens
+(holders in input order with package, version, verbs as chips, events,
+drawing, services; claims, poses, overrides; last writers), the extension
+lens (trait tables, the objects × verbs grid, what it holds now, services,
+writes), the running list (busy, lingering) and what isn't running, and
+eight layers kept in the prefs (`xray.layers`), four of them badging
+objects. World outlines through `boxes.js`, badges through `labels()`.
+Everything is `buildGears` of the public reads through pure models
+(`xray-model.js`); the boundary allowlist gains `writers`
+(stage/provenance.js). Tests: the models over gears.test's 2048 worlds
+(holders and chips, outlines, running order, nothing lingering when the
+running set is the doc's, the grid against the verbs, trait tables), every
+subset of the eight layers toggled, the layers' finite cases; the tool on a
+stage (X while playing, hover, a click pinned and passed on with its route,
+a picked extension's lens and outlines, the pref, last writers from an
+Automerge doc, Escape leaving nothing). tabletop/probes/xray.mjs, a Lost
+Cities table for two in headless Chrome: X held, a deck card's holders
+(scene.carry, tabletop, the keeper) and verbs, tabletop picked (60 cards
+outlined, its grid), both seats' claims, a card Ben is carrying held by Ben
+in Ana's poses layer, a click's route, Escape; 19 checks pass; a rebuild
+with tabletop picked takes about 9 ms there. The probe's repo is no
+Automerge one, so it shows no provenance.
