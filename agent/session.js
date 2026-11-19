@@ -1244,6 +1244,32 @@ export function isInterruptedResult(block) {
   return block?.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED
 }
 
+/**
+ * Give a session `add` dollars more than it has spent, inside a change. A
+ * session stopped for its budget carries on from where it stopped: it is told
+ * its new budget, which is also what wakes its runner. Returns the new limit.
+ */
+export function liftBudget(doc, add) {
+  const amount = Number(add)
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Lift the budget by a positive number of dollars.")
+  if (!doc.config) doc.config = {}
+  const spent = doc.usage?.cost ?? 0
+  const limit = Math.round((Math.max(doc.config.budget ?? 0, spent) + amount) * 100) / 100
+  doc.config.budget = limit
+  if (doc.stopped?.reason === "budget") {
+    doc.stopped = null
+    if (!doc.turns) doc.turns = []
+    doc.turns.push(makeTurn("user", [textBlock(`[Your budget is now $${limit.toFixed(2)}. Carry on from where you stopped.]`)]))
+  }
+  return limit
+}
+
+/** What a person can give a session that spent its budget: as much again, or four times as much. */
+export function liftAmounts(limit) {
+  const base = Math.max(0.5, Number(limit) || 0)
+  return [...new Set([base, base * 4].map((n) => Math.round(n * 100) / 100))]
+}
+
 // ---------------------------------------------------------------- lease
 
 /**

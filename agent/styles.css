@@ -1440,5 +1440,15 @@
   white-space: nowrap;
 }
 
+/* What a node has spent, of its budget (workflow/view.js moneyChip). */
+.agent-wf-money {
+  margin-left: auto;
+  font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
+  color: var(--agent-muted);
+  white-space: nowrap;
+}
+.agent-wf-money[data-over="true"] { color: var(--agent-danger-text); }
+
 /* The orchestrating session, as the first node on a workflow board. */
 .agent-wf-orchestrator { background: var(--agent-surface); }

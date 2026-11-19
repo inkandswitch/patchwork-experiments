@@ -380,5 +380,9 @@ export function renderTranscript(container, doc, state, handlers) {
     if (node.childElementCount) container.append(node)
   }
 
+  // What waits on the person at the end of the conversation — a spent budget,
+  // the session's or its workflow's — answered right here, as a permission is.
+  for (const node of handlers?.inline?.() ?? []) container.append(node)
+
   container.scrollTop = pinnedToBottom ? container.scrollHeight : previousScroll
 }

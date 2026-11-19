@@ -434,7 +434,7 @@ export function AmbientAgent(element, options = {}) {
       el(
         "strong",
         null,
-        item.kind === "finished" ? `${item.title} finished` : item.kind === "approval" ? `${item.title} needs your permission` : item.kind === "budget" ? `${item.title} paused: budget spent` : `${item.title} asks`
+        item.kind === "finished" ? `${item.title} finished` : item.kind === "approval" ? `${item.title} needs your permission` : item.kind === "budget" ? (item.scope === "session" ? `${item.title} spent its budget` : `${item.title} paused: budget spent`) : `${item.title} asks`
       )
     )
     if (rest) head.append(el("span", "agent-peek-more", `+${rest} more`))

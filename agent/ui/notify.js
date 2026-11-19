@@ -87,6 +87,6 @@ export function describe(event) {
     return { title: `${event.title} finished`, body: event.summary || `After ${minutes} minute${minutes === 1 ? "" : "s"} of work.` }
   }
   if (event.kind === "approval") return { title: `${event.title} needs your permission`, body: `To run ${event.tool}.` }
-  if (event.kind === "budget") return { title: `${event.title} paused: budget spent`, body: describeBudget(event) }
+  if (event.kind === "budget") return { title: event.scope === "session" ? `${event.title} spent its budget` : `${event.title} paused: budget spent`, body: describeBudget(event) }
   return { title: `${event.title} is asking you`, body: event.question ?? "" }
 }

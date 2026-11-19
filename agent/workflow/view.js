@@ -11,7 +11,7 @@
  * running when its tab closed resumes when anyone opens it again.
  */
 
-import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf } from "./plan.js"
+import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf, stepBudget } from "./plan.js"
 import { budgetWaiting } from "./waiting.js"
 import { renderBudgetItem } from "../ui/waiting.js"
 import { formatCost, STATUS, sessionTitle } from "../session.js"
@@ -78,6 +78,20 @@ export function stages(steps) {
 
 /** "~anthropic/claude-opus-latest" -> "claude-opus-latest". */
 const shortModel = (model) => String(model ?? "").split("/").pop()
+
+/** Dollars as a card shows them. */
+const dollars = (n) => `$${(Number(n) || 0).toFixed(2)}`
+
+/**
+ * What a node has spent, against its budget when it has one: on every card,
+ * so where the money goes is read off the board, not added up from sessions.
+ */
+function moneyChip(spent, limit = null, estimated = false) {
+  const chip = el("span", "agent-wf-money", limit == null ? `${dollars(spent)} spent` : `${dollars(spent)} / ${dollars(limit)}`)
+  chip.title = limit == null ? "Spent so far" : `Spent so far, of a ${dollars(limit)} budget${estimated ? " (partly estimated)" : ""}`
+  if (limit != null && spent >= limit) chip.dataset.over = "true"
+  return chip
+}
 
 /** A goal longer than this is folded to a few lines. */
 const GOAL_FOLD = 240
@@ -148,7 +162,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const card = el("article", "agent-wf-step agent-wf-orchestrator")
     card.dataset.state = state
     const head = el("div", "agent-wf-step-head")
-    head.append(el("span", "agent-wf-chip", label), el("strong", null, (doc && sessionTitle(doc)) || "Orchestrator"))
+    head.append(el("span", "agent-wf-chip", label), el("strong", null, (doc && sessionTitle(doc)) || "Orchestrator"), moneyChip(doc?.usage?.cost ?? 0, null, doc?.usage?.costEstimated))
     card.append(head)
 
     if (doc) {
@@ -175,7 +189,11 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     card.dataset.state = state
 
     const head = el("div", "agent-wf-step-head")
-    head.append(el("span", "agent-wf-chip", STATE_LABEL[state] ?? state), el("strong", null, step.title))
+    const stepSession = step.sessionUrl ? sessionDoc(step.sessionUrl) : null
+    // A step's budget is its session's once it has one (lifted budgets land
+    // there first), else the one it will start with.
+    const limit = stepSession?.config?.budget ?? stepBudget(step)
+    head.append(el("span", "agent-wf-chip", STATE_LABEL[state] ?? state), el("strong", null, step.title), moneyChip(stepSession?.usage?.cost ?? 0, limit, stepSession?.usage?.costEstimated))
     card.append(head)
 
     const meta = el("div", "agent-wf-meta")

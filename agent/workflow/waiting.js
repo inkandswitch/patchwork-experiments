@@ -34,6 +34,11 @@ export function budgetWaiting(plan, planUrl, planHandle) {
 
 export function waitingIn(doc) {
   if (!doc) return []
+  // Stopped for its budget: waiting for someone to give it more (liftBudget),
+  // shown wherever a permission would be.
+  if (doc.stopped?.reason === "budget") {
+    return [{ kind: "budget", scope: "session", callId: `budget:${doc.stopped.at}`, spent: doc.stopped.spent, limit: doc.stopped.limit }]
+  }
   const approvals = callsAwaitingApproval(doc).map((call) => ({
     kind: "approval",
     callId: call.id,

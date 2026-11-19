@@ -16,6 +16,7 @@ import { handleStore } from "../store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
+import { liftBudget, liftAmounts } from "../session.js"
 
 /** Documents a grant never covers: the account and its module settings. */
 const sensitiveDocs = () =>
@@ -106,6 +107,7 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
   node.dataset.kind = item.kind
   const store = () => handleStore(item.handle, splice)
 
+  if (item.kind === "budget" && item.scope === "session") return renderLiftItem(item, { onOpen, showStep, splice })
   if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
   if (showStep) node.append(el("p", "agent-waiting-step", `${item.stepTitle}${item.planTitle ? ` · ${item.planTitle}` : ""}`))
 
@@ -225,8 +227,41 @@ export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) 
   return node
 }
 
-/** One line on a paused budget. */
-export function describeBudget({ spent, limit, notStarted }) {
+/**
+ * A session — a workflow step, or any session given a budget — that stopped
+ * for its budget: what it spent, and Give more, as a permission is answered.
+ */
+export function renderLiftItem(item, { onOpen = null, showStep = true, splice = null } = {}) {
+  const node = el("div", "agent-waiting-item")
+  node.dataset.kind = "budget"
+  if (showStep && item.stepTitle) node.append(el("p", "agent-waiting-step", `${item.stepTitle}${item.planTitle ? ` · ${item.planTitle}` : ""}`))
+  node.append(el("p", null, describeBudget(item)))
+  const actions = el("div", "cluster")
+  liftAmounts(item.limit).forEach((amount, i) => {
+    const give = el("button", null, `Give $${amount.toFixed(2)} more`)
+    if (i === 0) give.dataset.variant = "primary"
+    give.addEventListener("click", (event) => {
+      event.preventDefault()
+      handleStore(item.handle, splice).change((d) => liftBudget(d, amount))
+    })
+    actions.append(give)
+  })
+  if (onOpen && item.sessionUrl) {
+    const open = el("button", null, "Open session")
+    open.addEventListener("click", (event) => {
+      event.preventDefault()
+      onOpen(item.sessionUrl)
+    })
+    actions.append(open)
+  }
+  node.append(actions)
+  return node
+}
+
+/** One line on a spent budget: a session's, or a whole workflow's. */
+export function describeBudget({ spent, limit, notStarted, scope }) {
+  if (scope === "session") return `Spent its $${Number(limit).toFixed(2)} budget ($${Number(spent).toFixed(2)}) and stopped part-way. It carries on from there if it is given more.`
+
   return `Budget spent: $${Number(spent).toFixed(2)} of $${Number(limit).toFixed(2)}. ${notStarted} step${notStarted === 1 ? "" : "s"} waiting to start.`
 }
 

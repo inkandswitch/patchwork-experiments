@@ -13,7 +13,7 @@
  */
 
 import { initPlan, newStep, validateSteps, states, STATE, PLAN, STEP, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS, DEFAULT_STEP_BUDGETS, budgetOf, stepBudget } from "../workflow/plan.js"
-import { makeTurn, textBlock } from "../session.js"
+import { liftBudget } from "../session.js"
 import { drivePlanHere, getDriver, keptCounts } from "../workflow/driver.js"
 import { truncate } from "./format.js"
 import { answerQuestion } from "../loop.js"
@@ -320,16 +320,11 @@ export const workflowBudget = {
     let resumed = false
     if (step.sessionUrl) {
       const session = await repo.find(step.sessionUrl)
-      const doc = session.doc()
-      // More than it has already spent, whatever its budget said.
-      limit = Math.round((Math.max(stepBudget(step), doc?.usage?.cost ?? 0) + add) * 100) / 100
+      resumed = session.doc()?.stopped?.reason === "budget"
+      // More than it has already spent, whatever its budget said; a step
+      // stopped for its budget carries on (session.js liftBudget).
       session.change((d) => {
-        d.config.budget = limit
-        if (d.stopped?.reason === "budget") {
-          d.stopped = null
-          d.turns.push(makeTurn("user", [textBlock(`[Your budget is now $${limit.toFixed(2)}. Carry on from where you stopped.]`)]))
-          resumed = true
-        }
+        limit = liftBudget(d, add)
       })
     }
     planHandle.change((d) => {

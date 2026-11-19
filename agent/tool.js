@@ -23,7 +23,8 @@ import { heldElsewhere, needsWork } from "./runner.js"
 import { attachView } from "./runners.js"
 import { startTabRunner, accountContext } from "./tab-runner.js"
 import { formatCost } from "./session.js"
-import { watchWaiting, renderWaiting } from "./ui/waiting.js"
+import { watchWaiting, renderWaiting, renderWaitingItem } from "./ui/waiting.js"
+import { waitingIn } from "./workflow/waiting.js"
 import { markCitations } from "./ui/citations.js"
 import { workflowOf } from "./workflow/plan.js"
 import { connectWorkerRunner } from "./worker-client.js"
@@ -176,7 +177,9 @@ export function AgentTool(handle, element, options = {}) {
   let waitingShown = ""
   function renderStrip() {
     if (!waiting) return
-    const items = waiting.items()
+    // A workflow's own spent budget is answered inline in this conversation
+    // (renderTranscript's `inline`); the strip is for what steps wait on.
+    const items = waiting.items().filter((item) => !(item.kind === "budget" && item.scope !== "session"))
     // Rebuilt only when what is waiting changes, so an answer half-typed in the
     // strip is not wiped by every other edit to the documents behind it.
     const signature = items.map((item) => item.callId).join(",")
@@ -959,6 +962,13 @@ export function AgentTool(handle, element, options = {}) {
       alwaysAsks: (block) => asksEveryTime(toolsetRef?.get(block.tool), block.input),
       scopeOf: (block) => callScope(block, subjectUrl(), toolsetRef?.get(block.tool) ?? null),
       view: (block, result) => views.elementFor(block, result, uiState),
+      inline: () => [
+        ...waitingIn(doc).filter((item) => item.kind === "budget").map((item) => renderWaitingItem({ ...item, handle }, { showStep: false })),
+        ...(waiting?.items() ?? []).filter((item) => item.kind === "budget" && item.scope !== "session").map((item) => renderWaitingItem(item, { showStep: false, onOpen: onOpenDoc })),
+      ].map((card) => {
+        card.classList.add("agent-inline-waiting")
+        return card
+      }),
     })
     // Each citation's quote, looked up in the document it cites.
     markCitations(transcript, async (url) => (await repo.find(url))?.doc?.() ?? null)
