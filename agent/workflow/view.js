@@ -78,6 +78,9 @@ export function stages(steps) {
 /** "~anthropic/claude-opus-latest" -> "claude-opus-latest". */
 const shortModel = (model) => String(model ?? "").split("/").pop()
 
+/** A goal longer than this is folded to a few lines. */
+const GOAL_FOLD = 240
+
 const tokens = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 
 export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
@@ -181,12 +184,52 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     return card
   }
 
+  /**
+   * Rebuild the view, keeping the person's place.
+   *
+   * Built off the page and swapped in at once: emptying the root first
+   * collapsed it for a moment, the browser clamped the scroll to the top, and
+   * a person reading further down was thrown back up every time a step's
+   * session changed — several times a second while one streamed. A render
+   * also waits while something in the view is being typed into, so an answer
+   * half-written in a step's card is not wiped.
+   */
   function render() {
     if (disposed) return
+    if (typing()) {
+      held = true
+      return
+    }
+    held = false
+    const top = root.scrollTop
+    const left = root.querySelector(".agent-wf-board")?.scrollLeft ?? 0
+    const out = document.createDocumentFragment()
+    build(out)
+    root.replaceChildren(out)
+    root.scrollTop = top
+    const board = root.querySelector(".agent-wf-board")
+    if (board) board.scrollLeft = left
+  }
+
+  /** Is the person typing into this view? */
+  function typing() {
+    const active = root.ownerDocument?.activeElement
+    return !!active && root.contains(active) && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")
+  }
+  // A render held for typing happens when the typing stops.
+  let held = false
+  const onFocusOut = () => {
+    if (held) setTimeout(() => !typing() && render(), 0)
+  }
+  root.addEventListener("focusout", onFocusOut)
+
+  // The goal folds to a few lines; whether it is open survives re-renders.
+  let goalOpen = false
+
+  function build(out) {
     const plan = handle.doc()
-    root.replaceChildren()
     if (!plan?.steps) {
-      root.append(el("p", "agent-hint", "This workflow has no plan yet."))
+      out.append(el("p", "agent-hint", "This workflow has no plan yet."))
       return
     }
     for (const step of plan.steps) watch(step.sessionUrl)
@@ -200,7 +243,19 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const status = el("span", "agent-wf-chip", plan.paused ? "paused" : plan.status)
     status.dataset.state = plan.paused ? STATE.needsInput : plan.status === PLAN.running ? STATE.running : plan.status === PLAN.done ? STATE.done : STATE.cancelled
     titleRow.append(el("h2", null, plan.title), status)
-    header.append(titleRow, el("p", "agent-wf-goal", plan.goal))
+    const goal = el("p", "agent-wf-goal", plan.goal)
+    goal.dataset.open = String(goalOpen)
+    header.append(titleRow, goal)
+    // Long goals — a whole brief — pushed the board off the screen.
+    if (String(plan.goal ?? "").length > GOAL_FOLD) {
+      const toggle = el("button", "agent-wf-goal-toggle", goalOpen ? "Show less" : "Show the whole goal")
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault()
+        goalOpen = !goalOpen
+        render()
+      })
+      header.append(toggle)
+    }
 
     const budget = budgetOf(plan)
     const summary = el("p", "agent-wf-summary")
@@ -257,7 +312,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       banner.classList.add("agent-wf-paused")
       header.append(banner)
     }
-    root.append(header)
+    out.append(header)
 
     const board = el("div", "agent-wf-board")
     stages(plan.steps).forEach((stage, i) => {
@@ -266,7 +321,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       for (const step of stage) column.append(stepCard(step, derived.get(step.id)))
       board.append(column)
     })
-    root.append(board)
+    out.append(board)
   }
 
   // The plan itself changes rarely, and a test or a person acting on it wants

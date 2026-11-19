@@ -184,3 +184,60 @@ describe("the settings switch", () => {
     cleanup()
   })
 })
+
+describe("the workflow view keeps your place", () => {
+  it("re-rendering keeps where you scrolled to, down and across the board", async () => {
+    const { repo, plan } = await planWith([step("a"), step("b", { after: ["a"] })], { status: PLAN.stopped })
+    const { element, cleanup } = mount(plan, repo)
+    const root = element.querySelector(".agent-workflow")
+    root.scrollTop = 420
+    root.querySelector(".agent-wf-board").scrollLeft = 130
+    plan.change((d) => { d.steps[0].title = "Renamed" })
+    await tick()
+    expect(root.querySelector(".agent-wf-step strong").textContent).toBe("Renamed")
+    expect(root.scrollTop).toBe(420)
+    expect(root.querySelector(".agent-wf-board").scrollLeft).toBe(130)
+    cleanup()
+  })
+
+  it("waits while you type in it, and catches up when you stop", async () => {
+    const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped })
+    const { element, cleanup } = mount(plan, repo)
+    const root = element.querySelector(".agent-workflow")
+    // Something answerable in the view, being typed into.
+    const field = document.createElement("input")
+    root.querySelector(".agent-wf-step").append(field)
+    field.focus()
+    field.value = "half an ans"
+    plan.change((d) => { d.steps[0].title = "Changed meanwhile" })
+    await tick()
+    expect(root.contains(field)).toBe(true)
+    expect(field.value).toBe("half an ans")
+    field.blur()
+    await tick()
+    expect(root.querySelector(".agent-wf-step strong").textContent).toBe("Changed meanwhile")
+    cleanup()
+  })
+
+  it("folds a long goal so the board is in view, and remembers when you open it", async () => {
+    const brief = "Design a 100 kWh LiFePO4 battery for a boat. ".repeat(20)
+    const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped, goal: brief })
+    const { element, cleanup } = mount(plan, repo)
+    const goal = () => element.querySelector(".agent-wf-goal")
+    const toggle = () => element.querySelector(".agent-wf-goal-toggle")
+    expect([goal().dataset.open, toggle().textContent]).toEqual(["false", "Show the whole goal"])
+    toggle().click()
+    expect([goal().dataset.open, toggle().textContent]).toEqual(["true", "Show less"])
+    plan.change((d) => { d.steps[0].title = "Another render" })
+    await tick()
+    expect(goal().dataset.open).toBe("true")
+    cleanup()
+  })
+
+  it("leaves a short goal alone", async () => {
+    const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped })
+    const { element, cleanup } = mount(plan, repo)
+    expect(element.querySelector(".agent-wf-goal-toggle")).toBe(null)
+    cleanup()
+  })
+})

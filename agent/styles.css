@@ -1196,6 +1196,26 @@
   color: var(--agent-muted);
 }
 
+/* A long goal — a whole brief — folds to three lines, so the board is in view. */
+.agent-wf-goal[data-open="false"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.agent-wf-goal { white-space: pre-wrap; }
+.agent-wf-goal-toggle {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--agent-accent-text);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
 .agent-wf-header .cluster + .cluster,
 .agent-wf-summary + .cluster {
   margin-top: var(--studio-space-sm, 0.5rem);
