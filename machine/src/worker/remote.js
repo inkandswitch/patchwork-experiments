@@ -27,6 +27,7 @@ export class RemoteHost {
   tick = 0;
   frontier = 0;
   loading = true;
+  joining = true;
   seat = null;
 
   #worker;
@@ -207,7 +208,7 @@ export class RemoteHost {
 
   #update(s) {
     if (!s) return;
-    ({ tick: this.tick, frontier: this.frontier, target: this.#target, loading: this.loading, seat: this.seat, stats: this.stats } = s);
+    ({ tick: this.tick, frontier: this.frontier, target: this.#target, loading: this.loading, joining: this.joining, seat: this.seat, stats: this.stats } = s);
     this.status = { ...s.status, error: s.status.error ?? this.#error };
   }
 

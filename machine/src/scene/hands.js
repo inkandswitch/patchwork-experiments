@@ -34,6 +34,12 @@ export const NO_SEATS = "Its seats need the seats package";
  * verb's key does nothing, so the label is all a keyboard user gets.
  */
 const FULL = Object.freeze({ label: "Play (every port is taken)", disabled: true, title: "Every port is taken" });
+/**
+ * Play while the session's clock may be nobody's (Host.joining: a port held
+ * by a holder not heard from yet, perhaps one long gone): a moment, until
+ * that seat is known live or reaped.
+ */
+const JOINING = Object.freeze({ label: "Play (joining…)", disabled: true, title: "Joining the game: a moment" });
 
 /**
  * @param o.machines  Map id → machine, the extension's
@@ -115,8 +121,9 @@ export function hands({ machines, hold, sitting, seatsOf, prefer, notify, roster
     if (!e) return null;
     if (!e.m) return { label: "Play", disabled: true, title: e.note ?? "Starting…" };
     if (held?.id === id) return { label: "Put the pad down" };
+    if (seated(e) && seatedAt(e) !== null) return { label: "Pick up the pad" };
+    if (!e.m.host?.seat && e.m.host?.joining) return JOINING;
     if (seated(e)) {
-      if (seatedAt(e) !== null) return { label: "Pick up the pad" };
       const r = sitter();
       if (!r) return { label: "Play (needs the seats package)", disabled: true, title: NO_SEATS };
       const [port] = open(e, r);

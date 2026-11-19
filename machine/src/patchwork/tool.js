@@ -170,21 +170,24 @@ export default function MachineTool(handle, element) {
     let seatsKey = "";
     const drawSeats = () => {
       const h = holders();
-      const key = JSON.stringify([h, host.seat?.port, watching]);
+      const joining = !host.seat && host.joining; // a port taken now could start on a clock nobody is running (Host.joining)
+      const key = JSON.stringify([h, host.seat?.port, watching, joining]);
       if (key === seatsKey) return;
       seatsKey = key;
       seats.replaceChildren(
         ...h.map((x, port) => {
           const mineHere = host.seat?.port === port;
-          const label = mineHere ? `P${port + 1}: you — leave` : x ? `P${port + 1}: ${x.by}` : `P${port + 1}: play`;
+          const label = mineHere ? `P${port + 1}: you — leave` : x ? `P${port + 1}: ${x.by}` : joining ? `P${port + 1}: joining…` : `P${port + 1}: play`;
           return el("button", {
             "data-mine": mineHere, "data-taken": !!x && !mineHere, "data-watching": !host.seat && watching === port,
+            disabled: !x && !mineHere && joining,
             onclick: () => {
               if (mineHere) {
                 host.stand();
                 if (!holders().some(Boolean)) host.pause();
               } else if (x) watching = port;
               else {
+                if (host.joining) return; // drawn a frame ago; joining since (Host.sit refuses)
                 if (host.seat) host.stand();
                 // seated first, then the clock: the port is held when it starts
                 host.sit(port);

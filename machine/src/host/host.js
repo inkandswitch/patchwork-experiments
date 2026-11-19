@@ -90,7 +90,7 @@ export class Host {
   #clock;
   #timeline = null;
   #seated;
-  #seats = new Map(); // seat id -> { record, handle, inputs: Map<tick, bytes>, top, heard, ingested: Map<n, length> }
+  #seats = new Map(); // seat id -> { record, handle, inputs: Map<tick, bytes>, top, heard, spoke, ingested: Map<n, length> }
   #mine = null; // { id, port, from, until, handle, next, durable }
   // Confirmed checkpoint states are { tick, snapshot, seating }, seating the
   // seatingKey they were computed under: one whose key is no longer the
@@ -223,6 +223,20 @@ export class Host {
   get loading() {
     return this.#loading !== null;
   }
+  /**
+   * Still finding out whether the session's clock is anyone's: some port
+   * another peer holds isn't known to be live yet (silent below). A seat its
+   * holder left behind (a tab killed) keeps the clock running at wall time
+   * until it is reaped, so a seat taken now would start wherever that clock
+   * ran to, hours past anything played; sit() waits until it isn't.
+   */
+  get joining() {
+    if (this.#loading !== null || !this.#timeline) return true;
+    const now = this.#o.now();
+    const target = this.target();
+    for (const port of this.#seated) for (const s of port) if (s.until === Infinity && s.id !== this.#mine?.id && this.#silent(s, target, now) !== false) return true;
+    return false;
+  }
   /** The seat this peer holds: { id, port, from } or null. */
   get seat() {
     const m = this.#mine;
@@ -283,9 +297,14 @@ export class Host {
     if (this.#loading) return;
     const target = this.target();
     if (this.#mine) this.#sample(target);
-    this.#feed(Math.max(target, this.#timeline.now));
-    this.#outputs.skip(target);
-    this.#advance(target);
+    // Joining (no port of ours, another's not heard from yet): the clock may
+    // be a left-behind seat's, run on for hours. The engine waits where it is
+    // until that seat is known live or reaped, rather than stepping vacant
+    // ticks towards a time nobody played to (and seating us there).
+    const reach = !this.#mine && this.joining ? this.#timeline.now : target;
+    this.#feed(Math.max(reach, this.#timeline.now));
+    this.#outputs.skip(reach);
+    this.#advance(reach);
     this.#outputs.deliver(this.#timeline.now, this.#timeline.frontier);
     this.status.fault = this.#timeline.fault;
     this.#settleCheckpoints();
@@ -310,6 +329,7 @@ export class Host {
   /** Takes a free port, from a little ahead of now. */
   sit(port) {
     if (this.#mine) throw new Error("this peer already holds a port");
+    if (this.joining) throw new Error("still joining: a port another peer holds isn't heard from yet");
     const from = Math.max(this.target(), this.tick) + ticksOf(SECONDS.claim, this.#rate);
     const held = this.#seated[port];
     const last = held[held.length - 1];
@@ -441,7 +461,7 @@ export class Host {
   #seat(id) {
     let s = this.#seats.get(id);
     if (!s) {
-      s = { handle: null, finding: null, inputs: new Map(), top: -1, heard: this.#o.now(), ingested: new Map() };
+      s = { handle: null, finding: null, inputs: new Map(), top: -1, heard: this.#o.now(), spoke: false, ingested: new Map() };
       this.#seats.set(id, s);
     }
     return s;
@@ -509,6 +529,7 @@ export class Host {
     if (msg?.m === "in") {
       const seat = this.#seat(msg.seat);
       seat.heard = this.#o.now();
+      seat.spoke = true;
       for (const [t, b] of unpack(msg.at, msg.bytes, this.#width)) {
         if (!seat.inputs.has(t)) seat.inputs.set(t, b);
         if (t > seat.top) seat.top = t;
@@ -623,18 +644,35 @@ export class Host {
     }
   }
 
-  // A holder silent for SECONDS.reap loses the rest of its seat: it ends
-  // where its durable inputs end, as this peer sees them. Any peer may do it
-  // (the lead's call: anyone may move anything); two at once settle by
-  // last writer, the same everywhere.
+  // Whether the holder of seat `s` (another peer's, held) is silent: true,
+  // false (live), or null (not known yet). Heard from by message: silent once
+  // SECONDS.reap passes without another. Not yet: its durable inputs say,
+  // once its doc is read (silent if they end more than SECONDS.reap behind
+  // the clock: a live holder writes them every second while time runs);
+  // with neither, silent SECONDS.reap after this peer first saw the seat.
+  // A holder left behind hours ago is silent as soon as its doc is read,
+  // not SECONDS.reap after each newcomer arrives.
+  #silent(s, target, now) {
+    const seat = this.#seat(s.id);
+    const quiet = now - seat.heard >= this.#o.reap * 1000;
+    if (seat.spoke || quiet) return quiet;
+    if (!seat.handle) return null;
+    return target - Math.max(seat.top, s.from) > ticksOf(this.#o.reap, this.#rate);
+  }
+
+  // A silent holder (above) loses the rest of its seat: it ends where its
+  // durable inputs end, as this peer sees them. Any peer may do it (the
+  // lead's call: anyone may move anything); two at once settle by last
+  // writer, the same everywhere.
   #reap() {
     const now = this.#o.now();
+    const target = this.target();
     const doc = this.#handle.doc();
     for (const port of this.#seated)
       for (const s of port) {
         if (s.until !== Infinity || s.id === this.#mine?.id) continue;
         const seat = this.#seat(s.id);
-        if (now - seat.heard < this.#o.reap * 1000) continue;
+        if (this.#silent(s, target, now) !== true) continue;
         let end = s.from;
         const chunks = seat.handle?.doc()?.chunks ?? {};
         for (const [k, bytes] of Object.entries(chunks)) {
