@@ -26,15 +26,14 @@
  * while no runner was alive is lost. While no runner is alive, nothing is
  * listening; there is no runner outside the browser.
  *
- * Edits made in this tab while the session is mid-turn are taken to be the
- * agent's own and are not reported: it made them, and a watch that woke the
- * agent about its own edits would be a loop events.js could only slow down.
- * "Made in this tab" is by actor: the repo labels every change event "change",
- * whoever made it, but a change made through this page's handle carries the
- * page's actor id, and one that arrived from the daemon or another peer
- * carries theirs. A change event with any foreign change in it is reported.
- * Someone else editing the same document in the same tab at that moment is
- * missed — the one thing a watch can miss.
+ * The session's own edits are not reported: it made them, and a watch that
+ * woke the agent about its own edits would be a loop events.js could only slow
+ * down. Own is by heads (own-changes.js): every write a session's tools make
+ * is noted by the change hashes it added, and a change event whose added heads
+ * are all the session's own is skipped. Anyone else's — a person in this same
+ * tab, the daemon, another session — is reported. (A sync never carries a
+ * change this page already has, so a session's own write and someone else's
+ * never arrive in one event.)
  *
  * A runner catching up reports the net edits between two versions (a diff), so
  * a value that went queued → solving → failed while nobody listened is one
@@ -44,7 +43,7 @@
 import { hostImport } from "./host.js"
 import { preview } from "./format.js"
 import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "./history.js"
-import { STATUS } from "../session.js"
+import { addedHeads, isOwn } from "../own-changes.js"
 
 export const MAX_WATCHES = 8
 /** Edits kept for one wake; older ones are counted, not shown. */
@@ -53,15 +52,13 @@ export const KEPT_EDITS = 20
 export const PERSIST_MS = 5 * 60 * 1000
 const EDIT_PREVIEW = { maxString: 200, maxItems: 6, maxDepth: 3 }
 
-/**
- * Did this page make every change between `before` and `after`? By actor: a
- * change made through this page's handle carries the document's own actor id.
- */
-export function madeHere(automerge, before, after) {
+/** Did the session make this change event, every head it added? (own-changes.js) */
+export function ownEvent(automerge, payload, isOwnHash) {
+  const before = payload.patchInfo?.before
+  const after = payload.patchInfo?.after
   if (!before || !after) return false
-  const actor = automerge.getActorId(after)
-  const changes = automerge.getChanges(before, after)
-  return changes.length > 0 && changes.every((c) => automerge.decodeChange(c).actor === actor)
+  const added = addedHeads(automerge.getHeads(before), automerge.getHeads(after))
+  return added.length > 0 && added.every(isOwnHash)
 }
 
 /**
@@ -250,16 +247,33 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
     },
   })
 
+  // Change events are judged a moment after they fire, in order. An event fires
+  // inside the write that caused it, before the guarded repo has noted that
+  // write's hash as the session's own (scope.js); writes are synchronous, so
+  // by the next microtask it has. Each event's before/after are immutable
+  // snapshots, so judging it later judges exactly what happened.
+  const queue = []
   function onChange(payload) {
+    if (!watch.alive) return
+    queue.push(payload)
+    if (queue.length === 1) queueMicrotask(drain)
+  }
+
+  function drain() {
+    const payloads = queue.splice(0)
     if (!watch.alive) return
     if (!stillWanted()) return watch.close()
     watch.seenHeads = root.heads()
-    const mine = watches.doc()?.status === STATUS.running && madeHere(automerge, payload.patchInfo?.before, payload.patchInfo?.after)
-    if (!mine && take(editsOfChange(payload, spec.path))) {
-      channel.notify(render)
-    } else if (!watch.pending.length && now() - watch.persistedAt >= PERSIST_MS) {
-      persist()
+    let took = false
+    let own = false
+    for (const payload of payloads) {
+      if (ownEvent(automerge, payload, watches.isOwn)) own = true
+      else if (take(editsOfChange(payload, spec.path))) took = true
     }
+    if (took) channel.notify(render)
+    // The session's own edit is recorded as seen at once when nothing is
+    // waiting, so a runner that starts later does not report it back.
+    else if (!watch.pending.length && (own || now() - watch.persistedAt >= PERSIST_MS)) persist()
   }
 
   watched.on("change", onChange)
@@ -305,6 +319,7 @@ export function watchesWriter(store) {
   return {
     url: store.url,
     doc: () => store.doc(),
+    isOwn: (hash) => isOwn(store.url, hash),
     change: (fn) =>
       store.change((d) => {
         if (!d.watches) d.watches = {}
@@ -322,7 +337,7 @@ export const docWatch = {
   description: [
     "Be woken when a document — or one place inside it — changes, instead of reading it again every turn to see. Give `path` to watch only part of it (e.g. ['status'], or ['log']), and `match` (case-insensitive text or regex) to be woken only by edits whose new or removed value matches it — e.g. watch a simulation run's ['status'] with match 'failed|done', or its log with match 'error|fatal'.",
     "",
-    "When something matching happens you get an event (not a message from the person) listing the edits, each with its path, new value and the value it replaced. Wakes wait for things to settle and are rate-limited (at most one every 30 s, 12 an hour), so many edits arrive together. Your own edits made while you are working are not reported.",
+    "When something matching happens you get an event (not a message from the person) listing the edits, each with its path, new value and the value it replaced. Wakes wait for things to settle and are rate-limited (at most one every 30 s, 12 an hour), so many edits arrive together. Your own edits are not reported; everyone else's are, including the person's.",
     "",
     "A watch lasts until you stop it: doc_watch {stop: id}, or {stop: 'all'}. It survives reloads, and what changed while no tab had this session open is reported when one opens it. Every call answers with the watches open now. Stop a watch once its job is done — a finished run, a question answered.",
   ].join("\n"),

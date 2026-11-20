@@ -15,6 +15,10 @@ const { docWatch, restoreWatches, splitTarget, watchesWriter, KEPT_EDITS } = awa
 const { createEvents } = await import("./events.js")
 const { handleStore } = await import("./store.js")
 const { initSession, STATUS } = await import("./session.js")
+const { fullContext } = await import("./runner.js")
+
+/** Change events are judged a microtask after they fire (tools/watch.js). */
+const settled = () => new Promise((r) => setTimeout(r, 0))
 
 /** A run document as OpenFOAM writes one: big frozen inputs, a status, a log. */
 function runDoc(repo) {
@@ -94,15 +98,19 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     // told only about its own path.
     run.change((d) => { d.progress.push(1, 2, 3) })
     run.change((d) => { d.status = "solving" })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(0)
 
     run.change((d) => { d.status = "failed" })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(1)
+    await settled()
     const text = events.deliver(id)
     expect(text).toContain('set /status = "failed" (was "solving")')
     expect(text).toContain(`Still watching (${id})`)
 
     // Delivered once: nothing more to say until something new matches.
+    await settled()
     expect(events.deliver(id)).toBe("")
   })
 
@@ -114,8 +122,10 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     const id = idOf(await watch({ url: run.url, path: ["log"], match: "fatal" }, { repo, store, events }))
 
     run.change((d) => { A.splice(d, ["log"], 0, 0, "Time = 1\nsolving\n") })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(0)
     run.change((d) => { A.splice(d, ["log"], d.log.length, 0, "--> FOAM FATAL ERROR: cannot open mesh\n") })
+    await settled()
     expect(events.deliver(id)).toMatch(/insert \/log\/\d+ = ".*FOAM FATAL ERROR/)
   })
 
@@ -127,8 +137,10 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     const id = idOf(await watch({ url: run.url, path: ["error"] }, { repo, store, events }))
 
     run.change((d) => { d.status = "meshing" })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(0)
     run.change((d) => { d.error = "snappyHexMesh exited 1" })
+    await settled()
     expect(events.deliver(id)).toContain('set /error = "snappyHexMesh exited 1" (was null)')
   })
 
@@ -140,25 +152,61 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     const id = idOf(await watch({ url: doc.url, path: ["runs", 0] }, { repo, store, events }))
 
     doc.change((d) => { d.runs[0] = { status: "done", drag: 12.5 } })
+    await settled()
     const text = events.deliver(id)
     expect(text).toContain("/runs/0")
     expect(text).toContain('"done"')
   })
 
-  it("edits made here while the session is mid-turn are the agent's own and are not reported", async () => {
+  it("the session's own edits are not reported; a person's in the same tab are, even mid-turn", async () => {
     const repo = new Repo({ network: [] })
     const run = runDoc(repo)
     const store = sessionStore(repo)
     const events = recordingEvents()
-    const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo, store, events }))
-
+    // The repo a runner hands this session's tools: every write noted as its own.
+    const agentRepo = fullContext({ repo }, store).repo
+    const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo: agentRepo, store, events }))
     store.change((d) => { d.status = STATUS.running })
-    run.change((d) => { d.status = "cancelled" })
+
+    // The agent cancels the run, through its own tools' repo.
+    ;(await agentRepo.find(run.url)).change((d) => { d.status = "cancelled" })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(0)
 
-    store.change((d) => { d.status = STATUS.idle })
+    // The person, in the same tab, at the same moment, through the page's repo.
     run.change((d) => { d.status = "queued" })
+    await settled()
     expect(events.deliver(id)).toContain('set /status = "queued" (was "cancelled")')
+  })
+
+  it("another session's edits are someone else's", async () => {
+    const repo = new Repo({ network: [] })
+    const run = runDoc(repo)
+    const store = sessionStore(repo)
+    const other = sessionStore(repo)
+    const events = recordingEvents()
+    const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo: fullContext({ repo }, store).repo, store, events }))
+
+    ;(await fullContext({ repo }, other).repo.find(run.url)).change((d) => { d.status = "done" })
+    await settled()
+    expect(events.deliver(id)).toContain('set /status = "done"')
+  })
+
+  it("the session's own edit is recorded as seen, so a runner that starts later does not report it", async () => {
+    const repo = new Repo({ network: [] })
+    const run = runDoc(repo)
+    const store = sessionStore(repo)
+    const agentRepo = fullContext({ repo }, store).repo
+    const first = recordingEvents()
+    const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo: agentRepo, store, events: first }))
+    ;(await agentRepo.find(run.url)).change((d) => { d.status = "cancelled" })
+    await settled()
+    first.stopAll()
+
+    const second = recordingEvents()
+    await restoreWatches({ repo: agentRepo, events: second, store })
+    await settled()
+    expect(second.deliver(id)).toBe("")
   })
 
   it("edits from another peer are reported even mid-turn", async () => {
@@ -172,6 +220,7 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     // The daemon's edit, arriving as changes from elsewhere.
     const elsewhere = A.change(A.clone(run.doc()), (d) => { d.status = "failed" })
     run.update((d) => A.applyChanges(d, A.getChanges(run.doc(), elsewhere))[0])
+    await settled()
     expect(events.deliver(id)).toContain('set /status = "failed"')
   })
 
@@ -183,6 +232,7 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     const id = idOf(await watch({ url: doc.url, path: ["n"] }, { repo, store, events }))
 
     for (let i = 1; i <= KEPT_EDITS + 5; i++) doc.change((d) => { d.n = i })
+    await settled()
     const text = events.deliver(id)
     expect(text).toContain(`${KEPT_EDITS + 5} edits`)
     expect(text).toContain("(5 earlier edits not shown")
@@ -203,12 +253,14 @@ describe("doc_watch: a watch outlives its runner", () => {
     first.stopAll()
     run.change((d) => { d.status = "solving" })
     run.change((d) => { d.status = "failed" })
+    await settled()
     expect(first.channel(id).renders).toHaveLength(0)
 
     // A runner starts and opens the session's watches again.
     const second = recordingEvents()
     expect(await restoreWatches({ repo, events: second, store })).toEqual([{ id, ok: true }])
     // A catch-up is the net difference: queued → failed, one edit.
+    await settled()
     const text = second.deliver(id)
     expect(text).toContain('set /status = "failed" (was "queued")')
     expect(text).toContain("1 edit matching")
@@ -217,12 +269,14 @@ describe("doc_watch: a watch outlives its runner", () => {
     second.stopAll()
     const third = recordingEvents()
     await restoreWatches({ repo, events: third, store })
+    await settled()
     expect(third.deliver(id)).toBe("")
 
     // ...and is listening: new edits still arrive.
     run.change((d) => { d.status = "failed" })
     run.change((d) => { d.status = "solving" })
     run.change((d) => { d.status = "failed" })
+    await settled()
     expect(third.deliver(id)).toContain('set /status = "failed" (was "solving")')
   })
 
@@ -237,6 +291,7 @@ describe("doc_watch: a watch outlives its runner", () => {
 
     const second = recordingEvents()
     await restoreWatches({ repo, events: second, store })
+    await settled()
     expect(second.deliver(id)).toContain('set /status = "done" (was "queued")')
   })
 
@@ -249,9 +304,12 @@ describe("doc_watch: a watch outlives its runner", () => {
     const second = recordingEvents()
     await restoreWatches({ repo, events: second, store })
 
+    await settled()
     expect(first.channel(id).closed).toBe(true)
     run.change((d) => { d.status = "done" })
+    await settled()
     expect(first.channel(id).renders).toHaveLength(0)
+    await settled()
     expect(second.deliver(id)).toContain('"done"')
   })
 })
@@ -268,8 +326,10 @@ describe("doc_watch: stopping", () => {
     expect(result).toContain(`Stopped ${id}.`)
     expect(result).toContain("No watches.")
     expect(store.doc().watches[id]).toBeUndefined()
+    await settled()
     expect(events.channel(id).closed).toBe(true)
     run.change((d) => { d.status = "done" })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(0)
   })
 
@@ -282,7 +342,9 @@ describe("doc_watch: stopping", () => {
 
     store.change((d) => { delete d.watches[id] }) // as another tab's doc_watch {stop} writes it
     run.change((d) => { d.status = "done" })
+    await settled()
     expect(events.channel(id).renders).toHaveLength(0)
+    await settled()
     expect(events.channel(id).closed).toBe(true)
   })
 

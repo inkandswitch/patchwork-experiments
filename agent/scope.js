@@ -33,6 +33,7 @@
  * no plugin, ever holds the real repo or a writer of a session.
  */
 
+import { addedHeads } from "./own-changes.js"
 import * as A from "@automerge/automerge"
 import { interpretAsDocumentId, isValidAutomergeUrl, stringifyAutomergeUrl, decodeHeads, encodeHeads } from "@automerge/automerge-repo"
 import { repairDocUrl } from "./doc-urls.js"
@@ -396,8 +397,18 @@ const refuse = () => {
   throw new Error(KERNEL_REFUSAL)
 }
 
-/** Each guarded handle, by the handle beneath it, and back: one guard per handle, so a listener comes off the way it went on. */
-const guards = new WeakMap()
+/**
+ * Each guarded handle, by the handle beneath it, and back: one guard per handle
+ * for each session's record of its writes (or none), so a listener comes off
+ * the way it went on and a write is credited to the session that made it.
+ */
+const guardsByRecord = new WeakMap() // record -> WeakMap(handle -> guard)
+const unrecorded = new WeakMap()
+const guardsFor = (record) => {
+  if (!record) return unrecorded
+  if (!guardsByRecord.has(record)) guardsByRecord.set(record, new WeakMap())
+  return guardsByRecord.get(record)
+}
 const beneath = new WeakMap()
 const unguarded = (value) => beneath.get(value) ?? value
 
@@ -480,16 +491,26 @@ const WRITES = {
   },
 }
 
-function kernelHandle(handle) {
+/** The heads of the whole document behind a handle, or null if it has none now (deleted). */
+const headsOf = (handle) => {
+  try {
+    return A.getHeads(whole(handle))
+  } catch {
+    return null
+  }
+}
+
+function kernelHandle(handle, record = null) {
   if (!handle || typeof handle !== "object") return handle
   if (beneath.has(handle)) return handle
+  const guards = guardsFor(record)
   if (guards.has(handle)) return guards.get(handle)
 
   // A listener is called with the handle it was added to; it gets this one.
   const listeners = new WeakMap()
   const listenerFor = (fn) => {
     if (typeof fn !== "function") return fn
-    if (!listeners.has(fn)) listeners.set(fn, (payload) => fn(payload?.handle ? { ...payload, handle: kernelHandle(payload.handle) } : payload))
+    if (!listeners.has(fn)) listeners.set(fn, (payload) => fn(payload?.handle ? { ...payload, handle: kernelHandle(payload.handle, record) } : payload))
     return listeners.get(fn)
   }
   // The chainable methods return the handle itself; they return this one.
@@ -505,10 +526,16 @@ function kernelHandle(handle) {
           // neither a path in the URL nor a document that became a session
           // after it was opened gets past it.
           if (isKernel(whole(target))) refuse()
-          return WRITES[key](target, value, args)
+          // The changes this write made, for the session that made it
+          // (own-changes.js): the heads it added. Writes are synchronous, so
+          // nothing else lands in between.
+          const before = record ? headsOf(target) : null
+          const result = WRITES[key](target, value, args)
+          if (record) record(addedHeads(before, headsOf(target)))
+          return result
         }
       }
-      if (DERIVES.has(key)) return (...args) => kernelHandle(value.apply(target, args))
+      if (DERIVES.has(key)) return (...args) => kernelHandle(value.apply(target, args), record)
       if (LISTENS.has(key)) return (event, fn) => ours(value.call(target, event, listenerFor(fn)))
       // Bound to the handle itself: its fields are private, and a method
       // called on the proxy could not reach them. A guarded handle passed
@@ -521,7 +548,8 @@ function kernelHandle(handle) {
   return guard
 }
 
-const wrapped = (result) => (result && typeof result.then === "function" ? result.then(kernelHandle) : kernelHandle(result))
+const wrapped = (result, record) =>
+  result && typeof result.then === "function" ? result.then((h) => kernelHandle(h, record)) : kernelHandle(result, record)
 
 /**
  * The repo every other session's tools get: everything works, except that no
@@ -531,7 +559,7 @@ const wrapped = (result) => (result && typeof result.then === "function" ? resul
  * handle — its table of live handles, deleting by id, importing over an
  * existing id — are closed too.
  */
-export function kernelRepo(repo, { known = null } = {}) {
+export function kernelRepo(repo, { known = null, record = null } = {}) {
   if (!repo || typeof repo !== "object") return repo
   // A mistyped document URL is mended where that is safe, or refused with
   // the nearest the conversation has seen (doc-urls.js).
@@ -541,18 +569,18 @@ export function kernelRepo(repo, { known = null } = {}) {
       if (key === "handles" || key === "findWithProgress") return undefined
       const value = Reflect.get(target, key)
       if (typeof value !== "function") return value
-      if (key === "find" || key === "findClassic") return (...args) => wrapped(value.apply(target, mend(args)))
+      if (key === "find" || key === "findClassic") return (...args) => wrapped(value.apply(target, mend(args)), record)
       if (key === "create" || key === "create2") {
         return (initial) => {
           if (isKernel(initial)) refuse()
-          return wrapped(value.call(target, initial))
+          return wrapped(value.call(target, initial), record)
         }
       }
       if (key === "clone") {
         return (source) => {
           const original = unguarded(source)
           if (isKernel(whole(original))) refuse()
-          return kernelHandle(value.call(target, original))
+          return kernelHandle(value.call(target, original), record)
         }
       }
       if (key === "delete") {
@@ -567,7 +595,7 @@ export function kernelRepo(repo, { known = null } = {}) {
         return (binary, args) => {
           if (args?.docId) refuse()
           if (isKernel(A.load(binary))) refuse()
-          return kernelHandle(value.call(target, binary, args))
+          return kernelHandle(value.call(target, binary, args), record)
         }
       }
       return value.bind(target)

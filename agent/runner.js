@@ -39,6 +39,7 @@ import { run, OUTCOME } from "./loop.js"
 import { scopeOf, assertScopeAgrees, confine, scopedToolset, kernelRepo, ScopeRefusal } from "./scope.js"
 import { WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
 import { urlsIn } from "./doc-urls.js"
+import { rememberOwn } from "./own-changes.js"
 
 /**
  * The document URLs this conversation has seen — its subject, what it made,
@@ -463,7 +464,9 @@ export class SessionRunner {
  */
 export function fullContext(base, store) {
   const overrides = {
-    repo: kernelRepo(base.repo, { known: () => knownUrls(store) }),
+    // Every write through it is noted as this session's (own-changes.js), so
+    // a watch can tell the session's own edits from everyone else's.
+    repo: kernelRepo(base.repo, { known: () => knownUrls(store), record: (hashes) => rememberOwn(store?.url, hashes) }),
     session: { url: store?.url ?? null, doc: () => store.doc() },
     startStepSession: undefined,
   }
