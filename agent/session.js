@@ -326,6 +326,10 @@ export function resultBlock(callId, output, opts = {}) {
     // document — a fetched page, an imported file — so the transcript can link
     // to it and a person can open it instead of reading a wall of text.
     doc: opts.doc ?? null,
+    // { url, name, mimeType } when the tool handed the model a file to read
+    // itself (a PDF). A reference: the bytes are loaded for each request,
+    // so a datasheet never sits in this synced document.
+    file: opts.file ?? null,
     // The tool's own one-line description of what it did. Computed once, when
     // the call runs, because the transcript needs it on every render and the
     // raw output's first line is a poor substitute (a JSON result renders as
@@ -1145,6 +1149,16 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
     }
   }
   const keepImages = new Set(withImages.slice(-maxImages))
+  // Files handed to the model (a PDF a tool read, or one attached): only the
+  // newest goes with a request; each can be read again on demand.
+  const withFiles = []
+  for (const turn of turns) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type === "result" && block.file?.url && sent.get(block.callId) === block.id) withFiles.push(block.id)
+      if (block.type === "attachment" && isPdfAttachment(block)) withFiles.push(block.id)
+    }
+  }
+  const keepFiles = new Set(withFiles.slice(-MAX_FILES_IN_REQUEST))
   const keepWhole = resultsToKeepWhole(results, doc.config ?? {})
 
   // A summary supersedes everything up to the turn it names. Only the most
@@ -1190,6 +1204,10 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
           text: `[Attached: ${block.name ?? "a document"}${what ? ` (${what})` : ""} — ${block.url}${block.image && !shown ? "; an image, not re-sent — doc_read it to look again" : ""}]`,
         })
         if (shown) content.push({ type: "image", image: String(block.image) })
+        if (isPdfAttachment(block)) {
+          if (keepFiles.has(block.id)) content.push({ type: "file", url: block.url, name: block.name ?? "document.pdf", mimeType: "application/pdf" })
+          else content.push({ type: "text", text: "[That PDF is not re-sent: doc_read it to read it again.]" })
+        }
       } else if (block.type === "call") {
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
         // A denial is the call's RESULT, in the place the call happened.
@@ -1221,6 +1239,10 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
           // check or to JSON.stringify.
           output: keepWhole.has(block.id) ? String(block.output ?? "") : taperedResult(block),
           isError: !!block.isError,
+        }
+        if (block.file?.url) {
+          if (keepFiles.has(block.id)) part.file = { url: block.file.url, name: block.file.name ?? null, mimeType: block.file.mimeType ?? null }
+          else part.output = `${part.output}\n[The file is not re-sent: read it again if you need it.]`
         }
         if (block.image) {
           if (keepImages.has(block.id)) part.image = String(block.image)
@@ -1292,6 +1314,13 @@ export function liftBudget(doc, add) {
 export function liftAmounts(limit) {
   const base = Math.max(0.5, Number(limit) || 0)
   return [...new Set([base, base * 4].map((n) => Math.round(n * 100) / 100))]
+}
+
+/** How many files (PDFs) go with one request: the newest. */
+export const MAX_FILES_IN_REQUEST = 1
+
+function isPdfAttachment(block) {
+  return /application\/pdf/i.test(String(block.mimeType ?? "")) || /\.pdf$/i.test(String(block.name ?? ""))
 }
 
 // ---------------------------------------------------------------- lease

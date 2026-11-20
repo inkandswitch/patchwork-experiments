@@ -11,6 +11,7 @@
  */
 
 import { imageTypeOf, imageForModel, sniffImage } from "../images.js"
+import { fileKind } from "../files.js"
 
 const URLS_MIME = "text/x-patchwork-urls"
 const DND_MIME = "text/x-patchwork-dnd"
@@ -70,13 +71,16 @@ async function keepFile(repo, file) {
   const name = file.name || `pasted-${Date.now()}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`
   const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : ""
   const mimeType = file.type || sniffImage(bytes) || "application/octet-stream"
+  // Text is kept as text, as Patchwork's own files keep it, so it reads and
+  // edits as a file; everything else as its bytes.
+  const kind = fileKind({ name, extension, mimeType, content: bytes })
   const handle = await repo.create2()
   handle.change((d) => {
     d["@patchwork"] = { type: "file" }
     d.name = name
     d.extension = extension
     d.mimeType = mimeType
-    d.content = bytes
+    d.content = kind?.kind === "text" ? kind.text : bytes
   })
   return { url: handle.url, name, bytes, mimeType }
 }

@@ -57,14 +57,12 @@ describe("reading an image file shows the image", () => {
   it("doc_read of the file, or of its content, returns the image", async () => {
     for (const path of [undefined, ["content"]]) {
       const out = await docRead.execute({ url: "automerge:hull", path }, ctxWith(imageDoc()))
-      expect(out.text).toMatch(/image 'hull\.png' \(image\/png, .*\)\. The image is attached to this result\./)
+      expect(out.text).toMatch(/'hull\.png' \(image\/png, .*\)\. The image is attached to this result\./)
       expect(out.image.startsWith("data:image/png;base64,")).toBe(true)
     }
   })
 
-  it("other bytes, and other paths, read as before", async () => {
-    const pdf = await docRead.execute({ url: "automerge:paper" }, ctxWith({ name: "paper.pdf", mimeType: "application/pdf", content: PDF }))
-    expect(typeof pdf).toBe("string")
+  it("other paths read as before", async () => {
     const name = await docRead.execute({ url: "automerge:hull", path: ["name"] }, ctxWith(imageDoc()))
     expect(name).toMatch(/hull\.png/)
   })
@@ -277,5 +275,24 @@ describe("in the session view", () => {
     ])
     cleanup()
     localStorage.clear()
+  })
+})
+
+describe("a dropped text file", () => {
+  it("is kept as text, as Patchwork's own files are, so it reads and edits as a file", async () => {
+    const all = {}
+    const repo = {
+      async create2() {
+        const url = "automerge:csvfile"
+        all[url] = {}
+        return { url, change: (fn) => fn(all[url]), doc: () => all[url] }
+      },
+    }
+    const tray = attachmentTray({ repo })
+    tray.addFiles([new File(["part,qty\nLF280K,112\n"], "parts.csv", { type: "text/csv" })])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const [attachment] = tray.take()
+    expect(all[attachment.url]).toMatchObject({ name: "parts.csv", extension: "csv", mimeType: "text/csv", content: "part,qty\nLF280K,112\n" })
+    expect(attachment.image).toBe(null)
   })
 })

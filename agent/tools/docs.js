@@ -16,7 +16,8 @@ import { applyOps, OpError } from "./ops.js"
 import { previewJson, preview, shape, bytes } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
-import { imageTypeOf, imageForModel } from "../images.js"
+import { imageForModel } from "../images.js"
+import { fileKind, officeText, describeFile, MAX_FILE_BYTES } from "../files.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -72,7 +73,7 @@ export const docRead = {
   name: "Read document",
   target: { fields: ["url"], fallback: "subject" },
   description: [
-    "Read an automerge document, or one path inside it. Defaults to the document this session is attached to. An image file is shown to you as the image itself — read it, rather than opening it in a view to screenshot.",
+    "Read an automerge document, or one path inside it. Defaults to the document this session is attached to. A file is read in the form you can use: an image is shown to you, a PDF is handed to you whole, a Word, Excel or PowerPoint file gives its text, and text stored as bytes is decoded — read it, rather than opening it in a view to screenshot.",
     "",
     "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a file's content, say — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
   ].join("\n"),
@@ -118,15 +119,37 @@ export const docRead = {
 
     if (input.shapeOnly) return `${url} /${path.join("/")}\n${shape(value)}`
 
-    // An image file is shown as the image, not as a byte array: the model
-    // looks at it, instead of mounting the file in a view to screenshot it.
-    const imageType = imageTypeOf(doc)
-    if (imageType && (path.length === 0 || (path.length === 1 && path[0] === "content"))) {
-      const name = doc.name ?? doc.title ?? "image"
-      const about = `${url} — image '${name}' (${imageType}, ${bytes(doc.content.byteLength)})`
-      const shown = await imageForModel(doc.content, imageType)
-      if (!shown) return `${about}: too large to show from here.`
-      return { text: `${about}${shown.width ? `, shown at ${shown.width}×${shown.height}` : ""}. The image is attached to this result.`, image: shown.url }
+    // A file is read in the form a model can use (files.js), not as a count
+    // of bytes: an image shown, a PDF handed over whole, an Office file's
+    // text, text that arrived as bytes decoded.
+    const wholeFile = path.length === 0 || (path.length === 1 && path[0] === "content")
+    const kind = wholeFile && doc.content instanceof Uint8Array ? fileKind(doc) : null
+    if (kind) {
+      const about = `${url} — ${describeFile(doc, kind)}`
+      if (kind.kind === "image") {
+        const shown = await imageForModel(doc.content, kind.type)
+        if (!shown) return `${about}: an image too large to show from here.`
+        return { text: `${about}${shown.width ? `, shown at ${shown.width}×${shown.height}` : ""}. The image is attached to this result.`, image: shown.url }
+      }
+      if (kind.kind === "pdf") {
+        if (doc.content.byteLength > MAX_FILE_BYTES) return `${about}: a PDF too large to hand over (more than ${MAX_FILE_BYTES / 1024 / 1024} MB).`
+        return { text: `${about}. The PDF itself is attached to this result: read it, figures and tables included.`, file: { url, name: doc.name ?? "document.pdf", mimeType: "application/pdf" } }
+      }
+      let text = kind.kind === "text" ? kind.text : null
+      if (kind.kind === "office") {
+        try {
+          text = await officeText(doc.content, kind.format)
+        } catch (err) {
+          return `${about}: its text could not be read (${err.message}).`
+        }
+      }
+      if (text != null) {
+        const from = kind.kind === "office" ? `the text of this ${kind.format} file` : "its text"
+        if (input.offset != null || input.limit != null) return readRange(text, input, url, ["content"])
+        const shown = text.slice(0, RANGE_LIMIT)
+        return `${about} — ${from}, ${text.length} characters${text.length > shown.length ? `; the first ${shown.length} below (read on with offset: ${shown.length})` : ""}.\n\n${shown}`
+      }
+      return `${previewJson(value)}\n\n${about}: binary${doc.mimeType ? "" : " of an unknown kind"}, not something readable here as text, an image or a document.`
     }
 
     // A range over a string, so a long one can be read in full rather than

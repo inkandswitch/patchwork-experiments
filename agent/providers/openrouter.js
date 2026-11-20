@@ -94,11 +94,13 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
     const results = []
 
     const images = []
+    const files = []
     for (const part of msg.content ?? []) {
       if (part.type === "text") text.push(part.text)
       else if (part.type === "call") calls.push(part)
       else if (part.type === "result") results.push(part)
       else if (part.type === "image" && !dropImages) images.push(part.image)
+      else if (part.type === "file" && part.data) files.push(part)
     }
 
     if (msg.role === "assistant" || calls.length) {
@@ -112,11 +114,15 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
       }
       // An assistant message with neither text nor calls is not useful to send.
       if (assistant.content || assistant.tool_calls) out.push(assistant)
-    } else if (images.length && msg.role !== "system") {
-      // What a person attached: their words, then each image.
+    } else if ((images.length || files.length) && msg.role !== "system") {
+      // What a person attached: their words, then each image and file.
       out.push({
         role: "user",
-        content: [...(text.length ? [{ type: "text", text: text.join("") }] : []), ...images.map((url) => ({ type: "image_url", image_url: { url } }))],
+        content: [
+          ...(text.length ? [{ type: "text", text: text.join("") }] : []),
+          ...images.map((url) => ({ type: "image_url", image_url: { url } })),
+          ...files.map(fileContent),
+        ],
       })
     } else if (text.length) {
       out.push({ role: msg.role === "system" ? "system" : "user", content: text.join("") })
@@ -133,6 +139,11 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
       // user message. This is the standard workaround and every vision model
       // reads it the same way — and a model that is not one rejects the whole
       // request, which is why this can be turned off.
+      // A file a tool handed over (a PDF) follows as its own user message, as
+      // an image does: a tool message carries text only.
+      if (r.file?.data) {
+        out.push({ role: "user", content: [{ type: "text", text: "File from the tool call above:" }, fileContent(r.file)] })
+      }
       if (r.image && !dropImages) {
         out.push({
           role: "user",
@@ -146,6 +157,11 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
   }
 
   return out
+}
+
+/** A file as OpenRouter takes it: a name and the bytes as a data URL. */
+function fileContent(file) {
+  return { type: "file", file: { filename: file.name ?? "document.pdf", file_data: file.data } }
 }
 
 /** Neutral tool definitions -> OpenAI function schemas. */

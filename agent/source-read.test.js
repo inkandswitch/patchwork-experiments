@@ -191,9 +191,11 @@ describe("source_read", () => {
     expect(out).toContain("Outline: 0 # Title · 6000 ## 3 Model Architecture")
   })
 
-  it("will not pretend bytes are text", async () => {
+  it("hands over a PDF kept with no text beside it, as the PDF itself", async () => {
     const { ctx, pdf } = world()
-    expect(await sourceRead.execute({ source: pdf }, ctx)).toBe("This is binary (PDF, 12 B) with no text kept; open it in Patchwork.")
+    const out = await sourceRead.execute({ source: pdf }, ctx)
+    expect(out.text).toMatch(/a PDF \(12 B\) with no text kept beside it; the PDF itself is attached to this result/)
+    expect(out.file).toMatchObject({ mimeType: "application/pdf" })
   })
 
   it("reads the same document however its URL is spelled", async () => {

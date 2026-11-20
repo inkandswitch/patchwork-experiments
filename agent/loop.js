@@ -50,6 +50,7 @@ import {
 } from "./session.js"
 import { batchedAppender } from "./store.js"
 import { runTool } from "./tools/index.js"
+import { withFileData } from "./files.js"
 import { notesSection } from "./tools/notes.js"
 import { sessionKey } from "./providers/openrouter.js"
 
@@ -469,8 +470,11 @@ async function maybeCompact(settings) {
 async function streamTurn(opts) {
   const { store, provider, toolset, signal, system, flushMs = 120, emit, stillOurs } = opts
 
+  const built = toRequest(store.doc(), { system })
+  // Files the request refers to are loaded now, not kept in the session.
+  built.messages = await withFileData(built.messages, opts.ctx?.repo ?? null)
   const request = {
-    ...toRequest(store.doc(), { system }),
+    ...built,
     tools: toolset.schemas,
     model: store.doc().config?.model,
     params: { ...(store.doc().config?.params ?? {}), ...(opts.paramsOverride ?? {}) },
@@ -688,6 +692,7 @@ async function executeCalls(opts) {
         summary: outcome.summary,
         image: outcome.image ?? null,
         doc: outcome.doc ?? null,
+        file: outcome.file ?? null,
       })
     )
 

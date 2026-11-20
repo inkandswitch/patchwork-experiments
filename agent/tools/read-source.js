@@ -22,7 +22,8 @@ import { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringif
 import { repairDocUrl } from "../doc-urls.js"
 import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
 import { bytes } from "./format.js"
-import { imageTypeOf, imageForModel } from "../images.js"
+import { imageForModel } from "../images.js"
+import { fileKind, officeText, MAX_FILE_BYTES } from "../files.js"
 
 export const READ_LIMIT = 8000
 export const MAX_READ = 20000
@@ -128,13 +129,21 @@ export const sourceRead = {
     const doc = handle.doc()
     const url = handle.url
     const name = titleOf(doc)
-    const text = readable(doc)
+    let text = readable(doc)
     if (text == null) {
-      const imageType = imageTypeOf(doc)
-      if (imageType) {
-        const shown = await imageForModel(doc.content, imageType)
-        if (shown) return { text: `'${name}' (${url}) — an image (${imageType}, ${bytes(doc.content.byteLength)}), attached to this result.`, image: shown.url }
+      // What was kept with no text beside it: read it as what it is (files.js).
+      const kind = fileKind(doc)
+      if (kind?.kind === "image") {
+        const shown = await imageForModel(doc.content, kind.type)
+        if (shown) return { text: `'${name}' (${url}) — an image (${kind.type}, ${bytes(doc.content.byteLength)}), attached to this result.`, image: shown.url }
       }
+      if (kind?.kind === "pdf" && doc.content.byteLength <= MAX_FILE_BYTES) {
+        return { text: `'${name}' (${url}) — a PDF (${bytes(doc.content.byteLength)}) with no text kept beside it; the PDF itself is attached to this result.`, file: { url, name: doc.name ?? "document.pdf", mimeType: "application/pdf" } }
+      }
+      if (kind?.kind === "office") text = await officeText(doc.content, kind.format).catch(() => null)
+      if (kind?.kind === "text") text = kind.text
+    }
+    if (text == null) {
       const content = doc.content
       const kind = (content && formatOf(content)) ?? doc.mimeType ?? "binary"
       const size = content?.byteLength != null ? `, ${bytes(content.byteLength)}` : ""
