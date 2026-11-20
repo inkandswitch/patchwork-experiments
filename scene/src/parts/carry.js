@@ -461,6 +461,7 @@ export default {
         id: "snap",
         edit: true,
         name: "Snap",
+        group: "settings",
         show: ["toolbar"],
         state(target, { scene, view }) {
           if (target != null) return null;

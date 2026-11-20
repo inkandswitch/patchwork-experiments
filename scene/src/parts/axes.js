@@ -203,6 +203,8 @@ export default {
           id: "axes",
           edit: true,
           name: "Axes",
+          group: "view",
+          icon: "axes",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show the world axes" } : null),
           run: () => api.use("prefs")?.set("axes", !shown()),

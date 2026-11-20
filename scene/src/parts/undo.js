@@ -44,6 +44,8 @@ function create(api) {
   const command = (which, name) => ({
     id: which,
     name,
+    group: "history",
+    icon: which,
     edit: true,
     show: ["toolbar"],
     state: (target) => {

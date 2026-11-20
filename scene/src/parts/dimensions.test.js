@@ -226,10 +226,30 @@ describe("scene.dimensions", () => {
     expect(s.doc().dimensions.d1).toBeUndefined();
     expect(selectedDim()).toBeNull();
     expect(p.rows()).toEqual([]);
-    expect(p.host.querySelector(".empty-row").textContent).toBe("Use Measure to add one.");
+    expect(p.host.querySelector(".empty-row").textContent).toBe("Measure adds one: click two points.");
     expect(labels()).toEqual([]);
     p.handle.dispose();
     expect(p.host.querySelector(".dimension-list")).toBeNull();
+  });
+
+  it("Measure is the panel's (PLANS.md §5): its button holds and puts down scene.measure's tool, pressed while held; with no Measure installed, no button", async () => {
+    const { default: measure } = await import("./measure.js");
+    await mount({ extensions: [{ meta: { id: "scene.measure" }, module: measure }] });
+    const p = panel();
+    await settle();
+    const button = () => p.host.querySelector(".measure-toggle");
+    expect([button().hidden, button().getAttribute("aria-pressed")]).toEqual([false, "false"]);
+    button().click();
+    await settle();
+    expect([s.local.get().held.map((t) => t.command), button().getAttribute("aria-pressed")]).toEqual([["measure"], "true"]);
+    button().click();
+    await settle();
+    expect([s.local.get().held, button().getAttribute("aria-pressed")]).toEqual([[], "false"]);
+    s.unmount();
+    await mount();
+    const q = panel();
+    await settle();
+    expect(q.host.querySelector(".measure-toggle").hidden).toBe(true);
   });
 
   it("the tab's update works even before the extension's own", async () => {

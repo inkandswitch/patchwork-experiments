@@ -17,9 +17,9 @@
 // scene's representation of it: Visible, Wireframe, Locked, Colour (+ Auto),
 // Opacity, In group (the groups as a tree), Attached to (objects), Position
 // (display units, the pref "units"), Rotation (°), Scale, its Layers and its
-// Behaviours (below); then the other commands that apply to it (every
-// running extension's, shown on "inspector" or on every surface; an Open is
-// the header's) as buttons: this extension's Frame, Group and Ungroup first.
+// Behaviours (below). Its other verbs (Frame, Group, Ungroup, Extract, Remove,
+// a package's) are the context menu's, each with its key or shortcut, not
+// buttons here (PLANS.md §5); its Open is the header's.
 // "Built from": its source as a row (Source, File or Linked scene: Open
 // Editor and Dock); for a link, a Link row: what it is here (live, shown
 // again, fixed at a version, closed and why); the Version row (Latest, or
@@ -73,7 +73,7 @@ import { openFor, runOpen } from "./open.js";
 import { drawerTab } from "./tab.js";
 import { LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
-import { DEG, attachOptions, buildSummary, commandsFor, commandsKey, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
+import { DEG, attachOptions, buildSummary, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { editor } from "./editor.js";
 import { createOutline } from "./outline.js";
 import { atFocus } from "./per-focus.js";
@@ -694,7 +694,6 @@ function create(api) {
 
     const behaviours = behavioursView(id, "object");
     const layers = group ? null : layersView(id);
-    const commands = el("div", { class: "cluster commands" });
     const content = contentKind(here.loadState?.(id));
     const builtFrom = docRowsView((d) => BUILT_FROM.has(d.id));
     const notes = docRowsView((d) => !BUILT_FROM.has(d.id) && d.id !== BUILD_DOC);
@@ -743,7 +742,6 @@ function create(api) {
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Scale"), el("div", { class: "triple" }, scale.row)),
       layers?.section,
       behaviours.section,
-      commands,
       group ? null : heading("Built from", "What it shows, and how it's made"),
       builtFrom.section,
       linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Link"), linkRow.text) : null,
@@ -777,8 +775,6 @@ function create(api) {
       posUnit,
       behaviours,
       layers,
-      commands,
-      commandsKey: null,
       openBtn,
       builtFrom,
       notes,
@@ -884,7 +880,6 @@ function create(api) {
 
     view.layers?.update(o);
     view.behaviours.update(scene);
-    fillCommands(scene, local);
     fillStatus(scene, local, o);
     fillVersion(o);
     fillLink();
@@ -938,71 +933,6 @@ function create(api) {
     v.fix.disabled = !point || atKey(point) === key;
     v.fix.title = !point ? notYet(view.id) : "Keep showing exactly what it shows now, whatever later edits to the source do";
     v.follow.disabled = !at;
-  }
-
-  // what's ticked of each command's options, for the selection shown (a new selection starts with none ticked)
-  let ticks = new Map();
-  let ticksFor = null;
-  function fillCommands(scene, local) {
-    // (an Open is the header's button, not one of these)
-    const list = commandsFor(api.collect("commands"), view.id, here.context(null), ID).filter((c) => c.command.open !== true);
-    const key = commandsKey(list);
-    if (key === view.commandsKey) return;
-    view.commandsKey = key;
-    const target = view.id;
-    if (ticksFor !== target) {
-      ticks = new Map();
-      ticksFor = target;
-    }
-    // a disabled command's title is why it can't be used: written out after
-    // the control, since a disabled button's tooltip is easy to never see
-    const reasonOf = (state) => (state.disabled && state.title ? el("span", { class: "hint command-reason" }, String(state.title)) : null);
-    const buttons = list.flatMap(({ ext, command, state }) => {
-      const title = state.title ?? "";
-      const reason = reasonOf(state);
-      if (Array.isArray(state.choices)) {
-        const sel = el("select", { class: "command-choice", "aria-label": command.name ?? command.id, title, disabled: !!state.disabled, dataset: { ext, command: command.id } });
-        state.choices.forEach((c, i) => sel.append(el("option", { value: String(i) }, c?.label ?? String(c?.value ?? ""))));
-        const at = state.choices.findIndex((c) => c?.value === state.value);
-        if (at >= 0) sel.value = String(at);
-        sel.addEventListener("change", () => api.run({ ext, command: command.id, target, value: state.choices[Number(sel.value)]?.value }));
-        return [el("label", { class: "toggle" }, `${command.name ?? command.id} `, sel), reason];
-      }
-      // a command run with a set of its options (EDITOR.md "A command"): a checkbox each, none ticked, then the button
-      const options = Array.isArray(state.options) && state.options.length && !state.disabled ? state.options : null;
-      const tickKey = `${ext}|${command.id}|${target}`;
-      if (options && !ticks.has(tickKey)) ticks.set(tickKey, new Set());
-      const ticked = options ? ticks.get(tickKey) : null;
-      const boxes = options
-        ? el(
-            "span",
-            { class: "command-options" },
-            options.map((o) => {
-              const box = el("input", { type: "checkbox", checked: ticked.has(o.value), dataset: { option: String(o.value) } });
-              box.addEventListener("change", () => (box.checked ? ticked.add(o.value) : ticked.delete(o.value)));
-              return el("label", { class: "toggle" }, box, ` ${o.label ?? String(o.value)}`);
-            }),
-          )
-        : null;
-      const toggle = state.checked != null;
-      const button = el(
-        "button",
-        {
-          type: "button",
-          class: `button${command.id === "remove" ? " danger" : ""}`,
-          title,
-          disabled: !!state.disabled,
-          "aria-pressed": toggle ? String(!!state.checked) : null,
-          dataset: { ext, command: command.id },
-          onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : options ? { ext, command: command.id, target, value: options.map((o) => o.value).filter((v) => ticked.has(v)) } : { ext, command: command.id, target }),
-        },
-        // the verb's name for this target (EDITOR.md "A command"), as the menu, toolbar and use prompt show it
-        String(state.label ?? command.name ?? command.id),
-      );
-      return options ? [el("span", { class: "command-with-options" }, button, boxes), reason] : [button, reason];
-    }).filter(Boolean);
-    view.commands.replaceChildren(...buttons);
-    view.commands.hidden = !buttons.length;
   }
 
   function fillStatus(scene, local, o) {
@@ -1088,7 +1018,7 @@ function create(api) {
     {
       id: "frame",
       name: "Frame",
-      show: ["inspector", "menu"],
+      show: ["menu"],
       state: (target, { scene }) => (objectOf(target, scene) ? { title: "Fit the view to this" } : null),
       run: (target) => {
         const o = objectOf(target, here.scene());
@@ -1100,7 +1030,8 @@ function create(api) {
       id: "group",
       edit: true,
       name: "Group",
-      show: ["inspector", "menu"],
+      shortcut: "Mod+G",
+      show: ["menu"],
       state: (target, { scene }) => {
         const o = objectOf(target, scene);
         return o && !isGroup(o) ? { title: "Put this object in a new group" } : null;
@@ -1114,7 +1045,8 @@ function create(api) {
       id: "ungroup",
       edit: true,
       name: "Ungroup",
-      show: ["inspector", "menu"],
+      shortcut: "Shift+Mod+G",
+      show: ["menu"],
       state: (target, { scene }) => (isGroup(objectOf(target, scene)) ? { title: "Move what's in this group up a level, where it is, and remove the group" } : null),
       run: (target) => {
         const plan = apply(here.ops.ungroup(here.scene(), target), "Ungroup");
@@ -1186,6 +1118,8 @@ function create(api) {
   commands.push({
     id: "inspector",
     name: "Inspector",
+    group: "panels",
+    icon: "inspector",
     edit: true,
     show: ["toolbar"],
     state: (target) => (target == null ? { checked: tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),

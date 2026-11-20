@@ -67,8 +67,10 @@ async function mount({ objects, extensions = [], doc = {}, repo } = {}) {
 /** The Inspector pane's fields, below its tree (open: the viewer asked for it) */
 const body = () => s.instance("scene.inspector").tab.body.querySelector(".inspector-body");
 const $ = (sel) => body().querySelector(sel);
-const buttons = () => [...body().querySelectorAll(".commands button")];
-const button = (text) => buttons().find((b) => b.textContent === text);
+/** Run one of the inspector's own commands on a target, as the menu does */
+const run = (command, target) => s.api("scene.inspector").run({ ext: "scene.inspector", command, target });
+/** The inspector's commands that apply to a target, by name (the menu's, now: no buttons here) */
+const applies = (command, target) => !!s.instance("scene.inspector").commands.find((c) => c.id === command)?.state(target, { scene: s.facet("scene.inspector").scene() });
 async function select(id) {
   s.local.swap((m) => ({ ...m, selected: id }));
   await settle();
@@ -289,8 +291,8 @@ describe("scene.inspector: the panel", () => {
     expect($(".wireframe")).toBeNull();
     expect($(".color")).toBeNull();
     expect($(".opacity").value).toBe("0.5");
-    expect(button("Group")).toBeUndefined();
-    button("Ungroup").click();
+    expect(applies("group", "body")).toBe(false);
+    run("ungroup", "body");
     const o = s.doc().objects;
     expect(o.body).toBeUndefined();
     expect(o.hull.group).toBe("vessel");
@@ -303,8 +305,8 @@ describe("scene.inspector: the panel", () => {
   it("Group wraps the object in a new group, filed where it was, and selects it", async () => {
     await mount({ objects: { g: group("G"), a: object({ name: "A", group: "g" }) } });
     await select("a");
-    expect(button("Ungroup")).toBeUndefined();
-    button("Group").click();
+    expect(applies("ungroup", "a")).toBe(false);
+    run("group", "a");
     const objects = s.doc().objects;
     const gid = objects.a.group;
     expect(gid).not.toBe("g");
@@ -320,79 +322,16 @@ describe("scene.inspector: the panel", () => {
     const framed = [];
     api.box = () => ({ min: [0, 0, 0], max: [1, 1, 1] });
     vi.spyOn(s.debug.viewport, "frame").mockImplementation((b) => framed.push(b));
-    button("Frame").click();
+    run("frame", "a");
     expect(framed).toEqual([{ min: [0, 0, 0], max: [1, 1, 1] }]);
   });
 
-  it("shows other extensions' commands for the selection (inspector or every surface), and runs them on it", async () => {
-    const log = [];
-    const ext = {
-      meta: { id: "t.poke" },
-      module: {
-        create: () => ({
-          commands: [
-            { id: "poke", name: "Poke", state: (t) => (t === "a" ? { title: "Poke it" } : null), run: (t) => log.push(["poke", t]) },
-            { id: "menuonly", name: "Menu only", show: ["menu"], state: (t) => (t ? {} : null), run: () => log.push("menu") },
-            { id: "scene", name: "Scene only", run: () => log.push("scene") },
-            { id: "pin", name: "Pin", state: (t) => (t ? { checked: false } : null), run: (t, v) => log.push(["pin", t, v]) },
-            { id: "off", name: "Off", show: ["inspector"], state: (t) => (t ? { disabled: true } : null), run: () => log.push("off") },
-          ],
-        }),
-      },
-    };
-    await mount({ objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, extensions: [ext] });
-    await select("a");
-    expect(buttons().map((b) => b.textContent)).toEqual(["Frame", "Group", "Poke", "Pin", "Off"]);
-    button("Poke").click();
-    button("Pin").click();
-    button("Off").click();
-    expect(log).toEqual([["poke", "a"], ["pin", "a", true]]);
-    expect(button("Pin").getAttribute("aria-pressed")).toBe("false");
-    expect(button("Off").disabled).toBe(true);
-    await select("b");
-    expect(button("Poke")).toBeUndefined();
-  });
-
-  // label present/absent × enabled/disabled × title (the reason) present/absent: all eight
-  it("a command's button is named by its state's label, and a disabled one says why", async () => {
-    const cases = [];
-    for (const label of [undefined, "Done"]) for (const disabled of [false, true]) for (const title of [undefined, "Because"]) cases.push({ label, disabled, title });
-    const state = (c) => Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined && v !== false));
-    const ext = {
-      meta: { id: "t.states" },
-      module: { create: () => ({ commands: cases.map((c, i) => ({ id: `c${i}`, name: `Name ${i}`, show: ["inspector"], state: (t) => (t ? state(c) : null), run() {} })) }) },
-    };
+  it("has no command buttons: the selection's verbs are the menu's (PLANS.md §5); its Open is the header's", async () => {
+    const ext = { meta: { id: "t.poke" }, module: { create: () => ({ commands: [{ id: "poke", name: "Poke", state: (t) => (t === "a" ? {} : null), run: () => {} }] }) } };
     await mount({ objects: { a: object({ name: "A" }) }, extensions: [ext] });
     await select("a");
-    cases.forEach((c, i) => {
-      const b = $(`.commands button[data-command="c${i}"]`);
-      expect(b.textContent).toBe(c.label ?? `Name ${i}`);
-      expect(b.disabled).toBe(c.disabled);
-      expect(b.title).toBe(c.title ?? "");
-      const after = b.nextElementSibling;
-      const reason = after?.classList.contains("command-reason") ? after.textContent : null;
-      expect(reason).toBe(c.disabled && c.title ? c.title : null);
-    });
-    expect(body().querySelectorAll(".command-reason").length).toBe(2);
-  });
-
-  it("the buttons follow a state's label and reason as they change", async () => {
-    let st = { label: "Shape hull" };
-    const ext = { meta: { id: "t.shape" }, module: { create: () => ({ commands: [{ id: "shape", name: "Shape hull", show: ["inspector"], state: (t) => (t ? st : null), run() {} }] }) } };
-    await mount({ objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, extensions: [ext] });
-    await select("a");
-    const shape = () => $('.commands button[data-command="shape"]');
-    expect(shape().textContent).toBe("Shape hull");
-    st = { label: "Done shaping" };
-    await select("b");
-    expect(shape().textContent).toBe("Done shaping");
-    st = { disabled: true, title: "Follow latest to shape" };
-    await select("a");
-    expect(shape().textContent).toBe("Shape hull");
-    expect($(".command-reason").textContent).toBe("Follow latest to shape");
-    st = {};
-    await select("b");
-    expect($(".command-reason")).toBeNull();
+    expect(body().querySelector(".commands")).toBeNull();
+    expect([...body().querySelectorAll("button[data-command]")].map((b) => b.dataset.command)).toEqual([]);
   });
 
   it("a displayed name is shown read-only, never written back", async () => {
@@ -490,7 +429,7 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
     for (const target of ["built", "file", "link", "boat", null]) {
       await select(target);
       // (the commands and the Open are other extensions' verbs, run through api.run, and are their own tests)
-      const others = [...body().querySelectorAll("button")].filter((b) => !b.closest(".commands") && !b.classList.contains("doc-open") && !b.classList.contains("open-thing"));
+      const others = [...body().querySelectorAll("button")].filter((b) => !b.classList.contains("doc-open") && !b.classList.contains("open-thing"));
       for (const b of others) if (b.isConnected && !b.disabled) b.click();
       await settle();
     }
@@ -616,7 +555,7 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
     expect([render.doc().params, render.doc().pinned]).toEqual([{}, true]);
   });
 
-  it("the header's Open is the selection's (./open.js): labelled as it says, run on a click, and not among the command buttons", async () => {
+  it("the header's Open is the selection's (./open.js): labelled as it says, run on a click", async () => {
     const runs = [];
     const opener = { meta: { id: "t.opener", type: "scene:view" }, module: { create: () => ({ commands: [{ id: "edit-it", name: "Open", open: true, show: ["inspector", "menu"], state: (t) => (t === "built" ? { label: "Open" } : null), run: (t) => runs.push(t) }] }) } };
     await mountKinds([opener]);
@@ -624,7 +563,7 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
     await settle();
     const open = body().querySelector(".open-thing");
     expect([open.hidden, open.textContent]).toEqual([false, "Open"]);
-    expect([...body().querySelectorAll(".commands button")].some((b) => b.dataset.command === "edit-it")).toBe(false);
+    expect(body().querySelector(".commands")).toBeNull();
     open.click();
     expect(runs).toEqual(["built"]);
     await select("boat");
@@ -1050,10 +989,9 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     expect(s.drawer()).toEqual({ order: [pane, tab().body], shown: pane });
   });
 
-  it("the toolbar's Inspector says whether its tab is open, in the flush after it shuts (local.drawer)", async () => {
-    const toolbar = (await import("./toolbar.js")).default;
-    await bare({ a: object({ name: "A" }) }, [{ meta: { id: "scene.toolbar" }, module: toolbar }]);
-    const pressed = () => s.root.querySelector('.toolbar [data-command="inspector"]')?.getAttribute("aria-pressed");
+  it("the drawer's rail's Inspector says whether its tab is open, in the flush after it shuts (local.drawer)", async () => {
+    await bare({ a: object({ name: "A" }) }, []);
+    const pressed = () => s.root.querySelector('.stage-panel-rail [data-command="inspector"]')?.getAttribute("aria-pressed");
     expect(pressed()).toBe("false");
     await pick("a");
     expect(pressed()).toBe("true");

@@ -98,6 +98,8 @@ export default {
           id: "bounds",
           edit: true,
           name: "Bounds",
+          group: "view",
+          icon: "bounds",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show bounding boxes and sizes" } : null),
           run: () => api.use("prefs")?.set("bounds", !shown()),

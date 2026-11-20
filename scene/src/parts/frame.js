@@ -19,6 +19,8 @@ export default {
           id: "frame",
           name: "Frame all",
           key: ".",
+          group: "view",
+          icon: "frame",
           state: (target, { view } = {}) => {
             if (target != null) return null;
             return selectedBox(view) ? { label: "Frame selection", title: "Frame the selection (.)" } : { title: "Frame everything (.)" };

@@ -14,7 +14,7 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.keys`, `scene.use`, `scene.menu`, `scene.touch` | the key map; the use prompt; the context menu; the touch controls |
 | `scene.toolbar`, `scene.body`, `scene.clock-chip`, `scene.packages` | the bar of tools; the body chip, Edit, who's here, the Esc hint; the clock chips; the packages prompt |
 | `scene.inspector` | the one pane: the outline (`outline.js`) and the selection's fields |
-| `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions; Measure |
+| `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions and their panel; Measure (`M`, the Dimensions panel's button) |
 | `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
 | `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | drops; copy and paste; the parts bin; Undo and Redo |
 
@@ -39,10 +39,12 @@ such tool, wherever it is in the hands, and the selection.
 ```js
 { id, name,
   key?: string | string[],    // KeyboardEvent.key values
-  show?: string | string[],   // "toolbar", "world", "menu", "inspector", "use"; [] none
+  show?: string | string[],   // "toolbar", "world", "menu", "use"; [] none
+  shortcut?: string | string[], shortcutBy?: string,  // a ⌘ key (below)
   hold?: boolean,             // shown as "hold F"
   reach?: true, edit?: true,
   open?: true,                // the target's Open (below)
+  group?: string, icon?: string, order?: number,  // where it sits on the bar (below)
   tool?: { keys?, pointer? },
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?, options?, disabled? },
   run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit)
@@ -55,7 +57,11 @@ for its content; a target's Open is the first that applies, and the inspector,
 the menu (after Select), the outline (its → and a double-click) and a
 double-click in Edit run it; an Open's key is `Enter`. `state` null: not for this target; no `state`: the scene only.
 `label` names the verb for this target; `title` is the tooltip, and the reason
-when `disabled`; `options` become inspector checkboxes passed as `value`.
+when `disabled`; `options` become checkboxes under its menu row, what's ticked
+passed as `value`. `shortcut` is a ⌘ key (`"Mod+G"`, `"Shift+Mod+G"`;
+`src/parts/shortcuts.js`), run by the key map on attention's target and shown
+in the menu; `shortcutBy` names what does it already (the clipboard's ⌘C):
+shown, not run.
 **Surfaces**: absent `show` means every surface but `"world"`; keys work
 whatever `show` says. **`edit: true`**: only while editing (`inBody`).
 **`reach: true`**: beyond the body's reach it is "too far" and runs nowhere
@@ -178,8 +184,15 @@ field as its default.
 
 - **The toolbar** (`scene.toolbar`): the scene commands of every stage on the
   focus path, focus first: the editor's at the left while editing, `"world"`
-  ones at the right in every body. Each a button, toggle (`checked`) or picker
-  (`choices`, `value`).
+  ones at the right in every body. The editor's are in groups, by a
+  command's `group`: history (undo, redo), tools (Select, Move), the rest,
+  view (frame, grid, axes, bounds) and settings, behind a gear in a popover
+  (units, snap); `order` sorts within a group. The panels group (Inspector,
+  Dimensions, Parts) is the drawer's **rail** (`native/drawer.js`): a column
+  of icons at the right edge, there while some panel is on offer, each
+  pressed while its tab is open. A command with an `icon` (`src/parts/icons.js`) is
+  drawn as it; otherwise a button, toggle (`checked`) or picker (`choices`,
+  `value`).
 - **The body chip** (`scene.body`): Look, the bodies with `here` not false,
   Leave; **Edit** beside it; who's here in the focus doc, with body and top
   hand; the Esc hint (the layer the next Escape pops).
@@ -189,7 +202,8 @@ field as its default.
 - **The inspector** (`scene.inspector`, `src/parts/inspector-model.js`): one
   drawer pane, the outline on top and the selection below: a header (what
   it is, its name, its Open), **In this scene** (the scene's representation
-  of it: placement, display, lock, layers, behaviours) and **Built from**
+  of it: placement, display, lock, layers, behaviours; its verbs are the
+  menu's, not buttons here) and **Built from**
   (its source as a row, version, the build's summary, Rebuild, Pinned and
   its params as fields). No document is mounted: each is a row with Open
   Editor and Dock. While editing it opens on the first selection and stays

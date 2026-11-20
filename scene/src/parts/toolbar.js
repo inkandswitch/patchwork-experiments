@@ -10,6 +10,15 @@
 // to be hard-wired here (frame, measure, grid, units…) is each part's
 // command now.
 //
+// The editor's cluster is in groups (PLANS.md §5), by a command's `group`:
+// history (undo, redo), tools (Select, Move…), the rest (a package's, X-ray),
+// panels (the drawer's tabs), view (frame, grid, axes, bounds) and settings,
+// which sit behind one gear, in a popover (units, snap); within a group, a
+// command's `order` (default 0) comes first, then running order. A command with an
+// `icon` (../icons.js) is drawn as it, its name its label and tooltip. The
+// panels group (the drawer's tabs) isn't the bar's: the drawer's rail shows
+// it (../native/drawer.js).
+//
 // Each flush it works out every control's state; the DOM is touched only for
 // controls whose state changed, so a picker keeps its focus and a hover costs
 // nothing.
@@ -38,6 +47,11 @@ import css from "./toolbar.css?inline";
 import { barEntries, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
 import { hintFor } from "../keymap.js";
 import { resolverState } from "./resolver.js";
+import { ICONS } from "../icons.js";
+
+/** The editor's groups, in the order they sit (a command without a group is "other"). */
+export const GROUPS = Object.freeze(["history", "tools", "other", "panels", "view", "settings"]);
+export const groupOf = (command) => (GROUPS.includes(command?.group) ? command.group : "other");
 
 function create(api) {
   api.style(css);
@@ -53,6 +67,49 @@ function create(api) {
   world.className = "cluster world";
   bar.append(row, world);
   edge.append(bar);
+
+  // each group's element in the editor's cluster; settings is a gear and its popover
+  const groupEls = new Map(GROUPS.map((g) => {
+    const el = document.createElement("div");
+    el.className = "bar-group";
+    el.dataset.group = g;
+    return [g, el];
+  }));
+  const gear = document.createElement("button");
+  gear.type = "button";
+  gear.className = "button icon-button settings-toggle";
+  gear.innerHTML = ICONS.settings;
+  gear.setAttribute("aria-label", "Settings");
+  gear.setAttribute("aria-expanded", "false");
+  gear.title = "Settings: units, snap";
+  gear.addEventListener("mousedown", (e) => e.preventDefault());
+  const pop = document.createElement("div");
+  pop.className = "settings-popover";
+  pop.hidden = true;
+  const settings = groupEls.get("settings");
+  settings.append(gear, pop);
+  let releasePop = null;
+  function shut() {
+    if (pop.hidden) return;
+    pop.hidden = true;
+    gear.setAttribute("aria-expanded", "false");
+    const r = releasePop;
+    releasePop = null;
+    r?.();
+  }
+  gear.addEventListener("click", () => {
+    if (!pop.hidden) return shut();
+    pop.hidden = false;
+    gear.setAttribute("aria-expanded", "true");
+    // a popover (STAGE.md, "Hands"): Escape closes it, and the canvas is its while it's open
+    releasePop = api.popover?.(shut) ?? null;
+  });
+  api.listen(document, "pointerdown", (e) => {
+    if (!pop.hidden && !settings.contains(e.target)) shut();
+  }, true);
+  // (settings outside the row's sideways scroll, which would clip its popover)
+  row.append(...[...groupEls.values()].filter((g) => g !== settings));
+  bar.insertBefore(settings, world);
 
   /** control key ("stage\0ext\0command") → { el, sig, kind, choices } */
   const controls = new Map();
@@ -81,7 +138,8 @@ function create(api) {
     } else {
       el = document.createElement("button");
       el.type = "button";
-      el.className = "button";
+      el.className = ICONS[command.icon] ? "button icon-button" : "button";
+      if (ICONS[command.icon]) el.innerHTML = ICONS[command.icon];
       // (a mouse press doesn't move the focus: see the header)
       el.addEventListener("mousedown", (e) => e.preventDefault());
       el.addEventListener("click", () => {
@@ -118,10 +176,30 @@ function create(api) {
       el.selectedIndex = at;
     } else {
       const label = String(state.label ?? command.name ?? command.id);
-      if (el.textContent !== label) el.textContent = label;
+      // an icon's label is its accessible name and tooltip; anything else shows it
+      if (ICONS[command.icon]) el.setAttribute("aria-label", label);
+      else if (el.textContent !== label) el.textContent = label;
       if (c.kind === "toggle") el.setAttribute("aria-pressed", String(!!state.checked));
       else el.removeAttribute("aria-pressed");
     }
+  }
+
+  /** A setting in the popover: its control with its name beside it (a toggle's name is its own label). */
+  const wrappers = new WeakMap();
+  function labelled(el, item) {
+    let w = wrappers.get(el);
+    if (!w) {
+      w = document.createElement("label");
+      w.className = "setting";
+      const name = document.createElement("span");
+      name.className = "setting-name";
+      w.append(name, el);
+      wrappers.set(el, w);
+    }
+    const kind = controlKind(item.state);
+    const name = kind === "choices" ? String(item.command.name ?? item.command.id) : "";
+    if (w.firstChild.textContent !== name) w.firstChild.textContent = name;
+    return w;
   }
 
   function render(scene, view) {
@@ -130,7 +208,7 @@ function create(api) {
     const segs = api.path({ focus: true }).map((seg) => ({ stage: seg.stage, collected: seg.collect("commands"), ctx: seg.context(null) }));
     const entries = barEntries(segs, view);
     const seen = new Set();
-    const place = (el, items) => {
+    const place = (el, items, wrap = null) => {
       const ks = [];
       const els = [];
       for (const it of items) {
@@ -146,7 +224,7 @@ function create(api) {
         const sig = controlKey(item);
         if (c.sig !== sig) paint(c, item, sig);
         ks.push(k);
-        els.push(c.el);
+        els.push(wrap ? wrap(c.el, item) : c.el);
       }
       const next = ks.join("\u0001");
       if (next !== orders.get(el)) {
@@ -154,7 +232,23 @@ function create(api) {
         el.replaceChildren(...els);
       }
     };
-    place(row, entries.editor);
+    for (const g of GROUPS) {
+      // (the panels are the drawer's rail's)
+      if (g === "panels") {
+        groupEls.get(g).hidden = true;
+        continue;
+      }
+      // in a group: by `order` (default 0), then running order and command order
+      const items = entries.editor.filter((it) => groupOf(it.command) === g).sort((a, b) => (Number(a.command.order) || 0) - (Number(b.command.order) || 0));
+      if (g === "settings") {
+        // each setting labelled, in the popover
+        place(pop, items, (el, item) => labelled(el, item));
+        settings.hidden = !items.length;
+      } else {
+        place(groupEls.get(g), items);
+        groupEls.get(g).hidden = !items.length;
+      }
+    }
     place(world, entries.world);
     for (const k of [...controls.keys()]) if (!seen.has(k)) controls.delete(k);
     edge.hidden = !entries.shown;

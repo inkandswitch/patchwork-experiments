@@ -13,6 +13,7 @@ export default {
           id: "units",
           edit: true,
           name: "Units",
+          group: "settings",
           show: ["toolbar"],
           state: (target) => (target == null ? { value: current(), choices: UNIT_OPTIONS.map((o) => ({ ...o })), title: "Units for lengths" } : null),
           run: (_target, value) => {

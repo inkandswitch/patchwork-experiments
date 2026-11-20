@@ -5,7 +5,8 @@
 // applies to attention's element (the selection, else the look's), then to
 // the scene. Within one target, in running order then command order. Keys
 // work whatever a command's `show` says. With ctrl or meta held a key is the
-// browser's (copy, reload…). An auto-repeated key that matches is claimed
+// browser's (copy, reload…), unless a command's `shortcut` names it
+// (./shortcuts.js: ⌘G Groups), on attention's path in the same way. An auto-repeated key that matches is claimed
 // but not run again, so holding M doesn't flicker the measure tool and
 // holding Delete doesn't remove one thing after another. Escape is never a
 // command's: it is the stage's ladder.
@@ -29,7 +30,8 @@
 // (api.collect).
 
 import { commandState, controlKind, flatCommands } from "./toolbar-commands.js";
-import { mapInvocation, segmentsOf } from "../keymap.js";
+import { attentionPath, mapInvocation, segmentsOf } from "../keymap.js";
+import { onMac, shortcutInvocation } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 import { samePath } from "../stage/paths.js";
 
@@ -131,7 +133,38 @@ function create(api) {
   // The code a key event is held under (its physical key, as the router keeps it).
   const codeOf = (ev) => ev.code || ev.key;
 
+  /** Run what a resolved invocation names, in its segment, as the plain keys do. → whether it ran */
+  function invoke(inv, seg) {
+    const { collected, ctx } = seg;
+    const entry = flatCommands(collected).find((e) => e.ext === inv.ext && e.command.id === inv.command);
+    if (!entry) return false;
+    const { command } = entry;
+    if (command.tool) return api.run({ ...inv, ...(seg.stage !== undefined ? { stage: seg.stage } : {}), hit: ctx.hit });
+    const state = commandState(command, inv.target, ctx);
+    if (!state || state.disabled) return false;
+    try {
+      command.run(inv.target, controlKind(state) === "toggle" ? !state.checked : undefined, ctx);
+    } catch (err) {
+      console.warn(`[scene] extension “${inv.ext}”: command ${command.id} failed`, err);
+    }
+    return true;
+  }
+
+  /** A ⌘ key that a command's shortcut names (./shortcuts.js): its invocation on attention's path, innermost first. */
+  function onShortcut(ev) {
+    if (ev.repeat) return false;
+    const mac = onMac();
+    for (const seg of segmentsOf(resolverState(api, held.path ?? null))) {
+      const parents = seg.ctx?.scene?.parents;
+      const targets = [...attentionPath(seg.attention, parents).filter((t) => seg.attention?.selected != null || seg.ctx?.scene?.objects?.[t]), null];
+      const inv = shortcutInvocation(flatCommands(seg.collected), ev, mac, (c, t) => commandState(c, t, seg.ctx), targets);
+      if (inv) return invoke(inv, seg);
+    }
+    return false;
+  }
+
   function onKey(ev) {
+    if ((ev.ctrl || ev.meta) && typeof ev.key === "string") return onShortcut(ev);
     if (ev.ctrl || ev.meta || typeof ev.key !== "string" || ev.key === "Escape") return false;
     // the held key's own repeat: still the held verb's, on its target
     if (ev.repeat && held.has(codeOf(ev))) return true;

@@ -34,6 +34,9 @@ import { editor } from "./editor.js";
 import { editing } from "../stage/bodies.js";
 import { perFocus } from "./per-focus.js";
 
+/** The measuring tool this panel offers (./measure.js). */
+const MEASURE = "scene.measure";
+
 /** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
 export const KIND = "dimension";
 const PREFIX = `${KIND}:`;
@@ -414,11 +417,17 @@ export function create(api) {
 
   /** The Dimensions panel: the list, to select and delete. */
   function mountPanel(host) {
+    // Measure is this panel's (PLANS.md §5): scene.measure's tool, pressed while it's held (M does it too)
+    const measuring = () => (api.view.get().held ?? []).some((t) => t.command === "measure" && String(t.ext).endsWith(MEASURE));
+    const measure = el("button", { type: "button", class: "button measure-toggle", title: "Measure point to point (M)", onclick: () => api.run({ ext: MEASURE, command: "measure", target: null }) }, "Measure");
     const ul = el("ul", { class: "dimension-list" });
-    host.append(ul);
+    host.append(el("div", { class: "dimension-head" }, measure), ul);
     let shown = null;
     const p = {
       render() {
+        measure.setAttribute("aria-pressed", String(measuring()));
+        // (no Measure here where it isn't installed)
+        measure.hidden = !api.collect("commands").some((c) => c.id === MEASURE);
         const key = JSON.stringify(list.map((d) => [d.id, d.text, d.selected, d.detached, d.offSurface]));
         if (key === shown) return;
         shown = key;
@@ -448,7 +457,7 @@ export function create(api) {
             ),
           ),
         );
-        if (!list.length) ul.append(el("li", { class: "empty-row" }, "Use Measure to add one."));
+        if (!list.length) ul.append(el("li", { class: "empty-row" }, "Measure adds one: click two points."));
       },
     };
     panels.add(p);
@@ -494,7 +503,7 @@ export function create(api) {
 
   // a drawer tab the viewer opens (Dimensions in the toolbar)
   const tab = drawerTab(api, { id: "dimensions", title: "Dimensions", mount: mountPanel });
-  commands.push(tabToggle(tab, { id: "dimensions", name: "Dimensions", title: "The dimensions saved in this scene" }));
+  commands.push(tabToggle(tab, { id: "dimensions", name: "Dimensions", icon: "dimensions", title: "The dimensions saved in this scene, and Measure" }));
 
   return {
     update(scene, local, prev, view) {

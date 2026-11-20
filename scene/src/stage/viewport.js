@@ -44,7 +44,7 @@ import { prepareGLB } from "../gltf-content.js";
 import { layerShown, layerStates } from "../layers.js";
 import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
 import { defaultSnapRadius } from "../carry-rules.js";
-import { onThemeChange, resolveCssColor } from "../theme.js";
+import { onThemeChange, resolveCssColor, colorSchemeOf } from "../theme.js";
 import { createRides } from "./ride.js";
 import { realTime } from "./time.js";
 import { parseKey } from "./paths.js";
@@ -1081,6 +1081,9 @@ export class Viewport {
     // a new object per read, so whoever keeps it can tell that it changed
     this.theme = Object.freeze(next);
     this.renderer?.setClearColor(this.clearColor(), 1);
+    // native controls (selects, checkboxes) in the stage follow Patchwork's theme, not the OS's
+    const scheme = colorSchemeOf(this.theme.bg);
+    if (this.themeRoot?.style && this.themeRoot.style.colorScheme !== scheme) this.themeRoot.style.colorScheme = scheme;
   }
 
   /** What shows where nothing is drawn: the theme's background, or fog's colour when there's fog and no sky. */

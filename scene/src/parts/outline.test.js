@@ -79,7 +79,8 @@ describe("the inspector's tree", () => {
     expect([...tab.body.children].map((c) => c.className)).toEqual(["inspector-tree", "inspector-body"]);
     expect(tab.body.querySelectorAll(".inspector-tree .object-list").length).toBe(1);
     const toggles = s.api("scene.inspector").collect("commands").flatMap((c) => (Array.isArray(c.value) ? c.value.filter((k) => k?.show?.includes?.("toolbar")).map((k) => `${c.id}:${k.id}`) : []));
-    expect(toggles).toEqual(["scene.inspector:inspector"]);
+    // (the Edit hand's Select is the bar's too; no toggle is the tree's)
+    expect(toggles.filter((t) => !t.startsWith("scene.edit:"))).toEqual(["scene.inspector:inspector"]);
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
     expect(tab.isOpen()).toBe(false);
     expect(s.drawer().order).toEqual([]);

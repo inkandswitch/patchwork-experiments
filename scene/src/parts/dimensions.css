@@ -98,3 +98,12 @@
   border-color: var(--scene-warning);
   background: color-mix(in oklch, var(--scene-warning) 20%, transparent);
 }
+
+
+/* the panel's head: Measure (PLANS.md §5) */
+.scene-stage .dimension-head:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--scene-border);
+}

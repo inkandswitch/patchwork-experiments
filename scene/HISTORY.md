@@ -1094,3 +1094,61 @@ finite cases (double-click gates, Enter, Edit only, menu order); the
 inspector's parts for each kind of object; rows' Open Editor, Dock and
 drag; the build controls' writes and their undo; buildSummary by cases.
 
+### 2026-11-19 — The bar in groups (PLANS §5 slice 3)
+
+The lead: display toggles and history as paired icons, Select beside the
+modal tools, edit tools only in Edit. A command may say its `group`
+(history, tools, panels, view, settings; anything else is "other"), its
+`icon` and an `order`; the bar lays the editor's commands out in that
+order of groups, icons drawn from `src/parts/icons.js`, settings (units,
+snap) behind a gear in a popover (a popover hand: Escape closes it).
+**Select** is the Edit hand's: it puts down every tool picked up through an
+`edit: true` command and is checked while none is held; being `edit: true`
+itself, it and the other tools show only while editing, so picking one
+never enters Edit. Tests: groups in order, icons named by their label, the
+popover, Select and Move.
+
+### 2026-11-19 — The selection's verbs are the menu's, with shortcuts (PLANS §5 slice 4)
+
+The lead: Group, Extract and the like go to the context menu with a key.
+The inspector has no command buttons now (every package's inspector verb
+was on the menu too). A command may declare a `shortcut`, a ⌘ key
+(`"Mod+G"`; Ctrl off a Mac): the key map's keys stay plain keys, and
+scene.keys runs a ⌘ key a shortcut names on attention's target, as it runs
+a plain one; the menu shows it ("⌘G"). Group ⌘G, Ungroup ⇧⌘G, Extract ⌘E,
+Bundle ⇧⌘E; Copy ⌘C and Paste ⌘V are the browser's copy and paste events
+(`shortcutBy: "clipboard"`: shown, not run). Extract's options (which
+behaviours go with it) were only ever the inspector's checkboxes: they are
+now checkboxes under the command's menu row. Tests: shortcuts by every
+modifier combination on and off a Mac, labels, which command a key runs; ⌘G
+and ⇧⌘G on a stage, ⌘C left to the browser; Extract's options from a real
+right-click.
+
+### 2026-11-19 — The drawer's rail; Measure in Dimensions (PLANS §5 slice 5)
+
+The lead: panel toggles belong to the drawer, and Measure to the Dimensions
+panel. The commands of the "panels" group (Inspector, Dimensions, Parts,
+each with an icon) are the drawer's rail now, not the bar's: a column of
+icons at the right edge, read through the focus's reader as the bar reads
+(no facet acquired: the view-plugins test caught the first try, which
+called api.focus()), there whenever a panel is on offer, so a closed drawer
+still shows what can open. Measure leaves the bar (its M stays): the
+Dimensions panel's head has its button, pressed while it's held, gone where
+no Measure is installed. The icons moved to `src/icons.js` (the bar's and
+the rail's). Tests: the rail's Inspector pressed with its tab; the panels
+off the bar and on the rail; the panel's Measure holding and putting down
+the tool.
+
+### 2026-11-19 — Dark mode for native controls and the body bar
+
+The lead: the view picker didn't follow dark mode. Two causes. The stage
+never said its `color-scheme`, so native controls (selects and their lists,
+checkboxes, number fields) drew in the OS's scheme, not Patchwork's: the
+viewport now sets it on the stage's root from the theme's background
+(`theme.js colorSchemeOf`, re-read on every theme change), so everything in
+the stage inherits it, the CAD and OpenSCAD editors over it too. And the
+body bar (the "You · look · Edit" pill and its menu) was the one part
+styled from `--studio-surface`/`--studio-ink`, which Patchwork's dark theme
+doesn't move: it uses the scene's tokens now. Checked in Chrome with a dark
+theme's tokens: the root's scheme turns dark, the pill and selects with it.
+

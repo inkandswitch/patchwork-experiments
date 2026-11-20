@@ -14,6 +14,7 @@
 import css from "./menu.css?inline";
 import { applicable, cleanChoices, controlKind, flatCommands } from "./toolbar-commands.js";
 import { hintFor } from "../keymap.js";
+import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 
 /** The selection's verb, first in every target's menu. */
@@ -76,7 +77,7 @@ function create(api) {
     b.append(label);
     // the key is the key map's, decided in its context (resolver.js keyContext); the
     // row runs at the point the menu was opened on, so a row disabled there shows none
-    const key = state.disabled ? "" : (extra.key ?? hintFor({ ext, command, target, stage }, keys));
+    const key = state.disabled ? "" : (extra.key ?? (hintFor({ ext, command, target, stage }, keys) || shortcutLabel(shortcutsOf(command)[0], onMac())));
     if (key) {
       const k = document.createElement("kbd");
       k.className = "menu-key";
@@ -89,16 +90,36 @@ function create(api) {
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       close({ refocus: true });
-      api.run({ ...(stage !== undefined ? { stage } : {}), ext, command: command.id, target, value: extra.value, hit });
+      // (a value worked out as it's picked: a command's ticked options)
+      api.run({ ...(stage !== undefined ? { stage } : {}), ext, command: command.id, target, value: typeof extra.value === "function" ? extra.value() : extra.value, hit });
     });
     return b;
   }
 
-  // One command's rows: a plain item, a checkable one, or a heading and one
-  // radio row per choice.
+  // One command's rows: a plain item, a checkable one, a heading and one
+  // radio row per choice, or an item with a checkbox per option under it
+  // (EDITOR.md, "A command": ticking one keeps the menu open; the item runs
+  // with what's ticked).
   function rows(entry, target) {
     const { command, state } = entry;
     const kind = controlKind(state);
+    const options = Array.isArray(state.options) && state.options.length && !state.disabled ? state.options : null;
+    if (options) {
+      const ticked = new Set();
+      const boxes = options.map((o) => {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.dataset.option = String(o.value);
+        box.addEventListener("click", (e) => e.stopPropagation());
+        box.addEventListener("change", () => (box.checked ? ticked.add(o.value) : ticked.delete(o.value)));
+        const row = document.createElement("label");
+        row.className = "menu-option";
+        row.addEventListener("click", (e) => e.stopPropagation());
+        row.append(box, ` ${o.label ?? String(o.value)}`);
+        return row;
+      });
+      return [item(entry, target, { value: () => options.map((o) => o.value).filter((v) => ticked.has(v)) }), ...boxes];
+    }
     if (kind === "toggle")
       return [
         item(entry, target, {

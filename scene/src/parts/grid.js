@@ -107,6 +107,8 @@ export default {
           id: "grid",
           edit: true,
           name: "Grid",
+          group: "view",
+          icon: "grid",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show the ground grid" } : null),
           run: () => api.use("prefs")?.set("grid", !shown()),

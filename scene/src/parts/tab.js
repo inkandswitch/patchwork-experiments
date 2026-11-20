@@ -102,10 +102,13 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
  * A toolbar toggle that opens and closes a tab: { id, name, show, state, run }.
  * `available()` false (nothing to show: no parts on offer) leaves it out.
  */
-export function tabToggle(tab, { id, name, title, available = () => true }) {
+export function tabToggle(tab, { id, name, title, icon, available = () => true }) {
   return {
     id,
     name,
+    // the drawer's rail shows the "panels" group (../native/drawer.js), not the bar
+    group: "panels",
+    ...(icon ? { icon } : {}),
     // the drawer's tabs are the editor's (../stage/bodies.js): only while editing
     edit: true,
     show: ["toolbar"],

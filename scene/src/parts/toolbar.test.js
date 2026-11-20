@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object } from "../test/stage-harness.js";
-import toolbar from "./toolbar.js";
+import { mountStage, object, posesBy } from "../test/stage-harness.js";
+import toolbar, { GROUPS, groupOf } from "./toolbar.js";
 import { keyMatches, keyLabel, commandState, shownOn, flatCommands, barEntries, onBar } from "./toolbar-commands.js";
 
 /** A stand-in extension with a button, a toggle (a pref), a picker and an object-only command. */
@@ -111,7 +111,8 @@ describe("scene.toolbar", () => {
 
   it("shows the scene's toolbar commands in order: buttons, toggles, pickers", () => {
     const ids = [...bar().querySelectorAll("[data-command]")].map((e) => e.dataset.command);
-    expect(ids).toEqual(["frame", "grid", "shade", "off"]);
+    // (Select is the editor's, its tools group first: the scene starts in Edit)
+    expect(ids).toEqual(["select-tool", "frame", "grid", "shade", "off"]);
     expect(control("frame").tagName).toBe("BUTTON");
     expect(control("frame").title).toBe("Frame all (F)");
     expect(control("grid").getAttribute("aria-pressed")).toBe("true");
@@ -160,7 +161,7 @@ describe("scene.toolbar", () => {
     expect(control("frame")).toBeTruthy();
     await s.uninstall("t.tools");
     expect(bar()).toBeTruthy();
-    expect(bar().querySelectorAll("[data-command]")).toHaveLength(0);
+    expect([...bar().querySelectorAll("[data-command]")].map((e) => e.dataset.command)).toEqual(["select-tool"]);
   });
 });
 
@@ -305,7 +306,7 @@ describe("the bar of tools in every body", () => {
   const edge = () => s.root.querySelector('.stage-edge-part[data-owner="scene.toolbar"]');
   const ids = (cluster) => [...s.root.querySelectorAll(`.toolbar .${cluster} [data-command]`)].map((e) => e.dataset.command);
 
-  it("Look and a walk, editing or not, playing or not: the world's Play always, Snap only while editing, and the bar never hides", async () => {
+  it("Look and a walk, editing or not, playing or not: the world's Play always, Select and Snap only while editing, and the bar never hides", async () => {
     const api = s.api("t.game");
     let n = 0;
     for (const [body, path] of [["look", ["look"]], ["t.walk", ["look", "t.walk"]]]) {
@@ -318,7 +319,8 @@ describe("the bar of tools in every body", () => {
           s.edit(edit);
           await s.settle();
           expect(s.local.get().body.id).toBe(body);
-          const want = { tools: edit ? ["snap"] : [], world: playing ? [] : ["play"], hidden: false };
+          // (Select is the editor's resting tool; this game's Snap is a command of its own, with no group)
+          const want = { tools: edit ? ["select-tool", "snap"] : [], world: playing ? [] : ["play"], hidden: false };
           expect({ body, edit, playing, tools: ids("tools"), world: ids("world"), hidden: edge().hidden }).toEqual({ body, edit, playing, ...want });
           n++;
         }
@@ -344,3 +346,58 @@ describe("the bar of tools in every body", () => {
     expect(edge().hidden).toBe(true);
   });
 });
+
+// The editor's groups (PLANS.md §5): each command in its `group`'s run, the runs in GROUPS
+// order; an `icon` drawn as it, named by its label; settings behind the gear, in a popover.
+describe("scene.toolbar: groups, icons, settings", () => {
+  let s = null;
+  const cmd = (id, group, extra = {}) => ({ id, name: id[0].toUpperCase() + id.slice(1), group, edit: true, show: ["toolbar"], state: (t) => (t == null ? {} : null), run: () => {}, ...extra });
+  const GROUPED = {
+    meta: { id: "t.grouped" },
+    module: {
+      create: () => ({
+        commands: [cmd("bounds", "view", { icon: "bounds", state: (t) => (t == null ? { checked: true } : null) }), cmd("units", "settings", { state: (t) => (t == null ? { value: "m", choices: [{ value: "m", label: "m" }, { value: "mm", label: "mm" }] } : null) }), cmd("redo", "history", { icon: "redo" }), cmd("wave", undefined), cmd("undo", "history", { icon: "undo" }), cmd("panel", "panels")],
+      }),
+    },
+  };
+  afterEach(() => s?.unmount());
+  const runs = () => [...s.root.querySelectorAll(".toolbar .bar-group:not([hidden])")].map((g) => [g.dataset.group, ...[...g.querySelectorAll("[data-command]")].map((e) => e.dataset.command)]);
+
+  it("each command in its group, the groups in order (panels on the drawer's rail); icons named by their label; settings in the gear's popover", async () => {
+    s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, GROUPED], doc: { objects: {}, order: [] } });
+    await s.settle();
+    // (within a group: running order, then the order commands are declared in)
+    expect(runs()).toEqual([["history", "redo", "undo"], ["tools", "select-tool"], ["other", "wave"], ["view", "bounds"], ["settings", "units"]]);
+    // the panels are the drawer's rail's, not the bar's
+    expect([...s.root.querySelectorAll(".stage-panel-rail [data-command]")].map((b) => b.dataset.command)).toEqual(["panel"]);
+    expect(GROUPS).toEqual(["history", "tools", "other", "panels", "view", "settings"]);
+    const undo = s.root.querySelector('.toolbar [data-command="undo"]');
+    expect([undo.querySelector("svg") != null, undo.getAttribute("aria-label"), undo.textContent]).toEqual([true, "Undo", ""]);
+    expect(s.root.querySelector('.toolbar [data-command="bounds"]').getAttribute("aria-pressed")).toBe("true");
+    expect(s.root.querySelector('.toolbar [data-command="wave"]').textContent).toBe("Wave");
+    // the gear opens the popover, and a press outside it shuts it
+    const gear = s.root.querySelector(".toolbar .settings-toggle");
+    const pop = s.root.querySelector(".toolbar .settings-popover");
+    expect([pop.hidden, pop.querySelector(".setting .setting-name").textContent]).toEqual([true, "Units"]);
+    gear.click();
+    expect([pop.hidden, gear.getAttribute("aria-expanded")]).toEqual([false, "true"]);
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(pop.hidden).toBe(true);
+    expect(groupOf({ group: "nonsense" })).toBe("other");
+  });
+
+  it("Select is checked exactly while no editor's tool is held, and picking it puts Move down", async () => {
+    const halo = (await import("./halo.js")).default;
+    s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, { meta: { id: "scene.halo" }, module: halo }, posesBy({ hold: () => true, release: () => {}, heldBy: () => null })], doc: { objects: {}, order: [] } });
+    await s.settle();
+    const pressed = (id) => s.root.querySelector(`.toolbar [data-command="${id}"]`).getAttribute("aria-pressed");
+    expect([pressed("select-tool"), pressed("move")]).toEqual(["true", "false"]);
+    s.root.querySelector('.toolbar [data-command="move"]').click();
+    await s.settle();
+    expect([pressed("select-tool"), pressed("move"), s.local.get().held.map((t) => t.command)]).toEqual(["false", "true", ["move"]]);
+    s.root.querySelector('.toolbar [data-command="select-tool"]').click();
+    await s.settle();
+    expect([pressed("select-tool"), pressed("move"), s.local.get().held]).toEqual(["true", "false", []]);
+  });
+});
+

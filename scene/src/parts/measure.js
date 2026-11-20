@@ -1,6 +1,6 @@
 // scene.measure: point-to-point measuring, as a held tool (STAGE.md, "Bodies").
 //
-// "Measure" (M) picks it up, on top of the hands; M again (from wherever it
+// "Measure" (M, or the Dimensions panel's button) picks it up, on top of the hands; M again (from wherever it
 // is in them), or Escape while it's the top hand, puts it down. It takes
 // every click and passes presses on (a drag still orbits), and it wants the
 // pointer (`pointer: true`: no lock while it's held; carrying and the halo
@@ -249,6 +249,8 @@ function measureAt(api, view, hint) {
       edit: true,
       name: "Measure",
       key: "m",
+      // (the Dimensions panel's, not the bar's: PLANS.md §5)
+      show: [],
       // a tool: its run's input goes on top of the hands
       tool: { pointer: true },
       state: (target) => (target == null ? { checked: holding, title: "Measure point to point" } : null),
