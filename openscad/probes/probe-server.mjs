@@ -5,7 +5,7 @@ import { extname, join, resolve } from "node:path";
 
 const dir = resolve(process.argv[2]);
 const port = Number(process.argv[3] ?? 4456);
-const MIME = { ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".css": "text/css", ".html": "text/html" };
+const MIME = { ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".css": "text/css", ".html": "text/html", ".wasm": "application/wasm" };
 
 const server = createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");

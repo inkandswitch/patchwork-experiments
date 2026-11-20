@@ -7,14 +7,15 @@
 //
 // Renders go through the engine's shared cache (render/engine.ts), the same
 // one the editor uses: with the editor and a scene both open on a doc, the
-// source compiles once, and a unit change only re-encodes the cached STL.
+// source compiles once, and a unit change only re-encodes the cached model.
 
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 import type {OpenscadDoc} from "../types"
 import {docToJsonString} from "../imports"
 import type {Render, RenderImportInput} from "../render/engine"
+import {allPositions, toHexColor, type Model} from "../render/model"
 import {computeBounds, computeNormals, encodeGLB} from "./glb.js"
-import {parseSTL, zUpToYUpMeters, UNIT_METERS, type Unit} from "./stl"
+import {zUpToYUpMeters, UNIT_METERS, type Unit} from "./axes"
 
 export type BuildParams = {unit?: Unit}
 
@@ -105,14 +106,20 @@ export async function resolveImports(
 	return {imports, missing}
 }
 
-/** OpenSCAD STL (Z-up, `unit`) -> GLB (Y-up, metres) with flat per-face normals. */
-export function stlToGLB(stlBytes: Uint8Array, unit: Unit = "mm", name = "OpenSCAD"): BuildResult & {triangles: number} {
-	const stl = parseSTL(stlBytes)
-	const positions = zUpToYUpMeters(stl.positions, unit)
-	const normals = computeNormals(positions)
-	const glb = encodeGLB({meshes: [{name, positions, normals}]})
-	const bounds = computeBounds(positions)
-	return {kind: "glb", glb, triangles: stl.triangles, meta: bounds ? {bounds} : {}}
+/**
+ * OpenSCAD model (Z-up, `unit`) -> GLB (Y-up, metres) with flat per-face
+ * normals: one mesh, one primitive per colour. Uncoloured triangles get no
+ * material, so the viewer's default applies; a colour with alpha < 1 blends.
+ * Colours go to glb.js as sRGB hex, which it linearises.
+ */
+export function modelToGLB(model: Model, unit: Unit = "mm", name = "OpenSCAD"): BuildResult & {triangles: number} {
+	const primitives = model.parts.map(part => {
+		const positions = zUpToYUpMeters(part.positions, unit)
+		return {positions, normals: computeNormals(positions), ...(part.color ? {color: toHexColor(part.color)} : {})}
+	})
+	const glb = encodeGLB({meshes: [{name, primitives}]})
+	const bounds = computeBounds(zUpToYUpMeters(allPositions(model), unit))
+	return {kind: "glb", glb, triangles: model.triangles, meta: bounds ? {bounds} : {}}
 }
 
 /** openscad-wasm prints this on every run; it is not part of any error. */
@@ -155,7 +162,7 @@ export function createOpenscadSource(render: () => Promise<Render>) {
 			// A fixed mesh name: the title is not in the fingerprint, so a name
 			// taken from it would go stale on rename. The scene outline shows
 			// the scene object's own name anyway.
-			const {triangles, ...out} = stlToGLB(result.stl, unit)
+			const {triangles, ...out} = modelToGLB(result.model, unit)
 			const notes = [`${triangles} triangles`]
 			if (!result.cached) notes.push(`rendered in ${(result.elapsedMillis / 1000).toFixed(1)} s`)
 			const warnings = countWarnings(result.logs)

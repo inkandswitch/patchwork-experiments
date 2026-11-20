@@ -6,6 +6,7 @@ import {styles} from "../styles"
 import {CodeEditor} from "./CodeEditor"
 import {Viewer3D} from "./Viewer3D"
 import {onLoadProgress, renderScad, RenderError, type LoadProgress} from "../render/engine"
+import {to3MF, toBinarySTL, type Model} from "../render/model"
 import {hasPatchworkDrop, parsePatchworkDrop, type PatchworkDropItem} from "../dnd"
 import {sanitizeIdentifier, uniqueIdentifier} from "../imports"
 import {createImportResolver} from "../importResolver"
@@ -26,7 +27,7 @@ export function OpenscadEditor(props: {
 }) {
 	const initialDoc = props.handle.doc()
 
-	const [stl, setStl] = createSignal<Uint8Array | null>(null)
+	const [model, setModel] = createSignal<Model | null>(null)
 	const [logs, setLogs] = createSignal<string[]>([])
 	const [status, setStatus] = createSignal<"idle" | "rendering" | "ready" | "error">("idle")
 	const [elapsedMillis, setElapsedMillis] = createSignal<number | null>(null)
@@ -73,7 +74,7 @@ export function OpenscadEditor(props: {
 		try {
 			const result = await renderScad(source, importPayload)
 			if (id !== runId) return
-			setStl(result.stl)
+			setModel(result.model)
 			setLogs(result.logs)
 			setElapsedMillis(result.elapsedMillis)
 			setCached(!!result.cached)
@@ -119,27 +120,35 @@ export function OpenscadEditor(props: {
 		})
 	})
 
-	function downloadStl() {
-		const bytes = stl()
-		if (!bytes) return
-		const blob = new Blob([bytes as BlobPart], {type: "model/stl"})
+	function download(bytes: Uint8Array, type: string, extension: string) {
+		const blob = new Blob([bytes as BlobPart], {type})
 		const a = document.createElement("a")
 		a.href = URL.createObjectURL(blob)
-		a.download = `${props.handle.doc()?.title || "model"}.stl`
+		a.download = `${props.handle.doc()?.title || "model"}.${extension}`
 		a.click()
 		setTimeout(() => URL.revokeObjectURL(a.href), 30_000)
 	}
 
+	function download3mf() {
+		const m = model()
+		if (m) download(to3MF(m, props.handle.doc()?.title || undefined), "model/3mf", "3mf")
+	}
+
+	function downloadStl() {
+		const m = model()
+		if (m) download(toBinarySTL(m), "model/stl", "stl")
+	}
+
 	function statusText(): string {
 		const p = engineProgress()
-		if (p && status() === "rendering" && !stl()) {
+		if (p && status() === "rendering" && !model()) {
 			if (p.phase === "downloading") {
 				const loaded = formatBytes(p.loaded)
 				return p.total
 					? `downloading OpenSCAD engine… ${loaded} / ${formatBytes(p.total)}`
 					: `downloading OpenSCAD engine… ${loaded}`
 			}
-			return p.fromCache ? "starting engine (cached)…" : "starting engine…"
+			return "starting engine…"
 		}
 		if (status() === "rendering") return waitingForImports() ? "Loading imports…" : "Rendering…"
 		if (status() === "error") return "Render failed"
@@ -229,7 +238,10 @@ export function OpenscadEditor(props: {
 					{statusText()}
 				</span>
 				<div class="openscad-toolbar-spacer" />
-				<button class="openscad-btn" disabled={!stl()} onClick={downloadStl}>
+				<button class="openscad-btn" disabled={!model()} onClick={download3mf} title="With colours">
+					Download 3MF
+				</button>
+				<button class="openscad-btn" disabled={!model()} onClick={downloadStl} title="Geometry only: STL has no colours">
 					Download STL
 				</button>
 			</div>
@@ -298,8 +310,8 @@ export function OpenscadEditor(props: {
 				</div>
 				<div class="openscad-pane-view">
 					<div class="openscad-view-stage">
-						<Viewer3D stl={stl()} />
-						<Show when={!stl()}>
+						<Viewer3D model={model()} />
+						<Show when={!model()}>
 							<div class="openscad-viewer-placeholder">
 								{status() === "error" ? "Fix the error below and render again" : "Rendering your model…"}
 							</div>
