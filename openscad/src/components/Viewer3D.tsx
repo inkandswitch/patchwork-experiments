@@ -33,7 +33,10 @@ export function Viewer3D(props: {model: Model | null}) {
 		camera.position.set(60, -90, 70)
 		camera.lookAt(0, 0, 0)
 
-		const renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true})
+		// preserveDrawingBuffer keeps the last frame readable, so a screenshot
+		// (the agent's view_screenshot, or anyone's toDataURL) gets the model
+		// rather than a blank canvas cleared after compositing.
+		const renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true})
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
 		const controls = new OrbitControls(camera, renderer.domElement)
