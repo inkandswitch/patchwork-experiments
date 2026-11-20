@@ -353,7 +353,8 @@ function create(api) {
       id: "extract",
       edit: true,
       name: "Extract",
-      show: ["menu", "inspector"],
+      shortcut: "Mod+E",
+      show: ["menu"],
       state: (target, { scene }) => {
         if (target == null || !scene?.objects?.[target]) return null;
         if (!here.writable()) return { disabled: true, title: "view only" };
@@ -368,7 +369,8 @@ function create(api) {
       id: "bundle",
       edit: true,
       name: "Bundle",
-      show: ["menu", "inspector"],
+      shortcut: "Shift+Mod+E",
+      show: ["menu"],
       state: (target, { scene }) => {
         const o = target != null ? scene?.objects?.[target] : null;
         if (!isLink(o)) return null;
@@ -383,6 +385,9 @@ function create(api) {
       id: "copy",
       edit: true,
       name: "Copy",
+      // (⌘C is the browser's copy event, which this part hears: shown, not run by scene.keys)
+      shortcut: "Mod+C",
+      shortcutBy: "clipboard",
       show: ["menu"],
       state: (target, { scene }) => (target != null && scene?.objects?.[target] ? { title: "Copy this, to paste here or into another scene" } : null),
       run(target) {
@@ -402,6 +407,8 @@ function create(api) {
       id: "paste",
       edit: true,
       name: "Paste",
+      shortcut: "Mod+V",
+      shortcutBy: "clipboard",
       show: ["menu"],
       state: (target) => {
         const h = heldCopy();

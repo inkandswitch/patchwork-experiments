@@ -117,3 +117,15 @@
   margin: 4px 2px;
   background: var(--scene-border);
 }
+
+
+/* a command's options, under its item: a checkbox each (EDITOR.md, "A command") */
+.scene-stage .context-menu .menu-option:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 22px;
+  font-size: 12px;
+  color: var(--scene-muted);
+  cursor: pointer;
+}

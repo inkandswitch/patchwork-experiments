@@ -1108,3 +1108,19 @@ itself, it and the other tools show only while editing, so picking one
 never enters Edit. Tests: groups in order, icons named by their label, the
 popover, Select and Move.
 
+### 2026-11-19 — The selection's verbs are the menu's, with shortcuts (PLANS §5 slice 4)
+
+The lead: Group, Extract and the like go to the context menu with a key.
+The inspector has no command buttons now (every package's inspector verb
+was on the menu too). A command may declare a `shortcut`, a ⌘ key
+(`"Mod+G"`; Ctrl off a Mac): the key map's keys stay plain keys, and
+scene.keys runs a ⌘ key a shortcut names on attention's target, as it runs
+a plain one; the menu shows it ("⌘G"). Group ⌘G, Ungroup ⇧⌘G, Extract ⌘E,
+Bundle ⇧⌘E; Copy ⌘C and Paste ⌘V are the browser's copy and paste events
+(`shortcutBy: "clipboard"`: shown, not run). Extract's options (which
+behaviours go with it) were only ever the inspector's checkboxes: they are
+now checkboxes under the command's menu row. Tests: shortcuts by every
+modifier combination on and off a Mac, labels, which command a key runs; ⌘G
+and ⇧⌘G on a stage, ⌘C left to the browser; Extract's options from a real
+right-click.
+

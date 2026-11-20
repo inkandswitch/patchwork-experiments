@@ -39,7 +39,8 @@ such tool, wherever it is in the hands, and the selection.
 ```js
 { id, name,
   key?: string | string[],    // KeyboardEvent.key values
-  show?: string | string[],   // "toolbar", "world", "menu", "inspector", "use"; [] none
+  show?: string | string[],   // "toolbar", "world", "menu", "use"; [] none
+  shortcut?: string | string[], shortcutBy?: string,  // a ⌘ key (below)
   hold?: boolean,             // shown as "hold F"
   reach?: true, edit?: true,
   open?: true,                // the target's Open (below)
@@ -56,7 +57,11 @@ for its content; a target's Open is the first that applies, and the inspector,
 the menu (after Select), the outline (its → and a double-click) and a
 double-click in Edit run it; an Open's key is `Enter`. `state` null: not for this target; no `state`: the scene only.
 `label` names the verb for this target; `title` is the tooltip, and the reason
-when `disabled`; `options` become inspector checkboxes passed as `value`.
+when `disabled`; `options` become checkboxes under its menu row, what's ticked
+passed as `value`. `shortcut` is a ⌘ key (`"Mod+G"`, `"Shift+Mod+G"`;
+`src/parts/shortcuts.js`), run by the key map on attention's target and shown
+in the menu; `shortcutBy` names what does it already (the clipboard's ⌘C):
+shown, not run.
 **Surfaces**: absent `show` means every surface but `"world"`; keys work
 whatever `show` says. **`edit: true`**: only while editing (`inBody`).
 **`reach: true`**: beyond the body's reach it is "too far" and runs nowhere
@@ -195,7 +200,8 @@ field as its default.
 - **The inspector** (`scene.inspector`, `src/parts/inspector-model.js`): one
   drawer pane, the outline on top and the selection below: a header (what
   it is, its name, its Open), **In this scene** (the scene's representation
-  of it: placement, display, lock, layers, behaviours) and **Built from**
+  of it: placement, display, lock, layers, behaviours; its verbs are the
+  menu's, not buttons here) and **Built from**
   (its source as a row, version, the build's summary, Rebuild, Pinned and
   its params as fields). No document is mounted: each is a row with Open
   Editor and Dock. While editing it opens on the first selection and stays

@@ -587,19 +587,23 @@ describe("Extract and Bundle", () => {
     expect(cmds.find((c) => c.id === "bundle").state("gone", { scene: { objects: s.doc().objects } })).toMatchObject({ disabled: true, title: "Not open here (unavailable)" });
   });
 
-  it("the inspector shows a command's options as checkboxes, none ticked, and runs it with what's ticked", async () => {
-    const { default: inspector } = await import("./inspector.js");
-    await mount([{ meta: { id: "scene.inspector" }, module: inspector }]);
+  it("the menu shows a command's options as checkboxes under it, none ticked; ticking keeps it open; it runs with what's ticked", async () => {
+    const { default: menu } = await import("./menu.js");
+    await mount([{ meta: { id: "scene.menu" }, module: menu }]);
     s.local.swap((m) => ({ ...m, selected: "winch" }));
-    // (opened from the toolbar)
-    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
     await settle();
-    const host = s.root.querySelector(".inspector [data-command='extract']")?.parentElement;
-    expect(host?.className).toBe("command-with-options");
-    const boxes = [...host.querySelectorAll("input[type=checkbox]")];
+    // a right-click on the winch opens the menu
+    s.debug.viewport.pick = () => ({ id: "winch", point: [0, 0, 0], normal: [0, 1, 0], distance: 1 });
+    s.pointer("pointerdown", 20, 20, { button: 2, buttons: 2 });
+    s.pointer("pointerup", 20, 20, { button: 2, buttons: 0 });
+    await settle();
+    const extract = s.root.querySelector(".context-menu [data-command='extract']");
+    expect(extract).toBeTruthy();
+    const boxes = [...s.root.querySelectorAll(".context-menu .menu-option input[type=checkbox]")];
     expect(boxes.map((b) => [b.dataset.option, b.checked])).toEqual([["t.sea", false]]);
     boxes[0].click();
-    host.querySelector("[data-command='extract']").click();
+    expect(s.root.querySelector(".context-menu")).toBeTruthy();
+    extract.click();
     await until(() => linkId());
     expect(s.repo.handles.get(s.doc().objects[linkId()].sourceUrl).doc().traits).toEqual({ "t.sea": { level: 0 } });
   });
