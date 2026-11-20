@@ -1,8 +1,7 @@
 // The stage's content loop, mounted with the model's add and inspector (its
-// tree too) (no WebGL; a stand-in <patchwork-view>, src/test/patchwork-view.js,
-// mounts the inspector's Build section in this package's build controls, as
-// Patchwork's does): render docs built through the stage, the sync
-// settle window, the embedded controls' rebuild and context events, objects
+// tree too) (no WebGL): render docs built through the stage, the sync
+// settle window, the inspector's build controls (its params, Rebuild through
+// the stage, its summary of the build), objects
 // fixed at a version of their source (`at`), and what a dragged row carries.
 // Ported from tool.test.js / tool-v3.test.js (scene contract v3).
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
@@ -86,7 +85,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
   const versionText = () => $(".inspector .version-text")?.textContent;
   const button = (cls) => $(`.inspector .${cls}`);
 
-  it("embeds the controls, whose edits rebuild through the stage; Rebuild now with the same bytes keeps the GLB doc", async () => {
+  it("the inspector's build controls: a param's edit rebuilds through the stage; Rebuild with the same bytes keeps the GLB doc", async () => {
     await mount();
     await addByUrl(file.url);
     const [id] = Object.keys(s.doc().objects);
@@ -95,10 +94,11 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await settle();
     const firstGlb = (await repo.find(renderUrl)).doc().glbUrl;
     expect(firstGlb).toBeTruthy();
-    // add selected it; its Build section is the build controls, in the (stand-in) <patchwork-view>
-    const controls = $(".scene-render-controls");
+    // add selected it; "Built from" has its build's controls, fields of the inspector's own
+    const controls = $(".inspector .build-controls");
     expect(controls).toBeTruthy();
-    const unit = controls.querySelector("select");
+    expect(controls.querySelector(".build-summary").textContent).toMatch(/^Up to date · built /);
+    const unit = controls.querySelector('.param[data-key="unit"] select');
     expect(unit.value).toBe("mm");
     unit.value = "in";
     unit.dispatchEvent(new Event("change"));
@@ -109,7 +109,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(r.glbUrl).not.toBe(firstGlb);
     expect(JSON.parse(r.builtFrom.paramsKey)).toEqual({ unit: "in", up: "z" });
 
-    // "Rebuild now" goes through the stage (the event is claimed); same bytes, so the same GLB doc
+    // Rebuild goes through the stage (the event is claimed); same bytes, so the same GLB doc
     const before = repo.created.length;
     const builtAt = r.builtAt;
     await wait(5);
@@ -165,10 +165,8 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(render.bounds.max[0]).toBeCloseTo(0.01); // 10 mm: the old triangle, not the 30 mm one
     expect($(`.object-row[data-id="${id}"] .fixed-mark`)).toBeTruthy();
     expect(versionText()).toMatch(/^Fixed at /);
-    // the embedded controls ask the stage, so they don't call it stale
-    const controls = $(".scene-render-controls");
-    expect(controls.querySelector(".status").textContent).toBe("Up to date");
-    expect(controls.querySelector(".built").textContent).toMatch(/fixed version/);
+    // the build's summary is the stage's: fixed, so not out of date
+    expect($(".inspector .build-summary").textContent).toMatch(/^Built .* · fixed version$/);
   });
 
   it("inspector: Fix at this version freezes what is built; Follow latest catches up", async () => {
@@ -201,7 +199,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(after.glbUrl).toBe(built.glbUrl);
     expect(after.builtAt).toBe(built.builtAt);
     expect(repo.created.length).toBe(created);
-    expect($(".scene-render-controls .status").textContent).toBe("Up to date");
+    expect($(".inspector .build-summary").textContent).toMatch(/· fixed version$/);
 
     button("follow-latest").click();
     await settle();

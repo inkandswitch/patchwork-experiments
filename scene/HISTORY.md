@@ -1066,3 +1066,31 @@ the text stays one object; tested with a cursor across undo and redo. Undo
 still compares whole fields: anyone's later edit anywhere in the text leaves
 the step undone, and said.
 
+### 2026-11-19 — Open, and the inspector's parts (PLANS §5 slices 1 and 2)
+
+The lead found patchwork-cad's "Edit model" undiscoverable, and the
+inspector a stack of conflicting jobs. **Open** (the lead's word, over
+Enter) is one verb: a command with `open: true` (`src/parts/open.js`); a
+link's Enter is one, and a package's editor for its content another. The
+menu lists it after Select, the outline's → and a row's double-click run it,
+its key is Enter, and the Edit hand Opens on two clicks on the same thing
+(500 ms, 6 px): in Edit only (the lead), so the kernel still has no
+dblclick. Declaring Enter on the Edit hand instead put a lone Open button on
+every touch pad: the commands' own key keeps the pad clear and the menu's
+hint right.
+
+The inspector is now a header (what it is: the provider's name, Linked
+scene or Group; the name; the Open), **In this scene** ("how this scene
+places and shows it"), and **Built from**: its source as a row, the Link
+and Version rows, the status line, and the build's controls as the
+inspector's own fields (a one-line summary from the stage's load state,
+Rebuild through scene:rebuild, Pinned, the provider's params as edits on
+the render doc, so the scene's undo takes them back). No document is
+mounted any more (the lead: "the inline mount of the ex-scene rendered
+version" went, which for a CAD model was a whole second editor and kernel);
+a document is a row, **Open Editor** (the lead's name) and Dock. The
+controls tool stays for a render doc opened on its own. Tests: Open's
+finite cases (double-click gates, Enter, Edit only, menu order); the
+inspector's parts for each kind of object; rows' Open Editor, Dock and
+drag; the build controls' writes and their undo; buildSummary by cases.
+

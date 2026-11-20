@@ -197,97 +197,99 @@
   word-break: break-word;
 }
 
-/* its documents (EDITOR.md, "The interface"): a section each, its head (the
-   label, which folds it, Dock and Open; dragged to the drawer's tabs) and
-   the document, height-capped, or "In the drawer · Show" while it's docked */
-.scene-stage .inspector .doc-sections:where(:not(.about-embed *), .about-embed .scene-tool *) {
+/* the header: what it is, its name and its Open (PLANS.md §5) */
+.scene-stage .inspector .inspector-head:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-direction: column;
-  gap: var(--studio-space-xs, 0.375rem);
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--scene-border);
 }
 
-.scene-stage .inspector .doc-sections[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *),
-.scene-stage .inspector .section-embed[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .inspector .inspector-title:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.scene-stage .inspector .inspector-title .name-input:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-stage .inspector .button.primary:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+  font-weight: 600;
+}
+
+.scene-stage .inspector .button[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: none;
 }
 
-.scene-stage .inspector .doc-section:where(:not(.about-embed *), .about-embed .scene-tool *) {
+/* the parts of an object: "In this scene" (the scene's representation of it), "Built from" */
+.scene-stage .inspector .inspector-heading:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.scene-stage .inspector .inspector-heading h3:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--scene-label);
+}
+
+.scene-stage .inspector .inspector-heading .hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  color: var(--scene-muted);
+}
+
+/* its documents: a row each, Open Editor and Dock; dragged to the drawer's tabs */
+.scene-stage .inspector .doc-rows:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-top: 1px solid var(--scene-border);
-  padding-top: var(--studio-space-xs, 0.375rem);
 }
 
-.scene-stage .inspector .section-head:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .inspector .doc-rows[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .inspector .doc-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
-}
-
-.scene-stage .inspector .section-fold:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  all: unset;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.scene-stage .inspector .section-fold:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
-  content: "▾";
-  color: var(--scene-muted);
-  font-size: 12px;
-  width: 1em;
-}
-
-.scene-stage .inspector .doc-section[data-folded] .section-fold:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
-  content: "▸";
-}
-
-.scene-stage .inspector .section-head[draggable="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding: 6px 8px;
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
   cursor: grab;
 }
 
-.scene-stage .inspector .section-acts:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: inline-flex;
-  gap: 8px;
+.scene-stage .inspector .doc-row-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* in the drawer: the head, and where it is */
-.scene-stage .inspector .section-docked:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  margin: 0;
-  font-size: 12px;
-  color: var(--scene-muted);
+.scene-stage .inspector .doc-row-acts:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
-.scene-stage .inspector .section-docked[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  display: none;
-}
-
-.scene-stage .inspector .section-fold:focus-visible:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  outline: 2px solid var(--studio-link, steelblue);
-  outline-offset: 2px;
-}
-
-/* the embed box itself is ours; what's inside it is the embedded tool's. It
-   has a definite height, so a tool that fills its host (an editor, a scene)
-   gets one, and the viewer can drag it taller or shorter; a tool shorter than
-   it leaves room, one taller scrolls */
-.scene-stage .inspector .section-embed {
-  height: min(40vh, 22rem);
-  min-height: 3rem;
-  resize: vertical;
-  overflow: auto;
-  border: 1px solid var(--scene-border);
-  border-radius: var(--studio-radius-sm, 4px);
-}
-
-.scene-stage .inspector .section-embed > patchwork-view {
-  display: block;
-  height: 100%;
+.scene-stage .inspector .build-controls:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* which version of its source a render-doc object shows (scene object `at`) */

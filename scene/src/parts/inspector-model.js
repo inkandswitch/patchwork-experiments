@@ -144,6 +144,33 @@ export function statusParts(o, { status = null, load = null, content = null, sho
   return out;
 }
 
+/** How long ago `at` was, said briefly ("just now", "4 min ago"); `now` in the same clock. Pure. */
+export function ago(at, now) {
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s} s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+}
+
+/**
+ * A built object's build in a line, from the stage's load state (the render
+ * manager's): building, never built, up to date, out of date (pinned or
+ * not), or fixed at a version; null for content that isn't built (a file, a
+ * link) or a missing provider (statusParts says that). Pure.
+ */
+export function buildSummary(load, now) {
+  if (!load || contentKind(load) !== "built" || load.phase === "no-provider") return null;
+  if (load.building) return "Building…";
+  if (!load.builtAt) return load.pinned ? "Not built (pinned)" : "Not built yet";
+  const when = ago(load.builtAt, now);
+  if (load.fixed) return `Built ${when} · fixed version`;
+  if (load.stale) return `Built ${when} · out of date${load.pinned ? " (pinned)" : ""}`;
+  return `Up to date · built ${when}`;
+}
+
 // ─── what extensions contribute: commands ───────────────────────────────────
 
 /**

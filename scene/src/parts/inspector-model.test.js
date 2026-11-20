@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { fakeUrl } from "../test/fake-repo.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
-import { CONTROLS_TOOL, commandsFor, documentsFor, inspectorDocuments } from "./inspector-model.js";
+import { CONTROLS_TOOL, commandsFor, documentsFor, inspectorDocuments, ago, buildSummary } from "./inspector-model.js";
 
 // The inspector's documents (EDITOR.md, "The interface"): every related
 // document of an object is a section, and documentsFor is the one rule for
@@ -66,5 +66,32 @@ describe("commandsFor: what's contributed", () => {
     const commands = [{ id: "t.x", value: [{ id: "bad", run() {}, state: boom }, { id: "ok", run() {}, state: () => ({}) }] }];
     expect(commandsFor(commands, "x", {}, null).map((c) => c.command.id)).toEqual(["ok"]);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildSummary: a built object's build in a line", () => {
+  const NOW = 10_000_000;
+  const built = (o) => ({ content: "built", phase: "ready", builtAt: NOW - 120_000, ...o });
+  it.each([
+    ["a file isn't built", { content: "file" }, null],
+    ["a link isn't built", { content: "scene" }, null],
+    ["no load state", null, null],
+    ["a missing provider is the status line's", built({ phase: "no-provider" }), null],
+    ["building", built({ building: true }), "Building…"],
+    ["building wins over stale", built({ building: true, stale: true }), "Building…"],
+    ["never built", built({ builtAt: null }), "Not built yet"],
+    ["never built, pinned", built({ builtAt: null, pinned: true }), "Not built (pinned)"],
+    ["up to date", built({}), "Up to date · built 2 min ago"],
+    ["out of date", built({ stale: true }), "Built 2 min ago · out of date"],
+    ["out of date, pinned", built({ stale: true, pinned: true }), "Built 2 min ago · out of date (pinned)"],
+    ["fixed (never out of date)", built({ fixed: true, stale: true }), "Built 2 min ago · fixed version"],
+  ])("%s", (_name, load, want) => {
+    expect(buildSummary(load, NOW)).toBe(want);
+  });
+  it("ago: each unit at its edges", () => {
+    const at = (ms) => ago(0, ms);
+    // (rounded to the nearest second, then minute, hour and day)
+    expect([at(0), at(4_499), at(4_500), at(59_499), at(59_500), at(60 * 60_000 - 31_000), at(60 * 60_000 - 30_000), at(47 * 3_600_000), at(48 * 3_600_000)]).toEqual(["just now", "just now", "5 s ago", "59 s ago", "1 min ago", "59 min ago", "1 h ago", "47 h ago", "2 days ago"]);
+    expect(ago(1000, 0)).toBe("just now"); // a clock behind: never negative
   });
 });

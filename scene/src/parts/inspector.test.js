@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
+import { getRegistry } from "../test/plugins-mock.js";
 import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { manualTime } from "../stage/time.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
-import inspector, { sectionPref, startBodies } from "./inspector.js";
+import inspector, { startBodies } from "./inspector.js";
 import { editing } from "../stage/bodies.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
@@ -135,7 +136,8 @@ describe("scene.inspector: the panel", () => {
     expect($(".inspector-kind").textContent).toBe("Scene");
     await select("a");
     expect(body().hidden).toBe(false);
-    expect($(".inspector-kind").textContent).toBe("Object");
+    // what it is: its source's provider (the harness's objects are GLB files)
+    expect($(".inspector-kind").textContent).toBe("GLB file");
     expect($(".name-input").value).toBe("A");
     expect($(".name-input").readOnly).toBe(false);
     expect($(".opacity").value).toBe("0.5");
@@ -416,19 +418,20 @@ describe("scene.inspector: the panel", () => {
   });
 });
 
-describe("scene.inspector: documents, a section each (EDITOR.md, “The interface”)", () => {
+describe("scene.inspector: an object's parts and its documents, a row each (PLANS.md §5)", () => {
   const ME = "scene.inspector";
-  /** the sections as shown: [ext/id, label, open?, the doc-url and tool-id of its view, or null while folded] */
-  const sections = () =>
-    [...body().querySelectorAll(".doc-section")].map((sec) => {
-      const v = sec.querySelector(".section-embed > patchwork-view");
-      return [`${sec.dataset.ext}/${sec.dataset.section}`, sec.querySelector(".section-label").textContent, !sec.hasAttribute("data-folded"), v ? [v.getAttribute("doc-url"), v.getAttribute("tool-id")] : null];
-    });
-  const section = (key) => [...body().querySelectorAll(".doc-section")].find((sec) => `${sec.dataset.ext}/${sec.dataset.section}` === key);
-  const views = () => s.root.querySelectorAll("patchwork-view").length;
+  /** the document rows as shown: "Built from"'s and the notes' (an object has both lists, the scene only notes) → [ext/id, label] */
+  const rows = () => {
+    const lists = [...body().querySelectorAll(".inspector > .doc-rows")];
+    return lists.length === 2 ? { builtFrom: rowsIn(lists[0]), notes: rowsIn(lists[1]) } : { builtFrom: [], notes: lists[0] ? rowsIn(lists[0]) : [] };
+  };
+  const rowsIn = (list) => (list.hidden ? [] : [...list.querySelectorAll(".doc-row")].map((r) => [`${r.dataset.ext}/${r.dataset.section}`, r.querySelector(".doc-row-label").textContent]));
+  const row = (key) => [...body().querySelectorAll(".doc-row")].find((r) => `${r.dataset.ext}/${r.dataset.section}` === key);
+  /** the object's parts, in order: what it is, then each heading */
+  const parts = () => [body().querySelector(".inspector-kind")?.textContent ?? null, ...[...body().querySelectorAll(".inspector-heading h3")].map((h) => h.textContent)];
 
   /** a scene with a built object, a GLB file and a link, each in a group with an About */
-  async function mountKinds() {
+  async function mountKinds(extensions = []) {
     const repo = new FakeRepo();
     const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
@@ -437,172 +440,46 @@ describe("scene.inspector: documents, a section each (EDITOR.md, “The interfac
     const info = repo.add({ title: "the boat" });
     const objects = {
       boat: group("Boat", null, { infoUrl: info.url }),
-      built: object({ name: "Built", group: "boat", sourceUrl: src.url, renderUrl: render.url, visible: false }),
+      built: object({ name: "Built", group: "boat", sourceUrl: src.url, renderUrl: render.url, providerId: "file-glb", visible: false }),
       file: object({ name: "File", sourceUrl: glb.url, visible: false }),
       link: object({ name: "Link", sourceUrl: linked.url, providerId: LINK, renderUrl: null }),
     };
-    await mount({ repo, objects });
+    await mount({ repo, objects, extensions });
     return { repo, src, render, glb, linked, info };
   }
 
-  it("shows the selection's sections, in order, and only the open ones have a view", async () => {
+  it("an object is its header (what it is, its name, its Open), then In this scene, then Built from; a group has no Built from; nothing is mounted", async () => {
     const m = await mountKinds();
-    await select("built");
-    await settle();
-    expect(sections()).toEqual([
-      [`${ME}/source`, "Source", true, [m.src.url, null]],
-      [`${ME}/build`, "Build", true, [m.render.url, "scene-render-controls"]],
-      [`${ME}/about`, "About Boat", true, [m.info.url, null]],
-    ]);
-    // each view sits inside the stage's embed marker and its style guard: its keys and its look are its own
-    for (const v of body().querySelectorAll(".doc-section patchwork-view")) expect([v.closest(`[${EMBED_ATTR}]`) != null, v.closest(`.${EMBED_CLASS}`) != null]).toEqual([true, true]);
-    await select("file");
-    expect(sections()).toEqual([[`${ME}/file`, "File", false, null]]);
-    await select("link");
-    expect(sections()).toEqual([[`${ME}/link`, "Linked scene", false, null]]);
-    // the link's text row stays (what the link is here), with no Open of its own; the section is the document
-    expect($(".link-row").textContent).toMatch(/^Link(Live|Closed|Fixed)/);
-    expect($(".link-row button")).toBeNull();
-    await select("boat");
-    expect(sections()).toEqual([[`${ME}/about`, "About", true, [m.info.url, null]]]);
-    await select(null);
-    expect(sections()).toEqual([]);
-    expect($(".doc-sections").hidden).toBe(true);
-  });
-
-  it("one live view per open section: a new selection unmounts every old one; an unchanged section stays mounted", async () => {
-    const m = await mountKinds();
-    await select("built");
-    expect(views()).toBe(3);
-    const first = [...body().querySelectorAll(".doc-section patchwork-view")];
-    s.change((d) => (d.objects.built.opacity = 0.4));
-    await settle();
-    // the very same elements, still connected (not new ones like them)
-    const now = [...body().querySelectorAll(".doc-section patchwork-view")];
-    expect(now.length).toBe(first.length);
-    expect(now.every((v, i) => v === first[i] && v.isConnected)).toBe(true);
-    await select("boat");
-    expect(views()).toBe(1);
-    for (const v of first) expect(v.isConnected).toBe(false);
-    // the same About, a new selection: a view of its own
-    await select("built");
-    await select("boat");
-    expect(views()).toBe(1);
-    expect(body().querySelector(".doc-section patchwork-view").getAttribute("doc-url")).toBe(m.info.url);
-  });
-
-  // the sections around an open one come and go: [what changes, then the mounts and unmounts it causes]
-  const AROUND = [
-    ["About goes (built leaves its group)", (d) => (d.objects.built.group = null), (m) => [["unmount", m.info.url]]],
-    ["About comes (built back in Boat)", (d) => (d.objects.built.group = "boat"), (m) => [["mount", m.info.url]]],
-  ];
-  it("a section coming or going leaves every other open section mounted (no tool remounted)", async () => {
-    const m = await mountKinds();
-    await select("built");
-    expect(views()).toBe(3);
-    for (const [name, change, want] of AROUND) {
-      embedLog.length = 0;
-      s.change(change);
-      await settle();
-      expect(embedLog, name).toEqual(want(m));
-    }
-    // and the live ones are exactly the open sections
-    expect(views()).toBe(3);
-    embedLog.length = 0;
-    await select("boat");
-    expect(embedLog.filter(([k]) => k === "unmount").map(([, u]) => u).sort()).toEqual([m.src.url, m.render.url, m.info.url].sort());
-    expect(embedLog.filter(([k]) => k === "mount").map(([, u]) => u)).toEqual([m.info.url]);
-  });
-
-  it("a section whose document changes under the same selection shows, and opens, the new one", async () => {
-    const repo = new FakeRepo();
-    const one = repo.add({ title: "one" });
-    const two = repo.add({ title: "two" });
-    await mount({ repo, objects: { g1: group("G1", null, { infoUrl: one.url }), g2: group("G2", null, { infoUrl: two.url }), x: object({ name: "X", group: "g1" }) } });
-    await select("x");
-    const about = () => section(`${ME}/about`);
-    expect(about().querySelector("patchwork-view").getAttribute("doc-url")).toBe(one.url);
-    s.change((d) => (d.objects.x.group = "g2"));
-    await settle();
-    expect(about().querySelector(".section-label").textContent).toBe("About G2");
-    expect([...body().querySelectorAll("patchwork-view")].map((v) => v.getAttribute("doc-url"))).toEqual([two.url]);
-    const opened = [];
-    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-    about().querySelector(".section-open").click();
-    expect(opened).toEqual([{ url: two.url }]);
-  });
-
-  // fold: the viewer's pref, else the entry's own `folded`: {no pref, true, false} × {entry folded, not}
-  // (a File starts folded, a built Source open; each section is its own pref)
-  const FOLD = [
-    ["no pref", undefined, "file", "file", false],
-    ["no pref", undefined, "built", "source", true],
-    ["pref true", true, "file", "file", true],
-    ["pref true", true, "built", "source", true],
-    ["pref false", false, "file", "file", false],
-    ["pref false", false, "built", "source", false],
-  ];
-  it.each(FOLD)("fold: %s (%s), %s's section → open %s", async (_name, pref, target, id, open) => {
-    await mountKinds();
-    if (pref !== undefined) s.api(ME).use("prefs").set(sectionPref(ME, id), pref);
-    await select(target);
-    await settle();
-    const sec = section(`${ME}/${id}`);
-    expect(!sec.hasAttribute("data-folded")).toBe(open);
-    expect(sec.querySelector(".section-fold").getAttribute("aria-expanded")).toBe(String(open));
-    // a view exactly while it's open
-    expect(sec.querySelectorAll("patchwork-view").length).toBe(open ? 1 : 0);
-    expect(sec.querySelector(".section-embed").hidden).toBe(!open);
-  });
-
-  // one kind's fold leaves the others' as they start: [the pref set, then each kind's section → open?]
-  const OWN_FOLD = [
-    ["File unfolded", "file", true, { built: true, file: true, link: false }],
-    ["Linked scene unfolded", "link", true, { built: true, file: false, link: true }],
-    ["Source folded", "source", false, { built: false, file: false, link: false }],
-  ];
-  it.each(OWN_FOLD)("%s: only that section follows it", async (_name, id, pref, want) => {
-    await mountKinds();
-    s.api(ME).use("prefs").set(sectionPref(ME, id), pref);
-    const got = {};
-    for (const [target, sid] of [["built", "source"], ["file", "file"], ["link", "link"]]) {
+    const seen = {};
+    for (const target of ["built", "file", "link", "boat", null]) {
       await select(target);
-      got[target] = !section(`${ME}/${sid}`).hasAttribute("data-folded");
+      seen[target ?? "scene"] = { parts: parts(), rows: rows() };
     }
-    expect(got).toEqual(want);
+    expect(seen).toEqual({
+      built: { parts: ["GLB file", "In this scene", "Built from"], rows: { builtFrom: [[`${ME}/source`, "Source"]], notes: [[`${ME}/about`, "About Boat"]] } },
+      file: { parts: ["GLB file", "In this scene", "Built from"], rows: { builtFrom: [[`${ME}/file`, "File"]], notes: [] } },
+      link: { parts: ["Linked scene", "In this scene", "Built from"], rows: { builtFrom: [[`${ME}/link`, "Linked scene"]], notes: [] } },
+      boat: { parts: ["Group", "In this scene"], rows: { builtFrom: [], notes: [[`${ME}/about`, "About"]] } },
+      scene: { parts: ["Scene"], rows: { builtFrom: [], notes: [] } },
+    });
+    // no document is mounted in the pane: rows only
+    expect(s.root.querySelectorAll(".inspector patchwork-view").length).toBe(0);
+    void m;
   });
 
-  it("the fold toggles the viewer's pref, nothing in the doc, and mounts or unmounts the view", async () => {
-    await mountKinds();
-    await select("built");
-    const before = JSON.stringify(s.doc());
-    section(`${ME}/source`).querySelector(".section-fold").click();
-    await settle();
-    expect(s.api(ME).use("prefs").get(sectionPref(ME, "source"), null)).toBe(false);
-    expect(section(`${ME}/source`).querySelectorAll("patchwork-view").length).toBe(0);
-    expect(views()).toBe(2);
-    section(`${ME}/source`).querySelector(".section-fold").click();
-    await settle();
-    expect(s.api(ME).use("prefs").get(sectionPref(ME, "source"), null)).toBe(true);
-    expect(views()).toBe(3);
-    expect(JSON.stringify(s.doc())).toBe(before);
-  });
-
-  // Open per kind of section: its own url and tool, as patchwork:open-document's detail
+  // [row, the object, its row's key, the open-document detail]
   const OPEN = [
     ["Source", "built", `${"scene.inspector"}/source`, (m) => ({ url: m.src.url })],
-    ["Build", "built", `${"scene.inspector"}/build`, (m) => ({ url: m.render.url, toolId: "scene-render-controls" })],
-    ["About", "boat", `${"scene.inspector"}/about`, (m) => ({ url: m.info.url })],
-    // from a folded head: what Open file and the link's Open were
-    ["File (folded)", "file", `${"scene.inspector"}/file`, (m) => ({ url: m.glb.url })],
-    ["Linked scene (folded)", "link", `${"scene.inspector"}/link`, (m) => ({ url: m.linked.url })],
+    ["About (its group's)", "built", `${"scene.inspector"}/about`, (m) => ({ url: m.info.url })],
+    ["File", "file", `${"scene.inspector"}/file`, (m) => ({ url: m.glb.url })],
+    ["Linked scene", "link", `${"scene.inspector"}/link`, (m) => ({ url: m.linked.url })],
   ];
-  it.each(OPEN)("Open on %s dispatches its own url and tool", async (_name, target, key, detail) => {
+  it.each(OPEN)("Open Editor on %s dispatches its own url and tool", async (_name, target, key, detail) => {
     const m = await mountKinds();
     await select(target);
     const opened = [];
     s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-    section(key).querySelector(".section-open").click();
+    row(key).querySelector(".doc-open").click();
     expect(opened).toEqual([detail(m)]);
   });
 
@@ -612,77 +489,42 @@ describe("scene.inspector: documents, a section each (EDITOR.md, “The interfac
     s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url));
     for (const target of ["built", "file", "link", "boat", null]) {
       await select(target);
-      // (the commands are other extensions' verbs, run through api.run, and are their own tests)
-      const others = [...body().querySelectorAll("button")].filter((b) => !b.closest(".commands") && !b.classList.contains("section-open"));
+      // (the commands and the Open are other extensions' verbs, run through api.run, and are their own tests)
+      const others = [...body().querySelectorAll("button")].filter((b) => !b.closest(".commands") && !b.classList.contains("doc-open") && !b.classList.contains("open-thing"));
       for (const b of others) if (b.isConnected && !b.disabled) b.click();
       await settle();
     }
     expect(opened).toEqual([]);
   });
 
-  it("a section's box has a height of its own, which its view fills (a tool that fills its host gets one)", () => {
-    const css = readFileSync(fileURLToPath(import.meta.url).replace(/inspector\.test\.js$/, "inspector.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const rule = (sel) => css.match(new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
-    expect(rule(".scene-stage .inspector .section-embed")).toMatch(/(^|[\s;])height:\s*[^;]*\d/);
-    expect(rule(".scene-stage .inspector .section-embed > patchwork-view")).toMatch(/(^|[\s;])height:\s*100%/);
-  });
-
-  // ─── detach: a section in the drawer (NATIVE.md, "The drawer") ───
   const drawerViews = () => [...s.root.querySelectorAll(".stage-drawer-doc > patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
   const docTab = (title) => [...s.root.querySelectorAll(".stage-drawer-tab")].find((t) => t.querySelector(".stage-drawer-tab-name").textContent === title);
-  /** a section as shown: [docked?, its inline view's doc-url or null, "In the drawer" shown?] */
-  const sectionShown = (id) => {
-    const sec = section(`${ME}/${id}`);
-    return [sec.hasAttribute("data-docked"), sec.querySelector(".section-embed > patchwork-view")?.getAttribute("doc-url") ?? null, !sec.querySelector(".section-docked").hidden];
-  };
-  const sourceShown = () => sectionShown("source");
-  // [what's done, the section looked at, then it as shown, then the documents in the drawer]: Source has no tool of
-  // its own, Build has one (scene-render-controls); each is docked by its own Dock, and its doc under another tool
-  const FOLD_DOCKED = [
-    ["Source docked (its Dock)", "source", async () => section(`${ME}/source`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.src.url}|`]],
-    ["Source docked, then its × closed", "source", async () => (section(`${ME}/source`).querySelector(".section-dock").click(), await settle(), docTab("Built · Source").querySelector(".stage-drawer-tab-close").click()), (m) => [false, m.src.url, false], () => []],
-    ["Source's doc docked under another tool", "source", async (m) => s.api(ME).use("drawer").dockDocument({ url: m.src.url, toolId: "other", title: "Other" }), (m) => [false, m.src.url, false], (m) => [`${m.src.url}|other`]],
-    ["Build docked (its Dock)", "build", async () => section(`${ME}/build`).querySelector(".section-dock").click(), (m) => [true, null, true], (m) => [`${m.render.url}|scene-render-controls`]],
-    ["Build's doc docked with no tool", "build", async (m) => s.api(ME).use("drawer").dockDocument({ url: m.render.url, title: "Render" }), (m) => [false, m.render.url, false], (m) => [`${m.render.url}|`]],
-  ];
-  it.each(FOLD_DOCKED)("folded while docked: %s", async (_name, id, act, want, inDrawer) => {
-    const m = await mountKinds();
-    await select("built");
-    await act(m);
-    await settle();
-    expect(sectionShown(id)).toEqual(want(m));
-    expect(drawerViews()).toEqual(inDrawer(m));
-    // never two live views of one doc and tool in the stage
-    const all = [...s.root.querySelectorAll("patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
-    expect(new Set(all).size).toBe(all.length);
-  });
+  /** a row as shown: [docked?, its Dock's text] */
+  const rowShown = (key) => [row(key).hasAttribute("data-docked"), row(key).querySelector(".doc-dock").textContent];
 
-  it("Show (in the drawer) shows its pane again; another selection's section of it is folded too", async () => {
+  it("Dock puts the document in a drawer pane of its own, and the row says so; its × takes it out; In the drawer shows it again", async () => {
     const m = await mountKinds();
     await select("built");
-    section(`${ME}/source`).querySelector(".section-dock").click();
+    expect(rowShown(`${ME}/source`)).toEqual([false, "Dock"]);
+    row(`${ME}/source`).querySelector(".doc-dock").click();
     await settle();
-    // the drawer shows the Source (titled after its object); the Inspector's tab shows the pane again
-    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Built · Source");
+    expect([rowShown(`${ME}/source`), drawerViews()]).toEqual([[true, "In the drawer"], [`${m.src.url}|`]]);
     docTab("Inspector").querySelector(".stage-drawer-tab-name").click();
     await settle();
-    section(`${ME}/source`).querySelector(".section-show").click();
+    row(`${ME}/source`).querySelector(".doc-dock").click();
     await settle();
-    expect(s.root.querySelector('.stage-drawer [aria-selected="true"] .stage-drawer-tab-name').textContent).toBe("Built · Source");
-    expect(drawerViews()).toEqual([`${m.src.url}|`]);
-    // the doc pane outlives the selection; the section comes back folded to "In the drawer"
-    await select("boat");
-    await select("built");
-    expect(sourceShown()).toEqual([true, null, true]);
-    expect(drawerViews()).toEqual([`${m.src.url}|`]);
+    expect(s.debug.view.atom.get()["scene.drawer"].shown).toBe("Built · Source");
+    docTab("Built · Source").querySelector(".stage-drawer-tab-close").click();
+    await settle();
+    expect([rowShown(`${ME}/source`), drawerViews()]).toEqual([[false, "Dock"], []]);
   });
 
-  /** dragstart on a section's head → what it sets ({ mime: value }) and the event */
-  const dragHead = (id) => {
+  /** dragstart on a row → what it sets ({ mime: value }) and the event */
+  const dragRow = (key) => {
     const data = {};
     const e = new Event("dragstart", { bubbles: true, cancelable: true });
     Object.defineProperty(e, "dataTransfer", { value: { setData: (t, v) => (data[t] = v), effectAllowed: "all" } });
-    section(`${ME}/${id}`).querySelector(".section-head").dispatchEvent(e);
+    row(key).dispatchEvent(e);
     return { data, e };
   };
   const carrying = (type, data) => {
@@ -691,33 +533,33 @@ describe("scene.inspector: documents, a section each (EDITOR.md, “The interfac
     return e;
   };
 
-  it("a section's head is dragged as a Patchwork document and as the scene's own: exactly four payload types, its url, title and tool", async () => {
+  it("a row is dragged as a Patchwork document and as the scene's own: exactly four payload types, its url, title and tool", async () => {
     const m = await mountKinds();
     await select("built");
-    const { data, e } = dragHead("build");
+    const { data, e } = dragRow(`${ME}/source`);
     expect(Object.keys(data).sort()).toEqual([SECTION_MIME, "text/plain", "text/x-patchwork-dnd", "text/x-patchwork-urls"].sort());
-    expect(JSON.parse(data["text/x-patchwork-dnd"]).items).toEqual([{ url: m.render.url, name: "Built · Build", toolId: "scene-render-controls" }]);
-    expect(JSON.parse(data["text/x-patchwork-urls"])).toEqual([m.render.url]);
-    expect(data["text/plain"]).toBe(m.render.url);
-    expect(data[SECTION_MIME]).toBe(`${m.render.url}|scene-render-controls`);
+    expect(JSON.parse(data["text/x-patchwork-dnd"]).items).toEqual([{ url: m.src.url, name: "Built · Source" }]);
+    expect(JSON.parse(data["text/x-patchwork-urls"])).toEqual([m.src.url]);
+    expect(data["text/plain"]).toBe(m.src.url);
+    expect(data[SECTION_MIME]).toBe(`${m.src.url}|`);
     expect(e.dataTransfer.effectAllowed).toBe("copy");
-    expect(section(`${ME}/build`).querySelector(".section-head").getAttribute("draggable")).toBe("true");
+    expect(row(`${ME}/source`).getAttribute("draggable")).toBe("true");
   });
 
-  // a section's head let go [where, docked there?, the element under it]: only the tab strip takes it; anywhere else
+  // a row let go [where, docked there?, the element under it]: only the tab strip takes it; anywhere else
   // in the stage it's nothing (no object added, no notice, the drop not accepted), the tree and the canvas included
-  const HEAD_LET_GO = [
-    ["back on its section's fields", false, () => body()],
+  const LET_GO = [
+    ["back on its own fields", false, () => body()],
     ["on a row of the tree, in the same pane", false, () => s.root.querySelector(".inspector-tree .object-row")],
     ["on the canvas, in Edit", false, () => s.canvas],
     ["on the drawer's tab strip", true, () => s.root.querySelector(".stage-drawer-tabs")],
   ];
-  it.each(HEAD_LET_GO)("a section's head let go %s → docked: %s, and nothing added to the scene", async (_where, docks, under) => {
+  it.each(LET_GO)("a row let go %s → docked: %s, and nothing added to the scene", async (_where, docks, under) => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountKinds([{ meta: { id: "scene.add" }, module: add }]);
     await select("built");
     const objects = JSON.stringify(s.doc().objects);
-    const { data } = dragHead("source");
+    const { data } = dragRow(`${ME}/source`);
     const target = under();
     expect(target).not.toBeNull();
     const over = carrying("dragover", data);
@@ -732,43 +574,61 @@ describe("scene.inspector: documents, a section each (EDITOR.md, “The interfac
     expect(s.notices()).toEqual([]);
   });
 
-  it("two objects' Sources dock as two tabs, each titled after its object; Show keeps a pane's title", async () => {
-    const repo = new FakeRepo();
-    const thing = (title) => repo.add({ "@patchwork": { type: "thing" }, title });
-    const render = (parent) => repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
-    const [hull, mast, notes] = [thing("hull"), thing("mast"), thing("notes")];
-    const objects = {
-      hull: object({ name: "Hull", sourceUrl: hull.url, renderUrl: render(hull.url).url, visible: false }),
-      mast: object({ name: "Mast", sourceUrl: mast.url, renderUrl: render(mast.url).url, visible: false }),
-      deck: object({ name: "Deck", sourceUrl: notes.url, renderUrl: render(notes.url).url, visible: false }),
-    };
-    await mount({ repo, objects });
-    const tabs = () => s.debug.view.atom.get()["scene.drawer"].tabs;
-    for (const id of ["hull", "mast"]) {
-      await select(id);
-      section(`${ME}/source`).querySelector(".section-dock").click();
-      await settle();
-    }
-    expect(tabs()).toEqual(["Inspector", "Hull · Source", "Mast · Source"]);
-    // a document docked under a name of its own keeps it when a section shows it
-    s.api(ME).use("drawer").dockDocument({ url: notes.url, title: "My notes" });
-    await select("deck");
-    docTab("Inspector").querySelector(".stage-drawer-tab-name").click();
-    await settle();
-    section(`${ME}/source`).querySelector(".section-show").click();
-    await settle();
-    expect(tabs()).toEqual(["Inspector", "Hull · Source", "Mast · Source", "My notes"]);
-    expect(s.debug.view.atom.get()["scene.drawer"].shown).toBe("My notes");
-  });
-
-  it("the source shown is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {
+  it("the source offered is the doc's own sourceUrl, never a lens's (nothing veiled is offered)", async () => {
     const secret = fakeUrl();
     const lens = { meta: { id: "t.lens" }, module: { create: () => ({ looks: () => new Map([["built", { sourceUrl: secret, name: "Ace" }]]) }) } };
     const m = await mountKinds([lens]);
     await select("built");
     await settle();
-    expect(sections()[0]).toEqual([`${ME}/source`, "Source", true, [m.src.url, null]]);
-    expect([...s.root.querySelectorAll("patchwork-view")].some((v) => v.getAttribute("doc-url") === secret)).toBe(false);
+    const opened = [];
+    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url));
+    row(`${ME}/source`).querySelector(".doc-open").click();
+    expect(opened).toEqual([m.src.url]);
+  });
+
+  it("the build's controls are fields on its render doc: Rebuild asks the scene, Pinned and each param are edits the scene's undo takes back", async () => {
+    const repo = new FakeRepo();
+    const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "t-sized", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    await mount({ repo, objects: { it: object({ name: "It", sourceUrl: src.url, renderUrl: render.url, providerId: "t-sized", visible: false }) }, extensions: [{ meta: { id: "scene.undo" }, module: (await import("./undo.js")).default }] });
+    // (the harness's registry is made fresh by the mount: the provider is installed after it)
+    getRegistry("scene:source").register({ type: "scene:source", id: "t-sized", name: "Sized thing", content: "built", params: [{ key: "size", label: "Size", kind: "number", default: 2 }], load: async () => ({ build: async () => ({ kind: "glb", glb: new Uint8Array() }) }) });
+    await select("it");
+    await settle();
+    expect(parts()[0]).toBe("Sized thing");
+    const asked = [];
+    s.root.addEventListener("scene:rebuild", (e) => asked.push(e.detail.renderUrl), true);
+    body().querySelector(".build-controls .rebuild").click();
+    expect(asked).toEqual([render.url]);
+    const pin = body().querySelector(".build-controls .pinned");
+    pin.checked = true;
+    pin.dispatchEvent(new Event("change"));
+    await settle();
+    expect(render.doc().pinned).toBe(true);
+    const size = body().querySelector('.build-controls .param[data-key="size"] input');
+    expect(size.value).toBe("2");
+    size.value = "5";
+    size.dispatchEvent(new Event("change"));
+    await settle();
+    expect(render.doc().params).toEqual({ size: 5 });
+    s.api("scene.undo").run({ ext: "scene.undo", command: "undo", target: null });
+    await settle();
+    expect([render.doc().params, render.doc().pinned]).toEqual([{}, true]);
+  });
+
+  it("the header's Open is the selection's (./open.js): labelled as it says, run on a click, and not among the command buttons", async () => {
+    const runs = [];
+    const opener = { meta: { id: "t.opener", type: "scene:view" }, module: { create: () => ({ commands: [{ id: "edit-it", name: "Open", open: true, show: ["inspector", "menu"], state: (t) => (t === "built" ? { label: "Open" } : null), run: (t) => runs.push(t) }] }) } };
+    await mountKinds([opener]);
+    await select("built");
+    await settle();
+    const open = body().querySelector(".open-thing");
+    expect([open.hidden, open.textContent]).toEqual([false, "Open"]);
+    expect([...body().querySelectorAll(".commands button")].some((b) => b.dataset.command === "edit-it")).toBe(false);
+    open.click();
+    expect(runs).toEqual(["built"]);
+    await select("boat");
+    expect(body().querySelector(".open-thing").hidden).toBe(true);
   });
 });
 

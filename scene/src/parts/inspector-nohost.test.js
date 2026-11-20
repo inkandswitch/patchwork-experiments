@@ -1,7 +1,8 @@
-// The inspector's sections where the host has no <patchwork-view> (a local
-// probe, a test): each open section names its document instead, and nothing
-// of this package is mounted in its place. (No <patchwork-view> is defined in
-// this file; inspector.test.js has its stand-in.)
+// The inspector where the host has no <patchwork-view> (a local probe, a
+// test): it mounts no document anyway (PLANS.md §5): its documents are rows,
+// and its build's controls are its own fields, never the controls tool.
+// (No <patchwork-view> is defined in this file; inspector.test.js has its
+// stand-in.)
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
@@ -15,8 +16,8 @@ afterEach(() => {
   s = null;
 });
 
-describe("scene.inspector: sections without a host embed", () => {
-  it("an open section is a placeholder naming its doc; folded, it has none; a new selection takes them all", async () => {
+describe("scene.inspector: without a host embed", () => {
+  it("mounts nothing: rows for its documents, its own fields for the build, no placeholder and no controls tool", async () => {
     const repo = new FakeRepo();
     const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
@@ -29,15 +30,10 @@ describe("scene.inspector: sections without a host embed", () => {
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     const body = s.instance("scene.inspector").tab.body;
-    const shown = () => [...body.querySelectorAll(".doc-section")].map((sec) => [sec.dataset.section, sec.querySelector(".doc-placeholder")?.textContent ?? null]);
     expect(customElements.get("patchwork-view")).toBeUndefined();
-    const build = shown().find(([id]) => id === "build");
-    expect(build).toEqual(["build", `Build: ${render.url}`]);
-    expect(shown().find(([id]) => id === "about")).toEqual(["about", `About: ${info.url}`]);
-    // the build controls aren't mounted in its place
-    expect(body.querySelector(".scene-render-controls")).toBeNull();
-    s.local.swap((m) => ({ ...m, selected: "b" }));
-    await settle();
+    expect([...body.querySelectorAll(".doc-row")].map((r) => r.dataset.section)).toEqual(["source", "about"]);
     expect(body.querySelectorAll(".doc-placeholder").length).toBe(0);
+    expect(body.querySelector(".scene-render-controls")).toBeNull();
+    expect(body.querySelector(".build-controls .rebuild")).not.toBeNull();
   });
 });

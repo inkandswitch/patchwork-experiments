@@ -187,8 +187,13 @@ field as its default.
   process (its `"clock"` service), ▶ or ⏸, pausing or resuming that doc.
 - **The trail** (NATIVE.md, "Links"): the focus path, each a way out, and Leave.
 - **The inspector** (`scene.inspector`, `src/parts/inspector-model.js`): one
-  drawer pane, the outline on top and the selection's fields below; while
-  editing it opens on the first selection and stays open.
+  drawer pane, the outline on top and the selection below: a header (what
+  it is, its name, its Open), **In this scene** (the scene's representation
+  of it: placement, display, lock, layers, behaviours) and **Built from**
+  (its source as a row, version, the build's summary, Rebuild, Pinned and
+  its params as fields). No document is mounted: each is a row with Open
+  Editor and Dock. While editing it opens on the first selection and stays
+  open.
 - **The outline** (`outline.js`): the focus doc's tree; rows select, drag,
   group; a link's row says what it is and enters.
 - **The menu** (`scene.menu`): a target's commands with `"menu"` (or none),
