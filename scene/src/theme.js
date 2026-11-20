@@ -39,6 +39,14 @@ export function resolveCssColor(el, varName, fallback = [0.5, 0.5, 0.5]) {
   return [d[0] / 255, d[1] / 255, d[2] / 255];
 }
 
+/**
+ * The CSS colour scheme a background asks for (sRGB 0..1): "dark" when it is
+ * darker than mid-grey by luma, else "light". Set on the stage's root, native
+ * controls (a <select>'s list, a checkbox) follow Patchwork's theme, not the
+ * OS's. Pure.
+ */
+export const colorSchemeOf = ([r, g, b] = [1, 1, 1]) => (0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5 ? "dark" : "light");
+
 /** Call `fn` whenever the Patchwork theme (or the OS colour scheme) changes. */
 export function onThemeChange(fn) {
   const mo = new MutationObserver(() => fn());

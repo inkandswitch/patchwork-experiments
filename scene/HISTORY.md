@@ -1139,3 +1139,16 @@ the rail's). Tests: the rail's Inspector pressed with its tab; the panels
 off the bar and on the rail; the panel's Measure holding and putting down
 the tool.
 
+### 2026-11-19 — Dark mode for native controls and the body bar
+
+The lead: the view picker didn't follow dark mode. Two causes. The stage
+never said its `color-scheme`, so native controls (selects and their lists,
+checkboxes, number fields) drew in the OS's scheme, not Patchwork's: the
+viewport now sets it on the stage's root from the theme's background
+(`theme.js colorSchemeOf`, re-read on every theme change), so everything in
+the stage inherits it, the CAD and OpenSCAD editors over it too. And the
+body bar (the "You · look · Edit" pill and its menu) was the one part
+styled from `--studio-surface`/`--studio-ink`, which Patchwork's dark theme
+doesn't move: it uses the scene's tokens now. Checked in Chrome with a dark
+theme's tokens: the root's scheme turns dark, the pill and selects with it.
+

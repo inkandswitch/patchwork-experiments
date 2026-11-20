@@ -30,8 +30,9 @@
   .body-person:where(:not(.about-embed *), .about-embed .scene-tool *) {
   padding: 2px 8px;
   border-radius: var(--studio-radius-round, 9999px);
-  background: color-mix(in oklch, var(--studio-surface, #fff) 82%, transparent);
-  color: var(--studio-ink, #222);
+  /* the scene's themed tokens (stage.css), so it follows Patchwork's dark theme as the rest does */
+  background: color-mix(in oklch, var(--scene-bg) 82%, transparent);
+  color: var(--scene-fg);
   white-space: nowrap;
 }
 
@@ -53,7 +54,9 @@
   min-width: 10rem;
   padding: 4px;
   border-radius: var(--studio-radius, 8px);
-  background: var(--studio-surface, #fff);
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  border: 1px solid var(--scene-border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   pointer-events: auto;
 }
@@ -99,6 +102,7 @@
   .menu-item:where(:not(.about-embed *), .about-embed .scene-tool *) {
   border: 0;
   background: none;
+  color: inherit;
   padding: 5px 10px;
   text-align: left;
   font: inherit;
@@ -111,7 +115,7 @@
   .body-layer
   .body-menu
   .menu-item:is(:hover, :focus-visible):where(:not(.about-embed *), .about-embed .scene-tool *) {
-  background: color-mix(in oklch, var(--studio-ink, #222) 10%, transparent);
+  background: var(--scene-hover);
 }
 
 .scene-stage
