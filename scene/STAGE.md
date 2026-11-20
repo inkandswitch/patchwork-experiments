@@ -127,7 +127,7 @@ Each event goes, until one consumes it (H12): (1) **the hands**, top first; (2)
 **the widget's owner**; (3) **the holders, nearest first**: the hit object, what
 it hangs on, its groups, the scene (`ev.holder`: the extension's nearest member
 with its trait; a segment per stage, innermost first; I8); (4) **the view
-plugins**; (5) **the top body**; (6) **the default** (orbit, pan, zoom). Steps
+plugins**; (5) **the top body**; (6) **the default** (orbit, pan, zoom toward the pointer). Steps
 2–4 are `stage/chain.js`; each extension is offered an event once. An event is
 `{ type` (`press`, `click`, `menu`, `key`, `keyup`, `wheel`, `move`), `x, y,
 clientX, clientY, ndc, ray, hit, widget` (both lazy), `holder, button, buttons,

@@ -2,7 +2,7 @@
 // face-down deck comes out as TTS has it; every tile shape, every die, both
 // kinds of bag; and an image's size read from its header.
 import { describe, it, expect } from "vitest";
-import { D6_ROTATIONS, customDieFaces, sideUp, translate, tableHeight } from "./translate.js";
+import { D6_ROTATIONS, TABLE_NONE_SINK, customDieFaces, sideUp, translate, tableHeight } from "./translate.js";
 import { dieOf } from "../dice/die.js";
 import { solid } from "../dice/solids.js";
 import { unityRotation } from "./convert.js";
@@ -286,6 +286,21 @@ describe("the table top", () => {
     expect(tableHeight([node("Custom_Model", { kind: "model" })])).toBe(0.96);
     // a card lies by its middle: its foot is half its thickness down
     expect(tableHeight([card(100)].map((c) => ({ ...c, transform: { ...c.transform, posY: 1.01 } })))).toBe(1);
+  });
+  it("is a slab, its top at the table top; where the mod says Table_None, its top sunk under it (the mod's own table's top is there), its snap points still at the table top", () => {
+    const tableOf = (extra) => {
+      const { game } = translate(save([node("PlayerPawn", { kind: "piece" })], { snapPoints: [{ position: [1, 1, 1] }], ...extra }), { file: files });
+      expect(validate(game).ok, errorText(validate(game))).toBe(true);
+      const s = game.setup.find((x) => game.pieces[x.piece]?.name === "Table");
+      const piece = game.pieces[s.piece];
+      expect(piece.parts.map((p) => p.shape)).toEqual(["slab"]);
+      const [part] = piece.parts;
+      expect(s.at.position[1]).toBe(0);
+      expect(piece.snapPoints.map((p) => p.position[1])).toEqual([0]);
+      return part.at[1] + part.thickness;
+    };
+    for (const table of ["", "Table_Custom", "Table_Square"]) expect(tableOf({ table })).toBeCloseTo(0, 9);
+    expect(tableOf({ table: "Table_None" })).toBeCloseTo(-TABLE_NONE_SINK, 9);
   });
 });
 

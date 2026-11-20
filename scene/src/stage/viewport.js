@@ -466,7 +466,7 @@ export function reseatTarget(position, forward, distance) {
 
 /**
  * Drop whatever motion OrbitControls still has queued (the damped tail of a
- * fling, a half-applied pan or zoom), so a camera that was just set or let go
+ * fling, a half-applied pan or zoom, toward the cursor or not), so a camera that was just set or let go
  * stays where it was put. These are OrbitControls' private fields (three
  * 0.186); anything missing is left alone.
  */
@@ -474,6 +474,7 @@ export function resetOrbitMotion(controls) {
   controls?._sphericalDelta?.set?.(0, 0, 0);
   controls?._panOffset?.set?.(0, 0, 0);
   if (controls && "_scale" in controls) controls._scale = 1;
+  if (controls && "_performCursorZoom" in controls) controls._performCursorZoom = false;
 }
 
 /**
@@ -1052,6 +1053,9 @@ export class Viewport {
     this.controls = new OrbitControls(this.camera, dom);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.15;
+    // the wheel zooms toward what's under the pointer, and the orbit's centre moves with it: a
+    // camera whose centre is elsewhere (a seat's, at its own edge of the table) zooms where you point
+    this.controls.zoomToCursor = true;
     this.controls.addEventListener("change", () => this.invalidate());
     this.controls.addEventListener("start", () => {
       this.wasTouched = true;

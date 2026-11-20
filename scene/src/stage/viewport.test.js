@@ -185,10 +185,12 @@ describe("re-seating the orbit", () => {
     c._sphericalDelta.set(1, 0.2, 0.3);
     c._panOffset.set(1, 2, 3);
     c._scale = 1.5;
+    c._performCursorZoom = true;
     resetOrbitMotion(c);
     expect([c._sphericalDelta.phi, c._sphericalDelta.theta]).toEqual([0, 0]);
     expect(c._panOffset.toArray()).toEqual([0, 0, 0]);
     expect(c._scale).toBe(1);
+    expect(c._performCursorZoom).toBe(false);
     c.dispose();
     expect(() => resetOrbitMotion({})).not.toThrow();
     expect(() => resetOrbitMotion(null)).not.toThrow();
