@@ -1323,6 +1323,22 @@ function isPdfAttachment(block) {
   return /application\/pdf/i.test(String(block.mimeType ?? "")) || /\.pdf$/i.test(String(block.name ?? ""))
 }
 
+/**
+ * Every kind of block this version of the agent writes and reads. A newer
+ * version may add one — attachments were added this way — and a runner from
+ * before it would read past it as if it were not there: the model is sent the
+ * words of a message and never the image that came with it. So a runner that
+ * meets a block it does not know leaves the session to one that does.
+ */
+export const BLOCK_TYPES = ["text", "reasoning", "call", "result", "context", "event", "summary", "attachment"]
+
+/** The kinds of block in a session this version does not know, if any. */
+export function unknownBlocks(doc) {
+  const unknown = new Set()
+  for (const turn of doc?.turns ?? []) for (const block of turn.blocks ?? []) if (!BLOCK_TYPES.includes(block?.type)) unknown.add(block?.type)
+  return [...unknown]
+}
+
 // ---------------------------------------------------------------- lease
 
 /**

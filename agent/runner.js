@@ -31,6 +31,7 @@ import {
   questionsAwaitingAnswer,
   orphanedCalls,
   resolveOrphans,
+  unknownBlocks,
   makeTurn,
   textBlock,
 } from "./session.js"
@@ -189,6 +190,28 @@ export class SessionRunner {
     this.interrupt()
   }
 
+  /**
+   * Take no more work, finish what is under way, then stop. How a runner made
+   * by an older version of this code hands over to a newer one (runners.js):
+   * stopping it outright would cut a turn off half-way. `onDone` is told when
+   * it has stopped.
+   */
+  retire(onDone = null) {
+    this.retired = true
+    this.onRetired = onDone
+    if (!this.running) this.finishRetiring()
+  }
+
+  finishRetiring() {
+    if (this.stopped) return
+    this.stop()
+    try {
+      this.onRetired?.()
+    } catch {
+      /* the hand-over goes ahead regardless */
+    }
+  }
+
   /** Ask the current turn to stop after the call in flight. */
   interrupt() {
     this.controller?.abort()
@@ -213,8 +236,17 @@ export class SessionRunner {
     const doc = this.store.doc()
     // Sampled on every tick, work or none, so the watch sees each heartbeat.
     this.live(doc?.lease)
-    if (!needsWork(doc, this.canRun, this.live) || !this.hasKey()) {
+    if (this.retired || !needsWork(doc, this.canRun, this.live) || !this.hasKey()) {
       this.wantedSince = null
+      return
+    }
+    // Something in the session this version cannot read: a newer version of
+    // the agent wrote it. Leave it to a runner that can, rather than send the
+    // model the session without it.
+    const unknown = unknownBlocks(doc)
+    if (unknown.length) {
+      this.wantedSince = null
+      this.onEvent({ type: "outdated", unknown })
       return
     }
 
@@ -338,6 +370,7 @@ export class SessionRunner {
       this.running = false
       this.controller = null
       this.releaseIfIdle()
+      if (this.retired) this.finishRetiring()
     }
   }
 

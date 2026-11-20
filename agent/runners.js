@@ -18,8 +18,23 @@
  * only a runner outside the browser is genuinely durable.
  */
 
-/** sessionUrl -> { runner, ctx, viewers:Set, listeners:Set, idleSince } */
-const live = new Map()
+/**
+ * Which build of this code made a runner: its module URL, which changes with
+ * every version Patchwork loads.
+ */
+export const CODE_VERSION = import.meta.url
+
+/**
+ * sessionUrl -> { runner, ctx, viewers:Set, listeners:Set, idleSince, version }
+ *
+ * Kept on globalThis, not in this module. Patchwork reloads a package in place
+ * when a new version arrives, and a reloaded module starts with nothing: its
+ * own view came up with the new code while the old runner, with the old code,
+ * went on running the session unseen — and sent the model a message without
+ * the image attached to it, because the old code did not know attachments.
+ * Here, the new code finds the old runner and takes over from it (ensureRunner).
+ */
+const live = (globalThis.__patchworkAgentRunners ??= new Map())
 
 /** How long a runner with no viewers and nothing to do is kept before reaping. */
 export const IDLE_GRACE_MS = 5 * 60 * 1000
@@ -49,6 +64,18 @@ export function busyCount(except = null) {
  * lock so two views opening at once cannot start two runners for one session.
  */
 export async function ensureRunner(sessionUrl, create) {
+  const found = live.get(sessionUrl)
+  // A runner from another version of this code: it finishes the turn it is
+  // in and stops, and this version runs the session from here.
+  if (found?.runner && found.version !== CODE_VERSION) {
+    live.delete(sessionUrl)
+    const old = found.runner
+    if (typeof old.retire === "function") old.retire(() => found.dispose?.())
+    else {
+      old.stop?.()
+      found.dispose?.()
+    }
+  }
   const existing = live.get(sessionUrl)
   if (existing?.runner) return existing
   if (existing?.creating) {
@@ -56,7 +83,7 @@ export async function ensureRunner(sessionUrl, create) {
     return live.get(sessionUrl)
   }
 
-  const entry = { runner: null, ctx: null, viewers: new Set(), listeners: new Set(), idleSince: null }
+  const entry = { runner: null, ctx: null, viewers: new Set(), listeners: new Set(), idleSince: null, version: CODE_VERSION }
   entry.creating = (async () => {
     const made = await create((event) => {
       // Fan an event out to every attached view.

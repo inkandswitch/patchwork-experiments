@@ -22,7 +22,7 @@ import { decide, say, answerQuestion } from "./loop.js"
 import { heldElsewhere, needsWork } from "./runner.js"
 import { attachView } from "./runners.js"
 import { startTabRunner, accountContext } from "./tab-runner.js"
-import { formatCost } from "./session.js"
+import { formatCost, unknownBlocks } from "./session.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./ui/waiting.js"
 import { waitingIn } from "./workflow/waiting.js"
 import { markCitations } from "./ui/citations.js"
@@ -1039,7 +1039,9 @@ export function AgentTool(handle, element, options = {}) {
     // Dictation's status wins while it is on: it is what you are doing now.
     hint.textContent =
       voiceStatus ??
-      (!hasKey
+      (unknownBlocks(doc).length
+        ? "Something here needs a newer version of the agent: reload the page"
+        : !hasKey
         ? elsewhere
           ? "Running in another browser — this one has no API key"
           : "Add an API key to start"
