@@ -178,7 +178,25 @@ export class SessionRunner {
       if (!this.running) this.tick()
     }, HEARTBEAT_MS)
     this.tick()
+    this.restoreWatches()
     return () => this.stop()
+  }
+
+  /**
+   * Listen again to every watch the session has (tools/watch.js), reporting
+   * first what changed while no runner was. Only a runner that can wake the
+   * session does this. Loaded late, as privileges are: the tool registry
+   * imports modules that import this one.
+   */
+  restoreWatches() {
+    const events = this.ctx.events
+    if (!events || !this.store?.doc()?.watches) return
+    import("./tools/watch.js")
+      .then(({ restoreWatches }) => restoreWatches({ repo: this.fullCtx.repo, events, store: this.store }))
+      .then((results) => {
+        for (const r of results ?? []) if (!r.ok) this.onEvent({ type: "watch-error", id: r.id, error: r.error })
+      })
+      .catch(() => {})
   }
 
   stop() {
@@ -469,6 +487,7 @@ export function fullContext(base, store) {
  *   workflows  the real repo and the step-session starter, for the workflow
  *              tools, which write plans and drive step sessions
  *   session    this conversation's own document, writable, for session_title
+ *   watches    only the `watches` map in it, writable, for doc_watch
  *
  * By identity with the built-in, not by id: a plugin cannot take a built-in's
  * id, and a tool that is not the built-in gets nothing whatever it is called.
@@ -480,7 +499,9 @@ export async function privileges(base, store) {
   const builtin = (id) => BUILTIN_TOOLS.find((t) => t.id === id)
   const workflows = { workflows: { repo: base.repo ?? null, startSession: base.startStepSession ?? null } }
   const session = { session: { url: store?.url ?? null, doc: () => store.doc(), change: (fn) => store.change(fn) } }
-  const given = new Map([...WORKFLOW_TOOL_IDS.map((id) => [builtin(id), workflows]), [builtin("session_title"), session]])
+  const { watchesWriter } = await import("./tools/watch.js")
+  const watches = { watches: watchesWriter(store) }
+  const given = new Map([...WORKFLOW_TOOL_IDS.map((id) => [builtin(id), workflows]), [builtin("session_title"), session], [builtin("doc_watch"), watches]])
   return (tool) => given.get(tool) ?? null
 }
 

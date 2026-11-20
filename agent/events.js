@@ -26,7 +26,8 @@
  * call it) returns "" and the wake dissolves.
  *
  * An open channel is a session listening, so the runner holding it is not
- * reaped for idleness (runners.js). Closing it drops anything pending.
+ * reaped for idleness (runners.js). Closing it drops anything pending, and
+ * `onClose` (an option to `open`) is told when it ends for any reason.
  */
 
 import { STATUS, eventBlock, makeTurn } from "./session.js"
@@ -113,7 +114,7 @@ export function createEvents(store, opts = {}) {
     wakes.push(now())
   }
 
-  function open(source, key, { label = null } = {}) {
+  function open(source, key, { label = null, onClose = null } = {}) {
     const id = `${source}:${key}`
     channels.get(id)?.close()
     const channel = {
@@ -135,6 +136,17 @@ export function createEvents(store, opts = {}) {
         channels.delete(id)
         pending.delete(id)
         if (!pending.size) schedule()
+        channel.closed()
+      },
+      // Told once, however the channel ends — closed, replaced by one of the
+      // same key, or the whole session stopping — so a tool can let go of
+      // what it was listening to.
+      closed() {
+        const fn = onClose
+        onClose = null
+        try {
+          fn?.()
+        } catch {}
       },
     }
     channels.set(id, channel)
@@ -153,7 +165,9 @@ export function createEvents(store, opts = {}) {
       stopped = true
       if (timer !== null) clearTimer(timer)
       timer = null
+      const open = [...channels.values()]
       channels.clear()
+      for (const channel of open) channel.closed()
       pending.clear()
     },
   }

@@ -355,6 +355,10 @@ describe("the legitimate writers", () => {
     expect(using(/ctx\.session\??\.change/)).toEqual(["naming.js"])
   })
 
+  it("only tools/watch.js reaches for ctx.watches", () => {
+    expect(using(/ctx\.watches/)).toEqual(["watch.js"])
+  })
+
   /** A full session with Workflows on, a plugin of its own, and a runner over it. */
   function fullSession(execute = () => "plugin ran") {
     const w = world()
@@ -400,6 +404,9 @@ describe("the legitimate writers", () => {
       } else if (t.id === "session_title") {
         expect(Object.keys(given), t.id).toEqual(["session"])
         expect(given.session.change).toBeTypeOf("function")
+      } else if (t.id === "doc_watch") {
+        expect(Object.keys(given), t.id).toEqual(["watches"])
+        expect(given.watches.change).toBeTypeOf("function")
       } else {
         expect(given, t.id).toBeNull()
       }
@@ -407,6 +414,22 @@ describe("the legitimate writers", () => {
     // By identity, not by name: a copy of a built-in is not the built-in.
     expect(privileged({ ...tool("workflow_start") })).toBeNull()
     expect(privileged({ ...tool("session_title") })).toBeNull()
+    expect(privileged({ ...tool("doc_watch") })).toBeNull()
+  })
+
+  it("doc_watch's capability writes the session's watches and nothing else", async () => {
+    const { runner, store } = fullSession()
+    const { privileged } = await runner.prepare(runner.store.doc())
+    const { watches } = privileged(tool("doc_watch"))
+    watches.change((all) => {
+      all.w1 = { url: "automerge:x", path: [], match: null, label: null, heads: [], at: 0 }
+    })
+    expect(store.doc().watches.w1.url).toBe("automerge:x")
+    // What it is handed is the watches map, not the session: there is no way
+    // from it to the title, the grants or the turns.
+    let handed = null
+    watches.change((all) => { handed = Object.keys(all) })
+    expect(handed).toEqual(["w1"])
   })
 
   it("through the loop, a plugin gets neither, while session_title still names the session", async () => {
@@ -426,6 +449,7 @@ describe("the legitimate writers", () => {
     expect(seen.workflows).toBeUndefined()
     expect(seen.startStepSession).toBeUndefined()
     expect(seen.session?.change).toBeUndefined()
+    expect(seen.watches).toBeUndefined()
     expect(store.doc().title).toBe("Named")
   })
 

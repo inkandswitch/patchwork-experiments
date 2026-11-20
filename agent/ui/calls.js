@@ -91,6 +91,10 @@ export const PRESENTATION = {
   doc_edit: { verb: "edit", detail: (i) => describeOps(i.ops) },
   doc_create: { verb: "create", detail: (i) => i.title || i.datatype || null },
   doc_history: { verb: "history", detail: (i, subject) => shortDoc(i.url, subject) },
+  doc_watch: {
+    verb: "watch",
+    detail: (i, subject) => (i.stop ? `stop ${i.stop}` : pathLabel(i.path) ?? shortDoc(i.url, subject)),
+  },
   doc_search: { verb: "search docs", detail: (i) => (i.query ? `“${i.query}”` : null) },
   doc_tree: { verb: "browse", detail: () => null },
 

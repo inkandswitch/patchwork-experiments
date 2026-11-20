@@ -19,6 +19,7 @@
  *     lease:   { runner, at, generation } | null
  *     grants:  { [grantKey]: "session" | "always" }
  *     made:    Artifact[]                 documents this session created
+ *     watches: { [id]: Watch }            absent until doc_watch makes one (tools/watch.js)
  *   }
  *
  *   Turn  = { id, role: "user"|"assistant"|"tool", at, author, blocks: Block[] }

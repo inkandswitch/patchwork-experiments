@@ -115,7 +115,18 @@ function apply(rep, patch) {
  * Heads are automerge's hex change hashes; `[]` is the empty document.
  */
 export function editsBetween(automerge, doc, fromHeads, toHeads) {
-  const rep = replica(automerge.view(doc, fromHeads))
+  return editsOfPatches(automerge.diff(doc, fromHeads, toHeads), automerge.view(doc, fromHeads))
+}
+
+/**
+ * The edits a run of patches made to `before`, each with the value it replaced.
+ * Patches are whole-document paths, in order, as a diff or a handle's change
+ * event gives them; `before` is the document they apply to. Only the
+ * containers they touch are copied, so a small change to a large document
+ * costs only what it touched.
+ */
+export function editsOfPatches(patches, before) {
+  const rep = replica(before)
   const edits = []
   // Assigning a string arrives as "new empty text here" and then "insert its
   // characters at 0". Said as one edit, it reads the way it was written. Only
@@ -125,7 +136,7 @@ export function editsBetween(automerge, doc, fromHeads, toHeads) {
   const emptyTexts = new Map() // path -> fill it in
   const at = (path) => JSON.stringify(path)
 
-  for (const patch of automerge.diff(doc, fromHeads, toHeads)) {
+  for (const patch of patches) {
     const edit = apply(rep, patch)
     if (!edit) continue
 

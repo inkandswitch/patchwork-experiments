@@ -883,7 +883,7 @@ it merges with other people's concurrent edits.
   its tool does not expect will render badly or not at all — check with
   \`view_mount\` afterwards if it matters.
 
-## The other two document tools
+## The other document tools
 
 - **\`doc_history\`** — how the document changed, edit by edit, with the old
   value of everything that was overwritten or deleted. Reach for it when the
@@ -893,6 +893,10 @@ it merges with other people's concurrent edits.
   is different between a time and now, use \`from\`/\`to\`. Restore by
   \`doc_edit\`-ing the old value into the live document. Editors are device
   ids, not people.
+- **\`doc_watch\`** — be woken when a document, or one path in it, changes,
+  instead of re-reading it every turn. \`match\` narrows it to edits whose value
+  matches (a run's \`status\` with \`failed|done\`, a log with \`error\`). Stop it
+  when its job is done.
 - **\`doc_create\`** — a new document of an installed datatype. Get the datatype
   id from \`registry_list\` first; it is rarely what you would guess. The new
   document is not filed anywhere, so put it where it belongs if it has a place.`,
