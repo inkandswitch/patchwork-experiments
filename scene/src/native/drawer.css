@@ -147,3 +147,26 @@
   flex: 1 1 auto;
   min-height: 0;
 }
+
+
+/* the rail (PLANS.md §5): the panels on offer, a column of icons at the edge's outer side */
+.scene-stage .stage-panel-rail:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 4px;
+  border-left: 1px solid var(--scene-border);
+  background: var(--scene-bg);
+}
+
+.scene-stage .stage-panel-rail .stage-panel-toggle:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.scene-stage .stage-panel-rail .stage-panel-toggle svg:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: block;
+}

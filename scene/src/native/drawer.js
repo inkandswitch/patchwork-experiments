@@ -39,10 +39,17 @@
 // inspector section's header) and docks each one; a drag over the strip is
 // the strip's, so nothing dropped there reaches the scene.
 //
+// The rail (PLANS.md §5): the panels a viewer can open (the "panels" group of
+// commands on offer: Inspector, Dimensions, Parts), a column of icons at the
+// edge's outer side, each pressed while its tab is open. It is in the edge
+// whenever some panel is on offer (they are the editor's: while editing),
+// pane or no pane.
+//
 // The model is pure and the DOM follows it: `docked`, `shown` and `undocked`
 // below, the widths' `kindOf`, `widthFor`, `dragged` and `stepped`, and
 // createDrawer, which keeps an element per docked key.
 
+import { ICONS } from "../icons.js";
 import css from "./drawer.css?inline";
 import { EMBED_ATTR, documentBox, documentView } from "../embed.js";
 import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
@@ -410,6 +417,52 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
 
 // ─── the plugin ─────────────────────────────────────────────────────────────
 
+/** The rail's entries from what's collected: [{ ext, command, state }] of the "panels" group that apply to the scene. Pure. */
+export function railEntries(collected, ctx) {
+  const out = [];
+  for (const { id: ext, value } of collected ?? []) {
+    for (const command of Array.isArray(value) ? value : []) {
+      if (command?.group !== "panels" || typeof command.state !== "function" || typeof command.run !== "function") continue;
+      let state = null;
+      try {
+        state = command.state(null, ctx);
+      } catch {
+        state = null;
+      }
+      if (state) out.push({ ext, command, state: typeof state === "object" ? state : {} });
+    }
+  }
+  return out;
+}
+
+/** The rail: a part of the right edge of its own, a button per panel on offer. */
+function createRail(api) {
+  const part = api.edge("right");
+  const rail = make("nav", "stage-panel-rail", { "aria-label": "Panels" });
+  let key = "";
+  return function update() {
+    // (through the focus's reader, as the bar reads: no facet of the focus is acquired for it)
+    const seg = api.path({ focus: true })[0] ?? null;
+    const entries = seg ? railEntries(seg.collect("commands"), seg.context(null)) : [];
+    const next = JSON.stringify(entries.map((e) => [e.ext, e.command.id, !!e.state.checked, e.state.title ?? ""]));
+    // with no panel on offer it leaves its part empty, so the edge takes no room for it
+    if (!entries.length) rail.remove();
+    else if (rail.parentNode !== part) part.append(rail);
+    if (next === key) return;
+    key = next;
+    rail.replaceChildren(
+      ...entries.map(({ ext, command, state }) => {
+        const b = make("button", "button icon-button stage-panel-toggle", { type: "button", "aria-pressed": String(!!state.checked), "aria-label": String(command.name ?? command.id), title: String(state.title ?? command.name ?? command.id), "data-ext": ext, "data-command": command.id });
+        if (ICONS[command.icon]) b.innerHTML = ICONS[command.icon];
+        else b.textContent = String(command.name ?? command.id).slice(0, 1);
+        b.addEventListener("mousedown", (e) => e.preventDefault());
+        b.addEventListener("click", () => api.run({ ext, command: command.id, target: null, value: !state.checked }));
+        return b;
+      }),
+    );
+  };
+}
+
 function create(api) {
   const prefs = () => api.use("prefs");
   let now = Object.freeze({ tabs: [], shown: null, docs: [] }); // what's docked, as state() and view["scene.drawer"] say
@@ -434,7 +487,8 @@ function create(api) {
       state: () => now,
     });
   /** panes(): the docked elements in tab order, and the one shown (for tests and probes) */
-  return { provides: { drawer: drawerFor }, panes: () => drawer.state(), dispose: () => drawer.dispose() };
+  const rail = createRail(api);
+  return { provides: { drawer: drawerFor }, panes: () => drawer.state(), update: () => rail(), dispose: () => drawer.dispose() };
 }
 
 export default { create };

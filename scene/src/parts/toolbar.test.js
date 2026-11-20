@@ -363,11 +363,13 @@ describe("scene.toolbar: groups, icons, settings", () => {
   afterEach(() => s?.unmount());
   const runs = () => [...s.root.querySelectorAll(".toolbar .bar-group:not([hidden])")].map((g) => [g.dataset.group, ...[...g.querySelectorAll("[data-command]")].map((e) => e.dataset.command)]);
 
-  it("each command in its group, the groups in order; icons named by their label; settings in the gear's popover", async () => {
+  it("each command in its group, the groups in order (panels on the drawer's rail); icons named by their label; settings in the gear's popover", async () => {
     s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, GROUPED], doc: { objects: {}, order: [] } });
     await s.settle();
     // (within a group: running order, then the order commands are declared in)
-    expect(runs()).toEqual([["history", "redo", "undo"], ["tools", "select-tool"], ["other", "wave"], ["panels", "panel"], ["view", "bounds"], ["settings", "units"]]);
+    expect(runs()).toEqual([["history", "redo", "undo"], ["tools", "select-tool"], ["other", "wave"], ["view", "bounds"], ["settings", "units"]]);
+    // the panels are the drawer's rail's, not the bar's
+    expect([...s.root.querySelectorAll(".stage-panel-rail [data-command]")].map((b) => b.dataset.command)).toEqual(["panel"]);
     expect(GROUPS).toEqual(["history", "tools", "other", "panels", "view", "settings"]);
     const undo = s.root.querySelector('.toolbar [data-command="undo"]');
     expect([undo.querySelector("svg") != null, undo.getAttribute("aria-label"), undo.textContent]).toEqual([true, "Undo", ""]);

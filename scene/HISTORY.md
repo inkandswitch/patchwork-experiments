@@ -1124,3 +1124,18 @@ modifier combination on and off a Mac, labels, which command a key runs; ⌘G
 and ⇧⌘G on a stage, ⌘C left to the browser; Extract's options from a real
 right-click.
 
+### 2026-11-19 — The drawer's rail; Measure in Dimensions (PLANS §5 slice 5)
+
+The lead: panel toggles belong to the drawer, and Measure to the Dimensions
+panel. The commands of the "panels" group (Inspector, Dimensions, Parts,
+each with an icon) are the drawer's rail now, not the bar's: a column of
+icons at the right edge, read through the focus's reader as the bar reads
+(no facet acquired: the view-plugins test caught the first try, which
+called api.focus()), there whenever a panel is on offer, so a closed drawer
+still shows what can open. Measure leaves the bar (its M stays): the
+Dimensions panel's head has its button, pressed while it's held, gone where
+no Measure is installed. The icons moved to `src/icons.js` (the bar's and
+the rail's). Tests: the rail's Inspector pressed with its tab; the panels
+off the bar and on the rail; the panel's Measure holding and putting down
+the tool.
+

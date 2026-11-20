@@ -989,10 +989,9 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     expect(s.drawer()).toEqual({ order: [pane, tab().body], shown: pane });
   });
 
-  it("the toolbar's Inspector says whether its tab is open, in the flush after it shuts (local.drawer)", async () => {
-    const toolbar = (await import("./toolbar.js")).default;
-    await bare({ a: object({ name: "A" }) }, [{ meta: { id: "scene.toolbar" }, module: toolbar }]);
-    const pressed = () => s.root.querySelector('.toolbar [data-command="inspector"]')?.getAttribute("aria-pressed");
+  it("the drawer's rail's Inspector says whether its tab is open, in the flush after it shuts (local.drawer)", async () => {
+    await bare({ a: object({ name: "A" }) }, []);
+    const pressed = () => s.root.querySelector('.stage-panel-rail [data-command="inspector"]')?.getAttribute("aria-pressed");
     expect(pressed()).toBe("false");
     await pick("a");
     expect(pressed()).toBe("true");

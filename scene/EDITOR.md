@@ -14,7 +14,7 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.keys`, `scene.use`, `scene.menu`, `scene.touch` | the key map; the use prompt; the context menu; the touch controls |
 | `scene.toolbar`, `scene.body`, `scene.clock-chip`, `scene.packages` | the bar of tools; the body chip, Edit, who's here, the Esc hint; the clock chips; the packages prompt |
 | `scene.inspector` | the one pane: the outline (`outline.js`) and the selection's fields |
-| `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions; Measure |
+| `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions and their panel; Measure (`M`, the Dimensions panel's button) |
 | `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
 | `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | drops; copy and paste; the parts bin; Undo and Redo |
 
@@ -185,10 +185,12 @@ field as its default.
 - **The toolbar** (`scene.toolbar`): the scene commands of every stage on the
   focus path, focus first: the editor's at the left while editing, `"world"`
   ones at the right in every body. The editor's are in groups, by a
-  command's `group`: history (undo, redo), tools (Select, Move, Measure),
-  the rest, panels (Inspector, Dimensions, Parts), view (frame, grid, axes,
-  bounds) and settings, behind a gear in a popover (units, snap); `order`
-  sorts within a group. A command with an `icon` (`src/parts/icons.js`) is
+  command's `group`: history (undo, redo), tools (Select, Move), the rest,
+  view (frame, grid, axes, bounds) and settings, behind a gear in a popover
+  (units, snap); `order` sorts within a group. The panels group (Inspector,
+  Dimensions, Parts) is the drawer's **rail** (`native/drawer.js`): a column
+  of icons at the right edge, there while some panel is on offer, each
+  pressed while its tab is open. A command with an `icon` (`src/parts/icons.js`) is
   drawn as it; otherwise a button, toggle (`checked`) or picker (`choices`,
   `value`).
 - **The body chip** (`scene.body`): Look, the bodies with `here` not false,

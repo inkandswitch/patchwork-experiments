@@ -386,7 +386,7 @@ function create(api) {
   });
 
   return {
-    commands: [tabToggle(tab, { id: "parts", name: "Parts", title: "Parts to put into the scene: drag one in, or click to put it where you're looking", available: () => parts.length > 0 })],
+    commands: [tabToggle(tab, { id: "parts", name: "Parts", icon: "parts", title: "Parts to put into the scene: drag one in, or click to put it where you're looking", available: () => parts.length > 0 })],
     update: (scene, local) => tab.update(scene, local),
     tab,
     dispose() {

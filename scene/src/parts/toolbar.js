@@ -15,7 +15,9 @@
 // panels (the drawer's tabs), view (frame, grid, axes, bounds) and settings,
 // which sit behind one gear, in a popover (units, snap); within a group, a
 // command's `order` (default 0) comes first, then running order. A command with an
-// `icon` (./icons.js) is drawn as it, its name its label and tooltip.
+// `icon` (../icons.js) is drawn as it, its name its label and tooltip. The
+// panels group (the drawer's tabs) isn't the bar's: the drawer's rail shows
+// it (../native/drawer.js).
 //
 // Each flush it works out every control's state; the DOM is touched only for
 // controls whose state changed, so a picker keeps its focus and a hover costs
@@ -45,7 +47,7 @@ import css from "./toolbar.css?inline";
 import { barEntries, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
 import { hintFor } from "../keymap.js";
 import { resolverState } from "./resolver.js";
-import { ICONS } from "./icons.js";
+import { ICONS } from "../icons.js";
 
 /** The editor's groups, in the order they sit (a command without a group is "other"). */
 export const GROUPS = Object.freeze(["history", "tools", "other", "panels", "view", "settings"]);
@@ -231,6 +233,11 @@ function create(api) {
       }
     };
     for (const g of GROUPS) {
+      // (the panels are the drawer's rail's)
+      if (g === "panels") {
+        groupEls.get(g).hidden = true;
+        continue;
+      }
       // in a group: by `order` (default 0), then running order and command order
       const items = entries.editor.filter((it) => groupOf(it.command) === g).sort((a, b) => (Number(a.command.order) || 0) - (Number(b.command.order) || 0));
       if (g === "settings") {

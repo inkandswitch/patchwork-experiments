@@ -358,22 +358,12 @@ command), and the bar mixes panels, display toggles, history and tools.
 - X-ray stays as it is (an overlay, allowed to be odd). The bottom bar is not
   yet thought about.
 
-### Slices
-1. Open: `open: true` on a command marks it an Open (scene.links' Enter,
-   patchwork-cad's Edit model); the inspector's header has the selection's
-   Open as its one button; the menu lists it after Select; double-click in
-   Edit (the Edit hand: a second click on the same target within 500 ms
-   and 6 px) and on an outline row; `Enter` Opens the selection.
-2. The inspector: header (name, what it is, Open); "In this scene"
-   (placement, appearance, lock, behaviours); "Built from" (the source as
-   an Open Editor row, version, rebuild, the build's params as fields, not a
-   mounted document); About as a row. No mounted documents.
-3. The bar: Select and Move as a palette (Edit only); grid, axes, bounds and
-   Frame all as icons; undo and redo as icons; units and snap in a settings
-   popover.
-4. The menu: the object commands leave the inspector for the context menu,
-   with keys.
-5. The drawer: panel toggles grouped there; Measure inside Dimensions.
+### Done
+Slices 1–5 (Open; the inspector's parts; the bar in groups; the menu's
+verbs with shortcuts; the drawer's rail and Measure in Dimensions):
+HISTORY.md, 2026-11-19. Still open: the bottom bar (body chip, Edit, who's
+here, the Esc hint, clock chips, the trail), which the lead hasn't thought
+about yet.
 
 ### Follow-ons (the lead, 2026-11-19)
 - **Camber and batten** get an Open of their own: a hull's or a batten's
