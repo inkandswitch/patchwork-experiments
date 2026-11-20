@@ -8,11 +8,19 @@
 // Escape clears the selection, then leaves the entered link, then puts it
 // down; putting it down puts down every tool picked up through an `edit: true`
 // command (Measure), wherever it is in the stack, and the selection. It stays
-// in hand across Enter and Leave.
+// in hand across Enter and Leave. A second click on the same thing within
+// DOUBLE_MS and DOUBLE_PX of the first Opens the selection (./open.js): in
+// Edit only, so a game's clicks stay clicks (PLANS.md §5). (Enter is the Open
+// commands' own key, so the key map shows and resolves it.)
 
 import { EDIT_HAND } from "../stage/bodies.js";
 import { restLayer } from "../stage/ladder.js";
 import { keyOf } from "../stage/paths.js";
+import { runOpen } from "./open.js";
+
+/** A double-click: the second click within this long (stage ms) and this near (px) of the first, on the same thing. */
+export const DOUBLE_MS = 500;
+export const DOUBLE_PX = 6;
 
 export default {
   create(api) {
@@ -21,13 +29,22 @@ export default {
       const v = api.view.get();
       return restLayer({ selection: v.selected != null, focus: v.focus?.length ?? 0 });
     };
+    /** The last click that selected something: { key, at, x, y }, to tell a double-click. */
+    let last = null;
+    /** Open what's selected at the focus (./open.js). */
+    const openSelected = () => runOpen(api, api.focus()?.view.get().selected ?? null);
     const input = {
       click(ev) {
         const path = ev?.hit?.path ?? null;
         // nothing to select or clear: the chain has it, the widget's owner first
         if (!path && api.view.get().selected == null) return false;
-        if (api.offerWidget("click", ev)) return true;
+        if (api.offerWidget("click", ev)) return (last = null), true;
         api.view.step({ type: "press", path: path ?? [] });
+        const key = path ? JSON.stringify(path) : null;
+        const now = api.now();
+        const double = key != null && last?.key === key && now - last.at <= DOUBLE_MS && Math.hypot(ev.x - last.x, ev.y - last.y) <= DOUBLE_PX;
+        last = key && !double ? { key, at: now, x: ev.x, y: ev.y } : null;
+        if (double) openSelected();
         return true;
       },
     };

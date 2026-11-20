@@ -225,8 +225,11 @@ function create(api) {
     inspect: () => snapshot({ stages: [...states].map(([k, st]) => ({ path: k.split("\u001f"), ...st, url: opened.get(k)?.url ?? null })) }),
     commands: [
       {
+        // a link's Open (EDITOR.md, "A command"): go inside it, to edit what's in it, in place
         id: "enter",
-        name: "Enter",
+        name: "Open",
+        open: true,
+        key: "Enter",
         show: ["menu", "inspector"],
         state: (target) => (target == null ? null : enterState(role(at(null, target)))),
         run: (target) => api.focus()?.view.enter(target) ?? false,

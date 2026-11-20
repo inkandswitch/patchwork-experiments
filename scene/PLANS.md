@@ -375,3 +375,10 @@ command), and the bar mixes panels, display toggles, history and tools.
    with keys.
 5. The drawer: panel toggles grouped there; Measure inside Dimensions.
 
+### Follow-ons (the lead, 2026-11-19)
+- **Camber and batten** get an Open of their own: a hull's or a batten's
+  editor in place, as patchwork-cad's model editor is (in the boatbook
+  wrapper, never pushed to Rising Tide's repos).
+- **Direct manipulation of OpenSCAD**: more ambitious (its code has no
+  feature history to hang manipulators on).
+

@@ -27,7 +27,8 @@ selects at the focus (on nothing it clears, outside the focus it selects
 nothing and goes no further), offered first to a widget's owner under it
 (`api.offerWidget`); presses aren't its; it wants the pointer. Its `escape()`
 clears the selection, then leaves the entered link. It stays in hand across
-Enter and Leave, in any body; a tool can sit over it. **Editing** is
+Enter and Leave, in any body; a tool can sit over it. A second click on the
+same thing within 500 ms and 6 px Opens the selection. **Editing** is
 `editing(view)` (`stage/bodies.js`): the editor's chrome (Move, inspector,
 toolbar's editor commands, grid, axes, bounds, dimensions, Measure, every
 `edit: true` command) shows exactly then (H13). Putting it down puts down every
@@ -41,13 +42,18 @@ such tool, wherever it is in the hands, and the selection.
   show?: string | string[],   // "toolbar", "world", "menu", "inspector", "use"; [] none
   hold?: boolean,             // shown as "hold F"
   reach?: true, edit?: true,
+  open?: true,                // the target's Open (below)
   tool?: { keys?, pointer? },
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?, options?, disabled? },
   run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit)
 ```
 
 An instance's `commands`, run by the kernel (`api.run`) in the context every
-surface passes. `state` null: not for this target; no `state`: the scene only.
+surface passes. **Open** (`open: true`, `src/parts/open.js`) goes into a thing
+to edit what's inside, in place: a link's (scene.links'), a package's editor
+for its content; a target's Open is the first that applies, and the inspector,
+the menu (after Select), the outline (its → and a double-click) and a
+double-click in Edit run it; an Open's key is `Enter`. `state` null: not for this target; no `state`: the scene only.
 `label` names the verb for this target; `title` is the tooltip, and the reason
 when `disabled`; `options` become inspector checkboxes passed as `value`.
 **Surfaces**: absent `show` means every surface but `"world"`; keys work

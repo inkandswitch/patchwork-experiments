@@ -35,6 +35,7 @@
 // Rows are kept per object id and updated in place: rebuilding them on every
 // doc change would destroy the colour input mid-drag (its picker closes).
 
+import { openFor, runOpen } from "./open.js";
 import css from "./outline.css?inline";
 import { atFocus, perFocus } from "./per-focus.js";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
@@ -45,7 +46,6 @@ import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
 import { add, drop, editor } from "./editor.js";
-import { enterState } from "../native/links.js";
 
 /** What a link's row says it is, by its role here (use("links").role), and why. Pure. */
 export function linkMark(link) {
@@ -253,11 +253,8 @@ export function createOutline(api, { shown = () => true } = {}) {
   const isShown = () => !!view && shown();
 
   const selectedId = () => here.view.get().selected ?? null;
-  /** Can this row be entered (an open link whose doc acts, here or where it's live)? */
-  const enterable = (id) => {
-    const can = enterState(linkOf(id));
-    return !!can && !can.disabled;
-  };
+  /** Can this row be opened (./open.js: a link to go inside, a model to edit in place)? */
+  const openable = (id) => !!openFor(api.collect("commands"), id, here.context(null));
   /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
   const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => linkOf(id)).filter(Boolean));
   function select(id) {
@@ -553,9 +550,9 @@ export function createOutline(api, { shown = () => true } = {}) {
       const fixedMark = group ? null : el("span", { class: "tag fixed-mark" }, "◷ fixed");
       // a link's: what it is here, and Enter where it can be entered
       const linkTag = group ? null : el("span", { class: "tag link-mark" });
-      const enterBtn = group ? null : el("button", { type: "button", class: "icon-button enter-link", title: "Enter: select and edit what's inside", "aria-label": "Enter", onclick: () => here.view.enter(id) }, "→");
+      const enterBtn = group ? null : el("button", { type: "button", class: "icon-button enter-link", title: "Open: edit what's inside, in place (double-click, Enter)", "aria-label": "Open", onclick: () => runOpen(api, id) }, "→");
       const remove = el("button", { type: "button", class: "icon-button remove", title: group ? "Remove group and everything in it" : "Remove from scene", "aria-label": "Remove from scene", onclick: () => removeRow(id) }, "×");
-      const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (enterable(id) ? here.view.enter(id) : (select(id), frameRow(id))) }, name, count);
+      const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (openable(id) ? (select(id), runOpen(api, id)) : (select(id), frameRow(id))) }, name, count);
       // The name is the grab handle. Making the whole row draggable would
       // fight the colour input and the visibility checkbox inside it.
       main.draggable = true;
@@ -701,7 +698,7 @@ export function createOutline(api, { shown = () => true } = {}) {
             linkTag.title = mark.title;
             if (linkTag.parentNode !== li) li.insertBefore(linkTag, remove);
           } else linkTag.remove();
-          if (enterable(id)) {
+          if (openable(id)) {
             if (enterBtn.parentNode !== li) li.insertBefore(enterBtn, remove);
           } else enterBtn.remove();
         }
