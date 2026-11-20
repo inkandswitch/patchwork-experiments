@@ -66,4 +66,15 @@ export const plugins = [
 			return (await import("./scene/source")).default
 		},
 	},
+	{
+		// Editing a model where it stands in a scene: its Open lays the code
+		// editor over the scene and draws each render in the object's place
+		// (src/scene/editTool.tsx).
+		type: "scene:view",
+		id: "openscad-scene-edit",
+		name: "OpenSCAD editing",
+		async load() {
+			return (await import("./scene/editTool")).default
+		},
+	},
 ]
