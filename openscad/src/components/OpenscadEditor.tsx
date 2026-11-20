@@ -22,7 +22,14 @@ function formatBytes(bytes: number): string {
 
 export function OpenscadEditor(props: {
 	handle: DocHandle<OpenscadDoc>
-	element: PatchworkViewElement
+	/** where its imports are found (`repo`); in Patchwork, the tool's element */
+	element: Pick<PatchworkViewElement, "repo">
+	/**
+	 * Laid over a host's own 3D view (a scene: src/scene/editTool.tsx): no view
+	 * of its own, the console under the code, and each render's STL handed to
+	 * the host (null when one fails, so the host keeps the last good one).
+	 */
+	hosted?: {onStl(stl: Uint8Array | null): void}
 }) {
 	const initialDoc = props.handle.doc()
 
@@ -74,6 +81,7 @@ export function OpenscadEditor(props: {
 			const result = await renderScad(source, importPayload)
 			if (id !== runId) return
 			setStl(result.stl)
+			props.hosted?.onStl(result.stl)
 			setLogs(result.logs)
 			setElapsedMillis(result.elapsedMillis)
 			setCached(!!result.cached)
@@ -83,6 +91,7 @@ export function OpenscadEditor(props: {
 			const message = err instanceof RenderError ? err.message : String((err as Error)?.message ?? err)
 			setLogs(message.split("\n"))
 			setStatus("error")
+			props.hosted?.onStl(null)
 		}
 	}
 
@@ -212,7 +221,7 @@ export function OpenscadEditor(props: {
 	}
 
 	return (
-		<div class="openscad-tool">
+		<div class="openscad-tool" classList={{"openscad-tool--hosted": !!props.hosted}}>
 			<style>{styles}</style>
 
 			<div class="openscad-toolbar">
@@ -297,14 +306,16 @@ export function OpenscadEditor(props: {
 					/>
 				</div>
 				<div class="openscad-pane-view">
-					<div class="openscad-view-stage">
-						<Viewer3D stl={stl()} />
-						<Show when={!stl()}>
-							<div class="openscad-viewer-placeholder">
-								{status() === "error" ? "Fix the error below and render again" : "Rendering your model…"}
-							</div>
-						</Show>
-					</div>
+					<Show when={!props.hosted}>
+						<div class="openscad-view-stage">
+							<Viewer3D stl={stl()} />
+							<Show when={!stl()}>
+								<div class="openscad-viewer-placeholder">
+									{status() === "error" ? "Fix the error below and render again" : "Rendering your model…"}
+								</div>
+							</Show>
+						</div>
+					</Show>
 					<div
 						class="openscad-console"
 						data-state={status() === "error" ? "error" : undefined}
