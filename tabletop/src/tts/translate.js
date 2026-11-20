@@ -40,6 +40,9 @@
 //   Figurine        a standee: its image stood up on a base
 //   HandTrigger     a seat, and its hand: a tray with card slots, the seat's zone
 //   SnapPoints      the pieces' snap points, and the table's
+//   Table           a table slab under it all, its TableURL on top; for
+//                   Table_None, sunk a little under the table top (the mod
+//                   may bring its own table, its top at the table top)
 //   States          the piece's states, in TTS's order (its first the piece's
 //                   own look), each named by its Nickname or "<piece> (state n)";
 //                   a thing in another state says which (`state`). A card's
@@ -490,10 +493,14 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
   }
 
   const setup = [];
-  // the table under it all: the mod's table image on top, its free snap points
+  // the table under it all: the mod's table image on top, its free snap points. A mod that says
+  // Table_None may bring its own (a locked model whose top is where things rest): this one's top
+  // then lies TABLE_NONE_SINK below the table top, under the mod's, not in its plane fighting it
+  // for the same pixels; a mod with none of its own still has something under its things
+  const sink = save.table === "Table_None" ? TABLE_NONE_SINK : 0;
   const table = usePiece({
     name: "Table",
-    parts: [slab({ w: 2 * ext.hx * u, d: 2 * ext.hz * u, t: 0.5 * u, y: -0.5 * u, color: "#4d6b56", side: "#5a4535", top: image(url(save.tableURL)) })],
+    parts: [slab({ w: 2 * ext.hx * u, d: 2 * ext.hz * u, t: 0.5 * u, y: -0.5 * u - sink, color: "#4d6b56", side: "#5a4535", top: image(url(save.tableURL)) })],
     locked: true,
     ...(save.snapPoints?.length ? { snapPoints: save.snapPoints.map((s) => snap({ ...s, position: [s.position[0] - ext.cx, 0, s.position[2] - ext.cz] }, [1, 1, 1])) } : {}),
   });
@@ -554,6 +561,9 @@ export function translate(save, { file = (u) => (isWeb(u) ? u : null), unit = 0.
   };
   return { game, counts: { ...counts, pieces: Object.keys(pieces).length, placed, tableY }, skipped, approximated, warnings };
 }
+
+/** How far (m) a Table_None mod's table slab lies under the table top: under a table the mod brings, far more than the depth buffer can tell apart, too little to see things float. */
+export const TABLE_NONE_SINK = 0.005;
 
 /** TTS's player colours, in its own order: the order seats are kept in as fewer play. */
 const COLOURS = ["white", "brown", "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "grey", "black"];
