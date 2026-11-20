@@ -30,8 +30,8 @@ import { say } from "./loop.js"
 import { handleStore } from "./store.js"
 
 export const STORAGE_TOOL_ID = "agent-ambient"
-const FALLBACK_KEY = "patchwork-agent:ambient"
-const STORAGE_TIMEOUT_MS = 3000
+/** How long the box waits for the account's storage before saying it is waiting. */
+export const STORAGE_PATIENCE_MS = 3000
 const HISTORY_LIMIT = 20
 
 const el = (tag, className, text) => {
@@ -58,51 +58,29 @@ export function isToggleShortcut(event) {
 // ---- where the session lives ---------------------------------------------
 
 /**
- * A stand-in for the tool-storage document when no provider answers: the same
- * `{ doc, change, on, off }` surface over this device's localStorage. Only a
- * pointer is kept there — the sessions themselves are still documents.
+ * The agent's tool-storage document: the account's one list of sessions.
+ *
+ * Waited for as long as it takes. There is no other list to fall back to: a
+ * device-local stand-in, used when the account's storage was slow to answer,
+ * became a second list that silently took over on slow loads and was never
+ * merged back. Rejects only if the storage document itself cannot be loaded.
  */
-function localStorageDoc() {
-  const listeners = new Set()
-  let doc = {}
-  try {
-    doc = JSON.parse(globalThis.localStorage?.getItem(FALLBACK_KEY) ?? "{}") ?? {}
-  } catch {
-    doc = {}
-  }
-  return {
-    doc: () => doc,
-    change(fn) {
-      fn(doc)
-      try {
-        globalThis.localStorage?.setItem(FALLBACK_KEY, JSON.stringify(doc))
-      } catch {
-        /* storage full or blocked: the pointer lasts as long as the page */
-      }
-      for (const listener of [...listeners]) listener({ doc })
-    },
-    on: (event, fn) => event === "change" && listeners.add(fn),
-    off: (_event, fn) => listeners.delete(fn),
-  }
-}
-
-/** The agent's tool-storage document, or the local stand-in if nobody answers. */
-export function findStorage(element, repo, { timeoutMs = STORAGE_TIMEOUT_MS } = {}) {
-  return new Promise((resolve) => {
-    let settled = false
-    let unsubscribe = () => {}
-    const settle = (value) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      unsubscribe()
-      resolve(value)
+export function findStorage(element, repo) {
+  return new Promise((resolve, reject) => {
+    let answered = false
+    let unsubscribe = null
+    const stop = () => {
+      unsubscribe?.()
+      unsubscribe = null
     }
-    const timer = setTimeout(() => settle(localStorageDoc()), timeoutMs)
     unsubscribe = subscribe(element, { type: "patchwork:tool-storage", toolId: STORAGE_TOOL_ID }, (url) => {
-      if (!url) return
-      repo.find(url).then(settle, () => settle(localStorageDoc()))
+      if (!url || answered) return
+      answered = true
+      // A provider may answer before subscribe has returned.
+      queueMicrotask(stop)
+      Promise.resolve(repo.find(url)).then(resolve, reject)
     })
+    if (answered) stop()
   })
 }
 
@@ -237,15 +215,27 @@ export function AmbientAgent(element, options = {}) {
   }
 
   // ---- the session -----------------------------------------------------
-  async function ensureStorage() {
-    if (!storage) {
-      storage = await findStorage(element, repo)
-      storage.on("change", onStorageChange)
-      // The sessions to follow are listed here: start following them now, not
-      // at the list's next change.
-      onStorageChange()
-    }
-    return storage
+  // One lookup at a time; a failed one is forgotten, so opening the box again
+  // asks again.
+  let finding = null
+  function ensureStorage() {
+    if (storage) return Promise.resolve(storage)
+    finding ??= findStorage(element, repo).then(
+      (found) => {
+        if (disposed) return found
+        storage = found
+        storage.on("change", onStorageChange)
+        // The sessions to follow are listed here: start following them now, not
+        // at the list's next change.
+        onStorageChange()
+        return storage
+      },
+      (err) => {
+        finding = null
+        throw err
+      }
+    )
+    return finding
   }
 
   function onStorageChange() {
@@ -268,7 +258,11 @@ export function AmbientAgent(element, options = {}) {
 
   function ensureMounted() {
     mounting ??= (async () => {
-      const store = await ensureStorage()
+      // Said only if it is slow: usually the account's storage is already here.
+      const waiting = setTimeout(() => {
+        if (!sessionUrl) body.replaceChildren(el("div", "agent-empty", "Waiting for your account's agent storage to load…"))
+      }, STORAGE_PATIENCE_MS)
+      const store = await ensureStorage().finally(() => clearTimeout(waiting))
       await mount(await currentSession(store, repo))
     })().catch((err) => {
       mounting = null

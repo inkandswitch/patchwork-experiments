@@ -3,7 +3,7 @@
  * carry what was open when they were sent.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { AmbientAgent, STORAGE_TOOL_ID } from "./ambient.js"
+import { AmbientAgent, STORAGE_TOOL_ID, STORAGE_PATIENCE_MS } from "./ambient.js"
 import { contextBlock, describeContext, toRequest, initSession, makeTurn, textBlock } from "./session.js"
 import { say } from "./loop.js"
 import { memoryStore } from "./store.js"
@@ -52,7 +52,7 @@ function fakeRepo(seed = {}) {
 function fakeFrame({ selected = null, open = [], storageUrl = null } = {}) {
   const frame = document.createElement("div")
   document.body.append(frame)
-  const ports = { selected: new Set(), open: new Set() }
+  const ports = { selected: new Set(), open: new Set(), storage: new Set() }
   const opened = []
   const send = (port, value) => port.postMessage({ type: "change", value })
 
@@ -64,8 +64,9 @@ function fakeFrame({ selected = null, open = [], storageUrl = null } = {}) {
     } else if (selector.type === "patchwork:open-views") {
       ports.open.add(port)
       send(port, open)
-    } else if (selector.type === "patchwork:tool-storage" && storageUrl && selector.toolId === STORAGE_TOOL_ID) {
-      send(port, storageUrl)
+    } else if (selector.type === "patchwork:tool-storage" && selector.toolId === STORAGE_TOOL_ID) {
+      ports.storage.add(port)
+      if (storageUrl) send(port, storageUrl)
     }
   })
   frame.addEventListener("patchwork:open-document", (event) => opened.push(event.detail))
@@ -80,6 +81,11 @@ function fakeFrame({ selected = null, open = [], storageUrl = null } = {}) {
     setOpen(views) {
       open = views
       for (const port of ports.open) send(port, views)
+    },
+    /** The account's storage arriving, however late. */
+    answerStorage(url) {
+      storageUrl = url
+      for (const port of ports.storage) send(port, url)
     },
   }
 }
@@ -231,6 +237,42 @@ describe("the ambient box", () => {
     box().querySelector("button[title='Start a new session']").click()
     await vi.waitFor(() => expect(storage().sessionUrl).not.toBe(first))
     expect(storage().sessions).toEqual([storage().sessionUrl, first])
+  })
+
+  it("waits for the account's storage, however long it takes, and keeps no list of its own", async () => {
+    // What an older version left on this device is neither read nor written.
+    localStorage.setItem("patchwork-agent:ambient", JSON.stringify({ sessionUrl: "automerge:old", sessions: ["automerge:old"] }))
+    const { box, frame, storage, repo } = mountAmbient({ storageUrl: null })
+    press("j")
+    expect(box().hidden).toBe(false)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(box().querySelector(".patchwork-agent")).toBeNull()
+    expect(repo.handles.size).toBe(1) // only the storage document: no session made in the meantime
+
+    frame.answerStorage(STORAGE)
+    await vi.waitFor(() => expect(box().querySelector(".patchwork-agent")).toBeTruthy())
+    expect(storage().sessions).toEqual([storage().sessionUrl])
+    expect(storage().sessions).not.toContain("automerge:old")
+    expect(JSON.parse(localStorage.getItem("patchwork-agent:ambient")).sessions).toEqual(["automerge:old"])
+  })
+
+  it("says it is waiting when the account's storage is slow", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      const { box, frame, repo } = mountAmbient({ storageUrl: null })
+      press("j")
+      await vi.advanceTimersByTimeAsync(STORAGE_PATIENCE_MS * 10)
+      expect(box().textContent).toContain("Waiting for your account's agent storage")
+      // Long past when the old stand-in took over: no session, no local list.
+      expect(repo.handles.size).toBe(1)
+      expect(localStorage.getItem("patchwork-agent:ambient")).toBeNull()
+      frame.answerStorage(STORAGE)
+      vi.useRealTimers()
+      await vi.waitFor(() => expect(box().querySelector(".patchwork-agent")).toBeTruthy())
+      expect(box().textContent).not.toContain("Waiting for your account's agent storage")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("docks the session as a panel", async () => {
