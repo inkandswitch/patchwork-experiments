@@ -42,7 +42,9 @@ export const plugins = [
 		// Bump when build() makes different output from the same doc and
 		// params; renders built by an older version (or none) go stale once.
 		// The fingerprint stays content-only. v1: the Manifold backend.
-		version: 1,
+		// v2: colours (a primitive per color()). v3: the vendored engine,
+		// OpenSCAD 2026.11.20 with Manifold 3.5.4.
+		version: 3,
 		params: [
 			{
 				key: "unit",
@@ -55,7 +57,7 @@ export const plugins = [
 					{value: "m", label: "Metres"},
 					{value: "in", label: "Inches"},
 				],
-				// the engine caches STLs by source + imports, so a unit
+				// the engine caches models by source + imports, so a unit
 				// change only re-encodes
 				cost: "cheap",
 			},

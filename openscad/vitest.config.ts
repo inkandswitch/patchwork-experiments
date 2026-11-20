@@ -1,6 +1,6 @@
 import {defineConfig} from "vitest/config"
 
-// The scene:source build path is pure (STL -> GLB), so node is enough; no
+// The scene:source build path is pure (OFF -> model -> GLB), so node is enough; no
 // Solid plugin needed because the tests never render a component.
 export default defineConfig({
 	test: {

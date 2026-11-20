@@ -2,15 +2,16 @@ import {describe, expect, it, vi} from "vitest"
 import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js"
 import type {Mesh} from "three"
 import {parseGLB} from "./glb.js"
-import {parseSTL, zUpToYUpMeters} from "./stl"
-import {createOpenscadSource, dependencies, fingerprint, stlToGLB} from "./source"
+import {zUpToYUpMeters} from "./axes"
+import {createOpenscadSource, dependencies, fingerprint, modelToGLB} from "./source"
 import {createRenderCache} from "../render/engine"
+import type {Model, RGBA} from "../render/model"
 import type {OpenscadDoc} from "../types"
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 
-/** A binary STL of an axis-aligned box from [0,0,0] to size, 12 triangles (OpenSCAD `cube(size)`). */
-function boxSTL([sx, sy, sz]: [number, number, number]): Uint8Array {
-	const v = (x: number, y: number, z: number) => [x * sx, y * sy, z * sz]
+/** The triangles of an axis-aligned box from `at` to `at` + size, 12 of them (OpenSCAD `cube(size)`). */
+function boxPositions([sx, sy, sz]: [number, number, number], at = [0, 0, 0]): Float32Array {
+	const v = (x: number, y: number, z: number) => [at[0] + x * sx, at[1] + y * sy, at[2] + z * sz]
 	// quads as corner lists, counter-clockwise seen from outside
 	const quads = [
 		[v(0, 0, 0), v(0, 1, 0), v(1, 1, 0), v(1, 0, 0)], // -z
@@ -20,15 +21,16 @@ function boxSTL([sx, sy, sz]: [number, number, number]): Uint8Array {
 		[v(0, 0, 0), v(0, 0, 1), v(0, 1, 1), v(0, 1, 0)], // -x
 		[v(1, 0, 0), v(1, 1, 0), v(1, 1, 1), v(1, 0, 1)], // +x
 	]
-	const tris = quads.flatMap(([a, b, c, d]) => [[a, b, c], [a, c, d]])
-	const bytes = new Uint8Array(84 + tris.length * 50)
-	const dv = new DataView(bytes.buffer)
-	dv.setUint32(80, tris.length, true)
-	tris.forEach((tri, t) => {
-		tri.flat().forEach((value, k) => dv.setFloat32(84 + t * 50 + 12 + k * 4, value, true))
-	})
-	return bytes
+	return Float32Array.from(quads.flatMap(([a, b, c, d]) => [a, b, c, a, c, d]).flat())
 }
+
+/** An uncoloured box, as the engine hands it over. */
+function boxModel(size: [number, number, number], color: RGBA | null = null): Model {
+	return {parts: [{color, positions: boxPositions(size)}], triangles: 12}
+}
+
+const emptyModel = (): Model => ({parts: [], triangles: 0})
+const rendered = (model: Model, elapsedMillis = 1) => ({model, logs: [], elapsedMillis})
 
 function load(bytes: Uint8Array): Promise<any> {
 	const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
@@ -37,28 +39,7 @@ function load(bytes: Uint8Array): Promise<any> {
 
 const url = (id: string) => `automerge:${id}` as AutomergeUrl
 
-describe("STL parsing and axes", () => {
-	it("reads binary STL", () => {
-		const stl = parseSTL(boxSTL([30, 10, 15]))
-		expect(stl.format).toBe("binary")
-		expect(stl.triangles).toBe(12)
-	})
-
-	it("reads ASCII STL", () => {
-		const text = `solid t
-facet normal 0 0 1
- outer loop
-  vertex 0 0 0
-  vertex 1 0 0
-  vertex 0 1 0
- endloop
-endfacet
-endsolid t`
-		const stl = parseSTL(new TextEncoder().encode(text))
-		expect(stl.format).toBe("ascii")
-		expect(Array.from(stl.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0])
-	})
-
+describe("axes", () => {
 	it("turns Z-up millimetres into Y-up metres: (x, y, z) -> (x, z, -y)", () => {
 		const out = zUpToYUpMeters(new Float32Array([10, 20, 30]), "mm")
 		expect(out[0]).toBeCloseTo(0.01)
@@ -68,9 +49,9 @@ endsolid t`
 	})
 })
 
-describe("stlToGLB", () => {
+describe("modelToGLB", () => {
 	it("makes a GLB that three loads, Y-up metres, with normals pointing outward", async () => {
-		const {glb, meta, triangles} = stlToGLB(boxSTL([30, 10, 15]), "mm", "box")
+		const {glb, meta, triangles} = modelToGLB(boxModel([30, 10, 15]), "mm", "box")
 		expect(triangles).toBe(12)
 		// width (x) 30 mm, height (y, was z) 15 mm, depth (z, was -y) 10 mm
 		expect(meta?.bounds?.min.map(n => +n.toFixed(4))).toEqual([0, 0, -0.01])
@@ -79,6 +60,8 @@ describe("stlToGLB", () => {
 		const {json} = parseGLB(glb)
 		expect(json.asset.version).toBe("2.0")
 		expect(json.meshes[0].name).toBe("box")
+		// uncoloured: no material, so the viewer's default applies
+		expect(json.materials).toBeUndefined()
 
 		const gltf = await load(glb)
 		const mesh = gltf.scene.getObjectByName("box") as Mesh
@@ -97,9 +80,30 @@ describe("stlToGLB", () => {
 		}
 	})
 
-	it("encodes an empty STL as a valid, empty GLB", async () => {
-		const empty = new Uint8Array(84)
-		const {glb, triangles} = stlToGLB(empty)
+	it("makes a primitive per colour, with a material each; alpha < 1 blends", () => {
+		const model: Model = {
+			triangles: 24,
+			parts: [
+				{color: [1, 0, 0, 1], positions: boxPositions([10, 10, 10])},
+				{color: [0, 0, 1, 0.5], positions: boxPositions([10, 10, 10], [20, 0, 0])},
+			],
+		}
+		const {glb, meta} = modelToGLB(model)
+		const {json} = parseGLB(glb)
+		const prims = json.meshes[0].primitives
+		expect(prims).toHaveLength(2)
+		const [red, blue] = prims.map((p: any) => json.materials[p.material])
+		expect(red.pbrMetallicRoughness.baseColorFactor).toEqual([1, 0, 0, 1])
+		expect(red.alphaMode).toBeUndefined()
+		expect(blue.pbrMetallicRoughness.baseColorFactor.slice(0, 3)).toEqual([0, 0, 1])
+		expect(blue.pbrMetallicRoughness.baseColorFactor[3]).toBeCloseTo(0.5, 2)
+		expect(blue.alphaMode).toBe("BLEND")
+		// bounds cover every part
+		expect(meta?.bounds?.max[0]).toBeCloseTo(0.03)
+	})
+
+	it("encodes an empty model as a valid, empty GLB", async () => {
+		const {glb, triangles} = modelToGLB(emptyModel())
 		expect(triangles).toBe(0)
 		const gltf = await load(glb)
 		expect(gltf.scene).toBeTruthy()
@@ -150,7 +154,7 @@ describe("dependencies", () => {
 	})
 
 	it("lists exactly the docs build() fetches", async () => {
-		const render = vi.fn(async () => ({stl: new Uint8Array(84), logs: [], elapsedMillis: 1}))
+		const render = vi.fn(async () => rendered(emptyModel()))
 		const impl = createOpenscadSource(async () => render)
 		const find = vi.fn(async (_u: AutomergeUrl) => ({doc: () => ({link: url("nested")})}))
 		const doc: OpenscadDoc = {
@@ -166,7 +170,7 @@ describe("dependencies", () => {
 	})
 
 	it("is on the SourceImpl, alongside a fingerprint that ignores import contents", () => {
-		const impl = createOpenscadSource(async () => async () => ({stl: new Uint8Array(84), logs: [], elapsedMillis: 0}))
+		const impl = createOpenscadSource(async () => async () => rendered(emptyModel(), 0))
 		expect(impl.dependencies).toBe(dependencies)
 		const doc: OpenscadDoc = {source: "cube(data.w);", imports: [{name: "data", docUrl: url("a")}]}
 		// the fingerprint is a pure function of this doc; the host tracks url("a")'s heads itself
@@ -175,11 +179,10 @@ describe("dependencies", () => {
 })
 
 describe("the SourceImpl", () => {
-	function setup(stl = boxSTL([20, 20, 20])) {
+	function setup(model = boxModel([20, 20, 20])) {
 		const render = vi.fn(async (_source: string, _imports?: {name: string; json: string}[]) => ({
-			stl,
+			...rendered(model, 1200),
 			logs: ["WARNING: something"],
-			elapsedMillis: 1200,
 		}))
 		const impl = createOpenscadSource(async () => render)
 		return {render, impl}
