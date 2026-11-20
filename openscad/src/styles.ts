@@ -201,6 +201,23 @@ export const styles = `
   to { transform: rotate(360deg); }
 }
 
+/* Laid over a scene (src/scene/editTool.tsx): the code fills the panel, the console under it, no view of its own */
+.openscad-tool--hosted .openscad-body {
+  flex-direction: column;
+}
+
+.openscad-tool--hosted .openscad-pane-editor {
+  width: auto;
+  flex: 1;
+  border-right: none;
+}
+
+.openscad-tool--hosted .openscad-pane-view {
+  flex: 0 0 auto;
+  max-height: 30%;
+  border-top: 1px solid var(--openscad-border);
+}
+
 .openscad-body {
   flex: 1;
   display: flex;

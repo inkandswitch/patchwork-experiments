@@ -117,6 +117,21 @@ a different origin from the page (a dev server), the engine fetches the
 worker and starts it from a blob URL, since `new Worker()` refuses
 cross-origin scripts.
 
+### Editing it in place
+
+The package also registers a `scene:view`, `openscad-scene-edit`
+(`src/scene/editTool.tsx`): the model's **Open** (the scene's `open: true`
+convention: the inspector's header button, the object's menu, a double-click
+or Enter, in Edit). It puts a hand on the scene's stack, hides the object's
+built GLB from this viewer, lays this package's editor over the scene
+(`OpenscadEditor` with `hosted`: toolbar, imports, code and console, no 3D
+view of its own) and draws each of its renders in the object's place with
+the scene's own three.js, in the object's frame and its build's `unit`
+(`src/scene/hosted.ts` `modelFrame`, the GLB's own turn). Every write goes
+on the scene's undo through its `edits` service (`hostedHandle`), leaving
+Patchwork's `@` keys out; without the service it writes directly. Escape
+leaves (a focused code field takes its own Escape first).
+
 ## Possible follow-ups
 
 - Customizer panel for OpenSCAD `/* [group] */` parameters.
