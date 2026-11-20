@@ -654,6 +654,8 @@ try {
       // a click on the card selects it, now that the focus is in its doc (Edit's click, ahead of carrying)
       const at2 = await until(`aimAt(${J(target)}, 'a')`, 5000);
       if (at2) await b.click(at2.x, at2.y);
+      // (the halo's handles are Move's, a tool: V picks it up)
+      await b.key("v");
       await until(`halo('a')?.id === ${J(target)}`, 5000);
       await b.rest(800); // (the inspector's tab, opening on it, narrows the canvas: let it settle before aiming)
       const seen = await P("seen('a')");
