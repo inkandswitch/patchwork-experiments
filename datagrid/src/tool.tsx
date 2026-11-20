@@ -23,6 +23,12 @@ import {
 
 registerAllModules();
 
+const FILL_CHAIN = `
+.datagrid-root > div,
+.datagrid-root .ht-root-wrapper,
+.datagrid-root .ht-grid { height: 100%; }
+`;
+
 function DataGridEditor({ handle }: { handle: DocHandle<DataGridDoc> }) {
   const [doc] = useDocument<DataGridDoc>(handle.url);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -80,10 +86,19 @@ function DataGridEditor({ handle }: { handle: DocHandle<DataGridDoc> }) {
   }
 
   return (
+    // The grid fills the view and scrolls inside itself. It was `height="auto"`
+    // in a div with no height (its `overflow-scroll` is a Tailwind class, and
+    // there is no Tailwind here), so the table grew to every row and the view
+    // clipped it: nothing below the fold could be reached.
     <div
       ref={containerRef}
-      className="datagrid-root ht-theme-main overflow-scroll eldritch-horrors"
+      className="datagrid-root ht-theme-main"
+      style={{ width: "100%", height: "100%", overflow: "hidden" }}
     >
+      {/* Handsontable 17 wraps its grid in HotTable's div, .ht-root-wrapper
+          and .ht-grid, none of which has a height, so its 100% came out as 0.
+          Each fills the one above it, down to the grid. */}
+      <style>{FILL_CHAIN}</style>
       <HotTable
         data={doc.data}
         beforeChange={onBeforeHotChange}
@@ -92,8 +107,8 @@ function DataGridEditor({ handle }: { handle: DocHandle<DataGridDoc> }) {
         rowHeaders={true}
         colHeaders={true}
         contextMenu={true}
-        width="auto"
-        height="auto"
+        width="100%"
+        height="100%"
         autoWrapRow={false}
         autoWrapCol={false}
         licenseKey="non-commercial-and-evaluation"
