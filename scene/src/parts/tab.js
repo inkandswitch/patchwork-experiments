@@ -106,6 +106,7 @@ export function tabToggle(tab, { id, name, title, available = () => true }) {
   return {
     id,
     name,
+    group: "panels",
     // the drawer's tabs are the editor's (../stage/bodies.js): only while editing
     edit: true,
     show: ["toolbar"],

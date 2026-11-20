@@ -85,3 +85,76 @@
   .picker:disabled:where(:not(.about-embed *), .about-embed .scene-tool *) {
   opacity: 0.5;
 }
+
+
+/* The editor's groups (PLANS.md §5): history, tools, the rest, panels, view,
+   each a run of controls with a gap between runs; settings is a gear with
+   its popover. */
+.scene-stage .toolbar .bar-group:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.scene-stage .toolbar .bar-group[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .toolbar .tools:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+.scene-stage .toolbar .bar-group > *:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  box-sizing: border-box;
+  height: var(--scene-toolbar-control);
+}
+
+.scene-stage .toolbar .icon-button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-grid;
+  place-items: center;
+  width: var(--scene-toolbar-control);
+  padding: 0;
+}
+
+.scene-stage .toolbar .icon-button svg:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: block;
+}
+
+.scene-stage .toolbar .bar-group[data-group="settings"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: relative;
+}
+
+.scene-stage .toolbar .settings-popover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 10rem;
+  padding: 8px;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+  height: auto;
+}
+
+.scene-stage .toolbar .settings-popover[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .toolbar .setting:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scene-stage .toolbar .setting-name:empty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}

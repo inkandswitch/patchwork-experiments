@@ -1186,6 +1186,7 @@ function create(api) {
   commands.push({
     id: "inspector",
     name: "Inspector",
+    group: "panels",
     edit: true,
     show: ["toolbar"],
     state: (target) => (target == null ? { checked: tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),

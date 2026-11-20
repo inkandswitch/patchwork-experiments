@@ -11,7 +11,8 @@
 // in hand across Enter and Leave. A second click on the same thing within
 // DOUBLE_MS and DOUBLE_PX of the first Opens the selection (./open.js): in
 // Edit only, so a game's clicks stay clicks (PLANS.md §5). (Enter is the Open
-// commands' own key, so the key map shows and resolves it.)
+// commands' own key, so the key map shows and resolves it.) Its Select, on
+// the bar beside Move, puts the editor's tools down.
 
 import { EDIT_HAND } from "../stage/bodies.js";
 import { restLayer } from "../stage/ladder.js";
@@ -101,6 +102,22 @@ export default {
           show: [],
           state: (target) => (target == null ? { checked: !!release, title: release ? "Put the editor down" : "Pick up the editor: select, move and change things" } : null),
           run: (_target, value) => hold(value === undefined ? !release : !!value),
+        },
+        {
+          // Select (PLANS.md §5): the editor's resting tool, beside Move on the bar: picking it
+          // puts down every tool picked up through an `edit: true` command; it's checked while none is held
+          id: "select-tool",
+          name: "Select",
+          group: "tools",
+          // first of the tools, whatever runs before the editor
+          order: -1,
+          icon: "select",
+          edit: true,
+          show: ["toolbar"],
+          state: (target) => (target == null ? { checked: !(api.view.get().held ?? []).some(edits), title: "Select: a click selects (puts the other tools down)" } : null),
+          run: () => {
+            for (const t of api.view.get().held ?? []) if (edits(t)) api.putDown(t);
+          },
         },
       ],
     };

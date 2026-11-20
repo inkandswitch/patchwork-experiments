@@ -375,6 +375,8 @@ function create(api) {
         id: MOVE.command,
         name: "Move",
         key: "v",
+        group: "tools",
+        icon: "move",
         edit: true,
         show: ["toolbar"],
         // a tool: on top of the hands while held; V again (or Escape at the top) puts it down

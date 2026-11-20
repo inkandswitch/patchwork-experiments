@@ -249,6 +249,8 @@ function measureAt(api, view, hint) {
       edit: true,
       name: "Measure",
       key: "m",
+      group: "tools",
+      icon: "measure",
       // a tool: its run's input goes on top of the hands
       tool: { pointer: true },
       state: (target) => (target == null ? { checked: holding, title: "Measure point to point" } : null),

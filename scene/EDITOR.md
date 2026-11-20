@@ -43,6 +43,7 @@ such tool, wherever it is in the hands, and the selection.
   hold?: boolean,             // shown as "hold F"
   reach?: true, edit?: true,
   open?: true,                // the target's Open (below)
+  group?: string, icon?: string, order?: number,  // where it sits on the bar (below)
   tool?: { keys?, pointer? },
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?, options?, disabled? },
   run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit)
@@ -178,8 +179,13 @@ field as its default.
 
 - **The toolbar** (`scene.toolbar`): the scene commands of every stage on the
   focus path, focus first: the editor's at the left while editing, `"world"`
-  ones at the right in every body. Each a button, toggle (`checked`) or picker
-  (`choices`, `value`).
+  ones at the right in every body. The editor's are in groups, by a
+  command's `group`: history (undo, redo), tools (Select, Move, Measure),
+  the rest, panels (Inspector, Dimensions, Parts), view (frame, grid, axes,
+  bounds) and settings, behind a gear in a popover (units, snap); `order`
+  sorts within a group. A command with an `icon` (`src/parts/icons.js`) is
+  drawn as it; otherwise a button, toggle (`checked`) or picker (`choices`,
+  `value`).
 - **The body chip** (`scene.body`): Look, the bodies with `here` not false,
   Leave; **Edit** beside it; who's here in the focus doc, with body and top
   hand; the Esc hint (the layer the next Escape pops).

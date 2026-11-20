@@ -1094,3 +1094,17 @@ finite cases (double-click gates, Enter, Edit only, menu order); the
 inspector's parts for each kind of object; rows' Open Editor, Dock and
 drag; the build controls' writes and their undo; buildSummary by cases.
 
+### 2026-11-19 — The bar in groups (PLANS §5 slice 3)
+
+The lead: display toggles and history as paired icons, Select beside the
+modal tools, edit tools only in Edit. A command may say its `group`
+(history, tools, panels, view, settings; anything else is "other"), its
+`icon` and an `order`; the bar lays the editor's commands out in that
+order of groups, icons drawn from `src/parts/icons.js`, settings (units,
+snap) behind a gear in a popover (a popover hand: Escape closes it).
+**Select** is the Edit hand's: it puts down every tool picked up through an
+`edit: true` command and is checked while none is held; being `edit: true`
+itself, it and the other tools show only while editing, so picking one
+never enters Edit. Tests: groups in order, icons named by their label, the
+popover, Select and Move.
+
