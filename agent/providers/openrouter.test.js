@@ -26,6 +26,15 @@ const collect = async (iterable) => {
 }
 
 describe("toOpenAIMessages", () => {
+  it("keeps a turn's text parts apart, so a URL never runs into the words after it", () => {
+    const note = "[Workspace when this message was sent]\nFocused: \"board\" — automerge:xaDNcJdLK5n9ia6BqPQebwR4xnU"
+    const [user] = toOpenAIMessages(null, [{ role: "user", content: [{ type: "text", text: note }, { type: "text", text: "okay, the board" }] }])
+    expect(user.content).toBe(`${note}\n\nokay, the board`)
+    expect(user.content.match(/automerge:[1-9A-HJ-NP-Za-km-z]+/)[0]).toBe("automerge:xaDNcJdLK5n9ia6BqPQebwR4xnU")
+    const [withImage] = toOpenAIMessages(null, [{ role: "user", content: [{ type: "text", text: note }, { type: "text", text: "okay" }, { type: "image", image: "data:image/png;base64,AA" }] }])
+    expect(withImage.content[0].text).toBe(`${note}\n\nokay`)
+  })
+
   it("puts the system prompt first", () => {
     const out = toOpenAIMessages("be terse", [])
     expect(out[0]).toEqual({ role: "system", content: "be terse" })

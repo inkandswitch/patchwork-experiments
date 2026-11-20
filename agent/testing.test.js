@@ -177,6 +177,34 @@ describe("package_test", () => {
     expect(out).toContain("Unexpected token")
   })
 
+  it("shows what the tests logged, under their file, and puts the console back", async () => {
+    _resetEsbuild()
+    _resetVitest()
+    const repo = fakeRepo(PACKAGE)
+    const esbuild = { initialize: async () => {}, build: async () => ({ outputFiles: [{ text: "x" }] }) }
+    const log = console.log
+    const runBundle = async () => {
+      const h = globalThis.__patchworkHarness
+      console.log("loading", { hulls: 2 })
+      h.it("reads the hull", () => {
+        console.log("bbox", [0, -5.5, 2.6])
+        console.warn("no rig contract")
+      })
+    }
+    const out = await packageTest.execute({ url: "automerge:pkg" }, { repo, importModule: async () => esbuild, runBundle })
+    expect(out).toContain('  console:\n    loading {"hulls":2}\n    bbox [0,-5.5,2.6]\n    [warn] no rig contract')
+    expect(console.log).toBe(log)
+  })
+
+  it("keeps a bounded amount of it", async () => {
+    const { formatResults, LOGGED_MAX_LINES } = await import("./tools/testing.js")
+    const logged = Array.from({ length: LOGGED_MAX_LINES + 15 }, (_, i) => `line ${i}`)
+    const { report } = formatResults([{ file: "a.test.js", results: [], logged }])
+    expect(report).toContain(`line ${LOGGED_MAX_LINES - 1}`)
+    expect(report).not.toContain(`line ${LOGGED_MAX_LINES}\n`)
+    expect(report).toContain("… 15 more lines")
+  })
+
   it("leaves no harness behind on globalThis", async () => {
     _resetEsbuild()
     _resetVitest()

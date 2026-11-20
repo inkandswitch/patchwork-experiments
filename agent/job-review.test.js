@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { run, OUTCOME, onlyReasoning, quieterReasoning } from "./loop.js"
+import { run, OUTCOME, mostlyThinking, quieterReasoning } from "./loop.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "./providers/mock.js"
 import { initSession, makeTurn, textBlock, callBlock, claimLease, needsApproval, CALL, STATUS, _resetIds } from "./session.js"
@@ -48,9 +48,9 @@ describe("a step waiting on a permission is waiting, whatever its status says", 
 
 describe("a turn that was all thinking is retried with less thinking", () => {
   it("knows a turn of nothing but reasoning", () => {
-    expect(onlyReasoning({ blocks: [{ type: "reasoning", text: "hm" }] })).toBe(true)
-    expect(onlyReasoning({ blocks: [{ type: "reasoning" }, { type: "text", text: "a" }] })).toBe(false)
-    expect(onlyReasoning({ blocks: [] })).toBe(false)
+    expect(mostlyThinking({ blocks: [{ type: "reasoning", text: "hm" }] })).toBe(true)
+    expect(mostlyThinking({ blocks: [{ type: "reasoning" }, { type: "text", text: "a" }] })).toBe(false)
+    expect(mostlyThinking({ blocks: [] })).toBe(false)
   })
 
   it("steps effort down one level at a time, among the levels the model takes, and caps tokens where it takes none", () => {

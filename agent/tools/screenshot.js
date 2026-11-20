@@ -68,6 +68,40 @@ function inlineComputedStyles(source, clone, view) {
   }
 }
 
+/** An element and its descendants of one tag, in document order — the same order in a clone. */
+function selfAndAll(element, tag) {
+  const all = [...(element.querySelectorAll?.(tag) ?? [])]
+  return element.tagName?.toLowerCase() === tag ? [element, ...all] : all
+}
+
+/**
+ * Give each image in the clone its pixels as a data URL, drawn from the loaded
+ * original. One that is not loaded yet, or is cross-origin and so cannot be
+ * read, is left as it was.
+ */
+export function inlineImages(element, clone, doc) {
+  const sources = selfAndAll(element, "img")
+  const copies = selfAndAll(clone, "img")
+  for (let i = 0; i < sources.length && i < copies.length; i++) {
+    const source = sources[i]
+    const src = source.currentSrc || source.src || ""
+    if (!src || src.startsWith("data:")) continue
+    const width = source.naturalWidth
+    const height = source.naturalHeight
+    if (!source.complete || !width || !height) continue
+    try {
+      const canvas = doc.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext("2d").drawImage(source, 0, 0)
+      copies[i].setAttribute("src", canvas.toDataURL("image/png"))
+      copies[i].removeAttribute("srcset")
+    } catch {
+      // Tainted by another origin: it stays missing, as the result says.
+    }
+  }
+}
+
 /**
  * Rasterize an element by way of an SVG foreignObject.
  *
@@ -91,6 +125,11 @@ export async function rasterize(element, { width, height, doc }) {
   clone.style.left = "0"
   clone.style.top = "0"
   clone.style.margin = "0"
+
+  // An image inside the SVG is loaded by the SVG, which may fetch nothing: a
+  // `blob:` or http source comes out as a broken-image icon. Images first,
+  // because the canvas swap below adds images of its own to the clone.
+  inlineImages(element, clone, doc)
 
   // Canvas pixels do not survive cloneNode; substitute an image of each.
   const sourceCanvases = [...element.querySelectorAll("canvas")]

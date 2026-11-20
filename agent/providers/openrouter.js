@@ -84,6 +84,14 @@ export function effortsOf(reasoning) {
  * assistant message and each result as its own `role: "tool"` message keyed by
  * id. So one neutral turn can fan out into several OpenAI messages.
  */
+/**
+ * What separates a turn's text parts when they become one message. They were
+ * joined with nothing, so the workspace note's last URL ran straight into the
+ * person's first word — `automerge:…2URokay, the board` — and the model, reading
+ * base58, took `…2URo` for the address and edited the wrong document.
+ */
+export const PARTS = "\n\n"
+
 export function toOpenAIMessages(system, messages, { dropImages = false } = {}) {
   const out = []
   if (system) out.push({ role: "system", content: system })
@@ -104,7 +112,7 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
     }
 
     if (msg.role === "assistant" || calls.length) {
-      const assistant = { role: "assistant", content: text.join("") || null }
+      const assistant = { role: "assistant", content: text.join(PARTS) || null }
       if (calls.length) {
         assistant.tool_calls = calls.map((c) => ({
           id: c.id,
@@ -119,13 +127,13 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
       out.push({
         role: "user",
         content: [
-          ...(text.length ? [{ type: "text", text: text.join("") }] : []),
+          ...(text.length ? [{ type: "text", text: text.join(PARTS) }] : []),
           ...images.map((url) => ({ type: "image_url", image_url: { url } })),
           ...files.map(fileContent),
         ],
       })
     } else if (text.length) {
-      out.push({ role: msg.role === "system" ? "system" : "user", content: text.join("") })
+      out.push({ role: msg.role === "system" ? "system" : "user", content: text.join(PARTS) })
     }
 
     for (const r of results) {
@@ -352,6 +360,9 @@ export async function* decodeStream(chunks) {
       name: acc.name,
       input,
       parseError,
+      // How much the model wrote for it, which a cut-off call has no other
+      // record of: the loop weighs it against the thinking before it.
+      argsLength: acc.args?.length ?? 0,
     }
     stopReason = "tool_use"
   }

@@ -569,7 +569,9 @@ only a race.
 \`view_inspect\` reads a mount you opened. \`dom_snapshot\` reads the page the
 user is actually looking at right now — their sidebar, their open document,
 whatever is on their screen. Use that one when the question is about *their*
-Patchwork rather than about something you opened.
+Patchwork rather than about something you opened. After \`view_open\`, pass the
+document's \`url\` to \`dom_snapshot\` so it looks inside that view; it waits a
+moment for the view to render.
 
 \`view_screenshot\` takes a picture of a mount, or of the live page. Mounting and
 \`tool_check\` already return one, so reach for it when you want another look

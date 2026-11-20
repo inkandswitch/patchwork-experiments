@@ -78,6 +78,59 @@ export function testPlugin(files, options = {}) {
   }
 }
 
+/** How much of what a file logged the report keeps. */
+export const LOGGED_MAX_LINES = 60
+export const LOGGED_MAX_CHARS = 6000
+
+/** Render one console argument as a person reads it in a console. */
+function logArgument(value) {
+  if (typeof value === "string") return value
+  if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
+
+/**
+ * Collect what the page's console is given until `stop()`, still passing it
+ * through. A test that logs was shown nothing: the sailing note's way to see a
+ * value was to throw an Error with the JSON in it.
+ */
+export function captureConsole(target = globalThis.console) {
+  const lines = []
+  const originals = {}
+  for (const level of ["log", "info", "warn", "error", "debug"]) {
+    originals[level] = target[level]
+    target[level] = (...args) => {
+      lines.push(`${level === "log" ? "" : `[${level}] `}${args.map(logArgument).join(" ")}`)
+      originals[level]?.apply(target, args)
+    }
+  }
+  return {
+    lines,
+    stop() {
+      Object.assign(target, originals)
+    },
+  }
+}
+
+function describeLogged(logged) {
+  if (!logged.length) return []
+  const out = ["  console:"]
+  let chars = 0
+  for (const [i, line] of logged.entries()) {
+    if (i >= LOGGED_MAX_LINES || chars + line.length > LOGGED_MAX_CHARS) {
+      out.push(`    … ${logged.length - i} more line${logged.length - i === 1 ? "" : "s"}`)
+      break
+    }
+    chars += line.length
+    out.push(...line.split("\n").map((part) => `    ${part}`))
+  }
+  return out
+}
+
 /** Render results the way a test runner does, because that is what people read. */
 export function formatResults(fileResults) {
   const lines = []
@@ -85,10 +138,11 @@ export function formatResults(fileResults) {
   let failed = 0
   let skipped = 0
 
-  for (const { file, results, error } of fileResults) {
+  for (const { file, results, error, logged = [] } of fileResults) {
     if (error) {
       lines.push(`✗ ${file}`)
       lines.push(`  could not run: ${error}`)
+      lines.push(...describeLogged(logged))
       failed++
       continue
     }
@@ -109,6 +163,7 @@ export function formatResults(fileResults) {
         lines.push(`  - ${result.label} (skipped)`)
       }
     }
+    lines.push(...describeLogged(logged))
   }
 
   lines.push("")
@@ -129,6 +184,7 @@ export const packageTest = {
     "They run in the browser: each file is bundled and executed. The assertions are REAL vitest — @vitest/expect on chai, so every matcher you know works, including asymmetric ones (expect.objectContaining, expect.arrayContaining, expect.any) — and `vi.fn()` / `vi.spyOn()` come from @vitest/spy. Only vitest's CLI cannot run here, so there is no vi.mock, no snapshots and no coverage.",
     "With no network it falls back to a smaller built-in matcher set and says so in the report, rather than pretending.",
     "",
+    "What the tests log with console.log (or warn, error) is shown under each file in the report.",
     "Test the logic you can test this way; use tool_check for whether the tool mounts and renders.",
   ].join("\n"),
   where: "host",
@@ -192,13 +248,16 @@ export const packageTest = {
       globalThis.__patchworkHarness = harness.api
 
       const run = ctx.runBundle ?? defaultRunBundle
+      // Files run one after another, so what is logged meanwhile is this file's.
+      const consoled = captureConsole()
       try {
         await run(bundle)
         const results = await harness.run()
-        fileResults.push({ file, results })
+        fileResults.push({ file, results, logged: consoled.lines })
       } catch (err) {
-        fileResults.push({ file, error: String(err?.message ?? err) })
+        fileResults.push({ file, error: String(err?.message ?? err), logged: consoled.lines })
       } finally {
+        consoled.stop()
         globalThis.__patchworkHarness = previous
       }
     }

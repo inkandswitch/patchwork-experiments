@@ -209,6 +209,22 @@ export const pluginSource = {
   },
 }
 
+/** How long dom_snapshot waits for what it was asked to look at. */
+export const SNAPSHOT_WAIT_MS = 3000
+
+/**
+ * The view showing a document: a `<patchwork-view>` whose document is `url`
+ * (heads ignored), preferring one that is on screen.
+ */
+export function viewShowing(root, url) {
+  const bare = String(url).split("#")[0]
+  const views = [...root.querySelectorAll("patchwork-view")].filter((view) => {
+    const shown = String(view.docUrl ?? view.getAttribute("doc-url") ?? "").split("#")[0]
+    return shown === bare
+  })
+  return views.find((view) => view.getClientRects?.().length) ?? views[0] ?? null
+}
+
 export const domSnapshot = {
   id: "dom_snapshot",
   name: "Look at the page",
@@ -220,6 +236,14 @@ export const domSnapshot = {
     type: "object",
     properties: {
       selector: { type: "string", description: "CSS selector to snapshot. Defaults to the whole document area." },
+      url: {
+        type: "string",
+        description: "A document's URL: look only inside the view showing it — the one view_open just opened, say — rather than the first match anywhere on the page.",
+      },
+      waitMs: {
+        type: "number",
+        description: `How long to wait for the view and selector to appear. Default ${SNAPSHOT_WAIT_MS}: a view opened a moment ago may not have rendered yet.`,
+      },
       maxChars: { type: "number", description: "Default 8000." },
       text: { type: "boolean", description: "Return visible text instead of markup." },
     },
@@ -228,11 +252,27 @@ export const domSnapshot = {
     const root = ctx.element?.ownerDocument ?? globalThis.document
     if (!root) throw new Error("No document available — this needs to run in a tab.")
 
-    const target = input.selector
-      ? root.querySelector(input.selector)
-      : root.querySelector("patchwork-view") ?? root.body
+    // Looked for until it appears, briefly: straight after view_open the view
+    // has not rendered, and "nothing matches" sent the agent off to record
+    // that dom_snapshot cannot see `.openscad-status` — which it can, a moment
+    // later.
+    const find = () => {
+      const scope = input.url ? viewShowing(root, input.url) : root
+      if (!scope) return null
+      if (input.selector) return scope.querySelector(input.selector)
+      return input.url ? scope : root.querySelector("patchwork-view") ?? root.body
+    }
+    const deadline = Date.now() + Math.max(0, input.waitMs ?? SNAPSHOT_WAIT_MS)
+    let target = find()
+    while (!target && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      target = find()
+    }
 
-    if (!target) throw new Error(`Nothing matches ${input.selector}.`)
+    if (!target) {
+      if (input.url && !viewShowing(root, input.url)) throw new Error(`${input.url} is not open on the page. Open it with view_open first.`)
+      throw new Error(`Nothing matches ${input.selector}${input.url ? ` in the view of ${input.url}` : ""}.`)
+    }
 
     const raw = input.text ? (target.innerText ?? target.textContent ?? "") : target.outerHTML
     return truncate(raw, input.maxChars ?? 8000)

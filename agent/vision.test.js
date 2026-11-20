@@ -118,3 +118,55 @@ describe("view_screenshot", () => {
     ).rejects.toThrow(/no size/)
   })
 })
+
+describe("a picture of a view with images in it", () => {
+  /** A document whose canvases draw by recording, since happy-dom has no 2D context. */
+  function drawingDoc() {
+    const drawn = []
+    const doc = {
+      createElement(tag) {
+        const node = document.createElement(tag)
+        if (tag === "canvas") {
+          node.getContext = () => ({ drawImage: (img) => drawn.push(img.getAttribute("src")) })
+          node.toDataURL = () => `data:image/png;base64,PIXELS${drawn.length}`
+        }
+        return node
+      },
+    }
+    return { doc, drawn }
+  }
+
+  const loadedImage = (src, { complete = true } = {}) => {
+    const img = document.createElement("img")
+    img.setAttribute("src", src)
+    Object.defineProperties(img, {
+      complete: { value: complete },
+      naturalWidth: { value: complete ? 40 : 0 },
+      naturalHeight: { value: complete ? 30 : 0 },
+    })
+    return img
+  }
+
+  it("carries each loaded image's pixels, which the SVG could not fetch from a blob: URL", async () => {
+    const { inlineImages } = await import("./tools/screenshot.js")
+    const view = document.createElement("div")
+    view.append(loadedImage("blob:https://patchwork/abc"), loadedImage("data:image/png;base64,KEPT"), loadedImage("blob:https://patchwork/late", { complete: false }))
+    const clone = view.cloneNode(true)
+    const { doc, drawn } = drawingDoc()
+    inlineImages(view, clone, doc)
+    expect([...clone.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+      "data:image/png;base64,PIXELS1",
+      "data:image/png;base64,KEPT",
+      "blob:https://patchwork/late",
+    ])
+    expect(drawn).toEqual(["blob:https://patchwork/abc"])
+  })
+
+  it("and when the element photographed is itself the image", async () => {
+    const { inlineImages } = await import("./tools/screenshot.js")
+    const img = loadedImage("blob:https://patchwork/only")
+    const clone = img.cloneNode(true)
+    inlineImages(img, clone, drawingDoc().doc)
+    expect(clone.getAttribute("src")).toBe("data:image/png;base64,PIXELS1")
+  })
+})

@@ -81,6 +81,7 @@ export const OUTCOME = {
   awaitingAnswer: "awaiting-answer", // the agent asked the human something
   truncated: "truncated", // the model kept running out of output budget
   repetition: "repetition", // the model kept repeating itself while thinking
+  silent: "silent", // the model kept stopping without a word or a call
   parked: "parked", // a host-tier call has no tab to run in
   aborted: "aborted",
   error: "error",
@@ -179,6 +180,7 @@ export async function run(opts) {
   const maxTruncations = opts.maxTruncations ?? 2
   let repetitions = 0
   const maxRepetitions = opts.maxRepetitions ?? 1
+  let silences = 0
 
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
     if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
@@ -265,10 +267,12 @@ export async function run(opts) {
           (settings.paramsOverride?.maxTokens ?? store.doc().config?.params?.maxTokens ?? 8192) * 2
         )
         settings.paramsOverride = { ...(settings.paramsOverride ?? {}), maxTokens }
-        // A turn that was all thinking — no word, no call — will only think
-        // longer with more room. Turn the thinking down as well, a step each
-        // time; a step that ran out three times this way failed for good.
-        if (onlyReasoning(store.doc().turns[assistant.turnIndex])) {
+        // A turn that was mostly thinking will only think longer with more
+        // room. Turn the thinking down as well, a step each time. It used to
+        // be only a turn that was ALL thinking; one that thought at length and
+        // then had its long write cut off kept the same thinking, ran out the
+        // same way three times, and the workflow step failed for good.
+        if (mostlyThinking(store.doc().turns[assistant.turnIndex], assistant.broken)) {
           const current = settings.paramsOverride.reasoning ?? store.doc().config?.params?.reasoning ?? null
           settings.paramsOverride.reasoning = quieterReasoning(current, settings.capabilities, maxTokens)
         }
@@ -342,7 +346,33 @@ export async function run(opts) {
       return finish(store, STATUS.error, OUTCOME.repetition, emit, "repetition")
     }
 
-    if (!assistant.calls.length) return finish(store, STATUS.idle, OUTCOME.idle, emit)
+    if (!assistant.calls.length) {
+      // ---- 6. Did it stop without a word?
+      //
+      // A turn with no text and no call is not an answer. It went idle all the
+      // same, and a workflow step that did it read as done — "finished without
+      // saying anything", its document unwritten. Ask once; a model that does
+      // it again has stopped working, and says so.
+      if (saidNothing(store.doc().turns[assistant.turnIndex])) {
+        silences++
+        emit({ type: "silent", turn: turnNumber, attempt: silences })
+        if (silences <= 1) {
+          appendTurn(
+            store,
+            makeTurn("user", [
+              textBlock(
+                "(You stopped without saying anything or calling a tool.) If the work is finished, say what you " +
+                  "did and where the results are. If it is not, carry on with the next tool call."
+              ),
+            ])
+          )
+          continue
+        }
+        appendTurn(store, makeTurn("assistant", [textBlock("⚠ The model stopped twice without a word or a tool call, so this ended here. Try again, or pick another model.")]))
+        return finish(store, STATUS.error, OUTCOME.silent, emit, "said nothing")
+      }
+      return finish(store, STATUS.idle, OUTCOME.idle, emit)
+    }
 
     // A question the model just asked outranks anything else it queued: the
     // answer may make the rest pointless, and being asked to approve work that
@@ -798,10 +828,27 @@ function setStatus(store, status) {
   })
 }
 
-/** Did this turn do nothing but think? */
-export function onlyReasoning(turn) {
+/** Did this turn end with neither words nor a call — nothing a person or a workflow can use? */
+export function saidNothing(turn) {
   const blocks = turn?.blocks ?? []
-  return blocks.length > 0 && blocks.every((b) => b.type === "reasoning")
+  return !blocks.some((b) => (b.type === "text" && String(b.text ?? "").trim()) || b.type === "call")
+}
+
+/**
+ * Did thinking take most of this turn's output? Its words, its calls and any
+ * call that was cut off (`broken`, which never became a block) are weighed
+ * against its reasoning, by length.
+ */
+export function mostlyThinking(turn, broken = []) {
+  let thought = 0
+  let rest = 0
+  for (const b of turn?.blocks ?? []) {
+    if (b.type === "reasoning") thought += String(b.text ?? "").length
+    else if (b.type === "text") rest += String(b.text ?? "").length
+    else if (b.type === "call") rest += JSON.stringify(b.input ?? {}).length
+  }
+  for (const call of broken ?? []) rest += call.argsLength ?? 0
+  return thought > 0 && thought >= rest
 }
 
 /** Effort levels from most thinking to least. */

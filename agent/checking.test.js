@@ -328,3 +328,50 @@ describe("driving a view with the granular tools", () => {
     await expect(viewMount.execute({}, { repo: fakeRepo() })).rejects.toThrow(/Pass `docUrl`/)
   })
 })
+
+describe("a mounted tool gets the element Patchwork gives it", () => {
+  it("finds documents through element.repo, as OpenSCAD finds its imports", async () => {
+    const repo = fakeRepo()
+    const url = repo.seedPackage("automerge:package")
+    repo.docs.set("automerge:dims", { "@patchwork": { type: "dims" }, length: 12 })
+    let seen = null
+    const importer = (handle, element) => {
+      const out = document.createElement("span")
+      out.className = "bound"
+      element.append(out)
+      element.repo.find("automerge:dims").then((h) => {
+        out.textContent = JSON.stringify(h.doc())
+      })
+      seen = { docUrl: element.docUrl, toolId: element.toolId, hasRepo: element.repo === repo }
+      return () => out.remove()
+    }
+    const out = await viewMount.execute({ url }, { repo, importModule: async () => makeModule(importer) })
+    const mountId = out.match(/mountId: (\S+)/)[1]
+    expect(out).toMatch(/Mounted without throwing/)
+    expect(seen).toEqual({ docUrl: expect.stringMatching(/^automerge:new/), toolId: "widget", hasRepo: true })
+    expect(await viewInspect.execute({ mountId, selector: ".bound" }, {})).toContain("length")
+  })
+})
+
+describe("a document holding bytes", () => {
+  it("is inspected and driven with its bytes summarized, however large", async () => {
+    const repo = fakeRepo()
+    const url = repo.seedPackage("automerge:package")
+    const huge = new Uint8Array(40_000_000)
+    const tool = (handle, element) => {
+      const button = document.createElement("button")
+      button.textContent = "rename"
+      button.onclick = () => handle.change((d) => { d.name = "hull.3dm" })
+      element.append(button)
+      return () => button.remove()
+    }
+    const out = await viewMount.execute(
+      { url },
+      { repo, importModule: async () => makeModule(tool, { datatypeInit: (d) => { d.content = huge } }) }
+    )
+    const mountId = out.match(/mountId: (\S+)/)[1]
+    expect(await viewInspect.execute({ mountId }, {})).toContain("<40000000 bytes>")
+    const driven = await viewInteract.execute({ mountId, action: "click" }, {})
+    expect(driven).toMatch(/document changed: .*hull\.3dm/)
+  })
+})

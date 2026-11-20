@@ -25,7 +25,7 @@
  */
 
 import { hostImport } from "./host.js"
-import { truncate } from "./format.js"
+import { truncate, preview } from "./format.js"
 import { rasterize, shrink, canvasWithin } from "./screenshot.js"
 import { contentToText, treeNode, treeEntries } from "./folders.js"
 
@@ -322,7 +322,7 @@ async function mountTool({ plugins, input, ctx, doc, notes }) {
         datatype?.init?.(draft)
         draft["@patchwork"] = { type: datatypePlugin?.id ?? "unknown" }
       })
-      notes.push(`Test document created: ${truncate(JSON.stringify(handle.doc()), 200)}`)
+      notes.push(`Test document created: ${truncate(docText(handle), 200)}`)
     } catch (err) {
       notes.push(`PROBLEM datatype init threw: ${err?.message ?? err}`)
     }
@@ -395,11 +395,28 @@ export function parkMount(container) {
   if (container.parentElement !== holder) holder.append(container)
 }
 
+/**
+ * The fields of the element a tool is mounted into: the repo it finds
+ * documents through, the document and tool it was opened as, and the keyhive
+ * the agent's own view was given, where there is one.
+ */
+export function viewElementFields({ ctx, handle, toolId }) {
+  const fields = { repo: ctx.repo, docUrl: handle.url ?? null, toolId: toolId ?? null }
+  const hive = ctx.element?.hive
+  if (hive) fields.hive = hive
+  return fields
+}
+
 async function finishMount({ render, handle, toolId, doc, notes, ctx }) {
   const container = doc.createElement("div")
   container.className = "agent-mount"
+  // What a tool finds on the element Patchwork mounts it in (`<patchwork-view>`,
+  // PatchworkViewElementBase in core/elements). Without it the container was a
+  // bare div: OpenSCAD's `element.repo.find` threw, so every import bound as
+  // `{}`, and the file tool's `useDocHandle(url, element)` refused to run —
+  // which the agent recorded as "a harness artefact" and worked around.
+  Object.assign(container, viewElementFields({ ctx, handle, toolId }))
   mountHolder(doc).append(container)
-  void ctx
 
   const captured = captureErrors(globalThis)
   let cleanup = null
@@ -424,6 +441,26 @@ async function finishMount({ render, handle, toolId, doc, notes, ctx }) {
   return { container, handle, cleanup, captured, mounted, toolId }
 }
 
+/**
+ * A document as the agent reads it: bytes summarized and long things cut, so a
+ * 3dm file is `<9437184 bytes>`. Stringifying the document itself turned each
+ * byte into a key of its own, and a large file threw "Invalid string length"
+ * before a word of it could be truncated.
+ */
+function docText(handle) {
+  return JSON.stringify(preview(handle.doc())) ?? "null"
+}
+
+/**
+ * What differs when the document does: its heads, where the handle has them,
+ * and everything but the bytes, which are summarized by length.
+ */
+function docStamp(handle) {
+  const heads = typeof handle.heads === "function" ? handle.heads() : null
+  const whole = preview(handle.doc(), { maxString: Infinity, maxItems: Infinity, maxDepth: 64 })
+  return `${JSON.stringify(heads)} ${JSON.stringify(whole)}`
+}
+
 /** Describe what is on screen right now. */
 function describeRender(container) {
   const text = visibleText(container)
@@ -446,13 +483,13 @@ function describeRender(container) {
  * The diagnosis worth having: the document changed but the screen did not.
  * This is the bug a person notices instantly and an agent never thinks to check.
  */
-function diagnoseInteraction({ docBefore, docAfter, textBefore, textAfter, label }) {
+function diagnoseInteraction({ docBefore, docAfter, shown = docAfter, textBefore, textAfter, label }) {
   const lines = []
   if (docBefore === docAfter) {
     lines.push(`Interacted with ${label} — the document did NOT change.`)
     lines.push("  If it was supposed to write, check that you call handle.change().")
   } else {
-    lines.push(`Interacted with ${label} — document changed: ${truncate(docAfter, 200)}`)
+    lines.push(`Interacted with ${label} — document changed: ${truncate(shown, 200)}`)
     if (textAfter === textBefore) {
       lines.push("PROBLEM the document changed but the rendering did NOT update.")
       lines.push("  This is the classic one: `handle.doc()` is a function, and you must re-render")
@@ -617,7 +654,7 @@ export const viewInspect = {
         ? [`Text: ${JSON.stringify(truncate(visibleText(target), 600))}`]
         : describeRender(mount.container)
 
-    lines.push(`Document: ${truncate(JSON.stringify(mount.handle.doc()), 500)}`)
+    lines.push(`Document: ${truncate(docText(mount.handle), 500)}`)
     if (mount.captured.errors.length) {
       lines.push(`Page errors so far (${mount.captured.errors.length}): ${truncate(mount.captured.errors[0], 200)}`)
     }
@@ -666,7 +703,7 @@ export const viewInteract = {
       )
     }
 
-    const docBefore = JSON.stringify(mount.handle.doc())
+    const docBefore = docStamp(mount.handle)
     const textBefore = visibleText(container)
     const label = `${action} on ${input.selector ?? defaultSelector} (${JSON.stringify(truncate(visibleText(target) || target.tagName, 30))})`
 
@@ -690,7 +727,8 @@ export const viewInteract = {
 
     const lines = diagnoseInteraction({
       docBefore,
-      docAfter: JSON.stringify(mount.handle.doc()),
+      docAfter: docStamp(mount.handle),
+      shown: docText(mount.handle),
       textBefore,
       textAfter: visibleText(container),
       label,
@@ -810,7 +848,7 @@ export const toolCheck = {
 
         const buttons = [...mount.container.querySelectorAll("button")]
         if (input.interact !== false && buttons.length) {
-          const docBefore = JSON.stringify(mount.handle.doc())
+          const docBefore = docStamp(mount.handle)
           const textBefore = visibleText(mount.container)
           try {
             buttons[0].click()
@@ -821,7 +859,8 @@ export const toolCheck = {
           notes.push(
             ...diagnoseInteraction({
               docBefore,
-              docAfter: JSON.stringify(mount.handle.doc()),
+              docAfter: docStamp(mount.handle),
+              shown: docText(mount.handle),
               textBefore,
               textAfter: visibleText(mount.container),
               label: `'${truncate(visibleText(buttons[0]), 40)}'`,
