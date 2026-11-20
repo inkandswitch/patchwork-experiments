@@ -4,7 +4,8 @@
 kernel), which the lead started on 2026-11-17, is complete (HISTORY.md "Kernel
 step 1" to "Kernel step 8"; step 7 stays deferred, in section 2). Section 3
 (tabletop) is queued to start next. Section 4 (visible gears) was started
-2026-11-18 at the lead's request. Nothing else here is to be started without
+2026-11-18 at the lead's request. Section 5 (the editor's interface) was
+started 2026-11-19 at the lead's request. Nothing else here is to be started without
 the lead asking.
 
 What might be done, and the questions still open. How the scene got here is
@@ -327,3 +328,50 @@ selected object by default; a slim panel for the scene.
 3. The presence tap.
 4. Dressing through `display` (migrate sailing, water and others that dress)
    + the scrubber.
+
+## 5. The editor's interface: Open, the inspector, the bar
+
+Started 2026-11-19 by the lead, after "Edit model" (patchwork-cad's
+in-place editor) proved undiscoverable: the inspector concatenates
+conflicting jobs (the scene's data about an object, the configuration of
+its build, an inline mount of its source in its own tool, a row of every
+command), and the bar mixes panels, display toggles, history and tools.
+
+### Decisions (the lead, 2026-11-19)
+- **Open** is the one verb for going into a thing to edit what's inside, in
+  place: a link's Enter and CAD's Edit model become it. Double-click Opens,
+  in Edit only (a game's clicks stay clicks).
+- **The outline stays** on top of the inspector.
+- **No inline documents**: a document becomes a navigation row, more
+  prominent than today's section heads; the source's is **Open Editor**.
+- The inspector's other controls are **labelled as the scene's
+  representation** of the thing; **version controls** (fix, follow, rebuild)
+  go there with them.
+- **Panel toggles** (Inspector, Dimensions, Parts) are grouped and belong to
+  the drawer; **Measure** moves into the Dimensions panel.
+- **Display toggles** (grid, axes, bounds) and **history** (undo, redo)
+  become paired icon groups.
+- **Select** joins Move as the modal tools; the edit tools show only in
+  Edit, so picking one never enters Edit.
+- **Group, Ungroup, Extract, Bundle, Copy, Paste, Remove** go to the context
+  menu, each with a key.
+- X-ray stays as it is (an overlay, allowed to be odd). The bottom bar is not
+  yet thought about.
+
+### Slices
+1. Open: `open: true` on a command marks it an Open (scene.links' Enter,
+   patchwork-cad's Edit model); the inspector's header has the selection's
+   Open as its one button; the menu lists it after Select; double-click in
+   Edit (the Edit hand: a second click on the same target within 500 ms
+   and 6 px) and on an outline row; `Enter` Opens the selection.
+2. The inspector: header (name, what it is, Open); "In this scene"
+   (placement, appearance, lock, behaviours); "Built from" (the source as
+   an Open Editor row, version, rebuild, the build's params as fields, not a
+   mounted document); About as a row. No mounted documents.
+3. The bar: Select and Move as a palette (Edit only); grid, axes, bounds and
+   Frame all as icons; undo and redo as icons; units and snap in a settings
+   popover.
+4. The menu: the object commands leave the inspector for the context menu,
+   with keys.
+5. The drawer: panel toggles grouped there; Measure inside Dimensions.
+
