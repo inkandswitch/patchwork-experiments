@@ -1,26 +1,25 @@
 /// <reference lib="webworker" />
-// Runs OpenSCAD (compiled to WebAssembly) off the main thread. The engine
-// itself is not bundled with this module: it's downloaded from a CDN on
-// first use and cached via the Cache API, matching the pattern used by the
-// pandoc and ffmpeg Patchwork tools for their own (much larger) WASM engines.
+// Runs OpenSCAD (compiled to WebAssembly) off the main thread. The engine is
+// vendored into this package (dist/<ENGINE_DIR>/, see engineFiles.ts); the
+// main thread resolves its URLs against the package bundle and sends them
+// with each render. The wasm is fetched and compiled once per worker, and
+// every render instantiates that compiled module afresh.
 
 import {openscadArgs} from "./args"
+import {parseOFF, type Model} from "./model"
 
 declare const self: DedicatedWorkerGlobalScope
-
-/** openscad-wasm npm version we pin; a single ES module bundling engine + wasm */
-const OPENSCAD_WASM_VERSION = "0.0.4"
-const ENGINE_URLS = [
-	`https://cdn.jsdelivr.net/npm/openscad-wasm@${OPENSCAD_WASM_VERSION}/openscad.js`,
-	`https://unpkg.com/openscad-wasm@${OPENSCAD_WASM_VERSION}/openscad.js`,
-]
-const CACHE_NAME = "openscad-wasm"
 
 export type LoadProgress = {
 	phase: "downloading" | "starting"
 	loaded: number
 	total: number | null
-	fromCache: boolean
+}
+
+export type EngineUrls = {
+	/** the Emscripten ES module; its default export makes an engine instance */
+	js: string
+	wasm: string
 }
 
 type ImportInput = {
@@ -35,11 +34,12 @@ type RenderRequest = {
 	type: "render"
 	source: string
 	imports?: ImportInput[]
+	engine: EngineUrls
 }
 
 type OutgoingMessage =
 	| {type: "progress"; progress: LoadProgress}
-	| {type: "result"; id: number; ok: true; stl: Uint8Array; logs: string[]; elapsedMillis: number}
+	| {type: "result"; id: number; ok: true; model: Model; logs: string[]; elapsedMillis: number}
 	| {type: "result"; id: number; ok: false; error: string; logs: string[]}
 
 function post(msg: OutgoingMessage, transfer?: Transferable[]) {
@@ -47,21 +47,10 @@ function post(msg: OutgoingMessage, transfer?: Transferable[]) {
 	self.postMessage(msg, transfer)
 }
 
-async function openCache(): Promise<Cache | null> {
-	try {
-		return await caches.open(CACHE_NAME)
-	} catch {
-		return null
-	}
-}
-
-async function downloadText(
-	url: string,
-	onProgress: (p: LoadProgress) => void,
-): Promise<string> {
+/** Fetch the wasm, reporting progress, without needing an application/wasm content type. */
+async function downloadWasm(url: string): Promise<ArrayBuffer> {
 	const response = await fetch(url)
 	if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
-
 	const total = Number(response.headers.get("content-length")) || null
 	let loaded = 0
 	const chunks: Uint8Array[] = []
@@ -71,91 +60,64 @@ async function downloadText(
 		if (done) break
 		chunks.push(value)
 		loaded += value.byteLength
-		onProgress({phase: "downloading", loaded, total, fromCache: false})
+		post({type: "progress", progress: {phase: "downloading", loaded, total}})
 	}
-	return new Blob(chunks as BlobPart[]).text()
+	return new Blob(chunks as BlobPart[]).arrayBuffer()
 }
 
-async function fetchEngineSource(
-	onProgress: (p: LoadProgress) => void,
-): Promise<{text: string; fromCache: boolean}> {
-	const cache = await openCache()
-	if (cache) {
-		for (const url of ENGINE_URLS) {
-			const hit = await cache.match(url)
-			if (hit) return {text: await hit.text(), fromCache: true}
-		}
-	}
-
-	let lastError: unknown = null
-	for (const url of ENGINE_URLS) {
-		try {
-			const text = await downloadText(url, onProgress)
-			if (cache) {
-				try {
-					await cache.put(
-						url,
-						new Response(text, {headers: {"Content-Type": "text/javascript"}}),
-					)
-				} catch {
-					// quota exceeded etc - cache is best-effort
-				}
-			}
-			return {text, fromCache: false}
-		} catch (err) {
-			lastError = err
-		}
-	}
-	throw new Error(`Failed to download OpenSCAD engine: ${lastError}`)
+type EngineModule = {
+	FS: any
+	callMain(args: string[]): number
 }
 
-type CreateOpenSCAD = (
-	opts: Record<string, unknown>,
-) => Promise<{getInstance(): any}>
+type Factory = (opts: Record<string, unknown>) => Promise<EngineModule>
 
-let factoryPromise: Promise<CreateOpenSCAD> | null = null
+let enginePromise: Promise<{factory: Factory; wasm: WebAssembly.Module}> | null = null
 
-function loadFactory(): Promise<CreateOpenSCAD> {
-	if (!factoryPromise) {
-		factoryPromise = (async () => {
-			const {text, fromCache} = await fetchEngineSource(progress => post({type: "progress", progress}))
-			post({type: "progress", progress: {phase: "starting", loaded: 0, total: null, fromCache}})
-			const blobUrl = URL.createObjectURL(new Blob([text], {type: "text/javascript"}))
-			try {
-				const mod = await import(/* @vite-ignore */ blobUrl)
-				return mod.createOpenSCAD as CreateOpenSCAD
-			} finally {
-				URL.revokeObjectURL(blobUrl)
-			}
+function loadEngine(urls: EngineUrls) {
+	if (!enginePromise) {
+		enginePromise = (async () => {
+			const [wasm, mod] = await Promise.all([
+				downloadWasm(urls.wasm).then(bytes => {
+					post({type: "progress", progress: {phase: "starting", loaded: 0, total: null}})
+					return WebAssembly.compile(bytes)
+				}),
+				import(/* @vite-ignore */ urls.js),
+			])
+			return {factory: mod.default as Factory, wasm}
 		})().catch(err => {
-			factoryPromise = null
-			throw err
+			enginePromise = null
+			throw new Error(`Failed to load the OpenSCAD engine: ${(err as Error)?.message ?? err}`)
 		})
 	}
-	return factoryPromise
+	return enginePromise
 }
 
 async function render(
 	source: string,
 	imports: ImportInput[] = [],
-): Promise<{stl: Uint8Array; logs: string[]; elapsedMillis: number}> {
-	const createOpenSCAD = await loadFactory()
+	urls: EngineUrls,
+): Promise<{model: Model; logs: string[]; elapsedMillis: number}> {
+	const {factory, wasm} = await loadEngine(urls)
 	const logs: string[] = []
 	const start = performance.now()
 
-	// A fresh instance per render: reusing one instance's filesystem/runtime
-	// across multiple callMain() invocations is not reliable with this engine.
-	const engine = await createOpenSCAD({
+	// A fresh instance per render: OpenSCAD's globals don't reset between
+	// runs. Instantiating the already-compiled module is cheap.
+	const instance = await factory({
+		noInitialRun: true,
 		print: (text: string) => logs.push(text),
 		printErr: (text: string) => logs.push(text),
+		instantiateWasm(imports: WebAssembly.Imports, done: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void) {
+			WebAssembly.instantiate(wasm, imports).then(i => done(i, wasm))
+			return {}
+		},
 	})
-	const instance = engine.getInstance()
 
 	// Imported docs are written as JSON files and bound to a variable of the
 	// same name via a single generated line prepended to the source (so the
 	// offset is a constant +1, not +N, when at least one import is present).
-	// This relies on the experimental "import-function" feature, which makes
-	// import() return parsed JSON data instead of importing geometry.
+	// import() of a .json file returns its parsed data.
 	let finalSource = source
 	if (imports.length > 0) {
 		instance.FS.mkdir("/imports")
@@ -169,33 +131,27 @@ async function render(
 
 	instance.FS.writeFile("/input.scad", finalSource)
 
-	const args = openscadArgs({input: "/input.scad", output: "/model.stl", hasImports: imports.length > 0})
-
 	let exitCode: number
 	try {
-		exitCode = instance.callMain(args)
+		exitCode = instance.callMain(openscadArgs({input: "/input.scad", output: "/model.off"}))
 	} catch (e) {
-		let message = `${e}`
-		if (typeof e === "number" && instance.formatException) {
-			message = instance.formatException(e)
-		}
-		throw new Error(`${message}\n${logs.join("\n")}`)
+		throw new Error(`${(e as Error)?.message ?? e}\n${logs.join("\n")}`)
 	}
-
 	if (exitCode !== 0) {
 		throw new Error(logs.join("\n") || `OpenSCAD exited with code ${exitCode}`)
 	}
 
-	const stl = instance.FS.readFile("/model.stl") as Uint8Array
+	// parsed here, off the main thread; the editor and the scene both want the mesh
+	const model = parseOFF(instance.FS.readFile("/model.off", {encoding: "utf8"}) as string)
 	const elapsedMillis = performance.now() - start
-	return {stl, logs, elapsedMillis}
+	return {model, logs, elapsedMillis}
 }
 
 self.addEventListener("message", async (e: MessageEvent<RenderRequest>) => {
-	const {id, source, imports} = e.data
+	const {id, source, imports, engine} = e.data
 	try {
-		const {stl, logs, elapsedMillis} = await render(source, imports)
-		post({type: "result", id, ok: true, stl, logs, elapsedMillis}, [stl.buffer])
+		const {model, logs, elapsedMillis} = await render(source, imports, engine)
+		post({type: "result", id, ok: true, model, logs, elapsedMillis}, model.parts.map(p => p.positions.buffer))
 	} catch (err) {
 		post({type: "result", id, ok: false, error: String((err as Error)?.message ?? err), logs: []})
 	}

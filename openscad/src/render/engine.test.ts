@@ -11,7 +11,7 @@ function deferred<T>() {
 	return {promise, resolve, reject}
 }
 
-const result = (n: number): RenderResult => ({stl: new Uint8Array([n]), logs: [], elapsedMillis: n})
+const result = (n: number): RenderResult => ({model: {parts: [], triangles: n}, logs: [], elapsedMillis: n})
 
 describe("renderKey", () => {
 	it("depends on the source and on each import's name and JSON, in order", () => {
@@ -39,7 +39,7 @@ describe("createRenderCache", () => {
 		expect(first.cached).toBeFalsy()
 		const second = await cached("cube(1);", [])
 		expect(second.cached).toBe(true)
-		expect(second.stl).toBe(first.stl)
+		expect(second.model).toBe(first.model)
 		expect(second.elapsedMillis).toBe(first.elapsedMillis)
 		expect(render).toHaveBeenCalledTimes(1)
 	})

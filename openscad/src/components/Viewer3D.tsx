@@ -1,10 +1,26 @@
 import {onMount, onCleanup, createEffect} from "solid-js"
 import * as THREE from "three"
-import {STLLoader} from "three/examples/jsm/loaders/STLLoader.js"
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js"
 import {needsReframe} from "./framing"
+import {allPositions, type Model, type RGBA} from "../render/model"
 
-export function Viewer3D(props: {stl: Uint8Array | null}) {
+/** One material per colour; triangles the model gives no colour use `uncoloured`. */
+function materialFor(color: RGBA | null, uncoloured: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+	if (!color) return uncoloured
+	const [r, g, b, a] = color
+	return new THREE.MeshStandardMaterial({
+		color: new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace),
+		metalness: uncoloured.metalness,
+		roughness: uncoloured.roughness,
+		side: THREE.DoubleSide,
+		transparent: a < 1,
+		opacity: a,
+		// see-through parts don't hide what is behind them
+		depthWrite: a >= 1,
+	})
+}
+
+export function Viewer3D(props: {model: Model | null}) {
 	let container!: HTMLDivElement
 	let canvas!: HTMLCanvasElement
 
@@ -46,6 +62,7 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 			side: THREE.DoubleSide,
 		})
 		let mesh: THREE.Mesh | null = null
+		let partMaterials: THREE.MeshStandardMaterial[] = []
 
 		function resize() {
 			const w = container.clientWidth || 1
@@ -86,17 +103,27 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 
 		let disposed = false
 		createEffect(() => {
-			const stl = props.stl
-			if (disposed || !stl) return
-			const geometry = new STLLoader().parse(stl.buffer as ArrayBuffer)
-			geometry.computeVertexNormals()
+			const model = props.model
+			if (disposed || !model) return
+			// one triangle soup, a geometry group per colour part
+			const geometry = new THREE.BufferGeometry()
+			geometry.setAttribute("position", new THREE.BufferAttribute(allPositions(model), 3))
+			let start = 0
+			model.parts.forEach((part, i) => {
+				const count = part.positions.length / 3
+				geometry.addGroup(start, count, i)
+				start += count
+			})
+			geometry.computeVertexNormals() // flat: the soup shares no vertices
 
 			const wasEmpty = !mesh
 			if (mesh) {
 				scene.remove(mesh)
 				mesh.geometry.dispose()
 			}
-			mesh = new THREE.Mesh(geometry, material)
+			for (const m of partMaterials) if (m !== material) m.dispose()
+			partMaterials = model.parts.map(part => materialFor(part.color, material))
+			mesh = new THREE.Mesh(geometry, partMaterials)
 			scene.add(mesh)
 			// Keep the camera where the user left it across edits, unless the part
 			// is now a very different size (a first render of a placeholder, an
@@ -114,6 +141,7 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 			controls.dispose()
 			renderer.dispose()
 			mesh?.geometry.dispose()
+			for (const m of partMaterials) if (m !== material) m.dispose()
 			material.dispose()
 		})
 	})

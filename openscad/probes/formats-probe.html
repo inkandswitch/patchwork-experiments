@@ -1,0 +1,36 @@
+<!doctype html><meta charset="utf-8">
+<script type="module">
+// Runs the vendored engine directly (no worker, no dist/) on a coloured model,
+// once per export format, and reports exit codes, logs, and the head of each
+// output: what this build can write colours into.
+//   node probes/probe-server.mjs . 4456  →  open /probes/formats-probe.html
+import { ENGINE } from "./engine-dir.js";
+const report = (x) => fetch("/report", { method: "POST", body: JSON.stringify(x, null, 2) });
+const SOURCE = `color("red") cube(10);
+color([0,0,1,0.5]) translate([15,0,0]) cube(5);
+translate([-15,0,0]) cube(4);
+difference() { color("green") translate([0,15,0]) cube(10); color("yellow") translate([5,20,5]) cube(4, center=true); }`;
+try {
+  const factory = (await import(`../vendor/${ENGINE}/openscad.js`)).default;
+  const runs = [];
+  for (const fmt of (new URLSearchParams(location.search).get("formats") ?? "off,3mf,binstl").split(",")) {
+    const logs = [];
+    const mod = await factory({ noInitialRun: true, print: (t) => logs.push(t), printErr: (t) => logs.push(t) });
+    mod.FS.writeFile("/in.scad", SOURCE);
+    const out = `/out.${fmt}`;
+    let exit, error, head, bytes;
+    try {
+      exit = mod.callMain(["/in.scad", "--backend=manifold", `--export-format=${fmt}`, "-o", out]);
+      const data = mod.FS.readFile(out);
+      bytes = data.byteLength;
+      if (fmt === "off") head = new TextDecoder().decode(data).trim().split("\n").slice(-6).join("\n");
+    } catch (err) {
+      error = String(err?.message ?? err);
+    }
+    runs.push({ format: fmt, exit, bytes, error, logs: logs.filter((l) => /WARN|ERR/.test(l)), head });
+  }
+  await report({ ok: true, engine: ENGINE, runs });
+} catch (err) {
+  await report({ ok: false, fatal: String(err?.stack || err) });
+}
+</script>

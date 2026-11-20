@@ -2,7 +2,7 @@
 // its live render goes, and how its writes reach the scene's undo.
 
 import type {DocHandle} from "@automerge/automerge-repo"
-import {UNIT_METERS, type Unit} from "./stl"
+import {UNIT_METERS, type Unit} from "./axes"
 
 /** A column-major 4×4 matrix (three.js's `elements`). */
 export type Mat4 = number[]
@@ -22,7 +22,7 @@ export function multiply(a: Mat4, b: Mat4): Mat4 {
 /**
  * The model's frame in the scene: the object's drawn matrix (`world`, its
  * stage's frame) times OpenSCAD's Z-up `unit`s → the scene's Y-up metres, the
- * same turn stl.ts's zUpToYUpMeters makes for the built GLB: x stays, z goes
+ * same turn axes.ts's zUpToYUpMeters makes for the built GLB: x stays, z goes
  * up, y goes away (-z). Null while the object has no drawn matrix.
  */
 export function modelFrame(world: Mat4 | null | undefined, unit: Unit = "mm"): Mat4 | null {

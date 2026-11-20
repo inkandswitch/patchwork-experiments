@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8">
+<script type="module">
+// Builds coloured and uncoloured parts through the real scene:source provider
+// in dist/, in a real browser worker, and reports each GLB primitive's
+// colour, so you can see what colours OpenSCAD's 3MF export carries.
+//   node probes/probe-server.mjs . 4456  →  open /probes/color-probe.html
+const report = (x) => fetch("/report", { method: "POST", body: JSON.stringify(x, null, 2) });
+function glbJson(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + dv.getUint32(12, true))));
+}
+try {
+  const { plugins } = await import("../dist/index.js");
+  const provider = await plugins.find((p) => p.id === "openscad-model").load();
+  const cases = [
+    ["uncoloured", "cube(10);"],
+    ["one colour", `color("red") cube(10);`],
+    ["mixed, with alpha, and a CSG cut", `color("red") cube(10);
+color([0,0,1,0.5]) translate([15,0,0]) sphere(5);
+translate([-15,0,0]) cube(4);
+difference() { color("green") translate([0,15,0]) cube(10); color("yellow") translate([5,20,5]) sphere(4); }`],
+  ];
+  // also what isn't colour: a JSON import, text() (fonts), and an error
+  cases.push(["import", "cube(data.w);", [{ name: "data", docUrl: "automerge:probe" }]]);
+  cases.push(["text()", `linear_extrude(2) text("Hi");`]);
+  cases.push(["syntax error", "cube([1,1"]);
+  const repo = { find: async () => ({ doc: () => ({ w: 7 }) }) };
+  const runs = [];
+  for (const [label, source, imports = []] of cases) {
+    try {
+      const r = await provider.build({ doc: { source, imports }, params: { unit: "mm" }, repo });
+      const json = glbJson(r.glb);
+      const prims = json.meshes?.[0]?.primitives ?? [];
+      runs.push({
+        label,
+        notes: r.meta?.notes,
+        bounds: r.meta?.bounds,
+        primitives: prims.map((p) => ({
+          vertices: json.accessors[p.attributes.POSITION].count,
+          baseColorFactor: p.material == null ? null : json.materials[p.material].pbrMetallicRoughness.baseColorFactor.map((n) => +n.toFixed(3)),
+          alphaMode: p.material == null ? undefined : json.materials[p.material].alphaMode,
+        })),
+      });
+    } catch (err) {
+      runs.push({ label, error: String(err?.message ?? err).slice(0, 400) });
+    }
+  }
+  await report({ ok: true, runs });
+} catch (err) {
+  await report({ ok: false, fatal: String(err?.stack || err) });
+}
+</script>
