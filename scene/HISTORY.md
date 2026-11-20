@@ -1038,3 +1038,31 @@ details agree with who holds what), colours for every subset of ten ids,
 glyphs and the route's boxes by finite cases; the plugin's own tests
 (isolate, card, pin, glyph labels, down leaves nothing displayed); the
 display fields' layering. tabletop/probes/xray.mjs takes the screenshots.
+
+### 2026-11-19 — Move is a tool; packages' writes on the scene's undo
+
+From editing a CAD model in a scene (patchwork-cad's `cad-model-scene-edit`):
+selecting showed the halo's handles, which got in the way of a tool that edits
+a thing its own way. The lead: make Move a proper tool. **Move** (`V`,
+toolbar) is the halo's command, a tool on the stack like Measure; its input
+passes everything, and the handles (still widgets) and a provider's knobs
+(`scene.handles`) show only while it is held. Selecting is only selecting.
+Asked which other parts were tool-less modes: the knobs (folded into Move);
+carry stays a holder by design (pieces need no tool), the only remaining user
+of `pointing`.
+
+The lead also wanted the CAD editor's edits on the scene's undo. `scene.undo`
+provides `edits`: `edit(doc, fn, { label })` records a write to a package's
+own doc (the recorder already wrote render docs) as one step in the focus
+doc's stacks; the doc's `change` returns the patches the step takes back, so
+a package leaves out what isn't the person's (the CAD tool's locks). Tests:
+haloTarget's finite cases gain Move (ten tool stacks); the knobs follow Move;
+the service's step, its undo and redo, and its refusal read-only.
+
+Undo wrote a string back by assignment, which in Automerge makes a new text:
+the CAD editor's cursors into the model's code then panicked Automerge on
+redo. A string written over text is now the least splice (`updateText`), so
+the text stays one object; tested with a cursor across undo and redo. Undo
+still compares whole fields: anyone's later edit anywhere in the text leaves
+the step undone, and said.
+

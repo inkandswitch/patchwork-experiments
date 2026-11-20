@@ -10,7 +10,7 @@
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
 // They are the halo's build-param knobs (STAGE.md, "The input chain"): shown for the
-// selection while editing (they are the editor's: ../stage/bodies.js)
+// selection while editing with Move held (they are Move's, as the halo is)
 // where the scene may be written, hidden while another extension holds the
 // tool (measuring, say).
 //
@@ -24,6 +24,7 @@ import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { editor } from "./editor.js";
 import { editing, pointing } from "../stage/bodies.js";
+import { MOVE, moving } from "./halo-math.js";
 import { perFocus } from "./per-focus.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
@@ -32,12 +33,14 @@ export const GRAB_PX = 12;
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
 /**
- * May the selection's knobs show? Only while editing, where the scene may be
- * written, and while no other extension holds a pointing tool (bodies.js pointing). Pure.
+ * May the selection's knobs show? Only while editing with Move held (they are
+ * Move's, as the halo's handles are: ./halo.js), where the scene may be
+ * written, and while no other extension holds a pointing tool (bodies.js
+ * pointing). Pure.
  * @param {object} view  api.view.get()  @param {boolean} writable  @param {string} self  this part's id
  */
 export function knobsShown(view, writable, self) {
-  return editing(view) && !!writable && !pointing(view, self);
+  return editing(view) && moving(view) && !!writable && !pointing(view, self) && !pointing(view, MOVE.ext);
 }
 
 /** The provider (scene:source metadata) an object was built by, or null. */

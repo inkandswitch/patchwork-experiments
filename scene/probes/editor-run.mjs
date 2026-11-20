@@ -175,6 +175,10 @@ try {
     const p = await scr("b1", [0, 0.016, 0]);
     await b.click(p.x, p.y);
     await b.rest(200);
+    // the handles are Move's (V), a tool: selecting alone shows none
+    check("noHaloWithoutMove", (await P("halo()")) == null, await P("halo()"));
+    await b.key("v");
+    await b.rest(200);
     check("haloOnSelection", (await P("halo()"))?.id === "b1", await P("halo()"));
     // the X arrow, and which way on screen +X runs
     const h0 = await P('haloAt("move", 0)'), h1 = await P('haloAt("move", 0, 0.05)');

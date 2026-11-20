@@ -44,7 +44,9 @@ function judge(reg, { before, after }) {
  * The editor at the focus `f` (a view plugin's api.focus(), read now: its
  * steps stay with this doc wherever the focus goes). edit(fn, { label,
  * handle? }) writes fn as one step (on the scene, or on `handle`: an
- * object's render doc); edits(label) opens a step of several writes ({
+ * object's render doc; or on `doc`, a doc as the recorder takes one, whose
+ * change(fn) says what it wrote: a package's, through the "edits" service of
+ * ./undo.js); edits(label) opens a step of several writes ({
  * change(fn, handle?), end() }); undo() and redo() take this viewer's last
  * step here back or again (false when there's none, or it has been changed
  * since); labels() names them.
@@ -63,7 +65,14 @@ export function editor(f) {
     return Object.freeze({ change: (fn, h) => g.change(fn, h && writer(h)), end: g.end });
   };
   return Object.freeze({
-    edit(fn, { label, handle } = {}) {
+    /** fn as one step: on the scene, on `handle` (a DocHandle), or on `doc` (a recorder's doc as it is: { url, doc(), change(fn) → patches }) */
+    edit(fn, { label, handle, doc } = {}) {
+      if (doc) {
+        const g = e.begin(label);
+        g.change(fn, doc);
+        g.end();
+        return;
+      }
       const g = edits(label);
       g.change(fn, handle);
       g.end();

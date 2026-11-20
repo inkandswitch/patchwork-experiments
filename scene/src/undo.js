@@ -25,6 +25,12 @@
 // undone as the doc held it, and the undo says what it couldn't put back:
 // what is kept comes back as the keeper has it now. Undo never invents state
 // it didn't see.
+//
+// A string written back over text (Automerge's collaborative strings) goes in
+// as the least splice that makes it (updateText), never a new text: the text
+// stays the same object, so cursors into it hold and anyone's edits
+// elsewhere in it stay.
+import { updateText } from "@automerge/automerge";
 
 /** A plain copy of a doc value (Automerge's are frozen, and a value can be written into a doc only once). */
 export function plain(v) {
@@ -145,7 +151,17 @@ export function inverse(leaves, doc) {
   return { writes: changed.length ? [] : leaves.map((l) => ({ path: l.path, value: l.before })), changed };
 }
 
-/** Write these into an Automerge draft (value undefined deletes). Parents are there (inverse checked). */
+/** A string over text in an Automerge draft as the least splice (updateText); false where the draft isn't Automerge's. */
+function spliceText(draft, path, value) {
+  try {
+    updateText(draft, path, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Write these into an Automerge draft (value undefined deletes; a string over text, a splice). Parents are there (inverse checked). */
 export function apply(draft, writes) {
   for (const { path, value } of writes) {
     let v = draft;
@@ -157,7 +173,7 @@ export function apply(draft, writes) {
     const last = path.at(-1);
     if (value === undefined) {
       if (Object.prototype.hasOwnProperty.call(v, last)) delete v[last];
-    } else v[last] = plain(value);
+    } else if (!(typeof value === "string" && typeof v[last] === "string" && spliceText(draft, path, value))) v[last] = plain(value);
   }
 }
 

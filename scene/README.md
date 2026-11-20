@@ -40,8 +40,9 @@ run once per view, whatever the focus, and work on the focus doc.
 - **Edit.** The editor is a hand: **Edit**, beside the body chip, picks it up
   or puts it down, in any body (you can walk while editing). Holding it,
   click to select; Escape deselects, then leaves an entered link, then puts
-  it down. The **halo** has
-  move arrows, rotate rings, scale corners and a provider's param knobs. The
+  it down. **Move** (`V`) is a tool: while it's held, the selection has
+  the **halo**: move arrows, rotate rings, scale corners and a provider's
+  param knobs. The
   **inspector** drawer tab holds the object tree, the selection's fields and
   behaviours, and its documents (Source, Build, About), each dockable. The
   toolbar opens Dimensions and Parts; `M` measures.

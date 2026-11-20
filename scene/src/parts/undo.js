@@ -4,7 +4,8 @@
 // doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or
 // a process's save is never on it. ⌘Z / Ctrl+Z undoes, ⇧⌘Z / Ctrl+Y redoes,
 // unless a field has the keys (its own text undo) or they come from a docked
-// pane; the toolbar has both, named for the step they'd take. Both are the
+// pane; the toolbar has both, named for the step they'd take. A package's
+// own writes go on it through the "edits" service (EDITOR.md, "Undo"). Both are the
 // editor's (../stage/bodies.js): only while editing. A step recorded
 // there stays on the stack while the viewer looks, walks or sits, and is
 // there to take back on coming back to Edit (if the doc still holds what it
@@ -57,6 +58,24 @@ function create(api) {
 
   return {
     commands: [command("undo", "Undo"), command("redo", "Redo")],
+    provides: {
+      // EDITOR.md, "Undo": a package's own writes, as steps on this undo
+      edits: () =>
+        Object.freeze({
+          /**
+           * Write fn to `doc` ({ url, doc(), change(fn) → patches }: a doc a package edits for a
+           * thing in the scene, e.g. a model an object shows; its patches are what the step takes
+           * back) as one step of this viewer's in the focus doc. false: nothing written (no
+           * focus, or the focus doc can't be written here), so the caller writes it itself.
+           */
+          edit(doc, fn, { label } = {}) {
+            const f = api.focus();
+            if (!f?.writable() || !doc || typeof doc.change !== "function" || typeof fn !== "function") return false;
+            editor(f).edit(fn, { label, doc });
+            return true;
+          },
+        }),
+    },
   };
 }
 

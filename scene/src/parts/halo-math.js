@@ -56,16 +56,23 @@ export function groupRoots(scene, gid) {
 
 /**
  * What the halo's handles are on: { kind: "object" | "group", id }, or null.
- * Handles are the editor's: they show only while editing
- * (../stage/bodies.js), for the selection where its doc may be written, while
- * no pointing tool is held (its clicks are the world's: bodies.js pointing), on an object that
- * isn't locked or a group with something it can move.
+ * Handles are Move's: they show only while editing (../stage/bodies.js)
+ * with Move held, for the selection where its doc may be written, while no
+ * other pointing tool is held (its clicks are the world's: bodies.js
+ * pointing), on an object that isn't locked or a group with something it can
+ * move.
  * @param {object} scene  api.scene()
  * @param {object} view  api.view.get()
  * @param {boolean} writable  api.writable()
  */
+/** The halo's own tool: Move, picked up and put down (halo.js). */
+export const MOVE = Object.freeze({ ext: "scene.halo", command: "move" });
+
+/** Is Move held? */
+export const moving = (view) => Array.isArray(view?.held) && view.held.some((t) => t?.ext === MOVE.ext && t?.command === MOVE.command);
+
 export function haloTarget(scene, view, writable = true) {
-  if (!editing(view) || !writable || pointing(view)) return null;
+  if (!editing(view) || !writable || !moving(view) || pointing(view, MOVE.ext)) return null;
   const id = view?.selected;
   const o = id != null ? scene?.objects?.[id] : null;
   if (!o) return null;

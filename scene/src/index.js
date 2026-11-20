@@ -393,6 +393,7 @@ export const plugins = [
     type: "scene:view",
     id: "scene.undo",
     name: "Undo",
+    provides: ["edits"],
     async load() {
       return (await import("./parts/undo.js")).default;
     },

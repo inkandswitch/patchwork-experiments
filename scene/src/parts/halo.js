@@ -1,7 +1,14 @@
-// scene.halo: the selection's handles (STAGE.md, "The input chain"), after Morphic's halo.
+// scene.halo: Move, a tool (STAGE.md, "Hands"), and the selection's handles
+// while it is held (STAGE.md, "The input chain"), after Morphic's halo.
 //
+// Move (V) is picked up and put down like Measure; nothing else shows the
+// handles, so selecting is only selecting, and a tool that edits a thing its
+// own way (a CAD model's editor) has no handles in its way. Its input passes
+// everything: the handles are widgets, so a press on one is still the halo's
+// (the chain's widget step), and a press elsewhere goes on as before.
 // Round what's selected, while editing (../stage/bodies.js: the halo is
-// the editor's), where its doc may be written and no tool is held:
+// the editor's) with Move held, where its doc may be written and no other
+// pointing tool is held:
 // a move arrow along each axis, a rotate ring about each, and a scale handle
 // at each corner, all outside its box (./halo-math.js says where), sized for
 // the screen. There are no modes and no keys: each handle is its own verb,
@@ -25,7 +32,7 @@
 // when the focus moves finishes where it started (the facet lingers while it
 // holds the pose).
 
-import { HANDLE_SIZE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, groupRoots, usable } from "./halo-math.js";
+import { HANDLE_SIZE, MOVE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, moving, groupRoots, usable } from "./halo-math.js";
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
 import { editor } from "./editor.js";
@@ -356,9 +363,26 @@ function haloAt(api, view) {
   };
 }
 
+/** Move's input: it passes everything (the handles are widgets, offered to the halo by the chain). */
+const PASS = Object.freeze({});
+
 function create(api) {
   const at = perFocus(api, (f) => haloAt(f, api));
+  const held = () => moving(api.view.get());
   return {
+    commands: [
+      {
+        id: MOVE.command,
+        name: "Move",
+        key: "v",
+        edit: true,
+        show: ["toolbar"],
+        // a tool: on top of the hands while held; V again (or Escape at the top) puts it down
+        tool: {},
+        state: (target) => (target == null ? { checked: held(), title: "Move, rotate and scale the selection" } : null),
+        run: () => PASS,
+      },
+    ],
     // (its focus's: what the view offers is read as it offers it)
     get input() {
       return at()?.input ?? null;

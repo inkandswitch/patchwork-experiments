@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import halo from "./halo.js";
-import { GRAB_PX, HANDLE_SIZE, MIN_SCALE, dragDelta, groupMembers, groupRoots, haloHandles, haloTarget, handleAt, handlePoints, planeHit, usable } from "./halo-math.js";
+import { GRAB_PX, HANDLE_SIZE, MIN_SCALE, MOVE, dragDelta, groupMembers, groupRoots, haloHandles, haloTarget, handleAt, handlePoints, planeHit, usable } from "./halo-math.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, multiplyMatrices } from "../transform.js";
 import { resolveGroups } from "../groups.js";
 import { resolveParents } from "../hierarchy.js";
@@ -29,19 +29,21 @@ describe("haloTarget: what the handles are on", () => {
     lg: group("Locked"),
     lm: object({ group: "lg", locked: true }),
   });
-  it("every body × the editor held or not × selection × the tools held (none, a pointing one, one that only looks, both) × writable: only holding the editor, and no pointing tool", () => {
+  it("every body × the editor held or not × selection × the tools held (none, Move, a pointing one, one that only looks, and their stacks) × writable: only holding the editor and Move, and no other pointing tool", () => {
     const want = { a: { kind: "object", id: "a" }, g: { kind: "group", id: "g" }, m: { kind: "object", id: "m" } };
+    const MOVING = { ...MOVE, pointer: false };
     const MEASURE = { ext: "scene.measure", command: "measure", pointer: true };
     const XRAY = { ext: "scene.xray", command: "xray", pointer: false };
+    const stacks = [[], [MOVING], [MEASURE], [XRAY], [MEASURE, XRAY], [XRAY, MEASURE], [MOVING, MEASURE], [MEASURE, MOVING], [MOVING, XRAY], [XRAY, MOVING]];
     for (const body of ["look", "walk", "seat", "station", undefined])
       for (const edit of [false, true])
         for (const selected of [null, "a", "l", "g", "m", "e", "lg", "lm", "gone", "dimension:x"])
-          for (const held of [[], [MEASURE], [XRAY], [MEASURE, XRAY], [XRAY, MEASURE]])
+          for (const held of stacks)
             for (const writable of [true, false]) {
               const hands = [...(edit ? [{ kind: "edit" }] : []), ...held.map(() => ({ kind: "tool" }))];
               const got = haloTarget(sc, { body: body ? { id: body } : undefined, hands, selected, held }, writable);
-              const armed = held.includes(MEASURE);
-              expect([body, edit, selected, held, writable, got]).toEqual([body, edit, selected, held, writable, edit && writable && !armed ? (want[selected] ?? null) : null]);
+              const shows = edit && writable && held.includes(MOVING) && !held.includes(MEASURE);
+              expect([body, edit, selected, held, writable, got]).toEqual([body, edit, selected, held, writable, shows ? (want[selected] ?? null) : null]);
             }
   });
 });
@@ -216,6 +218,13 @@ async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   poses.hold = (id, t) => (s.holds.push([id, t]), !s.refuse.has(id));
   poses.release = (id, o) => s.releases.push([id, o ?? {}]);
   s.halo = () => s.instance("scene.halo");
+  // the handles are Move's: pick it up, as V does
+  s.move = async (on = true) => {
+    const held = s.debug.view.atom.get().held.some((t) => t.command === MOVE.command);
+    if (held !== on) s.debug.view.plugins.record("scene.halo").api.run({ ext: "scene.halo", command: MOVE.command, target: null });
+    await settle();
+  };
+  await s.move(true);
   s.select = async (id) => {
     s.local.swap((m) => ({ ...m, selected: id }));
     await settle();

@@ -2,10 +2,11 @@
 // hand is held and never otherwise, whatever the body. Every body (the
 // stage's Look; a walk and a seat over Look; a station over a walk) × holding
 // the editor or not × what's selected (nothing, an object, a ref) × whether
-// the scene may be written: the real parts, mounted together, say whether the
+// the scene may be written × Move held or not (it is the editor's, so only
+// on offer while editing): the real parts, mounted together, say whether the
 // halo's handles, the build-param knobs, the inspector (opening a beat after
 // the selection), the grid, axes and bounds, and the toolbar show. Finite and
-// exhaustive: 4 × 2 × 3 × 2 = 48 cases.
+// exhaustive: 4 × 2 × 3 × 2 × 2 = 96 cases.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { Box3, Vector3 } from "three";
@@ -128,15 +129,17 @@ function chrome() {
   };
 }
 
-/** What should show: only holding the editor; handles and knobs on an object where the scene may be written; the inspector on an object. */
-function expected(edit, selected, writable) {
+/** What should show: only holding the editor; handles and knobs with Move held, on an object where the scene may be written; the inspector on an object. */
+function expected(edit, move, selected, writable) {
   const obj = selected === "a";
-  return { handles: edit && obj && writable, knobs: edit && obj && writable, inspector: edit && obj, grid: edit, axes: edit, bounds: edit, toolbar: edit };
+  return { handles: edit && move && obj && writable, knobs: edit && move && obj && writable, inspector: edit && obj, grid: edit, axes: edit, bounds: edit, toolbar: edit };
 }
+/** Pick up Move (V) → whether it ran: it is the editor's, so not without it. */
+const move = () => s.api("scene.halo").run({ ext: "scene.halo", command: "move" });
 
 // H13: editing ⇔ the Edit hand is held; its chrome shows exactly then, in any body
 describe("the editor is the Edit hand", () => {
-  it("every body × editing or not × nothing, an object or a ref selected × writable or not: handles, knobs, inspector, grid, axes, bounds, toolbar", async () => {
+  it("every body × editing or not × nothing, an object or a ref selected × writable or not × Move or not: handles, knobs, inspector, grid, axes, bounds, toolbar", async () => {
     let cases = 0;
     for (const writable of [true, false]) {
       await mount({ writable });
@@ -144,24 +147,27 @@ describe("the editor is the Edit hand", () => {
       for (const [body, path] of Object.entries(IN)) {
         for (const edit of [false, true]) {
           for (const selected of SELECTIONS) {
-            // start each case from Look, not editing, with nothing selected
-            api.body.enter("look");
-            s.edit(false);
-            await settle();
-            for (const id of path) expect(api.body.enter(id)).toBe(true);
-            s.edit(edit);
-            s.local.swap((m) => ({ ...m, selected }));
-            await still();
-            expect([s.local.get().body.id, editing(s.local.get())]).toEqual([body, edit]);
-            expect({ body, edit, selected, writable, ...chrome() }).toEqual({ body, edit, selected, writable, ...expected(edit, selected, writable) });
-            cases++;
+            for (const moving of [false, true]) {
+              // start each case from Look, not editing (so holding nothing), with nothing selected
+              api.body.enter("look");
+              s.edit(false);
+              await settle();
+              for (const id of path) expect(api.body.enter(id)).toBe(true);
+              s.edit(edit);
+              if (moving) expect(move()).toBe(edit);
+              s.local.swap((m) => ({ ...m, selected }));
+              await still();
+              expect([s.local.get().body.id, editing(s.local.get()), s.local.get().held.map((t) => t.command)]).toEqual([body, edit, moving && edit ? ["move"] : []]);
+              expect({ body, edit, moving, selected, writable, ...chrome() }).toEqual({ body, edit, moving, selected, writable, ...expected(edit, moving, selected, writable) });
+              cases++;
+            }
           }
         }
       }
       s.unmount();
       s = null;
     }
-    expect(cases).toBe(4 * 2 * 3 * 2);
+    expect(cases).toBe(4 * 2 * 3 * 2 * 2);
   }, 60_000);
 
   it("a body doesn't touch the editor: walking, a held Measure, the selection and the inspector stay; Leave never puts the editor down; peers are told every hand, top last, an open menu passed over", async () => {
@@ -207,10 +213,11 @@ describe("the editor is the Edit hand", () => {
       s.local.swap((m) => ({ ...m, selected: "a" }));
       await still();
       expect(chrome().inspector).toBe(true);
+      expect(move()).toBe(true);
       expect(s.api("scene.measure").run({ ext: "scene.measure", command: "measure" })).toBe(true);
       // a tool not the editor's, over Measure
       const putWrench = api.hold({ name: "Wrench" }, {});
-      expect(s.local.get().held.map((t) => t.name)).toEqual(["Measure", "Wrench"]);
+      expect(s.local.get().held.map((t) => t.name)).toEqual(["Move", "Measure", "Wrench"]);
       s.edit(false);
       await still();
       expect(editing(s.local.get())).toBe(false);
@@ -225,6 +232,10 @@ describe("the editor is the Edit hand", () => {
       await still();
       expect(chrome()).toMatchObject({ inspector: false, handles: false, toolbar: true });
       s.local.swap((m) => ({ ...m, selected: "a" }));
+      await still();
+      // selecting is only selecting: the handles are Move's
+      expect(chrome()).toMatchObject({ inspector: true, handles: false, toolbar: true });
+      expect(move()).toBe(true);
       await still();
       expect(chrome()).toMatchObject({ inspector: true, handles: true, toolbar: true });
     } finally {

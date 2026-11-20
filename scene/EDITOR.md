@@ -14,7 +14,7 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.keys`, `scene.use`, `scene.menu`, `scene.touch` | the key map; the use prompt; the context menu; the touch controls |
 | `scene.toolbar`, `scene.body`, `scene.clock-chip`, `scene.packages` | the bar of tools; the body chip, Edit, who's here, the Esc hint; the clock chips; the packages prompt |
 | `scene.inspector` | the one pane: the outline (`outline.js`) and the selection's fields |
-| `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | move, rotate and scale handles (in the parent's drawn frame, no keys, one write on release); knobs; dimensions; Measure |
+| `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions; Measure |
 | `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
 | `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | drops; copy and paste; the parts bin; Undo and Redo |
 
@@ -28,7 +28,7 @@ nothing and goes no further), offered first to a widget's owner under it
 (`api.offerWidget`); presses aren't its; it wants the pointer. Its `escape()`
 clears the selection, then leaves the entered link. It stays in hand across
 Enter and Leave, in any body; a tool can sit over it. **Editing** is
-`editing(view)` (`stage/bodies.js`): the editor's chrome (halo, inspector,
+`editing(view)` (`stage/bodies.js`): the editor's chrome (Move, inspector,
 toolbar's editor commands, grid, axes, bounds, dimensions, Measure, every
 `edit: true` command) shows exactly then (H13). Putting it down puts down every
 such tool, wherever it is in the hands, and the selection.
@@ -87,7 +87,12 @@ what `change` returns, per person and per focus doc, in the focus stage's
 `local.edits`; a package's verb, a clock act or a process save is never one. A
 step restores only if the doc still holds all it wrote, else it is dropped and
 said; kept objects come back as their keeper has them now. Undo and Redo are
-`edit: true`.
+`edit: true`. A package puts its own writes on it with the `edits` service
+(`scene.undo`'s): `use("edits").edit(doc, fn, { label })` writes `fn` to `doc`
+(`{ url, doc(), change(fn) → patches }`; the patches are what the step takes
+back, so a doc leaves out writes that aren't the person's) as one step of this
+viewer's in the focus doc; `false`, nothing written, where the focus doc can't
+be written here.
 
 ## Drops, templates and parts
 

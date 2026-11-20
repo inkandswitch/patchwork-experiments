@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { Box3, Vector3 } from "three";
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
+import halo from "./halo.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import handles, { handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } from "./handles.js";
@@ -37,15 +38,23 @@ function stubViewport(s, { loaded = true } = {}) {
   vp.ray = (x, y) => ({ origin: [(x - 100) / 10, (100 - y) / 10, 10], dir: [0, 0, -1] });
 }
 
+/** The knobs are Move's (the halo's tool): the halo, to pick it up as V does. */
+const MOVE_TOOL = [{ meta: { id: "scene.halo" }, module: halo }, posesBy({ hold: () => true, release: () => {}, heldBy: () => null })];
+async function pickUpMove(s) {
+  s.debug.view.plugins.record("scene.halo").api.run({ ext: "scene.halo", command: "move", target: null });
+  await settle();
+}
+
 async function setup({ view = {}, params = { height: 0.2 } } = {}) {
   clicks.length = 0;
   const repo = new FakeRepo();
   const render = repo.add({ params });
   const s = await mountStage({
     repo,
-    extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles" }, module: handles }, fakeTool],
+    extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles" }, module: handles }, fakeTool, ...MOVE_TOOL],
     doc: { objects: { a: object({ name: "Slice", providerId: "slice-test", renderUrl: render.url }), g: object({ kind: "group", providerId: null }) }, view },
   });
+  await pickUpMove(s);
   getRegistry("scene:source").register(SLICE);
   stubViewport(s);
   return { s, render };
@@ -173,11 +182,23 @@ describe("scene.handles on the stage", () => {
     putLooker();
     const putDown = s.api("t.tool").hold({ name: "Tool", pointer: true }, {});
     await settle();
-    expect(s.local.get().held).toMatchObject([{ ext: "t.tool", command: null, name: "Tool", pointer: true }]);
+    expect(s.local.get().held).toMatchObject([{ ext: "scene.halo", command: "move" }, { ext: "t.tool", command: null, name: "Tool", pointer: true }]);
     expect(labelTexts(s)).toEqual([]);
     expect(s.instance("scene.handles").input.widgetAt({ x: 100, y: 98 })).toBe(null);
     putDown();
     await settle();
+    expect(labelTexts(s)).toHaveLength(1);
+  });
+
+  it("are Move's: putting Move down hides them, picking it up again shows them", async () => {
+    const { s } = await setup();
+    current = s;
+    await select(s, "a");
+    expect(labelTexts(s)).toHaveLength(1);
+    await pickUpMove(s); // V again: put down
+    expect(s.local.get().held).toEqual([]);
+    expect(labelTexts(s)).toEqual([]);
+    await pickUpMove(s);
     expect(labelTexts(s)).toHaveLength(1);
   });
 
@@ -273,9 +294,10 @@ describe("scene.handles on the stage", () => {
     const render = repo.add({ params: { height: 0.2 } });
     const s = await mountStage({
       repo,
-      extensions: [{ meta: { id: "scene.handles" }, module: handles }],
+      extensions: [{ meta: { id: "scene.handles" }, module: handles }, ...MOVE_TOOL],
       doc: { objects: { a: object({ providerId: "slice-later", renderUrl: render.url }) } },
     });
+    await pickUpMove(s);
     current = s;
     stubViewport(s);
     await select(s, "a");

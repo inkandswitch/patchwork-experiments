@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
-import { fakeUrl } from "../test/fake-repo.js";
+import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import undo, { undoKey } from "./undo.js";
 import select from "./select.js";
 import { editor } from "./editor.js";
@@ -43,6 +43,35 @@ const press = (key, extra = {}) => {
 };
 
 describe("scene.undo", () => {
+  it("edits: a package's write to its own doc is a step here, which Undo and Redo take back and again; what its doc leaves out of its patches stays; refused where the scene can't be written", async () => {
+    const repo = new FakeRepo();
+    const model = repo.add({ content: "a", cad: { locks: {} } });
+    // the doc as the package hands it over: its change says what it wrote, without the locks
+    const doc = {
+      url: model.url,
+      doc: () => model.doc(),
+      change(fn) {
+        let out = [];
+        model.change(fn, { patchCallback: (p) => void (out = p) });
+        return out.filter((p) => p.path[0] !== "cad");
+      },
+    };
+    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.undo" }, module: undo }, { meta: { id: "t.pkg" }, module: { create: () => ({}) } }], doc: { objects: {} } });
+    await settle();
+    const edits = s.api("t.pkg").use("edits");
+    expect(edits.edit(doc, (d) => { d.content = "b"; d.cad.locks.x = ["h"]; }, { label: "Edit model" })).toBe(true);
+    expect(model.doc()).toEqual({ content: "b", cad: { locks: { x: ["h"] } } });
+    const state = (id) => s.instance("scene.undo").commands.find((c) => c.id === id).state(null);
+    expect(state("undo")).toMatchObject({ title: "Undo “Edit model”" });
+    s.api("scene.undo").run({ ext: "scene.undo", command: "undo", target: null });
+    expect(model.doc()).toEqual({ content: "a", cad: { locks: { x: ["h"] } } });
+    s.api("scene.undo").run({ ext: "scene.undo", command: "redo", target: null });
+    expect(model.doc().content).toBe("b");
+    s.handle.isReadOnly = () => true;
+    expect(edits.edit(doc, (d) => (d.content = "c"))).toBe(false);
+    expect(model.doc().content).toBe("b");
+  });
+
   it("undoKey: ⌘Z / Ctrl+Z undo, with Shift redo, Ctrl+Y redo; nothing else", () => {
     expect(undoKey({ key: "z", metaKey: true })).toBe("undo");
     expect(undoKey({ key: "Z", ctrlKey: true, shiftKey: true })).toBe("redo");

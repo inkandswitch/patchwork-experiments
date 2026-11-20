@@ -120,6 +120,27 @@ describe("createEdits on real Automerge", () => {
     view: {},
   });
 
+  it("text written back is spliced, never replaced: a cursor taken before undo and redo still resolves, and an edit elsewhere in the text stays", () => {
+    const h = amHandle({ content: "radius: 1.5; width: 60", objects: {}, order: [], clock: { running: true, t: 0 }, view: {} }, "automerge:model");
+    const e = createEdits({ handle: h });
+    const g = e.begin("Edit model");
+    g.change((d) => Automerge.splice(d, ["content"], 8, 3, "4"));
+    g.end();
+    expect(h.doc().content).toBe("radius: 4; width: 60");
+    const at = Automerge.getCursor(h.doc(), ["content"], 17); // the "6" of "60"
+    expect(e.take("undo")).toBe(true);
+    expect(h.doc().content).toBe("radius: 1.5; width: 60");
+    expect(Automerge.getCursorPosition(h.doc(), ["content"], at)).toBe(19);
+    expect(e.take("redo")).toBe(true);
+    expect(h.doc().content).toBe("radius: 4; width: 60");
+    expect(Automerge.getCursorPosition(h.doc(), ["content"], at)).toBe(17);
+    // someone's edit elsewhere in the text: the step's after is no longer what the text holds, so undo leaves it be
+    h.change((d) => Automerge.splice(d, ["content"], 0, 0, "// "));
+    expect(e.take("undo")).toBe(false);
+    expect(h.doc().content).toBe("// radius: 4; width: 60");
+    h.free();
+  });
+
   it("judge sees the doc before a step's first change and after its last, readable when the step ends; what it says rides on the step", () => {
     const h = amHandle(init());
     const seen = [];
