@@ -17,7 +17,8 @@ import type * as Three from "three"
 import {OpenscadEditor} from "../components/OpenscadEditor"
 import type {OpenscadDoc} from "../types"
 import {hostedHandle, modelFrame, type Edits} from "./hosted"
-import {parseSTL, UNIT_METERS, type Unit} from "./stl"
+import {UNIT_METERS, type Unit} from "./axes"
+import type {Model} from "../render/model"
 
 /** The scene source whose objects this edits (index.ts). */
 export const SOURCE_ID = "openscad-model"
@@ -85,18 +86,25 @@ export function create(api: ViewApi) {
 				;(o.material as Three.Material | undefined)?.dispose()
 			}
 		}
-		/** A render: the model's triangles (its own units, Z up) and their creases, in its frame; a failed one keeps the last. */
-		const draw = (stl: Uint8Array | null) => {
-			if (!stl) return
-			const {positions, triangles: n} = parseSTL(stl)
+		/**
+		 * A render: each of the model's parts (its triangles of one colour, in its own units, Z up) and their
+		 * creases, in its frame; a part's colour as the built GLB has it (source.ts), none in the body grey.
+		 * A failed render keeps the last.
+		 */
+		const draw = (model: Model | null) => {
+			if (!model) return
 			clear()
-			triangles = n
-			const g = new THREE.BufferGeometry()
-			g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
-			g.computeVertexNormals()
-			const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({color: "#a9aeb5", roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1}))
-			const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: "#1e1e1e"}))
-			root.add(mesh, edges)
+			triangles = model.triangles
+			for (const part of model.parts) {
+				const g = new THREE.BufferGeometry()
+				g.setAttribute("position", new THREE.Float32BufferAttribute(part.positions, 3))
+				g.computeVertexNormals()
+				const [r, gr, b, a] = part.color ?? [0, 0, 0, 1]
+				const color = part.color ? new THREE.Color().setRGB(r, gr, b, THREE.SRGBColorSpace) : new THREE.Color("#a9aeb5")
+				const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({color, transparent: a < 1, opacity: a, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1}))
+				const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: "#1e1e1e"}))
+				root.add(mesh, edges)
+			}
 			moved()
 		}
 		const element = document.createElement("div")
@@ -142,7 +150,7 @@ export function create(api: ViewApi) {
 			handle => {
 				if (stopped) return
 				const hosted = hostedHandle(handle as DocHandle<OpenscadDoc>, () => (api.use("edits") as Edits | null) ?? null)
-				unmount = render(() => <OpenscadEditor handle={hosted} element={{repo: stage.repo as never}} hosted={{onStl: draw}} />, element)
+				unmount = render(() => <OpenscadEditor handle={hosted} element={{repo: stage.repo as never}} hosted={{onModel: draw}} />, element)
 			},
 			() => stop(),
 		)

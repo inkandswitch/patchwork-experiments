@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from "vitest"
 import {apply, hostedHandle, modelFrame, multiply, undoablePatches} from "./hosted"
-import {zUpToYUpMeters} from "./stl"
+import {zUpToYUpMeters} from "./axes"
 import type {OpenscadDoc} from "../types"
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]

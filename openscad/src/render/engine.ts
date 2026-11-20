@@ -7,17 +7,15 @@
 
 /// <reference types="vite/client" />
 import workerUrl from "./worker.ts?worker&url"
+import type {Model} from "./model"
+import type {EngineUrls, LoadProgress} from "./worker"
+import {ENGINE_DIR} from "./engineFiles"
 
-export type LoadProgress = {
-	phase: "downloading" | "starting"
-	loaded: number
-	total: number | null
-	fromCache: boolean
-}
+export type {LoadProgress}
 
 export type RenderResult = {
-	/** binary STL; shared between callers through the cache, so treat it as read-only */
-	stl: Uint8Array
+	/** triangles grouped by colour; shared between callers through the cache, so treat it as read-only */
+	model: Model
 	logs: string[]
 	/** how long OpenSCAD took when this result was rendered */
 	elapsedMillis: number
@@ -65,6 +63,15 @@ let nextId = 1
 // `base: "./"` that URL is emitted as new URL("assets/…", import.meta.url).)
 const WORKER_URL = new URL(workerUrl, import.meta.url)
 
+// The vendored engine sits next to the entry chunks (dist/<ENGINE_DIR>/),
+// so it resolves against this module too. (`here` rather than a literal
+// import.meta.url in new URL(), which vite would try to bundle.)
+const here = import.meta.url
+const ENGINE: EngineUrls = {
+	js: new URL(`${ENGINE_DIR}/openscad.js`, here).href,
+	wasm: new URL(`${ENGINE_DIR}/openscad.wasm`, here).href,
+}
+
 /**
  * `new Worker()` only accepts a same-origin script. When this bundle is served
  * from somewhere other than the page (a dev server, a CDN), fetch the worker
@@ -97,7 +104,7 @@ function attach(w: Worker): Worker {
 			const entry = pending.get(msg.id)
 			pending.delete(msg.id)
 			if (!entry) return
-			if (msg.ok) entry.resolve({stl: msg.stl, logs: msg.logs, elapsedMillis: msg.elapsedMillis})
+			if (msg.ok) entry.resolve({model: msg.model, logs: msg.logs, elapsedMillis: msg.elapsedMillis})
 			else entry.reject(new RenderError(msg.error, msg.logs ?? []))
 		}
 	}
@@ -129,7 +136,7 @@ function renderInWorker(source: string, imports: RenderImportInput[] = []): Prom
 		const id = nextId++
 		pending.set(id, {resolve, reject})
 		getWorker().then(
-			w => w.postMessage({id, type: "render", source, imports}),
+			w => w.postMessage({id, type: "render", source, imports, engine: ENGINE}),
 			err => {
 				pending.delete(id)
 				reject(err)
@@ -141,7 +148,7 @@ function renderInWorker(source: string, imports: RenderImportInput[] = []): Prom
 /**
  * What a render's output depends on: the source text and the import bindings
  * (name and JSON, in binding order). Nothing else reaches the engine, so equal
- * keys give equal STL.
+ * keys give equal output.
  */
 export function renderKey(source: string, imports: RenderImportInput[] = []): string {
 	return JSON.stringify([source, imports.map(imp => [imp.name, imp.json])])
