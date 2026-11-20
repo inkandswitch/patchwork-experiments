@@ -45,6 +45,7 @@ import {
   needsApproval,
   findCall,
   findResult,
+  attachmentBlock,
   holdsLease,
 } from "./session.js"
 import { batchedAppender } from "./store.js"
@@ -948,11 +949,17 @@ export function answerQuestion(store, callId, answer, author = null) {
  * they had open; it goes first, so the model reads where they were before what
  * they asked. A context with nothing in it is left out rather than recorded.
  */
-export function say(store, text, author = null, context = null) {
+export function say(store, text, author = null, context = null, attachments = []) {
   const located = !!(context?.focused?.url || context?.open?.length)
   store.change((d) => {
     if (!d.turns) d.turns = []
     const blocks = located ? [contextBlock(context), textBlock(text)] : [textBlock(text)]
+    for (const attachment of attachments ?? []) {
+      blocks.push(attachmentBlock(attachment))
+      // A file kept from the computer or a paste is something this session
+      // made: it is listed with the rest, so it can be found again.
+      if (attachment.kept) recordArtifact(d, { url: attachment.url, name: attachment.name, kind: "file" })
+    }
     d.turns.push(makeTurn("user", blocks, { author }))
     d.status = STATUS.idle
   })

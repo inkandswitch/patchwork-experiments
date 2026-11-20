@@ -16,6 +16,7 @@ import { applyOps, OpError } from "./ops.js"
 import { previewJson, preview, shape, bytes } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
+import { imageTypeOf, imageForModel } from "../images.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -71,7 +72,7 @@ export const docRead = {
   name: "Read document",
   target: { fields: ["url"], fallback: "subject" },
   description: [
-    "Read an automerge document, or one path inside it. Defaults to the document this session is attached to.",
+    "Read an automerge document, or one path inside it. Defaults to the document this session is attached to. An image file is shown to you as the image itself — read it, rather than opening it in a view to screenshot.",
     "",
     "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a file's content, say — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
   ].join("\n"),
@@ -116,6 +117,17 @@ export const docRead = {
     }
 
     if (input.shapeOnly) return `${url} /${path.join("/")}\n${shape(value)}`
+
+    // An image file is shown as the image, not as a byte array: the model
+    // looks at it, instead of mounting the file in a view to screenshot it.
+    const imageType = imageTypeOf(doc)
+    if (imageType && (path.length === 0 || (path.length === 1 && path[0] === "content"))) {
+      const name = doc.name ?? doc.title ?? "image"
+      const about = `${url} — image '${name}' (${imageType}, ${bytes(doc.content.byteLength)})`
+      const shown = await imageForModel(doc.content, imageType)
+      if (!shown) return `${about}: too large to show from here.`
+      return { text: `${about}${shown.width ? `, shown at ${shown.width}×${shown.height}` : ""}. The image is attached to this result.`, image: shown.url }
+    }
 
     // A range over a string, so a long one can be read in full rather than
     // only ever as its first 2000 characters. Text written once (a kept

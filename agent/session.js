@@ -193,6 +193,16 @@ export function textBlock(text, opts = {}) {
 }
 
 /**
+ * Something a person attached to a message: a document dropped in from the
+ * sidebar, or an image pasted or dropped, kept as a file document. An image
+ * also carries what the model is shown (`image`, a data URL fitted as a
+ * screenshot is), so the request needs nothing but this document.
+ */
+export function attachmentBlock({ url, name = null, docType = null, mimeType = null, image = null }, opts = {}) {
+  return { type: "attachment", id: opts.id ?? makeId("b"), url: String(url), name, docType, mimeType, image: image ? frozen(image) : null }
+}
+
+/**
  * What the person had in front of them when they spoke.
  *
  * An ambient session is about no one document: it is summoned from anywhere,
@@ -1103,7 +1113,7 @@ export function rejectSentImages(doc, { maxImages = MAX_IMAGES_IN_REQUEST } = {}
   const sent = []
   for (const turn of doc.turns ?? []) {
     for (const block of turn.blocks ?? []) {
-      if (block.type === "result" && block.image && !block.imageRejected) sent.push(block)
+      if ((block.type === "result" || block.type === "attachment") && block.image && !block.imageRejected) sent.push(block)
     }
   }
   for (const block of sent.slice(-maxImages)) block.imageRejected = true
@@ -1122,6 +1132,12 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
   const sent = theResultOfEachCall(turns)
   for (const turn of turns) {
     for (const block of turn.blocks ?? []) {
+      // What a person attached shares the images-in-a-request budget with
+      // screenshots: the newest are sent, older ones only named.
+      if (block.type === "attachment") {
+        if (block.image && !block.imageRejected) withImages.push(block.id)
+        continue
+      }
       if (block.type !== "result" || sent.get(block.callId) !== block.id) continue
       answered.add(block.callId)
       results.push(block)
@@ -1166,6 +1182,14 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
         if (!confined) content.push({ type: "text", text: describeContext(block) })
       } else if (block.type === "event") {
         content.push({ type: "text", text: describeEvent(block) })
+      } else if (block.type === "attachment") {
+        const what = [block.docType, block.mimeType].filter(Boolean).join(", ")
+        const shown = block.image && keepImages.has(block.id)
+        content.push({
+          type: "text",
+          text: `[Attached: ${block.name ?? "a document"}${what ? ` (${what})` : ""} — ${block.url}${block.image && !shown ? "; an image, not re-sent — doc_read it to look again" : ""}]`,
+        })
+        if (shown) content.push({ type: "image", image: String(block.image) })
       } else if (block.type === "call") {
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
         // A denial is the call's RESULT, in the place the call happened.

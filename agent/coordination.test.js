@@ -29,7 +29,8 @@ describe("a lease watch judges liveness by change, on the observer's clock alone
   const SKEWS = [-DEAD_ON_SIGHT_MS + STALE_AFTER_MS, -90_000, -1, 0, 1, 90_000, DEAD_ON_SIGHT_MS - STALE_AFTER_MS - 1]
   const SAMPLE_EVERY = [1, HEARTBEAT_MS, STALE_AFTER_MS - 1]
 
-  it("a holder heartbeating every HEARTBEAT_MS is never judged dead, whatever the skew or how often we look", () => {
+  // Exhaustive and so a few seconds' work; the limit allows for a loaded machine.
+  it("a holder heartbeating every HEARTBEAT_MS is never judged dead, whatever the skew or how often we look", { timeout: 30_000 }, () => {
     for (const skew of SKEWS) {
       for (const every of SAMPLE_EVERY) {
         let t = 1_000_000

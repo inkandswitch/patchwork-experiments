@@ -26,6 +26,7 @@ import { formatCost } from "./session.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./ui/waiting.js"
 import { waitingIn } from "./workflow/waiting.js"
 import { markCitations } from "./ui/citations.js"
+import { attachmentTray, carriesAttachments, pastedImages } from "./ui/attachments.js"
 import { workflowOf } from "./workflow/plan.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import {
@@ -206,7 +207,30 @@ export function AgentTool(handle, element, options = {}) {
   micButton.hidden = !voiceSupported()
   const row = el("div", "agent-composer-row")
   row.append(hint, micButton, stopButton, sendButton)
-  composer.append(input, row)
+  // What is waiting to go with the next message: documents dragged in,
+  // files dropped, images pasted (ui/attachments.js).
+  const tray = attachmentTray({ repo, onChange: () => render() })
+  composer.append(tray.element, input, row)
+  composer.addEventListener("dragover", (event) => {
+    if (!carriesAttachments(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+    composer.dataset.dropping = "true"
+  })
+  composer.addEventListener("dragleave", () => delete composer.dataset.dropping)
+  composer.addEventListener("drop", (event) => {
+    delete composer.dataset.dropping
+    if (!carriesAttachments(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (tray.addDrop(event.dataTransfer)) input.focus()
+  })
+  input.addEventListener("paste", (event) => {
+    const images = pastedImages(event.clipboardData)
+    if (!images.length) return
+    event.preventDefault()
+    tray.addFiles(images)
+  })
 
   // ---- settings panel --------------------------------------------------
   const settings = el("div", "agent-setup")
@@ -579,11 +603,15 @@ export function AgentTool(handle, element, options = {}) {
   async function send() {
     if (wantDictation) stopListening()
     const text = input.value.trim()
-    if (!text) return
+    if (!text && !tray.size()) return
     input.value = ""
+    // An attachment still being read or kept is waited for, briefly: it was
+    // dropped to go with this message.
+    for (let waited = 0; tray.pending() && waited < 10_000; waited += 100) await new Promise((resolve) => setTimeout(resolve, 100))
+    const attachments = tray.take()
     // What was open when this was sent, for a session with no subject.
     const context = (await contextFor?.().catch(() => null)) ?? null
-    say(store, text, await myContactUrl(), context)
+    say(store, text || "(attached)", await myContactUrl(), context, attachments)
     render()
     kick()
   }

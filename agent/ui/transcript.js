@@ -294,6 +294,26 @@ function renderContext(block) {
   return chip
 }
 
+/**
+ * Something attached to a person's message: a link to the document, with
+ * the image when it is one. Opens like any document link (data-doc-url).
+ */
+function renderAttachment(block) {
+  const chip = el("span", "agent-attachment-chip agent-doc-link")
+  chip.dataset.docUrl = block.url
+  chip.setAttribute("role", "link")
+  chip.tabIndex = 0
+  if (block.image) {
+    const thumb = el("img", "agent-attachment-thumb")
+    thumb.src = String(block.image)
+    thumb.alt = block.name ?? "attached image"
+    chip.append(thumb)
+  }
+  chip.append(el("span", "agent-attachment-name", block.name ?? "document"))
+  chip.title = [block.docType, block.mimeType].filter(Boolean).join(" · ")
+  return chip
+}
+
 function prose(text) {
   const node = el("div", "agent-text")
   node.append(renderMarkdown(text))
@@ -354,6 +374,7 @@ export function renderTranscript(container, doc, state, handlers) {
       if (author) node.append(el("div", "agent-author", author))
       for (const block of turn.blocks ?? []) {
         if (block.type === "text") node.append(prose(block.text ?? ""))
+        else if (block.type === "attachment") node.append(renderAttachment(block))
         else if (block.type === "context") {
           const chip = renderContext(block)
           if (chip) node.append(chip)

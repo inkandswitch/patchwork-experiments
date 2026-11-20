@@ -93,10 +93,12 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
     const calls = []
     const results = []
 
+    const images = []
     for (const part of msg.content ?? []) {
       if (part.type === "text") text.push(part.text)
       else if (part.type === "call") calls.push(part)
       else if (part.type === "result") results.push(part)
+      else if (part.type === "image" && !dropImages) images.push(part.image)
     }
 
     if (msg.role === "assistant" || calls.length) {
@@ -110,6 +112,12 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
       }
       // An assistant message with neither text nor calls is not useful to send.
       if (assistant.content || assistant.tool_calls) out.push(assistant)
+    } else if (images.length && msg.role !== "system") {
+      // What a person attached: their words, then each image.
+      out.push({
+        role: "user",
+        content: [...(text.length ? [{ type: "text", text: text.join("") }] : []), ...images.map((url) => ({ type: "image_url", image_url: { url } }))],
+      })
     } else if (text.length) {
       out.push({ role: msg.role === "system" ? "system" : "user", content: text.join("") })
     }
@@ -129,7 +137,7 @@ export function toOpenAIMessages(system, messages, { dropImages = false } = {}) 
         out.push({
           role: "user",
           content: [
-            { type: "text", text: "Screenshot from the tool call above:" },
+            { type: "text", text: "Image from the tool call above:" },
             { type: "image_url", image_url: { url: r.image } },
           ],
         })

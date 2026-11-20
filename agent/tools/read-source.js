@@ -22,6 +22,7 @@ import { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringif
 import { repairDocUrl } from "../doc-urls.js"
 import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
 import { bytes } from "./format.js"
+import { imageTypeOf, imageForModel } from "../images.js"
 
 export const READ_LIMIT = 8000
 export const MAX_READ = 20000
@@ -129,6 +130,11 @@ export const sourceRead = {
     const name = titleOf(doc)
     const text = readable(doc)
     if (text == null) {
+      const imageType = imageTypeOf(doc)
+      if (imageType) {
+        const shown = await imageForModel(doc.content, imageType)
+        if (shown) return { text: `'${name}' (${url}) — an image (${imageType}, ${bytes(doc.content.byteLength)}), attached to this result.`, image: shown.url }
+      }
       const content = doc.content
       const kind = (content && formatOf(content)) ?? doc.mimeType ?? "binary"
       const size = content?.byteLength != null ? `, ${bytes(content.byteLength)}` : ""
