@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { toolCheck, viewMount, viewInspect, viewInteract, viewUnmount, packageFileUrl, _resetMounts } from "./tools/checking.js"
+import { changeLines, renderingChange, toolCheck, viewMount, viewInspect, viewInteract, viewUnmount, packageFileUrl, _resetMounts } from "./tools/checking.js"
 
 /** A repo whose documents are plain objects. */
 function fakeRepo() {
@@ -372,6 +372,55 @@ describe("a document holding bytes", () => {
     const mountId = out.match(/mountId: (\S+)/)[1]
     expect(await viewInspect.execute({ mountId }, {})).toContain("<40000000 bytes>")
     const driven = await viewInteract.execute({ mountId, action: "click" }, {})
-    expect(driven).toMatch(/document changed: .*hull\.3dm/)
+    expect(driven.split("\n").slice(0, 2)).toEqual(["Interacted with click on button (\"rename\") — document changed in 1 place:", '  /name: (none) → "hull.3dm"'])
+  })
+})
+
+describe("what an interaction changed", () => {
+  it("names each place the document changed, with what was there and what is now", () => {
+    const before = { title: "Hull", cells: [{ id: "c1", outputs: [], execution_count: null }] }
+    const after = { title: "Hull", cells: [{ id: "c1", outputs: [{ name: "stdout", text: "x".repeat(300) }], execution_count: 2 }] }
+    const { count, lines } = changeLines(before, after, "automerge:nb")
+    expect(count).toBe(2)
+    expect(lines[0]).toMatch(/^  \/cells\/0\/outputs\/0: \(none\) → \{"name":"stdout","text":"x{160}… \[\+140 more chars\]"\}$/)
+    expect(lines[1]).toBe("  /cells/0/execution_count: null → 2")
+  })
+
+  it("points at a long string rather than showing it, and says how many more places changed", () => {
+    const before = { log: "a", n: Array.from({ length: 12 }, () => 0) }
+    const after = { log: "b".repeat(500), n: Array.from({ length: 12 }, () => 1) }
+    const { count, lines } = changeLines(before, after, "automerge:run")
+    expect(count).toBe(13)
+    expect(lines[0]).toBe(`  /log: "a" → "${"b".repeat(160)}"… (500 chars; doc_read {url:"automerge:run", path:["log"]} for all of it)`)
+    expect(lines.at(-1)).toBe("  …and 5 more")
+  })
+
+  it("names the lines that appeared and went on screen", () => {
+    expect(renderingChange("Python · busy\n[ ]:\nx = 1", "Python · idle\n[1]:\nx = 1")).toBe(
+      'Rendering updated: +"Python · idle", +"[1]:", -"Python · busy", -"[ ]:"'
+    )
+    expect(renderingChange("a\nb", "b\na")).toBe("Rendering updated (the same lines, rearranged).")
+  })
+})
+
+describe("view_inspect, when nothing matches", () => {
+  it("lists what is there by class attribute — an SVG element's className is an object", async () => {
+    const repo = fakeRepo()
+    const url = repo.seedPackage("automerge:package")
+    const tool = (handle, element) => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+      svg.setAttribute("class", "icon run")
+      // As a browser has it (an SVGAnimatedString); happy-dom gives a string.
+      Object.defineProperty(svg, "className", { value: { baseVal: "icon run", animVal: "icon run" } })
+      const button = document.createElement("button")
+      button.className = "pwnb-tool"
+      element.append(button, svg)
+      return () => element.replaceChildren()
+    }
+    const out = await viewMount.execute({ url }, { repo, importModule: async () => makeModule(tool) })
+    const mountId = out.match(/mountId: (\S+)/)[1]
+    const error = await viewInspect.execute({ mountId, selector: "body" }, {}).catch((e) => e)
+    expect(error.message).toMatch(/Present: .*button\.pwnb-tool, svg\.icon/)
+    expect(error.message).not.toMatch(/\[object/)
   })
 })

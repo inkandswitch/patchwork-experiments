@@ -25,7 +25,7 @@
  */
 
 import { hostImport } from "./host.js"
-import { truncate, preview } from "./format.js"
+import { truncate, preview, changesBetween } from "./format.js"
 import { rasterize, shrink, canvasWithin } from "./screenshot.js"
 import { contentToText, treeNode, treeEntries } from "./folders.js"
 
@@ -457,8 +457,46 @@ function docText(handle) {
  */
 function docStamp(handle) {
   const heads = typeof handle.heads === "function" ? handle.heads() : null
-  const whole = preview(handle.doc(), { maxString: Infinity, maxItems: Infinity, maxDepth: 64 })
-  return `${JSON.stringify(heads)} ${JSON.stringify(whole)}`
+  return `${JSON.stringify(heads)} ${JSON.stringify(docPlain(handle))}`
+}
+
+/** The whole document as plain values, bytes summarized: what changes are found in. */
+function docPlain(handle) {
+  return preview(handle.doc(), { maxString: Infinity, maxItems: Infinity, maxDepth: 64 })
+}
+
+/**
+ * What an interaction changed in the document, one line per place: its path,
+ * what was there and what is there now. Showing the document's first 200
+ * characters instead told the agent the notebook's title after every run, and
+ * it read the document again to find out what had happened.
+ */
+export function changeLines(before, after, url = null) {
+  const { count, changes } = changesBetween(before, after)
+  const show = (value, path) => {
+    if (value === undefined) return "(none)"
+    if (typeof value === "string" && value.length > 160) {
+      const read = url ? `; doc_read {url:"${url}", path:${JSON.stringify(path)}} for all of it` : ""
+      return `${JSON.stringify(value.slice(0, 160))}… (${value.length} chars${read})`
+    }
+    return truncate(JSON.stringify(preview(value, { maxString: 160, maxItems: 5, maxDepth: 4 })), 240)
+  }
+  const lines = changes.map(({ path, before: was, after: now }) => `  /${path.join("/")}: ${show(was, path)} → ${show(now, path)}`)
+  if (count > changes.length) lines.push(`  …and ${count - changes.length} more`)
+  return { count, lines }
+}
+
+/** What changed on screen: lines that appeared and lines that went, not the screen's first 200 characters. */
+export function renderingChange(before, after) {
+  const lines = (text) => String(text ?? "").split("\n").map((l) => l.trim()).filter(Boolean)
+  const was = new Set(lines(before))
+  const now = new Set(lines(after))
+  const added = [...now].filter((l) => !was.has(l))
+  const removed = [...was].filter((l) => !now.has(l))
+  if (!added.length && !removed.length) return "Rendering updated (the same lines, rearranged)."
+  const shown = [...added.slice(0, 6).map((l) => `+${JSON.stringify(truncate(l, 80))}`), ...removed.slice(0, 4).map((l) => `-${JSON.stringify(truncate(l, 80))}`)]
+  const more = added.length + removed.length - shown.length
+  return `Rendering updated: ${shown.join(", ")}${more > 0 ? `, and ${more} more lines` : ""}`
 }
 
 /** Describe what is on screen right now. */
@@ -483,19 +521,31 @@ function describeRender(container) {
  * The diagnosis worth having: the document changed but the screen did not.
  * This is the bug a person notices instantly and an agent never thinks to check.
  */
-function diagnoseInteraction({ docBefore, docAfter, shown = docAfter, textBefore, textAfter, label }) {
+function diagnoseInteraction({ docBefore, docAfter, plainBefore, plainAfter, url = null, textBefore, textAfter, label, authoring = true }) {
   const lines = []
   if (docBefore === docAfter) {
     lines.push(`Interacted with ${label} — the document did NOT change.`)
-    lines.push("  If it was supposed to write, check that you call handle.change().")
+    // Advice for the tool's author; driving someone else's tool, it is only
+    // a possibility.
+    lines.push(
+      authoring
+        ? "  If it was supposed to write, check that you call handle.change()."
+        : "  If you wrote this tool and the action should write, check that it calls handle.change()."
+    )
   } else {
-    lines.push(`Interacted with ${label} — document changed: ${truncate(shown, 200)}`)
+    const { count, lines: where } = changeLines(plainBefore, plainAfter, url)
+    lines.push(
+      count
+        ? `Interacted with ${label} — document changed in ${count} place${count === 1 ? "" : "s"}:`
+        : `Interacted with ${label} — document changed (new history, the same values).`,
+      ...where
+    )
     if (textAfter === textBefore) {
       lines.push("PROBLEM the document changed but the rendering did NOT update.")
       lines.push("  This is the classic one: `handle.doc()` is a function, and you must re-render")
       lines.push("  from it inside a handle.on('change', …) listener.")
     } else {
-      lines.push(`Rendering updated: ${JSON.stringify(truncate(textAfter, 200))}`)
+      lines.push(renderingChange(textBefore, textAfter))
     }
   }
   return lines
@@ -644,7 +694,9 @@ export const viewInspect = {
     if (!target) {
       const available = [...mount.container.querySelectorAll("*")]
         .slice(0, 20)
-        .map((el) => el.tagName.toLowerCase() + (el.className ? `.${String(el.className).split(" ")[0]}` : ""))
+        // The class attribute, not className: an SVG element's className is
+        // an object, and listed as `svg.[object`.
+        .map((el) => el.tagName.toLowerCase() + (el.getAttribute("class") ? `.${el.getAttribute("class").trim().split(/\s+/)[0]}` : ""))
       throw new Error(`Nothing matches '${input.selector}'. Present: ${[...new Set(available)].join(", ") || "(empty)"}`)
     }
 
@@ -704,6 +756,7 @@ export const viewInteract = {
     }
 
     const docBefore = docStamp(mount.handle)
+    const plainBefore = docPlain(mount.handle)
     const textBefore = visibleText(container)
     const label = `${action} on ${input.selector ?? defaultSelector} (${JSON.stringify(truncate(visibleText(target) || target.tagName, 30))})`
 
@@ -728,10 +781,13 @@ export const viewInteract = {
     const lines = diagnoseInteraction({
       docBefore,
       docAfter: docStamp(mount.handle),
-      shown: docText(mount.handle),
+      plainBefore,
+      plainAfter: docPlain(mount.handle),
+      url: mount.handle.url ?? null,
       textBefore,
       textAfter: visibleText(container),
       label,
+      authoring: false,
     })
 
     if (mount.captured.errors.length) {
@@ -849,6 +905,7 @@ export const toolCheck = {
         const buttons = [...mount.container.querySelectorAll("button")]
         if (input.interact !== false && buttons.length) {
           const docBefore = docStamp(mount.handle)
+          const plainBefore = docPlain(mount.handle)
           const textBefore = visibleText(mount.container)
           try {
             buttons[0].click()
@@ -860,7 +917,9 @@ export const toolCheck = {
             ...diagnoseInteraction({
               docBefore,
               docAfter: docStamp(mount.handle),
-              shown: docText(mount.handle),
+              plainBefore,
+              plainAfter: docPlain(mount.handle),
+              url: mount.handle.url ?? null,
               textBefore,
               textAfter: visibleText(mount.container),
               label: `'${truncate(visibleText(buttons[0]), 40)}'`,

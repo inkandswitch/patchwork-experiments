@@ -17,6 +17,7 @@ import { previewJson, preview, shape, bytes } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
 import { imageForModel } from "../images.js"
+import { findAll, around, MAX_MATCHES } from "./read-source.js"
 import { fileKind, officeText, describeFile, MAX_FILE_BYTES } from "../files.js"
 
 /** Resolve a url argument against the session's subject. */
@@ -68,6 +69,46 @@ export function readRange(value, input, url, path) {
   return `${header}\n\n${value.slice(offset, end)}`
 }
 
+/**
+ * Every string under `value` — at `path` in its document — that contains
+ * `find`, case-insensitively and literally: `{ count, strings, hits }`, with
+ * at most `max` hits kept, each `{ path, at, text }`. Bytes are skipped.
+ */
+export function findInValue(value, path, find, max = MAX_MATCHES) {
+  const hits = []
+  let count = 0
+  let strings = 0
+  const walk = (node, at, depth) => {
+    if (node == null || depth > 64) return
+    if (typeof node === "string" || isImmutableString(node)) {
+      const text = String(node)
+      const found = findAll(text, find, Math.max(0, max - hits.length))
+      if (!found.count) return
+      strings++
+      count += found.count
+      for (const match of found.matches) hits.push({ path: at, at: match.at, text })
+      return
+    }
+    if (ArrayBuffer.isView(node) || typeof node !== "object") return
+    if (Array.isArray(node)) node.forEach((item, i) => walk(item, [...at, i], depth + 1))
+    else for (const [key, item] of Object.entries(node)) walk(item, [...at, key], depth + 1)
+  }
+  walk(value, path, 0)
+  return { count, strings, hits }
+}
+
+/** What a doc_read with `find` says: each match with its path, offset and context, and how to read around one. */
+function foundIn(url, path, find, { count, strings, hits }) {
+  const where = `${url} /${path.join("/")}`
+  if (!count) return `${where} — no match for "${find}".`
+  const first = hits[0]
+  const read = `doc_read {url:"${url}", path:${JSON.stringify(first.path)}, offset:${Math.max(0, first.at - 200)}}`
+  return [
+    `${where} — ${count} match${count === 1 ? "" : "es"} for "${find}" in ${strings} string${strings === 1 ? "" : "s"}${count > hits.length ? `, first ${hits.length} shown` : ""}. Read around one with ${read}.`,
+    ...hits.map((hit) => `${JSON.stringify(hit.path)} @${hit.at} · ${around(hit.text, hit.at, find.length)}`),
+  ].join("\n")
+}
+
 export const docRead = {
   id: "doc_read",
   name: "Read document",
@@ -76,6 +117,8 @@ export const docRead = {
     "Read an automerge document, or one path inside it. Defaults to the document this session is attached to. A file is read in the form you can use: an image is shown to you, a PDF is handed to you whole, a Word, Excel or PowerPoint file gives its text, and text stored as bytes is decoded — read it, rather than opening it in a view to screenshot.",
     "",
     "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a file's content, say — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
+    "",
+    "To find something without reading everything, pass `find`: it lists each string under `path` that contains it, with the string's path, the match's offset and the text around it. Then read just there with `path` and `offset`.",
   ].join("\n"),
   where: "worker",
   risk: "read",
@@ -87,6 +130,10 @@ export const docRead = {
         type: "array",
         items: { type: ["string", "number"] },
         description: "Path into the document, e.g. ['messages', 0, 'text']. Omit for the whole doc.",
+      },
+      find: {
+        type: "string",
+        description: "Search instead of reading: every string under `path` (the whole document if none) containing this text, case-insensitive and literal, with its path, offset and the text around it.",
       },
       shapeOnly: {
         type: "boolean",
@@ -117,13 +164,24 @@ export const docRead = {
       )
     }
 
-    if (input.shapeOnly) return `${url} /${path.join("/")}\n${shape(value)}`
-
     // A file is read in the form a model can use (files.js), not as a count
     // of bytes: an image shown, a PDF handed over whole, an Office file's
     // text, text that arrived as bytes decoded.
     const wholeFile = path.length === 0 || (path.length === 1 && path[0] === "content")
     const kind = wholeFile && doc.content instanceof Uint8Array ? fileKind(doc) : null
+
+    const find = String(input.find ?? "")
+    if (find.trim()) {
+      // A file's text is what is searched, when it has text: its bytes would be skipped.
+      if (kind?.kind === "text") return foundIn(url, ["content"], find, findInValue(kind.text, ["content"], find))
+      if (kind?.kind === "office") {
+        const text = await officeText(doc.content, kind.format)
+        return foundIn(url, ["content"], find, findInValue(text, ["content"], find))
+      }
+      return foundIn(url, path, find, findInValue(value, path, find))
+    }
+
+    if (input.shapeOnly) return `${url} /${path.join("/")}\n${shape(value)}`
     if (kind) {
       const about = `${url} — ${describeFile(doc, kind)}`
       if (kind.kind === "image") {
@@ -161,10 +219,18 @@ export const docRead = {
       return readRange(text, input, url, path)
     }
 
-    return previewJson(value)
+    return previewJson(value, {
+      path,
+      more: (at, shown) => `read on with doc_read {url:"${url}", path:${JSON.stringify(at)}, offset:${shown}}`,
+      narrow: "point path at a part of it, or search it with find",
+    })
   },
   summarize(input, output) {
     const where = input?.path?.length ? `/${input.path.join("/")}` : "document"
+    if (String(input?.find ?? "").trim()) {
+      const found = String(output ?? "").match(/— (\d+) match/)
+      return `found "${input.find}" in ${where} · ${found ? found[1] : "0"}`
+    }
     if (input?.offset != null || input?.limit != null) {
       const range = String(output ?? "").match(/characters (\d+)–(\d+)/)
       return `read ${where}${range ? ` ${range[1]}–${range[2]}` : ""} · ${bytes(String(output ?? "").length)}`

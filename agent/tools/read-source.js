@@ -75,7 +75,7 @@ export function findAll(text, find, max = MAX_MATCHES) {
 const oneLine = (text) => text.replace(/\s+/g, " ").trim()
 
 /** The text around one match, on one line. */
-function around(text, at, length) {
+export function around(text, at, length) {
   const from = Math.max(0, at - CONTEXT)
   const to = Math.min(text.length, at + length + CONTEXT)
   return `${from > 0 ? "…" : ""}${oneLine(text.slice(from, to))}${to < text.length ? "…" : ""}`
