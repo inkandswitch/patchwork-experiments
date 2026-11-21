@@ -54,26 +54,78 @@ export function htmlToText(html) {
     .trim()
 }
 
-/** Pull results straight out of DuckDuckGo's HTML, for direct mode. */
-export function parseDuckDuckGoHtml(html, limit = 8) {
+/**
+ * Search is Brave's Search API: an index of its own, and an API meant for
+ * programs, so a search is a request the engine agreed to answer. (Scraping
+ * DuckDuckGo's results page got its bot check instead, which read as "no
+ * results", and the agent went on to guess URLs.)
+ *
+ * It needs the account's key (kept with the API keys) and, in a browser, the
+ * fetch relay: Brave's API does not answer pages on other origins. The relay
+ * passes the key to Brave's API and to nothing else.
+ *
+ * A runner hands tools `ctx.search` (braveSearch below), not the key: the key
+ * is closed over, so a tool can search — a research step's admitted plugins
+ * included — but never read it.
+ */
+export const BRAVE_SEARCH = "https://api.search.brave.com/res/v1/web/search"
+export const BRAVE_KEY_HEADER = "x-subscription-token"
+/** The same search as a person would see it: the kept record's source. */
+const BRAVE_PAGE = "https://search.brave.com/search?q="
+/** The most results Brave returns to one request. */
+export const BRAVE_MAX = 20
+
+/** The API request for `query`, asking for `count` results. */
+export function braveSearchUrl(query, count) {
+  return `${BRAVE_SEARCH}?q=${encodeURIComponent(query)}&count=${count}`
+}
+
+/**
+ * A runner's `ctx.search`: `search(query, count, signal)` asks Brave through
+ * the runner's guarded fetch with `key()`, read afresh each time;
+ * `search.ready()` says whether there is a key.
+ */
+export function braveSearch({ key, fetchImpl }) {
+  const search = (query, count, signal) =>
+    fetchImpl(braveSearchUrl(query, count), { signal, headers: { accept: "application/json", [BRAVE_KEY_HEADER]: key() } })
+  search.ready = () => !!key()
+  return search
+}
+
+/**
+ * Results out of Brave's JSON: title, URL and the engine's excerpt, its
+ * emphasis tags and entities undone. Pure, so the parsing is unit-tested.
+ */
+export function parseBraveResults(json, limit = 8) {
   const results = []
   const seen = new Set()
-  const page = String(html ?? "")
-  const anchor = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
-  const found = [...page.matchAll(anchor)]
-  for (const [i, match] of found.entries()) {
+  for (const result of json?.web?.results ?? []) {
     if (results.length >= limit) break
-    const url = unwrapRedirect(match[1].replace(/&amp;/g, "&"))
-    const title = htmlToText(match[2])
-    if (!/^https?:\/\//.test(url) || seen.has(url) || !title) continue
+    const url = String(result?.url ?? "")
+    if (!/^https?:\/\//.test(url) || seen.has(url)) continue
     seen.add(url)
-    // The snippet is the engine's excerpt of the page, between this result's
-    // link and the next one's.
-    const rest = page.slice(match.index + match[0].length, found[i + 1]?.index ?? page.length)
-    const snippet = rest.match(/<(?:a|div|td)[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|div|td)>/i)
-    results.push({ title, url, snippet: snippet ? cleanSnippet(htmlToText(snippet[1])) : null })
+    results.push({ title: htmlToText(result.title ?? "") || url, url, snippet: cleanSnippet(htmlToText(result.description ?? "")) })
   }
   return results
+}
+
+/** Why a search cannot run on this runner, or null when it can. */
+function searchMissing(ctx) {
+  const missing = []
+  if (!ctx.search?.ready?.()) missing.push("a Brave Search API key (the agent's settings, under Web search)")
+  if (!ctx.direct) missing.push("the fetch relay (the agent's settings, under Fetch relay), because Brave's API does not answer a browser page directly")
+  if (!missing.length) return null
+  return `Web search is not set up here: it needs ${missing.join(" and ")}. Tell the person so in one line. Until then, web_fetch only URLs you were given or found in what you have read — a guessed URL is usually a 404.`
+}
+
+/** What a failed search says, by Brave's status. */
+function searchFailed(status, relayed) {
+  if (status === 401 || status === 403 || status === 422) {
+    const relay = relayed ? " If the key is right, the fetch relay may be older than this agent and not passing it on: redeploy fetch-relay." : ""
+    return `Brave Search refused the search (HTTP ${status}): the key may be wrong or expired — the person can check it in the agent's settings, under Web search.${relay}`
+  }
+  if (status === 429) return "Brave Search's rate or monthly limit was reached (HTTP 429). Carry on without searching, and say so."
+  return `Search failed (HTTP ${status}).`
 }
 
 /** How much of an engine's excerpt a result shows. */
@@ -112,87 +164,10 @@ export function readerHeaders(format = "markdown", fresh = false) {
   if (fresh) headers["x-no-cache"] = "true"
   return headers
 }
-const SEARCH_ENGINE = "https://duckduckgo.com/html/?q="
 
 /** Build the reader URL for a target page. */
 export function readerUrl(target, reader = DEFAULT_READER) {
   return reader + target
-}
-
-/**
- * DuckDuckGo's HTML results wrap every outbound link in a redirect
- * (`/l/?uddg=<encoded>`). Unwrap it so the model gets the real URL and can pass
- * it straight back to web_fetch.
- */
-export function unwrapRedirect(href) {
-  try {
-    const url = new URL(href, "https://duckduckgo.com")
-    if (url.pathname === "/l/" && url.searchParams.has("uddg")) {
-      return url.searchParams.get("uddg")
-    }
-    return href
-  } catch {
-    return href
-  }
-}
-
-/**
- * Pull `[title](url)` pairs out of the reader's markdown, dropping the engine's
- * own chrome links. Pure, so the parsing is unit-tested rather than hoped at.
- */
-export function parseSearchResults(markdown, limit = 8) {
-  const structured = parseResultHeadings(markdown, limit)
-  if (structured.length) return structured
-  const results = []
-  const seen = new Set()
-  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g
-
-  let match
-  while ((match = linkPattern.exec(markdown)) !== null) {
-    const title = match[1].replace(/\s+/g, " ").trim()
-    const href = unwrapRedirect(match[2].trim())
-
-    if (!title || title.length < 3) continue
-    if (!/^https?:\/\//.test(href)) continue
-    if (/duckduckgo\.com/.test(href)) continue
-    if (seen.has(href)) continue
-
-    seen.add(href)
-    results.push({ title, url: href })
-    if (results.length >= limit) break
-  }
-
-  return results
-}
-
-/**
- * The engine's results as the reader renders them: each one a heading linking
- * the page, then links to the same page — its icon, its address, and the
- * engine's excerpt of it. The excerpt is the longest of those that is neither
- * an image nor the address. Nothing found here (another layout) leaves
- * parseSearchResults to read the links alone.
- */
-function parseResultHeadings(markdown, limit) {
-  const text = String(markdown ?? "")
-  const heading = /^#{1,6}\s*\[([^\]]+)\]\(([^)\s]+)\)\s*$/gm
-  const found = [...text.matchAll(heading)]
-  const results = []
-  const seen = new Set()
-  for (const [i, match] of found.entries()) {
-    if (results.length >= limit) break
-    const url = unwrapRedirect(match[2].trim())
-    const title = match[1].replace(/\*\*/g, "").replace(/\s+/g, " ").trim()
-    if (!/^https?:\/\//.test(url) || /duckduckgo\.com/.test(url) || seen.has(url) || title.length < 3) continue
-    seen.add(url)
-    const block = text.slice(match.index + match[0].length, found[i + 1]?.index ?? text.length)
-    const excerpts = [...block.matchAll(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(([^)\s]+)\)/g)]
-      .filter(([, words, href]) => unwrapRedirect(href) === url && !words.startsWith("!["))
-      .map(([, words]) => words)
-      .filter((words) => /\s/.test(words.trim()))
-    const longest = excerpts.sort((a, b) => b.length - a.length)[0]
-    results.push({ title, url, snippet: longest ? cleanSnippet(longest) : null })
-  }
-  return results
 }
 
 /**
@@ -337,6 +312,28 @@ async function viaReader(target, format, input, ctx, fetchImpl) {
   })
 }
 
+/**
+ * The status the site gave the reader, when it was an error, or null.
+ *
+ * The reader answers 200 even when the site did not: it says so in its
+ * header ("Warning: Target URL returned error 404: Not Found") and renders the
+ * error page — a 404, or a bot wall — as though it were the page. Kept, that
+ * was a source made of an error page.
+ */
+export function readerSiteError(markdown) {
+  const header = String(markdown ?? "").split(/^Markdown Content:/m)[0]
+  const match = header.match(/^Warning: Target URL returned error (\d{3})/m)
+  return match ? Number(match[1]) : null
+}
+
+/** The reader's text of a page, or null with why: the reader's status, or the site's. */
+async function readerText(response) {
+  if (!response.ok) return { markdown: null, why: response.status }
+  const markdown = await response.text()
+  const site = readerSiteError(markdown)
+  return site ? { markdown: null, why: `the site answered it ${site}`, site } : { markdown, why: null }
+}
+
 /** Keep the PDF's bytes with the reader's text, or the reader's text with the reason the PDF is missing. */
 export async function keepPdf(target, { pdf, markdown, readerStatus, readerCache, at }, ctx) {
   if (pdf.ok) {
@@ -383,12 +380,15 @@ export async function keepPdf(target, { pdf, markdown, readerStatus, readerCache
 async function readInBrowser(target, format, input, ctx, fetchImpl, at) {
   const readerCache = input.fresh ? "no-cache" : "allowed"
   const response = await viaReader(target, format, input, ctx, fetchImpl)
-  if (!response.ok) {
-    if (!pdfByPath(target)) throw readerRefused(target, response.status)
+  const { markdown, why, site } = await readerText(response)
+  if (markdown == null) {
+    if (!pdfByPath(target)) {
+      if (site) throw new Error(`Could not fetch ${target} (http-error: HTTP ${site}, as the reader found it).`)
+      throw readerRefused(target, response.status)
+    }
     const pdf = await fetchPdf(target, ctx, fetchImpl)
-    return keepPdf(target, { pdf, markdown: null, readerStatus: response.status, at }, ctx)
+    return keepPdf(target, { pdf, markdown: null, readerStatus: why, at }, ctx)
   }
-  const markdown = await response.text()
   if (pdfByPath(target) || readerSaysPdf(markdown)) {
     const pdf = await fetchPdf(target, ctx, fetchImpl)
     return keepPdf(target, { pdf, markdown, readerCache, at }, ctx)
@@ -416,9 +416,8 @@ async function readInBrowser(target, format, input, ctx, fetchImpl, at) {
  */
 async function readDirect(target, input, ctx, fetchImpl, at) {
   const withReader = async (pdf) => {
-    const reader = await viaReader(target, "markdown", input, ctx, fetchImpl)
-    const markdown = reader.ok ? await reader.text() : null
-    return keepPdf(target, { pdf, markdown, readerStatus: reader.status, readerCache: input.fresh ? "no-cache" : "allowed", at }, ctx)
+    const { markdown, why } = await readerText(await viaReader(target, "markdown", input, ctx, fetchImpl))
+    return keepPdf(target, { pdf, markdown, readerStatus: why, readerCache: input.fresh ? "no-cache" : "allowed", at }, ctx)
   }
 
   const got = await requestDirect(target, ctx, fetchImpl)
@@ -566,51 +565,44 @@ export const webSearch = {
     required: ["query"],
     properties: {
       query: { type: "string", description: "What to search for. Specific beats broad; this returns links, not answers." },
-      limit: { type: "number", description: "How many results. Default 8." },
+      limit: { type: "number", description: "How many results, at most 20. Default 8." },
     },
   },
   async execute(input, ctx) {
     const query = String(input.query ?? "").trim()
     if (!query) throw new Error("Pass a query.")
 
-    const fetchImpl = fetcher(ctx)
-    const target = SEARCH_ENGINE + encodeURIComponent(query)
-    const limit = input.limit ?? 8
+    fetcher(ctx) // nothing is asked of the web without the runner's guarded fetch
+    const missing = searchMissing(ctx)
+    if (missing) throw new Error(missing)
+    const limit = Math.min(BRAVE_MAX, Math.max(1, Math.floor(Number(input.limit) || 8)))
 
     const at = Date.now()
-    let results
-    let page
-    let response
-    if (ctx.direct) {
-      response = await fetchImpl(target, {
-        signal: ctx.signal,
-        headers: { accept: "text/html", "user-agent": "patchwork-agent" },
-      })
-      if (!response.ok) throw new Error(`Search failed (${response.status}).`)
-      page = await response.text()
-      results = parseDuckDuckGoHtml(page, limit)
-    } else {
-      response = await fetchImpl(readerUrl(target, ctx.reader ?? DEFAULT_READER), {
-        signal: ctx.signal,
-        headers: { accept: "text/plain" },
-      })
-      if (!response.ok) throw new Error(`Search failed (${response.status}).`)
-      page = await response.text()
-      results = parseSearchResults(page, limit)
+    const response = await ctx.search(query, limit, ctx.signal)
+    if (!response.ok) throw new Error(searchFailed(response.status, !!response.relayed))
+    const body = await response.text()
+    let json
+    try {
+      json = JSON.parse(body)
+    } catch {
+      throw new Error("Search failed: Brave's answer was not the JSON its API sends.")
     }
+    const results = parseBraveResults(json, limit)
 
-    // What the search returned, as it was seen: how the agent came to read
-    // what it read. Best-effort — a runner that cannot keep still searches.
+    // What the search returned, as it came — how the agent came to read what
+    // it read, kept with this run for provenance. Best-effort: a runner that
+    // cannot keep still searches.
+    const source = BRAVE_PAGE + encodeURIComponent(query)
     let kept = null
     try {
       kept = (
         await keepSource(ctx, {
-          source: target,
+          source,
           role: "extract",
-          content: page,
-          mimeType: ctx.direct ? "text/html" : "text/markdown",
+          content: body,
+          mimeType: "application/json",
           title: `Search: ${query}`,
-          capture: { at, via: ctx.direct ? "direct" : "reader", engine: "search", status: response.status ?? null },
+          capture: { at, via: "direct", engine: "search", status: response.status ?? null },
         })
       ).ref
     } catch {

@@ -57,7 +57,9 @@ every redirect, which the relay follows itself:
 - fetch a path that names an automerge document;
 - send anything but GET or HEAD, or forward cookies, credentials or any
   request header beyond `accept`, `accept-language`, `range` and the
-  conditional ones;
+  conditional ones — save one: Brave Search's key (`x-subscription-token`),
+  passed to `api.search.brave.com` and nowhere else, redirects included, so
+  the agent can search from a browser (`CREDENTIALS` in `relay.js`);
 - pass a site's cookies back.
 
 `relay.test.js` checks each of these, and that a PDF's bytes come back

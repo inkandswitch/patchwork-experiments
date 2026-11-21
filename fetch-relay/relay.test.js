@@ -51,6 +51,25 @@ describe("relaying", () => {
     expect(sent[0].init.redirect).toBe("manual")
   })
 
+  it("passes Brave's search key to Brave's API alone, and drops it when a redirect leaves", async () => {
+    const BRAVE = "https://api.search.brave.com/res/v1/web/search?q=x"
+    const { fetch, sent } = web({
+      [BRAVE]: () => new Response("{}"),
+      "https://maker.test/": () => new Response("ok"),
+      "https://api.search.brave.com/moved": () => new Response(null, { status: 302, headers: { location: "https://maker.test/" } }),
+    })
+    const token = { "x-subscription-token": "brave-key" }
+    await handle(ask(BRAVE, { headers: token }), { fetch })
+    await handle(ask("https://maker.test/", { headers: token }), { fetch })
+    await handle(ask("https://api.search.brave.com/moved", { headers: token }), { fetch })
+    expect(sent.map((s) => [s.url, s.init.headers["x-subscription-token"] ?? null])).toEqual([
+      [BRAVE, "brave-key"],
+      ["https://maker.test/", null],
+      ["https://api.search.brave.com/moved", "brave-key"],
+      ["https://maker.test/", null],
+    ])
+  })
+
   it("answers HEAD without a body", async () => {
     const { fetch } = web({ "https://maker.test/": () => new Response("big", { headers: { "content-type": "text/html" } }) })
     const response = await handle(ask("https://maker.test/", { method: "HEAD" }), { fetch })
@@ -131,6 +150,7 @@ describe("being called from a page", () => {
     const response = await handle(ask("https://maker.test/", { method: "OPTIONS" }), { fetch: web({}).fetch })
     expect(response.status).toBe(204)
     expect(response.headers.get("access-control-allow-headers")).toMatch(/x-relay-key/)
+    expect(response.headers.get("access-control-allow-headers")).toMatch(/x-subscription-token/)
     expect(corsHeaders("https://patchwork.test", null)["access-control-expose-headers"]).toMatch(/x-relay-final-url/)
   })
 

@@ -158,6 +158,7 @@ export async function confine(ctx, scope) {
     direct: ctx.direct,
     reader: ctx.reader,
     fetchImpl: ctx.fetchImpl,
+    search: ctx.search,
     repo: scopedRepo(ctx.repo, ledger, scope),
     scope: { stepId: scope.stepId },
   }

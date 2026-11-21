@@ -12,6 +12,23 @@
  * is sent from the page as before.
  */
 
+/**
+ * The one credential the relay carries, and the one host it is for: Brave's
+ * key, so web_search works from a browser (Brave's API answers no page
+ * directly). fetch-relay/relay.js has the same table and sends it nowhere else
+ * either, redirects included; change them together.
+ */
+export const RELAYED_CREDENTIALS = { "api.search.brave.com": ["x-subscription-token"] }
+
+/** The credential headers `url`'s host may be sent. */
+export function credentialsFor(url) {
+  try {
+    return RELAYED_CREDENTIALS[new URL(String(url)).hostname] ?? []
+  } catch {
+    return []
+  }
+}
+
 /** A fetch that sends GET and HEAD through the relay `relay()` names, when it names one. */
 export function relayFetch({ fetch: send, relay }) {
   if (typeof send !== "function") throw new Error("relayFetch needs the fetch it sends with.")
@@ -21,8 +38,9 @@ export function relayFetch({ fetch: send, relay }) {
     if (!config?.url || (method !== "GET" && method !== "HEAD")) return send(url, init)
 
     const headers = {}
+    const passed = ["accept", "accept-language", "range", ...credentialsFor(url)]
     for (const [name, value] of Object.entries(headerObject(init.headers))) {
-      if (["accept", "accept-language", "range"].includes(name.toLowerCase())) headers[name] = value
+      if (passed.includes(name.toLowerCase())) headers[name] = value
     }
     if (config.key) headers["x-relay-key"] = config.key
     const response = await send(`${config.url}/fetch?url=${encodeURIComponent(String(url))}`, { method, headers, signal: init.signal })

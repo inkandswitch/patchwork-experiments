@@ -28,7 +28,7 @@ const BUILTIN_IDS = BUILTIN_TOOLS.map((t) => t.id)
 const RESEARCH_ONLY = "finding_write"
 const FULL_ONLY = "source_file"
 /** What a research step's context holds (scope.js confine), written out. */
-const CONFINED = ["direct", "events", "fetchImpl", "reader", "repo", "scope", "signal"]
+const CONFINED = ["direct", "events", "fetchImpl", "reader", "repo", "scope", "search", "signal"]
 
 /** What a research step's tool list said before scopes decided it. */
 const OLD_WEB_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "session_recall"]

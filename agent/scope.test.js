@@ -25,6 +25,7 @@ import { initSession, makeTurn, textBlock, callBlock, resultBlock } from "./sess
 import { initPlan, STEP } from "./workflow/plan.js"
 import { runTool, BUILTIN_TOOLS } from "./tools/index.js"
 import { guardedFetch } from "./tools/guard.js"
+import { braveSearch } from "./tools/web.js"
 import { keepSource } from "./tools/sources.js"
 import { findingWrite } from "./tools/findings.js"
 import { sourceRead } from "./tools/read-source.js"
@@ -170,7 +171,6 @@ async function world() {
     if (target === "https://web.test/ids") {
       return response(`Title: Ids\n\n# Ids\n${Object.values(user).map((h) => h.url).join(" ")}\n![x](${handoff})`, { url })
     }
-    if (target.startsWith("https://duckduckgo.com/")) return response("[Result](https://web.test/result)", { url })
     return response("Title: Page\n\n# Page\nwords", { url })
   }
   const fetchImpl = guardedFetch({ fetch: web, deny: [ORIGIN] })
@@ -218,6 +218,7 @@ async function world() {
     direct: false,
     reader: READER,
     fetchImpl,
+    search: braveSearch({ key: () => "brave-key", fetchImpl }),
     signal: undefined,
   }
   const ctx = await confine(full, research)
@@ -450,7 +451,7 @@ describe("web_fetch answers from the ledger", () => {
 describe("confine", () => {
   // §5.2, written out: what a research step's context may hold, and each
   // field of the runner's context it must never hold.
-  const ALLOWED = ["direct", "events", "fetchImpl", "reader", "repo", "scope", "signal"]
+  const ALLOWED = ["direct", "events", "fetchImpl", "reader", "repo", "scope", "search", "signal"]
   const FORBIDDEN = [
     "subject", "rootFolderUrl", "notesFolderUrl", "skillsFolderUrl", "accountDocHandle", "contactUrl", "moduleSettingsUrl",
     "sessionUrl", "element", "getMount", "workflows", "session", "startStepSession", "sensitiveDocs",

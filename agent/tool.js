@@ -35,6 +35,7 @@ import {
   writeKey,
   readRelay,
   writeRelay,
+  SEARCH_KEY_ID,
   onKeyChange,
   connectAccountKeys,
   loadCatalogue,
@@ -330,6 +331,15 @@ export function AgentTool(handle, element, options = {}) {
     null,
     "Most sites will not let a browser page read them, so without a relay the agent keeps a reader's text of each page and a PDF only when the site allows. A relay fetches for it, and the PDF or page itself is kept as the source. Stored with your API key."
   )
+  // web_search is Brave's Search API: it needs a key, and in a browser the relay.
+  const searchKeyInput = document.createElement("input")
+  searchKeyInput.type = "password"
+  searchKeyInput.autocomplete = "off"
+  const searchNote = el(
+    "p",
+    null,
+    "Searches go to Brave's Search API (api-dashboard.search.brave.com), which needs a key and, in a browser, the fetch relay above. Stored with your API key."
+  )
 
   settings.append(
     el("p", null, "Model"),
@@ -350,6 +360,9 @@ export function AgentTool(handle, element, options = {}) {
     relayInput,
     relayKeyInput,
     relayNote,
+    el("p", null, "Web search"),
+    searchKeyInput,
+    searchNote,
     saveKey
   )
   main.insertBefore(settings, transcript)
@@ -759,6 +772,7 @@ export function AgentTool(handle, element, options = {}) {
       if (!catalogueLoaded) loadModels()
       // The relay's address, not its key: a key is never shown back.
       relayInput.value = readRelay()?.url ?? ""
+      searchKeyInput.placeholder = readKey(SEARCH_KEY_ID) ? "Brave Search API key — saved; type to replace" : "Brave Search API key"
     }
   })
 
@@ -943,6 +957,9 @@ export function AgentTool(handle, element, options = {}) {
       writeRelay(relayUrl ? { url: relayUrl, key: relayKeyInput.value || current?.key || "" } : null)
     }
     relayKeyInput.value = ""
+    const searchKey = searchKeyInput.value.trim()
+    if (searchKey) writeKey(SEARCH_KEY_ID, searchKey)
+    searchKeyInput.value = ""
     settings.style.display = "none"
     render()
   })

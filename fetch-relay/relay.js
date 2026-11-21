@@ -17,7 +17,8 @@
  *     the agent uses), checked at the target, at every redirect, and — where a
  *     resolver is given — at every address the name resolves to;
  *   - send anything but GET or HEAD, or forward cookies, credentials or any
- *     header but a few harmless ones;
+ *     header but a few harmless ones — save one credential for one host
+ *     (CREDENTIALS: Brave Search's key, to Brave's API alone);
  *   - return more than `maxBytes`, or wait longer than `timeoutMs`;
  *   - pass a site's cookies back.
  * And, as configured: answer only a request carrying `key`, and only pages
@@ -36,6 +37,14 @@ export const USER_AGENT = "PatchworkFetchRelay/1.0 (+https://www.inkandswitch.co
 
 /** Request headers passed on to the site; everything else is dropped. */
 const FORWARD = ["accept", "accept-language", "range", "if-none-match", "if-modified-since"]
+
+/**
+ * The one credential passed on, and the only host it may reach: Brave Search's
+ * key, so the agent can search from a browser (Brave's API answers no page
+ * directly). Checked at every hop, so a redirect elsewhere drops it. The
+ * agent's tools/relay.js has the same table; change them together.
+ */
+export const CREDENTIALS = { "api.search.brave.com": ["x-subscription-token"] }
 
 /** Response headers passed back; never set-cookie. */
 const RETURN = ["content-type", "content-language", "content-disposition", "last-modified", "etag", "content-range"]
@@ -64,7 +73,7 @@ export async function handle(request, options = {}) {
   if (cors === null) return refuse(403, "this page's origin may not use the relay", {})
 
   const method = String(request.method ?? "GET").toUpperCase()
-  if (method === "OPTIONS") return new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "GET, HEAD", "access-control-allow-headers": "x-relay-key, accept, range", "access-control-max-age": "86400" } })
+  if (method === "OPTIONS") return new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "GET, HEAD", "access-control-allow-headers": `x-relay-key, accept, range, ${[...new Set(Object.values(CREDENTIALS).flat())].join(", ")}`, "access-control-max-age": "86400" } })
   if (method !== "GET" && method !== "HEAD") return refuse(405, "only GET and HEAD are relayed", cors)
   if (config.key && request.headers.get("x-relay-key") !== config.key) return refuse(401, "missing or wrong x-relay-key", cors)
 
@@ -84,7 +93,7 @@ export async function handle(request, options = {}) {
     for (let hop = 0; ; hop++) {
       const reason = await refusal(current, config.lookup)
       if (reason) return refuse(403, `refused ${current}: ${reason}`, cors)
-      const response = await config.fetch(current, { method, headers, redirect: "manual", signal: controller.signal })
+      const response = await config.fetch(current, { method, headers: { ...headers, ...credentials(request, current) }, redirect: "manual", signal: controller.signal })
       const location = response.headers.get("location")
       if (REDIRECTS.has(response.status) && location) {
         response.body?.cancel?.()
@@ -100,6 +109,16 @@ export async function handle(request, options = {}) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+/** The credentials the page sent that `url`'s host may have: none, but for CREDENTIALS. */
+function credentials(request, url) {
+  const out = {}
+  for (const name of CREDENTIALS[new URL(url).hostname] ?? []) {
+    const value = request.headers.get(name)
+    if (value) out[name] = value
+  }
+  return out
 }
 
 /** Why the relay will not fetch `url`, or null. */

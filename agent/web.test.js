@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import {
-  parseSearchResults, SNIPPET_MAX, unwrapRedirect, readerUrl, webFetch, webSearch, htmlToText, parseDuckDuckGoHtml,
+  parseBraveResults, braveSearch, braveSearchUrl, BRAVE_SEARCH, SNIPPET_MAX, readerUrl, readerSiteError, webFetch, webSearch, htmlToText,
 } from "./tools/web.js"
 import { MAX_PDF_BYTES, sha256Hex } from "./tools/sources.js"
 import { guardedFetch, Refused } from "./tools/guard.js"
@@ -38,93 +38,49 @@ const respond = (body, { status = 200, type = "text/plain", url = "", length = n
   },
 })
 
-describe("unwrapRedirect", () => {
-  it("unwraps a DuckDuckGo redirect to the real URL", () => {
-    const wrapped = "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fautomerge.org%2Fdocs&rut=abc"
-    expect(unwrapRedirect(wrapped)).toBe("https://automerge.org/docs")
-  })
+/** Brave's answer, shaped as its API sends it (trimmed). */
+const braveAnswer = (results) => ({ type: "search", query: { original: "q" }, web: { type: "search", results } })
 
-  it("leaves a plain URL alone", () => {
-    expect(unwrapRedirect("https://example.com/x")).toBe("https://example.com/x")
-  })
+describe("parseBraveResults", () => {
+  const answer = braveAnswer([
+    { title: "Automerge &amp; <strong>CRDTs</strong>", url: "https://automerge.org/", description: "A <strong>CRDT</strong> library &mdash; local-first." },
+    { title: "Automerge again", url: "https://automerge.org/" },
+    { title: "Not the web", url: "ftp://files.example/x" },
+    { title: "", url: "https://untitled.example/" },
+  ])
 
-  it("does not throw on a malformed href", () => {
-    expect(unwrapRedirect("not a url")).toBe("not a url")
-  })
-})
-
-describe("parseSearchResults", () => {
-  const markdown = `
-Title: automerge at DuckDuckGo
-
-[](https://duckduckgo.com/html/?q=automerge)
-## [Automerge CRDT](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fautomerge.org%2F&rut=1)
-Some snippet text.
-## [GitHub - automerge/automerge](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fautomerge&rut=2)
-[Settings](https://duckduckgo.com/settings)
-`
-
-  it("extracts titles and unwrapped urls", () => {
-    const results = parseSearchResults(markdown)
-    expect(results).toEqual([
-      { title: "Automerge CRDT", url: "https://automerge.org/", snippet: null },
-      { title: "GitHub - automerge/automerge", url: "https://github.com/automerge", snippet: null },
+  it("reads title, URL and excerpt, its tags and entities undone, each URL once", () => {
+    expect(parseBraveResults(answer)).toEqual([
+      { title: "Automerge & CRDTs", url: "https://automerge.org/", snippet: "A CRDT library &mdash; local-first." },
+      { title: "https://untitled.example/", url: "https://untitled.example/", snippet: null },
     ])
-  })
-
-  it("drops the engine's own links", () => {
-    expect(parseSearchResults(markdown).some((r) => /duckduckgo/.test(r.url))).toBe(false)
-  })
-
-  it("dedupes repeated urls", () => {
-    const doubled = markdown + markdown
-    const results = parseSearchResults(doubled)
-    expect(new Set(results.map((r) => r.url)).size).toBe(results.length)
   })
 
   it("honours the limit", () => {
-    expect(parseSearchResults(markdown, 1)).toHaveLength(1)
+    expect(parseBraveResults(answer, 1)).toHaveLength(1)
   })
 
-  it("returns nothing for markdown with no results", () => {
-    expect(parseSearchResults("Title: nothing here\n\nNo links.")).toEqual([])
-  })
-
-  // How the reader renders DuckDuckGo's results (trimmed from a real page):
-  // a heading per result, then its icon, its address and the engine's
-  // excerpt, every one a link to the same page.
-  const real = [
-    "Title: LiFePO4 280Ah cell datasheet at DuckDuckGo",
-    "",
-    "[](https://html.duckduckgo.com/html/?q=x)",
-    "",
-    "## [PDF LiFePO4 280Ah Battery Datasheet](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fls.example%2Fsheet.pdf&rut=1)",
-    "",
-    "[![Image 1](https://external-content.duckduckgo.com/ip3/ls.example.ico)](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fls.example%2Fsheet.pdf&rut=1)[ls.example/sheet.pdf](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fls.example%2Fsheet.pdf&rut=1)",
-    "",
-    "[ADVANTAGE Standardized **cell** format. Support 1C charge and discharge rate. 4000times cycle life.](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fls.example%2Fsheet.pdf&rut=1)",
-    "",
-    "## [Specification of 3.2V 280Ah LiFePO4 Battery](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fev.example%2Fspec.pdf&rut=2)",
-    "",
-    "[ev.example/spec.pdf](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fev.example%2Fspec.pdf&rut=2)",
-    "",
-    "## [No excerpt here](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fbare.example%2F&rut=3)",
-  ].join("\n")
-
-  it("keeps the engine's excerpt of each result, not its icon or its address", () => {
-    expect(parseSearchResults(real)).toEqual([
-      { title: "PDF LiFePO4 280Ah Battery Datasheet", url: "https://ls.example/sheet.pdf", snippet: "ADVANTAGE Standardized cell format. Support 1C charge and discharge rate. 4000times cycle life." },
-      { title: "Specification of 3.2V 280Ah LiFePO4 Battery", url: "https://ev.example/spec.pdf", snippet: null },
-      { title: "No excerpt here", url: "https://bare.example/", snippet: null },
-    ])
+  it("returns nothing for an answer with no web results", () => {
+    expect(parseBraveResults({ type: "search" })).toEqual([])
+    expect(parseBraveResults(null)).toEqual([])
   })
 
   it("cuts a long excerpt to one line", () => {
-    const long = real.replace("4000times cycle life.", "x ".repeat(400))
-    const snippet = parseSearchResults(long)[0].snippet
+    const snippet = parseBraveResults(braveAnswer([{ title: "T", url: "https://t.example/", description: "x\n ".repeat(400) }]))[0].snippet
     expect(snippet.length).toBe(SNIPPET_MAX)
     expect(snippet.endsWith("…")).toBe(true)
     expect(snippet).not.toMatch(/\n|  /)
+  })
+})
+
+describe("readerSiteError", () => {
+  it("is the status the site gave the reader, from the reader's header", () => {
+    expect(readerSiteError("Title: Nacra F18\n\nURL Source: https://w.example/x\n\nWarning: Target URL returned error 404: Not Found\n\nMarkdown Content:\nNot here")).toBe(404)
+  })
+
+  it("is null for a page the site served, even one that quotes the warning", () => {
+    expect(readerSiteError("Title: Hi\n\nMarkdown Content:\nWarning: Target URL returned error 500")).toBe(null)
+    expect(readerSiteError("Title: Hi\n\nWarning: This is a cached snapshot\n\nMarkdown Content:\nHello")).toBe(null)
   })
 })
 
@@ -157,6 +113,15 @@ describe("web_fetch through the reader", () => {
   it("explains a failure rather than returning empty text", async () => {
     const impl = async () => respond("", { status: 451 })
     await expect(webFetch.execute({ url: "https://example.com" }, ctx(impl))).rejects.toThrow(/451/)
+  })
+
+  it("keeps nothing when the site answered the reader with an error, and says what the site said", async () => {
+    const repo = fakeRepo()
+    const notHere = "Title: Nacra F18\n\nURL Source: https://w.example/Nacra_F18\n\nWarning: Target URL returned error 404: Not Found\n\nMarkdown Content:\nNo such page"
+    await expect(webFetch.execute({ url: "https://w.example/Nacra_F18" }, { ...ctx(async () => respond(notHere)), repo })).rejects.toThrow(
+      "Could not fetch https://w.example/Nacra_F18 (http-error: HTTP 404, as the reader found it)."
+    )
+    expect(repo.docs.size).toBe(0)
   })
 
   it("summarizes by host", () => {
@@ -197,38 +162,77 @@ describe("what web_fetch may reach", () => {
 })
 
 describe("web_search", () => {
-  it("formats results as a numbered list", async () => {
-    const impl = async () => ({
-      ok: true,
-      text: async () => "## [Automerge](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fautomerge.org%2F)",
-    })
-    const out = await webSearch.execute({ query: "automerge" }, { fetchImpl: impl })
-    expect(out.text).toContain("1. Automerge")
-    expect(out.text).toContain("https://automerge.org/")
+  /** A runner that can search: a key, and direct (node, or a tab with the relay). */
+  const searching = (answer, extra = {}) => {
+    const sent = []
+    const fetchImpl = async (url, init) => {
+      sent.push({ url: String(url), init })
+      return answer(url, init)
+    }
+    const key = "key" in extra ? extra.key : "brave-key"
+    return { sent, ctx: { fetchImpl, direct: true, search: braveSearch({ key: () => key, fetchImpl }), repo: fakeRepo(), ...extra } }
+  }
+  const json = (value, status = 200) => respond(JSON.stringify(value), { status, type: "application/json" })
+
+  it("asks Brave's API, with the account's key, for as many results as wanted, at most 20", async () => {
+    const { sent, ctx } = searching(() => json(braveAnswer([])))
+    await webSearch.execute({ query: "lfp cells", limit: 50 }, ctx)
+    await webSearch.execute({ query: "x" }, ctx)
+    expect(sent.map((s) => s.url)).toEqual([braveSearchUrl("lfp cells", 20), braveSearchUrl("x", 8)])
+    expect(sent[0].url).toBe(`${BRAVE_SEARCH}?q=lfp%20cells&count=20`)
+    expect(sent[0].init.headers).toEqual({ accept: "application/json", "x-subscription-token": "brave-key" })
   })
 
-  it("shows each excerpt, and keeps the results page as it came", async () => {
-    const page = "## [Cells](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fcells.example%2F)\n\n[Rated 280Ah at 0.5C, 6000 cycles.](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fcells.example%2F)"
-    const repo = fakeRepo()
-    const out = await webSearch.execute({ query: "lfp cells" }, { fetchImpl: async () => ({ ok: true, status: 200, text: async () => page }), repo })
+  it("lists each result with its excerpt, and keeps Brave's answer as it came", async () => {
+    const answer = braveAnswer([{ title: "Cells", url: "https://cells.example/", description: "Rated 280Ah at 0.5C, 6000 cycles." }])
+    const { ctx } = searching(() => json(answer))
+    const out = await webSearch.execute({ query: "lfp cells" }, ctx)
     expect(out.text.split("\n").slice(0, 4)).toEqual(['1 results for "lfp cells":', "1. Cells", "   https://cells.example/", "   “Rated 280Ah at 0.5C, 6000 cycles.”"])
     expect(out.text).toContain(`Results page kept at ${out.doc.url}.`)
-    const kept = repo.docs.get(out.doc.url)
-    expect(String(kept.content)).toBe(page)
-    expect(kept).toMatchObject({ role: "extract", source: "https://duckduckgo.com/html/?q=lfp%20cells" })
-    expect(kept.capture).toMatchObject({ via: "reader", engine: "search", status: 200 })
+    const kept = ctx.repo.docs.get(out.doc.url)
+    expect(JSON.parse(String(kept.content))).toEqual(answer)
+    expect(kept).toMatchObject({ role: "extract", mimeType: "application/json", source: "https://search.brave.com/search?q=lfp%20cells" })
+    expect(kept.capture).toMatchObject({ via: "direct", engine: "search", status: 200 })
   })
 
   it("still answers when nothing can be kept", async () => {
-    const page = "## [Cells](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fcells.example%2F)"
-    const out = await webSearch.execute({ query: "lfp" }, { fetchImpl: async () => ({ ok: true, text: async () => page }) })
+    const { ctx } = searching(() => json(braveAnswer([{ title: "Cells", url: "https://cells.example/" }])), { repo: undefined })
+    const out = await webSearch.execute({ query: "lfp" }, ctx)
     expect([out.text, out.doc]).toEqual(['1 results for "lfp":\n1. Cells\n   https://cells.example/', null])
   })
 
   it("says so when there are no results", async () => {
-    const impl = async () => ({ ok: true, text: async () => "nothing" })
-    const out = await webSearch.execute({ query: "zzz" }, { fetchImpl: impl })
-    expect(out.text).toMatch(/No results/)
+    const { ctx } = searching(() => json(braveAnswer([])))
+    expect((await webSearch.execute({ query: "zzz" }, ctx)).text).toMatch(/^No results for "zzz"/)
+  })
+
+  it.each([
+    [{ key: null }, /needs a Brave Search API key \(/, /fetch relay/],
+    [{ direct: false }, /needs the fetch relay/, /API key/],
+    [{ search: undefined, direct: false }, /needs a Brave Search API key .* and the fetch relay/, null],
+  ])("says what is missing, asks nothing of the web, and warns against guessing URLs (%#)", async (extra, says, saysNot) => {
+    const { sent, ctx } = searching(() => json(braveAnswer([])), extra)
+    const error = await webSearch.execute({ query: "q" }, ctx).catch((e) => e)
+    expect(error.message).toMatch(/^Web search is not set up here/)
+    expect(error.message).toMatch(says)
+    if (saysNot) expect(error.message).not.toMatch(saysNot)
+    expect(error.message).toMatch(/a guessed URL is usually a 404/)
+    expect(sent).toEqual([])
+  })
+
+  it.each([
+    [401, false, /refused the search \(HTTP 401\).*Web search\.$/],
+    [422, true, /refused the search \(HTTP 422\).*redeploy fetch-relay/],
+    [429, false, /limit was reached \(HTTP 429\)/],
+    [500, false, /^Search failed \(HTTP 500\)\.$/],
+  ])("says what Brave's %i means", async (status, relayed, says) => {
+    const { ctx } = searching(() => ({ ...json({ error: "x" }, status), relayed }))
+    await expect(webSearch.execute({ query: "q" }, ctx)).rejects.toThrow(says)
+  })
+
+  it("does not mistake an answer that is not Brave's JSON for no results", async () => {
+    const { ctx } = searching(() => respond("<html>a bot check</html>", { type: "text/html" }))
+    await expect(webSearch.execute({ query: "q" }, ctx)).rejects.toThrow(/not the JSON/)
   })
 
   it("requires a query", async () => {
@@ -308,18 +312,6 @@ describe("direct mode (outside a browser)", () => {
       webFetch.execute({ url: "https://example.com/gone" }, { direct: true, repo: fakeRepo(), fetchImpl: async () => respond("", { status: 404 }) })
     ).rejects.toThrow("Could not fetch https://example.com/gone (http-error: HTTP 404).")
   })
-
-  it("searches DuckDuckGo directly and unwraps its redirects", async () => {
-    const html = `
-      <a class="result__a" href="/l/?uddg=https%3A%2F%2Fautomerge.org%2F&rut=1">Automerge <b>CRDT</b></a>
-      <a class="result__a" href="/l/?uddg=https%3A%2F%2Fgithub.com%2Fautomerge&rut=2">GitHub</a>
-      <a class="something-else" href="https://ads.example">Ad</a>`
-    const fetchImpl = async () => ({ ok: true, text: async () => html })
-    const out = await webSearch.execute({ query: "automerge" }, { fetchImpl, direct: true })
-    expect(out.text).toContain("https://automerge.org/")
-    expect(out.text).toContain("Automerge CRDT")
-    expect(out.text).not.toContain("ads.example")
-  })
 })
 
 
@@ -333,33 +325,6 @@ describe("htmlToText", () => {
   })
   it("turns breaks into newlines", () => {
     expect(htmlToText("a<br>b")).toBe("a\nb")
-  })
-})
-
-describe("parseDuckDuckGoHtml", () => {
-  const html = `
-    <a class="result__a" href="/l/?uddg=https%3A%2F%2Fa.example%2F">First</a>
-    <a class="result__a" href="/l/?uddg=https%3A%2F%2Fa.example%2F">First again</a>
-    <a class="result__a" href="/l/?uddg=https%3A%2F%2Fb.example%2F">Second</a>`
-
-  it("extracts and dedupes results", () => {
-    expect(parseDuckDuckGoHtml(html)).toEqual([
-      { title: "First", url: "https://a.example/", snippet: null },
-      { title: "Second", url: "https://b.example/", snippet: null },
-    ])
-  })
-  it("keeps each result's own excerpt", () => {
-    const page = `
-      <a class="result__a" href="/l/?uddg=https%3A%2F%2Fa.example%2F">First</a>
-      <a class="result__snippet" href="/l/?uddg=https%3A%2F%2Fa.example%2F">About <b>the</b> first.</a>
-      <a class="result__a" href="/l/?uddg=https%3A%2F%2Fb.example%2F">Second</a>`
-    expect(parseDuckDuckGoHtml(page).map((r) => r.snippet)).toEqual(["About the first.", null])
-  })
-  it("honours the limit", () => {
-    expect(parseDuckDuckGoHtml(html, 1)).toHaveLength(1)
-  })
-  it("returns nothing for html with no results", () => {
-    expect(parseDuckDuckGoHtml("<p>nothing</p>")).toEqual([])
   })
 })
 

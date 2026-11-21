@@ -311,7 +311,7 @@ describe("filing what research steps kept", () => {
     const { plan, folder, driver } = await ledgerOf([])
     const scoped = scopedRepo(driver.repo, plan, { stepId: "r" })
     const search = await scoped.create2()
-    search.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Search: lfp cells.md", role: "extract", source: "https://duckduckgo.com/html/?q=lfp", capture: { engine: "search" }, content: "results" }))
+    search.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Search: lfp cells.json", role: "extract", source: "https://search.brave.com/search?q=lfp", capture: { engine: "search" }, content: "results" }))
     const page = await scoped.create2()
     page.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "cells.pdf", role: "primary", source: "https://site.test/cells.pdf", capture: { engine: "raw" }, content: "%PDF" }))
     await driver.fileSources()

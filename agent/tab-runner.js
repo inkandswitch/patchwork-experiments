@@ -13,11 +13,12 @@ import { SessionRunner, DEFER_PER_BUSY_MS } from "./runner.js"
 import { ensureRunner as ensureSharedRunner, busyCount } from "./runners.js"
 import { createEvents } from "./events.js"
 import { buildToolset, loadPluginTools } from "./tools/index.js"
-import { getProvider, readKey, readRelay, modelInfo } from "./providers/index.js"
+import { getProvider, readKey, readRelay, modelInfo, SEARCH_KEY_ID } from "./providers/index.js"
 import { relayFetch } from "./tools/relay.js"
 import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "./tools/guard.js"
+import { braveSearch } from "./tools/web.js"
 
 /**
  * The fetch every tool in this tab uses. It refuses this page's own origin —
@@ -61,6 +62,7 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
     // runner, not the view: a tool may be watching long after the view has gone.
     const events = createEvents(liveStore)
 
+    const fetchImpl = tabFetch()
     // Mutable on purpose: `element` is swapped as views come and go, so
     // host-tier tools always mount into something actually on the page, and
     // becomes null when nothing is watching.
@@ -78,12 +80,15 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
       // So view_screenshot can photograph a view that view_mount opened.
       getMount,
-      fetchImpl: tabFetch(),
+      fetchImpl,
       // With a relay a tab reaches pages as node does, so it keeps them as
       // node does: the PDF or the page itself, with its text beside it.
       get direct() {
         return !!readRelay()
       },
+      // web_search: Brave with the account's key, read afresh so a key saved
+      // in settings works at once. Tools get the search, never the key.
+      search: braveSearch({ key: () => readKey(SEARCH_KEY_ID), fetchImpl }),
       // The page's own origin, for plugin_source alone (see pageOriginFetch).
       pageFetch: pageOriginFetch({ fetch: (url, init) => fetch(url, init), origin: location.origin }),
     }

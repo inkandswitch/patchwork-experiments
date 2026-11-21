@@ -222,6 +222,21 @@ page is kept too, as the record of how a step found what it read, but it is
 not filed in a workflow's Sources folder: that folder is for what a reviewer
 checks claims against.
 
+**Search is Brave's Search API.** An index of its own, with an API meant for
+programs: scraping DuckDuckGo's results page got its bot check, which read as
+"no results", and the agent went on to guess URLs that were not there. It
+needs a key (the agent's settings, under *Web search*, kept with the API keys;
+`BRAVE_SEARCH_API_KEY` for the node runner) and, in a browser, the relay —
+Brave's API answers no page directly. The relay passes that one header,
+`x-subscription-token`, to Brave's API host and to nothing else. Without
+either, `web_search` says what is missing rather than returning nothing. Its
+answer is kept as it came, JSON, with the run.
+
+**An error page is not a source.** The reader answers 200 even when the site
+did not, noting `Warning: Target URL returned error 404` above a rendering of
+the error page. `web_fetch` reads that as the site's failure and keeps
+nothing.
+
 A fetched page used to exist only as a paragraph in a tool result. It cost
 context on every later turn, a person could not open it, and a PDF arrived as a
 third party's markdown of it. One measured workflow re-read pages it had
@@ -357,7 +372,8 @@ session. Every runner — tab, worker, node — reads it in one place
   exists nowhere else; `source_file`, which writes into a folder, is never
   here.
 - **The context** is built field by field from an allowlist (`confine`): the
-  signal, events, the guarded fetch, the reader, and a repo. There is no
+  signal, events, the guarded fetch, the reader, the search (its key closed
+  over, so no tool can read it), and a repo. There is no
   subject, no root, notes or skills folder, no account, no session URL, no
   page, no way to start a workflow — so the person's notes and skills are not
   in its prompt either, with no special case. The workspace note a view

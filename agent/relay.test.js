@@ -48,6 +48,20 @@ describe("relayFetch", () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(pdf)
   })
 
+  it("passes Brave's search key on to Brave's API, and to no other host", async () => {
+    const { send, sent } = relayed(() => new Response("{}"))
+    const fetch = relayFetch({ fetch: send, relay: () => RELAY })
+    const headers = { accept: "application/json", "x-subscription-token": "brave-key" }
+    await fetch("https://api.search.brave.com/res/v1/web/search?q=x", { headers })
+    await fetch("https://site.test/", { headers })
+    await fetch("https://search.brave.com/search?q=x", { headers })
+    expect(sent.map((s) => s.init.headers)).toEqual([
+      { accept: "application/json", "x-subscription-token": "brave-key", "x-relay-key": "k" },
+      { accept: "application/json", "x-relay-key": "k" },
+      { accept: "application/json", "x-relay-key": "k" },
+    ])
+  })
+
   it("sends anything else, and everything when no relay is set up, from the page as before", async () => {
     const { send, sent } = relayed(() => new Response("ok"))
     await relayFetch({ fetch: send, relay: () => RELAY })("https://api.test/x", { method: "POST", body: "{}" })

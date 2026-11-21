@@ -20,6 +20,8 @@
  * Usage:
  *   OPENROUTER_API_KEY=… node node-runner.mjs automerge:<sessionUrl> [more…]
  *   OPENROUTER_API_KEY=… node node-runner.mjs --watch automerge:<queueFolderUrl>
+ *
+ * web_search needs BRAVE_SEARCH_API_KEY too; without it, it says search is not set up.
  */
 
 import { Repo, initSubduction, setSubductionLogLevel } from "@automerge/automerge-repo"
@@ -32,6 +34,7 @@ import { buildToolset } from "./tools/index.js"
 import { getProvider, modelInfo } from "./providers/index.js"
 import { STATUS } from "./session.js"
 import { nodeFetch } from "./node-fetch.mjs"
+import { braveSearch } from "./tools/web.js"
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com"
 
@@ -76,7 +79,9 @@ log(`connected to ${SYNC}`)
 // network, or the cloud metadata address. Redirects are followed one checked
 // hop at a time, and every address a name resolves to must be public.
 const fetchImpl = nodeFetch({ sync: SYNC })
-const baseCtx = { repo, splice, direct: true, fetchImpl }
+// web_search's key (Brave Search API), like the model's: in this process only.
+const SEARCH_KEY = process.env.BRAVE_SEARCH_API_KEY || null
+const baseCtx = { repo, splice, direct: true, fetchImpl, search: braveSearch({ key: () => SEARCH_KEY, fetchImpl }) }
 
 const runners = new Map()
 

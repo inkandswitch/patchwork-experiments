@@ -110,6 +110,13 @@ export function writeKey(providerId, key, storage = globalThis.localStorage) {
 }
 
 /**
+ * The key web_search uses (Brave's Search API), read and written with
+ * readKey/writeKey under this id: the account's, like a provider's key, never
+ * a session's.
+ */
+export const SEARCH_KEY_ID = "agentBraveSearch"
+
+/**
  * The fetch relay this account uses, or null: `{ url, key }`.
  *
  * Kept where the API keys are, under a field of its own, for the same
@@ -190,7 +197,7 @@ export function connectAccountKeys(
         return
       }
       accountSettings = handle
-      for (const providerId of registry.keys()) {
+      for (const providerId of [...registry.keys(), SEARCH_KEY_ID]) {
         const local = localKey(providerId, storage)
         if (local && !accountKey(providerId)) {
           writeAccountKey(providerId, local)
