@@ -1,0 +1,4 @@
+# Never publish local credentials or build noise.
+.secrets
+node_modules
+dist
