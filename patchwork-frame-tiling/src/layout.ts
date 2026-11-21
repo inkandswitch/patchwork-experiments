@@ -1,3 +1,4 @@
+import { isValidAutomergeUrl } from "@automerge/automerge-repo";
 import type {
   DropSide,
   LayoutNode,
@@ -15,12 +16,29 @@ const sessionTag = Math.random().toString(36).slice(2, 8);
 const nextId = (prefix: string) =>
   `${prefix}-${sessionTag}-${(idCounter++).toString(36)}`;
 
-/** Build a clean (no `undefined`) view object safe to store in Automerge. */
+/**
+ * Whether a view's `url` can't name a document: present, but not an Automerge
+ * URL (a typo, a bare id, whatever some other writer left there). The repo
+ * throws on such a string, synchronously, from inside the hooks that render a
+ * tab — taking the whole frame down, and again on every reload, since the
+ * layout is persisted. So no stored view ever holds one: every write goes
+ * through {@link cleanView} or {@link writeView}, which drop it, and a layout
+ * written before (or by someone else) is put right by {@link repairLayout}.
+ */
+const hasBadUrl = (view: PanelView): boolean =>
+  view.url !== undefined && view.url !== null && !isValidAutomergeUrl(view.url);
+
+/**
+ * Build a clean (no `undefined`) view object safe to store in Automerge. A
+ * view whose url names no document becomes an empty one; its tool went with
+ * the document, so it goes too.
+ */
 const cleanView = (view: PanelView): PanelView => {
   const out: PanelView = {};
+  if (view.role !== undefined && view.role !== null) out.role = view.role;
+  if (hasBadUrl(view)) return out;
   if (view.url !== undefined && view.url !== null) out.url = view.url;
   if (view.toolId !== undefined && view.toolId !== null) out.toolId = view.toolId;
-  if (view.role !== undefined && view.role !== null) out.role = view.role;
   return out;
 };
 
@@ -83,11 +101,9 @@ export const navigatorSizes = (
  */
 export const cloneLayout = (node: LayoutNode): LayoutNode => {
   if (node.kind === "leaf") {
-    const leaf: LeafNode = { kind: "leaf", id: node.id, view: cleanView(node.view) };
-    if (node.stack && node.stack.length > 0) {
-      leaf.stack = [...node.stack].map(cleanView);
-      leaf.stackAt = clampStackAt(node);
-    }
+    const leaf: LeafNode = { kind: "leaf", id: node.id, view: {} };
+    const { tabs, active } = leafTabs(node);
+    writeTabs(leaf, tabs, active);
     if (node.drawer) {
       leaf.drawer = { open: node.drawer.open, width: node.drawer.width };
       if (node.drawer.tool) leaf.drawer.tool = node.drawer.tool;
@@ -101,6 +117,37 @@ export const cloneLayout = (node: LayoutNode): LayoutNode => {
     sizes: [node.sizes[0], node.sizes[1]],
     children: [cloneLayout(node.children[0]), cloneLayout(node.children[1])],
   };
+};
+
+const someLeaf = (node: LayoutNode, test: (leaf: LeafNode) => boolean): boolean =>
+  node.kind === "leaf"
+    ? test(node)
+    : someLeaf(node.children[0], test) || someLeaf(node.children[1], test);
+
+const leafHasBadUrl = (leaf: LeafNode): boolean =>
+  hasBadUrl(leaf.view) || (leaf.stack ?? []).some(hasBadUrl);
+
+/**
+ * `layout` with every url that names no document taken out (see
+ * {@link hasBadUrl}): such a tab is dropped from its stack, and a panel whose
+ * only document it was becomes an empty frame. The same object when there's
+ * nothing to repair, so it's cheap to call on every render.
+ */
+export const repairLayout = <L extends LayoutNode | null>(layout: L): L =>
+  layout && someLeaf(layout, leafHasBadUrl) ? (cloneLayout(layout) as L) : layout;
+
+/** {@link repairLayout}, in place: only the leaves that need it are rewritten. */
+export const repairLayoutIn = (doc: TilingLayoutDoc): void => {
+  const visit = (node: LayoutNode): void => {
+    if (node.kind === "split") {
+      visit(node.children[0]);
+      visit(node.children[1]);
+    } else if (leafHasBadUrl(node)) {
+      const { tabs, active } = leafTabs(node);
+      writeTabs(node, tabs, active);
+    }
+  };
+  if (doc.layout) visit(doc.layout);
 };
 
 /** Collect the ids of every leaf panel, in tree order. */
@@ -137,7 +184,8 @@ export const leafTabs = (
  * document to show instead, no document appears twice (the showing one wins),
  * and a single remaining tab is stored as a plain leaf, with no stack.
  */
-const writeTabs = (leaf: LeafNode, tabs: PanelView[], requested: number): void => {
+const writeTabs = (leaf: LeafNode, given: PanelView[], requested: number): void => {
+  const tabs = given.map(cleanView);
   const firstDoc = tabs.findIndex((tab) => !!tab.url);
   const active = tabs[requested]?.url || firstDoc < 0 ? requested : firstDoc;
   const shownUrl = tabs[active]?.url;
@@ -147,12 +195,12 @@ const writeTabs = (leaf: LeafNode, tabs: PanelView[], requested: number): void =
   tabs.forEach((tab, i) => {
     if (i === active) {
       shown = kept.length;
-      kept.push(cleanView(tab));
+      kept.push(tab);
       return;
     }
     if (!tab.url || seen.has(tab.url)) return;
     seen.add(tab.url);
-    kept.push(cleanView(tab));
+    kept.push(tab);
   });
   if (kept.length === 0) return;
   leaf.view = kept[shown];
@@ -248,7 +296,8 @@ const childIndexOfLeaf = (split: SplitNode, leafId: string): 0 | 1 =>
   split.children[0].kind === "leaf" && split.children[0].id === leafId ? 0 : 1;
 
 /** Set `target.url`/`target.toolId` in place, avoiding `undefined` writes. */
-const writeView = (target: PanelView, view: PanelView): void => {
+const writeView = (target: PanelView, given: PanelView): void => {
+  const view = cleanView(given);
   const url = view.url;
   if (url === undefined || url === null) {
     if (target.url !== undefined) delete (target as { url?: string }).url;
@@ -390,13 +439,13 @@ export const stackIntoIn = (
   }
 
   const moving = (tab === null ? from.tabs : [from.tabs[tab]])
-    .filter((view) => view.url)
-    .map(cleanView);
+    .map(cleanView)
+    .filter((view) => view.url);
   // An empty source brings nothing, and leaves the target showing what it was.
   const shownUrl =
     (tab === null ? from.tabs[from.active]?.url : moving[0]?.url) ?? target.view.url;
   const into = leafTabs(target);
-  const intoDocs = into.tabs.filter((view) => view.url).map(cleanView);
+  const intoDocs = into.tabs.map(cleanView).filter((view) => view.url);
   const incoming = moving.filter((m) => !intoDocs.some((t) => t.url === m.url));
   if (intoDocs.length + incoming.length === 0) return null;
   const defaultAt = tab === null || !target.view.url ? intoDocs.length : into.active + 1;
